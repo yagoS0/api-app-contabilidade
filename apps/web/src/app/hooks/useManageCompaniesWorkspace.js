@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { detalhesDaConfirmacaoDoResponsavel } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
@@ -56,6 +56,11 @@ function deriveCompanyDetailTab(pathname) {
 export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced, onGuidePaymentConfirmed }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const telaAtual = useRef(location.key);
+  telaAtual.current = location.key;
+  const feedbackAtual = useRef(feedback);
+  feedbackAtual.current = feedback;
+  useEffect(() => { feedbackAtual.current.clearFeedback(); }, [location.key]);
   const companiesState = useCompanies();
   const guidesState = useCompanyGuides();
   const createCompanyForm = useCompanyForm(getInitialCompanyFormState());
@@ -68,6 +73,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // para uma empresa e a tela renderizava outra — a que estava no estado. Um `setSelectedCompanyId`
   // esquecido em qualquer ponto de navegação (link, voltar do browser, refresh) reproduzia o bug.
   const companyIdDaUrl = deriveCompanyIdFromPath(location.pathname);
+  const empresaAtualGuias = useRef(null);
+  empresaAtualGuias.current = page === "login" ? null : companyIdDaUrl || companiesState.selectedCompanyId;
+  const leituraGuias = useRef(0);
+  const [empresaDasGuias, setEmpresaDasGuias] = useState(null);
+  const guiasVigentes = useRef(null);
+  guiasVigentes.current = { companyId: empresaDasGuias, guides: guidesState.guides, loading: guidesState.loadingGuides };
+  const recalculoEmCurso = useRef(false);
   useEffect(() => {
     if (companyIdDaUrl && companyIdDaUrl !== companiesState.selectedCompanyId) {
       companiesState.setSelectedCompanyId(companyIdDaUrl);
@@ -172,17 +184,24 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function loadGuides(companyId = companiesState.selectedCompanyId) {
-    if (!companyId) return;
+    if (!companyId || companyId !== empresaAtualGuias.current) return;
+    const telaOrigem = telaAtual.current;
+    const leitura = ++leituraGuias.current;
+    const vigente = () => leitura === leituraGuias.current && companyId === empresaAtualGuias.current;
     guidesState.setLoadingGuides(true);
     feedback.clearFeedback();
     try {
       const items = await api.getCompanyGuides(companyId);
+      if (!vigente()) return;
       guidesState.setGuides(items);
+      setEmpresaDasGuias(companyId);
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao carregar guias");
+      if (!vigente()) return;
+      if (telaAtual.current === telaOrigem) feedback.setError(err?.message || "Falha ao carregar guias");
       guidesState.setGuides([]);
+      setEmpresaDasGuias(companyId);
     } finally {
-      guidesState.setLoadingGuides(false);
+      if (vigente()) guidesState.setLoadingGuides(false);
     }
   }
 
@@ -686,6 +705,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleResendGuide(guideId) {
+    const telaOrigem = telaAtual.current;
+    const vigente = () => telaAtual.current === telaOrigem;
     const companyId = companiesState.selectedCompanyId;
     if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
     if (!guideId) {
@@ -699,7 +720,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // ⚠ A ORDEM IMPORTA: `loadGuides` começa com `feedback.clearFeedback()`. Setar a mensagem
       // antes dele APAGA a mensagem — o clique não devolvia retorno nenhum à tela, nem de sucesso
       // nem de falha. "O sistema diz que fez" tem uma variante pior: o sistema não diz nada.
+      if (!vigente()) return;
       await loadGuides(companyId);
+      if (!vigente()) return;
       // ⚠ Dizia "Guia colocada na fila de reenvio". Não existe fila: o laço automático saiu na Q55
       // e nada drena `emailNextRetryAt`. O reenvio é SÍNCRONO — ou saiu agora, ou não saiu.
       if (!r.ok) {
@@ -708,6 +731,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       }
     } catch (err) {
+      if (!vigente()) return;
       feedback.setError(err?.message || "Falha ao reenviar guia");
     } finally {
       guidesState.setResendingGuideId("");
@@ -715,6 +739,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleConfirmGuidePayment(guideId) {
+    const telaOrigem = telaAtual.current;
+    const vigente = () => telaAtual.current === telaOrigem;
     if (!guideId) {
       feedback.setError("guide_id_not_found");
       return;
@@ -727,7 +753,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // rodava DEPOIS todas as mensagens abaixo eram apagadas antes de aparecer — inclusive as que
       // pedem uma ação do contador ("Lance a baixa na Circular", "nenhuma provisão correspondente
       // foi encontrada"). O clique terminava mudo.
+      if (!vigente()) return;
       await loadGuides();
+      if (!vigente()) return;
       // Q23: guia de parcela gera a baixa do pagamento; mensagem reflete o resultado.
       // A resposta diz se a Circular foi atualizada — não afirmamos "✅ na Circular" sem ter sido.
       // Comprovante do SERPRO: quando `aplicado`, a baixa saiu com a DATA e os VALORES reais.
@@ -760,6 +788,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // aba mostrava dado velho (antes só as guias eram recarregadas).
       await onGuidePaymentConfirmed?.();
     } catch (err) {
+      if (!vigente()) return;
       const msg = String(err?.message || "");
       if (msg.includes("MES_FECHADO")) {
         feedback.setError("Mês contábil fechado — reabra o mês antes de marcar a parcela como paga.");
@@ -776,6 +805,18 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       feedback.setError("guide_id_not_found");
       return;
     }
+    const companyId = companyIdDaUrl || companiesState.selectedCompanyId;
+    const telaOrigem = telaAtual.current;
+    const contextoAtual = () => telaAtual.current === telaOrigem && companyId && companyId === empresaAtualGuias.current;
+    if (!contextoAtual() || recalculoEmCurso.current) return;
+    const lista = guiasVigentes.current;
+    const guia = lista?.companyId === companyId && !lista.loading
+      ? lista.guides.find((item) => (item.guideId || item.id) === guideId) : null;
+    if (!guia || guia.paymentStatus === "PAID" || guia.parcelamentoId || !guia.canRecalculate) {
+      feedback.setError("Esta guia não está disponível para recálculo nesta empresa. Atualize a lista de guias.");
+      return;
+    }
+    recalculoEmCurso.current = true;
     guidesState.setRecalculatingGuideId(guideId);
     feedback.clearFeedback();
     try {
@@ -798,7 +839,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         ? `${acrescimos.texto} `
         : "";
       // ⚠ `loadGuides` limpa o feedback — a mensagem tem que vir DEPOIS dele, senão some.
-      await loadGuides();
+      if (!contextoAtual()) return;
+      await loadGuides(companyId);
+      if (!contextoAtual()) return;
       // ⚠ Dizia "enviada para a fila de e-mail" / "o envio automático está ocupado". Não há fila e
       // não há envio automático (Q55). O recálculo dispara o envio SÍNCRONO da guia nova; o que a
       // tela pode afirmar é se ele saiu, e o que fazer quando não saiu.
@@ -821,8 +864,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         );
       }
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao recalcular guia");
+      if (contextoAtual()) feedback.setError(err?.message || "Falha ao recalcular guia");
     } finally {
+      recalculoEmCurso.current = false;
       guidesState.setRecalculatingGuideId("");
     }
   }
@@ -830,7 +874,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // Q53: recálculo/traga EXPLÍCITO da guia de INSS de uma competência (botão na aba Guias).
   // Reusa /serpro/inss/sync — o backend bloqueia se a guia da competência já estiver paga.
   async function handleRecalcularInss(competencia) {
-    const companyId = companiesState.selectedCompanyId;
+    const companyId = companyIdDaUrl || companiesState.selectedCompanyId;
     if (!companyId) {
       feedback.setError("Selecione uma empresa para recalcular o INSS.");
       return;
@@ -839,16 +883,36 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       feedback.setError("Selecione uma competência (AAAA-MM) para recalcular o INSS.");
       return;
     }
+    const telaOrigem = telaAtual.current;
+    const contextoAtual = () => telaAtual.current === telaOrigem && companyId === empresaAtualGuias.current;
+    if (!contextoAtual() || recalculoEmCurso.current) return;
+    const lista = guiasVigentes.current;
+    const guia = lista?.companyId === companyId && !lista.loading
+      ? lista.guides.find((item) => item.tipo === "INSS" && item.competencia === competencia && !item.parcelamentoId && item.paymentStatus !== "PAID") : null;
+    if (!guia) {
+      feedback.setError("Não há guia de INSS disponível para recálculo nesta empresa e competência.");
+      return;
+    }
+    recalculoEmCurso.current = true;
     setRecalcInssBusy(true);
     feedback.clearFeedback();
     try {
-      await api.syncSerproInss(companyId, { competencia, atualizar: true });
+      const payload = await api.syncSerproInss(companyId, { competencia, atualizar: true });
+      if (!contextoAtual()) return;
       // ⚠ DEPOIS do reload — `loadGuides` limpa o feedback (mesmo defeito dos vizinhos).
       await loadGuides(companyId);
+      if (!contextoAtual()) return;
+      // HTTP 200 também pode informar declaração não transmitida, guia não encontrada ou
+      // documento reaproveitado. Só EMITTED com a guia retornada confirma o recálculo.
+      if (!payload?.result?.guide?.guideId || payload?.result?.inss?.status !== "EMITTED") {
+        feedback.setError(`Não houve confirmação de recálculo do INSS de ${competencia}. A consulta não retornou uma nova guia emitida.`);
+        return;
+      }
       feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao recalcular o INSS.");
+      if (contextoAtual()) feedback.setError(err?.message || "Falha ao recalcular o INSS.");
     } finally {
+      recalculoEmCurso.current = false;
       setRecalcInssBusy(false);
     }
   }
@@ -856,6 +920,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // Portal Cliente: libera SÓ a guia selecionada ao cliente e envia SÓ ela por e-mail
   // (página da empresa). O empacotamento DAS+INSS fica no envio em lote da página principal.
   async function handleLiberarGuia(guideId) {
+    const telaOrigem = telaAtual.current;
+    const vigente = () => telaAtual.current === telaOrigem;
     const companyId = companiesState.selectedCompanyId;
     if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
     if (!guideId) { feedback.setError("Selecione uma guia."); return; }
@@ -875,13 +941,16 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // ⚠ A ORDEM IMPORTA: `loadGuides` abre com `feedback.clearFeedback()`. Enquanto a mensagem
       // era setada ANTES dele, o clique em "Liberar ao cliente" não devolvia NADA à tela — nem o
       // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
+      if (!vigente()) return;
       await loadGuides(companyId);
+      if (!vigente()) return;
       if (r.ok) {
         feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       } else {
         feedback.setError(r.texto);
       }
     } catch (err) {
+      if (!vigente()) return;
       feedback.setError(err?.message || "Falha ao liberar a guia ao cliente.");
     } finally {
       setLiberarGuiasBusy(false);
@@ -889,6 +958,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleLiberarGuias(items) {
+    const telaOrigem = telaAtual.current;
+    const vigente = () => telaAtual.current === telaOrigem;
     const companyId = companiesState.selectedCompanyId;
     if (!companyId || !items?.length || liberarGuiasBusy) return [];
     setLiberarGuiasBusy(true);
@@ -896,13 +967,16 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     let resultados = [];
     try {
       resultados = await liberarSelecao({ api, companyId, items });
+      if (!vigente()) return resultados;
       await loadGuides(companyId);
+      if (!vigente()) return resultados;
       const falhas = resultados.filter((r) => !r.ok);
       const texto = resultados.map((r) => `${r.rotulo}: ${r.texto}`).join("\n");
       if (falhas.length) feedback.setError(`${falhas.length} de ${resultados.length} guias com falha.\n${texto}`);
       else feedback.setMessage(resultados.some((r) => r.tom === "pendente") ? { texto, tom: "pendente" } : texto);
       return resultados;
     } catch (erro) {
+      if (!vigente()) return resultados;
       feedback.setError(erro?.message || "Não foi possível atualizar o resultado do envio. Confira o histórico antes de repetir.");
       return resultados;
     } finally {
@@ -946,13 +1020,18 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleDeleteGuide(guideId) {
+    const telaOrigem = telaAtual.current;
+    const vigente = () => telaAtual.current === telaOrigem;
     const companyId = companiesState.selectedCompanyId;
     feedback.clearFeedback();
     try {
       await api.deleteGuide(guideId);
+      if (!vigente()) return;
       await loadGuides(companyId);
+      if (!vigente()) return;
       feedback.setMessage("Guia excluída com sucesso.");
     } catch (err) {
+      if (!vigente()) return;
       feedback.setError(err?.message || "Falha ao excluir guia.");
     }
   }
@@ -1040,6 +1119,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   function resetWorkspace() {
+    leituraGuias.current += 1;
+    empresaAtualGuias.current = null;
+    setEmpresaDasGuias(null);
+    guidesState.setLoadingGuides(false);
     companiesState.setCompanies([]);
     companiesState.setSelectedCompanyId("");
     guidesState.setGuides([]);
@@ -1273,7 +1356,11 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   return {
     companiesState,
-    guidesState,
+    guidesState: {
+      ...guidesState,
+      guides: empresaDasGuias === empresaAtualGuias.current ? guidesState.guides : [],
+      loadingGuides: guidesState.loadingGuides || Boolean(empresaAtualGuias.current && empresaDasGuias !== empresaAtualGuias.current),
+    },
     createCompanyForm,
     editCompanyForm,
     companyDetailTab,

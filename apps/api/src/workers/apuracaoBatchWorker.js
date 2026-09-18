@@ -16,15 +16,17 @@ const BACKOFF_MS = 5 * 60 * 1000;
 /**
  * Processa 1 item da fila (idempotente; consulta-antes via FechamentoService).
  */
-async function processarItem(item) {
-  await prisma.apuracaoBatchItem.update({
-    where: { id: item.id },
+async function processarItem(item, job) {
+  const reserva = await prisma.apuracaoBatchItem.updateMany({
+    where: { id: item.id, status: "pendente" },
     data: { status: "processando", tentativas: { increment: 1 } },
   });
+  if (reserva.count !== 1) return { ok: false, skipped: "ja_reservado" };
   try {
     const result = await transmitirFechamento({
       portalClientId: item.portalClientId,
       competencia: item.competencia,
+      calculoId: job?.resumo?.calculosAprovados?.[item.portalClientId], userId: job?.triggeredBy,
     });
     await prisma.apuracaoBatchItem.update({
       where: { id: item.id },
@@ -39,7 +41,7 @@ async function processarItem(item) {
     return { ok: true };
   } catch (err) {
     const transitorio = /timeout|429|ETIMEDOUT|ECONNRESET|throttl/i.test(String(err?.message || ""));
-    const podeReatentar = transitorio && item.tentativas + 1 < MAX_TENTATIVAS;
+    const podeReatentar = !["TRANSMISSAO_RESULTADO_INCERTO", "TRANSMISSAO_PENDENTE_CONFERENCIA"].includes(err?.code) && transitorio && item.tentativas + 1 < MAX_TENTATIVAS;
     await prisma.apuracaoBatchItem.update({
       where: { id: item.id },
       data: podeReatentar
@@ -85,9 +87,10 @@ export async function runApuracaoBatchOnce(jobId = null) {
     take: ITEMS_POR_CICLO,
   });
   if (itens.length === 0) return { processados: 0 };
+  const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: String(jobId) } });
   for (const item of itens) {
     // eslint-disable-next-line no-await-in-loop
-    await processarItem(item);
+    await processarItem(item, job);
   }
   await atualizarJob(String(jobId));
   return { processados: itens.length };
@@ -108,17 +111,19 @@ export async function criarBatchJob({ portalClientIds, competencia, userId }) {
   // só empresas com snapshot em estado "fechada" entram
   const snaps = await prisma.apuracaoSnapshot.findMany({
     where: { portalClientId: { in: ids }, competencia, estado: "fechada" },
-    select: { portalClientId: true },
+    select: { portalClientId: true, idempotencyKey: true },
   });
-  const elegiveis = snaps.map((s) => s.portalClientId);
+  const confirmadas = snaps.filter((s) => String(s.idempotencyKey || "").startsWith("fech:v1:"));
+  const elegiveis = confirmadas.map((s) => s.portalClientId);
   if (elegiveis.length === 0) {
-    const e = new Error("Nenhuma das empresas selecionadas está 'fechada' pra apurar"); e.code = "NONE_CLOSED"; throw e;
+    const e = new Error("Nenhuma empresa selecionada tem fechamento com simulação confirmada. Calcule e feche novamente antes de enviar em lote."); e.code = "NONE_CLOSED"; throw e;
   }
   const job = await prisma.apuracaoBatchJob.create({
     data: {
       acao: "TRANSMITIR", competencia,
       totalEmpresas: elegiveis.length, pendenteCount: elegiveis.length,
       status: "running", triggeredBy: userId || null,
+      resumo: { calculosAprovados: Object.fromEntries(confirmadas.map((s) => [s.portalClientId, s.idempotencyKey])) },
     },
   });
   await prisma.apuracaoBatchItem.createMany({

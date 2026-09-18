@@ -354,7 +354,7 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime, onOpenObligations, cale
 }
 
 function ApuracaoV2TabWrapper({ companyId, feedback, razao, myRole, competencia, onCompetenciaChange, onAbrirPerfilFiscal }) {
-  const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
+  const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, competencia, feedback });
   return (
     <ApuracaoV2Tab
       panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao}
@@ -380,9 +380,9 @@ function PerfilFiscalTabWrapper({ companyId, feedback, podeEditar }) {
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
 const sitfisApi = createApiClient();
-function SitfisTabWrapper({ companyId }) {
+function SitfisTabWrapper({ companyId, guidesPanel, feedback }) {
   const panel = useSitfis({ api: sitfisApi, companyId });
-  return <SitfisTab sitfisPanel={panel} />;
+  return <SitfisTab sitfisPanel={panel} guidesPanel={guidesPanel} feedback={feedback} />;
 }
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
@@ -1150,7 +1150,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
           if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
           e.preventDefault(); switchTab("notasFiscais");
         }} style={{ marginBottom: 16 }}>← Voltar às notas</a>
-        <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
+        <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} podeEditar={["ACCOUNTANT", "FIRM_ADMIN"].includes(String(selectedCompany?.myRole || "").toUpperCase())} />
       </CompanyTabLayout>
     );
   }
@@ -1176,7 +1176,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         largura="trabalho"
         suspense
       >
-        <SitfisTabWrapper companyId={companyId} />
+        <SitfisTabWrapper key={companyId} companyId={companyId} guidesPanel={guidesPanel} feedback={feedback} />
       </CompanyTabLayout>
     );
   }

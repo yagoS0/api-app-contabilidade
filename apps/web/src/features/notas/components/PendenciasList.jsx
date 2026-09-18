@@ -26,11 +26,11 @@ import { FRASE_MOTIVO_PENDENCIA } from "../lib/auditoriaTela";
 // coluna de ações não é renderizada e o componente vira leitura pura; com eles, o comportamento é o
 // de sempre, para a tela que tiver a ação.
 
-export function PendenciasList({ pendencias, saving, onReabrir, onResolver, titulo, rodape }) {
+export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAbrirNota, rotuloResolver = "Ignorar", titulo, rodape }) {
   const open = (pendencias || []).filter((p) => !p.resolvida);
   if (open.length === 0) return null;
 
-  const comAcoes = Boolean(onReabrir || onResolver);
+  const comAcoes = Boolean(onReabrir || onResolver || onAbrirNota);
 
   return (
     <section style={{
@@ -71,7 +71,8 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, titu
                 /* O âmbar da caixa (a pendência CONSTATADA) fica — ali a cor é informação. O botão
                    não: "Reabrir competência" é ação, e ação primária é o accent. */
                 <td style={{ padding: 6, textAlign: "right" }}>
-                  <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    {onAbrirNota && p.notaId && <Button size="sm" variant="secondary" onClick={() => onAbrirNota(p.notaId)} disabled={saving}>Abrir nota</Button>}
                     {onReabrir ? (
                       <Button size="sm" onClick={() => onReabrir(p.competencia)} disabled={saving}>
                         Reabrir competência
@@ -79,7 +80,7 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, titu
                     ) : null}
                     {onResolver ? (
                       <Button size="sm" variant="secondary" onClick={() => onResolver(p.id)} disabled={saving}>
-                        Ignorar
+                        {rotuloResolver}
                       </Button>
                     ) : null}
                   </div>

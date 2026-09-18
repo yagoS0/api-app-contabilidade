@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { limparSessao, lerEmpresaSalva, salvarEmpresa } from "../../api/sessionStore";
 import { ehVisitaDoEscritorio, ehMestreDoEscritorio } from "../../api/accountGate";
@@ -51,6 +51,16 @@ export function AppShell({ user }) {
   // `rota === "emitir"`. Ele mora aqui, e não dentro da `NotasPage`, pelo mesmo motivo do modelo:
   // a casca é quem monta a tela ativa, e é ela que precisa decidir entre a lista e o formulário.
   const [emissaoAberta, setEmissaoAberta] = useState(false);
+  const [emissaoEmCurso, setEmissaoEmCurso] = useState(false);
+  const envioEmCurso = useRef(false);
+  function aoMudarEnvio(ocupado) {
+    envioEmCurso.current = ocupado;
+    setEmissaoEmCurso(ocupado);
+  }
+  // Voltar pelo navegador não desmonta a emissão. O desfecho permanece na mesma tela.
+  useEffect(() => {
+    if (emissaoAberta && rota !== "notas") navegar("notas");
+  }, [emissaoAberta, rota, navegar]);
   // ⚠⚠ A COMPETÊNCIA É UMA SÓ, E ELA MORA AQUI.
   //
   // Eram DUAS: `HomePage` e `NotasPage` tinham, cada uma, o seu `useState(competenciaPadrao)`.
@@ -107,6 +117,7 @@ export function AppShell({ user }) {
   }, [empresas, empresaEscolhida, user?.defaultClientId]);
 
   function escolherEmpresa(companyId) {
+    if (envioEmCurso.current) return;
     setEmpresaEscolhida(companyId);
     salvarEmpresa(companyId);
     setSeletorAberto(false);
@@ -134,6 +145,7 @@ export function AppShell({ user }) {
    * rótulo promete.
    */
   function irPara(destino) {
+    if (envioEmCurso.current) return;
     setEmissaoAberta(false);
     setLoteAberto(false);
     setExtratoAberto(false);
@@ -174,12 +186,13 @@ export function AppShell({ user }) {
 
   /** Volta da emissão para a lista, sem sair da rota. */
   function fecharEmissao() {
+    if (envioEmCurso.current) return;
     setEmissaoAberta(false);
     setModeloEmissao(null);
   }
 
   async function sair() {
-    if (saindo) return;
+    if (saindo || envioEmCurso.current) return;
     setSaindo(true);
     try {
       await api.logout();
@@ -266,7 +279,7 @@ export function AppShell({ user }) {
 
         <div className="topbar-actions">
           {empresas.length > 1 ? (
-            <button type="button" className="btn" onClick={() => setSeletorAberto(true)}>
+            <button type="button" className="btn" disabled={emissaoEmCurso} onClick={() => setSeletorAberto(true)}>
               Trocar empresa
             </button>
           ) : null}
@@ -326,6 +339,7 @@ export function AppShell({ user }) {
       </nav>
 
       <main className="page">
+        {emissaoEmCurso && <p role="status">Emissão em andamento. Aguarde o resultado antes de sair ou trocar de empresa.</p>}
         {empresasQuery.carregando ? (
           <Carregando>Carregando suas empresas…</Carregando>
         ) : empresasQuery.erro ? (
@@ -338,11 +352,12 @@ export function AppShell({ user }) {
           <Vazio>
             Nenhuma empresa está vinculada ao seu acesso. Fale com o seu contador para liberar.
           </Vazio>
-        ) : rota === "notas" ? (
+        ) : rota === "notas" || emissaoAberta ? (
           // ⚠ UMA ROTA, DOIS MODOS. `emissaoAberta` é o que sobrou de `rota === "emitir"`.
           emissaoAberta ? (
             <EmitirNotaPage
               empresa={empresaAtiva}
+              aoMudarEnvio={aoMudarEnvio}
               // ⚠ O PROP MUDOU DE NOME PORQUE MUDOU DE NATUREZA. Era `aoNavegar`, e a única coisa
               // que a emissão jamais fez com ele foi `aoNavegar("notas")` — ou seja, voltar. Hoje
               // isso não é navegação, é fechar um modo; um nome que dissesse "navegar" mentiria.

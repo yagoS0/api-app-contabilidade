@@ -14,13 +14,59 @@
 //   7. a pendência pós-fechamento é renderizada (o componente existia sem nenhum consumidor);
 //   8. nenhum bloco de numeração da DPS volta à tela.
 
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { AuditoriaTab } from "../renderAuditoriaTab";
 
 const perguntaBase = (over) => ({
   achado: "há um ponto a conferir nesta nota",
   situacao: "CONFERIDA", motivo: null, avaliadas: 10, achados: [], naoAvaliadas: [], ...over,
+});
+
+const promessa = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+
+test("respostas antigas de auditoria e pendências não entram na empresa/competência atual", async () => {
+  const antiga = promessa(), pendencias = promessa();
+  const api = apiCom({ ...AUDITORIA, totalAchados: 9 });
+  api.getAuditoriaNotas.mockImplementationOnce(() => antiga.promise);
+  api.listPendenciasPosFechamento.mockImplementationOnce(() => pendencias.promise).mockResolvedValue([]);
+  const tela = render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} />);
+  tela.rerender(<AuditoriaTab companyId="B" competencia="2026-08" api={api} />);
+  expect(await screen.findByText("9 pontos a conferir")).toBeInTheDocument();
+  await act(async () => { antiga.resolve({ auditoria: AUDITORIA }); pendencias.resolve(PENDENCIAS); });
+  expect(screen.getByText("9 pontos a conferir")).toBeInTheDocument();
+  expect(screen.queryByText(/Pendências pós-fechamento \(1\)/)).not.toBeInTheDocument();
+});
+
+test("abre a nota sem competência e a nota da pendência da própria empresa", async () => {
+  const api = { ...apiCom(AUDITORIA), getNota: jest.fn(async () => ({ nota: { id: "n7", numero: "13007", type: "NFSE" } })) };
+  render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Abrir nota 13007" }));
+  await waitFor(() => expect(api.getNota).toHaveBeenCalledWith("A", "n7"));
+  expect(await screen.findByText(/Competência não informada:/)).toBeInTheDocument();
+});
+
+test("reabrir exige motivo e confirmação explícita sem concluir pendência automaticamente", async () => {
+  const api = { ...apiCom(AUDITORIA), reabrirCompetencia: jest.fn(async () => ({ ok: true })), resolverPendenciaPosFechamento: jest.fn(async () => ({ ok: true })) };
+  render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} podeEditar />);
+  fireEvent.click(await screen.findByRole("button", { name: "Reabrir competência" }));
+  const dialogo = within(screen.getByRole("dialog"));
+  expect(dialogo.getByRole("button", { name: "Confirmar" })).toBeDisabled();
+  expect(api.reabrirCompetencia).not.toHaveBeenCalled();
+  fireEvent.change(dialogo.getByLabelText(/Motivo da reabertura/), { target: { value: "Conferir nota retroativa" } });
+  fireEvent.click(dialogo.getByRole("button", { name: "Confirmar" }));
+  await waitFor(() => expect(api.reabrirCompetencia).toHaveBeenCalledWith("A", "2026-05", "Conferir nota retroativa"));
+  expect(api.resolverPendenciaPosFechamento).not.toHaveBeenCalled();
+  expect(await screen.findByText(/Competência fiscal reaberta para conferência/)).toBeInTheDocument();
+});
+
+test("concluir conferência usa rota própria e só altera depois de confirmar", async () => {
+  const api = { ...apiCom(AUDITORIA), resolverPendenciaPosFechamento: jest.fn(async () => ({ ok: true })) };
+  render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} podeEditar />);
+  fireEvent.click(await screen.findByRole("button", { name: "Marcar como conferida" }));
+  expect(api.resolverPendenciaPosFechamento).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirmar" }));
+  await waitFor(() => expect(api.resolverPendenciaPosFechamento).toHaveBeenCalledWith("A", "p1"));
 });
 
 const AUDITORIA = {
@@ -182,7 +228,7 @@ describe("a aba Auditoria", () => {
     for (const r of rotulos) {
       expect(r).not.toMatch(/salvar|marcar|corrigir|ignorar|aplicar|confirmar|transmitir|excluir|reabrir/i);
     }
-    expect(screen.getByText(/Esta tela apenas lê/)).toBeInTheDocument();
+    expect(screen.getByText(/A conferência não altera notas nem apurações automaticamente/)).toBeInTheDocument();
   });
 
   it("⚠ falha NÃO vira 'nada a apontar' — o erro aparece", async () => {

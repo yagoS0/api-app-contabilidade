@@ -26,7 +26,7 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
-    portalInvoice: { findFirst: jest.fn(), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    portalInvoice: { findFirst: jest.fn(), findMany: jest.fn(async () => []), count: jest.fn(async () => 0), update: jest.fn() },
     notaItem: { findMany: jest.fn(async () => []) },
     // O detalhe passou a devolver o CICLO DE VIDA junto (cancelada × substituída × substituta ×
     // "não temos o evento"), e para isso lê os eventos da nota. Vazio por padrão: é exatamente o
@@ -93,6 +93,35 @@ function notaCompleta(over = {}) {
 }
 
 beforeEach(() => jest.clearAllMocks());
+
+describe("busca e ajuste local de notas", () => {
+  it.each(["/notas", "/notas/summary"])("%s não transforma nome em filtro vazio de documento", async (rota) => {
+    prisma.portalInvoice.findMany.mockResolvedValue([]);
+    await request(makeApp()).get(`/firm/companies/emp-1${rota}?search=ALBATROZ`).expect(200);
+    const filtro = prisma.portalInvoice.findMany.mock.calls[0][0].where;
+    expect(filtro.clientId).toBe("emp-1");
+    expect(filtro.OR).toContainEqual({ tomadorNome: { contains: "ALBATROZ", mode: "insensitive" } });
+    expect(filtro.OR.some(x => x.emitenteDoc || x.tomadorDoc)).toBe(false);
+  });
+  it.each(["/notas", "/notas/summary"])("%s busca documento do emitente e do tomador", async (rota) => {
+    prisma.portalInvoice.findMany.mockResolvedValue([]);
+    await request(makeApp()).get(`/firm/companies/emp-1${rota}`).query({ search: "11.222.333/0001-81" }).expect(200);
+    const filtro = prisma.portalInvoice.findMany.mock.calls[0][0].where;
+    expect(filtro.OR).toEqual(expect.arrayContaining([{ tomadorDoc: { contains: "11222333000181" } }, { emitenteDoc: { contains: "11222333000181" } }]));
+  });
+  it.each(["cancelada", "autorizada"])("não permite ajuste %s em recebida", async (statusEfetivo) => {
+    prisma.portalInvoice.findFirst.mockResolvedValue({ id: "dest", papel: "DEST" });
+    await request(makeApp()).patch("/firm/companies/emp-1/notas/dest/status").send({ statusEfetivo }).expect(409);
+    expect(prisma.portalInvoice.update).not.toHaveBeenCalled();
+  });
+  it("preserva ajuste local da emitida e exige pertencer à empresa", async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue({ id: "emit", papel: "EMIT" });
+    prisma.portalInvoice.update.mockResolvedValue({ id: "emit", statusEfetivo: "cancelada" });
+    await request(makeApp()).patch("/firm/companies/emp-1/notas/emit/status").send({ statusEfetivo: "cancelada" }).expect(200);
+    expect(prisma.portalInvoice.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "emit", clientId: "emp-1" } }));
+    expect(prisma.portalInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: { statusEfetivo: "cancelada", status: "CANCELADA" } }));
+  });
+});
 
 describe("GET /notas/:notaId — a íntegra da nota", () => {
   it("devolve itens, XML e identificadores que a LISTA não devolve", async () => {

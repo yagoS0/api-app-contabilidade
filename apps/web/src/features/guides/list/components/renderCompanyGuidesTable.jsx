@@ -1194,17 +1194,19 @@ export function CompanyGuidesTable({
         <div className="guides-list-panel__context">
           <div className="guides-list-panel__alerts">
             {!loadingGuides && visao === "vencimento" && <>
-            {anteriores > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("anteriores")}>Pendências anteriores ({anteriores})</Button>}
             {semVencimento > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("semVencimento")}>Conferir vencimento ({semVencimento})</Button>}
 
             </>}
           </div>
           <div className="guides-list-panel__views">
             {visao !== "vencimento" && <Button variant="secondary" size="sm" onClick={() => setVisao("vencimento")}>Voltar às guias do mês</Button>}
+            <Button variant="secondary" size="sm" aria-pressed={visao === "anteriores"} onClick={() => setVisao("anteriores")}>
+              Pendências anteriores{!loadingGuides && anteriores > 0 ? ` (${anteriores})` : ""}
+            </Button>
+            <Button variant="secondary" size="sm" aria-pressed={visao === "todas"} onClick={() => setVisao("todas")}>Histórico completo</Button>
             <details className="guides-view-menu">
               <summary>Outras consultas</summary>
               <div className="guides-view-menu__options">
-                <Button variant="secondary" size="sm" onClick={(event) => { setVisao("todas"); event.currentTarget.closest("details").open = false; }}>Histórico completo</Button>
                 <Button variant="secondary" size="sm" onClick={(event) => { setVisao("competencia"); event.currentTarget.closest("details").open = false; }}>Por competência fiscal</Button>
               </div>
             </details>
@@ -1347,7 +1349,9 @@ export function CompanyGuidesTable({
           // o porquê em `../lib/estadoVazioGuias.js`.
           visao !== "competencia" ? (
             <Aviso className="guides-notice" tom="neutro" titulo="Nenhuma guia nesta visão">
-              {visao === "vencimento" ? `Nenhum documento com vencimento em ${mesVencimento}. Isso não confirma ausência de tributos ou parcelas a pagar.` : "Nenhum documento corresponde ao filtro escolhido."}
+              {visao === "vencimento" ? `Nenhum documento com vencimento em ${mesVencimento}. Isso não confirma ausência de tributos ou parcelas a pagar.`
+                : visao === "anteriores" ? "Não há guias cadastradas com vencimento anterior a este mês e sem pagamento confirmado. Consulte o Histórico completo para ver também as guias pagas e sem vencimento informado."
+                  : "Nenhum documento corresponde ao filtro escolhido."}
             </Aviso>
           ) : contextoVazio.carregando ? (
             <p className="text-muted">Nenhuma guia em {filterCompetencia}. Verificando o estado da competência…</p>

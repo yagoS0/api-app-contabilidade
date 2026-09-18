@@ -1,9 +1,13 @@
 // Q41: Situação Fiscal (SITFIS) — estado + handlers.
 // reload() lê o último status gravado (barato, sem SERPRO). consultar() chama o SERPRO (por clique).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useSitfis({ api, companyId }) {
+  const contexto = useRef({ api, companyId });
+  if (contexto.current.api !== api || contexto.current.companyId !== companyId) contexto.current = { api, companyId };
+  const leitura = useRef(0);
+  const expiracaoLida = useRef(null);
   const [status, setStatus] = useState(null); // { situacao, protocolo, relatorioPdfFileId, texto, checkedAt }
   const [loading, setLoading] = useState(false);
   const [consulting, setConsulting] = useState(false);
@@ -18,26 +22,33 @@ export function useSitfis({ api, companyId }) {
 
   const reload = useCallback(async () => {
     if (!api || !companyId) return;
+    const origem = contexto.current;
+    const pedido = ++leitura.current;
+    const vigente = () => contexto.current === origem && pedido === leitura.current;
     setLoading(true);
     setError(null);
     try {
       const res = await api.getStoredSitfis(companyId);
+      if (!vigente()) return;
       setStatus(res?.status || null);
     } catch (err) {
+      if (!vigente()) return;
       setError(err?.message || "Falha ao carregar a situação fiscal.");
       setStatus(null);
     } finally {
-      setLoading(false);
+      if (vigente()) setLoading(false);
     }
   }, [api, companyId]);
 
   const consultar = useCallback(async () => {
     if (!api || !companyId || consulting) return;
+    const origem = contexto.current;
     setConsulting(true);
     setError(null);
     setNotice(null);
     try {
       const res = await api.getSitfis(companyId);
+      if (contexto.current !== origem) return;
       if (res?.throttled) {
         // C11: dentro da janela de 4h o backend não chama o SERPRO — devolve o relatório salvo.
         setNotice(res?.mensagem || "Situação fiscal consultada há pouco — mostrando o último relatório salvo.");
@@ -52,15 +63,28 @@ SERPRO: ${res.mensagemSerpro}` : base);
       }
       await reload();
     } catch (err) {
+      if (contexto.current !== origem) return;
       setError(err?.reason || err?.message || "Falha ao consultar a situação fiscal no SERPRO.");
     } finally {
-      setConsulting(false);
+      if (contexto.current === origem) setConsulting(false);
     }
   }, [api, companyId, consulting, reload]);
 
   useEffect(() => {
+    setStatus(null); setNotice(null); setConsulting(false);
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    const quando = Date.parse(status?.proximaConsultaEm);
+    const chave = `${companyId}|${status?.proximaConsultaEm}`;
+    if (status?.podeConsultar !== false || !Number.isFinite(quando) || expiracaoLida.current === chave) return undefined;
+    const timer = setTimeout(() => {
+      expiracaoLida.current = chave;
+      reload(); // Apenas relê o status salvo; nunca consulta o SERPRO automaticamente.
+    }, Math.max(0, quando - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [companyId, status?.podeConsultar, status?.proximaConsultaEm, reload]);
 
   // Q43.4: quando há PDF gravado, busca como blob (com auth) e cria um object URL p/ iframe + download.
   useEffect(() => {

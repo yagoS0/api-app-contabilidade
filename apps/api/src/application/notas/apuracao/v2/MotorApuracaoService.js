@@ -1,3 +1,4 @@
+import { exigirEstadoLivre, erroCalculoObsoleto } from "./CalculoConfirmado.js";
 // Q14.3.b — Motor de apuração próprio do Simples Nacional.
 //
 // Calcula DAS LOCALMENTE usando AliquotaSimplesNacional versionada.
@@ -375,9 +376,12 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
     const existing = await prisma.apuracaoSnapshot.findUnique({
       where: { portalClientId_competencia: { portalClientId, competencia } },
     });
-    snap = existing
-      ? await prisma.apuracaoSnapshot.update({ where: { id: existing.id }, data })
-      : await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
+    exigirEstadoLivre(existing);
+    if (existing) {
+      const salvo = await prisma.apuracaoSnapshot.updateMany({ where: { id: existing.id, idempotencyKey: existing.idempotencyKey, estado: existing.estado }, data });
+      if (salvo.count !== 1) throw erroCalculoObsoleto();
+      snap = { ...existing, ...data };
+    } else snap = await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
   }
 
   return {

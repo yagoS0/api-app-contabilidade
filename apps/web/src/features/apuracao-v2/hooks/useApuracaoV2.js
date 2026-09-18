@@ -1,9 +1,14 @@
 // Q14.2.e — hook de state pra Apuração V2 dentro de uma empresa
 // (cadastro fiscal + produtos/serviços + pendências).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fraseDaClassificacao } from "../lib/fraseDaClassificacao";
 
-export function useApuracaoV2({ api, companyId, feedback }) {
+export function useApuracaoV2({ api, companyId, competencia, feedback }) {
+  const contexto = String(companyId || '') + ':' + String(competencia || '');
+  const contextoAtual = useRef(contexto); contextoAtual.current = contexto;
+  const pedidoAtual = useRef(0);
+  const [contextoCarregado, setContextoCarregado] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [cadastro, setCadastro] = useState(null);
   // ⚠⚠ `prefill: true` quer dizer que o cadastro NÃO existe no banco — ele foi montado a partir
   // da `Company`, com o regime possivelmente vindo de um default. O backend devolve isso desde
@@ -20,16 +25,21 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   const [perfilError, setPerfilError] = useState(null);
 
   const loadAll = useCallback(async () => {
-    if (!api || !companyId) return;
+    if (!api || !companyId || contextoAtual.current !== contexto) return;
+    const pedido = ++pedidoAtual.current;
+    const vigente = () => contextoAtual.current === contexto && pedidoAtual.current === pedido;
+    setLoadError(null);
     setLoading(true);
     setPerfilError(null);
     try {
       const [cad, perf, prods, pends] = await Promise.all([
-        api.getCadastroFiscal(companyId).catch(() => ({ cadastro: null })),
-        api.getPerfilFiscal?.(companyId).catch((e) => { setPerfilError(e?.message || "Falha ao carregar atividades fiscais."); return null; }) ?? null,
-        api.listProdutosServicos(companyId).catch(() => ({ items: [] })),
-        api.listPendencias(companyId, { resolvida: false }).catch(() => ({ items: [], counts: [] })),
+        api.getCadastroFiscal(companyId),
+        api.getPerfilFiscal?.(companyId) ?? null,
+        api.listProdutosServicos(companyId),
+        api.listPendencias(companyId, { resolvida: false, ...(competencia ? { competencia } : {}) }),
       ]);
+      if (!vigente()) return;
+      setContextoCarregado(contexto);
       setCadastro(cad?.cadastro || null);
       setCadastroPrefill(cad?.prefill === true);
       setCnaePrincipalRef(cad?.cnaePrincipalRef || null);
@@ -38,40 +48,47 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       setPendencias(pends?.items || []);
       setPendenciasCounts(pends?.counts || []);
     } catch (err) {
+      if (!vigente()) return;
+      setContextoCarregado(null);
+      setLoadError(err?.message || "Falha ao carregar dados fiscais.");
       feedback?.notifyError?.(err?.message || "Falha ao carregar apuração v2");
     } finally {
-      setLoading(false);
+      if (vigente()) setLoading(false);
     }
-  }, [api, companyId, feedback]);
+  }, [api, companyId, competencia, contexto, feedback]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { setSaving(false); loadAll(); return () => { pedidoAtual.current += 1; }; }, [loadAll]);
 
   async function saveCadastro(payload) {
     setSaving(true);
     try {
       const out = await api.saveCadastroFiscal(companyId, payload);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       feedback?.notifySuccess?.("Cadastro fiscal salvo.");
       setCadastro(out.cadastro);
       await loadAll();
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro ao salvar");
       throw err;
-    } finally { setSaving(false); }
+    } finally { if (contextoAtual.current === contexto) setSaving(false); }
   }
 
   async function savePerfil(perfilAtividades) {
     setSaving(true);
     try {
       const out = await api.savePerfilFiscal(companyId, perfilAtividades);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       feedback?.notifySuccess?.("Perfil fiscal salvo.");
       setPerfil(out);
       return out;
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro ao salvar perfil");
       throw err;
-    } finally { setSaving(false); }
+    } finally { if (contextoAtual.current === contexto) setSaving(false); }
   }
 
   async function getSugestao(competencia) {
@@ -81,10 +98,12 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   async function createProduto(payload) {
     try {
       const out = await api.createProdutoServico(companyId, payload);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       feedback?.notifySuccess?.(`Produto "${out.produto?.nome}" criado.`);
       await loadAll();
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
     }
@@ -93,9 +112,11 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   async function updateProduto(produtoId, payload) {
     try {
       const out = await api.updateProdutoServico(companyId, produtoId, payload);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       await loadAll();
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
     }
@@ -104,9 +125,11 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   async function deleteProduto(produtoId) {
     try {
       const out = await api.deleteProdutoServico(companyId, produtoId);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       await loadAll();
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
     }
@@ -115,6 +138,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   async function resolverPendencia(pendenciaId, payload) {
     try {
       const out = await api.resolverPendencia(companyId, pendenciaId, payload);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
       const reclass = r.reclassificacao;
@@ -139,6 +163,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       );
       await loadAll();
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
     }
@@ -148,6 +173,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     setSaving(true);
     try {
       const out = await api.classificarV2(companyId, opts);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
       // ⚠ A frase mora em `lib/fraseDaClassificacao.js`, com teste. Ela diz o ESCOPO (o mês ou a
@@ -162,15 +188,17 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       await loadAll();
       return r;
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
-    } finally { setSaving(false); }
+    } finally { if (contextoAtual.current === contexto) setSaving(false); }
   }
 
   async function apurarV2(competencia, opts = {}) {
     setSaving(true);
     try {
       const out = await api.apurarV2(companyId, competencia, opts);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
       if (r.ok) {
@@ -181,18 +209,19 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       await loadAll();
       return r;
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Erro");
       throw err;
-    } finally { setSaving(false); }
+    } finally { if (contextoAtual.current === contexto) setSaving(false); }
   }
 
   return {
-    cadastro, cadastroPrefill, cnaePrincipalRef,
-    perfil, savePerfil,
+    cadastro: contextoCarregado === contexto ? cadastro : null, cadastroPrefill: contextoCarregado === contexto && cadastroPrefill, cnaePrincipalRef: contextoCarregado === contexto ? cnaePrincipalRef : null,
+    perfil: contextoCarregado === contexto ? perfil : null, savePerfil,
     getSugestao,
-    produtos,
-    pendencias, pendenciasCounts,
-    loading, saving, perfilError,
+    produtos: contextoCarregado === contexto ? produtos : [],
+    pendencias: contextoCarregado === contexto ? pendencias : [], pendenciasCounts: contextoCarregado === contexto ? pendenciasCounts : [],
+    loading: loading || (!loadError && contextoCarregado !== contexto), saving, perfilError: perfilError || loadError, loadError,
     reload: loadAll,
     saveCadastro,
     createProduto, updateProduto, deleteProduto,

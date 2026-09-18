@@ -2,24 +2,30 @@ import { numeroMensal, distribuirReceitaAnual } from "./planejamentoMensal";
 
 // Metadados por campo distinguem sugestões automáticas de zero/apagamento manual.
 // A foto salva permanece intacta; somente o formulário reaberto recebe dados novos.
-export function preencherMensal(value = {}, dados = [], ano = 2026, receitaAnual = null) {
-  if (!dados.length) return value;
+export function preencherMensal(value = {}, dados = null, ano = 2026, receitaAnual = null) {
+  if (!Array.isArray(dados)) return value;
   const mapa = new Map(dados.map(d => [d.competencia, d]));
   const planoInicial = numeroMensal(receitaAnual) > 0 ? distribuirReceitaAnual(receitaAnual) : [];
   const preencher = (anterior, d, historico, i) => {
     const m = { ...anterior, automaticos: { ...anterior?.automaticos } };
-    const atualizar = (chave, valor, extras = {}) => {
-      if (numeroMensal(valor) == null || m.editados?.[chave]) return;
+    const atualizar = (chave, valor, extras = {}, ausencia = {}) => {
+      if (m.editados?.[chave]) return;
       if (m[chave] != null && m[chave] !== "" && !m.automaticos[chave]) return;
+      if (numeroMensal(valor) == null) {
+        if (m.automaticos[chave]) Object.assign(m, { [chave]: null, ...ausencia });
+        return;
+      }
       Object.assign(m, { [chave]: valor, ...extras }); m.automaticos[chave] = true;
     };
     if (!historico) atualizar("plano", planoInicial[i], { origemPlano: "receita anual distribuída em 12 meses" });
-    if (!d) return m;
+    d = d || {};
     m.mesParcial = Boolean(d.mesParcial);
     atualizar(historico ? "receita" : "realizado", d.receita, { origem: d.origem, mesParcial: Boolean(d.mesParcial), avisoReceita: d.avisoReceita || null,
-      ...(!historico ? { tributoApurado: d.tributoApurado ?? null, origemTributo: d.origemTributo || null } : {}) });
-    if (d.folha != null) atualizar("folha", d.folha, { origemFolha: d.origemFolha || "folha informada na apuração", folhaPendenteConferencia: false });
-    else atualizar("folha", d.folhaContabil, { origemFolha: d.origemFolhaContabil, folhaPendenteConferencia: true });
+      ...(!historico ? { tributoApurado: d.tributoApurado ?? null, origemTributo: d.origemTributo || null } : {}) },
+      { origem: "Fonte automática indisponível", avisoReceita: "O valor automático anterior não está disponível na leitura atual. Confira os registros de origem.", tributoApurado: null, origemTributo: null });
+    const folhaAusente = { origemFolha: "Fonte automática indisponível — confira os registros de folha.", folhaPendenteConferencia: false };
+    if (d.folha != null) atualizar("folha", d.folha, { origemFolha: d.origemFolha || "folha informada na apuração", folhaPendenteConferencia: false }, folhaAusente);
+    else atualizar("folha", d.folhaContabil, { origemFolha: d.origemFolhaContabil, folhaPendenteConferencia: true }, folhaAusente);
     return m;
   };
   return { ...value, meses: Array.from({ length: 12 }, (_, i) => preencher(value.meses?.[i], mapa.get(`${ano}-${String(i + 1).padStart(2, "0")}`), false, i)),

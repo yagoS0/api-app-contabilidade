@@ -56,3 +56,16 @@ it.each([
   expect(prisma.guide.upsert.mock.calls[0][0].create.extracted.composicao).toHaveLength(debitos.length);
   expect(generateProvisionsFromGuide).toHaveBeenCalledWith({ guideId: "guia-lp" });
 });
+
+it('reemitir DARF não informa sucesso quando a gravação da guia falha', async () => {
+  const { reemitirDarfLp } = require('../LucroPresumidoProvisaoService.js');
+  prisma.guide.update.mockRejectedValueOnce(new Error('banco indisponível'));
+  await expect(reemitirDarfLp({ ...opts, guideId: 'guia-lp' })).rejects.toThrow('banco indisponível');
+});
+
+it('recaptura da declaração mantém evidência do recálculo explícito', async () => {
+  const recalculoGuia = { guiaId: 'guia-lp', recalculadoEm: '2026-09-18T12:00:00.000Z' };
+  prisma.guide.findUnique.mockResolvedValueOnce({ extracted: { recalculoGuia } });
+  await provisionarLpDaDeclaracao({ ...opts, debitos: [{ codigoReceita: '8109', tributo: 'PIS', debitoApurado: 100 }] });
+  expect(prisma.guide.upsert.mock.calls[0][0].update.extracted.recalculoGuia).toEqual(recalculoGuia);
+});

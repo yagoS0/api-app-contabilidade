@@ -194,6 +194,13 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   const [cenariosSalvos, setCenariosSalvos] = useState(null);
   const [mostrarCenarios, setMostrarCenarios] = useState(false);
   const edicoesDoCenario = useRef(0);
+  const camposEditados = useRef(new Set());
+  const edicaoAntesDosDados = useRef(0);
+  function editarPremissa(chave, setter, valor) {
+    camposEditados.current.add(chave);
+    edicoesDoCenario.current += 1;
+    setter(valor);
+  }
   const [cenarioSalvo, setCenarioSalvo] = useState(null);
   const [carregandoCenarios, setCarregandoCenarios] = useState(false);
   const empresaAtualCenario = useRef(empresaId);
@@ -224,6 +231,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       return () => { cancelado = true; };
     }
     setCarregando(true);
+    edicaoAntesDosDados.current = edicoesDoCenario.current;
     setErroCarga(null);
     api.getDadosPlanejamento(empresaId)
       .then((r) => {
@@ -272,6 +280,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   // e outro os campos ficam em branco, e isso é a verdade — ainda não sabemos nada da empresa nova.
   // Inverter a ordem faria a limpeza apagar o que o prefill acabou de escrever.
   useEffect(() => {
+    camposEditados.current.clear();
     setReceita("");
     setCenariosSalvos(null);
     setMostrarCenarios(false);
@@ -318,19 +327,19 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     // ⚠ `dinheiroParaCampo`, não `paraCampo`: os campos de dinheiro passaram a ser MASCARADOS
     // (01/09/2026), e o texto que o prefill escreve tem de estar na mesma forma que o teclado
     // produz — senão o primeiro toque na tecla reformata o campo inteiro e o número salta.
-    setReceita(dinheiroParaCampo(v.receitaAnual));
-    setRbt12(dinheiroParaCampo(v.rbt12));
-    setFolha(dinheiroParaCampo(v.folhaAnual));
+    if (!camposEditados.current.has("receita")) setReceita(dinheiroParaCampo(v.receitaAnual));
+    if (!camposEditados.current.has("rbt12")) setRbt12(dinheiroParaCampo(v.rbt12));
+    if (!camposEditados.current.has("folha")) setFolha(dinheiroParaCampo(v.folhaAnual));
     // ⚠ O ISS viaja em FRAÇÃO no payload e é PERCENTUAL no campo. A conversão é esta; o que não
     // pode voltar é o `String()` em volta dela (3,5% viraria 35%).
-    setIss(v.aliquotaIss == null ? "5" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
-    if (v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
-    if (v.anexo != null) setAnexo(v.anexo);
+    if (!camposEditados.current.has("iss")) setIss(v.aliquotaIss == null ? "5" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
+    if (!camposEditados.current.has("fatorR") && v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
+    if (!camposEditados.current.has("anexo") && v.anexo != null) setAnexo(v.anexo);
     // ⚠⚠ PRÉ-SELECIONA A SUGESTÃO, E A MARCA COMO NÃO CONFIRMADA. Sem a sugestão, o seletor caía
     // no default "Serviços em geral" para TODA empresa — inclusive as de comércio, que presumem 8%
     // e não 32%. Pré-selecionar pelo CNAE é estritamente melhor que isso; o que não pode é a tela
     // deixar de dizer que aquilo é proposta, não cadastro.
-    if (prefill.presumido?.sugestao) {
+    if (!camposEditados.current.has("atividade") && prefill.presumido?.sugestao) {
       setAtividade(prefill.presumido.sugestao);
       setCategoriaConfirmada(false);
     }
@@ -401,7 +410,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       if (colado == null) return;
       evento.preventDefault();
       const r = colarDinheiro(colado);
-      if (r.ok) { setter(r.mascarado); setRecusaDeColagem(null); return; }
+      if (r.ok) { editarPremissa(campo, setter, r.mascarado); setRecusaDeColagem(null); return; }
       setRecusaDeColagem({ campo, texto: textoDaRecusaDeColarDinheiro(r) });
     };
   }
@@ -447,8 +456,8 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     servicosAte120kConfirmado: servicos16,
   }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16, ajustes, prefill.valores?.regimeAtual]);
 
-  const mensalPreenchido = useMemo(() => preencherMensal(ajustes.mensal, prefill.historicoMensal || [], entradas.anoBase || 2026, entradas.receitaAnual), [ajustes.mensal, prefill.historicoMensal, entradas.anoBase, entradas.receitaAnual]);
-  const ajustesDoCenario = prefill.historicoMensal?.length ? { ...ajustes, mensal: mensalPreenchido } : ajustes;
+  const mensalPreenchido = useMemo(() => preencherMensal(ajustes.mensal, prefill.historicoDisponivel ? prefill.historicoMensal : null, entradas.anoBase || 2026, entradas.receitaAnual), [ajustes.mensal, prefill.historicoDisponivel, prefill.historicoMensal, entradas.anoBase, entradas.receitaAnual]);
+  const ajustesDoCenario = prefill.historicoDisponivel ? { ...ajustes, mensal: mensalPreenchido } : ajustes;
   const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, iss, margem, creditos,
     mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses, ajustes: ajustesDoCenario };
   const assinaturaCenario = JSON.stringify(formularioCenario);
@@ -463,7 +472,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       if (r?.ok === false) throw new Error(r.message || "Não foi possível retomar o cenário.");
       const lista = (r?.simulacoes || []).filter(Boolean).slice().sort((a, b) => new Date(b.geradoEm) - new Date(a.geradoEm));
       setCenariosSalvos(lista);
-      if (lista[0] && edicoesDoCenario.current === edicaoInicial) abrirCenario(lista[0]);
+      if (lista[0] && edicoesDoCenario.current === edicaoInicial && edicaoInicial === edicaoAntesDosDados.current) abrirCenario(lista[0]);
     }).catch(() => {
       if (!cancelado) setDesfechoDoGuardar({ tom: "erro", texto: "Não foi possível recuperar o preenchimento anterior. Use Abrir cenário para tentar novamente." });
     }).finally(() => { if (!cancelado) setCarregandoCenarios(false); });
@@ -827,7 +836,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 <input
                   {...a}
                   value={receita}
-                  onChange={(e) => setReceita(mascararDinheiro(e.target.value))}
+                  onChange={(e) => editarPremissa("receita", setReceita, mascararDinheiro(e.target.value))}
                   onPaste={aoColar(setReceita, "receita")}
                   inputMode="numeric"
                   placeholder="0,00"
@@ -847,7 +856,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 <input
                   {...a}
                   value={mesesInicioAtividade ? "" : rbt12}
-                  onChange={(e) => setRbt12(mascararDinheiro(e.target.value))}
+                  onChange={(e) => editarPremissa("rbt12", setRbt12, mascararDinheiro(e.target.value))}
                   onPaste={aoColar(setRbt12, "rbt12")}
                   inputMode="numeric"
                   disabled={Boolean(mesesInicioAtividade)}
@@ -885,7 +894,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 <input
                   {...a}
                   value={folha}
-                  onChange={(e) => setFolha(mascararDinheiro(e.target.value))}
+                  onChange={(e) => editarPremissa("folha", setFolha, mascararDinheiro(e.target.value))}
                   onPaste={aoColar(setFolha, "folha")}
                   inputMode="numeric"
                   placeholder="vazio = não informada"
@@ -905,7 +914,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 <select
                   {...a}
                   value={atividade}
-                  onChange={(e) => { setAtividade(e.target.value); setCategoriaConfirmada(true); }}
+                  onChange={(e) => { editarPremissa("atividade", setAtividade, e.target.value); setCategoriaConfirmada(true); }}
                   style={campo}
                 >
                   {Object.entries(ATIVIDADES_PRESUMIDO).map(([k, at]) => <option key={k} value={k}>{at.rotulo}</option>)}
@@ -963,6 +972,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             >
               {(a) => (
                 <select {...a} value={sujeitoFatorR && !anexoManual ? "automatico" : anexo} onChange={(e) => {
+                  camposEditados.current.add("anexo");
                   setAnexoManual(e.target.value !== "automatico");
                   if (e.target.value !== "automatico") setAnexo(e.target.value);
                 }} style={campo}>
@@ -987,7 +997,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                   100 não há separador de milhar, logo não há ambiguidade, e a máscara de centavos
                   aqui transformaria `5` em `0,05`. O que mudou é QUEM LÊ (`lerPercentual`). */}
               {(a) => (
-                <input {...a} value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="5" style={campo} />
+                <input {...a} value={iss} onChange={(e) => editarPremissa("iss", setIss, e.target.value)} inputMode="decimal" placeholder="5" style={campo} />
               )}
             </Campo>
           </div>
@@ -1012,7 +1022,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           )}
 
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", cursor: "pointer" }}>
-            <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
+            <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => editarPremissa("fatorR", setSujeitoFatorR, e.target.checked)} />
             Atividade sujeita ao Fator R
           </label>
           {anexoManual && <small style={{ color: C.muted }}>Anexo {anexo} escolhido para esta simulação.</small>}

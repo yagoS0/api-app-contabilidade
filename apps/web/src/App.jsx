@@ -33,6 +33,7 @@ import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWor
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
 import { useParcelamentos } from "./features/accounting/parcelamento/hooks/useParcelamentos";
 import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
+import { ImportacaoNotasModal } from "./features/notas/components/ImportacaoNotasModal";
 import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 import { usePendencias } from "./features/pendencias/hooks/usePendencias";
@@ -111,6 +112,7 @@ function AppInterno({ session, feedback }) {
   const notasFiscais = useNotasFiscais({
     api,
     companyId: companiesWorkspace.companiesState.selectedCompanyId,
+    companyName: companiesWorkspace.companiesState.selectedCompany?.razao || companiesWorkspace.companiesState.companies?.find(c => c.companyId === companiesWorkspace.companiesState.selectedCompanyId)?.razao,
     feedback,
   });
   // Q12.C.2: Apuração global — só carrega depois de autenticado e na página apuracao
@@ -171,6 +173,9 @@ function AppInterno({ session, feedback }) {
     };
   }, [accountingWorkspace, companiesWorkspace, feedback, session]);
 
+  // O acompanhamento pertence à sessão, não à aba. Voltar no navegador mantém
+  // o modal e o destino original mesmo se a página por baixo mudar.
+  function renderPagina() {
   if (session.page === "createCompany") {
     return (
       <CompanyFormPage
@@ -622,6 +627,8 @@ function AppInterno({ session, feedback }) {
       error={feedback.error}
     />
   );
+  }
+  return <>{renderPagina()}{notasFiscais.importModalAberto && <ImportacaoNotasModal andamento={notasFiscais.importAndamento} resultado={notasFiscais.importModalResultado} ocupado={notasFiscais.importing} aoFechar={notasFiscais.fecharImportModal} />}</>;
 }
 
 export default App;

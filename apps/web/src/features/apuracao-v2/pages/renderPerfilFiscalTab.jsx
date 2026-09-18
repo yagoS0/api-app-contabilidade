@@ -59,7 +59,7 @@ export function PerfilFiscalTab({ panel, companyId, podeEditar = false }) {
         width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto",
       }}
     >
-      <RegimeDaEmpresa regime={panel?.cadastro?.regime} prefill={panel?.cadastroPrefill} />
+      {panel.loading ? <p role="status">Carregando cadastro fiscal…</p> : panel.loadError ? <p role="alert">{panel.loadError}</p> : <RegimeDaEmpresa regime={panel?.cadastro?.regime} prefill={panel?.cadastroPrefill} />}
       <AbaFiscalPanel panel={panel} />
       <ServicosTributacao companyId={companyId} podeEditar={podeEditar} />
     </div>

@@ -68,7 +68,9 @@ export async function provisionarLpDaDeclaracao({
 
   const principalTotal = round2(composicao.reduce((s, c) => s + c.total, 0));
   const sourceFileId = `serpro:dctfweb:lp:${onlyDigits(cnpj)}:${competencia}`;
+  const anterior = await prisma.guide.findUnique({ where: { sourceFileId }, select: { extracted: true } });
   const extracted = {
+    ...(anterior?.extracted?.recalculoGuia ? { recalculoGuia: anterior.extracted.recalculoGuia } : {}),
     integrationSource: "SERPRO_DCTFWEB_LP",
     sistema: "DCTFWEB",
     servico: "CONSDECCOMPLETA33",
@@ -148,7 +150,7 @@ export async function provisionarLpDaDeclaracao({
  * que permite comparar depois quanto de acréscimo entrou.
  */
 async function aplicarDarfNaGuia({ portalClientId, competencia, guideId, darf }) {
-  const g = await prisma.guide.findUnique({ where: { id: guideId }, select: { extracted: true } }).catch(() => null);
+  const g = await prisma.guide.findUnique({ where: { id: guideId }, select: { extracted: true } });
   const extractedAtual = g?.extracted && typeof g.extracted === "object" ? g.extracted : {};
   await prisma.guide.update({
     where: { id: guideId },
@@ -159,7 +161,7 @@ async function aplicarDarfNaGuia({ portalClientId, competencia, guideId, darf })
       ...(darf.pdfBuffer ? { pdfBytes: darf.pdfBuffer } : {}),
       extracted: { ...extractedAtual, numeroDocumento: darf.numeroDocumento },
     },
-  }).catch(() => {});
+  });
   const valores = {};
   for (const it of darf.composicao?.itens || []) {
     const t = CODIGO_TRIBUTO[String(it.codigo).replace(/\D+/g, "").slice(0, 4)];

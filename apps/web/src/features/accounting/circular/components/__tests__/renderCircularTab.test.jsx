@@ -10,7 +10,7 @@
 // A REGRA em si (estadoDaGuia/aparenciaDaGuia/totaisEmAberto) tem cobertura própria em
 // `../../lib/__tests__/estadoGuia.test.js`. Aqui se testa a LIGAÇÃO: que a cor da célula, o chip do
 // popover e o rodapé saem da mesma leitura, e que a tela não contradiz a regra.
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
@@ -147,6 +147,18 @@ function abrirCelula(texto) {
   fireEvent.click(botao);
   return botao;
 }
+
+test("recálculo confirmado aparece sem acréscimo e preserva valor e pagamento da circular", () => {
+  renderTab([provisao({ recalculoGuia: {
+    guiaId: "g1", recalculadoEm: "2026-09-18T12:00:00Z", valorAnterior: 1234.56,
+    valorAtual: 1234.56, escopoValor: "TOTAL_GUIA",
+  } })]);
+  expect(screen.getByText("Recalculada")).toBeInTheDocument();
+  abrirCelula("R$ 1.234,56");
+  expect(screen.getByText(/Total da guia recalculada: R\$\s*1.234,56/)).toBeInTheDocument();
+  expect(screen.getByText(/não confirma pagamento/)).toBeInTheDocument();
+  expect(screen.getByText("Vencida · 12 dias")).toBeInTheDocument();
+});
 
 describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
   it("vencida sai vermelha, e o popover diz há quantos dias", () => {
@@ -508,6 +520,35 @@ describe("provisão fora do regime / sem subtipo — continua clicável em algum
       vencida({ id: "c", subtipo: "COFINS", valor: 3000, historico: "COFINS 07", sourceGuide: guia({ id: "gc", tipo: "DARF", vencimento: emDias(-10) }) }),
     ], { companyRegime: "SIMPLES", ...over });
   }
+
+  it("indica recálculo no bucket e mostra o detalhe apenas no lançamento marcado", () => {
+    renderTab([
+      vencida({ id: "p", subtipo: "PIS", valor: 250, historico: "PIS recalculado", recalculoGuia: {
+        guiaId: "gp", recalculadoEm: "2026-09-18T12:00:00Z", valorAnterior: 850,
+        valorAtual: 910, escopoValor: "TOTAL_GUIA", especie: "DARF_PRESUMIDO",
+      } }),
+      vencida({ id: "c", subtipo: "COFINS", valor: 600, historico: "COFINS sem recálculo" }),
+    ], { companyRegime: "SIMPLES" });
+    expect(screen.getByText("Recalculada")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "R$ 850,00" }));
+    const pis = screen.getByText("PIS recalculado").parentElement.parentElement;
+    const cofins = screen.getByText("COFINS sem recálculo").parentElement.parentElement;
+    fireEvent.click(within(pis).getByText("Guia recalculada"));
+    expect(within(pis).getByText(/Recálculo em/)).toHaveTextContent("18/09/2026");
+    expect(within(pis).getByText(/Total anterior da guia/)).toHaveTextContent("850,00");
+    expect(within(pis).getByText(/Total da guia recalculada/)).toHaveTextContent("910,00");
+    expect(within(pis).getByText(/não confirma pagamento nem altera/)).toBeInTheDocument();
+    expect(within(cofins).queryByText("Guia recalculada")).not.toBeInTheDocument();
+    expect(within(cofins).queryByText(/Recálculo em/)).not.toBeInTheDocument();
+    expect(within(pis).getByRole("button", { name: /Editar/ })).toBeInTheDocument();
+  });
+
+  it("não sugere recálculo no bucket quando nenhum lançamento tem o registro", () => {
+    comForaDoRegime();
+    expect(screen.queryByText("Recalculada")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "R$ 5.900,00" }));
+    expect(screen.queryByText("Guia recalculada")).not.toBeInTheDocument();
+  });
 
   it("⚠ o que o total soma tem coluna: R$ 5.900 de PIS+COFINS não fica sem célula", () => {
     comForaDoRegime();

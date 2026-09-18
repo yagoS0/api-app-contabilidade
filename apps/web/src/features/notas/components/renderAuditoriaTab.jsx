@@ -23,9 +23,8 @@
 // próximo passo natural (e reusaria `empresasVisiveis`, sem quarta leitura de escopo), mas o achado
 // só é acionável aqui — é aqui que o contador abre a nota e decide.
 //
-// ⚠ ESTA TELA NÃO ESCREVE NADA. Não há botão de "marcar como conferido", "ignorar" ou "corrigir":
-// a auditoria é leitura, e o backend não tem por onde gravar. Quem julga a nota é o contador, e o
-// julgamento dele vira ação nas telas que já existem (a nota, a apuração, o cadastro).
+// A auditoria não altera notas automaticamente. Contadores podem tratar pendências existentes
+// com confirmação explícita: reabertura fiscal exige motivo; concluir conferência não retifica.
 //
 // ⚠ E ELA NÃO REESCREVE A REGRA. Todo texto de pergunta vem do backend
 // (`application/notas/auditoria/auditoriaNotas.js`, puro); o que é de tela — motivo em português,
@@ -34,6 +33,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NotaDetailModal } from "./NotaDetailModal";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import { createApiClient } from "../../../api/client";
 import { PANEL } from "./notasStyles";
 import { PendenciasList } from "./PendenciasList";
@@ -163,6 +163,7 @@ function BlocoDaPergunta({ pergunta, onAbrirNota }) {
               {naoAvaliadas.map((n, i) => (
                 <li key={n.notaId || i} style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
                   {n.numero ? `Nota ${n.numero}` : "Nota sem número"} — {FRASE_NOTA_NAO_AVALIADA[n.motivo] || n.motivo}
+                  {n.notaId && <Button size="sm" variant="secondary" onClick={() => onAbrirNota(n.notaId)}>Abrir nota {n.numero || ""}</Button>}
                 </li>
               ))}
             </ul>
@@ -173,7 +174,13 @@ function BlocoDaPergunta({ pergunta, onAbrirNota }) {
   );
 }
 
-export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
+export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeEditar = false }) {
+  const escopo = `${companyId}:${competencia}`;
+  const escopoAtual = useRef(escopo);
+  escopoAtual.current = escopo;
+  const pedidoAuditoria = useRef(0), pedidoPendencias = useRef(0);
+  const [escopoCarregado, setEscopoCarregado] = useState(null);
+  const [empresaPendencias, setEmpresaPendencias] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
   const pedidoNota = useRef(0);
   const fecharNota = () => { pedidoNota.current += 1; setDetalhe(null); };
@@ -193,21 +200,31 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
   const [pendencias, setPendencias] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
+  const [tratamento, setTratamento] = useState(null);
+  const [motivo, setMotivo] = useState("");
+  const [tratando, setTratando] = useState(false);
+  const tratandoRef = useRef(false);
+  const [resultadoTratamento, setResultadoTratamento] = useState(null);
+  useEffect(() => { setTratamento(null); setResultadoTratamento(null); setMotivo(""); }, [companyId, competencia]);
 
   const carregar = useCallback(async () => {
-    if (!companyId || !competencia) return;
+    if (!companyId || !competencia) { setCarregando(false); setErro(""); return; }
+    const pedido = ++pedidoAuditoria.current;
+    const atual = () => escopoAtual.current === escopo && pedidoAuditoria.current === pedido;
     setCarregando(true);
     setErro("");
     try {
       const r = await api.getAuditoriaNotas(companyId, competencia);
+      if (!atual()) return;
+      if (!r?.auditoria) throw new Error("Não foi possível confirmar os dados da auditoria.");
       setAuditoria(r?.auditoria || null);
+      setEscopoCarregado(escopo);
     } catch (e) {
       // ⚠ A FALHA APARECE. Erro engolido nesta tela viraria "nada a apontar", que é a mentira mais
       // cara que ela pode contar — e é o defeito já pago no `FechamentoModal` (`apps/web/CLAUDE.md`).
-      setAuditoria(null);
-      setErro(e?.message || "Não foi possível carregar a auditoria desta competência.");
+      if (atual()) { setAuditoria(null); setErro(e?.message || "Não foi possível carregar a auditoria desta competência."); }
     } finally {
-      setCarregando(false);
+      if (atual()) setCarregando(false);
     }
   }, [api, companyId, competencia]);
 
@@ -225,21 +242,46 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
   const [pendenciasFalharam, setPendenciasFalharam] = useState(false);
   const carregarPendencias = useCallback(async () => {
     if (!companyId) return;
+    const pedido = ++pedidoPendencias.current;
+    const atual = () => escopoAtual.current.split(":")[0] === companyId && pedidoPendencias.current === pedido;
     try {
       const lista = await api.listPendenciasPosFechamento(companyId, { onlyOpen: true });
+      if (!atual()) return;
+      if (!Array.isArray(lista)) throw new Error("Resposta de pendências indisponível");
       setPendencias(Array.isArray(lista) ? lista : []);
+      setEmpresaPendencias(companyId);
       setPendenciasFalharam(false);
     } catch {
-      setPendencias([]);
-      setPendenciasFalharam(true);
+      if (atual()) { setPendencias([]); setEmpresaPendencias(companyId); setPendenciasFalharam(true); }
     }
   }, [api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarPendencias(); }, [carregarPendencias]);
+  useEffect(() => () => { pedidoAuditoria.current += 1; pedidoPendencias.current += 1; }, []);
 
-  const cabecalho = leituraDoCabecalho(auditoria);
-  const fora = leituraDoForaDaConferencia(auditoria?.foraDaConferencia);
+  async function confirmarTratamento() {
+    if (!podeEditar || !tratamento || tratandoRef.current || (tratamento.tipo === "reabrir" && !motivo.trim())) return;
+    tratandoRef.current = true; setTratando(true); setResultadoTratamento(null);
+    try {
+      const r = tratamento.tipo === "reabrir"
+        ? await api.reabrirCompetencia(companyId, tratamento.competencia, motivo.trim())
+        : await api.resolverPendenciaPosFechamento(companyId, tratamento.id);
+      if (r?.ok !== true) throw new Error("Não foi possível confirmar a alteração. Atualize a auditoria antes de tentar novamente.");
+      if (escopoAtual.current !== escopo) return;
+      setTratamento(null);
+      setResultadoTratamento({ texto: tratamento.tipo === "reabrir" ? "Competência fiscal reaberta para conferência. A pendência permanece até você concluir sua revisão." : "Pendência marcada como conferida." });
+      await Promise.all([carregar(), carregarPendencias()]);
+    } catch (e) {
+      if (escopoAtual.current === escopo) setResultadoTratamento({ erro: true, texto: e?.message || "Não foi possível tratar a pendência." });
+    } finally { tratandoRef.current = false; setTratando(false); }
+  }
+
+  const auditoriaVisivel = escopoCarregado === escopo ? auditoria : null;
+  const pendenciasVisiveis = empresaPendencias === companyId ? pendencias : [];
+
+  const cabecalho = leituraDoCabecalho(auditoriaVisivel);
+  const fora = leituraDoForaDaConferencia(auditoriaVisivel?.foraDaConferencia);
 
   return (
     /* ⚠ A LARGURA SAIU DAQUI (era `maxWidth: 1100` + padding próprio, mais um número entre os
@@ -281,7 +323,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
         </div>
       ) : null}
 
-      {!erro && !carregando && !auditoria ? (
+      {!erro && !carregando && !auditoriaVisivel ? (
         <div style={{ ...card, color: PANEL.muted, fontSize: "0.85rem" }}>
           Escolha uma competência no topo para conferir as notas do mês.
         </div>
@@ -293,7 +335,12 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
           seria lida como mais um detalhe do mês em curso.
           ⚠ SEM `onReabrir`/`onResolver`: a aba não escreve. Quem reabre a competência é a aba
           Lançamentos, onde a ação já existe e já tem confirmação. */}
-      <PendenciasList pendencias={pendencias} />
+      <PendenciasList pendencias={pendenciasVisiveis} saving={tratando} onAbrirNota={abrirNota}
+        onReabrir={podeEditar && api.reabrirCompetencia ? (mes) => { setMotivo(""); setTratamento({ tipo: "reabrir", competencia: mes }); } : undefined}
+            onResolver={podeEditar && api.resolverPendenciaPosFechamento ? (id) => setTratamento({ tipo: "resolver", id }) : undefined}
+        rotuloResolver="Marcar como conferida" />
+      {resultadoTratamento && <p role={resultadoTratamento.erro ? "alert" : "status"}>{resultadoTratamento.texto}</p>}
+      {pendenciasFalharam && empresaPendencias === companyId && !auditoriaVisivel && <p role="alert">Não foi possível conferir se entrou nota depois de a competência ser fechada.</p>}
 
       {fora ? (
         <div style={{ ...card, borderLeft: `3px solid var(${fora.token})` }}>
@@ -301,7 +348,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
             <div style={{ color: PANEL.text, fontWeight: 600, fontSize: "0.95rem" }}>
               Notas fora de qualquer conferência mensal
             </div>
-            <Selo token={fora.token} icone={fora.icone}>{auditoria?.foraDaConferencia?.total}</Selo>
+            <Selo token={fora.token} icone={fora.icone}>{auditoriaVisivel?.foraDaConferencia?.total}</Selo>
           </div>
           {/* ⚠ ESTE BLOCO É O CONSERTO DE UMA PROMESSA QUEBRADA (21/08/2026). A consulta filtrava
               por competência, e `NULL` não satisfaz intervalo: a nota sem competência não entrava em
@@ -310,31 +357,32 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
               ⚠ Ela NÃO é atribuída a este mês: fazer isso seria o sistema inventar a competência
               dela, que é o dado que decide em qual apuração a receita entra. */}
           <div style={{ color: PANEL.text, fontSize: "0.85rem", marginTop: 8 }}>{fora.resumo}</div>
-          {auditoria?.foraDaConferencia?.truncada ? (
+          {auditoriaVisivel?.foraDaConferencia?.truncada ? (
             <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 4 }}>
-              Mostrando {auditoria.foraDaConferencia.listadas} das {auditoria.foraDaConferencia.total} mais recentes.
+              Mostrando {auditoriaVisivel.foraDaConferencia.listadas} das {auditoriaVisivel.foraDaConferencia.total} mais recentes.
             </div>
           ) : null}
           <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 4 }}>
-            {(auditoria?.foraDaConferencia?.notas || []).map((n, i) => (
+            {(auditoriaVisivel?.foraDaConferencia?.notas || []).map((n, i) => (
               <li key={n.notaId || i} style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
                 {n.numero ? `Nota ${n.numero}` : "Nota sem número"}
                 {n.emissao ? ` — emitida em ${n.emissao}` : ""}
+                {n.notaId && <Button size="sm" variant="secondary" onClick={() => abrirNota(n.notaId)}>Abrir nota {n.numero || "sem número"}</Button>}
               </li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {auditoria
-        ? ordenarPerguntas(auditoria.perguntas).map((p) => <BlocoDaPergunta key={p.id} pergunta={p} onAbrirNota={abrirNota} />)
+      {auditoriaVisivel
+        ? ordenarPerguntas(auditoriaVisivel.perguntas).map((p) => <BlocoDaPergunta key={`${escopo}:${p.id}`} pergunta={p} onAbrirNota={abrirNota} />)
         : null}
 
       {detalhe && <NotaDetailModal {...detalhe} onClose={fecharNota} onAbrirNota={abrirNota} />}
-      {auditoria ? (
+      {auditoriaVisivel ? (
         <div style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
-          {auditoria.totalNotas} nota(s) emitida(s) na competência ({auditoria.totalNotasApuradas} entram na apuração).
-          Esta tela apenas lê — nada é marcado, classificado ou alterado por ela.
+          {auditoriaVisivel.totalNotas} nota(s) emitida(s) na competência ({auditoriaVisivel.totalNotasApuradas} entram na apuração).
+          A conferência não altera notas nem apurações automaticamente.
           {/* ⚠ FALHA DA SEGUNDA CHAMADA APARECE. Lista vazia por erro é indistinguível de "nenhuma
               pendência" — e "nenhuma pendência" é uma afirmação sobre mês fechado. */}
           {pendenciasFalharam
@@ -342,6 +390,13 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
             : ""}
         </div>
       ) : null}
+      {tratamento && <Modal titulo={tratamento.tipo === "reabrir" ? `Reabrir competência fiscal ${tratamento.competencia}` : "Concluir conferência da pendência"} tamanho="sm" ocupado={tratando} aoFechar={() => setTratamento(null)} rodape={<>
+        <Button variant="secondary" disabled={tratando} onClick={() => setTratamento(null)}>Cancelar</Button>
+        <Button disabled={tratando || (tratamento.tipo === "reabrir" && !motivo.trim())} onClick={confirmarTratamento}>{tratando ? "Salvando…" : "Confirmar"}</Button>
+      </>}>
+        {tratamento.tipo === "reabrir" ? <><p>A competência fiscal voltará à conferência. Isso não reabre o fechamento contábil, não retifica declarações transmitidas e não resolve a pendência automaticamente.</p><label>Motivo da reabertura<textarea aria-label="Motivo da reabertura" value={motivo} disabled={tratando} onChange={e => setMotivo(e.target.value)} style={{ width: "100%" }} /></label></> : <p>Confirme somente depois de revisar a nota e os reflexos na competência. Esta ação encerra o aviso; não altera a nota, o fechamento ou a declaração.</p>}
+        {resultadoTratamento?.erro && <p role="alert">{resultadoTratamento.texto}</p>}
+      </Modal>}
     </div>
   );
 }

@@ -50,3 +50,32 @@ test("resposta vazia interrompe o envio sem anunciar sucesso", async () => {
   expect(out.ok).toBe(false);
   expect(out.mensagem).toContain("Não foi possível confirmar");
 });
+
+test("progresso conta só respostas confirmadas e conserva o lote interrompido", async () => {
+  let confirmar;
+  const enviar = jest.fn().mockImplementationOnce(() => new Promise(resolve => { confirmar = resolve; })).mockRejectedValueOnce(new Error("rede"));
+  const progresso = jest.fn();
+  const tarefa = importarNotasEmLotes(enviar, "empresa", Array.from({ length: 45 }, (_, i) => new File(["a"], `${i}.xml`)), "NFE", progresso);
+  expect(progresso.mock.lastCall[0]).toMatchObject({ etapa: "processando", loteAtual: 1, lotesConcluidos: 0, totalLotes: 3, arquivosConcluidos: 0 });
+  confirmar({ importadas: 18, duplicadas: 1, recusadas: 1, detalhes: [] });
+  await tarefa;
+  expect(progresso.mock.lastCall[0]).toMatchObject({ etapa: "interrompida", loteAtual: 2, lotesConcluidos: 1, arquivosConcluidos: 20, resultadoDesconhecido: true, totais: { novas: 18, duplicadas: 1, recusadas: 1 } });
+});
+
+test("ZIP único não conclui antes da resposta do servidor", async () => {
+  let confirmar;
+  const progresso = jest.fn();
+  const tarefa = importarNotasEmLotes(() => new Promise(resolve => { confirmar = resolve; }), "empresa", [new File(["zip"], "notas.zip")], "NFE", progresso);
+  expect(progresso.mock.lastCall[0].lotesConcluidos).toBe(0);
+  confirmar({ importadas: 350, detalhes: [] });
+  await tarefa;
+  expect(progresso.mock.lastCall[0]).toMatchObject({ etapa: "concluida", lotesConcluidos: 1, arquivosConcluidos: 1, totais: { novas: 350 } });
+});
+
+test("sessão desmontada não envia os próximos lotes", async () => {
+  let ativa = true;
+  const enviar = jest.fn(async () => { ativa = false; return { importadas: 20 }; });
+  const out = await importarNotasEmLotes(enviar, "empresa", Array.from({ length: 21 }, () => new File(["a"], "nota.xml")), "NFE", undefined, () => ativa);
+  expect(enviar).toHaveBeenCalledTimes(1);
+  expect(out).toMatchObject({ ok: false, importadas: 20 });
+});

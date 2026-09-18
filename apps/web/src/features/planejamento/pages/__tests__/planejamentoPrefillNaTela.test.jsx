@@ -13,7 +13,7 @@
 // Medido em produção antes do conserto: 12 de 18 empresas com dado apurado, 3 com o Presumido morto
 // e 7 com o Simples. Este arquivo prende os três sintomas pelo caminho REAL da tela.
 
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { PlanejamentoPage } from "../renderPlanejamentoPage";
 
@@ -271,4 +271,17 @@ describe("⚠⚠ A CATEGORIA DO PRESUMIDO CHEGA SUGERIDA, E A TELA DIZ QUE É SU
     await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
     expect(screen.queryByText(/confirme no seletor acima/i)).not.toBeInTheDocument();
   });
+});
+
+it.each(['digitação', 'colagem'])('prefill tardio preserva %s e não retoma cenário sobre a edição', async modo => {
+  let resolver;
+  const api = { getDadosPlanejamento: jest.fn(() => new Promise(r => { resolver = r; })), listarSimulacoesPlanejamento: jest.fn().mockResolvedValue({ simulacoes: [{ id: 'anterior', geradoEm: '2026-09-01', entradas: { formularioCenario: { receita: '500.000,00' } } }] }) };
+  render(<PlanejamentoPage api={api} empresa={{ id: 'e1' }} empresas={[]} onVoltar={() => {}} />);
+  const receita = screen.getByLabelText('Receita anual (R$)');
+  if (modo === 'colagem') fireEvent.paste(receita, { clipboardData: { getData: () => '120.000,00' } });
+  else fireEvent.change(receita, { target: { value: '12000000' } });
+  expect(receita).toHaveValue('120.000,00');
+  await act(async () => resolver(payload()));
+  await waitFor(() => expect(screen.getByDisplayValue('718.036,09')).toBeInTheDocument());
+  expect(receita).toHaveValue('120.000,00');
 });

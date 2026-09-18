@@ -25,6 +25,12 @@ import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "../lib/da
 const TIPO_LABEL = { NFSE: "Nota de serviço (NFS-e)", NFE: "Nota de venda (NF-e)" };
 const PAPEL_LABEL = { EMIT: "Emitida pela empresa", DEST: "Recebida pela empresa" };
 
+// Emissão é uma data civil do documento. Meia-noite UTC não deve virar o dia anterior no Brasil.
+function dataCivilDaNota(valor) {
+  const partes = String(valor || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
+  return partes ? `${partes[3]}/${partes[2]}/${partes[1]}` : fmtDate(valor);
+}
+
 // A frase única de ausência. Uma só, para não virar quatro sinônimos pela tela.
 function SemDado({ children = "não temos este dado" }) {
   return (
@@ -148,7 +154,7 @@ function BlocoXml({ xml, nota }) {
         titulo="XML do documento"
         aviso={
           nota?.type === "NFE"
-            ? "Não guardamos o XML desta nota. A captura de NF-e pela SEFAZ traz o resumo do documento (DFe); o XML completo só vem depois da manifestação do destinatário."
+            ? "XML completo indisponível. Importe o XML desta NF-e para consultar seus itens e baixar o DANFE."
             : "Não guardamos o XML desta nota."
         }
       >
@@ -613,17 +619,16 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
             <Secao titulo="Valores e datas">
               <div style={GRADE}>
                 <Campo rotulo="Valor total" valor={nota.total == null ? null : fmtMoney(nota.total)} mono />
-                <Campo rotulo="Data de emissão" valor={nota.issueDate ? fmtDate(nota.issueDate) : null} />
+                <Campo rotulo="Data de emissão" valor={nota.issueDate ? dataCivilDaNota(nota.issueDate) : null} />
                 <Campo rotulo="Competência" valor={fmtCompetencia(nota.competencia)} />
               </div>
+              {!nota.competencia && <p style={{ color: PANEL.muted, fontSize: "0.82rem" }}>Competência não informada: confira o XML e o documento de origem. Se necessário, corrija a informação na origem e reimporte o XML. A data de emissão não será usada automaticamente como competência.</p>}
             </Secao>
 
             <Secao
               titulo="Situação"
               aviso={
-                "`Situação efetiva` é o campo que a APURAÇÃO lê, e ele só tem dois valores "
-                + "(autorizada / cancelada) — é dinheiro, não história. O que aconteceu com a nota "
-                + "(cancelamento, substituição, e o que não sabemos) está no bloco Ciclo da nota."
+                "Situação usada na apuração. Cancelamentos e substituições aparecem no histórico abaixo."
               }
             >
               <div style={GRADE}>
@@ -641,7 +646,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
             <BlocoItens itens={nota.itens} nota={nota} />
             <BlocoXml xml={nota.xml} nota={nota} />
 
-            <Secao
+            <details style={{ color: PANEL.muted, fontSize: "0.82rem" }}><summary style={{ cursor: "pointer", marginBottom: 10 }}>Dados de captura e identificação interna</summary><Secao
               titulo="Captura"
               aviso="Quando esta nota entrou na nossa base — não é a data da nota, é a data em que a capturamos."
             >
@@ -652,7 +657,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
                 <Campo rotulo="Hash do XML" valor={nota.xmlHash} mono quebra />
                 <Campo rotulo="Identificador interno" valor={nota.id} mono quebra />
               </div>
-            </Secao>
+            </Secao></details>
           </>
         )}
 

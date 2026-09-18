@@ -230,7 +230,7 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
     ? ausente("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro.")
     : primeiraFonteQueResponde([
       anexoCadastro ? apurado(anexoCadastro, "cadastro da empresa (anexo do Simples)") : null,
-    ], "Anexo do Simples não cadastrado — escolha na tela. Não derivamos anexo do CNAE aqui: o de-para CNAE→anexo do projeto responde \"III ou V (Fator R)\" e \"revisar\" em boa parte dos casos.");
+    ], "Anexo do Simples não cadastrado. Selecione o anexo para simular e confira se a atividade depende do Fator R.");
 
   // ── ALÍQUOTA DE ISS ───────────────────────────────────────────────────────────────────────────
   // ⚠ UNIDADE: `perfilAtividades[].aliquotaIss` é PERCENTUAL (a coluna da Aba Fiscal é "Alíq. ISS %",
@@ -270,11 +270,8 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   const sugestaoPresumido = sugerirCategoriaDaEmpresa(perfilFiscal?.candidatos || []);
   const atividadePresumido = ausente(
     sugestaoPresumido.categoria
-      ? `${sugestaoPresumido.motivo} A presunção NÃO é derivada do CNAE — o catálogo do portal mapeia `
-        + "anexo do Simples, que é outra lei, e errar entre 8% e 32% inverteria a comparação."
-      : "A atividade do Lucro Presumido não é derivada do CNAE: o projeto não tem de-para "
-        + "CNAE→presunção de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. "
-        + `${sugestaoPresumido.motivo}`,
+      ? `${sugestaoPresumido.motivo} Confira a atividade sugerida antes de comparar os regimes.`
+      : `${sugestaoPresumido.motivo} Selecione a atividade do Lucro Presumido. Ela define os percentuais de presunção usados na comparação.`,
   );
 
   const historico = await prisma.apuracaoSnapshot.findMany({

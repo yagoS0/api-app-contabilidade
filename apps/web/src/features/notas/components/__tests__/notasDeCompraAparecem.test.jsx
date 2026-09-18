@@ -70,6 +70,15 @@ function montar(overrides = {}, props = {}) {
   return { setNotasFilters, notasPanel };
 }
 
+it("erro de listagem oferece retry da lista separado do estado da captura", () => {
+  const { notasPanel } = montar({ erroNotas: "Lista indisponível", erroCaptura: "Captura indisponível", error: "Captura indisponível" });
+  fireEvent.click(screen.getByRole("button", { name: "Tentar carregar notas novamente" }));
+  expect(notasPanel.loadNotas).toHaveBeenCalledTimes(1);
+  expect(notasPanel.reload).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Recarregar estado da captura" }));
+  expect(notasPanel.reload).toHaveBeenCalledTimes(1);
+});
+
 it("empresa com IE mantém vendas e encaminha XML/ZIP ao importador NF-e", async () => {
   const { notasPanel } = montar({}, { inscricaoEstadual: "123.456.789" });
   fireEvent.click(screen.getByRole("button", { name: "Notas de venda e compra (NF-e)" }));
@@ -194,6 +203,11 @@ describe("as recebidas foram ABSORVIDAS pela faixa única — duas espécies, se
 });
 
 describe("nota recebida não se cancela", () => {
+  it("na direção combinada a recebida não ganha ajuste local", () => {
+    montar({ notas: [NFSE_RECEBIDA], notasFilters: { papel: "", type: "NFSE", competencia: "2026-08", limit: 100, offset: 0 } });
+    expect(screen.getByText(/PRESTADOR DE SERVICO LTDA/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Marcar como cancelada|Reativar/i })).not.toBeInTheDocument();
+  });
   it("em Recebidas, a coluna 'Marcar como cancelada' NÃO é oferecida", () => {
     // ⚠ `type: "NFSE"` porque a janela nasce em NFS-e — e a linha PRECISA estar na tela para o
     // teste valer. Sem a linha, "o botão não existe" passaria por lista vazia, e o teste diria

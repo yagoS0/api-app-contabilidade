@@ -312,7 +312,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       /* ⚠ A célula de ação PARA o clique antes de ele subir para a linha: senão
                          cancelar uma nota abriria o detalhe por cima do confirm. */
                       <td style={td} onClick={(e) => e.stopPropagation()}>
-                        {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
+                        {n.papel !== "EMIT" ? <span style={{ color: PANEL.muted }}>—</span> : String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
                           <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
                             style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Reativar

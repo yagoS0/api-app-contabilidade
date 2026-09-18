@@ -207,15 +207,15 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null, temOfici
       ) : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-        {/* NOSSO — rotulado como cálculo do portal, explicitamente. */}
-        <div style={{ padding: 10, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+        {/* A estimativa só ocupa um cartão quando há valor; zero calculado é válido. */}
+        {proc.nosso.disponivel && <div style={{ padding: 10, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
           <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
             {proc.nosso.rotulo}
           </div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 700, fontFamily: "monospace", color: proc.nosso.disponivel ? PANEL.text : "var(--state-warn)" }}>
-            {proc.nosso.disponivel ? fmtMoney(proc.nosso.valor) : "não calculado"}
+          <div style={{ fontSize: "1.1rem", fontWeight: 700, fontFamily: "monospace", color: PANEL.text }}>
+            {fmtMoney(proc.nosso.valor)}
           </div>
-        </div>
+        </div>}
 
         {/* OFICIAL — e, quando a coluna é ambígua, a tela diz que não sabe de quem é. */}
         <div style={{ padding: 10, border: `1px solid ${proc.oficial.ambiguo ? "var(--state-warn)" : PANEL.border}`, borderRadius: 8 }}>

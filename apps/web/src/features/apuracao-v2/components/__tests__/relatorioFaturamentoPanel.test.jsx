@@ -198,8 +198,27 @@ describe("RelatorioFaturamentoPanel — procedência do DAS", () => {
     expect(screen.getByText(/A receita da competência não está classificada/)).toBeInTheDocument();
     expect(screen.getByText(/2 itens/)).toBeInTheDocument();
     expect(screen.getByText(/100% do total da competência/)).toBeInTheDocument();
-    // ⚠ "não calculado", nunca R$ 0,00 — zero afirmaria que o DAS do mês é zero.
-    expect(screen.getByText("não calculado")).toBeInTheDocument();
+    // Ausência não ocupa cartão nem vira um DAS de R$ 0,00.
+    expect(screen.queryByText("não calculado")).not.toBeInTheDocument();
+    expect(screen.queryByText(/DAS pré-apurado pelo portal/)).not.toBeInTheDocument();
+  });
+
+  it("apuração oficial permanece sem o cartão vazio do cálculo local", () => {
+    const rel = relatorioFixture();
+    rel.dados.preApurado = { ok: false, das: null, oficial: { dasRetornadoSerpro: 130 } };
+    render(<RelatorioFaturamentoPanel relatorio={rel} />);
+    expect(screen.getByText(/DAS oficial devolvido pela Receita/)).toBeInTheDocument();
+    expect(screen.queryByText(/DAS pré-apurado pelo portal/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Diferença \(portal − Receita\)/)).not.toBeInTheDocument();
+  });
+
+  it("zero efetivamente calculado mantém o cartão da estimativa", () => {
+    const rel = relatorioFixture();
+    rel.dados.preApurado.ok = true;
+    rel.dados.preApurado.das = 0;
+    render(<RelatorioFaturamentoPanel relatorio={rel} />);
+    expect(screen.getByText(/DAS pré-apurado pelo portal/)).toBeInTheDocument();
+    expect(screen.queryByText("não calculado")).not.toBeInTheDocument();
   });
 });
 

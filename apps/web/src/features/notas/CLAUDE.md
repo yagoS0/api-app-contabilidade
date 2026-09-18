@@ -1,5 +1,19 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Revisão de concorrência e tratamento — 18/09/2026
+
+Lista, detalhe, captura e auditoria descartam respostas de outra empresa/competência ou de uma nota já fechada. Recarga após captura/importação usa os filtros atuais. Erros de listagem e captura têm retentativas distintas; resposta sem lista não equivale a nenhuma nota. Busca por nome não inclui documento vazio; busca numérica cobre emitente e tomador, também nos resumos.
+
+“Ajustes na base” é ajuste local, nunca cancelamento oficial; só notas `EMIT` aceitam cancelamento/reativação, inclusive no backend. A auditoria abre notas sem competência e pendências pós-fechamento. Ausência de competência orienta conferir/corrigir a origem e reimportar, sem inventar competência pela emissão. Usuários `ACCOUNTANT`/`FIRM_ADMIN` podem reabrir competência fiscal com motivo e confirmação, ou concluir a conferência da pendência. São ações independentes: reabrir não resolve o aviso, não reabre contabilidade e não retifica declaração. API usa `resolverPendenciaPosFechamento`, separado da resolução de classificação; payload inválido de pendências lança erro. Dados técnicos do detalhe ficam expansíveis. Testes não acionam captura/emissão reais.
+
+## Fonte escolhida para NF-e emitidas — 17/09/2026
+
+O usuário escolheu o Fisco Fácil SEFAZ-RJ. Pesquisa e plano detalhado em `docs/plano-consultas-fisco-facil-rj.md`; pendente prova autenticada, sem endpoints ou captura automática implementados. Identificar o emissor da Vagalo não é mais pré-requisito. Prever pedidos assíncronos por estabelecimento/período, acompanhamento persistente e ingestão/eventos compartilhados. O modal de importação não deve bloquear a tela durante a espera externa. A regra antiga de nunca integrar o Fisco Fácil foi superada por este pedido explícito; mantém-se a exigência de comprovar acesso e comportamento real. Nada publicado em produção nesta etapa.
+
+## Próxima entrega planejada — 17/09/2026
+
+O usuário autorizou implementar o plano em desenvolvimento. Modal implementado em `ImportacaoNotasModal`, renderizado pelo `AppInterno` para sobreviver à navegação, com progresso real por lote confirmado, resumo preservado, erro parcial explícito e ZIP sem contagem interna inventada. `useNotasFiscais` congela empresa/tipo, impede envio duplo, conserva resultado por empresa e protege recarga; a sessão desmontada interrompe próximos lotes. Mock demonstra sem gravação, incluindo botão próprio de demonstração. Captura emitida ainda NÃO comprovada: pendente fluxo autenticado do extrator RJ escolhido pelo usuário. Plano e evidências em `docs/plano-captura-nfe-emitidas.md` e `docs/plano-consultas-fisco-facil-rj.md` na raiz. Não criar conector/agendamento fictício nem remover a captura de recebidas. Nenhuma publicação em produção nesta etapa.
+
 ## Importação acima do limite — 17/09/2026
 
 O 500 em produção era `MulterError: Too many files`. `importarNotasEmLotes` divide a seleção em grupos sequenciais de 20 arquivos NF-e ou 50 NFS-e, soma os resultados e preserva motivos por arquivo. Falha interrompe os próximos lotes, mantém totais confirmados e orienta conferir o lote de resultado desconhecido; nunca repetir automaticamente. Os limites do servidor continuam em vigor e retornam JSON legível. Conferência local: 38 testes de upload/ingestão, contrato e resultado aprovados; sem importar documentos reais.

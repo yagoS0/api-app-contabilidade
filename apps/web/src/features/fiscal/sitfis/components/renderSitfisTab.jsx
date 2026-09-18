@@ -1,9 +1,10 @@
 // Q41: Aba "Situação Fiscal" (SITFIS) — mostra a última consulta gravada + botão para consultar no SERPRO.
 
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { SitfisRelatorioTabela } from "./SitfisRelatorioTabela";
+import { RecalcularGuiasSitfis } from "./RecalcularGuiasSitfis";
 
 
 
@@ -35,10 +36,17 @@ function SituacaoBadge({ situacao }) {
   );
 }
 
-export function SitfisTab({ sitfisPanel }) {
+export function SitfisTab({ sitfisPanel, guidesPanel, feedback }) {
   // O PDF é o documento oficial, mas a leitura do dia a dia é a tabela. Por isso ele é opcional,
   // sob clique — e não mais o único jeito de ver o relatório.
   const [verPdf, setVerPdf] = useState(false);
+  const areaRecalculo = useRef(null);
+  function abrirRecalculo() {
+    const detalhes = areaRecalculo.current?.querySelector("details");
+    if (detalhes) detalhes.open = true;
+    areaRecalculo.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    detalhes?.querySelector("summary")?.focus();
+  }
   const {
     status, loading, consulting, error, notice, pdfUrl, consultar,
     pdfIndisponivel, podeConsultar = true, proximaConsultaEm, reload, recarregarPdf,
@@ -61,6 +69,7 @@ export function SitfisTab({ sitfisPanel }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
+        {guidesPanel && <Button variant="secondary" onClick={abrirRecalculo}>Recalcular guia</Button>}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           <Button variant="primary" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
             {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
@@ -168,6 +177,7 @@ export function SitfisTab({ sitfisPanel }) {
           </>
         )}
       </div>
+      {guidesPanel && <div ref={areaRecalculo}><RecalcularGuiasSitfis guidesPanel={guidesPanel} feedback={feedback} /></div>}
     </div>
   );
 }

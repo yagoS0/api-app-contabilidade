@@ -1943,9 +1943,10 @@ export function createRealApi() {
     },
     async listPendenciasPosFechamento(companyId, { onlyOpen = true } = {}) {
       const payload = await request(`/firm/companies/${companyId}/pendencias-pos-fechamento?onlyOpen=${onlyOpen}`);
-      return Array.isArray(payload?.pendencias) ? payload.pendencias : [];
+      if (!Array.isArray(payload?.pendencias)) throw new Error("Não foi possível confirmar as pendências pós-fechamento.");
+      return payload.pendencias;
     },
-    async resolverPendencia(companyId, pendId) {
+    async resolverPendenciaPosFechamento(companyId, pendId) {
       return request(`/firm/companies/${companyId}/pendencias-pos-fechamento/${pendId}/resolver`, { method: "POST" });
     },
 
@@ -1972,8 +1973,8 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/adn/clear-error`, { method: "POST" });
     },
     // Q56: import MANUAL de notas (XML) — pra quando a captura automática não trouxe as notas.
-    async importInvoicesXml(companyId, files, { type = "NFSE" } = {}) {
-      return importarNotasEmLotes(request, companyId, files, type);
+    async importInvoicesXml(companyId, files, { type = "NFSE", onProgress, shouldContinue } = {}) {
+      return importarNotasEmLotes(request, companyId, files, type, onProgress, shouldContinue);
     },
     // Q48: download de notas em lote (job em segundo plano + zip)
     async createNotasDownload(payload) {
@@ -2621,6 +2622,9 @@ export function createRealApi() {
       );
     },
     // Q15 — fechamento
+    async conferirTransmissaoFechamento(companyId, competencia) {
+      return request('/firm/companies/' + encodeURIComponent(companyId) + '/fechamento/' + encodeURIComponent(competencia) + '/conferir-transmissao', { method: 'POST' });
+    },
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
     },
@@ -2634,9 +2638,9 @@ export function createRealApi() {
         method: "POST", body: JSON.stringify(payload),
       });
     },
-    async transmitirFechamento(companyId, competencia, confirmCompetencia) {
+    async transmitirFechamento(companyId, competencia, confirmCompetencia, calculoId) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
-        method: "POST", body: JSON.stringify({ confirmCompetencia }),
+        method: "POST", body: JSON.stringify({ confirmCompetencia, calculoId }),
       });
     },
     // A declaração entregue FORA do portal (gov.br). ⚠ NÃO transmite nada: registra a afirmação do
@@ -2652,9 +2656,9 @@ export function createRealApi() {
     async reabrirFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/reabrir`, { method: "POST" });
     },
-    async retificarFechamento(companyId, competencia, confirmCompetencia) {
+    async retificarFechamento(companyId, competencia, confirmCompetencia, calculoId) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/retificar`, {
-        method: "POST", body: JSON.stringify({ confirmCompetencia, confirmRetificar: true }),
+        method: "POST", body: JSON.stringify({ confirmCompetencia, confirmRetificar: true, calculoId }),
       });
     },
     // Q19 — lista de atividades PGDAS-D (de-para oficial) p/ o dropdown do modal de fechamento

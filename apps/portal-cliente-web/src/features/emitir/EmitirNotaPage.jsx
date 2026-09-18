@@ -363,10 +363,17 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId =
  * a saída era o menu; sem a aba, uma tela sem botão de voltar é uma armadilha — e o ramo do
  * PORTÃO FECHADO é o pior deles, porque quem cai nele é justamente quem não pode fazer nada ali.
  */
-export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresas, modelo = null, aoDescartarModelo }) {
+export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresas, modelo = null, aoDescartarModelo, aoMudarEnvio }) {
   const companyId = empresa.companyId;
   const [form, setForm] = useState(formVazio);
   const [enviando, setEnviando] = useState(false);
+  const envioAtivo = useRef(false);
+  useEffect(() => {
+    if (!enviando) return;
+    const avisar = (evento) => { evento.preventDefault(); evento.returnValue = ""; };
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [enviando]);
   const [desfecho, setDesfecho] = useState(null);
   // A linha da tentativa anterior, quando o servidor disse que o número dela é reaproveitável.
   // ⚠ Reenviar SEM ela queimaria um número novo a cada correção — e número pulado é buraco
@@ -1011,7 +1018,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
   async function emitir(evento) {
     evento.preventDefault();
-    if (enviando) return;
+    if (envioAtivo.current || enviando) return;
 
     // ⚠⚠ COM VÁRIOS CÓDIGOS E NENHUM ESCOLHIDO, NADA SAI DAQUI — e esta trava não é cosmética.
     //
@@ -1065,6 +1072,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       return;
     }
 
+    envioAtivo.current = true;
+    aoMudarEnvio?.(true);
     setEnviando(true);
     try {
       const payload = montarPayload(form, {
@@ -1120,6 +1129,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         esquecerModelo();
       }
     } finally {
+      envioAtivo.current = false;
+      aoMudarEnvio?.(false);
       setEnviando(false);
     }
   }
@@ -1152,7 +1163,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     <>
       <div className="page-header">
         <h1>Emitir nota</h1>
-        <button type="button" className="btn" onClick={aoVoltarParaNotas}>
+        <button type="button" className="btn" disabled={enviando} onClick={aoVoltarParaNotas}>
           Voltar para as notas
         </button>
       </div>

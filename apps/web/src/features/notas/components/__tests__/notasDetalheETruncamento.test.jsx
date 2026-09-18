@@ -30,6 +30,12 @@ function paginaDe(n, offset = 0) {
 
 const noop = () => {};
 
+test.each(["2026-08-19", "2026-08-19T00:00:00.000Z", "2026-08-19T00:30:00-03:00"])("detalhe conserva a data civil da emissão %s", issueDate => {
+  render(<NotaDetailModal nota={{ ...paginaDe(1)[0], issueDate }} onClose={noop} />);
+  const campo = screen.getByText("Data de emissão").parentElement;
+  expect(within(campo).getByText("19/08/2026")).toBeInTheDocument();
+});
+
 function umaNota(patch) {
   return [{ ...paginaDe(1)[0], ...patch }];
 }
@@ -263,7 +269,7 @@ describe("detalhe da nota — ausência nunca é resposta", () => {
 
   it('distingue "não temos XML" de "temos e não coube"', () => {
     const { unmount } = render(<NotaDetailModal nota={NFE_MAGRA} loading={false} error={null} onClose={noop} />);
-    expect(screen.getByText(/Não guardamos o XML desta nota/i)).toBeInTheDocument();
+    expect(screen.getByText(/XML completo indisponível\. Importe o XML desta NF-e/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Ver XML/i })).not.toBeInTheDocument();
     unmount();
 

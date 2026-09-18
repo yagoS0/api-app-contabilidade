@@ -253,7 +253,7 @@ describe("atividade do Lucro Presumido", () => {
     comBase({ cadastro: { cnaePrincipal: "4711302", perfilAtividades: [] } });
     const campo = (await rodar()).campos.atividadePresumido;
     expect(campo.apurado).toBe(false);
-    expect(campo.motivoAusencia).toMatch(/de-para CNAE/i);
+    expect(campo.motivoAusencia).toMatch(/Selecione a atividade do Lucro Presumido/i);
   });
 });
 
