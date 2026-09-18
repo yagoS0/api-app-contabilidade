@@ -1,5 +1,4 @@
 import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
-import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
@@ -560,25 +559,36 @@ export function CompaniesHomePage({
       <AppShell className="dashboard-home-shell">
         <section className="dashboard-home">
           <header className="dashboard-home__header">
+            <h1 className="dashboard-home__title dashboard-home__title--accessible">
+              {modoVisao === "tabela" ? "Empresas" : "Agenda"}
+            </h1>
+            <div className="dashboard-home__views">
+              <Tabs
+                mode="view"
+                ariaLabel="Visão da carteira"
+                pill={false}
+                size="lg"
+                items={[
+                  { key: "calendario", label: "Agenda" },
+                  { key: "tabela", label: "Empresas" },
+                ]}
+                active={modoVisao}
+                onChange={trocarVisao}
+              />
+            </div>
+            <div className="dashboard-home__user">
+              <span className="dashboard-home__user-name">{user?.name || "Conta do escritório"}</span>
+              <Button variant="secondary" className="dashboard-home__logout" onClick={onLogout}>
+                Sair
+              </Button>
+            </div>
+          </header>
+
+          {modoVisao === "tabela" && (
+          <div className="dashboard-home__toolbar">
             <div className="dashboard-home__brand">
               <div>
-                {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
-                    tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
-                    que se vê é sinal de que a tela não se explica sozinha. */}
-                {/* A COMPETÊNCIA SOBE PARA O TÍTULO. Ela é o contexto de tudo o que a tela mostra —
-                    contadores, guias, notas, fechamento — e estava perdida no meio dos filtros,
-                    onde parecia mais um recorte opcional. Aqui fica claro que o mês é o assunto. */}
-                {/* ⚠⚠ O `<h1>` TERMINA NA PALAVRA "Empresas" — os três controles são IRMÃOS dele,
-                    não filhos. Até 24/08/2026 os `‹ ›` e o "↻" viviam DENTRO do `<h1>`, e o efeito
-                    não era visual: o nome acessível do cabeçalho passava a ser *"Empresas · Mês
-                    anterior Agosto de 2026 Próximo mês Recarregar a lista de Agosto de 2026"*. Quem
-                    navega por cabeçalhos ouve o título da tela; ali ouvia a barra de ferramentas.
-                    ⚠ **O DESENHO NÃO MUDOU** — a linha flex subiu um nível, com o mesmo `gap` e o
-                    mesmo `align-items`, e a decisão de 20/08 (*"a competência sobe para o título
-                    porque ela é o contexto de tudo o que a tela mostra"*) continua de pé: ela
-                    continua na mesma linha, ao lado do título. O que mudou é de quem ela é filha. */}
                 <div className="dashboard-home__heading" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <h1 className="dashboard-home__title" style={{ margin: 0 }}>Empresas</h1>
 
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
@@ -617,19 +627,42 @@ export function CompaniesHomePage({
               </div>
             </div>
 
-            <div className="dashboard-home__user">
-              <Engrenagem href="/configuracoes" onClick={onOpenConfiguracoes} label="Configurações gerais do escritório" />
-              <div className="dashboard-home__user-meta">
-                <span className="dashboard-home__user-label">Contador logado</span>
-                <strong className="dashboard-home__user-name">{user?.name || "Conta escritorio"}</strong>
-              </div>
-              <Button variant="secondary" className="dashboard-home__logout" onClick={onLogout}>
-                Sair
+            <nav className="dashboard-home__actions" aria-label="Ações das empresas">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={imprimirListagem}
+                disabled={imprimindo}
+                title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
+                className="dashboard-home__print"
+              >
+                {imprimindo ? "Preparando…" : "Imprimir"}
               </Button>
-            </div>
-          </header>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (globalChartStatus && !globalChartStatus.isConfigured) {
+                    avisoPlanoGlobal.current?.focus();
+                    avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
+                    return;
+                  }
+                  onCreateCompany();
+                }}
+                title={globalChartStatus && !globalChartStatus.isConfigured
+                  ? "Plano de contas global incompleto — configure antes de criar empresas"
+                  : undefined}
+              >
+                Nova empresa
+                {globalChartStatus && !globalChartStatus.isConfigured && (
+                  <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
+                )}
+              </Button>
+            </nav>
+          </div>
+          )}
 
-          {globalChartStatus && !globalChartStatus.isConfigured && (
+          {modoVisao === "tabela" && globalChartStatus && !globalChartStatus.isConfigured && (
             <div
               ref={avisoPlanoGlobal}
               tabIndex={-1}
@@ -661,8 +694,6 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* Atalhos e visões compartilham a barra abaixo; cadastro é ação secundária. */}
-
           {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
               fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
               continua na página do job — aqui é só o aviso. */}
@@ -686,74 +717,7 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
-              calendário (o que vence no dia). O calendário era uma página separada; virou visão
-              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo.
-              Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
-              forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
-              visível aqui, dentro do calendário. */}
-          <div className="dashboard-home__toolbar">
-          <div className="dashboard-home__views">
-            {/* `mode="view"`: trocar de visão não navega, então é `aria-pressed`, não
-                `aria-current="page"`. */}
-            <Tabs
-              mode="view"
-              ariaLabel="Visão da carteira"
-              /* ⚠ O Calendário vem PRIMEIRO porque é o padrão — a barra tem de ler na ordem em
-                 que a tela abre. "Ano" saiu daqui e virou granularidade lá dentro; "Cards" saiu
-                 de vez. */
-              items={[
-                { key: "calendario", label: "Calendário" },
-                { key: "tabela", label: "Tabela" },
-              ]}
-              active={modoVisao}
-              onChange={trocarVisao}
-            />
-            {/* Imprimir mora ao lado das visões porque É uma visão — a da carteira no papel. Ele
-                troca para Tabela sozinho e expande as fechadas: imprimir a lista pela metade, em
-                silêncio, seria pior que não ter o botão.
-                ⚠ NÃO entra na barra de abas: é ação, não recorte — clicar nele não deixa a barra
-                num estado "selecionado". */}
-
-          </div>
-          <nav className="dashboard-home__actions" aria-label="Atalhos">
-            <Button
-              variant="secondary"
-              className="dashboard-home__action dashboard-home__action--outline"
-              onClick={() => {
-                if (globalChartStatus && !globalChartStatus.isConfigured) {
-                  avisoPlanoGlobal.current?.focus();
-                  avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
-                  return;
-                }
-                onCreateCompany();
-              }}
-              title={
-                globalChartStatus && !globalChartStatus.isConfigured
-                  ? "Plano de contas global incompleto — configure antes de criar empresas"
-                  : undefined
-              }
-            >
-              Nova empresa
-              {globalChartStatus && !globalChartStatus.isConfigured && (
-                <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
-              )}
-            </Button>
-          </nav>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={imprimirListagem}
-              disabled={imprimindo}
-              title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
-              className="dashboard-home__print"
-            >
-              🖨 {imprimindo ? "Preparando…" : "Imprimir"}
-            </Button>
-          </div>
-
-          {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
+          {/* Busca e filtros pertencem à lista de empresas; a agenda tem navegação própria. */}
           {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"
