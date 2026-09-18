@@ -69,7 +69,7 @@ beforeEach(() => {
 describe("⚠⚠ a visão em Cards saiu do produto", () => {
   test("não há botão `Cards` na barra de visões — sobraram DUAS", () => {
     montar();
-    expect(visoes()).toEqual(["Calendário", "Tabela"]);
+    expect(visoes()).toEqual(["Agenda", "Empresas"]);
   });
 
   test("calendário abre na semana e oferece dia, mês e lista", () => {
@@ -85,27 +85,27 @@ describe("⚠⚠ a visão em Cards saiu do produto", () => {
 describe("⚠⚠ a carteira abre no Calendário, e a escolha NÃO é lembrada", () => {
   test("ao montar, a visão acesa é o Calendário", () => {
     montar();
-    expect(visaoAtiva()).toEqual(["Calendário"]);
+    expect(visaoAtiva()).toEqual(["Agenda"]);
   });
 
   test("Tabela é selecionável", () => {
     montar();
-    fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
-    expect(visaoAtiva()).toEqual(["Tabela"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Empresas$/ }));
+    expect(visaoAtiva()).toEqual(["Empresas"]);
     expect(screen.getByText(/ALFA SIMPLES LTDA/)).toBeInTheDocument();
   });
 
   test("⚠⚠ escolher Tabela NÃO grava nada — remontar volta ao Calendário", () => {
     const { unmount } = montar();
-    fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
-    expect(visaoAtiva()).toEqual(["Tabela"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Empresas$/ }));
+    expect(visaoAtiva()).toEqual(["Empresas"]);
     // ⚠ A chave inteira tem de continuar ausente: gravar e ignorar na leitura seria pior que não
     // gravar — deixaria um valor que o próximo leitor acharia que manda em alguma coisa.
     expect(localStorage.getItem("dashboard:modoVisao")).toBeNull();
 
     unmount();
     montar();
-    expect(visaoAtiva()).toEqual(["Calendário"]);
+    expect(visaoAtiva()).toEqual(["Agenda"]);
   });
 
   test("⚠⚠ com `cards` GRAVADO no navegador, a tela abre no Calendário — e com a aba ACESA", () => {
@@ -116,7 +116,39 @@ describe("⚠⚠ a carteira abre no Calendário, e a escolha NÃO é lembrada", 
     // `"cards"` sozinha em qualquer tela menor que 1024px, sem ninguém escolher nada.
     localStorage.setItem("dashboard:modoVisao", "cards");
     montar();
-    expect(visaoAtiva()).toEqual(["Calendário"]);
+    expect(visaoAtiva()).toEqual(["Agenda"]);
     expect(visaoAtiva()).toHaveLength(1); // ⚠ exatamente uma, nunca zero
+  });
+});
+
+describe("ferramentas acompanham o contexto da tela inicial", () => {
+  test("agenda usa seu próprio período e ações de empresa aparecem só na lista", () => {
+    const onChangeCompetencia = jest.fn();
+    const onRefreshCompanies = jest.fn();
+    montar({ onChangeCompetencia, onRefreshCompanies });
+    expect(screen.getByRole("heading", { level: 1, name: "Agenda" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Nova empresa" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Imprimir" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Competência da carteira" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(barraDeVisoes()).getByRole("button", { name: "Empresas" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Empresas" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Nova empresa" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Imprimir" })).toBeInTheDocument();
+    const competencia = screen.getByRole("group", { name: "Competência da carteira" });
+    fireEvent.click(within(competencia).getByRole("button", { name: "Próximo mês" }));
+    expect(onChangeCompetencia).toHaveBeenCalledWith("2026-08");
+    fireEvent.click(within(competencia).getByRole("button", { name: /Recarregar a lista/ }));
+    expect(onRefreshCompanies).toHaveBeenCalledTimes(1);
+  });
+
+  test("cadastro continua protegido pelo plano de contas global", () => {
+    const onCreateCompany = jest.fn();
+    montar({ onCreateCompany, globalChartStatus: { isConfigured: false, tiposFaltantes: ["ATIVO"] } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(within(barraDeVisoes()).getByRole("button", { name: "Empresas" }));
+    fireEvent.click(screen.getByRole("button", { name: /Nova empresa/ }));
+    expect(onCreateCompany).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveFocus();
   });
 });

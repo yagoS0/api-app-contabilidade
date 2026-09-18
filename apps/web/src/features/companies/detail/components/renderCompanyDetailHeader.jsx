@@ -248,7 +248,7 @@ export function CompanySectionHeader({
             </BotaoCopiar> : "CNPJ não informado"}</span>
         </div>
       </div>
-        {/* Grupos ao lado da identificação; sub-abas na linha seguinte. */}
+        {/* Abas centralizadas ao lado da identificação em telas amplas; abaixo em telas menores. */}
         <Tabs
           className="company-topbar__nav"
           items={groups.map((group) => ({
