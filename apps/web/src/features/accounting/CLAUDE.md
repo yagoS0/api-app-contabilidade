@@ -6,6 +6,10 @@ O bucket “Sem subtipo / fora do regime” também mostra “Recalculada” qua
 
 Usuário restringiu o pedido a informar recálculo, sem substituir valores contábeis. Circular mostra “Recalculada” com detalhes no popover; lançamentos têm “Guia recalculada” expansível na linha. Contrato aditivo `recalculoGuia` traz guiaId/data/valores e `escopoValor: TOTAL_GUIA`; no DARF consolidado o total nunca é atribuído a cada tributo. Sinais legados `recalculatedAt/from/to` continuam legíveis. Recálculo não equivale a pagamento. O detalhe deixa explícita a preservação dos valores contábeis; os avisos não geram baixas ou alteração de linhas. Abas circular/lançamentos já releem os dados ao serem abertas. Sem publicação nesta etapa.
 
+## A lançar — revisão visual de 17/09/2026
+
+A fila e os modais de conferência usam classes `cq-` em `styles/conferencia.css`, com tokens da aplicação, controles de altura consistente, contas com código reduzido e nome, ações hierarquizadas e tabelas com rolagem local. Os formulários de regras e lotes compartilham esse vocabulário visual; preservar Button/Modal existentes. Alteração de apresentação: seleção, competência, datas declaradas versus OFX, conta enviada, crédito padrão, regras automáticas e confirmação de lote continuam com os mesmos contratos. Não ocultar avisos de bloqueio ou resultado incerto para compactar a tela.
+
 ## A lançar — 08/09/2026
 
 Complemento: avisos de `getVerificacaoLancamentos().porLancamento` são repassados às linhas pelo mesmo carregamento do painel. A tabela mostra “Conferir lançamento” e permite expandir os motivos; não recalcular regras fiscais no frontend. Atualizar a consulta quando a lista de lançamentos mudar. Regras de fornecedor exibem nome das notas da própria empresa, CNPJ formatado e código reduzido/nome das contas; código completo permanece no título. A listagem da API preserva crédito, dia e estado automático.

@@ -1,11 +1,11 @@
-/* Uma moldura para todas as abas: marca, empresa e ações compartilham o eixo. */
+/* Identificação, abas e ações se alinham na mesma faixa quando há espaço. */
 .company-section-header:has(.company-header__identity) {
   display: grid;
-  grid-template-columns: fit-content(320px) minmax(0, 1fr) auto;
-  grid-template-areas: "identity navigation actions" "sections sections sections";
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "identity actions" "navigation navigation" "sections sections";
   align-items: center;
-  gap: 12px 20px;
-  padding: 16px max(16px, 5%);
+  gap: 12px 24px;
+  padding: 24px max(16px, 5%) 12px;
   top: 0;
   border-bottom: 1px solid var(--border);
 }
@@ -18,10 +18,22 @@
 }
 .company-header__identity .workspace-home { flex: 0 0 auto; }
 .company-header__identity .workspace-home svg { display: block; }
-.company-header__identity .btn-back { flex: 0 0 auto; min-height: 40px; }
+.company-header__identity .btn-back {
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  height: 32px;
+  padding: 6px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.company-header__identity .btn-back:hover { background: var(--bg-surface); color: var(--text); }
 .company-header__identity .company-topbar__brand { gap: 4px; }
 .company-header__identity .company-topbar__name { font-size: 1rem; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
-.company-header__identity .company-topbar__cnpj { font-size: .8rem; color: var(--text-muted); }
+.company-header__identity .company-topbar__cnpj { font-size: .75rem; color: var(--text-muted); }
 .company-section-header > .company-topbar__nav {
   grid-area: navigation;
   justify-content: flex-start;
@@ -29,6 +41,7 @@
   overflow-x: auto;
   min-width: 0;
   gap: 8px;
+  margin-top: 4px;
 }
 .company-section-header > .company-topbar__nav .app-tab { flex: 0 0 auto; min-height: 40px; }
 .company-section-header > .config-topbar-actions { grid-area: actions; flex-wrap: nowrap; gap: 12px; }
@@ -37,14 +50,28 @@
 .company-section-header .config-gear { width: 40px; height: 40px; box-sizing: border-box; }
 .company-section-header > .company-section-header__subtabs {
   grid-area: sections;
-  margin: -4px 0 0;
+  margin: -6px 0 0;
   min-width: 0;
   justify-content: flex-start;
-  border-top: 1px solid var(--border);
-  padding-top: 6px;
+  border-top: 0;
+  padding-top: 0;
 }
 .company-section-header__subtabs > .app-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; min-width: 0; max-width: 100%; }
 .company-section-header__subtabs .app-tab { flex: 0 0 auto; min-height: 38px; }
+.company-section-header__subtabs .app-tab:not([aria-current]) { color: var(--text-muted); }
+
+@media (min-width: 1000px) {
+  .company-section-header:has(.company-header__identity) {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-areas: "identity navigation actions" "sections sections sections";
+    padding-top: 20px;
+    column-gap: 16px;
+  }
+  .company-section-header > .company-topbar__nav { justify-content: center; margin-top: 0; }
+  .company-section-header > .company-topbar__nav .app-tab { padding-inline: 10px; }
+  .company-section-header > .config-topbar-actions { justify-self: end; }
+  .company-section-header > .company-section-header__subtabs { justify-content: center; margin-top: 0; }
+}
 
 .company-workspace { min-width: 0; }
 .company-workspace input, .company-workspace select, .company-workspace textarea, .company-workspace button { font-family: inherit; box-sizing: border-box; }
@@ -97,4 +124,7 @@
 }
 @media print {
   .company-header__identity .workspace-home { display: none; }
+}
+@media (pointer: coarse) {
+  .company-header__identity .btn-back { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }

@@ -2,7 +2,8 @@
 // e toda leitura refaz empresa, contato, pessoa, papel e permissão antes de responder.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { WhatsappCloudClient } from "./WhatsappCloudClient.js";
+import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
+import { whatsappPorCanal } from "./CanalWhatsappService.js";
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
 import { janelaDaConversa } from "./ConversaWhatsappService.js";
 import { SITUACOES_JANELA } from "./janela24h.js";
@@ -18,6 +19,7 @@ import { chaveLeaseResponsavel, conferirContextoResponsavel, encaminharResponsav
 import { vincularOpcoesAoContexto } from "./contextoMenuWhatsapp.js";
 import { resolverConsultaCliente, atenderConsultaCliente } from "./ConsultasClienteWhatsappService.js";
 import { pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
+import { pediuMenuWhatsapp, pediuMenuExplicitamente, pediuEquipeWhatsapp } from "./navegacaoWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
   CLIENTE_GUIAS_ABERTO: "altan.client.guides.open.v1",
@@ -82,7 +84,7 @@ export function rotularEmpresa(texto, conversa, rotulo = "Empresa") {
 export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   const t = semAcento(texto).replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  if (/^(oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comecar|inicio)$/.test(t)) return "MENU";
+  if (pediuMenuWhatsapp(texto)) return "MENU";
   if (cliente) {
     if (ehPedidoDeEmissao(texto)) return "EMISSAO";
     if (/^nova (?:emissao|nota)$/.test(t)) return "EMISSAO";
@@ -91,9 +93,7 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
     if (t === "guias em aberto") return "GUIAS_ABERTO";
     if (/^(quanto devo|dividas|debitos)$/.test(t)) return "QUANTO_DEVO";
     if (t === "documentos") return "DOCUMENTOS";
-    if (/^(?:(?:quero|preciso|gostaria de) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem)(?: de verdade| real)?$/.test(t)
-      || /^(atendente|contador|contadora|humano|equipe|atendimento humano)$/.test(t)
-      || /^(?:chama|chame|chamar) (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe)$/.test(t)) return "EQUIPE";
+    if (pediuEquipeWhatsapp(texto)) return "EQUIPE";
     if (/^(mais opcoes|outras opcoes|outras|outros)$/.test(t)) return "MAIS";
     return null;
   }
@@ -101,11 +101,6 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   if (/\b(ja sou cliente|sou cliente|cliente altan)\b/.test(t)) return "LEAD_CLIENTE";
   if (/\b(falar|atendente|equipe|pessoa|humano|especialista)\b/.test(t)) return "LEAD_EQUIPE";
   return "LEAD_EQUIPE";
-}
-
-function pediuMenuExplicitamente(texto) {
-  const t = semAcento(texto).replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
-  return /^(menu|ajuda|comecar|inicio)$/.test(t);
 }
 
 function competenciaAtual(agora) {
@@ -118,7 +113,7 @@ function competenciaAtual(agora) {
 async function carregarSessao(conversa, client) {
   if (!conversa?.portalClientId) return sessaoDoContato({ portalClientId: null });
   const contatos = await client.contatoWhatsapp.findMany({
-    where: { portalClientId: conversa.portalClientId, ativo: true, OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] },
+    where: { portalClientId: conversa.portalClientId, ativo: true, ...(conversa.vinculoNumeroId ? { vinculoNumeroId: conversa.vinculoNumeroId } : {}), OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] },
     take: 2,
     select: { id: true, nome: true, userId: true, permissoesAssistente: true },
   });
@@ -288,7 +283,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     ? await resolverConsultaCliente({ texto, interacao, acaoMenu: acao, registro, client, agora }) : null;
   if (consulta) acao = "CONSULTA_CLIENTE";
 
-  const whatsapp = cloud || new WhatsappCloudClient({ log: logger });
+  const whatsapp = await whatsappPorCanal(conversa, { cloud, client, log: logger });
   const opcoesNoContexto = opcoes => vincularOpcoesAoContexto(opcoes, registro.contexto);
   let encaminhamentoDoMenu = false;
   const antesDeEnviar = async (ferramenta = null, assinatura = null) => {
@@ -320,7 +315,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const assinatura = JSON.stringify({ ok: sessao.ok, userId: sessao.userId, papel: sessao.papel, permissoes: [...(sessao.permissoesAssistente || [])].sort() });
   const encaminhar = async () => {
     await antesDeEnviar(null, assinatura);
-    const r = conversa.atendimentoId
+    const r = conversa.atendimentoId || conversa.vinculoNumeroId
       ? await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto: registro.contexto, client, quando: agora })
       : await marcarHandoff(conversa, agora, client);
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
@@ -387,8 +382,8 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       where: { conversaId: conversa.id, direcao: "out", tipo: "interactive", registradaEm: { gte: new Date(agora.getTime() - 24 * 60 * 60 * 1000) } },
       select: { id: true },
     });
-    if (recente && !menuExplicito) {
-      const corpo = cliente ? rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa) : "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
+    if (recente && !menuExplicito && cliente) {
+      const corpo = rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa);
       await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     } else if (cliente) {
       const linhas = opcoesNoContexto(opcoesIniciaisDoCliente(sessao));
@@ -397,13 +392,25 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
         : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
       await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
     } else {
+      const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164, { canal: registro.canal, canalId: conversa.canalId });
       const botoes = [
         { id: IDS_MENU_WHATSAPP.LEAD_ANALISAR, titulo: "Analisar empresa" },
         { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },
         { id: IDS_MENU_WHATSAPP.LEAD_EQUIPE, titulo: "Falar com a equipe" },
       ];
       const corpo = "Olá! Como a Altan pode ajudar?";
-      await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes, rodape: "Você também pode escrever seu pedido." }) });
+      if (coletaAtiva) {
+        const linhas = [
+          { id: "altan.comercial.abertura.v1", titulo: "Abrir uma empresa" },
+          { id: "altan.comercial.transferencia.v1", titulo: "Trocar de contador" },
+          { id: "altan.comercial.inativa.v1", titulo: "Empresa parada" },
+          { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },
+          { id: IDS_MENU_WHATSAPP.LEAD_EQUIPE, titulo: "Falar com a equipe" },
+        ];
+        await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
+      } else {
+        await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes, rodape: "Você também pode escrever seu pedido." }) });
+      }
     }
   } else if (!cliente) {
     const final = ["LEAD_ANALISAR", "LEAD_CLIENTE", "LEAD_EQUIPE"].includes(acao) ? acao : "LEAD_EQUIPE";

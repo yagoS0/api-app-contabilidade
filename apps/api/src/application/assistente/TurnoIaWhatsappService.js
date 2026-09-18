@@ -24,10 +24,13 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
     // TurnoIaWhatsapp armazena conversaId, sem uma relação Prisma chamada conversa.
     // Resolver o piloto antes de ler a fila evita invalidar também a seleção dos clientes.
     const conversasLead = await client.conversaWhatsapp.findMany({
-      where: { telefoneE164: { in: comercialPiloto }, portalClientId: null },
-      select: { id: true },
+      where: { telefoneE164: { in: comercialPiloto } },
+      select: { id: true, portalClientId: true, vinculoNumero: { select: { interlocutorId: true } } },
     });
-    if (conversasLead.length) escopos.push({ perfil: "LEAD", portalClientId: null, conversaId: { in: conversasLead.map(c => c.id) } });
+    const idsConhecidos = conversasLead.filter(c => c.portalClientId && c.vinculoNumero?.interlocutorId).map(c => c.vinculoNumero.interlocutorId);
+    const casos = idsConhecidos.length ? await client.atendimentoLead.findMany({ where: { interlocutorId: { in: idsConhecidos }, encerradoEm: null, onboardingId: { not: null } }, select: { interlocutorId: true } }) : [];
+    const autorizadas = conversasLead.filter(c => !c.portalClientId || casos.some(a => a.interlocutorId === c.vinculoNumero?.interlocutorId));
+    if (autorizadas.length) escopos.push({ perfil: "LEAD", conversaId: { in: autorizadas.map(c => c.id) } });
   }
   if (!escopos.length) return { processados: 0 };
   const jobs = await client.turnoIaWhatsapp.findMany({ where: {

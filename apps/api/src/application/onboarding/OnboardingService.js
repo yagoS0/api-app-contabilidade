@@ -13,6 +13,8 @@ import { etapasDaOrigem } from "./etapasTemplate.js";
 import { prepararArquivoConversao, conferirFontesDoArquivo } from "./ArquivoConversaoService.js";
 import { normalizarE164 } from "../whatsapp/telefone.js";
 import { normalizarEmail } from "../whatsapp/ContatoWhatsappService.js";
+import { identidadeWhatsappV2Ativa } from "../whatsapp/CanalWhatsappService.js";
+import { garantirIdentidadeWhatsapp } from "../whatsapp/IdentidadeComunicacaoService.js";
 import {
   CompanyProvisioningError,
   aplicarPosCriacao,
@@ -398,10 +400,11 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
 }
 
 async function conferirContratoDeConversao(db, onboardingId) {
-  const proposta = await db.propostaComercial.findFirst({ where: { onboardingId }, orderBy: { versao: "desc" } });
+  const proposta = await db.propostaComercial.findFirst({ where: { onboardingId, status: "ACEITA", revogadaEm: null }, orderBy: { versao: "desc" } })
+    || await db.propostaComercial.findFirst({ where: { onboardingId }, orderBy: { versao: "desc" } });
   if (!proposta) return {}; // Fichas anteriores ao fluxo comercial continuam válidas.
   const contrato = await db.contratoComercial.findFirst({ where: { onboardingId, propostaId: proposta.id, status: "ASSINADO_CONFERIDO" } });
-  if (proposta.revogadaEm || proposta.status !== "ACEITA" || !contrato?.dados?.opcao?.recorrente) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente da proposta aceita antes de criar a empresa.", 409);
+  if (proposta.revogadaEm || proposta.status !== "ACEITA" || !contrato?.dados?.opcao?.recorrente || proposta.opcaoAceita !== contrato.dados.opcao.chave) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente da proposta aceita antes de criar a empresa.", 409);
   const pagamento = await db.onboardingEvento.findFirst({ where: { onboardingId, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: contrato.id } } });
   if (!pagamento) throw new OnboardingError("pagamento_pendente", "Confira o pagamento deste contrato na jornada antes de criar a empresa.", 409);
   return { proposta, contrato };
@@ -412,8 +415,10 @@ async function salvarContatoDaConversao(tx, registro, payload, criada) {
   const email = normalizarEmail(fonte.email), telefoneE164 = normalizarE164(fonte.telefone);
   if ((fonte.email && !email) || (fonte.telefone && !telefoneE164)) throw new OnboardingError("contato_invalido", "Confira o e-mail e o WhatsApp do responsável antes de converter.", 400);
   if (!email && !telefoneE164) return;
+  const identidade = telefoneE164 && identidadeWhatsappV2Ativa() ? await garantirIdentidadeWhatsapp({ telefone: telefoneE164, client: tx }) : null;
   await tx.contatoWhatsapp.create({ data: {
     portalClientId: criada.portalId, nome: String(fonte.nome || registro.responsavelNome || "Responsável").trim(), email, telefoneE164,
+    ...(identidade ? { vinculoNumeroId: identidade.vinculoNumero.id } : {}),
     userId: email && email === String(payload.ownerEmail || "").trim().toLowerCase() ? criada.ownerUserId : null,
     optInEm: telefoneE164 && fonte.whatsappAutorizado === true ? new Date() : null,
     optInOrigem: telefoneE164 && fonte.whatsappAutorizado === true ? "conferencia_onboarding" : null,

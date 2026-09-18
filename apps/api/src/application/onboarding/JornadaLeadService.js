@@ -5,9 +5,11 @@ import { exigirGestor } from "./RecursosComerciaisService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { encerrado } from "./LeadService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
+import { assinarMensagemHumana } from "../whatsapp/assinaturaAtendente.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
-import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
+import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
+import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
 
 const erro = (codigo, mensagem) => new OnboardingError(codigo, mensagem, 409);
 const confirmados = new Set(["enviado", "entregue", "lido"]);
@@ -25,7 +27,7 @@ function contextoDoDiagnostico(ficha, analiseId) {
 }
 
 // O progresso nasce de provas salvas; abrir uma aba ou enviar um formulário não conclui análise.
-export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(), janela = janelaDaConversa,
+export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaConversa,
   comercial = criarServicoComercial({ db }) } = {}) {
   async function carregar(id, user) {
     exigirGestor(user);
@@ -37,20 +39,21 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
       db.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: ["JORNADA_PUBLICA_CONFERIDA", "JORNADA_SITFIS_CONFERIDA"] } }, orderBy: { createdAt: "desc" }, take: 100 }),
     ]);
     const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
-    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" ? null : fiscal?.id || null);
+    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null);
     const diagnostico = registros[0]?.dados?.contexto === referencia ? registros[0] : null;
     const saidas = diagnostico ? await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
       orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } }) : [];
-    const partes = (ficha.origem === "ABERTURA" ? ["TEXTO"] : ["RELATORIO", "TEXTO"]).map(parte => {
+    const partes = (ficha.origem === "ABERTURA" || diagnostico?.dados?.dispensaConsultaPrivada ? ["TEXTO"] : ["RELATORIO", "TEXTO"]).map(parte => {
       const saida = saidas.find(s => s.referenciaComercial?.parte === parte);
       return { parte, mensagemId: saida?.id || null, status: saida?.statusEnvio || "nao_enviado", erro: saida?.erroEnvioMensagem || null };
     });
     const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA");
+    const apresentacao = diagnostico ? await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: diagnostico.id } }, orderBy: { createdAt: "desc" } }) : null;
     return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
       publicaConferida: Boolean(publica && conferencias.some(e => e.tipo === "JORNADA_PUBLICA_CONFERIDA" && e.dados?.analiseId === publica.id)),
       fiscalConferido: Boolean(fiscal && conferencias.some(e => e.tipo === "JORNADA_SITFIS_CONFERIDA" && e.dados?.analiseId === fiscal.id)),
       diagnosticoDesatualizado: Boolean(registros[0] && !diagnostico),
-      devolutiva: { partes, concluida: Boolean(diagnostico) && partes.every(p => confirmados.has(p.status)),
+      devolutiva: { partes, apresentacao, concluida: Boolean(diagnostico) && (Boolean(apresentacao) || partes.every(p => confirmados.has(p.status))),
         incerta: partes.some(p => ["enviando", "indeterminado"].includes(p.status)) } };
   }
 
@@ -64,7 +67,13 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
       if (dadosIniciaisPendentes(ficha).length) throw erro("dados_incompletos", "Conclua os dados iniciais antes de registrar o diagnóstico.");
       if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10 && t.length <= 1200)) throw erro("diagnostico_incompleto", "Descreva o que foi conferido e os serviços necessários (10 a 1.200 caracteres por campo).");
       let analiseId = null;
+      const dispensaConsultaPrivada = typeof body.dispensaConsultaPrivada === "string" ? body.dispensaConsultaPrivada.trim() : null;
+      if (dispensaConsultaPrivada && (dispensaConsultaPrivada.length < 20 || dispensaConsultaPrivada.length > 1200)) throw erro("escopo_limitado_invalido", "Descreva a limitação do serviço sem consulta privada (20 a 1.200 caracteres).");
       if (ficha.origem !== "ABERTURA") {
+        const publica = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "PUBLICA", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
+        if (!publica || !await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_PUBLICA_CONFERIDA", dados: { path: ["analiseId"], equals: publica.id } } })) throw erro("analise_pendente", "Confira primeiro os dados públicos da empresa.");
+      }
+      if (ficha.origem !== "ABERTURA" && !dispensaConsultaPrivada) {
         const fiscal = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "SITFIS", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
         if (!fiscal?.resultado?.relatorioDisponivel || fiscal.id !== body.analiseId) throw erro("analise_pendente", "Conclua e confira o relatório fiscal atual antes do diagnóstico.");
         if (!await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_SITFIS_CONFERIDA", dados: { path: ["analiseId"], equals: fiscal.id } } })) throw erro("analise_pendente", "Registre a conferência do relatório antes do diagnóstico.");
@@ -73,10 +82,10 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
       const contexto = contextoDoDiagnostico(ficha, analiseId);
       const anterior = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       const achados = body.achados.trim(), servicos = body.servicos.trim();
-      if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos) return anterior;
+      if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos && (anterior.dados.dispensaConsultaPrivada || null) === dispensaConsultaPrivada) return anterior;
       return tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO", atorId: user.id,
-        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, analiseId, achados, servicos,
-          texto: `Conferimos ${ficha.origem === "ABERTURA" ? "as informações para a abertura" : `a situação da empresa de CNPJ ${ficha.cnpj}`}:\n\n${achados}\n\nServiços propostos:\n${servicos}\n\nNa próxima etapa, apresentaremos os valores dos serviços e, se desejar, da contabilidade mensal.` } } });
+        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, analiseId, achados, servicos, dispensaConsultaPrivada,
+          texto: `Conferimos ${ficha.origem === "ABERTURA" ? "as informações para a abertura" : `as informações do atendimento da empresa de CNPJ ${ficha.cnpj}`}:\n\n${achados}\n\nServiços propostos:\n${servicos}${dispensaConsultaPrivada ? `\n\nLimitação do escopo, sem consulta fiscal privada: ${dispensaConsultaPrivada}` : ""}\n\nNa próxima etapa, apresentaremos os valores dos serviços e, se desejar, da contabilidade mensal.` } } });
     });
   }
 
@@ -84,8 +93,11 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
     exigirGestor(user);
     const ficha = await exigirEscopo(id, user, db);
     const lead = await db.atendimentoLead.findFirst({ where: { onboardingId: id, encerradoEm: null }, include: { conversa: true } });
-    const c = lead?.conversa;
-    if (encerrado(ficha) || !c || c.portalClientId || c.excluidaEm) throw erro("conversa_indisponivel", "Abra a conversa ativa deste lead.");
+    const c = body.conversaId ? await db.conversaWhatsapp.findUnique({ where: { id: body.conversaId } }) : lead?.conversa;
+    if (encerrado(ficha) || !c || c.excluidaEm) throw erro("conversa_indisponivel", "Abra a conversa ativa deste atendimento.");
+    await exigirConversaDoCaso(lead, c, db);
+    const identidade = await capturarIdentidadeComercial(c, db);
+    const transporte = await whatsappPorCanal(c, { cloud, client: db });
     const lease = await adquirirLease(`jornada:${id}`, { client: db });
     if (!lease) throw erro("envio_em_andamento", "Já existe um envio em andamento neste atendimento.");
     try {
@@ -95,24 +107,26 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
           db.conversaWhatsapp.findUnique({ where: { id: c.id } }), carregar(id, user),
           db.atendimentoLead.findFirst({ where: { id: lead.id, onboardingId: id, encerradoEm: null } }),
         ]);
-        if (!vinculo || jornada.encerrado || !jornada.diagnostico || jornada.diagnostico.id !== body.diagnosticoId || !atual || atual.excluidaEm || atual.portalClientId
-          || atual.telefoneE164 !== c.telefoneE164 || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw erro("atendimento_alterado", "O atendimento ou diagnóstico mudou. Confira antes de enviar.");
+        if (!vinculo || jornada.encerrado || !jornada.diagnostico || jornada.diagnostico.id !== body.diagnosticoId || !atual || atual.excluidaEm
+          || atual.telefoneE164 !== c.telefoneE164 || atual.canalId !== c.canalId || atual.vinculoNumeroId !== c.vinculoNumeroId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw erro("atendimento_alterado", "O atendimento ou diagnóstico mudou. Confira antes de enviar.");
         if ((await janela(c.id)).situacao !== "ABERTA") throw erro("FORA_DA_JANELA", "Aguarde uma mensagem do lead para reabrir a janela de resposta do WhatsApp.");
+        await exigirConversaDoCaso(vinculo, atual, db);
+        await conferirIdentidadeComercial(atual, identidade, db);
         return jornada;
       };
       const jornada = await conferir();
       if (jornada.devolutiva.incerta) throw erro("envio_incerto", "Há um envio sem confirmação. Confira o histórico antes de qualquer nova tentativa.");
       if (jornada.devolutiva.concluida) return { jaEnviada: true };
-      await db.conversaWhatsapp.update({ where: { id: c.id }, data: { atendidaPor: user.id, atendidaDesde: new Date() } });
+      await assumirEnvioComercial(c, user, identidade, db);
       for (const parte of jornada.devolutiva.partes) {
         if (confirmados.has(parte.status)) continue;
         const pdf = parte.parte === "RELATORIO" ? await comercial.documento(id, jornada.diagnostico.dados.analiseId, user) : null;
-        const texto = jornada.diagnostico.dados.texto;
+        const texto = assinarMensagemHumana(pdf ? `Situação fiscal · CNPJ ${ficha.cnpj}` : jornada.diagnostico.dados.texto, user, { limite: pdf ? 1024 : 4096 });
         await enviarMensagemRastreada({ conversa: c, autor: "HUMANO", client: db,
-          tipo: pdf ? "document" : "text", corpo: pdf ? `Relatório fiscal · CNPJ ${ficha.cnpj}` : texto,
+          tipo: pdf ? "document" : "text", corpo: texto,
           referenciaComercial: { tipo: "JORNADA_DEVOLUTIVA", diagnosticoId: jornada.diagnostico.id, parte: parte.parte },
           antesDeEnviar: conferir,
-          enviar: () => pdf ? cloud.enviarDocumento({ telefone: c.telefoneE164, conteudo: pdf, mimeType: "application/pdf", nomeArquivo: "situacao-fiscal.pdf", legenda: `Situação fiscal · CNPJ ${ficha.cnpj}` }) : cloud.enviarTexto({ telefone: c.telefoneE164, texto }),
+          enviar: () => pdf ? transporte.enviarDocumento({ telefone: c.telefoneE164, conteudo: pdf, mimeType: "application/pdf", nomeArquivo: "situacao-fiscal.pdf", legenda: texto }) : transporte.enviarTexto({ telefone: c.telefoneE164, texto }),
         });
       }
       return { enviada: true };
@@ -147,5 +161,17 @@ export function criarJornadaLead({ db = prisma, cloud = new WhatsappCloudClient(
       return anterior || tx.onboardingEvento.create({ data: { onboardingId: id, tipo, atorId: user.id, dados: { analiseId: a.id, cnpj: ficha.cnpj } } });
     });
   }
-  return { carregar, diagnosticar, enviarDevolutiva, confirmarPagamento, conferirAnalise };
+  async function registrarApresentacao(id, user, body = {}) {
+    exigirGestor(user);
+    if (![body.meio, body.evidencia].every(v => typeof v === "string" && v.trim().length >= 3 && v.length <= 2000) || !Number.isInteger(body.versao)) throw erro("apresentacao_invalida", "Informe meio e evidência da apresentação dos serviços.");
+    return db.$transaction(async tx => {
+      const ficha = await exigirEscopo(id, user, tx);
+      const reserva = await tx.onboarding.updateMany({ where: { id, versao: body.versao, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date() } });
+      if (!reserva.count) throw erro("formulario_alterado", "A ficha mudou. Confira a apresentação novamente.");
+      const j = await criarJornadaLead({ db: tx }).carregar(id, user);
+      if (!j.diagnostico || j.diagnostico.id !== body.diagnosticoId) throw erro("diagnostico_alterado", "Confira o diagnóstico atual antes de registrar a apresentação.");
+      return await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: body.diagnosticoId } } }) || tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", atorId: user.id, dados: { diagnosticoId: body.diagnosticoId, meio: body.meio.trim(), evidencia: body.evidencia.trim(), fichaVersao: ficha.versao } } });
+    });
+  }
+  return { carregar, diagnosticar, enviarDevolutiva, confirmarPagamento, conferirAnalise, registrarApresentacao };
 }

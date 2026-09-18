@@ -34,7 +34,6 @@ import {
   log as logPadrao,
 } from "../../config.js";
 import {
-  WhatsappCloudClient,
   WhatsappError,
   variaveisDaGuia,
   nomeArquivoDaGuia,
@@ -45,7 +44,9 @@ import {
   destinatariosDeEnvio,
   gravarWaIdDoContato,
 } from "./ContatoWhatsappService.js";
-import { registrarMensagemEnviada } from "./ConversaWhatsappService.js";
+import { registrarMensagemEnviada, garantirConversa } from "./ConversaWhatsappService.js";
+import { whatsappPorCanal, identidadeWhatsappV2Ativa, CANAL_PRINCIPAL } from "./CanalWhatsappService.js";
+import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
 import { conferirGuiasVencimento } from "../guides/GuideDueBatchService.js";
 import { assinaturaGuias, periodoVencimento, loteAlterado } from "../guides/loteVencimento.js";
@@ -346,7 +347,7 @@ export async function enviarGuiaPorWhatsapp({
    * que enganava: o lote construía o cliente, o individual esperava recebê-lo de alguém.
    * ⚠ Continua INJETÁVEL — é o que trava a rede nos testes.
    */
-  cliente = new WhatsappCloudClient(),
+  cliente = null,
   carregarPdf = carregarPdfDaGuia,
   log = logPadrao,
   reenviar = false,
@@ -390,7 +391,23 @@ export async function enviarGuiaPorWhatsapp({
   const competenciaLabel = competenciaPorExtenso(guide.competencia);
 
   let aceitoWamid = null;
+  let vinculoReservado = null, conversaReservada = null;
+  const conferirDestinatario = async () => {
+    if (!identidadeWhatsappV2Ativa()) return;
+    const atual = await prisma.contatoWhatsapp.findFirst({ where: { id: contato.id, ativo: true, portalClientId: guide.portalClientId, telefoneE164: contato.telefoneE164 } });
+    if (!atual?.vinculoNumeroId || !atual.optInEm || (vinculoReservado && atual.vinculoNumeroId !== vinculoReservado)) throw Object.assign(new Error("Confira a identificação e a autorização do destinatário."), { codigo: "DESTINATARIO_ALTERADO" });
+    await conferirIdentidadeVigente({ vinculoNumeroId: atual.vinculoNumeroId, telefone: contato.telefoneE164 });
+    const canalAtual = await prisma.canalWhatsapp.findUnique({where:{id:CANAL_PRINCIPAL}});
+    if (!canalAtual?.ativo) throw Object.assign(new Error("O canal desta guia foi desativado."),{codigo:"CANAL_DESABILITADO"});
+    vinculoReservado = atual.vinculoNumeroId;
+  };
   try {
+    cliente ||= await whatsappPorCanal(CANAL_PRINCIPAL);
+    if (identidadeWhatsappV2Ativa()) {
+      await conferirDestinatario();
+      conversaReservada = await garantirConversa({telefone:contato.telefoneE164,portalClientId:guide.portalClientId,canalId:CANAL_PRINCIPAL,vinculoNumeroId:vinculoReservado});
+      await prisma.envioGuiaTentativa.update({ where: { id: tentativaId }, data: { canalId: CANAL_PRINCIPAL } });
+    }
     // ⚠⚠ SEM VALOR, NÃO SAI. A 4ª variável do template é o valor; vazia, o cliente lê "Valor: R$ "
     // — e o zero por omissão seria pior ainda ("Valor: R$ 0,00" sobre uma guia a pagar). A recusa é
     // NOSSA e vem antes do upload: nada é gasto, e o conserto (o valor da guia) é nomeado.
@@ -432,12 +449,14 @@ export async function enviarGuiaPorWhatsapp({
     }
 
     const comecouEm = Date.now();
+    await conferirDestinatario();
     const { wamid, waId, input } = await cliente.enviarGuia({
       telefone: contato.telefoneE164,
       conteudoPdf,
       nomeArquivo: nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia }),
       template: canal.nomeMeta,
       idioma: canal.idioma,
+      ...(identidadeWhatsappV2Ativa() ? { antesDoTemplate: conferirDestinatario } : {}),
       variaveis: variaveisDaGuia({
         // Primeiro nome, como no esqueleto do dono [E]: a mensagem cumprimenta a pessoa.
         nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
@@ -488,7 +507,7 @@ export async function enviarGuiaPorWhatsapp({
     // no webhook: sem gravá-lo, a resposta do cliente com o nono dígito diferente cai na fila de
     // "não vinculados". ⚠ BEST-EFFORT pelo mesmo motivo do balão: a mensagem já saiu.
     try {
-      await gravarWaIdDoContato({ contatoId: contato.id, telefoneEnviado: contato.telefoneE164, waId });
+      await gravarWaIdDoContato({ contatoId: contato.id, telefoneEnviado: contato.telefoneE164, waId, ...(vinculoReservado ? {vinculoNumeroId:vinculoReservado} : {}) });
     } catch (e) {
       log?.warn?.({ err: e?.message || e, envioId: envio.id }, "guia enviada, mas o waId do contato não foi gravado");
     }
@@ -503,6 +522,8 @@ export async function enviarGuiaPorWhatsapp({
         providerMessageId: wamid,
         envioGuiaId: envio.id,
         envioGuiaTentativaId: tentativaId,
+        canalId: CANAL_PRINCIPAL,
+        ...(conversaReservada ? {conversaId:conversaReservada.id,vinculoNumeroId:vinculoReservado} : {}),
       });
     } catch (e) {
       log?.warn?.({ err: e?.message || e, guideId: guide.id }, "guia enviada por WhatsApp, mas o balão do fio não foi registrado");
@@ -713,7 +734,7 @@ export async function executarLote({
   const paraWhatsapp = previa.linhas.filter((l) => l.canalSugerido === CANAIS.WHATSAPP);
   const paraEmail = previa.linhas.filter((l) => l.canalSugerido === CANAIS.EMAIL);
 
-  const clienteUsado = cliente || new WhatsappCloudClient();
+  const clienteUsado = cliente || await whatsappPorCanal(CANAL_PRINCIPAL);
   const resultados = [];
 
   // As guias vêm da prévia (que já filtrou por escopo); aqui só se recarrega o que o envio precisa.

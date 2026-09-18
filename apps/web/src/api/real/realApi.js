@@ -1058,15 +1058,19 @@ export function createRealApi() {
     async getResumoWhatsapp() {
       return request("/firm/whatsapp/resumo");
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null } = {}) {
-      const qs = new URLSearchParams({ filtro: String(filtro) });
+    whatsappContratoV2: true,
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null, q = "", relacionamento = "", naoLidas = false } = {}) {
+      const qs = new URLSearchParams({ filtro: String(filtro), v2: "1" });
+      if (q) qs.set("q", q);
+      if (relacionamento) qs.set("relacionamento", relacionamento);
+      if (naoLidas) qs.set("naoLidas", "1");
       if (empresa) qs.set("empresa", String(empresa));
       if (cursor) qs.set("cursor", String(cursor));
       if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
     async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null } = {}) {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ v2: "1" });
       if (empresa) qs.set("empresa", String(empresa));
       if (cursor) qs.set("cursor", String(cursor));
       if (limite) qs.set("limite", String(limite));
@@ -1079,6 +1083,15 @@ export function createRealApi() {
         method: "POST",
         body: JSON.stringify({ documentId, ...(legenda ? { legenda } : {}) }),
       });
+    },
+    async conferirIdentificacaoWhatsapp(conversaId, body) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/identificacao`, { method: "POST", body: JSON.stringify(body) });
+    },
+    async marcarConversaWhatsappLida(conversaId, mensagemId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/lida`, { method: "POST", body: JSON.stringify({ mensagemId }) });
+    },
+    async criarNotaInternaWhatsapp(conversaId, body) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/notas-internas`, { method: "POST", body: JSON.stringify(body) });
     },
     async assumirConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
@@ -1780,6 +1793,13 @@ export function createRealApi() {
     async baixarPropostaPublica(token) {
       const res = await fetch(getApiBaseUrl() + "/public/proposta/pdf", { headers: { Authorization: "Bearer " + token }, credentials: "omit", cache: "no-store" });
       if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Proposta indisponível."); } return res.blob();
+    },
+    async salvarFichaAvulsa(id, body) {
+      return request(`/firm/comercial/onboardings/${encodeURIComponent(id)}/ficha-avulsa`, { method: "PUT", body: JSON.stringify(body) });
+    },
+    async baixarDocumentoFichaAvulsa(id, doc) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/ficha-avulsa/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir o documento da ficha avulsa."); return res.blob();
     },
     async baixarDocumentoComercial(id, doc) {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });

@@ -5,8 +5,8 @@ test("seleção de empresa é uma ação; filtro de histórico é somente leitur
  expect(fetch.mock.calls[0][0]).toMatch(/conversas\/cv%2F1\/selecionar-empresa$/);
  expect(fetch.mock.calls[0][1].method).toBe("POST");
  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ portalClientId: "pc-2" });
- await api.getMensagensWhatsapp("cv1", { empresa: "pc-1", cursor: "m-2" });
- expect(Object.fromEntries(new URL(fetch.mock.calls[1][0]).searchParams)).toEqual({ empresa: "pc-1", cursor: "m-2" });
+ await api.getMensagensWhatsapp("cv1", { empresa: "pc-1", cursor: "m-2", v2: "1" });
+ expect(Object.fromEntries(new URL(fetch.mock.calls[1][0]).searchParams)).toEqual({ empresa: "pc-1", cursor: "m-2", v2: "1" });
  await api.salvarApelidosWhatsapp("pc/1", ["Clínica"]);
  expect(fetch.mock.calls[2][0]).toMatch(/empresas\/pc%2F1\/apelidos$/);
  expect(fetch.mock.calls[2][1].method).toBe("POST");
@@ -21,7 +21,7 @@ test("lixeira e restauração usam POST no segmento indicado; histórico mantém
  expect(fetch.mock.calls[1][0]).toMatch(/conversas\/cv%2Flegado\/restaurar$/);
  expect(fetch.mock.calls[1][1].method).toBe("POST");
  await api.listarConversasWhatsapp("historico", { empresa: "pc1", cursor: "cv-antigo" });
- expect(Object.fromEntries(new URL(fetch.mock.calls[2][0]).searchParams)).toEqual({ filtro: "historico", empresa: "pc1", cursor: "cv-antigo" });
+ expect(Object.fromEntries(new URL(fetch.mock.calls[2][0]).searchParams)).toEqual({ filtro: "historico", empresa: "pc1", cursor: "cv-antigo", v2: "1" });
 });
 beforeEach(() => { global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })); });
 afterEach(() => { delete global.fetch; });
@@ -29,7 +29,7 @@ test("cursor e limite são enviados na lista e no histórico, preservando empres
  const api=createRealApi();
  await api.listarConversasWhatsapp("todas",{empresa:"pc1",cursor:"cv/2",limite:50});
  const lista=new URL(fetch.mock.calls[0][0]);expect(lista.pathname).toBe("/firm/whatsapp/conversas");
- expect(Object.fromEntries(lista.searchParams)).toEqual({filtro:"todas",empresa:"pc1",cursor:"cv/2",limite:"50"});
+ expect(Object.fromEntries(lista.searchParams)).toEqual({filtro:"todas",empresa:"pc1",cursor:"cv/2",limite:"50",v2:"1"});
  await api.getMensagensWhatsapp("cv1",{cursor:"m/2",limite:50});
  const mensagens=new URL(fetch.mock.calls[1][0]);expect(mensagens.pathname).toBe("/firm/whatsapp/conversas/cv1/mensagens");expect(mensagens.searchParams.get("cursor")).toBe("m/2");
 });
@@ -48,4 +48,19 @@ test("fila e vínculo manual usam a empresa escolhida; leitura não abre conteú
 test("recusa com mensagem em português mantém código e frase",async()=>{
  global.fetch=jest.fn(async()=>({ok:false,status:409,json:async()=>({error:"ESCOPO_NAO_VERIFICADO",mensagem:"Confirme a empresa desta conversa."})}));
  await expect(createRealApi().devolverConversaWhatsapp("cv1")).rejects.toMatchObject({code:"ESCOPO_NAO_VERIFICADO",message:"Confirme a empresa desta conversa."});
+});
+test("contrato por pessoa envia busca global e separa leitura, nota e identificação de transporte", async () => {
+ const api = createRealApi();
+ await api.listarConversasWhatsapp("todas", { q: "Liz", relacionamento: "CLIENTE", naoLidas: true, cursor: "pessoa-2" });
+ expect(Object.fromEntries(new URL(fetch.mock.calls[0][0]).searchParams)).toEqual({ v2: "1", filtro: "todas", q: "Liz", relacionamento: "CLIENTE", naoLidas: "1", cursor: "pessoa-2" });
+ await api.marcarConversaWhatsappLida("cv/1", "m1");
+ expect(fetch.mock.calls[1][0]).toMatch(/conversas\/cv%2F1\/lida$/);
+ expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ mensagemId: "m1" });
+ await api.criarNotaInternaWhatsapp("cv/1", { texto: "Somente equipe", escopo: "CASO", atendimentoLeadId: "a1", chaveIdempotencia: "k1" });
+ expect(fetch.mock.calls[2][0]).toMatch(/conversas\/cv%2F1\/notas-internas$/);
+ expect(JSON.parse(fetch.mock.calls[2][1].body)).toMatchObject({ escopo: "CASO", atendimentoLeadId: "a1", chaveIdempotencia: "k1" });
+ await api.conferirIdentificacaoWhatsapp("cv/1", { acao: "CONTESTAR", versao: 2, evidencia: "Conferência do escritório" });
+ expect(fetch.mock.calls[3][0]).toMatch(/conversas\/cv%2F1\/identificacao$/);
+ expect(JSON.parse(fetch.mock.calls[3][1].body)).toMatchObject({ acao: "CONTESTAR", versao: 2 });
+ expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/responder"))).toBe(false);
 });

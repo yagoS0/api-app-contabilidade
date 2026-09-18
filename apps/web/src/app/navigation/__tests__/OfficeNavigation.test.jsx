@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { OfficeNavigation } from "../OfficeNavigation";
 import { WorkspaceNavigationProvider, useWorkspaceNavigation } from "../WorkspaceNavigation";
@@ -34,6 +34,7 @@ test.each([
 ])("reconhece %s sem destacar dois destinos", (route, area, destination) => {
   setup(route);
   expect(screen.getByRole("link", { name: area })).toHaveAttribute("aria-current", "location");
+  if (screen.queryByRole("button", { name: "Navegar" })) fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   const nav = screen.getByRole("navigation", { name: `Navegação de ${area}` });
   expect(within(nav).getByRole("link", { name: destination })).toHaveAttribute("aria-current", "page");
   expect(within(nav).getAllByRole("link").filter((link) => link.hasAttribute("aria-current"))).toHaveLength(1);
@@ -48,6 +49,7 @@ test("destinos são links reais e a mudança de área mantém o histórico e a v
   expect(screen.getByRole("link", { name: "Pendências de e-mail" })).toHaveAttribute("href", "/guides/pending");
   fireEvent.click(screen.getByText("Voltar no escritório"));
   expect(screen.getByLabelText("rota")).toHaveTextContent("/companies/123/notas?competencia=2026-09");
+  fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   fireEvent.click(screen.getByRole("link", { name: "Empresas e agenda" }));
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
   expect(screen.getByLabelText("visão")).toHaveTextContent("tabela");
@@ -71,6 +73,52 @@ test("links modificados não são interceptados pela navegação interna", () =>
   setup();
   fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }), { ctrlKey: true });
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
+});
+
+test("empresa recolhe destinos globais, abre pelo teclado e devolve o foco ao fechar", () => {
+  setup("/companies/123/documentos");
+  const trigger = screen.getByRole("button", { name: "Navegar" });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("navigation", { name: "Navegação de Operação" })).not.toBeInTheDocument();
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("link", { name: "Empresas e agenda" })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, { key: "Escape" });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(trigger).toHaveFocus();
+});
+
+test("menu fecha ao clicar ou mover foco para fora e ao navegar para outra área", () => {
+  setup("/companies/123/documentos");
+  const trigger = screen.getByRole("button", { name: "Navegar" });
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(document.body);
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(trigger);
+  act(() => screen.getByRole("button", { name: "Escolher tabela" }).focus());
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }));
+  fireEvent.click(screen.getByRole("button", { name: "Voltar no escritório" }));
+  expect(screen.getByRole("button", { name: "Navegar" })).toHaveAttribute("aria-expanded", "false");
+});
+
+test("destinos recolhidos continuam sendo links reais e preservam Ctrl+clique", () => {
+  setup("/companies/123/documentos");
+  fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
+  const destination = screen.getByRole("link", { name: "Consultas" });
+  expect(destination).toHaveAttribute("href", "/funcoes-serpro");
+  fireEvent.click(destination, { ctrlKey: true });
+  expect(screen.getByLabelText("rota").textContent).toBe("/companies/123/documentos");
+  fireEvent.click(destination);
+  expect(screen.getByLabelText("rota").textContent).toBe("/funcoes-serpro");
+});
+
+test.each(["/companies", "/companies/new", "/apuracao"])("fora de uma empresa mantém destinos visíveis em %s", (route) => {
+  setup(route);
+  expect(screen.queryByRole("button", { name: "Navegar" })).not.toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Navegação de Operação" })).toBeVisible();
 });
 
 test.each(["/login", "/onboarding/publico", "/proposta/publica"])("não cria navegação nas rotas públicas: %s", (route) => {

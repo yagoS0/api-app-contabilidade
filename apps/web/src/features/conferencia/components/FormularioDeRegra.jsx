@@ -36,14 +36,6 @@ export const CAMPOS_VAZIOS = Object.freeze({
   diaDoLancamento: "",
 });
 
-const campo = {
-  background: "var(--surface-2, var(--surface))",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  padding: "6px 8px",
-  width: "100%",
-};
 
 function mensagemDoErro(e) {
   return e?.body?.message || e?.message || "Não foi possível concluir.";
@@ -128,69 +120,69 @@ export function FormularioDeRegra({
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }} data-testid="formulario-de-regra">
+    <div className="cq-modal-content" data-testid="formulario-de-regra">
       {aviso ? (
         <div role="alert" style={{ color: "var(--state-danger)" }}>{aviso}</div>
       ) : null}
 
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-        <label style={{ display: "grid", gap: 4 }}>
+      <div className="cq-form-grid">
+        <label className="cq-field">
           <span style={{ fontSize: 13 }}>CNPJ do fornecedor</span>
           <input
-            style={campo}
+            className="cq-control"
             value={campos.cnpjFornecedor}
             inputMode="numeric"
             placeholder="só dígitos"
             onChange={(e) => setCampos((c) => ({ ...c, cnpjFornecedor: e.target.value }))}
           />
         </label>
-        <label style={{ display: "grid", gap: 4 }}>
+        <label className="cq-field">
           <span style={{ fontSize: 13 }}>ou padrão da descrição</span>
           <input
-            style={campo}
+            className="cq-control"
             value={campos.padraoDescricao}
             onChange={(e) => setCampos((c) => ({ ...c, padraoDescricao: e.target.value }))}
           />
         </label>
-        <label style={{ display: "grid", gap: 4 }}>
+        <label className="cq-field">
           <span style={{ fontSize: 13 }}>Valor mínimo</span>
           <input
-            style={campo}
+            className="cq-control"
             inputMode="decimal"
             value={campos.valorMin}
             onChange={(e) => setCampos((c) => ({ ...c, valorMin: e.target.value }))}
           />
         </label>
-        <label style={{ display: "grid", gap: 4 }}>
+        <label className="cq-field">
           <span style={{ fontSize: 13 }}>Valor máximo</span>
           <input
-            style={campo}
+            className="cq-control"
             inputMode="decimal"
             value={campos.valorMax}
             onChange={(e) => setCampos((c) => ({ ...c, valorMax: e.target.value }))}
           />
         </label>
-        <label style={{ display: "grid", gap: 4 }}>
+        <label className="cq-field">
           <span style={{ fontSize: 13 }}>Débito (a despesa)</span>
           <select
-            style={campo}
+            className="cq-control"
             value={campos.contaDestino}
             onChange={(e) => setCampos((c) => ({ ...c, contaDestino: e.target.value }))}
           >
             <option value="">Escolha…</option>
             {debitos.map((c) => (
               <option key={c.codigoCompleto} value={c.codigoCompleto}>
-                {c.codigoCompleto} · {c.nome}
+                {c.codigo || c.codigoCompleto} — {c.nome}
               </option>
             ))}
           </select>
         </label>
-        <label style={{ display: "grid", gap: 4 }}>
+        <label className="cq-field">
           {/* ⚠⚠ SÓ DISPONIBILIDADE. O seletor não oferece o plano inteiro: o lançamento afirma
               de ONDE o dinheiro saiu, e uma conta de despesa como crédito seria uma mentira. */}
           <span style={{ fontSize: 13 }}>Crédito (caixa ou banco)</span>
           <select
-            style={campo}
+            className="cq-control"
             value={campos.contaCredito}
             onChange={(e) => setCampos((c) => ({ ...c, contaCredito: e.target.value }))}
           >
@@ -198,7 +190,7 @@ export function FormularioDeRegra({
             <option value="">Manter o caixa padrão</option>
             {creditos.map((c) => (
               <option key={c.codigoCompleto} value={c.codigoCompleto}>
-                {c.codigoCompleto} · {c.nome}
+                {c.codigo || c.codigoCompleto} — {c.nome}
               </option>
             ))}
           </select>
@@ -212,7 +204,7 @@ export function FormularioDeRegra({
         <div style={{ fontSize: 13, color: "var(--state-warn)" }}>{notaDaFaixa}</div>
       ) : null}
 
-      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <label className="cq-check">
         <input
           type="checkbox"
           checked={campos.lancaSozinha === true}
@@ -225,10 +217,10 @@ export function FormularioDeRegra({
       </label>
 
       {campos.lancaSozinha ? (
-        <label style={{ display: "grid", gap: 4, maxWidth: 220 }}>
+        <label className="cq-field" style={{ maxWidth: 360 }}>
           <span style={{ fontSize: 13 }}>Dia do mês em que ela lança</span>
           <input
-            style={campo}
+            className="cq-control"
             inputMode="numeric"
             value={campos.diaDoLancamento}
             onChange={(e) => setCampos((c) => ({ ...c, diaDoLancamento: e.target.value }))}
@@ -248,7 +240,7 @@ export function FormularioDeRegra({
         <div style={{ color: "var(--state-warn)", fontSize: 13 }}>{veredito.frase}</div>
       ) : null}
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="cq-form-actions">
         <Button size="sm" disabled={!veredito.pode || enviando} onClick={criar}>
           {enviando ? "Salvando…" : "Criar regra"}
         </Button>

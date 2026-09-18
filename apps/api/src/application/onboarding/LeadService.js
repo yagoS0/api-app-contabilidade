@@ -1,5 +1,6 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
+import { emTransacaoComercial, identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./ContextoComercialService.js";
 import { descritorDe, podarInvisiveis } from "@contabilidade/shared/onboarding";
 const erro = (code, message, status = 409) => new OnboardingError(code, message, status);
 export const ORIGENS_LEAD = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
@@ -16,24 +17,20 @@ export async function iniciarAtendimento({
   client = prisma
 }) {
   if (origem && !ORIGENS_LEAD.includes(origem)) throw erro("origem_invalida", "Confira o motivo do atendimento.", 400);
-  return client.$transaction(async tx => {
+  return emTransacaoComercial(client, async tx => {
+    const conversa = await tx.conversaWhatsapp.findUnique({ where: { id: conversaId } });
+    const interlocutorId = await identidadeDoCaso(conversa, tx, { travar: true });
     const trava = await tx.conversaWhatsapp.updateMany({
       where: {
         id: conversaId,
-        portalClientId: null,
         excluidaEm: null
       },
       data: {
         updatedAt: new Date()
       }
     });
-    if (!trava.count) throw erro("lead_indisponivel", "Esta conversa não é um lead ativo.");
-    const conversa = await tx.conversaWhatsapp.findUnique({
-      where: {
-        id: conversaId
-      }
-    });
-    if (String(conversa.chaveEscopo).startsWith("legado:")) throw erro("lead_indisponivel", "Abra a conversa atual.");
+    if (!trava.count) throw erro("lead_indisponivel", "Esta conversa não está disponível para atendimento.");
+    const escopoCaso = filtroCasoDaConversa(conversa, interlocutorId);
     const entrada = await tx.mensagemWhatsapp.findFirst({
       where: {
         conversaId,
@@ -43,7 +40,7 @@ export async function iniciarAtendimento({
     if (!entrada) throw erro("sem_entrada", "O interessado precisa ter escrito antes.");
     let lead = await tx.atendimentoLead.findFirst({
       where: {
-        conversaId,
+        ...escopoCaso,
         encerradoEm: null
       },
       include: {
@@ -73,7 +70,8 @@ export async function iniciarAtendimento({
     }
     if (!lead) lead = await tx.atendimentoLead.create({
       data: {
-        conversaId
+        conversaId,
+        ...(interlocutorId ? { interlocutorId } : {})
       },
       include: {
         onboarding: true
@@ -206,34 +204,31 @@ export async function registrarCampos({
   fonte = "WHATSAPP",
   client = prisma
 }) {
-  return client.$transaction(async tx => {
+  return emTransacaoComercial(client, async tx => {
     const r = await tx.onboarding.findUnique({
       where: {
         id: onboardingId
       }
     });
     if (!r || encerrado(r) || r.versao !== versao) throw erro("formulario_alterado", "A ficha mudou. Releia antes de registrar.");
+    let caso;
     if (mensagemId) {
+      caso = await tx.atendimentoLead.findFirst({ where: { onboardingId, encerradoEm: null } });
       const entrada = await tx.mensagemWhatsapp.findFirst({
         where: {
           id: mensagemId,
-          direcao: "in",
-          conversa: {
-            atendimentosLead: {
-              some: {
-                onboardingId,
-                encerradoEm: null
-              }
-            }
-          }
-        }
+          direcao: "in"
+        }, include: { conversa: true }
       });
       if (!entrada) throw erro("mensagem_fora_do_escopo", "Mensagem não pertence ao atendimento.", 403);
+      if (caso?.interlocutorId) await exigirConversaDoCaso(caso, entrada.conversa, tx);
+      else if (!caso || entrada.conversaId !== caso.conversaId) throw erro("mensagem_fora_do_escopo", "Mensagem não pertence ao atendimento.", 403);
     }
     if (mensagensIds !== null) {
       if (!mensagemId || !Array.isArray(mensagensIds) || !mensagensIds.length || mensagensIds.length > 12 || !mensagensIds.includes(mensagemId) || mensagensIds.some(id => typeof id !== "string") || new Set(mensagensIds).size !== mensagensIds.length) throw erro("mensagem_fora_do_escopo", "Confira as mensagens de origem.", 403);
-      const entradas = await tx.mensagemWhatsapp.findMany({ where: { id: { in: mensagensIds }, direcao: "in", conversa: { atendimentosLead: { some: { onboardingId, encerradoEm: null } } } }, select: { id: true } });
+      const entradas = await tx.mensagemWhatsapp.findMany({ where: { id: { in: mensagensIds }, direcao: "in", ...(!caso?.interlocutorId ? { conversaId: caso?.conversaId } : {}) }, include: { conversa: true } });
       if (entradas.length !== mensagensIds.length) throw erro("mensagem_fora_do_escopo", "Mensagens não pertencem ao atendimento.", 403);
+      if (caso?.interlocutorId) for (const entrada of entradas) await exigirConversaDoCaso(caso, entrada.conversa, tx);
     }
     const dados = aplicarCampos(r.origem, r.dados || {}, operacoes);
     const fontesDados = {
@@ -297,7 +292,7 @@ export async function registrarCampos({
     });
   });
 }
-export function proximaPergunta(r) {
+export function proximaPergunta(r, { desconhecidos = [] } = {}) {
   if (!r) return {
     campo: "origem",
     pergunta: "Você quer abrir uma empresa, trocar de contador ou resolver a situação de uma empresa parada?"
@@ -315,6 +310,7 @@ export function proximaPergunta(r) {
     motivoTroca: "O que está motivando a troca de contador?",
   };
   for (const campo of ordem) {
+    if (desconhecidos.includes(campo)) continue;
     const d = descritorDe(r.origem, campo);
     if (d && (r.dados?.[campo] === undefined || r.dados?.[campo] === "" || r.dados?.[campo] === null)) return {
       campo,

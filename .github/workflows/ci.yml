@@ -134,6 +134,17 @@ jobs:
       - name: Verify broadcast approval, deduplication and durable sending without external calls
         working-directory: apps/api
         run: node scripts/verify-whatsapp-comunicados-postgres.js --url "$DATABASE_URL"
+      - name: Verify contact identity, channels and commercial journey without external calls
+        working-directory: apps/api
+        env:
+          WHATSAPP_IDENTIDADE_V2: "1"
+          LOG_LEVEL: fatal
+        run: |
+          node scripts/verify-whatsapp-identidade-postgres.js
+          node scripts/verify-whatsapp-canais-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-commercial-identity-postgres.js "$DATABASE_URL"
+          node scripts/verify-lead-entry-postgres.js "$DATABASE_URL"
+          node scripts/verify-lead-entry-postgres.js "$DATABASE_URL" --commercial
       - name: Verify atomic OFX imports and tenant isolation
         working-directory: apps/api
         run: node scripts/verify-whatsapp-ofx-postgres.js --url "$DATABASE_URL"

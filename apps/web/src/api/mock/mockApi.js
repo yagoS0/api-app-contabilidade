@@ -1145,6 +1145,12 @@ function resumoMockDaConversa(c) {
   const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
   const d = String(c.telefoneE164);
   return {
+    interlocutorId: `interlocutor-${c.telefoneE164}`,
+    identidade: { estado: c.portalClientId ? "RECONHECIDA_NO_CADASTRO" : "NAO_VERIFICADA", origemNome: contatoDoMock(c) ? "CADASTRO" : "PERFIL", versao: 1 },
+    relacionamento: { tipo: c.portalClientId ? "CLIENTE" : c.solicitacaoComercial ? "LEAD" : "A_IDENTIFICAR", motivo: c.portalClientId ? "CONTATO_ATIVO_CADASTRADO" : "CADASTRO_NAO_RECONHECIDO", fonte: "DEMONSTRACAO", versao: 1 },
+    solicitacaoComercial: c.solicitacaoComercial || null,
+    canalId: "principal", canais: [{ id: "principal", chave: "Principal", finalidade: "PRINCIPAL", conversaId: c.id, janela: c.janela, podeResponder: c.janela?.situacao === "ABERTA" }],
+    capacidades: { notaInterna: true, escoposNotas: [{ id: "pessoa", escopo: "PESSOA", rotulo: "Este contato" }, ...(c.portalClientId ? [{ id: c.portalClientId, escopo: "EMPRESA", portalClientId: c.portalClientId, rotulo: c.empresa?.razao || "Empresa" }] : [])] },
     id: c.id, telefoneE164: c.telefoneE164, telefoneMascarado: `+${d.slice(0, 2)}…${d.slice(-4)}`, nomePerfilProvedor: c.nomePerfilProvedor,
     portalClientId: c.portalClientId, empresa: c.empresa, atendidaPor: c.atendidaPor, atendente: c.atendente, atendidaDesde: c.atendidaDesde,
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
@@ -7835,7 +7841,8 @@ export function createMockApi() {
         lixeiraConversas: lixeira.length, lixeiraConversasNaoLidas: lixeira.filter(c => c.naoLidas > 0).length, lixeiraMensagensNaoLidas: lixeira.reduce((s,c) => s+c.naoLidas,0),
       } };
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50 } = {}) {
+    whatsappContratoV2: true,
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50, q = "", relacionamento = "", naoLidas = false } = {}) {
       await delay(120);
       // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem
       // empresa): o servidor recusa NOMEADO, e o mock recusa igual — mock permissivo esconde ramo.
@@ -7848,19 +7855,22 @@ export function createMockApi() {
         : filtro === "atendidas-por-mim" ? todas.filter((c) => c.atendidaPor === "mock-user-1")
           : todas;
       // Com empresa escolhida a fila (sem empresa) nao entra: ela nao e daquela empresa.
-      const lista = empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro;
+      const normalizar = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const termo = normalizar(q).trim();
+      const lista = (empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro).filter(c =>
+        (!relacionamento || c.relacionamento.tipo === relacionamento) && (!naoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.telefoneE164, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresa?.apelidosWhatsapp || [])].filter(Boolean).join(" ")).includes(termo)));
       const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))), cursor, limite);
-      return { ok: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
+      return { ok: true, versaoContrato: 2, buscaConfigurada: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
     async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
       if (empresa && c.portalClientId !== empresa) { const e = new Error("Empresa não encontrada."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
-      c.lidaAteEm = new Date().toISOString();
+      // A leitura é explícita: GET e polling não marcam mensagens vistas.
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
       const pagina = paginaWhatsappMock([...c.mensagens].reverse(), cursor, limite);
-      return { ok: true, conversa: resumoMockDaConversa(c), temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, mensagens: pagina.itens.reverse().map((m) => ({ ...m, statusEnvio: m.statusEnvio || (m.direcao === "out" && m.providerMessageId ? "enviado" : null), erroEnvio: m.erroEnvio || null, temMidia: Boolean(m.midiaProvedorId) })) };
+      return { ok: true, versaoContrato: 2, notasInternas: c.notasInternas || [], conversa: resumoMockDaConversa(c), temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, mensagens: pagina.itens.reverse().map((m) => ({ ...m, statusEnvio: m.statusEnvio || (m.direcao === "out" && m.providerMessageId ? "enviado" : null), erroEnvio: m.erroEnvio || null, temMidia: Boolean(m.midiaProvedorId) })) };
     },
     // ⚠ O MESMO contrato do real, recusas incluídas — mock permissivo esconde ramo, e este projeto
     // já pagou por isso oito vezes. Fora da janela: 409 FORA_DA_JANELA. Fio sem empresa: 422.
@@ -7887,6 +7897,33 @@ export function createMockApi() {
       c.mensagens.push(m);
       c.updatedAt = m.registradaEm;
       return { ok: true, documento: { id: doc.id, nome: doc.nome, tipo: doc.tipo }, mensagem: { id: m.id, providerMessageId: m.providerMessageId, autor: "HUMANO", corpo } };
+    },
+    async conferirIdentificacaoWhatsapp() {
+      throw Object.assign(new Error("Conferência de identidade disponível apenas na API conectada; a demonstração não altera vínculos reais."), { status: 409 });
+    },
+    async marcarConversaWhatsappLida(conversaId, mensagemId) {
+      const c = mockConversasWhatsapp.find(x => x.id === conversaId);
+      const m = c?.mensagens.find(x => x.id === mensagemId && x.direcao === "in");
+      if (!m) throw Object.assign(new Error("Mensagem não encontrada nesta conversa."), { status: 404 });
+      if (!c.lidaAteEm || c.lidaAteEm < m.registradaEm) c.lidaAteEm = m.registradaEm;
+      return { ok: true };
+    },
+    async criarNotaInternaWhatsapp(conversaId, body) {
+      const c = mockConversasWhatsapp.find(x => x.id === conversaId);
+      if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 });
+      recusarChatExcluidoMock(c);
+      const permitidos = resumoMockDaConversa(c).capacidades.escoposNotas;
+      if (!permitidos.some(e => e.escopo === body.escopo && (e.portalClientId || null) === (body.portalClientId || null) && (e.atendimentoLeadId || null) === (body.atendimentoLeadId || null))) throw Object.assign(new Error("Escopo da nota não autorizado."), { status: 403 });
+      if (!body.texto?.trim() || !body.chaveIdempotencia) throw Object.assign(new Error("Informe texto e chave da nota."), { status: 400 });
+      c.notasInternas ||= [];
+      const anterior = c.notasInternas.find(n => n.chaveIdempotencia === body.chaveIdempotencia);
+      if (anterior) {
+        if (anterior.texto !== body.texto || anterior.escopo !== body.escopo || anterior.portalClientId !== body.portalClientId) throw Object.assign(new Error("A tentativa já corresponde a outra nota."), { status: 409 });
+        return { ok: true, nota: anterior };
+      }
+      const nota = { ...body, id: crypto.randomUUID(), criadaEm: new Date().toISOString(), autor: { id: "mock-user-1", nome: "Equipe de demonstração" } };
+      c.notasInternas.push(nota);
+      return { ok: true, nota };
     },
     async assumirConversaWhatsapp(conversaId) {
       await delay(80);

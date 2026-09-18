@@ -5,6 +5,10 @@
 // o mesmo veredito, "espelho" é intenção, não fato — e a divergência apareceria como "a tela aceitou
 // e o servidor recusou" no cadastro do número que recebe guia.
 
+// A paridade usa as constantes reais; não inicia logger/Prisma de Node no jsdom.
+jest.mock("../../../../../../../api/src/config.js", () => ({ WHATSAPP_IDENTIDADE_V2: false }));
+jest.mock("../../../../../../../api/src/infrastructure/db/prisma.js", () => ({ prisma: {} }));
+
 import {
   normalizarE164,
   formatarTelefone,

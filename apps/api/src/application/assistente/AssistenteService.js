@@ -3,7 +3,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { IA_HISTORICO_MENSAGENS, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO, log as logPadrao } from "../../config.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
-import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
+import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { registrarMensagemEnviada, janelaDaConversa, DIRECAO } from "../whatsapp/ConversaWhatsappService.js";
 import { SITUACOES_JANELA } from "../whatsapp/janela24h.js";
 import { AssistenteClient } from "./AssistenteClient.js";
@@ -145,7 +145,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       await conferirContextoResponsavel({ conversa: atual, mensagem, contexto, client, permitirHandoffEm: encaminhamentoDoTurno });
     };
     await conferirPortao();
-    const cloud = deps.cloud || new WhatsappCloudClient({ log });
+    const cloud = await whatsappPorCanal(conversa, { cloud: deps.cloud, client, log });
     const textoNoEscopo = texto => conversa.atendimentoId
       ? `${conversa.portalClient.razao} · CNPJ ${conversa.portalClient.cnpj}\n\n${texto}`
       : texto;
@@ -433,7 +433,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
     if (chamouEscritorio) {
       await conferirPortao();
-      await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "text", corpo: `[pedido de atendimento humano] ${chamouEscritorio.motivo}`, autor: AUTOR.SISTEMA }).catch(() => {});
+      await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, conversaId: conversa.id, canalId: conversa.canalId || "principal", vinculoNumeroId: conversa.vinculoNumeroId, tipo: "text", corpo: `[pedido de atendimento humano] ${chamouEscritorio.motivo}`, autor: AUTOR.SISTEMA }).catch(() => {});
     }
     return concluir({ feito: true, motivo: "RESPONDIDA", texto });
   } catch (err) {

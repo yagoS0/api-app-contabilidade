@@ -5,8 +5,8 @@ function banco(entradas = ["m1", "m2"]) {
   const ficha = { id: "o1", origem: "ABERTURA", versao: 0, dados: {}, cnpj: null };
   const db = {
     onboarding: { findUnique: jest.fn(async () => ({ ...ficha })), updateMany: jest.fn(async ({ data }) => { Object.assign(ficha, data, { versao: 1 }); return { count: 1 }; }) },
-    mensagemWhatsapp: { findFirst: jest.fn(async () => ({ id: "m1" })), findMany: jest.fn(async () => entradas.map(id => ({ id }))) },
-    atendimentoLead: { updateMany: jest.fn() }, onboardingEvento: { create: jest.fn() },
+    mensagemWhatsapp: { findFirst: jest.fn(async () => ({ id: "m1", conversaId: "c1" })), findMany: jest.fn(async () => entradas.map(id => ({ id, conversaId: "c1" }))) },
+    atendimentoLead: { findFirst: jest.fn(async () => ({ id: "a1", conversaId: "c1", onboardingId: "o1" })), updateMany: jest.fn() }, onboardingEvento: { create: jest.fn() },
   };
   db.$transaction = fn => fn(db);
   return db;

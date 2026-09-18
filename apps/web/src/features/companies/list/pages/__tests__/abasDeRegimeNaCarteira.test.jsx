@@ -44,7 +44,7 @@ const CARTEIRA = [
 // helper troca de visão logo depois de montar. Sem isso, todo caso aqui mediria a ausência da barra
 // de regime numa tela que nunca a teve, e ficaria verde pelo motivo errado.
 function irParaTabela() {
-  fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Empresas$/ }));
 }
 
 function montar(props = {}) {
@@ -291,7 +291,7 @@ describe("ações locais da carteira", () => {
   test("cadastro continua disponível; navegação entre áreas pertence ao shell", () => {
     const onCreateCompany = jest.fn();
     montar({ onCreateCompany, onOpenOnboardings: jest.fn(), onOpenWhatsapp: jest.fn() });
-    const barra = screen.getByRole("navigation", { name: "Atalhos" });
+    const barra = screen.getByRole("navigation", { name: "Ações das empresas" });
     fireEvent.click(within(barra).getByRole("button", { name: "Nova empresa" }));
     expect(onCreateCompany).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Entrada de clientes" })).not.toBeInTheDocument();

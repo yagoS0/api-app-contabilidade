@@ -1,5 +1,11 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Hierarquia da navegação — 18/09/2026
+
+A página inicial apresenta Agenda e Empresas; os valores internos continuam `calendario`/`tabela`, com Agenda como entrada e preservação da escolha durante a sessão. Competência, cadastro, impressão e o aviso de plano global incompleto pertencem à visão Empresas. A conta fica discreta no cabeçalho; configurações gerais seguem por Gestão → Configurações.
+
+Dentro de uma empresa, a navegação global conserva as três áreas e recolhe os destinos de Operação no botão Navegar. Em telas amplas, nome/CNPJ ficam à esquerda, grupos da empresa centralizados ao lado e ações à direita; as subabas ficam centralizadas logo abaixo. Em telas menores, as abas passam para baixo da identificação. Anotações continua sendo a entrada da empresa; Documentos e a engrenagem mantêm seus destinos. O retorno continua respeitando o histórico, por isso permanece uma seta com rótulo acessível Voltar. CNPJ aparece formatado e copia apenas números.
+
 Relatório de faturamento — 15/09/2026: em Apuração, a ação tem nome fixo “Revisar classificação”, no alto e no aviso do relatório. Abre SugestaoModal → “Classificar competência”; concluir classificação ou resolução de pendência regenera o relatório local e recarrega dados sem consulta paga. A lib de apresentação normaliza instruções antigas dos JSONs salvos sem alterar valores históricos. Perfil fiscal é acessado por Configurações da empresa (engrenagem). Ver docs/fiscal-incidente-e-perfil-2026-09-15.md.
 
 Perfis de emissão — 15/09/2026: cLocPrestacao agora usa MunicípioDoPerfil/municipioIbge, busca nome+UF e envia apenas o código IBGE. Busca não resolvida bloqueia salvar; campo vazio continua opcional. Não inferir local da prestação do endereço do emissor. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.

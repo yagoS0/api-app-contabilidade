@@ -1,5 +1,9 @@
 // Por onde a guia sai — a regra da tela, e o AMARRE com o vocabulário do servidor.
 
+// Confere o vocabulário real sem iniciar logger/Prisma de Node no jsdom.
+jest.mock("../../../../../../api/src/config.js", () => ({ WHATSAPP_IDENTIDADE_V2: false }));
+jest.mock("../../../../../../api/src/infrastructure/db/prisma.js", () => ({ prisma: {} }));
+
 import {
   CANAL,
   decidirCanaisAoLiberar,

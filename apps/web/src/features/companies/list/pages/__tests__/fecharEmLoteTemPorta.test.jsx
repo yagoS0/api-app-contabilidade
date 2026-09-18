@@ -51,7 +51,7 @@ function travas() {
 // ⚠ Quem trava o padrão (Calendário) é `carteiraAbreNoCalendario.test.jsx` — aqui não se afirma
 // nada sobre qual visão abre, só se navega até a que interessa.
 function irParaTabela() {
-  fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Empresas$/ }));
 }
 
 function montar(api = {}) {
