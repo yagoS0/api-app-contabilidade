@@ -1,4 +1,5 @@
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
+import { RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
@@ -1412,14 +1413,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
             {isTemplate
               ? <span style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999 }}>agendado</span>
               : entry.origem !== "MANUAL" && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text, background: ACCOUNTING_PANEL.surface, padding: "2px 7px", borderRadius: 999 }}>{ORIGEM_LABELS[entry.origem] || entry.origem}</span>}
-            {entry.recalculatedAt && (
-              <span
-                style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999, fontWeight: 700 }}
-                title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)} — valor original R$ ${fmtValor(entry.recalculatedFromValor)} → atualizado R$ ${fmtValor(entry.recalculatedToValor)} (na circular). O valor do lançamento permanece o original.`}
-              >
-                Recalculada
-              </span>
-            )}
+            <RecalculoGuiaAviso entry={entry} />
           </div>
         </td>
         <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtValor(totalD || totalC)}</td>

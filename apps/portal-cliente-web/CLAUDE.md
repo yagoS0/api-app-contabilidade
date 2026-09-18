@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Emissão durante navegação — 18/09/2026
+
+A emissão avulsa comunica à casca quando está enviando. Até receber o desfecho, bloqueia troca de empresa, saída, retorno e navegação interna; mudança direta do hash mantém o emissor montado e retorna a Notas. O resultado fica visível na mesma instância. Há trava imediata contra submit duplo e aviso de saída/recarregamento do navegador. Após resposta, a navegação volta a funcionar; desfecho desconhecido mantém as restrições de reenvio já existentes. Testes com promessa controlada verificam os dois elos, sem emitir ou consultar serviço externo.
+
 ## DRE somente dos meses fechados — 16/09/2026
 
 A DRE usa seleção independente da competência do painel/Fluxo. Primeira consulta omite competência para abrir o último fechamento contábil; seletor apresenta apenas `competenciasDisponiveis` do servidor. Trocar empresa descarta a seleção anterior. Atualizar DRE busca novamente o último fechamento. Sem fechamento, mostrar estado próprio, sem tabela zerada. Não presumir fechamento por mês passado ou por status dos lançamentos. API recusa mês aberto inclusive em acesso direto; fechamento é `fechadoContabilEm`. Mock mantém agosto/julho fechados e uma empresa sem fechamento. Esta decisão substitui a exibição da DRE de qualquer mês selecionado no painel.

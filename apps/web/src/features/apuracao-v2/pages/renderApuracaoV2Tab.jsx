@@ -195,7 +195,7 @@ export function ApuracaoV2Tab({
   // exatamente a lacuna que o `apps/web/CLAUDE.md` já nomeia para o JSX — só que aqui nem o build
   // salva. Quem pegaria é o ESLint com `no-undef`, ou um teste que monte o componente.
   useEffect(() => {
-    setExtrato(null); setFechDados(null); setSnap(null);
+    setExtrato(null); setFechDados(null); setSnap(null); setSugData(null); setSugErro(null); setSugLoading(false);
     setExtratoLoading(false);
     carregarApuracao();
   }, [carregarApuracao]);
@@ -208,11 +208,28 @@ export function ApuracaoV2Tab({
     carregarRelatorio();
   }, [carregarRelatorio]);
 
+  useEffect(() => { setFechando(null); }, [contexto]);
+  const [conferindoEnvio, setConferindoEnvio] = useState(false);
+  async function conferirEnvio() {
+    if (conferindoEnvio) return;
+    setConferindoEnvio(true);
+    try {
+      const out = await api.conferirTransmissaoFechamento(companyId, competencia);
+      if (contextoAtual.current !== contexto) return;
+      if (!out?.ok) throw new Error(out?.message || 'Falha ao conferir envio');
+      if (out.result?.confirmada) feedback?.notifySuccess?.(out.result.mensagem);
+      else feedback?.notifyError?.(out.result?.mensagem || 'Entrega ainda não confirmada.');
+      await carregarApuracao();
+    } catch (err) { if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || 'Falha ao conferir envio'); }
+    finally { setConferindoEnvio(false); }
+  }
+
   async function abrirRetificar() {
     // eslint-disable-next-line no-alert
     if (!window.confirm(`Reabrir a apuração de ${razao || "esta empresa"} (${competencia}) para RETIFICAR?\n\nVocê corrige os valores e retransmite uma declaração RETIFICADORA (substitui a anterior).`)) return;
     try {
       const r = await api.reabrirFechamento?.(companyId, competencia);
+      if (contextoAtual.current !== contexto) return;
       if (r?.ok === false) throw new Error(r?.message || r?.error || "Falha ao reabrir");
       feedback?.notifySuccess?.("Apuração reaberta — corrija e clique em Transmitir/Retificar dentro do modal.");
       setFechando({ retificar: true });
@@ -261,11 +278,13 @@ export function ApuracaoV2Tab({
     setSugLoading(true); setSugErro(null);
     try {
       const out = await panel.getSugestao(competencia);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || "Falha");
       setSugData(out);
     } catch (e) {
+      if (contextoAtual.current !== contexto) return;
       setSugErro(e?.message || "Erro"); setSugData(null);
-    } finally { setSugLoading(false); }
+    } finally { if (contextoAtual.current === contexto) setSugLoading(false); }
   }
 
   async function classificar() {
@@ -347,9 +366,10 @@ export function ApuracaoV2Tab({
                 </button>
               );
             })()}
-            <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading}>
+            <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
+            {estado === 'erro_transmissao' && <Button variant="secondary" onClick={conferirEnvio} disabled={conferindoEnvio}>Conferir envio na Receita</Button>}
             {estado === "transmitida" && (
               <Button variant="secondary" onClick={abrirRetificar} title="Reabrir para corrigir e retransmitir como retificadora.">
                 🔄 Retificar

@@ -2162,11 +2162,13 @@ esconderia nota legítima (o erro oposto, igualmente caro).
 não é nem prestadora nem tomadora, marcando as **EMIT** (essas afetariam faturamento e apuração).
 Só leitura — não apaga nada, porque nota fiscal não volta e a decisão é do contador.
 
-## ⚠⚠ NF-e DE VENDA ENTRA POR UPLOAD — não há, e não haverá, integração (23/08/2026)
+## NF-e de venda — importação existente e integração RJ planejada (atualizado em 17/09/2026)
+
+**Decisão atual do usuário:** pesquisar e planejar integração com o Fisco Fácil SEFAZ-RJ. A antiga conclusão de que nunca haveria integração está superada. A restrição do `NFeDistribuicaoDFe` continua válida para aquele serviço, mas não impede aquisição por um extrator estadual autorizado. Plano: `docs/plano-consultas-fisco-facil-rj.md`. Pendente observar autenticação, pedidos, status e download reais; não inventar rotas nem anunciar captura pronta. O importador e a ingestão única serão reutilizados, com tratamento de eventos antes do piloto. Nenhuma consulta autenticada ou publicação nova feita nesta pesquisa.
 
 > Pedido do dono: *"quero consultar as notas que ela [VAGALO] emitiu, mas não consigo"*.
 
-**A resposta é normativa, e está PROVADA — não é limitação nossa.**
+**A restrição abaixo se refere ao serviço nacional de distribuição.**
 
 **NT 2014.002, §3** (PDF oficial, lido; a URL entra em loop de redirecionamento sem cookie jar —
 use `curl -c/-b`):
@@ -2192,7 +2194,7 @@ período**), tendo em vista a obrigação do contribuinte emitente de (…) **ma
 **Medido:** 47 NF-e na base, **100% `papel: "DEST"`, ZERO `EMIT`**. Isso não é defeito de captura —
 é o desenho do serviço.
 
-### As alternativas, todas medidas e todas descartadas
+### Histórico da análise das fontes (23/08/2026; Fisco Fácil reaberto em 17/09)
 
 | candidato | veredito |
 |---|---|
@@ -2203,16 +2205,17 @@ período**), tendo em vista a obrigação do contribuinte emitente de (…) **ma
 | **SERPRO Consulta NF-e** | ⚠ só `GET /{chave}`. Enumerados **todos** os paths do swagger: nada por CNPJ, período ou NSU. **Não descobre**, e descoberta é o problema. E **não é o Integra Contador** que já usamos — contrato à parte (o catálogo do Integra tem **zero** ocorrências de NF-e) |
 | automatizar o **Fisco Fácil** | ver abaixo |
 
-### ⚠⚠ Por que NÃO automatizar o Fisco Fácil — e o argumento decisivo é de arquitetura
+### Integração com Fisco Fácil: prova de acesso e aquisição antes da implementação
 
-O manual oficial do Fisco Fácil documenta a extração **tela por tela, botão por botão**, com 12
-perguntas dedicadas: **zero menções a API ou web service**. Some-se a isso que a SEFAZ-RJ
-**bloqueia por reputação de IP** os serviços com sigilo fiscal (página oficial dedicada) — robô em
-datacenter cairia nisso e **derrubaria o acesso legítimo junto**; e que o Portal DFe usa recaptcha.
+Não foi localizado contrato público de API nas fontes consultadas. A documentação institucional
+identifica o extrator como JSF; o fluxo autenticado precisa confirmar a tecnologia atual e as
+requisições efetivas. Bloqueios de IP e dependências de interação devem ser medidos no piloto,
+sem presumir que qualquer automação seja impossível nem contornar controles de acesso.
 
-⚠⚠ **Mas o que encerra não é isso: o Fisco Fácil entrega um ZIP de XMLs.** Automatizar o portal
-automatizaria **o clique de baixar** — alguém ainda teria de ingerir o ZIP. **O import é a
-fundação, não a alternativa.** Se um dia houver API, ela devolverá XML, e o import já a recebe.
+O ZIP é compatível com integração: o conector pode obtê-lo e chamar o serviço de importação no
+backend. A ingestão única existente é a fundação. Autenticação estadual tem escopo próprio;
+procuração e-CAC não comprova autorização SEFAZ-RJ. Separar cobertura de aquisição e atualidade
+dos eventos, pois o importador atual conta cancelamentos, mas não os aplica.
 
 ### A porta: `POST /clients/:clientId/invoices/import/nfe`
 
@@ -2238,9 +2241,9 @@ Regra em `application/notas/importXml/` (`zipLeitura` · `loteNfe` · `ImportNfe
   ⚠ O lote pode vir **legitimamente vazio** (o portal tem o estado *"Processada sem resultado"*) e
   sempre tem defasagem mínima de 10 dias. Sem os números, "não veio nada" e "deu erro" ficam iguais.
 
-**Cotas do portal, para quem for usar:** carência **10 dias** · **6 meses** por solicitação ·
-**5 anos** retroativo · **7 dias** para baixar · **3** solicitações sem download · não aceita raiz
-de CNPJ. (⚠ Os **90 dias** da NT valem para a distribuição automática, não para o Fisco Fácil.)
+**Cotas:** consultar a seção de evidências do novo plano. O manual versão 11 informa janela de
+31 dias; a anotação anterior de seis meses não foi comprovada. Confirmar limites no extrator
+atual e mantê-los configuráveis. Não confundir limites do serviço nacional com os do Fisco Fácil.
 
 ⚠ **Nada neste caminho chama a SEFAZ.**
 

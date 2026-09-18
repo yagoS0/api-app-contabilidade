@@ -38,6 +38,19 @@ import { baixarNotasSelecionadas } from "../../application/notas/download/NotasS
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
+// Nomes sem dígitos não podem produzir contains:"", que aceitaria todos os documentos.
+function filtroBuscaNotas(search) {
+  const texto = String(search || "").trim();
+  if (!texto) return null;
+  const documento = texto.replace(/\D+/g, "");
+  return [
+    { chaveAcesso: { contains: texto } }, { numero: { contains: texto } },
+    { emitenteNome: { contains: texto, mode: "insensitive" } },
+    { tomadorNome: { contains: texto, mode: "insensitive" } },
+    ...(documento ? [{ emitenteDoc: { contains: documento } }, { tomadorDoc: { contains: documento } }] : []),
+  ];
+}
+
 function bad(res, status, error, message, extra = {}) {
   return res.status(status).json({ ok: false, error, message, ...extra });
 }
@@ -433,14 +446,7 @@ export function createNotasRouter({ log }) {
       where.competencia = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
     }
     if (search && String(search).trim()) {
-      const s = String(search).trim();
-      where.OR = [
-        { chaveAcesso: { contains: s } },
-        { numero: { contains: s } },
-        { emitenteNome: { contains: s, mode: "insensitive" } },
-        { emitenteDoc: { contains: s.replace(/\D+/g, "") } },
-        { tomadorNome: { contains: s, mode: "insensitive" } },
-      ];
+      where.OR = filtroBuscaNotas(search);
     }
     await applyAtividadeFilter(where, { cfop, servico });
 
@@ -518,9 +524,10 @@ export function createNotasRouter({ log }) {
       return res.status(400).json({ error: "status_invalido", allowed: ["cancelada", "autorizada"] });
     }
     const nota = await prisma.portalInvoice.findFirst({
-      where: { id: notaId, clientId: portalClientId }, select: { id: true },
+      where: { id: notaId, clientId: portalClientId }, select: { id: true, papel: true },
     });
     if (!nota) return res.status(404).json({ error: "nota_nao_encontrada" });
+    if (nota.papel !== "EMIT") return bad(res, 409, "ajuste_apenas_nota_emitida", "O ajuste local de situação está disponível somente para notas emitidas pela empresa.");
     const updated = await prisma.portalInvoice.update({
       where: { id: nota.id },
       data: { statusEfetivo: alvo, status: alvo === "cancelada" ? "CANCELADA" : "EMITIDA" },
@@ -550,14 +557,7 @@ export function createNotasRouter({ log }) {
       where.competencia = { gte: new Date(Date.UTC(ano, 0, 1)), lt: new Date(Date.UTC(ano + 1, 0, 1)) };
     }
     if (search && String(search).trim()) {
-      const s = String(search).trim();
-      where.OR = [
-        { chaveAcesso: { contains: s } },
-        { numero: { contains: s } },
-        { emitenteNome: { contains: s, mode: "insensitive" } },
-        { emitenteDoc: { contains: s.replace(/\D+/g, "") } },
-        { tomadorNome: { contains: s, mode: "insensitive" } },
-      ];
+      where.OR = filtroBuscaNotas(search);
     }
     await applyAtividadeFilter(where, { cfop, servico });
 

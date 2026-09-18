@@ -88,7 +88,7 @@ export function NotasFiscaisTab({
   onAbrirAuditoria = null,
 }) {
   const {
-    loading, error, reload,
+    loading, error, erroCaptura, erroNotas, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
     adnState, adnSyncing, syncAdn, clearAdnError,
     companyId,
@@ -178,19 +178,23 @@ export function NotasFiscaisTab({
        `CompanyTabLayout`. A tabela de notas tem número, chave, tomador, valor, data, status e
        ações — era a que mais truncava em 1400px. */
     <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
-      {error && (
+      {(erroCaptura || (erroCaptura === undefined && erroNotas === undefined && error)) && (
         <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
-          {error}
+          {erroCaptura || error}
           {/* ⚠ Este NÃO é um botão destrutivo — ele só recarrega. O `var(--danger)` era a cor da CAIXA DE
               ERRO em volta, emprestada pelo botão: exatamente o defeito que esta padronização
               corrige, só que com vermelho em vez de âmbar. `danger` aqui mentiria sobre a ação (e,
               sobre um fundo que já é `--state-danger` a 10%, o `.btn-danger` de superfície ficaria
               quase invisível). O vermelho continua na caixa, onde ele é informação. */}
           <Button variant="secondary" size="sm" onClick={reload} style={{ marginLeft: 12 }}>
-            Tentar de novo
+            Recarregar estado da captura
           </Button>
         </div>
       )}
+      {erroNotas && <div role="alert" style={{ padding: 12, marginBottom: 16, border: "1px solid var(--state-danger)", borderRadius: 6 }}>
+        {erroNotas} A lista não foi atualizada.
+        <Button variant="secondary" size="sm" onClick={() => loadNotas()} style={{ marginLeft: 12 }}>Tentar carregar notas novamente</Button>
+      </div>}
 
       {/* ⚠ AS DUAS JANELAS APARECEM SEMPRE. O `hasInscricaoEstadual` que envolvia este bloco era o
           defeito 1 do cabeçalho: ele escondia a NF-e de 3 de 3 empresas que TÊM nota de compra.
@@ -265,6 +269,11 @@ export function NotasFiscaisTab({
           <input aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
         </label>
       </div>
+      {nfseApi.mode === "mock" && <div style={{ marginBottom: 12 }}><Button variant="ghost" size="sm" disabled={importing} onClick={() => {
+        const quantidade = janelaAtiva === "NFE" ? 25 : 55;
+        const arquivos = Array.from({ length: quantidade }, (_, i) => new File([janelaAtiva === "NFE" ? `<NFe><infNFe Id="demonstracao-${i}"><ide><mod>55</mod><nNF>${i + 1}</nNF></ide></infNFe></NFe>` : `<NFSe><Numero>${i + 1}</Numero></NFSe>`], `demonstracao-${i + 1}.xml`, { type: "application/xml" }));
+        importNotas?.(arquivos, { type: janelaAtiva });
+      }}>Demonstrar importação (mock)</Button></div>}
       {importResult?.type === janelaAtiva && <section aria-label="Resultado da importação" style={{ marginBottom: 16 }}>
         <p role={importResult.falhou || importResult.quantidadeProblemas > 0 ? "alert" : "status"}>{importResult.mensagem}</p>
         {importResult.problemas?.length > 0 && <ul>{importResult.problemas.map((p, i) => <li key={i}><strong>{p.arquivo || "Arquivo"}:</strong> {p.mensagem}</li>)}</ul>}

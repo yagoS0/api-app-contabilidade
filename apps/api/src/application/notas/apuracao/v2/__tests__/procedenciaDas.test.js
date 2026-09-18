@@ -24,6 +24,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
     aggregate: jest.fn(async () => ({ _sum: { total: 0 } })),
     count: jest.fn(async () => 0),
     create: jest.fn(async (args) => ({ id: "novo", ...(args?.data || {}) })),
+    updateMany: jest.fn(async () => ({ count: 1 })),
     update: jest.fn(async (args) => ({ id: "existente", ...(args?.data || {}) })),
   });
   return {
@@ -43,11 +44,13 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
 });
 
 const mockSimular = jest.fn();
+const mockTransmitir = jest.fn();
+const mockIndice = jest.fn();
 jest.mock("../../../../fiscal/serpro/PgdasSimulacaoService.js", () => ({
-  PgdasSimulacaoService: jest.fn().mockImplementation(() => ({ simular: mockSimular, transmitir: jest.fn() })),
+  PgdasSimulacaoService: jest.fn().mockImplementation(() => ({ simular: mockSimular, transmitir: mockTransmitir })),
   parseRetornoSimulacao: jest.fn(),
 }));
-jest.mock("../../../../fiscal/serpro/SerproPgdasdService.js", () => ({ SerproPgdasdService: jest.fn() }));
+jest.mock("../../../../fiscal/serpro/SerproPgdasdService.js", () => ({ SerproPgdasdService: jest.fn().mockImplementation(() => ({consultarDeclaracaoIndice: mockIndice})) }));
 jest.mock("../../../../fiscal/serpro/SerproRuntimeSettings.js", () => ({
   getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { hasCertificate: true, document: "11111111111111" } })),
 }));
@@ -75,9 +78,11 @@ jest.mock("../AliquotaResolver.js", () => ({
 }));
 
 import { prisma } from "../../../../../infrastructure/db/prisma.js";
-import { calcularFechamento } from "../FechamentoService.js";
+import { calcularFechamento, salvarFechamento, transmitirFechamento, reabrirFechamento, conferirTransmissaoFechamento } from "../FechamentoService.js";
 import { calcularApuracaoLocal } from "../MotorApuracaoService.js";
 import { montarRelatorioFaturamento } from "../RelatorioFaturamentoService.js";
+import { salvarConfigMemory } from "../ApuracaoConfigMemoryService.js";
+import { getRbt12, lerPeriodosAceitos } from "../RbtExtratoService.js";
 import { PROCEDENCIA_DAS, ehCalculoNosso } from "../procedenciaDas.js";
 
 const PORTAL_ID = "portal-1";
@@ -98,6 +103,9 @@ const NOTAS = [{
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.apuracaoSnapshot.updateMany.mockResolvedValue({count: 1});
+  mockIndice.mockResolvedValue({dados: []});
+  mockTransmitir.mockResolvedValue({dasValor: 812, numeroDeclaracao: "D1"});
   prisma.portalClient.findUnique.mockResolvedValue({
     id: PORTAL_ID, razao: "EMPRESA TESTE LTDA", cnpj: "34627370000175", municipio: "São Paulo", uf: "SP",
   });
@@ -112,7 +120,7 @@ beforeEach(() => {
 /** O objeto que foi de fato para o banco no [Calcular]. */
 function dadosGravadosNoCalcular() {
   const create = prisma.apuracaoSnapshot.create.mock.calls[0];
-  const update = prisma.apuracaoSnapshot.update.mock.calls[0];
+  const update = prisma.apuracaoSnapshot.updateMany.mock.calls[0];
   return create ? create[0].data : update[0].data;
 }
 
@@ -162,7 +170,7 @@ describe("[Calcular] — a simulação da RFB não mora na coluna do motor", () 
   it("o retorno cru da simulação continua guardado em `simulacaoSerpro`", async () => {
     // É o campo que PROVA a procedência do valor — e é dele que o backfill da migration se serve.
     await calcularFechamento({ ...BASE, atividades: ATIVIDADES });
-    expect(dadosGravadosNoCalcular().simulacaoSerpro).toEqual({ simulado: true });
+    expect(dadosGravadosNoCalcular().simulacaoSerpro.raw).toEqual({ simulado: true });
   });
 });
 
@@ -234,4 +242,103 @@ describe("[Relatório] — o que a tela recebe sobre a procedência", () => {
 
     expect(oficial.dasCalculadoLocalNoSnapshot).toMatchObject({ valor: 77, procedenciaAmbigua: true });
   });
+});
+
+async function simulacaoSalva() {
+  const out = await calcularFechamento({ ...BASE, atividades: ATIVIDADES });
+  const snapshot = { id: 's1', ...out.snapshot };
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue(snapshot);
+  return { snapshot, calculoId: out.calculoId };
+}
+describe('Vínculo entre simulação e fechamento', () => {
+  it('recusa caixa antes de qualquer consulta externa', async () => {
+    await expect(calcularFechamento({...BASE, atividades: ATIVIDADES, regimeApuracao:'CAIXA'})).rejects.toMatchObject({code:'REGIME_APURACAO_NAO_SUPORTADO'});
+    expect(mockSimular).not.toHaveBeenCalled(); expect(mockIndice).not.toHaveBeenCalled();
+  });
+  it('não fecha valores editados e preserva o snapshot', async () => {
+    const {calculoId} = await simulacaoSalva();
+    await expect(salvarFechamento({...BASE, calculoId, atividades:[{...ATIVIDADES[0],valorInterno:20000}]})).rejects.toMatchObject({code:'CALCULO_DESATUALIZADO'});
+    expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+  });
+  it('recusa token de outra empresa, antigo ou ausente antes de consultar', async () => {
+    const {calculoId} = await simulacaoSalva();
+    for (const args of [{...BASE},{...BASE,calculoId:'antigo'},{...BASE,calculoId,portalClientId:'outra'}]) {
+      await expect(transmitirFechamento(args)).rejects.toMatchObject({code:'CALCULO_DESATUALIZADO'});
+    }
+    expect(mockIndice).not.toHaveBeenCalled(); expect(mockTransmitir).not.toHaveBeenCalled();
+  });
+  it.each([{}, {dados:'invalido'}, {dados:{}}])('não confunde índice inválido com ausência: %j', async indice => {
+    const {calculoId} = await simulacaoSalva(); mockIndice.mockResolvedValue(indice);
+    await expect(transmitirFechamento({...BASE,calculoId})).rejects.toMatchObject({code:'CONSULTA_DECLARACAO_FALHOU'});
+    expect(mockTransmitir).not.toHaveBeenCalled();
+    expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({data:expect.objectContaining({estado:'calculada'})}));
+  });
+  it('reserva exclusiva impede duas transmissões concorrentes', async () => {
+    const {calculoId} = await simulacaoSalva();
+    prisma.apuracaoSnapshot.updateMany.mockResolvedValueOnce({count:1}).mockResolvedValueOnce({count:0});
+    const results = await Promise.allSettled([transmitirFechamento({...BASE,calculoId}),transmitirFechamento({...BASE,calculoId})]);
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+  it('timeout após envio mantém incerteza e impede novo envio', async () => {
+    const {snapshot,calculoId} = await simulacaoSalva(); mockTransmitir.mockRejectedValueOnce(new Error('timeout'));
+    await expect(transmitirFechamento({...BASE,calculoId})).rejects.toMatchObject({code:'TRANSMISSAO_RESULTADO_INCERTO'});
+    expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({data:expect.objectContaining({estado:'erro_transmissao'})}));
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao'});
+    await expect(transmitirFechamento({...BASE,calculoId})).rejects.toMatchObject({code:'TRANSMISSAO_PENDENTE_CONFERENCIA'});
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+  it('simulação que perde CAS não grava suas premissas na memória', async () => {
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({id:'s1',estado:'calculada',idempotencyKey:'old'});
+    prisma.apuracaoSnapshot.updateMany.mockResolvedValueOnce({count:0});
+    await expect(calcularFechamento({...BASE,atividades:ATIVIDADES})).rejects.toMatchObject({code:'CALCULO_DESATUALIZADO'});
+    expect(salvarConfigMemory).not.toHaveBeenCalled();
+  });
+  it('motor local não sobrescreve transmissão reservada', async () => {
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({id:'s1',estado:'transmitindo',idempotencyKey:'reservado'});
+    await expect(calcularApuracaoLocal({...BASE})).rejects.toMatchObject({code:'TRANSMISSAO_PENDENTE_CONFERENCIA'});
+    expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+  });
+  it('reabertura invalida token da declaração anterior', async () => {
+    const {snapshot} = await simulacaoSalva(); prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'transmitida'});
+    const out = await reabrirFechamento(BASE);
+    expect(out.snapshot.estado).toBe('aberta');
+    expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({estado:'aberta',idempotencyKey:expect.stringMatching(/^reaberta:/)})}));
+  });
+  it('transmissão reutiliza listas vazias aceitas, sem consultar RBT novamente', async () => {
+    lerPeriodosAceitos.mockResolvedValueOnce({receitas:[],folhas:[]});
+    const {calculoId} = await simulacaoSalva(); getRbt12.mockClear();
+    await transmitirFechamento({...BASE,calculoId});
+    expect(mockTransmitir).toHaveBeenCalledWith(expect.objectContaining({receitasBrutasAnteriores:[],folhasSalario:[],regimeApuracao:'COMPETENCIA'}));
+    expect(getRbt12).not.toHaveBeenCalled();
+  });
+  it.each(['retorno textual', [{id:1}]])('preserva retorno cru sem converter forma: %j', async raw => {
+    mockSimular.mockResolvedValueOnce({dasValor:812,raw});
+    await calcularFechamento({...BASE,atividades:ATIVIDADES});
+    expect(dadosGravadosNoCalcular().simulacaoSerpro.raw).toEqual(raw);
+  });
+});
+
+describe('Conferência explícita de transmissão incerta',()=>{
+ it('índice vazio mantém bloqueio e não transmite',async()=>{
+  const {snapshot}=await simulacaoSalva();prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao'});
+  expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({ok:true,confirmada:false});
+  expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();expect(mockTransmitir).not.toHaveBeenCalled();
+ });
+ it('declaração localizada recupera estado sem repetir envio',async()=>{
+  const {snapshot}=await simulacaoSalva();prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao'});mockIndice.mockResolvedValue({dados:{declaracoes:[{numeroDeclaracao:'D1'}]}});
+  expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({ok:true,confirmada:true});
+  expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({estado:'erro_transmissao'}),data:expect.objectContaining({estado:'transmitida'})}));
+  expect(mockTransmitir).not.toHaveBeenCalled();
+ });
+});
+
+it('declaração anterior nunca comprova a entrega de retificadora incerta',async()=>{
+ const {snapshot}=await simulacaoSalva();prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao',simulacaoSerpro:{...snapshot.simulacaoSerpro,_portalTransmissao:{retificar:true}}});mockIndice.mockResolvedValue({dados:[{numeroDeclaracao:'original'}]});
+ expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({confirmada:false});expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();expect(mockIndice).not.toHaveBeenCalled();
+});
+
+it('cadastro CAIXA não é contornado omitindo regime no formulário',async()=>{
+ prisma.cadastroFiscal.findUnique.mockResolvedValue({regimeApuracao:'CAIXA'});
+ await expect(calcularFechamento({...BASE,atividades:ATIVIDADES})).rejects.toMatchObject({code:'REGIME_APURACAO_NAO_SUPORTADO'});expect(mockSimular).not.toHaveBeenCalled();
 });

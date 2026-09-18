@@ -76,6 +76,7 @@ import {
 } from "../../application/guides/lib/dataDoPagamento.js";
 import { comContextoSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { registrarRecalculoGuia } from "../../application/guides/RegistroRecalculoGuia.js";
 import { reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { SERPRO_PGDASD_SERVICE_COBRANCA } from "../../application/fiscal/serpro/SerproPgdasdService.js";
 import {
@@ -1305,6 +1306,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
             competencia: guide.competencia,
             guideId: guide.id,
           }));
+          await registrarRecalculoGuia(prisma, { guiaAnterior: guide, guiaId: guide.id, especie, userId: req.auth?.user?.id });
           await markGuideOpenBySerpro({ guideId: guide.id });
           const atualizada = await prisma.guide.findUnique({ where: { id: guide.id } });
           return res.json({
@@ -1323,6 +1325,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           existingGuideId: guide.id,
           serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
         }));
+        await registrarRecalculoGuia(prisma, { guiaAnterior: guide, guiaId: result.guide.guideId, especie, userId: req.auth?.user?.id });
         await markGuideOpenBySerpro({ guideId: result.guide.guideId });
         const atualizada = await prisma.guide.findUnique({ where: { id: result.guide.guideId } });
         return res.json({

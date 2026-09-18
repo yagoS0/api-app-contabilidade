@@ -8,9 +8,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROTA = path.resolve(__dirname, "../index.js");
-const fonte = fs.readFileSync(ROTA, "utf-8");
+const fonte = fs.readFileSync(ROTA, "utf-8").replace(/\r\n/g, "\n");
 const INICIO = fonte.indexOf('"/guides/:guideId/recalculate"');
-const bloco = fonte.slice(INICIO, INICIO + 4200);
+const bloco = fonte.slice(INICIO, fonte.indexOf("router.post(", INICIO));
 
 describe("⚠⚠ A ORIGEM ANÔNIMA — o gasto mais visível do contador não se identificava", () => {
   it("a rota é envolvida por `comContextoSerpro`", () => {

@@ -1,3 +1,4 @@
+import { importarNotasMock } from "./importarNotasMock";
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
 import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
@@ -669,6 +670,25 @@ function makeGuidesByCompany(companies) {
 
 const mockCompanies = makeCompanies();
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
+const mockRecalculosGuias = new Map();
+
+function registrarRecalculoGuiaMock(guia, valorAnterior, especie) {
+  const registro = {
+    guiaId: guia.id, recalculadoEm: new Date().toISOString(),
+    valorAnterior: Number(valorAnterior), valorAtual: Number(guia.valor),
+    escopoValor: "TOTAL_GUIA", especie,
+  };
+  mockRecalculosGuias.set(guia.id, registro);
+  return registro;
+}
+
+function comRecalculoGuiaMock(companyId, entry) {
+  // O vínculo é explícito: nunca associar por valor, tributo ou competência.
+  const guiaId = entry.sourceGuideId || entry.sourceGuide?.id;
+  const guia = (mockGuidesByCompany.get(companyId) || []).find((g) => g.id === guiaId);
+  const registro = guia && mockRecalculosGuias.get(guiaId);
+  return registro ? { ...entry, sourceGuide: { ...entry.sourceGuide, ...guia }, recalculoGuia: { ...registro } } : entry;
+}
 const mockUnidentifiedGuides = [];
 
 // ── Obrigações ────────────────────────────────────────────────────────────────────────────────
@@ -1479,6 +1499,11 @@ const mockNotas = (() => {
     }));
   }
 
+  out.push(...[
+    { id: 'mock-auditoria-sem-comp-1', numero: '13007', competencia: null, issueDate: MOCK_NOTAS_COMPETENCIA + '-19T00:00:00.000Z', total: '890.00' },
+    { id: 'mock-auditoria-sem-comp-2', numero: '13008', competencia: null, issueDate: MOCK_NOTAS_COMPETENCIA + '-22T00:00:00.000Z', total: '1500.00' },
+    { id: 'mock-auditoria-pos', numero: '13006', competencia: '2026-05-01T00:00:00.000Z', total: '500.00', competenciaPosFechamento: true },
+  ].map(n => mockNota({ emitenteNome: 'EMPRESA EXEMPLO MOCK LTDA', emitenteDoc: '00000000000191', ...n })));
   return out;
 })();
 
@@ -1954,6 +1979,39 @@ if (_firstCompanyId) {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     },
   ]);
+}
+
+// Duas provisões com vínculo documentado ao débito do relatório fiscal do mock.
+// O recálculo altera somente a guia; os valores destas partidas permanecem originais.
+if (_firstCompanyId) {
+  const entries = mockEntriesByCompany.get(_firstCompanyId);
+  const guides = mockGuidesByCompany.get(_firstCompanyId);
+  for (const fixture of [
+    { tipo: "SIMPLES", competencia: "2025-12", valor: 2382.5, vencimento: "2026-01-21", eventType: "DAS_SIMPLES" },
+    { tipo: "INSS", competencia: "2026-02", valor: 178.31, vencimento: "2026-03-20", eventType: "INSS" },
+  ]) {
+    const guideId = `mock-recalculo-${_firstCompanyId}-${fixture.tipo}`;
+    const guide = {
+      ...fixture, id: guideId, portalClientId: _firstCompanyId,
+      vencimento: `${fixture.vencimento}T12:00:00.000Z`,
+      status: "PROCESSED", source: "SERPRO", paymentStatus: "OPEN", emailStatus: "PENDING",
+      canConfirmPayment: true,
+    };
+    guides.push({ ...guide, ...recalculoDoMock(guide) });
+    entries.push({
+      id: `${guideId}-provisao`, portalClientId: _firstCompanyId,
+      sourceGuideId: guideId, sourceGuide: guide,
+      data: `${fixture.competencia}-28T12:00:00.000Z`, competencia: fixture.competencia,
+      historico: `Provisão ${fixture.tipo} ${fixture.competencia} — guia vinculada`,
+      tipo: "PROVISAO", subtipo: fixture.tipo === "SIMPLES" ? "DAS" : fixture.tipo, eventType: fixture.eventType, origem: "SERPRO",
+      status: "CONFIRMADO", statusPagamento: "ABERTO", openEntryId: null,
+      valor: fixture.valor, totalD: fixture.valor, totalC: fixture.valor, baixas: [],
+      lines: [
+        { id: `${guideId}-d`, conta: "265", tipo: "D", valor: fixture.valor, ordem: 0 },
+        { id: `${guideId}-c`, conta: "553", tipo: "C", valor: fixture.valor, ordem: 1 },
+      ],
+    });
+  }
 }
 
 /**
@@ -3583,6 +3641,15 @@ let varreduraAutomaticaDoMock = {
 };
 
 export function createMockApi() {
+  const perfisSalvos = new Map();
+  const pendenciasConferidas = new Set();
+  const fechamentosSalvos = new Map();
+  let sequenciaCalculo = 0;
+  const copiar = v => JSON.parse(JSON.stringify(v));
+  const chaveFechamento = (empresa, mes) => `${empresa}|${mes}`;
+  const formularioCalculo = p => ({ atividades: p.atividades || [], folhaMensal12: p.folhaMensal12 || [], regimeApuracao: p.regimeApuracao || "COMPETENCIA" });
+  const obsoleto = () => ({ ok: false, error: "CALCULO_DESATUALIZADO", message: "Calcule novamente e confira o resultado antes de fechar ou transmitir." });
+
   let accessToken = "";
 
   return {
@@ -4035,7 +4102,10 @@ export function createMockApi() {
       for (const guides of mockGuidesByCompany.values()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
-          target.valor = Number(faker.finance.amount({ min: 300, max: 5000, dec: 2 }));
+          const valorAnterior = Number(target.valorRecalculado ?? target.valor);
+          target.valor = Math.round(valorAnterior * 1.05 * 100) / 100;
+          target.valorRecalculado = target.valor;
+          registrarRecalculoGuiaMock(target, valorAnterior, target.tipo === "OUTRA" ? "DARF_PRESUMIDO" : "DAS");
           target.vencimento = faker.date.soon({ days: 10 }).toISOString();
           target.paymentStatus = "OPEN";
           target.paymentStatusSource = "SERPRO";
@@ -4044,7 +4114,7 @@ export function createMockApi() {
           target.serproLastCheckResult = "FOUND";
           target.emailStatus = "PENDING";
           target.canConfirmPayment = true;
-          target.canRecalculate = false;
+          Object.assign(target, recalculoDoMock(target));
           return {
             ok: true,
             result: {
@@ -4827,6 +4897,26 @@ export function createMockApi() {
       const company = mockCompanies.find((item) => item.companyId === companyId);
       if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
       const competencia = String(input.competencia || "2026-04");
+      if (input.atualizar === true) {
+        const guias = (mockGuidesByCompany.get(companyId) || []).filter((g) =>
+          g.competencia === competencia && g.tipo === "INSS" && !g.parcelamentoId);
+        if (guias.length !== 1) throw new Error(guias.length ? "INSS_GUIA_AMBIGUA" : "INSS_GUIA_NAO_ENCONTRADA");
+        const guia = guias[0];
+        const valorAnterior = Number(guia.valorRecalculado ?? guia.valor);
+        guia.valor = Math.round(valorAnterior * 1.05 * 100) / 100;
+        guia.valorRecalculado = guia.valor;
+        guia.vencimento = new Date(Date.now() + 10 * 86400000).toISOString();
+        registrarRecalculoGuiaMock(guia, valorAnterior, "INSS");
+        Object.assign(guia, { paymentStatus: "OPEN", paymentConfirmedAt: null, emailStatus: "PENDING", canRecalculate: false });
+        Object.assign(guia, recalculoDoMock(guia));
+        return { ok: true, result: {
+          company: { id: companyId, razao: company.razao, cnpj: company.cnpj },
+          circular: getCircularRecord(companyId, competencia),
+          accounting: { ok: true, generatedEntries: [] },
+          guide: { ...guia, guideId: guia.id, companyId },
+          inss: { status: "EMITTED", competencia, inssTotal: guia.valor, inssVencimento: guia.vencimento },
+        } };
+      }
       const inssTotal = Number(faker.finance.amount({ min: 180, max: 12000, dec: 2 }));
       const inssVencimento = faker.date.soon({ days: 20 }).toISOString();
       const circular = {
@@ -5463,7 +5553,7 @@ export function createMockApi() {
       const page = Math.max(1, Number(params.page || 1));
       const limit = Math.min(200, Number(params.limit || 50));
       const paged = list.slice((page - 1) * limit, page * limit);
-      return { data: paged, total: list.length, page, limit };
+      return { data: paged.map((entry) => comRecalculoGuiaMock(companyId, entry)), total: list.length, page, limit };
     },
     async createAccountingEntry(companyId, input) {
       await delay();
@@ -6244,13 +6334,14 @@ export function createMockApi() {
         [meses[4]]: { temDeclaracao: true, temRecibo: false, semFaturamento: true },
         [meses[5]]: { temDeclaracao: true, temRecibo: true, semFaturamento: false },
       };
-      return { year: y, provisoes, receitas, extrato };
+      return { year: y, provisoes: provisoes.map((entry) => comRecalculoGuiaMock(companyId, entry)), receitas, extrato };
     },
     async getCircularAccountingEntries(companyId, competencia) {
       await delay();
       const circular = getCircularRecord(companyId, competencia);
       const list = mockEntriesByCompany.get(companyId) || [];
-      const entries = list.filter((entry) => entry.competencia === competencia && entry.origem === "SERPRO");
+      const entries = list.filter((entry) => entry.competencia === competencia && entry.origem === "SERPRO")
+        .map((entry) => comRecalculoGuiaMock(companyId, entry));
       return { circular, entries, allEntries: entries };
     },
     async updateCircular(companyId, competencia, input = {}) {
@@ -7004,41 +7095,28 @@ export function createMockApi() {
     // (`notas/components/PendenciasList.jsx`) — que responde *"entrou nota depois que eu fechei o
     // mês?"* — só passou a ser renderizada na aba Auditoria em 21/08/2026. Um mock vazio esconderia
     // offline exatamente o bloco novo: `PendenciasList` devolve `null` sem pendência aberta.
-    async listPendenciasPosFechamento() {
+    async listPendenciasPosFechamento(companyId) {
       await delay(60);
       return [{
         id: "mock-pend-1",
         competencia: "2026-05",
-        notaId: "mock-nfse-6",
+        notaId: "mock-auditoria-pos",
         motivo: "nota_retroativa",
         observacoes: "NFS-e 33045572255387580000103000000013006 chegou para 2026-05 (competência já fechada).",
         resolvida: false,
         resolvidaAt: null,
         resolvidaByUserId: null,
         createdAt: "2026-08-14T11:20:00.000Z",
-      }];
+      }].filter(p => !pendenciasConferidas.has(`${companyId}|${p.id}`));
     },
-    async resolverPendencia() { await delay(60); return { ok: true }; },
+    async resolverPendenciaPosFechamento(companyId, pendenciaId) { await delay(60); pendenciasConferidas.add(`${companyId}|${pendenciaId}`); return { ok: true }; },
     async syncDfe() { await delay(80); return { ok: true, result: { totalDocs: 0, byType: {}, newCursor: "0" } }; },
     async getDfeState() { await delay(60); return null; },
     async clearDfeError() { await delay(40); return { ok: true }; },
     async syncAdn() { await delay(80); return { ok: true, result: { totalDocs: 0, byStatus: {}, newCursor: "0" } }; },
     async getAdnState() { await delay(60); return null; },
     async clearAdnError() { await delay(40); return { ok: true }; },
-    async importInvoicesXml(_companyId, files, { type = "NFSE" } = {}) {
-      await delay(120);
-      if (type === "NFE") return { ok: false, mensagem: "A importação de XML/ZIP de NF-e está disponível no ambiente conectado. Nenhum arquivo foi gravado neste mock." };
-      const errors = [];
-      for (const file of files || []) {
-        const xml = await file.text();
-        const doc = new DOMParser().parseFromString(xml, "application/xml");
-        const raiz = doc.documentElement?.localName?.toLowerCase();
-        const reason = doc.querySelector("parsererror") ? "invalid_xml"
-          : ["nfeproc", "procnfe", "nfe", "resnfe"].includes(raiz) ? "nfe_na_area_nfse" : "mock_sem_gravacao";
-        errors.push({ file: file.name, reason });
-      }
-      return { created: 0, updated: 0, duplicates: 0, errors };
-    },
+    importInvoicesXml: importarNotasMock,
     // Q48: download de notas em lote — job fake que "conclui" no primeiro poll.
     async createNotasDownload(payload = {}) {
       await delay(80);
@@ -9296,8 +9374,8 @@ export function createMockApi() {
             motivo: "SEM_COMPETENCIA_GRAVADA",
             total: 2, listadas: 2, truncada: false,
             notas: [
-              { notaId: "mock-nfse-7", numero: "13007", chaveAcesso: null, emissao: `${competencia}-19`, competencia: null, valor: 890 },
-              { notaId: "mock-nfse-8", numero: "13008", chaveAcesso: null, emissao: `${competencia}-22`, competencia: null, valor: 1500 },
+              { notaId: "mock-auditoria-sem-comp-1", numero: "13007", chaveAcesso: null, emissao: `${competencia}-19`, competencia: null, valor: 890 },
+              { notaId: "mock-auditoria-sem-comp-2", numero: "13008", chaveAcesso: null, emissao: `${competencia}-22`, competencia: null, valor: 1500 },
             ],
           },
           empresa: {
@@ -9444,6 +9522,7 @@ export function createMockApi() {
     },
 
     async getPerfilFiscal(companyId) {
+      if (perfisSalvos.has(companyId)) return copiar(perfisSalvos.get(companyId));
       await delay(40);
       const idx = Math.max(0, mockCompanies.findIndex((c) => c.companyId === companyId));
       // A 1ª empresa tem cadastro SALVO; as demais mostram o perfil DERIVADO da ficha.
@@ -9493,7 +9572,14 @@ export function createMockApi() {
         candidatos: idx === 0 ? candidatos.filter(c => !c.impeditivo) : candidatos,
       };
     },
-    async savePerfilFiscal() { await delay(60); return { ok: true, candidatos: [] }; },
+    async savePerfilFiscal(companyId, perfilAtividades) {
+      await delay(60);
+      const anterior = await this.getPerfilFiscal(companyId);
+      const candidatos = Array.isArray(perfilAtividades) ? perfilAtividades : [];
+      const perfil = { ...anterior, candidatos: copiar(candidatos), temCadastro: true, temFatorR: candidatos.some(c => c.ativo !== false && c.sujeitoFatorR) };
+      perfisSalvos.set(companyId, perfil);
+      return copiar(perfil);
+    },
     async listProdutosServicos() { await delay(40); return { ok: true, items: [] }; },
     async createProdutoServico() { await delay(60); return { ok: true, produto: null }; },
     async updateProdutoServico() { await delay(60); return { ok: true, produto: null }; },
@@ -9564,6 +9650,11 @@ export function createMockApi() {
     },
     async apurarV2() { await delay(150); return { ok: true, result: { ok: true, snapshot: null, dasCalculadoLocal: 0, rbt12: 0, receitaPorAnexo: {}, aliquotaEfetivaPorAnexo: {} } }; },
     async getApuracaoSnapshot(companyId, competencia) {
+      const salvo = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
+      if (salvo) return { ok: true, snapshot: { portalClientId: companyId, competencia, estado: salvo.estado,
+        idempotencyKey: salvo.calculoId, dasSimuladoSerpro: salvo.resultado?.dasValor ?? null,
+        dasRetornadoSerpro: salvo.estado === 'transmitida' ? salvo.resultado?.dasValor ?? null : null,
+        numeroDeclaracao: salvo.numeroDeclaracao || null, dasCalculadoLocal: null, dasCalculadoLocalProcedencia: null } };
       await delay(40);
       // ⚠ Era `snapshot: null` fixo, e por isso o KPI "DAS apurado" da aba não tinha COMO ser
       // conferido offline — nem o valor, nem (agora) a procedência dele. O snapshot sai da mesma
@@ -9843,6 +9934,10 @@ export function createMockApi() {
         geradoEm: new Date().toISOString(),
         geradoPor: "mock-user",
       };
+      const fechamento = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
+      if (fechamento) {
+        relatorio.dados.preApurado.oficial = { ...(await this.getApuracaoSnapshot(companyId, competencia)).snapshot, fonte: 'ApuracaoSnapshot', dasCalculadoLocalNoSnapshot: null };
+      }
       mockRelatoriosFaturamento.set(`${companyId}|${competencia}`, relatorio);
       return { ok: true, relatorio };
     },
@@ -9914,8 +10009,7 @@ export function createMockApi() {
       const nao = (motivoAusencia) => ({ valor: null, apurado: false, origem: null, motivoAusencia });
 
       const semAtividadePresumido = nao(
-        "A atividade do Lucro Presumido não é derivada do CNAE: o projeto não tem de-para CNAE→presunção "
-        + "de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. Escolha na tela.",
+        "Selecione e confira a atividade do Lucro Presumido. Ela define os percentuais de presunção usados na comparação.",
       );
 
       // ⚠⚠ OS VALORES TÊM CENTAVOS DE PROPÓSITO, E ISSO É REGRESSÃO, NÃO CAPRICHO.
@@ -10184,6 +10278,10 @@ export function createMockApi() {
           // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
           // de 800, que é a que a tela precisa apontar, inclusive na célula do mês.
           folhaMensal12: pas.map((pa) => ({ pa, valor: 5000 })),
+          ...(fechamentosSalvos.has(chaveFechamento(companyId, competencia)) ? (() => {
+            const salvo = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
+            return { ...copiar(salvo.formulario), estado: salvo.estado, calculoId: salvo.calculoId, snapshot: copiar(salvo), simulacaoSerpro: copiar(salvo.resultado), numeroDeclaracao: salvo.numeroDeclaracao || null };
+          })() : {}),
           folhaDerivada: {
             disponivel: true,
             total: 59200,
@@ -10205,6 +10303,15 @@ export function createMockApi() {
     //     caixa de resultado precisa avisar em vez de pintar de verde com "—".
     // ⚠ A mensagem do caso 2 é ROTULADA como mock de propósito: não inventamos texto da RFB.
     async calcularFechamento(companyId, competencia, payload = {}) {
+      if ((payload.regimeApuracao || 'COMPETENCIA') !== 'COMPETENCIA') return { ok: false, error: 'REGIME_APURACAO_NAO_SUPORTADO', message: 'Regime de caixa indisponível neste fluxo.' };
+      const chave = chaveFechamento(companyId, competencia);
+      if (['transmitindo', 'transmitida'].includes(fechamentosSalvos.get(chave)?.estado)) return { ok: false, error: 'FECHAMENTO_BLOQUEADO', message: 'Reabra a competência antes de calcular novamente.' };
+      const concluir = resultado => {
+        const calculoId = 'mock-calculo-' + (++sequenciaCalculo);
+        const snapshot = { estado: 'calculada', idempotencyKey: calculoId, calculoId, formulario: copiar(formularioCalculo(payload)), resultado: copiar(resultado) };
+        fechamentosSalvos.set(chave, snapshot);
+        return { ok: true, result: { ...resultado, calculoId, snapshot: copiar(snapshot) } };
+      };
       await delay(150);
       const atividades = Array.isArray(payload.atividades) ? payload.atividades : [];
       const somaAtividades = atividades.reduce(
@@ -10251,33 +10358,50 @@ export function createMockApi() {
         //
         // ⚠ E o DAS zero não é "nada a pagar por engano": mês sem receita não gera DAS, e a
         // declaração continua sendo obrigatória (Manual PGDAS-D/DEFIS §6.4.1).
-        return {
-          ok: true,
-          result: {
+        return concluir({
             dasValor: 0,
             rbt12: 0,
             mensagens: ["MOCK: declaração sem movimento — receita R$ 0,00, nenhuma atividade informada."],
-          },
-        };
+          });
       }
       const folha = Array.isArray(payload.folhaMensal12) ? payload.folhaMensal12 : [];
       const totalFolha = folha.reduce((s, f) => s + Number(f?.valor || 0), 0);
       if (atividades.some((a) => a?.sujeitoFatorR) && totalFolha === 0) {
-        return {
-          ok: true,
-          result: {
+        return concluir({
             dasValor: null,
             rbt12: null,
             mensagens: ["MOCK: cenário de retorno sem valores devidos, para conferir a tela. Não é texto da RFB."],
-          },
-        };
+          });
       }
-      return { ok: true, result: { dasValor: 12345.67, rbt12: 480000, mensagens: [] } };
+      return concluir({ dasValor: 12345.67, rbt12: 480000, mensagens: [] });
     },
-    async salvarFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "fechada" } } }; },
-    async transmitirFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-1", dasValor: 0 } }; },
-    async reabrirFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "calculada" } } }; },
-    async retificarFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-RET-1", dasValor: 0 } }; },
+    async salvarFechamento(companyId, competencia, payload = {}) {
+      await delay(80);
+      const salvo = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
+      if (!salvo || !['calculada', 'fechada'].includes(salvo.estado) || payload.calculoId !== salvo.calculoId || JSON.stringify(formularioCalculo(payload)) !== JSON.stringify(salvo.formulario)) return obsoleto();
+      salvo.estado = 'fechada';
+      return { ok: true, result: { snapshot: copiar(salvo) } };
+    },
+    async transmitirFechamento(companyId, competencia, confirmCompetencia, calculoId) {
+      const salvo = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
+      if (confirmCompetencia !== competencia) return { ok: false, error: 'confirm_competencia_mismatch', message: 'Confirme a competência.' };
+      if (!salvo || !['calculada', 'fechada'].includes(salvo.estado) || !calculoId || calculoId !== salvo.calculoId) return obsoleto();
+      salvo.estado = 'transmitindo';
+      await delay(200);
+      salvo.estado = 'transmitida'; salvo.numeroDeclaracao = 'MOCK-' + calculoId;
+      return { ok: true, result: { ...copiar(salvo.resultado), numeroDeclaracao: salvo.numeroDeclaracao, snapshot: copiar(salvo) } };
+    },
+    async conferirTransmissaoFechamento() { await delay(80); return { ok: true, result: { ok: true, confirmada: false, mensagem: 'Envio ainda não confirmado no ambiente de demonstração.' } }; },
+    async reabrirFechamento(companyId, competencia, motivo) {
+      await delay(80);
+      if (!String(motivo || '').trim()) return { ok: false, error: 'motivo_required', message: 'Informe o motivo da reabertura.' };
+      const chave = chaveFechamento(companyId, competencia), salvo = fechamentosSalvos.get(chave);
+      if (salvo?.estado === 'transmitindo') return { ok: false, error: 'TRANSMISSAO_PENDENTE_CONFERENCIA' };
+      const reaberto = { formulario: {}, resultado: {}, ...(salvo || {}), estado: 'aberta', calculoId: null, idempotencyKey: null };
+      fechamentosSalvos.set(chave, reaberto);
+      return { ok: true, result: { snapshot: copiar(reaberto) } };
+    },
+    async retificarFechamento(companyId, competencia, confirmCompetencia, calculoId) { return this.transmitirFechamento(companyId, competencia, confirmCompetencia, calculoId); },
     // ⚠ Registra a AFIRMAÇÃO de entrega feita fora do portal — não transmite nada e não vira prova.
     // A recusa da confirmação é reproduzida de propósito: é ato de consequência.
     async registrarEntregaPgdasExterna(companyId, competencia, { entregue, confirmCompetencia, observacao } = {}) {

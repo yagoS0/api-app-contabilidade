@@ -158,3 +158,11 @@ describe("o contrato que chega aos dois portais", () => {
     expect(naoEncontrada.linhaDigitavelValorLidoCentavos).toBeNull();
   });
 });
+
+it('recaptura preserva aviso do recálculo sem conservar dados fiscais substituídos', async () => {
+  const { prisma } = require('../../../infrastructure/db/prisma.js');
+  const recalculoGuia = { guiaId: 'g1', recalculadoEm: '2026-09-18T12:00:00.000Z', valorAnterior: 1000, valorAtual: 1100 };
+  prisma.guide.findUnique.mockResolvedValueOnce({ extracted: { recalculoGuia, numeroDocumento: 'antigo' } });
+  await chamar({ existingGuideId: 'g1', extracted: { numeroDocumento: 'novo' } });
+  expect(mockAtualizados[0].extracted).toEqual({ recalculoGuia, numeroDocumento: 'novo' });
+});

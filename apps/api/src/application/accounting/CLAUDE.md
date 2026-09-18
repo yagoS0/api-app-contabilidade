@@ -1801,3 +1801,9 @@ Se sim, ECD entra no roadmap e o referencial vem junto.
 - Nunca somar `tipo="PARCELA"` nem lançamentos `EXPORTADO` que não devam mudar.
 - Isolamento multi-tenant: sempre `portalClientId`.
 - Contas em branco são esperadas no 1º mês — a memória preenche as próximas.
+
+## Recálculo explícito e aviso contábil — 18/09/2026
+
+O recálculo de DAS/DARF e a atualização explícita do INSS registram `Guide.extracted.recalculoGuia` depois do retorno fiscal confirmado. O registro tem instante, usuário e totais anterior/atual, inclusive quando não variam; `updatedAt` não comprova o recálculo. Circular, Provisões e Lançamentos expõem `recalculoGuia` pelo vínculo com a guia e escopo da empresa. DAS legado sem vínculo só admite associação inequívoca da competência, sem parcelas. O contrato informa `escopoValor: TOTAL_GUIA`: no DARF consolidado esse total não é o valor de cada tributo.
+
+O aviso não altera linhas, valores, baixas, exportação nem fechamento contábil. INSS permanece sintético na Circular, sem inventar provisão. Os campos `recalculated*` antigos continuam disponíveis. A evidência é preservada ao recapturar a guia/declaração; falha ao gravar o DARF deixa de ser engolida para não afirmar recálculo sobre documento antigo. Testes locais com banco e serviços substituídos, sem consulta fiscal real. Não publicado nesta etapa.

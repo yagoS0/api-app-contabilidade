@@ -47,7 +47,9 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
-  const [servicos16, setServicos16] = useState(null);
+  const [escolha16, setEscolha16] = useState(null);
+  const servicos16 = escolha16?.companyId === companyId ? escolha16.valor : null;
+  const setServicos16 = (valor) => setEscolha16({ companyId, valor });
   const pedidoAtual = useRef(0);
 
   const carregar = useCallback(async () => {

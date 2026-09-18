@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Acesso às guias antigas — 18/09/2026
+
+O usuário não encontrou “Pendências anteriores”: o acesso era condicionado à contagem positiva na visão do mês. Agora “Pendências anteriores” e “Histórico completo” são ações sempre visíveis acima da lista, com indicação da visão ativa. A contagem aparece somente após carregar e quando positiva; o vazio orienta consultar o histórico. Apenas a consulta por competência fiscal permanece em “Outras consultas”. Recalcular continua na seleção de uma guia, com as mesmas regras por tipo, pagamento e parcelamento. Alteração em desenvolvimento, sem publicação.
+
 ## Resultado da liberação em lote — 10/09/2026
 
 `ResultadoLiberacaoGuias` apresenta o retorno da seleção da carteira por empresa e canal, com resumo e detalhes recolhidos. `resumirLiberacao` usa a prévia da execução, nunca a seleção/competência posterior. Falta de cadastro é canal não utilizado; tentativa recusada ou indeterminada continua exigindo atenção. Aceite de WhatsApp significa aguardando entrega. Parcelas faltantes continuam identificadas por empresa. O resultado permanece ao limpar a seleção; falha na atualização da carteira não apaga o retorno nem repete o envio. A prévia mostra cada empresa uma vez, seus destinatários e documentos expansíveis, avisando quando só haverá liberação no portal.
@@ -506,3 +510,5 @@ em telefone, e-mail, opt-in ou usuário ao alterar somente os acessos.
 A seleção de empresas (`BarraSelecaoEmpresas`) tem mês de vencimento independente da competência da carteira. O painel `/guides/batch-email` usa o mês atual do Rio de Janeiro, permite consultar qualquer mês e mantém competência como filtro opcional com aviso. `GuiasPorVencimento` mostra cada documento e parcela faltante, inclusive empresa sem nenhum PDF disponível. Pagas não são selecionadas. Pendências anteriores e sem vencimento ficam fora do lote.
 
 Os dois canais enviam IDs exatos; a assinatura devolvida pelo servidor acompanha a confirmação. A mensagem de envio não pode declarar a carteira concluída se há parcelas faltantes. O mock mantém IDs estáveis e reflete o envio sem esconder essas pendências.
+
+Revisão fiscal (18/09/2026): mensagens de envio/reenvio individual e em seleção, confirmação de pagamento e exclusão pertencem à navegação que iniciou a ação. Ao trocar de aba/empresa, limpar avisos; resultados atrasados não recarregam nem publicam feedback na nova tela. O envio já autorizado continua no contexto original. Cobertura em app/hooks/__tests__/guiasEmpresaAtual.test.jsx.

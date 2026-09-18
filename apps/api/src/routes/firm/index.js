@@ -155,6 +155,7 @@ import {
   ROTINA_LABELS,
 } from "../../application/fiscal/serpro/CompanyRotinasService.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { registrarRecalculoGuia } from "../../application/guides/RegistroRecalculoGuia.js";
 import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED, INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 import { capturarLpDaCompetencia, reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
@@ -4126,6 +4127,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             competencia: scoped.guide.competencia,
             guideId: scoped.guide.id,
           }));
+          await registrarRecalculoGuia(prisma, { guiaAnterior: scoped.guide, guiaId: scoped.guide.id, especie, userId: req.auth?.user?.id });
           await markGuideOpenBySerpro({ guideId: scoped.guide.id });
           const emailResult = await runGuideEmailWorkerSelected({ guideIds: [scoped.guide.id] });
           return res.json({
@@ -4151,6 +4153,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           existingGuideId: scoped.guide.id,
           serviceId,
         }));
+        await registrarRecalculoGuia(prisma, { guiaAnterior: scoped.guide, guiaId: result.guide.guideId, especie, userId: req.auth?.user?.id });
         await markGuideOpenBySerpro({ guideId: result.guide.guideId });
 
         const emailResult = await runGuideEmailWorkerSelected({
@@ -4511,7 +4514,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // com juros/multa, mesmo que o cliente tenha pago no prazo). Bloqueia antes de sincronizar.
         const existingInss = await prisma.guide.findFirst({
           where: { portalClientId: portalCompanyId, tipo: "INSS", competencia, status: "PROCESSED" },
-          select: { paymentStatus: true },
+          select: { id: true, portalClientId: true, competencia: true, valor: true, paymentStatus: true },
         });
         if (existingInss && isGuidePaid(existingInss)) {
           return res.status(409).json({
@@ -4527,6 +4530,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           atualizar: req.body?.atualizar === true,
           contratanteCnpj: contratanteCnpj || undefined,
         }));
+
+        if (req.body?.atualizar === true && existingInss && result?.guide?.guideId && result?.inss?.status === "EMITTED") {
+          await registrarRecalculoGuia(prisma, { guiaAnterior: existingInss, guiaId: result.guide.guideId, especie: "INSS", userId: req.auth?.user?.id });
+        }
 
         // Auto-send REMOVIDO. Guia INSS fica em emailStatus=PENDING aguardando
         // envio em lote via página `Envio de e-mails em lote`.

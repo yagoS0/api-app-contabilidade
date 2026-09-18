@@ -59,7 +59,7 @@ function dadosBase(over = {}) {
 }
 
 function montar(apiOver = {}) {
-  const calcularFechamento = jest.fn(async () => ({ ok: true, result: { dasValor: 712.34, rbt12: 480000, mensagens: [] } }));
+  const calcularFechamento = jest.fn(async () => ({ ok: true, result: { calculoId: "calculo-1", dasValor: 712.34, rbt12: 480000, mensagens: [] } }));
   const gerarRelatorioFaturamento = jest.fn(async () => ({ ok: true, relatorio: RELATORIO }));
   const feedback = { notifySuccess: jest.fn(), notifyError: jest.fn() };
   const api = {

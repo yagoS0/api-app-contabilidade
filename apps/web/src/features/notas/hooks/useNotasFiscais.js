@@ -1,7 +1,7 @@
 // Q12.A.4: state + handlers da aba Notas Fiscais.
 // Único hook, instanciado pelo CompanyDetailPage via lazy load.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resultadoImportacao } from "../lib/resultadoImportacao";
 
 // Competência (YYYY-MM) do mês anterior ao atual.
@@ -11,7 +11,17 @@ function prevMonthCompetencia() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function useNotasFiscais({ api, companyId, feedback }) {
+export function useNotasFiscais({ api, companyId, companyName, feedback }) {
+  const empresaAtual = useRef(companyId);
+  empresaAtual.current = companyId;
+  const importacaoAtiva = useRef(false);
+  const leituraNotas = useRef(0);
+  const leituraCaptura = useRef(0);
+  const leituraDetalhe = useRef(0);
+  const capturaAtiva = useRef(false);
+  const recarregarNotasAtuais = useRef(null);
+  const montado = useRef(true);
+  useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
   const [ano, setAno] = useState(() => new Date().getUTCFullYear());
   const [competencias, setCompetencias] = useState([]);
   const [procuracoes, setProcuracoes] = useState([]);
@@ -19,6 +29,10 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [erroNotas, setErroNotas] = useState(null);
+  const [empresaDaLista, setEmpresaDaLista] = useState(null);
+  const [empresaDaCaptura, setEmpresaDaCaptura] = useState(null);
+  const [empresaDoDetalhe, setEmpresaDoDetalhe] = useState(null);
   // Q12.B
   const [dfeState, setDfeState] = useState(null);
   const [dfeSyncing, setDfeSyncing] = useState(false);
@@ -31,6 +45,14 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   // Q56: import MANUAL de notas (XML)
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importAndamento, setImportAndamento] = useState(null);
+  const [importModalAberto, setImportModalAberto] = useState(false);
+  useEffect(() => {
+    if (!importing) return;
+    const avisar = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [importing]);
   // Q12.C.1: listagem de notas + resumo
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
@@ -61,6 +83,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
 
   const loadAll = useCallback(async () => {
     if (!companyId || !api) return;
+    const leitura = ++leituraCaptura.current;
+    const atual = () => montado.current && empresaAtual.current === companyId && leituraCaptura.current === leitura;
     setLoading(true);
     setError(null);
     try {
@@ -72,18 +96,23 @@ export function useNotasFiscais({ api, companyId, feedback }) {
         api.getDfeState ? api.getDfeState(companyId) : Promise.resolve(null),
         api.getAdnState ? api.getAdnState(companyId) : Promise.resolve(null),
       ]);
+      if (!atual()) return;
       setDfeState(dfe);
       setAdnState(adn);
+      setEmpresaDaCaptura(companyId);
     } catch (err) {
-      setError(err?.message || "Falha ao carregar Notas Fiscais.");
+      if (atual()) setError(err?.message || "Falha ao carregar o estado da captura.");
     } finally {
-      setLoading(false);
+      if (atual()) setLoading(false);
     }
   }, [api, companyId]);
 
   const loadNotas = useCallback(async (filtersOverride) => {
     if (!companyId || !api) return;
+    const leitura = ++leituraNotas.current;
+    const atual = () => montado.current && empresaAtual.current === companyId && leituraNotas.current === leitura;
     setLoadingNotas(true);
+    setErroNotas(null);
     try {
       const f = filtersOverride || notasFilters;
       // Listagem + summary em paralelo com os mesmos filtros — MENOS `papel`: as caixas
@@ -101,19 +130,27 @@ export function useNotasFiscais({ api, companyId, feedback }) {
         api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),
         api.getNotasSummary ? api.getNotasSummary(companyId, recebidasArgs) : Promise.resolve(null),
       ]);
+      if (!atual()) return;
+      if (!out || !Array.isArray(out.notas)) throw new Error("Não foi possível confirmar a lista de notas.");
       setNotas(out?.notas || []);
       setNotasTotal(out?.total || 0);
       setNotasSummary(summary);
       setNotasRecebidas(recebidas);
+      setEmpresaDaLista(companyId);
     } catch (err) {
-      setError(err?.message || "Falha ao carregar notas.");
+      if (atual()) setErroNotas(err?.message || "Falha ao carregar notas.");
     } finally {
-      setLoadingNotas(false);
+      if (atual()) setLoadingNotas(false);
     }
   }, [api, companyId, notasFilters, ano]);
+  recarregarNotasAtuais.current = loadNotas;
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadNotas(); }, [loadNotas]);
+  useEffect(() => {
+    leituraDetalhe.current += 1;
+    setNotaAbertaId(null); setNotaAberta(null); setNotaError(null); setNotaLoading(false);
+  }, [companyId, notasFilters.competencia]);
 
   async function createProcuracao(body) {
     setSaving(true);
@@ -168,7 +205,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   async function resolverPendencia(pendId) {
     setSaving(true);
     try {
-      await api.resolverPendencia(companyId, pendId);
+      await api.resolverPendenciaPosFechamento(companyId, pendId);
       feedback?.notifySuccess?.("Pendência marcada como resolvida.");
       await loadAll();
     } catch (err) {
@@ -177,10 +214,14 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   }
 
   async function syncDfe({ env = "prod" } = {}) {
+    if (capturaAtiva.current || !companyId) return;
+    capturaAtiva.current = true;
     setDfeSyncing(true);
     setDfeLastResult(null);
     try {
       const out = await api.syncDfe(companyId, { env });
+      if (!montado.current || empresaAtual.current !== companyId) return;
+      if (!out || typeof out.ok !== "boolean" || !out.result || (out.ok && !Number.isFinite(Number(out.result.totalDocs)))) throw new Error("Não foi possível confirmar o resultado da captura DFe. Confira o estado antes de buscar novamente.");
       setDfeLastResult(out?.result || out);
       if (out?.ok) {
         feedback?.notifySuccess?.(`Captura DFe (${env}) concluída — ${out.result?.totalDocs || 0} documentos.`);
@@ -188,10 +229,12 @@ export function useNotasFiscais({ api, companyId, feedback }) {
         feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura DFe.");
       }
       // Recarrega estado E a lista de notas — as notas capturadas aparecem sem precisar consultar de novo.
-      await Promise.all([loadAll(), loadNotas()]);
+      await Promise.all([loadAll(), recarregarNotasAtuais.current?.()]);
+      if (!out.ok && montado.current && empresaAtual.current === companyId) setError(out.result?.message || out.message || "Falha na captura DFe.");
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro.");
+      if (empresaAtual.current === companyId) { setError(err?.message || "Falha na captura DFe."); feedback?.notifyError?.(err?.message || "Erro."); }
     } finally {
+      capturaAtiva.current = false;
       setDfeSyncing(false);
     }
   }
@@ -212,10 +255,14 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   }
 
   async function syncAdn({ env = "prod" } = {}) {
+    if (capturaAtiva.current || !companyId) return;
+    capturaAtiva.current = true;
     setAdnSyncing(true);
     setAdnLastResult(null);
     try {
       const out = await api.syncAdn(companyId, { env });
+      if (!montado.current || empresaAtual.current !== companyId) return;
+      if (!out || typeof out.ok !== "boolean" || !out.result || (out.ok && !Number.isFinite(Number(out.result.totalDocs)))) throw new Error("Não foi possível confirmar o resultado da captura NFS-e. Confira o estado antes de buscar novamente.");
       setAdnLastResult(out?.result || out);
       if (out?.ok) {
         feedback?.notifySuccess?.(`Captura NFS-e (${env}) concluída — ${out.result?.totalDocs || 0} documentos.`);
@@ -223,10 +270,12 @@ export function useNotasFiscais({ api, companyId, feedback }) {
         feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura ADN.");
       }
       // Recarrega estado E a lista de notas — as notas capturadas aparecem sem precisar consultar de novo.
-      await Promise.all([loadAll(), loadNotas()]);
+      await Promise.all([loadAll(), recarregarNotasAtuais.current?.()]);
+      if (!out.ok && montado.current && empresaAtual.current === companyId) setError(out.result?.message || out.message || "Falha na captura NFS-e.");
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro.");
+      if (empresaAtual.current === companyId) { setError(err?.message || "Falha na captura NFS-e."); feedback?.notifyError?.(err?.message || "Erro."); }
     } finally {
+      capturaAtiva.current = false;
       setAdnSyncing(false);
     }
   }
@@ -236,6 +285,9 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   // em branco é indistinguível de "esta nota não tem nada".
   const abrirNota = useCallback(async (notaId) => {
     if (!notaId) return;
+    const pedido = ++leituraDetalhe.current;
+    const atual = () => montado.current && empresaAtual.current === companyId && leituraDetalhe.current === pedido;
+    setEmpresaDoDetalhe(companyId);
     setNotaAbertaId(notaId);
     setNotaAberta(null);
     setNotaError(null);
@@ -246,19 +298,22 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     setNotaLoading(true);
     try {
       const out = await api.getNota(companyId, notaId);
+      if (!atual()) return;
       setNotaAberta(out?.nota || null);
       if (!out?.nota) setNotaError("A API respondeu sem os dados da nota.");
     } catch (err) {
-      setNotaError(err?.message || "Falha ao carregar a nota.");
+      if (atual()) setNotaError(err?.message || "Falha ao carregar a nota.");
     } finally {
-      setNotaLoading(false);
+      if (atual()) setNotaLoading(false);
     }
   }, [api, companyId]);
 
   const fecharNota = useCallback(() => {
+    leituraDetalhe.current += 1;
     setNotaAbertaId(null);
     setNotaAberta(null);
     setNotaError(null);
+    setNotaLoading(false);
   }, []);
 
   // Marca uma nota como cancelada (some do faturamento/apuração) ou reativa.
@@ -266,35 +321,47 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     if (!api?.marcarNotaStatus) { feedback?.notifyError?.("Ação indisponível."); return; }
     try {
       await api.marcarNotaStatus(companyId, notaId, statusEfetivo);
+      if (!montado.current || empresaAtual.current !== companyId) return;
       feedback?.notifySuccess?.(statusEfetivo === "cancelada" ? "Nota marcada como cancelada." : "Nota reativada.");
-      await loadNotas();
+      await recarregarNotasAtuais.current?.();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao atualizar a nota.");
+      if (montado.current && empresaAtual.current === companyId) feedback?.notifyError?.(err?.message || "Falha ao atualizar a nota.");
     }
   }
 
   // Q56: import MANUAL de notas via upload de XML (pra empresas onde a captura automática falhou)
   async function importNotas(files, { type = "NFSE" } = {}) {
     const list = Array.isArray(files) ? files : (files ? [files] : []);
-    if (!list.length) return;
+    if (!list.length || importacaoAtiva.current || !companyId) return;
     if (!api?.importInvoicesXml) {
       feedback?.notifyError?.("Import de notas não disponível.");
       return;
     }
+    importacaoAtiva.current = true;
+    const destino = companyId;
     setImporting(true);
     setImportResult(null);
+    setImportAndamento({ companyId: destino, empresa: companyName || "Empresa selecionada", type, mock: api.mode === "mock", temZip: list.some(f => /\.zip$/i.test(f.name)), progresso: { etapa: "preparando", totalArquivos: list.length, totalLotes: Math.ceil(list.length / (type === "NFE" ? 20 : 50)) } });
+    setImportModalAberto(true);
     try {
-      const out = await api.importInvoicesXml(companyId, list, { type });
+      const out = await api.importInvoicesXml(destino, list, { type, shouldContinue: () => montado.current, onProgress: (progresso) => {
+        if (montado.current) setImportAndamento(atual => ({ ...atual, progresso }));
+      } });
+      if (!montado.current) return;
       const resultado = resultadoImportacao(out, type);
-      setImportResult(resultado);
+      setImportResult({ ...resultado, companyId: destino });
       if (resultado.falhou || resultado.quantidadeProblemas > 0) feedback?.notifyError?.(resultado.mensagem);
       else feedback?.notifySuccess?.(resultado.mensagem);
-      await loadNotas();
+      if (empresaAtual.current === destino) await recarregarNotasAtuais.current?.();
     } catch (err) {
-      setImportResult({ type, falhou: true, problemas: [], mensagem: err?.message || "Falha ao importar notas." });
-      feedback?.notifyError?.(err?.message || "Falha ao importar notas.");
+      if (montado.current) {
+        setImportAndamento(atual => ({ ...atual, progresso: { ...atual?.progresso, etapa: "interrompida" } }));
+        setImportResult({ companyId: destino, type, falhou: true, problemas: [], mensagem: err?.message || "Não foi possível confirmar a importação. Confira as notas antes de tentar novamente." });
+        feedback?.notifyError?.(err?.message || "Falha ao importar notas.");
+      }
     } finally {
-      setImporting(false);
+      importacaoAtiva.current = false;
+      if (montado.current) setImporting(false);
     }
   }
 
@@ -305,7 +372,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     companyId,
     ano, setAno,
     competencias, procuracoes, pendencias,
-    loading, saving, error,
+    loading, saving, error: error || erroNotas, erroCaptura: error, erroNotas,
     reload: loadAll,
     // ⚠⚠ ESTES CINCO NÃO TÊM CONSUMIDOR — medido em 24/08/2026, varrendo cada nome em todo o
     // `src`: **zero chamadas** fora deste arquivo. (O `panel.resolverPendencia` que aparece em
@@ -328,16 +395,20 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
     // Q12.B
-    dfeState, dfeSyncing, dfeLastResult, syncDfe, clearDfeError,
+    dfeState: empresaDaCaptura === companyId ? dfeState : null, dfeSyncing, dfeLastResult, syncDfe, clearDfeError,
     // Q12.B+: NFS-e via ADN
-    adnState, adnSyncing, adnLastResult, syncAdn, clearAdnError,
+    adnState: empresaDaCaptura === companyId ? adnState : null, adnSyncing, adnLastResult, syncAdn, clearAdnError,
     // Q12.C.1: listagem de notas
-    notas, notasTotal, notasSummary, notasRecebidas,
+    notas: empresaDaLista === companyId ? notas : [], notasTotal: empresaDaLista === companyId ? notasTotal : 0,
+    notasSummary: empresaDaLista === companyId ? notasSummary : null, notasRecebidas: empresaDaLista === companyId ? notasRecebidas : null,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas, marcarNotaStatus,
     // Íntegra da nota (clique na linha)
-    notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
+    notaAbertaId: empresaDoDetalhe === companyId ? notaAbertaId : null,
+    notaAberta: empresaDoDetalhe === companyId ? notaAberta : null, notaLoading, notaError, abrirNota, fecharNota,
     // Q56: import manual de notas (XML)
-    importing, importResult, importNotas,
+    importing, importResult: !importResult?.companyId || importResult.companyId === companyId ? importResult : null, importNotas,
+    importAndamento, importModalAberto, importModalResultado: importResult,
+    fecharImportModal: () => { if (!importacaoAtiva.current) setImportModalAberto(false); },
   };
 }

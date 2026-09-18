@@ -25,7 +25,7 @@ export function BotaoAuditoria({ api, companyId, competencia, revisao, href, onA
     return () => { cancelado = true; };
   }, [api, companyId, competencia, revisao]);
   const texto = estado.carregando ? "Conferindo…" : estado.quantidade > 0
-    ? `${estado.quantidade} pendência(s)` : estado.indisponivel ? "Conferir situação" : "Sem pendências";
+    ? `${estado.quantidade} pendência(s)${estado.indisponivel ? " · conferência parcial" : ""}` : estado.indisponivel ? "Conferência indisponível" : "Sem pendências";
   return <a className="btn btn-secondary btn-md" href={href} onClick={(e) => {
     if (oNavegadorAssumeOClique(e)) return;
     e.preventDefault(); onAbrir?.();

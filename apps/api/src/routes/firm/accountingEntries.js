@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { sinalizarRecalculosNosLancamentos } from "../../application/guides/RegistroRecalculoGuia.js";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
@@ -1174,11 +1175,11 @@ export function createAccountingEntriesRouter({ log }) {
 
     return res.json({
       year,
-      provisoes: [
+      provisoes: await sinalizarRecalculosNosLancamentos(prisma, portalClientId, [
         ...provisoes.map((p) => enrichDasProvisao(entryToResponse(p))),
         ...inssSynthetic,
         ...dasSynthetic,
-      ],
+      ]),
       receitas: receitasPorComp,
       acrescimos: acrescimosByMonth,
       extrato: extratoByMonth,
@@ -1421,7 +1422,7 @@ export function createAccountingEntriesRouter({ log }) {
       orderBy: [{ data: "desc" }],
     });
 
-    return res.json({ data: entries.map(entryToResponse) });
+    return res.json({ data: await sinalizarRecalculosNosLancamentos(prisma, portalClientId, entries.map(entryToResponse)) });
   });
 
 
@@ -2005,7 +2006,7 @@ export function createAccountingEntriesRouter({ log }) {
       prisma.accountingEntry.count({ where }),
     ]);
 
-    return res.json({ data: entries.map(entryToResponse), page: pageNum, limit: limitNum, total });
+    return res.json({ data: await sinalizarRecalculosNosLancamentos(prisma, portalClientId, entries.map(entryToResponse)), page: pageNum, limit: limitNum, total });
   });
 
   // ─── Históricos ───────────────────────────────────────────────────────────

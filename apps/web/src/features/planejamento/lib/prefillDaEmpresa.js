@@ -85,6 +85,7 @@ export function prefillDaEmpresa(dados) {
     empresa: dados.empresa || (dados.razao ? { razao: dados.razao } : null),
     referencia: dados.referencia || null,
     historicoMensal: dados.historicoMensal || [],
+    historicoDisponivel: Array.isArray(dados.historicoMensal),
     avisosHistorico: dados.avisosHistorico || [],
     valores,
     campos: normalizados,

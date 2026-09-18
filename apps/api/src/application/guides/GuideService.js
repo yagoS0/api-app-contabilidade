@@ -688,6 +688,12 @@ export async function createOrUpdateGuideFromProcessing({
 
   let savedGuide;
   if (existingGuideId) {
+    // Uma recaptura substitui os dados extraídos, mas não apaga a evidência do recálculo
+    // explícito que a Circular e os Lançamentos consultam.
+    const anterior = await prisma.guide.findUnique({ where: { id: String(existingGuideId) }, select: { extracted: true } });
+    if (anterior?.extracted?.recalculoGuia) {
+      data.extracted = { ...data.extracted, recalculoGuia: anterior.extracted.recalculoGuia };
+    }
     // valorOriginal NÃO é incluído no update — preservado da 1ª captura mesmo se SERPRO recalcular.
     savedGuide = await prisma.guide.update({
       where: { id: String(existingGuideId) },

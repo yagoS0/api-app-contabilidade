@@ -35,3 +35,19 @@ test("mês em andamento não reduz a projeção ao realizado parcial nem gera de
   expect(m.linhas[8]).toMatchObject({ realizado: 30, plano: 100, receita: 100, desvio: null });
   expect(m.totalProjetado).toBe(1200); expect(m.mesesComparados).toBe(0);
 });
+
+test.each([{ atuais: [{ competencia: '2026-01', receita: null, folha: null }] }, { atuais: [{ competencia: '2026-02', receita: 20 }] }, { atuais: [] }])('fonte que desaparece invalida apenas o automático (%j)', ({ atuais }) => {
+  const salvo = preencherMensal({}, dados, 2026, 1200);
+  salvo.meses[1] = editarCampoMensal(editarCampoMensal(salvo.meses[1], 'realizado', 0), 'folha', '');
+  const novo = preencherMensal(salvo, atuais, 2026, 1200);
+  expect(novo.meses[0]).toMatchObject({ realizado: null, folha: null, tributoApurado: null });
+  expect(novo.meses[0].avisoReceita).toMatch(/não está disponível/);
+  expect(novo.meses[1]).toMatchObject({ realizado: 0, folha: '' });
+  expect(salvo.meses[0].realizado).toBe(100);
+});
+test('leitura indisponível preserva foto; zero confirmado e fonte recuperada preenchem', () => {
+  const salvo = preencherMensal({}, dados, 2026, 1200);
+  expect(preencherMensal(salvo, null)).toBe(salvo);
+  expect(preencherMensal(salvo, [{ competencia: '2026-01', receita: 0, folha: 0 }]).meses[0]).toMatchObject({ realizado: 0, folha: 0 });
+  expect(preencherMensal(preencherMensal(salvo, []), dados).meses[0].realizado).toBe(100);
+});

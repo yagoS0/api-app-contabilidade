@@ -8,6 +8,8 @@ import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/s
 //   salvar    → persiste config no snapshot, estado "fechada", grava memória
 //   transmitir→ consulta-antes-de-transmitir + TRANSDECLARACAO11 (individual)
 
+import { criarVinculoCalculo, validarCalculoConfirmado, insumosFormulario, exigirRegimeSuportado, exigirEstadoLivre, erroCalculoObsoleto } from "./CalculoConfirmado.js";
+import { randomUUID } from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { derivarFolha12m } from "./FolhaDerivadaService.js";
 import { getResolvedSerproCredentials } from "../../../fiscal/serpro/SerproRuntimeSettings.js";
@@ -683,6 +685,12 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
 export async function calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }) {
+  exigirRegimeSuportado(regimeApuracao);
+  const regimeCadastrado = await prisma.cadastroFiscal.findUnique({ where: { portalClientId }, select: { regimeApuracao: true } });
+  exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
+  const anterior = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
+  exigirEstadoLivre(anterior);
+  if (anterior?.estado === 'transmitida') throw new FechamentoError('ESTADO_INVALIDO', 'Reabra a apuração para retificar antes de calcular novamente.');
   // Normaliza pra [] — o restante usa atividades.reduce/JSON.stringify.
   atividades = Array.isArray(atividades) ? atividades : [];
 
@@ -759,7 +767,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   // a lista envelhece — a RFB rejeita, o laço reconverge e regrava. Pior caso volta a ser o de hoje.
   const aceitos = await lerPeriodosAceitos({ portalClientId, competencia }).catch(() => null);
   const podar = (lista, aceitosPa) => (
-    Array.isArray(aceitosPa) && aceitosPa.length
+    Array.isArray(aceitosPa)
       ? (lista || []).filter((r) => aceitosPa.includes(String(r.pa)))
       : (lista || [])
   );
@@ -777,27 +785,6 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
       permitirSemMovimento: semMovimento && semAtividades,
     },
   ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
-
-  // Guarda o que a RFB aceitou — as DUAS listas. `gravarDaSimulacao` só cobria as receitas, e é a
-  // FOLHA que precisa ser podada nas empresas de Fator-R (exatamente as que mais gastavam).
-  //
-  // ⚠ Sem tocar em `rbt12` nem em `origem`: a RFB não devolve RBT12, então o número continua sendo
-  // nosso. Gravá-lo como "veio da simulação" promoveria a confiabilidade de um dado que nós
-  // calculamos — o tipo de mentira de procedência que este projeto não aceita.
-  await gravarPeriodosAceitos({
-    portalClientId, competencia,
-    receitas: receitasAceitas,
-    folhas: folhasAceitas,
-  }).catch(() => null);
-
-  // Memória da última config (anexo/atividades/folha/regime) já no Calcular — antes só o Salvar
-  // gravava, e quando o cálculo falhava a escolha se perdia. Best-effort.
-  await salvarConfigMemory({
-    portalClientId,
-    atividadesEscolhidas: atividades,
-    folhaMensal12: folhaMensal12 || null,
-    regimeApuracao: regimeApuracao || null,
-  }).catch(() => null);
 
   const faturamentoInterno = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const faturamentoExterno = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
@@ -823,7 +810,10 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const { receitaPorTipo: receitaPorTipoDoMes } = await receitaPorTipoMercado({ portalClientId, competencia });
 
   // Persiste snapshot (configurando→calculada)
-  const idempotencyKey = `${portalClientId}:${competencia}:${JSON.stringify(atividades)}:${resultado.dasValor}`;
+  const vinculo = criarVinculoCalculo({ portalClientId, competencia,
+    formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }),
+    receitasBrutasAnteriores: receitasAceitas, folhasSalario: folhasAceitas, contribuinteCnpj, contratanteCnpj });
+  const idempotencyKey = vinculo.calculoId;
   const data = {
     rbt12: round2(resultado.rbt12 ?? rbt.rbt12),
     rbt12Extrato: round2(resultado.rbt12 ?? rbt.rbt12),
@@ -831,7 +821,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     folhaMensal12: folhaMensal12 || null,
     receitaInterna: faturamentoInterno,
     receitaExterna: faturamentoExterno,
-    simulacaoSerpro: resultado.raw || resultado,
+    simulacaoSerpro: { raw: resultado.raw ?? resultado, _portalCalculo: vinculo },
     // ⚠ A SIMULAÇÃO OFICIAL DA RFB VAI NA COLUNA DA RFB, NUNCA EM `dasCalculadoLocal`.
     //
     // Este número é o que a Receita respondeu ao `TRANSDECLARACAO11` com
@@ -855,25 +845,51 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     idempotencyKey,
     erroMensagem: null,
   };
-  const existing = await prisma.apuracaoSnapshot.findUnique({
-    where: { portalClientId_competencia: { portalClientId, competencia } },
-  });
-  const snapshot = existing
-    ? await prisma.apuracaoSnapshot.update({ where: { id: existing.id }, data })
-    : await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
+  let snapshot;
+  if (anterior) {
+    const gravado = await prisma.apuracaoSnapshot.updateMany({ where: { id: anterior.id, idempotencyKey: anterior.idempotencyKey, estado: anterior.estado }, data });
+    if (gravado.count !== 1) throw erroCalculoObsoleto();
+    snapshot = { ...anterior, ...data };
+  } else {
+    try { snapshot = await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } }); }
+    catch (err) { if (err?.code === 'P2002') throw erroCalculoObsoleto(); throw err; }
+  }
+  // Guarda o que a RFB aceitou — as DUAS listas. `gravarDaSimulacao` só cobria as receitas, e é a
+  // FOLHA que precisa ser podada nas empresas de Fator-R (exatamente as que mais gastavam).
+  //
+  // ⚠ Sem tocar em `rbt12` nem em `origem`: a RFB não devolve RBT12, então o número continua sendo
+  // nosso. Gravá-lo como "veio da simulação" promoveria a confiabilidade de um dado que nós
+  // calculamos — o tipo de mentira de procedência que este projeto não aceita.
+  await gravarPeriodosAceitos({
+    portalClientId, competencia,
+    receitas: receitasAceitas,
+    folhas: folhasAceitas,
+  }).catch(() => null);
 
-  return { ok: true, dasValor: resultado.dasValor, rbt12: data.rbt12, mensagens: resultado.mensagens, periodosRemovidos, snapshot };
+  // Memória da última config (anexo/atividades/folha/regime) já no Calcular — antes só o Salvar
+  // gravava, e quando o cálculo falhava a escolha se perdia. Best-effort.
+  await salvarConfigMemory({
+    portalClientId,
+    atividadesEscolhidas: atividades,
+    folhaMensal12: folhaMensal12 || null,
+    regimeApuracao: regimeApuracao || null,
+  }).catch(() => null);
+
+  return { ok: true, calculoId: idempotencyKey, dasValor: resultado.dasValor, rbt12: data.rbt12, mensagens: resultado.mensagens, periodosRemovidos, snapshot };
 }
 
 /**
  * [Salvar] — congela a config (estado "fechada") + grava memória pra próxima.
  */
-export async function salvarFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, userId }) {
+export async function salvarFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, userId, calculoId }) {
   const existing = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
   if (!existing) throw new FechamentoError("NAO_CALCULADA", "Calcule a apuração antes de salvar.");
 
+  exigirEstadoLivre(existing);
+  validarCalculoConfirmado(existing, { portalClientId, competencia, calculoId, formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }) });
+  if (!['calculada', 'fechada'].includes(existing.estado)) throw erroCalculoObsoleto();
   // Camada 2 (Robustez): se a conferência com o ADN achou nota que falta no nosso lado, TRAVA o
   // fechamento (é o "28 vs 27"). Só trava em divergência confirmada — "nao_conferivel" (município
   // fora do ADN / sem cert próprio) e "ok" liberam. Resolver: capturar/importar a(s) nota(s) faltante(s)
@@ -887,17 +903,17 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
     );
   }
 
-  const snapshot = await prisma.apuracaoSnapshot.update({
-    where: { id: existing.id },
+  const fechamento = await prisma.apuracaoSnapshot.updateMany({
+    where: { id: existing.id, idempotencyKey: calculoId, estado: existing.estado },
     data: {
-      atividadesEscolhidas: atividades ?? existing.atividadesEscolhidas,
-      folhaMensal12: folhaMensal12 ?? existing.folhaMensal12,
       estado: "fechada",
       fechadaEm: new Date(),
       fechadaPor: userId || null,
     },
   });
 
+  if (fechamento.count !== 1) throw erroCalculoObsoleto();
+  const snapshot = { ...existing, estado: 'fechada' };
   // memória pra próxima competência
   await salvarConfigMemory({
     portalClientId,
@@ -983,11 +999,26 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
   return out;
 }
 
-export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false }) {
-  const snapshot = await prisma.apuracaoSnapshot.findUnique({
-    where: { portalClientId_competencia: { portalClientId, competencia } },
-  });
-  if (!snapshot) throw new FechamentoError("NAO_CALCULADA", "Apuração não calculada.");
+export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false, calculoId }) {
+  const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
+  exigirEstadoLivre(snapshot);
+  const vinculo = validarCalculoConfirmado(snapshot, { portalClientId, competencia, calculoId });
+  if (!['calculada', 'fechada'].includes(snapshot.estado)) throw erroCalculoObsoleto();
+  const reserva = await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: calculoId, estado: snapshot.estado }, data: { estado: 'transmitindo', simulacaoSerpro: { ...snapshot.simulacaoSerpro, _portalTransmissao: { retificar, iniciadaEm: new Date().toISOString() } } } });
+  if (reserva.count !== 1) throw erroCalculoObsoleto();
+  let envioIniciado = false;
+  try {
+    return await transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar, snapshot, vinculo, iniciarEnvio: () => { envioIniciado = true; } });
+  } catch (err) {
+    const recusaConhecida = ['SERPRO_BUSINESS_ERROR', 'RECEITAS_ANTERIORES_NAO_CONVERGIU'].includes(err?.code);
+    const incerto = envioIniciado && !recusaConhecida;
+    await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: calculoId, estado: 'transmitindo' }, data: { estado: incerto ? 'erro_transmissao' : snapshot.estado, erroMensagem: String(err?.message || 'Falha na transmissão') } });
+    if (incerto) throw new FechamentoError('TRANSMISSAO_RESULTADO_INCERTO', 'O envio foi iniciado, mas o resultado não pôde ser confirmado. Confira a entrega na Receita antes de repetir.', { cause: err });
+    throw err;
+  }
+}
+
+async function transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar = false, snapshot, vinculo, iniciarEnvio }) {
   // Q55: retificar permite reprocessar uma competência já "transmitida".
   const estadosOk = retificar ? ["fechada", "calculada", "transmitida"] : ["fechada", "calculada"];
   if (!estadosOk.includes(snapshot.estado)) {
@@ -1011,11 +1042,16 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
 
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
 
+  if (vinculo.contribuinteCnpj !== contribuinteCnpj || vinculo.contratanteCnpj !== contratanteCnpj) throw erroCalculoObsoleto();
+  const regimeCadastrado = await prisma.cadastroFiscal.findUnique({ where: { portalClientId }, select: { regimeApuracao: true } });
+  exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
+
   // 1. CONSULTA-ANTES-DE-TRANSMITIR: já existe declaração pra esse PA?
   const pgdas = new SerproPgdasdService();
   const indice = await pgdas.consultarDeclaracaoIndice({
     contratanteCnpj, contribuinteCnpj, periodoApuracao: competencia,
-  }).catch(() => null);
+  });
+  if (!indice) throw new FechamentoError('CONSULTA_DECLARACAO_FALHOU', 'Não foi possível conferir se esta competência já foi entregue. Nenhuma transmissão foi iniciada.');
   const jaDeclarado = detectarDeclaracaoExistente(indice);
   // Q55: em RETIFICAÇÃO, NÃO fazemos o short-circuit — o objetivo é justamente retransmitir.
   if (jaDeclarado && !retificar) {
@@ -1034,23 +1070,22 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
 
   // 2. Transmite de fato
   const sim = new PgdasSimulacaoService();
-  const rbt = await getRbt12({ portalClientId, competencia });
   let resultado;
   try {
     // Auto-ajuste dos períodos anteriores (receita bruta E folha) também aqui: a rejeição "período
     // desnecessário" ocorre ANTES de a declaração ser aceita, então re-tentar com a lista corrigida
     // é seguro. O cache já convergido pelo Calcular torna o retry raro.
     const exec = await executarComAjusteDePeriodos(
-      (p) => sim.transmitir(p),
+      (p) => { iniciarEnvio(); return sim.transmitir(p); },
       {
         contratanteCnpj, contribuinteCnpj, competencia,
-        regimeApuracao: "COMPETENCIA",
+        regimeApuracao: vinculo.formulario.regimeApuracao,
         // Q55: retificadora (2) na retificação explícita; original (1) caso contrário.
         tipoDeclaracao: retificar ? 2 : 1,
         atividades: snapshot.atividadesEscolhidas || [],
-        receitasBrutasAnteriores: rbt.detalhePorMes || [],
+        receitasBrutasAnteriores: vinculo.receitasBrutasAnteriores,
         // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
-        folhasSalario: await folhasSalarioSeAplicavel(snapshot.atividadesEscolhidas, snapshot.folhaMensal12),
+        folhasSalario: vinculo.folhasSalario,
         permitirSemMovimento: semMovimento,
       },
     );
@@ -1113,27 +1148,36 @@ export async function reabrirFechamento({ portalClientId, competencia, userId })
   if (snapshot.estado !== "transmitida") {
     throw new FechamentoError("ESTADO_INVALIDO", `Só uma apuração 'transmitida' pode ser reaberta para retificar (estado atual: ${snapshot.estado}).`);
   }
-  const updated = await prisma.apuracaoSnapshot.update({
-    where: { id: snapshot.id },
-    data: { estado: "calculada", erroMensagem: null },
+  const updated = await prisma.apuracaoSnapshot.updateMany({
+    where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: "transmitida" },
+    data: { estado: "aberta", idempotencyKey: `reaberta:${randomUUID()}`, erroMensagem: null },
   });
-  return { ok: true, snapshot: updated };
+  if (updated.count !== 1) throw erroCalculoObsoleto();
+  return { ok: true, snapshot: { ...snapshot, estado: "aberta", idempotencyKey: null } };
+}
+
+// Reconciliação explícita: ausência temporária no índice NÃO prova que um envio incerto falhou.
+export async function conferirTransmissaoFechamento({ portalClientId, competencia }) {
+  const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
+  if (snapshot?.estado !== 'erro_transmissao') throw new FechamentoError('ESTADO_INVALIDO', 'A conferência está disponível para transmissões sem confirmação.');
+  if (snapshot.simulacaoSerpro?._portalTransmissao?.retificar || snapshot.numeroDeclaracao) return { ok: true, confirmada: false, mensagem: 'A competência já tinha uma declaração anterior. O índice sozinho não comprova a retificadora. Confira o recibo da retificação no portal oficial; o envio permanece bloqueado para evitar uma nova retificadora.' };
+  const cnpjs = await resolverCnpjs(portalClientId);
+  const indice = await new SerproPgdasdService().consultarDeclaracaoIndice({ ...cnpjs, periodoApuracao: competencia });
+  if (!detectarDeclaracaoExistente(indice)) return { ok: true, confirmada: false, mensagem: 'A entrega ainda não consta no índice. O envio permanece bloqueado para evitar duplicidade. Confira o recibo no portal oficial antes de qualquer nova transmissão.' };
+  const update = await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: 'erro_transmissao' }, data: { estado: 'transmitida', erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() } });
+  if (update.count !== 1) throw erroCalculoObsoleto();
+  return { ok: true, confirmada: true, mensagem: 'Declaração localizada na Receita. A competência foi marcada como transmitida, sem novo envio.' };
 }
 
 /** Heurística: o índice CONSDECLARACAO13 indica declaração existente pro PA?
  * Q44: o retorno do SERPRO usa `dados` (não `dadosSaida`) — lê os dois por robustez. */
 function detectarDeclaracaoExistente(indice) {
-  if (!indice) return false;
   let dados = indice?.dados ?? indice?.dadosSaida;
-  if (typeof dados === "string") { try { dados = JSON.parse(dados); } catch { dados = null; } }
-  if (!dados) return false;
-  const arr = Array.isArray(dados)
-    ? dados
-    : (dados.declaracoes || dados.listaDeclaracoes || dados.declaracaoTransmitida || []);
-  if (Array.isArray(arr) && arr.length > 0) return true;
-  // objeto único de declaração (idDeclaracao/numeroDeclaracao presentes)
-  if (!Array.isArray(dados) && (dados.idDeclaracao || dados.numeroDeclaracao)) return true;
-  return false;
+  if (typeof dados === 'string') { try { dados = JSON.parse(dados); } catch { dados = null; } }
+  if (dados && !Array.isArray(dados) && (dados.idDeclaracao || dados.numeroDeclaracao)) return true;
+  const lista = Array.isArray(dados) ? dados : dados?.declaracoes ?? dados?.listaDeclaracoes ?? dados?.declaracaoTransmitida;
+  if (Array.isArray(lista)) return lista.length > 0;
+  throw new FechamentoError('CONSULTA_DECLARACAO_FALHOU', 'A consulta de declarações retornou dados incompletos. Nenhuma transmissão foi iniciada; confira a situação antes de tentar novamente.');
 }
 
 // Q44: a mensagem de negócio do SERPRO que prova que já existe declaração no PA

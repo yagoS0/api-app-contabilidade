@@ -1,7 +1,7 @@
 // Q15.7 — Modal de fechamento da apuração.
 // Faturamento (read-only, das notas), folha 12m (grade), atividades (editável),
 // aviso de disparidade, alíquota/DAS calculado. Botões: Calcular | Salvar | Transmitir.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Aviso } from "../../../components/ui/Aviso";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
@@ -21,6 +21,11 @@ function pasAnteriores(competencia, n = 12) {
 }
 
 export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, retificar = false, onClose, onChanged }) {
+  const contexto = portalClientId + ':' + competencia;
+  const contextoAtual = useRef(contexto); contextoAtual.current = contexto;
+  const revisao = useRef(0);
+  const operacao = useRef(false);
+  const pedidoAtual = useRef(0);
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
@@ -43,10 +48,12 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   async function abrirCadastro() {
     try {
       const out = await api.getCadastroFiscal?.(portalClientId);
+      if (contextoAtual.current !== contexto) return;
       // pré-preenche o CNAE que a empresa já tem (Company) quando não há CadastroFiscal ainda
       const cadastro = out?.cadastro || (dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null);
       setCadastroData({ cadastro, cnaePrincipalRef: out?.cnaePrincipalRef || null });
     } catch {
+      if (contextoAtual.current !== contexto) return;
       setCadastroData({ cadastro: dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null, cnaePrincipalRef: null });
     }
     setShowCadastro(true);
@@ -56,6 +63,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     setSavingCadastro(true);
     try {
       const out = await api.saveCadastroFiscal?.(portalClientId, payload);
+      if (contextoAtual.current !== contexto) return;
       if (out && out.ok === false) throw new Error(out?.message || out?.error || "Falha ao salvar cadastro");
       feedback?.notifySuccess?.("Cadastro fiscal salvo.");
       setShowCadastro(false);
@@ -66,13 +74,16 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   async function load() {
-    setLoading(true);
+    const pedido = ++pedidoAtual.current;
+    const vigente = () => contextoAtual.current === contexto && pedidoAtual.current === pedido;
+    setLoading(true); setActing(false); setRelatorioGerando(false); setDados(null); invalidarCalculo(); setShowCadastro(false); setCadastroData(null); setSemMovimento(false);
     try {
       // Q19: carrega o catálogo oficial de atividades (de-para idAtividade) em paralelo.
       const [out, atvOut] = await Promise.all([
         api.getFechamento(portalClientId, competencia),
         api.listAtividadesPgdasd?.(portalClientId, `${competencia}-01`).catch(() => null),
       ]);
+      if (!vigente()) return;
       const d = out?.dados || out;
       setDados(d);
       // Dica: empresa marcada como zerada + sem faturamento → já sugere o modo sem movimento.
@@ -87,10 +98,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (Array.isArray(d?.folhaMensal12)) for (const f of d.folhaMensal12) folhaInit[f.pa] = f.valor;
       setFolha(folhaInit);
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao carregar fechamento");
-    } finally { setLoading(false); }
+      if (vigente()) feedback?.notifyError?.(err?.message || "Falha ao carregar fechamento");
+    } finally { if (vigente()) setLoading(false); }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [portalClientId, competencia]);
+  useEffect(() => { load(); return () => { pedidoAtual.current += 1; revisao.current += 1; }; /* eslint-disable-next-line */ }, [portalClientId, competencia]);
 
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
   const folhaSerie = pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
@@ -151,13 +162,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   // backend deixa `null` de propósito quando não sabe o valor (memória com 2+ atividades: não existe
   // regra de rateio), e essa distinção morreria na primeira tecla. `null` some no envio: tanto
   // `somaAtividades` quanto `buildDeclaracaoPayload` leem `Number(v || 0)`.
+  function invalidarCalculo() {
+    revisao.current += 1;
+    setResultado(null); setRelatorio(null); setRelatorioErro(null); setShowTransmit(false); setConfirmComp('');
+  }
   function setAtvValor(idx, campo, valor) {
+    invalidarCalculo();
     const limpo = String(valor).trim() === "" ? null : (Number(valor) || 0);
     setAtividades((prev) => prev.map((a, i) => i === idx ? { ...a, [campo]: limpo } : a));
   }
 
   // Q19: trocar a atividade de uma linha → o anexo/mercado/Fator-R vêm junto (do catálogo).
   function setAtvAtividade(idx, idAtividade) {
+    invalidarCalculo();
     const opt = atividadeOpcoes.find((o) => String(o.idAtividade) === String(idAtividade));
     if (!opt) return;
     setAtividades((prev) => prev.map((a, i) => i === idx ? {
@@ -172,6 +189,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   function addAtividade() {
+    invalidarCalculo();
     const opt = atividadeOpcoes[0];
     if (!opt) { feedback?.notifyError?.("Catálogo de atividades indisponível."); return; }
     setAtividades((prev) => [...prev, {
@@ -182,6 +200,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   function removeAtividade(idx) {
+    invalidarCalculo();
     setAtividades((prev) => prev.filter((_, i) => i !== idx));
   }
 
@@ -215,20 +234,29 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   // lento nem falha por causa do relatório. Se a geração falhar, o cálculo continua valendo e o
   // painel abaixo diz que o relatório não saiu, com "Gerar relatório" para tentar de novo.
   async function gerarRelatorio() {
+    const versao = revisao.current;
+    const vigente = () => contextoAtual.current === contexto && revisao.current === versao;
     if (!api?.gerarRelatorioFaturamento) return;
     setRelatorioGerando(true);
     try {
       const out = await api.gerarRelatorioFaturamento(portalClientId, competencia);
+      if (!vigente()) return;
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao gerar o relatório");
       setRelatorio(out?.relatorio || null);
       setRelatorioErro(null);
     } catch (err) {
+      if (!vigente()) return;
       setRelatorio(null);
       setRelatorioErro(err?.message || "O relatório de faturamento não foi gerado.");
-    } finally { setRelatorioGerando(false); }
+    } finally { if (contextoAtual.current === contexto) setRelatorioGerando(false); }
   }
 
   async function handleCalcular() {
+    if (operacao.current) return;
+    operacao.current = true;
+    invalidarCalculo();
+    const versao = revisao.current;
+    const vigente = () => contextoAtual.current === contexto && revisao.current === versao;
     setActing(true);
     let calculou = false;
     try {
@@ -237,42 +265,51 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
         // Pela SOMA, não pelo comprimento — é o que o payload do PGDAS-D de fato leva.
         semMovimento: semMovimento && declaracaoZerada,
       });
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
-      setResultado(out.result);
+      if (!vigente()) return;
+      setResultado({ ...out.result, calculoId: out.result?.calculoId || out.result?.snapshot?.idempotencyKey });
       feedback?.notifySuccess?.(`DAS calculado: ${fmtMoney(out.result?.dasValor || 0)}`);
       calculou = true;
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro no cálculo (SERPRO)");
-    } finally { setActing(false); }
+      if (vigente()) feedback?.notifyError?.(err?.message || "Erro no cálculo (SERPRO)");
+    } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
 
     // ⚠ FORA do try/finally do cálculo: o resultado já está na tela e os botões já foram
     // liberados antes desta chamada começar. Ver o comentário de `gerarRelatorio`.
-    if (calculou) { await gerarRelatorio(); onChanged?.({ relatorioGerado: true }); }
+    if (calculou && vigente()) { await gerarRelatorio(); if (vigente()) onChanged?.({ relatorioGerado: true }); }
   }
 
   async function handleSalvar() {
+    if (operacao.current || !resultado?.calculoId) return;
+    operacao.current = true;
     setActing(true);
     try {
       const out = await api.salvarFechamento(portalClientId, competencia, {
+        calculoId: resultado.calculoId,
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
       });
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       feedback?.notifySuccess?.("Apuração fechada (pronta pra apurar em lote).");
       onChanged?.();
       onClose?.();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro ao salvar");
-    } finally { setActing(false); }
+      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "Erro ao salvar");
+    } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
   async function handleTransmitir() {
+    if (operacao.current || !resultado?.calculoId) return;
     if (confirmComp !== competencia) { feedback?.notifyError?.("Digite a competência exata."); return; }
+    operacao.current = true;
     setActing(true);
     try {
       // Q55: em modo retificar, retransmite como RETIFICADORA (tipoDeclaracao:2, fura o guard "já declarado").
       const out = retificar
-        ? await api.retificarFechamento(portalClientId, competencia, confirmComp)
-        : await api.transmitirFechamento(portalClientId, competencia, confirmComp);
+        ? await api.retificarFechamento(portalClientId, competencia, confirmComp, resultado.calculoId)
+        : await api.transmitirFechamento(portalClientId, competencia, confirmComp, resultado.calculoId);
+      if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       const r = out.result || {};
       const base = retificar
@@ -295,8 +332,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       onChanged?.();
       onClose?.();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro na transmissão");
-    } finally { setActing(false); }
+      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "Erro na transmissão");
+    } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
   const inputS = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4, color: PANEL.text, padding: "4px 8px", fontSize: "0.8rem" };
@@ -306,7 +343,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   // instante em que a tecla errada custa mais caro, e recuar é o que o Esc significa ali.
   useEffect(() => {
     function onKey(e) {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || operacao.current) return;
       if (showTransmit) { setShowTransmit(false); setConfirmComp(""); return; }
       onClose?.();
     }
@@ -315,17 +352,17 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }, [showTransmit, onClose]);
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+    <div onClick={() => { if (!operacao.current) onClose?.(); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 22, width: "min(96vw, 1040px)", maxHeight: "94vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>🔒 Fechamento — {razao} · {competencia}</div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+          <button disabled={acting} onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
 
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
 
         {dados && !loading && (
-          <>
+          <fieldset disabled={acting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "contents" }}>
             {/* Q44: Cadastro fiscal acessível aqui (a aba "Apuração V2" saiu do menu). */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {!dados.cadastroCompleto && (
@@ -479,7 +516,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   que é o caminho da declaração zerada, era inalcançável na tela. */}
               {dados?.semMovimentoDisponivel && declaracaoZerada && (
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, marginTop: 8, background: "rgba(139,233,253,0.08)", border: "1px solid var(--accent-cyan)", borderRadius: "var(--radius-sm)", fontSize: "0.82rem", cursor: "pointer" }}>
-                  <input type="checkbox" checked={semMovimento} onChange={(e) => setSemMovimento(e.target.checked)} style={{ marginTop: 2 }} />
+                  <input type="checkbox" checked={semMovimento} onChange={(e) => { invalidarCalculo(); setSemMovimento(e.target.checked); }} style={{ marginTop: 2 }} />
                   <span>
                     <strong>Declarar SEM MOVIMENTO (zerado)</strong> — a empresa não teve receita nesta competência.
                     Vai transmitir o PGDAS-D com receita <strong>R$ 0,00</strong> à Receita.
@@ -528,7 +565,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                         {pa}
                         <input
                           type="number" step="0.01" value={folha[pa] || ""}
-                          onChange={(e) => setFolha((p) => ({ ...p, [pa]: e.target.value }))}
+                          onChange={(e) => { invalidarCalculo(); setFolha((p) => ({ ...p, [pa]: e.target.value })); }}
                           placeholder="0,00"
                           style={divergeMes ? { ...inputS, borderColor: "var(--state-warn)" } : inputS}
                         />
@@ -662,7 +699,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   matando a regra do bloco acima. Só existem `primary | secondary | danger`.
                   O `marginRight: auto` separa a saída do grupo de ação: sair não é um passo do
                   fluxo, é o oposto dele. */}
-              <Button onClick={onClose} variant="secondary" style={{ marginRight: "auto" }}
+              <Button disabled={acting} onClick={onClose} variant="secondary" style={{ marginRight: "auto" }}
                 title="Fecha sem salvar. Nada é transmitido.">Fechar</Button>
               {/* ⚠ Desabilitado NOMEIA o motivo. Antes a condição era `atividades.length === 0 &&
                   !semMovimento`: com a lista preenchida de R$ 0,00 o botão ficava ATIVO e o clique
@@ -672,9 +709,9 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               <Button onClick={handleCalcular} disabled={acting || Boolean(motivoCalcularBloqueado)}
                 title={motivoCalcularBloqueado}
                 variant={resultado ? "secondary" : "primary"}>{acting ? "…" : (declaracaoZerada && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</Button>
-              <Button onClick={handleSalvar} disabled={acting || !resultado}
+              <Button onClick={handleSalvar} disabled={acting || !resultado?.calculoId}
                 variant="secondary" title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</Button>
-              <Button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
+              <Button onClick={() => setShowTransmit(true)} disabled={acting || !resultado?.calculoId}
                 variant={resultado ? "primary" : "secondary"} title={!resultado ? "Calcule antes de transmitir" : ""}>
                 {retificar ? "🔄 Retransmitir (retificadora)" : "📤 Apurar/Transmitir"}
               </Button>
@@ -706,7 +743,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 </div>
               </div>
             )}
-          </>
+          </fieldset>
         )}
       </div>
     </div>

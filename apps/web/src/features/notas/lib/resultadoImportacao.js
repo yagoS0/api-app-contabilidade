@@ -1,4 +1,5 @@
 const motivos = {
+  mock_zip_nao_processado: "Este mock não extrai ZIPs. Use XMLs para demonstrar o progresso; a importação ZIP está disponível no ambiente conectado.",
   mock_sem_gravacao: "Nenhuma nota foi gravada neste mock. A importação está disponível no ambiente conectado.",
   nfe_na_area_nfse: "Este XML é de NF-e de venda/compra, não de serviço. Importe na área de NF-e.",
   invalid_xml: "Arquivo inválido ou XML incompleto. Selecione o XML original da nota.",
@@ -34,5 +35,5 @@ export function resultadoImportacao(out, type) {
   const mensagem = out?.ok === false ? out.mensagem || "Não foi possível importar os arquivos. Tente novamente."
     : out?.loteVazio ? out.mensagem || "O lote não trouxe documentos."
     : `${novas} nova(s), ${atualizadas} atualizada(s), ${duplicadas} duplicada(s) e ${quantidadeProblemas} não importada(s).${nfe ? ` No lote: ${out?.emitidas || 0} emitida(s) e ${out?.recebidas || 0} recebida(s).` : ""}`;
-  return { type, mensagem, problemas, quantidadeProblemas, falhou, detalhesTruncados: out?.detalhesTruncados === true };
+  return { type, mensagem: out.mock ? `Demonstração — nenhuma nota foi gravada. ${mensagem}` : mensagem, problemas, quantidadeProblemas, falhou, detalhesTruncados: out?.detalhesTruncados === true };
 }

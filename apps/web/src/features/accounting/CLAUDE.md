@@ -1,5 +1,11 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Aviso de recálculo — 18/09/2026
+
+O bucket “Sem subtipo / fora do regime” também mostra “Recalculada” quando alguma provisão tem registro. Seu popover conserva os totais contábeis e as ações, apresentando data/valores somente junto à entrada efetivamente marcada; as demais entradas do grupo não herdam o aviso.
+
+Usuário restringiu o pedido a informar recálculo, sem substituir valores contábeis. Circular mostra “Recalculada” com detalhes no popover; lançamentos têm “Guia recalculada” expansível na linha. Contrato aditivo `recalculoGuia` traz guiaId/data/valores e `escopoValor: TOTAL_GUIA`; no DARF consolidado o total nunca é atribuído a cada tributo. Sinais legados `recalculatedAt/from/to` continuam legíveis. Recálculo não equivale a pagamento. O detalhe deixa explícita a preservação dos valores contábeis; os avisos não geram baixas ou alteração de linhas. Abas circular/lançamentos já releem os dados ao serem abertas. Sem publicação nesta etapa.
+
 ## A lançar — 08/09/2026
 
 Complemento: avisos de `getVerificacaoLancamentos().porLancamento` são repassados às linhas pelo mesmo carregamento do painel. A tabela mostra “Conferir lançamento” e permite expandir os motivos; não recalcular regras fiscais no frontend. Atualizar a consulta quando a lista de lançamentos mudar. Regras de fornecedor exibem nome das notas da própria empresa, CNPJ formatado e código reduzido/nome das contas; código completo permanece no título. A listagem da API preserva crédito, dia e estado automático.

@@ -1,4 +1,5 @@
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
+import { informacaoRecalculo, DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { EstornoBaixaModal } from "./EstornoBaixaModal";
@@ -415,6 +416,7 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
       )}
       {juros > 0 && <LinhaResumo rotulo="Valor atualizado" valor={`R$ ${fmtValor(atualizado)}`} forte />}
       <LinhaResumo rotulo="Vencimento" valor={guia?.vencimento ? fmtDataCivil(guia.vencimento) : null} />
+      {informacaoRecalculo(entry) && <div style={{ padding: "4px", borderTop: "1px solid var(--border)" }}><DetalheRecalculoGuia entry={entry} /></div>}
       {Number.isFinite(Number(entry?.saldo)) && String(entry?.statusPagamento).toUpperCase() === "PARCIAL" && (
         <LinhaResumo rotulo="Saldo a pagar" valor={`R$ ${fmtValor(entry.saldo)}`} cor="#6EA8FF" forte />
       )}
@@ -446,8 +448,8 @@ function fmtCompetenciaLonga(comp) {
 
 // ─── PagamentoCell ───────────────────────────────────────────────────────────
 
-// Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
-// parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
+// Célula centrada no número e no estado do pagamento, com aviso discreto “Recalculada” quando
+// há registro. Clicar abre detalhes e ações (Editar / Dar baixa / Vincular a parcelamento).
 function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
@@ -551,7 +553,10 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
           • ✅ quitada
       */}
-      {!placeholder && (temAcrescimo || entry.recalculatedAt) && isOpenLike && !pagamentoLocalizado && (
+      {!placeholder && informacaoRecalculo(entry) && (
+        <div style={{ fontSize: "0.7rem", lineHeight: 1.2, color: "var(--text-muted)" }} title={informacaoRecalculo(entry).titulo}>Recalculada</div>
+      )}
+      {!placeholder && temAcrescimo && !informacaoRecalculo(entry) && isOpenLike && !pagamentoLocalizado && (
         <div style={{ fontSize: "0.7rem", lineHeight: 1.1, color: "#FFB347" }} title="Tem juros/multa — abra a célula para ver o valor atualizado.">⚠</div>
       )}
       {/* ⚠⚠ É AQUI QUE A CONFIRMAÇÃO DO CLIENTE CAI, e é aqui que faltava QUEM.
@@ -624,7 +629,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
               Valor original, juros/multa, valor atualizado, vencimento e envio ao cliente moravam
               como micro-anotações DENTRO da célula — uma coluna de ~90px com até quatro linhas de
               6px empilhadas, cada uma com a informação real escondida num `title`. Aqui elas têm
-              rótulo e cabem. Na célula fica o número e, no máximo, um ícone. */}
+              rótulo e cabem. Na célula ficam o número, o ícone de pagamento e o aviso discreto
+              “Recalculada” quando houver registro; data e valores do recálculo ficam no detalhe. */}
           <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
           <div style={{ borderTop: "1px solid #44475A", margin: "4px 0 2px" }} />
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
@@ -691,6 +697,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
     return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
   }
   const total = itens.reduce((s, e) => s + valorDaProvisao(e), 0);
+  const temRecalculo = itens.some((entry) => informacaoRecalculo(entry));
   const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2", fontSize: "0.72rem", cursor: "pointer", marginTop: 4 };
 
   return (
@@ -711,6 +718,9 @@ function CelulaSemColuna({ itens = [], onEdit }) {
       >
         R$ {fmtValor(total) || "0,00"}
       </button>
+      {temRecalculo && (
+        <div style={{ fontSize: "0.7rem", lineHeight: 1.2, color: "var(--text-muted)" }} title="Há guia recalculada neste grupo. Abra a célula para conferir o lançamento.">Recalculada</div>
+      )}
       {open && (
         <div
           onMouseLeave={() => setOpen(false)}
@@ -732,6 +742,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
                   ? `Subtipo ${e.subtipo} — fora do regime desta empresa`
                   : "Sem subtipo"}
               </div>
+              <RecalculoGuiaAviso entry={e} />
               {onEdit && (
                 <button
                   onClick={() => { setOpen(false); onEdit(e); }}

@@ -104,6 +104,26 @@ async function submeter() {
   await act(async () => {});
 }
 
+test("envio trava retorno e duplicata, comunica a casca e conserva o desfecho", async () => {
+  comPerfis([]);
+  let concluir;
+  api.emitirNfse.mockImplementation(() => new Promise(resolve => { concluir = resolve; }));
+  const aoMudarEnvio = jest.fn(), aoVoltarParaNotas = jest.fn();
+  render(<EmitirNotaPage empresa={EMPRESA} aoMudarEnvio={aoMudarEnvio} aoVoltarParaNotas={aoVoltarParaNotas} />);
+  await act(async () => {});
+  await preencherOMinimo();
+  await submeter(); await submeter();
+  expect(api.emitirNfse).toHaveBeenCalledTimes(1);
+  expect(aoMudarEnvio).toHaveBeenLastCalledWith(true);
+  expect(screen.getByRole("button", { name: /Voltar para as notas/ })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /Voltar para as notas/ }));
+  expect(aoVoltarParaNotas).not.toHaveBeenCalled();
+  await act(async () => concluir({ status: "issued", nfse: { numero: "123", chaveAcesso: "CHAVE" } }));
+  expect(aoMudarEnvio).toHaveBeenLastCalledWith(false);
+  expect(screen.getByRole("heading", { name: /Nota .* emitida/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Voltar para as notas/ })).toBeEnabled();
+});
+
 
 const preencherOperacao = () => {
   for (const [id, value] of Object.entries({vRetIRRF:"10,50",vRetCP:"20",obraCodigo:"123456",obraInscricao:"987",destinatarioDoc:"11222333000181",destinatarioNome:"DESTINATARIO LTDA"}))
