@@ -1,5 +1,6 @@
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
 import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
+import { entradaComercialPublica } from "./entradaComercialWhatsapp.js";
 // Consome o inbox durável: grava mensagens, enfileira mídias/turnos e correlaciona recibos.
 // Falhas retornam no resumo para retry idempotente, sem registrar conteúdo ou credenciais.
 import {
@@ -180,6 +181,9 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
     if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
   }
   const telefone = String(r?.conversa?.telefoneE164 || "").replace(/\D+/g, "");
+  // Saudação comercial não depende de papel no portal ou do piloto fiscal.
+  // O menu desse canal permanece público e nunca abre ferramentas operacionais.
+  if (entradaComercialPublica(r)) return { responde: true, motivo: "CANAL_COMERCIAL" };
   const telefoneNoPiloto = Array.isArray(telefonesPiloto) && telefonesPiloto.includes(telefone);
   if (!r?.conversa?.portalClientId) {
     const leadSeguro = r?.vinculo?.situacao === SITUACOES.DESCONHECIDO;
@@ -242,6 +246,9 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
     // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
   }
+  if (item.tipo === "reaction") {
+    return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "REACAO_SEM_ATENDIMENTO" } };
+  }
   if (WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
     const coletar = responderColeta || (await import("./RespostaColetaComercialWhatsappService.js")).responderColetaComercial;
     const coleta = await coletar({ registro: r, item, agora });
@@ -260,7 +267,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
-  const decisao = decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
+  const decisao = entradaComercialPublica(r) ? { responde: false, motivo: "CANAL_COMERCIAL_SEM_IA" }
+    : decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
   // O menu público legado encaminha texto livre à equipe. Leads do piloto comercial seguem a
   // coleta por conversa; cliques continuam determinísticos. Clientes conservam o menu inicial.
   if (decisaoMenu.responde && (!decisaoComercial.responde || item.interacao) && typeof responderMenu === "function") {
@@ -298,6 +306,9 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   }
   return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: decisao };
   };
+  // O contexto fiscal só é necessário no atendimento operacional. Exigir uma
+  // empresa aqui bloqueava até o “Olá” de clientes no número comercial.
+  if (entradaComercialPublica(r)) return processar(r, item);
   if ((responder === responderPadrao || typeof atenderContexto === "function") && (r?.vinculo?.empresas?.length || r?.conversa?.atendimentoId)) {
     const atender = atenderContexto || (await import("./AtendimentoResponsavelWhatsappService.js")).atenderContextoResponsavel;
     const resultado = await atender({ registro: r, item, processar, agora, log: logger, ...(menu || {}) });
