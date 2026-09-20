@@ -301,12 +301,12 @@ export function proximaPergunta(r, { desconhecidos = [] } = {}) {
   const ordem = r.origem === "ABERTURA" ? ["responsavelNome", "atividadePretendida", "municipioAtendimento", "modalidadeServico", ...mensal, "enderecoPretendido"] : ["cnpj", "responsavelNome", ...(r.origem === "INATIVA" ? ["paradaDesde", "pretendeReativar"] : ["motivoTroca"]), "modalidadeServico", ...mensal];
   const perguntas = {
     responsavelNome: "Como você se chama?", cnpj: "Qual é o CNPJ da empresa?",
-    atividadePretendida: "Qual atividade você pretende exercer?", municipioAtendimento: "Em qual cidade e estado pretende atender?",
+    atividadePretendida: "Qual atividade você pretende exercer?", municipioAtendimento: "Em qual cidade e estado a empresa vai funcionar?",
     modalidadeServico: r.origem === "ABERTURA" ? "Você quer apenas a abertura ou também a contabilidade mensal? Podemos preparar as duas opções para comparar." : "Você procura um serviço pontual ou também acompanhamento contábil mensal? Podemos comparar as opções.",
     qtdFuncionarios: "A empresa terá funcionários? Se sim, quantos, sem contar os sócios?",
     notasRecebidasMes: "Tem uma ideia de quantas notas de compras e serviços a empresa recebe por mês? Tudo bem se ainda não souber.",
-    enderecoPretendido: "Já tem um endereço pensado para a empresa? Pode informar o que souber.",
-    paradaDesde: "Desde quando a empresa está sem movimentação?", pretendeReativar: "Você pretende voltar a usar a empresa ou quer avaliar o encerramento?",
+    enderecoPretendido: "Qual é o endereço pensado para a empresa? Se ainda não tiver, pode dizer que está a definir.",
+    paradaDesde: "Desde quando a empresa está sem movimentação? Informe o mês e o ano, se lembrar; por exemplo, janeiro de 2023.", pretendeReativar: "Você pretende voltar a usar a empresa ou quer avaliar o encerramento?",
     motivoTroca: "O que está motivando a troca de contador?",
   };
   for (const campo of ordem) {

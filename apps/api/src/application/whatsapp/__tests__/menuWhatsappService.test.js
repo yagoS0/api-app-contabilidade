@@ -1,6 +1,11 @@
 import { responderMenuWhatsapp, opcoesIniciaisDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
 import { executarFerramenta } from "../../assistente/ferramentas/index.js";
 import { montarPayloadLista } from "../WhatsappCloudClient.js";
+jest.mock("../../../config.js", () => ({
+  ...jest.requireActual("../../../config.js"),
+  WHATSAPP_COLETA_COMERCIAL: true, WHATSAPP_IDENTIDADE_V2: true, WHATSAPP_MULTICANAL: true,
+  IA_COMERCIAL_TELEFONES_PILOTO: [],
+}));
 jest.mock("../WhatsappLeaseService.js", () => ({ adquirirLease: jest.fn(async () => ({ id: "lease", token: "owner" })), renovarLease: jest.fn(async () => true), liberarLease: jest.fn(async () => {}) }));
 
 const AGORA = new Date("2026-09-08T15:00:00.000Z");
@@ -48,6 +53,89 @@ function nuvem() {
     enviarDocumento: jest.fn(async () => ({ wamid: "wamid.document" })),
   };
 }
+
+describe("acolhimento no canal comercial sem acesso fiscal", () => {
+  function comercial({ cliente = true, semPessoa = false, situacao = "VINCULADO", texto = "Olá" } = {}) {
+    const entrada = registro({ cliente, texto });
+    Object.assign(entrada.conversa, { canalId: "comercial", vinculoNumeroId: "vinculo-comercial", atendimentoId: "selecao-antiga", escopoVerificado: false });
+    entrada.canal = { id: "comercial", ativo: true, finalidade: "COMERCIAL" };
+    entrada.vinculo.situacao = cliente ? situacao : "DESCONHECIDO";
+    const pessoa = { id: "pessoa", estado: "ATIVO", versao: 1, atendidaPor: null, atendidaDesde: null };
+    const vinculo = { id: entrada.conversa.vinculoNumeroId, interlocutorId: pessoa.id, telefoneE164: entrada.conversa.telefoneE164, interlocutor: pessoa };
+    const client = banco({ cliente, semPessoa, permissoes: ["GUIAS", "EMISSAO_NFSE", "DOCUMENTOS_EMPRESA"] });
+    client.$transaction = fn => fn(client);
+    client.canalWhatsapp = { findUnique: jest.fn(async () => entrada.canal) };
+    client.vinculoNumeroInterlocutor = { findUnique: jest.fn(async () => vinculo), findMany: jest.fn(async () => [vinculo]) };
+    client.interlocutorComunicacao = { updateMany: jest.fn(async ({ data }) => { Object.assign(pessoa, data); return { count: 1 }; }) };
+    client.atendimentoResponsavelWhatsapp = { updateMany: jest.fn(async () => ({ count: 1 })), findFirst: jest.fn() };
+    client.conversaWhatsapp.findUnique.mockImplementation(async () => ({ ...entrada.conversa }));
+    client.conversaWhatsapp.findMany = jest.fn(async () => [entrada.conversa]);
+    client.conversaWhatsapp.updateMany.mockImplementation(async ({ data }) => { Object.assign(entrada.conversa, data); return { count: 1 }; });
+    client.acaoPendenteWhatsapp.updateMany = jest.fn(async () => ({ count: 0 }));
+    const cloud = nuvem(), executar = jest.fn(), coleta = jest.fn(), resolverVinculo = jest.fn();
+    const enviar = (opcoes = {}) => responderMenuWhatsapp({ registro: entrada, texto, agora: AGORA, client, cloud, executar, coleta, resolverVinculo, conferirJanela: janelaAberta, logger: log, ...opcoes });
+    return { entrada, pessoa, vinculo, client, cloud, executar, coleta, resolverVinculo, enviar };
+  }
+  const titulos = ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"];
+  it.each([{ semPessoa: false }, { semPessoa: true }, { situacao: "AMBIGUO" }])("acolhe contato existente %j mesmo sem sessão e conserva apenas opções comerciais", async opcoes => {
+    const c = comercial(opcoes);
+    expect(await c.enviar()).toMatchObject({ tratado: true, acao: "MENU" });
+    expect(c.cloud.enviarLista.mock.calls[0][0].linhas.map(l => l.titulo)).toEqual(titulos);
+    expect(c.client.contatoWhatsapp.findMany).not.toHaveBeenCalled();
+    expect(c.client.companyClientUser.findUnique).not.toHaveBeenCalled();
+    expect(c.client.atendimentoResponsavelWhatsapp.findFirst).not.toHaveBeenCalled();
+    expect(c.resolverVinculo).not.toHaveBeenCalled();
+    expect(c.executar).not.toHaveBeenCalled(); expect(c.coleta).not.toHaveBeenCalled();
+    expect(c.cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it.each(["Quanto custa?", "Quais documentos preciso?", "Quanto tempo demora?", "Preciso de ajuda", "Voltei", "Bom dia, gostaria de saber os valores"])("orienta início sem ficha e oferece opções: %s", async texto => {
+    const c = comercial({ cliente: false, texto });
+    expect(await c.enviar()).toMatchObject({ tratado: true, acao: "MENU" });
+    expect(c.cloud.enviarLista.mock.calls[0][0].linhas.map(l => l.titulo)).toEqual(titulos);
+    expect(c.cloud.enviarLista.mock.calls[0][0].texto).not.toMatch(/Não consegui identificar|encaminhei|Registrei as informações/);
+    expect(c.client.interlocutorComunicacao.updateMany).not.toHaveBeenCalled();
+    expect(c.executar).not.toHaveBeenCalled();
+  });
+  it.each([
+    { texto: "me manda as guias" },
+    { texto: "quero falar com uma pessoa" },
+    { interacao: { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE }, texto: "Já sou cliente" },
+    { interacao: { id: IDS_MENU_WHATSAPP.CLIENTE_GUIAS_ABERTO }, texto: "Guias em aberto" },
+  ])("pedido operacional/humano %j encaminha sem ferramenta ou exigência de empresa", async opcoes => {
+    const c = comercial({ texto: opcoes.texto });
+    expect(await c.enviar(opcoes)).toMatchObject({ tratado: true });
+    expect(c.cloud.enviarTexto.mock.calls[0][0].texto).toContain("Vou chamar a equipe");
+    expect(c.cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("Não localizei");
+    expect(c.cloud.enviarTexto.mock.calls[0][0].texto).not.toMatch(/IA continua|imediatamente/);
+    expect(c.pessoa.atendidaDesde).toEqual(AGORA);
+    expect(c.executar).not.toHaveBeenCalled(); expect(c.coleta).not.toHaveBeenCalled();
+    expect(c.client.atendimentoResponsavelWhatsapp.findFirst).not.toHaveBeenCalled();
+    expect(c.cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("clique desconhecido oferece opções atuais sem tratar o título como intenção", async () => {
+    const c = comercial({ cliente: false });
+    await c.enviar({ interacao: { id: "altan.antigo.v0", titulo: "Quero emitir nota" } });
+    expect(c.cloud.enviarLista.mock.calls[0][0].texto).toContain("não está mais disponível");
+    expect(c.client.interlocutorComunicacao.updateMany).not.toHaveBeenCalled();
+    expect(c.executar).not.toHaveBeenCalled();
+  });
+  it("fora do expediente encaminha sem prometer IA ou resposta imediata", async () => {
+    const c = comercial({ texto: "Falar com a equipe" });
+    await c.enviar({ agora: new Date("2026-09-20T15:00:00Z") });
+    const texto = c.cloud.enviarTexto.mock.calls[0][0].texto;
+    expect(texto).toContain("fora do horário");
+    expect(texto).toContain("21/09");
+    expect(texto).not.toMatch(/IA continua|imediatamente/);
+  });
+  it.each(["pausa", "identidade", "canal"])("mudança de %s antes da saída interrompe a resposta pública", async tipo => {
+    const c = comercial();
+    if (tipo === "pausa") c.pessoa.atendidaDesde = AGORA;
+    if (tipo === "identidade") c.vinculo.encerrouEm = AGORA;
+    if (tipo === "canal") c.client.canalWhatsapp.findUnique.mockResolvedValue({ id: "comercial", ativo: true, finalidade: "PRINCIPAL" });
+    await expect(c.enviar()).rejects.toThrow();
+    expect(c.cloud.enviarLista).not.toHaveBeenCalled();
+  });
+});
 
 describe("menus por perfil e permissão", () => {
   it.each(["Olá", "Oi, bom dia! Tudo bem?", "Boa noite 👋", "Oii", "voltar ao menu"])("reconhece saudação/navegação em ambos os perfis: %s", texto => {

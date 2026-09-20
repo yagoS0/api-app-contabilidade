@@ -3,6 +3,9 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
+import { entradaComercialPublica } from "./entradaComercialWhatsapp.js";
+import { pedidoOperacionalComercial, responderDuvidaComercial } from "../onboarding/interpretacaoComercialWhatsapp.js";
+import { avisoAtendimentoComercial } from "../onboarding/mensagensComerciais.js";
 import { whatsappPorCanal } from "./CanalWhatsappService.js";
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
 import { janelaDaConversa } from "./ConversaWhatsappService.js";
@@ -247,15 +250,16 @@ export async function responderMenuWhatsapp(args = {}) {
 async function atenderMenu({ registro, interacao = null, texto = null, agora = new Date(), logger = console, client = prisma, cloud = null, executar = executarFerramenta, conferirJanela = janelaDaConversa, resolverVinculo = resolverVinculoPorTelefone, conferirLease, textoLivreDisponivel = true, coleta = processarEmissaoGuiada, servicosColeta = {} } = {}) {
   const conversa = registro?.conversa;
   const mensagem = registro?.mensagem;
+  const comercialPublico = entradaComercialPublica(registro);
   if (!conversa?.id || !mensagem?.id || mensagem.direcao === "out") return { tratado: false };
   if (conversa.atendidaPor || conversa.atendidaDesde) return { tratado: false, motivo: "ASSUMIDA_POR_HUMANO" };
   if (!mensagemPosteriorAoCorte(mensagem, conversa.automacaoInvalidadaEm)) return { tratado: false, motivo: "AUTOMACAO_INVALIDADA" };
-  if (conversa.portalClientId && (conversa.escopoVerificado !== true || !vinculoExato(registro?.vinculo, conversa.portalClientId, registro.contexto))) {
+  if (!comercialPublico && conversa.portalClientId && (conversa.escopoVerificado !== true || !vinculoExato(registro?.vinculo, conversa.portalClientId, registro.contexto))) {
     return { tratado: false, motivo: "SEM_ESCOPO_VERIFICADO" };
   }
   // Uma mensagem antiga do segmento não atribuído não recebe menu de lead se o número já passou
   // a identificar uma empresa. O segmento correto será usado na próxima mensagem do contato.
-  if (!conversa.portalClientId && registro?.vinculo?.situacao === SITUACOES.VINCULADO) {
+  if (!comercialPublico && !conversa.portalClientId && registro?.vinculo?.situacao === SITUACOES.VINCULADO) {
     return { tratado: false, motivo: "VINCULO_MUDOU" };
   }
 
@@ -266,7 +270,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     return { tratado: true, motivo: "SAIDA_ANTERIOR" };
   }
 
-  const sessao = await carregarSessao(conversa, client);
+  const sessao = comercialPublico ? sessaoDoContato({ portalClientId: null }) : await carregarSessao(conversa, client);
   const cliente = Boolean(sessao.ok);
   const rascunhoPausado = cliente && conversa.atendimentoId
     ? await client.rascunhoEmissaoWhatsapp.findUnique({ where: { conversaId: conversa.id } }) : null;
@@ -275,26 +279,47 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const idRecebido = String(interacao?.id || "").trim();
   const menuExplicito = !idRecebido && pediuMenuExplicitamente(texto);
   let acao = idRecebido ? ACAO_POR_ID[idRecebido] || "ID_DESCONHECIDO" : acaoDoTextoLivre(texto, { cliente });
-  if (!idRecebido && registro.contexto?.resultado?.acaoOperacao === "EMISSAO") acao = "EMISSAO";
+  if (!comercialPublico && !idRecebido && registro.contexto?.resultado?.acaoOperacao === "EMISSAO") acao = "EMISSAO";
   const clienteId = idRecebido.startsWith("altan.client.");
   const leadId = idRecebido.startsWith("altan.lead.");
   if ((clienteId && !cliente) || (leadId && cliente)) acao = "ESCOPO_INVALIDO";
+  const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164, { canal: registro.canal, canalId: conversa.canalId });
+  let introducaoComercial = null;
+  if (!cliente && coletaAtiva) {
+    if (acao === "LEAD_ANALISAR" || acao === "ID_DESCONHECIDO") {
+      introducaoComercial = acao === "ID_DESCONHECIDO"
+        ? "Essa opção não está mais disponível. Escolha abaixo como podemos ajudar."
+        : "Para orientar a análise, escolha abaixo a situação da empresa.";
+      acao = "MENU";
+    } else if (!idRecebido && texto?.trim() && acao === "LEAD_EQUIPE" && !pediuEquipeWhatsapp(texto) && !pedidoOperacionalComercial(texto)) {
+      introducaoComercial = responderDuvidaComercial(texto)
+        || "Posso ajudar com a abertura de uma empresa, a troca de contador ou uma empresa parada. Escolha uma opção ou conte o que precisa.";
+      acao = "MENU";
+    }
+  }
   const consulta = cliente && acao !== "ESCOPO_INVALIDO"
     ? await resolverConsultaCliente({ texto, interacao, acaoMenu: acao, registro, client, agora }) : null;
   if (consulta) acao = "CONSULTA_CLIENTE";
 
   const whatsapp = await whatsappPorCanal(conversa, { cloud, client, log: logger });
+  // O acolhimento não usa seleção de empresa, mas conserva a guarda da pessoa.
+  const conversaDaGuarda = comercialPublico ? { ...conversa, atendimentoId: null } : conversa;
   const opcoesNoContexto = opcoes => vincularOpcoesAoContexto(opcoes, registro.contexto);
   let encaminhamentoDoMenu = false;
   const antesDeEnviar = async (ferramenta = null, assinatura = null) => {
     await conferirLease();
-    await conferirContextoResponsavel({ conversa, mensagem, contexto: registro.contexto, client, resolverVinculo, permitirHandoffEm: encaminhamentoDoMenu ? agora : null });
+    if (comercialPublico) {
+      const canalAtual = await client.canalWhatsapp.findUnique({ where: { id: conversa.canalId } });
+      if (!entradaComercialPublica({ ...registro, canal: canalAtual })) throw Object.assign(new Error("O canal comercial mudou durante o atendimento."), { codigo: "CANAL_ALTERADO" });
+    }
+    await conferirContextoResponsavel({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, resolverVinculo, permitirHandoffEm: encaminhamentoDoMenu ? agora : null });
     const atual = await client.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
     if (!atual || atual.excluidaEm || atual.atendidaPor || (atual.atendidaDesde && (!encaminhamentoDoMenu || new Date(atual.atendidaDesde).getTime() !== agora.getTime())) || atual.portalClientId !== conversa.portalClientId
+      || (atual.canalId || null) !== (conversa.canalId || null) || (atual.vinculoNumeroId || null) !== (conversa.vinculoNumeroId || null)
       || !mensagemPosteriorAoCorte(mensagem, atual.automacaoInvalidadaEm)) {
       throw Object.assign(new Error("A conversa mudou antes da resposta do menu."), { codigo: "AUTOMACAO_INVALIDADA" });
     }
-    if (atual.portalClientId) {
+    if (!comercialPublico && atual.portalClientId) {
       if (atual.escopoVerificado !== true || !vinculoExato(await resolverVinculo(atual.telefoneE164, { client }), atual.portalClientId, registro.contexto)) {
         throw Object.assign(new Error("O vínculo deste número mudou antes da resposta do menu."), { codigo: "ACESSO_REVOGADO" });
       }
@@ -302,7 +327,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     // A assinatura também protege menus e respostas sem ferramenta: um vínculo criado, removido
     // ou tornado ambíguo enquanto o webhook era processado não pode receber opções calculadas com
     // o acesso antigo. Quando há ferramenta, além da assinatura, ela precisa continuar liberada.
-    if (assinatura !== null) {
+    if (!comercialPublico && assinatura !== null) {
       const sessaoAtual = await carregarSessao(atual, client);
       const atualAssinada = JSON.stringify({ ok: sessaoAtual.ok, userId: sessaoAtual.userId, papel: sessaoAtual.papel, permissoes: [...(sessaoAtual.permissoesAssistente || [])].sort() });
       if (atualAssinada !== assinatura || (ferramenta && !ferramentaLiberada(sessaoAtual, ferramenta))) {
@@ -315,8 +340,8 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const assinatura = JSON.stringify({ ok: sessao.ok, userId: sessao.userId, papel: sessao.papel, permissoes: [...(sessao.permissoesAssistente || [])].sort() });
   const encaminhar = async () => {
     await antesDeEnviar(null, assinatura);
-    const r = conversa.atendimentoId || conversa.vinculoNumeroId
-      ? await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto: registro.contexto, client, quando: agora })
+    const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
+      ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora })
       : await marcarHandoff(conversa, agora, client);
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
     encaminhamentoDoMenu = true;
@@ -326,9 +351,9 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     antesDeEnviar: () => antesDeEnviar(ferramenta, assinatura), enviar: chamada,
   });
 
-  // O número pertence a uma empresa, mas não identifica uma pessoa com RBAC ativo. Ele não é lead
-  // e não deve receber oferta comercial; sem sessão também não pode ver nenhum dado da empresa.
-  if (conversa.portalClientId && !cliente) {
+  // No canal operacional, um contato de empresa sem RBAC segue para conferência.
+  // No comercial, qualquer pessoa pode tratar um novo serviço sem acessar dados fiscais.
+  if (!comercialPublico && conversa.portalClientId && !cliente) {
     const corpo = `${fraseSemSessao(sessao.motivo)} ${expedienteDoEscritorio(agora).mensagem}`;
     await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
@@ -392,13 +417,12 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
         : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
       await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
     } else {
-      const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164, { canal: registro.canal, canalId: conversa.canalId });
       const botoes = [
         { id: IDS_MENU_WHATSAPP.LEAD_ANALISAR, titulo: "Analisar empresa" },
         { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },
         { id: IDS_MENU_WHATSAPP.LEAD_EQUIPE, titulo: "Falar com a equipe" },
       ];
-      const corpo = "Olá! Como a Altan pode ajudar?";
+      const corpo = introducaoComercial || "Olá! Como a Altan pode ajudar?";
       if (coletaAtiva) {
         const linhas = [
           { id: "altan.comercial.abertura.v1", titulo: "Abrir uma empresa" },
@@ -414,7 +438,9 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     }
   } else if (!cliente) {
     const final = ["LEAD_ANALISAR", "LEAD_CLIENTE", "LEAD_EQUIPE"].includes(acao) ? acao : "LEAD_EQUIPE";
-    const corpo = mensagemLead(final, agora);
+    const corpo = comercialPublico && ["LEAD_CLIENTE", "LEAD_EQUIPE"].includes(final)
+      ? `Vou chamar a equipe para continuar seu atendimento por aqui. ${avisoAtendimentoComercial(agora)}`
+      : mensagemLead(final, agora);
     if (["LEAD_CLIENTE", "LEAD_EQUIPE"].includes(final)) await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
   } else if (acao === "MAIS") {

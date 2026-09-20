@@ -47,10 +47,10 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   db.$transaction = fn => fn(db);
   iniciarAtendimento.mockImplementation(async () => caso);
   let n = 0;
-  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao } = {}) => {
-    const mensagem = { id: id || `m${++n}`, conversaId: "c", direcao: "in", corpo: texto, tipo: "text", registradaEm: new Date(1760000000000 + n * 1000), conversa };
+  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao, tipo = "text", ocorridaEmProvedor } = {}) => {
+    const mensagem = { id: id || `m${++n}`, conversaId: "c", direcao: "in", corpo: texto, tipo, ocorridaEmProvedor, registradaEm: new Date(1760000000000 + n * 1000), conversa };
     mensagens.set(mensagem.id, mensagem);
-    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, agora: new Date(1760000010000 + n * 1000) } });
+    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao, tipo }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, agora: new Date(1760000010000 + n * 1000) } });
   };
   return { db, conversa, ficha, caso, recibos, chamar };
 }
@@ -66,6 +66,11 @@ test.each(["Olá", "Ola!", "Oi, bom dia! Tudo bem?", "Boa tarde", "Boa noite �
   expect(t.conversa.atendidaDesde).toBeUndefined();
   expect(enviar).not.toHaveBeenCalled();
 });
+test.each(["Posso falar com um atendente?", "Tem alguém aí?", "Quero falar com um especialista", "Falar com a equipe, por favor"])("pedido humano natural volta ao menu sem ser gravado no cadastro: %s", async texto => {
+  const t = banco();
+  expect((await t.chamar(texto)).motivo).toBe("NAVEGACAO_DO_ATENDIMENTO");
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
 test.each(["altan.lead.existing-client.v1", "altan.lead.human.v1", "altan.client.human.v1", "id-desconhecido"])("clique fora da coleta usa o menu pelo ID, sem gravar o título: %s", async id => {
   const t = banco();
   expect((await t.chamar("Texto que parece um nome", { interacao: { id } })).tratado).toBe(false);
@@ -75,6 +80,11 @@ test("saudação acompanhada de pedido e dados continua na coleta", async () => 
   const t = banco();
   expect((await t.chamar("Olá, sou médico e quero abrir uma empresa; me chamo Caio")).tratado).toBe(true);
   expect(t.ficha.dados).toMatchObject({ responsavelNome: "Caio", atividadePretendida: "médico" });
+});
+test("resposta rápida de template usa a intenção pelo ID sem tratar botão como anexo", async () => {
+  const t = banco();
+  const r = await t.chamar("Abrir uma empresa", { tipo: "button", interacao: { id: "altan.comercial.abertura.v1" } });
+  expect(r.resultado.encaminhar).toBe(false); expect(r.resultado.texto).toBe("Como você se chama?");
 });
 test("cliente atual pode preencher outra abertura sem copiar empresa, com replay idempotente", async () => {
   const t = banco();
@@ -89,11 +99,97 @@ test("pedido operacional e flag desligada não alteram cadastro ou consomem IA",
   expect((await t.chamar("Me chamo Ana", { flag: false })).tratado).toBe(false);
   expect(t.db.onboarding.updateMany).not.toHaveBeenCalled(); expect(t.db.coletaComercialWhatsapp.create).not.toHaveBeenCalled();
 });
+test.each(["faturamento", "meu faturamento", "faturamento de agosto", "Quero abrir empresa para emitir notas. Também me mande as guias em aberto"])("consulta não preenche a ficha comercial pendente: %s", async texto => {
+  const t = banco();
+  expect((await t.chamar(texto)).motivo).toBe("PEDIDO_OPERACIONAL");
+  expect(t.ficha.dados).toEqual({}); expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
 test("resposta desconhecida é lembrada e duas ambiguidades encaminham sem loop", async () => {
   const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ", modalidadeServico: "RECORRENTE" } });
   const r = await t.chamar("Não sei"); expect(t.caso.triagem.desconhecidos).toEqual(["qtdFuncionarios"]); expect(r.resultado.texto).toContain("notas");
-  await t.chamar("ok"); const fim = await t.chamar("ok");
+  await t.chamar("banana"); const fim = await t.chamar("abacaxi");
   expect(fim.resultado.encaminhar).toBe(true); expect(t.conversa.atendidaDesde).toBeTruthy();
+});
+
+test.each(["Voltei", "Pode continuar", "Já falei com vocês antes", "ok", "obrigado"])("retorno/agradecimento não preenche cadastro nem acumula falhas: %s", async texto => {
+  const t = banco(); t.caso.triagem = { campoEsperado: "responsavelNome", esclarecimentos: 1 };
+  const r = await t.chamar(texto);
+  expect(r.tratado).toBe(true); expect(r.resultado.encaminhar).toBe(false);
+  expect(t.caso.triagem.esclarecimentos).toBe(1); expect(t.ficha.dados.responsavelNome).toBeUndefined();
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
+test("informação antes desconhecida pode ser recuperada sem marcador contraditório", async () => {
+  const t = banco(); t.caso.triagem = { campoEsperado: "responsavelNome", desconhecidos: ["modalidadeServico"] };
+  await t.chamar("Quero contabilidade mensal");
+  expect(t.ficha.dados.modalidadeServico).toBe("RECORRENTE");
+  expect(t.caso.triagem.desconhecidos).not.toContain("modalidadeServico");
+});
+test("mensagem antiga pelo relógio do provedor não preenche o próximo campo", async () => {
+  const t = banco();
+  await t.chamar("Me chamo Ana", { ocorridaEmProvedor: new Date("2025-10-09T08:00:10Z") });
+  const antes = structuredClone({ dados: t.ficha.dados, triagem: t.caso.triagem });
+  const enviar = jest.fn();
+  const r = await t.chamar("Bruno", { ocorridaEmProvedor: new Date("2025-10-09T08:00:00Z"), enviar });
+  expect(r.motivo).toBe("MENSAGEM_ANTIGA"); expect(enviar).not.toHaveBeenCalled();
+  expect({ dados: t.ficha.dados, triagem: t.caso.triagem }).toEqual(antes);
+  const saudacao = await t.chamar("Olá", { ocorridaEmProvedor: new Date("2025-10-09T08:00:00Z"), enviar });
+  expect(saudacao).toMatchObject({ tratado: true, motivo: "MENSAGEM_ANTIGA" });
+});
+
+function inativaComDataPendente() {
+  const t = banco({ dados: { cnpj: "11222333000181", responsavelNome: "Ana" } });
+  t.ficha.origem = "INATIVA";
+  t.ficha.cnpj = "11222333000181";
+  t.caso.triagem = { campoEsperado: "paradaDesde" };
+  return t;
+}
+
+test.each([["janeiro", "2020-01"], ["5", "2020-05"]])("ano e mês em turnos separados completam a data: %s", async (mes, data) => {
+  const t = inativaComDataPendente();
+  const ano = await t.chamar("desde 2020");
+  expect(ano.resultado.texto).toBe("Em que mês de 2020 a empresa parou? Se não souber, pode dizer “não sei”.");
+  expect(t.caso.triagem.anoParadaPendente).toBe("2020"); expect(t.ficha.dados.paradaDesde).toBeUndefined();
+  const retomada = await t.chamar("Voltei");
+  expect(t.caso.triagem.anoParadaPendente).toBe("2020");
+  expect(retomada.resultado.texto).toContain("Em que mês de 2020");
+  expect(retomada.resultado.texto).not.toContain("2023");
+  const concluida = await t.chamar(mes);
+  expect(t.ficha.dados.paradaDesde).toBe(data); expect(t.caso.triagem.anoParadaPendente).toBeNull();
+  expect(t.caso.triagem.campoEsperado).toBe("pretendeReativar"); expect(concluida.resultado.encaminhar).toBe(false);
+});
+
+test("mês/ano explícito prevalece sobre ano pendente da conversa", async () => {
+  const t = inativaComDataPendente();
+  await t.chamar("desde 2020"); await t.chamar("janeiro de 2023");
+  expect(t.ficha.dados.paradaDesde).toBe("2023-01"); expect(t.caso.triagem.anoParadaPendente).toBeNull();
+});
+
+test("não saber o mês preserva ausência e limpa contexto parcial", async () => {
+  const t = inativaComDataPendente();
+  await t.chamar("desde 2020"); await t.chamar("não sei");
+  expect(t.ficha.dados.paradaDesde).toBeUndefined(); expect(t.caso.triagem.anoParadaPendente).toBeNull();
+  expect(t.caso.triagem.desconhecidos).toContain("paradaDesde"); expect(t.caso.triagem.campoEsperado).toBe("pretendeReativar");
+});
+
+test("ano atrasado não troca o contexto do mês pendente", async () => {
+  const t = inativaComDataPendente();
+  await t.chamar("desde 2020", { ocorridaEmProvedor: new Date("2025-10-09T08:00:10Z") });
+  const antes = structuredClone(t.caso.triagem);
+  const enviar = jest.fn();
+  const atrasada = await t.chamar("2021", { ocorridaEmProvedor: new Date("2025-10-09T08:00:00Z"), enviar });
+  expect(atrasada.motivo).toBe("MENSAGEM_ANTIGA"); expect(enviar).not.toHaveBeenCalled(); expect(t.caso.triagem).toEqual(antes);
+  await t.chamar("5", { ocorridaEmProvedor: new Date("2025-10-09T08:00:20Z") });
+  expect(t.ficha.dados.paradaDesde).toBe("2020-05");
+});
+test.each(["image", "document", "audio"])("mídia %s não vira campo cadastral nem lê a legenda como declaração", async tipo => {
+  const t = banco(); const r = await t.chamar("meu nome é um texto da legenda", { tipo });
+  expect(r.resultado.encaminhar).toBe(true); expect(r.resultado.texto).toContain("anexo");
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled(); expect(t.ficha.dados).toEqual({});
+});
+test("reação não responde, altera ficha ou encaminha à equipe", async () => {
+  const t = banco(); const enviar = jest.fn();
+  expect((await t.chamar("👍", { tipo: "reaction", enviar })).motivo).toBe("REACAO_SEM_COLETA");
+  expect(enviar).not.toHaveBeenCalled(); expect(t.db.atendimentoLead.update).not.toHaveBeenCalled();
 });
 
 test("dados fora de ordem são preenchidos sem transformar perguntas em nome ou atividade", async () => {

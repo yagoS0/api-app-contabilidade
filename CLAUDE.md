@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Revisão de comunicação e retornos — 20/09/2026
+
+O canal comercial acolhe também clientes conhecidos e responsáveis de várias empresas, sem mudar sua classificação nem exigir escolha fiscal para uma nova solicitação. Permissões operacionais continuam independentes; identidade em revisão e atendimento humano impedem a automação. O canal principal mantém sua audiência anterior. Retorno, agradecimento, pausa e perguntas frequentes são atos de conversa, não campos da ficha nem erros sucessivos. Aproveitar dados enviados juntos, aceitar as alternativas oferecidas (avulso, mensal, comparação) e perguntar somente a informação ausente. Não inventar datas, preços, enquadramento ou autorização fiscal.
+
+Anexos encaminham à equipe sem interpretar seu conteúdo. Reações não iniciam atendimento; mensagens atrasadas e cliques em menu antigo não sobrescrevem a ficha. Uma nova solicitação após ficha encerrada conserva a anterior e não herda seu CNPJ. A equipe recebe análise, definição de escopo/preço e pedidos fora do alcance; o automático não revoga essa pausa. Referências de outros setores e limites em `docs/revisao-dialogo-leads-referencias.md`; matriz reproduzível em `docs/revisao-comunicacao-cenarios.md`. As simulações usam PostgreSQL descartável, transporte e CNPJ sintéticos, rede bloqueada e zero Anthropic. Não confundir aprovação desses testes com entrega real pela Meta. Esta revisão não requer migration, backfill nem alteração de credenciais/flags.
+
 ## Saudação de lead com histórico — 17/09/2026
 
 Uma entrada real de “Olá” recebeu uma cobrança de informação porque a coleta reutilizou uma ficha comercial iniciada em outro canal. A entrega foi confirmada pela Meta, mas a resposta estava errada. Saudação e navegação devem abrir o menu mesmo com ficha ativa; nunca gravá-las como nome, incrementar ambiguidades ou acionar handoff por incompreensão. Cliques “Já sou cliente”/“Falar com a equipe” seguem o menu pelo ID e conservam as guardas de acesso/humano. Não apagar ficha/histórico para corrigir a retomada. `navegacaoWhatsapp.js` centraliza o reconhecimento; pedido acompanhado de saudação segue a coleta. Ver cenário com PostgreSQL real em `verify-lead-entry-postgres.js --commercial`; simulação bloqueia rede e IA.
