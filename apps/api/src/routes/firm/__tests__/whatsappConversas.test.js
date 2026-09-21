@@ -154,11 +154,11 @@ const cloud = {
   enviarImagem: jest.fn(async () => ({ wamid: "wamid.img" })),
 };
 
-function montarApp(user = { id: "u-contador", name: "Contador Teste", role: "contador", accountType: "FIRM" }) {
+function montarApp(user = { id: "u-contador", name: "Contador Teste", role: "contador", accountType: "FIRM" }, opcoes = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => { req.auth = { user }; next(); });
-  app.use("/firm", createWhatsappConversasRouter({ log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() }, cloud }));
+  app.use("/firm", createWhatsappConversasRouter({ log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() }, cloud, ...opcoes }));
   return app;
 }
 
@@ -439,6 +439,27 @@ describe("assumir e devolver — o que pausa a IA", () => {
 });
 
 describe("responder — só dentro da janela", () => {
+  it('registra instrução no caso explícito validado, sem procurar o caso pelo canal de envio', async () => {
+    const conversa = mockConversas.get('cv3'); const anterior = { ...conversa };
+    const caso = { id: 'caso-lead', conversaId: 'cv3', interlocutorId: null, encerradoEm: null, autorizacao: {}, onboarding: { cnpj: '11222333000181' } };
+    Object.assign(conversa, { canalId: 'comercial' });
+    prisma.canalWhatsapp = { findUnique: jest.fn(async () => ({ id: 'comercial', ativo: true, finalidade: 'COMERCIAL' })) };
+    prisma.atendimentoLead.findFirst.mockImplementation(async ({ where }) => where.id === caso.id ? caso : null);
+    prisma.atendimentoLead.updateMany = jest.fn(async () => ({ count: 1 }));
+    prisma.recursoComercial.findUnique.mockResolvedValueOnce({ id: 'orientacao-teste', chave: 'autorizacao', tipo: 'ORIENTACAO', versao: 2, aprovadoEm: new Date(), texto: 'Confira o acesso cadastrado.' });
+    try {
+      const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv3/responder').send({ orientacaoId: 'orientacao-teste', orientacaoVersao: 2, atendimentoLeadId: caso.id });
+      expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+      expect(prisma.atendimentoLead.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: caso.id }), data: { autorizacao: expect.objectContaining({ estado: 'INSTRUCAO_ENVIADA', cnpj: caso.onboarding.cnpj }) } }));
+    } finally { mockConversas.set('cv3', anterior); }
+  });
+  it('orientação de lead recusa canal principal antes de enviar', async () => {
+    prisma.atendimentoLead.findFirst.mockResolvedValue({ id: 'caso-lead', conversaId: 'cv3', interlocutorId: null, encerradoEm: null });
+    prisma.canalWhatsapp = { findUnique: jest.fn(async () => ({ id: 'principal', ativo: true, finalidade: 'PRINCIPAL' })) };
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv3/responder').send({ orientacaoId: 'orientacao-teste', orientacaoVersao: 2, atendimentoLeadId: 'caso-lead' });
+    expect(r.status).toBe(409); expect(r.body.error).toBe('canal_comercial_necessario');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
   it('exige nova prévia quando a orientação original mudou de versão', async () => {
     const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ orientacaoId:'orientacao-teste',orientacaoVersao:1 });
     expect(r.status).toBe(409); expect(r.body.error).toBe('orientacao_alterada');
@@ -693,6 +714,27 @@ describe("⚠⚠ a empresa do documento vem do FIO, e o corpo não a escolhe", (
 });
 
 describe("resumo do WhatsApp", () => {
+  it("V2 entrega totais globais por relacionamento sem herdar busca, página ou filtro", async () => {
+    const atual = { conversas: 503, naoVinculadas: 101, conversasNaoLidas: 203, mensagensNaoLidas: 517, leads: 109, clientes: 407, aIdentificar: 1 };
+    const outro = { conversas: 2, conversasNaoLidas: 1, mensagensNaoLidas: 3 };
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([atual]).mockResolvedValueOnce([outro]).mockResolvedValueOnce([outro]);
+    const r = await request(montarApp(undefined, { chatV2: true })).get("/firm/whatsapp/resumo?q=ausente&relacionamento=LEAD&cursor=segunda&empresa=pc-9");
+    expect(r.status).toBe(200);
+    expect(r.body.resumo).toMatchObject({ conversas: 503, mensagensNaoLidas: 517, contagensNaoLidas: { TODOS: 517, LEAD: 109, CLIENTE: 407, A_IDENTIFICAR: 1 }, historicoMensagensNaoLidas: 3, lixeiraMensagensNaoLidas: 3 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    for (const [consulta] of prisma.$queryRaw.mock.calls) {
+      expect(consulta.values).toContain("pc-1");
+      for (const valor of ["pc-9", "ausente", "segunda"]) expect(consulta.values).not.toContain(valor);
+    }
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("V2 conserva a restrição de perfil e não transforma indisponibilidade em zero", async () => {
+    prisma.$queryRaw = jest.fn().mockRejectedValue(new Error("offline"));
+    const negado = await request(montarApp({ id: "s", role: "staff" }, { chatV2: true })).get("/firm/whatsapp/resumo");
+    expect(negado.status).toBe(403); expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    const falha = await request(montarApp(undefined, { chatV2: true })).get("/firm/whatsapp/resumo");
+    expect(falha.status).toBe(500); expect(falha.body.resumo).toBeUndefined();
+  });
   it("recusa staff antes de agregar", async () => {
     const r = await request(montarApp({ id: "s", role: "staff" })).get("/firm/whatsapp/resumo");
     expect(r.status).toBe(403);

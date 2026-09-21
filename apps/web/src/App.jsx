@@ -2,7 +2,7 @@ import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/c
 import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
@@ -49,6 +49,13 @@ function App() {
 }
 
 function AppInterno({ session, feedback }) {
+  // Só a escolha da mensagem acompanha a navegação. Destinatário e texto são
+  // conferidos novamente na conversa, sem enviar ou transportar dados na URL.
+  const [mensagemBiblioteca, setMensagemBiblioteca] = useState(null);
+  const limparMensagemBiblioteca = useCallback(() => setMensagemBiblioteca(null), []);
+  useEffect(() => {
+    if (!["bibliotecaComercial", "whatsapp"].includes(session.page)) limparMensagemBiblioteca();
+  }, [session.page, limparMensagemBiblioteca]);
   const calendarioNavigation = useCalendarioNavigation();
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
   // fora do `companiesWorkspace`: ele já carrega 40 estados, e este é de uma página só.
@@ -190,7 +197,7 @@ function AppInterno({ session, feedback }) {
   }
 
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
-  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/whatsapp")} />;
+  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/whatsapp")} onUsarMensagem={mensagem => { setMensagemBiblioteca(mensagem); session.setPage("whatsapp"); }} />;
 
   if (session.page === "guideSettings") {
     return (
@@ -535,6 +542,8 @@ function AppInterno({ session, feedback }) {
   if (session.page === "whatsapp") {
     return (
       <WhatsappPage
+        mensagemBiblioteca={mensagemBiblioteca}
+        onMensagemBibliotecaAberta={limparMensagemBiblioteca}
         usuarioId={session.user?.id}
         api={api}
         onComunicados={() => session.setPage('comunicadosWhatsapp')}

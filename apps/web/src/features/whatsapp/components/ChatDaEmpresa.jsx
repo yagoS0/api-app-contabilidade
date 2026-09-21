@@ -106,6 +106,7 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
           key={aberto.conversa.id}
           fio={aberto}
           hook={hook}
+          onVirarAnotacao={onVirarAnotacao}
           temMais={hook.temMaisNoFio}
           slotAcoes={(
             <AcoesRapidas

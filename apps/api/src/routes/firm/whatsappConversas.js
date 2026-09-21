@@ -17,6 +17,7 @@
 // aprovado), então a resposta nomeia isso em vez de fingir que existe um botão.
 
 import { criarRecursosComerciais } from "../../application/onboarding/RecursosComerciaisService.js";
+import { resolverConversaEnvioComercial } from "../../application/onboarding/CanalEnvioComercialService.js";
 import { Router } from "express";
 import multer from "multer";
 import { validarAnexoManual } from "../../application/whatsapp/anexoManual.js";
@@ -45,7 +46,7 @@ import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsap
 import { assinarMensagemHumana } from "../../application/whatsapp/assinaturaAtendente.js";
 import { INCLUDE_CONVERSA, grupoNoEscopo, resumoDoGrupo, filtroMensagensDoGrupo, empresaDaMensagem } from "./whatsappAtendimento.js";
 import { WHATSAPP_CHAT_V2 } from '../../config.js';
-import { listarInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade, salvarNotaInterna, carregarGrupoIdentidade } from '../../application/whatsapp/InboxWhatsappService.js';
+import { listarInboxWhatsapp, resumoInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade, salvarNotaInterna, carregarGrupoIdentidade } from '../../application/whatsapp/InboxWhatsappService.js';
 import { conferirIdentificacao, conferirIdentidadeVigente } from '../../application/whatsapp/IdentidadeComunicacaoService.js';
 import { whatsappPorCanal } from '../../application/whatsapp/CanalWhatsappService.js';
 import { associarNumeroConferido } from '../../application/whatsapp/AssociacaoNumeroComunicacaoService.js';
@@ -147,7 +148,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.get("/whatsapp/resumo", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     try {
-      const resumo = await resumoWhatsapp(await empresasVisiveis(req), { client });
+      const resumo = await (chatV2 ? resumoInboxWhatsapp : resumoWhatsapp)(await empresasVisiveis(req), { client });
       return res.json({ ok: true, resumo });
     } catch (err) {
       return falhar(res, err, { operacao: "resumo" });
@@ -583,6 +584,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     const { conversaId } = req.params || {};
     let texto = String(req.body?.texto || "").trim();
     let referenciaComercial;
+    let casoComercial = null;
     if (req.body?.orientacaoId) {
       try {
         const p = await criarRecursosComerciais({ db: client }).prepararOrientacao(req.body.orientacaoId, req.body.variaveis || {});
@@ -601,6 +603,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         const grupo = conversa.vinculoNumeroId ? await carregarGrupoIdentidade({conversaId:conversa.id,visiveis:await empresasVisiveis(req),client}) : null;
         const caso = (!grupo || grupo.completo) && await client.atendimentoLead.findFirst({where:{id:String(req.body.atendimentoLeadId),...(grupo?.interlocutorId ? {interlocutorId:grupo.interlocutorId} : {conversaId:conversa.id}),encerradoEm:null}});
         if (!caso) return res.status(404).json({ok:false,error:'caso_nao_encontrado'});
+        await resolverConversaEnvioComercial({ caso, conversaId: conversa.id, db: client });
+        casoComercial = caso;
         referenciaComercial = {...referenciaComercial,atendimentoLeadId:caso.id};
       }
       if (req.body?.orientacaoAdaptada) {
@@ -612,6 +616,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
           const grupo = await carregarGrupoIdentidade({conversaId:conversa.id,visiveis:await empresasVisiveis(req),client});
           const caso = grupo.completo && await client.atendimentoLead.findFirst({where:{id:String(adaptacao.atendimentoLeadId),interlocutorId:grupo.interlocutorId,encerradoEm:null}});
           if (!caso) return res.status(404).json({ok:false,error:'caso_nao_encontrado'});
+          await resolverConversaEnvioComercial({ caso, conversaId: conversa.id, db: client });
+          casoComercial = caso;
         }
         referenciaComercial = {recursoId:recurso.id,chave:recurso.chave,versao:recurso.versao,adaptada:true,textoAprovado:false,atendimentoLeadId:adaptacao.atendimentoLeadId || null};
       }
@@ -626,11 +632,17 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
       }
       const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, referenciaComercial: { ...referenciaComercial, escopo: "PESSOA" }, client,
-        antesDeEnviar: () => conferirEnvio(conversa, conferirLease, { porPessoa: true }),
+        antesDeEnviar: async () => {
+          await conferirEnvio(conversa, conferirLease, { porPessoa: true });
+          if (casoComercial) {
+            const atual = await client.atendimentoLead.findFirst({ where: { id: casoComercial.id, encerradoEm: null } });
+            await resolverConversaEnvioComercial({ caso: atual, conversaId: conversa.id, db: client });
+          }
+        },
         enviar: () => cliente.enviarTexto({ telefone: conversa.telefoneE164, texto }),
       }));
       if (!referenciaComercial?.adaptada && ["autorizacao", "autorizacao-acesso"].includes(referenciaComercial?.chave)) {
-        const lead = await client.atendimentoLead.findFirst({ where: { conversaId, encerradoEm: null }, include: { onboarding: true } });
+        const lead = await client.atendimentoLead.findFirst({ where: { ...(casoComercial ? { id: casoComercial.id } : { conversaId }), encerradoEm: null }, include: { onboarding: true } });
         if (lead) await client.atendimentoLead.updateMany({ where: { id: lead.id, encerradoEm: null, autorizacao: { equals: lead.autorizacao || {} }, onboarding: { cnpj: lead.onboarding?.cnpj || null } }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: lead.autorizacao?.cnpj === lead.onboarding?.cnpj && lead.autorizacao?.estado === "ATIVA" ? "ATIVA" : "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
       }
       return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, autor: AUTOR_HUMANO, corpo: texto, statusEnvio: r.mensagem.statusEnvio } });

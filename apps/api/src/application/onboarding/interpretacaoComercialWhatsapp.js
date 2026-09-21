@@ -47,7 +47,7 @@ export function responderDuvidaComercial(texto, { origem = null } = {}) {
     : origem ? "Para começar a análise de uma empresa existente, precisamos do CNPJ. Depois da consulta pública, a equipe indica os documentos e autorizações necessários para seu caso."
       : "Na abertura, começamos pela atividade e cidade; depois orientamos os documentos dos sócios e do endereço. Se a empresa já existe, começamos pelo CNPJ para indicar os documentos necessários.";
   if (/\b(?:quanto tempo|qual (?:e )?o prazo|prazo|demora|fica pront[oa])\b/.test(t) && (/\?|\b(?:quanto|qual|em quantos|que prazo|demora para|demora a abrir)\b/.test(t))) return "O prazo depende do serviço, dos documentos e, na abertura, da análise do endereço e dos órgãos responsáveis. A equipe confirma uma previsão depois dessa conferência.";
-  if (/\b(?:quanto custa|quanto (?:e|fica|cobram)|qual (?:e )?o valor|precos?|honorarios?|orcamento|valores|valor da|valor de|mensalidade)\b/.test(t) && !/\b(?:sem mensalidade|nao quero mensalidade)\b/.test(t)) return "O valor depende da atividade e do que sua empresa precisa. A proposta separa serviços pontuais, contabilidade mensal e eventuais taxas. Você pode escolher só o serviço ou comparar com o acompanhamento mensal.";
+  if (/\b(?:(?:quanto|qto|qt) (?:custa|e|fica|cobram|ta|sai)|precos?|honorarios?|orcamento|valor(?:es)?|mensalidade)\b/.test(t) && !/\b(?:sem mensalidade|nao quero mensalidade)\b/.test(t)) return "O valor depende da atividade e do que sua empresa precisa. A proposta separa serviços pontuais, contabilidade mensal e eventuais taxas. Você pode escolher só o serviço ou comparar com o acompanhamento mensal.";
   if (/\b(?:como funciona|como (?:e|sera) (?:feito|o processo)|qual (?:e )?o (?:passo|processo)|por onde comec|quais (?:sao )?as etapas)\b/.test(t)) return origem === "ABERTURA"
     ? "Primeiro entendemos sua atividade e o endereço pretendido. A equipe confere a viabilidade e prepara a proposta; depois do aceite, orienta os documentos e o registro da empresa."
     : origem ? "Primeiro entendemos seu objetivo e consultamos os dados públicos do CNPJ. Se precisar de análise fiscal, a equipe orienta a autorização, confere as pendências e prepara a proposta antes de executar os serviços."
@@ -96,6 +96,17 @@ function parteDoCampo(valor) {
   return String(valor || "").split(/[;\n,.!?]|\s+e\s+(?=(?:meu|minha|sou|moro|atendo|trabalho|quero|preciso|tenho|gostaria|pretendo|vou|o email|o e-mail)\b)/i)[0].trim();
 }
 
+function declarouMotivoTroca(texto) {
+  const t = normalizar(texto);
+  // A pergunta pendente dá sentido a "preço" e a declarações como "não me
+  // respondem". Pedidos de informação e referências aos nossos valores seguem
+  // como dúvida, inclusive quando a pessoa não usa ponto de interrogação.
+  if (texto.length > 1000 || /\?|\b(?:qual|quais|como|quanto|qto|qt|posso|pode|podem|poderia|consegue|conseguem|saber|informe|informar|por que)\b/.test(t)
+    || /\b(?:me |nos )?(?:passa|passe|manda|mande|envia|envie|diga|diz|mostra|mostre)\b/.test(t)
+    || /\b(?:voces|vcs|seus?|suas?|altan|orcamento|tabela)\b/.test(t)) return false;
+  return /\b(?:precos?|valor(?:es)?|honorarios?|mensalidade|car[oa]s?|carissim[oa]s?|atendimento|demora|retorno|respondem?|respostas?|cobranca|atrasos?|erros?|suporte|pagar menos)\b/.test(t);
+}
+
 export function interpretarColetaComercial({ texto, origem, campoEsperado = null, anoParadaPendente = null }) {
   const raw = String(texto || "").trim(), t = limpo(raw), campos = new Map();
   const set = (campo, valor) => campos.set(campo, { campo, acao: "set", valor });
@@ -108,13 +119,12 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   const desconhece = naoSabeCampo(t, campoEsperado);
   // Quando perguntamos o motivo da troca, "Preço" é a resposta, não um orçamento.
   // Perguntas explícitas sobre nossos valores continuam na FAQ.
-  const motivoCurto = origem === "TRANSFERENCIA" && campoEsperado === "motivoTroca"
-    && /^(?:(?:o|os|a|as|pelo|pela|por causa do|por causa da)\s+)?(?:preco|valor|honorarios|mensalidade|atendimento|demora|falta de retorno|caro|muito caro|esta caro|ta caro)(?:\s+(?:alto|altos|alta|altas|ruim|muito alto))?$/.test(t);
+  const motivoInformado = origem === "TRANSFERENCIA" && campoEsperado === "motivoTroca" && !desconhece && declarouMotivoTroca(raw);
   let resposta = responderDuvidaComercial(raw, { origem });
-  if (motivoCurto) { set("motivoTroca", raw); resposta = null; }
+  if (motivoInformado) { set("motivoTroca", raw); resposta = null; }
   let respostaSubstituiPergunta = false;
   let anoParadaAtualizado;
-  const pergunta = Boolean(resposta) || /\?|\b(?:qual|quais|como|quanto|posso|pode me|voces fazem)\b/.test(t);
+  const pergunta = Boolean(resposta) || raw.includes("?") || /\b(?:qual|quais|como|quanto|posso|pode me|voces fazem)\b/.test(t);
 
   const nomeExplicito = raw.match(/\b(?:me chamo|meu nome [ée]|nome\s*:)\s*([^;\n]+)/i)?.[1]
     || raw.match(/^(?:ol[áa][,!]?\s*)?sou (?:a |o )?([^;\n]+)/i)?.[1];

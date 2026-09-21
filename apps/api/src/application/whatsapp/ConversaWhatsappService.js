@@ -4,7 +4,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { normalizarE164 } from "./telefone.js";
 import { resolverVinculoPorTelefone } from "./ContatoWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
-import { avaliarJanela24h } from "./janela24h.js";
+import { avaliarJanela24h, instanteQueAbreAJanela } from "./janela24h.js";
 import { identidadeWhatsappV2Ativa, filtroSegmentosDoCanal, CANAL_PRINCIPAL } from "./CanalWhatsappService.js";
 import { garantirIdentidadeWhatsapp, conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 
@@ -251,20 +251,34 @@ export async function registrarMensagemEnviada({
 /**
  * A ÚLTIMA MENSAGEM RECEBIDA do fio — o fato de que a janela depende.
  *
- * ⚠ ORDENA POR `registradaEm`, o NOSSO instante, e não pelo do provedor. `registradaEm` nunca é
- * nulo e cresce com a ordem de gravação; `ocorridaEmProvedor` pode faltar, e ordenar por ele com
- * nulos escolheria a linha errada. Se os dois discordarem, a base fica um pouco mais ANTIGA do que
- * poderia — a janela fecha antes, que é o lado seguro do erro (ver `janela24h.js`).
+ * O webhook pode entregar mensagens fora de ordem. A maior `registradaEm` não garante
+ * a entrada mais recente: uma mensagem antiga recebida com atraso não fecha uma janela aberta.
+ * Cada entrada usa min(ocorridaEmProvedor, registradaEm), ou registradaEm sem timestamp.
+ * Duas partições calculam o máximo dessa regra sem trazer histórico/conteúdo ou cortar
+ * candidatos por um limite arbitrário. Nulos e relógio do provedor adiantado ficam na segunda.
  */
 async function ultimaRecebida(conversaId) {
   const conversa = await prisma.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, select: { telefoneE164: true, canalId: true, vinculoNumeroId: true } });
   if (!conversa) return null;
   // A janela é do destinatário na Meta; somente timestamps atravessam segmentos, nunca conteúdo.
-  return prisma.mensagemWhatsapp.findFirst({
-    where: { conversa: filtroSegmentosDoCanal(conversa), direcao: DIRECAO.ENTRADA },
-    orderBy: { registradaEm: "desc" },
-    select: { ocorridaEmProvedor: true, registradaEm: true },
-  });
+  const where = { conversa: filtroSegmentosDoCanal(conversa), direcao: DIRECAO.ENTRADA };
+  const select = { ocorridaEmProvedor: true, registradaEm: true };
+  const registradaEm = prisma.mensagemWhatsapp.fields.registradaEm;
+  const candidatas = await Promise.all([
+    prisma.mensagemWhatsapp.findFirst({
+      where: { ...where, ocorridaEmProvedor: { lte: registradaEm } },
+      orderBy: [{ ocorridaEmProvedor: "desc" }, { registradaEm: "desc" }, { id: "desc" }], select,
+    }),
+    prisma.mensagemWhatsapp.findFirst({
+      where: { ...where, OR: [{ ocorridaEmProvedor: null }, { ocorridaEmProvedor: { gt: registradaEm } }] },
+      orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select,
+    }),
+  ]);
+  return candidatas.filter(Boolean).reduce((maisRecente, candidata) => {
+    const instante = instanteQueAbreAJanela(candidata).instante?.getTime() ?? -Infinity;
+    const anterior = instanteQueAbreAJanela(maisRecente).instante?.getTime() ?? -Infinity;
+    return !maisRecente || instante > anterior ? candidata : maisRecente;
+  }, null);
 }
 
 /**

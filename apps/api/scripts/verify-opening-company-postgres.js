@@ -9,7 +9,7 @@ import https from "node:https";
 import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixtures/catalogoSintetico.js";
 
 const url = new URL(process.argv[2]);
-const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && url.pathname === "/lead_flow_check_v2");
+const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && ["/lead_flow_check_v2", "/lead_flow_final_20260921"].includes(url.pathname));
 const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
 if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Use somente o PostgreSQL descartável nos alvos explícitos de teste.");
 const pasta = process.env.OPENING_TEST_OUTPUT || await fs.mkdtemp(path.join(os.tmpdir(), "abertura-completa-"));
@@ -35,7 +35,7 @@ const pdfSintetico = titulo => new Promise(resolve => { const d = new PDFDocumen
 const checks = [], conversa = [], hash = b => crypto.createHash("sha256").update(b).digest("hex");
 const ok = texto => { checks.push(texto); console.log(`OK ${texto}`); };
 const run = crypto.randomUUID();
-let user, owner, atendimento, chat, portal, legacy, cliente;
+let user, owner, atendimento, chat, canal, portal, legacy, cliente;
 const recursosIds = [], chartIds = [];
 const entrada = async texto => { conversa.push({ autor: "LEAD SINTÉTICO", texto }); return db.mensagemWhatsapp.create({ data: { conversaId: chat.id, providerMessageId: `wamid.OPENING.IN.${crypto.randomUUID()}`, direcao: "in", tipo: "text", corpo: texto } }); };
 let nSaidas = 0;
@@ -48,7 +48,8 @@ try {
   for (const [i, tipo] of ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"].entries()) {
     const c = await db.chartOfAccount.create({ data: { codigo: `TEST-${run}-${i}`, nome: `Conta sintética ${tipo}`, tipo } }); chartIds.push(c.id);
   }
-  chat = await db.conversaWhatsapp.create({ data: { telefoneE164: "5511900000001", chaveEscopo: `abertura:${run}` } });
+  canal = await db.canalWhatsapp.create({ data: { id: `abertura:${run}`, chave: `abertura:${run}`, finalidade: "COMERCIAL", ativo: true } });
+  chat = await db.conversaWhatsapp.create({ data: { telefoneE164: "5511900000001", chaveEscopo: `abertura:${run}`, canalId: canal.id } });
   const msg = await entrada("Olá, quero abrir uma empresa de consultoria e contratar a contabilidade. Ainda não tenho CNPJ.");
   atendimento = await iniciarAtendimento({ conversaId: chat.id, origem: "ABERTURA", atorId: user.id, client: db });
   const id = atendimento.onboardingId;
@@ -151,6 +152,7 @@ try {
   // Somente registros identificados desta execução; os PDFs de evidência ficam no diretório de saída.
   if (atendimento) { const id = atendimento.onboardingId; await db.onboardingEvento.deleteMany({ where: { onboardingId: id } }); await db.onboardingEtapa.deleteMany({ where: { onboardingId: id } }); await db.onboardingLink.deleteMany({ where: { onboardingId: id } }); await db.contratoComercial.deleteMany({ where: { onboardingId: id } }); await db.propostaComercial.deleteMany({ where: { onboardingId: id } }); await db.documentoOnboarding.deleteMany({ where: { onboardingId: id } }); await db.atendimentoLead.deleteMany({ where: { onboardingId: id } }); await db.onboarding.delete({ where: { id } }); }
   if (chat) { await db.mensagemWhatsapp.deleteMany({ where: { conversaId: chat.id } }); await db.conversaWhatsapp.delete({ where: { id: chat.id } }); }
+  if (canal) await db.canalWhatsapp.delete({ where: { id: canal.id } });
   if (portal) await db.portalClient.delete({ where: { id: portal.id } });
   if (legacy) { await db.partner.deleteMany({ where: { companyId: legacy } }); await db.company.delete({ where: { id: legacy } }); }
   if (cliente) await db.client.delete({ where: { id: cliente } });

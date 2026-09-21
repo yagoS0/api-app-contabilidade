@@ -92,14 +92,30 @@ test("motivo da troca pode vir junto com a intenção", () => {
   expect(dados(ler("Quero trocar de contador porque o atual demora a responder", null, "TRANSFERENCIA")).motivoTroca).toBe("o atual demora a responder");
 });
 
-test.each(["Preço", "O preço", "Pelo preço", "Honorários altos", "Muito caro", "Atendimento", "Falta de retorno"])("resposta curta ao motivo da troca não vira pergunta de orçamento: %s", texto => {
+test.each([
+  "Preço", "O preço", "Pelo preço", "Valor", "Honorários altos", "Muito caro", "Atendimento", "Falta de retorno",
+  "preco", "O preço está muito alto", "É pelo valor que pago", "A mensalidade aumentou", "O valor e o atendimento",
+  "ta mt caro", "tá caríssimo", "Não gostei do atendimento", "Não me respondem", "Não tenho retorno",
+  "Quero pagar menos", "Preciso de um atendimento melhor", "É o preço, não o atendimento", "Não é pelo preço, é pelo atendimento",
+])("resposta natural ao motivo da troca não vira pergunta de orçamento: %s", texto => {
   const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
   expect(dados(r).motivoTroca).toBe(texto); expect(r.resposta).toBeNull();
 });
 
-test.each(["Quanto custa?", "Qual o preço?", "Qual é o valor da mensalidade?"])("pergunta explícita de valores durante o motivo continua sendo dúvida: %s", texto => {
+test.each([
+  "Quanto custa?", "Qual o preço?", "Qual é o valor da mensalidade?", "Preço?", "Valor?", "Qual valor",
+  "Me passa o valor", "Quero saber o preço", "Pode informar os honorários", "O preço de vocês", "Seus honorários",
+  "qto fica", "quanto tá a mensalidade", "Queria um orçamento", "Não sei o preço de vocês",
+])("pergunta explícita de valores durante o motivo continua sendo dúvida: %s", texto => {
   const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
   expect(dados(r).motivoTroca).toBeUndefined(); expect(r.resposta).toContain("O valor depende");
+});
+test.each(["Preço", "Valor", "Mensalidade"])("palavra de preço fora da pergunta de motivo continua como dúvida: %s", texto => {
+  const r = ler(texto, "responsavelNome", "TRANSFERENCIA");
+  expect(r.operacoes).toEqual([]); expect(r.resposta).toContain("O valor depende");
+});
+test.each(["Não sei", "menu", "Falar com a equipe", "Como funciona o atendimento?", "Qual o prazo?"])("dúvida e navegação não viram motivo da troca: %s", texto => {
+  expect(dados(ler(texto, "motivoTroca", "TRANSFERENCIA")).motivoTroca).toBeUndefined();
 });
 test("CNPJ é validado, normalizado e nunca cria vínculo", () => {
   expect(dados(ler("11.222.333/0001-81", "cnpj", "TRANSFERENCIA"))).toEqual({ cnpj: "11222333000181" });

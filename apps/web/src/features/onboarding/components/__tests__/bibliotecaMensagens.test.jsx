@@ -69,7 +69,7 @@ test("Usar mensagem insere no compositor, não envia, e mais usadas usa inserç�
   expect(screen.getByText("Outra orientação")).toBeVisible();
   expect(lerUsosMensagens("operador")).toEqual({});
   fireEvent.click(within(screen.getByText("Outra orientação").closest("article")).getByRole("button"));
-  fireEvent.click(await screen.findByRole("button", { name: "Usar mensagem" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inserir na conversa" }));
   expect(onPreparado).toHaveBeenCalledWith(expect.objectContaining({ texto: "Texto preparado para revisão.", orientacaoId: "m4", versao: 4 }));
   expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
   expect(lerUsosMensagens("operador")).toEqual({ "orientacao:segunda": 1 });
@@ -89,7 +89,7 @@ test("uma falha ao inserir não conta uso nem envia mensagem", async () => {
   render(<OrientacoesRapidas usuarioId="operador" api={api} conversa={conversa} onPreparado={() => { throw Error("Rascunho ocupado"); }} />);
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
   fireEvent.click(within((await screen.findByText("Guia versão 1")).closest("article")).getByRole("button"));
-  fireEvent.click(await screen.findByRole("button", { name: "Usar mensagem" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inserir na conversa" }));
   expect(screen.getByRole("alert")).toHaveTextContent("Rascunho ocupado");
   expect(screen.getByText("Texto disponível")).toBeVisible();
   expect(lerUsosMensagens("operador")).toEqual({}); expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
@@ -103,7 +103,7 @@ test("a prévia substitui a lista e mensagem vazia não pode entrar no composito
   fireEvent.click(within((await screen.findByText("Guia versão 1")).closest("article")).getByRole("button"));
   expect(await screen.findByRole("alert")).toHaveTextContent("mensagem está vazia");
   expect(screen.queryByLabelText("Buscar mensagem rápida")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Usar mensagem" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Inserir na conversa" })).not.toBeInTheDocument();
   expect(onPreparado).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Voltar às mensagens" }));
   expect(screen.getByLabelText("Buscar mensagem rápida")).toBeVisible();

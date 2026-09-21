@@ -4,6 +4,7 @@ import { iniciarAtendimento, registrarCampos } from "../src/application/onboardi
 
 // Executado somente pelo verificador PostgreSQL descartável, com a rede já bloqueada.
 export async function verificarJornada({ db, user, ok }) {
+  const canal = await db.canalWhatsapp.create({ data: { id: "jornada-comercial-legado", chave: "jornada-comercial-legado", finalidade: "COMERCIAL", ativo: true } });
   let n = 0, chamadas = [], falhaTexto = null, durantePdf = null, janelaAberta = true;
   const cloud = {
     enviarDocumento: async args => { chamadas.push(["PDF", args]); await durantePdf?.(); return { wamid: `wamid.JORNADA.${++n}` }; },
@@ -11,7 +12,7 @@ export async function verificarJornada({ db, user, ok }) {
   };
   const j = criarJornadaLead({ db, cloud, janela: async () => ({ situacao: janelaAberta ? "ABERTA" : "FECHADA" }), comercial: { documento: async () => Buffer.from("%PDF-1.4\nSINTETICO\n%%EOF") } });
   const criar = async origem => {
-    const c = await db.conversaWhatsapp.create({ data: { telefoneE164: `551190001${String(++n).padStart(4, "0")}`, chaveEscopo: `jornada:${n}` } });
+    const c = await db.conversaWhatsapp.create({ data: { telefoneE164: `551190001${String(++n).padStart(4, "0")}`, chaveEscopo: `jornada:${n}`, canalId: canal.id } });
     await db.mensagemWhatsapp.create({ data: { conversaId: c.id, providerMessageId: `wamid.JORNADA.IN.${n}`, direcao: "in", tipo: "text", corpo: "Contato sintético para testar o atendimento." } });
     const a = await iniciarAtendimento({ conversaId: c.id, origem, atorId: user.id, client: db });
     return { c, a, o: await db.onboarding.findUnique({ where: { id: a.onboardingId } }) };
@@ -96,4 +97,6 @@ export async function verificarJornada({ db, user, ok }) {
   await db.propostaComercial.update({ where: { id: p.id }, data: { revogadaEm: new Date() } });
   await assert.rejects(j.confirmarPagamento(id, user, pagamento), e => e.code === "contrato_pendente");
   ok("Jornada: pagamento manual exige assinatura da proposta aceita, não duplica nem aceita contrato revogado");
+  const { verificarJornadaCanais } = await import("./checks-jornada-canais.js");
+  await verificarJornadaCanais({ db, user, ok });
 }

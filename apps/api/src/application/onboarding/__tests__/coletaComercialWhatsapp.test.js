@@ -134,6 +134,53 @@ test.each(["Preço", "O preço"])("motivo real %s avança à contratação com t
   expect(r.resultado.botoes.map(b => b.titulo)).toEqual(["Serviço avulso", "Contabilidade mensal", "Comparar opções"]);
 });
 
+test.each(["Preço", "O preço", "valor", "caro", "atendimento", "O preço está muito alto", "Não me respondem", "Quero pagar menos"])("conversa de transferência chega ao encaminhamento com motivo natural: %s", async motivo => {
+  // Somente persistência em memória: nenhum modelo, transporte ou provedor fiscal.
+  const t = banco({ dados: { cnpj: "11222333000181" } });
+  t.ficha.origem = "TRANSFERENCIA"; t.ficha.cnpj = "11222333000181";
+  expect((await t.chamar("Olá")).motivo).toBe("NAVEGACAO_DO_ATENDIMENTO");
+  const inicio = await t.chamar("Trocar de contador");
+  expect(inicio.resultado.texto).toBe("Como você se chama?");
+  const nome = await t.chamar("Caio");
+  expect(nome.resultado.texto).toBe("O que está motivando a troca de contador?");
+  const respostaMotivo = await t.chamar(motivo);
+  expect(t.ficha.dados).toMatchObject({ responsavelNome: "Caio", motivoTroca: motivo });
+  expect(respostaMotivo.resultado.texto).not.toMatch(/motivando|O valor depende/);
+  expect(respostaMotivo.resultado.botoes).toHaveLength(3);
+  await t.chamar("mensal");
+  expect(t.caso.triagem.campoEsperado).toBe("qtdFuncionarios");
+  await t.chamar("só eu");
+  expect(t.caso.triagem.campoEsperado).toBe("notasRecebidasMes");
+  const fim = await t.chamar("não sei");
+  expect(fim.motivo).toBe("ENCAMINHADA");
+  expect(fim.resultado.texto).toContain("A equipe vai conferir seu caso e preparar a proposta");
+  expect(t.ficha.dados).toMatchObject({ motivoTroca: motivo, modalidadeServico: "RECORRENTE", qtdFuncionarios: 0 });
+  expect(t.ficha.dados.notasRecebidasMes).toBeUndefined();
+  expect(t.caso.triagem.desconhecidos).toEqual(["notasRecebidasMes"]);
+  expect(t.caso.triagem.esclarecimentos).toBe(0);
+  expect(t.conversa.atendidaDesde).toBeTruthy();
+  expect((await t.chamar("obrigado")).motivo).toBe("AUTOMACAO_INVALIDADA");
+});
+
+test.each(["Quanto custa?", "Me passa o valor", "O preço de vocês", "Preço?"])("dúvida %s mantém o motivo pendente e aceita a resposta seguinte", async duvida => {
+  const t = banco({ dados: { cnpj: "11222333000181", responsavelNome: "Caio" } });
+  t.ficha.origem = "TRANSFERENCIA"; t.ficha.cnpj = "11222333000181";
+  t.caso.triagem = { campoEsperado: "motivoTroca" };
+  const faq = await t.chamar(duvida);
+  expect(faq.resultado.texto).toContain("O valor depende");
+  expect(t.ficha.dados.motivoTroca).toBeUndefined();
+  expect(t.caso.triagem.campoEsperado).toBe("motivoTroca");
+  expect(faq.resultado.encaminhar).toBe(false);
+  const resposta = await t.chamar("O preço está muito alto");
+  expect(t.ficha.dados.motivoTroca).toBe("O preço está muito alto");
+  expect(t.caso.triagem.campoEsperado).toBe("modalidadeServico");
+  expect(resposta.resultado.texto).not.toMatch(/motivando|O valor depende/);
+  const fim = await t.chamar("serviço pontual");
+  expect(fim.motivo).toBe("ENCAMINHADA");
+  expect(t.ficha.dados.modalidadeServico).toBe("AVULSO");
+  expect(t.conversa.atendidaDesde).toBeTruthy();
+});
+
 test("consulta pública extensa cabe no mesmo envio da escolha com botões", async () => {
   const t = banco({ dados: { responsavelNome: "Ana", motivoTroca: "Atendimento" } });
   t.ficha.origem = "TRANSFERENCIA"; t.caso.triagem = { campoEsperado: "cnpj" };

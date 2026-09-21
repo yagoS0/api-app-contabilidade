@@ -1,5 +1,15 @@
 # CLAUDE.md — API (apps/api)
 
+## Destino comercial, janela e SITFIS — revisão de 21/09/2026
+
+`CanalEnvioComercialService` resolve somente conversas existentes do mesmo número/vigência e contexto. `conversaId:null` recusa; omissão em devolutiva/proposta de lead procura um único comercial ativo e revalida antes do transporte. Contato ativo caracteriza cliente e preserva seu canal explícito válido; não concede acesso fiscal. Orientação com caso usa a mesma regra e registra instrução pelo ID validado do caso. Anexo genérico conserva destino explícito e as guardas existentes.
+
+Janela é o máximo de `min(ocorridaEmProvedor,registradaEm)`, com fallback para registradaEm, isolada por canal/número/vigência. Resumo e listagem compartilham ACL e contam não lidas globais; carteira vazia usa conjunto SQL vazio, nunca `NOT IN (NULL)`. SITFIS só conclui com PDF cifrado; protocolo sobrevive a falha. Prova oficial de procuração recente só é reaproveitada no mesmo caso/CNPJ/procurador vigente. Diagnóstico anterior invalidado é retornado separadamente como rascunho, sem autorizar proposta/envio. Provas PostgreSQL e limites: `docs/chat-atendimento-20260921-revisao.md`.
+
+## Jornada comercial sem dependência de consulta automática — 21/09/2026
+
+O contador pode registrar conferência cadastral manual pela rota existente `/jornada/conferencia`, com `{tipo:"PUBLICA",versao,manual:{fonte,evidencia}}` e CNPJ previamente salvo. O servidor conserva ator, data, CNPJ/origem e versão em `JORNADA_PUBLICA_MANUAL_CONFERIDA`; não fabrica análise pública concluída nem regularidade fiscal. Nova evidência incrementa a versão e muda o contexto do diagnóstico; repetir o mesmo registro é idempotente. Fonte/evidência ficam internas; diagnóstico e PDF da proposta informam a origem manual. A dispensa explícita da consulta fiscal privada continua sendo uma limitação de escopo do contador. Assinatura por documento e pagamento conferido permitem seguir sem provedores externos; honorários e escopo do contrato vêm da opção aceita, nunca de variáveis livres. Detalhes e limites em `docs/jornada-lead-passo-a-passo.md` na raiz. Testes usam dados sintéticos e dependências locais, sem Anthropic, consulta fiscal ou envio real.
+
 ## Exclusão de rascunho da biblioteca — 21/09/2026
 
 `DELETE /firm/comercial/recursos/:recursoId` exige gestor autenticado, ID e versão válida. `RecursosComerciaisService.excluirRascunho` usa filtro atômico por id/versão/aprovadoEm:null: aprovação concorrente ou versão inexistente recusa sem remover conteúdo publicado. Não aceitar filtro amplo com ID ausente. Versões aprovadas e mensagens enviadas permanecem; sem migration. Frequência de mensagens rápidas é preferência local da interface, não métrica de entrega. O descarte de ficha comercial vinculada continua recusado para preservar histórico. Ver `docs/chat-simples-20260921.md` na raiz.

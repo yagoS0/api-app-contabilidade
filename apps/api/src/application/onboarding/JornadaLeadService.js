@@ -10,9 +10,18 @@ import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
 import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
+import { resolverConversaEnvioComercial } from "./CanalEnvioComercialService.js";
 
 const erro = (codigo, mensagem) => new OnboardingError(codigo, mensagem, 409);
 const confirmados = new Set(["enviado", "entregue", "lido"]);
+const tiposConferencia = ["JORNADA_PUBLICA_CONFERIDA", "JORNADA_PUBLICA_MANUAL_CONFERIDA", "JORNADA_SITFIS_CONFERIDA"];
+function conferenciaPublica(analises, conferencias, ficha) {
+  const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA" && a.cnpj === ficha.cnpj);
+  const evento = conferencias.find(e => e.tipo === "JORNADA_PUBLICA_CONFERIDA" ? Boolean(publica && e.dados?.analiseId === publica.id)
+    : e.tipo === "JORNADA_PUBLICA_MANUAL_CONFERIDA" && e.dados?.cnpj === ficha.cnpj && e.dados?.origem === ficha.origem && e.dados?.fonte && e.dados?.evidencia);
+  if (!evento) return null;
+  return { id: evento.id, modo: evento.tipo === "JORNADA_PUBLICA_MANUAL_CONFERIDA" ? "MANUAL" : "CONSULTA", conferidaEm: evento.createdAt ? new Date(evento.createdAt).toISOString() : null, ...evento.dados };
+}
 export function dadosIniciaisPendentes(ficha) {
   if (ficha.origem !== "ABERTURA") return ficha.cnpj ? [] : ["CNPJ"];
   const d = ficha.dados || {};
@@ -20,10 +29,13 @@ export function dadosIniciaisPendentes(ficha) {
     [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]]
     .filter(([v]) => !String(v || "").trim()).map(([, nome]) => nome);
 }
-function contextoDoDiagnostico(ficha, analiseId) {
+function contextoDoDiagnostico(ficha, analiseId, conferencia = null) {
   const d = ficha.dados || {};
-  return createHash("sha256").update(JSON.stringify([ficha.origem, ficha.cnpj || null, analiseId,
-    d.atividadePretendida || null, d.municipioAtendimento || d.municipioPretendido || null, d.enderecoPretendido || null])).digest("hex");
+  const partes = [ficha.origem, ficha.cnpj || null, analiseId,
+    d.atividadePretendida || null, d.municipioAtendimento || d.municipioPretendido || null, d.enderecoPretendido || null];
+  // Preserva os hashes anteriores de conferências por consulta oficial.
+  if (conferencia?.modo === "MANUAL") partes.push("CADASTRO_MANUAL", conferencia.id);
+  return createHash("sha256").update(JSON.stringify(partes)).digest("hex");
 }
 
 // O progresso nasce de provas salvas; abrir uma aba ou enviar um formulário não conclui análise.
@@ -36,10 +48,11 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       db.onboardingAnalise.findMany({ where: { onboardingId: id, cnpj: ficha.cnpj || "" }, orderBy: { createdAt: "desc" }, take: 100,
         select: { id: true, tipo: true, status: true, cnpj: true, resultado: true, createdAt: true } }),
       db.onboardingEvento.findMany({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 }),
-      db.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: ["JORNADA_PUBLICA_CONFERIDA", "JORNADA_SITFIS_CONFERIDA"] } }, orderBy: { createdAt: "desc" }, take: 100 }),
+      db.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: tiposConferencia } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 }),
     ]);
     const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
-    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null);
+    const publicaConferencia = conferenciaPublica(analises, conferencias, ficha);
+    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia);
     const diagnostico = registros[0]?.dados?.contexto === referencia ? registros[0] : null;
     const saidas = diagnostico ? await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
       orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } }) : [];
@@ -47,12 +60,12 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       const saida = saidas.find(s => s.referenciaComercial?.parte === parte);
       return { parte, mensagemId: saida?.id || null, status: saida?.statusEnvio || "nao_enviado", erro: saida?.erroEnvioMensagem || null };
     });
-    const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA");
     const apresentacao = diagnostico ? await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: diagnostico.id } }, orderBy: { createdAt: "desc" } }) : null;
     return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
-      publicaConferida: Boolean(publica && conferencias.some(e => e.tipo === "JORNADA_PUBLICA_CONFERIDA" && e.dados?.analiseId === publica.id)),
+      publicaConferida: Boolean(publicaConferencia), publicaConferencia,
       fiscalConferido: Boolean(fiscal && conferencias.some(e => e.tipo === "JORNADA_SITFIS_CONFERIDA" && e.dados?.analiseId === fiscal.id)),
       diagnosticoDesatualizado: Boolean(registros[0] && !diagnostico),
+      diagnosticoAnterior: !diagnostico && registros[0] ? registros[0].dados : null,
       devolutiva: { partes, apresentacao, concluida: Boolean(diagnostico) && (Boolean(apresentacao) || partes.every(p => confirmados.has(p.status))),
         incerta: partes.some(p => ["enviando", "indeterminado"].includes(p.status)) } };
   }
@@ -67,11 +80,14 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       if (dadosIniciaisPendentes(ficha).length) throw erro("dados_incompletos", "Conclua os dados iniciais antes de registrar o diagnóstico.");
       if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10 && t.length <= 1200)) throw erro("diagnostico_incompleto", "Descreva o que foi conferido e os serviços necessários (10 a 1.200 caracteres por campo).");
       let analiseId = null;
+      let conferenciaCadastro = null;
       const dispensaConsultaPrivada = typeof body.dispensaConsultaPrivada === "string" ? body.dispensaConsultaPrivada.trim() : null;
       if (dispensaConsultaPrivada && (dispensaConsultaPrivada.length < 20 || dispensaConsultaPrivada.length > 1200)) throw erro("escopo_limitado_invalido", "Descreva a limitação do serviço sem consulta privada (20 a 1.200 caracteres).");
       if (ficha.origem !== "ABERTURA") {
         const publica = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "PUBLICA", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
-        if (!publica || !await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_PUBLICA_CONFERIDA", dados: { path: ["analiseId"], equals: publica.id } } })) throw erro("analise_pendente", "Confira primeiro os dados públicos da empresa.");
+        const conferencias = await tx.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: tiposConferencia } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 });
+        conferenciaCadastro = conferenciaPublica(publica ? [publica] : [], conferencias, ficha);
+        if (!conferenciaCadastro) throw erro("analise_pendente", "Confira os dados cadastrais pela consulta ou registre a fonte e a evidência da conferência manual.");
       }
       if (ficha.origem !== "ABERTURA" && !dispensaConsultaPrivada) {
         const fiscal = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "SITFIS", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
@@ -79,13 +95,13 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
         if (!await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_SITFIS_CONFERIDA", dados: { path: ["analiseId"], equals: fiscal.id } } })) throw erro("analise_pendente", "Registre a conferência do relatório antes do diagnóstico.");
         analiseId = fiscal.id;
       }
-      const contexto = contextoDoDiagnostico(ficha, analiseId);
+      const contexto = contextoDoDiagnostico(ficha, analiseId, conferenciaCadastro);
       const anterior = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       const achados = body.achados.trim(), servicos = body.servicos.trim();
       if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos && (anterior.dados.dispensaConsultaPrivada || null) === dispensaConsultaPrivada) return anterior;
       return tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO", atorId: user.id,
-        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, analiseId, achados, servicos, dispensaConsultaPrivada,
-          texto: `Conferimos ${ficha.origem === "ABERTURA" ? "as informações para a abertura" : `as informações do atendimento da empresa de CNPJ ${ficha.cnpj}`}:\n\n${achados}\n\nServiços propostos:\n${servicos}${dispensaConsultaPrivada ? `\n\nLimitação do escopo, sem consulta fiscal privada: ${dispensaConsultaPrivada}` : ""}\n\nNa próxima etapa, apresentaremos os valores dos serviços e, se desejar, da contabilidade mensal.` } } });
+        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, analiseId, achados, servicos, dispensaConsultaPrivada, conferenciaCadastro,
+          texto: `Conferimos ${ficha.origem === "ABERTURA" ? "as informações para a abertura" : `as informações do atendimento da empresa de CNPJ ${ficha.cnpj}`}:\n\n${achados}${conferenciaCadastro?.modo === "MANUAL" ? "\n\nDados cadastrais conferidos manualmente pelo escritório; consulta automática não utilizada. Esta conferência não comprova regularidade fiscal." : ""}\n\nServiços propostos:\n${servicos}${dispensaConsultaPrivada ? `\n\nLimitação do escopo, sem consulta fiscal privada: ${dispensaConsultaPrivada}` : ""}\n\nNa próxima etapa, apresentaremos os valores dos serviços e, se desejar, da contabilidade mensal.` } } });
     });
   }
 
@@ -93,7 +109,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     exigirGestor(user);
     const ficha = await exigirEscopo(id, user, db);
     const lead = await db.atendimentoLead.findFirst({ where: { onboardingId: id, encerradoEm: null }, include: { conversa: true } });
-    const c = body.conversaId ? await db.conversaWhatsapp.findUnique({ where: { id: body.conversaId } }) : lead?.conversa;
+    const c = await resolverConversaEnvioComercial({ caso: lead, conversaId: body.conversaId, db });
     if (encerrado(ficha) || !c || c.excluidaEm) throw erro("conversa_indisponivel", "Abra a conversa ativa deste atendimento.");
     await exigirConversaDoCaso(lead, c, db);
     const identidade = await capturarIdentidadeComercial(c, db);
@@ -111,6 +127,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
           || atual.telefoneE164 !== c.telefoneE164 || atual.canalId !== c.canalId || atual.vinculoNumeroId !== c.vinculoNumeroId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw erro("atendimento_alterado", "O atendimento ou diagnóstico mudou. Confira antes de enviar.");
         if ((await janela(c.id)).situacao !== "ABERTA") throw erro("FORA_DA_JANELA", "Aguarde uma mensagem do lead para reabrir a janela de resposta do WhatsApp.");
         await exigirConversaDoCaso(vinculo, atual, db);
+        await resolverConversaEnvioComercial({ caso: vinculo, conversaId: c.id, db });
         await conferirIdentidadeComercial(atual, identidade, db);
         return jornada;
       };
@@ -149,11 +166,21 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
   }
   async function conferirAnalise(id, user, body = {}) {
     exigirGestor(user);
-    if (!["PUBLICA", "SITFIS"].includes(body.tipo) || !Number.isInteger(body.versao) || typeof body.analiseId !== "string") throw erro("conferencia_invalida", "Confira o resultado atual antes de continuar.");
+    const manual = body.manual !== undefined;
+    if (!["PUBLICA", "SITFIS"].includes(body.tipo) || !Number.isInteger(body.versao) || body.versao < 0 || (manual ? body.tipo !== "PUBLICA" || body.analiseId != null : typeof body.analiseId !== "string")) throw erro("conferencia_invalida", "Confira o resultado atual antes de continuar. A conferência manual é somente cadastral.");
+    if (manual && (!body.manual || typeof body.manual.fonte !== "string" || body.manual.fonte.trim().length < 3 || body.manual.fonte.length > 300 || typeof body.manual.evidencia !== "string" || body.manual.evidencia.trim().length < 10 || body.manual.evidencia.length > 2000)) throw erro("conferencia_manual_invalida", "Informe a fonte consultada (3 a 300 caracteres) e o que foi conferido manualmente (10 a 2.000 caracteres).");
     return db.$transaction(async tx => {
       const ficha = await exigirEscopo(id, user, tx);
-      const reserva = await tx.onboarding.updateMany({ where: { id, versao: body.versao, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date() } });
+      let anteriorManual = null, igual = false;
+      if (manual) {
+        if (!/^\d{14}$/.test(ficha.cnpj || "")) throw erro("cnpj_necessario", "Salve o CNPJ completo da empresa antes da conferência manual.");
+        anteriorManual = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_PUBLICA_MANUAL_CONFERIDA", dados: { path: ["cnpj"], equals: ficha.cnpj } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+        igual = anteriorManual?.dados?.origem === ficha.origem && anteriorManual.dados.fonte === body.manual.fonte.trim() && anteriorManual.dados.evidencia === body.manual.evidencia.trim();
+        if (igual && anteriorManual.dados.fichaVersao === body.versao && ficha.versao === body.versao + 1 && !encerrado(ficha)) return anteriorManual;
+      }
+      const reserva = await tx.onboarding.updateMany({ where: { id, versao: body.versao, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date(), ...(manual && !igual ? { versao: { increment: 1 } } : {}) } });
       if (!reserva.count) throw erro("formulario_alterado", "A ficha mudou. Recarregue antes de conferir.");
+      if (manual) return igual ? anteriorManual : tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_PUBLICA_MANUAL_CONFERIDA", atorId: user.id, dados: { cnpj: ficha.cnpj, origem: ficha.origem, fichaVersao: body.versao, fonte: body.manual.fonte.trim(), evidencia: body.manual.evidencia.trim() } } });
       const a = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: body.tipo, status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
       if (!a || a.id !== body.analiseId || (body.tipo === "SITFIS" && !a.resultado?.relatorioDisponivel)) throw erro("analise_pendente", "A análise mudou ou ainda não está concluída.");
       const tipo = `JORNADA_${body.tipo}_CONFERIDA`;

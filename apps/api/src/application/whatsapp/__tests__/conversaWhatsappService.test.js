@@ -15,7 +15,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     contatoWhatsapp: { findMany: jest.fn() },
     companyClientUser: { findMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-    mensagemWhatsapp: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+    mensagemWhatsapp: { fields: { registradaEm: { name: "registradaEm" } }, create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
   },
 }));
 
@@ -172,11 +172,8 @@ describe("⚠ A JANELA É DERIVADA — não há coluna `aberta`", () => {
     expect((await janelaDaConversa("conv1", agora)).situacao).toBe(SITUACOES_JANELA.EXPIRADA);
   });
 
-  it("⚠ ordena pelo NOSSO instante, que nunca é nulo — ordenar pelo do provedor escolheria a linha errada", async () => {
-    prisma.mensagemWhatsapp.findFirst.mockResolvedValue(null);
-    await janelaDaConversa("conv1");
-    expect(prisma.mensagemWhatsapp.findFirst.mock.calls[0][0].orderBy).toEqual({ registradaEm: "desc" });
-  });
+  // Ordem fora de sequência, nulos e relógios divergentes são exercitados com linhas
+  // distintas em janelaConversaEfetiva.test.js; não travar aqui uma ordem de persistência.
 });
 
 describe("⚠ MULTI-TENANCY — a conversa de uma empresa não é alcançável pelo escopo de outra", () => {
@@ -257,7 +254,10 @@ describe("garantirConversa", () => {
 it("janela após novo vínculo usa apenas horários do destinatário, sem copiar histórico",async()=>{
  prisma.mensagemWhatsapp.findFirst.mockResolvedValue({registradaEm:new Date(),ocorridaEmProvedor:new Date()});
  expect((await janelaDaConversa("conv1")).situacao).toBe(SITUACOES_JANELA.ABERTA);
- expect(prisma.mensagemWhatsapp.findFirst).toHaveBeenCalledWith({where:{conversa:{telefoneE164:"5521999998888",canalId:null,vinculoNumeroId:null},direcao:"in"},orderBy:{registradaEm:"desc"},select:{registradaEm:true,ocorridaEmProvedor:true}});
+ for(const [args] of prisma.mensagemWhatsapp.findFirst.mock.calls) {
+  expect(args.where).toMatchObject({conversa:{telefoneE164:"5521999998888",canalId:null,vinculoNumeroId:null},direcao:"in"});
+  expect(args.select).toEqual({registradaEm:true,ocorridaEmProvedor:true});
+ }
 });
 it("conflito de wamid após troca de vínculo preserva conversa vencedora e tenant da mídia",async()=>{
  prisma.contatoWhatsapp.findMany.mockResolvedValue([contato({portalClientId:"p2",portalClient:{id:"p2",razao:"BETA",cnpj:"22222222000122"}})]);
