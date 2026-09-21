@@ -19,7 +19,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const canal = canais.find(c => c.id === canalId);
   const destino = canal?.conversaId || (canais.length === 1 ? conversa.id : null);
   const destinoAtual = { conversaId: destino, vinculoNumeroId: canal?.vinculoNumeroId || null };
-  const conversaCanal = { ...conversa, id: destino, canalId, telefoneMascarado: canal?.telefoneMascarado || conversa.telefoneMascarado, janela: canal?.janela || (canais.length === 1 ? conversa.janela : null) };
+  const conversaCanal = { ...conversa, id: destino, canalId, canalNome: canal?.nome || canal?.chave || canal?.finalidade, podeResponder: canal?.podeResponder, telefoneMascarado: canal?.telefoneMascarado || conversa.telefoneMascarado, janela: canal?.janela || (canais.length === 1 ? conversa.janela : null) };
   const resposta = canal?.podeResponder === false ? { pode: false, motivo: canal?.janela?.situacao === "ABERTA" ? "Este canal está indisponível para responder. Selecione um canal ativo e confira a mensagem." : estadoDaResposta(conversaCanal).motivo } : canal ? estadoDaResposta(conversaCanal) : { pode: false, motivo: "O canal preparado não está mais disponível. Selecione um canal e confira a mensagem." };
   const chave = chaveDoRascunho(conversa, { canalId });
   const chaveRef = useRef(chave);
@@ -105,7 +105,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
           salvarDraft({ texto: p.texto, orientacao: { ...p, conversaId: destino, canalId } });
           requestAnimationFrame(() => textoRef.current?.focus());
         }} />}
-        {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes && <details className="wa-composer-documents"><summary>Guias e documentos</summary>{slotAcoes}</details>}
+        {slotAcoes && (typeof slotAcoes === "function" || !conversa.atendimento || conversa.atendimento.contextoSelecionado) && <details className="wa-composer-documents"><summary>Guias e documentos</summary>{typeof slotAcoes === "function" ? slotAcoes(conversaCanal) : slotAcoes}</details>}
       </div>
       <Button variant="primary" disabled={bloqueado || !texto.trim()} onClick={enviar}>{editada ? previa ? "Conferi: enviar adaptação" : "Conferir adaptação" : "Responder"}</Button>
     </div>
@@ -113,6 +113,9 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     {!resposta.pode && <p data-testid="resposta-bloqueada" className="wa-list-note">{comercialObrigatorio && !comercialId ? "Leads são atendidos pelo WhatsApp Comercial. Este contato ainda não tem conversa nesse número." : resposta.motivo}</p>}
     {orientacao && <p className="wa-list-note">{editada ? "Texto adaptado: confira a prévia antes de enviar. Não certifica a orientação original." : "Mensagem inserida. Confira o texto e clique em Responder para enviar."}<button type="button" onClick={() => salvarDraft(texto)}>Desvincular orientação</button></p>}
     {previa && <div className="wa-draft-preview"><strong>Confira o texto adaptado</strong><p>{texto}</p></div>}
+    {!comercialObrigatorio && canais.length > 1 && <label className="wa-compose-channel">Enviar pelo WhatsApp<select aria-label="Canal da mensagem" value={canalId || ""} disabled={ocupado || hook.ocupado} onChange={e => setCanalId(e.target.value)}>
+      {!canal && <option value="">Selecione o canal</option>}{canais.map(c => <option key={c.id} value={c.id}>{c.nome || c.chave || c.finalidade || "Principal"}</option>)}
+    </select></label>}
     <div className="wa-composer-hint"><span>{`WhatsApp ${comercialObrigatorio ? "Comercial" : canal?.nome || canal?.chave || ""} · Ctrl + Enter para enviar`}</span>{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado} onClick={descartar}>Descartar rascunho</button>}</div>
     {descartado?.chave === chave && <div className="wa-draft-undo" role="status">Rascunho descartado. <button type="button" disabled={ocupado || hook.ocupado} onClick={desfazerDescarte}>Desfazer</button></div>}
     {erro && !hook.erroAcao && <p role="alert" className="wa-list-note">{erro}</p>}

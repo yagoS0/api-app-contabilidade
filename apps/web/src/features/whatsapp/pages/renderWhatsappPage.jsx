@@ -14,7 +14,7 @@
 // e o vínculo não existe (`portalClientId` nunca é nulo ali).
 
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
-import { relacionamentoDaConversa, chaveDoInterlocutor, canaisDaConversa, canalInicialDaConversa } from "../lib/identidadeAtendimento";
+import { relacionamentoDaConversa, chaveDoInterlocutor } from "../lib/identidadeAtendimento";
 import { AvatarConversa, WhatsappIcon, DetalhesConversa } from "../components/ConversaVisual";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageShell } from "../../../components/layout/PageShell";
@@ -23,7 +23,7 @@ import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { useResumoWhatsapp } from "../hooks/useResumoWhatsapp";
 import { AtualizacaoAtendimento } from "../components/AtendimentoComercial";
-import { CanalDoAtendimento } from "../components/CanalDoAtendimento";
+import { useCanalAtendimento, leituraDoCaso } from "../hooks/useCanalAtendimento";
 import { FormOnboarding } from "../components/FormOnboarding";
 import { FioDaConversa, campo } from "../components/FioDaConversa";
 // ⚠ A MESMA fonte da URL que a navegação por clique usa — nunca uma segunda construção do caminho.
@@ -94,8 +94,7 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado 
 export function WhatsappPage({ api, companies = [], onBack, onComunicados, message, error, usuarioId = null, mensagemBiblioteca = null, onMensagemBibliotecaAberta }) {
   const hook = useConversasWhatsapp({ api, feedback: null });
   const resumo = useResumoWhatsapp({ api });
-  const [revisaoComercial, setRevisaoComercial] = useState(0);
-  const atualizacaoComercial = useMemo(() => ({ revisao: revisaoComercial, mensagemBiblioteca, onMensagemBibliotecaAberta, atualizar: () => { setRevisaoComercial(v => v + 1); return hook.atualizarConversa(hook.aberta?.conversa.id); } }), [revisaoComercial, hook.atualizarConversa, hook.aberta?.conversa.id, mensagemBiblioteca, onMensagemBibliotecaAberta]);
+  const { registrarCanal, pedidoCanal, conversaComercial, canalDeEnvio, atualizacaoComercial } = useCanalAtendimento(hook, { mensagemBiblioteca, onMensagemBibliotecaAberta });
   const [busca, setBusca] = useState("");
   const [soNaoLidas, setSoNaoLidas] = useState(false);
   const [relacionamento, setRelacionamento] = useState("");
@@ -120,23 +119,12 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
     return () => { terminar(); window.removeEventListener("pointermove", mover); window.removeEventListener("pointerup", terminar); window.removeEventListener("pointercancel", terminar); };
   }, [ajustarLargura]);
   const [detalhes, setDetalhes] = useState(false);
-  const [canalPreparado, setCanalPreparado] = useState(null);
-  const [pedidoCanal, setPedidoCanal] = useState(null);
-  const registrarCanal = useCallback(c => setCanalPreparado(anterior => JSON.stringify(anterior) === JSON.stringify(c) ? anterior : c), []);
-  const canalComercial = canalPreparado?.interlocutorId === (hook.aberta?.conversa.interlocutorId || hook.aberta?.conversa.id) ? canalPreparado : null;
-  const canalAtual = hook.aberta ? canaisDaConversa(hook.aberta.conversa).find(c => c.id === (relacionamentoDaConversa(hook.aberta.conversa).tipo === "LEAD" ? canalInicialDaConversa(hook.aberta.conversa) : canalComercial?.canalId || canalInicialDaConversa(hook.aberta.conversa))) : null;
-  const conversaComercial = hook.aberta ? { ...hook.aberta.conversa, ...(canalAtual ? { id: canalAtual.conversaId, canalId: canalAtual.id, janela: canalAtual.janela, podeResponder: canalAtual.podeResponder } : {}) } : null;
-  const escolherCanal = canalId => setPedidoCanal({ interlocutorId: hook.aberta.conversa.interlocutorId || hook.aberta.conversa.id, canalId });
-  const canalDeEnvio = hook.aberta ? <CanalDoAtendimento conversa={hook.aberta.conversa} canalId={conversaComercial.canalId} onSelecionar={escolherCanal} disabled={hook.ocupado} /> : null;
   const [verChat, setVerChat] = useState(false);
   const listaRef = useRef(null);
   const lista = useMemo(() => hook.buscaServidor ? hook.conversas : ordenarConversas(hook.conversas), [hook.conversas, hook.buscaServidor]);
   const fila = lista.filter((c) => c.relacionamento ? relacionamentoDaConversa(c).tipo === "A_IDENTIFICAR" : situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
   const avisoDaLista = frasePaginacao(hook.temMais);
   // A classificação e o caso comercial chegam na própria página; nunca carregar a carteira de fichas.
-  const leituraOnboarding = c => c.solicitacaoComercial?.onboardingId
-    ? { situacao: "EXATO", candidatos: [{ id: c.solicitacaoComercial.onboardingId, origem: c.solicitacaoComercial.origem, status: c.solicitacaoComercial.etapa, confianca: "EXATO" }] }
-    : { situacao: "SEM_ONBOARDING", candidatos: [] };
   useEffect(() => {
     if (!api?.whatsappContratoV2) return;
     const timer = setTimeout(() => hook.setConsulta({ q: busca.trim(), relacionamento, naoLidas: soNaoLidas }), 250);
@@ -152,7 +140,7 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
     requestAnimationFrame(() => (listaRef.current?.querySelector('[aria-current="true"]') || listaRef.current?.querySelector("input"))?.focus());
   };
 
-  const painelComercial = hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
+  const painelComercial = hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraDoCaso(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
 
   return <div className="wa-page">
     <PageShell title="Atendimento" subtitle={mensagemBiblioteca ? `Escolha uma conversa para usar “${mensagemBiblioteca.titulo}”.` : "Conversas pelo WhatsApp"} onBack={onBack}

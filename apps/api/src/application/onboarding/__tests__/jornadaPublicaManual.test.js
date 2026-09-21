@@ -146,6 +146,31 @@ test("origem manual fica no snapshot; contrato conserva exatamente preço e esco
   expect(ct.texto).toContain("246,80"); expect(ct.texto).not.toContain("escopo inventado");
 });
 
+test("proposta mensal gerada e aprovada alimenta formulário contratual sem permitir alterar os termos aceitos", async () => {
+  const t = setup();
+  t.ficha.dados = { modalidadeServico: "RECORRENTE", regimeAtual: "SIMPLES", qtdFuncionarios: 2, notasRecebidasMes: 15, consultoriaMensal: false };
+  await t.conferir(); const diagnostico = await t.diagnosticar();
+  await t.jornada.registrarApresentacao(t.ficha.id, user, { versao: t.ficha.versao, diagnosticoId: diagnostico.id, meio: "Presencial", evidencia: "Cliente conferiu serviços mensais e condições em reunião." });
+  const service = criarPropostasComerciais({ db: t.db });
+  const p = await service.gerar(t.ficha.id, user, { versao: t.ficha.versao, ajustes: {} });
+  await service.aprovar(t.ficha.id, p.id, user);
+  const aceita = t.propostas.find(v => v.id === p.id); aceita.status = "ACEITA"; aceita.opcaoAceita = "RECORRENTE";
+  const opcao = aceita.snapshot.opcoes.find(o => o.chave === "RECORRENTE");
+  const modelo = { id: "modelo-mensal", tipo: "CONTRATO", aprovadoEm: new Date(), versao: 2,
+    dados: { recorrente: true, camposPadrao: { diaVencimento: 10 } },
+    texto: "{{nome}} {{honorariosMensais}} {{honorariosMensaisExtenso}} {{servico}} {{condicoes}}; até {{limiteFuncionarios}} pessoas e {{limiteDocumentos}} documentos; vencimento {{diaVencimento}}" };
+  t.db.recursoComercial.findUnique.mockResolvedValue(modelo);
+  const c = await service.contrato(t.ficha.id, p.id, user, { modeloId: modelo.id, variaveis: { honorariosMensais: "R$ 1", honorariosMensaisExtenso: "um real", servico: "Escopo adulterado", condicoes: "Condições adulteradas", limiteFuncionarios: 999, limiteDocumentos: 999, diaVencimento: 18 } });
+  expect(c.dados.opcao).toEqual(opcao);
+  expect(c.dados.variaveis).toMatchObject({ servico: opcao.escopo, condicoes: aceita.snapshot.condicoes, limiteFuncionarios: aceita.snapshot.limitesPlano.funcionarios, limiteDocumentos: aceita.snapshot.limitesPlano.documentosEntradaMes, diaVencimento: 18 });
+  expect(c.texto).toContain((opcao.mensalCentavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+  expect(c.texto).not.toMatch(/adulterad|999/);
+  expect(c.dados.modeloVersao).toBe(2);
+  const gravacoes = t.db.contratoComercial.upsert.mock.calls.length;
+  await expect(service.contrato(t.ficha.id, p.id, user, { modeloId: modelo.id, variaveis: { diaVencimento: 50 } })).rejects.toMatchObject({ code: "contrato_incompleto" });
+  expect(t.db.contratoComercial.upsert).toHaveBeenCalledTimes(gravacoes);
+});
+
 test("conferência por consulta preserva origem, exige análise exata e não dispensa SITFIS sozinha", async () => {
   const t = setup();
   t.analises.push({ id: "publica-sintetica", onboardingId: t.ficha.id, cnpj, tipo: "PUBLICA", status: "CONCLUIDA", createdAt: new Date() });

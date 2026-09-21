@@ -5,6 +5,7 @@ import { camposDaOrigem } from "../lib/onboardingSpec";
 import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { AutorizacaoDoLead } from "./AutorizacaoDoLead";
 import { AnaliseDoLead } from "./AnaliseDoLead";
+import { FormularioContrato } from "./FormularioContrato";
 export const campoComercial = {
   width: "100%",
   padding: 8,
@@ -18,22 +19,8 @@ export const reais = c => c == null ? "A confirmar" : (c / 100).toLocaleString("
   style: "currency",
   currency: "BRL"
 });
-export function OpcoesProposta({
-  proposta
-}) {
-  return <><div style={{
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 12
-    }}>{proposta.opcoes?.map(o => <article key={o.chave} style={{
-        flex: "1 1 220px",
-        padding: 14,
-        border: "1px solid var(--border)",
-        borderRadius: 8
-      }}><strong>{o.titulo}</strong><p>{o.recorrente ? `${reais(o.mensalCentavos)}/mês${o.unicoCentavos !== 0 ? ` + ${reais(o.unicoCentavos)} pelo serviço inicial` : ""}` : `${reais(o.unicoCentavos)} pelo serviço`}</p><p>{o.escopo}</p></article>)}</div><p>Regularização: {proposta.regularizacaoCentavos == null ? "orçamento separado, quando necessária" : reais(proposta.regularizacaoCentavos)} · Taxas públicas: {reais(proposta.taxasCentavos)}{proposta.taxasConfirmadas ? " (confirmadas)" : " (a conferir)"}</p><p style={{
-      whiteSpace: "pre-wrap"
-    }}>{proposta.condicoes}</p></>;
-}
+import { ApresentacaoProposta as OpcoesProposta } from "./ApresentacaoProposta";
+export { ApresentacaoProposta as OpcoesProposta } from "./ApresentacaoProposta";
 
 import { FichaAvulsa } from "./FichaAvulsa";
 import { AcoesDaEtapa } from "./AcoesDaEtapa";
@@ -46,7 +33,7 @@ import { ProgressoDoLead, CamposDaEtapa, DiagnosticoDoLead, MensagemDoPasso, Ori
 export function FluxoComercial({ api, onboardingId, conversaId: conversaInformada, janela = null, canalDisponivel = true, canalDeEnvio = null }) {
   const [estado, setEstado] = useState(null), [recursos, setRecursos] = useState([]), [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false), [passoEscolhido, setPassoEscolhido] = useState(null), [link, setLink] = useState("");
-  const [modeloId, setModeloId] = useState(""), [vars, setVars] = useState({}), [documentoId, setDocumentoId] = useState("");
+  const [documentoId, setDocumentoId] = useState("");
   const [campoEdicao, setCampoEdicao] = useState(""), [valorCampo, setValorCampo] = useState("");
   const [evidenciaPagamento, setEvidenciaPagamento] = useState(""), [linkPagamento, setLinkPagamento] = useState("");
   const [evidenciaEntrega, setEvidenciaEntrega] = useState("");
@@ -88,11 +75,8 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
   // O chat informa o destino conferido. A ficha isolada não reaproveita o canal antigo do caso.
   const conversaId = conversaInformada || null;
   const podeEnviar = Boolean(conversaId && canalDisponivel && (!janela || janela.situacao === "ABERTA"));
-  const modelos = recursos.filter(r => r.tipo === "CONTRATO" && r.aprovadoEm), modelo = modelos.find(r => r.id === modeloId);
-  const marcadores = [...new Set([...(modelo?.texto || "").matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]))].filter(k => !["servico", "honorarios", "condicoes"].includes(k));
-  const o = estado.onboarding, d = o.dados || {};
+  const o = estado.onboarding;
   const contratosAtuais = estado.contratos.filter(c => c.propostaId === jornada.proposta?.id);
-  const varsCadastro = { nome: o.responsavelNome || d.responsavelNome || "", cnpj: o.cnpj || "", contratante: o.razaoSocial || d.razaoSocial || "", email: o.responsavelEmail || d.responsavelEmail || "", cpf: d.responsavelCpf || "", endereco: d.endereco || d.enderecoPretendido || "" };
   const campos = camposDaOrigem(o.origem), descritor = campos.find(c => c.campo === campoEdicao);
   const etapa = jornada.passos.find(p => p.id === passo);
   const trabalho = tipo => estado.trabalhos?.find(t => t.tipo === tipo && t.cnpj === o.cnpj);
@@ -143,16 +127,9 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
 
       </>}
       {passo === "contrato" && <>
-        {!modelos.length && <p role="status">Cadastre e aprove um modelo na biblioteca para preparar o contrato.</p>}
         <OrientacaoDoPasso api={api} recursos={recursos} chaves={["assinatura-govbr"]} onboarding={o} conversaId={conversaId} onEnviado={carregar} disabled={ocupado} />
-        <details key={contratosAtuais.map(c => c.id + c.status).join(":")}><summary>{contratosAtuais.length ? "Conferir contrato e assinatura" : "Preparar contrato"}</summary><label>Modelo aprovado<select style={campoComercial} value={modeloId} onChange={e => {
-            setModeloId(e.target.value);
-            setVars({});
-          }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao}</option>)}</select></label>{marcadores.map(k => <label key={k}>{k}<input style={campoComercial} value={vars[k] ?? varsCadastro[k] ?? ""} onChange={e => setVars({
-            ...vars,
-            [k]: e.target.value
-          })} /></label>)}
-        {estado.propostas.filter(p => p.status === "ACEITA" && !p.revogadaEm && !estado.contratos.some(c => c.propostaId === p.id)).map(p => <p key={p.id}><Button disabled={!modeloId} onClick={() => acao(`/propostas/${p.id}/contrato`, { modeloId, variaveis: { ...varsCadastro, ...vars } })}>Gerar contrato da opção aceita</Button></p>)}
+        <details key={contratosAtuais.map(c => c.id + c.status).join(":")}><summary>{contratosAtuais.length ? "Conferir contrato e assinatura" : "Preparar contrato"}</summary>
+        {estado.propostas.filter(p => p.id === jornada.proposta?.id && p.status === "ACEITA" && !p.revogadaEm && !estado.contratos.some(c => c.propostaId === p.id)).map(p => <FormularioContrato key={onboardingId + ":" + p.id} onboarding={o} proposta={p} recursos={recursos} onGerar={body => acao(`/propostas/${p.id}/contrato`, body)} />)}
         {contratosAtuais.map(c => <article key={c.id}><strong>Contrato · {c.status}</strong><pre style={{
             whiteSpace: "pre-wrap",
             font: "inherit",

@@ -1,4 +1,18 @@
 .lead-journey { margin-block: 16px; min-width: 0; color: var(--text); font-size: .9375rem; line-height: 1.55; container-type: inline-size; }
+.commercial-contract-form { min-width: 0; font-size: .875rem; color: var(--text); line-height: 1.55; }
+.commercial-contract-form fieldset { min-width: 0; padding: 10px 14px 14px; margin-block: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 16px; }
+.commercial-contract-form legend { padding-inline: 6px; font-weight: 600; }
+.commercial-contract-form fieldset > div { min-width: 0; }
+.commercial-contract-form label { display: grid; gap: 6px; margin-block: 8px; font-size: .875rem; }
+.commercial-contract-form input, .commercial-contract-form select, .commercial-contract-form textarea { display: block; box-sizing: border-box; min-width: 0; width: 100%; max-width: 100%; min-height: 40px; padding: 10px; font: inherit; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.commercial-contract-form textarea { resize: vertical; }
+.commercial-contract-form :is(input, select, textarea):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.commercial-contract-form [aria-invalid="true"] { border-color: var(--state-warn); }
+.commercial-contract-form small { display: block; line-height: 1.5; color: var(--text); }
+.commercial-contract-form dl { display: grid; gap: 10px; margin-block: 12px; padding: 14px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.commercial-contract-form dt { color: var(--text-muted); font-size: .8125rem; }
+.commercial-contract-form dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.commercial-contract-form pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 360px; overflow: auto; padding: 14px; background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .lead-journey-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
 .lead-journey-heading h3 { margin: 0 0 4px; font-size: 1rem; }
 .lead-journey-heading p { margin: 0; color: var(--text-muted); font-size: .875rem; }
@@ -43,12 +57,12 @@
 .lead-support dt { color: var(--text-muted); font-size: .875rem; }
 .lead-support dd { margin: 2px 0 12px; overflow-wrap: anywhere; }
 .lead-steps { margin-bottom: 18px; }
-.lead-steps ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lead-steps ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
 .lead-steps li { min-width: 0; }
 .lead-steps button { display: flex; align-items: flex-start; gap: 8px; text-align: left; width: 100%; height: 100%; padding: 10px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: transparent; font: inherit; font-size: .875rem; line-height: 1.4; cursor: pointer; }
 .lead-step-number { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; min-height: 24px; border: 1px solid var(--border); border-radius: 50%; font-size: .8125rem; font-weight: 600; }
 .lead-steps small { display: block; color: var(--text-muted); font-size: .75rem; margin-top: 2px; }
-.lead-steps button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.lead-steps button > span:last-child { min-width: 0; overflow-wrap: normal; }
 .lead-steps button[aria-current=step] { border-color: var(--text); background: var(--bg-subtle); font-weight: 600; }
 .lead-steps button[aria-pressed=true]:not([aria-current=step]) { border-color: var(--text-muted); background: var(--bg-subtle); }
 .lead-steps li[data-status=atual] .lead-step-number { background: var(--text); color: var(--bg-page); border-color: transparent; }
@@ -65,9 +79,6 @@
 .lead-stage-action > [role=tabpanel] > :first-child { margin-top: 0; }
 .lead-support > h4 { margin: 12px 0; font-size: 1rem; }
 .lead-support > dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
-@container (min-width: 620px) {
-  .lead-steps ol { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-}
 @container (max-width: 420px) {
   .lead-steps button { flex-direction: column; gap: 5px; padding: 9px; font-size: .8125rem; }
   .lead-step-number { flex-basis: auto; width: 22px; min-height: 22px; }

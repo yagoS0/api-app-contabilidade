@@ -62,12 +62,12 @@ describe("um fio só", () => {
 });
 
 describe("dois fios da mesma empresa — o seletor", () => {
-  it("o seletor lista as PESSOAS com o papel, e trocar abre o outro fio", async () => {
+  it("o seletor lista somente os nomes das pessoas, e trocar abre o outro fio", async () => {
     const api = apiFalso([SOCIA, FINANCEIRO]);
     render(<ChatDaEmpresa api={api} companyId="pc-1" />);
     const seletor = await screen.findByTestId("seletor-de-contato");
-    expect(seletor).toHaveTextContent("Maria Silva · sócia");
-    expect(seletor).toHaveTextContent("João Financeiro · financeiro");
+    expect(seletor).toHaveTextContent("Maria Silva");
+    expect(seletor).toHaveTextContent("João Financeiro");
     await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv1"));
     fireEvent.change(seletor, { target: { value: "cv2" } });
     await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv2"));

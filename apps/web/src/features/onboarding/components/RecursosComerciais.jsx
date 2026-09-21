@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { descricaoMensagem, normalizarBuscaMensagem } from "../../whatsapp/lib/mensagensRapidas";
+import { CAMPOS_CONTRATO, variaveisDoModelo } from "../../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
 import "../commercial-library.css";
 
 const style = { width: "100%", padding: 8, background: "var(--bg-subtle)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5, marginBlock: 5 };
@@ -12,7 +13,7 @@ const valores = [
   ["consultoriaCentavos", "Consultoria mensal adicional (R$)"], ["irpfCentavos", "IRPF por declaração (R$)"],
   ["regularizacaoMinimaCentavos", "Piso de regularização (R$)"]
 ];
-const variaveis = ["nome", "cnpj", "escritorio", "procuradorCnpj", "linkAutorizacao", "linkProposta", "servico", "honorarios", "condicoes", "contratante", "endereco", "email", "cpf"];
+const variaveis = CAMPOS_CONTRATO.map(c => c.chave);
 const variaveisDaOrientacao = ["nome", "cnpj", "servico", "escritorio", "procuradorCnpj", "linkAutorizacao"];
 const textoNumero = (v, moeda = false) => v == null ? "" : moeda && typeof v === "number" ? (v / 100).toFixed(2).replace(".", ",") : String(v);
 const faixaVazia = () => ({ ate: "", recebidas: "", SIMPLES: "", LUCRO_PRESUMIDO: "" });
@@ -161,14 +162,18 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar, onUsarMens
           <Campo numero rotulo="Consultoria incluída a partir de quantos funcionários" valor={editando.dados.consultoriaIncluidaAPartir} ajuda="Abaixo deste número, o valor adicional é cobrado quando a consultoria for solicitada. Zero inclui em todas as faixas." onChange={v => mudarDado("consultoriaIncluidaAPartir", v)} />
         </div>
         {[["escopoAbertura", "Escopo da abertura"], ["escopoMensal", "Escopo da contabilidade mensal"], ["condicoes", "Condições comerciais"]].map(([k, rotulo]) => <label key={k} style={{ display: "block", marginTop: 10 }}>{rotulo}<textarea style={style} rows={4} value={editando.dados[k] ?? ""} onChange={e => mudarDado(k, e.target.value)} /></label>)}
+        <h4>Apresentação da proposta em PDF</h4><p>Descreva as entregas em linguagem simples, uma por linha. Estes textos ficam vinculados à versão da proposta. Não alteram o cálculo dos honorários.</p>
+        {[["incluidos", "O que está incluído no plano mensal"], ["gestao", "Gestão e acompanhamento incluídos na consultoria"], ["beneficios", "Benefícios do plano mensal"], ["limites", "Limites e adicionais do plano mensal"]].map(([k, rotulo]) => <label key={k} style={{ display: "block", marginTop: 10 }}>{rotulo}<textarea style={style} rows={3} maxLength={6000} value={editando.dados.apresentacao?.[k] ?? ""} onChange={e => mudarGrupo("apresentacao", k, e.target.value)} />{k === "gestao" && <small>Esta descrição só aparece como incluída quando a consultoria estiver contratada ou incluída pela faixa.</small>}</label>)}
       </> : editando.tipo === "INSTITUCIONAL" ? <div style={grid}>
         <Campo rotulo="Nome do escritório" valor={editando.dados.escritorio} onChange={v => mudarDado("escritorio", v)} />
         <Campo rotulo="CNPJ do procurador" valor={editando.dados.procuradorCnpj} onChange={v => mudarDado("procuradorCnpj", v)} />
         <Campo rotulo="Link HTTPS das instruções de autorização" valor={editando.dados.linkAutorizacao} onChange={v => mudarDado("linkAutorizacao", v)} />
+        {CAMPOS_CONTRATO.filter(c => ["contratadaRazaoSocial", "contratadaCnpj", "contratadaEndereco", "contadorNome", "contadorCrc"].includes(c.chave)).map(c => <Campo key={c.chave} rotulo={c.rotulo} valor={editando.dados[c.chave]} onChange={v => mudarDado(c.chave, v)} ajuda="Usado para preencher os contratos. Pode ser conferido no formulário de cada cliente." />)}
       </div> : <><label>Texto<textarea style={style} rows={10} value={editando.texto} onChange={e => setEditando({ ...editando, texto: e.target.value })} /></label>
         <p>Campos substituíveis: {(editando.tipo === "ORIENTACAO" ? variaveisDaOrientacao : variaveis).map(k => `{{${k}}}`).join(", ")}. Em mensagens rápidas, nome, CNPJ e serviço vêm do atendimento; os dados do escritório vêm da configuração aprovada. Os demais campos dependem do fluxo que preencherá o modelo.</p>
       </>}
       {editando.tipo === "CONTRATO" && <div><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.recorrente === true} onChange={e => mudarDado("recorrente", e.target.checked)} /> Contabilidade recorrente</label><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.permitePreCnpj === true} onChange={e => mudarDado("permitePreCnpj", e.target.checked)} /> Modelo validado para contratação antes do CNPJ</label><p>Revise a minuta e substitua os marcadores de revisão antes de aprovar.</p></div>}
+      {editando.tipo === "CONTRATO" && <><h4>Valores padrão do formulário</h4><p>Preencha o que se repete entre contratos. Os dados da empresa e da proposta aceita completam o restante; valores e escopo aceitos ficam protegidos.</p><div style={grid}>{CAMPOS_CONTRATO.filter(c => !c.protegido && variaveisDoModelo(editando.texto).includes(c.chave)).map(c => <Campo key={c.chave} rotulo={c.rotulo} numero={c.tipo === "number"} valor={editando.dados.camposPadrao?.[c.chave]} onChange={v => mudarGrupo("camposPadrao", c.chave, v)} ajuda={c.tipo === "date" ? "Data no formato AAAA-MM-DD." : undefined} />)}</div></>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}><Button type="button" onClick={salvar}>Salvar nova versão em rascunho</Button><Button type="button" variant="secondary" onClick={() => { setEditando(null); setErros([]); }}>Fechar edição</Button></div>
     </fieldset>}
   </section>;

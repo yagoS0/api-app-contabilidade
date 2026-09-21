@@ -87,6 +87,9 @@ jobs:
       - name: Invoice preparation and public registration lookups without network
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='src/application/tomador|preparacaoFiscalDoCliente'
+      - name: Commercial proposals, PDFs and contract forms without external calls
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/onboarding/__tests__'
       - name: WhatsApp, guides and AI backend regression
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|envioTentativas|classificacaoPorIa|corrigirValorGuia|guiaEmailDestinatarios|destinatarioDaGuia|envioSemFila|envioPendenteNull|GuideReleaseBatch|liberacaoGuiasCanais'

@@ -48,11 +48,12 @@ async function montar(api = apiFalso(), props = {}) {
 }
 
 describe("a tira chega ao DOM pelo chat da empresa", () => {
-  it("as três ações aparecem, e as três habilitadas dentro da janela", async () => {
+  it("envios ficam nas ações rápidas e notas são criadas pela mensagem", async () => {
     await montar();
     expect(screen.getByTestId("acao-ENVIAR_GUIA")).toBeEnabled();
     expect(screen.getByTestId("acao-ENVIAR_DOCUMENTO")).toBeEnabled();
-    expect(screen.getByTestId("acao-VIRAR_ANOTACAO")).toBeEnabled();
+    expect(screen.queryByTestId("acao-VIRAR_ANOTACAO")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("balao-m1")).getByRole("button", { name: "Ações da mensagem" })).toBeEnabled();
   });
 
   it("⚠ sem destino de anotação (o /whatsapp) a ação NÃO é montada", async () => {
@@ -127,14 +128,8 @@ describe("⚠⚠ virar anotação NÃO grava nada — devolve texto para o conta
   it("a mensagem é ESCOLHIDA, e o texto sai com quando, quem e o que foi dito", async () => {
     const onVirarAnotacao = jest.fn();
     await montar(apiFalso(), { onVirarAnotacao });
-    fireEvent.click(screen.getByTestId("acao-VIRAR_ANOTACAO"));
-    const painel = await screen.findByTestId("escolha-do-envio");
-    const select = await within(painel).findByLabelText("Mensagem que vira anotação");
-    // ⚠ Só as que TÊM texto: a mídia que não sabemos abrir não tem o que copiar.
-    expect(select).toHaveTextContent("quero parcelar o DAS");
-    expect(select.querySelectorAll("option")).toHaveLength(2); // "— escolha —" + a única com texto
-    fireEvent.change(select, { target: { value: "m1" } });
-    fireEvent.click(within(painel).getByRole("button", { name: /Levar para a anotação/ }));
+    fireEvent.click(within(screen.getByTestId("balao-m1")).getByRole("button", { name: "Ações da mensagem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Criar nota interna" }));
     await waitFor(() => expect(onVirarAnotacao).toHaveBeenCalled());
     const texto = onVirarAnotacao.mock.calls[0][0];
     expect(texto).toMatch(/Maria Silva no WhatsApp/);
@@ -144,10 +139,8 @@ describe("⚠⚠ virar anotação NÃO grava nada — devolve texto para o conta
   it("⚠ nenhuma chamada de envio acontece — a anotação não fala com a Meta", async () => {
     const onVirarAnotacao = jest.fn();
     const api = await montar(apiFalso(), { onVirarAnotacao });
-    fireEvent.click(screen.getByTestId("acao-VIRAR_ANOTACAO"));
-    const painel = await screen.findByTestId("escolha-do-envio");
-    fireEvent.change(await within(painel).findByLabelText("Mensagem que vira anotação"), { target: { value: "m1" } });
-    fireEvent.click(within(painel).getByRole("button", { name: /Levar para a anotação/ }));
+    fireEvent.click(within(screen.getByTestId("balao-m1")).getByRole("button", { name: "Ações da mensagem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Criar nota interna" }));
     await waitFor(() => expect(onVirarAnotacao).toHaveBeenCalled());
     expect(api.enviarDocumentoWhatsapp).not.toHaveBeenCalled();
     expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
