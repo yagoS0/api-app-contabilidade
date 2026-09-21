@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Clareza do chat e da biblioteca — 21/09/2026
+
+O dono pediu simplificar o atendimento com pesquisa, design, construção e revisão independente. Conversa é a área principal; lista mostra nome/prévia/contexto curto e os metadados ficam nos detalhes. Paleta neutra e tipografia legível usam os tokens existentes. Mensagens rápidas oferecem descrição, prévia e Usar mensagem no compositor; Mais usadas mede inserções por usuário/navegador, sem guardar texto ou dados de contato. Rascunho do compositor pode ser descartado e desfeito no contexto atual. A biblioteca permite excluir somente a versão em rascunho, com guarda atômica contra aprovação concorrente. Não apagar ficha comercial vinculada à conversa: recusa precisa ser visível com caminho para conferir/encerrar. Guias mantêm prévia de empresa/destinatários e limpam seleção ao cancelar/trocar empresa. Próximo passo do onboarding fica em destaque e formulários recolhidos preservam edição. Plano, referências e critérios: `docs/chat-simples-20260921.md`. Sem mudança fiscal, migration, IA ou envios reais nos testes.
+
 ## Escolha de contratação por botões — 20/09/2026
 
 O dono esclareceu que o seletor desejado é o tipo de contratação. Na pergunta de modalidade, enviar três botões nativos: na abertura, Só abertura / Abertura + mensal / Comparar opções; nas demais origens, Serviço avulso / Contabilidade mensal / Comparar opções. Continuar aceitando texto livre. Não confundir essa escolha com seleção de empresa. A resposta curta “Preço” ao motivo da troca é informação declarada, não pergunta sobre nossos honorários; perguntas explícitas de valores continuam recebendo orientação. Guardar escolha pelo ID do botão e pela solicitação atual, nunca pelo título. Botão antigo de outra ficha/etapa não deve sobrescrever dados. Sem IA, migration, mudança de identidade ou de pausa humana.

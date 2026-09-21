@@ -3,10 +3,11 @@
 // ⚠ LARGURA: `--content-wide` — é tela de DADOS (quatro colunas de cartões), não de leitura.
 // Rascunhos aparecem na seção Em preenchimento, inclusive enquanto o cliente responde ao link.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { NovoAtendimentoModal } from "../components/NovoAtendimentoModal";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import { useOnboardings } from "../hooks/useOnboardings";
 import { colunasDoQuadro, estiloDoStatus, statusDoOnboarding } from "../lib/onboardingStatus";
 import { ONBOARDING_ORIGENS } from "../lib/onboardingSpec";
@@ -102,6 +103,9 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
   const [mostrarRascunhos, setMostrarRascunhos] = useState(true);
   const [novoAberto, setNovoAberto] = useState(false);
   const [visao, setVisao] = useState("ativos");
+  const [rascunhoParaExcluir, setRascunhoParaExcluir] = useState(null);
+  const [erroDescarte, setErroDescarte] = useState(null), [descartando, setDescartando] = useState(false);
+  const descarteEmCurso = useRef(false);
 
   const encerrados = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
   const colunas = useMemo(() => colunasDoQuadro().filter(c => visao === "todos" ||
@@ -123,9 +127,15 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
     alterarFiltro("incluirRascunhos", proximo);
   }
 
-  async function confirmarDescarte(item) {
-    if (!window.confirm("Descartar este rascunho? Ele não vira histórico — some de vez.")) return;
-    await descartar(item.id);
+  function confirmarDescarte(item) {
+    setErroDescarte(null); setRascunhoParaExcluir(item);
+  }
+  async function excluirRascunho() {
+    if (!rascunhoParaExcluir || descarteEmCurso.current) return;
+    descarteEmCurso.current = true; setDescartando(true); setErroDescarte(null);
+    try { await descartar(rascunhoParaExcluir.id); setRascunhoParaExcluir(null); }
+    catch (e) { setErroDescarte(e); }
+    finally { descarteEmCurso.current = false; setDescartando(false); }
   }
 
   return (
@@ -138,6 +148,10 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
       contentStyle={{ maxWidth: "var(--content-wide)", margin: "0 auto", width: "100%" }}
     >
       {novoAberto && <NovoAtendimentoModal onCriar={onNovo} onFechar={() => { setNovoAberto(false); recarregar(); }} />}
+      {rascunhoParaExcluir && <Modal titulo="Descartar rascunho?" tamanho="sm" ocupado={descartando} aoFechar={() => setRascunhoParaExcluir(null)} rodape={<><Button variant="secondary" disabled={descartando} onClick={() => setRascunhoParaExcluir(null)}>Cancelar</Button><Button variant="danger" disabled={descartando || Boolean(erroDescarte)} onClick={excluirRascunho}>{descartando ? "Excluindo…" : "Descartar rascunho"}</Button></>}>
+        <p><strong>{rascunhoParaExcluir.razaoSocial || rascunhoParaExcluir.responsavelNome || "Ficha em preenchimento"}</strong></p><p>A exclusão remove esta ficha em preenchimento. Atendimentos com conversa vinculada devem ser encerrados para preservar o histórico.</p>
+        {erroDescarte && <div role="alert"><p>{erroDescarte.payload?.message || erroDescarte.message || "Não foi possível confirmar a exclusão. Atualize a lista antes de tentar novamente."}</p><Button variant="secondary" onClick={() => { const ficha = rascunhoParaExcluir; setRascunhoParaExcluir(null); onAbrir?.(ficha); }}>Abrir ficha para conferir</Button></div>}
+      </Modal>}
       <nav className="onboarding-sections" aria-label="Situação dos atendimentos">
         {[["ativos", "Em andamento"], ["encerrados", "Encerrados"], ["todos", "Todos"]].map(([valor, rotulo]) =>
           <button key={valor} type="button" aria-pressed={visao === valor} onClick={() => setVisao(valor)}>

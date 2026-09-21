@@ -187,6 +187,16 @@ export function criarRecursosComerciais({
       throw new OnboardingError(e.code || "variaveis_ausentes", e.message, e.status || 409);
     }
   }
+  async function excluirRascunho(id, versao, user) {
+    exigirGestor(user);
+    if (typeof id !== "string" || !id.trim() || id.length > 200) throw new OnboardingError("recurso_necessario", "Selecione o rascunho que deseja excluir.", 400);
+    if (!Number.isSafeInteger(versao) || versao < 1 || versao > 2147483647) throw new OnboardingError("versao_necessaria", "Recarregue a biblioteca antes de excluir o rascunho.", 409);
+    // Uma aprovação concorrente torna o registro inelegível no próprio DELETE.
+    // Nenhuma versão publicada pode desaparecer junto do rascunho escolhido.
+    const resultado = await db.recursoComercial.deleteMany({ where: { id, versao, aprovadoEm: null } });
+    if (resultado.count !== 1) throw new OnboardingError("rascunho_indisponivel", "Este rascunho mudou, já foi excluído ou foi aprovado. Atualize a biblioteca.", 409);
+    return { excluido: true };
+  }
   async function iniciarBiblioteca(user) {
     exigirGestor(user);
     // Catálogo de preços e modelos contratuais são configurações privadas. A biblioteca
@@ -216,6 +226,7 @@ export function criarRecursosComerciais({
     aprovar,
     prepararOrientacao,
     iniciarBiblioteca,
-    importarRascunhos
+    importarRascunhos,
+    excluirRascunho
   };
 }

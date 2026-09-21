@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Exclusão de rascunho da biblioteca — 21/09/2026
+
+`DELETE /firm/comercial/recursos/:recursoId` exige gestor autenticado, ID e versão válida. `RecursosComerciaisService.excluirRascunho` usa filtro atômico por id/versão/aprovadoEm:null: aprovação concorrente ou versão inexistente recusa sem remover conteúdo publicado. Não aceitar filtro amplo com ID ausente. Versões aprovadas e mensagens enviadas permanecem; sem migration. Frequência de mensagens rápidas é preferência local da interface, não métrica de entrega. O descarte de ficha comercial vinculada continua recusado para preservar histórico. Ver `docs/chat-simples-20260921.md` na raiz.
+
 ## Botões de contratação — 20/09/2026
 
 O coletor salva `resultado.botoes` somente ao perguntar `modalidadeServico`; o adaptador envia `interactive` com a mesma reserva/lease, janela e revalidação já usadas no texto. IDs carregam `atendimentoLead.id` e o enum AVULSO/RECORRENTE/COMPARAR. Aceitar o clique só para essa ficha e enquanto a pergunta atual ainda é modalidade; título nunca preenche campos. Reentrega continua idempotente e clique antigo preserva a triagem. Resposta por texto continua válida. A consulta pública é resumida quando acompanhada de botões para caber no limite já validado pelo cliente Meta. “Preço”/“O preço” em `motivoTroca` devem ser salvos como motivo; “Quanto custa?” continua sendo FAQ. Ver cenários em `docs/revisao-comunicacao-cenarios.md` na raiz.

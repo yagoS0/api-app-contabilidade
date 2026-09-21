@@ -47,12 +47,13 @@ export function CnpjDaConversa({ cnpj, empresa = "empresa", copiavel = true }) {
 }
 
 export function DetalhesConversa({ conversa, onFechar, atendimento = null, api, onConferido, aberto = true }) {
-  const [aba, setAba] = useState("contato");
+  const [aba, setAba] = useState(atendimento && api?.comercial ? "comercial" : "contato");
   const [comercialPreparado, setComercialPreparado] = useState(false);
   const relacionamento = relacionamentoDaConversa(conversa);
   const fecharRef = useRef(null);
   useEffect(() => {
     if (!aberto) return;
+    if (aba === "comercial") setComercialPreparado(true);
     const origem = document.activeElement;
     fecharRef.current?.focus();
     return () => { if (origem?.isConnected) origem.focus(); };
@@ -60,11 +61,11 @@ export function DetalhesConversa({ conversa, onFechar, atendimento = null, api, 
   const i = identidadeDaConversa(conversa);
   const resposta = estadoDaResposta(conversa);
   return <aside hidden={!aberto} className={`wa-details${aba === "comercial" ? " wa-details--commercial" : ""}`} aria-label="Detalhes da conversa" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onFechar(); } }}>
-    <div className="wa-section-heading"><h2>Detalhes do contato</h2><Button ref={fecharRef} variant="secondary" size="sm" onClick={onFechar} aria-label="Fechar detalhes"><WhatsappIcon nome="fechar" size={16} /></Button></div>
+    <div className="wa-section-heading"><h2>{aba === "comercial" ? "Atendimento do cliente" : "Detalhes do contato"}</h2><Button ref={fecharRef} variant="secondary" size="sm" onClick={onFechar} aria-label="Fechar detalhes"><WhatsappIcon nome="fechar" size={16} /></Button></div>
     {atendimento && <div className="wa-compose-tabs" aria-label="Detalhes do atendimento"><button type="button" aria-pressed={aba === "contato"} onClick={() => setAba("contato")}>Contato</button><button type="button" aria-pressed={aba === "comercial"} onClick={() => { setComercialPreparado(true); setAba("comercial"); }}>{nomeDaSolicitacao(conversa) || "Comercial"}</button></div>}
     <div hidden={aba !== "comercial"}>{comercialPreparado && atendimento}</div><div hidden={aba !== "contato"}>
     <section className="wa-detail-section"><h3>Relacionamento</h3><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><p>{relacionamento.motivo}</p><ConferirIdentificacao conversa={conversa} api={api} onConferido={onConferido} /></section>
-    <div className="wa-contact-profile"><AvatarConversa nome={i.pessoa} /><strong>{i.pessoa}</strong><span>{i.papel || "Contato"}</span><span>{conversa.telefoneMascarado}</span></div>
+    <div className="wa-contact-profile"><AvatarConversa nome={i.pessoa} /><strong>{i.pessoa}</strong><span>{i.papel || "Contato"}</span>{i.avisoDoNome && <span>{i.avisoDoNome}</span>}<span>{conversa.telefoneMascarado}</span></div>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="empresa" size={16} /> Empresas do contato</h3>{conversa.empresas?.length > 1 ? <><p>Escolha a empresa que deseja abrir:</p>{conversa.empresas.map(e => <p key={e.id}><a href={companyTabPath(e.id, "anotacoes")}>{e.razao}</a><br /><CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</> : <><p>{i.linhaDaEmpresa}</p>{i.cnpj ? <small><CnpjDaConversa cnpj={i.cnpj} empresa={i.linhaDaEmpresa} /></small> : null}{conversa.portalClientId ? <a href={companyTabPath(conversa.portalClientId, "anotacoes")}>Abrir a empresa →</a> : null}</>}</section>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="pessoa" size={16} /> Atendimento</h3><SituacaoConversa conversa={conversa} /><p>{conversa.excluidaEm || (conversa.portalClientId && (conversa.escopoVerificado === false || conversa.legadoNaoVerificado)) ? "Histórico preservado para consulta. O atendimento acontece em Conversas atuais." : conversa.atendidaPor || conversa.atendidaDesde ? "O assistente permanece em pausa durante o atendimento da equipe." : "Você pode assumir a conversa para responder pela equipe."}</p></section>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="relogio" size={16} /> Respostas pelo WhatsApp</h3><p>{resposta.pode ? "Janela de resposta aberta." : resposta.motivo}</p></section>

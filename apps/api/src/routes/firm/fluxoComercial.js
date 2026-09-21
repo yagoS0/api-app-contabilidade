@@ -95,6 +95,7 @@ export function createFluxoComercialRouter({
   router.post("/recursos/:recursoId/aprovar", wrap(async req => ({
     recurso: await recursos.aprovar(req.params.recursoId, req.auth.user)
   })));
+  router.delete("/recursos/:recursoId", wrap(async req => recursos.excluirRascunho(req.params.recursoId, req.body?.versao, req.auth.user)));
   router.post("/recursos/:recursoId/previa", wrap(async req => ({
     previa: await recursos.prepararOrientacao(req.params.recursoId, req.body?.variaveis || {})
   })));

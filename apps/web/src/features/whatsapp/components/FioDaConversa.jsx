@@ -11,7 +11,7 @@
 // substitui a outra. Ver `identidadeDaConversa` em `../lib/conversasTela.js`.
 
 import { CompositorConversa } from "./CompositorConversa";
-import { relacionamentoDaConversa, nomeDaSolicitacao, podeAtendimentoComercial } from "../lib/identidadeAtendimento";
+import { relacionamentoDaConversa, podeAtendimentoComercial } from "../lib/identidadeAtendimento";
 import { PainelAtendimento } from "./PainelAtendimento";
 import { AtualizacaoAtendimento } from "./AtendimentoComercial";
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
@@ -34,6 +34,7 @@ export const campo = {
   padding: "8px 10px", fontSize: "0.86rem", fontFamily: "inherit", boxSizing: "border-box", width: "100%",
 };
 export const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)" };
+const PEDIDOS_PENDENTES = { EMITIR_NFSE: "Emissão de nota", CANCELAR_NFSE: "Cancelamento de nota", RECALCULAR_GUIA: "Atualização de guia" };
 
 /**
  * A empresa da conversa, em UMA linha — razão social + CNPJ.
@@ -46,7 +47,7 @@ export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem", copiarCnpj = t
     <span
       data-testid="empresa-da-conversa"
       data-sem-empresa={identidade.semEmpresa ? "sim" : "nao"}
-      style={{ fontSize: tamanho, color: identidade.semEmpresa ? "var(--state-warn)" : "var(--text-muted)" }}
+      style={{ fontSize: tamanho, color: "var(--text-muted)" }}
     >
       {identidade.linhaDaEmpresa}
       {identidade.cnpj ? <> · <CnpjDaConversa cnpj={identidade.cnpj} empresa={identidade.linhaDaEmpresa} copiavel={copiarCnpj} /></> : null}
@@ -61,18 +62,18 @@ export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem", copiarCnpj = t
 export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
   return (
     <>
-      <strong data-testid="pessoa-da-conversa" title={identidade.avisoDoNome || undefined} data-origem={identidade.origemDoNome} style={{ fontSize: tamanho }}>
+      <strong data-testid="pessoa-da-conversa" title={[identidade.pessoa, identidade.papel, identidade.avisoDoNome].filter(Boolean).join(" · ")} data-origem={identidade.origemDoNome} style={{ fontSize: tamanho }}>
         {identidade.pessoa}
       </strong>
-      {identidade.papel ? <span style={{ fontSize: "0.7rem", color: "var(--text-faint)" }}>{identidade.papel}</span> : null}
+      {identidade.papel ? <span className="wa-visually-hidden">{identidade.papel}</span> : null}
       {identidade.avisoDoNome ? (
-        <span data-testid="aviso-do-nome" style={{ fontSize: "0.68rem", color: "var(--text-faint)" }}>({identidade.avisoDoNome})</span>
+        <span data-testid="aviso-do-nome" className="wa-visually-hidden">({identidade.avisoDoNome})</span>
       ) : null}
     </>
   );
 }
 
-export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, atualizacaoComercialExterna = null }) {
+export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, atualizacaoComercialExterna = null, usuarioId = null }) {
   const { conversa } = fio;
   const mensagens = useMemo(() => [...fio.mensagens, ...(fio.notasInternas || []).map(n => ({ ...n, id: `nota-${n.id}`, tipo: "nota_interna", corpo: n.texto, registradaEm: n.criadaEm || n.createdAt }))].sort((a,b) => String(a.registradaEm).localeCompare(String(b.registradaEm)) || String(a.id).localeCompare(String(b.id))), [fio.mensagens, fio.notasInternas]);
   const relacionamento = relacionamentoDaConversa(conversa);
@@ -168,30 +169,31 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         {onVoltar ? <Button variant="secondary" size="sm" className="wa-mobile-back" onClick={onVoltar} aria-label="Voltar para conversas"><WhatsappIcon nome="seta" /></Button> : null}
         <AvatarConversa nome={identidade.pessoa} />
         <div className="wa-thread-identity">
-          <div className="wa-thread-name"><NomeDaPessoa identidade={identidade} tamanho="1rem" /><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span>{nomeDaSolicitacao(conversa) && <small>{nomeDaSolicitacao(conversa)}</small>}</div>
-          <div className="wa-thread-company"><LinhaDaEmpresa identidade={identidade} /> <SituacaoIdentificacao conversa={conversa} /></div>
-          <div className="wa-inline"><span style={{ fontSize: ".7rem", color: "var(--text-muted)" }}>{conversa.telefoneMascarado}</span><SituacaoConversa conversa={conversa} /></div>
+          <div className="wa-thread-name"><NomeDaPessoa identidade={identidade} tamanho="1rem" /></div>
+          <div className="wa-thread-subtitle"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><SituacaoConversa conversa={conversa} /><SituacaoIdentificacao conversa={conversa} /></div>
+          {!conversa.atendimento && <div className="wa-thread-company"><LinhaDaEmpresa identidade={identidade} tamanho=".8125rem" /></div>}
         </div>
         <div className="wa-thread-actions">
-          {hrefDaEmpresa && conversa.portalClientId ? conversa.empresas?.length > 1 ? <Button variant="secondary" size="sm" onClick={() => setEscolherEmpresa(true)}>Abrir a empresa →</Button> : <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
           {!somenteLeitura && Boolean(conversa.atendidaPor || conversa.atendidaDesde) ? (
             <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder ao responsável nas empresas autorizadas">Devolver ao automático</Button>
           ) : !somenteLeitura ? (
             <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
-          {naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button>
-            : typeof hook.excluir === "function" ? <details className="wa-more-actions"><summary aria-label="Mais ações da conversa">•••</summary><Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => setConfirmarExclusao(true)}>Excluir chat</Button></details> : null}
           {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={18} /><span>Atendimento</span></Button> : null}
+          {naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button> : null}
+          {Boolean((hrefDaEmpresa && conversa.portalClientId) || (!naLixeira && typeof hook.excluir === "function")) && <details className="wa-more-actions" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label="Mais ações da conversa">Mais</summary><div className="wa-more-menu">
+            {hrefDaEmpresa && conversa.portalClientId ? conversa.empresas?.length > 1 ? <Button variant="secondary" size="sm" onClick={e => { e.currentTarget.closest("details").open = false; setEscolherEmpresa(true); }}>Abrir a empresa →</Button> : <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
+            {!naLixeira && typeof hook.excluir === "function" && <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={e => { e.currentTarget.closest("details").open = false; setConfirmarExclusao(true); }}>Excluir chat</Button>}
+          </div></details>}
         </div>
       </div>
       {conversa.atendimento && !somenteLeitura ? <div className="wa-company-context" data-testid="contexto-empresa">
-        <span>Conversa com esta pessoa · histórico de todas as empresas</span>
-        <p>{conversa.atendimento.empresaAtual && !conversa.atendimento.aguardandoSelecao ? <>Empresa selecionada no atendimento automático: <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></> : "O cliente ainda não selecionou uma empresa no atendimento automático."}</p>
+        <p>{conversa.atendimento.empresaAtual && !conversa.atendimento.aguardandoSelecao ? <><span>Empresa selecionada no atendimento automático:</span> <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></> : "O cliente ainda não selecionou uma empresa no atendimento automático."}</p>
         {hook.salvarApelidos && conversa.empresa && <NomesCurtosDaEmpresa key={conversa.portalClientId} conversa={conversa} hook={hook} />}
       </div> : null}
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
-      {conversa.pendencia ? <div data-testid="pendencia-aberta" className="wa-notice">Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div> : null}
+      {conversa.pendencia ? <div data-testid="pendencia-aberta" className="wa-notice">Pedido aguardando confirmação do cliente: <strong>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Operação solicitada"}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div> : null}
       {!somenteLeitura && !onDetalhes && podeAtendimentoComercial(conversa) && Boolean(slotVincular) && (hook.api?.comercial || !conversa.portalClientId) ? <PainelAtendimento>{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</PainelAtendimento> : null}
       {historico ? <details className="wa-thread-setup"><summary>Verificar vínculo e iniciar conversa atual</summary><p>O vínculo abre um segmento verificado e preserva este histórico anterior.</p>{slotVincular || <a href="/whatsapp">Verificar vínculo na central de WhatsApp, em Histórico anterior</a>}</details> : null}
       <div className="wa-messages" ref={historicoRef} onScroll={acompanharLeitura} aria-label="Histórico de mensagens" tabIndex={0}>
@@ -211,7 +213,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
               <AvatarConversa nome={interna ? m.autor?.nome || "Equipe" : entrada ? nomeDoCliente : rotuloDoAutor(m, { nomeDoCliente })} pequeno />
               <div className="wa-bubble">
                 <div className="wa-bubble-author"><strong>{interna ? m.autor?.nome || "Equipe" : rotuloDoAutor(m, { nomeDoCliente })}</strong><time dateTime={m.ocorridaEmProvedor || m.registradaEm}>{fmtDataHora(m.ocorridaEmProvedor || m.registradaEm)}</time>{interna ? <span>Nota interna · só a equipe</span> : m.canal && <span>{m.canal.nome || m.canal.chave || m.canal.finalidade}</span>}</div>
-                {!interna && conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.escopoPessoa ? "Mensagem para este contato" : m.empresa ? <>{m.empresa.razao} · <CnpjDaConversa cnpj={m.empresa.cnpj} empresa={m.empresa.razao} /></> : "Empresa ainda não definida"}</div> : null}
+                {!interna && conversa.atendimento && m.empresa && !m.escopoPessoa ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa.razao} · <CnpjDaConversa cnpj={m.empresa.cnpj} empresa={m.empresa.razao} /></div> : null}
                 {midia ? <div data-testid="midia-do-balao" className="wa-media"><WhatsappIcon nome="documento" size={20} /><span>{midia.replace(/^📎\s*/, "")}</span></div> : null}
                 {m.corpo ? <div className="wa-bubble-text">{m.corpo}</div> : m.tipo === "template" ? <div className="wa-bubble-text">Modelo de mensagem do escritório</div> : null}
                 <div className="wa-bubble-footer">
@@ -224,7 +226,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         })}
       </div>
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
-      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} slotAcoes={slotAcoes} onCanalSelecionado={onCanalSelecionado} /> : null}
+      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} slotAcoes={slotAcoes} onCanalSelecionado={onCanalSelecionado} usuarioId={usuarioId} /> : null}
       {escolherEmpresa && <Modal titulo="Abrir empresa deste contato" tamanho="sm" aoFechar={() => setEscolherEmpresa(false)}><p>O histórico continua sendo único para esta pessoa.</p>{conversa.empresas.map(e => <p key={e.id}><a href={hrefDaEmpresa(e.id)}>{e.razao}</a> · <CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</Modal>}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
         rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>

@@ -17,7 +17,7 @@ test("mensagem rápida mostra a prévia e envia a versão com assumir explícito
   const api = { comercial: jest.fn(async path => path === "/recursos" ? { recursos: [{ id: "r1", tipo: "ORIENTACAO", aprovadoEm: "2026-09-08", chave: "cnpj", titulo: "Pedir CNPJ", versao: 2 }] } : { previa: { texto: "Qual é o CNPJ?" } }), enviarOrientacaoWhatsapp: jest.fn(async () => ({ ok: true })) };
   render(<OrientacoesRapidas api={api} conversa={{ id: "c1" }} />);
   fireEvent.click(screen.getByText("Mensagens rápidas")); await screen.findByText("Pedir CNPJ");
-  fireEvent.click(screen.getByRole("button", { name: "Preparar mensagem" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ver mensagem" }));
   expect(await screen.findByText("Qual é o CNPJ?")).toBeInTheDocument(); fireEvent.click(screen.getByText("Assumir e enviar orientação"));
   await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("c1", { orientacaoId: "r1", orientacaoVersao: 2, variaveis: { nome: "", cnpj: "", servico: "" }, assumir: true }));
 });

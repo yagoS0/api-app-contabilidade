@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Chat e mensagens rápidas simplificados — 21/09/2026
+
+`whatsapp.css` consolida o layout neutro: contatos compactos, metadados sob demanda, cabeçalho com ações principais e Mais. Preservar origem do nome acessível, empresa operacional, fila/pausa e falhas de entrega. `CompositorConversa` descarta somente a chave pessoa/canal/modo atual; Desfazer recupera referência e destinatário preparado, sem contornar a reconferência do destino. Durante envio, descarte fica bloqueado. `mensagensRapidas.js` guarda apenas chaves e contagens de inserção por usuário/navegador; sem usuário válido, só sessão. Biblioteca abre em nova aba, menu rápido permanece à esquerda; selecionar abre prévia visível e Usar mensagem prepara o compositor. Editor versionado separa categorias/rascunhos/histórico e exclusão não atinge aprovações. `AcoesRapidas` nomeia empresa/canal/destinatários e cancela seleção/reenvio ao sair ou trocar empresa. Contextos e verificações: `docs/chat-simples-20260921.md` na raiz.
+
 ## Áreas do escritório — 17/09/2026
 
 `OfficeNavigation` reúne Operação, Relacionamento e Gestão usando os caminhos existentes. Monta somente no `SessionBoundary` autenticado, com sol único e resumo de mensagens; home e cabeçalho da empresa não repetem a marca. O provider conserva histórico, competência e modo da carteira, mas não desenha conteúdo antes da confirmação de sessão. A antiga gaveta Ferramentas e atalhos repetidos da home foram substituídos pela navegação global; cadastro de empresa continua na carteira. Formulários públicos e portal do cliente permanecem separados.

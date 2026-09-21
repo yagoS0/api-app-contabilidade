@@ -42,13 +42,21 @@ function LinhaConversa({ c, ativa, onAbrir }) {
   return <button type="button" className="wa-conversation" data-testid={`conversa-${c.id}`} data-situacao={r.situacao} data-relacionamento={relacionamento.tipo} aria-current={ativa ? "true" : undefined} onClick={() => onAbrir(c.id)}>
     <AvatarConversa nome={identidade.pessoa} pequeno />
     <div className="wa-conversation-copy">
-      <div className="wa-conversation-title"><NomeDaPessoa identidade={identidade} /><time>{fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}</time></div>
+      <div className="wa-conversation-title"><NomeDaPessoa identidade={identidade} /><time title={fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}>{horaDaConversa(c.ultimaMensagem?.registradaEm || c.updatedAt)}</time></div>
+      <div className="wa-conversation-preview"><span>{c.ultimaMensagem?.corpo || c.telefoneMascarado || "Abrir conversa"}</span>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
       <div className="wa-contact-meta"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span>{nomeDaSolicitacao(c) && <span> · {nomeDaSolicitacao(c)}</span>}</div>
-      <div className="wa-conversation-company" title={identidade.linhaDaEmpresa}><LinhaDaEmpresa identidade={identidade} copiarCnpj={false} /></div>
+      <div className="wa-visually-hidden"><LinhaDaEmpresa identidade={identidade} copiarCnpj={false} /></div>
       <SituacaoIdentificacao conversa={c} />{c.naFilaDoEscritorio && <span className="wa-needs-team">Aguardando a equipe</span>}
-      <div className="wa-conversation-preview"><span>{c.ultimaMensagem?.empresa?.razao ? `${c.ultimaMensagem.empresa.razao} · ` : ""}{c.ultimaMensagem?.corpo || c.telefoneMascarado || "Abrir conversa"}</span>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
     </div>
   </button>;
+}
+function horaDaConversa(valor) {
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "";
+  const dia = d => d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  return dia(data) === dia(new Date())
+    ? data.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
+    : data.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
 }
 function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado = false, empresaInicial = "" }) {
   const [portalClientId, setPortalClientId] = useState(empresaInicial);
@@ -147,16 +155,16 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
       actions={<><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
         <div style={{ "--wa-list-width": `${larguraLista}px` }} className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
-          <nav className="wa-rail" aria-label="Comunicação"><a href="/whatsapp" aria-current="page"><WhatsappIcon nome="chat" /><span>Conversas</span></a>{onComunicados && <button type="button" onClick={onComunicados}><WhatsappIcon nome="enviar" /><span>Avisos</span></button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)"><WhatsappIcon nome="documento" /><span>Biblioteca</span></a></nav>
           <aside className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef}>
             <div className="wa-sidebar-top">
-              <div className="wa-section-heading"><h2>Caixa de entrada</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span></div>
+              <div className="wa-section-heading"><h2>Conversas</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span></div>
               <label className="wa-search"><WhatsappIcon nome="busca" size={17} /><input aria-label={api?.whatsappContratoV2 ? "Buscar pessoa ou empresa" : "Buscar nas conversas carregadas"} placeholder="Buscar contato ou empresa" value={busca} onChange={e => setBusca(e.target.value)} /></label>
-              <div className="wa-relationship-filters" aria-label="Relacionamento">{[["", "Todos"], ["LEAD", "Leads"], ["CLIENTE", "Clientes"]].map(([tipo, titulo]) => <button type="button" key={tipo} aria-pressed={relacionamento === tipo} onClick={() => { setRelacionamento(tipo); if (!api?.whatsappContratoV2) hook.setConsulta({ ...hook.consulta, relacionamento: tipo }); }}>{titulo}</button>)}</div>
-              <div className="wa-filters">
-                <select aria-label="Filtro das conversas" style={{ ...campo, fontSize: ".75rem" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setVerChat(false); setDetalhes(false); hook.setFiltro(e.target.value); }}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
+              <div className="wa-sidebar-filterline"><div className="wa-relationship-filters" aria-label="Relacionamento">{[["", "Todos"], ["LEAD", "Leads"], ["CLIENTE", "Clientes"]].map(([tipo, titulo]) => <button type="button" key={tipo} aria-pressed={relacionamento === tipo} onClick={() => { setRelacionamento(tipo); if (!api?.whatsappContratoV2) hook.setConsulta({ ...hook.consulta, relacionamento: tipo }); }}>{titulo}</button>)}</div>
+              <details className="wa-list-filters"><summary>Filtros{(hook.filtro !== "todas" || soNaoLidas) && <span aria-label="Há filtros ativos"> ·</span>}</summary><div className="wa-filters">
+                <select aria-label="Filtro das conversas" style={campo} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setVerChat(false); setDetalhes(false); hook.setFiltro(e.target.value); }}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
                 <Button variant="secondary" size="sm" className="wa-filter-unread" aria-pressed={soNaoLidas} onClick={() => setSoNaoLidas(v => !v)}>Não lidas</Button>
-              </div>
+              </div></details></div>
+              {(hook.filtro !== "todas" || soNaoLidas) && <p className="wa-active-filters" role="status">{[hook.filtro !== "todas" && FILTROS.find(f => f.valor === hook.filtro)?.rotulo, soNaoLidas && "Não lidas"].filter(Boolean).join(" · ")}</p>}
               {fila > 0 ? <p data-testid="contagem-fila" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "8px 0 0" }}>{fila} número{fila === 1 ? "" : "s"} aguardando atendimento</p> : null}
               {resumo.avisoHistorico ? <p role="status" className="wa-list-note">{resumo.avisoHistorico}. Consulte o filtro Histórico anterior.</p> : null}
               {hook.filtro === "historico" ? <p className="wa-list-note">Mensagens anteriores preservadas para consulta, separadas das conversas atuais.</p> : hook.filtro === "lixeira" ? <p className="wa-list-note">Conversas excluídas da lista. O histórico está preservado e pode ser restaurado.</p> : null}
@@ -170,14 +178,13 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
               {lista.length > 0 && avisoDaLista ? <p data-testid="aviso-paginacao-lista" className="wa-list-note">{avisoDaLista}</p> : null}
               {(termo || soNaoLidas) && !hook.buscaServidor ? <p className="wa-list-note">Busca e filtro de não lidas aplicados às conversas carregadas.</p> : null}
             </div>
-            <details className="wa-list-preferences"><summary>Ajustar lista</summary><label>Largura da lista<input aria-label="Largura da lista" type="range" min="210" max="280" value={larguraLista} onChange={e => ajustarLargura(Number(e.target.value))} /></label></details>
-            <details className="wa-budget"><summary>Consumo do assistente</summary><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p></details>
+            <div className="wa-sidebar-footer"><nav className="wa-inbox-links" aria-label="Comunicação">{onComunicados && <button type="button" onClick={onComunicados}>Avisos</button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)">Biblioteca ↗</a></nav><details className="wa-inbox-options"><summary>Opções</summary><div className="wa-options-content"><label className="wa-list-preferences">Largura da lista<input aria-label="Largura da lista" type="range" min="210" max="280" value={larguraLista} onChange={e => ajustarLargura(Number(e.target.value))} /></label><div className="wa-budget"><strong>Consumo do assistente</strong><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p></div></div></details></div>
           </aside>
           <section className="wa-chat-column" aria-label="Conversa selecionada">
             {hook.erroFio ? <p role="alert" className="wa-notice">Não foi possível atualizar a conversa: {hook.erroFio}</p> : null}
             {hook.aberta ? <FioDaConversa key={chaveDoInterlocutor(hook.aberta.conversa)} fio={hook.aberta} hook={hook} temMais={hook.temMaisNoFio}
               hrefDaEmpresa={id => companyTabPath(id, "anotacoes")} onVoltar={voltar} onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes} onCanalSelecionado={registrarCanal} atualizacaoComercialExterna={atualizacaoComercial}
-              slotVincular={painelComercial}
+              slotVincular={painelComercial} usuarioId={usuarioId}
             /> : <div className="wa-empty"><div className="wa-empty-symbol"><WhatsappIcon size={34} /></div><h2>{hook.carregandoFio ? "Abrindo conversa…" : "Seu atendimento, em um só lugar"}</h2><p>{hook.carregandoFio ? "Carregando o histórico deste contato." : "Escolha uma conversa à esquerda. Consulte o histórico, acompanhe a entrega e responda aos seus clientes."}</p>{verChat ? <Button variant="secondary" className="wa-mobile-back" onClick={voltar}>Voltar para conversas</Button> : null}</div>}
           </section>
           {hook.aberta ? <AtualizacaoAtendimento.Provider value={atualizacaoComercial}><DetalhesConversa key={chaveDoInterlocutor(hook.aberta.conversa)} aberto={detalhes} conversa={hook.aberta.conversa} atendimento={painelComercial} api={api} onConferido={async () => { await hook.abrir(hook.aberta.conversa.id, true); await hook.carregar(hook.filtro, true); }} onFechar={() => setDetalhes(false)} /></AtualizacaoAtendimento.Provider> : null}

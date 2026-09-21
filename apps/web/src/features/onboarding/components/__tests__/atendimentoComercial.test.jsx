@@ -6,7 +6,7 @@ const pendente = () => { let resolve, reject; const promise = new Promise((r, j)
 const recursos = [{ id: "r1", tipo: "ORIENTACAO", aprovadoEm: "2026-09-09", chave: "primeira", titulo: "Primeira", texto: "Olá {{nome}} {{cnpj}} {{servico}}", versao: 1 }, { id: "r2", tipo: "ORIENTACAO", aprovadoEm: "2026-09-09", chave: "segunda", titulo: "Segunda", texto: "Olá {{nome}} {{cnpj}} {{servico}}", versao: 2 }];
 const a = { id: "a", contato: { nome: "Contato A" }, empresa: { cnpj: "12345678000195" } }, b = { id: "b", contato: { nome: "Contato B" }, empresa: { cnpj: "11222333000181" } };
 async function abrir() { fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" })); await screen.findByText("Primeira"); }
-function selecionar(id) { fireEvent.click(within(screen.getByText(id === "r1" ? "Primeira" : "Segunda").closest("article")).getByRole("button", { name: "Preparar mensagem" })); }
+function selecionar(id) { fireEvent.click(within(screen.getByText(id === "r1" ? "Primeira" : "Segunda").closest("article")).getByRole("button", { name: "Ver mensagem" })); }
 
 test("troca de conversa limpa a ficha anterior e ignora consulta atrasada", async () => {
   const primeira = pendente();
@@ -41,7 +41,7 @@ test("conclusão de criação da conversa anterior não muda a nova nem chama ca
 test("prévia antiga não sobrescreve a orientação escolhida mais recentemente", async () => {
   const antiga = pendente(), nova = pendente();
   const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : path.startsWith("/conversas/") ? Promise.resolve({ atendimento: null }) : path.includes("r1") ? antiga.promise : nova.promise), enviarOrientacaoWhatsapp: jest.fn().mockResolvedValue({ ok: true }) };
-  render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1"); selecionar("r2");
+  render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1"); fireEvent.click(screen.getByRole("button", { name: "Voltar às mensagens" })); selecionar("r2");
   await act(async () => nova.resolve({ previa: { texto: "Mensagem mais recente" } }));
   await act(async () => antiga.resolve({ previa: { texto: "Mensagem antiga" } }));
   expect(screen.queryByText("Mensagem antiga")).not.toBeInTheDocument(); expect(screen.getByText("Mensagem mais recente")).toBeInTheDocument();

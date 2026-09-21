@@ -26,6 +26,62 @@ test("campo da etapa preserva versão inicial e não apaga rascunho ao falhar", 
   await waitFor(() => expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 1 })));
   expect(input).toHaveValue("Ana sintética");
 });
+
+test("recolher os dados mantém o formulário montado e preserva a edição sem salvar", () => {
+  const onSalvar = jest.fn();
+  render(<CamposDaEtapa onboarding={{ id: "o", origem: "ABERTURA", versao: 1, dados: {} }} campos={["responsavelNome"]} onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole("button", { name: "Conferir ou preencher dados deste passo" }));
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "Ana sintética" } });
+  fireEvent.click(screen.getByRole("button", { name: "Recolher dados" }));
+  expect(input).toBeInTheDocument();
+  expect(input).not.toBeVisible();
+  expect(onSalvar).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Conferir ou preencher dados deste passo" }));
+  expect(screen.getByRole("textbox")).toBe(input);
+  expect(input).toHaveValue("Ana sintética");
+});
+
+test("recolher o diagnóstico mantém os campos e ainda exige a conferência da versão atual", () => {
+  const onSalvar = jest.fn(), o = { id: "o", origem: "ABERTURA", versao: 1 };
+  const { rerender } = render(<DiagnosticoDoLead onboarding={o} jornada={{}} onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole("button", { name: "Preparar diagnóstico e escopo" }));
+  const achados = screen.getByLabelText(/Análise da atividade/);
+  fireEvent.change(achados, { target: { value: "Atividade conferida para a abertura." } });
+  fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura e acompanhamento mensal." } });
+  fireEvent.click(screen.getByRole("button", { name: "Recolher diagnóstico" }));
+  expect(achados).toBeInTheDocument();
+  expect(achados).not.toBeVisible();
+  rerender(<DiagnosticoDoLead onboarding={{ ...o, versao: 2 }} jornada={{}} onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole("button", { name: "Preparar diagnóstico e escopo" }));
+  expect(screen.getByLabelText(/Análise da atividade/)).toBe(achados);
+  expect(achados).toHaveValue("Atividade conferida para a abertura.");
+  expect(screen.getByRole("button", { name: "Confirmar diagnóstico e continuar" })).toBeDisabled();
+  expect(onSalvar).not.toHaveBeenCalled();
+});
+
+test("próximo passo segue a projeção do servidor e o mapa não executa etapas futuras", async () => {
+  const estado = { onboarding: { id: "o", origem: "ABERTURA", versao: 1, dados: {} }, propostas: [], contratos: [], documentos: [], trabalhos: [], jornada: { projecao: {
+    atual: "diagnostico", passos: [
+      { id: "cadastro", titulo: "Dados conferidos", concluido: true, acessivel: true, pendencias: [] },
+      { id: "diagnostico", titulo: "Conferir o serviço solicitado", concluido: false, acessivel: true, instrucao: "Revisar o que foi coletado antes da proposta.", pendencias: ["Conferência do contador"] },
+      { id: "proposta", titulo: "Apresentar a proposta", concluido: false, acessivel: false, pendencias: [] }
+    ]
+  } } };
+  const api = { comercial: jest.fn(async path => path === "/recursos" ? { recursos: [] } : estado) };
+  render(<FluxoComercial api={api} onboardingId="o" />);
+  expect(await screen.findByText("Próximo passo")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Conferir o serviço solicitado" })).toBeVisible();
+  const mapa = screen.getByRole("navigation", { name: "Passo a passo do lead", hidden: true });
+  expect(mapa).not.toBeVisible();
+  const detalhes = mapa.closest("details");
+  detalhes.open = true;
+  const futura = screen.getByRole("button", { name: /Apresentar a proposta/ });
+  expect(futura).toBeDisabled();
+  fireEvent.click(futura);
+  expect(api.comercial.mock.calls.every(args => args.length === 1)).toBe(true);
+  expect(screen.queryByText("Gerar proposta para revisão")).not.toBeInTheDocument();
+});
 test("orientação precisa de prévia e envio explícito; timeout impede repetição", async () => {
   const preparar = jest.fn(async () => ({ texto: "Mensagem sintética" }));
   const api = { enviarOrientacaoWhatsapp: jest.fn(async () => { throw Error("Timeout sintético"); }) };

@@ -7,7 +7,7 @@ const recurso = (extra = {}) => ({ id: "cat-1", tipo: "CATALOGO", chave: "honora
 function montar(recursos = [recurso()], api = { comercial: jest.fn().mockResolvedValue({ ok: true }) }) {
   const onAtualizar = jest.fn().mockResolvedValue();
   render(<RecursosComerciais recursos={recursos} api={api} onAtualizar={onAtualizar} />);
-  fireEvent.click(screen.getByText("Biblioteca de mensagens, preços e modelos"));
+  if (recursos[0]?.tipo === "CATALOGO") fireEvent.click(screen.getByRole("button", { name: "Catálogo de honorários" }));
   return { api, onAtualizar };
 }
 const alterar = (nome, value) => fireEvent.change(screen.getByLabelText(nome), { target: { value } });
@@ -15,7 +15,7 @@ const salvar = () => fireEvent.click(screen.getByText("Salvar nova versão em ra
 
 test("edita todas as regras e salva nova versão, preservando campos desconhecidos, null e zero", async () => {
   const original = recurso(); const { api, onAtualizar } = montar([original]);
-  fireEvent.click(screen.getByText("Revisar / nova versão"));
+  fireEvent.click(screen.getByText("Editar"));
   expect(screen.getByLabelText("Abertura (R$)")).toHaveValue("");
   expect(screen.getByLabelText("Baixa (R$)")).toHaveValue("0,00");
   expect(screen.getByLabelText("Atalho / chave")).toHaveAttribute("readonly");
@@ -36,7 +36,7 @@ test("edita todas as regras e salva nova versão, preservando campos desconhecid
 });
 
 test("novo catálogo começa sem preços, tem chave correta e não salva incompleto", () => {
-  const { api } = montar([]); fireEvent.click(screen.getByText("Novo recurso")); alterar("Tipo", "CATALOGO");
+  const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Tipo", "CATALOGO");
   expect(screen.getByLabelText("Atalho / chave")).toHaveValue("honorarios");
   expect(screen.getByLabelText("Simples Nacional mensal (R$)")).toHaveValue("");
   expect(screen.getByLabelText("Piso de regularização (R$)")).toHaveValue("");
@@ -44,7 +44,7 @@ test("novo catálogo começa sem preços, tem chave correta e não salva incompl
 });
 
 test("adiciona e remove faixas e rejeita limites repetidos sem ordenar silenciosamente", () => {
-  const { api } = montar(); fireEvent.click(screen.getByText("Revisar / nova versão"));
+  const { api } = montar(); fireEvent.click(screen.getByText("Editar"));
   fireEvent.click(screen.getByText("Adicionar faixa")); expect(screen.getByRole("group", { name: "Faixa 3" })).toBeInTheDocument();
   fireEvent.click(screen.getByText("Remover faixa 3"));
   fireEvent.change(within(screen.getByRole("group", { name: "Faixa 2" })).getByLabelText("Até quantos funcionários"), { target: { value: "2" } });
@@ -52,12 +52,12 @@ test("adiciona e remove faixas e rejeita limites repetidos sem ordenar silencios
 });
 
 test.each([["1.234,56", "Piso de regularização (R$)"], ["-1", "Consultoria mensal adicional (R$)"], ["1,234", "IRPF por declaração (R$)"], ["0", "Quantidade de notas por bloco adicional"], ["1,5", "Consultoria incluída a partir de quantos funcionários"], ["", "Consultoria mensal adicional (R$)"], ["90071992547409999", "Piso de regularização (R$)"]])("não salva valor inválido %s em %s", (value, campo) => {
-  const { api } = montar(); fireEvent.click(screen.getByText("Revisar / nova versão")); alterar(campo, value); salvar();
+  const { api } = montar(); fireEvent.click(screen.getByText("Editar")); alterar(campo, value); salvar();
   expect(screen.getByRole("alert")).toBeInTheDocument(); expect(api.comercial).not.toHaveBeenCalled();
 });
 
 test("abrir/limpar preços opcionais distingue honorário zero de valor a confirmar", async () => {
-  const { api } = montar(); fireEvent.click(screen.getByText("Revisar / nova versão"));
+  const { api } = montar(); fireEvent.click(screen.getByText("Editar"));
   alterar("Abertura (R$)", "0"); alterar("Baixa (R$)", ""); salvar();
   await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/recursos", expect.objectContaining({ dados: expect.objectContaining({ aberturaCentavos: 0, baixaCentavos: null }) })));
 });
@@ -70,12 +70,12 @@ test("aprovação de catálogo inválido abre revisão sem chamar aprovação", 
 
 test("falha ao salvar preserva edição e não faz aprovação automática", async () => {
   const api = { comercial: jest.fn().mockRejectedValue(new Error("Conexão indisponível")) }; montar([recurso()], api);
-  fireEvent.click(screen.getByText("Revisar / nova versão")); alterar("Título", "Revisão em andamento"); salvar();
+  fireEvent.click(screen.getByText("Editar")); alterar("Título", "Revisão em andamento"); salvar();
   expect(await screen.findByRole("alert")).toHaveTextContent("Conexão indisponível"); expect(screen.getByLabelText("Título")).toHaveValue("Revisão em andamento"); expect(api.comercial).toHaveBeenCalledTimes(1);
 });
 
 test("dados institucionais normalizam CNPJ e não aceitam link inseguro", async () => {
-  const { api } = montar([]); fireEvent.click(screen.getByText("Novo recurso")); alterar("Tipo", "INSTITUCIONAL");
+  const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Tipo", "INSTITUCIONAL");
   expect(screen.getByLabelText("Atalho / chave")).toHaveValue("escritorio");
   alterar("Título", "Escritório demonstrativo"); alterar("Nome do escritório", "Escritório de teste"); alterar("CNPJ do procurador", "12.345.678/0001-95"); alterar("Link HTTPS das instruções de autorização", "http://example.invalid/instrucoes");
   salvar(); expect(screen.getByRole("alert")).toHaveTextContent("HTTPS"); expect(api.comercial).not.toHaveBeenCalled();
@@ -85,23 +85,49 @@ test("dados institucionais normalizam CNPJ e não aceitam link inseguro", async 
 
 test("dois cliques durante salvamento enviam uma única versão", async () => {
   let concluir; const api = { comercial: jest.fn(() => new Promise(resolve => { concluir = resolve; })) }; montar([recurso()], api);
-  fireEvent.click(screen.getByText("Revisar / nova versão")); salvar(); salvar(); expect(api.comercial).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText("Editar")); salvar(); salvar(); expect(api.comercial).toHaveBeenCalledTimes(1);
   await act(async () => concluir({ ok: true }));
 });
 
 test("configura um catálogo válido do zero, sem importar valores prontos", async () => {
-  const { api } = montar([]); fireEvent.click(screen.getByText("Novo recurso")); alterar("Tipo", "CATALOGO"); alterar("Título", "Regras fictícias preenchidas manualmente");
+  const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Tipo", "CATALOGO"); alterar("Título", "Regras fictícias preenchidas manualmente");
   for (const campo of ["Até quantos funcionários", "Notas recebidas incluídas por mês", "Simples Nacional mensal (R$)", "Lucro Presumido mensal (R$)", "Piso personalizado — Simples Nacional (R$)", "Piso personalizado — Lucro Presumido (R$)", "Valor do bloco adicional (R$)", "Consultoria mensal adicional (R$)", "IRPF por declaração (R$)", "Piso de regularização (R$)", "Consultoria incluída a partir de quantos funcionários"]) alterar(campo, "0");
   alterar("Quantidade de notas por bloco adicional", "1"); alterar("Escopo da abertura", "Escopo de teste"); alterar("Escopo da contabilidade mensal", "Escopo mensal de teste"); alterar("Condições comerciais", "Condições de teste"); salvar();
   await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/recursos", expect.objectContaining({ tipo: "CATALOGO", chave: "honorarios", dados: expect.objectContaining({ aberturaCentavos: null, baixaCentavos: null, faixas: [{ ate: 0, recebidas: 0, SIMPLES: 0, LUCRO_PRESUMIDO: 0 }], blocoRecebidas: { quantidade: 1, centavos: 0 } }) })));
 });
 
 test("campos substituíveis inválidos não são salvos silenciosamente", () => {
-  const { api } = montar([]); fireEvent.click(screen.getByText("Novo recurso")); alterar("Título", "Orientação de teste"); alterar("Atalho / chave", "orientacao-teste"); alterar("Texto", "Olá {{ senha }}"); salvar();
+  const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Título", "Orientação de teste"); alterar("Atalho / chave", "orientacao-teste"); alterar("Texto", "Olá {{ senha }}"); salvar();
   expect(screen.getByRole("alert")).toHaveTextContent("campos substituíveis"); expect(api.comercial).not.toHaveBeenCalled();
 });
 
 test("mensagem rápida não oferece variável que seu fluxo não preenche", () => {
-  const { api } = montar([]); fireEvent.click(screen.getByText("Novo recurso")); alterar("Título", "Orientação de teste"); alterar("Atalho / chave", "orientacao-teste"); alterar("Texto", "Confira {{linkProposta}}"); salvar();
+  const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Título", "Orientação de teste"); alterar("Atalho / chave", "orientacao-teste"); alterar("Texto", "Confira {{linkProposta}}"); salvar();
   expect(screen.getByRole("alert")).toHaveTextContent("campos substituíveis"); expect(api.comercial).not.toHaveBeenCalled();
+});
+
+test("exclui somente o rascunho confirmado com sua versão e conserva publicação", async () => {
+  const aprovado = { id: "m1", tipo: "ORIENTACAO", chave: "teste", titulo: "Mensagem aprovada", texto: "Texto aprovado", dados: { descricao: "Orientar o cliente" }, versao: 1, aprovadoEm: "2026-09-01" };
+  const rascunho = { ...aprovado, id: "m2", titulo: "Nova versão", versao: 2, aprovadoEm: null };
+  const { api } = montar([aprovado, rascunho]);
+  fireEvent.click(screen.getByRole("button", { name: "Excluir rascunho" }));
+  expect(api.comercial).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(api.comercial).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Excluir rascunho" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/recursos/m2", { versao: 2 }, "DELETE"));
+  expect(await screen.findByRole("status")).toHaveTextContent("Rascunho excluído");
+  expect(aprovado.aprovadoEm).toBe("2026-09-01");
+});
+
+test("versão aprovada não oferece exclusão; recusa do servidor preserva rascunho na tela", async () => {
+  const api = { comercial: jest.fn().mockRejectedValue(new Error("Este rascunho foi aprovado. Atualize a biblioteca.")) };
+  const { unmount } = render(<RecursosComerciais api={api} recursos={[{ id: "m1", tipo: "ORIENTACAO", chave: "t", titulo: "Publicada", versao: 1, aprovadoEm: "2026-09-01" }]} />);
+  expect(screen.queryByRole("button", { name: "Excluir rascunho" })).not.toBeInTheDocument();
+  unmount();
+  montar([{ id: "m2", tipo: "ORIENTACAO", chave: "t", titulo: "Pendente", versao: 2, aprovadoEm: null }], api);
+  fireEvent.click(screen.getByRole("button", { name: "Excluir rascunho" })); fireEvent.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("foi aprovado");
+  expect(screen.getByText("Pendente")).toBeVisible();
 });
