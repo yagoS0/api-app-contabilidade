@@ -99,9 +99,12 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
   return <section aria-label="Propostas e contratação" className="lead-journey">
     <div className="lead-journey-heading"><div><h3>Passo a passo · {jornada.nome}</h3><p>{o.responsavelNome || "Nome a confirmar"}</p></div><Button variant="secondary" disabled={ocupado} onClick={() => executar(async () => {})}>Atualizar atendimento</Button></div>
     {erro && <p role="alert">{erro}</p>}
-    <details className="lead-all-steps"><summary>Ver etapas do atendimento</summary><ProgressoDoLead jornada={jornada} selecionado={passo} onSelecionar={setPassoEscolhido} ocupado={ocupado} /></details>
     {jornada.encerrado ? <><p role="status">Solicitação encerrada. O histórico está preservado; inicie outra solicitação para um novo serviço.</p>{o.status === "CONCLUIDO_AVULSO" && jornada.abertura && <FichaAvulsa api={api} onboarding={o} somenteLeitura />}</> : <>
-    {etapa && <header className="lead-current-step"><small>Você está no passo {jornada.passos.indexOf(etapa) + 1} de {jornada.passos.length}</small><h4 ref={tituloRef} tabIndex={-1}>{etapa.titulo}</h4><p>{etapa.instrucao}</p>{!etapa.concluido && etapa.pendencias.length > 0 && <ul aria-label="O que falta neste passo">{etapa.pendencias.map(p => <li key={p}>{p}</li>)}</ul>}</header>}
+    {etapa && <header className="lead-current-step">
+      <div className="lead-step-meta"><span>{passo === jornada.atual ? "Próximo passo" : etapa.concluido ? "Etapa concluída" : "Histórico do atendimento"}</span><small>Passo {jornada.passos.indexOf(etapa) + 1} de {jornada.passos.length}</small></div>
+      <h4 ref={tituloRef} tabIndex={-1}>{etapa.titulo}</h4><p>{etapa.instrucao}</p>
+      {!etapa.concluido && etapa.pendencias.length > 0 && <div className="lead-step-pending"><strong>Para continuar</strong><ul aria-label="O que falta neste passo">{etapa.pendencias.map(p => <li key={p}>{p}</li>)}</ul></div>}
+    </header>}
     <fieldset disabled={ocupado} className="lead-actions">
       {["autorizacao", "fiscal"].includes(passo) && jornada.comandosPermitidos?.diagnosticoLimitado && <details><summary>Definir um serviço limitado sem consulta privada</summary><p>Use quando o escopo puder ser definido com os dados públicos conferidos. Registre expressamente o que não foi consultado.</p><DiagnosticoDoLead limitado jornada={estado.jornada} onboarding={o} ocupado={ocupado} onSalvar={b => acao("/jornada/diagnostico", b)} /></details>}
       {passo === "cadastro" && <>{formulario}<p>Gerar outro formulário substitui o link anterior. O envio do link não conclui a coleta.</p><CamposDaEtapa onboarding={o} campos={["responsavelNome", "atividadePretendida", "municipioAtendimento", "enderecoPretendido"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} /></>}
@@ -139,7 +142,7 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
           display: "flex",
           gap: 8,
           flexWrap: "wrap"
-        }}>{p.status === "APROVADA" && estado.atendimento && <Button onClick={() => acao(`/propostas/${p.id}/enviar`, { conversaId })}>Assumir e enviar PDF da proposta no WhatsApp</Button>}{p.status === "RASCUNHO" && <Button onClick={() => acao(`/propostas/${p.id}/aprovar`)}>Aprovar esta versão</Button>}{["APROVADA", "ENVIADA"].includes(p.status) && <Button onClick={() => executar(async () => {
+        }}>{p.status === "APROVADA" && estado.atendimento && <Button onClick={() => acao(`/propostas/${p.id}/enviar`, { conversaId })}>Assumir e enviar PDF da proposta no WhatsApp</Button>}{p.status === "RASCUNHO" && <Button onClick={() => acao(`/propostas/${p.id}/aprovar`)}>Aprovar esta versão</Button>}{["APROVADA", "ENVIADA"].includes(p.status) && <Button variant="secondary" onClick={() => executar(async () => {
             const r = await api.comercial(base + `/propostas/${p.id}/link`, {});
             setLink(`${window.location.origin}/proposta/publica#token=${encodeURIComponent(r.token)}`);
           })}>Gerar link da proposta</Button>}{p.status === "ACEITA" && <Button onClick={() => setPassoEscolhido("contrato")}>Preparar contrato da opção aceita</Button>}</div>}</article>)}
@@ -179,7 +182,7 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
               setDocumentoId(r.documento.id);
             });
           }} /></label><label>Documento para conferência<select style={campoComercial} value={documentoId} onChange={e => setDocumentoId(e.target.value)}><option value="">Selecione</option>{estado.documentos.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}</select></label><p>A anexação não confirma a assinatura. Abra e confira o documento antes de registrar a conferência.</p>
-        {documentoId && <Button onClick={() => executar(async () => {
+        {documentoId && <Button variant="secondary" onClick={() => executar(async () => {
           const blob = await api.baixarDocumentoComercial(onboardingId, documentoId);
           const url = URL.createObjectURL(blob);
           window.open(url, "_blank", "noopener");
@@ -193,6 +196,7 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
     </fieldset>
     {etapa && passo !== jornada.atual && <Button variant="secondary" onClick={() => setPassoEscolhido(null)}>Continuar da etapa atual</Button>}
     </>}
+    <details className="lead-all-steps"><summary>Ver etapas do atendimento <span className="lead-step-total">{jornada.passos.filter(p => p.concluido).length} de {jornada.passos.length} concluídas</span></summary><ProgressoDoLead jornada={jornada} selecionado={passo} onSelecionar={setPassoEscolhido} ocupado={ocupado} /></details>
     <details className="lead-support"><summary>Biblioteca e dados de apoio</summary>
       <details><summary>Conferir dados coletados na conversa</summary><dl>{Object.entries(estado.onboarding.dados || {}).map(([k, v]) => <div key={k}><dt>{campos.find(c => c.campo === k)?.rotulo || k}</dt><dd>{typeof v === "boolean" ? v ? "Sim" : "Não" : typeof v === "object" ? JSON.stringify(v) : String(v)} · {estado.onboarding.fontesDados?.[k]?.conferido ? "Conferido pelo escritório" : "A conferir"}</dd></div>)}</dl>
         <label>Corrigir campo<select style={campoComercial} value={campoEdicao} onChange={e => {

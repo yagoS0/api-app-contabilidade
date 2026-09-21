@@ -25,15 +25,16 @@ const registro = () => ({
   vinculo: { situacao: "DESCONHECIDO", empresas: [] },
 });
 const menu = { flag: true, piloto: [], telefonesPiloto: [], leads: false };
-async function enviar(texto, { coleta = { tratado: false }, interacao, entrada = registro() } = {}) {
+async function enviar(texto, { coleta = { tratado: false }, interacao, entrada = registro(), reaction = false, atenderContexto } = {}) {
   registrarMensagemRecebida.mockResolvedValue(entrada);
   responderColetaComercial.mockResolvedValue(coleta);
   const responder = jest.fn(), responderMenu = jest.fn(async () => ({ tratado: true }));
   const message = { id: "wamid.sintetico", from: telefone, timestamp: String(agora.getTime() / 1000),
-    ...(interacao ? { type: "interactive", interactive: { list_reply: { id: interacao, title: "Seleção" } } }
+    ...(reaction ? { type: "reaction", reaction: { message_id: "wamid.anterior", emoji: "👍" } }
+      : interacao ? { type: "interactive", interactive: { list_reply: { id: interacao, title: "Seleção" } } }
       : { type: "text", text: { body: texto } }) };
   const resultado = await processarEventoWhatsapp({ entry: [{ changes: [{ field: "messages", value: { messages: [message] } }] }] },
-    { agora, responder, responderMenu, menu, ia: { flag: true, piloto: [] }, logger: { info() {}, error() {}, warn() {} } });
+    { agora, responder, responderMenu, atenderContexto, menu, ia: { flag: true, piloto: [] }, logger: { info() {}, error() {}, warn() {} } });
   expect(resultado.erros).toEqual([]);
   return { responder, responderMenu };
 }
@@ -88,9 +89,43 @@ test.each(["atendidaPor", "atendidaDesde", "excluidaEm"])("canal comercial não 
   const r = entradaComercial(); r.conversa[campo] = agora;
   expect(decidirRespostaDoMenu({ r, ...menu }).responde).toBe(false);
 });
-test("canal comercial não transforma identidade ambígua ou cliente em lead", () => {
+test("canal comercial acolhe cadastro cliente ou ambíguo sem conceder escopo fiscal", () => {
   const r = entradaComercial(); r.vinculo.situacao = "AMBIGUO";
-  expect(decidirRespostaDoMenu({ r, ...menu }).responde).toBe(false);
+  expect(decidirRespostaDoMenu({ r, ...menu }).responde).toBe(true);
   r.vinculo.situacao = "VINCULADO"; r.conversa.portalClientId = "empresa"; r.conversa.escopoVerificado = true;
+  expect(decidirRespostaDoMenu({ r, ...menu }).responde).toBe(true);
+});
+
+test.each(["VINCULADO", "AMBIGUO"])("saudação comercial de cadastro %s não exige seletor de empresa nem usa IA", async situacao => {
+  const entrada = entradaComercial();
+  entrada.vinculo = { situacao, empresas: [{ portalClientId: "empresa-fora-piloto" }] };
+  entrada.conversa.portalClientId = situacao === "VINCULADO" ? "empresa-fora-piloto" : null;
+  entrada.conversa.atendimentoId = "contexto-fiscal-antigo";
+  resolverCanalEntrada.mockResolvedValue(entrada.canal);
+  const atenderContexto = jest.fn();
+  const r = await enviar("Olá", { entrada, atenderContexto });
+  expect(r.responderMenu).toHaveBeenCalledWith(expect.objectContaining({ texto: "Olá", textoLivreDisponivel: false }));
+  expect(atenderContexto).not.toHaveBeenCalled();
+  expect(r.responder).not.toHaveBeenCalled();
+});
+
+test("reação é preservada sem passar pelo coletor, menu, seleção ou IA", async () => {
+  const entrada = entradaComercial(); resolverCanalEntrada.mockResolvedValue(entrada.canal);
+  const atenderContexto = jest.fn();
+  const r = await enviar("", { entrada, reaction: true, atenderContexto });
+  expect(registrarMensagemRecebida).toHaveBeenCalledWith(expect.objectContaining({ tipo: "reaction" }));
+  expect(responderColetaComercial).not.toHaveBeenCalled();
+  expect(r.responderMenu).not.toHaveBeenCalled();
+  expect(atenderContexto).not.toHaveBeenCalled();
+  expect(r.responder).not.toHaveBeenCalled();
+});
+
+test("cliente fora do piloto permanece sem automação no principal", () => {
+  const r = entradaComercial();
+  r.canal = { id: "principal", finalidade: "PRINCIPAL", ativo: true };
+  r.conversa.canalId = "principal";
+  r.conversa.portalClientId = "empresa-fora-piloto";
+  r.conversa.escopoVerificado = true;
+  r.vinculo = { situacao: "VINCULADO", empresas: [{ portalClientId: r.conversa.portalClientId }] };
   expect(decidirRespostaDoMenu({ r, ...menu }).responde).toBe(false);
 });

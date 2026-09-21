@@ -1,6 +1,7 @@
 import { responderColetaComercial } from "../RespostaColetaComercialWhatsappService.js";
 import { enviarMensagemRastreada } from "../SaidaWhatsappService.js";
 import { comLeaseDoAtendimento } from "../AtendimentoResponsavelWhatsappService.js";
+import { botoesModalidadeServico } from "../../onboarding/mensagensComerciais.js";
 jest.mock("../AtendimentoResponsavelWhatsappService.js", () => ({
   comLeaseDoAtendimento: jest.fn(async (_, executar) => executar(async () => {})),
 }));
@@ -13,12 +14,12 @@ jest.mock("../CanalWhatsappService.js", () => ({ whatsappPorCanal: jest.fn(async
   return cloud;
 }) }));
 const registro = { conversa: { id: "c", telefoneE164: "5521999999999", canalId: "comercial" }, mensagem: { id: "entrada1" } };
-function cenario() {
+function cenario({ botoes = null } = {}) {
   const client = { mensagemWhatsapp: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 1 })) } };
-  const cloud = { enviarTexto: jest.fn(async () => ({ wamid: "saida-ficticia" })) };
+  const cloud = { enviarTexto: jest.fn(async () => ({ wamid: "saida-ficticia" })), enviarBotoes: jest.fn(async () => ({ wamid: "botoes-ficticios" })) };
   const guarda = jest.fn(async () => {});
   const coletar = async ({ deps }) => {
-    await deps.enviar({ conversa: registro.conversa, texto: "Qual o seu nome?", antesDeEnviar: guarda,
+    await deps.enviar({ conversa: registro.conversa, texto: botoes ? "Qual opção você prefere?" : "Qual o seu nome?", antesDeEnviar: guarda, resultado: { botoes },
       referenciaComercial: { tipo: "COLETA_COMERCIAL", atendimentoId: "caso1" } });
     return { tratado: true };
   };
@@ -36,6 +37,29 @@ it("responde no canal comercial com saída rastreada e marca a entrada concluíd
   expect(c.cloud.enviarTexto).toHaveBeenCalledTimes(1);
   expect(enviarMensagemRastreada).toHaveBeenCalledWith(expect.objectContaining({ autor: "SISTEMA", turnoIaId: "coleta-comercial:entrada1", referenciaComercial: expect.objectContaining({ atendimentoId: "caso1" }) }));
   expect(c.client.mensagemWhatsapp.updateMany).toHaveBeenCalled();
+});
+
+it("envia escolha nativa pelo mesmo transporte rastreado, com opção de texto livre", async () => {
+  const botoes = botoesModalidadeServico("caso1", "ABERTURA"), c = cenario({ botoes });
+  await responderColetaComercial(c);
+  expect(c.cloud.enviarTexto).not.toHaveBeenCalled();
+  expect(c.cloud.enviarBotoes).toHaveBeenCalledWith(expect.objectContaining({ telefone: registro.conversa.telefoneE164, botoes, rodape: "Você também pode responder por texto." }));
+  expect(enviarMensagemRastreada).toHaveBeenCalledWith(expect.objectContaining({ tipo: "interactive", turnoIaId: "coleta-comercial:entrada1" }));
+  expect(c.client.mensagemWhatsapp.updateMany).toHaveBeenCalledTimes(1);
+});
+
+it.each(["reservada", "janela", "humano"])("botões conservam o bloqueio por %s", async motivo => {
+  const c = cenario({ botoes: botoesModalidadeServico("caso1", "TRANSFERENCIA") });
+  if (motivo === "reservada") {
+    c.client.mensagemWhatsapp.findFirst.mockResolvedValue({ id: "incerta", statusEnvio: "indeterminado" });
+    await responderColetaComercial(c);
+  } else {
+    if (motivo === "janela") c.conferirJanela.mockResolvedValue({ situacao: "EXPIRADA" });
+    if (motivo === "humano") c.guarda.mockResolvedValueOnce().mockRejectedValueOnce(Object.assign(new Error("Assumida"), { codigo: "ASSUMIDA_POR_HUMANO" }));
+    await expect(responderColetaComercial(c)).rejects.toBeTruthy();
+  }
+  expect(c.cloud.enviarBotoes).not.toHaveBeenCalled(); expect(c.cloud.enviarTexto).not.toHaveBeenCalled();
+  expect(c.client.mensagemWhatsapp.updateMany).not.toHaveBeenCalled();
 });
 it("reentrega com uma saída já reservada não envia outra mensagem", async () => {
   const c = cenario(); c.client.mensagemWhatsapp.findFirst.mockResolvedValue({ id: "reservada", statusEnvio: "indeterminado" });

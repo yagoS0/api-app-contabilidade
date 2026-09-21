@@ -1,5 +1,9 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Próximo passo e rascunhos — 21/09/2026
+
+Jornada apresenta a etapa atual e suas pendências antes do mapa completo, recolhido sob demanda. Não usar opacidade para apagar descrições de etapas futuras: elas permanecem bloqueadas pela regra, com texto legível. Campos/diagnóstico continuam montados após a primeira abertura para preservar edição, rascunho e versão ao recolher. Biblioteca tem categorias, descrições e exclusão de versão ainda não aprovada. Na lista de entrada, descarte usa Modal compartilhado, evita duplicação e exibe recusa sem perder a ficha: atendimento com conversa vinculada deve ser conferido/encerrado, sem apagar o histórico. Não marcar passo concluído por abrir painel. Referência: `docs/chat-simples-20260921.md` na raiz.
+
 ## Áreas do atendimento — 17/09/2026
 
 A lista abre em Em andamento e mantém Na carteira, Serviço avulso concluído e Desistiu em Encerrados/Todos. `EM_TRILHA` aparece como Em acompanhamento; não comprova contratação. A listagem não recebe evidências suficientes para dividir Comercial/Implantação por estágio, portanto essa separação é de áreas no detalhe: Atendimento comercial, Dados do cliente e Implantação. As áreas ficam montadas e ocultas por `hidden`, preservando link, proposta e observação em edição ao alternar; trocar área não salva nem conclui etapas.

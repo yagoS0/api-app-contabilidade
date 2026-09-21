@@ -74,6 +74,18 @@ afterEach(() => {
 });
 
 describe("Escape fecha a lista de sugestões antes de fechar o modal", () => {
+  it("Escape e X não fecham a configuração durante sua gravação", async () => {
+    let resolve;
+    const onClose = jest.fn();
+    render(<ParcelamentoConfigModal parcId="p1" getConfig={async () => ({})} saveConfig={() => new Promise((ok) => { resolve = ok; })} onClose={onClose} />);
+    await act(async () => {});
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Salvar config" })); });
+    expect(screen.getByRole("button", { name: "Fechar configuração" })).toBeDisabled();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { resolve({ ok: true }); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
   it("⚠ com o dropdown de conta aberto, Escape NÃO fecha o modal nem perde o formulário", async () => {
     const { onClose } = await montar();
 

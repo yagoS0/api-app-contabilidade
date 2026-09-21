@@ -17,8 +17,9 @@ export function declarouSerCliente(texto) {
 }
 
 export function pediuEquipeWhatsapp(texto) {
-  const t = normalizar(texto);
-  return /^(?:(?:quero|preciso|gostaria de) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem)(?: de verdade| real)?$/.test(t)
+  const t = normalizar(texto).replace(/^(?:por favor |ola |oi )/, "").replace(/(?: por favor| por gentileza)$/, "");
+  return /^(?:(?:quero|preciso|gostaria de|posso|consigo|poderia) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem|especialista)(?: de verdade| real)?$/.test(t)
+    || /^(?:tem|ha) (?:alguem|algum atendente|uma pessoa)(?: ai| disponivel)?$/.test(t)
     || /^(atendente|contador|contadora|humano|equipe|atendimento humano)$/.test(t)
     || /^(?:chama|chame|chamar) (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe)$/.test(t);
 }

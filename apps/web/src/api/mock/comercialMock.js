@@ -46,7 +46,14 @@ export function criarMockComercial({
     }]
   });
   return {
-    async comercial(path, body) {
+    async comercial(path, body, method = "POST") {
+      const excluir = /^\/recursos\/([^/]+)$/.exec(path);
+      if (method === "DELETE" && excluir) {
+        const indice = recursos.findIndex(r => r.id === decodeURIComponent(excluir[1]) && r.versao === body?.versao && !r.aprovadoEm);
+        if (indice < 0) throw Error("Este rascunho mudou, já foi excluído ou foi aprovado. Atualize a biblioteca.");
+        recursos.splice(indice, 1);
+        return { ok: true, excluido: true };
+      }
       if (path === "/recursos/iniciar") {
         if (!recursos.length) recursos.push({
           id: uid(),

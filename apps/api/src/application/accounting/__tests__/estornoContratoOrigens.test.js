@@ -291,6 +291,21 @@ describe("despacho por âncora", () => {
 // 4. ATOMICIDADE — falhar no meio não pode deixar estado MISTO
 // ════════════════════════════════════════════════════════════════════════════════════════════
 describe("a reversão da âncora é atômica com o estorno dos lançamentos", () => {
+  it("estorna a declaração mesmo após chegar uma guia, preservando o documento e conferindo o vínculo", async () => {
+    const { lote } = armar(ANCORAS.PARCELA, "MANUAL");
+    prisma.parcela.findMany.mockResolvedValue([{
+      id: "pc7", numeroParcela: 7, competencia: "2026-07", valorPrevisto: 500,
+      origemBaixa: "MANUAL", guiaId: "guia-posterior",
+    }]);
+    const out = await executarEstorno({ portalClientId: "p1", entryId: lote[0].id, motivo: MOTIVO });
+    expect(out.ok).toBe(true);
+    expect(__tx.parcela.updateMany).toHaveBeenCalledWith({
+      where: { id: "pc7", portalClientId: "p1", origemBaixa: "MANUAL", guiaId: "guia-posterior" },
+      data: { origemBaixa: null, baixadaEm: null },
+    });
+    expect(__tx.guide.update).not.toHaveBeenCalled();
+  });
+
   it("⚠ se a prestação mudou, a operação INTEIRA é recusada de dentro da transação", async () => {
     const { lote } = armar(ANCORAS.PARCELA, "MANUAL");
     // Outra sessão estornou primeiro (ou a captura vinculou uma guia): o `where` condicional não

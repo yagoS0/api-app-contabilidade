@@ -138,7 +138,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             </div>
           </div>
           <button
-            type="button" onClick={onClose} title="Fechar sem lançar nada"
+            type="button" onClick={onClose} disabled={enviando} aria-label="Fechar composição" title="Fechar sem lançar nada"
             style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.1rem" }}
           >
             ✕
@@ -257,7 +257,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             O que vai ser lançado
           </div>
           {linhasPrevistas.length ? (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 0, tableLayout: "fixed", borderCollapse: "collapse", overflowWrap: "anywhere" }}>
               <tbody>
                 {linhasPrevistas.map((l) => (
                   <tr key={l.papel} style={{ borderTop: `1px solid ${PANEL.border}` }}>
@@ -318,7 +318,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             </span>
           )}
           <button
-            type="button" onClick={onClose}
+            type="button" onClick={onClose} disabled={enviando}
             style={{ padding: "5px 12px", borderRadius: 6, background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, cursor: "pointer", fontSize: "0.8rem" }}
           >
             Cancelar

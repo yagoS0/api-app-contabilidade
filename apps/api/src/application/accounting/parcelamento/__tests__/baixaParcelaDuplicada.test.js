@@ -24,6 +24,10 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => {
   const criados = [];
   const tx = {
+    parcela: {
+      findFirst: jest.fn(async () => null),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
     mapaContaTributo: { findFirst: jest.fn(async () => null) },
     accountingEntry: {
       create: jest.fn(async ({ data }) => {
@@ -82,6 +86,8 @@ beforeEach(() => {
   prisma.parcelamento.findUnique.mockResolvedValue({ ...PARCELAMENTO });
   prisma.tributoParcela.findMany.mockResolvedValue(TRIBUTOS);
   __tx.guide.updateMany.mockResolvedValue({ count: 1 });
+  __tx.parcela.findFirst.mockResolvedValue(null);
+  __tx.parcela.updateMany.mockResolvedValue({ count: 1 });
 });
 
 async function baixar() {
@@ -91,6 +97,41 @@ async function baixar() {
 }
 
 describe("reserva atômica da guia", () => {
+  it("recusa a guia que chegou após a baixa manual e aborta a transação antes de outro lote", async () => {
+    __tx.parcela.findFirst.mockResolvedValue({ id: "prestacao1" });
+    __tx.parcela.updateMany.mockResolvedValue({ count: 0 });
+    prisma.$transaction.mockImplementationOnce(async (callback) => {
+      await expect(callback(__tx)).rejects.toMatchObject({ code: "PARCELA_BAIXA_CONCORRENTE" });
+      throw Object.assign(new Error("rollback"), { code: "PARCELA_BAIXA_CONCORRENTE" });
+    });
+    expect(await baixar()).toEqual({ skipped: true, reason: "parcela_ja_baixada" });
+    expect(__criados).toHaveLength(0);
+    expect(__tx.guide.update).not.toHaveBeenCalled();
+    expect(__tx.parcela.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ portalClientId: "p1", parcelamentoId: "parc1" }),
+    }));
+  });
+
+  it("reserva guia e prestação na ordem da captura, antes do lançamento e contra baixa manual concorrente", async () => {
+    __tx.parcela.findFirst.mockResolvedValue({ id: "prestacao1" });
+    expect((await baixar()).ok).toBe(true);
+    expect(__tx.parcela.updateMany).toHaveBeenCalledWith({
+      where: { id: "prestacao1", portalClientId: "p1", origemBaixa: null,
+        OR: [{ guiaId: null }, { guiaId: "g1" }] },
+      data: { guiaId: "g1", origem: "GUIA" },
+    });
+    expect(__tx.guide.updateMany.mock.invocationCallOrder[0])
+      .toBeLessThan(__tx.parcela.updateMany.mock.invocationCallOrder[0]);
+    expect(__tx.parcela.updateMany.mock.invocationCallOrder[0])
+      .toBeLessThan(__tx.accountingEntry.create.mock.invocationCallOrder[0]);
+  });
+
+  it("recusa data ilegível sem lançar na competência de hoje", async () => {
+    expect(await gerarPagamentoParcelaFromGuide({ portalClientId: "p1", guideId: "g1", dataPagamento: "inválida" }))
+      .toEqual({ skipped: true, reason: "data_invalida" });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("caminho normal: reserva a guia e lança o lote", async () => {
     const r = await baixar();
     expect(r.ok).toBe(true);

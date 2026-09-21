@@ -49,6 +49,25 @@ describe("Modal — o foco entra no CORPO, nunca no ✕", () => {
 });
 
 describe("Modal — as três saídas", () => {
+  it("suspenso não intercepta Escape/Tab nem clique enquanto outro modal está em primeiro plano", () => {
+    const aoFechar = jest.fn();
+    const { container } = abrir({ aoFechar, suspenso: true });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(container.querySelector(".modal-fundo")).toHaveAttribute("inert");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(true);
+    fireEvent.click(container.querySelector(".modal-fundo"));
+    expect(aoFechar).not.toHaveBeenCalled();
+  });
+
+  it("formulários podem preservar o preenchimento no clique acidental do fundo", () => {
+    const aoFechar = jest.fn();
+    const { container } = abrir({ aoFechar, fecharAoClicarFundo: false });
+    fireEvent.click(container.querySelector(".modal-fundo"));
+    expect(aoFechar).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(aoFechar).toHaveBeenCalledTimes(1);
+  });
   it("Esc fecha", () => {
     const aoFechar = jest.fn();
     abrir({ aoFechar });

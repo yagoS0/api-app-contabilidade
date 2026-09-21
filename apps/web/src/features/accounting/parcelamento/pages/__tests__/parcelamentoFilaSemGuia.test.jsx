@@ -226,7 +226,7 @@ describe("o ato de consequência", () => {
     const confirmacao = screen.getByRole("dialog", { name: "Confirmar declaração de pagamento" }).textContent;
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar pagamento declarado" })); });
 
-    expect(screen.getByText(/Nada foi lançado/)).toBeTruthy();
+    expect(screen.getByText(/A baixa não foi concluída/)).toBeTruthy();
     expect(screen.getByText(/competência da data do pagamento está FECHADA/i)).toBeTruthy();
     // O modal continua aberto, com o que foi digitado.
     expect(screen.getByRole("dialog")).toBeTruthy();

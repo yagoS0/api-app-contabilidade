@@ -6,66 +6,19 @@ import { consultarPublicaLead } from "./FiscalLeadService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
 import { pediuMenuWhatsapp, declarouSerCliente, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
+import { avisoAtendimentoComercial, botoesModalidadeServico, modalidadeDoBotao } from "./mensagensComerciais.js";
 
-const normalizar = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-export function pedidoOperacionalComercial(texto) {
-  return /\b(guia|guias|boleto|boletos|faturamento|faturou|emitir|emissao|cancelar nota|documentos da empresa|mand[ae] o documento|envie o documento|trocar empresa|trocar de empresa|mudar de empresa)\b/.test(normalizar(texto));
+import { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
+export { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
+
+function mensagemAnterior(mensagem, triagem = {}) {
+  // Compare relógios da mesma origem; fichas legadas não tinham o instante Meta.
+  if (mensagem.ocorridaEmProvedor && triagem.ultimaMensagemProvedorEm
+    && new Date(mensagem.ocorridaEmProvedor) < new Date(triagem.ultimaMensagemProvedorEm)) return true;
+  return Boolean(triagem.ultimaMensagemEm && new Date(mensagem.registradaEm) < new Date(triagem.ultimaMensagemEm));
 }
-export function identificarOrigemComercial(texto, interacao = null) {
-  const id = typeof interacao === "string" ? interacao : interacao?.id || interacao?.button_reply?.id || interacao?.list_reply?.id;
-  const botoes = { "altan.comercial.abertura.v1": "ABERTURA", "altan.comercial.transferencia.v1": "TRANSFERENCIA", "altan.comercial.inativa.v1": "INATIVA" };
-  if (botoes[id]) return botoes[id];
-  const t = normalizar(texto), tipos = [];
-  if (/\b(abrir|abri|abertura|constituir)\b.{0,35}\b(empresa|cnpj|consultorio)\b|\babertura\b/.test(t)) tipos.push("ABERTURA");
-  if (/\b(trocar|mudar|transferir)\b.{0,25}\b(contador|contabilidade)\b|\btransferir\b.{0,25}\bempresa\b|\btransferencia\b/.test(t)) tipos.push("TRANSFERENCIA");
-  if (/\b(empresa|cnpj)\b.{0,30}\b(parad[ao]|inativ[ao]|regularizar)\b|\bregularizar\b.{0,25}\b(empresa|cnpj)\b/.test(t)) tipos.push("INATIVA");
-  return tipos.length === 1 ? tipos[0] : tipos.length > 1 ? "MULTIPLOS" : null;
-}
-function cnpjValido(cnpj) {
-  if (!/^\d{14}$/.test(cnpj) || /^(\d)\1+$/.test(cnpj)) return false;
-  const digito = base => { let soma = 0, peso = base.length - 7; for (const d of base) { soma += Number(d) * peso--; if (peso < 2) peso = 9; } const resto = soma % 11; return resto < 2 ? 0 : 11 - resto; };
-  return digito(cnpj.slice(0, 12)) === Number(cnpj[12]) && digito(cnpj.slice(0, 13)) === Number(cnpj[13]);
-}
-export function interpretarColetaComercial({ texto, origem, campoEsperado = null }) {
-  const raw = String(texto || "").trim(), t = normalizar(raw), campos = new Map();
-  const set = (campo, valor) => campos.set(campo, { campo, acao: "set", valor });
-  const desconhecido = /\b(nao sei|nao tenho certeza|ainda nao sei|nao tenho ideia|a definir)\b/.test(t);
-  const humano = /\b(falar com (alguem|uma pessoa|o contador|a equipe|atendente)|atendimento humano|quero um contador|reclamacao)\b/.test(t);
-  const pergunta = /\?|\b(quanto custa|qual o valor|como funciona|voces fazem|o que inclui|quais documentos|quanto tempo)\b/.test(t);
-  let resposta = pergunta ? "Podemos preparar uma proposta com os serviços e valores para seu caso. O contador confere o escopo antes do envio; você pode contratar só o serviço ou também a contabilidade mensal." : null;
-  const nome = raw.match(/\b(?:me chamo|meu nome [ée]|nome\s*:)\s*([^;\n.,]+)/i)?.[1];
-  if (nome?.trim()) set("responsavelNome", nome.trim());
-  const email = raw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0];
-  if (email) set("responsavelEmail", email.toLowerCase());
-  if (/\b(so|somente|apenas)\b.{0,20}\b(abrir|abertura|avulso|servico)|\bsem (mensalidade|contabilidade mensal)\b/.test(t)) set("modalidadeServico", "AVULSO");
-  else if (/\b(comparar|duas opcoes|as duas|ambas)\b/.test(t)) set("modalidadeServico", "COMPARAR");
-  else if (/\b(com|tambem|quero|preciso)\b.{0,25}\bcontabilidade\b|\bcontabilidade mensal\b/.test(t) && !/\b(trocar|mudar)\b/.test(t)) set("modalidadeServico", "RECORRENTE");
-  const cnpj = raw.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/)?.[0]?.replace(/\D/g, "");
-  if (cnpj && origem !== "ABERTURA") {
-    if (cnpjValido(cnpj)) set("cnpj", cnpj); else resposta = "Esse CNPJ não passou na conferência dos dígitos. Pode conferir e enviar novamente?";
-  }
-  const rotulos = { atividade: "atividadePretendida", cidade: "municipioAtendimento", municipio: "municipioAtendimento", endereço: "enderecoPretendido", endereco: "enderecoPretendido" };
-  for (const [rotulo, campo] of Object.entries(rotulos)) { const v = raw.match(new RegExp(`(?:^|[;\\n])\\s*${rotulo}\\s*:\\s*([^;\\n]+)`, "i"))?.[1]; if (v && (origem === "ABERTURA" || campo === "municipioAtendimento")) set(campo, v.trim()); }
-  if (origem === "ABERTURA") {
-    const atividade = raw.match(/\bsou\s+(m[ée]dic[oa]|dentista|advogad[oa]|engenheir[oa]|psic[óo]log[oa]|arquiteto|arquiteta)\b/i)?.[1];
-    if (atividade) set("atividadePretendida", atividade);
-  }
-  if (/\b(nao (tenho|tera|tem)|sem|nenhum)\b.{0,15}\bfuncionarios?\b/.test(t)) set("qtdFuncionarios", 0);
-  else { const qtd = t.match(/\b(\d{1,4})\s+funcionarios?\b/)?.[1]; if (qtd) set("qtdFuncionarios", Number(qtd)); }
-  const notas = t.match(/\b(\d{1,5})\s+notas?\b/)?.[1]; if (notas && /receb|compra|despesa/.test(t)) set("notasRecebidasMes", Number(notas));
-  if (origem === "INATIVA") {
-    if (/\b(reativar|voltar a (usar|operar|funcionar))\b/.test(t)) set("pretendeReativar", "REATIVAR");
-    else if (/\b(dar baixa|encerrar a empresa|fechar a empresa)\b/.test(t)) set("pretendeReativar", "BAIXAR");
-    else if (/\bindeciso\b/.test(t) || desconhecido && campoEsperado === "pretendeReativar") set("pretendeReativar", "INDECISO");
-  }
-  if (campoEsperado && !campos.has(campoEsperado) && !desconhecido && !pergunta && !humano && !identificarOrigemComercial(raw) && !/^(obrigad[oa]|ok|sim|nao|oi|ola)[.! ]*$/.test(t) && !campos.size) {
-    if (["responsavelNome", "atividadePretendida", "municipioAtendimento", "enderecoPretendido", "motivoTroca"].includes(campoEsperado) && raw.length >= 2 && raw.length <= 1000) set(campoEsperado, raw);
-    if (["qtdFuncionarios", "notasRecebidasMes"].includes(campoEsperado) && /^\d{1,5}$/.test(t)) set(campoEsperado, Number(t));
-    if (campoEsperado === "qtdFuncionarios" && /^(nenhum|zero|nao tenho|sem funcionarios)$/.test(t)) set(campoEsperado, 0);
-    if (campoEsperado === "paradaDesde") { const mes = raw.match(/^(\d{2})\/(\d{4})$/); if (mes && Number(mes[1]) >= 1 && Number(mes[1]) <= 12) set(campoEsperado, `${mes[2]}-${mes[1]}`); }
-  }
-  return { operacoes: [...campos.values()], desconhecido: desconhecido && campoEsperado && !campos.has(campoEsperado) ? campoEsperado : null, humano, resposta };
-}
+
+const assuntoDoCaso = origem => ({ ABERTURA: "abertura", TRANSFERENCIA: "troca de contador", INATIVA: "regularização da empresa" })[origem] || "solicitação";
 
 export async function coletarComercialWhatsapp({ registro, item = {}, contexto = null, deps = {} } = {}) {
   const db = deps.client || prisma, agora = deps.agora || new Date();
@@ -73,27 +26,44 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const conversa = registro?.conversa, mensagem = registro?.mensagem;
   const piloto = deps.piloto || IA_COMERCIAL_TELEFONES_PILOTO;
   if (!conversa || !mensagem || !coletaComercialHabilitada(conversa.telefoneE164, { flag: true, piloto, canal: registro.canal, canalId: conversa.canalId })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
-  if (registro.vinculo?.situacao === "AMBIGUO") return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
-  const textoEntrada = item.corpo || mensagem.corpo;
+  const variasEmpresas = conversa.vinculoNumeroId && registro.vinculo?.ambiguidades?.length === 1
+    && registro.vinculo.ambiguidades[0] === "EMPRESA";
+  // A pessoa pode iniciar um novo serviço sem escolher uma empresa operacional.
+  // Ambiguidade de pessoa e segmentos sem identidade migrada continuam bloqueados.
+  if (registro.vinculo?.situacao === "AMBIGUO" && !variasEmpresas) return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
+  const tipo = item.tipo || mensagem.tipo || "text";
+  if (tipo === "reaction") return { tratado: true, motivo: "REACAO_SEM_COLETA" };
+  const anexo = !["text", "interactive", "button"].includes(tipo);
   const idInteracao = typeof item.interacao === "string" ? item.interacao : item.interacao?.id || item.interacao?.button_reply?.id || item.interacao?.list_reply?.id;
+  const escolhaModalidade = modalidadeDoBotao(idInteracao);
+  // A escolha vem do ID emitido pelo servidor; o título não é uma declaração.
+  const textoEntrada = anexo || escolhaModalidade ? "" : item.corpo || mensagem.corpo;
   // Um caso anterior, inclusive de outro canal, não transforma saudação/menu em
   // resposta cadastral. Cliques são decididos pelo ID, nunca pelo título recebido.
-  const navegacao = idInteracao ? !identificarOrigemComercial("", item.interacao)
+  const navegacao = idInteracao ? !identificarOrigemComercial("", item.interacao) && !escolhaModalidade
     : pediuMenuWhatsapp(textoEntrada) || declarouSerCliente(textoEntrada) || pediuEquipeWhatsapp(textoEntrada);
-  if (navegacao) return { tratado: false, motivo: "NAVEGACAO_DO_ATENDIMENTO" };
-  if (pedidoOperacionalComercial(item.corpo || mensagem.corpo)) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
   const inicial = await db.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
   const anterior = await db.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
   const bloqueada = c => !c || c.excluidaEm || c.atendidaPor || c.atendidaDesde || c.automacaoInvalidadaEm && new Date(mensagem.registradaEm) <= new Date(c.automacaoInvalidadaEm);
   const proprioHandoff = c => anterior?.resultado?.handoffEm && !c?.atendidaPor && c?.atendidaDesde && new Date(c.atendidaDesde).toISOString() === anterior.resultado.handoffEm;
   if (bloqueada(proprioHandoff(inicial) ? { ...inicial, atendidaDesde: null } : inicial)) return { tratado: false, motivo: "AUTOMACAO_INVALIDADA" };
-  const interlocutorId = await identidadeDoCaso(inicial, db);
+  let interlocutorId;
+  try { interlocutorId = await identidadeDoCaso(inicial, db); }
+  catch (err) {
+    if (err.code !== "identidade_alterada") throw err;
+    return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
+  }
   const pessoa = interlocutorId ? await db.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }) : null;
   if (pessoa && (pessoa.estado !== "ATIVO" || pessoa.atendidaPor || pessoa.atendidaDesde && !proprioHandoff(pessoa))) return { tratado: false, motivo: "IDENTIDADE_OU_HUMANO" };
   const identidadeVersao = pessoa?.versao || 0;
   const escopo = filtroCasoDaConversa(inicial, interlocutorId);
-  const existente = await db.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
-  const origem = identificarOrigemComercial(item.corpo || mensagem.corpo, item.interacao);
+  const vinculado = await db.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
+  // Um vínculo legado aberto não torna uma ficha concluída uma coleta ativa.
+  const existente = vinculado?.onboarding && !encerrado(vinculado.onboarding) ? vinculado : null;
+  const origem = identificarOrigemComercial(textoEntrada, item.interacao);
+  if (mensagemAnterior(mensagem, vinculado?.triagem)) return { tratado: true, motivo: "MENSAGEM_ANTIGA" };
+  if (navegacao) return { tratado: false, motivo: "NAVEGACAO_DO_ATENDIMENTO" };
+  if (pedidoOperacionalComercial(textoEntrada)) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
   if (!existente && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
   const persistido = await db.$transaction(async tx => {
     const atual = await tx.conversaWhatsapp.findUnique({ where: { id: inicial.id } });
@@ -106,29 +76,59 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     await exigirConversaDoCaso(caso, atual, tx);
     if (!caso.onboarding || encerrado(caso.onboarding)) throw new OnboardingError("atendimento_encerrado", "A solicitação não está em coleta.", 409);
     const triagem = caso.triagem || {};
-    if (triagem.ultimaMensagemEm && new Date(mensagem.registradaEm) < new Date(triagem.ultimaMensagemEm)) return { resultado: { texto: null }, atendimentoLeadId: caso.id, identidadeVersao };
-    const desconhecidos = [...(triagem.desconhecidos || [])];
+    if (mensagemAnterior(mensagem, triagem)) return { resultado: { texto: null }, atendimentoLeadId: caso.id, identidadeVersao };
+    let desconhecidos = [...(triagem.desconhecidos || [])];
     const esperada = proximaPergunta(caso.onboarding, { desconhecidos });
     // No primeiro pedido ainda não fizemos uma pergunta. "Minha empresa está
     // parada e não sei o que fazer" não significa que a pessoa desconhece o CNPJ.
-    const leitura = interpretarColetaComercial({ texto: item.corpo || mensagem.corpo, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null) });
+    const escolhaAntiga = Boolean(escolhaModalidade && (escolhaModalidade.atendimentoId !== caso.id || esperada.campo !== "modalidadeServico" || triagem.campoEsperado !== "modalidadeServico"));
+    const leitura = escolhaModalidade ? { operacoes: escolhaAntiga ? [] : [{ campo: "modalidadeServico", acao: "set", valor: escolhaModalidade.valor }] }
+      : anexo ? { operacoes: [], humano: true }
+      : interpretarColetaComercial({ texto: textoEntrada, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null), anoParadaPendente: triagem.anoParadaPendente });
     const mudouOrigem = origem && origem !== caso.onboarding.origem;
-    let encaminhar = leitura.humano || Boolean(mudouOrigem);
-    if (!mudouOrigem && leitura.operacoes.length) caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao, operacoes: leitura.operacoes, mensagemId: mensagem.id, client: tx });
+    const referencia = mensagem.respostaAProviderMessageId || item.respostaAProviderMessageId;
+    const menuRespondido = idInteracao && mudouOrigem && referencia && triagem.ultimaMensagemEm
+      ? await tx.mensagemWhatsapp.findFirst({ where: { providerMessageId: referencia, conversaId: atual.id, direcao: "out", tipo: "interactive" }, select: { registradaEm: true } }) : null;
+    const menuAntigo = Boolean(menuRespondido && new Date(menuRespondido.registradaEm) < new Date(triagem.ultimaMensagemEm));
+    let encaminhar = !menuAntigo && (leitura.humano || leitura.reinicio || Boolean(mudouOrigem));
+    if (!mudouOrigem && leitura.operacoes.length) {
+      caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao, operacoes: leitura.operacoes, mensagemId: mensagem.id, client: tx });
+      desconhecidos = desconhecidos.filter(campo => !leitura.operacoes.some(o => o.campo === campo && o.acao === "set"));
+    }
     if (leitura.desconhecido && !desconhecidos.includes(leitura.desconhecido)) desconhecidos.push(leitura.desconhecido);
     const proxima = proximaPergunta(caso.onboarding, { desconhecidos });
-    const semInterpretacao = !leitura.operacoes.length && !leitura.desconhecido && !leitura.resposta && !origem && !leitura.humano;
-    const esclarecimentos = semInterpretacao ? (triagem.esclarecimentos || 0) + 1 : 0;
-    encaminhar ||= esclarecimentos > 1 || !proxima.campo || leitura.desconhecido === "cnpj";
-    const texto = encaminhar ? mudouOrigem ? "Entendi que há outra solicitação. Vou chamar a equipe para separar os atendimentos e preservar os dados já informados." : "Registrei as informações. A equipe vai conferir o escopo e continuar o atendimento por aqui."
-      : [leitura.resposta, leitura.desconhecido ? "Sem problema não saber agora; deixei essa informação para o contador conferir." : null, semInterpretacao ? "Não consegui identificar essa informação. " + proxima.pergunta : proxima.pergunta].filter(Boolean).join("\n\n");
+    const anoParadaPendente = proxima.campo !== "paradaDesde" ? null
+      : !mudouOrigem && leitura.anoParadaPendente !== undefined ? leitura.anoParadaPendente : triagem.anoParadaPendente || null;
+    const perguntaSeguinte = proxima.campo === "paradaDesde" && /^\d{4}$/.test(String(anoParadaPendente || ""))
+      ? `Em que mês de ${anoParadaPendente} a empresa parou? Se não souber, pode dizer “não sei”.` : proxima.pergunta;
+    const manterColeta = leitura.retomada || leitura.aguardar || menuAntigo || escolhaAntiga;
+    const semInterpretacao = !leitura.operacoes.length && !leitura.desconhecido && !leitura.resposta && !origem && !leitura.humano && !leitura.reinicio && !manterColeta;
+    const esclarecimentos = manterColeta ? triagem.esclarecimentos || 0 : semInterpretacao ? (triagem.esclarecimentos || 0) + 1 : 0;
+    encaminhar ||= !manterColeta && (esclarecimentos > 1 || !proxima.campo || leitura.desconhecido === "cnpj");
+    const motivoEquipe = anexo ? "Vou chamar a equipe para conferir sua mensagem com anexo e continuar por aqui."
+      : mudouOrigem || leitura.reinicio ? "Vou chamar a equipe para organizar a nova solicitação. As informações que você já enviou ficam preservadas."
+        : leitura.desconhecido === "cnpj" ? "Sem problema. A equipe vai ajudar você a localizar o CNPJ e continuar a análise."
+          : leitura.humano || esclarecimentos > 1 ? "Vou chamar a equipe para entender melhor o que você precisa e continuar por aqui."
+            : "Já tenho as informações iniciais. A equipe vai conferir seu caso e preparar a proposta com os serviços e valores.";
+    const texto = escolhaAntiga ? `Essa opção é de outra solicitação ou de uma etapa que já passou. Vamos continuar o atendimento atual.\n\n${perguntaSeguinte}`
+      : menuAntigo ? "Esse menu é anterior ao atendimento que você está preenchendo. Escreva “menu” para ver as opções atuais ou conte o que deseja mudar. Seus dados foram preservados."
+      : encaminhar ? `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`
+        : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
+          : [leitura.retomada ? `Vamos continuar sua ${assuntoDoCaso(caso.onboarding.origem)} de onde paramos.` : leitura.resposta,
+            leitura.desconhecido ? "Tudo bem se ainda não souber; a equipe confere essa informação com você." : null,
+            leitura.respostaSubstituiPergunta ? null : semInterpretacao ? `Para continuar: ${perguntaSeguinte}` : perguntaSeguinte].filter(Boolean).join("\n\n");
     const handoffEm = encaminhar ? agora : null;
     if (encaminhar) {
       await tx.conversaWhatsapp.update({ where: { id: atual.id }, data: { atendidaDesde: agora } });
       if (interlocutorId) await tx.interlocutorComunicacao.update({ where: { id: interlocutorId }, data: { atendidaDesde: agora } });
     }
-    const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 }, triagem: { ...triagem, desconhecidos, campoEsperado: proxima.campo, esclarecimentos, ultimaMensagemEm: new Date(mensagem.registradaEm).toISOString(), ...(mudouOrigem ? { proximaSolicitacao: { origem, mensagemId: mensagem.id } } : {}) } } });
-    return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao, resultado: { texto, onboardingId: caso.onboardingId, atendimentoId: caso.id, casoVersao: salva.versao, fichaVersao: caso.onboarding.versao, cnpj: caso.onboarding.cnpj || null, consultarPublica: Boolean(caso.onboarding.cnpj && leitura.operacoes.some(o => o.campo === "cnpj")), encaminhar, handoffEm: handoffEm?.toISOString() || null, contexto: { interlocutorId, vinculoNumeroId: atual.vinculoNumeroId || null, canalId: atual.canalId || null, identidadeVersao } } } });
+    const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 }, ...(!menuAntigo && !escolhaAntiga ? { triagem: { ...triagem, desconhecidos, campoEsperado: proxima.campo, esclarecimentos,
+      anoParadaPendente,
+      ultimaMensagemEm: new Date(mensagem.registradaEm).toISOString(),
+      ...(mensagem.ocorridaEmProvedor ? { ultimaMensagemProvedorEm: new Date(mensagem.ocorridaEmProvedor).toISOString() } : {}),
+      ...(mudouOrigem ? { proximaSolicitacao: { origem, mensagemId: mensagem.id } } : {}) } } : {}) } });
+    const botoes = !encaminhar && !leitura.aguardar && !menuAntigo && proxima.campo === "modalidadeServico" ? botoesModalidadeServico(caso.id, caso.onboarding.origem) : null;
+    return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao, resultado: { texto, ...(botoes ? { botoes } : {}), onboardingId: caso.onboardingId, atendimentoId: caso.id, casoVersao: salva.versao, fichaVersao: caso.onboarding.versao, cnpj: caso.onboarding.cnpj || null, consultarPublica: Boolean(caso.onboarding.cnpj && leitura.operacoes.some(o => o.campo === "cnpj")), encaminhar, handoffEm: handoffEm?.toISOString() || null, contexto: { interlocutorId, vinculoNumeroId: atual.vinculoNumeroId || null, canalId: atual.canalId || null, identidadeVersao } } } });
   });
   let resultado = persistido.resultado;
   if (!resultado.texto) return { tratado: true, resultado, motivo: "MENSAGEM_ANTIGA" };
@@ -147,8 +147,11 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   if (resultado.consultarPublica) {
     try {
       const consulta = await (deps.consultaPublica || consultarPublicaLead)(resultado.onboardingId, { db });
-      const detalhe = [consulta.razaoSocial, consulta.atividadePrincipal, consulta.endereco, [consulta.municipio, consulta.uf].filter(Boolean).join(" / ")].filter(Boolean).join(" · ");
-      resultado = { ...resultado, consultarPublica: false, texto: `Consultei os dados públicos: ${detalhe || "dados disponíveis"}. Situação cadastral: ${consulta.situacaoCadastral || "não informada"}. Isso não comprova regularidade fiscal.\n\n${resultado.texto}` };
+      const completo = [consulta.razaoSocial, consulta.atividadePrincipal, consulta.endereco, [consulta.municipio, consulta.uf].filter(Boolean).join(" / ")].filter(Boolean).join(" · ");
+      // O corpo de botões tem limite menor; os dados completos ficam na análise salva.
+      const detalhe = resultado.botoes && completo.length > 500 ? `${completo.slice(0, 497)}…` : completo;
+      const situacao = String(consulta.situacaoCadastral || "não informada").slice(0, 60);
+      resultado = { ...resultado, consultarPublica: false, texto: `Consultei os dados públicos: ${detalhe || "dados disponíveis"}. Situação cadastral: ${situacao}. Isso não comprova regularidade fiscal.\n\n${resultado.texto}` };
     } catch { resultado = { ...resultado, consultarPublica: false, texto: `Não foi possível concluir a consulta pública agora; deixei o CNPJ registrado para a equipe conferir.\n\n${resultado.texto}` }; }
     await conferir();
     await db.coletaComercialWhatsapp.update({ where: { mensagemId: mensagem.id }, data: { resultado } });

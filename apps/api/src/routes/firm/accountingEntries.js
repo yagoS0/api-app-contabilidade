@@ -331,7 +331,9 @@ function dataBrParaDate(valor) {
   if (!m) return null;
   const [, dia, mes, ano] = m;
   const d = new Date(Number(ano), Number(mes) - 1, Number(dia), 12, 0, 0);
-  return Number.isNaN(d.getTime()) ? null : d;
+  // Date normaliza 31/02 para março; documento com dia impossível não pode mudar competência.
+  return Number.isNaN(d.getTime()) || d.getFullYear() !== Number(ano)
+    || d.getMonth() !== Number(mes) - 1 || d.getDate() !== Number(dia) ? null : d;
 }
 
 /** Mesma mensagem em vários lançamentos vira UMA linha, com a contagem. */
@@ -4305,13 +4307,19 @@ export function createAccountingEntriesRouter({ log }) {
       //
       // ⚠ `dataArrecadacao` é gravada como STRING BR ("dd/mm/aaaa"), não ISO — `new Date()` leria
       // "07/08/2026" como 7 de agosto no formato americano, ou como Invalid Date. Por isso o parse
-      // é explícito, e data ilegível vira `undefined` (o serviço cai em "hoje", como antes) em vez
-      // de virar uma data errada: lançar na competência errada é pior que lançar na de hoje.
+      // é explícito. Data informada ilegível/impossível recusa a baixa; não pode virar hoje.
       const guiaComComprovante = await prisma.guide.findFirst({
         where: { id: guideId, portalClientId },
         select: { extracted: true },
       });
-      const dataDoComprovante = dataBrParaDate(guiaComComprovante?.extracted?.comprovante?.dataArrecadacao);
+      const dataArrecadacao = guiaComComprovante?.extracted?.comprovante?.dataArrecadacao;
+      const dataDoComprovante = dataBrParaDate(dataArrecadacao);
+      if (dataArrecadacao != null && String(dataArrecadacao).trim() && !dataDoComprovante) {
+        return res.status(400).json({
+          ok: false, error: "data_invalida", motivo: "data_invalida",
+          message: "A data do comprovante está inválida. Confira o documento antes de lançar a baixa. Nenhuma baixa foi lançada.",
+        });
+      }
 
       // ⚠ PROVA ANTES DE DECLARAÇÃO, TAMBÉM NA DATA. Havendo comprovante, a data dele manda — é ela
       // que decide a competência do lançamento, e foi por ignorá-la que parcela paga em 20/03 e
@@ -4323,6 +4331,17 @@ export function createAccountingEntriesRouter({ log }) {
       // normal permitiria mandar uma data que contradiz o comprovante que está no próprio registro.
       const dataPagamento = dataDoComprovante
         || (composicaoDeclarada && dataDeclarada ? new Date(dataDeclarada) : null);
+      const diaDeclarado = !dataDoComprovante && composicaoDeclarada && dataDeclarada
+        ? String(dataDeclarada).match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+      const diaDeclaradoImpossivel = diaDeclarado && dataPagamento
+        && !Number.isNaN(dataPagamento.getTime())
+        && dataPagamento.toISOString().slice(0, 10) !== String(dataDeclarada);
+      if (dataPagamento && (Number.isNaN(dataPagamento.getTime()) || diaDeclaradoImpossivel)) {
+        return res.status(400).json({
+          ok: false, error: "data_invalida", motivo: "data_invalida",
+          message: "Informe uma data de pagamento válida. Nenhuma baixa foi lançada.",
+        });
+      }
 
       const out = await gerarPagamentoParcelaFromGuide({
         portalClientId, guideId, userId: req.auth?.user?.id,

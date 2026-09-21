@@ -70,10 +70,10 @@ function ModalDeAto({
   }, [parcelamento?.id]);
 
   useEffect(() => {
-    function onKey(e) { if (e.key === "Escape") onClose?.(); }
+    function onKey(e) { if (e.key === "Escape" && !salvando) onClose?.(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, salvando]);
 
   // ⚠ O gate é sobre o texto APARADO: campo obrigatório que aceita cinco espaços não é obrigatório,
   // e o banco recusaria depois, com o contador já achando que tinha excluído.
@@ -120,7 +120,7 @@ function ModalDeAto({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700 }}>{titulo}</h3>
           <button
-            type="button" onClick={onClose} aria-label="Fechar"
+            type="button" onClick={onClose} disabled={salvando} aria-label="Fechar"
             style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.3rem", lineHeight: 1 }}
           >
             ×

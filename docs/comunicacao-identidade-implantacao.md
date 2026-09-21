@@ -2,6 +2,12 @@
 
 Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
 
+## Revisão de diálogo — 20/09/2026
+
+A revisão amplia a interpretação determinística, o acolhimento de clientes no comercial e as simulações com histórico. Não há migration, backfill, troca de token ou mudança de audiência do principal. Conservar identidade V2/multicanal/coleta e a configuração de menus existentes. A publicação de código não autoriza revogar pausas humanas, refazer envios incertos ou reproduzir mensagens antigas. A validação de entrega externa requer uma nova entrada real e o respectivo recibo; os testes desta revisão bloqueiam rede e IA.
+
+Antes da integração, executar as regressões de WhatsApp/onboarding e os dois modos de `verify-lead-entry-postgres.js`. A CI também verifica identidade, canais, jornada comercial, abertura até o cadastro e envio de documentos. Conferir as transcrições e não apenas o total de testes. [Matriz e resultados](revisao-comunicacao-cenarios.md), [referências de diálogo](revisao-dialogo-leads-referencias.md). As notas de publicação de 17/09 abaixo são históricas.
+
 Estado atual em 17/09 após as 19h37 UTC: canal comercial e multicanal ativados, token validado com acesso ao número, WABA e aplicativo já inscrito. API saudável na main `f6fe6a2a`, que contém as PRs [67](https://github.com/yagoS0/api-app-contabilidade/pull/67) e [68](https://github.com/yagoS0/api-app-contabilidade/pull/68). Identidade V2, chat V2, menu e coleta comercial ativos; principal preservado. Entrada real do usuário recebida; a pausa humana antiga do contato impediu resposta automática, conforme a política. Os registros de bloqueio por falta de credencial abaixo documentam as etapas anteriores.
 
 ## Ativação e teste do novo número — 17/09/2026
