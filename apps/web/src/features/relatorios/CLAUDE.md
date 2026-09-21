@@ -1,3 +1,7 @@
+# Enquadramento e meses futuros — 21/09/2026
+
+RelatoriosTab abre AnaliseEmpresa em uma moldura responsiva de até 1440px, com margens próprias e filhos que podem encolher. Projeção financeira permanece operacional e separada dos meses contábeis fechados. FluxoLeitura permite escolher todos os meses retornados, avançar/voltar e retornar ao ciclo atual; troca de mês não consulta novamente a API nem muda o relógio do servidor. Detalhes acompanham a seleção. Não alterar cálculos ao ajustar a apresentação.
+
 # Fluxo mensal — 20/09/2026
 
 Pedido atual substitui a apresentação diária: quatro cards do mês selecionado, Entradas, Saídas (despesas + impostos, sem folha), Folha e Resultado (entradas − saídas − folha). Clique detalha o mês inteiro, inclusive linhas sem dia. Shared fluxoMensal usa a agregação existente; não muda motor, fontes ou procedência. Acumulado continua separado. Escritório somente leitura; cliente preserva a declaração de saída para conferência. DRE permanece restrita aos fechamentos contábeis.

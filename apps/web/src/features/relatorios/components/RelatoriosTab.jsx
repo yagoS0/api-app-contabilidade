@@ -35,7 +35,7 @@ const DESTAQUES = [
 ];
 
 export function RelatoriosTab({ api = relatoriosApi, ...props }) {
-  return <AnaliseEmpresa key={props.companyId} api={api} empresaId={props.companyId} empresaNome={props.razaoSocial} empresaCnpj={props.cnpj} />;
+  return <div className="relatorios-page"><AnaliseEmpresa key={props.companyId} api={api} empresaId={props.companyId} empresaNome={props.razaoSocial} empresaCnpj={props.cnpj} /></div>;
 }
 
 // Resumo legado preservado para consumidores explícitos; Relatórios agora abre fluxo de leitura.

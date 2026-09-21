@@ -1,4 +1,10 @@
 /* Analytical surfaces: compact rhythm, explicit typography and local scrolling. */
+.relatorios-page{box-sizing:border-box;width:100%;max-width:1440px;margin:0 auto;padding:24px clamp(16px,3vw,40px) 40px;min-width:0}
+.relatorios-page .bi-relatorios{grid-template-columns:minmax(0,1fr)}
+.relatorios-page .bi-relatorios>*,.relatorios-page .bi-cabecalho>div{min-width:0;max-width:100%}
+.relatorios-page .bi-contexto{overflow-wrap:anywhere}
+.relatorios-page .bi-acoes{justify-content:flex-end}
+@media(max-width:600px){.relatorios-page{padding:16px 12px 28px}.relatorios-page .bi-acoes{justify-content:flex-start}}
 .analise-empresa{color:var(--text-primary,#f8f8f2);display:grid;gap:14px;min-width:0;font-size:14px}
 .analise-empresa *{box-sizing:border-box}
 .analise-empresa h1,.analise-empresa h2,.analise-empresa h3{margin:0 0 8px}

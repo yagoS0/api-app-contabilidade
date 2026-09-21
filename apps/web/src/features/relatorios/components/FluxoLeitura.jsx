@@ -8,13 +8,25 @@ const origem = p => ({FATO:'Realizado',COMPROMISSO:'A pagar',PREVISAO:'Previsto'
 
 export function FluxoLeitura({api,companyId,competenciaReferencia,razaoSocial,titulo="Relatórios · Fluxo de caixa"}) {
   const [dados,setDados]=useState(null),[erro,setErro]=useState(null),[detalhe,setDetalhe]=useState(null);
+  const [selecao,setSelecao]=useState(null);
+  const escopo = `${companyId}:${competenciaReferencia || ''}`;
   useEffect(()=>{let vivo=true;setDados(null);setErro(null);setDetalhe(null);Promise.resolve().then(()=>api.getFluxoCaixa(companyId,{janelaInicio:competenciaReferencia})).then(r=>{if(!vivo)return;if(r?.ok===false||r?.demonstracao!==false||!Array.isArray(r?.meses))throw new Error(r?.message||'A resposta não contém o fluxo real desta empresa.');setDados(r);}).catch(e=>{if(vivo)setErro(e.message||'Não foi possível carregar o fluxo.');});return()=>{vivo=false;};},[api,companyId,competenciaReferencia]);
-  const inicio=competenciaReferencia||dados?.cicloAtual;
+  const inicio=(selecao?.escopo===escopo ? selecao.mes : null)||competenciaReferencia||dados?.cicloAtual||dados?.meses[0]?.competencia;
+  const meses=[...new Set((dados?.meses||[]).map(m=>m.competencia))].sort();
+  const indice=meses.indexOf(inicio);
+  const escolherMes=mes=>{setSelecao({escopo,mes});setDetalhe(null);};
   const mes=dados?.meses.find(m=>m.competencia===inicio);
   const total=resumoMensal(mes,linhaDoMes);
   const card=CARDS_FLUXO.find(c=>c.chave===detalhe);
-  return <div className="fluxo-mensal" style={{padding:'16px clamp(12px, 2vw, 28px)',minWidth:0}}>
-    <h2>{titulo}</h2><p>{razaoSocial||'Empresa'}{inicio?' · '+mesLabel(inicio):''}</p>
+  return <div className="fluxo-mensal fluxo-leitura">
+    <header className="fluxo-leitura-header"><div><h2>{titulo}</h2><p>{razaoSocial ? razaoSocial+' · ' : ''}{inicio?mesLabel(inicio):''}</p></div>
+      {dados&&!erro&&meses.length>0&&<nav className="fluxo-leitura-periodo" aria-label="Meses da projeção financeira">
+        <button type="button" aria-label="Mês anterior" disabled={indice<=0} onClick={()=>escolherMes(meses[indice-1])}>←</button>
+        <label><select aria-label="Mês da projeção" value={inicio} onChange={e=>escolherMes(e.target.value)}>{!meses.includes(inicio)&&<option value={inicio}>{mesLabel(inicio)}</option>}{meses.map(m=><option key={m} value={m}>{mesLabel(m)}{dados.cicloAtual&&m>dados.cicloAtual?' · Futuro':''}</option>)}</select></label>
+        <button type="button" aria-label="Mês seguinte" disabled={indice<0||indice>=meses.length-1} onClick={()=>escolherMes(meses[indice+1])}>→</button>
+        {meses.includes(dados.cicloAtual)&&inicio!==dados.cicloAtual&&<button type="button" onClick={()=>escolherMes(dados.cicloAtual)}>Mês atual</button>}
+      </nav>}
+    </header>
     {erro?<p role="alert">Não foi possível ler o fluxo. {erro}</p>:!dados?<p role="status">Carregando fluxo…</p>:!mes?<p role="status">Este mês não veio na consulta. Não é possível afirmar que está sem movimento.</p>:<>
       <div className="fluxo-mensal-cards">{CARDS_FLUXO.map(c=><button type="button" className="fluxo-mensal-card" key={c.chave} onClick={()=>setDetalhe(c.chave)} aria-label={'Ver '+c.rotulo.toLowerCase()+' de '+mesLabel(inicio)}>
         <span>{c.rotulo}</span><strong>{brl(total[c.chave]?.valor)}</strong>

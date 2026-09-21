@@ -26,3 +26,21 @@ expect(screen.queryByRole('button',{name:/Ver entradas/})).not.toBeInTheDocument
 });
 
 test('saldo mensal e último dia coincidem sem criar ação de escrita',()=>{expect(linhaDoMes(mes).saldo.valor).toBe(570);expect(linhasDosDias(mes,31).dias.at(-1).saldo.valor).toBe(570);});
+
+test('navega até o último mês futuro e abre seus movimentos sem nova consulta',async()=>{
+ const futuro={competencia:'2026-10',linhas:[{dia:null,rotulo:'Receita futura',direcao:'ENTRADA',fonte:'NOTA_EMITIDA',procedencia:'PREVISAO',valor:300}]};
+ const api={getFluxoCaixa:jest.fn(async()=>({ok:true,demonstracao:false,cicloAtual:'2026-08',meses:[mes,futuro]}))};
+ render(<FluxoLeitura api={api} companyId="a"/>);
+ await screen.findByRole('combobox',{name:'Mês da projeção'});
+ expect(screen.getByRole('button',{name:'Mês anterior'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Mês seguinte'}));
+ expect(screen.getByRole('combobox')).toHaveValue('2026-10');
+ expect(screen.getByRole('button',{name:'Mês seguinte'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:/Ver entradas/}));
+ expect(screen.getByRole('dialog')).toHaveTextContent('Receita futura');
+ expect(screen.getByRole('dialog')).toHaveTextContent('Previsto');
+ fireEvent.keyDown(document,{key:'Escape'});
+ fireEvent.click(screen.getByRole('button',{name:'Mês atual'}));
+ expect(screen.getByRole('combobox')).toHaveValue('2026-08');
+ expect(api.getFluxoCaixa).toHaveBeenCalledTimes(1);
+});
