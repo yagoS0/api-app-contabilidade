@@ -2,6 +2,10 @@
 
 Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamento do mês.
 
+## Revisão de parcelamento — 21/09/2026
+
+Baixa por guia também reserva a prestação correspondente (empresa, contrato e número/vínculo), na ordem guia → prestação usada pela captura. Uma prestação já baixada por declaração ou histórico não gera segundo lote quando a guia chega depois. A recusa aborta a transação, inclusive a reserva da guia. O estorno da declaração preserva uma guia recebida posteriormente e compara o vínculo observado na conferência; somente mudança durante o ato é recusada. Data declarada ilegível na baixa não pode cair silenciosamente na data de hoje. Forma dos lançamentos, memória de contas e tratamento de competências fechadas permanecem os existentes. Testes usam banco substituído; não constituem ensaio concorrente de PostgreSQL nem operação fiscal real.
+
 ## Conceitos
 
 - **AccountingEntry** = um lançamento. Tem `tipo` (PROVISAO | DESPESA | RECEITA | BAIXA |

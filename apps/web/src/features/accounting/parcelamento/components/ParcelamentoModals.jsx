@@ -13,7 +13,7 @@ import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // ele exige (`templatePaymentFunctionId` + seeds `PARCELAMENTO_PAYMENT`) estão marcados no
 // `apps/api/src/application/accounting/CLAUDE.md` como leftover cuja remoção é DECISÃO DO DONO.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
 import { ParcelasDoAcordo } from "./ParcelasDoAcordo";
@@ -26,20 +26,20 @@ import { baseDaRescisao, valorPorPapelDaRescisao, somasDaRescisao } from "../lib
 // Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
 // Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
 // esses modais são formulários longos (linhas de provisão/pagamento). Saída = ✕, Cancelar ou ESC.
-function useEscapeToClose(onClose) {
+function useEscapeToClose(onClose, ocupado = false) {
   useEffect(() => {
-    if (!onClose) return undefined;
+    if (!onClose || ocupado) return undefined;
     function onKeyDown(event) {
       if (event.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, ocupado]);
 }
 
 const PANEL = {
-  surface: "#21222C", field: "#282A36", border: "#44475A",
-  text: "#F8F8F2", muted: "#aeb6d3",
+  surface: "var(--bg-surface)", field: "var(--bg-subtle)", border: "var(--border)",
+  text: "var(--text)", muted: "var(--text-muted)",
 };
 const FIELD_STYLE = {
   background: PANEL.field,
@@ -103,13 +103,13 @@ const ROLE_LABEL = { PRINCIPAL: "Principal", JUROS: "Juros", MULTA: "Multa", PAR
 const normCfgRow = (r) => ({ tipoLinha: r?.tipoLinha || "PARC", tipo: r?.tipo === "C" ? "C" : "D", conta: r?.conta || "" });
 
 export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, onClose, onSaved, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
-  useEscapeToClose(onClose);
   const [prov, setProv] = useState([]);
   const [pag, setPag] = useState([]);
   const [obs, setObs] = useState(""); // Q31: descrição (competências parceladas)
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
+  useEscapeToClose(onClose, busy);
 
   useEffect(() => {
     let cancel = false;
@@ -185,7 +185,7 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
       <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 860px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", overflowWrap: "anywhere", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Configuração de lançamento — {label}</strong>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+          <button type="button" aria-label="Fechar configuração" onClick={onClose} disabled={busy} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
@@ -222,13 +222,13 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
 // editáveis, com saldo remanescente sugerido. Ao confirmar, lança a rescisão (single-leg por linha).
 // ─────────────────────────────────────────────────────────────────────────
 export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, onClose, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
-  useEscapeToClose(onClose);
   const [lines, setLines] = useState([]);
   const [dataRescisao, setDataRescisao] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmando, setConfirmando] = useState(null); // 2ª etapa da confirmação
+  useEscapeToClose(confirmando ? () => setConfirmando(null) : onClose, saving || busy);
 
   // ⚠ A REGRA (E A RECUSA) MORAM NA LIB, com teste próprio. O que o `|| 0` de antes fazia era
   // transformar "não sei quanto falta" em "não falta nada" — R$ 0,00 pré-preenchido num lançamento
@@ -313,9 +313,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
       setErro(`Σ Débito (${fmtMoney(somaD)}) ≠ Σ Crédito (${fmtMoney(somaC)}). Um lote desbalanceado trava o fechamento do mês — corrija antes de rescindir.`);
       return;
     }
-    // ⚠ SEGUNDA ETAPA: a rescisão manda o saldo remanescente para a Dívida Ativa da União e
-    // restabelece as reduções de multa da adesão. É irreversível pelo app, e o passo anterior é
-    // só um formulário de lançamento — nada nele diz o que a confirmação provoca.
+    // A confirmação registra a rescisão e os lançamentos locais; não cancela o acordo na Receita.
     setConfirmando({ clean, dataRescisao });
   }
 
@@ -337,7 +335,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
       <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 900px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", overflowWrap: "anywhere", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Rescindir — {parc?.label}</strong>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+          <button type="button" aria-label="Fechar rescisão" onClick={onClose} disabled={saving || busy} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
@@ -458,12 +456,13 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
 
       {/* ⚠ CONFIRMAÇÃO EM DUAS ETAPAS, repetindo os dados. */}
       {confirmando && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1800, padding: 16 }}>
+        <div role="dialog" aria-label="Confirmar rescisão contábil" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1800, padding: 16 }}>
           <div style={{ background: PANEL.surface, border: "1px solid var(--state-danger)", borderRadius: 10, padding: 18, width: "min(94vw, 520px)", color: PANEL.text, display: "flex", flexDirection: "column", gap: 10 }}>
             <strong style={{ fontSize: "0.95rem", color: "var(--state-danger)" }}>Rescindir {parc?.label}?</strong>
             <div style={{ fontSize: "0.78rem", color: PANEL.muted, lineHeight: 1.5 }}>
-              Rescindido, o <strong style={{ color: PANEL.text }}>saldo remanescente vai para a Dívida Ativa da União</strong> e
-              as reduções de multa da adesão são restabelecidas. O app não desfaz isso.
+              Registra a rescisão no aplicativo, grava os lançamentos abaixo e retira as prestações sem guia da fila.
+              Esta ação não rescinde o acordo perante a Receita nem envia valores à Dívida Ativa.
+              Um registro feito por engano pode ser revisado em “Desfazer rescisão”.
             </div>
             <div style={{ fontSize: "0.76rem", color: PANEL.muted, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}>
               Data da rescisão: <strong style={{ color: PANEL.text }}>{confirmando.dataRescisao}</strong><br />
@@ -1174,28 +1173,37 @@ export function ParcelamentosList({
 // Q28 Fase 3: ConferenciaParcelasPanel — fila de parcelas pagas a conferir / divergentes.
 // Aprovar em lote confirma os lançamentos de baixa (RASCUNHO → CONFIRMADO).
 // ─────────────────────────────────────────────────────────────────────────
-export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }) {
+export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia, refreshKey = 0 }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [items, setItems] = useState([]);
   const [sel, setSel] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [erroAprovacao, setErroAprovacao] = useState(null);
+  const request = useRef(0);
+  useEffect(() => () => { request.current += 1; }, []);
 
   async function reload() {
+    const version = ++request.current;
     setLoading(true);
     setErro(null);
     try {
-      setItems(await listConferencia());
+      const out = await listConferencia();
+      if (version !== request.current) return;
+      const next = Array.isArray(out) ? out : [];
+      setItems(next);
+      setSel((previous) => new Set([...previous].filter((id) => next.some((it) => it.guideId === id && it.estado === "PAGA_A_CONFERIR"))));
     } catch (err) {
+      if (version !== request.current) return;
       // ⚠ AUSÊNCIA NUNCA É RESPOSTA. Este painel fazia `if (loading || !items.length) return null`
       // por cima de um `catch` que devolvia `[]`: falha de rede produzia EXATAMENTE o mesmo pixel
       // que "não há nada a conferir" — nenhum. E é a fila de conferência: o que ela esconde é
       // pagamento aguardando confirmação contábil.
       setErro(err?.message || "Não foi possível carregar a fila de conferência.");
-    } finally { setLoading(false); }
+    } finally { if (version === request.current) setLoading(false); }
   }
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     // Mesma disciplina do vazio: uma linha, não um card. "Carregando" e "não há nada" são estados
@@ -1233,10 +1241,11 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
   const toggle = (id) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   async function aprovar() {
-    if (!sel.size) return;
+    if (!sel.size || busy) return;
     // ⚠ ATO DE CONSEQUÊNCIA CONFIRMA REPETINDO OS DADOS. "Aprovar" confirma lançamentos de baixa
     // (RASCUNHO → CONFIRMADO) — antes saía num clique só, sem nomear o que estava sendo aprovado.
-    const escolhidas = items.filter((it) => sel.has(it.guideId));
+    const escolhidas = items.filter((it) => sel.has(it.guideId) && it.estado === "PAGA_A_CONFERIR");
+    if (!escolhidas.length) return;
     const lista = escolhidas
       .map((it) => `· parcela ${it.numeroParcela || "?"} — ${it.competencia || it.anoMesParcela || "sem competência"} — R$ ${fmtMoney(it.valor)}`)
       .join("\n");
@@ -1246,7 +1255,10 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
     // eslint-disable-next-line no-alert
     if (!await pedir({ titulo: "Aprovar baixas conferidas", acao: "Aprovar baixas", texto: `Aprovar a baixa de ${escolhidas.length} parcela(s)?\n\n${lista}\n\nOs lançamentos passam de RASCUNHO para CONFIRMADO.` })) return;
     setBusy(true);
-    try { await aprovarConferencia([...sel]); setSel(new Set()); await reload(); } finally { setBusy(false); }
+    setErroAprovacao(null);
+    try { await aprovarConferencia(escolhidas.map((it) => it.guideId)); setSel(new Set()); await reload(); }
+    catch (err) { setErroAprovacao(err?.message || "Não foi possível aprovar as baixas. Tente novamente."); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -1258,12 +1270,13 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
           title={sel.size
             ? `Confirma os lançamentos de baixa das ${sel.size} parcela(s) selecionada(s).`
             : (selecionaveis.length
-              ? "Selecione ao menos uma parcela em PAGA_A_CONFERIR."
-              : "Nenhuma parcela nesta fila está em PAGA_A_CONFERIR — as divergentes precisam ser resolvidas antes.")}
+              ? "Selecione ao menos uma parcela a conferir."
+              : "Nenhuma parcela está pronta para aprovação — as divergências precisam ser resolvidas antes.")}
         >
           {busy ? "Aprovando…" : `Aprovar (${sel.size})`}
         </Button>
       </div>
+      {erroAprovacao && <div role="alert" style={{ padding: "10px 14px", color: "var(--state-danger)", fontSize: "0.8125rem" }}>{erroAprovacao}</div>}
       {items.map((it) => {
         const conferivel = it.estado === "PAGA_A_CONFERIR";
         const divergente = it.estado === "DIVERGENTE";
@@ -1273,25 +1286,25 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
           ? "Marque para confirmar o lançamento de baixa desta parcela."
           : divergente
             ? "Parcela DIVERGENTE: o valor pago não bate com o esperado. Resolva a divergência antes de aprovar."
-            : `Parcela em ${it.estado}: só parcelas em PAGA_A_CONFERIR podem ser aprovadas aqui.`;
+            : "Esta parcela ainda não está pronta para aprovação. Confira sua situação antes de aprovar.";
         return (
           <label key={it.guideId} title={motivo} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "start", padding: "8px 14px", borderBottom: `1px solid ${PANEL.border}`, cursor: conferivel ? "pointer" : "default" }}>
-            <input type="checkbox" disabled={!conferivel} title={motivo} checked={sel.has(it.guideId)} onChange={() => toggle(it.guideId)} />
-            <div style={{ fontSize: "0.78rem", color: PANEL.text }}>
+            <input type="checkbox" disabled={busy || !conferivel} title={motivo} checked={sel.has(it.guideId)} onChange={() => toggle(it.guideId)} />
+            <div style={{ fontSize: "0.8125rem", color: PANEL.text }}>
               {it.parcelamentoLabel || "Parcelamento"} · parc {it.numeroParcela || "?"} · {it.competencia || it.anoMesParcela || ""}
               <span style={{ color: PANEL.muted, marginLeft: 8 }}>R$ {fmtMoney(it.valor)}</span>
               {/* O motivo do bloqueio também fica VISÍVEL, não só no hover: `title` não existe em
                   toque, e este é o mesmo padrão que `ParcelasDoAcordo` já usa. */}
               {!conferivel && (
-                <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 2, lineHeight: 1.35 }}>{motivo}</div>
+                <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 2, lineHeight: 1.35 }}>{motivo}</div>
               )}
             </div>
             <span style={{
-              fontSize: "0.65rem", fontWeight: 700, padding: "1px 6px", borderRadius: 999,
+              fontSize: "0.8125rem", fontWeight: 700, padding: "1px 6px", borderRadius: 999,
               background: divergente ? "var(--state-danger-surface)" : "var(--state-warn-surface)",
               color: divergente ? "var(--state-danger)" : "var(--state-warn)",
               border: `1px solid ${divergente ? "var(--state-danger)" : "var(--state-warn)"}`,
-            }}>{it.estado}</span>
+            }}>{conferivel ? "A conferir" : divergente ? "Divergente" : "Aguardando conferência"}</span>
           </label>
         );
       })}

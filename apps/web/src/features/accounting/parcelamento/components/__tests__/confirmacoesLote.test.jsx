@@ -47,3 +47,27 @@ it("aprovação de baixas: cancelar mantém seleção e confirmar usa somente as
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Aprovar baixas" })); });
   expect(aprovarConferencia).toHaveBeenCalledWith(["g1"]);
 });
+
+it("aprovação recusada informa o erro e preserva seleção para nova tentativa", async () => {
+  const aprovarConferencia = jest.fn().mockRejectedValue(new Error("A competência foi fechada"));
+  const listConferencia = jest.fn().mockResolvedValue([{ guideId: "g1", estado: "PAGA_A_CONFERIR", numeroParcela: 1, valor: 100 }]);
+  await act(async () => { render(<ConferenciaParcelasPanel listConferencia={listConferencia} aprovarConferencia={aprovarConferencia} />); });
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Aprovar (1)" }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Aprovar baixas" })); });
+  expect(screen.getByRole("alert")).toHaveTextContent("A competência foi fechada");
+  expect(screen.getByRole("checkbox")).toBeChecked();
+  expect(screen.getByRole("button", { name: "Aprovar (1)" })).not.toBeDisabled();
+});
+
+it("recarga após baixa atualiza conferência e remove seleção que deixou de ser aprovável", async () => {
+  const listConferencia = jest.fn().mockResolvedValueOnce([{ guideId: "g1", estado: "PAGA_A_CONFERIR", valor: 100 }]).mockResolvedValue([{ guideId: "g1", estado: "DIVERGENTE", valor: 100 }]);
+  const props = { listConferencia, aprovarConferencia: jest.fn() };
+  const { rerender } = render(<ConferenciaParcelasPanel {...props} refreshKey={0} />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("checkbox"));
+  await act(async () => { rerender(<ConferenciaParcelasPanel {...props} refreshKey={1} />); });
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.getByRole("checkbox")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Aprovar (0)" })).toBeDisabled();
+});

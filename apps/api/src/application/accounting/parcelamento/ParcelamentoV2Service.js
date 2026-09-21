@@ -1044,6 +1044,7 @@ export async function gerarPagamentoParcelaFromGuide({
   }
 
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
+  if (Number.isNaN(data.getTime())) return { skipped: true, reason: "data_invalida" };
   const competencia = competenciaFromDate(data);
   if (await isMonthClosed(portalClientId, competencia)) {
     const err = new Error(`Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
@@ -1109,6 +1110,35 @@ export async function gerarPagamentoParcelaFromGuide({
     });
     if (reserva.count !== 1) return { skipped: true, reason: "ja_baixada" };
 
+    // A prestação pode ter sido baixada sem guia antes de o documento chegar. Reserve a
+    // mesma linha usada pela baixa manual: só conferir a guia permitiria amortizar duas vezes.
+    // O vínculo também impede uma baixa manual concorrente enquanto esta transação termina.
+    const prestacao = await tx.parcela.findFirst({
+      where: {
+        portalClientId, parcelamentoId: parcelamento.id,
+        OR: [
+          { guiaId: guide.id },
+          ...(guide.numeroParcela != null ? [{ numeroParcela: guide.numeroParcela }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    if (prestacao) {
+      const reservaPrestacao = await tx.parcela.updateMany({
+        where: {
+          id: prestacao.id, portalClientId, origemBaixa: null,
+          OR: [{ guiaId: null }, { guiaId: guide.id }],
+        },
+        data: { guiaId: guide.id, origem: "GUIA" },
+      });
+      if (reservaPrestacao.count !== 1) {
+        const erro = new Error("A prestação já foi baixada ou recebeu outra guia.");
+        erro.code = "PARCELA_BAIXA_CONCORRENTE";
+        throw erro; // desfaz também a reserva da guia, sem deixar baixa parcial
+      }
+    }
+
+
     // Com comprovante, o CÓDIGO DE RECEITA separa amortização de encargo corrente; sem ele, o
     // caminho antigo, que não tem como fazer essa distinção.
     const pagLines = usaComprovante
@@ -1149,6 +1179,11 @@ export async function gerarPagamentoParcelaFromGuide({
       // nenhum chamador existente veja campo novo aparecer do nada.
       ...(declarada ? { composicaoDeclarada: declarada } : {}),
     };
+  }).catch((erro) => {
+    if (erro?.code === "PARCELA_BAIXA_CONCORRENTE") {
+      return { skipped: true, reason: "parcela_ja_baixada" };
+    }
+    throw erro;
   });
 }
 
