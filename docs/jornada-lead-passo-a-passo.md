@@ -1,5 +1,11 @@
 # Jornada guiada do lead — 14/09/2026
 
+## Dados e correção da proposta — 21/09/2026
+
+A etapa reúne nome/e-mail do responsável, modalidade, regime, funcionários, notas recebidas/despesas e consultoria para o cálculo mensal, além do escopo já conferido. Serviços avulsos e taxas são preenchidos conforme o caso. Valores personalizados exigem fonte/justificativa interna antes da geração; não afirmar que todos esses campos são obrigatórios para toda modalidade.
+
+Um rascunho legado com pendência mostra a correção diretamente na etapa e recupera seus valores monetários. O contador informa a justificativa e gera outra versão para revisão. A versão antiga permanece registrada; aprovar, compartilhar e obter o aceite seguem ações separadas. Não preencher justificativa em nome do usuário, não alterar valores aceitos e não registrar aceite apenas porque o contador aprovou o PDF. O teste reproduz a pendência, impede geração sem justificativa e segue por correção → aprovação → link de aceite, sem transporte externo ou IA.
+
 ## Conferência manual e recuperação fiscal — 21/09/2026
 
 As integrações ajudam a obter dados; sua indisponibilidade não exige fabricar uma consulta nem impede uma contratação com escopo conferido manualmente. Para transferência ou empresa parada, o contador pode salvar o CNPJ na ficha e registrar a fonte e a evidência da conferência cadastral. A rota existente `POST /firm/comercial/onboardings/:id/jornada/conferencia` aceita `{tipo:"PUBLICA",versao,manual:{fonte,evidencia}}`: fonte de 3 a 300 caracteres e evidência de 10 a 2.000. Apenas admin/contador, mesma ficha ativa e versão atual. Não existe modo manual de marcar um SITFIS como consultado.

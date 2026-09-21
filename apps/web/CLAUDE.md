@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Proposta com pendência de justificativa — 21/09/2026
+
+`ValoresDaProposta` mostra somente preços aplicáveis à origem/modalidade e exige justificativa antes de enviar valores personalizados. Proposta já salva com pendências abre a correção na própria etapa, recuperando preços do snapshot (inclusive zero), sem inventar justificativa ou aprovar automaticamente. Gerar cria nova versão; a aprovação continua explícita e bloqueada enquanto houver pendências. Texto de justificativa é interno, não vai ao PDF. Conservar preços aceitos e dados do rascunho ao trocar abas. Ver `docs/jornada-lead-passo-a-passo.md`.
+
 ## Correção visual do atendimento — 21/09/2026
 
 Ficha, Recomeçar e Nova solicitação compartilham uma grade de três colunas e o mesmo tamanho de botão; o link Ficha precisa de `btn-md`, sem regra legada que remova seu preenchimento lateral. Etapas respondem à largura do painel (`container-type`), com três colunas em espaços menores e cinco no painel amplo. Ações da etapa ficam em um bloco próprio; abas e botões longos quebram texto sem extrapolar a largura. Preservar estados, campos montados e callbacks; esta correção é apenas de layout, sem consultas ou mensagens externas.

@@ -2077,7 +2077,7 @@ th.tabela__num {
 .fluxo-leitura { width:100%; max-width:100%; box-sizing:border-box; }
 .fluxo-leitura-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
 .fluxo-leitura-header h2 { margin:0 0 4px; font-size:1rem; }
-.fluxo-leitura-header p { margin:0; color:var(--text-muted,var(--muted)); text-transform:capitalize; }
+.fluxo-leitura-header p { margin:0; color:var(--text-muted); text-transform:capitalize; }
 .fluxo-leitura-periodo { display:flex; align-items:center; gap:6px; flex-wrap:wrap; max-width:100%; }
 .fluxo-leitura-periodo label { min-width:0; flex:1; }
 .fluxo-leitura-periodo button,.fluxo-leitura-periodo select { min-height:36px; padding:7px 10px; color:var(--text); background:var(--bg-card,#252538); border:1px solid var(--border); border-radius:7px; font:inherit; font-size:13px; max-width:100%; }

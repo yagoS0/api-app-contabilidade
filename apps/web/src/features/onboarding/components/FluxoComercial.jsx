@@ -37,6 +37,7 @@ export function OpcoesProposta({
 
 import { FichaAvulsa } from "./FichaAvulsa";
 import { AcoesDaEtapa } from "./AcoesDaEtapa";
+import { ValoresDaProposta } from "./ValoresDaProposta";
 import { ConferenciaPublicaManual } from "./ConferenciaPublicaManual";
 import { DevolutivaDoLead } from "./DevolutivaDoLead";
 import { montarJornada } from "../lib/jornadaComercial";
@@ -45,7 +46,6 @@ import { ProgressoDoLead, CamposDaEtapa, DiagnosticoDoLead, MensagemDoPasso, Ori
 export function FluxoComercial({ api, onboardingId, conversaId: conversaInformada, janela = null, canalDisponivel = true, canalDeEnvio = null }) {
   const [estado, setEstado] = useState(null), [recursos, setRecursos] = useState([]), [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false), [passoEscolhido, setPassoEscolhido] = useState(null), [link, setLink] = useState("");
-  const [ajustes, setAjustes] = useState({}), [justificativa, setJustificativa] = useState("");
   const [modeloId, setModeloId] = useState(""), [vars, setVars] = useState({}), [documentoId, setDocumentoId] = useState("");
   const [campoEdicao, setCampoEdicao] = useState(""), [valorCampo, setValorCampo] = useState("");
   const [evidenciaPagamento, setEvidenciaPagamento] = useState(""), [linkPagamento, setLinkPagamento] = useState("");
@@ -124,33 +124,18 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
       {passo === "proposta" && <>
         {jornada.proposta ? <details><summary>Dados para o orçamento</summary>{camposOrcamento}</details> : camposOrcamento}
         {estado.jornada?.diagnostico && <p>Escopo conferido: {estado.jornada.diagnostico.dados.servicos}</p>}
-        <details key={estado.propostas[0]?.id || "nova-proposta"}><summary>Preparar uma nova proposta em PDF</summary><p>A mensalidade é calculada pelo catálogo aprovado. Você pode ajustar honorários, serviços e taxas antes do aceite, informando a justificativa. Após o aceite, os valores contratados ficam preservados.</p>{[["aberturaCentavos", "Abertura"], ["servicoCentavos", "Outro serviço avulso"], ["mensalCentavos", "Mensalidade personalizada"], ["regularizacaoCentavos", "Regularização"], ["taxasCentavos", "Taxas públicas"]].map(([k, nome]) => <label key={k}>{nome} (R$)<input style={campoComercial} inputMode="decimal" value={ajustes[k] || ""} onChange={e => setAjustes({
-            ...ajustes,
-            [k]: e.target.value
-          })} /></label>)}<label>Fonte, escopo e justificativa dos ajustes<textarea style={campoComercial} value={justificativa} onChange={e => setJustificativa(e.target.value)} /></label><Button onClick={() => executar(async () => {
-          const valores = {};
-          for (const [k, v] of Object.entries(ajustes)) {
-            if (!v.trim()) continue;
-            if (!/^\d+(,\d{1,2})?$/.test(v)) throw new Error("Informe valores sem milhar, usando vírgula para centavos.");
-            valores[k] = Math.round(Number(v.replace(",", ".")) * 100);
-          }
-          await api.comercial(base + "/propostas", {
-            versao: estado.onboarding.versao,
-            ajustes: {
-              ...valores,
-              justificativa,
-              escopoAvulso: estado.jornada?.diagnostico?.dados.servicos || justificativa
-            }
-          });
-        })}>Gerar proposta para revisão</Button></details>
+        {jornada.proposta?.status !== "ACEITA" && (jornada.proposta?.snapshot?.pendencias?.length ? <>
+          <div role="alert"><strong>Esta proposta ainda precisa de correção</strong><ul>{jornada.proposta.snapshot.pendencias.map(p => <li key={p}>{p}</li>)}</ul><p>Corrija abaixo e gere uma nova versão para revisar e aprovar.</p></div>
+          <ValoresDaProposta key={jornada.proposta.id} onboarding={o} anterior={jornada.proposta} escopo={estado.jornada?.diagnostico?.dados.servicos} correcao onGerar={ajustes => acao("/propostas", { versao: o.versao, ajustes })} />
+        </> : <details key={estado.propostas[0]?.id || "nova-proposta"}><summary>Preparar uma nova proposta em PDF</summary><ValoresDaProposta onboarding={o} anterior={jornada.proposta} escopo={estado.jornada?.diagnostico?.dados.servicos} onGerar={ajustes => acao("/propostas", { versao: o.versao, ajustes })} /></details>)}
       {estado.propostas.filter(p => p.id === jornada.proposta?.id).map(p => <article key={p.id} style={{
         paddingBlock: 16,
         borderBottom: "1px solid var(--border)"
-      }}><strong>Proposta {p.versao} · {p.revogadaEm ? "Substituída" : p.status}</strong><OpcoesProposta proposta={p.snapshot} />{api.baixarPropostaComercial && !p.revogadaEm && <Button variant="secondary" onClick={() => executar(async () => { const url = URL.createObjectURL(await api.baixarPropostaComercial(onboardingId, p.id)); const a = document.createElement("a"); a.href = url; a.download = "proposta-altan.pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); })}>Baixar proposta em PDF</Button>}{p.snapshot.pendencias?.length > 0 && <ul>{p.snapshot.pendencias.map(x => <li key={x}>{x}</li>)}</ul>}{!p.revogadaEm && <div style={{
+      }}><strong>Proposta {p.versao} · {p.revogadaEm ? "Substituída" : p.status}</strong><OpcoesProposta proposta={p.snapshot} />{api.baixarPropostaComercial && !p.revogadaEm && <Button variant="secondary" onClick={() => executar(async () => { const url = URL.createObjectURL(await api.baixarPropostaComercial(onboardingId, p.id)); const a = document.createElement("a"); a.href = url; a.download = "proposta-altan.pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); })}>Baixar proposta em PDF</Button>}{!p.revogadaEm && <div style={{
           display: "flex",
           gap: 8,
           flexWrap: "wrap"
-        }}>{p.status === "APROVADA" && estado.atendimento && <Button disabled={!podeEnviar} onClick={() => acao(`/propostas/${p.id}/enviar`, { conversaId })}>Assumir e enviar PDF da proposta no WhatsApp</Button>}{p.status === "RASCUNHO" && <Button onClick={() => acao(`/propostas/${p.id}/aprovar`)}>Aprovar esta versão</Button>}{["APROVADA", "ENVIADA"].includes(p.status) && <Button variant="secondary" onClick={() => executar(async () => {
+        }}>{p.status === "APROVADA" && estado.atendimento && <Button disabled={!podeEnviar} onClick={() => acao(`/propostas/${p.id}/enviar`, { conversaId })}>Assumir e enviar PDF da proposta no WhatsApp</Button>}{p.status === "RASCUNHO" && <Button disabled={Boolean(p.snapshot.pendencias?.length)} onClick={() => acao(`/propostas/${p.id}/aprovar`)}>Aprovar esta versão</Button>}{["APROVADA", "ENVIADA"].includes(p.status) && <Button variant="secondary" onClick={() => executar(async () => {
             const r = await api.comercial(base + `/propostas/${p.id}/link`, {});
             setLink(`${window.location.origin}/proposta/publica#token=${encodeURIComponent(r.token)}`);
           })}>Gerar link da proposta</Button>}{p.status === "ACEITA" && <Button onClick={() => setPassoEscolhido("contrato")}>Preparar contrato da opção aceita</Button>}</div>}</article>)}
