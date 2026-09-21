@@ -2,7 +2,9 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { preencherTexto, catalogoValido } from "./CatalogoComercial.js";
 import { RECURSOS_INICIAIS } from "./MensagensPadrao.js";
-export const variaveisPermitidas = ["nome", "cnpj", "escritorio", "procuradorCnpj", "linkAutorizacao", "linkProposta", "servico", "honorarios", "condicoes", "contratante", "endereco", "email", "cpf"];
+import { CAMPOS_CONTRATO } from "../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
+import { validarPadroesContrato } from "./ContratoComercialCampos.js";
+export const variaveisPermitidas = CAMPOS_CONTRATO.map(c => c.chave);
 export function exigirGestor(user) {
   if (!user?.id || !["admin", "contador"].includes(String(user.role).toLowerCase())) throw new OnboardingError("forbidden", "Ação reservada ao contador.", 403);
 }
@@ -137,6 +139,7 @@ export function criarRecursosComerciais({
     if (["ORIENTACAO", "CONTRATO"].includes(r.tipo) && !r.texto.trim()) throw new OnboardingError("texto_ausente", "Preencha o texto antes de aprovar.");
     if (r.tipo === "CATALOGO" && !catalogoValido(r.dados)) throw new OnboardingError("catalogo_invalido", "Confira as faixas, valores e condições do catálogo.");
     if (r.tipo === "CONTRATO" && (/\[[^\]]+\]/.test(r.texto) || r.texto.includes("MINUTA PARA VALIDAÇÃO"))) throw new OnboardingError("modelo_pendente", "Revise a minuta de referência e substitua todos os marcadores antes da aprovação.");
+    if (r.tipo === "CONTRATO" && !validarPadroesContrato(r)) throw new OnboardingError("padroes_contrato_invalidos", "Confira os campos padrão do contrato. Honorários e escopo vêm da proposta aceita.");
     if (r.tipo === "INSTITUCIONAL" && (!/^\d{14}$/.test(r.dados.procuradorCnpj || "") || !String(r.dados.linkAutorizacao || "").startsWith("https://"))) throw new OnboardingError("institucional_incompleto", "Confirme CNPJ do procurador e link HTTPS das instruções.");
     if (r.aprovadoEm) return r;
     return db.recursoComercial.update({

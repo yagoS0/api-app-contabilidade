@@ -1,7 +1,7 @@
-// A TIRA DE AÇÕES RÁPIDAS, acima do compositor (F3, 06/09/2026).
-//
-// > Dono: *"podendo ter funções rápidas, como enviar guias, enviar algum documento"* — e, na
-// > escolha das ações da v1, *"virar anotação"* no lugar de recalcular.
+// Envios da ficha, acessíveis pelo menu "Guias e documentos" do compositor.
+// A empresa vem da ficha aberta; o destinatário e o canal vêm da conversa preparada.
+// Notas são criadas no menu da mensagem; o callback de anotação abaixo conserva
+// somente a compatibilidade com consumidores legados deste componente.
 //
 // ⚠ A REGRA de quem pode agora mora em `../lib/acoesRapidas.js`; aqui é a ligação. O motivo do
 // bloqueio sai em TEXTO na tela, nunca em `title` — `title` não aparece no teclado nem no toque.
@@ -42,12 +42,15 @@ export function AcoesRapidas({
   const [destinatarios, setDestinatarios] = useState([]);
   const [resultado, setResultado] = useState(null);
   const [reenvio, setReenvio] = useState(false);
-  const empresa = conversa.empresas?.find(e => e.id === companyId) || (conversa.portalClientId === companyId ? conversa.empresa : null);
+  const [incerto, setIncerto] = useState(false);
+  const empresa = conversa.empresas?.find(e => e.id === companyId) || (conversa.portalClientId === companyId ? conversa.empresa || { id: companyId } : null);
   const versao = useRef(0);
+  const envioEmCurso = useRef(null);
   useEffect(() => {
     versao.current++;
+    envioEmCurso.current = null;
     setAberta(null); setItens([]); setEscolhido(""); setDestinatarios([]);
-    setRecusa(null); setResultado(null); setReenvio(false); setCarregando(false); setOcupado(false);
+    setRecusa(null); setResultado(null); setReenvio(false); setIncerto(false); setCarregando(false); setOcupado(false);
     return () => { versao.current++; };
   }, [companyId, conversa.id]);
   const recebem = r => {
@@ -61,11 +64,13 @@ export function AcoesRapidas({
   }
 
   const acoes = acoesDisponiveis({
-    conversa,
+    conversa: { ...conversa, portalClientId: empresa ? companyId : null },
     janela,
     canalLigado,
     temDestinoDeAnotacao: typeof onVirarAnotacao === "function",
   });
+  const disponibilidadeAtual = useRef(acoes);
+  disponibilidadeAtual.current = acoes;
 
   async function abrir(acao) {
     const v = ++versao.current;
@@ -91,7 +96,7 @@ export function AcoesRapidas({
       } else if (acao === ACAO.ENVIAR_DOCUMENTO) {
         const r = await api.listCompanyDocuments(companyId);
         if (v !== versao.current) return;
-        setItens((Array.isArray(r?.documentos) ? r.documentos : []).map((d) => ({ id: d.id, rotulo: d.nome })));
+        setItens((Array.isArray(r?.documentos) ? r.documentos : []).map((d) => ({ id: d.id, rotulo: d.nome, mimeType: d.mimeType })));
       } else {
         // ⚠⚠ QUAL mensagem vira anotação é ESCOLHA do contador, nunca "a última" — anotação é juízo,
         // e adivinhar qual fala importa é o mesmo erro de adivinhar o que ela quer dizer. Só entram
@@ -112,8 +117,14 @@ export function AcoesRapidas({
   }
 
   async function confirmar(confirmouReenvio = false) {
-    if (!escolhido || ocupado) return;
+    if (!escolhido || ocupado || (incerto && aberta === ACAO.ENVIAR_DOCUMENTO) || envioEmCurso.current) return;
+    const permitida = disponibilidadeAtual.current.find(a => a.acao === aberta);
+    if (!permitida?.pode) { setRecusa(permitida?.frase || "Confira a empresa e o canal antes de enviar."); return; }
     const v = versao.current;
+    const operacao = Symbol("envio");
+    envioEmCurso.current = operacao;
+    let envioIniciado = false;
+    let envioConfirmado = false;
     setOcupado(true);
     setRecusa(null);
     try {
@@ -140,9 +151,27 @@ export function AcoesRapidas({
         if (v !== versao.current) return;
         setResultado(resumirWhatsapp(desfechoWhatsapp(r)));
       } else {
-        const r = await api.enviarDocumentoWhatsapp(conversa.id, escolhido);
+        // Documento autorizado pela ficha atual; o envio manual usa o canal da pessoa.
+        // Não altera a empresa escolhida no atendimento automático.
+        let r;
+        if (empresa && api.fetchCompanyDocumentBlob && api.enviarAnexoWhatsapp) {
+          const item = itens.find(i => i.id === escolhido);
+          if (!item) throw new Error("Escolha novamente o documento desta empresa.");
+          const blob = await api.fetchCompanyDocumentBlob(companyId, escolhido);
+          if (v !== versao.current) return;
+          const atual = disponibilidadeAtual.current.find(a => a.acao === ACAO.ENVIAR_DOCUMENTO);
+          if (!atual?.pode) throw new Error(atual?.frase || "Confira o canal antes de enviar o documento.");
+          const arquivo = new File([blob], item.rotulo, { type: blob.type || item.mimeType || "application/pdf" });
+          envioIniciado = true;
+          r = await api.enviarAnexoWhatsapp(conversa.id, arquivo, `${empresa.razao || "Empresa desta ficha"} · ${item.rotulo}`);
+        } else {
+          if (conversa.portalClientId !== companyId) throw new Error("Atualize o sistema para enviar documentos desta ficha ao contato.");
+          envioIniciado = true;
+          r = await api.enviarDocumentoWhatsapp(conversa.id, escolhido);
+        }
         if (v !== versao.current) return;
-        if (r?.ok === false) throw new Error(r.message || r.mensagem || "O envio não foi confirmado.");
+        if (r?.ok === false) throw Object.assign(new Error(r.message || r.mensagem || "O envio não foi confirmado."), { payload: r });
+        envioConfirmado = true;
         setResultado({ tom: "pendente", texto: "Documento aceito pela Meta; aguarde a confirmação de entrega no fio." });
       }
       if (v !== versao.current) return;
@@ -155,7 +184,9 @@ export function AcoesRapidas({
       if (v !== versao.current) return;
       setRecusa(err?.payload?.message || err?.payload?.mensagem || err?.message || "Não foi possível enviar.");
       setReenvio(err?.code === "GUIA_JA_ENVIADA");
+      if (envioIniciado && !envioConfirmado && err.payload?.podeTentarDeNovo !== true && (!err.status || err.status >= 500 || err.payload?.podeTentarDeNovo === false)) setIncerto(true);
     } finally {
+      if (envioEmCurso.current === operacao) envioEmCurso.current = null;
       if (v === versao.current) setOcupado(false);
     }
   }
@@ -186,7 +217,7 @@ export function AcoesRapidas({
       {aberta ? (
         <div data-testid="escolha-do-envio" className="wa-send-panel">
           <h3>{aberta === ACAO.ENVIAR_GUIA ? "Enviar guia pelo WhatsApp" : aberta === ACAO.ENVIAR_DOCUMENTO ? "Enviar documento pelo WhatsApp" : "Preparar anotação"}</h3>
-          {aberta !== ACAO.VIRAR_ANOTACAO && <dl className="wa-send-summary"><dt>Empresa</dt><dd>{empresa?.razao || "Empresa deste cadastro"}{empresa?.cnpj && <> · <CnpjDaConversa cnpj={empresa.cnpj} empresa={empresa.razao} /></>}</dd><dt>Canal</dt><dd>WhatsApp</dd></dl>}
+          {aberta !== ACAO.VIRAR_ANOTACAO && <dl className="wa-send-summary"><dt>Empresa</dt><dd>{empresa?.razao || "Empresa deste cadastro"}{empresa?.cnpj && <> · <CnpjDaConversa cnpj={empresa.cnpj} empresa={empresa.razao} /></>}</dd><dt>Canal</dt><dd>{aberta === ACAO.ENVIAR_DOCUMENTO ? `WhatsApp ${conversa.canalNome || ""}` : "WhatsApp do escritório"}</dd>{aberta === ACAO.ENVIAR_DOCUMENTO && <><dt>Destinatário</dt><dd>{conversa.contato?.nome || conversa.nomePerfilProvedor || conversa.telefoneMascarado}</dd></>}</dl>}
           {carregando ? <p className="wa-list-note">Carregando documentos e destinatários…</p> : null}
           {!carregando && !itens.length ? (
             <p data-testid="escolha-vazia" className="wa-list-note">
@@ -218,7 +249,7 @@ export function AcoesRapidas({
                 {itens.map((i) => <option key={i.id} value={i.id}>{i.rotulo}</option>)}
               </select></label>
               <div className="wa-send-buttons">
-              <Button variant="primary" disabled={!escolhido || ocupado || reenvio || (aberta === ACAO.ENVIAR_GUIA && !destinatarios.length)} onClick={() => confirmar(false)}>
+              <Button variant="primary" disabled={!escolhido || ocupado || reenvio || (incerto && aberta === ACAO.ENVIAR_DOCUMENTO) || (aberta === ACAO.ENVIAR_GUIA && !destinatarios.length)} onClick={() => confirmar(false)}>
                 {ocupado ? "Enviando…" : aberta === ACAO.VIRAR_ANOTACAO ? "Levar para a anotação" : "Enviar"}
               </Button>
               <Button variant="secondary" disabled={ocupado} onClick={cancelar}>Cancelar</Button></div>
@@ -229,6 +260,7 @@ export function AcoesRapidas({
 
       {resultado ? <p role={resultado.tom === "erro" ? "alert" : "status"} style={{ color: resultado.tom === "erro" ? "var(--state-danger)" : "var(--text-muted)" }}>{resultado.texto}</p> : null}
       {aberta === ACAO.ENVIAR_GUIA && reenvio && escolhido ? <Button disabled={ocupado} onClick={() => confirmar(true)}>Confirmar reenvio aos destinatários acima</Button> : null}
+      {incerto && <div><p role="status">Envio sem confirmação. Confira o histórico antes de preparar outro envio.</p><Button variant="secondary" disabled={ocupado} onClick={() => { cancelar(); setIncerto(false); }}>Conferi o histórico: preparar outro envio</Button></div>}
       {recusa ? <p role="alert" className="wa-send-error">{recusa}</p> : null}
     </div>
   );

@@ -54,3 +54,62 @@ test("orçamento personalizado acima do piso deixa de ser pendência, abaixo con
   const calc = mensalCentavos => calcularOpcoes({ ficha: f, catalogo: CATALOGO_SINTETICO, ajustes: { mensalCentavos, justificativa: "Escopo especial conferido" } });
   expect(calc(90000).pendencias).toEqual([]); expect(calc(100).pendencias).toContain("Mensalidade abaixo do piso personalizado.");
 });
+
+const APRESENTACAO = { incluidos: 'Contábil, fiscal, folha e obrigações.', gestao: 'Reunião mensal e análise dos resultados.', beneficios: 'Benefício sintético do plano.', limites: 'Períodos anteriores exigem orçamento próprio.' };
+const catalogoApresentado = { ...CATALOGO_SINTETICO, apresentacao: APRESENTACAO };
+function propostaCompleta(dados = {}) {
+  const f = { ...ficha, dados: { ...ficha.dados, notasRecebidasMes: 20, ...dados } };
+  return { ...p, snapshot: { ...p.snapshot, ...calcularOpcoes({ ficha: f, catalogo: catalogoApresentado, ajustes: { servicoCentavos: 6789, justificativa: 'Orçamento sintético', escopoAvulso: 'Entrega avulsa conferida.' } }), perfil: { atividade: 'Comércio sintético', regime: 'SIMPLES', funcionarios: f.dados.qtdFuncionarios, notasRecebidasMes: f.dados.notasRecebidasMes, consultoriaMensal: f.dados.consultoriaMensal === true || f.dados.qtdFuncionarios >= catalogoApresentado.consultoriaIncluidaAPartir } } };
+}
+test('apresentação congela entregas, inclui blocos contratados e não revela dados internos', () => {
+  const proposta = propostaCompleta({ consultoriaMensal: true });
+  expect(proposta.snapshot.limitesPlano).toMatchObject({ funcionarios: 2, documentosEntradaMes: 26, blocoAdicionalQuantidade: 7, blocoAdicionalCentavos: 173 });
+  expect(proposta.snapshot.apresentacao.gestao).toBe(APRESENTACAO.gestao);
+  proposta.snapshot.apresentacao.fonte = 'SEGREDO'; proposta.snapshot.limitesPlano.piso = 'SEGREDO';
+  const publico = propostaParaCliente(proposta);
+  expect(JSON.stringify(publico)).not.toContain('SEGREDO');
+  expect(publico.apresentacao).toEqual(APRESENTACAO);
+});
+test('PDF completo tem sete seções e duas páginas, sem páginas extras de rodapé', async () => {
+  const pdf = await gerarPropostaPdf(propostaParaCliente(propostaCompleta({ consultoriaMensal: true })));
+  const lido = await pdfParse(new Uint8Array(pdf), { version: 'v2.0.550' });
+  for (const titulo of ['Sobre a empresa', 'O que está incluído', 'Gestão e acompanhamento', 'Investimento', 'Benefícios incluídos', 'Limites e adicionais', 'Condições e aceite']) expect(lido.text).toContain(titulo);
+  expect(lido.numpages).toBe(2);
+  expect(lido.text).toContain(APRESENTACAO.gestao); expect(lido.text).toContain(APRESENTACAO.beneficios);
+  expect(lido.text).toContain('até 26 documentos');
+  expect(lido.text).toContain('1 / 2'); expect(lido.text).toContain('2 / 2');
+});
+test('mensal sem consultoria não promete reunião incluída; avulso não recebe benefícios mensais', async () => {
+  const mensal = propostaCompleta({ consultoriaMensal: false });
+  expect(mensal.snapshot.apresentacao.gestao).toBe('');
+  const mensalLido = await pdfParse(new Uint8Array(await gerarPropostaPdf(propostaParaCliente(mensal))), { version: 'v2.0.550' });
+  expect(mensalLido.text).not.toContain(APRESENTACAO.gestao);
+  const avulso = propostaCompleta({ modalidadeServico: 'AVULSO', consultoriaMensal: true });
+  expect(avulso.snapshot.apresentacao).toBeNull(); expect(avulso.snapshot.limitesPlano).toBeNull();
+  const lido = await pdfParse(new Uint8Array(await gerarPropostaPdf(propostaParaCliente(avulso))), { version: 'v2.0.550' });
+  expect(lido.text).toContain('Entrega avulsa conferida.'); expect(lido.text).toContain('67,89');
+  expect(lido.text).not.toContain(APRESENTACAO.beneficios); expect(lido.text).not.toContain(APRESENTACAO.gestao);
+});
+test('comparação mantém preços e identifica a qual opção pertencem benefícios', async () => {
+  const publico = propostaParaCliente(propostaCompleta({ modalidadeServico: 'COMPARAR', consultoriaMensal: true }));
+  expect(publico.opcoes).toHaveLength(2);
+  const lido = await pdfParse(new Uint8Array(await gerarPropostaPdf(publico)), { version: 'v2.0.550' });
+  expect(lido.text).toContain('Serviço avulso'); expect(lido.text).toContain('Contabilidade mensal');
+  expect(lido.text).toContain('somente à opção de contabilidade mensal');
+  expect(lido.text).toContain('67,89'); expect(lido.text).toContain('164,04');
+});
+test('propostas antigas continuam sem benefícios ou limites acrescentados retroativamente', () => {
+  const antigo = propostaParaCliente({ ...p, snapshot: { ...p.snapshot, apresentacao: undefined, limitesPlano: undefined } });
+  expect(antigo.apresentacao).toBeNull(); expect(antigo.limitesPlano).toBeNull();
+});
+
+test('apresentação não substitui o escopo mensal específico nem exclui gestão de proposta antiga', async () => {
+  const novo = propostaParaCliente(propostaCompleta({ consultoriaMensal: true }));
+  novo.opcoes[0].escopo = 'Entrega específica negociada para este cliente.';
+  const n = await pdfParse(new Uint8Array(await gerarPropostaPdf(novo)), { version: 'v2.0.550' });
+  expect(n.text).toContain(novo.opcoes[0].escopo);
+  const legado = { ...propostaParaCliente(p), perfil: null, apresentacao: null, opcoes: [{ ...p.snapshot.opcoes[0], escopo: 'Reunião mensal incluída conforme negociação anterior.' }] };
+  const l = await pdfParse(new Uint8Array(await gerarPropostaPdf(legado)), { version: 'v2.0.550' });
+  expect(l.text).toContain(legado.opcoes[0].escopo);
+  expect(l.text).not.toContain('não estão incluídas'); expect(l.text).not.toContain('contratada separadamente');
+});

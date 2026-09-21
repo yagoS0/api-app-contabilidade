@@ -1,5 +1,11 @@
 # CLAUDE.md — Web (apps/web)
 
+## Proposta, contrato e chat na ficha — 21/09/2026
+
+PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.
+
+Chat da empresa compartilha canal/atendimento da central, preserva rascunho por pessoa/canal e isola troca de ficha. Documento sai da empresa da ficha para o canal preparado; autorização e janela permanecem no servidor. Resultado tardio não reabre outra pessoa. Anotações partem da mensagem; expandir realmente oculta a coluna de notas. Grades dos botões/etapas agora adaptam a quantidade de colunas à largura disponível, evitando quebrar palavras em telas estreitas; substitui a regra anterior de 3/5 colunas fixas. Ver `docs/chat-empresa-20260921.md`. Testes sem Anthropic, envio real ou consulta paga.
+
 ## Proposta com pendência de justificativa — 21/09/2026
 
 `ValoresDaProposta` mostra somente preços aplicáveis à origem/modalidade e exige justificativa antes de enviar valores personalizados. Proposta já salva com pendências abre a correção na própria etapa, recuperando preços do snapshot (inclusive zero), sem inventar justificativa ou aprovar automaticamente. Gerar cria nova versão; a aprovação continua explícita e bloqueada enquanto houver pendências. Texto de justificativa é interno, não vai ao PDF. Conservar preços aceitos e dados do rascunho ao trocar abas. Ver `docs/jornada-lead-passo-a-passo.md`.

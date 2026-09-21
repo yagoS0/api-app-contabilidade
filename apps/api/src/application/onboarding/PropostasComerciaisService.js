@@ -8,6 +8,7 @@ import { encerrado } from "./LeadService.js";
 import { encryptSecret, decryptSecret } from "../../utils/crypto.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
 import { propostaParaCliente } from "./PropostaComercialPdf.js";
+import { prepararCamposContrato } from "./ContratoComercialCampos.js";
 import { exigirPropostaDefinitiva, exigirContratoAvulsoConcluivel } from "./PoliticaJornadaComercial.js";
 const hash = v => crypto.createHash("sha256").update(v).digest("hex");
 const erro = (c, m, s = 409) => new OnboardingError(c, m, s);
@@ -18,10 +19,6 @@ const evento = (tx, onboardingId, tipo, atorId, dados = {}) => tx.onboardingEven
     atorId,
     dados
   }
-});
-const money = c => (c / 100).toLocaleString("pt-BR", {
-  style: "currency",
-  currency: "BRL"
 });
 async function conferirDiagnosticoDaProposta(db, proposta) {
   if (!proposta.snapshot?.diagnosticoId || proposta.status === "ACEITA") return;
@@ -356,15 +353,10 @@ export function criarPropostasComerciais({
     });
     const opcao = p.snapshot.opcoes.find(o => o.chave === p.opcaoAceita);
     if (modelo?.tipo !== "CONTRATO" || !modelo.aprovadoEm || modelo.dados.recorrente !== opcao.recorrente || !r.cnpj && modelo.dados.permitePreCnpj !== true) throw erro("modelo_incompativel", "Selecione um modelo aprovado para esta modalidade e identificação do contratante.");
-    const dados = {
-      ...(body.variaveis || {}),
-      nome: r.responsavelNome || body.variaveis?.nome,
-      cnpj: r.cnpj,
-      email: r.responsavelEmail || body.variaveis?.email,
-      servico: opcao.escopo,
-      honorarios: `${money(opcao.unicoCentavos)} de serviço; ${money(opcao.mensalCentavos)} por mês`,
-      condicoes: p.snapshot.condicoes
-    };
+    const institucional = await db.recursoComercial.findFirst({
+      where: { tipo: "INSTITUCIONAL", chave: "escritorio", aprovadoEm: { not: null } }, orderBy: { versao: "desc" }
+    });
+    const dados = prepararCamposContrato({ onboarding: r, proposta: p, modelo, institucional: institucional || {}, variaveis: body.variaveis });
     let texto;
     try {
       texto = preencherTexto(modelo.texto, dados);

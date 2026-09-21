@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Proposta, contrato e chat na ficha — 21/09/2026
+
+PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.
+
+Chat da empresa compartilha canal/atendimento da central, preserva rascunho por pessoa/canal e isola troca de ficha. Documento sai da empresa da ficha para o canal preparado; autorização e janela permanecem no servidor. Resultado tardio não reabre outra pessoa. Anotações partem da mensagem; expandir realmente oculta a coluna de notas. Grades dos botões/etapas agora adaptam a quantidade de colunas à largura disponível, evitando quebrar palavras em telas estreitas; substitui a regra anterior de 3/5 colunas fixas. Ver `docs/chat-empresa-20260921.md`. Testes sem Anthropic, envio real ou consulta paga.
+
 ## Revisão do atendimento e consultas — 21/09/2026
 
 Decisão posterior do dono: contatos com nome e Lead/Cliente, lista ajustável/recolhível por Ctrl+B e botão, recebidas à esquerda e enviadas à direita com contraste. Notas são criadas a partir da mensagem. Atendimento tem Ficha/Recomeçar/Nova solicitação, etapas visíveis, ações abertas em abas e dados capturados abaixo. Isso substitui a orientação anterior de recolher todas as ações. Biblioteca continua em nova aba e oferece Usar no chat sem enviar automaticamente. Leads são atendidos no comercial; clientes mantêm escolha explícita do canal. Contagem de não lidas é global à carteira autorizada.

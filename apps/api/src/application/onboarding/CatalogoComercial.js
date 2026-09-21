@@ -2,6 +2,7 @@
 const centavosValidos = v => Number.isSafeInteger(v) && v >= 0;
 export function catalogoValido(c) {
   if (!c || c.moeda !== "BRL" || !Array.isArray(c.faixas) || !c.faixas.length || typeof c.condicoes !== "string" || !c.condicoes.trim()) return false;
+  if (c.apresentacao != null && (typeof c.apresentacao !== "object" || Array.isArray(c.apresentacao) || ["incluidos", "gestao", "beneficios", "limites"].some(k => c.apresentacao[k] != null && (typeof c.apresentacao[k] !== "string" || c.apresentacao[k].length > 6000)))) return false;
   const regimes = ["SIMPLES", "LUCRO_PRESUMIDO"];
   const inteiro = v => Number.isSafeInteger(v) && v >= 0;
   if (!c.faixas.every((f, i) => inteiro(f.ate) && inteiro(f.recebidas) && regimes.every(r => centavosValidos(f[r])) && (!i || f.ate > c.faixas[i - 1].ate))) return false;
@@ -71,12 +72,31 @@ export function calcularOpcoes({
   return {
     moeda: "BRL",
     opcoes,
+    ...apresentacaoDaProposta({ catalogo, funcionarios, recebidas, consultoria: d.consultoriaMensal === true || funcionarios >= catalogo.consultoriaIncluidaAPartir, recorrente: opcoes.some(o => o.recorrente) }),
     pendencias,
     regularizacaoCentavos: ajustes.regularizacaoCentavos ?? null,
     taxasCentavos: ajustes.taxasCentavos ?? null,
     taxasConfirmadas: ajustes.taxasConfirmadas === true,
     condicoes: catalogo.condicoes,
     justificativa: ajustes.justificativa || null
+  };
+}
+
+// Congela o conteúdo comercial aprovado junto ao preço. Mudanças no catálogo
+// nunca acrescentam benefícios retroativamente a uma proposta já emitida.
+function apresentacaoDaProposta({ catalogo, funcionarios, recebidas, consultoria, recorrente }) {
+  const a = catalogo.apresentacao || {};
+  const faixa = recorrente && Number.isInteger(funcionarios) && funcionarios >= 0 ? catalogo.faixas.find(f => funcionarios <= f.ate) : null;
+  const blocos = faixa && Number.isInteger(recebidas) && recebidas >= 0 ? Math.ceil(Math.max(0, recebidas - faixa.recebidas) / catalogo.blocoRecebidas.quantidade) : null;
+  return {
+    apresentacao: recorrente ? {
+      incluidos: String(a.incluidos || ""), gestao: consultoria ? String(a.gestao || "") : "",
+      beneficios: String(a.beneficios || ""), limites: String(a.limites || "")
+    } : null,
+    limitesPlano: faixa && blocos !== null ? {
+      funcionarios: faixa.ate, documentosEntradaMes: faixa.recebidas + blocos * catalogo.blocoRecebidas.quantidade,
+      blocoAdicionalQuantidade: catalogo.blocoRecebidas.quantidade, blocoAdicionalCentavos: catalogo.blocoRecebidas.centavos
+    } : null
   };
 }
 export function preencherTexto(texto, variaveis) {

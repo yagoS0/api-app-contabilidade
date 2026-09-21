@@ -186,7 +186,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-case-toolbar { display: grid; gap: 8px; margin: 0 0 16px; }
 .wa-case-toolbar > .wa-commercial-process { margin: 0; font-size: .8125rem; }
 .wa-case-toolbar > .wa-commercial-process[open] { flex-basis: 100%; }
-.wa-case-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wa-case-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr)); gap: 8px; }
 .wa-case-actions > .btn { display: inline-flex; margin: 0; min-width: 0; min-height: 42px; padding: 9px 12px; font-size: .875rem; line-height: 1.4; text-align: center; white-space: normal; overflow-wrap: anywhere; text-decoration: none; }
 .wa-commercial-intake > .wa-case-reset { gap: 12px; padding: 16px; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .wa-case-reset legend { padding-inline: 6px; font-size: .875rem; font-weight: 600; }
@@ -230,14 +230,14 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-quick-drawer .btn { white-space: normal; min-height: 36px; }
 
 /* O chat dentro da empresa reutiliza o mesmo histórico e comportamento. */
-.wa-company-chat { height: max(580px, calc(100dvh - 190px)); min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.wa-company-chat { position: relative; height: max(580px, calc(100dvh - 190px)); min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .wa-company-chat > .wa-section-heading { margin: 0; padding: 14px 18px; background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
 .wa-company-chat .wa-thread-header { flex-wrap: wrap; }
 .anotacoes-com-chat .anotacoes-com-chat__chat { max-height: none; overflow: visible; }
 .wa-notes-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .anotacoes-com-chat[data-notas="ocultas"] { grid-template-columns: minmax(0, 1fr); }
 .wa-thread .wa-mobile-back, .wa-empty .wa-mobile-back { display: none; }
-@media (min-width: 1001px) { .anotacoes-com-chat:has(.wa-company-chat) { grid-template-columns: minmax(0, 1fr) minmax(480px, 1.15fr); } }
+@media (min-width: 1001px) { .anotacoes-com-chat[data-notas="visiveis"]:has(.wa-company-chat) { grid-template-columns: minmax(0, 1fr) minmax(480px, 1.15fr); } }
 @media (max-width: 1100px) {
   .wa-thread-header { flex-wrap: wrap; }
   .wa-thread-actions { margin-left: auto; }
@@ -335,3 +335,9 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-previous-requests { min-width: 0; font-size: .875rem; }
 .wa-previous-requests > summary, .wa-contact-data > summary { cursor: pointer; padding-block: 8px; }
 .wa-contact-data { margin-top: 20px; border-top: 1px solid var(--border); }
+
+.wa-company-chat > .wa-section-heading { gap: 10px; flex-shrink: 0; }
+.wa-company-chat > .wa-section-heading select { max-width: 100%; min-width: 0; }
+.wa-company-chat > .wa-section-heading label { min-width: 0; max-width: 100%; }
+.wa-compose-channel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: .8125rem; color: var(--text-muted); }
+.wa-compose-channel select { max-width: 100%; padding: 5px 7px; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: 5px; font: inherit; }

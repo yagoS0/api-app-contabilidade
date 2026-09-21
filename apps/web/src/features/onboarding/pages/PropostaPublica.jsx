@@ -29,7 +29,7 @@ export function PropostaPublica({
     maxWidth: 850,
     margin: "40px auto",
     padding: 24
-  }}><h1>Proposta de serviços — ALTAN</h1>{api.mode === "mock" && <p>Demonstração local. Nenhum serviço será contratado.</p>}{erro && <p role="alert">{erro}</p>}{proposta ? <><p>Para {proposta.destinatario} · versão {proposta.versao} · válida até {new Date(proposta.expiraEm).toLocaleDateString("pt-BR")}</p><OpcoesProposta proposta={proposta} />{api.baixarPropostaPublica && <Button variant="secondary" disabled={ocupado} onClick={async () => {
+  }}><h1>Proposta de serviços — ALTAN</h1>{api.mode === "mock" && <p>Demonstração local. Nenhum serviço será contratado.</p>}{erro && <p role="alert">{erro}</p>}{proposta ? <><p>Para {proposta.destinatario} · versão {proposta.versao} · válida até {new Date(proposta.expiraEm).toLocaleDateString("pt-BR")}</p><OpcoesProposta proposta={proposta} detalhada />{api.baixarPropostaPublica && <Button variant="secondary" disabled={ocupado} onClick={async () => {
       setOcupado(true); setErro("");
       try { const url = URL.createObjectURL(await api.baixarPropostaPublica(token)); const a = document.createElement("a"); a.href = url; a.download = "proposta-altan.pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); }
       catch (e) { setErro(e.message); } finally { setOcupado(false); }

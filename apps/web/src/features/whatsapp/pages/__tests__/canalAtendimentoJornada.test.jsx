@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
+import { ChatDaEmpresa } from "../../components/ChatDaEmpresa";
 
 const clonar = valor => JSON.parse(JSON.stringify(valor));
 function cenario() {
@@ -83,4 +84,24 @@ test("janela fechada permite baixar relatório e registrar apresentação real p
     expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/apresentacao", { versao: 2, diagnosticoId: "d", meio: "Reunião em 21/09/2026", evidencia: "Relatório e escopo apresentados na reunião de teste." });
     expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/jornada/devolutiva"))).toBe(false);
   } finally { baixar.mockRestore(); URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
+});
+
+test("chat da ficha abre o mesmo atendimento e envia a devolutiva pelo canal preparado", async () => {
+  const { api, conversa } = cenario();
+  conversa.relacionamento = { tipo: "CLIENTE" };
+  conversa.portalClientId = "empresa-da-ficha";
+  conversa.empresa = { id: "empresa-da-ficha", razao: "Empresa sintética" };
+  render(<ChatDaEmpresa api={api} companyId="empresa-da-ficha" usuarioId="contador-sintetico" />);
+  await screen.findByLabelText("Responder ao cliente");
+  fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
+  await screen.findByRole("navigation", { name: "Passo a passo do lead" });
+  expect(screen.getByRole("button", { name: "5. devolutiva" })).toHaveAttribute("aria-current", "step");
+  expect(screen.getByLabelText("Canal do atendimento")).toHaveValue("comercial");
+  fireEvent.change(screen.getByLabelText("Canal do atendimento"), { target: { value: "principal" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeDisabled());
+  fireEvent.click(screen.getByRole("button", { name: "Usar Comercial — conversa aberta" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" }));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d", conversaId: "recente" }));
+  expect(await screen.findByText("Preparar uma nova proposta em PDF")).toBeVisible();
 });

@@ -34,6 +34,7 @@ export const MOTIVO = Object.freeze({
   FORA_DA_JANELA: "FORA_DA_JANELA",
   JANELA_DESCONHECIDA: "JANELA_DESCONHECIDA",
   CANAL_DESLIGADO: "CANAL_DESLIGADO",
+  RESPOSTA_INDISPONIVEL: "RESPOSTA_INDISPONIVEL",
   SEM_MENSAGEM: "SEM_MENSAGEM",
 });
 
@@ -43,6 +44,7 @@ export const FRASE_MOTIVO = Object.freeze({
   [MOTIVO.FORA_DA_JANELA]: "Fora da janela de 24h: a Meta só aceita modelo aprovado agora, e documento não é modelo.",
   [MOTIVO.JANELA_DESCONHECIDA]: "Não dá para afirmar que a janela de 24h está aberta — esta tela não recebeu o estado dela.",
   [MOTIVO.CANAL_DESLIGADO]: "O canal de WhatsApp está desligado no servidor.",
+  [MOTIVO.RESPOSTA_INDISPONIVEL]: "Este canal está indisponível para responder. Selecione um canal ativo e confira o destinatário.",
   [MOTIVO.SEM_MENSAGEM]: "Escolha a mensagem que vira anotação.",
 });
 
@@ -78,6 +80,7 @@ export function acoesDisponiveis({ conversa, janela = null, canalLigado = null, 
     canalDesligado ? MOTIVO.CANAL_DESLIGADO : null,
     janelaAberta === false ? MOTIVO.FORA_DA_JANELA : null,
     janelaAberta === null ? MOTIVO.JANELA_DESCONHECIDA : null,
+    conversa?.podeResponder === false ? MOTIVO.RESPOSTA_INDISPONIVEL : null,
   ]));
 
   // ANOTAÇÃO — não fala com a Meta. Sem destino ela NÃO É OFERECIDA (não é "bloqueada").

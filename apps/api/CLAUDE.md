@@ -1,5 +1,11 @@
 # CLAUDE.md — API (apps/api)
 
+## Proposta, contrato e chat na ficha — 21/09/2026
+
+PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.
+
+Chat da empresa compartilha canal/atendimento da central, preserva rascunho por pessoa/canal e isola troca de ficha. Documento sai da empresa da ficha para o canal preparado; autorização e janela permanecem no servidor. Resultado tardio não reabre outra pessoa. Anotações partem da mensagem; expandir realmente oculta a coluna de notas. Grades dos botões/etapas agora adaptam a quantidade de colunas à largura disponível, evitando quebrar palavras em telas estreitas; substitui a regra anterior de 3/5 colunas fixas. Ver `docs/chat-empresa-20260921.md`. Testes sem Anthropic, envio real ou consulta paga.
+
 ## Destino comercial, janela e SITFIS — revisão de 21/09/2026
 
 `CanalEnvioComercialService` resolve somente conversas existentes do mesmo número/vigência e contexto. `conversaId:null` recusa; omissão em devolutiva/proposta de lead procura um único comercial ativo e revalida antes do transporte. Contato ativo caracteriza cliente e preserva seu canal explícito válido; não concede acesso fiscal. Orientação com caso usa a mesma regra e registra instrução pelo ID validado do caso. Anexo genérico conserva destino explícito e as guardas existentes.

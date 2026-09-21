@@ -15,20 +15,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { FioDaConversa, NomeDaPessoa, campo } from "./FioDaConversa";
 import { AcoesRapidas } from "./AcoesRapidas";
-import { WhatsappIcon } from "./ConversaVisual";
+import { WhatsappIcon, DetalhesConversa } from "./ConversaVisual";
 import { identidadeDaConversa, ordenarConversas } from "../lib/conversasTela";
-import { ESCOLHA_DO_FIO, FRASE_SEM_FIO, escolhaDoFio, fioAberto } from "../lib/fiosDaEmpresa";
+import { ESCOLHA_DO_FIO, FRASE_SEM_FIO, escolhaDoFio } from "../lib/fiosDaEmpresa";
 
-export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao = null, canalLigado = null }) {
+import { Button } from "../../../components/ui/Button";
+import { chaveDoInterlocutor, podeAtendimentoComercial } from "../lib/identidadeAtendimento";
+import { AtualizacaoAtendimento } from "./AtendimentoComercial";
+import { FormOnboarding } from "./FormOnboarding";
+import { useCanalAtendimento, leituraDoCaso } from "../hooks/useCanalAtendimento";
+import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
+
+export function ChatDaEmpresa(props) {
+  return <ChatNoCadastro key={props.companyId} {...props} />;
+}
+function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = null, canalLigado = null, usuarioId = null }) {
   const hook = useConversasWhatsapp({ api, feedback, empresa: companyId });
   const [escolhido, setEscolhido] = useState(null);
+  const [detalhes, setDetalhes] = useState(false);
+  const { registrarCanal, pedidoCanal, conversaComercial, canalDeEnvio, atualizacaoComercial } = useCanalAtendimento(hook);
 
   const fios = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const escolha = escolhaDoFio(fios);
-  const fio = fioAberto(fios, escolhido);
+  const fio = fios.find(c => chaveDoInterlocutor(c) === escolhido) || fios[0];
 
   // ⚠ O fio ABERTO (com as mensagens) é OUTRA consulta: a listagem traz só o resumo.
-  const aberto = hook.aberta?.conversa?.id === fio?.id ? hook.aberta : null;
+  const aberto = fio && chaveDoInterlocutor(hook.aberta?.conversa) === chaveDoInterlocutor(fio) ? hook.aberta : null;
 
   // ⚠⚠ Aqui o fio abre SOZINHO — é uma aba de conversa, não uma caixa de entrada: pedir um clique
   // para ver o que já está na tela é atrito. ⚠ A tentativa é registrada num ref: se `abrir` falhar,
@@ -38,7 +50,7 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
   useEffect(() => { setEscolhido(null); tentado.current = null; }, [api, companyId]);
   useEffect(() => {
     // A lista pode mudar de ordem sem trocar o destinatário ou descartar o rascunho.
-    if (fio?.id && escolhido !== fio.id) setEscolhido(fio.id);
+    if (fio?.id && escolhido !== chaveDoInterlocutor(fio)) setEscolhido(chaveDoInterlocutor(fio));
     if (!fio?.id || aberto || tentado.current === fio.id) return;
     tentado.current = fio.id;
     abrir(fio.id);
@@ -48,6 +60,7 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
     <section data-testid="chat-da-empresa" className="wa-company-chat">
       <div className="wa-section-heading" style={{ flexWrap: "wrap" }}>
         <h2 className="wa-inline"><WhatsappIcon size={19} />WhatsApp</h2>
+        <Button variant="secondary" size="sm" disabled={hook.carregando || hook.carregandoFio || hook.ocupado} onClick={() => hook.atualizarConversa(aberto?.conversa.id)}>Atualizar conversa</Button>
         <select aria-label="Visualização das conversas da empresa" style={{ ...campo, width: "auto" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setEscolhido(null); tentado.current = null; hook.setFiltro(e.target.value); }}>
           <option value="todas">Conversas atuais</option><option value="historico">Histórico anterior</option><option value="lixeira">Lixeira</option>
         </select>
@@ -58,12 +71,12 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
               aria-label="Contato da conversa"
               data-testid="seletor-de-contato"
               style={{ ...campo, width: "auto" }}
-              value={fio?.id || ""}
-              onChange={(e) => { tentado.current = e.target.value; setEscolhido(e.target.value); hook.abrir(e.target.value); }}
+              value={chaveDoInterlocutor(fio) || ""}
+              onChange={(e) => { const contato = fios.find(c => chaveDoInterlocutor(c) === e.target.value); if (!contato) return; tentado.current = contato.id; setEscolhido(e.target.value); setDetalhes(false); hook.abrir(contato.id); }}
             >
               {escolha.fios.map((c) => {
                 const i = identidadeDaConversa(c);
-                return <option key={c.id} value={c.id}>{i.papel ? `${i.pessoa} · ${i.papel}` : i.pessoa}</option>;
+                return <option key={chaveDoInterlocutor(c)} value={chaveDoInterlocutor(c)}>{i.pessoa}</option>;
               })}
             </select>
           </label>
@@ -101,27 +114,26 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
         <p>Não foi possível atualizar a conversa: {hook.erroFio}</p>
         {fio ? <button type="button" disabled={hook.carregandoFio} onClick={() => hook.abrir(fio.id)}>Tentar abrir novamente</button> : null}
       </div> : null}
-      {aberto ? (
+      {aberto ? <>
         <FioDaConversa
-          key={aberto.conversa.id}
-          fio={aberto}
-          hook={hook}
-          onVirarAnotacao={onVirarAnotacao}
-          temMais={hook.temMaisNoFio}
-          slotAcoes={(
-            <AcoesRapidas
-              conversa={aberto.conversa}
-              mensagens={aberto.mensagens}
-              janela={aberto.conversa?.janela || null}
-              canalLigado={canalLigado}
-              api={api}
-              companyId={companyId}
-              onVirarAnotacao={onVirarAnotacao}
-              onEnviado={() => hook.abrir(aberto.conversa.id)}
-            />
-          )}
+          key={chaveDoInterlocutor(aberto.conversa)} fio={aberto} hook={hook} temMais={hook.temMaisNoFio}
+          usuarioId={usuarioId} onVirarAnotacao={onVirarAnotacao} hrefDaEmpresa={id => companyTabPath(id, "anotacoes")}
+          onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes}
+          onCanalSelecionado={registrarCanal} pedidoCanal={pedidoCanal} atualizacaoComercialExterna={atualizacaoComercial}
+          slotAcoes={conversa => <AcoesRapidas conversa={conversa} mensagens={aberto.mensagens} janela={conversa.janela}
+            canalLigado={canalLigado} api={api} companyId={companyId}
+            onEnviado={() => hook.atualizarConversa(aberto.conversa.id)} />}
         />
-      ) : null}
+        <AtualizacaoAtendimento.Provider value={atualizacaoComercial}>
+          <DetalhesConversa key={chaveDoInterlocutor(aberto.conversa)} aberto={detalhes} conversa={aberto.conversa} api={api}
+            onConferido={() => hook.atualizarConversa(aberto.conversa.id)} onFechar={() => setDetalhes(false)}
+            atendimento={api.comercial && podeAtendimentoComercial(aberto.conversa) && hook.filtro === "todas" ?
+              <section className="wa-commercial-section"><FormOnboarding api={api} conversa={conversaComercial}
+                mensagens={aberto.mensagens} leitura={leituraDoCaso(aberto.conversa)} canalDeEnvio={canalDeEnvio}
+                onCriado={() => hook.atualizarConversa(aberto.conversa.id)} /></section> : null}
+          />
+        </AtualizacaoAtendimento.Provider>
+      </> : null}
     </section>
   );
 }

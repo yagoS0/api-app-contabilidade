@@ -400,6 +400,7 @@ function AppInterno({ session, feedback }) {
   if (session.page === "companyDetail") {
     return (
       <CompanyDetailPage
+        usuarioId={session.user?.id}
         company={{
           selectedCompany: companiesWorkspace.selectedCompany,
           onBack: () => session.goBack(),

@@ -146,10 +146,10 @@ function CompanyDocumentsTabWrapper({ companyId, feedback }) {
 // ⚠ O hook do chat monta com `companyDocsApi` — o cliente de MÓDULO —, nunca com uma prop `api`:
 // `CompanyDetailPage` não recebe `api`, e esse erro já compilou, passou nos testes e explodiu só no
 // navegador.
-function CompanyNotesTabWrapper({ companyId, feedback }) {
+function CompanyNotesTabWrapper({ companyId, feedback, usuarioId }) {
   const notes = useCompanyNotes({ api: companyDocsApi, companyId, feedback });
-  // ⚠ O rascunho é o que faz "virar anotação" existir, e é o que torna o LADO A LADO condição da
-  // ação, não estética: sem o campo ao lado não há destino, e no `/whatsapp` o botão nem aparece.
+  // Mensagens legadas preparam uma anotação editável e reabrem o painel de notas.
+  // Conversas atuais usam a nota interna criada pelo menu da própria mensagem.
   const [rascunho, setRascunho] = useState(null);
   const [mostrarNotas, setMostrarNotas] = useState(true);
   return (
@@ -164,6 +164,7 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
           <ChatDaEmpresa
             api={companyDocsApi}
             companyId={companyId}
+            usuarioId={usuarioId}
             feedback={feedback}
             onVirarAnotacao={texto => { setMostrarNotas(true); setRascunho(texto); }}
           />
@@ -387,7 +388,8 @@ function SitfisTabWrapper({ companyId, guidesPanel, feedback }) {
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
 
-function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
+function CompanyDetailContent({
+  usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
@@ -636,7 +638,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         feedback={feedback}
         suspense
       >
-        <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />
+        <CompanyNotesTabWrapper key={companyId} companyId={companyId} feedback={feedback} usuarioId={usuarioId} />
       </CompanyTabLayout>
     );
   }
