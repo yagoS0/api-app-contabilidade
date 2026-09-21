@@ -2,6 +2,51 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PropostaPublica } from "../../pages/PropostaPublica";
 import { OrientacoesRapidas } from "../../../whatsapp/components/AtendimentoComercial";
 import { FluxoComercial } from "../FluxoComercial";
+import { ValoresDaProposta } from "../ValoresDaProposta";
+
+test("valor informado exige justificativa antes de criar um rascunho", async () => {
+  const gerar = jest.fn();
+  render(<ValoresDaProposta onboarding={{ origem: "ABERTURA", dados: { modalidadeServico: "AVULSO" } }} onGerar={gerar} />);
+  fireEvent.change(screen.getByLabelText("Abertura (R$)"), { target: { value: "895" } });
+  fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Explique a fonte e o motivo");
+  expect(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes")).toHaveFocus();
+  expect(gerar).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Mensalidade personalizada (R$)")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Valor conferido com o escopo da abertura." } });
+  fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
+  expect(gerar).toHaveBeenCalledWith({ aberturaCentavos: 89500, justificativa: "Valor conferido com o escopo da abertura.", escopoAvulso: "" });
+});
+
+test("rascunho antigo com justificativa ausente recupera valores e permite corrigir, aprovar e gerar o link", async () => {
+  const pendente = { id: "p1", versao: 1, status: "RASCUNHO", snapshot: { pendencias: ["Registrar a justificativa e fonte dos valores conferidos."],
+    taxasCentavos: 0, opcoes: [{ chave: "RECORRENTE", titulo: "Contabilidade mensal", mensalCentavos: 79000, unicoCentavos: 0, recorrente: true }] } };
+  let proposta = pendente;
+  const api = { comercial: jest.fn(async (path, body) => {
+    if (path === "/recursos") return { recursos: [] };
+    if (path === "/onboardings/o/propostas" && body) {
+      proposta = { ...pendente, id: "p2", versao: 2, snapshot: { ...pendente.snapshot, pendencias: [], justificativa: body.ajustes.justificativa } }; return { proposta };
+    }
+    if (path.endsWith("/aprovar")) { proposta = { ...proposta, status: "APROVADA" }; return { proposta }; }
+    if (path.endsWith("/link")) return { token: "teste-proposta" };
+    return { onboarding: { id: "o", origem: "INATIVA", dados: { modalidadeServico: "RECORRENTE" }, versao: 3 }, propostas: [proposta], contratos: [], documentos: [], trabalhos: [],
+      jornada: { diagnostico: { dados: { servicos: "Regularização e serviços conferidos." } }, projecao: { atual: "proposta", proposta, passos: [{ id: "proposta", titulo: "Proposta", acessivel: true }] } } };
+  }) };
+  render(<FluxoComercial api={api} onboardingId="o" />);
+  expect(await screen.findByRole("region", { name: "Corrigir proposta pendente" })).toBeVisible();
+  expect(screen.getByLabelText("Mensalidade personalizada (R$)")).toHaveValue("790,00");
+  expect(screen.getByLabelText("Taxas públicas (R$)")).toHaveValue("0,00");
+  expect(screen.queryByLabelText("Abertura (R$)")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Aprovar esta versão" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Honorários conferidos conforme o escopo negociado." } });
+  fireEvent.click(screen.getByRole("button", { name: "Gerar versão corrigida para revisão" }));
+  expect(await screen.findByText("Proposta 2 · RASCUNHO")).toBeVisible();
+  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/propostas", { versao: 3, ajustes: { mensalCentavos: 79000, taxasCentavos: 0, justificativa: "Honorários conferidos conforme o escopo negociado.", escopoAvulso: "Regularização e serviços conferidos." } });
+  fireEvent.click(screen.getByRole("button", { name: "Aprovar esta versão" }));
+  const link = await screen.findByRole("button", { name: "Gerar link da proposta" });
+  fireEvent.click(link);
+  expect(await screen.findByLabelText("Link pessoal da proposta — envie pela conversa")).toHaveValue("http://localhost/proposta/publica#token=teste-proposta");
+});
 
 test.each([false, true])("gerar proposta pela aba de preparação mostra imediatamente o resultado (anterior: %s)", async temAnterior => {
   const anterior = { id: "proposta-antiga", versao: 1, status: "RASCUNHO", snapshot: { opcoes: [] } };
