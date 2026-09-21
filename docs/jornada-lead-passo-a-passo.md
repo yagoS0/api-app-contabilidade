@@ -1,5 +1,17 @@
 # Jornada guiada do lead — 14/09/2026
 
+## Conferência manual e recuperação fiscal — 21/09/2026
+
+As integrações ajudam a obter dados; sua indisponibilidade não exige fabricar uma consulta nem impede uma contratação com escopo conferido manualmente. Para transferência ou empresa parada, o contador pode salvar o CNPJ na ficha e registrar a fonte e a evidência da conferência cadastral. A rota existente `POST /firm/comercial/onboardings/:id/jornada/conferencia` aceita `{tipo:"PUBLICA",versao,manual:{fonte,evidencia}}`: fonte de 3 a 300 caracteres e evidência de 10 a 2.000. Apenas admin/contador, mesma ficha ativa e versão atual. Não existe modo manual de marcar um SITFIS como consultado.
+
+O evento `JORNADA_PUBLICA_MANUAL_CONFERIDA` conserva CNPJ, origem, ator, data, versão e evidência. Nenhuma análise `CONCLUIDA` é criada. O GET da jornada devolve `publicaConferencia` com `modo:"MANUAL"` e `publicaConferida:true`. Nova evidência incrementa a versão da ficha; recarregar o painel após salvar. Cliques idênticos conservam o mesmo registro. Troca de CNPJ/origem ou revisão da conferência invalida o diagnóstico correspondente; propostas de versões anteriores ainda não aceitas precisam ser refeitas.
+
+Se não houver consulta fiscal privada, o contador registra `dispensaConsultaPrivada` ao delimitar o diagnóstico (20 a 1.200 caracteres). Essa limitação acompanha a proposta. A apresentação pode ser registrada por meio e evidência quando não houver envio pelo WhatsApp. Assim, o percurso manual é: cadastro conferido → escopo limitado fundamentado → apresentação registrada → proposta e aceite → contrato assinado conferido por arquivo → pagamento conferido → execução/conclusão conforme a modalidade. Nenhuma dessas conferências declara regularidade fiscal, assinatura ou pagamento que não tenham sido verificados.
+
+O snapshot interno da proposta preserva a origem da conferência cadastral. Sua projeção pública/PDF mostra apenas que os dados foram conferidos manualmente e que a consulta automática não foi utilizada; fonte, evidência e identificação do operador ficam internas. Honorários podem ser ajustados com justificativa antes do aceite, respeitando o catálogo e os pisos aplicáveis; cada geração cria uma proposta nova. O contrato usa exatamente a opção e os valores aceitos. Gerar novamente não altera uma minuta já existente; depois do aceite, mudança de preço/escopo requer outra solicitação ou um futuro fluxo de aditivo.
+
+Na consulta fiscal explícita, a prova oficial recente do próprio atendimento pode ser reaproveitada por até cinco minutos, somente com CNPJ, representante, identidade e procurador atual conferidos. Revogação conhecida impede o uso. Consulta interrompida conserva o protocolo do mesmo CNPJ/procurador; ausência de PDF ou falha de armazenamento não conclui a análise. Intervalos conhecidos de consulta viram espera limitada na fila; resultados desconhecidos e limites de consumo nunca são repetidos automaticamente. Sem migration, nova rota ou ampliação dos serviços SERPRO.
+
 O painel **Atendimento**, dentro da conversa do WhatsApp, apresenta a etapa atual, o que falta e a ação correspondente. O mesmo componente atende o detalhe do onboarding. A conversa continua por pessoa; cada solicitação conserva seu onboarding. Nova solicitação/reinício preservam o histórico anterior.
 
 ## Percursos

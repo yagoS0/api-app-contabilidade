@@ -3,7 +3,7 @@
 .lead-journey-heading h3 { margin: 0 0 4px; font-size: 1rem; }
 .lead-journey-heading p { margin: 0; color: var(--text-muted); font-size: .875rem; }
 .lead-journey-heading .btn { flex-shrink: 0; }
-.lead-current-step { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 18px; }
+.lead-current-step { padding: 0; margin-bottom: 16px; }
 .lead-step-meta { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; font-size: .875rem; }
 .lead-step-meta > span { font-weight: 600; }
 .lead-step-meta small { color: var(--text-muted); font-size: .875rem; }
@@ -40,16 +40,28 @@
 .lead-support summary { cursor: pointer; font-size: .875rem; line-height: 1.5; }
 .lead-support dt { color: var(--text-muted); font-size: .875rem; }
 .lead-support dd { margin: 2px 0 12px; overflow-wrap: anywhere; }
-.lead-steps ol { list-style: none; padding: 0; margin: 8px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
-.lead-steps button { display: flex; align-items: flex-start; gap: 10px; text-align: left; width: 100%; height: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: transparent; font: inherit; font-size: .875rem; line-height: 1.4; cursor: pointer; }
+.lead-steps { margin-bottom: 18px; }
+.lead-steps ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(142px, 100%), 1fr)); gap: 6px; }
+.lead-steps button { display: flex; align-items: flex-start; gap: 8px; text-align: left; width: 100%; height: 100%; padding: 10px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: transparent; font: inherit; font-size: .875rem; line-height: 1.4; cursor: pointer; }
 .lead-step-number { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; min-height: 24px; border: 1px solid var(--border); border-radius: 50%; font-size: .8125rem; font-weight: 600; }
-.lead-steps small { display: block; color: var(--text-muted); font-size: .8125rem; margin-top: 4px; }
-.lead-steps button[aria-current=step] { border-color: var(--text-muted); background: var(--bg-subtle); }
+.lead-steps small { display: block; color: var(--text-muted); font-size: .75rem; margin-top: 2px; }
+.lead-steps button[aria-current=step] { border-color: var(--text); background: var(--bg-subtle); font-weight: 600; }
+.lead-steps button[aria-pressed=true]:not([aria-current=step]) { border-color: var(--text-muted); background: var(--bg-subtle); }
 .lead-steps li[data-status=atual] .lead-step-number { background: var(--text); color: var(--bg-page); border-color: transparent; }
 .lead-steps button:disabled { opacity: 1; color: var(--text-muted); cursor: default; }
 .lead-journey [role="alert"] { padding: 12px; border: 1px solid var(--state-warn); border-radius: var(--radius-sm); font-size: .875rem; line-height: 1.5; }
+.lead-send-channel { margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.lead-send-channel label { margin: 0; }
+.lead-send-channel p { margin: 8px 0 0; font-size: .875rem; }
+.lead-action-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+.lead-action-tabs button { border: 1px solid transparent; border-bottom: 3px solid transparent; background: transparent; color: var(--text-muted); font: inherit; padding: 10px 14px; min-height: 42px; cursor: pointer; flex: 0 0 auto; max-width: 240px; text-align: left; }
+.lead-action-tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--text); background: var(--bg-surface); font-weight: 600; }
+.lead-stage-action > [hidden] { display: none !important; }
+.lead-stage-action > [role=tabpanel] > :first-child { margin-top: 0; }
+.lead-support > h4 { margin: 12px 0; font-size: 1rem; }
+.lead-support > dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
 @media (max-width: 600px) {
   .lead-journey-heading { flex-wrap: wrap; }
-  .lead-current-step, .lead-step-fields { padding: 14px; }
+  .lead-step-fields { padding: 14px; }
   .lead-step-total { display: block; margin: 4px 0 0 18px; }
 }

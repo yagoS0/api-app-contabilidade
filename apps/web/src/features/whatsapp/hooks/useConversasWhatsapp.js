@@ -240,7 +240,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),
     carregarAnteriores: () => cursorFio && !carregandoAnteriores && abrir(selecionada.current, false, cursorFio),
-    filtro, setFiltro: trocarFiltro, conversas, temMais, temMaisNoFio, consumoIa, carregando, erro, erroFio, aberta, carregandoFio, ocupado, carregar, abrir, assumir, devolver, responder, vincular, fechar };
+    filtro, setFiltro: trocarFiltro, conversas, temMais, temMaisNoFio, consumoIa, carregando, erro, erroFio, aberta, carregandoFio, ocupado, carregar, abrir, atualizarConversa: recarregarTudo, assumir, devolver, responder, vincular, fechar };
 }
 
 function unirPorId(atuais = [], novas = [], chave = item => item.id) {

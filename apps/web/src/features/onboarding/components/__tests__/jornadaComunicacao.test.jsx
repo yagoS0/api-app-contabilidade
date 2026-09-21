@@ -9,7 +9,9 @@ test("formulário de abertura liga a conversa ao onboarding antes de preparar o 
   render(<OrientacoesRapidas api={api} conversa={{ id: "c1", nomePerfilProvedor: "Maria" }} />);
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
   const card = await screen.findByText("Formulário de abertura");
-  fireEvent.click(within(card.closest("article")).getByRole("button", { name: "Preparar formulário" }));
+  const preparar = within(card.closest("article")).getByRole("button", { name: "Preparar formulário" });
+  await waitFor(() => expect(preparar).toBeEnabled());
+  fireEvent.click(preparar);
   expect(await screen.findByText(/preencha este formulário:/)).toHaveTextContent("/onboarding/publico#token=pessoal");
   expect(api.comercial).toHaveBeenCalledWith("/conversas/c1/iniciar", { origem: "ABERTURA" });
   expect(api.criarLinkOnboarding).toHaveBeenCalledWith("o1", { diasValidade: 7 }); expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
@@ -19,8 +21,11 @@ test("formulário de abertura liga a conversa ao onboarding antes de preparar o 
 test("formulário de outra origem não mistura solicitações", async () => {
   const api = { comercial: jest.fn(async path => path === "/recursos" ? { recursos: [] } : { atendimento: { onboardingId: "o1", onboarding: { origem: "TRANSFERENCIA" } } }), criarLinkOnboarding: jest.fn() };
   render(<OrientacoesRapidas api={api} conversa={{ id: "c1" }} />); fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
-  fireEvent.click(within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" }));
+  const preparar = within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" });
+  await waitFor(() => expect(preparar).toBeEnabled());
+  fireEvent.click(preparar);
   expect(await screen.findByRole("alert")).toHaveTextContent("outra solicitação ativa"); expect(api.criarLinkOnboarding).not.toHaveBeenCalled();
+  expect(api.comercial.mock.calls.filter(([, body]) => body !== undefined)).toHaveLength(0);
 });
 test("consulta pública mostra razão social e falha explícita sem inventar regularidade", async () => {
   const onboarding = { id: "o1", origem: "TRANSFERENCIA", versao: 3, cnpj: "11222333000181" };
@@ -56,10 +61,12 @@ test("formulário preparado atualiza o atendimento e retira o vínculo com outra
   fireEvent.click(screen.getByRole("button", { name: "Abrir atendimento" }));
   expect(await screen.findByText("Vincular empresa existente")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
-  fireEvent.click(within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" }));
+  const preparar = within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" });
+  await waitFor(() => expect(preparar).toBeEnabled());
+  fireEvent.click(preparar);
   expect(await screen.findByText(/preencha este formulário:/)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("Vincular empresa existente")).not.toBeInTheDocument());
-  expect(await screen.findByRole("button", { name: "Nova solicitação deste contato" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Nova solicitação", exact: true })).toBeInTheDocument();
 });
 
 test("atualizar atendimento recupera resultado fiscal mesmo sem mudança na versão da ficha", async () => {

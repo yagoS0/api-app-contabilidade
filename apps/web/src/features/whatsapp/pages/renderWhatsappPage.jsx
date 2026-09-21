@@ -14,8 +14,8 @@
 // e o vínculo não existe (`portalClientId` nunca é nulo ali).
 
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
-import { relacionamentoDaConversa, nomeDaSolicitacao, chaveDoInterlocutor } from "../lib/identidadeAtendimento";
-import { AvatarConversa, SituacaoIdentificacao, WhatsappIcon, DetalhesConversa } from "../components/ConversaVisual";
+import { relacionamentoDaConversa, chaveDoInterlocutor, canaisDaConversa, canalInicialDaConversa } from "../lib/identidadeAtendimento";
+import { AvatarConversa, WhatsappIcon, DetalhesConversa } from "../components/ConversaVisual";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
@@ -23,18 +23,14 @@ import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { useResumoWhatsapp } from "../hooks/useResumoWhatsapp";
 import { AtualizacaoAtendimento } from "../components/AtendimentoComercial";
+import { CanalDoAtendimento } from "../components/CanalDoAtendimento";
 import { FormOnboarding } from "../components/FormOnboarding";
-import { FioDaConversa, LinhaDaEmpresa, NomeDaPessoa, campo } from "../components/FioDaConversa";
+import { FioDaConversa, campo } from "../components/FioDaConversa";
 // ⚠ A MESMA fonte da URL que a navegação por clique usa — nunca uma segunda construção do caminho.
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
-import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, fmtDataHora, fraseDoConsumo, ordenarConversas, identidadeDaConversa, frasePaginacao } from "../lib/conversasTela";
+import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, fraseDoConsumo, ordenarConversas, identidadeDaConversa, frasePaginacao } from "../lib/conversasTela";
 
-// ⚠⚠ QUEM está falando E de QUAL empresa — as duas, nunca uma OU outra.
-//
-// Esta linha fazia `c.empresa?.razao || c.nomePerfilProvedor || c.telefoneMascarado`: um `||`
-// escolhendo entre coisas que não se substituem. Numa conversa de cliente aparecia a EMPRESA e o
-// contador nunca sabia QUEM estava falando; numa da fila aparecia a pessoa e não havia empresa.
-// Hoje são duas linhas: a pessoa em cima (com a origem do nome dita), a empresa embaixo.
+// A lista identifica a pessoa. Empresa, função, origem do nome e caso ficam no fio/detalhes.
 function LinhaConversa({ c, ativa, onAbrir }) {
   const r = rotuloDaSituacao(c);
   const identidade = identidadeDaConversa(c);
@@ -42,21 +38,10 @@ function LinhaConversa({ c, ativa, onAbrir }) {
   return <button type="button" className="wa-conversation" data-testid={`conversa-${c.id}`} data-situacao={r.situacao} data-relacionamento={relacionamento.tipo} aria-current={ativa ? "true" : undefined} onClick={() => onAbrir(c.id)}>
     <AvatarConversa nome={identidade.pessoa} pequeno />
     <div className="wa-conversation-copy">
-      <div className="wa-conversation-title"><NomeDaPessoa identidade={identidade} /><time title={fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}>{horaDaConversa(c.ultimaMensagem?.registradaEm || c.updatedAt)}</time></div>
-      <div className="wa-conversation-preview"><span>{c.ultimaMensagem?.corpo || c.telefoneMascarado || "Abrir conversa"}</span>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
-      <div className="wa-contact-meta"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span>{nomeDaSolicitacao(c) && <span> · {nomeDaSolicitacao(c)}</span>}</div>
-      <div className="wa-visually-hidden"><LinhaDaEmpresa identidade={identidade} copiarCnpj={false} /></div>
-      <SituacaoIdentificacao conversa={c} />{c.naFilaDoEscritorio && <span className="wa-needs-team">Aguardando a equipe</span>}
+      <div className="wa-conversation-title"><strong title={identidade.pessoa}>{identidade.pessoa}</strong>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
+      <div className="wa-contact-meta"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span></div>
     </div>
   </button>;
-}
-function horaDaConversa(valor) {
-  const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) return "";
-  const dia = d => d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  return dia(data) === dia(new Date())
-    ? data.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
-    : data.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
 }
 function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado = false, empresaInicial = "" }) {
   const [portalClientId, setPortalClientId] = useState(empresaInicial);
@@ -106,24 +91,43 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado 
   );
 }
 
-export function WhatsappPage({ api, companies = [], onBack, onComunicados, message, error, usuarioId = null }) {
+export function WhatsappPage({ api, companies = [], onBack, onComunicados, message, error, usuarioId = null, mensagemBiblioteca = null, onMensagemBibliotecaAberta }) {
   const hook = useConversasWhatsapp({ api, feedback: null });
   const resumo = useResumoWhatsapp({ api });
   const [revisaoComercial, setRevisaoComercial] = useState(0);
-  const atualizacaoComercial = useMemo(() => ({ revisao: revisaoComercial, atualizar: () => { setRevisaoComercial(v => v + 1); hook.carregar(hook.filtro, true); } }), [revisaoComercial, hook.carregar, hook.filtro]);
+  const atualizacaoComercial = useMemo(() => ({ revisao: revisaoComercial, mensagemBiblioteca, onMensagemBibliotecaAberta, atualizar: () => { setRevisaoComercial(v => v + 1); return hook.atualizarConversa(hook.aberta?.conversa.id); } }), [revisaoComercial, hook.atualizarConversa, hook.aberta?.conversa.id, mensagemBiblioteca, onMensagemBibliotecaAberta]);
   const [busca, setBusca] = useState("");
   const [soNaoLidas, setSoNaoLidas] = useState(false);
   const [relacionamento, setRelacionamento] = useState("");
   const chavePreferencia = usuarioId ? `altan:comunicacao:largura:${usuarioId}` : null;
-  const lerLargura = () => { try { const n = Number(chavePreferencia && localStorage.getItem(chavePreferencia)); return n >= 210 && n <= 280 ? n : 238; } catch { return 238; } };
+  const lerLargura = () => { try { const n = Number(chavePreferencia && localStorage.getItem(chavePreferencia)); return n >= 200 && n <= 380 ? n : 238; } catch { return 238; } };
   const [larguraLista, setLarguraLista] = useState(lerLargura);
   useEffect(() => { setLarguraLista(lerLargura()); }, [chavePreferencia]);
-  const ajustarLargura = valor => { const n = Math.min(280, Math.max(210, valor)); setLarguraLista(n); try { if (chavePreferencia) localStorage.setItem(chavePreferencia, String(n)); } catch { /* Preferência visual continua na sessão. */ } };
+  const ajustarLargura = useCallback(valor => { if (!Number.isFinite(valor)) return; const n = Math.min(380, Math.max(200, Math.round(valor))); setLarguraLista(n); try { if (chavePreferencia) localStorage.setItem(chavePreferencia, String(n)); } catch { /* Preferência visual continua na sessão. */ } }, [chavePreferencia]);
+  const [listaOculta, setListaOculta] = useState(false);
+  const alternarListaRef = useRef(null);
+  const arrastoLista = useRef(null);
+  const alternarLista = useCallback(() => { setListaOculta(v => !v); setVerChat(false); alternarListaRef.current?.focus(); }, []);
+  useEffect(() => {
+    const atalho = e => { if (e.ctrlKey && !e.altKey && !e.shiftKey && !e.repeat && !e.isComposing && e.key.toLowerCase() === "b") { e.preventDefault(); alternarLista(); } };
+    window.addEventListener("keydown", atalho);
+    return () => window.removeEventListener("keydown", atalho);
+  }, [alternarLista]);
+  useEffect(() => {
+    const mover = e => { const inicio = arrastoLista.current; if (inicio) ajustarLargura(inicio.largura + e.clientX - inicio.x); };
+    const terminar = () => { arrastoLista.current = null; };
+    window.addEventListener("pointermove", mover); window.addEventListener("pointerup", terminar); window.addEventListener("pointercancel", terminar);
+    return () => { terminar(); window.removeEventListener("pointermove", mover); window.removeEventListener("pointerup", terminar); window.removeEventListener("pointercancel", terminar); };
+  }, [ajustarLargura]);
   const [detalhes, setDetalhes] = useState(false);
   const [canalPreparado, setCanalPreparado] = useState(null);
+  const [pedidoCanal, setPedidoCanal] = useState(null);
   const registrarCanal = useCallback(c => setCanalPreparado(anterior => JSON.stringify(anterior) === JSON.stringify(c) ? anterior : c), []);
   const canalComercial = canalPreparado?.interlocutorId === (hook.aberta?.conversa.interlocutorId || hook.aberta?.conversa.id) ? canalPreparado : null;
-  const conversaComercial = hook.aberta ? { ...hook.aberta.conversa, ...(canalComercial ? { id: canalComercial.conversaId, canalId: canalComercial.canalId } : {}) } : null;
+  const canalAtual = hook.aberta ? canaisDaConversa(hook.aberta.conversa).find(c => c.id === (relacionamentoDaConversa(hook.aberta.conversa).tipo === "LEAD" ? canalInicialDaConversa(hook.aberta.conversa) : canalComercial?.canalId || canalInicialDaConversa(hook.aberta.conversa))) : null;
+  const conversaComercial = hook.aberta ? { ...hook.aberta.conversa, ...(canalAtual ? { id: canalAtual.conversaId, canalId: canalAtual.id, janela: canalAtual.janela, podeResponder: canalAtual.podeResponder } : {}) } : null;
+  const escolherCanal = canalId => setPedidoCanal({ interlocutorId: hook.aberta.conversa.interlocutorId || hook.aberta.conversa.id, canalId });
+  const canalDeEnvio = hook.aberta ? <CanalDoAtendimento conversa={hook.aberta.conversa} canalId={conversaComercial.canalId} onSelecionar={escolherCanal} disabled={hook.ocupado} /> : null;
   const [verChat, setVerChat] = useState(false);
   const listaRef = useRef(null);
   const lista = useMemo(() => hook.buscaServidor ? hook.conversas : ordenarConversas(hook.conversas), [hook.conversas, hook.buscaServidor]);
@@ -144,22 +148,22 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
   const grupos = ["CLIENTE", "LEAD", "A_IDENTIFICAR"].map(tipo => ({ tipo, titulo: ({ CLIENTE: "Clientes", LEAD: "Leads", A_IDENTIFICAR: "A identificar" })[tipo], itens: visiveis.filter(c => relacionamentoDaConversa(c).tipo === tipo) }));
   const abrir = id => { setVerChat(true); hook.abrir(id); };
   const voltar = () => {
-    setVerChat(false); setDetalhes(false);
+    setVerChat(false); setDetalhes(false); setListaOculta(false);
     requestAnimationFrame(() => (listaRef.current?.querySelector('[aria-current="true"]') || listaRef.current?.querySelector("input"))?.focus());
   };
 
-  const painelComercial = hook.aberta ? <><section className="wa-commercial-section">{canalComercial && <p className="wa-list-note">Envios deste atendimento pelo canal: <strong>{canalComercial.nome}</strong>.</p>}<FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => hook.carregar(hook.filtro, true)} /></section></> : null;
+  const painelComercial = hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
 
   return <div className="wa-page">
-    <PageShell title="Atendimento" subtitle="Conversas pelo WhatsApp" onBack={onBack}
-      actions={<><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
+    <PageShell title="Atendimento" subtitle={mensagemBiblioteca ? `Escolha uma conversa para usar “${mensagemBiblioteca.titulo}”.` : "Conversas pelo WhatsApp"} onBack={onBack}
+      actions={<><Button ref={alternarListaRef} variant="secondary" aria-label={listaOculta ? "Mostrar contatos" : "Ocultar contatos"} aria-expanded={!listaOculta} aria-controls="wa-lista-contatos" aria-keyshortcuts="Control+B" title={`${listaOculta ? "Mostrar" : "Ocultar"} contatos (Ctrl+B)`} onClick={alternarLista}>Contatos</Button><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
-        <div style={{ "--wa-list-width": `${larguraLista}px` }} className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
-          <aside className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef}>
+        <div style={{ "--wa-list-width": `${larguraLista}px` }} className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${listaOculta ? " wa-workspace--list-hidden" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
+          <aside id="wa-lista-contatos" className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef} hidden={listaOculta}>
             <div className="wa-sidebar-top">
               <div className="wa-section-heading"><h2>Conversas</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span></div>
               <label className="wa-search"><WhatsappIcon nome="busca" size={17} /><input aria-label={api?.whatsappContratoV2 ? "Buscar pessoa ou empresa" : "Buscar nas conversas carregadas"} placeholder="Buscar contato ou empresa" value={busca} onChange={e => setBusca(e.target.value)} /></label>
-              <div className="wa-sidebar-filterline"><div className="wa-relationship-filters" aria-label="Relacionamento">{[["", "Todos"], ["LEAD", "Leads"], ["CLIENTE", "Clientes"]].map(([tipo, titulo]) => <button type="button" key={tipo} aria-pressed={relacionamento === tipo} onClick={() => { setRelacionamento(tipo); if (!api?.whatsappContratoV2) hook.setConsulta({ ...hook.consulta, relacionamento: tipo }); }}>{titulo}</button>)}</div>
+              <div className="wa-sidebar-filterline"><div className="wa-relationship-filters" aria-label="Relacionamento">{[["", "Todos"], ["LEAD", "Leads"], ["CLIENTE", "Clientes"]].map(([tipo, titulo]) => <button type="button" key={tipo} aria-label={titulo} title={resumo.contagensNaoLidas ? `${resumo.contagensNaoLidas[tipo || "TODOS"]} novas mensagens em todas as conversas atuais de ${titulo.toLowerCase()}` : "Contagem de novas mensagens indisponível"} aria-pressed={relacionamento === tipo} onClick={() => { setRelacionamento(tipo); if (!api?.whatsappContratoV2) hook.setConsulta({ ...hook.consulta, relacionamento: tipo }); }}>{titulo}{resumo.contagensNaoLidas && <span className="wa-filter-count" aria-label={`${resumo.contagensNaoLidas[tipo || "TODOS"]} novas mensagens`}>{resumo.contagensNaoLidas[tipo || "TODOS"]}</span>}</button>)}</div>
               <details className="wa-list-filters"><summary>Filtros{(hook.filtro !== "todas" || soNaoLidas) && <span aria-label="Há filtros ativos"> ·</span>}</summary><div className="wa-filters">
                 <select aria-label="Filtro das conversas" style={campo} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setVerChat(false); setDetalhes(false); hook.setFiltro(e.target.value); }}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
                 <Button variant="secondary" size="sm" className="wa-filter-unread" aria-pressed={soNaoLidas} onClick={() => setSoNaoLidas(v => !v)}>Não lidas</Button>
@@ -178,16 +182,17 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
               {lista.length > 0 && avisoDaLista ? <p data-testid="aviso-paginacao-lista" className="wa-list-note">{avisoDaLista}</p> : null}
               {(termo || soNaoLidas) && !hook.buscaServidor ? <p className="wa-list-note">Busca e filtro de não lidas aplicados às conversas carregadas.</p> : null}
             </div>
-            <div className="wa-sidebar-footer"><nav className="wa-inbox-links" aria-label="Comunicação">{onComunicados && <button type="button" onClick={onComunicados}>Avisos</button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)">Biblioteca ↗</a></nav><details className="wa-inbox-options"><summary>Opções</summary><div className="wa-options-content"><label className="wa-list-preferences">Largura da lista<input aria-label="Largura da lista" type="range" min="210" max="280" value={larguraLista} onChange={e => ajustarLargura(Number(e.target.value))} /></label><div className="wa-budget"><strong>Consumo do assistente</strong><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p></div></div></details></div>
+            <div className="wa-sidebar-footer"><nav className="wa-inbox-links" aria-label="Comunicação">{onComunicados && <button type="button" onClick={onComunicados}>Avisos</button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)">Biblioteca ↗</a></nav><details className="wa-inbox-options"><summary>Opções</summary><div className="wa-options-content"><label className="wa-list-preferences">Largura da lista: {larguraLista}px<input aria-label="Largura da lista" type="range" min="200" max="380" value={larguraLista} onChange={e => ajustarLargura(Number(e.target.value))} /></label><div className="wa-budget"><strong>Consumo do assistente</strong><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p></div></div></details></div>
+            <div className="wa-list-resizer" role="separator" aria-label="Redimensionar lista de contatos" aria-orientation="vertical" aria-valuemin={200} aria-valuemax={380} aria-valuenow={larguraLista} tabIndex={0} onPointerDown={e => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.focus(); arrastoLista.current = { x: e.clientX, largura: larguraLista }; }} onKeyDown={e => { const n = { ArrowLeft: larguraLista - 10, ArrowRight: larguraLista + 10, Home: 200, End: 380 }[e.key]; if (n !== undefined) { e.preventDefault(); ajustarLargura(n); } }} />
           </aside>
           <section className="wa-chat-column" aria-label="Conversa selecionada">
             {hook.erroFio ? <p role="alert" className="wa-notice">Não foi possível atualizar a conversa: {hook.erroFio}</p> : null}
             {hook.aberta ? <FioDaConversa key={chaveDoInterlocutor(hook.aberta.conversa)} fio={hook.aberta} hook={hook} temMais={hook.temMaisNoFio}
-              hrefDaEmpresa={id => companyTabPath(id, "anotacoes")} onVoltar={voltar} onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes} onCanalSelecionado={registrarCanal} atualizacaoComercialExterna={atualizacaoComercial}
+              hrefDaEmpresa={id => companyTabPath(id, "anotacoes")} onVoltar={voltar} onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes} onCanalSelecionado={registrarCanal} pedidoCanal={pedidoCanal} atualizacaoComercialExterna={atualizacaoComercial}
               slotVincular={painelComercial} usuarioId={usuarioId}
             /> : <div className="wa-empty"><div className="wa-empty-symbol"><WhatsappIcon size={34} /></div><h2>{hook.carregandoFio ? "Abrindo conversa…" : "Seu atendimento, em um só lugar"}</h2><p>{hook.carregandoFio ? "Carregando o histórico deste contato." : "Escolha uma conversa à esquerda. Consulte o histórico, acompanhe a entrega e responda aos seus clientes."}</p>{verChat ? <Button variant="secondary" className="wa-mobile-back" onClick={voltar}>Voltar para conversas</Button> : null}</div>}
           </section>
-          {hook.aberta ? <AtualizacaoAtendimento.Provider value={atualizacaoComercial}><DetalhesConversa key={chaveDoInterlocutor(hook.aberta.conversa)} aberto={detalhes} conversa={hook.aberta.conversa} atendimento={painelComercial} api={api} onConferido={async () => { await hook.abrir(hook.aberta.conversa.id, true); await hook.carregar(hook.filtro, true); }} onFechar={() => setDetalhes(false)} /></AtualizacaoAtendimento.Provider> : null}
+          {hook.aberta ? <AtualizacaoAtendimento.Provider value={atualizacaoComercial}><DetalhesConversa key={chaveDoInterlocutor(hook.aberta.conversa)} aberto={detalhes} conversa={hook.aberta.conversa} atendimento={painelComercial} api={api} onConferido={() => hook.atualizarConversa(hook.aberta.conversa.id)} onFechar={() => setDetalhes(false)} /></AtualizacaoAtendimento.Provider> : null}
         </div>
         <Feedback message={message} error={hook.erroAcao || error} />
       </AppShell>

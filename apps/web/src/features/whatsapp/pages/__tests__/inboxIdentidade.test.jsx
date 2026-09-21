@@ -9,7 +9,8 @@ test("busca consulta servidor além da página carregada e não busca todos os o
     listarConversasWhatsapp: jest.fn(async (_f, opts) => ({ versaoContrato: 2, buscaConfigurada: true, conversas: opts.q ? [oculto] : [cliente], temMais: !opts.q, proximoCursor: opts.q ? null : "segunda" })) };
   render(<WhatsappPage api={api} />);
   await screen.findByTestId("conversa-cv-liz");
-  expect(screen.getByTestId("conversa-cv-liz")).toHaveTextContent("Cliente · Nova abertura");
+  expect(screen.getByTestId("conversa-cv-liz")).toHaveTextContent("Cliente");
+  expect(screen.getByTestId("conversa-cv-liz")).not.toHaveTextContent("Nova abertura");
   expect(screen.queryByTestId("conversa-cv-raphael")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Buscar pessoa ou empresa"), { target: { value: "Raphael" } });
   await screen.findByTestId("conversa-cv-raphael");
@@ -43,7 +44,7 @@ test("cliente pode iniciar outro caso e recolher detalhes preserva o formulário
  fireEvent.click(await screen.findByTestId("conversa-cv-liz"));
  await screen.findByTestId("fio"); expect(api.comercial).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
- fireEvent.click(screen.getByRole("button", { name: "Comercial" }));
+ expect(screen.queryByRole("button", { name: "Comercial" })).not.toBeInTheDocument();
  fireEvent.change(await screen.findByLabelText("Motivo do atendimento"), { target: { value: "ABERTURA" } });
  fireEvent.click(screen.getByRole("button", { name: "Fechar detalhes" }));
  expect(screen.queryByRole("button", { name: "Iniciar atendimento" })).not.toBeInTheDocument();

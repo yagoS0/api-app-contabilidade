@@ -28,6 +28,20 @@ export function canaisDaConversa(c) {
   return [{ id: c?.canalId || "principal", nome: "Principal", conversaId: c?.id, janela: c?.janela }];
 }
 
+// A primeira abertura acompanha a entrada mais recente. Durante a edição, a escolha
+// fica fixada no compositor: polling nunca move um rascunho para outro remetente.
+export function canalInicialDaConversa(c) {
+  const canais = canaisDaConversa(c);
+  if (c?.relacionamento?.tipo === "LEAD") return canalComercialDaConversa(c)?.id;
+  const recebidos = canais.filter(canal => Number.isFinite(Date.parse(canal.janela?.instante)))
+    .sort((a, b) => Date.parse(b.janela.instante) - Date.parse(a.janela.instante));
+  return recebidos[0]?.id || canais.find(canal => canal.id === c?.canalId)?.id || canais[0]?.id;
+}
+
+export function canalComercialDaConversa(c) {
+  return canaisDaConversa(c).find(canal => canal.id === "comercial" || String(canal.finalidade || canal.chave).toUpperCase() === "COMERCIAL");
+}
+
 export function chaveDoRascunho(c, { canalId, modo = "MENSAGEM", escopo = null } = {}) {
   // Uma nota para a empresa A nunca passa a pertencer à B por uma troca de contexto.
   return JSON.stringify([chaveDoInterlocutor(c), canalId || c?.canalId || "principal", modo,

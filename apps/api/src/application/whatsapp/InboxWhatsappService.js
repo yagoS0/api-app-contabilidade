@@ -18,19 +18,15 @@ export function lerCursorInbox(cursor, assinatura) {
   catch { throw erro('cursor_invalido'); }
 }
 
-/** Agrupa no SQL ANTES do cursor/limite. Só segmentos visíveis alimentam busca, contagem e prévia. */
-export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'todas', empresaId = null, relacionamento = '', q = '', naoLidas = false, cursor = null, limite = 100, client = prisma }) {
-  const ids = [...new Set(visiveis || [])].sort();
-  const lim = Math.min(200, Math.max(1, Number(limite) || 100));
-  const assinatura = createHash('sha256').update(JSON.stringify({ ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas })).digest('hex').slice(0, 20);
-  const c = lerCursorInbox(cursor, assinatura);
-  const empresasSql = ids.length ? Prisma.join(ids) : Prisma.sql`NULL`;
+// A listagem e os totais usam a mesma visibilidade, identidade e resolução de mensagens.
+function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null, q = '' }) {
+  // NOT IN (NULL) é desconhecido, não verdadeiro: com carteira vazia isso
+  // deixaria recibos neutros de clientes restritos escaparem do NOT EXISTS.
+  const empresasSql = ids.length ? Prisma.join(ids) : Prisma.sql`SELECT NULL::text WHERE false`;
   const busca = `%${String(q).trim().replace(/[\\%_]/g, '\\$&')}%`;
   const telefoneBusca = String(q).replace(/\D/g, '');
   const historico = filtro === 'historico', lixeira = filtro === 'lixeira';
-  if (empresaId && !ids.includes(empresaId)) return { conversas: [], temMais: false, proximoCursor: null, versaoContrato: 2, buscaConfigurada: true };
-  if (empresaId && filtro === 'nao-vinculadas') throw erro('filtro_incompativel');
-  const linhas = await client.$queryRaw(Prisma.sql`
+  return Prisma.sql`
     WITH base AS (
       SELECT c.*, v."interlocutorId", COALESCE(v."interlocutorId", 'legado:' || COALESCE(c."atendimentoId",c.id)) AS grupo,
         p.razao, p.cnpj, p."apelidosWhatsapp"
@@ -69,7 +65,19 @@ export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'toda
         COALESCE(n.total,0) AS "naoLidas"
       FROM grupos g LEFT JOIN nao_lidas n ON n.grupo=g.grupo
       WHERE g.encontrou AND g.da_empresa AND g.do_operador
-    ) SELECT * FROM classificados WHERE ${relacionamento ? Prisma.sql`relacionamento=${relacionamento}` : Prisma.sql`true`}
+    )`;
+}
+
+/** Agrupa no SQL ANTES do cursor/limite. Só segmentos visíveis alimentam busca, contagem e prévia. */
+export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'todas', empresaId = null, relacionamento = '', q = '', naoLidas = false, cursor = null, limite = 100, client = prisma }) {
+  const ids = [...new Set(visiveis || [])].sort();
+  const lim = Math.min(200, Math.max(1, Number(limite) || 100));
+  const assinatura = createHash('sha256').update(JSON.stringify({ ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas })).digest('hex').slice(0, 20);
+  const c = lerCursorInbox(cursor, assinatura);
+  if (empresaId && !ids.includes(empresaId)) return { conversas: [], temMais: false, proximoCursor: null, versaoContrato: 2, buscaConfigurada: true };
+  if (empresaId && filtro === 'nao-vinculadas') throw erro('filtro_incompativel');
+  const linhas = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, operadorId, filtro, empresaId, q })}
+    SELECT * FROM classificados WHERE ${relacionamento ? Prisma.sql`relacionamento=${relacionamento}` : Prisma.sql`true`}
       AND ${filtro === 'nao-vinculadas' ? Prisma.sql`relacionamento<>'CLIENTE'` : Prisma.sql`true`}
       AND ${naoLidas ? Prisma.sql`"naoLidas">0` : Prisma.sql`true`}
       AND ${c ? Prisma.sql`(instante < ${c.t}::timestamp OR (instante=${c.t}::timestamp AND grupo < ${c.id}))` : Prisma.sql`true`}
@@ -82,6 +90,27 @@ export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'toda
   const ultimo = pagina.at(-1);
   return { conversas, temMais, proximoCursor: temMais ? encode({ id: ultimo.grupo, t: new Date(ultimo.instante).toISOString(), s: assinatura }) : null,
     versaoContrato: 2, buscaConfigurada: true };
+}
+
+/** Totais globais da carteira, sem busca, filtro de relacionamento, cursor ou limite. */
+export async function resumoInboxWhatsapp(visiveis, { client = prisma } = {}) {
+  const ids = [...new Set(visiveis || [])].sort();
+  const [atual, historico, lixeira] = await Promise.all(['todas', 'historico', 'lixeira'].map(async filtro => {
+    const [totais] = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, filtro })}
+      SELECT COUNT(*)::int AS "conversas",
+        COUNT(*) FILTER (WHERE relacionamento<>'CLIENTE')::int AS "naoVinculadas",
+        COUNT(*) FILTER (WHERE "naoLidas">0)::int AS "conversasNaoLidas",
+        COALESCE(SUM("naoLidas"),0)::int AS "mensagensNaoLidas",
+        COALESCE(SUM("naoLidas") FILTER (WHERE relacionamento='LEAD'),0)::int AS "leads",
+        COALESCE(SUM("naoLidas") FILTER (WHERE relacionamento='CLIENTE'),0)::int AS "clientes",
+        COALESCE(SUM("naoLidas") FILTER (WHERE relacionamento='A_IDENTIFICAR'),0)::int AS "aIdentificar"
+      FROM classificados`);
+    return totais;
+  }));
+  return { conversas: atual.conversas, naoVinculadas: atual.naoVinculadas, conversasNaoLidas: atual.conversasNaoLidas, mensagensNaoLidas: atual.mensagensNaoLidas,
+    contagensNaoLidas: { TODOS: atual.mensagensNaoLidas, LEAD: atual.leads, CLIENTE: atual.clientes, A_IDENTIFICAR: atual.aIdentificar },
+    historicoConversas: historico.conversas, historicoConversasNaoLidas: historico.conversasNaoLidas, historicoMensagensNaoLidas: historico.mensagensNaoLidas,
+    lixeiraConversas: lixeira.conversas, lixeiraConversasNaoLidas: lixeira.conversasNaoLidas, lixeiraMensagensNaoLidas: lixeira.mensagensNaoLidas };
 }
 
 export function filtroMensagensIdentidade(segmentos) {
@@ -124,9 +153,13 @@ async function resumirGrupos(grupos, { visiveis, client }) {
       { contatos: { some: { portalClientId: { notIn: visiveis } } } }, { conversas: { some: { portalClientId: { not: null, notIn: visiveis } } } },
     ] }, select: { interlocutorId: true } }),
   ]);
-  const recebidas = await client.$queryRaw(Prisma.sql`SELECT DISTINCT ON (c."canalId",c."vinculoNumeroId") c."canalId",c."vinculoNumeroId",m."ocorridaEmProvedor",m."registradaEm"
+  // A janela usa o instante efetivo da entrada, não a ordem de chegada do webhook.
+  // Sem vigência de identidade, legados só compartilham timestamps do mesmo telefone.
+  const recebidas = await client.$queryRaw(Prisma.sql`SELECT DISTINCT ON (c."canalId",c."vinculoNumeroId",CASE WHEN c."vinculoNumeroId" IS NULL THEN c."telefoneE164" END)
+      c."canalId",c."vinculoNumeroId",c."telefoneE164",m."ocorridaEmProvedor",m."registradaEm"
     FROM mensagens_whatsapp m JOIN conversas_whatsapp c ON c.id=m."conversaId" WHERE c.id IN (${Prisma.join(ids)}) AND m.direcao='in'
-    ORDER BY c."canalId",c."vinculoNumeroId",m."registradaEm" DESC,m.id DESC`);
+    ORDER BY c."canalId",c."vinculoNumeroId",CASE WHEN c."vinculoNumeroId" IS NULL THEN c."telefoneE164" END,
+      LEAST(COALESCE(m."ocorridaEmProvedor",m."registradaEm"),m."registradaEm") DESC,m."registradaEm" DESC,m.id DESC`);
   return grupos.map(g => {
     const vigente = s => !s.vinculoNumero?.encerrouEm;
     const maisRecente = lista => [...lista].sort((a,b) => new Date(b.updatedAt)-new Date(a.updatedAt) || b.id.localeCompare(a.id))[0];
@@ -149,7 +182,8 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     const canais = [...new Set(g.segmentos.filter(vigente).map(s => s.canalId || 'principal'))].map(canalId => {
       const candidatos = g.segmentos.filter(s => vigente(s) && (s.canalId || 'principal') === canalId);
       const s = candidatos.find(s => s.id === segmento.id) || maisRecente(candidatos);
-      const entrada = recebidas.find(m => m.canalId === s.canalId && m.vinculoNumeroId === s.vinculoNumeroId);
+      const entrada = recebidas.find(m => m.canalId === s.canalId && m.vinculoNumeroId === s.vinculoNumeroId
+        && (s.vinculoNumeroId || m.telefoneE164 === s.telefoneE164));
       const janela = avaliarJanela24h(entrada || null);
       return { id: s.canalId || 'principal', chave: s.canalWhatsapp?.chave || 'principal', finalidade: s.canalWhatsapp?.finalidade || 'PRINCIPAL', conversaId: s.id, vinculoNumeroId:s.vinculoNumeroId || null, telefoneE164:s.telefoneE164, telefoneMascarado:mascararTelefone(s.telefoneE164), janela,
         podeResponder: Boolean(s.canalWhatsapp?.ativo !== false && !s.vinculoNumero?.encerrouEm && janela.situacao === 'ABERTA') };

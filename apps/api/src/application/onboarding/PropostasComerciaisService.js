@@ -217,7 +217,7 @@ export function criarPropostasComerciais({
         },
         data: {
           status: "APROVADA",
-          snapshot: { ...p.snapshot, diagnosticoId: jornada.diagnostico.id, servicosConferidos: jornada.diagnostico.dados.servicos, limitacaoEscopo: jornada.diagnostico.dados.dispensaConsultaPrivada || null },
+          snapshot: { ...p.snapshot, diagnosticoId: jornada.diagnostico.id, servicosConferidos: jornada.diagnostico.dados.servicos, limitacaoEscopo: jornada.diagnostico.dados.dispensaConsultaPrivada || null, conferenciaCadastro: jornada.diagnostico.dados.conferenciaCadastro || null },
           aprovadaPor: user.id,
           aprovadaEm: agora()
         }

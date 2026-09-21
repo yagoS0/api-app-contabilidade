@@ -1,5 +1,13 @@
 # CLAUDE.md — Web (apps/web)
 
+## Atendimento por etapas e contraste — revisão de 21/09/2026
+
+A lista mostra nome (telefone só na ausência dele), relacionamento e não lidas. Ctrl+B e o botão Contatos recolhem/restauram a lista; largura ajustável por usuário. Contagens dos filtros vêm do resumo global autorizado, nunca da página carregada. Mensagens recebidas ficam à esquerda em superfície neutra clara; enviadas à direita em azul, preservando os tokens dos dois temas. Notas partem da mensagem original e usam somente os escopos autorizados retornados pelo servidor; não há modo de nota acima do compositor.
+
+O atendimento abre diretamente em Ficha, Recomeçar e Nova solicitação, com histórico anterior próximo desses botões. Mapa completo das etapas precede as ações abertas; alternativas ficam em abas que preservam campos. Dados capturados ficam abaixo. A proposta gerada abre seu resultado e mantém os dados do orçamento em aba própria. Valores podem ser ajustados antes do aceite com justificativa; contrato usa a opção aceita e o modelo aprovado. Não existe edição retroativa de contrato nem integração automática de assinatura/cobrança neste lote.
+
+Lead usa o canal comercial, sem seletor. Clientes preservam seleção explícita e rascunhos por canal. A ficha fora do chat não reutiliza o ID antigo do atendimento para enviar: requer destino explícito do chat. Uma entrada abre somente a janela do número que a recebeu. Prévia preparada para outro destino exige novo preparo. APIs indisponíveis têm conferência manual com evidência ou diagnóstico limitado declarado; nunca simular consulta bem-sucedida. Ver `docs/jornada-lead-passo-a-passo.md` e `docs/chat-atendimento-20260921-revisao.md`.
+
 ## Chat e mensagens rápidas simplificados — 21/09/2026
 
 `whatsapp.css` consolida o layout neutro: contatos compactos, metadados sob demanda, cabeçalho com ações principais e Mais. Preservar origem do nome acessível, empresa operacional, fila/pausa e falhas de entrega. `CompositorConversa` descarta somente a chave pessoa/canal/modo atual; Desfazer recupera referência e destinatário preparado, sem contornar a reconferência do destino. Durante envio, descarte fica bloqueado. `mensagensRapidas.js` guarda apenas chaves e contagens de inserção por usuário/navegador; sem usuário válido, só sessão. Biblioteca abre em nova aba, menu rápido permanece à esquerda; selecionar abre prévia visível e Usar mensagem prepara o compositor. Editor versionado separa categorias/rascunhos/histórico e exclusão não atinge aprovações. `AcoesRapidas` nomeia empresa/canal/destinatários e cancela seleção/reenvio ao sair ou trocar empresa. Contextos e verificações: `docs/chat-simples-20260921.md` na raiz.
@@ -8,7 +16,7 @@
 
 `OfficeNavigation` reúne Operação, Relacionamento e Gestão usando os caminhos existentes. Monta somente no `SessionBoundary` autenticado, com sol único e resumo de mensagens; home e cabeçalho da empresa não repetem a marca. O provider conserva histórico, competência e modo da carteira, mas não desenha conteúdo antes da confirmação de sessão. A antiga gaveta Ferramentas e atalhos repetidos da home foram substituídos pela navegação global; cadastro de empresa continua na carteira. Formulários públicos e portal do cliente permanecem separados.
 
-Entrada de clientes separa atendimento comercial, dados e implantação, sem deduzir contratação do enum `EM_TRILHA`. A conversa permite abrir a ficha em nova aba, preservando o rascunho, e mantém o processo completo recolhido sob demanda. O chat usa o espaço restante de um shell flexível: não subtrair uma altura fixa de cabeçalho. Ver `docs/organizacao-escritorio.md`.
+Entrada de clientes separa atendimento comercial, dados e implantação, sem deduzir contratação do enum `EM_TRILHA`. A conversa permite abrir a ficha em nova aba, preservando o rascunho. O atendimento agora exibe etapas e ações diretamente (revisão de 21/09 acima). O chat usa o espaço restante de um shell flexível: não subtrair uma altura fixa de cabeçalho. Ver `docs/organizacao-escritorio.md`.
 
 ## Chat por interlocutor — 16/09/2026
 

@@ -3,7 +3,7 @@ import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { RecursosComerciais } from "../components/RecursosComerciais";
 
-export function BibliotecaComercialPage({ api, onBack }) {
+export function BibliotecaComercialPage({ api, onBack, onUsarMensagem }) {
   const [recursos, setRecursos] = useState([]), [erro, setErro] = useState(""), [carregando, setCarregando] = useState(true);
   const vivo = useRef(false), sequencia = useRef(0);
   const carregar = useCallback(async () => {
@@ -15,6 +15,6 @@ export function BibliotecaComercialPage({ api, onBack }) {
   useEffect(() => { vivo.current = true; carregar(); return () => { vivo.current = false; sequencia.current++; }; }, [carregar]);
   return <PageShell title="Biblioteca compartilhada" subtitle="Mensagens rápidas, dados do escritório, honorários e contratos" onBack={onBack} actions={<Button variant="secondary" onClick={carregar} disabled={carregando}>Atualizar biblioteca</Button>} contentStyle={{ maxWidth: "var(--content-max)", width: "100%", margin: "0 auto", padding: 24 }}>
     {erro && <p role="alert">{erro}</p>}{carregando && <p role="status">Carregando biblioteca…</p>}
-    <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} inicialmenteAberto />
+    <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} onUsarMensagem={onUsarMensagem} inicialmenteAberto />
   </PageShell>;
 }

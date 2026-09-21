@@ -12,11 +12,12 @@ import { adquirirLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js
 import { gerarPropostaPdf, propostaParaCliente } from "./PropostaComercialPdf.js";
 import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
 import { exigirPropostaDefinitiva } from "./PoliticaJornadaComercial.js";
+import { resolverConversaEnvioComercial } from "./CanalEnvioComercialService.js";
 export async function enviarProposta(id, propostaId, user, {
   db = prisma,
   webUrl = COMERCIAL_WEB_URL,
   cloud = null,
-  conversaId = null,
+  conversaId,
   janela = janelaDaConversa
 } = {}) {
   exigirGestor(user);
@@ -43,7 +44,7 @@ export async function enviarProposta(id, propostaId, user, {
       conversa: true
     }
   });
-  const c = conversaId ? await db.conversaWhatsapp.findUnique({ where: { id: conversaId } }) : lead?.conversa;
+  const c = await resolverConversaEnvioComercial({ caso: lead, conversaId, db });
   if (!c || c.excluidaEm) throw new OnboardingError("conversa_indisponivel", "A conversa não está disponível.", 409);
   await exigirConversaDoCaso(lead, c, db);
   const identidade = await capturarIdentidadeComercial(c, db);
@@ -86,9 +87,10 @@ export async function enviarProposta(id, propostaId, user, {
           }
         }
       });
-      if (!proposta || !atual || atual.excluidaEm || atual.canalId !== c.canalId || atual.vinculoNumeroId !== c.vinculoNumeroId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw new OnboardingError("atendimento_alterado", "Conversa ou proposta mudou durante o envio.", 409);
+      if (!proposta || !atual || atual.excluidaEm || atual.telefoneE164 !== c.telefoneE164 || atual.canalId !== c.canalId || atual.vinculoNumeroId !== c.vinculoNumeroId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw new OnboardingError("atendimento_alterado", "Conversa ou proposta mudou durante o envio.", 409);
       const casoAtual = await db.atendimentoLead.findUnique({ where: { id: lead.id } });
       await exigirConversaDoCaso(casoAtual, atual, db);
+      await resolverConversaEnvioComercial({ caso: casoAtual, conversaId: c.id, db });
       await conferirIdentidadeComercial(atual, identidade, db);
       const jornada = await exigirPropostaDefinitiva({ db, ficha: r, user });
       if (p.snapshot.diagnosticoId && jornada.diagnostico.id !== p.snapshot.diagnosticoId) throw new OnboardingError("diagnostico_alterado", "O diagnóstico mudou depois da aprovação da proposta.", 409);

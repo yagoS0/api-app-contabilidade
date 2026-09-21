@@ -5,14 +5,14 @@ import { relacionamentoDaConversa, chaveDoRascunho } from "../../lib/identidadeA
 jest.mock("../AtendimentoComercial", () => ({ OrientacoesRapidas: ({ onPreparado }) => <button onClick={() => onPreparado({ texto: "Orientação aprovada", orientacaoId: "orientacao-1", versao: 2, variaveis: { nome: "Liz" }, atendimentoLeadId: "caso-1" })}>Preparar exemplo</button> }));
 
 const c = {
-  id: "conversa-a", interlocutorId: "liz", canalId: "principal", portalClientId: "klaus",
+  id: "conversa-a", interlocutorId: "liz", canalId: "principal", portalClientId: "klaus", relacionamento: { tipo: "CLIENTE" },
   janela: { situacao: "ABERTA" },
   canais: [{ id: "principal", chave: "Atendimento", conversaId: "conversa-a", janela: { situacao: "ABERTA" } }, { id: "comercial", chave: "Comercial", conversaId: "conversa-b", janela: { situacao: "ABERTA" } }],
   capacidades: { escoposNotas: [{ id: "klaus", rotulo: "Klaus Nigro", escopo: "EMPRESA", portalClientId: "klaus" }, { id: "lente", rotulo: "Lente", escopo: "EMPRESA", portalClientId: "lente" }] },
 };
 function hook() {
   return { api: { criarNotaInternaWhatsapp: jest.fn(), enviarOrientacaoWhatsapp: jest.fn(async () => ({ ok: true })) },
-    rascunhosRef: { current: new Map() }, responder: jest.fn(async () => ({ ok: true })), salvarNota: jest.fn(async () => ({ ok: true })), abrir: jest.fn() };
+    rascunhosRef: { current: new Map() }, responder: jest.fn(async () => ({ ok: true })), salvarNota: jest.fn(async () => ({ ok: true })), abrir: jest.fn(), atualizarConversa: jest.fn() };
 }
 
 test("número desconhecido não vira lead; relacionamento e solicitação são independentes", () => {
@@ -26,14 +26,15 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   const texto = screen.getByRole("textbox", { name: "Responder ao cliente" });
   fireEvent.change(texto, { target: { value: "Mensagem pelo atendimento" } });
   ui.rerender(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
-  expect(screen.getByLabelText("Canal da resposta")).toHaveValue("principal");
+  expect(screen.queryByLabelText("Canal da resposta")).not.toBeInTheDocument();
+  expect(screen.getByText(/WhatsApp Atendimento/)).toBeVisible();
   expect(texto).toHaveValue("Mensagem pelo atendimento");
-  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "comercial" } });
+  ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   expect(texto).toHaveValue("");
   fireEvent.change(texto, { target: { value: "Mensagem comercial" } });
   fireEvent.click(screen.getByRole("button", { name: "Responder" }));
   await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Mensagem comercial"));
-  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "principal" } });
+  ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "principal" }} />);
   expect(texto).toHaveValue("Mensagem pelo atendimento");
 });
 
@@ -67,21 +68,15 @@ test("mudança de vigência também exige conferência quando conversa e canal p
   expect(h.responder).not.toHaveBeenCalled();
 });
 
-test("nota privada não usa transporte e trocar empresa conserva rascunhos separados", async () => {
+test("compositor não oferece nota nem seletor de canal; notas ficam nas ações da mensagem", () => {
   const h = hook(); render(<CompositorConversa conversa={{ ...c, janela: { situacao: "EXPIRADA" }, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) }} hook={h} />);
-  fireEvent.click(screen.getByRole("button", { name: /Nota interna/ }));
-  fireEvent.change(screen.getByLabelText("Escopo da nota interna"), { target: { value: "klaus" } });
-  const texto = screen.getByLabelText("Texto da nota interna");
-  fireEvent.change(texto, { target: { value: "Somente equipe Klaus" } });
-  fireEvent.change(screen.getByLabelText("Escopo da nota interna"), { target: { value: "lente" } });
-  expect(texto).toHaveValue("");
-  fireEvent.change(texto, { target: { value: "Somente equipe Lente" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar nota interna" }));
-  await waitFor(() => expect(h.salvarNota).toHaveBeenCalledWith("conversa-a", expect.objectContaining({ texto: "Somente equipe Lente", escopo: "EMPRESA", portalClientId: "lente", chaveIdempotencia: expect.any(String) })));
+  expect(screen.queryByRole("button", { name: /Nota interna/i })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Escopo da nota interna")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Canal da resposta")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Responder ao cliente")).toBeDisabled();
+  expect(h.salvarNota).not.toHaveBeenCalled();
   expect(h.responder).not.toHaveBeenCalled();
   expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText("Escopo da nota interna"), { target: { value: "klaus" } });
-  expect(texto).toHaveValue("Somente equipe Klaus");
 });
 test("contexto fiscal pendente não impede resposta manual pela janela aberta", async () => {
   const h = hook(); render(<CompositorConversa conversa={{ ...c, contextoOperacional: { pendente: true }, capacidades: { fiscal: false } }} hook={h} />);
@@ -90,17 +85,25 @@ test("contexto fiscal pendente não impede resposta manual pela janela aberta", 
   await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-a", "Vou conferir o seu cadastro."));
 });
 
-test("nota após falha reutiliza a chave e não limpa o conteúdo", async () => {
-  const h = hook(); h.salvarNota.mockResolvedValueOnce({ ok: false, erro: new Error("Sem confirmação") });
-  render(<CompositorConversa conversa={c} hook={h} />);
-  fireEvent.click(screen.getByRole("button", { name: /Nota interna/ }));
-  fireEvent.change(screen.getByLabelText("Escopo da nota interna"), { target: { value: "klaus" } });
-  fireEvent.change(screen.getByLabelText("Texto da nota interna"), { target: { value: "Preservar esta nota" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar nota interna" }));
-  await screen.findByText("Sem confirmação");
-  fireEvent.click(screen.getByRole("button", { name: "Salvar nota interna" }));
-  await waitFor(() => expect(h.salvarNota).toHaveBeenCalledTimes(2));
-  expect(h.salvarNota.mock.calls[0][1].chaveIdempotencia).toBe(h.salvarNota.mock.calls[1][1].chaveIdempotencia);
+test("lead responde pelo comercial e ignora pedido para trocar ao principal", async () => {
+  const h = hook(), lead = { ...c, relacionamento: { tipo: "LEAD" } };
+  const ui = render(<CompositorConversa conversa={lead} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Atendimento comercial preparado." } });
+  ui.rerender(<CompositorConversa conversa={lead} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "principal" }} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Atendimento comercial preparado.");
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Atendimento comercial preparado."));
+  expect(h.responder).toHaveBeenCalledTimes(1);
+});
+
+test("lead sem comercial não envia pelo principal mesmo com janela aberta", () => {
+  const h = hook();
+  render(<CompositorConversa conversa={{ ...c, relacionamento: { tipo: "LEAD" }, canais: [c.canais[0]] }} hook={h} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByTestId("resposta-bloqueada")).toHaveTextContent("ainda não tem conversa nesse número");
+  expect(h.responder).not.toHaveBeenCalled();
 });
 
 test("orientação editada exige prévia e guarda origem sem certificar texto aprovado", async () => {
@@ -118,12 +121,12 @@ test("orientação editada exige prévia e guarda origem sem certificar texto ap
 test("descartar só apaga o rascunho do canal atual e não o restaura ao reabrir", () => {
   const h = hook(); const ui = render(<CompositorConversa conversa={c} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Manter no principal" } });
-  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "comercial" } });
+  ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Descartar no comercial" } });
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("");
   expect(screen.getByRole("status")).toHaveTextContent("Rascunho descartado");
-  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "principal" } });
+  ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "principal" }} />);
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Manter no principal");
   expect(screen.queryByRole("button", { name: "Desfazer" })).not.toBeInTheDocument();
   ui.unmount(); render(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
