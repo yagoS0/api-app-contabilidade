@@ -183,12 +183,20 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-commercial-intake > fieldset > .btn { min-height: 40px; }
 .wa-commercial-process { margin-top: 12px; }
 .wa-commercial-process > summary { cursor: pointer; padding: 8px 0; color: var(--text); font-weight: 600; }
-.wa-case-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-block: 6px; }
+.wa-case-toolbar { display: grid; gap: 8px; margin: 0 0 16px; }
 .wa-case-toolbar > .wa-commercial-process { margin: 0; font-size: .8125rem; }
 .wa-case-toolbar > .wa-commercial-process[open] { flex-basis: 100%; }
-.wa-case-link, .wa-case-link a { display: inline-block; padding: 8px 0; color: var(--text); text-underline-offset: 3px; font-size: .875rem; }
+.wa-case-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wa-case-actions > .btn { display: inline-flex; margin: 0; min-width: 0; min-height: 42px; padding: 9px 12px; font-size: .875rem; line-height: 1.4; text-align: center; white-space: normal; overflow-wrap: anywhere; text-decoration: none; }
+.wa-commercial-intake > .wa-case-reset { gap: 12px; padding: 16px; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.wa-case-reset legend { padding-inline: 6px; font-size: .875rem; font-weight: 600; }
+.wa-case-reset > p { margin: 0; }
+.wa-case-reset-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .wa-commercial-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.wa-commercial-section fieldset > .btn { margin: 10px 6px 0 0; }
+.wa-commercial-section { min-width: 0; }
+.wa-commercial-section .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; padding-block: 9px; }
+.wa-details--commercial > .wa-section-heading { gap: 16px; margin-bottom: 18px; }
+.wa-details--commercial > .wa-section-heading > .btn { flex: 0 0 38px; width: 38px; height: 38px; padding: 0; }
 .wa-link-company { border-top: 1px solid var(--border); padding-top: 16px; }
 .wa-link-company summary { cursor: pointer; font-size: .875rem; font-weight: 600; }
 .wa-identity-review label, .wa-details .lead-avulsa label, .wa-details .lead-step-fields label, .wa-lead-panel label { display: grid; gap: 6px; margin-block: 10px; font-size: .875rem; }
@@ -324,8 +332,6 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-page { font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); font-size: 15px; line-height: 1.55; }
 .wa-page input, .wa-page textarea, .wa-page select, .wa-page button { font-family: inherit; }
 .wa-page .wa-bubble-text { font-size: 15px; line-height: 1.6; }
-.wa-case-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; margin-bottom: 16px; }
-.wa-case-toolbar .wa-case-link { margin: 0; text-decoration: none; }
-.wa-previous-requests { flex-basis: 100%; font-size: .875rem; }
+.wa-previous-requests { min-width: 0; font-size: .875rem; }
 .wa-previous-requests > summary, .wa-contact-data > summary { cursor: pointer; padding-block: 8px; }
 .wa-contact-data { margin-top: 20px; border-top: 1px solid var(--border); }

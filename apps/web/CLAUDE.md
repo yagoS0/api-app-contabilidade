@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Correção visual do atendimento — 21/09/2026
+
+Ficha, Recomeçar e Nova solicitação compartilham uma grade de três colunas e o mesmo tamanho de botão; o link Ficha precisa de `btn-md`, sem regra legada que remova seu preenchimento lateral. Etapas respondem à largura do painel (`container-type`), com três colunas em espaços menores e cinco no painel amplo. Ações da etapa ficam em um bloco próprio; abas e botões longos quebram texto sem extrapolar a largura. Preservar estados, campos montados e callbacks; esta correção é apenas de layout, sem consultas ou mensagens externas.
+
 ## Atendimento por etapas e contraste — revisão de 21/09/2026
 
 A lista mostra nome (telefone só na ausência dele), relacionamento e não lidas. Ctrl+B e o botão Contatos recolhem/restauram a lista; largura ajustável por usuário. Contagens dos filtros vêm do resumo global autorizado, nunca da página carregada. Mensagens recebidas ficam à esquerda em superfície neutra clara; enviadas à direita em azul, preservando os tokens dos dois temas. Notas partem da mensagem original e usam somente os escopos autorizados retornados pelo servidor; não há modo de nota acima do compositor.
