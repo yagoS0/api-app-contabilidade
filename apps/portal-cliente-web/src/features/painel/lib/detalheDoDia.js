@@ -116,7 +116,7 @@ function baldeDaLinha(linha) {
  * aqui faria a gaveta discordar de qualquer outra leitura das mesmas linhas.
  */
 export function linhasDoDia(linhasDoMes, opcoes = {}) {
-  const { dia = null, balde = null, quantosDias = null } = opcoes;
+  const { dia = null, balde = null, quantosDias = null, mensal = false } = opcoes;
   // ⚠ `null`/`undefined` valem "no mês"; o resto vira número. Um `dia` ilegível (NaN) não casa com
   // nada e devolve lista vazia — nunca cai em "no mês" por acidente, que seria mostrar as projeções
   // do mês debaixo do título de um dia.
@@ -126,11 +126,12 @@ export function linhasDoDia(linhasDoMes, opcoes = {}) {
 
   lista.forEach((l, i) => {
     if (!l) return;
-    if (diaDaLinha(l, quantosDias) !== alvo) return;
+    if (!mensal && diaDaLinha(l, quantosDias) !== alvo) return;
 
     const baldeDesta = baldeDaLinha(l);
     if (!baldeDesta) return;
-    if (balde && baldeDesta !== balde) return;
+    if (balde && !(mensal && balde === 'resultado') &&
+      !(mensal && balde === 'saidas' && ['saida', 'impostos'].includes(baldeDesta)) && baldeDesta !== balde) return;
 
     const frase = String(l?.base?.frase ?? "").trim();
     saida.push({
@@ -147,7 +148,7 @@ export function linhasDoDia(linhasDoMes, opcoes = {}) {
       procedencia: l.procedencia,
       balde: baldeDesta,
       fonte: l.fonte,
-      dia: alvo,
+      dia: mensal ? diaDaLinha(l, quantosDias) : alvo,
       // ⚠⚠ A FRASE É O QUE DIZ DE ONDE O NÚMERO VEIO, e ela vem do SERVIDOR pronta. `null` quando
       // não há — a tela não escreve uma de reserva, senão as duas divergem na primeira correção.
       frase: frase || null,

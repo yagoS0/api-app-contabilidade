@@ -1,3 +1,7 @@
+# Fluxo mensal — 20/09/2026
+
+Pedido atual substitui a apresentação diária: quatro cards do mês selecionado, Entradas, Saídas (despesas + impostos, sem folha), Folha e Resultado (entradas − saídas − folha). Clique detalha o mês inteiro, inclusive linhas sem dia. Shared fluxoMensal usa a agregação existente; não muda motor, fontes ou procedência. Acumulado continua separado. Escritório somente leitura; cliente preserva a declaração de saída para conferência. DRE permanece restrita aos fechamentos contábeis.
+
 # Relatórios — 08/09/2026
 
 ## Correção de entendimento: painel e acumulado automático — 08/09/2026

@@ -95,3 +95,17 @@
   .painel-financeiro .hint,
   .painel-financeiro .dre-rodape { font-size: .875rem; line-height: 1.5; }
 }
+
+/* Resumo mensal do fluxo, com detalhes por categoria. */
+.fluxo-mensal { min-width:0; }
+.fluxo-mensal h3 { text-transform:capitalize; margin:0 0 16px; }
+.fluxo-mensal-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.fluxo-mensal-card { display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--surface, var(--bg-surface)); color:var(--text); font:inherit; text-align:left; cursor:pointer; min-width:0; }
+.fluxo-mensal-card:hover { border-color:var(--primary); }
+.fluxo-mensal-card:focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.fluxo-mensal-card > span:first-child { font-size:14px; font-weight:600; }
+.fluxo-mensal-card strong { font-size:clamp(20px,2vw,28px); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.fluxo-mensal-card small { color:var(--text-muted, var(--muted)); font-size:12px; line-height:1.4; }
+.fluxo-mensal-link { margin-top:auto; padding-top:8px; font-size:13px; color:var(--accent-purple); }
+@media(max-width:1000px) { .fluxo-mensal-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:480px) { .fluxo-mensal-cards { grid-template-columns:1fr; } }

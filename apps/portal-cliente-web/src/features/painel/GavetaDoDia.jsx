@@ -26,6 +26,8 @@
 import { useState } from "react";
 import { api } from "../../api";
 import { AlertaErro } from "../../components/ui";
+import { resumoMensal } from "../../../../../packages/shared/src/fluxoMensal";
+import { linhaDoMes } from "./lib/tabelaDoFluxo";
 import { brl } from "../../lib/format";
 import { useDialogoModal } from "../../lib/hooks";
 // ⚠⚠ A MESMA GRAMÁTICA DE NÚMERO DA EMISSÃO DE NOTA, e ela não pode divergir dentro do app:
@@ -77,7 +79,8 @@ function dataDoDia(competencia, dia) {
  * ⚠ "no mês" é a mesma palavra que a tabela usa na linha sem dia (`fluxo-v3-sem-dia`). Chamá-la
  * aqui de "sem data" ou "projeções" faria a pessoa duvidar de que clicou naquela linha.
  */
-function tituloDaGaveta({ competencia, dia, balde }) {
+function tituloDaGaveta({ competencia, dia, balde, mensal }) {
+  if (mensal) return `${balde === 'saidas' ? 'Saídas' : rotuloDoBalde(balde) || 'Movimentos'} · ${rotuloDoMes(competencia)}`;
   // ⚠ "sem dia", e não "no mês" (31/08/2026): a LINHA que abre esta gaveta se chama "sem dia", e
   // "no mês" é o TOTAL DO RODAPÉ — outro número. Dois nomes para a mesma coisa numa tela em que o
   // vizinho é uma coisa diferente com o nome antigo é como se lê o número errado.
@@ -131,11 +134,11 @@ function fraseDoDia(linha) {
     : "Dia estimado pelas datas em que as notas foram emitidas.";
 }
 
-function LinhaDaGaveta({ linha, aoMudarDia, aoExcluir, ocupada }) {
+function LinhaDaGaveta({ linha, aoMudarDia, aoExcluir, ocupada, somenteLeitura, mostrarSinal }) {
   const leitura = leituraDaProcedencia(linha.procedencia);
   const [editando, setEditando] = useState(false);
   const [dia, setDia] = useState(linha.dia == null ? "" : String(linha.dia));
-  const mexivel = podeMexer(linha);
+  const mexivel = !somenteLeitura && podeMexer(linha);
   const frase = fraseDoDia(linha);
 
   async function salvarDia(ev) {
@@ -155,7 +158,7 @@ function LinhaDaGaveta({ linha, aoMudarDia, aoExcluir, ocupada }) {
     >
       <div className="gaveta-linha-topo">
         <span className="gaveta-rotulo">{linha.rotulo}</span>
-        <span className="gaveta-valor num">{brl(linha.valor)}</span>
+        <span className="gaveta-valor num">{mostrarSinal ? (linha.balde === 'entrada' ? '+ ' : '− ') : ''}{brl(linha.valor)}</span>
       </div>
       {/* ⚠ A palavra ANTES da cor: quem lê no papel ou com leitor de tela recebe a mesma
           informação que quem vê o âmbar. */}
@@ -222,7 +225,7 @@ function LinhaDaGaveta({ linha, aoMudarDia, aoExcluir, ocupada }) {
  * condicionalmente. Com a gaveta fechada não há diálogo nenhum, e um `if` antes do hook quebraria
  * a ordem dos hooks na primeira abertura. O invólucro decide existir; este decide o quê mostrar.
  */
-function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoMudar }) {
+function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoMudar, mensal = false, somenteLeitura = false }) {
   /**
    * ⚠⚠ ABERTA PELO DIA, O CAMPO DE DATA JÁ VEM COM AQUELE DIA — e isso é o pedido do dono lido ao
    * pé da letra: *"ele deve clicar no campo do dia (…) e aí ele digita a saída"*. Quem clicou no
@@ -246,7 +249,7 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
   // ⚠ `quantosDias` fecha a borda do mês: dia 31 num mês de 30 pertence a "no mês", e é assim que a
   // tabela já o desenha. Sem ele a gaveta mostraria um dia que a tabela não tem.
   const quantosDias = diasDoMes(competencia).length || null;
-  const linhas = linhasDoDia(linhasDoMes, { dia, balde, quantosDias });
+  const linhas = linhasDoDia(linhasDoMes, { dia, balde, quantosDias, mensal });
 
   /**
    * ⚠⚠ QUANDO O FORMULÁRIO APARECE — e o critério é o do pedido do dono, literal.
@@ -260,7 +263,7 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
    * fechada), some da célula que ele clicou e reapareceria em outra coluna. Ele acharia que o
    * sistema perdeu o que ele digitou.
    */
-  const podeAcrescentar = !balde || balde === "saida";
+  const podeAcrescentar = !somenteLeitura && (!balde || balde === "saida" || balde === 'saidas');
 
   function campo(k) {
     return (ev) => setForm((f) => ({ ...f, [k]: ev.target.value }));
@@ -373,7 +376,7 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
         data-dia={dia == null ? "no-mes" : String(dia)}
       >
         <header className="gaveta-topo">
-          <h2 id="gaveta-do-dia-titulo">{tituloDaGaveta({ competencia, dia, balde })}</h2>
+          <h2 id="gaveta-do-dia-titulo">{tituloDaGaveta({ competencia, dia, balde, mensal })}</h2>
           <button type="button" className="btn btn-icone" onClick={aoFechar} aria-label="Fechar">
             ✕
           </button>
@@ -381,10 +384,11 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
 
         {/* ⚠ VAZIO É RESPOSTA, e ele diz que é resposta. Sem a frase, a gaveta vazia se lê como
             carregamento que não terminou — e aqui não há carregamento nenhum para terminar. */}
+        {mensal && <p>{balde === "resultado" ? "Entradas − saídas − folha" : "Total do mês"}: {brl(resumoMensal({linhas:linhasDoMes}, linhaDoMes)[balde]?.valor)}</p>}
         {linhas.length === 0 ? (
           <p className="empty">
             {balde
-              ? `Nada em ${rotuloDoBalde(balde)} ${dia == null ? "neste mês" : "neste dia"}.`
+              ? `Nada em ${balde === "saidas" ? "Saídas" : rotuloDoBalde(balde)} ${dia == null ? "neste mês" : "neste dia"}.`
               : `Nenhum lançamento ${dia == null ? "sem dia neste mês" : "neste dia"}.`}
           </p>
         ) : (
@@ -393,6 +397,8 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
               <LinhaDaGaveta
                 key={l.chave}
                 linha={l}
+                somenteLeitura={somenteLeitura}
+                mostrarSinal={mensal && balde === 'resultado'}
                 ocupada={salvando}
                 aoMudarDia={mudarODia}
                 aoExcluir={tirarDoFluxo}

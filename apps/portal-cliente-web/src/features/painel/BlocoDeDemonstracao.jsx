@@ -53,6 +53,7 @@ import {
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
+import { FluxoMensal } from "./FluxoMensal";
 import { GavetaDoDia } from "./GavetaDoDia";
 import { GuiasVencidas } from "./GuiasVencidas";
 
@@ -545,7 +546,7 @@ function Horizonte({ meses, unidade, comFolha, cicloAtual, aoAbrirMes }) {
                   type="button"
                   className="fluxo-v3-periodo"
                   onClick={() => aoAbrirMes(c)}
-                  title={`Ver ${rotuloDoMes(c)} dia a dia`}
+                  title={`Ver ${rotuloDoMes(c)} em resumo mensal`}
                 >
                   {mesCurto(c)}
                 </button>
@@ -670,7 +671,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
    * mergulho a partir da tabela de meses. Decisão do dono: *"ao invés de mostrar o mês ele vai
    * mostrar os dias mesmo"*. O `horizonte` é a antiga tabela de meses, transposta, atrás do botão.
    */
-  const [modo, setModo] = useState("dias");
+  const [modo, setModo] = useState("mensal");
   /**
    * ⚠⚠ ONDE A TABELA COMEÇA — e são DUAS coisas diferentes, que já foram uma só e custaram caro.
    *
@@ -739,7 +740,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
   /** ⚠ O ciclo do servidor manda no bloco da esquerda enquanto ninguém tiver andado. */
   const esquerda = mesEsquerda || competencia || dados?.cicloAtual;
   const par = parDeMeses(meses, esquerda);
-  const nav = navegacaoDoPar({ meses, esquerda, janela });
+  const nav = navegacaoDoPar({ meses, esquerda, janela, quantidade: 1 });
   /**
    * ⚠⚠ A COLUNA FOLHA SÓ EXISTE SE HOUVER FOLHA (v3 §3.2), e **quem decide é o servidor**.
    * ⚠ `!== false`: resposta que não trouxesse o campo mostraria a coluna vazia, que é barato —
@@ -794,7 +795,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
   /** ⚠ Do horizonte para os dias DAQUELE mês — o caminho de ida e volta é o mesmo. */
   function abrirMes(comp) {
     setMesEsquerda(comp);
-    setModo("dias");
+    setModo("mensal");
   }
 
   const podeVoltar = modo === "horizonte" ? Boolean(janela?.podeVoltar) : nav.podeVoltar;
@@ -836,7 +837,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
             ))}
           </div>
 
-          {visao === "fluxo" ? (
+          {visao === "fluxo" && modo === "horizonte" ? (
             <div className="seg" role="group" aria-label="Unidade">
               {UNIDADES.map((u) => (
                 <button
@@ -872,7 +873,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
               type="button"
               className="btn btn-alternador"
               aria-pressed={modo === "horizonte"}
-              onClick={() => setModo((m) => (m === "horizonte" ? "dias" : "horizonte"))}
+              onClick={() => setModo((m) => (m === "horizonte" ? "mensal" : "horizonte"))}
             >
               Horizonte
             </button>
@@ -936,37 +937,9 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
 
       {!atual.carregando && !atual.erro && dados ? (
         visao === "fluxo" ? (
-          modo === "dias" ? (
-            /* ⚠⚠ "QUANDO A TELA PERMITIR" — abaixo de ~900px o segundo mês vai ABAIXO do primeiro,
-               nunca some, e a página não rola para o lado. A regra é do CSS (`.fluxo-v4-par`), e o
-               DOM é o mesmo nas duas larguras: esconder um bloco por media query faria a tela
-               mostrar menos dinheiro no celular sem dizer. */
-            <div className="fluxo-v4-par">
-              {par.map((bloco) => (
-                <TabelaDeDias
-                  key={bloco.competencia}
-                  bloco={bloco}
-                  unidade={unidade}
-                  comFolha={comFolha}
-                  /* ⚠ O bloco diz QUAL mês é o dele — a gaveta precisa das linhas daquele mês, e
-                     os dois blocos da tela são meses diferentes. */
-                  aoAbrir={(dia, balde) => setGaveta({ competencia: bloco.competencia, dia, balde })}
-                  /* ⚠⚠ SÓ O MÊS CORRENTE TEM "HOJE". Passar o dia para os outros pintaria de ciano
-                     uma data que não significa nada naquele mês — e o ciano, nesta tela, quer dizer
-                     "é aqui que você está". ⚠ Quem é o mês corrente é o SERVIDOR (`cicloAtual`),
-                     nunca uma conta feita aqui. */
-                  diaDeHoje={bloco.competencia === dados.cicloAtual ? diaDeHoje : null}
-                  cabecalho={(
-                    <h3
-                      className="fluxo-v4-mes"
-                      data-agora={bloco.competencia === dados.cicloAtual ? "sim" : undefined}
-                    >
-                      {rotuloDoMes(bloco.competencia)}
-                    </h3>
-                  )}
-                />
-              ))}
-            </div>
+          modo === "mensal" ? (
+            <FluxoMensal mes={meses.find(m => m.competencia === esquerda)} competencia={esquerda}
+              comFolha={comFolha} aoAbrir={balde => setGaveta({ competencia: esquerda, dia: null, balde, mensal: true })} />
           ) : (
             <Horizonte
               meses={meses}
@@ -996,6 +969,8 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
 
       <GavetaDoDia
         aberta={Boolean(gaveta)}
+        mensal={gaveta?.mensal}
+        somenteLeitura={somenteLeitura}
         competencia={gaveta?.competencia}
         dia={gaveta?.dia ?? null}
         balde={gaveta?.balde ?? null}

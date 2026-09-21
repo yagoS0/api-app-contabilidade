@@ -318,13 +318,13 @@ export function parDeMeses(meses, esquerda) {
  * ler só os flags faria cada passo pedir uma consulta nova. As duas coisas juntas é o que dá um
  * passo barato dentro da janela e honesto fora dela.
  */
-export function navegacaoDoPar({ meses, esquerda, janela } = {}) {
+export function navegacaoDoPar({ meses, esquerda, janela, quantidade = MESES_LADO_A_LADO } = {}) {
   const lista = Array.isArray(meses) ? meses : [];
   const idx = lista.findIndex((m) => m?.competencia === esquerda);
   const temAnterior = idx > 0;
   // ⚠ `+ MESES_LADO_A_LADO` e não `+ 1`: avançar só compensa se o par INTEIRO couber, senão a seta
   // levaria a um bloco da direita nomeado como ausente — um passo que piora a tela.
-  const temSeguinte = idx >= 0 && idx + MESES_LADO_A_LADO < lista.length;
+  const temSeguinte = idx >= 0 && idx + quantidade < lista.length;
   return {
     podeVoltar: temAnterior || Boolean(janela?.podeVoltar),
     podeAvancar: temSeguinte || Boolean(janela?.podeAvancar),

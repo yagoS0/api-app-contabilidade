@@ -1,3 +1,7 @@
+# Fluxo mensal — 20/09/2026
+
+Pedido atual substitui a apresentação diária: quatro cards do mês selecionado, Entradas, Saídas (despesas + impostos, sem folha), Folha e Resultado (entradas − saídas − folha). Clique detalha o mês inteiro, inclusive linhas sem dia. Shared fluxoMensal usa a agregação existente; não muda motor, fontes ou procedência. Acumulado continua separado. Escritório somente leitura; cliente preserva a declaração de saída para conferência. DRE permanece restrita aos fechamentos contábeis.
+
 # Painel, Fluxo e DRE — celular (16/09/2026)
 
 Pedido atual: adaptar o portal cliente para celular e usar a paleta do contador. A paleta vem dos tokens globais; não fixar cores neste módulo. As decisões antigas de layout não impedem esta adaptação.
