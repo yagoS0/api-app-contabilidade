@@ -6,7 +6,7 @@ import { consultarPublicaLead } from "./FiscalLeadService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
 import { pediuMenuWhatsapp, declarouSerCliente, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
-import { avisoAtendimentoComercial } from "./mensagensComerciais.js";
+import { avisoAtendimentoComercial, botoesModalidadeServico, modalidadeDoBotao } from "./mensagensComerciais.js";
 
 import { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
 export { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
@@ -34,11 +34,13 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const tipo = item.tipo || mensagem.tipo || "text";
   if (tipo === "reaction") return { tratado: true, motivo: "REACAO_SEM_COLETA" };
   const anexo = !["text", "interactive", "button"].includes(tipo);
-  const textoEntrada = anexo ? "" : item.corpo || mensagem.corpo;
   const idInteracao = typeof item.interacao === "string" ? item.interacao : item.interacao?.id || item.interacao?.button_reply?.id || item.interacao?.list_reply?.id;
+  const escolhaModalidade = modalidadeDoBotao(idInteracao);
+  // A escolha vem do ID emitido pelo servidor; o título não é uma declaração.
+  const textoEntrada = anexo || escolhaModalidade ? "" : item.corpo || mensagem.corpo;
   // Um caso anterior, inclusive de outro canal, não transforma saudação/menu em
   // resposta cadastral. Cliques são decididos pelo ID, nunca pelo título recebido.
-  const navegacao = idInteracao ? !identificarOrigemComercial("", item.interacao)
+  const navegacao = idInteracao ? !identificarOrigemComercial("", item.interacao) && !escolhaModalidade
     : pediuMenuWhatsapp(textoEntrada) || declarouSerCliente(textoEntrada) || pediuEquipeWhatsapp(textoEntrada);
   const inicial = await db.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
   const anterior = await db.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
@@ -79,7 +81,9 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const esperada = proximaPergunta(caso.onboarding, { desconhecidos });
     // No primeiro pedido ainda não fizemos uma pergunta. "Minha empresa está
     // parada e não sei o que fazer" não significa que a pessoa desconhece o CNPJ.
-    const leitura = anexo ? { operacoes: [], humano: true }
+    const escolhaAntiga = Boolean(escolhaModalidade && (escolhaModalidade.atendimentoId !== caso.id || esperada.campo !== "modalidadeServico" || triagem.campoEsperado !== "modalidadeServico"));
+    const leitura = escolhaModalidade ? { operacoes: escolhaAntiga ? [] : [{ campo: "modalidadeServico", acao: "set", valor: escolhaModalidade.valor }] }
+      : anexo ? { operacoes: [], humano: true }
       : interpretarColetaComercial({ texto: textoEntrada, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null), anoParadaPendente: triagem.anoParadaPendente });
     const mudouOrigem = origem && origem !== caso.onboarding.origem;
     const referencia = mensagem.respostaAProviderMessageId || item.respostaAProviderMessageId;
@@ -97,7 +101,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       : !mudouOrigem && leitura.anoParadaPendente !== undefined ? leitura.anoParadaPendente : triagem.anoParadaPendente || null;
     const perguntaSeguinte = proxima.campo === "paradaDesde" && /^\d{4}$/.test(String(anoParadaPendente || ""))
       ? `Em que mês de ${anoParadaPendente} a empresa parou? Se não souber, pode dizer “não sei”.` : proxima.pergunta;
-    const manterColeta = leitura.retomada || leitura.aguardar || menuAntigo;
+    const manterColeta = leitura.retomada || leitura.aguardar || menuAntigo || escolhaAntiga;
     const semInterpretacao = !leitura.operacoes.length && !leitura.desconhecido && !leitura.resposta && !origem && !leitura.humano && !leitura.reinicio && !manterColeta;
     const esclarecimentos = manterColeta ? triagem.esclarecimentos || 0 : semInterpretacao ? (triagem.esclarecimentos || 0) + 1 : 0;
     encaminhar ||= !manterColeta && (esclarecimentos > 1 || !proxima.campo || leitura.desconhecido === "cnpj");
@@ -106,7 +110,8 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
         : leitura.desconhecido === "cnpj" ? "Sem problema. A equipe vai ajudar você a localizar o CNPJ e continuar a análise."
           : leitura.humano || esclarecimentos > 1 ? "Vou chamar a equipe para entender melhor o que você precisa e continuar por aqui."
             : "Já tenho as informações iniciais. A equipe vai conferir seu caso e preparar a proposta com os serviços e valores.";
-    const texto = menuAntigo ? "Esse menu é anterior ao atendimento que você está preenchendo. Escreva “menu” para ver as opções atuais ou conte o que deseja mudar. Seus dados foram preservados."
+    const texto = escolhaAntiga ? `Essa opção é de outra solicitação ou de uma etapa que já passou. Vamos continuar o atendimento atual.\n\n${perguntaSeguinte}`
+      : menuAntigo ? "Esse menu é anterior ao atendimento que você está preenchendo. Escreva “menu” para ver as opções atuais ou conte o que deseja mudar. Seus dados foram preservados."
       : encaminhar ? `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
           : [leitura.retomada ? `Vamos continuar sua ${assuntoDoCaso(caso.onboarding.origem)} de onde paramos.` : leitura.resposta,
@@ -117,12 +122,13 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       await tx.conversaWhatsapp.update({ where: { id: atual.id }, data: { atendidaDesde: agora } });
       if (interlocutorId) await tx.interlocutorComunicacao.update({ where: { id: interlocutorId }, data: { atendidaDesde: agora } });
     }
-    const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 }, ...(!menuAntigo ? { triagem: { ...triagem, desconhecidos, campoEsperado: proxima.campo, esclarecimentos,
+    const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 }, ...(!menuAntigo && !escolhaAntiga ? { triagem: { ...triagem, desconhecidos, campoEsperado: proxima.campo, esclarecimentos,
       anoParadaPendente,
       ultimaMensagemEm: new Date(mensagem.registradaEm).toISOString(),
       ...(mensagem.ocorridaEmProvedor ? { ultimaMensagemProvedorEm: new Date(mensagem.ocorridaEmProvedor).toISOString() } : {}),
       ...(mudouOrigem ? { proximaSolicitacao: { origem, mensagemId: mensagem.id } } : {}) } } : {}) } });
-    return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao, resultado: { texto, onboardingId: caso.onboardingId, atendimentoId: caso.id, casoVersao: salva.versao, fichaVersao: caso.onboarding.versao, cnpj: caso.onboarding.cnpj || null, consultarPublica: Boolean(caso.onboarding.cnpj && leitura.operacoes.some(o => o.campo === "cnpj")), encaminhar, handoffEm: handoffEm?.toISOString() || null, contexto: { interlocutorId, vinculoNumeroId: atual.vinculoNumeroId || null, canalId: atual.canalId || null, identidadeVersao } } } });
+    const botoes = !encaminhar && !leitura.aguardar && !menuAntigo && proxima.campo === "modalidadeServico" ? botoesModalidadeServico(caso.id, caso.onboarding.origem) : null;
+    return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao, resultado: { texto, ...(botoes ? { botoes } : {}), onboardingId: caso.onboardingId, atendimentoId: caso.id, casoVersao: salva.versao, fichaVersao: caso.onboarding.versao, cnpj: caso.onboarding.cnpj || null, consultarPublica: Boolean(caso.onboarding.cnpj && leitura.operacoes.some(o => o.campo === "cnpj")), encaminhar, handoffEm: handoffEm?.toISOString() || null, contexto: { interlocutorId, vinculoNumeroId: atual.vinculoNumeroId || null, canalId: atual.canalId || null, identidadeVersao } } } });
   });
   let resultado = persistido.resultado;
   if (!resultado.texto) return { tratado: true, resultado, motivo: "MENSAGEM_ANTIGA" };
@@ -141,8 +147,11 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   if (resultado.consultarPublica) {
     try {
       const consulta = await (deps.consultaPublica || consultarPublicaLead)(resultado.onboardingId, { db });
-      const detalhe = [consulta.razaoSocial, consulta.atividadePrincipal, consulta.endereco, [consulta.municipio, consulta.uf].filter(Boolean).join(" / ")].filter(Boolean).join(" · ");
-      resultado = { ...resultado, consultarPublica: false, texto: `Consultei os dados públicos: ${detalhe || "dados disponíveis"}. Situação cadastral: ${consulta.situacaoCadastral || "não informada"}. Isso não comprova regularidade fiscal.\n\n${resultado.texto}` };
+      const completo = [consulta.razaoSocial, consulta.atividadePrincipal, consulta.endereco, [consulta.municipio, consulta.uf].filter(Boolean).join(" / ")].filter(Boolean).join(" · ");
+      // O corpo de botões tem limite menor; os dados completos ficam na análise salva.
+      const detalhe = resultado.botoes && completo.length > 500 ? `${completo.slice(0, 497)}…` : completo;
+      const situacao = String(consulta.situacaoCadastral || "não informada").slice(0, 60);
+      resultado = { ...resultado, consultarPublica: false, texto: `Consultei os dados públicos: ${detalhe || "dados disponíveis"}. Situação cadastral: ${situacao}. Isso não comprova regularidade fiscal.\n\n${resultado.texto}` };
     } catch { resultado = { ...resultado, consultarPublica: false, texto: `Não foi possível concluir a consulta pública agora; deixei o CNPJ registrado para a equipe conferir.\n\n${resultado.texto}` }; }
     await conferir();
     await db.coletaComercialWhatsapp.update({ where: { mensagemId: mensagem.id }, data: { resultado } });

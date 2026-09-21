@@ -29,7 +29,7 @@ const { responderMenuWhatsapp } = await import("../src/application/whatsapp/Menu
 const { responderColetaComercial } = await import("../src/application/whatsapp/RespostaColetaComercialWhatsappService.js");
 const { coletarComercialWhatsapp } = await import("../src/application/onboarding/ColetaComercialWhatsappService.js");
 const { iniciarAtendimento, registrarCampos } = await import("../src/application/onboarding/LeadService.js");
-const { montarPayloadLista } = await import("../src/application/whatsapp/WhatsappCloudClient.js");
+const { montarPayloadLista, montarPayloadBotoes } = await import("../src/application/whatsapp/WhatsappCloudClient.js");
 const { garantirIdentidadeWhatsapp, projetarIdentidadeConversa } = await import("../src/application/whatsapp/IdentidadeComunicacaoService.js");
 const saidas = [], checks = [], transcricoes = [], empresasSinteticas = [];
 const entradasVistas = new Set();
@@ -37,17 +37,18 @@ let cenario = "Entrada e navegação", falha = null;
 const ok = texto => { checks.push(texto); console.log("OK " + texto); };
 const cloud = Object.fromEntries(["enviarTexto", "enviarLista", "enviarBotoes"].map(tipo => [tipo, async args => {
   if (tipo === "enviarLista") montarPayloadLista({ ...args, para: args.telefone });
+  if (tipo === "enviarBotoes") montarPayloadBotoes({ ...args, para: args.telefone });
   saidas.push({ tipo, ...args }); return { wamid: `${run}-out-${saidas.length}` };
 }]));
 const casos = async telefone => db.atendimentoLead.findMany({ where: { conversa: { telefoneE164: telefone } }, include: { onboarding: true } });
 const casoAtivo = async telefone => (await casos(telefone)).find(c => !c.encerradoEm);
-const entrada = async (telefone, texto, { id = `${run}-in-${++sequencia}`, interacao, principal = false, erroEsperado = false, ocorridaEm, midia, respostaA } = {}) => {
+const entrada = async (telefone, texto, { id = `${run}-in-${++sequencia}`, interacao, botao = false, principal = false, erroEsperado = false, ocorridaEm, midia, respostaA } = {}) => {
   const agora = new Date();
   const antes = saidas.length;
   const m = { id, from: telefone, timestamp: String(Math.floor(new Date(ocorridaEm || agora).getTime() / 1000)),
     ...(respostaA ? { context: { id: respostaA } } : {}),
     ...(midia ? { type: midia, [midia]: { id: "123456789012345", mime_type: midia === "image" ? "image/jpeg" : "application/pdf", ...(texto ? { caption: texto } : {}) } }
-      : interacao ? { type: "interactive", interactive: { list_reply: { id: interacao, title: texto } } } : { type: "text", text: { body: texto } }) };
+      : interacao ? { type: "interactive", interactive: { [botao ? "button_reply" : "list_reply"]: { id: interacao, title: texto } } } : { type: "text", text: { body: texto } }) };
   const resposta = await processarEventoWhatsapp({ entry: [{ id: "fixture-waba", changes: [{ field: "messages", value: {
     ...(comercial ? { metadata: { phone_number_id: principal ? "fixture-channel" : canalId } } : {}), messages: [m],
   } }] }] }, {
@@ -145,7 +146,13 @@ try {
   assert.match(saidas.at(-1).texto, /cidade e estado/);
   await entrada(medico, "Rio de Janeiro/RJ");
   assert.match(saidas.at(-1).texto, /apenas a abertura/);
-  await entrada(medico, "Só abertura");
+  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
+  assert.deepEqual(saidas.at(-1).botoes.map(b => b.titulo), ["Só abertura", "Abertura + mensal", "Comparar opções"]);
+  const opcaoAvulso = saidas.at(-1).botoes[0].id;
+  const escolhaAvulso = await entrada(medico, "Só abertura", { interacao: opcaoAvulso, botao: true });
+  const saidasDepoisEscolha = saidas.length;
+  await entrada(medico, "Só abertura", { id: escolhaAvulso, interacao: opcaoAvulso, botao: true });
+  assert.equal(saidas.length, saidasDepoisEscolha, "Replay do clique não repete pergunta nem envio");
   assert.match(saidas.at(-1).texto, /endereço/);
   await entrada(medico, "endereco: Rua Sintética 123");
   assert.match(saidas.at(-1).texto, /equipe/);
@@ -187,8 +194,14 @@ try {
   cenario = "Comércio: abertura e contabilidade mensal, respostas curtas";
   await entrada(mensal, "Quero abrir uma empresa; meu nome é Marina; atividade: loja de roupas; cidade: Niterói/RJ");
   assert.match(saidas.at(-1).texto, /abertura|contabilidade/i);
-  await entrada(mensal, "abertura e contabilidade");
+  const opcaoMensal = saidas.at(-1).botoes[1].id;
+  await entrada(mensal, "Abertura + mensal", { interacao: opcaoMensal, botao: true });
   assert.equal((await casoAtivo(mensal)).onboarding.dados.modalidadeServico, "RECORRENTE");
+  const triagemAntesCliqueAntigo = (await casoAtivo(mensal)).triagem;
+  await entrada(mensal, "Só abertura", { interacao: opcaoAvulso, botao: true });
+  assert.equal((await casoAtivo(mensal)).onboarding.dados.modalidadeServico, "RECORRENTE");
+  assert.deepEqual((await casoAtivo(mensal)).triagem, triagemAntesCliqueAntigo);
+  assert.match(saidas.at(-1).texto, /outra solicitação|etapa que já passou/);
   await entrada(mensal, "não");
   assert.equal((await casoAtivo(mensal)).onboarding.dados.qtdFuncionarios, 0);
   await entrada(mensal, "20");
@@ -218,8 +231,10 @@ try {
 
   cenario = "Transferência: motivo natural e serviço pontual";
   await entrada(pontual, "Quero trocar de contador; me chamo Sérgio; CNPJ 11222333000181");
-  await entrada(pontual, "Quero trocar de contador porque o atual demora a responder");
-  assert.match((await casoAtivo(pontual)).onboarding.dados.motivoTroca, /demora a responder/);
+  await entrada(pontual, "Preço");
+  assert.equal((await casoAtivo(pontual)).onboarding.dados.motivoTroca, "Preço");
+  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
+  assert.deepEqual(saidas.at(-1).botoes.map(b => b.titulo), ["Serviço avulso", "Contabilidade mensal", "Comparar opções"]);
   await entrada(pontual, "serviço pontual");
   atual = await casoAtivo(pontual);
   assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
@@ -237,13 +252,14 @@ try {
   await entrada(reativar, "janeiro");
   assert.equal((await casoAtivo(reativar)).onboarding.dados.paradaDesde, "2020-01", "Mês sozinho completa o ano da última pergunta, sem exigir repetição");
   await entrada(reativar, "quero voltar");
-  await entrada(reativar, "mensal");
+  const opcaoComparar = saidas.at(-1).botoes[2].id;
+  await entrada(reativar, "Comparar opções", { interacao: opcaoComparar, botao: true });
   await entrada(reativar, "2");
   await entrada(reativar, "não sei");
   atual = await casoAtivo(reativar);
   assert.equal(atual.onboarding.dados.paradaDesde, "2020-01");
   assert.equal(atual.onboarding.dados.pretendeReativar, "REATIVAR");
-  assert.equal(atual.onboarding.dados.modalidadeServico, "RECORRENTE");
+  assert.equal(atual.onboarding.dados.modalidadeServico, "COMPARAR");
   assert.equal(atual.onboarding.dados.qtdFuncionarios, 2);
   assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
   assert.match(saidas.at(-1).texto, /equipe|contador/i);

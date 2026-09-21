@@ -23,10 +23,10 @@ A leitura final trouxe uma lacuna adicional: depois de `desde 2020`, o bot pergu
 | Primeiro contato | `Olá` | Cinco opções; não cria ficha; zero IA | PostgreSQL de entrada, Jest menu |
 | Pedido direto | `Sou médico e quero abrir uma empresa` | Aproveita a atividade e pergunta somente o nome | PostgreSQL de entrada |
 | Abertura avulsa | `Quanto custa?` → nome → cidade → `Só abertura` → endereço | Dúvida não vira nome; modalidade avulsa; não exige volume mensal | PostgreSQL de entrada |
-| Abertura mensal de comércio | Nome, atividade e cidade na mesma mensagem → `abertura e contabilidade` → `não` → `20` → endereço | Campos preservados, zero funcionários, 20 notas; segue para equipe | PostgreSQL de entrada ampliado |
+| Abertura mensal de comércio | Nome, atividade e cidade na mesma mensagem → botão `Abertura + mensal` → `não` → `20` → endereço | Campos preservados, zero funcionários, 20 notas; segue para equipe | PostgreSQL de entrada ampliado |
 | Comparação em odontologia | `quero ver as duas opções` → `só eu` → `não sei` → endereço | COMPARAR, zero funcionários, volume desconhecido sem inventar zero | PostgreSQL de entrada ampliado |
-| Transferência pontual | CNPJ e nome juntos → motivo em frase → `serviço pontual` | Consulta pública, motivo salvo, avulso sem questionário mensal | PostgreSQL de entrada ampliado |
-| Empresa parada com CNPJ | `desde 2020` → `janeiro` → `quero voltar` → `mensal` → `2` → `não sei` | Não inventa mês; aproveita ano explícito e salva 2020-01/reativar; nenhuma consulta fiscal automática | PostgreSQL de entrada ampliado |
+| Transferência pontual | CNPJ e nome juntos → `Preço` → botões → texto `serviço pontual` | Consulta pública, motivo salvo, avulso sem questionário mensal | PostgreSQL de entrada ampliado |
+| Empresa parada com CNPJ | `desde 2020` → `janeiro` → `quero voltar` → botão `Comparar opções` → `2` → `não sei` | Não inventa mês; aproveita ano explícito e salva 2020-01/reativar; nenhuma consulta fiscal automática | PostgreSQL de entrada ampliado |
 | Empresa parada sem CNPJ | Pedido inicial → `Não sei` | Não inventa CNPJ; encaminha para equipe | PostgreSQL de entrada |
 | Retorno com ficha ativa | `Voltei` / `Pode continuar` / `Já falei com vocês antes` | Retoma a pergunta; não grava a frase como nome nem acumula incompreensão | PostgreSQL de entrada ampliado |
 | Retorno pelo outro canal | Ficha do principal → `Olá` no comercial → mesma intenção → nome | Mesma ficha/CNPJ, sem duplicação; menu não apaga dados | PostgreSQL comercial |
@@ -70,3 +70,13 @@ Em 20/09/2026, após as correções, o PostgreSQL descartável aprovou 26 verifi
 - Handoff não pode ser desfeito automaticamente para fazer um teste responder. Retorno em atendimento humano respeita a pausa até a devolução pelo escritório.
 - Correção de motivo e segunda solicitação preservam a ficha anterior; não apagam histórico nem concedem acesso a outra empresa.
 - Templates proativos e APIs de assinatura/cobrança permanecem fora desta validação de conversa.
+
+## Complemento: contratação por botões
+
+Após esclarecimento do dono em 20/09, a pergunta sobre o tipo de contratação passa a ter três botões nativos, além de aceitar texto. Abertura usa Só abertura / Abertura + mensal / Comparar opções; transferência e inativa usam Serviço avulso / Contabilidade mensal / Comparar opções. O termo interno “modalidade” não aparece como instrução ao cliente.
+
+O teste real do dono revelou que “Preço” e “O preço”, respondidos ao motivo da troca, eram interpretados como dúvidas de orçamento e repetiam a pergunta indefinidamente. A correção trata esses motivos curtos no contexto, preservando a FAQ para perguntas explícitas como “Quanto custa?”.
+
+O verificador PostgreSQL exercita os três valores por `button_reply`, resposta textual após os botões, replay sem duplicação e clique de outro caso sem alteração de ficha/triagem. Usa o montador real de payload para validar títulos e tamanho. Testes do adaptador verificam saída interativa rastreada e bloqueio por janela, atendimento humano e reserva incerta. Nenhum seletor de empresa foi acrescentado; identificação, audiência e handoff permanecem independentes.
+
+Validação do complemento: 273 testes locais em cinco suítes aprovados e repetição dos dois modos PostgreSQL (26 comercial + 18 principal), com zero rede externa e IA. Transcrições da execução foram conferidas, incluindo “Preço” seguido dos três botões e clique antigo sem mudança da modalidade.

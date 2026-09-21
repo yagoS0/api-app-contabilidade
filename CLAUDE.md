@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Escolha de contratação por botões — 20/09/2026
+
+O dono esclareceu que o seletor desejado é o tipo de contratação. Na pergunta de modalidade, enviar três botões nativos: na abertura, Só abertura / Abertura + mensal / Comparar opções; nas demais origens, Serviço avulso / Contabilidade mensal / Comparar opções. Continuar aceitando texto livre. Não confundir essa escolha com seleção de empresa. A resposta curta “Preço” ao motivo da troca é informação declarada, não pergunta sobre nossos honorários; perguntas explícitas de valores continuam recebendo orientação. Guardar escolha pelo ID do botão e pela solicitação atual, nunca pelo título. Botão antigo de outra ficha/etapa não deve sobrescrever dados. Sem IA, migration, mudança de identidade ou de pausa humana.
+
 ## Revisão de comunicação e retornos — 20/09/2026
 
 O canal comercial acolhe também clientes conhecidos e responsáveis de várias empresas, sem mudar sua classificação nem exigir escolha fiscal para uma nova solicitação. Permissões operacionais continuam independentes; identidade em revisão e atendimento humano impedem a automação. O canal principal mantém sua audiência anterior. Retorno, agradecimento, pausa e perguntas frequentes são atos de conversa, não campos da ficha nem erros sucessivos. Aproveitar dados enviados juntos, aceitar as alternativas oferecidas (avulso, mensal, comparação) e perguntar somente a informação ausente. Não inventar datas, preços, enquadramento ou autorização fiscal.

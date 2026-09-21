@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Botões de contratação — 20/09/2026
+
+O coletor salva `resultado.botoes` somente ao perguntar `modalidadeServico`; o adaptador envia `interactive` com a mesma reserva/lease, janela e revalidação já usadas no texto. IDs carregam `atendimentoLead.id` e o enum AVULSO/RECORRENTE/COMPARAR. Aceitar o clique só para essa ficha e enquanto a pergunta atual ainda é modalidade; título nunca preenche campos. Reentrega continua idempotente e clique antigo preserva a triagem. Resposta por texto continua válida. A consulta pública é resumida quando acompanhada de botões para caber no limite já validado pelo cliente Meta. “Preço”/“O preço” em `motivoTroca` devem ser salvos como motivo; “Quanto custa?” continua sendo FAQ. Ver cenários em `docs/revisao-comunicacao-cenarios.md` na raiz.
+
 ## Diálogo comercial determinístico — 20/09/2026
 
 `interpretacaoComercialWhatsapp` separa interpretação de texto da persistência do coletor. Retomada/pausa/reinício/FAQ não viram nome nem somam incompreensão; uma correção remove somente a pendência do campo informado. Esclarecimento específico substitui a pergunta genérica. Datas exigem mês/ano declarados; não preencher janeiro por suposição. Mensagens atrasadas são comparadas pelo instante do provedor com o anterior do mesmo relógio, com fallback ao registro para casos legados. Preservar recibos, leases, versões e revalidação antes de consulta/envio. `button`/`interactive` usam IDs; anexos não viram campos e reações não disparam resposta.

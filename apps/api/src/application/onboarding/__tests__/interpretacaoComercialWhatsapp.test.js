@@ -91,6 +91,16 @@ test("nome pode acompanhar email; não obriga repetir informação", () => {
 test("motivo da troca pode vir junto com a intenção", () => {
   expect(dados(ler("Quero trocar de contador porque o atual demora a responder", null, "TRANSFERENCIA")).motivoTroca).toBe("o atual demora a responder");
 });
+
+test.each(["Preço", "O preço", "Pelo preço", "Honorários altos", "Muito caro", "Atendimento", "Falta de retorno"])("resposta curta ao motivo da troca não vira pergunta de orçamento: %s", texto => {
+  const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
+  expect(dados(r).motivoTroca).toBe(texto); expect(r.resposta).toBeNull();
+});
+
+test.each(["Quanto custa?", "Qual o preço?", "Qual é o valor da mensalidade?"])("pergunta explícita de valores durante o motivo continua sendo dúvida: %s", texto => {
+  const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
+  expect(dados(r).motivoTroca).toBeUndefined(); expect(r.resposta).toContain("O valor depende");
+});
 test("CNPJ é validado, normalizado e nunca cria vínculo", () => {
   expect(dados(ler("11.222.333/0001-81", "cnpj", "TRANSFERENCIA"))).toEqual({ cnpj: "11222333000181" });
   const r = ler("11.222.333/0001-00", "cnpj", "TRANSFERENCIA"); expect(r.operacoes).toEqual([]); expect(r.resposta).toContain("CNPJ");

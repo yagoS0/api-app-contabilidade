@@ -106,7 +106,12 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   const navegacao = pediuMenuWhatsapp(raw);
   if (retomada || aguardar || reinicio || navegacao || humano) return { operacoes: [], desconhecido: null, humano, resposta: null, retomada, aguardar, reinicio };
   const desconhece = naoSabeCampo(t, campoEsperado);
+  // Quando perguntamos o motivo da troca, "Preço" é a resposta, não um orçamento.
+  // Perguntas explícitas sobre nossos valores continuam na FAQ.
+  const motivoCurto = origem === "TRANSFERENCIA" && campoEsperado === "motivoTroca"
+    && /^(?:(?:o|os|a|as|pelo|pela|por causa do|por causa da)\s+)?(?:preco|valor|honorarios|mensalidade|atendimento|demora|falta de retorno|caro|muito caro|esta caro|ta caro)(?:\s+(?:alto|altos|alta|altas|ruim|muito alto))?$/.test(t);
   let resposta = responderDuvidaComercial(raw, { origem });
+  if (motivoCurto) { set("motivoTroca", raw); resposta = null; }
   let respostaSubstituiPergunta = false;
   let anoParadaAtualizado;
   const pergunta = Boolean(resposta) || /\?|\b(?:qual|quais|como|quanto|posso|pode me|voces fazem)\b/.test(t);
