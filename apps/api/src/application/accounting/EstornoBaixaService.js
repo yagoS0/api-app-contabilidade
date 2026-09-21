@@ -224,7 +224,7 @@ async function carregarParcelaDaBaixa(client, { portalClientId, entry }) {
     },
     select: {
       id: true, numeroParcela: true, competencia: true, vencimento: true,
-      valorPrevisto: true, origemBaixa: true, baixadaEm: true,
+      valorPrevisto: true, origemBaixa: true, baixadaEm: true, guiaId: true,
     },
     take: 2,
   });
@@ -375,6 +375,7 @@ export async function previewEstorno({ portalClientId, entryId, agora = new Date
       valorPrevisto: parcela.valorPrevisto != null ? Number(parcela.valorPrevisto) : null,
       origemBaixa: parcela.origemBaixa,
       baixadaEm: parcela.baixadaEm,
+      guiaId: parcela.guiaId ?? null,
       // O estado da prestação sem guia não é uma coluna — é a AUSÊNCIA de `origemBaixa`
       // (`parcelaRowQuitada` só pergunta isso). Limpá-la É devolvê-la à fila.
       origemBaixaAposEstorno: null,
@@ -489,7 +490,9 @@ async function reverterParcela(tx, { portalClientId, preview }) {
       portalClientId,
       // O valor LIDO no preview: se ele mudou, esta não é mais a mesma baixa a desfazer.
       origemBaixa: alvo.origemBaixa ?? null,
-      guiaId: null,
+      // Uma guia pode ter chegado depois da baixa manual. Preserve o documento e
+      // compare o vínculo conferido; só uma mudança durante o ato deve recusá-lo.
+      guiaId: alvo.guiaId ?? null,
     },
     data: { origemBaixa: null, baixadaEm: null },
   });

@@ -1,5 +1,17 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Parcelamentos — revisão de funcionamento e clareza, 21/09/2026
+
+As duas filas conservam seu significado: guia paga com evidência e prestação sem guia com declaração manual. Baixa, rescisão e configuração recarregam os cards, as filas e a conferência; sucesso de baixa permanece visível mesmo depois de a linha sair. Lote mostra quantas baixas foram lançadas e quantas recusadas, preservando os motivos. A fila com guia e sua confirmação identificam o contrato.
+
+Troca de empresa desmonta formulários e seleções. `useParcelamentos` isola lista/erro/gravação por empresa e descarta consultas superadas; as filas também ignoram respostas antigas. A conferência atualiza por `refreshKey`, retira seleções não elegíveis e conserva seleção/erro quando a aprovação falha.
+
+Configuração, rescisão e declarações não fecham pelos seus botões durante gravação. Se informar principal salvar o contrato e a baixa seguinte falhar, o modal conserva o novo principal, informa a conclusão parcial e não repete a correção usando o valor anterior vencido. Fechar depois dessa conclusão parcial atualiza o restante da tela. Rescisão é um registro contábil local: não prometer cancelamento perante a Receita, envio à Dívida Ativa nem irreversibilidade; existe “Desfazer rescisão”.
+
+Validação automatizada inclui troca de empresa com confirmação aberta, respostas fora de ordem, lote parcial, recarga da conferência, aprovação recusada e retentativa da baixa depois de valor contratado persistido. Conferência mostra rótulos humanos (“A conferir”, “Divergente”); mantém estados internos da API.
+
+Baixa manual usa `Modal` compartilhado: rodapé sempre visível, foco preso e ajuda detalhada sob demanda. Sua confirmação é irmã e suspende o diálogo de origem (`suspenso`: inert/aria-hidden e sem listener de teclado), então Escape fecha só a confirmação e preserva os campos. Clique no fundo conserva o formulário. Prévia local usa tabela sem o min-width global que antes vazava para fora do modal. A rescisão retira apenas as prestações sem guia da respectiva fila; guias pagas com baixa histórica continuam seguindo suas próprias regras.
+
 ## Aviso de recálculo — 18/09/2026
 
 O bucket “Sem subtipo / fora do regime” também mostra “Recalculada” quando alguma provisão tem registro. Seu popover conserva os totais contábeis e as ações, apresentando data/valores somente junto à entrada efetivamente marcada; as demais entradas do grupo não herdam o aviso.

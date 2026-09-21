@@ -33,6 +33,9 @@ const FOCAVEIS = [
  * @param {Function} aoFechar          Chamado por `Esc`, pelo fundo e pelo ✕.
  * @param {boolean}  [ocupado]         Gravando: `Esc` e o fundo param de fechar. ⚠ O ✕ TAMBÉM some
  *                                     — botão que não faz nada é pior que botão ausente.
+ * @param {boolean}  [suspenso]        Confirmação irmã em primeiro plano: remove teclado e
+ *                                     acessibilidade deste diálogo, preservando o formulário.
+ * @param {boolean}  [fecharAoClicarFundo] Formulário com dados digitados pode desativar só esta saída.
  * @param {"sm"|"md"|"lg"} [tamanho]
  * @param {boolean} [lateral]        ⚠⚠ GAVETA: a mesma caixa colada na borda direita, da altura da
  *                                   tela. É variante do MESMO primitivo de propósito — Esc, clique
@@ -46,6 +49,8 @@ export function Modal({
   titulo,
   aoFechar,
   ocupado = false,
+  suspenso = false,
+  fecharAoClicarFundo = true,
   tamanho = "md",
   lateral = false,
   rodape = null,
@@ -79,6 +84,7 @@ export function Modal({
   }, []);
 
   useEffect(() => {
+    if (suspenso) return undefined;
     function aoTeclar(e) {
       if (e.key === "Escape" && !ocupado) {
         e.stopPropagation();
@@ -112,7 +118,7 @@ export function Modal({
     }
     document.addEventListener("keydown", aoTeclar, true);
     return () => document.removeEventListener("keydown", aoTeclar, true);
-  }, [aoFechar, ocupado]);
+  }, [aoFechar, ocupado, suspenso]);
 
   const largura = LARGURAS[tamanho] || LARGURAS.md;
 
@@ -120,9 +126,11 @@ export function Modal({
     <div
       className={`modal-fundo${lateral ? " modal-fundo--lateral" : ""}`}
       role="dialog"
-      aria-modal="true"
+      aria-modal={suspenso ? undefined : "true"}
+      aria-hidden={suspenso || undefined}
+      inert={suspenso || undefined}
       aria-label={titulo}
-      onClick={(e) => { if (e.target === e.currentTarget && !ocupado) aoFechar?.(); }}
+      onClick={(e) => { if (e.target === e.currentTarget && !ocupado && !suspenso && fecharAoClicarFundo) aoFechar?.(); }}
     >
       {/* `tabIndex={-1}`: focável por código, nunca pela ordem de Tab. É o alvo de último recurso
           do foco inicial e o refúgio do trap quando não há nenhum elemento focável dentro. */}

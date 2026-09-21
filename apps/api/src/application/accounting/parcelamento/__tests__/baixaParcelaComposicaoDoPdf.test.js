@@ -22,6 +22,10 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => {
   const criados = [];
   const tx = {
+    parcela: {
+      findFirst: jest.fn(async () => null),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
     mapaContaTributo: { findFirst: jest.fn(async () => null) },
     accountingEntry: {
       create: jest.fn(async ({ data }) => {

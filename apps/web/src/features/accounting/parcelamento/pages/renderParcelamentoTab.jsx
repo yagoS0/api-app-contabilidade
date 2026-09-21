@@ -33,7 +33,7 @@ import { createApiClient } from "../../../../api/client";
 // `InformarValorEmLoteModal`, `ParcelamentoModals`) já liam em UTC; só esta ficou para trás.
 import { fmtDataCivil } from "../../../../lib/format";
 
-const PANEL = { text: "#F8F8F2", muted: "#A7B0C0", border: "#44475A", surface: "#21222C", field: "#282A36" };
+const PANEL = { text: "var(--text)", muted: "var(--text-muted)", border: "var(--border)", surface: "var(--bg-surface)", field: "var(--bg-subtle)" };
 const parcelaApi = createApiClient();
 
 // ─── OS TRÊS ÁTOMOS DA REFORMA ────────────────────────────────────────────────────────────────
@@ -99,6 +99,7 @@ const fmtMoney = formatarMoeda;
 // Os motivos de RECUSA da baixa, cada um com a saída que o contador precisa.
 const MOTIVOS_RECUSA = {
   ja_baixada: "esta parcela já tem lançamento de baixa.",
+  parcela_ja_baixada: "esta prestação já foi baixada, inclusive por declaração manual. Confira os lançamentos e a necessidade de estorno antes de tentar novamente.",
   provisao_inexistente: "o parcelamento não tem a provisão de abertura — lance a adesão antes.",
   // ⚠ ESTE TEXTO MUDOU, E TINHA DE MUDAR. Ele descrevia o beco sem dizer a saída, porque saída não
   // havia: a fila recusava, e a outra tela (a da prestação SEM guia) recusa toda prestação que TEM
@@ -144,7 +145,7 @@ function composicaoDeclaravel(motivo) {
  * Os três estados são distintos agora: carregando · falhou (com o motivo e "Tentar de novo") ·
  * vazio de verdade (dito, não escondido).
  */
-function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido }) {
+function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido, onBaixaLancada, contratos = [] }) {
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const [parcelas, setParcelas] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -160,8 +161,12 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   // pergunta é respondida pelo próprio clique em "Dar baixa".
   const [semComposicao, setSemComposicao] = useState({});
   const secaoRef = useRef(null);
+  const request = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current += 1; }; }, []);
 
   const carregar = useCallback(async () => {
+    const version = ++request.current;
     if (!companyId) { setCarregando(false); return; }
     if (!parcelaApi?.listParcelasPendentesBaixa) {
       setErro("A fila de parcelas pendentes não está disponível neste modo de API.");
@@ -172,11 +177,13 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     setErro(null);
     try {
       const out = await parcelaApi.listParcelasPendentesBaixa(companyId);
+      if (version !== request.current || !mounted.current) return;
       setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
     } catch (err) {
+      if (version !== request.current || !mounted.current) return;
       // ⚠ O `catch` NÃO zera mais a lista em silêncio: ele guarda o motivo e a tela o mostra.
       setErro(err?.message || "Não foi possível carregar as parcelas pendentes de baixa.");
-    } finally { setCarregando(false); }
+    } finally { if (version === request.current && mounted.current) setCarregando(false); }
     // `refreshKey` recarrega quando um "Buscar pagamento" na linha da parcela localiza o
     // comprovante — é exatamente aí que a parcela ENTRA nesta lista.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,7 +207,12 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   function confirmacaoDaBaixa(p) {
     const quando = p.comprovante?.dataArrecadacao
       || (p.confirmadoEm ? new Date(p.confirmadoEm).toLocaleDateString("pt-BR") : "data do comprovante não conhecida");
-    return `parcela ${p.numeroParcela ?? "?"} — competência ${p.competencia || "?"}, valor ${fmtMoney(p.valor)}, pagamento em ${quando}`;
+    return `${nomeDoContrato(p)} — parcela ${p.numeroParcela ?? "?"} — competência ${p.competencia || "?"}, valor ${fmtMoney(p.valor)}, pagamento em ${quando}`;
+  }
+
+  function nomeDoContrato(p) {
+    const contrato = contratos.find((item) => item.id === p.parcelamentoId);
+    return p.parcelamentoLabel || contrato?.label || (contrato?.numeroParcelamento ? `${contrato.tipo || "Parcelamento"} nº ${contrato.numeroParcelamento}` : "Contrato não identificado");
   }
 
   // ⚠ `body` OPCIONAL — sem ele, é a baixa de sempre (a composição vem do documento). Com
@@ -250,7 +262,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           err.motivo = out.motivo;
           throw err;
         }
-        return;
+        return false;
       }
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao lançar.");
       setSemComposicao((s) => ({ ...s, [p.guideId]: false }));
@@ -265,9 +277,11 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
             : "Baixa lançada.",
         },
       }));
+      return true;
     } catch (err) {
       setDesfechos((d) => ({ ...d, [p.guideId]: { tom: "danger", texto: err?.message || "Falha ao lançar a baixa da parcela." } }));
       if (body) throw err;
+      return false;
     }
   }
 
@@ -298,10 +312,12 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
         },
       }));
       await carregar();
+      await onBaixaLancada?.();
     } finally { setLancando(null); }
   }
 
   async function baixarEmLote(parcelamentoId) {
+    if (lancando || carregando || erro) return;
     const alvo = parcelas.filter((p) => !parcelamentoId || p.parcelamentoId === parcelamentoId);
     if (!alvo.length) {
       // ⚠ Nada a fazer TAMBÉM é resposta — e precisa ser dita, senão "cliquei e não aconteceu nada".
@@ -311,11 +327,20 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     if (!await confirmar({ titulo: `Dar baixa em ${alvo.length} parcela(s)`, texto: "Cada baixa grava lançamentos contábeis de principal, juros e multa e amortiza o passivo do parcelamento.", itens: alvo.map(confirmacaoDaBaixa), acao: "Confirmar baixas" })) return;
     setLancando("__lote");
     try {
+      let concluidas = 0;
       for (const p of alvo) {
+        if (!mounted.current) break;
         // eslint-disable-next-line no-await-in-loop
-        await executarBaixa(p);
+        if (await executarBaixa(p)) concluidas += 1;
       }
+      if (!mounted.current) return;
+      const pendentes = alvo.length - concluidas;
+      setDesfechos((d) => ({ ...d, __lote: {
+        tom: pendentes ? "warn" : "ok",
+        texto: `${concluidas} baixa(s) lançada(s).${pendentes ? ` ${pendentes} parcela(s) não lançada(s); confira os motivos nas linhas.` : ""}`,
+      } }));
       await carregar();
+      if (concluidas) await onBaixaLancada?.();
     } finally { setLancando(null); }
   }
 
@@ -330,8 +355,10 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
 
     setLancando(p.guideId);
     try {
-      await executarBaixa(p);
+      const concluida = await executarBaixa(p);
+      if (concluida) setDesfechos((d) => ({ ...d, __lote: { tom: "ok", texto: `Baixa da parcela ${p.numeroParcela ?? "?"} lançada.` } }));
       await carregar();
+      if (concluida) await onBaixaLancada?.();
     } finally { setLancando(null); }
   }
 
@@ -361,6 +388,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: PANEL.field }}>
+              <th style={th}>Contrato</th>
               <th style={th}>Parc.</th>
               <th style={th}>Competência</th>
               <th style={{ ...th, textAlign: "right" }}>Valor</th>
@@ -386,6 +414,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
                   borderTop: `1px solid ${PANEL.border}`,
                   background: destacada ? "var(--accent-purple-surface)" : "transparent",
                 }}>
+                  <td style={{ ...td, minWidth: 160 }}>{nomeDoContrato(p)}</td>
                   <td style={{ ...td, fontFamily: "monospace" }}>{p.numeroParcela ?? "?"}</td>
                   <td style={td}>{p.competencia}</td>
                   <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(p.valor)}</td>
@@ -612,8 +641,11 @@ function ParcelasSemGuiaPendentes({
   const [grupoEmLote, setGrupoEmLote] = useState(null); // o grupo "sem valor" com o modal aberto
   const [desfechos, setDesfechos] = useState({}); // parcelaId → { tom, texto }
   const [foraDaFila, setForaDaFila] = useState(null);
+  const request = useRef(0);
+  useEffect(() => () => { request.current += 1; }, []);
 
   const carregar = useCallback(async () => {
+    const version = ++request.current;
     if (!companyId) { setCarregando(false); return; }
     if (!parcelaApi?.listParcelasSemGuiaPendentes) {
       setErro("A fila de prestações sem guia não está disponível neste modo de API.");
@@ -624,6 +656,7 @@ function ParcelasSemGuiaPendentes({
     setErro(null);
     try {
       const out = await parcelaApi.listParcelasSemGuiaPendentes(companyId);
+      if (version !== request.current) return;
       setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
       // ⚠ A REGRA CONTINUA A MESMA (`avisoForaDaFila`): `null` quando não há nada escondido — aviso
       // que aparece sempre é aviso que ninguém lê. O que mudou é ONDE ele é desenhado.
@@ -631,9 +664,10 @@ function ParcelasSemGuiaPendentes({
       setForaDaFila(aviso);
       onForaDaFila?.(aviso);
     } catch (err) {
+      if (version !== request.current) return;
       // ⚠ O `catch` NÃO zera a lista: falha e vazio são o mesmo pixel e significam o oposto.
       setErro(err?.message || "Não foi possível carregar as prestações sem guia.");
-    } finally { setCarregando(false); }
+    } finally { if (version === request.current) setCarregando(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, refreshKey]);
 
@@ -651,7 +685,7 @@ function ParcelasSemGuiaPendentes({
       throw err;
     }
     setAlvo(null);
-    setDesfechos((d) => ({ ...d, [parcelaId]: { tom: "ok", texto: "Baixa declarada e lançada." } }));
+    setDesfechos((d) => ({ ...d, __conclusao: { tom: "ok", texto: "Baixa declarada e lançada." } }));
     await carregar();
     await onBaixaLancada?.();
   }
@@ -863,9 +897,10 @@ function ParcelasSemGuiaPendentes({
   // ⚠ `linhaRescindidos` SOBREVIVE, e não é inconsistência: contrato rescindido é um FATO sobre o
   // contrato, não a ausência de itens numa fila. É justamente com a fila vazia que ele importa —
   // sem ele, "nada aqui" se leria como "nada a fazer", que é conclusão falsa.
+  const conclusao = desfechos.__conclusao && <div role="status" style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6, color: "var(--state-ok)", background: "var(--state-ok-surface)", fontSize: "0.8125rem" }}>{desfechos.__conclusao.texto}</div>;
   const compacto = !carregando && !erro && !parcelas.length;
   if (compacto) {
-    return <section>{linhaRescindidos}</section>;
+    return <section>{conclusao}{linhaRescindidos}</section>;
   }
 
   return (
@@ -942,6 +977,7 @@ function ParcelasSemGuiaPendentes({
         </div>
       )}
 
+      {conclusao}
       {corpo()}
 
       {linhaRescindidos}
@@ -955,7 +991,7 @@ function ParcelasSemGuiaPendentes({
           // disponível neste modo de API") e vazio, então o botão "Informar valor e baixar…" abria
           // uma tela onde nada podia ser informado. A rota, o mock e a regra já existiam.
           onCorrigirValorContratado={podeCorrigirValor ? corrigirValorContratado : null}
-          onClose={() => setAlvo(null)}
+          onClose={({ contratoAtualizado } = {}) => { setAlvo(null); if (contratoAtualizado) { carregar(); onBaixaLancada?.(); } }}
         />
       )}
 
@@ -963,7 +999,7 @@ function ParcelasSemGuiaPendentes({
         <InformarValorEmLoteModal
           grupo={grupoEmLote}
           onInformar={corrigirValorContratado}
-          onConcluido={carregar}
+          onConcluido={async () => { await carregar(); await onBaixaLancada?.(); }}
           onClose={() => setGrupoEmLote(null)}
         />
       )}
@@ -1038,8 +1074,8 @@ function ContratosRescindidos({ parcelamentos, foraDaFila, onDesfazer, onExcluir
           Contratos rescindidos ({total})
         </strong>
         <div style={{ color: PANEL.muted, fontSize: "0.78rem", lineHeight: 1.45 }}>
-          Rescindido, o acordo sai das filas de baixa e deixa de ter risco a acompanhar — as
-          prestações dele não somem do sistema, elas deixam de ser cobradas aqui. Se a rescisão foi
+          Rescindido, o acordo sai do acompanhamento de risco e suas prestações sem guia saem da fila de baixa.
+          As guias pagas continuam disponíveis para conferência contábil. Se a rescisão foi
           por engano, desfaça <strong>e elas voltam para a fila</strong>; se o contrato nunca deveria
           ter existido, exclua.
         </div>
@@ -1154,6 +1190,13 @@ function ContratosRescindidos({ parcelamentos, foraDaFila, onDesfazer, onExcluir
 }
 
 export function ParcelamentoTab({
+  ...props
+}) {
+  // Trocar empresa fecha os formulários e descarta seleções e respostas da empresa anterior.
+  return <ParcelamentoTabContent key={props.companyId || "sem-empresa"} {...props} />;
+}
+
+function ParcelamentoTabContent({
   companyId, parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode, onIrParaGuias,
   // R4 — o "＋ Criar novo…" do modal de anexo de guia chega aqui já pedindo o wizard aberto.
   abrirWizardAoMontar = false, onWizardAberto,
@@ -1191,8 +1234,8 @@ export function ParcelamentoTab({
       err.code = "BUSCA_INDISPONIVEL";
       throw err;
     }
-    return parcelaApi.buscarPagamentoGuia(guideId);
-  }, []);
+    return parcelaApi.buscarPagamentoGuia(guideId, { companyId });
+  }, [companyId]);
 
   const aposLocalizarPagamento = useCallback(async () => {
     setBaixaRefreshKey((k) => k + 1);
@@ -1261,7 +1304,7 @@ export function ParcelamentoTab({
           falha ao listar parcelamentos era indistinguível de "esta empresa não tem parcelamento". */}
       {parcelamentos.error && (
         <div role="status" style={{ padding: "8px 12px", borderRadius: 8, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
-          <div style={{ color: "var(--state-danger)", fontWeight: 700, fontSize: "0.78rem" }}>Não foi possível carregar os parcelamentos</div>
+          <div style={{ color: "var(--state-danger)", fontWeight: 700, fontSize: "0.8125rem" }}>Não foi possível concluir a operação de parcelamento</div>
           <div style={{ color: PANEL.muted, fontSize: "0.72rem", marginTop: 2 }}>
             {parcelamentos.error} — a lista abaixo pode estar incompleta.
           </div>
@@ -1270,9 +1313,11 @@ export function ParcelamentoTab({
 
       <ParcelasPendentesBaixa
         companyId={companyId}
+        contratos={contratos}
         refreshKey={baixaRefreshKey}
         pedido={pedidoBaixa}
         onPedidoAtendido={() => setPedidoBaixa(null)}
+        onBaixaLancada={aposLocalizarPagamento}
       />
 
       {/* ⚠ A SEGUNDA FILA, e ela é separada de propósito — ver o comentário do componente. Ela vem
@@ -1288,6 +1333,7 @@ export function ParcelamentoTab({
       />
 
       <ConferenciaParcelasPanel
+        refreshKey={baixaRefreshKey}
         listConferencia={parcelamentos.listConferencia}
         aprovarConferencia={parcelamentos.aprovarConferencia}
       />
@@ -1295,10 +1341,10 @@ export function ParcelamentoTab({
       <ParcelamentosList
         parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO")}
         loading={parcelamentos.loading}
-        onRescindir={(parcId, body) => parcelamentos.rescindir(parcId, body)}
+        onRescindir={async (parcId, body) => { await parcelamentos.rescindir(parcId, body); await aposAto(); }}
         onOpenCreate={() => setWizardAberto(true)}
         getConfig={parcelamentos.getConfig}
-        saveConfig={parcelamentos.saveConfig}
+        saveConfig={async (...args) => { const out = await parcelamentos.saveConfig(...args); await aposAto(); return out; }}
         accounts={accounts}
         onSearchHistoricos={onSearchHistoricos}
         onGetHistoricosByCode={onGetHistoricosByCode}
