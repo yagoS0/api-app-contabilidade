@@ -6,7 +6,7 @@ const pendente = () => { let resolve, reject; const promise = new Promise((r, j)
 const recursos = [{ id: "r1", tipo: "ORIENTACAO", aprovadoEm: "2026-09-09", chave: "primeira", titulo: "Primeira", texto: "Olá {{nome}} {{cnpj}} {{servico}}", versao: 1 }, { id: "r2", tipo: "ORIENTACAO", aprovadoEm: "2026-09-09", chave: "segunda", titulo: "Segunda", texto: "Olá {{nome}} {{cnpj}} {{servico}}", versao: 2 }];
 const a = { id: "a", contato: { nome: "Contato A" }, empresa: { cnpj: "12345678000195" } }, b = { id: "b", contato: { nome: "Contato B" }, empresa: { cnpj: "11222333000181" } };
 async function abrir() { fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" })); await screen.findByText("Primeira"); }
-function selecionar(id) { fireEvent.click(within(screen.getByText(id === "r1" ? "Primeira" : "Segunda").closest("article")).getByRole("button", { name: "Ver mensagem" })); }
+function selecionar(id) { fireEvent.click(within(screen.getByText(id === "r1" ? "Primeira" : "Segunda").closest("article")).getByRole("button", { name: "Usar no chat" })); }
 
 test("troca de conversa limpa a ficha anterior e ignora consulta atrasada", async () => {
   const primeira = pendente();

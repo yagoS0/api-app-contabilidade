@@ -7,7 +7,7 @@ const now = new Date("2026-09-08T12:00:00Z");
 function setup() {
   const ficha = { id: "lead", criadoPorId: "dono", status: "RASCUNHO", origem: "TRANSFERENCIA", cnpj: "11222333000181", dados: { responsavelNome: "Maria" }, versao: 1 };
   const db = {
-    atendimentoLead: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    atendimentoLead: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })) },
     onboarding: { findUnique: jest.fn(async () => ficha), update: jest.fn(async ({ data }) => ({ ...ficha, ...data })), updateMany: jest.fn(async () => ({ count: 1 })) },
     onboardingAnalise: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })), create: jest.fn(async ({ data }) => ({ id: "analise", createdAt: now, ...data })), update: jest.fn(async ({ data }) => ({ id: "analise", createdAt: now, ...data })) },
     onboardingLink: { findFirst: jest.fn(async () => ({ id: "link", expiresAt: new Date("2026-09-09"), onboarding: ficha })), updateMany: jest.fn(async () => ({ count: 1 })), create: jest.fn(async ({ data }) => ({ id: "link", ...data })), update: jest.fn(async () => ({})) },
@@ -52,7 +52,7 @@ it("consulta pública não chama SERPRO nem afirma regularidade fiscal", async (
   expect(r.analise.resultado.mensagem).toMatch(/Não equivalem/);
 });
 it("reutiliza SITFIS concluído dentro de quatro horas sem cobrança nova", async () => {
-  const t = setup(); t.db.onboardingAnalise.findFirst.mockResolvedValue({ id: "anterior", status: "CONCLUIDA", cnpj: t.ficha.cnpj, createdAt: now, resultado: {} });
+  const t = setup(); t.db.onboardingAnalise.findFirst.mockResolvedValue({ id: "anterior", status: "CONCLUIDA", cnpj: t.ficha.cnpj, createdAt: now, resultado: { relatorioDisponivel: true }, documentoCifrado: "cifrado" });
   expect((await t.servico.analisar("lead", user, "SITFIS")).reutilizada).toBe(true);
   expect(t.procura).not.toHaveBeenCalled();
 });

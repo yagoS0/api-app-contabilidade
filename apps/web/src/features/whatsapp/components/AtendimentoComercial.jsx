@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { canalComercialDaConversa } from "../lib/identidadeAtendimento";
 import { FluxoComercial } from "../../onboarding/components/FluxoComercial";
 import { AbrirBiblioteca } from "../../onboarding/components/AbrirBiblioteca";
 import { descricaoMensagem, lerUsosMensagens, normalizarBuscaMensagem, registrarUsoMensagem, ultimasOrientacoes } from "../lib/mensagensRapidas";
@@ -10,8 +11,10 @@ export const AtualizacaoAtendimento = createContext({ revisao: 0, atualizar: () 
 export function AtendimentoComercial(props) {
   return <AtendimentoDaConversa key={props.conversa.interlocutorId || props.conversa.id} {...props} />;
 }
-function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEstado, slotEmpresa = null }) {
+function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEstado, slotEmpresa = null, canalDeEnvio = null }) {
   const { revisao } = useContext(AtualizacaoAtendimento);
+  const canalComercial = conversa.relacionamento?.tipo === "LEAD" ? canalComercialDaConversa(conversa) : null;
+  const destinoEnvio = conversa.relacionamento?.tipo === "LEAD" ? canalComercial?.conversaId || null : conversa.id;
   const [anteriores, setAnteriores] = useState([]), [reinicio, setReinicio] = useState("");
   const [lead, setLead] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [origem, setOrigem] = useState(""), [carregando, setCarregando] = useState(true), [recarga, setRecarga] = useState(0);
   const vivo = useRef(true), trava = useRef(false);
@@ -34,16 +37,17 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
     finally { trava.current = false; if (vivo.current) setOcupado(false); }
   }
   if (!api.comercial) return <p>Atendimento comercial disponível com a API atualizada.</p>;
-  return <section aria-label="Atendimento do interessado">
-    {!lead?.onboardingId && <><strong>Processo comercial</strong><p>Identifique o serviço e acompanhe a ficha vinculada a esta conversa.</p></>}
+  return <section className="wa-commercial-intake" aria-label="Atendimento do interessado">
+    {!lead?.onboardingId && <p>Escolha o motivo para iniciar o atendimento deste contato.</p>}
     {erro && <div role="alert">{erro} <Button type="button" variant="secondary" disabled={ocupado} onClick={() => setRecarga(v => v + 1)}>Recarregar atendimento comercial</Button></div>}
-    {carregando && !lead ? <p role="status">Carregando atendimento…</p> : lead?.onboardingId ? <><div className="wa-case-toolbar"><a className="wa-case-link" aria-label="Abrir ficha do cliente em nova aba" href={`/onboardings/${encodeURIComponent(lead.onboardingId)}`} target="_blank" rel="noopener noreferrer">Abrir ficha ↗</a><details className="wa-commercial-process"><summary>Gerenciar solicitação</summary><div className="wa-commercial-tabs"><Button variant="secondary" onClick={() => setReinicio("CORRIGIR_MOTIVO")}>Corrigir motivo / recomeçar</Button><Button variant="secondary" onClick={() => setReinicio("NOVA_SOLICITACAO")}>Nova solicitação deste contato</Button></div>{reinicio && <fieldset disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados. A nova solicitação será atendida separadamente, uma por vez.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></fieldset>}</details></div><FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={conversa.id} /></> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
+    {carregando && !lead ? <p role="status">Carregando atendimento…</p> : lead?.onboardingId ? <><div className="wa-case-toolbar"><div className="wa-case-actions"><a className="btn btn-secondary btn-md wa-case-link" aria-label="Abrir ficha do cliente em nova aba" href={`/onboardings/${encodeURIComponent(lead.onboardingId)}`} target="_blank" rel="noopener noreferrer">Ficha ↗</a><Button variant="secondary" onClick={() => setReinicio("CORRIGIR_MOTIVO")}>Recomeçar</Button><Button variant="secondary" onClick={() => setReinicio("NOVA_SOLICITACAO")}>Nova solicitação</Button></div>
+      {anteriores.length > 0 && <details className="wa-previous-requests"><summary>Solicitações anteriores ({anteriores.length})</summary>{anteriores.map(a => <p key={a.id}>{a.onboarding ? <a href={`/onboardings/${a.onboarding.id}`}>{a.onboarding.origem} · {a.onboarding.status}</a> : "Atendimento sem ficha"}</p>)}</details>}
+    </div>{reinicio && <fieldset className="wa-case-reset" disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><div className="wa-case-reset-actions"><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></div></fieldset>}<FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={destinoEnvio} janela={canalComercial?.janela || conversa.janela} canalDisponivel={destinoEnvio !== null && (canalComercial?.podeResponder ?? conversa.podeResponder) !== false} canalDeEnvio={canalDeEnvio} /></> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
       {candidatos.filter(c => !["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(c.status)).map(c => <p key={c.id}><a href={`/onboardings/${encodeURIComponent(c.id)}`}>Conferir ficha {c.origem} · {c.status}</a>{" "}<Button type="button" onClick={() => iniciar({ onboardingId: c.id })}>Conferi: vincular esta ficha</Button></p>)}
-      <label>Motivo do atendimento<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Identificar durante a conversa</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label>{" "}
+      <label>Motivo do atendimento<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Ainda não definido</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label>
       <Button type="button" onClick={() => iniciar({ origem: origem || null })}>{ocupado ? "Salvando…" : lead ? "Definir motivo do atendimento" : "Iniciar atendimento"}</Button>
     </fieldset>}
     {!carregando && !erro && !lead?.onboardingId && slotEmpresa}
-    {anteriores.length > 0 && <details><summary>Solicitações anteriores deste contato</summary>{anteriores.map(a => <p key={a.id}>{a.onboarding ? <a href={`/onboardings/${a.onboarding.id}`}>{a.onboarding.origem} · {a.onboarding.status}</a> : "Atendimento sem ficha"}</p>)}</details>}
   </section>;
 }
 
@@ -51,8 +55,8 @@ export function OrientacoesRapidas(props) {
   return <OrientacoesDaConversa key={props.conversa.id} {...props} />;
 }
 function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado, usuarioId }) {
-  const { atualizar } = useContext(AtualizacaoAtendimento);
-  const [aberto, setAberto] = useState(false), [recursos, setRecursos] = useState([]), [id, setId] = useState(""), [previa, setPrevia] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [preparando, setPreparando] = useState(false), [carregando, setCarregando] = useState(false);
+  const { atualizar, mensagemBiblioteca, onMensagemBibliotecaAberta } = useContext(AtualizacaoAtendimento);
+  const [aberto, setAberto] = useState(Boolean(mensagemBiblioteca)), [recursos, setRecursos] = useState([]), [id, setId] = useState(""), [previa, setPrevia] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [preparando, setPreparando] = useState(false), [carregando, setCarregando] = useState(false);
   const [vars, setVars] = useState({ nome: conversa.contato?.nome || conversa.nomePerfilProvedor || "", cnpj: "", servico: "" });
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("MAIS_USADAS"), [usos, setUsos] = useState(() => lerUsosMensagens(usuarioId));
@@ -60,37 +64,51 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
   const [casoId, setCasoId] = useState(conversa.solicitacaoComercial?.id || null);
   const abrirRef = useRef(null), fecharRef = useRef(null);
   const vivo = useRef(true), versaoPrevia = useRef(0), trava = useRef(false);
+  const solicitadaRef = useRef(mensagemBiblioteca), varsRef = useRef(vars);
+  varsRef.current = vars;
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; versaoPrevia.current += 1; }; }, []);
+  useEffect(() => {
+    if (!mensagemBiblioteca) return;
+    solicitadaRef.current = mensagemBiblioteca; setAberto(true);
+    onMensagemBibliotecaAberta?.();
+  }, [mensagemBiblioteca, onMensagemBibliotecaAberta]);
   useEffect(() => {
     if (!aberto || !api.comercial) return;
     let atual = true, pedido = 0;
     async function carregar() {
       const n = ++pedido; setCarregando(true); setErro(""); invalidarPrevia(); setId("");
-      try { const r = await api.comercial("/recursos"); if (atual && n === pedido) setRecursos(r.recursos || []); }
+      try {
+        const [r, caso] = await Promise.all([api.comercial("/recursos"), api.comercial(`/conversas/${encodeURIComponent(conversa.id)}`).catch(() => ({}))]);
+        if (!atual || n !== pedido) return;
+        const lista = r.recursos || [], o = caso.atendimento?.onboarding;
+        const variaveis = { ...varsRef.current, cnpj: varsRef.current.cnpj || (o ? o.cnpj || "" : conversa.empresa?.cnpj || ""), nome: varsRef.current.nome || o?.responsavelNome || "" };
+        const atendimentoLeadId = caso.atendimento?.id || null;
+        setRecursos(lista); setVars(variaveis); setCasoId(atendimentoLeadId);
+        if (solicitadaRef.current) {
+          const escolhida = lista.find(recurso => recurso.id === solicitadaRef.current.id && recurso.tipo === "ORIENTACAO" && recurso.aprovadoEm);
+          solicitadaRef.current = null;
+          if (!escolhida) throw new Error("Esta mensagem não está disponível. Escolha uma mensagem aprovada na lista.");
+          await selecionar(escolhida.id, { lista, variaveis, atendimentoLeadId });
+        }
+      }
       catch(e) { if (atual && n === pedido) setErro(e.message); }
       finally { if (atual && n === pedido) setCarregando(false); }
     }
     const aoVoltar = () => { if (document.visibilityState !== "hidden" && !trava.current) carregar(); };
     carregar(); window.addEventListener("focus", aoVoltar); document.addEventListener("visibilitychange", aoVoltar);
-    if (api.comercial) api.comercial(`/conversas/${encodeURIComponent(conversa.id)}`).then(r => {
-      const o = r.atendimento?.onboarding;
-      if (atual) setCasoId(r.atendimento?.id || null);
-      if (atual) setVars(v => ({ ...v, cnpj: v.cnpj || (o ? o.cnpj || "" : conversa.empresa?.cnpj || ""), nome: v.nome || o?.responsavelNome || "" }));
-    }).catch(() => {});
     return () => { atual = false; window.removeEventListener("focus", aoVoltar); document.removeEventListener("visibilitychange", aoVoltar); };
   }, [aberto, api]);
   function invalidarPrevia() { versaoPrevia.current += 1; setPrevia(null); setPreparando(false); }
-  async function selecionar(value) {
+  async function selecionar(value, { lista = recursos, variaveis = { ...vars }, atendimentoLeadId = casoId } = {}) {
     if (trava.current) return;
     setId(value); setPrevia(null); setErro("");
     const versao = ++versaoPrevia.current;
     if (!value) { setPreparando(false); return; }
     setPreparando(true);
-    const variaveis = { ...vars };
     try {
       const r = await api.comercial(`/recursos/${encodeURIComponent(value)}/previa`, { variaveis });
       if (typeof r?.previa?.texto !== "string" || !r.previa.texto.trim()) throw new Error("A mensagem está vazia. Revise o texto na biblioteca antes de usá-la.");
-      if (vivo.current && versao === versaoPrevia.current) setPrevia({ texto: r.previa.texto, orientacaoId: value, variaveis, versao: recursos.find(r => r.id === value)?.versao || null, atendimentoLeadId: casoId, usoId: `orientacao:${recursos.find(r => r.id === value)?.chave}`, titulo: recursos.find(r => r.id === value)?.titulo });
+      if (vivo.current && versao === versaoPrevia.current) setPrevia({ texto: r.previa.texto, orientacaoId: value, variaveis, versao: lista.find(r => r.id === value)?.versao || null, atendimentoLeadId, usoId: `orientacao:${lista.find(r => r.id === value)?.chave}`, titulo: lista.find(r => r.id === value)?.titulo });
     } catch (e) { if (vivo.current && versao === versaoPrevia.current) setErro(e.message); }
     finally { if (vivo.current && versao === versaoPrevia.current) setPreparando(false); }
   }
@@ -123,7 +141,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
     } catch (e) { if (vivo.current && versao === versaoPrevia.current) setErro(e.message); }
     finally { trava.current = false; if (vivo.current && versao === versaoPrevia.current) setPreparando(false); }
   }
-  function fechar() { invalidarPrevia(); setAberto(false); abrirRef.current?.focus(); }
+  function fechar() { solicitadaRef.current = null; invalidarPrevia(); setAberto(false); abrirRef.current?.focus(); }
   const orientacoes = ultimasOrientacoes(recursos);
   const formularios = conversa.capacidades?.podeCriarCasoComercial !== false && api.criarLinkOnboarding ? [["ABERTURA", "Formulário de abertura", "Pedir os dados necessários para abrir uma nova empresa."], ["TRANSFERENCIA", "Formulário de transferência", "Coletar os dados de quem quer trocar de contador."], ["INATIVA", "Formulário de empresa parada", "Coletar os dados para analisar uma empresa sem movimento."]].map(([origem,titulo,descricao]) => ({ usoId: `formulario:${origem}`, origem, titulo, descricao })) : [];
   const todas = [...orientacoes.map(r => ({ ...r, usoId: `orientacao:${r.chave}`, descricao: descricaoMensagem(r) })), ...formularios];
@@ -149,13 +167,13 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
       <div className="wa-library-tabs" role="group" aria-label="Filtrar mensagens rápidas">{[["MAIS_USADAS", "Mais usadas"], ["TODAS", "Todas"], ["FORMULARIOS", "Formulários"]].map(([valor,rotulo]) => <button type="button" key={valor} aria-pressed={filtro === valor} onClick={() => setFiltro(valor)}>{rotulo}</button>)}</div>
       {filtro === "MAIS_USADAS" && !busca && <p className="wa-quick-description">{temUsos ? "Mais usadas por você neste navegador." : "Todas as mensagens até seu primeiro uso."}</p>}
       {visiveis.some(r => r.origem) && <p className="wa-quick-description">Preparar um formulário gera um link e substitui o anterior.</p>}
-      <div className="wa-quick-list">{visiveis.map(r => <article className="wa-quick-card" key={r.usoId}><strong>{r.titulo}</strong><p className="wa-quick-description">{r.descricao}</p><Button variant="secondary" size="sm" disabled={Boolean(r.origem && preparando)} onClick={() => r.origem ? formulario(r.origem) : selecionar(r.id)}>{r.origem ? "Preparar formulário" : "Ver mensagem"}</Button></article>)}</div>
+      <div className="wa-quick-list">{visiveis.map(r => <article className="wa-quick-card" key={r.usoId}><strong>{r.titulo}</strong><p className="wa-quick-description">{r.descricao}</p><Button variant="secondary" size="sm" disabled={carregando || Boolean(r.origem && preparando)} onClick={() => r.origem ? formulario(r.origem) : selecionar(r.id)}>{r.origem ? "Preparar formulário" : "Usar no chat"}</Button></article>)}</div>
       {!carregando && !erro && !visiveis.length && <p>Nenhuma mensagem encontrada. Tente outra palavra ou escolha Todas.</p>}
       {!carregando && !erro && !orientacoes.length && <p>Não há textos aprovados. Em Gerenciar biblioteca compartilhada, carregue os modelos iniciais, revise e aprove para disponibilizá-los aqui.</p>}
       </>}
       {id && [["nome", "Nome do destinatário"], ["cnpj", "CNPJ"], ["servico", "Serviço"]].filter(([k]) => recursos.find(r => r.id === id)?.texto?.includes("{{"+k+"}}")).map(([k,rotulo]) => <label key={k}>{rotulo}<input value={vars[k]} onChange={e => { invalidarPrevia(); setVars({ ...vars, [k]: e.target.value }); }} /></label>)}
       {id && !previa && !preparando && <Button type="button" size="sm" variant="secondary" disabled={carregando} onClick={() => selecionar(id)}>Conferir mensagem</Button>}
-      {previa && <section className="wa-quick-preview" aria-label="Prévia para este contato"><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previa.texto}</p>{onPreparado ? <><p className="wa-quick-description">O texto será colocado no campo de mensagem para você revisar e enviar.</p><Button type="button" disabled={disabled || ocupado || preparando} onClick={usarMensagem}>Usar mensagem</Button></> : <Button type="button" disabled={disabled || ocupado || preparando} onClick={enviar}>Assumir e enviar orientação</Button>}</section>}
+      {previa && <section className="wa-quick-preview" aria-label="Prévia para este contato"><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previa.texto}</p>{onPreparado ? <><p className="wa-quick-description">Insira o texto, ajuste se precisar e clique em Responder para enviar.</p><Button type="button" disabled={disabled || ocupado || preparando} onClick={usarMensagem}>Inserir na conversa</Button></> : <Button type="button" disabled={disabled || ocupado || preparando} onClick={enviar}>Assumir e enviar orientação</Button>}</section>}
       </fieldset>
       {(carregando || preparando) && <p role="status">{carregando ? "Carregando orientações…" : "Preparando prévia…"}</p>}
       {erro && <p role="alert">{erro}</p>}

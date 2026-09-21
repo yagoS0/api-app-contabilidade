@@ -55,7 +55,8 @@ export function FichaAvulsa({ api, onboarding, onSalvo, somenteLeitura = false }
   </section>;
 }
 
-export function ApresentacaoManual({ onSalvar, versao, diagnosticoId, disabled }) {
+export function ApresentacaoManual({ onSalvar, versao, diagnosticoId, disabled, aberto = false }) {
   const [meio, setMeio] = useState(""), [evidencia, setEvidencia] = useState("");
-  return <details><summary>Já apresentei por reunião ou outro meio</summary><fieldset disabled={disabled}><legend>Registrar a apresentação ao lead</legend><label>Meio e data<input value={meio} maxLength={2000} onChange={e => setMeio(e.target.value)} placeholder="Ex.: reunião em 16/09/2026" /></label><label>Evidência e observações<textarea value={evidencia} maxLength={2000} onChange={e => setEvidencia(e.target.value)} /></label><p>Registra a apresentação deste diagnóstico. Não cria recibo de envio pelo WhatsApp.</p><Button disabled={!diagnosticoId || meio.trim().length < 3 || evidencia.trim().length < 3} onClick={() => onSalvar({ versao, diagnosticoId, meio, evidencia })}>Conferi: registrar apresentação</Button></fieldset></details>;
+  const Conteiner = aberto ? "section" : "details";
+  return <Conteiner>{!aberto && <summary>Já apresentei por reunião ou outro meio</summary>}<fieldset disabled={disabled}><legend>Registrar a apresentação ao lead</legend><label>Meio e data<input value={meio} maxLength={2000} onChange={e => setMeio(e.target.value)} placeholder="Ex.: reunião em 21/09/2026" /></label><label>Evidência e observações<textarea value={evidencia} maxLength={2000} onChange={e => setEvidencia(e.target.value)} /></label><p>Registra a apresentação deste diagnóstico. Não cria recibo de envio pelo WhatsApp.</p><Button disabled={!diagnosticoId || meio.trim().length < 3 || evidencia.trim().length < 3} onClick={() => onSalvar({ versao, diagnosticoId, meio, evidencia })}>Conferi: registrar apresentação</Button></fieldset></Conteiner>;
 }

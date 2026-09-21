@@ -3,7 +3,7 @@ import http from "node:http";
 import https from "node:https";
 import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixtures/catalogoSintetico.js";
 const url = new URL(process.argv[2]);
-const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && url.pathname === "/lead_flow_check_v2");
+const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && ["/lead_flow_check_v2", "/lead_flow_final_20260921"].includes(url.pathname));
 const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
 if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Somente cluster descartável 55440/lead_flow_check ou CI 55439/whatsapp_delivery_check.");
 process.env.DATABASE_URL = url.href;
@@ -79,7 +79,8 @@ try {
     await db.portalClient.delete({ where: { id: clienteFila.id } });
   }
   const user = await db.user.create({ data: { name: "Contador de teste", email: "lead-test@example.invalid", passwordHash: "inutilizavel", role: "contador", accountType: "FIRM", status: "active" } });
-  const c = await db.conversaWhatsapp.create({ data: { telefoneE164: "5511999999999", chaveEscopo: "fila:5511999999999" } });
+  const canalComercialLegado = await db.canalWhatsapp.create({ data: { id: "teste-comercial-legado", chave: "teste-comercial-legado", finalidade: "COMERCIAL", ativo: true } });
+  const c = await db.conversaWhatsapp.create({ data: { telefoneE164: "5511999999999", chaveEscopo: "fila:5511999999999", canalId: canalComercialLegado.id } });
   const msg = await db.mensagemWhatsapp.create({ data: { conversaId: c.id, providerMessageId: "wamid.LOCAL_TEST_1", ocorridaEmProvedor: new Date(), direcao: "in", tipo: "text", corpo: "Quero abrir uma empresa" } });
   const [a, b] = await Promise.all([1, 2].map(() => iniciarAtendimento({ conversaId: c.id, origem: "ABERTURA", atorId: user.id, client: db })));
   assert.equal(a.id, b.id); assert.equal(a.onboardingId, b.onboardingId); assert.equal(await db.onboarding.count(), 1); ok("Criação concorrente humana/IA reutiliza um único atendimento e onboarding");

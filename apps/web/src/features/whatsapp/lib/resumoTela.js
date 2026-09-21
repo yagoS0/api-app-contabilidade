@@ -7,6 +7,7 @@ export function leituraDoResumo(resumo) {
   const avisoHistorico = historico > 0 ? `${historico} ${historico === 1 ? "mensagem não lida no histórico anterior" : "mensagens não lidas no histórico anterior"}` : null;
   return {
     selo: resumo.mensagensNaoLidas + historico || null,
+    contagensNaoLidas: resumo.contagensNaoLidas && ['TODOS', 'LEAD', 'CLIENTE'].every(k => Number.isSafeInteger(resumo.contagensNaoLidas[k]) && resumo.contagensNaoLidas[k] >= 0) ? resumo.contagensNaoLidas : null,
     avisoHistorico,
     frase: `${resumo.mensagensNaoLidas} ${resumo.mensagensNaoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"} · ${resumo.naoVinculadas} ${resumo.naoVinculadas === 1 ? "número sem empresa" : "números sem empresa"}${avisoHistorico ? ` · ${avisoHistorico}` : ""}${lixeira > 0 ? ` · ${lixeira} não lidas na lixeira` : ""}`,
   };

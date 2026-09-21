@@ -7,6 +7,7 @@ export function propostaParaCliente(p) {
     destinatario: s.destinatario, razaoSocial: s.razaoSocial, cnpj: s.cnpj,
     perfil: s.perfil ? { atividade: s.perfil.atividade, regime: s.perfil.regime, funcionarios: s.perfil.funcionarios, notasRecebidasMes: s.perfil.notasRecebidasMes, consultoriaMensal: s.perfil.consultoriaMensal } : null,
     servicosConferidos: s.servicosConferidos, limitacaoEscopo: s.limitacaoEscopo || null,
+    conferenciaCadastro: s.conferenciaCadastro?.modo === "MANUAL" ? { modo: "MANUAL" } : null,
     opcoes: (s.opcoes || []).map(o => ({ chave: o.chave, titulo: o.titulo, recorrente: o.recorrente, unicoCentavos: o.unicoCentavos, mensalCentavos: o.mensalCentavos, escopo: o.escopo })),
     regularizacaoCentavos: s.regularizacaoCentavos, taxasCentavos: s.taxasCentavos,
     taxasConfirmadas: s.taxasConfirmadas, condicoes: s.condicoes,
@@ -42,6 +43,7 @@ export async function gerarPropostaPdf(p) {
     if (perfil.consultoriaMensal) texto("Consultoria mensal de gestão incluída no escopo recorrente.");
   }
   if (p.servicosConferidos) { titulo("O que vamos fazer"); texto(p.servicosConferidos); }
+  if (p.conferenciaCadastro?.modo === "MANUAL") { titulo("Conferência cadastral"); texto("Dados cadastrais conferidos manualmente pelo escritório; consulta automática não utilizada. Esta conferência não comprova regularidade fiscal."); }
   if (p.limitacaoEscopo) { titulo("Limites do serviço contratado"); texto(p.limitacaoEscopo); }
   for (const o of p.opcoes || []) {
     titulo(o.titulo);

@@ -26,6 +26,15 @@ test("escopo extenso quebra páginas sem perder o final e rascunho fica identifi
   expect(lido.numpages).toBeGreaterThan(1); expect(lido.text).toContain("ÚLTIMA CONDIÇÃO");
   expect(lido.text).toContain("RASCUNHO PARA REVISÃO"); expect(lido.text).toContain("Conferir serviço adicional");
 });
+
+test("PDF informa conferência cadastral manual sem publicar evidência interna", async () => {
+  const manual = { ...p, snapshot: { ...p.snapshot, conferenciaCadastro: { modo: "MANUAL", fonte: "fonte interna", evidencia: "SEGREDO-EVIDENCIA", atorId: "SEGREDO-ATOR" } } };
+  const publico = propostaParaCliente(manual);
+  expect(publico.conferenciaCadastro).toEqual({ modo: "MANUAL" });
+  const pdf = await gerarPropostaPdf(publico), lido = await pdfParse(new Uint8Array(pdf), { version: "v2.0.550" });
+  expect(lido.text).toMatch(/cadast.*manual/i); expect(lido.text).toMatch(/consulta automática não/i);
+  expect(lido.text).not.toContain("SEGREDO"); expect(lido.text).not.toContain("fonte interna");
+});
 test("download interno recusa outra versão da ficha e outra pessoa sem permissão", async () => {
   const db = { onboarding: { findUnique: async () => ficha }, propostaComercial: { findFirst: jest.fn(async () => ({ ...p, fichaVersao: 2 })) } };
   const service = criarPropostasComerciais({ db });

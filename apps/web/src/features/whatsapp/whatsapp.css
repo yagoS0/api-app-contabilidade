@@ -17,7 +17,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-page :is(button, a, summary, select, textarea):focus-visible, .wa-thread :is(button, a, summary):focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
 .wa-page .btn, .wa-thread .btn, .wa-details .btn { border-radius: var(--radius-sm); min-height: 36px; }
 
-/* Lista: três linhas por pessoa; os dados completos ficam nos detalhes. */
+/* Lista: nome e relacionamento; os dados completos ficam nos detalhes. */
 .wa-sidebar { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-subtle); }
 .wa-sidebar-top { padding: 14px 12px 10px; border-bottom: 1px solid var(--border); }
 .wa-section-heading { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -177,14 +177,26 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-lead-toolbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .wa-lead-toolbar > span { font-size: .875rem; color: var(--text-muted); }
 .wa-commercial-section { padding-bottom: 20px; }
+.wa-commercial-intake > fieldset { display: grid; gap: 16px; justify-items: start; min-width: 0; margin-top: 20px; }
+.wa-commercial-intake > fieldset > label { display: grid; gap: 8px; width: 100%; max-width: 480px; margin: 0; font-size: .9375rem; }
+.wa-commercial-intake > fieldset select { width: 100%; min-height: 44px; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; }
+.wa-commercial-intake > fieldset > .btn { min-height: 40px; }
 .wa-commercial-process { margin-top: 12px; }
 .wa-commercial-process > summary { cursor: pointer; padding: 8px 0; color: var(--text); font-weight: 600; }
-.wa-case-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-block: 6px; }
+.wa-case-toolbar { display: grid; gap: 8px; margin: 0 0 16px; }
 .wa-case-toolbar > .wa-commercial-process { margin: 0; font-size: .8125rem; }
 .wa-case-toolbar > .wa-commercial-process[open] { flex-basis: 100%; }
-.wa-case-link, .wa-case-link a { display: inline-block; padding: 8px 0; color: var(--text); text-underline-offset: 3px; font-size: .875rem; }
+.wa-case-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wa-case-actions > .btn { display: inline-flex; margin: 0; min-width: 0; min-height: 42px; padding: 9px 12px; font-size: .875rem; line-height: 1.4; text-align: center; white-space: normal; overflow-wrap: anywhere; text-decoration: none; }
+.wa-commercial-intake > .wa-case-reset { gap: 12px; padding: 16px; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.wa-case-reset legend { padding-inline: 6px; font-size: .875rem; font-weight: 600; }
+.wa-case-reset > p { margin: 0; }
+.wa-case-reset-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .wa-commercial-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.wa-commercial-section fieldset > .btn { margin: 10px 6px 0 0; }
+.wa-commercial-section { min-width: 0; }
+.wa-commercial-section .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; padding-block: 9px; }
+.wa-details--commercial > .wa-section-heading { gap: 16px; margin-bottom: 18px; }
+.wa-details--commercial > .wa-section-heading > .btn { flex: 0 0 38px; width: 38px; height: 38px; padding: 0; }
 .wa-link-company { border-top: 1px solid var(--border); padding-top: 16px; }
 .wa-link-company summary { cursor: pointer; font-size: .875rem; font-weight: 600; }
 .wa-identity-review label, .wa-details .lead-avulsa label, .wa-details .lead-step-fields label, .wa-lead-panel label { display: grid; gap: 6px; margin-block: 10px; font-size: .875rem; }
@@ -263,3 +275,63 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-analysis-result dl > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 @media (prefers-reduced-motion: reduce) { .wa-page *, .wa-company-chat * { scroll-behavior: auto !important; } }
+
+/* Contatos: painel recolhível e largura ajustável, independente do compositor. */
+.wa-workspace--list-hidden { grid-template-columns: minmax(0, 1fr); }
+.wa-sidebar { position: relative; }
+.wa-sidebar .wa-conversation { align-items: center; min-height: 60px; }
+.wa-sidebar .wa-conversation-title { align-items: center; }
+.wa-sidebar .wa-contact-meta { margin-top: 2px; }
+.wa-sidebar-filterline { flex-wrap: wrap; row-gap: 2px; }
+.wa-sidebar .wa-relationship-filters { display: flex; flex: 1 1 100%; }
+.wa-sidebar .wa-relationship-filters > button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding-inline: 3px; }
+.wa-filter-count { font-size: .6875rem; font-variant-numeric: tabular-nums; color: var(--text); }
+.wa-list-resizer { position: absolute; z-index: 6; top: 0; bottom: 0; right: -3px; width: 7px; cursor: col-resize; touch-action: none; }
+.wa-list-resizer:hover, .wa-list-resizer:focus-visible { background: var(--accent-purple); outline: none; opacity: .65; }
+@media (max-width: 760px) {
+  .wa-list-resizer { display: none; }
+  .wa-workspace--list-hidden .wa-chat-column { display: flex; }
+}
+
+/* Mensagens: direção reconhecível, superfícies distintas e ações junto da fonte. */
+.wa-messages { background: var(--bg-page); }
+.wa-message-row { width: fit-content; max-width: min(84%, 760px); padding: 5px 0; margin-right: auto; }
+.wa-message-row > .wa-bubble { flex: 0 1 auto; position: relative; padding: 10px 13px 8px; border: 1px solid var(--border); border-radius: 12px 12px 12px 3px; background: color-mix(in srgb, var(--bg-surface) 91%, var(--text)); box-shadow: var(--shadow); }
+.wa-message-row--out { margin-left: auto; margin-right: 0; flex-direction: row-reverse; }
+.wa-message-row--out > .wa-bubble { border-radius: 12px 12px 3px 12px; background: color-mix(in srgb, var(--primary) 25%, var(--bg-surface)); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.wa-message-row > .wa-avatar { margin-top: 4px; }
+.wa-message-row .wa-bubble-author { font-size: .72rem; margin-bottom: 5px; }
+.wa-message-row .wa-bubble-author strong { font-size: .78rem; font-weight: 600; }
+.wa-message-row .wa-bubble-author > time { display: none; }
+.wa-message-row .wa-bubble-footer { justify-content: flex-end; font-size: .70rem; margin-top: 6px; }
+.wa-message-row .wa-bubble-footer time { display: inline; }
+.wa-message-row--note { width: fit-content; max-width: min(88%, 740px); margin: 12px auto; padding: 0; border: 0; background: none; }
+.wa-message-row--note > .wa-avatar { display: none; }
+.wa-message-row--note > .wa-bubble { background: var(--state-neutral-surface); border: 1px dashed var(--border); border-radius: 8px; box-shadow: none; font-size: .875rem; }
+.wa-message-row--note .wa-bubble-author > span { color: var(--text-muted); }
+.wa-message-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 3px; }
+.wa-message-actions button { border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: .75rem; cursor: pointer; padding: 3px 6px; border-radius: 5px; min-height: 28px; }
+.wa-message-actions button:first-child { font-size: 1.1rem; line-height: 1; min-width: 30px; }
+.wa-message-actions button:hover, .wa-message-actions button:focus-visible { background: var(--state-neutral-surface); color: var(--text); }
+.wa-message-note-form { display: grid; gap: 14px; }
+.wa-message-note-form > p { margin: 0; color: var(--text-muted); }
+.wa-message-note-form label { display: grid; gap: 7px; }
+.wa-message-note-form select, .wa-message-note-form textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text); font: inherit; box-sizing: border-box; }
+.wa-message-note-form textarea { min-height: 130px; resize: vertical; }
+.wa-message-note-source { padding: 12px; background: var(--bg-page); border-left: 3px solid var(--border); border-radius: 5px; }
+.wa-message-note-source small { color: var(--text-muted); }
+.wa-message-note-source blockquote { margin: 7px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+@media (max-width: 760px) {
+  .wa-message-row { max-width: 92%; gap: 6px; }
+  .wa-message-row > .wa-avatar { display: none; }
+  .wa-message-row > .wa-bubble { padding: 9px 11px 7px; }
+  .wa-message-row--note { max-width: 94%; }
+}
+
+/* Tipografia e controles do atendimento: hierarquia legível nos dois temas. */
+.wa-page { font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); font-size: 15px; line-height: 1.55; }
+.wa-page input, .wa-page textarea, .wa-page select, .wa-page button { font-family: inherit; }
+.wa-page .wa-bubble-text { font-size: 15px; line-height: 1.6; }
+.wa-previous-requests { min-width: 0; font-size: .875rem; }
+.wa-previous-requests > summary, .wa-contact-data > summary { cursor: pointer; padding-block: 8px; }
+.wa-contact-data { margin-top: 20px; border-top: 1px solid var(--border); }

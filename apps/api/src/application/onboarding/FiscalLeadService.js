@@ -278,7 +278,9 @@ export function criarFiscalLead({
           const out = await comercial.analisar(j.onboardingId, user, "SITFIS");
           resultado = {
             analiseId: out.analise?.id,
-            mensagem: out.analise?.resultado?.mensagem || "Consulta registrada."
+            mensagem: out.analise?.resultado?.mensagem || "Consulta registrada.",
+            ...(out.analise?.resultado?.codigo ? { codigo: out.analise.resultado.codigo } : {}),
+            ...(out.analise?.resultado?.tentarNovamenteEm ? { tentarNovamenteEm: out.analise.resultado.tentarNovamenteEm } : {})
           };
           status = out.analise?.status === "PROCESSANDO" ? j.tentativas < 3 ? "AGUARDANDO" : "EXIGE_REVISAO" : out.analise?.status === "CONCLUIDA" ? "CONCLUIDO" : "FALHOU";
         }
@@ -288,6 +290,20 @@ export function criarFiscalLead({
           codigo: e.code || "consulta_falhou",
           mensagem: e instanceof OnboardingError ? e.message : "Não foi possível concluir. Confira antes de repetir."
         };
+        if (e.extra?.tentarNovamenteEm) resultado.tentarNovamenteEm = e.extra.tentarNovamenteEm;
+        const espera = Number(e.detalhe?.segundosRestantes);
+        if (e.code === "SERPRO_CHAMADA_REPETIDA" && Number.isFinite(espera) && espera > 0) {
+          resultado.tentarNovamenteEm = new Date(Date.now() + Math.ceil(espera) * 1000).toISOString();
+          resultado.mensagem = `Consulta realizada há pouco. Nova conferência após ${Math.ceil(espera)} segundos.`;
+        }
+      }
+      let proximaTentativaEm = new Date(Date.now() + 120000);
+      const prazo = new Date(resultado?.tentarNovamenteEm).getTime();
+      // Somente recusas conhecidas, anteriores à rede, entram em espera. Resultado
+      // incerto, limite de consumo e falta de PDF continuam exigindo ação humana.
+      if (status === "FALHOU" && (resultado?.codigo === "aguarde_consulta" || (resultado?.codigo === "SERPRO_CHAMADA_REPETIDA" && Number.isFinite(prazo)))) {
+        status = j.tentativas < 3 ? "AGUARDANDO" : "EXIGE_REVISAO";
+        if (Number.isFinite(prazo) && prazo > Date.now()) proximaTentativaEm = new Date(prazo);
       }
       await db.trabalhoFiscalLead.updateMany({
         where: {
@@ -299,7 +315,7 @@ export function criarFiscalLead({
           status,
           resultado,
           leaseAte: null,
-          proximaTentativaEm: new Date(Date.now() + 120000)
+          proximaTentativaEm
         }
       });
     }

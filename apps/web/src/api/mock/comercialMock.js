@@ -17,6 +17,16 @@ export function criarMockComercial({
     if (!o) throw Error("Ficha não encontrada.");
     return o;
   };
+  // As mesmas chaves materiais da jornada real; a demonstração só registra
+  // diagnósticos de abertura e nunca possui uma consulta fiscal concluída.
+  const contextoDiagnostico = o => JSON.stringify([
+    o.origem, o.cnpj || null, null,
+    o.dados?.atividadePretendida || null,
+    o.dados?.municipioAtendimento || o.dados?.municipioPretendido || null,
+    o.dados?.enderecoPretendido || null
+  ]);
+  const diagnosticoAtual = o => o.diagnosticoDemonstracao?.dados?.contexto === contextoDiagnostico(o)
+    ? o.diagnosticoDemonstracao : null;
   const snapshot = o => ({
     moeda: "BRL",
     destinatario: o.responsavelNome || "Interessado de demonstração",
@@ -173,8 +183,11 @@ export function criarMockComercial({
           ...o
         },
         atendimento: a || null,
-        jornada: { analises: [], diagnostico: o.diagnosticoDemonstracao || null, publicaConferida: false, fiscalConferido: false,
-          devolutiva: { partes: [], concluida: Boolean(o.apresentacaoDemonstracao), incerta: false } },
+        jornada: { analises: [], diagnostico: diagnosticoAtual(o),
+          diagnosticoDesatualizado: Boolean(o.diagnosticoDemonstracao && !diagnosticoAtual(o)),
+          diagnosticoAnterior: !diagnosticoAtual(o) ? o.diagnosticoDemonstracao?.dados || null : null,
+          publicaConferida: false, fiscalConferido: false,
+          devolutiva: { partes: [], concluida: Boolean(diagnosticoAtual(o) && o.apresentacaoDemonstracao?.diagnosticoId === diagnosticoAtual(o).id), incerta: false } },
         propostas: [...propostas.values()].filter(p => p.onboardingId === o.id).reverse(),
         contratos: [...contratos.values()].filter(c => c.onboardingId === o.id),
         documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(({
@@ -186,14 +199,14 @@ export function criarMockComercial({
       };
       if (suffix === "/ficha-avulsa") return { ok: true, fichaAvulsa: fichasAvulsas.get(o.id) || null };
       if (suffix === "/jornada/apresentacao") {
-        if (body.versao !== o.versao || body.diagnosticoId !== o.diagnosticoDemonstracao?.id || body.meio?.trim().length < 3 || body.evidencia?.trim().length < 3) throw Error("Confira a versão, o diagnóstico e a evidência da apresentação.");
+        if (body.versao !== o.versao || !diagnosticoAtual(o) || body.diagnosticoId !== diagnosticoAtual(o).id || body.meio?.trim().length < 3 || body.evidencia?.trim().length < 3) throw Error("Confira a versão, o diagnóstico e a evidência da apresentação.");
         o.apresentacaoDemonstracao = { ...body, id: uid(), createdAt: agora() }; persistir(); return { ok: true, apresentacao: o.apresentacaoDemonstracao };
       }
       if (suffix === "/jornada/diagnostico") {
         if (body.versao !== o.versao) throw Error("Ficha alterada. Atualize antes de salvar.");
         if (o.origem !== "ABERTURA") throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
         if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10)) throw Error("Preencha o diagnóstico e o escopo.");
-        o.diagnosticoDemonstracao = { id: uid(), dados: { achados: body.achados, servicos: body.servicos, texto: `DEMONSTRAÇÃO — ${body.achados}\n\nServiços propostos:\n${body.servicos}` } };
+        o.diagnosticoDemonstracao = { id: uid(), dados: { contexto: contextoDiagnostico(o), achados: body.achados, servicos: body.servicos, texto: `DEMONSTRAÇÃO — ${body.achados}\n\nServiços propostos:\n${body.servicos}` } };
         persistir(); return { diagnostico: o.diagnosticoDemonstracao };
       }
       if (suffix === "/jornada/devolutiva") throw Error("Demonstração: nenhuma mensagem ou PDF será enviado a clientes.");
@@ -222,13 +235,9 @@ export function criarMockComercial({
         if (body.versao !== (o.versao || 0)) throw Error("Ficha alterada. Atualize antes de salvar.");
         for (const op of body.operacoes) {
           if (op.acao === "unset") delete o.dados[op.campo];else o.dados[op.campo] = op.valor;
+          if (["responsavelNome", "cnpj"].includes(op.campo)) o[op.campo] = o.dados[op.campo] || null;
         }
         o.versao = (o.versao || 0) + 1;
-        o.diagnosticoDemonstracao = null;
-        Object.assign(o, {
-          responsavelNome: o.dados.responsavelNome,
-          cnpj: o.dados.cnpj
-        });
         persistir();
         return {
           ok: true,

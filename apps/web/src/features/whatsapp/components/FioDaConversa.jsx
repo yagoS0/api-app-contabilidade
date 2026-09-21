@@ -11,7 +11,9 @@
 // substitui a outra. Ver `identidadeDaConversa` em `../lib/conversasTela.js`.
 
 import { CompositorConversa } from "./CompositorConversa";
-import { relacionamentoDaConversa, podeAtendimentoComercial } from "../lib/identidadeAtendimento";
+import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota } from "../lib/identidadeAtendimento";
+import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
+import { NotaDaMensagem } from "./NotaDaMensagem";
 import { PainelAtendimento } from "./PainelAtendimento";
 import { AtualizacaoAtendimento } from "./AtendimentoComercial";
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
@@ -73,7 +75,7 @@ export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
   );
 }
 
-export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, atualizacaoComercialExterna = null, usuarioId = null }) {
+export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, pedidoCanal = null, atualizacaoComercialExterna = null, usuarioId = null, onVirarAnotacao = null }) {
   const { conversa } = fio;
   const mensagens = useMemo(() => [...fio.mensagens, ...(fio.notasInternas || []).map(n => ({ ...n, id: `nota-${n.id}`, tipo: "nota_interna", corpo: n.texto, registradaEm: n.criadaEm || n.createdAt }))].sort((a,b) => String(a.registradaEm).localeCompare(String(b.registradaEm)) || String(a.id).localeCompare(String(b.id))), [fio.mensagens, fio.notasInternas]);
   const relacionamento = relacionamentoDaConversa(conversa);
@@ -84,6 +86,8 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
   const [revisaoComercial, setRevisaoComercial] = useState(0);
   const atualizacaoComercial = useMemo(() => ({ revisao: revisaoComercial, atualizar: () => setRevisaoComercial(v => v + 1) }), [revisaoComercial]);
   const [novas, setNovas] = useState(false);
+  const [acoesDaMensagem, setAcoesDaMensagem] = useState(null);
+  const [fonteDaNota, setFonteDaNota] = useState(null);
   const historicoRef = useRef(null);
   const fioRef = useRef(null);
   const leituraRef = useRef(null);
@@ -95,6 +99,20 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
   const identidade = identidadeDaConversa(conversa);
   const nomeDoCliente = conversa?.contato?.nome || conversa?.nomePerfilProvedor || null;
   const avisoDePaginacao = frasePaginacao(temMais);
+  const podeNotaInterna = !somenteLeitura && conversa.capacidades?.notaInterna !== false
+    && escoposDeNota(conversa).length > 0 && typeof hook.salvarNota === "function" && typeof hook.api?.criarNotaInternaWhatsapp === "function";
+  const podeAnotacaoLegada = !somenteLeitura && !conversa.interlocutorId && typeof onVirarAnotacao === "function";
+  const contextoDaNota = `${conversa.id}:${usuarioId || ""}`;
+  useEffect(() => { setAcoesDaMensagem(null); setFonteDaNota(null); }, [contextoDaNota]);
+
+  function criarNota(mensagem) {
+    setAcoesDaMensagem(null);
+    if (podeNotaInterna) setFonteDaNota({ contexto: contextoDaNota, mensagem });
+    else if (podeAnotacaoLegada) {
+      const rascunho = rascunhoDeAnotacao(mensagem, { pessoa: rotuloDoAutor(mensagem, { nomeDoCliente }), fmtDataHora });
+      if (rascunho) onVirarAnotacao(rascunho);
+    }
+  }
 
   useLayoutEffect(() => {
     if (onVoltar && window.matchMedia?.("(max-width: 760px)").matches) fioRef.current?.focus();
@@ -203,13 +221,16 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         {mensagens.map((m, index) => {
           const interna = m.tipo === "nota_interna";
           const entrada = m.direcao === "in";
+          const podeAnotar = !interna && (podeNotaInterna || (podeAnotacaoLegada && Boolean(m.corpo?.trim())));
           const midia = interna ? null : descricaoDaMidia(m);
           const estado = estadoDaMensagem(m);
           const dia = dataDaMensagem(m);
           const separador = dia && (index === 0 || dia !== dataDaMensagem(mensagens[index - 1]));
           return <div key={m.id}>
             {separador ? <div className="wa-day"><span>{dia}</span></div> : null}
-            <div data-testid={`balao-${m.id}`} data-mensagem-id={m.id} data-mensagem-entrada={entrada ? "true" : undefined} data-autor={interna ? "nota-interna" : m.autor || (entrada ? "cliente" : "sem-autor")} className={`wa-message-row${entrada ? "" : " wa-message-row--out"}${interna ? " wa-message-row--note" : ""}`}>
+            <div data-testid={`balao-${m.id}`} data-mensagem-id={m.id} data-mensagem-entrada={entrada ? "true" : undefined} data-autor={interna ? "nota-interna" : m.autor || (entrada ? "cliente" : "sem-autor")}
+              className={`wa-message-row${!interna && !entrada ? " wa-message-row--out" : ""}${interna ? " wa-message-row--note" : ""}`}
+              onClick={podeAnotar ? e => { if (!e.target.closest("button,a,input,textarea,select,summary") && !window.getSelection()?.toString()) setAcoesDaMensagem(m.id); } : undefined}>
               <AvatarConversa nome={interna ? m.autor?.nome || "Equipe" : entrada ? nomeDoCliente : rotuloDoAutor(m, { nomeDoCliente })} pequeno />
               <div className="wa-bubble">
                 <div className="wa-bubble-author"><strong>{interna ? m.autor?.nome || "Equipe" : rotuloDoAutor(m, { nomeDoCliente })}</strong><time dateTime={m.ocorridaEmProvedor || m.registradaEm}>{fmtDataHora(m.ocorridaEmProvedor || m.registradaEm)}</time>{interna ? <span>Nota interna · só a equipe</span> : m.canal && <span>{m.canal.nome || m.canal.chave || m.canal.finalidade}</span>}</div>
@@ -220,13 +241,18 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
                   <time dateTime={m.ocorridaEmProvedor || m.registradaEm}>{fmtDataHora(m.ocorridaEmProvedor || m.registradaEm)}</time>
                   {estado ? <span data-testid="estado-mensagem" style={{ color: estado.tom === "erro" ? "var(--state-danger)" : estado.tom === "ok" ? "var(--state-ok)" : undefined }}>{estado.texto}</span> : null}
                 </div>
+                {podeAnotar && <div className="wa-message-actions">
+                  <button type="button" aria-label="Ações da mensagem" aria-expanded={acoesDaMensagem === m.id} onClick={() => setAcoesDaMensagem(acoesDaMensagem === m.id ? null : m.id)}>⋯</button>
+                  {acoesDaMensagem === m.id && <button type="button" disabled={hook.ocupado} onClick={() => criarNota(m)}>Criar nota interna</button>}
+                </div>}
               </div>
             </div>
           </div>;
         })}
       </div>
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
-      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} slotAcoes={slotAcoes} onCanalSelecionado={onCanalSelecionado} usuarioId={usuarioId} /> : null}
+      {podeNotaInterna && fonteDaNota?.contexto === contextoDaNota && <NotaDaMensagem key={`${contextoDaNota}:${fonteDaNota.mensagem.id}`} conversa={conversa} mensagem={fonteDaNota.mensagem} hook={hook} aoFechar={() => setFonteDaNota(null)} />}
+      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} slotAcoes={slotAcoes} onCanalSelecionado={onCanalSelecionado} pedidoCanal={pedidoCanal} usuarioId={usuarioId} /> : null}
       {escolherEmpresa && <Modal titulo="Abrir empresa deste contato" tamanho="sm" aoFechar={() => setEscolherEmpresa(false)}><p>O histórico continua sendo único para esta pessoa.</p>{conversa.empresas.map(e => <p key={e.id}><a href={hrefDaEmpresa(e.id)}>{e.razao}</a> · <CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</Modal>}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
         rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>

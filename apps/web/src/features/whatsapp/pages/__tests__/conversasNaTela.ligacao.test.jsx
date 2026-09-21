@@ -39,6 +39,7 @@ function apiFalso(over = {}) {
     responderConversaWhatsapp: jest.fn(async () => ({ ok: true })),
     vincularConversaWhatsapp: jest.fn(async () => ({ ok: true })),
     getPortalAccessUsers: jest.fn(async () => ({ ok: true, usuarios: [{ userId: "u9", nome: "Dono", email: "dono@x.com" }] })),
+    comercial: jest.fn(async () => ({ atendimento: null, anteriores: [] })),
     ...over,
   };
 }
@@ -61,8 +62,8 @@ describe("a lista", () => {
     expect(linhas[0]).toHaveTextContent(/A identificar/);
     expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número aguardando atendimento/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
-    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/monta a atualizada/i);
-    expect(screen.getByTestId("conversa-cv2")).toHaveTextContent(/BETA LTDA/);
+    expect(screen.getByTestId("conversa-cv1")).not.toHaveTextContent(/monta a atualizada/i);
+    expect(screen.getByTestId("conversa-cv2")).not.toHaveTextContent(/BETA LTDA/);
   });
 });
 
@@ -125,8 +126,7 @@ describe("vincular — a fila esvazia por aqui", () => {
     const fio = await screen.findByTestId("fio");
     expect(screen.queryByTestId("form-vincular")).not.toBeInTheDocument();
     fireEvent.click(within(fio).getByRole("button", { name: "Detalhes da conversa" }));
-    fireEvent.click(screen.getByRole("button", { name: "Comercial" }));
-    const form = screen.getByTestId("form-vincular");
+    const form = await screen.findByTestId("form-vincular");
     fireEvent.click(screen.getByText("Vincular a uma empresa existente"));
     const botao = within(form).getByRole("button", { name: /Vincular/ });
     expect(botao).toBeDisabled();
@@ -157,33 +157,29 @@ describe("vincular — a fila esvazia por aqui", () => {
 // bloco certo que ninguém chama. Antes, a linha fazia `empresa?.razao || nomePerfilProvedor || tel`
 // e numa conversa de cliente o contador via a EMPRESA e nunca sabia quem estava falando.
 
-describe("⚠⚠ a linha diz QUEM e de QUAL empresa — as duas", () => {
-  it("com contato cadastrado: a pessoa em cima, a empresa embaixo, e o papel junto", async () => {
+describe("a lista identifica a pessoa; empresa e função ficam no fio", () => {
+  it("mostra o nome cadastrado sem repetir empresa, função e origem", async () => {
     await montar();
     const linha = screen.getByTestId("conversa-cv1");
-    const pessoa = within(linha).getByTestId("pessoa-da-conversa");
-    expect(pessoa).toHaveTextContent("Maria Silva");
-    expect(pessoa).toHaveAttribute("data-origem", "CADASTRO");
-    expect(linha).toHaveTextContent("sócia");
-    // ⚠ A empresa NÃO sumiu — ela desceu para a própria linha.
-    expect(within(linha).getByTestId("empresa-da-conversa")).toHaveTextContent("ACME LTDA");
-    // Nome do cadastro não leva ressalva.
+    expect(linha).toHaveTextContent("Maria Silva");
+    expect(linha).not.toHaveTextContent("sócia");
+    expect(linha).not.toHaveTextContent("ACME LTDA");
     expect(within(linha).queryByTestId("aviso-do-nome")).toBeNull();
   });
 
-  it("⚠ sem cadastro, o nome do PERFIL aparece MARCADO — é o que a pessoa escreveu no aparelho dela", async () => {
+  it("sem cadastro mostra o nome do perfil sem observação na lista", async () => {
     await montar();
     const linha = screen.getByTestId("conversa-cv2");
-    expect(within(linha).getByTestId("pessoa-da-conversa")).toHaveAttribute("data-origem", "PERFIL");
-    expect(within(linha).getByTestId("aviso-do-nome")).toHaveTextContent(/não do cadastro/);
+    expect(linha).toHaveTextContent("Maria");
+    expect(within(linha).queryByTestId("aviso-do-nome")).toBeNull();
   });
 
-  it("⚠ na fila a ausência de empresa é DITA, não deixada em branco", async () => {
+  it("na fila mostra a classificação sem frase de ausência de empresa", async () => {
     await montar();
     const linha = screen.getByTestId("conversa-cv3");
-    const empresa = within(linha).getByTestId("empresa-da-conversa");
-    expect(empresa).toHaveAttribute("data-sem-empresa", "sim");
-    expect(empresa).toHaveTextContent(/sem empresa/);
+    expect(linha).toHaveTextContent("Carlos");
+    expect(linha).toHaveTextContent("A identificar");
+    expect(linha).not.toHaveTextContent(/sem empresa/);
   });
 
   it("o cabeçalho do fio aberto responde as MESMAS duas perguntas", async () => {
