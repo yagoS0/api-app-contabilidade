@@ -40,7 +40,10 @@ test("busca sem acentos e não lidas filtram somente carregadas, incluindo nova 
   expect(screen.getByTestId("conversa-a")).toBeInTheDocument();
   expect(screen.getByTestId("conversa-b")).toBeInTheDocument();
   expect(screen.queryByTestId("conversa-c")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Filtros", { exact: true }));
   fireEvent.click(screen.getByRole("button", { name: "Não lidas" }));
+  fireEvent.click(screen.getByText("Filtros", { exact: false, selector: "summary" }));
+  expect(screen.getByText("Não lidas", { selector: ".wa-active-filters" })).toBeInTheDocument();
   expect(screen.queryByTestId("conversa-b")).not.toBeInTheDocument();
   fireEvent.change(busca, { target: { value: "jose" } });
   expect(screen.queryByTestId("conversa-d")).not.toBeInTheDocument();

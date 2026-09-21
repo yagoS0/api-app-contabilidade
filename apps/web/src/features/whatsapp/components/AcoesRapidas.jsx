@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { CnpjDaConversa } from "./ConversaVisual";
 import { campo } from "./FioDaConversa";
 import { ACAO, acoesDisponiveis, rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { fmtDataHora, identidadeDaConversa } from "../lib/conversasTela";
@@ -41,13 +42,23 @@ export function AcoesRapidas({
   const [destinatarios, setDestinatarios] = useState([]);
   const [resultado, setResultado] = useState(null);
   const [reenvio, setReenvio] = useState(false);
+  const empresa = conversa.empresas?.find(e => e.id === companyId) || (conversa.portalClientId === companyId ? conversa.empresa : null);
   const versao = useRef(0);
-  useEffect(() => () => { versao.current++; }, [companyId, conversa.id]);
+  useEffect(() => {
+    versao.current++;
+    setAberta(null); setItens([]); setEscolhido(""); setDestinatarios([]);
+    setRecusa(null); setResultado(null); setReenvio(false); setCarregando(false); setOcupado(false);
+    return () => { versao.current++; };
+  }, [companyId, conversa.id]);
   const recebem = r => {
     if (!Array.isArray(r?.contatos)) throw new Error("Não foi possível conferir os destinatários.");
     return r.contatos.filter(c => c.ativo !== false && c.optInEm && c.telefoneE164);
   };
   const assinatura = lista => lista.map(c => `${c.id}:${c.telefoneE164}`).sort().join("|");
+  function cancelar() {
+    versao.current++;
+    setAberta(null); setEscolhido(""); setReenvio(false); setRecusa(null); setCarregando(false);
+  }
 
   const acoes = acoesDisponiveis({
     conversa,
@@ -59,7 +70,7 @@ export function AcoesRapidas({
   async function abrir(acao) {
     const v = ++versao.current;
     setRecusa(null); setResultado(null); setReenvio(false);
-    if (aberta === acao) { setAberta(null); return; }
+    if (aberta === acao) { cancelar(); return; }
     setAberta(acao);
     setEscolhido("");
     setItens([]);
@@ -75,7 +86,7 @@ export function AcoesRapidas({
           id: g.guideId || g.id,
           // ⚠ O nome da guia sai de `rotuloTipoGuia` — a MESMA leitura da aba Guias. Uma segunda
           // regra aqui faria a parcela de parcelamento aparecer como "DAS" só neste botão.
-          rotulo: `${rotuloTipoGuia(g)} · ${g.competencia || "sem competência"}`,
+          rotulo: `${rotuloTipoGuia(g)} · ${/^\d{4}-\d{2}$/.test(g.competencia || "") ? g.competencia.slice(5) + "/" + g.competencia.slice(0, 4) : g.competencia || "sem competência"}`,
         })));
       } else if (acao === ACAO.ENVIAR_DOCUMENTO) {
         const r = await api.listCompanyDocuments(companyId);
@@ -150,7 +161,7 @@ export function AcoesRapidas({
   }
 
   return (
-    <div data-testid="acoes-rapidas" className="wa-quick-actions" style={{ marginBottom: 8 }}>
+    <div data-testid="acoes-rapidas" className="wa-quick-actions">
       <div style={linha}>
         {acoes.map((a) => (
           <Button
@@ -167,16 +178,18 @@ export function AcoesRapidas({
 
       {/* ⚠ O motivo é TEXTO, e aparece ANTES do clique — não depois da recusa. */}
       {acoes.filter((a) => a.frase).map((a) => (
-        <p key={a.acao} data-testid={`motivo-${a.acao}`} style={{ fontSize: "0.72rem", color: "var(--state-warn)", margin: "4px 0 0" }}>
+        <p key={a.acao} data-testid={`motivo-${a.acao}`} className="wa-list-note">
           {a.rotulo}: {a.frase}
         </p>
       ))}
 
       {aberta ? (
-        <div data-testid="escolha-do-envio" style={{ marginTop: 8, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-subtle)" }}>
-          {carregando ? <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: 0 }}>Carregando…</p> : null}
+        <div data-testid="escolha-do-envio" className="wa-send-panel">
+          <h3>{aberta === ACAO.ENVIAR_GUIA ? "Enviar guia pelo WhatsApp" : aberta === ACAO.ENVIAR_DOCUMENTO ? "Enviar documento pelo WhatsApp" : "Preparar anotação"}</h3>
+          {aberta !== ACAO.VIRAR_ANOTACAO && <dl className="wa-send-summary"><dt>Empresa</dt><dd>{empresa?.razao || "Empresa deste cadastro"}{empresa?.cnpj && <> · <CnpjDaConversa cnpj={empresa.cnpj} empresa={empresa.razao} /></>}</dd><dt>Canal</dt><dd>WhatsApp</dd></dl>}
+          {carregando ? <p className="wa-list-note">Carregando documentos e destinatários…</p> : null}
           {!carregando && !itens.length ? (
-            <p data-testid="escolha-vazia" style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: 0 }}>
+            <p data-testid="escolha-vazia" className="wa-list-note">
               {aberta === ACAO.ENVIAR_GUIA
                 ? "Esta empresa não tem guia nesta lista."
                 : aberta === ACAO.ENVIAR_DOCUMENTO
@@ -184,37 +197,39 @@ export function AcoesRapidas({
                   : "Nenhuma mensagem com texto neste fio — só há mídia, que este sistema ainda não abre."}
             </p>
           ) : null}
-          {!carregando && aberta === ACAO.ENVIAR_GUIA && destinatarios.length ? <div data-testid="destinatarios-guia" style={{ fontSize: "0.78rem", marginBottom: 8 }}>
-            Esta guia vai para todos os destinatários abaixo, incluindo contatos de outros fios:
+          {!carregando && aberta === ACAO.ENVIAR_GUIA && destinatarios.length ? <div data-testid="destinatarios-guia" className="wa-send-recipients">
+            <strong>Quem vai receber</strong><p>Todos os contatos abaixo receberão a guia desta empresa.</p>
             <ul>{destinatarios.map(c => <li key={c.id}>{c.nome || "Contato"} · {c.telefoneE164}</li>)}</ul>
           </div> : null}
           {!carregando && itens.length ? (
-            <div style={linha}>
-              <select
+            <div className="wa-send-actions">
+              <label>{aberta === ACAO.ENVIAR_GUIA ? "Escolha a guia" : aberta === ACAO.ENVIAR_DOCUMENTO ? "Escolha o documento" : "Escolha a mensagem"}<select
                 aria-label={
                   aberta === ACAO.ENVIAR_GUIA ? "Guia a enviar"
                     : aberta === ACAO.ENVIAR_DOCUMENTO ? "Documento a enviar"
                       : "Mensagem que vira anotação"
                 }
-                style={{ ...campo, width: "auto" }}
+                style={campo}
                 value={escolhido}
-                onChange={(e) => setEscolhido(e.target.value)}
+                disabled={ocupado}
+                onChange={(e) => { setEscolhido(e.target.value); setReenvio(false); setRecusa(null); }}
               >
                 <option value="">— escolha —</option>
                 {itens.map((i) => <option key={i.id} value={i.id}>{i.rotulo}</option>)}
-              </select>
+              </select></label>
+              <div className="wa-send-buttons">
               <Button variant="primary" disabled={!escolhido || ocupado || reenvio || (aberta === ACAO.ENVIAR_GUIA && !destinatarios.length)} onClick={() => confirmar(false)}>
                 {ocupado ? "Enviando…" : aberta === ACAO.VIRAR_ANOTACAO ? "Levar para a anotação" : "Enviar"}
               </Button>
-              <Button variant="secondary" disabled={ocupado} onClick={() => setAberta(null)}>Cancelar</Button>
+              <Button variant="secondary" disabled={ocupado} onClick={cancelar}>Cancelar</Button></div>
             </div>
           ) : null}
         </div>
       ) : null}
 
       {resultado ? <p role={resultado.tom === "erro" ? "alert" : "status"} style={{ color: resultado.tom === "erro" ? "var(--state-danger)" : "var(--text-muted)" }}>{resultado.texto}</p> : null}
-      {reenvio && escolhido ? <Button disabled={ocupado} onClick={() => confirmar(true)}>Confirmar reenvio aos destinatários acima</Button> : null}
-      {recusa ? <p role="alert" style={{ fontSize: "0.76rem", color: "var(--state-danger)", margin: "6px 0 0" }}>{recusa}</p> : null}
+      {aberta === ACAO.ENVIAR_GUIA && reenvio && escolhido ? <Button disabled={ocupado} onClick={() => confirmar(true)}>Confirmar reenvio aos destinatários acima</Button> : null}
+      {recusa ? <p role="alert" className="wa-send-error">{recusa}</p> : null}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { OrientacoesRapidas } from "./AtendimentoComercial";
 import { estadoDaResposta } from "../lib/conversasTela";
 import { canaisDaConversa, chaveDoRascunho, escoposDeNota } from "../lib/identidadeAtendimento";
 
-export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSelecionado = null }) {
+export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSelecionado = null, usuarioId = null }) {
   const canais = canaisDaConversa(conversa);
   const [canalId, setCanalId] = useState(() => conversa.canalId || canais[0]?.id);
   const [modo, setModo] = useState("MENSAGEM");
@@ -25,6 +25,8 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [previa, setPrevia] = useState(false);
+  const [descartado, setDescartado] = useState(null);
+  const textoRef = useRef(null);
   const trava = useRef(false), tentativas = useRef(new Map());
   const texto = typeof rascunho === "string" ? rascunho : rascunho.texto || "";
   const orientacao = typeof rascunho === "object" ? rascunho.orientacao : null;
@@ -41,14 +43,29 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
       ? { ...(typeof salvo === "string" ? { texto: salvo } : salvo), destinoPreparado: destinoAtual } : salvo;
     if (preparado !== salvo) hook.rascunhosRef?.current.set(chave, preparado);
     setRascunho(preparado);
-    setErro(""); setPrevia(false);
+    setErro(""); setPrevia(false); setDescartado(null);
   }, [chave, hook.rascunhosRef]);
   function salvarDraft(valor) {
     const preparado = modo === "MENSAGEM" ? { ...(typeof valor === "string" ? { texto: valor } : valor), destinoPreparado: valor?.destinoPreparado || destinoPreparado || destinoAtual } : valor;
     hook.rascunhosRef?.current.set(chave, preparado);
-    setRascunho(preparado); setPrevia(false);
+    setRascunho(preparado); setPrevia(false); setDescartado(null);
   }
   function mudarTexto(valor) { salvarDraft(orientacao ? { texto: valor, orientacao } : valor); }
+  function descartar() {
+    if (trava.current || hook.ocupado) return;
+    setDescartado({ chave, rascunho });
+    hook.rascunhosRef?.current.delete(chave);
+    // O texto legado não pode reaparecer ao remontar este mesmo contato.
+    if (!conversa.interlocutorId) hook.rascunhosRef?.current.delete(conversa.id);
+    setRascunho(""); setErro(""); setPrevia(false);
+    textoRef.current?.focus();
+  }
+  function desfazerDescarte() {
+    if (!descartado || descartado.chave !== chave || trava.current || hook.ocupado) return;
+    hook.rascunhosRef?.current.set(chave, descartado.rascunho);
+    setRascunho(descartado.rascunho); setDescartado(null);
+    textoRef.current?.focus();
+  }
   async function enviar() {
     if (trava.current || hook.ocupado || !texto.trim() || !destino || destinoMudou || (modo === "MENSAGEM" && !resposta.pode) || (modo === "NOTA" && !escopo)) return;
     if (editada && !previa) { setPrevia(true); return; }
@@ -89,16 +106,21 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     </div>
     {destinoMudou && <div role="alert" className="wa-draft-preview"><strong>Confira o destinatário antes de continuar</strong><p>O número ou vínculo de destino deste canal mudou enquanto a mensagem estava preparada. Seu texto foi preservado. Destinatário atual: <strong>{conversaCanal.telefoneMascarado || "número a conferir no contato"}</strong>.</p><p>{texto}</p><Button variant="secondary" disabled={ocupado || hook.ocupado || !destino} onClick={() => salvarDraft({ texto, destinoPreparado: destinoAtual, ...(orientacao ? { orientacao: { ...orientacao, conversaId: destino, canalId } } : {}) })}>Conferi o destinatário: manter este rascunho</Button></div>}
     {modo === "NOTA" ? <div className="wa-note-scope"><label>Salvar nota para <select aria-label="Escopo da nota interna" value={escopo?.id || ""} onChange={e => setEscopoId(e.target.value)} disabled={ocupado}><option value="">Selecione o caso ou a empresa</option>{escopos.map(e => <option key={e.id} value={e.id}>{e.rotulo}</option>)}</select></label><p>Esta nota fica visível apenas à equipe autorizada. Não será enviada ao WhatsApp.</p></div> : <>
-      {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes}
-      <div className="wa-composer-tools"><AnexoDaConversa key={`anexo-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.abrir(conversa.id, true)} />
-      {hook.api?.comercial && <OrientacoesRapidas key={`orientacoes-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.abrir(conversa.id, true)} onPreparado={p => { salvarDraft({ texto: p.texto, orientacao: { ...p, conversaId: destino, canalId } }); }} />}</div>
       {!resposta.pode && <p data-testid="resposta-bloqueada" className="wa-list-note">{resposta.motivo}</p>}
     </>}
     {orientacao && modo === "MENSAGEM" && <p className="wa-list-note">{editada ? "Texto adaptado: confira a prévia antes de enviar. Não certifica a orientação original." : "Orientação preparada da biblioteca aprovada."}<button type="button" onClick={() => salvarDraft(texto)}>Desvincular orientação</button></p>}
     {previa && <div className="wa-draft-preview"><strong>Confira o texto adaptado</strong><p>{texto}</p></div>}
-    <div className="wa-composer-row"><textarea aria-label={modo === "NOTA" ? "Texto da nota interna" : "Responder ao cliente"} value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder={modo === "NOTA" ? "Anote o que a equipe precisa saber…" : "Escreva uma mensagem para este contato…"} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
-      <Button variant="primary" disabled={bloqueado || !texto.trim()} onClick={enviar}>{modo === "NOTA" ? "Salvar nota interna" : editada ? previa ? "Conferi: enviar adaptação" : "Conferir adaptação" : "Responder"}</Button></div>
-    <div className="wa-composer-hint">{modo === "NOTA" ? `Nota interna · ${escopo?.rotulo || "Escolha o escopo"}` : `Mensagem para este contato · ${canal?.nome || canal?.chave || "Principal"}`} · Ctrl + Enter</div>
+    <div className="wa-composer-row"><textarea ref={textoRef} aria-label={modo === "NOTA" ? "Texto da nota interna" : "Responder ao cliente"} value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder={modo === "NOTA" ? "Anote o que a equipe precisa saber…" : "Escreva uma mensagem para este contato…"} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} /></div>
+    <div className="wa-compose-footer">
+      <div className="wa-composer-tools">{modo === "MENSAGEM" && <>
+        <AnexoDaConversa key={`anexo-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.abrir(conversa.id, true)} />
+        {hook.api?.comercial && <OrientacoesRapidas key={`orientacoes-${destino}`} api={hook.api} conversa={conversaCanal} usuarioId={usuarioId} disabled={bloqueado} onEnviado={() => hook.abrir(conversa.id, true)} onPreparado={p => { salvarDraft({ texto: p.texto, orientacao: { ...p, conversaId: destino, canalId } }); }} />}
+        {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes && <details className="wa-composer-documents"><summary>Guias e documentos</summary>{slotAcoes}</details>}
+      </>}</div>
+      <Button variant="primary" disabled={bloqueado || !texto.trim()} onClick={enviar}>{modo === "NOTA" ? "Salvar nota interna" : editada ? previa ? "Conferi: enviar adaptação" : "Conferir adaptação" : "Responder"}</Button>
+    </div>
+    <div className="wa-composer-hint"><span>{modo === "NOTA" ? `Nota interna · ${escopo?.rotulo || "Escolha o escopo"}` : "Ctrl + Enter para enviar"}</span>{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado} onClick={descartar}>Descartar rascunho</button>}</div>
+    {descartado?.chave === chave && <div className="wa-draft-undo" role="status">Rascunho descartado. <button type="button" disabled={ocupado || hook.ocupado} onClick={desfazerDescarte}>Desfazer</button></div>}
     {erro && !hook.erroAcao && <p role="alert" className="wa-list-note">{erro}</p>}
   </div>;
 }

@@ -1,0 +1,19 @@
+.commercial-library { font-size: .9375rem; line-height: 1.5; }
+.commercial-library-toolbar, .commercial-library-tabs, .commercial-library-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 12px; }
+.commercial-library-tabs { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.commercial-library-tabs button { border: 1px solid transparent; border-radius: var(--radius-sm); min-height: 40px; padding: 8px 12px; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.commercial-library-tabs button[aria-pressed="true"] { background: var(--state-neutral-surface); border-color: var(--border); color: var(--text); font-weight: 600; }
+.commercial-library-tabs button:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
+.commercial-library-tabs button:disabled { cursor: not-allowed; }
+.commercial-library :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 3px; }
+.commercial-library-toolbar > label { flex: 1; min-width: min(240px, 100%); }
+.commercial-library-list { display: grid; gap: 12px; }
+.commercial-library-card { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); }
+.commercial-library-card-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.commercial-library-card-heading h3 { font-size: 1rem; margin: 0; }
+.commercial-library-meta { color: var(--text-muted); font-size: .8125rem; }
+.commercial-library-meta > summary { cursor: pointer; padding-block: 8px; }
+.commercial-library-editor { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 16px; }
+.commercial-library :is(input, select, textarea) { max-width: 100%; min-width: 0; padding: 10px; box-sizing: border-box; font: inherit; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.commercial-library textarea { width: 100%; min-height: 180px; }
+.commercial-library .btn { min-height: 36px; }

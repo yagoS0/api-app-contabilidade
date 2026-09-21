@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { descricaoMensagem, normalizarBuscaMensagem } from "../../whatsapp/lib/mensagensRapidas";
+import "../commercial-library.css";
 
 const style = { width: "100%", padding: 8, background: "var(--bg-subtle)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5, marginBlock: 5 };
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 };
@@ -82,8 +84,9 @@ function Campo({ rotulo, valor, onChange, numero = false, ajuda }) {
   return <div><label htmlFor={id} style={{ display: "block" }}>{rotulo}</label><input id={id} style={style} inputMode={numero ? "decimal" : undefined} aria-describedby={ajuda ? `${id}-ajuda` : undefined} value={valor ?? ""} onChange={e => onChange(e.target.value)} />{ajuda && <small id={`${id}-ajuda`} style={{ display: "block" }}>{ajuda}</small>}</div>;
 }
 
-export function RecursosComerciais({ api, recursos = [], onAtualizar, inicialmenteAberto = false }) {
+export function RecursosComerciais({ api, recursos = [], onAtualizar }) {
   const [editando, setEditando] = useState(null), [erros, setErros] = useState([]), [ocupado, setOcupado] = useState(false), [aviso, setAviso] = useState("");
+  const [tipo, setTipo] = useState("ORIENTACAO"), [estado, setEstado] = useState("ATUAIS"), [busca, setBusca] = useState(""), [excluindo, setExcluindo] = useState(null);
   const trava = useRef(false), errosRef = useRef(null);
   useEffect(() => { if (erros.length) errosRef.current?.focus(); }, [erros]);
   async function executar(fn) {
@@ -93,7 +96,7 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar, inicialmen
     finally { trava.current = false; setOcupado(false); }
   }
   function editar(r) { setEditando(abrirEditor(r)); setErros([]); setAviso(""); }
-  const novo = () => editar({ tipo: "ORIENTACAO", chave: "", titulo: "", texto: "", dados: {} });
+  const novo = () => editar({ tipo, chave: chavesFixas[tipo] || "", titulo: "", texto: "", dados: {} });
   const mudarDado = (k, v) => setEditando(e => ({ ...e, dados: { ...e.dados, [k]: v } }));
   const mudarGrupo = (grupo, k, v) => setEditando(e => ({ ...e, dados: { ...e.dados, [grupo]: { ...e.dados[grupo], [k]: v } } }));
   const mudarFaixa = (i, k, v) => setEditando(e => ({ ...e, dados: { ...e.dados, faixas: e.dados.faixas.map((f, j) => j === i ? { ...f, [k]: v } : f) } }));
@@ -107,25 +110,33 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar, inicialmen
     if (invalidos.length) { setEditando(abrirEditor(r)); setErros(invalidos); return; }
     executar(async () => { await api.comercial(`/recursos/${encodeURIComponent(r.id)}/aprovar`, {}); setAviso("Versão aprovada para uso no atendimento."); });
   }
-  return <details open={inicialmenteAberto || undefined} style={{ marginBlock: 14 }}>
-    <summary>Biblioteca de mensagens, preços e modelos</summary>
-    <p>Biblioteca compartilhada pelo atendimento. Salvar cria um rascunho; só as versões aprovadas ficam disponíveis para a IA e o contador. As versões anteriores são preservadas.</p>
+  function excluir(r) {
+    executar(async () => { await api.comercial(`/recursos/${encodeURIComponent(r.id)}`, { versao: r.versao }, "DELETE"); setExcluindo(null); setAviso("Rascunho excluído. As versões aprovadas continuam disponíveis."); });
+  }
+  const destaArea = recursos.filter(r => r.tipo === tipo);
+  const selecionados = estado === "ATUAIS" ? [...new Map([...destaArea].sort((a,b) => a.versao - b.versao).map(r => [r.chave, r])).values()] : estado === "RASCUNHOS" ? destaArea.filter(r => !r.aprovadoEm) : destaArea;
+  const visiveis = selecionados.filter(r => normalizarBuscaMensagem(`${r.titulo} ${descricaoMensagem(r)} ${r.chave}`).includes(normalizarBuscaMensagem(busca))).sort((a,b) => a.titulo.localeCompare(b.titulo, "pt-BR") || b.versao - a.versao);
+  return <section className="commercial-library" aria-label="Biblioteca de mensagens, preços e modelos">
+    <div className="commercial-library-tabs" role="group" aria-label="Conteúdo da biblioteca">{Object.entries(tipos).map(([valor, rotulo]) => <button key={valor} type="button" aria-pressed={tipo === valor} disabled={ocupado || !!editando} onClick={() => { setTipo(valor); setEstado("ATUAIS"); setBusca(""); }}>{rotulo}</button>)}</div>
+    <p>{tipo === "ORIENTACAO" ? "Textos prontos para ajudar no atendimento. As mensagens aprovadas aparecem no chat." : tipo === "CATALOGO" ? "Valores e regras para calcular propostas. Só o catálogo aprovado é usado no atendimento." : tipo === "CONTRATO" ? "Modelos para preparar contratos com os dados de cada cliente." : "Informações do escritório usadas para preencher as mensagens e os documentos."}</p>
     {erros.length > 0 && <div role="alert" tabIndex={-1} ref={errosRef}><strong>Confira antes de continuar:</strong><ul>{erros.map((e, i) => <li key={i}>{e}</li>)}</ul></div>}
     {aviso && <p role="status">{aviso}</p>}
-    <Button type="button" disabled={ocupado} onClick={() => executar(() => api.comercial("/recursos/iniciar", {}))}>Carregar rascunhos iniciais</Button>{" "}
-    <Button type="button" variant="secondary" disabled={ocupado || !!editando} onClick={novo}>Novo recurso</Button>
+    {!editando && <div className="commercial-library-toolbar"><label>Buscar na biblioteca<input style={style} value={busca} onChange={e => setBusca(e.target.value)} /></label><label>Mostrar<select style={style} value={estado} onChange={e => setEstado(e.target.value)}><option value="ATUAIS">Versão mais recente</option><option value="RASCUNHOS">Rascunhos</option><option value="HISTORICO">Todas as versões</option></select></label><Button type="button" disabled={ocupado} onClick={novo}>{tipo === "ORIENTACAO" ? "Nova mensagem" : "Novo recurso"}</Button></div>}
     {!recursos.length && <p>A biblioteca está vazia. Cadastre os textos e as regras de honorários do escritório, sem valores preenchidos automaticamente.</p>}
-    <ul>{recursos.map(r => <li key={r.id} style={{ marginBlock: 10 }}>
-      <strong>{r.titulo}</strong> · {tipos[r.tipo] || r.tipo} · /{r.chave} · v{r.versao} · {r.aprovadoEm ? "Aprovado" : "Rascunho"}{" "}
-      <Button type="button" variant="secondary" size="sm" disabled={ocupado || !!editando} onClick={() => editar(r)}>Revisar / nova versão</Button>{" "}
-      {!r.aprovadoEm && <Button type="button" size="sm" disabled={ocupado || !!editando} onClick={() => aprovar(r)}>Aprovar</Button>}
-    </li>)}</ul>
-    {editando && <fieldset disabled={ocupado} style={{ border: "1px solid var(--border)", padding: 14 }}>
+    {!editando && <div className="commercial-library-list">{visiveis.map(r => <article key={r.id} className="commercial-library-card">
+      <div className="commercial-library-card-heading"><strong>{r.titulo}</strong><span className="commercial-library-meta">{r.aprovadoEm ? "Disponível" : "Rascunho"}</span></div><p>{descricaoMensagem(r)}</p>
+      <div className="commercial-library-actions"><Button type="button" variant="secondary" size="sm" disabled={ocupado} onClick={() => editar(r)}>Editar</Button>{!r.aprovadoEm && <><Button type="button" size="sm" disabled={ocupado} onClick={() => aprovar(r)}>Aprovar</Button><Button type="button" variant="secondary" size="sm" disabled={ocupado} onClick={() => setExcluindo(r)}>Excluir rascunho</Button></>}</div>
+      {excluindo?.id === r.id && <div role="group" aria-label={`Excluir rascunho ${r.titulo}`}><p>Excluir o rascunho “{r.titulo}”, versão {r.versao}? As versões aprovadas e as mensagens enviadas serão preservadas.</p><Button type="button" disabled={ocupado} onClick={() => excluir(r)}>Confirmar exclusão</Button><Button type="button" variant="secondary" disabled={ocupado} onClick={() => setExcluindo(null)}>Cancelar</Button></div>}
+      <details className="commercial-library-meta"><summary>Versão {r.versao} · detalhes</summary><p>Atalho: /{r.chave}</p>{r.texto && <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{r.texto}</p>}{!r.aprovadoEm && destaArea.some(a => a.chave === r.chave && a.aprovadoEm) && <p>A versão aprovada anterior continua disponível no chat.</p>}</details>
+    </article>)}</div>}
+    {!editando && !visiveis.length && recursos.length > 0 && <p>Nenhum conteúdo nesta seleção. Escolha outra área ou altere a busca.</p>}
+    {!editando && <details className="commercial-library-meta"><summary>Modelos iniciais e ajuda</summary><p>Carregue textos de exemplo para revisar antes de disponibilizar à equipe. Salvar sempre cria um rascunho; aprovar libera a versão no atendimento.</p><Button type="button" variant="secondary" disabled={ocupado} onClick={() => executar(() => api.comercial("/recursos/iniciar", {}))}>Carregar rascunhos iniciais</Button></details>}
+    {editando && <fieldset className="commercial-library-editor" disabled={ocupado} style={{ border: "1px solid var(--border)", padding: 14 }}>
       <legend>{editando.id ? `Nova versão a partir da v${editando.versao}` : "Preparar recurso"}</legend>
       <label>Tipo<select style={style} value={editando.tipo} disabled={!!editando.id} onChange={e => editar({ tipo: e.target.value, chave: chavesFixas[e.target.value] || "", titulo: "", texto: "", dados: {} })}>{Object.entries(tipos).map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}</select></label>
       <label>Atalho / chave<input style={style} value={editando.chave} readOnly={!!editando.id || !!chavesFixas[editando.tipo]} onChange={e => setEditando({ ...editando, chave: e.target.value })} /></label>
       {chavesFixas[editando.tipo] && <p>{editando.tipo === "CATALOGO" ? "O cálculo das propostas usa a versão aprovada mais recente de /honorarios." : "As mensagens de autorização usam os dados aprovados de /escritorio."}</p>}
-      <Campo rotulo="Título" valor={editando.titulo} onChange={v => setEditando({ ...editando, titulo: v })} />{editando.tipo === "ORIENTACAO" && <Campo rotulo="Descrição da mensagem rápida" valor={editando.dados.descricao || ""} onChange={v => mudarDado("descricao", v)} />}
+      <Campo rotulo="Título" valor={editando.titulo} onChange={v => setEditando({ ...editando, titulo: v })} />{editando.tipo === "ORIENTACAO" && <Campo rotulo="Descrição da mensagem rápida" ajuda="Explique quando usar. Exemplo: ensinar o cliente a autorizar a consulta fiscal." valor={editando.dados.descricao || ""} onChange={v => mudarDado("descricao", v)} />}
       {editando.tipo === "CATALOGO" ? <>
         <p>Valores em reais, sem separador de milhar (ex.: 1250,50). Zero é um valor definido. Somente abertura e baixa podem ficar vazias para indicar “a confirmar”.</p>
         <label>Moeda<select style={style} value={editando.dados.moeda} onChange={e => mudarDado("moeda", e.target.value)}><option value="BRL">Real brasileiro (BRL)</option>{editando.dados.moeda !== "BRL" && <option value={editando.dados.moeda}>Moeda não aceita: {editando.dados.moeda}</option>}</select></label>
@@ -160,5 +171,5 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar, inicialmen
       {editando.tipo === "CONTRATO" && <div><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.recorrente === true} onChange={e => mudarDado("recorrente", e.target.checked)} /> Contabilidade recorrente</label><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.permitePreCnpj === true} onChange={e => mudarDado("permitePreCnpj", e.target.checked)} /> Modelo validado para contratação antes do CNPJ</label><p>Revise a minuta e substitua os marcadores de revisão antes de aprovar.</p></div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}><Button type="button" onClick={salvar}>Salvar nova versão em rascunho</Button><Button type="button" variant="secondary" onClick={() => { setEditando(null); setErros([]); }}>Fechar edição</Button></div>
     </fieldset>}
-  </details>;
+  </section>;
 }

@@ -7,6 +7,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { ChatDaEmpresa } from "../ChatDaEmpresa";
+import { AcoesRapidas } from "../AcoesRapidas";
 
 const FIO = {
   id: "cv1", telefoneE164: "5521999998888", telefoneMascarado: "+55…8888", nomePerfilProvedor: "Maria",
@@ -42,6 +43,7 @@ function apiFalso(over = {}, fio = FIO) {
 async function montar(api = apiFalso(), props = {}) {
   render(<ChatDaEmpresa api={api} companyId="pc-1" onVirarAnotacao={jest.fn()} {...props} />);
   await screen.findByTestId("acoes-rapidas");
+  fireEvent.click(screen.getByText("Guias e documentos", { selector: "summary" }));
   return api;
 }
 
@@ -80,7 +82,9 @@ describe("enviar guia", () => {
     const select = await within(painel).findByLabelText("Guia a enviar");
     // ⚠ O rótulo é o MESMO da aba Guias (`rotuloTipoGuia`) — nem "DAS" aqui e "SIMPLES" lá, nem o
     // contrário: uma segunda tradução faria a parcela de parcelamento aparecer com outro nome.
-    expect(select).toHaveTextContent("SIMPLES · 2026-08");
+    expect(select).toHaveTextContent("SIMPLES · 08/2026");
+    expect(within(painel).getByRole("heading", { name: "Enviar guia pelo WhatsApp" })).toBeVisible();
+    expect(painel).toHaveTextContent("ACME LTDA");
     fireEvent.change(select, { target: { value: "g2" } });
     fireEvent.click(within(painel).getByRole("button", { name: "Enviar" }));
     await waitFor(() => expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g2"));
@@ -157,6 +161,8 @@ test("prévia mostra todos os destinatários autorizados e exige nova escolha se
   const segundo = {id:"ct2",nome:"João",telefoneE164:"5521988887777",optInEm:"2026-09-06"};
   const api = apiFalso({listarContatosWhatsapp: jest.fn().mockResolvedValueOnce({contatos:[contato,segundo,{id:"sem-optin",nome:"Não autorizado",telefoneE164:"5521977776666"}]}).mockResolvedValue({contatos:[contato]})});
   render(<ChatDaEmpresa companyId="pc-1" api={api} />);
+  await screen.findByTestId("acoes-rapidas");
+  fireEvent.click(screen.getByText("Guias e documentos", { selector: "summary" }));
   fireEvent.click(await screen.findByTestId("acao-ENVIAR_GUIA"));
   const seletor = await screen.findByLabelText("Guia a enviar");
   expect(screen.getByTestId("destinatarios-guia")).toHaveTextContent("João");
@@ -165,4 +171,46 @@ test("prévia mostra todos os destinatários autorizados e exige nova escolha se
   fireEvent.click(within(screen.getByTestId("escolha-do-envio")).getByRole("button",{name:"Enviar"}));
   await screen.findByText(/Os destinatários mudaram/);
   expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();expect(seletor).toHaveValue("");
+});
+
+test("trocar uma guia já enviada por outra exige somente o envio da nova escolha", async () => {
+  const api = await montar(apiFalso({ enviarGuiaWhatsapp: jest.fn()
+    .mockRejectedValueOnce(Object.assign(new Error("Esta guia já foi enviada."), { code: "GUIA_JA_ENVIADA" }))
+    .mockResolvedValue({ ok: true }) }));
+  fireEvent.click(screen.getByTestId("acao-ENVIAR_GUIA"));
+  const seletor = await screen.findByLabelText("Guia a enviar");
+  fireEvent.change(seletor, { target: { value: "g1" } });
+  fireEvent.click(within(screen.getByTestId("escolha-do-envio")).getByRole("button", { name: "Enviar" }));
+  await screen.findByRole("button", { name: "Confirmar reenvio aos destinatários acima" });
+  fireEvent.change(seletor, { target: { value: "g2" } });
+  expect(screen.queryByRole("button", { name: "Confirmar reenvio aos destinatários acima" })).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByTestId("escolha-do-envio")).getByRole("button", { name: "Enviar" }));
+  await waitFor(() => expect(api.enviarGuiaWhatsapp).toHaveBeenLastCalledWith("pc-1", "g2"));
+});
+
+test("cancelar guia já enviada retira confirmação de reenvio e a seleção", async () => {
+  const api = await montar(apiFalso({ enviarGuiaWhatsapp: jest.fn().mockRejectedValue(Object.assign(new Error("Já enviada"), { code: "GUIA_JA_ENVIADA" })) }));
+  fireEvent.click(screen.getByTestId("acao-ENVIAR_GUIA"));
+  fireEvent.change(await screen.findByLabelText("Guia a enviar"), { target: { value: "g1" } });
+  fireEvent.click(within(screen.getByTestId("escolha-do-envio")).getByRole("button", { name: "Enviar" }));
+  await screen.findByRole("button", { name: "Confirmar reenvio aos destinatários acima" });
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(screen.queryByRole("button", { name: "Confirmar reenvio aos destinatários acima" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("acao-ENVIAR_GUIA"));
+  expect(await screen.findByLabelText("Guia a enviar")).toHaveValue("");
+  expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
+});
+
+test("trocar empresa na mesma conversa limpa guia e destinatários preparados", async () => {
+  const api = apiFalso();
+  const ui = render(<AcoesRapidas conversa={FIO} api={api} companyId="pc-1" />);
+  fireEvent.click(screen.getByTestId("acao-ENVIAR_GUIA"));
+  fireEvent.change(await screen.findByLabelText("Guia a enviar"), { target: { value: "g1" } });
+  ui.rerender(<AcoesRapidas conversa={{ ...FIO, portalClientId: "pc-2", empresa: { id: "pc-2", razao: "OUTRA EMPRESA" } }} api={api} companyId="pc-2" />);
+  expect(screen.queryByTestId("escolha-do-envio")).not.toBeInTheDocument();
+  expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId("acao-ENVIAR_GUIA"));
+  expect(await screen.findByLabelText("Guia a enviar")).toHaveValue("");
+  expect(screen.getByTestId("escolha-do-envio")).toHaveTextContent("OUTRA EMPRESA");
+  expect(api.getCompanyGuides).toHaveBeenLastCalledWith("pc-2");
 });

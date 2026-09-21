@@ -114,3 +114,56 @@ test("orientação editada exige prévia e guarda origem sem certificar texto ap
   await waitFor(() => expect(h.api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("conversa-a", { texto: "Texto adaptado pela equipe", assumir: true, orientacaoAdaptada: { id: "orientacao-1", versao: 2, atendimentoLeadId: "caso-1" } }));
   expect(h.responder).not.toHaveBeenCalled();
 });
+
+test("descartar só apaga o rascunho do canal atual e não o restaura ao reabrir", () => {
+  const h = hook(); const ui = render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Manter no principal" } });
+  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "comercial" } });
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Descartar no comercial" } });
+  fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("");
+  expect(screen.getByRole("status")).toHaveTextContent("Rascunho descartado");
+  fireEvent.change(screen.getByLabelText("Canal da resposta"), { target: { value: "principal" } });
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Manter no principal");
+  expect(screen.queryByRole("button", { name: "Desfazer" })).not.toBeInTheDocument();
+  ui.unmount(); render(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("");
+  expect(h.responder).not.toHaveBeenCalled();
+});
+
+test("desfazer descarte recupera texto e referência da mensagem rápida sem enviar", async () => {
+  const h = hook(); h.api.comercial = jest.fn();
+  render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.click(screen.getByText("Preparar exemplo"));
+  fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
+  fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Orientação aprovada");
+  expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  await waitFor(() => expect(h.api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("conversa-a", expect.objectContaining({ orientacaoId: "orientacao-1", orientacaoVersao: 2 })));
+});
+
+test("janela fechada permite descartar, sem liberar envio nem apagar a nota interna", () => {
+  const h = hook();
+  const chave = chaveDoRascunho(c, { canalId: "principal", modo: "MENSAGEM" });
+  const chaveNota = chaveDoRascunho(c, { canalId: "principal", modo: "NOTA", escopo: c.capacidades.escoposNotas[0] });
+  h.rascunhosRef.current.set(chave, "Texto preparado ontem");
+  h.rascunhosRef.current.set(chaveNota, "Nota preservada");
+  render(<CompositorConversa conversa={{ ...c, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) }} hook={h} />);
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
+  expect(h.rascunhosRef.current.has(chave)).toBe(false);
+  expect(h.rascunhosRef.current.get(chaveNota)).toBe("Nota preservada");
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+});
+
+test("envio em andamento impede descarte", async () => {
+  const h = hook(); let concluir;
+  h.responder.mockImplementation(() => new Promise(resolve => { concluir = resolve; }));
+  render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Em envio" } });
+  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  expect(screen.getByRole("button", { name: "Descartar rascunho" })).toBeDisabled();
+  concluir({ ok: true });
+  await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""));
+});
