@@ -13,7 +13,7 @@ export async function responderColetaComercial({ registro, item, agora = new Dat
   if (!coletaComercialHabilitada(registro?.conversa?.telefoneE164, { flag, canal: registro?.canal, canalId: registro?.conversa?.canalId, ...(piloto ? { piloto } : {}) })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
   return comLeaseDoAtendimento({ conversa: registro.conversa, client }, async conferirLease => coletar({ registro, item, deps: {
     client, flag, agora, ...(piloto ? { piloto } : {}),
-    enviar: async ({ conversa, texto, referenciaComercial, antesDeEnviar }) => {
+    enviar: async ({ conversa, texto, referenciaComercial, antesDeEnviar, resultado }) => {
       const turnoIaId = `coleta-comercial:${registro.mensagem.id}`;
       // Uma saída reservada, inclusive incerta, jamais é repetida no replay do webhook.
       if (await client.mensagemWhatsapp.findFirst({ where: { turnoIaId, direcao: "out" } })) return;
@@ -24,8 +24,10 @@ export async function responderColetaComercial({ registro, item, agora = new Dat
       };
       await conferir();
       const whatsapp = await whatsappPorCanal(conversa, { cloud, client });
-      await enviarMensagemRastreada({ conversa, corpo: texto, autor: "SISTEMA", turnoIaId, referenciaComercial, client, antesDeEnviar: conferir,
-        enviar: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto }) });
+      const botoes = resultado?.botoes;
+      await enviarMensagemRastreada({ conversa, tipo: botoes ? "interactive" : "text", corpo: texto, autor: "SISTEMA", turnoIaId, referenciaComercial, client, antesDeEnviar: conferir,
+        enviar: () => botoes ? whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto, botoes, rodape: "Você também pode responder por texto." })
+          : whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto }) });
       await client.mensagemWhatsapp.updateMany({ where: { id: registro.mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     },
   } }));

@@ -1,6 +1,8 @@
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 jest.mock("../LeadService.js", () => ({ ...jest.requireActual("../LeadService.js"), iniciarAtendimento: jest.fn() }));
 import { iniciarAtendimento } from "../LeadService.js";
+import { botoesModalidadeServico } from "../mensagensComerciais.js";
+import { montarPayloadBotoes } from "../../whatsapp/WhatsappCloudClient.js";
 import { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial, coletarComercialWhatsapp } from "../ColetaComercialWhatsappService.js";
 
 test.each([
@@ -47,10 +49,10 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   db.$transaction = fn => fn(db);
   iniciarAtendimento.mockImplementation(async () => caso);
   let n = 0;
-  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao, tipo = "text", ocorridaEmProvedor } = {}) => {
+  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao, tipo = "text", ocorridaEmProvedor, consultaPublica } = {}) => {
     const mensagem = { id: id || `m${++n}`, conversaId: "c", direcao: "in", corpo: texto, tipo, ocorridaEmProvedor, registradaEm: new Date(1760000000000 + n * 1000), conversa };
     mensagens.set(mensagem.id, mensagem);
-    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao, tipo }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, agora: new Date(1760000010000 + n * 1000) } });
+    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao, tipo }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, consultaPublica, agora: new Date(1760000010000 + n * 1000) } });
   };
   return { db, conversa, ficha, caso, recibos, chamar };
 }
@@ -85,6 +87,59 @@ test("resposta rápida de template usa a intenção pelo ID sem tratar botão co
   const t = banco();
   const r = await t.chamar("Abrir uma empresa", { tipo: "button", interacao: { id: "altan.comercial.abertura.v1" } });
   expect(r.resultado.encaminhar).toBe(false); expect(r.resultado.texto).toBe("Como você se chama?");
+});
+
+test.each([["AVULSO", "enderecoPretendido"], ["RECORRENTE", "qtdFuncionarios"], ["COMPARAR", "qtdFuncionarios"]])("botão de contratação %s preenche somente a escolha e continua, com replay idempotente", async (valor, proximo) => {
+  const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ" } });
+  const r = await t.chamar("Voltei");
+  expect(r.resultado.botoes.map(b => b.titulo)).toEqual(["Só abertura", "Abertura + mensal", "Comparar opções"]);
+  expect(montarPayloadBotoes({ para: t.conversa.telefoneE164, texto: r.resultado.texto, botoes: r.resultado.botoes }).interactive.type).toBe("button");
+  const interacao = { id: r.resultado.botoes.find(b => b.id.endsWith(valor)).id };
+  const escolha = await t.chamar("Me chamo Nome Forjado, quero falar com uma pessoa", { id: "escolha", tipo: "interactive", interacao });
+  expect(t.ficha.dados.modalidadeServico).toBe(valor); expect(t.ficha.dados.responsavelNome).toBe("Ana");
+  expect(t.caso.triagem.campoEsperado).toBe(proximo); expect(escolha.resultado.botoes).toBeUndefined();
+  expect(escolha.resultado.encaminhar).toBe(false);
+  await t.chamar("Título diferente", { id: "escolha", tipo: "interactive", interacao });
+  expect(t.db.onboarding.updateMany).toHaveBeenCalledTimes(1);
+});
+
+test("modalidade por texto continua disponível mesmo depois de receber botões", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ" } });
+  await t.chamar("Voltei"); await t.chamar("Quero apenas a abertura");
+  expect(t.ficha.dados.modalidadeServico).toBe("AVULSO"); expect(t.caso.triagem.campoEsperado).toBe("enderecoPretendido");
+});
+
+test.each(["outro-caso", "a"])("botão de %s em etapa incompatível não altera ficha, triagem ou pausa", async atendimentoId => {
+  const t = banco();
+  t.caso.triagem = { campoEsperado: "responsavelNome", esclarecimentos: 1 };
+  const antes = structuredClone(t.caso.triagem);
+  const r = await t.chamar("Só abertura", { tipo: "interactive", interacao: { id: botoesModalidadeServico(atendimentoId, "ABERTURA")[0].id } });
+  expect(r.resultado.texto).toContain("etapa que já passou"); expect(r.resultado.texto).toContain("Como você se chama");
+  expect(t.ficha.dados).toEqual({}); expect(t.caso.triagem).toEqual(antes); expect(r.resultado.encaminhar).toBe(false);
+});
+
+test("botão de outra ficha não escolhe modalidade mesmo quando o campo atual é o mesmo", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ" } });
+  await t.chamar("Voltei");
+  const r = await t.chamar("Contabilidade mensal", { tipo: "interactive", interacao: { id: botoesModalidadeServico("outra-ficha", "ABERTURA")[1].id } });
+  expect(t.ficha.dados.modalidadeServico).toBeUndefined(); expect(r.resultado.botoes.every(b => b.id.includes(".a."))).toBe(true);
+});
+
+test.each(["Preço", "O preço"])("motivo real %s avança à contratação com três botões", async texto => {
+  const t = banco({ dados: { cnpj: "11222333000181", responsavelNome: "Ana" } });
+  t.ficha.origem = "TRANSFERENCIA"; t.ficha.cnpj = "11222333000181"; t.caso.triagem = { campoEsperado: "motivoTroca" };
+  const r = await t.chamar(texto);
+  expect(t.ficha.dados.motivoTroca).toBe(texto); expect(t.caso.triagem.campoEsperado).toBe("modalidadeServico");
+  expect(r.resultado.texto).not.toContain("O valor depende"); expect(r.resultado.encaminhar).toBe(false);
+  expect(r.resultado.botoes.map(b => b.titulo)).toEqual(["Serviço avulso", "Contabilidade mensal", "Comparar opções"]);
+});
+
+test("consulta pública extensa cabe no mesmo envio da escolha com botões", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", motivoTroca: "Atendimento" } });
+  t.ficha.origem = "TRANSFERENCIA"; t.caso.triagem = { campoEsperado: "cnpj" };
+  const r = await t.chamar("11222333000181", { consultaPublica: async () => ({ razaoSocial: "Empresa ".repeat(100), endereco: "Endereço ".repeat(100), situacaoCadastral: "ATIVA" }) });
+  expect(r.resultado.botoes).toHaveLength(3); expect(r.resultado.texto).toContain("Situação cadastral: ATIVA");
+  expect(() => montarPayloadBotoes({ para: t.conversa.telefoneE164, texto: r.resultado.texto, botoes: r.resultado.botoes })).not.toThrow();
 });
 test("cliente atual pode preencher outra abertura sem copiar empresa, com replay idempotente", async () => {
   const t = banco();
