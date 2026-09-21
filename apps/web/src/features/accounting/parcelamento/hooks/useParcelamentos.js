@@ -1,26 +1,42 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function useParcelamentos({ api, companyId, status = null }) {
-  const [parcelamentos, setParcelamentos] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const scope = useMemo(() => ({}), [api, companyId, status]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const request = useRef(0);
+  const emptyState = { parcelamentos: [], loading: Boolean(companyId), error: null, saving: false };
+  const [state, setState] = useState({ ...emptyState, scope });
+  const { parcelamentos, loading, error, saving } = state.scope === scope ? state : emptyState;
+  // Uma operação da empresa anterior pode terminar depois da navegação. Seu resultado não
+  // atualiza dados, erro nem indicador de gravação da empresa que agora está aberta.
+  const update = (field, value) => {
+    if (currentScope.current !== scope) return;
+    setState((previous) => ({ ...(previous.scope === scope ? previous : emptyState), scope, [field]: value }));
+  };
+  const setParcelamentos = (value) => update("parcelamentos", value);
+  const setLoading = (value) => update("loading", value);
+  const setError = (value) => update("error", value);
+  const setSaving = (value) => update("saving", value);
 
   const load = useCallback(async () => {
-    if (!companyId) return;
+    if (!companyId || currentScope.current !== scope) return;
+    const version = ++request.current;
     setLoading(true); setError(null);
     try {
       const data = await api.listParcelamentos(companyId, status ? { status } : {});
+      if (version !== request.current) return;
       setParcelamentos(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (version !== request.current) return;
       setError(err?.message || "Falha ao listar parcelamentos.");
       setParcelamentos([]);
     } finally {
-      setLoading(false);
+      if (version === request.current) setLoading(false);
     }
-  }, [api, companyId, status]);
+  }, [api, companyId, status, scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { request.current += 1; }; }, [load]);
 
   async function create(body) {
     setSaving(true); setError(null);

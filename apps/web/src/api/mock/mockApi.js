@@ -2992,7 +2992,7 @@ mockPagamentosLocalizados.set("mock-guia-pendente-baixa", {
 const MOCK_PARCELA_SEM_COMPOSICAO = Object.freeze({
   parcelaId: "mock-parcela-upload-semcomposicao",
   guideId: "mock-guia-upload-semcomposicao-2",
-  numeroParcela: 2,
+  numeroParcela: 5,
   competencia: "2026-07",
   valor: 332.65,
   vencimento: null,
@@ -3006,22 +3006,18 @@ const MOCK_PARCELA_SEM_COMPOSICAO = Object.freeze({
 // As guias cuja composição o contador DECLAROU nesta sessão do mock. Sem isto a linha continuaria
 // na fila depois da declaração e o fluxo terminaria sem consequência visível — que é o tipo de mock
 // que passa no teste e esconde o defeito.
-const mockComposicoesDeclaradas = new Map(); // guideId → { principal, juros, multa, total, dataPagamento }
 
 // ⚠ OS PARCELAMENTOS CRIADOS NESTA SESSÃO DO MOCK (F2.3 — parcelamento-first).
 // O wizard "+ Novo parcelamento" cria o CONTRATO sem guia nenhuma; sem guardar o resultado aqui, a
 // lista voltaria sempre a mesma e a criação pareceria não fazer nada — e o aceite da fase
 // ("registrar um migrado, 23ª de 60, sem PDF, e o card mostrar 22 pagas / 38 restantes") não teria
 // como ser exercido offline.
-const mockParcelamentosCriados = new Map(); // id → parcelamento decorado (formato de listParcelamentos)
 
 // ⚠ OS ATOS DO CONTRATO, no mock — e eles precisam ter CONSEQUÊNCIA VISÍVEL, senão o aceite não é
 // exercível offline. Excluir tem de fazer o card SUMIR (das duas filas junto); desfazer a rescisão
 // tem de fazer o contrato VOLTAR e suas prestações reaparecerem na fila "vencidas sem guia" — que é,
 // literalmente, o problema que o dono relatou ("não consigo dar baixa em parcelamento sem guia").
 // As fixturas são reconstruídas a cada chamada, então o estado da sessão mora nestes dois conjuntos.
-const mockParcelamentosExcluidos = new Set(); // id → contrato que o contador excluiu nesta sessão
-const mockRescisoesDesfeitas = new Set();     // id → contrato cuja rescisão foi desfeita nesta sessão
 
 // Estornos já feitos no mock — é o que faz a parcela VOLTAR PARA A FILA depois do estorno, em vez
 // de a tela recarregar idêntica e o fluxo terminar sem nenhuma consequência visível.
@@ -3120,7 +3116,83 @@ function competenciaDoVencimentoMock(iso) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function construirParcelamentosFixos() {
+const mockParcelamentosPorEmpresa = new Map();
+function estadoParcelamentoMock(companyId) {
+  const key = String(companyId || 'demo');
+  if (!mockParcelamentosPorEmpresa.has(key)) {
+    mockParcelamentosPorEmpresa.set(key, {
+      mockPagamentosLocalizados: new Map(mockPagamentosLocalizados),
+      mockComposicoesDeclaradas: new Map(), mockParcelamentosCriados: new Map(),
+      mockParcelamentosExcluidos: new Set(), mockRescisoesDesfeitas: new Set(),
+      mockBaixasManuais: new Map(), mockValoresPrevistosCorrigidos: new Map(),
+      baixasComGuia: new Map(), rescindidos: new Set(), configs: new Map(),
+    });
+  }
+  return mockParcelamentosPorEmpresa.get(key);
+}
+
+function atualizarContratoParcelamentoMock(companyId, contrato) {
+  const estado = estadoParcelamentoMock(companyId);
+  const p = JSON.parse(JSON.stringify(contrato));
+  if (estado.rescindidos.has(p.id)) p.status = "RESCINDIDO";
+  if (estado.mockRescisoesDesfeitas.has(p.id)) p.status = "ATIVO";
+  let principalBaixado = 0;
+  p.parcelasContratadas = (p.parcelasContratadas || []).map((c) => {
+    if (estado.mockValoresPrevistosCorrigidos.has(c.id)) c.valorPrevisto = estado.mockValoresPrevistosCorrigidos.get(c.id);
+    const manual = estado.mockBaixasManuais.get(c.id);
+    if (manual) { c.origemBaixa = "MANUAL"; principalBaixado += manual.principal; }
+    if (c.guia) {
+      const baixa = estado.baixasComGuia.get(c.guia.id);
+      const pagamento = estado.mockPagamentosLocalizados.get(c.guia.id);
+      if (baixa || pagamento) c.guia.paymentStatus = "PAID";
+      if (baixa) { c.guia.baixada = true; principalBaixado += baixa.principal; }
+    }
+    return c;
+  });
+  p.guides = (p.guides || []).map((g) => {
+    const baixa = estado.baixasComGuia.get(g.id);
+    const comprovante = estado.mockPagamentosLocalizados.get(g.id);
+    return { ...g, ...(comprovante ? { comprovante, paymentStatus: "PAID" } : {}),
+      ...(baixa ? { baixada: true, paymentStatus: "PAID", parcelaEstado: baixa.estado } : {}) };
+  });
+  p.parcelasPagas = p.parcelasContratadas.filter(c => c.origemBaixa || c.guia?.paymentStatus === "PAID").length;
+  p.parcelasSemEvidencia = p.parcelasContratadas.filter(c => !c.origemBaixa && !c.guia).length;
+  if (p.risco?.parcelasEmAtraso?.length) {
+    const quitadas = new Set(p.parcelasContratadas.filter(c => c.origemBaixa || c.guia?.paymentStatus === "PAID").map(c => c.numeroParcela));
+    const pendentes = p.risco.parcelasEmAtraso.filter(c => !quitadas.has(c.numeroParcela));
+    if (pendentes.length !== p.risco.parcelasEmAtraso.length) {
+      p.risco = { ...p.risco, parcelasEmAtraso: pendentes, emAtraso: pendentes.length,
+        faltamParaRescindir: Math.max(0, 3 - pendentes.length),
+        nivel: pendentes.length >= 3 ? "rescindivel" : pendentes.length ? "atencao" : "ok",
+        caso: pendentes.length >= 3 ? p.risco.caso : null };
+    }
+  }
+  if (p.saldoPassivo != null) p.saldoPassivo = Math.max(0, Math.round((p.saldoPassivo - principalBaixado) * 100) / 100);
+  if (p.status === "RESCINDIDO") p.risco = null;
+  return p;
+}
+
+function contratosParcelamentoMock(companyId) {
+  const estado = estadoParcelamentoMock(companyId);
+  return [...estado.mockParcelamentosCriados.values(), ...construirParcelamentosFixos(companyId)]
+    .filter(p => !estado.mockParcelamentosExcluidos.has(p.id))
+    .map(p => atualizarContratoParcelamentoMock(companyId, p));
+}
+
+function registrarBaixaDocumentalMock(companyId, guideId, valores) {
+  const contrato = contratosParcelamentoMock(companyId).find(p => p.guides.some(g => g.id === guideId))
+    || contratosParcelamentoMock(companyId).find(p => p.id === MOCK_PARCELA_SEM_COMPOSICAO.parcelamentoId);
+  const guia = contrato?.guides.find(g => g.id === guideId) || MOCK_PARCELA_SEM_COMPOSICAO;
+  estadoParcelamentoMock(companyId).baixasComGuia.set(guideId, {
+    guideId, parcelaId: `mock-parcela-${guideId}`, parcelamentoId: contrato?.id,
+    parcelamentoLabel: contrato?.label, numeroParcela: guia.numeroParcela,
+    competencia: guia.competencia, valor: valores.total, principal: valores.principal,
+    estado: "PAGA_A_CONFERIR", dataBaixa: valores.dataPagamento || new Date().toISOString(),
+  });
+}
+
+function construirParcelamentosFixos(companyId) {
+  const { mockParcelamentosExcluidos, mockRescisoesDesfeitas } = estadoParcelamentoMock(companyId);
   const dia = 24 * 60 * 60 * 1000;
   const em = (n) => new Date(Date.now() + n * dia).toISOString();
       // ⚠ `linhas` descreve as PRESTAÇÕES, e é o que faz a busca de pagamento ser conferível
@@ -3134,7 +3206,7 @@ function construirParcelamentosFixos() {
         const guides = linhas.filter((l) => l.guia).map((l, i) => ({
           id: l.guia,
           numeroParcela: l.n,
-          valor: 1200 + i,
+          valor: l.valor ?? 1200 + i,
           paymentStatus: l.pago ? "PAID" : "OPEN",
           baixada: Boolean(l.baixada),
           competencia: l.competencia,
@@ -3143,7 +3215,7 @@ function construirParcelamentosFixos() {
           // ⚠ `null` aqui é o caso que o dono precisa ver desabilitado COM MOTIVO: sem número de
           // documento o PAGTOWEB não tem o que consultar (é a entrada de tudo lá).
           numeroDocumento: l.semDocumento ? null : `0720260000${1000 + l.n}`,
-          comprovante: l.pago
+          comprovante: l.pago && !l.semComposicao
             ? { dataArrecadacao: "05/07/2026", principal: 1180.22, juros: 12.94, multa: 6.84, total: 1200, meioPagamento: "PIX", confiavel: true }
             : null,
           paymentConfirmedAt: l.pago ? em(-3) : null,
@@ -3235,6 +3307,7 @@ function construirParcelamentosFixos() {
             { n: 2, guia: "mock-guia-pendente-baixa", competencia: "2026-05", vencimento: em(-70), pago: true },
             { n: 3, guia: "mock-guia-ok-3", competencia: "2026-06", vencimento: em(-40) },
             { n: 4, guia: "mock-guia-semdoc-4", competencia: "2026-07", vencimento: em(-10), semDocumento: true },
+            { n: 5, guia: MOCK_PARCELA_SEM_COMPOSICAO.guideId, competencia: "2026-07", vencimento: em(-5), pago: true, semComposicao: true, valor: 332.65 },
           ],
           risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 4, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: true },
         }),
@@ -3352,7 +3425,6 @@ function construirParcelamentosFixos() {
 // parcelamento não rescindido.
 
 /** parcelaId → a declaração feita nesta sessão. É o `origemBaixa: "MANUAL"` do mock. */
-const mockBaixasManuais = new Map();
 
 /**
  * parcelaId → o valor CONTRATADO corrigido nesta sessão (`parcelas.valorPrevisto` do backend).
@@ -3362,7 +3434,6 @@ const mockBaixasManuais = new Map();
  * quanto foi PAGO (principal + juros + multa). Guardar os dois no mesmo lugar seria, no offline, o
  * mesmo colapso que a tela evita.
  */
-const mockValoresPrevistosCorrigidos = new Map();
 
 /**
  * As recusas por prestação — cada uma existe para exercer uma guarda da rota real.
@@ -3382,13 +3453,14 @@ const RECUSAS_BAIXA_MANUAL_MOCK = Object.freeze({
   "parc-risco-p3": "provisao_inexistente",
 });
 
-function construirFilaSemGuiaMock() {
+function construirFilaSemGuiaMock(companyId) {
+  const { mockBaixasManuais, mockValoresPrevistosCorrigidos } = estadoParcelamentoMock(companyId);
   const agora = Date.now();
   const fimDeHoje = new Date();
   fimDeHoje.setHours(23, 59, 59, 999);
 
   const linhas = [];
-  for (const p of [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]) {
+  for (const p of contratosParcelamentoMock(companyId)) {
     if (p.status === "RESCINDIDO") continue;
     for (const c of p.parcelasContratadas || []) {
       if (c.guia || c.origemBaixa || mockBaixasManuais.has(c.id)) continue;
@@ -3438,12 +3510,13 @@ function construirFilaSemGuiaMock() {
  * (`whereParcelaForaDaFilaPorRescisao` é derivado de `whereParcelaSemGuiaPendente`). Se as duas
  * divergirem, o aviso passa a contar linhas que não voltariam para a fila, e a tela mente.
  */
-function construirForaDaFilaMock() {
+function construirForaDaFilaMock(companyId) {
+  const { mockBaixasManuais } = estadoParcelamentoMock(companyId);
   const fimDeHoje = new Date();
   fimDeHoje.setHours(23, 59, 59, 999);
 
   const porContrato = new Map();
-  for (const p of [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]) {
+  for (const p of contratosParcelamentoMock(companyId)) {
     if (p.status !== "RESCINDIDO") continue; // ← a única condição diferente da fila
     for (const c of p.parcelasContratadas || []) {
       if (c.guia || c.origemBaixa || mockBaixasManuais.has(c.id)) continue;
@@ -3478,7 +3551,8 @@ function construirForaDaFilaMock() {
  * produção. Uma flag própria do mock deixaria as duas telas discordando.
  */
 function construirPreviewExclusaoMock(companyId, parcId) {
-  const parc = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+
+  const parc = contratosParcelamentoMock(companyId)
     .find((p) => p.id === parcId);
   if (!parc) throw mockRecusa("parcelamento_nao_encontrado", "Parcelamento não encontrado.");
 
@@ -4326,14 +4400,16 @@ export function createMockApi() {
       });
       return { ok: true, competencia, semFaturamento: Boolean(ok), conferencia: ok ? conferencia : null };
     },
-    async listParcelasPendentesBaixa() {
+    async listParcelasPendentesBaixa(companyId) {
+      const { mockPagamentosLocalizados, mockComposicoesDeclaradas } = estadoParcelamentoMock(companyId);
       await delay();
       // A fila é alimentada pelo que a busca localizou nesta sessão — mais a parcela que já nasce
       // paga na fixture (`mock-guia-pendente-baixa`), pra a fila não depender de ninguém clicar.
+      const contratos = contratosParcelamentoMock(companyId);
       const parcelas = [...mockPagamentosLocalizados.entries()].map(([guideId, c], i) => ({
         parcelaId: `mock-parcela-${guideId}`,
         guideId,
-        numeroParcela: i + 1,
+        numeroParcela: contratos.flatMap(p => p.guides).find(g => g.id === guideId)?.numeroParcela ?? i + 1,
         competencia: c.competencia || "2026-07",
         valor: c.total ?? 1200,
         vencimento: null,
@@ -4347,7 +4423,8 @@ export function createMockApi() {
       if (!mockComposicoesDeclaradas.has(MOCK_PARCELA_SEM_COMPOSICAO.guideId)) {
         parcelas.push({ ...MOCK_PARCELA_SEM_COMPOSICAO });
       }
-      return { ok: true, parcelas };
+      return { ok: true, parcelas: parcelas.filter(p => contratos.some(c => c.id === p.parcelamentoId))
+        .map(p => ({ ...p, parcelamentoLabel: contratos.find(c => c.id === p.parcelamentoId)?.label })) };
     },
     // ⚠ A RECUSA TAMBÉM É UM DESFECHO, e ela vem do servidor como `skipped` com um MOTIVO — não
     // como erro. Enquanto o mock só sabia responder `ok:true`, o painel de baixa só podia ser
@@ -4358,8 +4435,10 @@ export function createMockApi() {
     // composição vem do documento); com `composicaoDeclarada`, a decomposição que o contador leu no
     // DAS. Duas rotas seriam duas guardas de idempotência que não se enxergam.
     async lancarBaixaParcela(companyId, guideId, body = null) {
+      const { mockPagamentosLocalizados, mockComposicoesDeclaradas, baixasComGuia } = estadoParcelamentoMock(companyId);
       await delay();
       const id = String(guideId || "");
+      if (baixasComGuia.has(id)) return { ok: false, skipped: true, motivo: "ja_baixada" };
       const declarada = body?.composicaoDeclarada || null;
       const semComposicao = id === MOCK_PARCELA_SEM_COMPOSICAO.guideId || id.startsWith("mock-guia-semdoc");
 
@@ -4398,6 +4477,7 @@ export function createMockApi() {
           throw mockRecusa("MES_FECHADO", "Mês 2026-01 fechado — reabra antes de baixar a parcela.");
         }
         mockComposicoesDeclaradas.set(id, { principal, juros, multa, total, dataPagamento: body?.dataPagamento || null });
+        registrarBaixaDocumentalMock(companyId, id, { principal, total, dataPagamento: body?.dataPagamento });
         mockPagamentosLocalizados.delete(guideId);
         return {
           ok: true,
@@ -4421,6 +4501,9 @@ export function createMockApi() {
       ];
       const motivo = (RECUSAS.find(([prefixo]) => id.startsWith(prefixo)) || [])[1];
       if (motivo) return { ok: false, skipped: true, motivo };
+      const comprovante = mockPagamentosLocalizados.get(guideId);
+      if (!comprovante) return { ok: false, skipped: true, motivo: "comprovante_nao_e_parcela" };
+      registrarBaixaDocumentalMock(companyId, id, comprovante);
       mockPagamentosLocalizados.delete(guideId);
       return { ok: true, resultado: { pagamentoId: "mock-baixa-parcela" } };
     },
@@ -4431,9 +4514,10 @@ export function createMockApi() {
     // contador. Por isso a resposta traz o CONTRATO junto de cada linha: sem isso o front faria uma
     // chamada por prestação, e são até 60 por acordo.
     // ⚠ `foraDaFila` VIAJA SEMPRE, inclusive vazio — é ele que faz a fila vazia parar de ser muda.
-    async listParcelasSemGuiaPendentes() {
+    async listParcelasSemGuiaPendentes(companyId) {
+
       await delay();
-      return { ok: true, parcelas: construirFilaSemGuiaMock(), foraDaFila: construirForaDaFilaMock() };
+      return { ok: true, parcelas: construirFilaSemGuiaMock(companyId), foraDaFila: construirForaDaFilaMock(companyId) };
     },
 
     // ⚠ TODAS AS GUARDAS DA ROTA REAL PASSAM POR AQUI — inclusive a conferência do total, que é o
@@ -4442,6 +4526,7 @@ export function createMockApi() {
     // também não: um mock que aceitasse qualquer total deixaria a divergência aparecer só em
     // produção, no lançamento.
     async lancarBaixaManualParcela(companyId, parcelaId, body = {}) {
+      const { mockBaixasManuais } = estadoParcelamentoMock(companyId);
       await delay();
       const id = String(parcelaId || "");
 
@@ -4450,7 +4535,7 @@ export function createMockApi() {
           payload: { ok: false, skipped: true, motivo: "parcela_ja_baixada" },
         });
       }
-      const linha = construirFilaSemGuiaMock().find((l) => l.parcelaId === id);
+      const linha = construirFilaSemGuiaMock(companyId).find((l) => l.parcelaId === id);
       if (!linha) {
         throw mockRecusa("parcela_not_found", "Prestação não encontrada.", {
           payload: { ok: false, skipped: true, motivo: "parcela_not_found" },
@@ -4497,7 +4582,7 @@ export function createMockApi() {
         throw mockRecusa("MES_FECHADO", `Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
       }
 
-      mockBaixasManuais.set(id, { declaradaEm: new Date().toISOString(), principal, juros, multa, total });
+      mockBaixasManuais.set(id, { declaradaEm: new Date().toISOString(), dataPagamento: body.dataPagamento, competencia, principal, juros, multa, total });
       return {
         ok: true,
         resultado: {
@@ -4516,6 +4601,7 @@ export function createMockApi() {
      * de reescrever um contrato a partir de um "antes" que ele nunca viu.
      */
     async corrigirValorPrevistoParcela(companyId, parcelaId, body = {}) {
+      const { mockBaixasManuais, mockValoresPrevistosCorrigidos } = estadoParcelamentoMock(companyId);
       await delay();
       const id = String(parcelaId || "");
 
@@ -4526,7 +4612,7 @@ export function createMockApi() {
           { payload: { ok: false, skipped: true, motivo: "parcela_ja_baixada" } },
         );
       }
-      const linha = construirFilaSemGuiaMock().find((l) => l.parcelaId === id);
+      const linha = construirFilaSemGuiaMock(companyId).find((l) => l.parcelaId === id);
       if (!linha) {
         throw mockRecusa("parcela_not_found", "Prestação não encontrada.", {
           payload: { ok: false, skipped: true, motivo: "parcela_not_found" },
@@ -4555,7 +4641,7 @@ export function createMockApi() {
       // amortizar × o principal que a adesão provisionou. ⚠ INFORMATIVA, nunca bloqueio: o número
       // certo sai do contrato, não deste código. Prestação `HISTORICO` fica de fora (não gera
       // lançamento nenhum), igual ao backend.
-      const contrato = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+      const contrato = contratosParcelamentoMock(companyId)
         .find((p) => p.id === linha.parcelamentoId) || null;
       const amortizaveis = (contrato?.parcelasContratadas || []).filter((c) => c.origemBaixa !== "HISTORICO");
       const somaPrestacoes = Math.round(amortizaveis.reduce((s, c) => {
@@ -4589,7 +4675,8 @@ export function createMockApi() {
     },
     // ⚠ Mesmo shape do real (`POST /firm/guides/:id/buscar-pagamento`), INCLUSIVE nas recusas —
     // ver `DESFECHO_BUSCA_MOCK` acima para o porquê de cada caminho existir aqui.
-    async buscarPagamentoGuia(guideId) {
+    async buscarPagamentoGuia(guideId, { companyId } = {}) {
+      const { mockPagamentosLocalizados } = estadoParcelamentoMock(companyId);
       await delay();
       const id = String(guideId || "");
       const caso = (DESFECHO_BUSCA_MOCK.find(([prefixo]) => id.startsWith(prefixo)) || [])[1]
@@ -10488,10 +10575,11 @@ export function createMockApi() {
     // card mostrar 22 pagas (históricas) / 38 restantes") não teria como ser exercido offline: a
     // lista voltaria sempre a mesma e a criação pareceria não fazer nada. Mock que só sabe o
     // caminho feliz esconde exatamente o que a tela existe para mostrar.
-    async listParcelamentos() {
+    async listParcelamentos(companyId) {
+
       await delay(80);
       // Os criados nesta sessão vêm primeiro — é o que o contador acabou de fazer.
-      return [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()];
+      return contratosParcelamentoMock(companyId);
     },
     async createParcelamento() { await delay(80); return { ok: true, data: null }; },
 
@@ -10499,6 +10587,7 @@ export function createMockApi() {
     // cria o CONTRATO sem documento nenhum. Com `guideId`, apenas ANEXA a guia a uma prestação de
     // um contrato que já existe — e NÃO confirma pagamento nem lança baixa.
     async ingestParcelamento(companyId, body = {}) {
+      const { mockParcelamentosCriados } = estadoParcelamentoMock(companyId);
       await delay(120);
       const header = body.header || {};
       const numero = String(header.numeroParcelamento || "").trim();
@@ -10559,7 +10648,7 @@ export function createMockApi() {
           vencimento = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), Math.min(diaVenc, ultimo), 12)).toISOString();
         }
         linhas.push({
-          id: `novo-${numero}-p${n}`,
+          id: `novo-${companyId}-${numero}-p${n}`,
           numeroParcela: n,
           // ⚠ SEM `competencia`, de propósito: `SELECT_PARCELA_PARA_QUADRO` (o select real que
           // alimenta `parcelasContratadas`) não a traz. Um mock que a mandasse esconderia o campo
@@ -10589,7 +10678,7 @@ export function createMockApi() {
         ? Math.round(jaPagas * principalPorParcela * 100) / 100
         : null;
       const novo = {
-        id: `novo-${numero}`,
+        id: `novo-${companyId}-${numero}`,
         label: `PARCELAMENTO ${header.tipo}${numero ? ` Nº ${numero}` : ""}`,
         tipo: header.tipo,
         numeroParcelamento: numero,
@@ -10700,13 +10789,38 @@ export function createMockApi() {
       err.error = "SERPRO_PARC_FLAG_OFF";
       throw err;
     },
-    async getParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock", configProvisao: null, configPagamento: null } }; },
-    async saveParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock" } }; },
-    async getConferenciaParcelas() { await delay(40); return { ok: true, items: [] }; },
-    async aprovarConferenciaParcelas() { await delay(40); return { ok: true, aprovadas: 0 }; },
+    async getParcelamentoConfig(companyId, parcId) {
+      await delay(40);
+      return { ok: true, parcelamento: { id: parcId, configProvisao: null, configPagamento: null,
+        ...estadoParcelamentoMock(companyId).configs.get(parcId) } };
+    },
+    async saveParcelamentoConfig(companyId, parcId, body) {
+      await delay(40);
+      estadoParcelamentoMock(companyId).configs.set(parcId, JSON.parse(JSON.stringify(body)));
+      return { ok: true, parcelamento: { id: parcId, ...body } };
+    },
+    async getConferenciaParcelas(companyId) {
+      await delay(40);
+      return { ok: true, items: [...estadoParcelamentoMock(companyId).baixasComGuia.values()]
+        .filter(b => b.estado === "PAGA_A_CONFERIR").map(b => ({ ...b })) };
+    },
+    async aprovarConferenciaParcelas(companyId, guideIds) {
+      await delay(40);
+      let aprovadas = 0;
+      const estado = estadoParcelamentoMock(companyId);
+      for (const id of new Set(guideIds || [])) {
+        const baixa = estado.baixasComGuia.get(id);
+        if (baixa?.estado !== "PAGA_A_CONFERIR") continue;
+        baixa.estado = "CONFIRMADA";
+        aprovadas += 1;
+      }
+      return { ok: true, aprovadas };
+    },
     async rescindirParcelamento(companyId, parcId) {
       await delay(80);
-      mockParcelamentosCriados.delete(parcId);
+      const estado = estadoParcelamentoMock(companyId);
+      estado.rescindidos.add(parcId);
+      estado.mockRescisoesDesfeitas.delete(parcId);
       return { ok: true };
     },
 
@@ -10725,6 +10839,7 @@ export function createMockApi() {
     },
 
     async excluirParcelamento(companyId, parcId, { motivo, totalConferido } = {}) {
+      const { mockParcelamentosCriados, mockParcelamentosExcluidos } = estadoParcelamentoMock(companyId);
       await delay(120);
       if (String(motivo || "").trim().length < 5) {
         throw mockRecusa("MOTIVO_OBRIGATORIO", "Informe o motivo (mínimo 5 caracteres).");
@@ -10750,8 +10865,9 @@ export function createMockApi() {
     },
 
     async previewDesfazerRescisao(companyId, parcId) {
+
       await delay(60);
-      const parc = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+      const parc = contratosParcelamentoMock(companyId)
         .find((p) => p.id === parcId);
       if (!parc) throw mockRecusa("parcelamento_nao_encontrado", "Parcelamento não encontrado.");
       const bloqueios = parc.status === "RESCINDIDO" ? [] : [{
@@ -10787,10 +10903,12 @@ export function createMockApi() {
     },
 
     async desfazerRescisaoParcelamento(companyId, parcId, { motivo } = {}) {
+      const { mockRescisoesDesfeitas } = estadoParcelamentoMock(companyId);
       await delay(120);
       if (String(motivo || "").trim().length < 5) {
         throw mockRecusa("MOTIVO_OBRIGATORIO", "Informe o motivo (mínimo 5 caracteres).");
       }
+      estadoParcelamentoMock(companyId).rescindidos.delete(parcId);
       mockRescisoesDesfeitas.add(parcId);
       return { ok: true, atoId: `mock-ato-${parcId}`, status: "ATIVO", modo: "DELECAO" };
     },
