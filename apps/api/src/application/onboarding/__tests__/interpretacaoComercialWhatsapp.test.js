@@ -172,3 +172,86 @@ test.each(["faturamento", "meu faturamento", "faturamento de agosto", "faturamem
 test.each(["Também me mande as guias em aberto", "Quero meu faturamento de agosto", "Preciso dos documentos da empresa"])("objetivo de abertura não oculta pedido operacional misto: %s", pedido => {
   expect(pedidoOperacionalComercial(`Quero abrir empresa para emitir notas. ${pedido}`)).toBe(true);
 });
+
+test.each([
+  "Qual a diferença entre só abertura e mensal?", "O que está incluído na contabilidade mensal?",
+  "Quero saber o preço da contabilidade mensal", "Se eu quiser só abertura, quanto fica?",
+  "Talvez eu queira contabilidade mensal", "Estou pensando em só abertura", "Não quero só abertura",
+  "Não quero comparar", "Não preciso de contabilidade mensal?", "Posso contratar só abertura?",
+  "E se eu contratar contabilidade mensal?", "Contabilidade mensal ou serviço avulso?",
+  "Pensei em contratar contabilidade mensal", "Qual seria melhor, contabilidade mensal",
+])("pergunta, hipótese e negação não escolhem modalidade: %s", texto => {
+  expect(dados(ler(texto, "modalidadeServico")).modalidadeServico).toBeUndefined();
+});
+
+test.each([
+  ["quero abrir e ter contador", "RECORRENTE"], ["quero abrir com um contador", "RECORRENTE"],
+  ["Quero contabilidade mensal; quanto custa?", "RECORRENTE"],
+  ["Não quero só abertura, quero comparar", "COMPARAR"],
+  ["Não quero contabilidade mensal, quero só abertura", "AVULSO"],
+])("decisão explícita continua válida em texto livre: %s", (texto, modalidade) => {
+  expect(dados(ler(texto, "modalidadeServico")).modalidadeServico).toBe(modalidade);
+});
+
+test.each([
+  "Posso dar baixa?", "Quanto custa dar baixa?", "É melhor reativar ou fechar a empresa?",
+  "Se eu reativar, como funciona?", "Talvez eu queira dar baixa", "Estou pensando em reativar",
+  "Não quero reativar", "Não vou dar baixa", "Não gostaria de reativar", "Não tenho interesse em reativar",
+  "Quero reativar ou dar baixa", "Quero reativar e depois dar baixa",
+])("dúvida e objetivo não decidido preservam a empresa parada: %s", texto => {
+  const r = dados(ler(texto, "pretendeReativar", "INATIVA"));
+  expect(r.pretendeReativar).toBeUndefined(); expect(r.modalidadeServico).toBeUndefined();
+});
+
+test.each(["Quero dar baixa", "Quero fechar", "Quero encerrar minha empresa", "Não quero reativar, quero dar baixa"])("encerramento explícito é serviço avulso: %s", texto => {
+  expect(dados(ler(texto, "pretendeReativar", "INATIVA"))).toMatchObject({ pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" });
+});
+test("mudança explícita de baixa para reativação pede uma nova escolha de modalidade", () => {
+  const r = interpretarColetaComercial({ texto: "Quero reativar", origem: "INATIVA", campoEsperado: "cnpj", dadosAtuais: { pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" } });
+  expect(r.operacoes).toContainEqual({ campo: "pretendeReativar", acao: "set", valor: "REATIVAR" });
+  expect(r.operacoes).toContainEqual({ campo: "modalidadeServico", acao: "unset" });
+});
+test("mensalidade não substitui silenciosamente pedido anterior de encerramento", () => {
+  const r = interpretarColetaComercial({ texto: "Quero contabilidade mensal", origem: "INATIVA", campoEsperado: "cnpj", dadosAtuais: { pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" } });
+  expect(r.operacoes).toEqual([]); expect(r.resposta).toContain("nova solicitação");
+});
+
+test.each(["Aguarda um pouco", "Espera aí", "Pera aí", "Peraí", "Só um minutinho", "Pode aguardar um momento?", "Já te mando", "Um minuto, por favor", "Aguarda um pouco, estou no trabalho"])("pausa cotidiana não é dado de nome, atividade ou endereço: %s", texto => {
+  for (const campo of ["responsavelNome", "atividadePretendida", "municipioAtendimento", "enderecoPretendido"]) {
+    const r = ler(texto, campo); expect(r.aguardar).toBe(true); expect(r.operacoes).toEqual([]);
+  }
+});
+test("não saber onde funciona como desconhecimento somente do endereço", () => {
+  expect(ler("Ainda não sei onde", "enderecoPretendido").desconhecido).toBe("enderecoPretendido");
+  expect(ler("Ainda não sei onde", "responsavelNome").desconhecido).toBeNull();
+});
+
+test.each([
+  ["Quero abri uma empresa", "ABERTURA"], ["Minha empresa está sem movimento", "INATIVA"],
+  ["Não uso mais meu CNPJ", "INATIVA"], ["Parei de movimentar minha empresa", "INATIVA"],
+  ["Meu MEI não tem movimentação", "INATIVA"], ["Minha empresa não está sem movimento", null],
+])("variações de intenção preservam negações cadastrais: %s", (texto, origem) => expect(identificarOrigemComercial(texto)).toBe(origem));
+
+test.each([
+  ["Sou médica, posso usar meu endereço de casa?", "ABERTURA", "viabilidade"],
+  ["Preciso de licença da prefeitura?", "ABERTURA", "atividade"],
+  ["Posso trocar de contador e continuar a emitir notas?", "TRANSFERENCIA", "competências"],
+  ["Posso dar baixa com dívida?", "INATIVA", "situação fiscal"],
+  ["Empresa sem movimento precisa pagar imposto?", "INATIVA", "regime"],
+  ["Empresa parada precisa entregar declarações?", "INATIVA", "período"],
+])("primeira dúvida recebe orientação específica sem conclusão fiscal: %s", (texto, origem, trecho) => {
+  const r = ler(texto, "responsavelNome", origem);
+  expect(r.resposta).toContain(trecho); expect(dados(r).responsavelNome).toBeUndefined();
+  expect(r.resposta).not.toMatch(/R\$|\d+%|isento|sem impostos|não precisa declarar/);
+});
+test("explicar emissão durante troca não dispara operação, mas pedido real continua operacional", () => {
+  expect(pedidoOperacionalComercial("Posso trocar de contador e continuar a emitir notas?")).toBe(false);
+  expect(pedidoOperacionalComercial("Posso trocar de contador e continuar a emitir notas? Me mande as guias.")).toBe(true);
+  expect(pedidoOperacionalComercial("Quero trocar de contador e emitir nota agora")).toBe(true);
+});
+test("preço de baixa não oferece plano mensal para empresa encerrada", () => {
+  const r = responderDuvidaComercial("Quanto custa?", { origem: "INATIVA", pretendeReativar: "BAIXAR" });
+  expect(r).toContain("orçamento avulso"); expect(r).not.toContain("comparar com o acompanhamento");
+  expect(responderDuvidaComercial("Quanto custa dar baixa?", { origem: "INATIVA" })).toContain("orçamento avulso");
+  expect(responderDuvidaComercial("Não quero dar baixa. Qual o preço da contabilidade mensal?", { origem: "INATIVA" })).not.toContain("orçamento avulso");
+});

@@ -1,4 +1,5 @@
 // Demonstração local, sem consultas fiscais, mensagens externas ou assinatura real.
+import { normalizarDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 export function criarMockComercial({
   onboardings,
   persistir
@@ -15,15 +16,19 @@ export function criarMockComercial({
   const ficha = id => {
     const o = onboardings.get(id);
     if (!o) throw Error("Ficha não encontrada.");
+    // Fichas criadas pelo formulário antigo da demonstração não tinham versão.
+    if (!Number.isInteger(o.versao)) o.versao = 0;
     return o;
   };
   // As mesmas chaves materiais da jornada real; a demonstração só registra
   // diagnósticos de abertura e nunca possui uma consulta fiscal concluída.
-  const contextoDiagnostico = o => JSON.stringify([
+  const perfilDaAnalise = o => Object.fromEntries(Object.entries({ regime: o.dados?.regimeAtual || o.dados?.regimePretendido, qtdFuncionarios: o.dados?.qtdFuncionarios, notasRecebidasMes: o.dados?.notasRecebidasMes, consultoriaMensal: o.dados?.consultoriaMensal, pretendeReativar: o.dados?.pretendeReativar }).filter(([, v]) => v != null && v !== ""));
+  const contextoDiagnostico = (o, perfil = o.diagnosticoDemonstracao?.dados?.perfilConferido) => JSON.stringify([
     o.origem, o.cnpj || null, null,
     o.dados?.atividadePretendida || null,
     o.dados?.municipioAtendimento || o.dados?.municipioPretendido || null,
-    o.dados?.enderecoPretendido || null
+    o.dados?.enderecoPretendido || null,
+    ...(perfil ? [Object.keys(perfil).sort().map(k => [k, perfilDaAnalise(o)[k] ?? null])] : [])
   ]);
   const diagnosticoAtual = o => o.diagnosticoDemonstracao?.dados?.contexto === contextoDiagnostico(o)
     ? o.diagnosticoDemonstracao : null;
@@ -186,6 +191,7 @@ export function criarMockComercial({
         jornada: { analises: [], diagnostico: diagnosticoAtual(o),
           diagnosticoDesatualizado: Boolean(o.diagnosticoDemonstracao && !diagnosticoAtual(o)),
           diagnosticoAnterior: !diagnosticoAtual(o) ? o.diagnosticoDemonstracao?.dados || null : null,
+          diagnosticoAnteriorId: !diagnosticoAtual(o) ? o.diagnosticoDemonstracao?.id || null : null,
           publicaConferida: false, fiscalConferido: false,
           devolutiva: { partes: [], concluida: Boolean(diagnosticoAtual(o) && o.apresentacaoDemonstracao?.diagnosticoId === diagnosticoAtual(o).id), incerta: false } },
         propostas: [...propostas.values()].filter(p => p.onboardingId === o.id).reverse(),
@@ -205,8 +211,14 @@ export function criarMockComercial({
       if (suffix === "/jornada/diagnostico") {
         if (body.versao !== o.versao) throw Error("Ficha alterada. Atualize antes de salvar.");
         if (o.origem !== "ABERTURA") throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
-        if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10)) throw Error("Preencha o diagnóstico e o escopo.");
-        o.diagnosticoDemonstracao = { id: uid(), dados: { contexto: contextoDiagnostico(o), achados: body.achados, servicos: body.servicos, texto: `DEMONSTRAÇÃO — ${body.achados}\n\nServiços propostos:\n${body.servicos}` } };
+        if (typeof body.servicos !== "string" || body.servicos.trim().length < 10) throw Error("Preencha o diagnóstico e o escopo.");
+        const estruturado = normalizarDiagnosticoComercial({ ...body, roteiro: { ...body.roteiro, dados: { ...body.roteiro?.dados, funcionariosClt: o.dados?.qtdFuncionarios, documentosEntradaMes: o.dados?.notasRecebidasMes } } }, o.origem);
+        if (Object.hasOwn(body, "diagnosticoBaseId") && body.diagnosticoBaseId !== (o.diagnosticoDemonstracao?.id || null)) throw Error("Outro atendente alterou o diagnóstico. Recarregue antes de salvar.");
+        const perfilConferido = perfilDaAnalise(o);
+        const dados = { ...estruturado, perfilConferido, contexto: contextoDiagnostico(o, perfilConferido), fichaVersao: o.versao, achados: Object.values(estruturado.devolutiva).join("\n\n"), servicos: body.servicos };
+        const texto = textoDaDevolutiva(dados);
+        if (texto.length > 3800) throw Error("Resuma a devolutiva para até 3.800 caracteres.");
+        o.diagnosticoDemonstracao = { id: uid(), dados: { ...dados, texto: `DEMONSTRAÇÃO — ${texto}` } };
         persistir(); return { diagnostico: o.diagnosticoDemonstracao };
       }
       if (suffix === "/jornada/devolutiva") throw Error("Demonstração: nenhuma mensagem ou PDF será enviado a clientes.");

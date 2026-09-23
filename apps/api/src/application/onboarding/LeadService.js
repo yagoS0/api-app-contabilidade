@@ -297,8 +297,9 @@ export function proximaPergunta(r, { desconhecidos = [] } = {}) {
     campo: "origem",
     pergunta: "Você quer abrir uma empresa, trocar de contador ou resolver a situação de uma empresa parada?"
   };
-  const mensal = r.dados?.modalidadeServico !== "AVULSO" ? ["qtdFuncionarios", "notasRecebidasMes"] : [];
-  const ordem = r.origem === "ABERTURA" ? ["responsavelNome", "atividadePretendida", "municipioAtendimento", "modalidadeServico", ...mensal, "enderecoPretendido"] : ["cnpj", "responsavelNome", ...(r.origem === "INATIVA" ? ["paradaDesde", "pretendeReativar"] : ["motivoTroca"]), "modalidadeServico", ...mensal];
+  const encerramento = r.origem === "INATIVA" && r.dados?.pretendeReativar === "BAIXAR";
+  const mensal = !encerramento && r.dados?.modalidadeServico !== "AVULSO" ? ["qtdFuncionarios", "notasRecebidasMes"] : [];
+  const ordem = r.origem === "ABERTURA" ? ["responsavelNome", "atividadePretendida", "municipioAtendimento", "modalidadeServico", ...mensal, "enderecoPretendido"] : ["cnpj", "responsavelNome", ...(r.origem === "INATIVA" ? ["paradaDesde", "pretendeReativar"] : ["motivoTroca"]), ...(!encerramento ? ["modalidadeServico", ...mensal] : [])];
   const perguntas = {
     responsavelNome: "Como você se chama?", cnpj: "Qual é o CNPJ da empresa?",
     atividadePretendida: "Qual atividade você pretende exercer?", municipioAtendimento: "Em qual cidade e estado a empresa vai funcionar?",
@@ -320,6 +321,7 @@ export function proximaPergunta(r, { desconhecidos = [] } = {}) {
   }
   return {
     campo: null,
-    pergunta: "Já temos os dados iniciais. O contador vai conferir o escopo e preparar as opções de proposta."
+    pergunta: encerramento ? "Já temos os dados iniciais. O contador vai conferir a situação e preparar o orçamento do encerramento, com eventuais regularizações separadas."
+      : "Já temos os dados iniciais. O contador vai conferir o escopo e preparar as opções de proposta."
   };
 }

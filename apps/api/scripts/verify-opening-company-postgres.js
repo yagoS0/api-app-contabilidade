@@ -1,3 +1,4 @@
+import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 // Jornada sintética de ponta a ponta, sem tokens de IA ou acesso a provedores.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -65,7 +66,7 @@ try {
   await assert.rejects(comercial.publico(link.token), e => e.code === "link_invalido");
   ok("Formulário público completa a ficha sem exigir CNPJ inexistente e encerra o link após envio");
   const jornada = criarJornadaLead({ db, cloud, janela: async () => ({ situacao: "ABERTA" }) });
-  const diagnostico = await jornada.diagnosticar(id, user, { versao: ficha.versao, achados: "SIMULAÇÃO: endereço e atividade conferidos pelo contador; viabilidade e registro serão realizados externamente.", servicos: "Abertura da sociedade e contabilidade mensal, conforme proposta sintética." });
+  const diagnostico = await jornada.diagnosticar(id, user, { versao: ficha.versao, ...diagnosticoSintetico("SIMULAÇÃO: endereço e atividade conferidos pelo contador; viabilidade e registro serão realizados externamente."), servicos: "Abertura da sociedade e contabilidade mensal, conforme proposta sintética." });
   await jornada.enviarDevolutiva(id, user, { diagnosticoId: diagnostico.id });
   assert.equal((await jornada.carregar(id, user)).devolutiva.concluida, true);
   ok("Contador revisa viabilidade e escopo, e a devolutiva fica registrada no chat");

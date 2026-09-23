@@ -1,4 +1,5 @@
 import { OnboardingError } from "./OnboardingService.js";
+import { pendenciasDiagnosticoComercial } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 const encerrados = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
 export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendimento, propostas = [], contratos = [], marcos = [] }, agora = new Date()) {
@@ -15,6 +16,8 @@ export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendim
   const autorizacao = atendimento?.autorizacao;
   const autorizada = atendimento?.representanteVerificadoEm && autorizacao?.cnpj === o.cnpj && autorizacao.estado === "ATIVA" && new Date(autorizacao.prova?.validUntil) > agora;
   const dispensa = Boolean(j.diagnostico?.dados?.dispensaConsultaPrivada);
+  const diagnosticoPendencias = pendenciasDiagnosticoComercial(j.diagnostico?.dados, o.origem);
+  const diagnosticoConferido = Boolean(j.diagnostico && !diagnosticoPendencias.length);
   const passos = [];
   const add = (id, titulo, concluido, instrucao, pendencias = []) => passos.push({ id, titulo, concluido: Boolean(concluido), instrucao, pendencias });
   if (abertura) add("cadastro", "Entender a abertura", !j.dadosPendentes?.length, "Confira os dados iniciais da abertura.", j.dadosPendentes || []);
@@ -23,7 +26,7 @@ export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendim
     add("autorizacao", "Obter autorização", dispensa || autorizada || fiscal && atendimento?.representanteVerificadoEm && autorizacao?.cnpj === o.cnpj, "Confira o representante e verifique a procuração aplicável.", autorizada || dispensa ? [] : ["Procuração vigente e representante conferido"]);
     add("fiscal", "Consultar situação fiscal", dispensa || fiscal && j.fiscalConferido, dispensa ? "O contador registrou um escopo limitado, sem consulta privada." : "Solicite e confira o PDF e a tabela fiscal.", j.fiscalConferido || dispensa ? [] : ["Relatório fiscal conferido"]);
   }
-  add("diagnostico", abertura ? "Conferir viabilidade e escopo" : "Definir serviços necessários", j.diagnostico, "O contador confere o diagnóstico e o escopo.", j.diagnostico ? [] : ["Diagnóstico atual conferido"]);
+  add("diagnostico", abertura ? "Conferir viabilidade e escopo" : "Definir serviços necessários", diagnosticoConferido, "Confira o roteiro e registre a devolutiva em três blocos, mantendo visíveis as pendências.", diagnosticoPendencias);
   add("devolutiva", "Apresentar os serviços", j.devolutiva?.concluida, "Confira e apresente os serviços ao interessado.", j.devolutiva?.concluida ? [] : ["Devolutiva enviada ou apresentada com evidência"]);
   add("proposta", "Valores e aceite da proposta", aceita, "Revise a proposta e envie para aceite.", aceita ? [] : ["Aceite da versão e opção corretas"]);
   add("contrato", "Contrato e assinatura", assinado, "Anexe e confira o contrato assinado.", assinado ? [] : ["Assinatura conferida"]);
@@ -32,7 +35,7 @@ export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendim
   const indiceAtual = passos.findIndex((p, i) => i >= inicio && !p.concluido);
   passos.forEach((p, i) => { p.anterior = Boolean(aceita && i < inicio && !p.concluido); p.acessivel = indiceAtual < 0 || i <= indiceAtual; });
   const encerrado = encerrados.includes(o.status);
-  const finalPermitida = !encerrado && Boolean(j.diagnostico && j.devolutiva?.concluida && (abertura ? !j.dadosPendentes?.length : cadastroConferido && (dispensa || fiscal && j.fiscalConferido)));
+  const finalPermitida = !encerrado && Boolean(diagnosticoConferido && j.devolutiva?.concluida && (abertura ? !j.dadosPendentes?.length : cadastroConferido && (dispensa || fiscal && j.fiscalConferido)));
   return { passos, atual: indiceAtual < 0 ? "conclusao" : passos[indiceAtual].id, indiceAtual, abertura, nome: { ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" }[o.origem],
     proposta, contrato, pagamento, publica, fiscal, encerrado, versao: o.versao, pendencias: indiceAtual < 0 ? [] : passos[indiceAtual].pendencias,
     comandosPermitidos: { diagnosticoLimitado: !encerrado && !abertura && Boolean(cadastroConferido), gerarRascunho: !encerrado, aprovarProposta: finalPermitida && !aceita, enviarProposta: finalPermitida && !aceita, conferirPagamento: !encerrado && Boolean(assinado), concluirAvulso: !encerrado && Boolean(pagamento && contrato?.dados?.opcao?.recorrente === false) } };

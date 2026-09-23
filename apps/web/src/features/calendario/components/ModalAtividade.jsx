@@ -92,6 +92,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   return <Modal titulo={modoRegra ? 'Configurar obrigação' : edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho="md">
     <form className="agenda-form" onSubmit={salvar}>
       {passo === 1 ? <>
+        {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
         {onConfigurarObrigacao && <button type="button" className="agenda-text-action" onClick={onConfigurarObrigacao}>Configurar obrigação</button>}
         {!obrigacao && inicial.companyId && <div className="agenda-task-status"><span>{inicial.empresa || empresas.find(e => e.companyId === inicial.companyId)?.razao || 'Empresa atual'}</span>{onOpenCompany && <Button type="button" variant="secondary" onClick={() => onOpenCompany(inicial.companyId)}>Abrir empresa</Button>}</div>}
         {!obrigacao && !inicial.companyId && !inicial.ocorrenciaIds && <fieldset className="agenda-scope"><legend>Empresas da tarefa (opcional)</legend>
@@ -99,7 +100,6 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
           <div className="agenda-company-choices">{empresas.filter(e => `${e.razao || e.nome} ${e.cnpj || ''}`.toLowerCase().includes(buscaEmpresa.toLowerCase())).map(e => <label key={e.companyId}><input type="checkbox" checked={empresasTarefa.includes(e.companyId)} onChange={ev => {setEmpresasTarefa(ids => ev.target.checked ? [...ids,e.companyId] : ids.filter(id => id !== e.companyId)); setCompartilhar(false);}}/>{e.razao || e.nome}{e.cnpj ? ` · ${e.cnpj}` : ''}</label>)}</div>
           {empresasTarefa.length ? <label><input type="checkbox" checked={compartilhar} onChange={e => setCompartilhar(e.target.checked)}/>Compartilhar com a equipe autorizada das empresas selecionadas. Cada empresa terá sua própria conclusão.{inicial.tarefaId ? ' A tarefa pessoal será substituída somente se não tiver histórico; o vínculo vale para toda a série.' : ''}</label> : <small>Sem seleção, esta tarefa continua pessoal.</small>}
         </fieldset>}
-        {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
         {onAlterarConclusao && !conversao && <div className="agenda-task-status">
           <span aria-live="polite">{inicial.resolvido ? 'Concluída' : 'Pendente'}</span>
           <Button type="button" variant="secondary" disabled={ocupado} onClick={alterarConclusao}>{inicial.resolvido ? 'Reabrir tarefa' : 'Concluir tarefa'}</Button>

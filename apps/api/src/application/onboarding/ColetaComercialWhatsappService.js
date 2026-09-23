@@ -8,7 +8,7 @@ import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
 import { pediuMenuWhatsapp, declarouSerCliente, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
 import { avisoAtendimentoComercial, botoesModalidadeServico, modalidadeDoBotao } from "./mensagensComerciais.js";
 
-import { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
+import { interpretarColetaComercial, identificarOrigemComercial, identificarOrigemDeclarada, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
 export { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
 
 function mensagemAnterior(mensagem, triagem = {}) {
@@ -84,8 +84,8 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const escolhaAntiga = Boolean(escolhaModalidade && (escolhaModalidade.atendimentoId !== caso.id || esperada.campo !== "modalidadeServico" || triagem.campoEsperado !== "modalidadeServico"));
     const leitura = escolhaModalidade ? { operacoes: escolhaAntiga ? [] : [{ campo: "modalidadeServico", acao: "set", valor: escolhaModalidade.valor }] }
       : anexo ? { operacoes: [], humano: true }
-      : interpretarColetaComercial({ texto: textoEntrada, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null), anoParadaPendente: triagem.anoParadaPendente });
-    const mudouOrigem = origem && origem !== caso.onboarding.origem;
+      : interpretarColetaComercial({ texto: textoEntrada, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null), anoParadaPendente: triagem.anoParadaPendente, dadosAtuais: caso.onboarding.dados });
+    const mudouOrigem = origem && origem !== caso.onboarding.origem && (idInteracao || identificarOrigemDeclarada(textoEntrada));
     const referencia = mensagem.respostaAProviderMessageId || item.respostaAProviderMessageId;
     const menuRespondido = idInteracao && mudouOrigem && referencia && triagem.ultimaMensagemEm
       ? await tx.mensagemWhatsapp.findFirst({ where: { providerMessageId: referencia, conversaId: atual.id, direcao: "out", tipo: "interactive" }, select: { registradaEm: true } }) : null;
@@ -109,10 +109,12 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       : mudouOrigem || leitura.reinicio ? "Vou chamar a equipe para organizar a nova solicitação. As informações que você já enviou ficam preservadas."
         : leitura.desconhecido === "cnpj" ? "Sem problema. A equipe vai ajudar você a localizar o CNPJ e continuar a análise."
           : leitura.humano || esclarecimentos > 1 ? "Vou chamar a equipe para entender melhor o que você precisa e continuar por aqui."
-            : "Já tenho as informações iniciais. A equipe vai conferir seu caso e preparar a proposta com os serviços e valores.";
+            : caso.onboarding.origem === "INATIVA" && caso.onboarding.dados?.pretendeReativar === "BAIXAR"
+              ? "Já tenho as informações iniciais. A equipe vai conferir a situação da empresa e preparar o orçamento do encerramento, com eventuais regularizações e taxas separadas."
+              : "Já tenho as informações iniciais. A equipe vai conferir seu caso e preparar a proposta com os serviços e valores.";
     const texto = escolhaAntiga ? `Essa opção é de outra solicitação ou de uma etapa que já passou. Vamos continuar o atendimento atual.\n\n${perguntaSeguinte}`
       : menuAntigo ? "Esse menu é anterior ao atendimento que você está preenchendo. Escreva “menu” para ver as opções atuais ou conte o que deseja mudar. Seus dados foram preservados."
-      : encaminhar ? `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`
+      : encaminhar ? [leitura.resposta, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
           : [leitura.retomada ? `Vamos continuar sua ${assuntoDoCaso(caso.onboarding.origem)} de onde paramos.` : leitura.resposta,
             leitura.desconhecido ? "Tudo bem se ainda não souber; a equipe confere essa informação com você." : null,

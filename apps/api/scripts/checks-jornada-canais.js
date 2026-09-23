@@ -1,3 +1,4 @@
+import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { garantirIdentidadeWhatsapp } from "../src/application/whatsapp/IdentidadeComunicacaoService.js";
@@ -54,7 +55,7 @@ export async function verificarJornadaCanais({ db, user, ok }) {
       enviarDocumento: async payload => { chamadas.push({ tipo: "document", payload }); return { wamid: `${run}-saida-${++sequencia}` }; },
     };
     const jornada = criarJornadaLead({ db, cloud }); // usa janelaDaConversa real
-    const diagnostico = await jornada.diagnosticar(id, user, { versao: ficha.versao, achados: "SIMULAÇÃO: atividade e endereço conferidos.", servicos: "Abertura avulsa sintética, sem contabilidade mensal." });
+    const diagnostico = await jornada.diagnosticar(id, user, { versao: ficha.versao, ...diagnosticoSintetico("SIMULAÇÃO: atividade e endereço conferidos."), servicos: "Abertura avulsa sintética, sem contabilidade mensal." });
     const proposta = await propostas.gerar(id, user, { versao: ficha.versao, ajustes: { aberturaCentavos: 123457, justificativa: "Preço fictício conferido exclusivamente para teste." } });
     await assert.rejects(propostas.aprovar(id, proposta.id, user), e => e.code === "jornada_pendente");
     await assert.rejects(jornada.enviarDevolutiva(id, user, { diagnosticoId: diagnostico.id, conversaId: principal.id }), e => e.code === "canal_comercial_necessario");

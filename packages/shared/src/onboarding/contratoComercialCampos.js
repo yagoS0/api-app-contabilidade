@@ -7,6 +7,7 @@ export const CAMPOS_CONTRATO = [
   campo('regimeTributario', 'Regime tributário contratado', 'Empresa'),
   campo('nome', 'Nome do representante', 'Representante'),
   campo('cpf', 'CPF do representante', 'Representante', { documento: 11 }),
+  campo('enderecoRepresentante', 'Endereço completo da pessoa contratante', 'Representante'),
   campo('cargo', 'Cargo do representante', 'Representante'),
   campo('email', 'E-mail do representante', 'Representante', { tipo: 'email' }),
   campo('whatsapp', 'WhatsApp do representante', 'Representante', { tipo: 'tel' }),
@@ -22,6 +23,10 @@ export const CAMPOS_CONTRATO = [
   campo('honorariosMensais', 'Honorários mensais', 'Proposta aceita', { protegido: true }),
   campo('honorariosMensaisExtenso', 'Honorários mensais por extenso', 'Proposta aceita', { protegido: true }),
   campo('honorariosUnicos', 'Valor do serviço inicial ou avulso', 'Proposta aceita', { protegido: true }),
+  campo('honorariosRegularizacao', 'Regularização contratada', 'Proposta aceita', { protegido: true }),
+  campo('totalInicialHonorarios', 'Total inicial de honorários', 'Proposta aceita', { protegido: true }),
+  campo('taxasPublicas', 'Taxas públicas da proposta', 'Proposta aceita', { protegido: true }),
+  campo('condicaoInicioMensal', 'Condição para iniciar o acompanhamento mensal', 'Proposta aceita', { protegido: true, multiline: true }),
   campo('condicoes', 'Condições da proposta aceita', 'Proposta aceita', { protegido: true, multiline: true }),
   campo('faixaContratada', 'Faixa contratada', 'Escopo e limites'),
   campo('limiteDocumentos', 'Documentos de entrada incluídos por mês', 'Escopo e limites', { tipo: 'number', min: 0, max: 1000000 }),
@@ -76,6 +81,7 @@ export function sugerirVariaveisContrato({ onboarding = {}, proposta = {}, model
     contratante: onboarding.razaoSocial || d.razaoSocial, cnpj: onboarding.cnpj,
     nome: onboarding.responsavelNome || d.responsavelNome, email: onboarding.responsavelEmail || d.responsavelEmail,
     cpf: d.responsavelCpf, cargo: d.responsavelCargo, whatsapp: onboarding.responsavelTelefone || d.responsavelTelefone,
+    enderecoRepresentante: enderecoContrato(d.responsavelEndereco),
     endereco: enderecoContrato(d.endereco || d.enderecoPretendido),
     regimeTributario: ({ SIMPLES: 'Simples Nacional', LUCRO_PRESUMIDO: 'Lucro Presumido', LUCRO_REAL: 'Lucro Real' })[s.perfil?.regime || d.regimeAtual || d.regimePretendido],
   });
@@ -83,10 +89,20 @@ export function sugerirVariaveisContrato({ onboarding = {}, proposta = {}, model
   if (onboarding.cnpj) valores.cnpj = String(onboarding.cnpj).replace(/\D/g, '');
   if (s.perfil?.regime && cadastro.regimeTributario) valores.regimeTributario = cadastro.regimeTributario;
   if (opcao) {
+    const regularizacao = Number.isSafeInteger(s.regularizacaoCentavos) && s.regularizacaoCentavos >= 0 ? s.regularizacaoCentavos : 0;
+    const regularizacaoExtra = opcao.regularizacaoIncluida ? 0 : regularizacao;
+    const unicoValido = Number.isSafeInteger(opcao.unicoCentavos) && opcao.unicoCentavos >= 0;
+    const total = unicoValido && Number.isSafeInteger(opcao.unicoCentavos + regularizacaoExtra) ? opcao.unicoCentavos + regularizacaoExtra : null;
     Object.assign(valores, {
-      servico: opcao.escopo || '', honorarios: monetario(opcao.unicoCentavos) + ' de serviço; ' + monetario(opcao.mensalCentavos) + ' por mês',
+      servico: opcao.escopo || '', honorarios: monetario(opcao.unicoCentavos) + ' de serviço' + (regularizacaoExtra ? '; ' + monetario(regularizacaoExtra) + ' de regularização' : '') + (opcao.recorrente ? '; ' + monetario(opcao.mensalCentavos) + ' por mês' : ''),
       honorariosMensais: monetario(opcao.mensalCentavos), honorariosMensaisExtenso: valorPorExtenso(opcao.mensalCentavos),
       honorariosUnicos: monetario(opcao.unicoCentavos), condicoes: s.condicoes || '',
+      honorariosRegularizacao: opcao.regularizacaoIncluida ? 'Incluída no valor do serviço avulso' : monetario(regularizacao),
+      totalInicialHonorarios: monetario(total),
+      taxasPublicas: s.taxasConfirmadas && Number.isSafeInteger(s.taxasCentavos) && s.taxasCentavos >= 0 ? monetario(s.taxasCentavos) : 'A confirmar separadamente, antes de qualquer recolhimento',
+      condicaoInicioMensal: !opcao.recorrente ? 'Não há acompanhamento mensal nesta contratação.'
+        : ({ APOS_REGULARIZACAO: 'Após a execução e conferência da regularização prevista na proposta aceita.', SEM_REGULARIZACAO: 'Conforme a vigência e o escopo da proposta aceita; não há regularização prévia contratada.' })[s.decisaoRegularizacao?.condicaoInicioMensal]
+          || s.decisaoRegularizacao?.condicaoInicioMensal || (s.decisaoRegularizacao?.necessaria ? 'Após a regularização prevista na proposta aceita.' : 'Conforme a vigência e o escopo da proposta aceita.'),
     });
     if (opcao.recorrente && s.limitesPlano) {
       if (Number.isInteger(s.limitesPlano.funcionarios)) valores.limiteFuncionarios = s.limitesPlano.funcionarios;

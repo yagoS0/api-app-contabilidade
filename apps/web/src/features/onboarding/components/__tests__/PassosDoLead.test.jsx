@@ -2,20 +2,61 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { DiagnosticoDoLead, MensagemDoPasso, CamposDaEtapa } from "../PassosDoLead";
 import { FluxoComercial } from "../FluxoComercial";
 import { AcoesDaEtapa } from "../AcoesDaEtapa";
+const completarBlocos = () => {
+  fireEvent.change(screen.getByLabelText("O que está certo"), { target: { value: "Cadastro e atividade conferidos." } });
+  fireEvent.change(screen.getByLabelText("O que podemos corrigir ou fazer a seguir"), { target: { value: "Executar os serviços dentro do escopo delimitado." } });
+};
+
+test("transferência oferece roteiro em guias, exige decisão de regularização e preserva pendências", () => {
+  const onSalvar = jest.fn();
+  render(<DiagnosticoDoLead sempreAberto limitado onboarding={{ id: "t", origem: "TRANSFERENCIA", versao: 2, cnpj: "11222333000181", dados: { qtdFuncionarios: 2, notasRecebidasMes: 20 } }} jornada={{}} onSalvar={onSalvar} />);
+  completarBlocos();
+  fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Relatório fiscal privado ainda não consultado." } });
+  fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Serviço cadastral com escopo restrito." } });
+  fireEvent.change(screen.getByLabelText(/Limitação do serviço/), { target: { value: "Serviço cadastral restrito sem análise fiscal privada." } });
+  expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Regularização antes da contabilidade mensal"), { target: { value: "true" } });
+  fireEvent.change(screen.getByLabelText("Motivo da decisão sobre regularização"), { target: { value: "Declarações omissas indicadas no documento recebido." } });
+  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  fireEvent.change(screen.getByLabelText("Receita dos últimos 12 meses (R$)"), { target: { value: "120000" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Conferências" }));
+  fireEvent.click(screen.getByText("Certidões RFB e PGFN"));
+  fireEvent.change(screen.getByLabelText("Certidões RFB e PGFN — resultado"), { target: { value: "FEITO" } });
+  expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Certidões RFB e PGFN — evidência ou motivo"), { target: { value: "Documentos e validade conferidos manualmente." } });
+  expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeEnabled();
+  fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
+  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ regularizacao: expect.objectContaining({ necessaria: true, condicaoInicioMensal: "APOS_REGULARIZACAO" }), roteiro: expect.objectContaining({ dados: expect.objectContaining({ receita12Meses: 120000, funcionariosClt: 2 }), conferencias: expect.objectContaining({ certidoesFederais: { estado: "FEITO", evidencia: "Documentos e validade conferidos manualmente." }, debitos: { estado: "PENDENTE", evidencia: "" } }) }) }));
+});
+
+test("dados da ficha em edição não podem ficar silenciosamente fora do diagnóstico", async () => {
+  const onSalvar = jest.fn(), onSalvarDados = jest.fn(async () => true);
+  render(<DiagnosticoDoLead sempreAberto onboarding={{ id: "o", origem: "ABERTURA", versao: 1, dados: {} }} jornada={{}} onSalvar={onSalvar} onSalvarDados={onSalvarDados} />);
+  completarBlocos();
+  fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Viabilidade condicionada aos órgãos responsáveis." } });
+  fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura e contabilidade conforme escopo." } });
+  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  fireEvent.change(screen.getByLabelText(/Quantidade de funcionários/), { target: { value: "2" } });
+  expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
+  fireEvent.click(screen.getByText("Salvar dados deste passo"));
+  await waitFor(() => expect(onSalvarDados).toHaveBeenCalledWith({ versao: 1, operacoes: [{ campo: "qtdFuncionarios", acao: "set", valor: 2 }] }));
+  expect(onSalvar).not.toHaveBeenCalled();
+});
 
 test("diagnóstico anterior reaparece como rascunho e só pode ser salvo depois da revisão explícita", () => {
   const onSalvar = jest.fn();
   const jornada = { diagnostico: null, diagnosticoDesatualizado: true, diagnosticoAnterior: { achados: "Endereço anterior conferido.", servicos: "Abertura e serviço contábil mensal." } };
   render(<DiagnosticoDoLead sempreAberto onboarding={{ id: "o", origem: "ABERTURA", versao: 4 }} jornada={jornada} onSalvar={onSalvar} />);
-  expect(screen.getByLabelText(/Análise da atividade/)).toHaveValue(jornada.diagnosticoAnterior.achados);
+  expect(screen.getByLabelText(/Pontos de atenção/)).toHaveValue(jornada.diagnosticoAnterior.achados);
   expect(screen.getByLabelText("Serviços necessários e escopo")).toHaveValue(jornada.diagnosticoAnterior.servicos);
   expect(screen.getByRole("alert")).toHaveTextContent(/rascunho|preservado/);
   expect(screen.getByRole("button", { name: "Confirmar diagnóstico e continuar" })).toBeDisabled();
   expect(onSalvar).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Conferi os dados atualizados: manter meu texto" }));
-  fireEvent.change(screen.getByLabelText(/Análise da atividade/), { target: { value: "Novo endereço conferido pelo escritório." } });
+  fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Novo endereço conferido pelo escritório." } });
+  completarBlocos();
   fireEvent.click(screen.getByRole("button", { name: "Confirmar diagnóstico e continuar" }));
-  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 4, achados: "Novo endereço conferido pelo escritório." }));
+  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 4, devolutiva: expect.objectContaining({ atencao: "Novo endereço conferido pelo escritório." }) }));
   expect(jornada.diagnostico).toBeNull();
 });
 
@@ -23,14 +64,15 @@ test("diagnóstico vazio adota a nova versão sem pedir para preservar texto ine
   const onSalvar = jest.fn(), ficha = { id: "o", origem: "ABERTURA", versao: 1 };
   const ui = render(<DiagnosticoDoLead sempreAberto onboarding={ficha} jornada={{}} onSalvar={onSalvar} />);
   ui.rerender(<DiagnosticoDoLead sempreAberto onboarding={{ ...ficha, versao: 2 }} jornada={{}} onSalvar={onSalvar} />);
-  expect(screen.getByLabelText(/Análise da atividade/)).toHaveValue("");
+  expect(screen.getByLabelText(/Pontos de atenção/)).toHaveValue("");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Conferi os dados atualizados: manter meu texto" })).not.toBeInTheDocument();
   expect(onSalvar).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText(/Análise da atividade/), { target: { value: "Viabilidade conferida na nova versão." } });
+  fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Viabilidade conferida na nova versão." } });
+  completarBlocos();
   fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura e acompanhamento mensal." } });
   fireEvent.click(screen.getByRole("button", { name: "Confirmar diagnóstico e continuar" }));
-  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 2, achados: "Viabilidade conferida na nova versão." }));
+  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 2, devolutiva: expect.objectContaining({ atencao: "Viabilidade conferida na nova versão." }) }));
 });
 
 test("abas da etapa preservam dados abertos e a versão do rascunho", async () => {
@@ -70,16 +112,17 @@ test("prévia de orientação não muda de destino; exige preparar novamente ant
 test("diagnóstico preserva o rascunho e pede revisão quando outro atendente altera a ficha", () => {
   const onSalvar = jest.fn(), o = { id: "o", origem: "ABERTURA", versao: 1 };
   const { rerender } = render(<DiagnosticoDoLead onboarding={o} jornada={{}} onSalvar={onSalvar} />);
-  expect(screen.queryByLabelText(/Análise da atividade/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Pontos de atenção/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Preparar diagnóstico e escopo"));
-  fireEvent.change(screen.getByLabelText(/Análise da atividade/), { target: { value: "Endereço e atividade conferidos." } });
+  fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Endereço e atividade conferidos." } });
+  completarBlocos();
   fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura com serviço contábil mensal." } });
   rerender(<DiagnosticoDoLead onboarding={{ ...o, versao: 2 }} jornada={{}} onSalvar={onSalvar} />);
   expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
-  expect(screen.getByLabelText(/Análise da atividade/)).toHaveValue("Endereço e atividade conferidos.");
+  expect(screen.getByLabelText(/Pontos de atenção/)).toHaveValue("Endereço e atividade conferidos.");
   fireEvent.click(screen.getByText("Conferi os dados atualizados: manter meu texto"));
   fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
-  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 2, achados: "Endereço e atividade conferidos." }));
+  expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ versao: 2, devolutiva: expect.objectContaining({ atencao: "Endereço e atividade conferidos." }) }));
 });
 test("campo da etapa preserva versão inicial e não apaga rascunho ao falhar", async () => {
   const o = { id: "o", origem: "ABERTURA", versao: 1, dados: {} }, onSalvar = jest.fn(async () => false);
@@ -111,7 +154,7 @@ test("recolher o diagnóstico mantém os campos e ainda exige a conferência da 
   const onSalvar = jest.fn(), o = { id: "o", origem: "ABERTURA", versao: 1 };
   const { rerender } = render(<DiagnosticoDoLead onboarding={o} jornada={{}} onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole("button", { name: "Preparar diagnóstico e escopo" }));
-  const achados = screen.getByLabelText(/Análise da atividade/);
+  const achados = screen.getByLabelText(/Pontos de atenção/);
   fireEvent.change(achados, { target: { value: "Atividade conferida para a abertura." } });
   fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura e acompanhamento mensal." } });
   fireEvent.click(screen.getByRole("button", { name: "Recolher diagnóstico" }));
@@ -119,7 +162,7 @@ test("recolher o diagnóstico mantém os campos e ainda exige a conferência da 
   expect(achados).not.toBeVisible();
   rerender(<DiagnosticoDoLead onboarding={{ ...o, versao: 2 }} jornada={{}} onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole("button", { name: "Preparar diagnóstico e escopo" }));
-  expect(screen.getByLabelText(/Análise da atividade/)).toBe(achados);
+  expect(screen.getByLabelText(/Pontos de atenção/)).toBe(achados);
   expect(achados).toHaveValue("Atividade conferida para a abertura.");
   expect(screen.getByRole("button", { name: "Confirmar diagnóstico e continuar" })).toBeDisabled();
   expect(onSalvar).not.toHaveBeenCalled();
@@ -165,8 +208,9 @@ test("tela avança diagnóstico, devolutiva e proposta com dados salvos e retoma
     return JSON.parse(JSON.stringify(e));
   }) };
   const { unmount } = render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
-  expect(await screen.findByLabelText(/Análise da atividade/)).toBeVisible();
-  fireEvent.change(await screen.findByLabelText(/Análise da atividade/), { target: { value: "Conferência da viabilidade sintética." } });
+  expect(await screen.findByLabelText(/Pontos de atenção/)).toBeVisible();
+  fireEvent.change(await screen.findByLabelText(/Pontos de atenção/), { target: { value: "Conferência da viabilidade sintética." } });
+  completarBlocos();
   fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Serviços avulsos e mensais sintéticos." } });
   fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
   expect(await screen.findByText("Devolutiva sintética")).toBeVisible();
@@ -177,6 +221,44 @@ test("tela avança diagnóstico, devolutiva e proposta com dados salvos e retoma
   unmount(); render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
   fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
   expect(await screen.findByText("Gerar proposta para revisão")).toBeInTheDocument();
+});
+
+test("revisar dados materiais na tela preserva o rascunho do diagnóstico já salvo e exige nova conferência", async () => {
+  const diagnostico = { id: "diagnostico-salvo", dados: {
+    devolutiva: { certo: "Cadastro e atividade conferidos.", atencao: "Endereço depende da análise de viabilidade.", corrigir: "Executar os serviços conforme escopo conferido." },
+    servicos: "Abertura e acompanhamento contábil mensal.", texto: "Devolutiva já registrada.",
+  } };
+  let e = { onboarding: { id: "o", origem: "ABERTURA", versao: 1, dados: { responsavelNome: "Ana", atividadePretendida: "Consultoria", municipioAtendimento: "Rio", enderecoPretendido: "Rua sintética", regimePretendido: "SIMPLES", qtdFuncionarios: 0, notasRecebidasMes: 20 } },
+    jornada: { analises: [], diagnostico, devolutiva: { partes: [], concluida: false } }, propostas: [], contratos: [], documentos: [], trabalhos: [] };
+  const api = { comercial: jest.fn(async (path, body) => {
+    if (path === "/recursos") return { recursos: [] };
+    if (path.endsWith("/campos")) e = { ...e, onboarding: { ...e.onboarding, versao: 2, dados: { ...e.onboarding.dados, qtdFuncionarios: 2 } },
+      jornada: { ...e.jornada, diagnostico: null, diagnosticoAnterior: diagnostico.dados, diagnosticoAnteriorId: diagnostico.id, diagnosticoDesatualizado: true } };
+    if (path.endsWith("/jornada/diagnostico")) e = { ...e, jornada: { ...e.jornada, diagnostico: { id: "diagnostico-revisado", dados: { ...body, texto: "Devolutiva revisada." } } } };
+    return JSON.parse(JSON.stringify(e));
+  }) };
+  render(<FluxoComercial api={api} onboardingId="o" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Conferir viabilidade e escopo/ }));
+  const atencao = screen.getByLabelText(/Pontos de atenção/);
+  const textoRevisado = "Endereço depende de viabilidade e a equipe terá dois funcionários.";
+  fireEvent.change(atencao, { target: { value: textoRevisado } });
+  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  fireEvent.change(screen.getByLabelText("Receita dos últimos 12 meses (R$)"), { target: { value: "120000" } });
+  fireEvent.change(screen.getByLabelText(/Quantidade de funcionários/), { target: { value: "2" } });
+  fireEvent.click(screen.getByText("Salvar dados deste passo"));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/campos", { versao: 1, operacoes: [{ campo: "qtdFuncionarios", acao: "set", valor: 2 }] }));
+  await screen.findByRole("button", { name: "Conferi os dados atualizados: manter meu texto" });
+  expect(screen.getByLabelText(/Pontos de atenção/)).toBe(atencao);
+  expect(atencao).toHaveValue(textoRevisado);
+  expect(screen.getByLabelText("Receita dos últimos 12 meses (R$)")).toHaveValue(120000);
+  expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
+  expect(api.comercial.mock.calls.filter(([path]) => path.endsWith("/jornada/diagnostico"))).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Conferi os dados atualizados: manter meu texto" }));
+  fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/diagnostico", expect.objectContaining({
+    versao: 2, diagnosticoBaseId: diagnostico.id, devolutiva: expect.objectContaining({ atencao: textoRevisado }),
+    roteiro: expect.objectContaining({ dados: expect.objectContaining({ funcionariosClt: 2, receita12Meses: 120000 }) }),
+  })));
 });
 
 test("orientação enviada recolhe a prévia sem repetir mensagem ao atualizar", async () => {

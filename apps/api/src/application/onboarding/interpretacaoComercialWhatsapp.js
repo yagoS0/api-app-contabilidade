@@ -7,11 +7,44 @@ const limpo = texto => normalizar(texto).replace(/[.!?]+$/g, "").trim();
 function afirmado(texto, padrao) {
   for (const match of texto.matchAll(new RegExp(padrao.source, "g"))) {
     const antes = texto.slice(0, match.index);
-    if (/\b(?:nao|nem|sem)\s+(?:(?:quero|preciso|pretendo|vou|desejo|gostaria de)\s+)?(?:mais\s+)?$/.test(antes)) continue;
+    if (/\b(?:nao|nem|sem)\s+(?:(?:quero|preciso|pretendo|vou|desejo|gostaria de|tenho interesse em|penso em)\s+)?(?:mais\s+)?$/.test(antes)) continue;
     if (/\bnao\b/.test(match[0])) continue;
     return true;
   }
   return false;
+}
+
+// Uma pergunta pode mencionar o nome de uma opção sem escolhê-la. Separar
+// frases permite aproveitar "quero mensal; quanto custa?" sem salvar hipóteses.
+function trechosDeDecisao(texto) {
+  return String(texto || "").match(/[^;\n.!?]+[!?]?/g)?.map(t => normalizar(t).trim()).filter(t => t
+    && !/\?|\b(?:qual|quais|como|quanto|qto|posso|consigo|poderia|seria|saber|explica|explique|diferenca|duvida|talvez|se|caso|melhor|compensa|penso|pensei|pensando|cogito|cogitando|considero|considerando|indecis[oa])\b/.test(t)
+    && !/\b(?:nao (?:sei|decidi)|vale a pena|tem como|e possivel)\b/.test(t)) || [];
+}
+
+function modalidadeDeclarada(texto, esperada) {
+  const escolhas = new Set();
+  for (const t of trechosDeDecisao(texto)) {
+    if (/\b(?:nao quero|nao preciso|sem)\b.{0,20}\b(?:contabilidade|mensalidade|mensal)\b/.test(t)
+      || afirmado(t, /\b(?:so|somente|apenas)\b.{0,20}\b(?:abrir|abertura|avulso|servico|regularizar|regularizacao)\b/)
+      || esperada && /^(?:avulso|avulsa|pontual|servico pontual|servico avulso|a abertura|abertura)$/.test(t)) escolhas.add("AVULSO");
+    if (afirmado(t, /\b(?:comparar|duas opcoes|as duas|ambas|os dois)\b/)) escolhas.add("COMPARAR");
+    if (!/\b(?:nao|nem|sem)\b.{0,40}\b(?:mensal|contabilidade|contador)\b/.test(t)
+      && (/\b(?:com|tambem|quero|preciso|e)\b.{0,25}\bcontabilidade\b/.test(t) && !/\b(?:trocar|mudar)\b/.test(t)
+        || /\bcontabilidade mensal\b/.test(t)
+        || /\b(?:abrir|abertura)\b.{0,20}\b(?:e ter|com) (?:um )?contador\b/.test(t)
+        || esperada && /(?:^|\bquero |\bprefiro )(?:mensal|recorrente|completa|acompanhamento mensal|contabilidade)$/.test(t))) escolhas.add("RECORRENTE");
+  }
+  return escolhas.size === 1 ? [...escolhas][0] : null;
+}
+
+function objetivoDeclarado(texto, esperado) {
+  const objetivos = new Set();
+  for (const t of trechosDeDecisao(texto)) {
+    if (afirmado(t, /\b(?:reativar|voltar a (?:usar|operar|funcionar))\b/) || esperado && /^(?:quero )?voltar$/.test(t)) objetivos.add("REATIVAR");
+    if (afirmado(t, /\b(?:dar baixa|(?:encerrar|fechar) (?:a |minha |esta |essa )?empresa)\b/) || esperado && /^(?:quero )?(?:fechar|encerrar|baixar)$/.test(t)) objetivos.add("BAIXAR");
+  }
+  return objetivos.size === 1 ? [...objetivos][0] : null;
 }
 
 export function identificarOrigemComercial(texto, interacao = null) {
@@ -19,10 +52,16 @@ export function identificarOrigemComercial(texto, interacao = null) {
   const botoes = { "altan.comercial.abertura.v1": "ABERTURA", "altan.comercial.transferencia.v1": "TRANSFERENCIA", "altan.comercial.inativa.v1": "INATIVA" };
   if (botoes[id]) return botoes[id];
   const t = normalizar(texto), tipos = [];
-  if (afirmado(t, /\b(?:abrir|abrem|constituir|registrar|formalizar)\b.{0,45}\b(?:empresa|cnpj|consultorio|mei|negocio)\b|\babertura\b|\b(?:preciso|quero|necessito)\s+(?:de\s+)?(?:um\s+)?(?:novo\s+)?cnpj\b|\b(?:tirar|criar|fazer)\s+(?:um\s+)?(?:novo\s+)?cnpj\b/)) tipos.push("ABERTURA");
+  if (afirmado(t, /\b(?:abrir|abri|abrem|constituir|registrar|formalizar)\b.{0,45}\b(?:empresa|cnpj|consultorio|mei|negocio)\b|\babertura\b|\b(?:preciso|quero|necessito)\s+(?:de\s+)?(?:um\s+)?(?:novo\s+)?cnpj\b|\b(?:tirar|criar|fazer)\s+(?:um\s+)?(?:novo\s+)?cnpj\b/)) tipos.push("ABERTURA");
   if (afirmado(t, /\b(?:trocar|mudar|transferir)\b.{0,30}\b(?:contador|contadora|contabilidade)\b|\btransferir\b.{0,30}\bempresa\b|\btransferencia\b/)) tipos.push("TRANSFERENCIA");
-  if (afirmado(t, /\b(?:empresa|cnpj|mei)\b.{0,35}\b(?:parad[ao]|inativ[ao]|inapt[ao]|irregular|suspens[ao]|baixad[ao]|regularizar)\b|\b(?:regularizar|reativar)\b.{0,30}\b(?:empresa|cnpj|mei)\b|\b(?:dar baixa|encerrar|fechar)\b.{0,20}\b(?:empresa|cnpj|mei)\b/)) tipos.push("INATIVA");
+  if (afirmado(t, /\b(?:empresa|cnpj|mei)\b.{0,35}\b(?:parad[ao]|inativ[ao]|inapt[ao]|irregular|suspens[ao]|baixad[ao]|regularizar|sem (?:movimento|movimentacao|atividade))\b|\b(?:regularizar|reativar)\b.{0,30}\b(?:empresa|cnpj|mei)\b|\b(?:dar baixa|encerrar|fechar)\b.{0,20}\b(?:empresa|cnpj|mei)\b/)
+    || /\b(?:nao (?:uso|movimento|utilizo)|parei de (?:usar|movimentar))\b.{0,25}\b(?:empresa|cnpj|mei)\b/.test(t)
+    || /\b(?:empresa|cnpj|mei)\b.{0,20}\bnao (?:funciona|opera|movimenta|movimento|tem movimentacao)\b/.test(t)) tipos.push("INATIVA");
   return tipos.length === 1 ? tipos[0] : tipos.length > 1 ? "MULTIPLOS" : null;
+}
+
+export function identificarOrigemDeclarada(texto) {
+  return identificarOrigemComercial(trechosDeDecisao(texto).join("; "));
 }
 
 export function pedidoOperacionalComercial(texto) {
@@ -35,25 +74,44 @@ export function pedidoOperacionalComercial(texto) {
   if (!declaracaoFaturamento && !faturamentoDesconhecido && pedidoDeConsulta(t)?.acao === "FATURAMENTO") return true;
   // A exceção do objetivo futuro não pode ocultar outro pedido operacional.
   const emissaoFutura = identificarOrigemComercial(t) === "ABERTURA" && /\b(?:para|pra|pois|porque)\b.{0,30}\b(?:emitir|emissao|nota|notas)\b/.test(t);
-  return !emissaoFutura && /\b(?:emitir|emissao)\b/.test(t);
+  const continuidadeNaTroca = identificarOrigemComercial(t) === "TRANSFERENCIA"
+    && /\b(?:continuar|seguir|poderei|nao consigo)\b.{0,30}\b(?:emitir|emissao)\b/.test(t)
+    && !/\b(?:emita|emite|emitir agora|emita agora)\b/.test(t);
+  return !emissaoFutura && !continuidadeNaTroca && /\b(?:emitir|emissao)\b/.test(t);
 }
 
-export function responderDuvidaComercial(texto, { origem = null } = {}) {
+export function responderDuvidaComercial(texto, { origem = null, pretendeReativar = null } = {}) {
   const t = normalizar(texto);
   if (/\b(?:voce|voces|isso)\s+(?:e|sao)\s+(?:uma?\s+)?(?:ia|robo|bot|inteligencia artificial|atendimento automatico)\b|\b(?:quem (?:esta|ta) falando|com quem (?:estou|to) falando)\b/.test(t)) return "Sou o atendimento automático da Altan. Posso coletar os dados iniciais e explicar as etapas. Se preferir, é só pedir para falar com a equipe.";
+  if (/\b(?:endereco|casa|residencia|residencial|apartamento|home office)\b/.test(t)
+    && /\?|\b(?:posso|consigo|pode|usar|serve|permite|permitido|saber)\b/.test(t)
+    && /\b(?:casa|residencia|residencial|apartamento|home office)\b/.test(t)) return "O uso de endereço residencial depende da atividade, de como o local será usado e das regras do município. A equipe precisa conferir a viabilidade do endereço antes de confirmar se ele serve para sua empresa.";
+  if (/\b(?:licenca|alvara|vigilancia sanitaria|inscricao municipal)\b/.test(t)
+    && /\?|\b(?:preciso|precisa|posso|exige|obrigatorio|saber|como)\b/.test(t)) return "A necessidade de licença ou alvará depende da atividade e do local. A equipe confere as exigências aplicáveis junto com a viabilidade e separa eventuais taxas dos honorários na proposta.";
+  if (/\b(?:trocar|mudar|transferir|transferencia)\b/.test(t) && /\b(?:contador|contabilidade)\b/.test(t)
+    && /\?|\b(?:como|posso|continuar|parar|interromper|emitir|prazo|atual)\b/.test(t)) return "Na troca de contador, a equipe alinha a data de início, os documentos e as competências que ficarão com cada escritório. Conferimos essa passagem antes de orientar qualquer mudança nas suas rotinas ou na emissão de notas.";
+  if (/\b(?:divida|dividas|debito|debitos|multa|multas|pendencias)\b/.test(t)
+    && /\?|\b(?:posso|consigo|como|preciso|quero saber|empresa parada|sem movimento)\b/.test(t)) return "Podemos analisar as pendências e explicar o que precisa ser feito. Só o cadastro público do CNPJ não mostra toda a situação fiscal; a equipe confere os documentos e, quando necessário, orienta a autorização de acesso. Regularização e eventuais débitos são separados dos honorários mensais, com orçamento antes da execução.";
+  if (/\b(?:sem (?:movimento|movimentacao|faturamento)|nao fatur[oa]|nao (?:uso|movimento) (?:mais )?(?:a |minha )?empresa|empresa (?:esta |ta )?parada)\b/.test(t)
+    && /\b(?:impostos?|declarac\w*|pagar|preciso|devo|obriga\w*|entregar)\b/.test(t)) return "Estar sem movimento, por si só, não permite concluir quais impostos ou declarações se aplicam. A equipe confere o regime, o período e o que já foi entregue antes de orientar. A análise aponta as pendências; a execução de regularizações recebe orçamento separado.";
   if (/\b(?:procuracao|autorizar acesso|autorizacao de acesso|senha do gov|senha gov)\b/.test(t)) return "Para a análise fiscal, a equipe orienta como autorizar o acesso à Receita por procuração. Não precisamos da sua senha gov.br. Se você já autorizou, a equipe confere antes de pedir novamente.";
   if (/\b(?:qual|o que|como|quais|preciso|precisa|posso)\b.{0,35}\b(?:documentos?|documentacao)\b|\blista de documentos\b/.test(t)) return origem === "ABERTURA"
     ? "Começamos com sua atividade, cidade e tipo de serviço desejado. Depois, a equipe orienta quais documentos dos sócios e do endereço serão necessários para a abertura."
     : origem ? "Para começar a análise de uma empresa existente, precisamos do CNPJ. Depois da consulta pública, a equipe indica os documentos e autorizações necessários para seu caso."
       : "Na abertura, começamos pela atividade e cidade; depois orientamos os documentos dos sócios e do endereço. Se a empresa já existe, começamos pelo CNPJ para indicar os documentos necessários.";
   if (/\b(?:quanto tempo|qual (?:e )?o prazo|prazo|demora|fica pront[oa])\b/.test(t) && (/\?|\b(?:quanto|qual|em quantos|que prazo|demora para|demora a abrir)\b/.test(t))) return "O prazo depende do serviço, dos documentos e, na abertura, da análise do endereço e dos órgãos responsáveis. A equipe confirma uma previsão depois dessa conferência.";
-  if (/\b(?:(?:quanto|qto|qt) (?:custa|e|fica|cobram|ta|sai)|precos?|honorarios?|orcamento|valor(?:es)?|mensalidade)\b/.test(t) && !/\b(?:sem mensalidade|nao quero mensalidade)\b/.test(t)) return "O valor depende da atividade e do que sua empresa precisa. A proposta separa serviços pontuais, contabilidade mensal e eventuais taxas. Você pode escolher só o serviço ou comparar com o acompanhamento mensal.";
+  if (/\b(?:(?:quanto|qto|qt) (?:custa|e|fica|cobram|ta|sai)|precos?|honorarios?|orcamento|valor(?:es)?|mensalidade)\b/.test(t) && !/\b(?:sem mensalidade|nao quero mensalidade)\b/.test(t)) return pretendeReativar === "BAIXAR" || afirmado(t, /\b(?:dar baixa|encerramento|(?:encerrar|fechar|baixar) (?:a |minha )?empresa)\b/)
+    ? "O valor do encerramento depende da situação da empresa e dos serviços necessários. A equipe prepara um orçamento avulso, separando honorários, eventuais regularizações e taxas públicas. Não incluímos contabilidade mensal para a empresa que será encerrada."
+    : "O valor depende da atividade e do que sua empresa precisa. A proposta separa serviços pontuais, contabilidade mensal e eventuais taxas. Você pode escolher só o serviço ou comparar com o acompanhamento mensal.";
+  if (/\b(?:reativar|dar baixa|encerrar|fechar|baixar)\b/.test(t)
+    && /\?|\b(?:diferenca|melhor|vale a pena|se|talvez|pensando|considerando|nao sei)\b/.test(t)) return "Podemos comparar a regularização para voltar a operar com o encerramento da empresa. A equipe verifica a situação e os serviços necessários antes de orientar. Você pode decidir depois dessa análise.";
   if (/\b(?:como funciona|como (?:e|sera) (?:feito|o processo)|qual (?:e )?o (?:passo|processo)|por onde comec|quais (?:sao )?as etapas)\b/.test(t)) return origem === "ABERTURA"
     ? "Primeiro entendemos sua atividade e o endereço pretendido. A equipe confere a viabilidade e prepara a proposta; depois do aceite, orienta os documentos e o registro da empresa."
     : origem ? "Primeiro entendemos seu objetivo e consultamos os dados públicos do CNPJ. Se precisar de análise fiscal, a equipe orienta a autorização, confere as pendências e prepara a proposta antes de executar os serviços."
       : "Primeiro entendemos se você quer abrir uma empresa ou cuidar de uma que já existe. Conferimos os dados necessários e preparamos a proposta antes de executar os serviços.";
   if (/\b(?:cnpj)\b/.test(t) && /\b(?:por que|porque (?:precisam|precisa)|para que|consultar|consulta publica|verificar|conferir)\b/.test(t)) return "O CNPJ permite consultar razão social, atividade, endereço e situação cadastral públicos. Para conferir declarações e débitos fiscais, pode ser necessária uma autorização específica.";
-  if (/\b(?:diferenca|inclui|incluso|o que vem|o que esta incluido)\b/.test(t)) return "O serviço pontual atende uma necessidade definida, como a abertura ou uma regularização. A contabilidade mensal acompanha as rotinas da empresa. A proposta descreve as entregas e o valor de cada opção.";
+  if (/\b(?:diferenca|inclui|incluso|o que vem|o que esta incluido)\b/.test(t)
+    || /\b(?:so abertura|contabilidade mensal|servico avulso|duas opcoes)\b/.test(t) && /\?|\b(?:se|talvez|pensando|considerando|nao decidi)\b/.test(t)) return "O serviço pontual atende uma necessidade definida, como a abertura ou uma regularização. A contabilidade mensal acompanha as rotinas da empresa. A proposta descreve as entregas e o valor de cada opção.";
   if (/\b(?:posso|pode|consigo)\b.{0,20}\b(?:mandar|enviar)\b.{0,15}\baudio\b/.test(t)) return "Para preencher os dados por aqui, envie uma mensagem de texto. Se preferir explicar por áudio, a equipe pode continuar seu atendimento.";
   if (/\b(?:voces|altan)\b.{0,20}\b(?:abrem|fazem abertura|podem abrir)\b|\b(?:consigo|posso)\s+abrir\b/.test(t)) return "Podemos ajudar com a abertura. A equipe confere a atividade e a viabilidade do endereço; você pode contratar só a abertura ou também a contabilidade mensal.";
   return null;
@@ -70,7 +128,7 @@ const MESES = { janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: 
 const PROFISSAO = "m[ée]dic[oa]|dentista|advogad[oa]|engenheir[oa]|psic[óo]log[oa]|arquiteto|arquiteta|veterin[áa]ri[oa]|fisioterapeuta|nutricionista|programador[a]?|desenvolvedor[a]?|designer|consultor[a]?|comerciante|professor[a]?|eletricista|pedreiro|esteticista|cabeleireir[oa]";
 const CAMPOS_DESCONHECIDOS = {
   cnpj: /\bcnpj\b/, responsavelNome: /\bnome\b/, atividadePretendida: /\b(?:atividade|profissao|trabalhar)\b/,
-  municipioAtendimento: /\b(?:cidade|municipio|estado|local)\b/, enderecoPretendido: /\b(?:endereco|local|imovel)\b/,
+  municipioAtendimento: /\b(?:cidade|municipio|estado|local)\b/, enderecoPretendido: /\b(?:endereco|local|imovel|onde)\b/,
   modalidadeServico: /\b(?:opcao|modalidade|mensal|avulso|contabilidade|contratar)\b/,
   qtdFuncionarios: /\b(?:funcionarios?|empregados?|contratar)\b/, notasRecebidasMes: /\b(?:notas?|compras)\b/,
   paradaDesde: /\b(?:quando|mes|ano|parou|parada|sem movimento)\b/, pretendeReativar: /\b(?:reativar|fechar|encerrar|fazer)\b/,
@@ -107,11 +165,11 @@ function declarouMotivoTroca(texto) {
   return /\b(?:precos?|valor(?:es)?|honorarios?|mensalidade|car[oa]s?|carissim[oa]s?|atendimento|demora|retorno|respondem?|respostas?|cobranca|atrasos?|erros?|suporte|pagar menos)\b/.test(t);
 }
 
-export function interpretarColetaComercial({ texto, origem, campoEsperado = null, anoParadaPendente = null }) {
+export function interpretarColetaComercial({ texto, origem, campoEsperado = null, anoParadaPendente = null, dadosAtuais = {} }) {
   const raw = String(texto || "").trim(), t = limpo(raw), campos = new Map();
   const set = (campo, valor) => campos.set(campo, { campo, acao: "set", valor });
   const retomada = /^(?:voltei|estou de volta|vamos continuar|pode continuar|continuar|continuando|podemos continuar|quero continuar|retomar|quero retomar|ja (?:falei|conversei) com voces(?: antes)?|ja (?:enviei|mandei|informei)(?: (?:isso|meu nome|meus dados|os dados))?)$/.test(t);
-  const aguardar = /^(?:ok|okay|entendi|certo|beleza|ta bom|tudo bem|tudo bom|obrigad[oa]|valeu|por nada|aguarde|um momento|so um momento|so um minuto|depois|falo depois|respondo depois|vou (?:ver|conferir|procurar)(?: e (?:te |lhe )?(?:mando|envio))?)$/.test(t);
+  const aguardar = /^(?:ok|okay|entendi|certo|beleza|ta bom|tudo bem|tudo bom|obrigad[oa]|valeu|por nada|aguard[ae](?: (?:ai|um pouco|um (?:momento|minuto|minutinho)|que ja volto))?|(?:pode |poderia )?(?:aguardar|esperar)(?: (?:um pouco|um (?:momento|minuto|minutinho)))?|(?:pera|espera)(?: ai| um pouco)?|perai|(?:so )?um (?:momento|minuto|minutinho)|ja (?:te |lhe )?(?:mando|envio|respondo)|depois|falo depois|respondo depois|vou (?:ver|conferir|procurar)(?: e (?:te |lhe )?(?:mando|envio))?)(?:,? por favor)?(?:,? (?:estou|to) (?:ocupad[oa]|no trabalho|em reuniao|dirigindo))?$/.test(t);
   const reinicio = /^(?:(?:quero|vamos|pode) )?(?:recomecar|reiniciar|comecar (?:de novo|do zero)|zerar (?:o )?atendimento|cancelar (?:o )?atendimento)$/.test(t);
   const humano = pediuEquipeWhatsapp(raw) || /\b(?:falar com (?:alguem|uma pessoa|o contador|a equipe|atendente)|atendimento humano|quero um contador|reclamacao)\b/.test(t);
   const navegacao = pediuMenuWhatsapp(raw);
@@ -120,7 +178,8 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   // Quando perguntamos o motivo da troca, "Preço" é a resposta, não um orçamento.
   // Perguntas explícitas sobre nossos valores continuam na FAQ.
   const motivoInformado = origem === "TRANSFERENCIA" && campoEsperado === "motivoTroca" && !desconhece && declarouMotivoTroca(raw);
-  let resposta = responderDuvidaComercial(raw, { origem });
+  const objetivo = origem === "INATIVA" ? objetivoDeclarado(raw, campoEsperado === "pretendeReativar") : null;
+  let resposta = responderDuvidaComercial(raw, { origem, pretendeReativar: objetivo || dadosAtuais.pretendeReativar });
   if (motivoInformado) { set("motivoTroca", raw); resposta = null; }
   let respostaSubstituiPergunta = false;
   let anoParadaAtualizado;
@@ -133,14 +192,8 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   const email = raw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0];
   if (email) set("responsavelEmail", email.toLowerCase());
 
-  const modalidadeEsperada = campoEsperado === "modalidadeServico";
-  if (/\b(?:nao quero|nao preciso|sem)\b.{0,20}\b(?:contabilidade|mensalidade|mensal)\b/.test(t)
-    || afirmado(t, /\b(?:so|somente|apenas)\b.{0,20}\b(?:abrir|abertura|avulso|servico|regularizar|regularizacao)\b/)
-    || modalidadeEsperada && /^(?:avulso|avulsa|pontual|servico pontual|servico avulso|a abertura|abertura)$/.test(t)) set("modalidadeServico", "AVULSO");
-  else if (afirmado(t, /\b(?:comparar|duas opcoes|as duas|ambas|os dois)\b/)) set("modalidadeServico", "COMPARAR");
-  else if (!/\b(?:nao|sem)\b.{0,25}\b(?:mensal|contabilidade)\b/.test(t)
-    && (/\b(?:com|tambem|quero|preciso|e)\b.{0,25}\bcontabilidade\b/.test(t) && !/\b(?:trocar|mudar)\b/.test(t)
-      || /\bcontabilidade mensal\b/.test(t) || modalidadeEsperada && /(?:^|\bquero |\bprefiro )(?:mensal|recorrente|completa|acompanhamento mensal|contabilidade)$/.test(t))) set("modalidadeServico", "RECORRENTE");
+  const modalidade = modalidadeDeclarada(raw, campoEsperado === "modalidadeServico");
+  if (modalidade) set("modalidadeServico", modalidade);
 
   const cnpj = raw.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/)?.[0]?.replace(/\D/g, "");
   if (cnpj && origem !== "ABERTURA") {
@@ -175,9 +228,16 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
     else if (NUMEROS[t] !== undefined) set(campoEsperado, NUMEROS[t]);
   }
   if (origem === "INATIVA") {
-    if (afirmado(t, /\b(?:reativar|voltar a (?:usar|operar|funcionar))\b/) || campoEsperado === "pretendeReativar" && /^(?:quero )?voltar$/.test(t)) set("pretendeReativar", "REATIVAR");
-    else if (afirmado(t, /\b(?:dar baixa|encerrar a empresa|fechar a empresa)\b/) || campoEsperado === "pretendeReativar" && /^(?:quero )?(?:fechar|encerrar|baixar)$/.test(t)) set("pretendeReativar", "BAIXAR");
-    else if (/\bindecis[oa]\b/.test(t) || desconhece && campoEsperado === "pretendeReativar") set("pretendeReativar", "INDECISO");
+    if (objetivo) set("pretendeReativar", objetivo);
+    else if (/^(?:estou |ainda estou |sou )?indecis[oa]$/.test(t) || desconhece && campoEsperado === "pretendeReativar") set("pretendeReativar", "INDECISO");
+    if (objetivo === "BAIXAR") set("modalidadeServico", "AVULSO");
+    else if (objetivo === "REATIVAR" && dadosAtuais.pretendeReativar === "BAIXAR" && !modalidade) campos.set("modalidadeServico", { campo: "modalidadeServico", acao: "unset" });
+    // A baixa não contrata mensalidade para uma empresa que será encerrada.
+    // Uma demanda recorrente de outra empresa precisa ser separada pela equipe.
+    if (!objetivo && dadosAtuais.pretendeReativar === "BAIXAR" && modalidade && modalidade !== "AVULSO") {
+      campos.delete("modalidadeServico");
+      resposta = "Esta solicitação está voltada ao encerramento da empresa. Para contratar contabilidade mensal, a equipe precisa conferir se você quer reativar esta empresa ou atender outra em uma nova solicitação.";
+    }
     if (campoEsperado === "paradaDesde") {
       const numerico = t.match(/^(?:desde |em |parada desde )?(\d{1,2})[/-](\d{4})$/);
       const extenso = t.match(/^(?:desde |em |parada desde )?([a-z]+)(?: de)? (\d{4})$/);

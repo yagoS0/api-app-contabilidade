@@ -1,3 +1,4 @@
+import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 import assert from "node:assert/strict";
 import http from "node:http";
 import https from "node:https";
@@ -111,9 +112,10 @@ try {
   assert.deepEqual(await db.recursoComercial.findUnique({ where: { id: catalogo.id } }), catalogoAprovado);
   ok("Conflito reverte lote inteiro e preserva versão e aprovação existentes");
   const propostas = criarPropostasComerciais({ db, cifrar: async s => "TEST:" + s, decifrar: async s => s.slice(5) });
+  const diagnosticoAbertura = await jornada.diagnosticar(id, user, { versao: r.versao, ...diagnosticoSintetico("SIMULAÇÃO: atividade e endereço conferidos."), servicos: "Abertura avulsa da empresa; registro externo." });
   const p = await propostas.gerar(id, user, { versao: r.versao, ajustes: { aberturaCentavos: 123456, justificativa: "Preço e escopo conferidos para este teste" } });
   assert.equal(p.snapshot.opcoes.length, 1); assert.equal(p.snapshot.opcoes[0].recorrente, false);
-  const diagnosticoAbertura = await jornada.diagnosticar(id, user, { versao: r.versao, achados: "SIMULAÇÃO: atividade e endereço conferidos.", servicos: "Abertura avulsa da empresa; registro externo." });
+  assert.equal(p.snapshot.diagnosticoId, diagnosticoAbertura.id);
   await jornada.registrarApresentacao(id, user, { versao: r.versao, diagnosticoId: diagnosticoAbertura.id, meio: "Reunião simulada", evidencia: "Escopo e entregas apresentados ao interessado." });
   await propostas.aprovar(id, p.id, user);
   const { token } = await propostas.emitirLink(id, p.id, user);
@@ -166,10 +168,12 @@ try {
     await jornada.conferirAnalise(r.id, user, { versao: r.versao, analiseId: analise.id, tipo });
   }
   const analiseFiscal = await db.onboardingAnalise.findFirst({ where: { onboardingId: r.id, tipo: "SITFIS" }, orderBy: { createdAt: "desc" } });
-  const diagnosticoFiscal = await jornada.diagnosticar(r.id, user, { versao: r.versao, analiseId: analiseFiscal.id, achados: "SIMULAÇÃO: pendências conferidas no relatório.", servicos: "Regularização e contabilidade conforme proposta." });
+  const diagnosticoFiscal = await jornada.diagnosticar(r.id, user, { versao: r.versao, analiseId: analiseFiscal.id, ...diagnosticoSintetico("SIMULAÇÃO: pendências conferidas no relatório.", true), servicos: "Regularização e contabilidade conforme proposta." });
   await jornada.registrarApresentacao(r.id, user, { versao: r.versao, diagnosticoId: diagnosticoFiscal.id, meio: "Reunião simulada", evidencia: "Relatório e escopo apresentados ao interessado." });
-  const p2 = await propostas.gerar(r.id, user, { versao: r.versao }); await propostas.aprovar(r.id, p2.id, user);
+  const p2 = await propostas.gerar(r.id, user, { versao: r.versao, ajustes: { regularizacaoCentavos: CATALOGO_SINTETICO.regularizacaoMinimaCentavos, justificativa: "Regularização sintética dimensionada antes da mensalidade." } }); await propostas.aprovar(r.id, p2.id, user);
   assert.equal(p2.snapshot.opcoes[0].mensalCentavos, 69057);
+  assert.equal(p2.snapshot.regularizacaoCentavos, CATALOGO_SINTETICO.regularizacaoMinimaCentavos);
+  assert.equal(p2.snapshot.decisaoRegularizacao.condicaoInicioMensal, "APOS_REGULARIZACAO");
   const { enviarProposta } = await import("../src/application/onboarding/EnvioPropostaService.js");
   let propostaEnviada = "";
   const transporte = { db, webUrl: "https://example.invalid", janela: async () => ({ situacao: "ABERTA" }), cloud: { enviarDocumento: async ({ conteudo, legenda }) => { assert.equal(conteudo.subarray(0, 4).toString(), "%PDF"); propostaEnviada = legenda; return { wamid: "wamid.LOCAL_PROPOSTA" }; } } };
