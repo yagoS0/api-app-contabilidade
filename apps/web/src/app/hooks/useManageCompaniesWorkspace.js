@@ -127,6 +127,11 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
+  const [serproSettingsStatus, setSerproSettingsStatus] = useState("idle");
+  const [serproSettingsError, setSerproSettingsError] = useState("");
+  const settingsRead = useRef(0);
+  const consultaGuiaAtiva = useRef(false);
+  useEffect(() => () => { ++settingsRead.current; }, [api]);
   const [savingSerproSettings, setSavingSerproSettings] = useState(false);
   const [uploadingSerproCertificate, setUploadingSerproCertificate] = useState(false);
   const [deletingSerproCertificate, setDeletingSerproCertificate] = useState(false);
@@ -207,13 +212,20 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   async function loadGuideSettings() {
     if (page === "login") return;
-    feedback.clearFeedback();
+    const read = ++settingsRead.current;
+    setSerproSettingsStatus("loading");
+    setSerproSettingsError("");
     try {
       const settings = await api.getSerproSettings();
+      if (read !== settingsRead.current) return;
+      if (!settings || typeof settings.enabled !== "boolean") throw new Error("Resposta de configuração incompleta.");
       setGuideSettings(settings);
-      setJobEnabled(Boolean(settings?.enabled));
+      setJobEnabled(settings.enabled);
+      setSerproSettingsStatus("ready");
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao carregar configuracao do job");
+      if (read !== settingsRead.current) return;
+      setSerproSettingsStatus("error");
+      setSerproSettingsError(err?.message || "Não foi possível verificar a configuração SERPRO.");
     }
   }
 
@@ -302,14 +314,24 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleSaveSerproSettings(input) {
+    if (!guideSettings || serproSettingsStatus !== "ready") return false;
+    const read = ++settingsRead.current;
     setSavingSerproSettings(true);
     feedback.clearFeedback();
     try {
       const payload = await api.updateSerproSettings(input);
-      setGuideSettings(payload?.settings || null);
+      if (read !== settingsRead.current) return false;
+      if (!payload?.settings || typeof payload.settings.enabled !== "boolean") {
+        await loadGuideSettings();
+        return false;
+      }
+      setGuideSettings(payload.settings);
+      setSerproSettingsStatus("ready");
       feedback.setMessage("Configuração SERPRO salva com sucesso.");
+      return true;
     } catch (err) {
       feedback.setError(err?.message || "Falha ao salvar configuração SERPRO.");
+      return false;
     } finally {
       setSavingSerproSettings(false);
     }
@@ -381,6 +403,28 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       return false;
     } finally {
       setCheckingSerproProcuration(false);
+    }
+  }
+
+  async function handleBuscarGuiaSerpro(tipo, companyId, competencia) {
+    if (!["das", "inss"].includes(tipo) || consultaGuiaAtiva.current || !companyId || companyId !== empresaAtualGuias.current || !/^\d{4}-\d{2}$/.test(competencia || "")) return false;
+    consultaGuiaAtiva.current = true;
+    const tela = telaAtual.current;
+    const vigente = () => companyId === empresaAtualGuias.current && tela === telaAtual.current;
+    try {
+      const response = tipo === "das"
+        ? await api.captureSerproPgdasd(companyId, { competencia })
+        : await api.syncSerproInss(companyId, { competencia });
+      if (vigente()) {
+        await loadGuides(companyId);
+        if (vigente()) feedback.setMessage(`Consulta de ${tipo === "das" ? "DAS" : "INSS"} concluída para ${competencia}.`);
+      }
+      return response;
+    } catch (err) {
+      if (vigente()) feedback.setError(err?.message || "Não foi possível consultar a guia.");
+      return false;
+    } finally {
+      consultaGuiaAtiva.current = false;
     }
   }
 
@@ -1173,12 +1217,22 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   useEffect(() => {
     if (page === "companies" || page === "guideSettings") {
       loadCompanies();
-      loadGuideSettings();
       loadSerproWorkerStatus();
     } else if (page === "pendingReport") {
       loadPendingGuidesReport();
     } else if (page === "guideUpload") {
       loadUnidentifiedGuides();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  useEffect(() => {
+    if (["companies", "guideSettings", "serproFuncoes", "rotinas"].includes(page)) loadGuideSettings();
+    if (page === "login") {
+      ++settingsRead.current;
+      setGuideSettings(null);
+      setSerproSettingsStatus("idle");
+      setSerproSettingsError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
@@ -1371,7 +1425,11 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     submittingCompany,
     submittingCompanyEdit,
     jobEnabled,
+    handleBuscarGuiaSerpro,
     guideSettings,
+    serproSettingsStatus,
+    serproSettingsError,
+    loadGuideSettings,
     savingSerproSettings,
     uploadingSerproCertificate,
     deletingSerproCertificate,

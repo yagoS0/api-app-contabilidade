@@ -20,6 +20,7 @@ function formatDateTime(value) {
 
 export function SerproSettingsPage({
   settings,
+  settingsStatus, settingsError, onRetrySettings,
   saving,
   uploadingCertificate,
   deletingCertificate,
@@ -30,6 +31,8 @@ export function SerproSettingsPage({
   message,
   error,
 }) {
+  const [dirty, setDirty] = useState(false);
+  const ready = settingsStatus ? settingsStatus === "ready" : Boolean(settings);
   const [form, setForm] = useState({
     enabled: false,
     environment: "homolog",
@@ -44,6 +47,7 @@ export function SerproSettingsPage({
   const [certificatePassword, setCertificatePassword] = useState("");
 
   useEffect(() => {
+    if (!settings || dirty) return;
     setForm({
       enabled: Boolean(settings?.enabled),
       environment: settings?.environment || "homolog",
@@ -54,15 +58,18 @@ export function SerproSettingsPage({
       scope: settings?.scope || "",
       timeoutMs: Number(settings?.timeoutMs || 30000),
     });
-  }, [settings]);
+  }, [settings, dirty]);
 
   function setField(key, value) {
+    setDirty(true);
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
-    await onSave(form);
+    if (!ready) return;
+    const ok = await onSave(form);
+    if (ok === true) setDirty(false);
   }
 
   async function handleCertificateUpload(event) {
@@ -82,6 +89,8 @@ export function SerproSettingsPage({
     >
       <AppShell className="serpro-settings-shell">
         <div className="serpro-settings-page">
+          {!ready && <div role="status">{settingsError || "Verificando configuração SERPRO…"}{settingsError && <Button onClick={onRetrySettings}>Tentar novamente</Button>}</div>}
+          <fieldset disabled={!ready || saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 20 }}>
           {/* ── Config SERPRO (Integra Contador) — só conexão/credenciais (agenda → Rotinas) ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
@@ -162,7 +171,7 @@ export function SerproSettingsPage({
             <div className="serpro-settings-status-grid">
               <div className="serpro-settings-status-item">
                 <span>Certificado</span>
-                <strong>{settings?.certificate?.hasCertificate ? "Configurado" : "Ausente"}</strong>
+                <strong>{!settings ? "Verificando…" : settings.certificate?.hasCertificate ? "Configurado" : "Ausente"}</strong>
               </div>
               <div className="serpro-settings-status-item">
                 <span>Arquivo</span>
@@ -201,6 +210,7 @@ export function SerproSettingsPage({
           </section>
 
           <Feedback message={message} error={error} />
+        </fieldset>
         </div>
       </AppShell>
     </PageShell>

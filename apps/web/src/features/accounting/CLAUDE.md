@@ -1,5 +1,13 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Atualização e exportação selecionada — 23/09/2026
+
+Atualização do mesmo contexto mantém as linhas montadas e mostra indicador discreto. Erro de recarga preserva lista com aviso; uma gravação já concluída não é repetida por falha na leitura. Empresa/filtros identificam o contexto; respostas superadas são descartadas e dados de outra empresa não são expostos.
+
+A seleção existente oferece Exportar selecionados, com IDs e competência congelados no modal. Conferência é obrigatória nesse fluxo e o hash acompanha download e confirmação. Mudança nos dados invalida a conferência. O CSV por período e as importações OFX/Excel conservam o contrato. A marcação abrange apenas os IDs selecionados; falha depois do download informa arquivo baixado sem sugerir repetir automaticamente.
+
+SERPRO nos lançamentos identifica Extrato do Simples — receita e imposto: consulta a competência para gerar lançamentos; não consulta comprovante de pagamento.
+
 ## Pagamento efetivo e retenção de INSS — 23/09/2026
 
 O usuário pediu corrigir a cadeia em que uma guia consultada depois do pagamento traz encargos atuais, o pró-labore usa esse total e a Circular ignora a baixa corrigida. A Circular paga apresenta o valor efetivamente baixado, vindo do contrato `pagamentoEfetivo`; seus detalhes separam principal, juros e multa pagos da guia consultada. Não reaproveitar `acrescimos` da consulta como composição do pagamento. Editar uma baixa altera o lançamento, sem regravar encargos da obrigação. Baixa em rascunho e divergência com comprovante permanecem identificáveis.

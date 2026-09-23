@@ -803,6 +803,9 @@ export function createRealApi() {
     async getTarefasAgenda(inicio, fim) {
       return request(`/firm/agenda/tarefas?${new URLSearchParams({ inicio, fim })}`);
     },
+    async vincularTarefasEmpresas(dados) {
+      return request('/firm/agenda/tarefas-empresas', {method:'POST', body:JSON.stringify(dados)});
+    },
     async salvarTarefaAgenda(dados, id) {
       return request(`/firm/agenda/tarefas${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(dados) });
     },
@@ -1876,7 +1879,8 @@ export function createRealApi() {
     },
 
     /** O que o ERP recusaria nesta competência — consultado ANTES de baixar o arquivo. */
-    async getExportPreflight(companyId, competencia) {
+    async getExportPreflight(companyId, competencia, entryIds) {
+      if (entryIds) return request(`/firm/companies/${companyId}/entries/export/preflight`, { method: "POST", body: JSON.stringify({ competenciaInicio: competencia, competenciaFim: competencia, entryIds }) });
       return request(`/firm/companies/${companyId}/entries/export/preflight?competencia=${encodeURIComponent(competencia)}`);
     },
 

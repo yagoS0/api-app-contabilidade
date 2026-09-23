@@ -167,3 +167,69 @@ it('INSS tardio não publica aviso em outra aba da mesma empresa', async () => {
   await act(async () => { job.resolve({}); await trabalho; });
   expect(feedback.setError).not.toHaveBeenCalled(); expect(feedback.setMessage).not.toHaveBeenCalled();
 });
+
+
+describe("configuração SERPRO", () => {
+  it("carrega ao abrir Consultas diretamente e separa carga de ausência", async () => {
+    const resposta = pendente();
+    const { result, rerender, api } = montar({ apiExtras: { getSerproSettings: jest.fn(() => resposta.promise) } });
+    rerender({ page: "serproFuncoes" });
+    await waitFor(() => expect(api.getSerproSettings).toHaveBeenCalledTimes(1));
+    expect(result.current.workspace.serproSettingsStatus).toBe("loading");
+    expect(result.current.workspace.guideSettings).toBeNull();
+    await act(async () => resposta.resolve({ enabled: true, certificate: { hasCertificate: true } }));
+    expect(result.current.workspace.serproSettingsStatus).toBe("ready");
+    expect(result.current.workspace.guideSettings.enabled).toBe(true);
+  });
+  it("falha de atualização preserva configuração anterior e permite tentar novamente", async () => {
+    const settings = { enabled: true, certificate: { hasCertificate: true } };
+    const getSerproSettings = jest.fn().mockResolvedValueOnce(settings).mockRejectedValueOnce(new Error("indisponível")).mockResolvedValueOnce(settings);
+    const { result, rerender } = montar({ apiExtras: { getSerproSettings } });
+    rerender({ page: "serproFuncoes" });
+    await waitFor(() => expect(result.current.workspace.serproSettingsStatus).toBe("ready"));
+    await act(async () => result.current.workspace.loadGuideSettings());
+    expect(result.current.workspace.serproSettingsStatus).toBe("error");
+    expect(result.current.workspace.guideSettings).toEqual(settings);
+    await act(async () => result.current.workspace.loadGuideSettings());
+    expect(result.current.workspace.serproSettingsStatus).toBe("ready");
+  });
+  it("resposta antiga não substitui a configuração mais recente", async () => {
+    const antigo = pendente();
+    const { result, rerender } = montar({ apiExtras: { getSerproSettings: jest.fn().mockReturnValueOnce(antigo.promise).mockResolvedValueOnce({ enabled: true }) } });
+    rerender({ page: "serproFuncoes" });
+    await waitFor(() => expect(result.current.workspace.serproSettingsStatus).toBe("loading"));
+    await act(async () => result.current.workspace.loadGuideSettings());
+    await act(async () => antigo.resolve({ enabled: false }));
+    expect(result.current.workspace.guideSettings.enabled).toBe(true);
+  });
+  it("consulta guia usa competência fiscal, não força atualização e bloqueia chamada duplicada", async () => {
+    const job = pendente();
+    const captureSerproPgdasd = jest.fn(() => job.promise);
+    const { result } = montar({ apiExtras: { captureSerproPgdasd } });
+    await waitFor(() => expect(result.current.workspace.guidesState.guides).toEqual([guia("A")]));
+    let consulta;
+    act(() => {
+      consulta = result.current.workspace.handleBuscarGuiaSerpro("das", "A", "2026-07");
+      result.current.workspace.handleBuscarGuiaSerpro("das", "A", "2026-07");
+    });
+    expect(captureSerproPgdasd).toHaveBeenCalledTimes(1);
+    expect(captureSerproPgdasd).toHaveBeenCalledWith("A", { competencia: "2026-07" });
+    await act(async () => { job.resolve({ result: {} }); await consulta; });
+  });
+});
+
+it("consulta INSS normal preserva payload e ignora retorno em outra empresa", async () => {
+  const job = pendente();
+  const { result, api, feedback } = montar({ syncSerproInss: jest.fn(() => job.promise) });
+  await waitFor(() => expect(result.current.workspace.guidesState.guides).toEqual([guia("A")]));
+  let consulta;
+  act(() => { consulta = result.current.workspace.handleBuscarGuiaSerpro("inss", "A", "2026-07"); });
+  expect(api.syncSerproInss).toHaveBeenCalledWith("A", { competencia: "2026-07" });
+  act(() => result.current.navigate("/companies/B/sitfis"));
+  await waitFor(() => expect(result.current.workspace.guidesState.guides).toEqual([guia("B")]));
+  feedback.setMessage.mockClear();
+  api.getCompanyGuides.mockClear();
+  await act(async () => { job.resolve({ result: {} }); await consulta; });
+  expect(api.getCompanyGuides).not.toHaveBeenCalled();
+  expect(feedback.setMessage).not.toHaveBeenCalled();
+});

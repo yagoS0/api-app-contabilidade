@@ -535,6 +535,7 @@ function CompanyDetailContent({
             onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment}
             onDeleteGuide={guidesPanel.onDeleteGuide}
             onRecalculateGuide={guidesPanel.onRecalculateGuide}
+            onConsultarSerpro={guidesPanel.onConsultarSerpro}
             onRecalcularInss={guidesPanel.onRecalcularInss}
             recalcInssBusy={guidesPanel.recalcInssBusy}
             onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias}

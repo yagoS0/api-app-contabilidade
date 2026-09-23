@@ -1,6 +1,6 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { expandirAgenda, normalizarAgenda, dataAgenda, encontrarOcorrenciaDaTarefa, ocorrenciasDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa } from '../../../../../packages/shared/src/agenda.js';
-import { ObrigacaoError } from '../obrigacoes/ObrigacoesService.js';
+import { ObrigacaoError, normalizarEntrada, sincronizarOcorrencias } from '../obrigacoes/ObrigacoesService.js';
 import { criarRegra, empresasDoEscopo } from '../obrigacoes/RegrasObrigacaoService.js';
 
 function validarConfigTarefa(dados) {
@@ -90,4 +90,33 @@ export async function converterTarefaEmObrigacao({ userId, id, cicloChave, regra
     await tx.tarefaAgenda.update({ where: { id }, data: { config: { ...tarefa.config, encerradaAPartirDe: inicio } } });
     return resultado;
   }, { timeout: 30000 });
+}
+
+/** Vínculo compartilhado exige escolha explícita e preserva tarefas com histórico. */
+export async function vincularTarefasEmpresas({ userId, portalIds, dados }, db = prisma) {
+  const ids = [...new Set(Array.isArray(dados.empresasIds) ? dados.empresasIds : [])];
+  if (!ids.length || ids.length > 100 || ids.some(id => typeof id !== 'string' || !portalIds.includes(id))) throw new ObrigacaoError('empresas_invalidas', 'Selecione até 100 empresas da sua carteira.', 400);
+  if (dados.compartilhar !== true) throw new ObrigacaoError('confirmacao_necessaria', 'Confirme que a tarefa ficará visível à equipe autorizada dessas empresas.');
+  const entrada = entradaTarefa(dados), c = entrada.config;
+  const limpo = normalizarEntrada({ nome:entrada.titulo, descricao:entrada.descricao, tipo:'TAREFA', periodicidade:c.recorrencia, agendaConfig:c, dataInicio:c.dataInicio, dataFim:c.dataFim, diaVencimento:Number(c.dataFim.slice(8)), mesReferencia:Number(c.dataInicio.slice(5,7)), ajusteDiaUtil:'MANTER', defasagemMeses:0 });
+  return db.$transaction(async tx => {
+    if (dados.tarefaId) {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${dados.tarefaId}))`;
+      const t = await tx.tarefaAgenda.findFirst({where:{id:dados.tarefaId,userId,excluidaEm:null}});
+      if (!t) throw new ObrigacaoError('tarefa_nao_encontrada','Tarefa não encontrada.',404);
+      if ((t.config.recorrencia !== 'AVULSA' || c.recorrencia !== 'AVULSA') && t.config.dataInicio < new Date().toISOString().slice(0,10)) throw new ObrigacaoError('recorrencia_passada','Esta série já começou. Crie uma nova tarefa empresarial; as ocorrências pessoais anteriores serão preservadas.',409);
+      if (c.dataInicio !== t.config.dataInicio) throw new ObrigacaoError('inicio_diferente','Para vincular a série inteira, mantenha a data inicial original ou crie uma nova tarefa empresarial.',409);
+      if (Object.keys(t.estados || {}).length || t.config.versoes?.length || t.config.encerradaAPartirDe) throw new ObrigacaoError('historico_existente','Esta tarefa já tem histórico. Crie uma nova tarefa vinculada às empresas; o histórico pessoal será preservado.',409);
+    }
+    const empresas = await tx.portalClient.findMany({where:{id:{in:ids}},select:{id:true}});
+    if (empresas.length !== ids.length) throw new ObrigacaoError('empresas_invalidas','Uma empresa selecionada não está mais disponível.',404);
+    const tarefas = [];
+    for (const portalClientId of ids) {
+      const tarefa = await tx.obrigacao.create({data:{...limpo,portalClientId,criadoPorId:userId}});
+      await sincronizarOcorrencias(tarefa.id,tx,{transacionada:true});
+      tarefas.push(tarefa);
+    }
+    if (dados.tarefaId) await tx.tarefaAgenda.update({where:{id:dados.tarefaId},data:{excluidaEm:new Date()}});
+    return {tarefas};
+  }, {timeout:30000});
 }

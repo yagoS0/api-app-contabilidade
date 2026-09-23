@@ -2038,7 +2038,7 @@ function ItemConferencia({ item, cor, rotulo, onIr }) {
   );
 }
 
-export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPreflight, onIrAteLancamento, onReabrir }) {
+export function CsvExportModal({ defaultCompetencia, entryIds, onExport, onClose, onPreflight, onIrAteLancamento, onReabrir }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [inicio, setInicio] = useState(defaultCompetencia || "");
   const [fim, setFim] = useState(defaultCompetencia || "");
@@ -2075,6 +2075,10 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
 
   async function handleExport() {
     setError("");
+    if (entryIds && !preflight?.preflightHash) {
+      setError("Confira os lançamentos selecionados antes de exportar.");
+      return;
+    }
     if (!validFormat(inicio) || !validFormat(fim)) {
       setError("Use o formato AAAA-MM (ex: 2026-01).");
       return;
@@ -2095,7 +2099,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
     }
     setExporting(true);
     try {
-      await onExport({ competenciaInicio: inicio, competenciaFim: fim });
+      await onExport({ competenciaInicio: inicio, competenciaFim: fim, ...(entryIds ? { entryIds: [...entryIds], preflightHash: preflight.preflightHash, confirmarAlertas: temAlertas } : {}) });
       onClose();
     } catch (err) {
       setError(err?.message || "Falha ao exportar.");
@@ -2127,16 +2131,18 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
         </div>
 
         <p style={{ fontSize: "0.85rem", color: "#aeb6d3", margin: "0 0 14px" }}>
-          Selecione o intervalo de competências a exportar. O arquivo terá 5 colunas:
+          {entryIds ? "Confira a seleção da competência abaixo." : "Selecione o intervalo de competências a exportar."} O arquivo terá 5 colunas:
           Data, Código Débito, Código Crédito, Histórico, Valor.
         </p>
 
+        {entryIds && <p><strong>{entryIds.length} {entryIds.length === 1 ? "lançamento selecionado" : "lançamentos selecionados"}</strong> · {entryIds.length === 1 ? "somente este registro será exportado." : "somente estes registros serão exportados."}</p>}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <label style={labelStyle}>
             Competência inicial
             <input
               type="month"
               value={inicio}
+              disabled={Boolean(entryIds) || exporting}
               onChange={(e) => setInicio(e.target.value)}
               style={{ ...inputStyle, colorScheme: "dark" }}
             />
@@ -2146,6 +2152,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
             <input
               type="month"
               value={fim}
+              disabled={Boolean(entryIds) || exporting}
               onChange={(e) => setFim(e.target.value)}
               style={{ ...inputStyle, colorScheme: "dark" }}
             />
@@ -2224,7 +2231,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
           <Button variant="secondary" onClick={onClose} disabled={exporting}>Cancelar</Button>
-          <Button variant="primary" onClick={handleExport} disabled={exporting || temErros}>
+          <Button variant="primary" onClick={handleExport} disabled={exporting || conferindo || temErros || Boolean(entryIds && !preflight?.preflightHash)}>
             {exporting ? "Exportando..." : temErros ? "Corrija os erros para exportar" : "Exportar"}
           </Button>
         </div>

@@ -512,3 +512,8 @@ A seleção de empresas (`BarraSelecaoEmpresas`) tem mês de vencimento independ
 Os dois canais enviam IDs exatos; a assinatura devolvida pelo servidor acompanha a confirmação. A mensagem de envio não pode declarar a carteira concluída se há parcelas faltantes. O mock mantém IDs estáveis e reflete o envio sem esconder essas pendências.
 
 Revisão fiscal (18/09/2026): mensagens de envio/reenvio individual e em seleção, confirmação de pagamento e exclusão pertencem à navegação que iniciou a ação. Ao trocar de aba/empresa, limpar avisos; resultados atrasados não recarregam nem publicam feedback na nova tela. O envio já autorizado continua no contexto original. Cobertura em app/hooks/__tests__/guiasEmpresaAtual.test.jsx.
+
+
+## Consulta explícita DAS/INSS — 23/09/2026
+
+A barra Guias oferece Consultar SERPRO, separada de Recalcular e do upload. Usa a competência fiscal do cabeçalho, não o vencimento derivado. DAS usa captura PGDAS-D; INSS usa sincronização DCTFWeb; ambas sem `atualizar`, preservando reaproveitamento e limites de consumo. A confirmação informa possibilidade de consulta paga; consultar não confirma pagamento. Trava concorrente e contexto da empresa impedem duplicação e retorno de outra empresa. Nenhuma chamada paga ao abrir a tela.

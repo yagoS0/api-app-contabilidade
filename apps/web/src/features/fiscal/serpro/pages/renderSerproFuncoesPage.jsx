@@ -18,10 +18,10 @@ import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPag
 // useRange=true → a função roda por competência (usa o intervalo De/Até).
 // useRange=false → roda uma vez por empresa (ignora o intervalo).
 const OP_DEFS = [
-  { key: "das", label: "DAS", useRange: true },
-  { key: "inss", label: "INSS", useRange: true },
-  { key: "extrato", label: "Extrato", useRange: true },
-  { key: "presumido", label: "Presumido", useRange: true },
+  { key: "das", label: "DAS — guia do Simples", useRange: true },
+  { key: "inss", label: "INSS — DARF da DCTFWeb", useRange: true },
+  { key: "extrato", label: "Extrato do Simples — receita e imposto", useRange: true },
+  { key: "presumido", label: "DCTFWeb — PIS, COFINS, IRPJ e CSLL", useRange: true },
   { key: "parcelamento", label: "Parcelamento", useRange: false },
   { key: "pagamento", label: "Confirmar pagamento", useRange: true },
   { key: "procuracao", label: "Testar procuração", useRange: false },
@@ -50,7 +50,7 @@ function expandRange(from, to) {
   return { ok: true, months };
 }
 
-export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, message, error, pendenciasPanel }) {
+export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError, onRetrySettings, companies, onRunOp, onBack, message, error, pendenciasPanel }) {
   const [view, setView] = useState("funcoes"); // "funcoes" | "sitfis" | "captura" | "download"
   const [selectedOps, setSelectedOps] = useState(() => new Set());
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -71,7 +71,8 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
 
   const certReady = Boolean(settings?.certificate?.hasCertificate);
   const serproEnabled = Boolean(settings?.enabled);
-  const canRun = serproEnabled && certReady && !running;
+  const settingsReady = settingsStatus ? settingsStatus === "ready" : Boolean(settings);
+  const canRun = settingsReady && serproEnabled && certReady && !running;
 
   function toggleOp(key) {
     setSelectedOps((prev) => {
@@ -110,6 +111,7 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
       setLocalNotice({ type: "error", text: "Selecione ao menos uma empresa na tabela." });
       return;
     }
+    if (!settingsReady || running) return;
     if (!serproEnabled) {
       setLocalNotice({ type: "error", text: "Integração SERPRO está desabilitada. Habilite e salve em Configuração SERPRO." });
       return;
@@ -244,7 +246,8 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
               </p>
             </div>
 
-            {(!serproEnabled || !certReady) && (
+            {!settingsReady && <div role="status">{settingsError || "Verificando configuração SERPRO…"}{settingsError && <Button onClick={onRetrySettings}>Tentar novamente</Button>}</div>}
+            {settingsReady && (!serproEnabled || !certReady) && (
               <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 6, background: "rgba(255,179,71,0.15)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem" }}>
                 {!serproEnabled && <div>⚠ Integração SERPRO desabilitada — habilite e salve em Configuração SERPRO.</div>}
                 {!certReady && <div>⚠ Certificado do procurador ausente — envie o PFX/P12 em Configuração SERPRO.</div>}

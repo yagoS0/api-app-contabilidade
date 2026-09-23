@@ -40,7 +40,7 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
       onKeyDown={editavel ? e => gestos.teclado(e,item) : undefined}
       aria-keyshortcuts={editavel ? 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Shift+ArrowUp Alt+Shift+ArrowDown' : undefined}
       title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}${item.horaInicio ? ` · ${horarioAtividade(item)}` : ''}${itens.length > 1 ? ` · ${progresso}` : ''}`}>
-      <span className="agenda-event-title">{item.tipo === 'obrigacao' && ICONE}{item.titulo}</span>
+      <span className="agenda-event-title">{item.tipo === 'obrigacao' && ICONE}{item.titulo}{itens.length === 1 && item.empresa ? ` · ${item.empresa}` : ''}</span>
       {!temHorario && itens.length > 1 && <small className="agenda-event-progress" aria-label={progresso}>{concluidas}/{itens.length}</small>}
       {temHorario && <span className="agenda-event-meta"><small className="agenda-event-time">{horarioAtividade(item)}</small>{itens.length > 1 && <small className="agenda-event-progress" aria-label={progresso}>{concluidas}/{itens.length}</small>}</span>}
     </button>

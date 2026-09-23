@@ -1758,6 +1758,38 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // A seleção usa corpo JSON para não ultrapassar o limite de URL em lotes grandes.
+  async function selecaoConferida(req, db = prisma) {
+    const { competenciaInicio, competenciaFim, entryIds, preflightHash } = req.body || {};
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competenciaInicio || '') || competenciaInicio !== competenciaFim || !Array.isArray(entryIds)) {
+      throw Object.assign(new Error('Informe uma competência e os lançamentos selecionados.'), { status: 400 });
+    }
+    const result = await preflightExportacao(db, String(req.params.companyId), competenciaInicio, true, entryIds);
+    if (preflightHash !== undefined && preflightHash !== result.preflightHash) {
+      throw Object.assign(new Error('Os lançamentos mudaram. Confira novamente antes de exportar.'), { status: 409 });
+    }
+    return result;
+  }
+
+  router.post('/entries/export/preflight', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const { entries, ...result } = await selecaoConferida(req);
+      return res.json(result);
+    } catch (err) { return res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : 'internal_error' }); }
+  });
+
+  router.post('/entries/export/csv', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      if (!req.body?.preflightHash) return res.status(400).json({ error: 'Confira a seleção antes de exportar.' });
+      const result = await selecaoConferida(req);
+      if (result.erros.length) return res.status(400).json({ error: 'Corrija os erros da seleção antes de exportar.', erros: result.erros });
+      if (result.alertas.length && !req.body.confirmarAlertas) return res.status(409).json({ error: 'Confirme os alertas da seleção antes de exportar.' });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="lancamentos-selecionados-${req.body.competenciaInicio}.csv"`);
+      return res.send('\uFEFF' + entriesToCsv(result.entries));
+    } catch (err) { return res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : 'internal_error' }); }
+  });
+
   /**
    * MARCA a competência como exportada, DEPOIS do download ter dado certo.
    *
@@ -1783,6 +1815,20 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(400).json({ ok: false, error: "competencia_required" });
     }
     try {
+      if (req.body.entryIds !== undefined) {
+        if (!req.body.preflightHash) return res.status(400).json({ error: 'A conferência da seleção é obrigatória.' });
+        const count = await prisma.$transaction(async (tx) => {
+          const result = await selecaoConferida(req, tx);
+          if (result.erros.length) throw Object.assign(new Error('A seleção contém erros contábeis. Confira novamente.'), { status: 400 });
+          const { count } = await tx.accountingEntry.updateMany({
+            where: { portalClientId, competencia: String(competenciaInicio), id: { in: req.body.entryIds }, tipo: { not: 'PARCELA' }, status: 'CONFIRMADO' },
+            data: { status: 'EXPORTADO' },
+          });
+          if (count !== result.entries.filter(e => e.status === 'CONFIRMADO').length) throw Object.assign(new Error('A seleção mudou durante a confirmação.'), { status: 409 });
+          return count;
+        }, { isolationLevel: 'Serializable' });
+        return res.json({ ok: true, marcados: count });
+      }
       const where = {
         portalClientId,
         competencia: { gte: String(competenciaInicio), lte: String(competenciaFim) },
@@ -1794,7 +1840,7 @@ export function createAccountingEntriesRouter({ log }) {
       return res.json({ ok: true, marcados: count });
     } catch (err) {
       log.error({ err, portalClientId }, "falha ao marcar lançamentos como exportados");
-      return res.status(500).json({ ok: false, error: "internal_error" });
+      return res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : "internal_error" });
     }
   });
 

@@ -799,6 +799,7 @@ export function AccountingEntriesTab({
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
+  const [exportSelection, setExportSelection] = useState(null);
   const [showFilters, setShowFilters] = useState(false);   // filtros saíram da caixa → modal
   const [showExcel, setShowExcel] = useState(false);
   // Q6: Funções de Lançamento — modais
@@ -854,6 +855,11 @@ export function AccountingEntriesTab({
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someSelected = visibleIds.some((id) => selectedIds.has(id));
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setShowCsvExport(false);
+    setExportSelection(null);
+  }, [companyId, filters.competencia, filters.tipo, filters.origem, filters.status]);
 
   function toggleAll() {
     setSelectedIds((prev) => {
@@ -1040,7 +1046,7 @@ export function AccountingEntriesTab({
             items={[
               { label: "Importar OFX", hint: "Extrato bancário", onClick: () => setShowOFX(true) },
               { label: "Importar Excel", hint: "Planilha (data; descrição; valor)", onClick: () => setShowExcel(true), disabled: !onPreviewExcel || !onImportExcel },
-              { label: "Exportar CSV", hint: "Lançamentos por competência", onClick: () => setShowCsvExport(true), disabled: !onExportCsv },
+              { label: "Exportar CSV", hint: "Lançamentos por competência", onClick: () => { setExportSelection(null); setShowCsvExport(true); }, disabled: !onExportCsv },
             ]}
           />
           {/* Sem `accent`: um primário por tela, e ele é o "+ Adicionar lançamento". */}
@@ -1082,10 +1088,10 @@ export function AccountingEntriesTab({
             label="SERPRO"
             items={[
               ...(isSimples ? [{
-                label: buscandoSerpro === "extrato" ? "Buscando extrato…" : "Buscar extrato do Simples",
+                label: buscandoSerpro === "extrato" ? "Buscando extrato…" : "Extrato do Simples — receita e imposto",
                 hint: buscasSerpro?.extrato?.buscado
                   ? `Já buscado em ${fmtDataHora(buscasSerpro.extrato.em)}`
-                  : "Traz receitas e DAS da competência e gera os lançamentos",
+                  : `Consulta receita e imposto de ${activeComp} e gera os lançamentos contábeis. Não consulta pagamento.`,
                 onClick: () => buscarNoSerpro("extrato"),
                 disabled: Boolean(buscandoSerpro) || monthClosed || !onSyncSerproPgdas,
               }] : []),
@@ -1248,6 +1254,10 @@ export function AccountingEntriesTab({
           <span style={{ fontWeight: 700, color: "#BD93F9" }}>
             {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
           </span>
+          {onExportCsv && <Button type="button" size="sm" disabled={loading || savingEntry} onClick={() => {
+            setExportSelection({ entryIds: visibleIds.filter(id => selectedIds.has(id)), competencia: activeComp });
+            setShowCsvExport(true);
+          }}>Exportar selecionados ({selectedCount})</Button>}
           {/* `#FF5757` sólido virou `.btn-danger`. A gravidade continua onde sempre esteve: o
               `handleBulkDeleteEntries` confirma ("Esta ação não pode ser desfeita") antes de
               chamar o backend — não é a saturação do botão que segura o clique. */}
@@ -1314,9 +1324,9 @@ export function AccountingEntriesTab({
                 onClose={() => setAdding(false)}
               />
             )}
-            {loading && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: ACCOUNTING_PANEL.text }}>Carregando...</td></tr>}
+            {loading && <tr><td colSpan={7} role="status" style={{ padding: 8, textAlign: "center", color: ACCOUNTING_PANEL.text }}>{entries.length ? "Atualizando lançamentos…" : "Carregando..."}</td></tr>}
             {!loading && entries.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: ACCOUNTING_PANEL.text }}>Nenhum lançamento para esta competência.</td></tr>}
-            {!loading && entries.length > 0 && TIPO_GROUP_ORDER.map((tipo) => {
+            {entries.length > 0 && TIPO_GROUP_ORDER.map((tipo) => {
               const items = groupedEntries[tipo];
               if (!items || items.length === 0) return null;
               const groupIds = items.map((e) => e.id);
@@ -1512,11 +1522,12 @@ export function AccountingEntriesTab({
       )}
       {showCsvExport && (
         <CsvExportModal
-          defaultCompetencia={activeComp}
+          defaultCompetencia={exportSelection?.competencia || activeComp}
+          entryIds={exportSelection?.entryIds}
           onExport={(rangeOptions) => onExportCsv(rangeOptions)}
           onClose={() => setShowCsvExport(false)}
-          onPreflight={(comp) => fechamentoApi.getExportPreflight(companyId, comp)}
-          onReabrir={async (comp) => {
+          onPreflight={(comp) => fechamentoApi.getExportPreflight(companyId, comp, exportSelection?.entryIds)}
+          onReabrir={exportSelection ? undefined : async (comp) => {
             await fechamentoApi.reabrirExportacao(companyId, { competenciaInicio: comp, competenciaFim: comp });
             await onLoad?.();
           }}

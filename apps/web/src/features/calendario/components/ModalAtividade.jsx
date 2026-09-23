@@ -5,7 +5,7 @@ import { normalizarAgenda } from '../../../../../../packages/shared/src/agenda.j
 import { editarJanela } from '../lib/editarJanela';
 import { CORES_PRIORIDADE, RECORRENCIAS } from '../lib/agendaWorkspace';
 
-export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao }) {
+export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao, onOpenCompany }) {
   const regra = inicial.regraEdicao || inicial.regraOriginal;
   const modoRegra = Boolean(inicial.regraEdicao);
   const edicao = Boolean(inicial.tarefaId || inicial.ocorrenciaIds || modoRegra);
@@ -21,6 +21,9 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   const [horario, setHorario] = useState(inicial.horaInicio ? inicial.horaFim ? 'INTERVALO' : 'FIXO' : 'SEM');
   const [fiscal, setFiscal] = useState({ categoria: 'fiscal', diaVencimento: '', mesReferencia: Number(inicial.dataInicio.slice(5,7)), defasagemMeses: 1, ajusteDiaUtil: 'ANTECIPAR', antecedenciaLembreteDias: 5, verificador: '', escopo: inicial.companyId ? 'SELECAO_MANUAL' : 'TODAS', aplicarANovas: true, vencimentoFiscal: inicial.dataVencimento || inicial.vencimentoFiscal || inicial.dataFim, ...inicial.obrigacaoOriginal, ...regra, regimes: regra?.filtros?.regimes || [], empresasIds: regra?.filtros?.empresasIds || (inicial.companyId ? [inicial.companyId] : []), temFolha: regra?.filtros?.temFolha === true });
   const [previa, setPrevia] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
+  const [empresasTarefa, setEmpresasTarefa] = useState([]);
+  const [buscaEmpresa, setBuscaEmpresa] = useState('');
+  const [compartilhar, setCompartilhar] = useState(false);
   const set = (chave, valor) => setDados(d => editarJanela(d, chave, valor));
   const setF = (chave, valor) => setFiscal(f => ({ ...f, [chave]: valor }));
   const filtros = fiscal.escopo === 'POR_FILTRO' ? { regimes: fiscal.regimes, temFolha: fiscal.temFolha || null } : fiscal.escopo === 'SELECAO_MANUAL' ? { empresasIds: fiscal.empresasIds } : null;
@@ -48,7 +51,11 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
       if (precisaFiscal && passo === 1) { setPasso(2); return; }
       setOcupado(true);
       let out;
-      if (!precisaFiscal && inicial.ocorrenciaIds && !edicaoSerie) out = await api.editarOcorrenciasAgenda(inicial.ocorrenciaIds, { ...config, titulo:dados.titulo, descricao:dados.descricao });
+      if (!obrigacao && empresasTarefa.length) {
+        if (!compartilhar) throw new Error('Confirme a visibilidade da tarefa para a equipe.');
+        out = await api.vincularTarefasEmpresas({titulo:dados.titulo, descricao:dados.descricao, config, empresasIds:empresasTarefa, compartilhar, ...(inicial.tarefaId ? {tarefaId:inicial.tarefaId} : {})});
+      }
+      else if (!precisaFiscal && inicial.ocorrenciaIds && !edicaoSerie) out = await api.editarOcorrenciasAgenda(inicial.ocorrenciaIds, { ...config, titulo:dados.titulo, descricao:dados.descricao });
       else if (!precisaFiscal && inicial.tarefaId) out = await api.acaoTarefaAgenda(inicial.tarefaId, { acao: edicaoSerie ? 'EDITAR_SERIE' : 'EDITAR', cicloChave: inicial.cicloChave, alteracoes: { ...config, titulo: dados.titulo, descricao: dados.descricao } });
       else if (!precisaFiscal && edicaoSerie && inicial.obrigacaoOriginal) out = await api.updateObrigacao(inicial.obrigacaoOriginal.obrigacaoId, { ...inicial.obrigacaoOriginal, nome:dados.titulo, descricao:dados.descricao, periodicidade:config.recorrencia, agendaConfig:config, dataInicio:config.dataInicio, dataFim:config.dataFim });
       else if (!obrigacao && inicial.companyId) out = await api.createObrigacao(inicial.companyId, { nome:dados.titulo, descricao:dados.descricao, tipo:'TAREFA', periodicidade:config.recorrencia, agendaConfig:config, dataInicio:config.dataInicio, dataFim:config.dataFim, diaVencimento:Number(config.dataFim.slice(8)), mesReferencia:Number(config.dataInicio.slice(5,7)), ajusteDiaUtil:'MANTER', defasagemMeses:0 });
@@ -86,6 +93,12 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
     <form className="agenda-form" onSubmit={salvar}>
       {passo === 1 ? <>
         {onConfigurarObrigacao && <button type="button" className="agenda-text-action" onClick={onConfigurarObrigacao}>Configurar obrigação</button>}
+        {!obrigacao && inicial.companyId && <div className="agenda-task-status"><span>{inicial.empresa || empresas.find(e => e.companyId === inicial.companyId)?.razao || 'Empresa atual'}</span>{onOpenCompany && <Button type="button" variant="secondary" onClick={() => onOpenCompany(inicial.companyId)}>Abrir empresa</Button>}</div>}
+        {!obrigacao && !inicial.companyId && !inicial.ocorrenciaIds && <fieldset className="agenda-scope"><legend>Empresas da tarefa (opcional)</legend>
+          <input className="agenda-company-search" aria-label="Buscar empresa da tarefa" placeholder="Razão social ou CNPJ" value={buscaEmpresa} onChange={e => setBuscaEmpresa(e.target.value)}/>
+          <div className="agenda-company-choices">{empresas.filter(e => `${e.razao || e.nome} ${e.cnpj || ''}`.toLowerCase().includes(buscaEmpresa.toLowerCase())).map(e => <label key={e.companyId}><input type="checkbox" checked={empresasTarefa.includes(e.companyId)} onChange={ev => {setEmpresasTarefa(ids => ev.target.checked ? [...ids,e.companyId] : ids.filter(id => id !== e.companyId)); setCompartilhar(false);}}/>{e.razao || e.nome}{e.cnpj ? ` · ${e.cnpj}` : ''}</label>)}</div>
+          {empresasTarefa.length ? <label><input type="checkbox" checked={compartilhar} onChange={e => setCompartilhar(e.target.checked)}/>Compartilhar com a equipe autorizada das empresas selecionadas. Cada empresa terá sua própria conclusão.{inicial.tarefaId ? ' A tarefa pessoal será substituída somente se não tiver histórico; o vínculo vale para toda a série.' : ''}</label> : <small>Sem seleção, esta tarefa continua pessoal.</small>}
+        </fieldset>}
         {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
         {onAlterarConclusao && !conversao && <div className="agenda-task-status">
           <span aria-live="polite">{inicial.resolvido ? 'Concluída' : 'Pendente'}</span>

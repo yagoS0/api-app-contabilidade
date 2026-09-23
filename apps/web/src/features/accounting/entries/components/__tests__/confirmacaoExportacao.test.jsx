@@ -2,6 +2,16 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { CsvExportModal } from "../renderAccountingEntriesParts";
 
 afterEach(() => jest.clearAllMocks());
+it('seleção exige prévia, fixa período e envia exatamente IDs e hash conferidos', async () => {
+  const onExport = jest.fn().mockResolvedValue({});
+  render(<CsvExportModal defaultCompetencia="2026-08" entryIds={['a', 'b']} onExport={onExport} onClose={jest.fn()}
+    onPreflight={async () => ({ preflightHash: 'snapshot', totais: { entries: 2, linhas: 4, totalD: 100, totalC: 100, diferenca: 0 }, erros: [], alertas: [] })} />);
+  expect(screen.getByRole('button', { name: 'Exportar' })).toBeDisabled();
+  expect(screen.getByLabelText('Competência inicial')).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Conferir' })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Exportar' })); });
+  expect(onExport).toHaveBeenCalledWith({ competenciaInicio: '2026-08', competenciaFim: '2026-08', entryIds: ['a', 'b'], preflightHash: 'snapshot', confirmarAlertas: false });
+});
 async function abrir({ jaExportados = 0 } = {}) {
   const onExport = jest.fn().mockResolvedValue({});
   const onReabrir = jest.fn().mockResolvedValue({});

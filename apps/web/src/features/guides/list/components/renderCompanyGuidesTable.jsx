@@ -1,3 +1,4 @@
+import { ConsultaSerproGuias } from "./ConsultaSerproGuias";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createApiClient } from "../../../../api/client";
 import { Aviso } from "../../../../components/ui/Aviso";
@@ -527,6 +528,7 @@ export function CompanyGuidesTable({
   onResendGuide,
   onConfirmGuidePayment,
   onRecalculateGuide,
+  onConsultarSerpro,
   onRecalcularInss,   // Q53: recálculo/traga explícito do INSS por competência
   recalcInssBusy,
   onLiberarGuia,      // Portal Cliente: libera SÓ a guia selecionada ao cliente (envia só ela por e-mail)
@@ -1180,6 +1182,9 @@ export function CompanyGuidesTable({
                   </div>
                 </>
               )}
+              {onConsultarSerpro && <ConsultaSerproGuias key={`${companyId}:${competenciaFiscal}`}
+                companyId={companyId} competencia={competenciaFiscal} regime={companyRegime}
+                onConsultar={onConsultarSerpro} />}
               {/* Marcar guias obrigatórias como VAZIO no mês (aparecem na tabela abaixo como vazio). */}
               <MarcarVazioDropdown
                 companyId={companyId}

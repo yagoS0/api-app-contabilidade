@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
 import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
@@ -6,6 +6,13 @@ import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
 export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab, feedback }) {
   const accountingEntriesState = useAccountingEntries();
   const chartOfAccountsState = useChartOfAccounts();
+  const entriesRequest = useRef(0);
+  const entriesScope = JSON.stringify([selectedCompanyId, accountingEntriesState.filters]);
+  const currentEntriesScope = useRef(entriesScope);
+  currentEntriesScope.current = entriesScope;
+  const loadedEntriesScope = useRef(null);
+  const [visibleEntriesScope, setVisibleEntriesScope] = useState(null);
+  const entrySaveRequest = useRef(0);
   const [savingEntry, setSavingEntry] = useState(false);
   const [savingBaixa, setSavingBaixa] = useState(false);
   const [savingCircular, setSavingCircular] = useState(false);
@@ -86,6 +93,12 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   // as páginas é aqui: até 200 lançamentos no mês continua sendo UMA requisição, igual antes.
   async function loadAccountingEntries(companyId = selectedCompanyId) {
     if (!companyId) return;
+    const scope = JSON.stringify([companyId, accountingEntriesState.filters]);
+    if (scope !== currentEntriesScope.current) return;
+    const request = ++entriesRequest.current;
+    const stillCurrent = () => request === entriesRequest.current && scope === currentEntriesScope.current;
+    const refreshing = loadedEntriesScope.current === scope;
+    if (!refreshing) accountingEntriesState.setEntries([]);
     accountingEntriesState.setLoading(true);
     setEntriesError("");
     try {
@@ -96,6 +109,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
         limit: PAGINA,
       });
       const todos = [...primeira.data];
+      if (!stillCurrent()) return;
       const total = Number(primeira.total || 0);
 
       // `numeroPagina`, não `page`: o hook já recebe uma prop `page` (qual tela do app está
@@ -106,6 +120,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
           page: numeroPagina,
           limit: PAGINA,
         });
+        if (!stillCurrent()) return;
         // Página vazia com `total` ainda por alcançar é o servidor se contradizendo.
         // Parar aqui evita laço infinito, mas NÃO pode ser silencioso: exibir menos do que
         // existe sem dizer nada é exatamente o defeito que esta função passou a corrigir.
@@ -120,12 +135,17 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       }
 
       accountingEntriesState.setEntries(todos);
+      loadedEntriesScope.current = scope;
+      setVisibleEntriesScope(scope);
       accountingEntriesState.setTotal(total);
     } catch (err) {
-      setEntriesError(err?.message || "Falha ao carregar lançamentos.");
-      accountingEntriesState.setEntries([]);
+      if (!stillCurrent()) return;
+      setEntriesError(refreshing
+        ? `Não foi possível atualizar a lista. Os dados exibidos podem estar desatualizados. ${err?.message || ""}`
+        : err?.message || "Falha ao carregar lançamentos.");
+      if (!refreshing) accountingEntriesState.setEntries([]);
     } finally {
-      accountingEntriesState.setLoading(false);
+      if (stillCurrent()) accountingEntriesState.setLoading(false);
     }
   }
 
@@ -328,20 +348,23 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   async function handleUpdateEntry(entryId, input) {
     if (!selectedCompanyId) return { ok: false, error: "no_company" };
+    const savingScope = entriesScope;
+    const saveRequest = ++entrySaveRequest.current;
     setSavingEntry(true);
     setEntriesError("");
     setEntriesMessage("");
     try {
       const result = await api.updateAccountingEntry(selectedCompanyId, entryId, input);
+      if (currentEntriesScope.current !== savingScope) return result;
       await loadAccountingEntries(selectedCompanyId);
-      setEntriesMessage("Lançamento atualizado.");
+      if (currentEntriesScope.current === savingScope) setEntriesMessage("Lançamento atualizado.");
       return result;
     } catch (err) {
-      setEntriesError(err?.message || "Falha ao atualizar lançamento.");
+      if (currentEntriesScope.current === savingScope) setEntriesError(err?.message || "Falha ao atualizar lançamento.");
       // Re-lança para o caller (modal) também conseguir exibir.
       throw err;
     } finally {
-      setSavingEntry(false);
+      if (saveRequest === entrySaveRequest.current) setSavingEntry(false);
     }
   }
 
@@ -512,14 +535,17 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     try {
       const url = api.getEntriesExportCsvUrl(selectedCompanyId, params);
       if (!url || url.startsWith("#")) {
-        setEntriesError("Exportação CSV não disponível no modo mock.");
-        return;
+        throw new Error("Exportação CSV não disponível no modo mock.");
       }
       const token = api.getAccessToken();
       const response = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        ...(params.entryIds ? { method: "POST", body: JSON.stringify(params) } : {}),
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(params.entryIds ? { "Content-Type": "application/json" } : {}) },
       });
-      if (!response.ok) throw new Error(`Falha na exportação: ${response.status}`);
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.error || `Falha na exportação: ${response.status}`);
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -539,7 +565,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
         const ini = params.competenciaInicio || params.competencia;
         const fim = params.competenciaFim || params.competencia;
         try {
-          const r = await api.confirmarExportacao(selectedCompanyId, { competenciaInicio: ini, competenciaFim: fim });
+          const r = await api.confirmarExportacao(selectedCompanyId, { competenciaInicio: ini, competenciaFim: fim, ...(params.entryIds ? { entryIds: params.entryIds, preflightHash: params.preflightHash } : {}) });
           await loadAccountingEntries(selectedCompanyId);
           setEntriesMessage(
             r?.marcados
@@ -552,6 +578,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
       setEntriesError(err?.message || "Falha ao exportar CSV.");
+      throw err;
     }
   }
 
@@ -624,7 +651,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }, [page, selectedCompanyId, companyDetailTab, circularYear, circularCompetencia]);
 
   return {
-    accountingEntriesState,
+    accountingEntriesState: { ...accountingEntriesState, entries: visibleEntriesScope === entriesScope ? accountingEntriesState.entries : [] },
     chartOfAccountsState,
     savingEntry,
     savingBaixa,

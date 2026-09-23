@@ -6990,10 +6990,11 @@ export function createMockApi() {
 
     // Pré-voo da exportação. Calculado sobre os MESMOS lançamentos do mock, não inventado: é assim
     // que dá para conferir offline a tela de erros/alertas — inclusive o caso de lote limpo.
-    async getExportPreflight(companyId, competencia) {
+    async getExportPreflight(companyId, competencia, entryIds) {
       await delay(120);
       const lista = (mockEntriesByCompany.get(companyId) || [])
-        .filter((e) => e.competencia === competencia && String(e.tipo || "").toUpperCase() !== "PARCELA");
+        .filter((e) => e.competencia === competencia && String(e.tipo || "").toUpperCase() !== "PARCELA" && (!entryIds || entryIds.includes(e.id)));
+      if (entryIds && (!entryIds.length || lista.length !== entryIds.length)) throw new Error("Seleção inválida para esta empresa e competência.");
       const erros = []; const alertas = [];
       let totalD = 0; let totalC = 0; let linhas = 0;
       const plano = new Set((mockChartOfAccounts.get(companyId) || []).map((a) => String(a.codigo)));
@@ -7022,6 +7023,7 @@ export function createMockApi() {
       }
       return {
         ok: true, competencia, erros, alertas, mesFechado, jaExportados,
+        ...(entryIds ? { preflightHash: "mock-selection" } : {}),
         totais: { entries: lista.length, linhas, totalD, totalC, diferenca: Math.abs(totalD - totalC) },
       };
     },

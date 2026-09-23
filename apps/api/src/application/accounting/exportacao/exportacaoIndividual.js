@@ -1,5 +1,6 @@
 // Contrato único usado na exportação individual e em lote.
 import { dataCivilBR } from '../../../utils/dataCivil.js';
+import { createHash } from 'node:crypto';
 import { computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS } from '../fechamentoBlockers.js';
 function dedupePorTexto(itens) {
   const porMotivo = new Map();
@@ -62,12 +63,23 @@ export function entriesToCsv(entries) {
   }
   return rows.join("\r\n");
 }
-export async function preflightExportacao(prisma, portalClientId, competencia, incluirLancamentos = false) {
+export function validarSelecaoExportacao(entryIds) {
+  if (!Array.isArray(entryIds) || !entryIds.length || entryIds.length > 5000 || entryIds.some(id => typeof id !== 'string' || !id.trim() || id.length > 100) || new Set(entryIds).size !== entryIds.length) {
+    throw Object.assign(new Error('Selecione de 1 a 5000 lançamentos válidos, sem duplicação.'), { status: 400 });
+  }
+  return entryIds;
+}
+
+export async function preflightExportacao(prisma, portalClientId, competencia, incluirLancamentos = false, entryIds = null) {
+      if (entryIds) validarSelecaoExportacao(entryIds);
       const entries = await prisma.accountingEntry.findMany({
-        where: { portalClientId, competencia, tipo: { not: "PARCELA" } },
+        where: { portalClientId, competencia, tipo: { not: "PARCELA" }, ...(entryIds ? { id: { in: entryIds } } : {}) },
         orderBy: [{ data: "asc" }, { createdAt: "asc" }, { id: "asc" }],
         ...(incluirLancamentos ? { include: { lines: { orderBy: { ordem: "asc" } } } } : { select: { ...SELECT_PARA_BLOQUEIOS, id: true, historico: true, competencia: true, status: true } }),
       });
+      if (entryIds && entries.length !== entryIds.length) {
+        throw Object.assign(new Error('A seleção contém lançamentos removidos, de outra competência ou não exportáveis. Selecione novamente.'), { status: 400 });
+      }
 
       const { blockers } = computeFechamentoBlockers(entries, competencia);
       const MOTIVOS = {
@@ -140,6 +152,7 @@ export async function preflightExportacao(prisma, portalClientId, competencia, i
 
       return ({
         ok: true,
+        ...(entryIds ? { preflightHash: createHash('sha256').update(JSON.stringify({ portalClientId, competencia, entries, erros, alertas })).digest('hex') } : {}),
         ...(incluirLancamentos ? { entries } : {}),
         competencia,
         // ⚠ Erro repetido não vira linha repetida: a mesma conta inexistente em oito lançamentos

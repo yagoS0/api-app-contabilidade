@@ -77,3 +77,19 @@ test('conversão de tarefa da empresa não oferece ampliar o escopo silenciosame
   fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
   await waitFor(()=>expect(api.updateObrigacao).toHaveBeenCalledWith('ob-a',expect.objectContaining({tipo:'OBRIGACAO',filtros:{empresasIds:['empresa-a']}})));
 });
+
+
+test('vincular tarefa exige ciência e envia seleção explícita',async()=>{
+ const api={vincularTarefasEmpresas:jest.fn(async()=>({ok:true}))};const onSalvo=jest.fn();
+ render(<ModalAtividade inicial={inicial} empresas={[{companyId:'a',razao:'Empresa Alfa',cnpj:'123'}]} api={api} onSalvo={onSalvo} onFechar={()=>{}}/>);
+ fireEvent.click(screen.getByLabelText(/Empresa Alfa/));
+ fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Confirme');expect(api.vincularTarefasEmpresas).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByLabelText(/Compartilhar com a equipe/));fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+ await waitFor(()=>expect(api.vincularTarefasEmpresas).toHaveBeenCalledWith(expect.objectContaining({tarefaId:'tarefa',empresasIds:['a'],compartilhar:true})));
+ expect(onSalvo).toHaveBeenCalled();
+});
+test('editor empresarial abre empresa sem concluir tarefa',()=>{
+ const abrir=jest.fn(),concluir=jest.fn();render(<ModalAtividade inicial={{...inicial,companyId:'a',empresa:'Alfa'}} empresas={[]} api={{}} onOpenCompany={abrir} onAlterarConclusao={concluir} onFechar={()=>{}}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Abrir empresa'}));expect(abrir).toHaveBeenCalledWith('a');expect(concluir).not.toHaveBeenCalled();
+});

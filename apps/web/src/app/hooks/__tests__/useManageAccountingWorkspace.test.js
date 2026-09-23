@@ -67,6 +67,21 @@ function ultimoSetEntries() {
   return calls[calls.length - 1][0];
 }
 
+it('salvar seguido de falha de recarga conserva a lista e não repete a gravação', async () => {
+  jest.clearAllMocks();
+  const api = montarApi([{ data: pagina(2, 0), total: 2 }]);
+  api.updateAccountingEntry = jest.fn().mockResolvedValue({ ok: true });
+  const { result } = montarHook(api);
+  await act(async () => { await result.current.loadAccountingEntries(); });
+  mockEntriesState.setEntries.mockClear();
+  api.getAccountingEntries.mockRejectedValueOnce(new Error('Rede indisponível'));
+  await act(async () => { await result.current.handleUpdateEntry('entry-0', { historico: 'Corrigido' }); });
+  expect(api.updateAccountingEntry).toHaveBeenCalledTimes(1);
+  expect(mockEntriesState.setEntries).not.toHaveBeenCalled();
+  expect(result.current.entriesMessage).toBe('Lançamento atualizado.');
+  expect(result.current.entriesError).toMatch(/desatualizados/);
+});
+
 // ⚠ F5 NA CIRCULAR DEIXAVA A TELA VAZIA.
 //
 // O único disparo de `onLoadCircular` era a TROCA DE ABA (`switchTab`, em

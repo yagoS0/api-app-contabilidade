@@ -3,6 +3,25 @@ export function criarMockAgenda(obrigacoes, regras) {
   const tarefas = [], ocultos = [];
   return {
     async getTarefasAgenda(inicio, fim) { return { ok:true, tarefas:tarefas.filter(t => !t.excluidaEm), itens:tarefas.filter(t => !t.excluidaEm).flatMap(t => ocorrenciasDaTarefa(t,inicio,fim)), ocultos }; },
+    async vincularTarefasEmpresas(dados) {
+      if (!dados.compartilhar) throw new Error('Confirme a visibilidade para a equipe.');
+      const ids=[...new Set(dados.empresasIds || [])];
+      if (!ids.length || ids.length>100) throw new Error('Selecione até 100 empresas.');
+      const t=dados.tarefaId ? tarefas.find(t=>t.id===dados.tarefaId && !t.excluidaEm) : null;
+      if(dados.tarefaId && !t) throw new Error('Tarefa não encontrada.');
+      if(t && (Object.keys(t.estados || {}).length || t.config.versoes?.length || t.config.encerradaAPartirDe)) throw new Error('Esta tarefa já tem histórico. Crie uma nova tarefa vinculada às empresas; o histórico pessoal será preservado.');
+      const config=normalizarAgenda(dados.config);
+      if(t && (t.config.recorrencia !== 'AVULSA' || config.recorrencia !== 'AVULSA') && t.config.dataInicio < new Date().toISOString().slice(0,10)) throw new Error('Esta série já começou. Crie uma nova tarefa empresarial; as ocorrências pessoais anteriores serão preservadas.');
+      if(t && config.dataInicio !== t.config.dataInicio) throw new Error('Para vincular a série inteira, mantenha a data inicial original ou crie uma nova tarefa empresarial.');
+      const previa=await this.previewEscopoRegra({escopo:'SELECAO_MANUAL',filtros:{empresasIds:ids}});
+      if(previa.total !== ids.length) throw new Error('Uma empresa selecionada não está mais disponível.');
+      const inicio=obrigacoes.length;
+      try {
+        for(const id of ids) await this.createObrigacao(id,{nome:dados.titulo,descricao:dados.descricao,tipo:'TAREFA',periodicidade:config.recorrencia,agendaConfig:config,dataInicio:config.dataInicio,dataFim:config.dataFim,diaVencimento:Number(config.dataFim.slice(8)),mesReferencia:Number(config.dataInicio.slice(5,7)),ajusteDiaUtil:'MANTER',defasagemMeses:0});
+      } catch(e) { obrigacoes.splice(inicio); throw e; }
+      if(t) t.excluidaEm=new Date().toISOString();
+      return {ok:true};
+    },
     async salvarTarefaAgenda(dados, id) {
       const titulo = String(dados.titulo || '').trim(); if (!titulo) throw new Error('Informe o título.');
       const config = normalizarAgenda(dados.config);

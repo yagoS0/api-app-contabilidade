@@ -204,6 +204,9 @@ function AppInterno({ session, feedback }) {
       <ConfiguracoesGeraisLayout atual="integracoes">
       <SerproSettingsPage
         settings={companiesWorkspace.guideSettings}
+        settingsStatus={companiesWorkspace.serproSettingsStatus}
+        settingsError={companiesWorkspace.serproSettingsError}
+        onRetrySettings={companiesWorkspace.loadGuideSettings}
         companies={companiesWorkspace.companiesState.companies}
         selectedCompanyId={companiesWorkspace.companiesState.selectedCompanyId}
         saving={companiesWorkspace.savingSerproSettings}
@@ -269,6 +272,9 @@ function AppInterno({ session, feedback }) {
       <SerproFuncoesPage
         api={api}
         settings={companiesWorkspace.guideSettings}
+        settingsStatus={companiesWorkspace.serproSettingsStatus}
+        settingsError={companiesWorkspace.serproSettingsError}
+        onRetrySettings={companiesWorkspace.loadGuideSettings}
         companies={companiesWorkspace.companiesState.companies}
         onRunOp={companiesWorkspace.runSerproOp}
         onBack={() => session.goBack()}
@@ -419,6 +425,7 @@ function AppInterno({ session, feedback }) {
           onConfirmGuidePayment: companiesWorkspace.handleConfirmGuidePayment,
           onRecalculateGuide: companiesWorkspace.handleRecalculateGuide,
           onRecalcularInss: companiesWorkspace.handleRecalcularInss,
+          onConsultarSerpro: companiesWorkspace.handleBuscarGuiaSerpro,
           recalcInssBusy: companiesWorkspace.recalcInssBusy,
           onLiberarGuia: companiesWorkspace.handleLiberarGuia,
           onLiberarGuias: companiesWorkspace.handleLiberarGuias,

@@ -151,3 +151,15 @@ test('maio personalizado sobrevive à trimestral sem maio e pausa/reativação',
   await api.updateObrigacao(criado.obrigacao.obrigacaoId, { descricao: 'Conferir orientação' });
   expect((await listar()).ocorrencias.find(o => o.ocorrenciaId === maio.ocorrenciaId)).toMatchObject(personalizado);
 });
+
+
+test('tarefa em duas empresas conserva ambas ao concluir somente uma',async()=>{
+ const empresas=(await api.listCompanies()).slice(0,2);
+ await api.vincularTarefasEmpresas({titulo:'Vínculo independente QA',empresasIds:empresas.map(e=>e.companyId),compartilhar:true,config:{dataInicio:'2026-09-23',dataFim:'2026-09-23',recorrencia:'AVULSA'}});
+ const lista=()=>api.listObrigacoes().then(r=>r.obrigacoes.filter(o=>o.nome==='Vínculo independente QA'));
+ const antes=await lista();expect(antes).toHaveLength(2);
+ await api.concluirOcorrencia(antes[0].ocorrencias[0].ocorrenciaId);
+ const depois=await lista();expect(depois).toHaveLength(2);
+ expect(depois[0].ocorrencias[0].situacao).toBe('CONCLUIDA');expect(depois[1].ocorrencias[0].situacao).not.toBe('CONCLUIDA');
+ expect(depois.map(o=>o.obrigacaoId)).toEqual(antes.map(o=>o.obrigacaoId));
+});
