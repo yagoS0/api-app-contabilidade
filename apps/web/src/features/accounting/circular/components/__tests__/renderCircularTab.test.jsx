@@ -92,6 +92,31 @@ function renderTab(provisoes, { acrescimos = {}, ...over } = {}) {
   return { props, ...render(<CircularTab {...props} />) };
 }
 
+test("INSS pago mostra baixa corrigida e separa a guia consultada dos encargos pagos", () => {
+  renderTab([provisao({ subtipo: "INSS", valor: 1000, statusPagamento: "PAGO", synthetic: true,
+    baixas: [{ id: "b" }], baixaEntry: { id: "b", tipo: "BAIXA", subtipo: "INSS", lines: [] },
+    sourceGuide: guia({ tipo: "INSS", paymentStatus: "PAID" }), recalculatedToValor: 1100,
+    pagamentoEfetivo: { fonte: "BAIXA_CONTABIL", total: 1000, principal: 1000, juros: 0, multa: 0, composicaoConhecida: true, data: "2026-06-20T00:00:00.000Z" },
+  })], { acrescimos: { [COMP]: { INSS: { principal: 1000, juros: 50, multa: 50 } } } });
+  fireEvent.click(screen.getByRole("button", { name: "R$ 1.000,00" }));
+  expect(screen.getByText("Valor baixado")).toBeInTheDocument();
+  expect(screen.getByText("Juros pagos").parentElement).toHaveTextContent("R$ 0,00");
+  expect(screen.getByText("Multa paga").parentElement).toHaveTextContent("R$ 0,00");
+  expect(screen.getByText("Guia consultada").parentElement).toHaveTextContent("R$ 1.100,00");
+  expect(screen.getByText("Data do pagamento").parentElement).toHaveTextContent("20/06/2026");
+  expect(screen.queryByText("Valor atualizado")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Editar baixa/ }));
+  expect(screen.queryByText(/Juros\/multa.*INSS/)).not.toBeInTheDocument();
+});
+
+test("baixa sem valor confiável permanece visível como pendência", () => {
+  renderTab([provisao({ subtipo: "INSS", valor: 1100, statusPagamento: "PAGO", synthetic: true,
+    baixas: [{ id: "b" }], pagamentoEfetivo: { fonte: "BAIXA_CONTABIL", total: null, pendencia: "BAIXA_SEM_VALOR_CONFIAVEL" },
+  })]);
+  fireEvent.click(screen.getByRole("button", { name: "R$ 1.100,00" }));
+  expect(screen.getByText(/Baixa sem valor confiável/)).toBeInTheDocument();
+});
+
 /**
  * A prévia do servidor — o LOTE, com valores. É ela que a confirmação repete na tela.
  * Três lançamentos porque uma baixa são até três (principal, juros e multa, em contas diferentes).

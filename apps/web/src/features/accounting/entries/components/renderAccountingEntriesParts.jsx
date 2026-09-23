@@ -1485,7 +1485,7 @@ function mensagemDeFalhaDoTemplate(err) {
     + "feche e abra o modal de novo.";
 }
 
-export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
+export function PayrollEntryModal({ companyId, accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [kind, setKind] = useState("PROLABORE");
   const [competencia, setCompetencia] = useState(defaultCompetencia || "");
@@ -1502,22 +1502,24 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
   // 12 meses a chamada demora, e trocar o texto de um botão não comunica que algo está rodando —
   // dá a impressão de que o clique não pegou, e o contador clica de novo.
   const [gravandoTotal, setGravandoTotal] = useState(0);
+  const loadTemplateRef = useRef(onLoadTemplate);
+  loadTemplateRef.current = onLoadTemplate;
 
   useEffect(() => {
     let canceled = false;
     if (!kind || !competencia) return undefined;
     setLoading(true);
     setError(null);
-    onLoadTemplate(kind, competencia)
+    loadTemplateRef.current(kind, competencia)
       .then((res) => {
         if (canceled) return;
         const tpl = res?.template || null;
         setTemplate(tpl);
         if (!tpl) return;
         const defaultDate = lastDayOfCompetencia(competencia);
-        // Q34: valor da provisão do INSS vem da guia INSS da competência (editável).
-        const inssGuideValor = tpl.inssGuide?.valor != null && Number(tpl.inssGuide.valor) > 0
-          ? Number(tpl.inssGuide.valor).toFixed(2)
+        // O total da guia não identifica a retenção desta folha/pró-labore.
+        const inssGuideValor = tpl.valorRetencaoInss != null && Number(tpl.valorRetencaoInss) >= 0
+          ? Number(tpl.valorRetencaoInss).toFixed(2)
           : "";
         // Linhas da provisão: cada uma com apenas D OU C preenchido
         // F1: preserva `role` para reconhecer linha do líquido (cálculo automático).
@@ -1550,7 +1552,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
         if (!canceled) setLoading(false);
       });
     return () => { canceled = true; };
-  }, [kind, competencia, onLoadTemplate]);
+  }, [companyId, kind, competencia]);
 
   // F1: Cálculo automático do líquido + baixa em tempo real.
   // Líquido = sum(linhas D com role "salary") - sum(linhas C com role retenção).
@@ -1917,7 +1919,8 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
 
         {template?.inssGuide && (
           <div style={{ marginTop: 10, padding: 8, fontSize: "0.78rem", color: "#aeb6d3" }}>
-            <strong style={{ color: "#FFB347" }}>INSS da guia: R$ {fmtValor(template.inssGuide.valor)}</strong>
+            <strong style={{ color: "#FFB347" }}>Guia INSS consultada: R$ {fmtValor(template.inssGuide.valor)}</strong>
+            <span> Apenas referência. Informe a retenção desta folha/pró-labore; o total da guia pode incluir outras contribuições e encargos.</span>
             {template.inssGuide.vencimento && <span> · vencimento {fmtDate(template.inssGuide.vencimento)}</span>}
           </div>
         )}

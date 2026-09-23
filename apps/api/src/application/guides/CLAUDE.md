@@ -1,5 +1,13 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## Cobrança e pagamento — 23/09/2026
+
+`Guide.valor` é documento de cobrança; `valorOriginal` é a primeira captura, que pode já conter encargos. Nenhum deles comprova quanto foi pago. Recaptura conserva status/data/autoria e comprovante via `atualizarGuiaComEvidencia`: atualização condicional pela revisão `updatedAt`, com releitura limitada em disputa. Testes simulam corrida; não constituem ensaio concorrente PostgreSQL. Não copiar o valor baixado para a guia/PDF.
+
+Confirmação persiste a data civil real e a composição do comprovante, mesmo que o total da cobrança posterior divirja; sem data válida permanece desconhecida. Reconfirmar não reescreve baixa existente. INSS automático exige data e composição confiável, inclusive juros/multa zero; sem evidência não usa `guide.valor` como pagamento. Edição manual continua no modal e mantém as guardas contábeis.
+
+A captura DCTFWeb conserva a circular já fechada. A composição documental atual fica em `extracted.composicao`/`composicaoTotais`; uma composição INSS já presente na circular não é substituída pela recaptura. Limitação deliberada: o legado não distingue composição editada pelo contador de captura anterior; revisão de valores existentes precisa ser explícita, sem sobrescrita automática. Sem backfill ou operação fiscal real nos testes.
+
 Domínio das guias de imposto (DAS/Simples, INSS, DARF, etc): contrato, compliance,
 status de pagamento/e-mail, lock de captura e envio.
 

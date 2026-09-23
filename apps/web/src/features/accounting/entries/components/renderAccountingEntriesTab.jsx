@@ -1444,6 +1444,8 @@ export function AccountingEntriesTab({
       {showHistoricos && <HistoricosModal onClose={() => setShowHistoricos(false)} onLoadAll={onLoadAllHistoricos} onUpdate={(id, input) => onUpdateHistorico(id, input)} onDelete={(id) => onDeleteHistorico(id)} />}
       {showPayroll && (
         <PayrollEntryModal
+          key={companyId}
+          companyId={companyId}
           accounts={accounts}
           defaultCompetencia={activeComp}
           onLoadTemplate={onLoadPayrollTemplate}

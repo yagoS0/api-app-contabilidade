@@ -3,7 +3,7 @@ import { comContextoSerpro, contextoSerproAtual } from "./serproCallContext.js";
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
-import { createOrUpdateGuideFromProcessing, hashPdf, toGuideResponse } from "../../guides/GuideService.js";
+import { createOrUpdateGuideFromProcessing, hashPdf, toGuideResponse, PUBLICO } from "../../guides/GuideService.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
@@ -492,8 +492,13 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
     ...buildDctfwebPayload({ competencia: normalizedCompetencia, idServico: SERPRO_DCTFWEB_SERVICE_RECEIPT }),
   });
 
+  const circularAnterior = await prisma.companyMonthlyCircular.findUnique({
+    where: { portalClientId_competencia: { portalClientId: portalClient.id, competencia: normalizedCompetencia } },
+  });
+  const circularFechada = Boolean(circularAnterior?.fechadoContabilEm);
+
   if (isDefinitelyNotTransmitted(receiptResponse)) {
-    const circular = await prisma.companyMonthlyCircular.upsert({
+    const circular = circularFechada ? circularAnterior : await prisma.companyMonthlyCircular.upsert({
       where: {
         portalClientId_competencia: {
           portalClientId: portalClient.id,
@@ -591,7 +596,7 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
   const uploaded = await storage.upload({ key: storageKey, buffer: mapped.pdfBuffer, contentType: "application/pdf" });
   const now = new Date();
 
-  const circular = await prisma.companyMonthlyCircular.upsert({
+  const circular = circularFechada ? circularAnterior : await prisma.companyMonthlyCircular.upsert({
     where: {
       portalClientId_competencia: {
         portalClientId: portalClient.id,
@@ -644,12 +649,14 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
   // Guarda de sanidade: só grava se o total parseado bate com o total conhecido (evita split
   // errado caso o layout do PDF divirja do esperado). Se não bater, não grava (a provisão segue no total).
   const inssTot = mapped?.composicao?.totais;
-  if (inssTot && Math.abs((Number(inssTot.total) || 0) - (Number(mapped.parsed.inssTotal) || 0)) < 0.02) {
+  if (!circularFechada && inssTot && Math.abs((Number(inssTot.total) || 0) - (Number(mapped.parsed.inssTotal) || 0)) < 0.02) {
     await gravarAcrescimoCircular({
       client: prisma,
       portalClientId: portalClient.id,
       competencia: normalizedCompetencia,
-      valores: { INSS: { principal: inssTot.principal, juros: inssTot.juros, multa: inssTot.multa } },
+      // A composição existente pode ter sido conferida pelo contador. Recaptura atualiza
+      // o documento (abaixo), sem substituir a obrigação editada na circular.
+      valores: circular.acrescimos?.INSS ? {} : { INSS: { principal: inssTot.principal, juros: inssTot.juros, multa: inssTot.multa } },
     }).catch(() => {});
   }
 
@@ -704,6 +711,8 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
       contribuinteCnpj: portalClient.cnpj,
       referencia: normalizedCompetencia,
       rawPayload: mapped.rawPayload,
+      composicao: mapped.composicao?.itens || [],
+      composicaoTotais: mapped.composicao?.totais || null,
     },
   });
 

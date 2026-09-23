@@ -1,5 +1,6 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
+import { dataDoComprovante } from "../../guides/lib/comprovantePagamento.js";
 import {
   isGuidePaid,
   markGuidePaidByComprovante,
@@ -108,7 +109,7 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
   }
 
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
-  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId });
+  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante: result?.comprovante });
   const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, composicao: result?.composicao, userId, logger });
   return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, baixa };
 }
@@ -157,9 +158,11 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger }
 
   // DAS pago (autoritativo). Busca o comprovante via PAGTOWEB se ligado + número disponível (best-effort).
   let comprovantePdfFileId = null;
+  let comprovante = null;
   if (INTEGRACAO_SERPRO_PAGTOWEB && numeroDocumento) {
     try {
       const result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
+      if (result?.pago) comprovante = result.comprovante || null;
       if (result?.pago && result.comprovantePdfBuffer?.length) {
         comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
       }
@@ -167,7 +170,7 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger }
       logger?.warn?.({ code: err?.code, guideId: guide.id }, "PAGTOWEB: comprovante do DAS não obtido (segue como pago)");
     }
   }
-  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId });
+  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante });
   // DAS não gera baixa contábil automática (o contador dá baixa se quiser); a Circular reflete o pago (Q45).
   return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId };
 }
@@ -237,11 +240,11 @@ async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, log
     }
     if (tipoUpper === "INSS") {
       const rateio = comprovante?.confiavel
-        ? { principal: comprovante.principal, juros: comprovante.juros, multa: comprovante.multa }
+        ? { principal: comprovante.principal, juros: comprovante.juros, multa: comprovante.multa, total: comprovante.total }
         : null;
       const r = await gerarPagamentoInssFromGuide({
         portalClientId: guide.portalClientId, guideId: guide.id, userId,
-        dataPagamento: comprovante?.dataArrecadacao || undefined,
+        dataPagamento: dataDoComprovante(comprovante),
         rateio,
       });
       if (r?.reason === "sem_rateio_do_acrescimo") {

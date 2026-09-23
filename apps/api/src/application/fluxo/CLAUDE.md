@@ -1,4 +1,8 @@
 
+## Guias pagas — 23/09/2026
+
+Saídas pagas usam `pagamentoGuiaEfetivo`: baixa vigente tem prioridade sobre comprovante; o valor atualizado do documento não comprova desembolso. Baixas de datas distintas aparecem em seus meses, sem duplicar D/C; estornos deixam de contribuir. Guia paga sem valor confiável fica em `semMes` para conferência. Baixa parcial vinculada à provisão projeta somente saldo principal remanescente. A base informa origem, estado contábil e divergência com comprovante. Nenhuma alteração na DRE ou reparo automático de históricos.
+
 ## Acumulado automático — 08/09/2026
 
 Decisão nova substitui saldo inicial manual. O GET de fluxo não consulta nem usa saldos_iniciais_fluxo. Migração e registros legados permanecem preservados; PUT/DELETE saldo-inicial estão desmontados do router cliente.

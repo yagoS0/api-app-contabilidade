@@ -1,5 +1,13 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Pagamento efetivo e retenção de INSS — 23/09/2026
+
+O usuário pediu corrigir a cadeia em que uma guia consultada depois do pagamento traz encargos atuais, o pró-labore usa esse total e a Circular ignora a baixa corrigida. A Circular paga apresenta o valor efetivamente baixado, vindo do contrato `pagamentoEfetivo`; seus detalhes separam principal, juros e multa pagos da guia consultada. Não reaproveitar `acrescimos` da consulta como composição do pagamento. Editar uma baixa altera o lançamento, sem regravar encargos da obrigação. Baixa em rascunho e divergência com comprovante permanecem identificáveis.
+
+O total de uma guia previdenciária consolidada não identifica a retenção da folha/pró-labore: pode conter empregados, contribuição patronal e encargos. `valorRetencaoInss` é nulo enquanto não houver fonte específica; o contador informa a retenção e o total da guia aparece somente como referência. Não inferir remuneração dividindo o total por alíquota, nem converter valor pago em retenção automaticamente.
+
+O modelo do formulário carrega por empresa, tipo e competência. Callback novo/renderização externa não reinicializa o rascunho; troca de empresa desmonta o modal e resposta antiga é descartada. Mock da empresa `04bf356c-cfe9-43fa-bee4-a0180cf8f114`, agosto do ano corrente, mostra guia consultada de 1.100 e baixa corrigida de 1.000. Editar a baixa e recarregar atualiza a Circular mantendo a guia. Testes sem consultas fiscais reais; publicação é uma etapa separada.
+
 ## Parcelamentos — revisão de funcionamento e clareza, 21/09/2026
 
 As duas filas conservam seu significado: guia paga com evidência e prestação sem guia com declaração manual. Baixa, rescisão e configuração recarregam os cards, as filas e a conferência; sucesso de baixa permanece visível mesmo depois de a linha sair. Lote mostra quantas baixas foram lançadas e quantas recusadas, preservando os motivos. A fila com guia e sua confirmação identificam o contrato.

@@ -26,7 +26,11 @@ const guia = (extra = {}) => ({
   id: "g-1", tipo: "SIMPLES", competencia: "2026-07", valor: "1200.00",
   vencimento: new Date("2026-08-20T00:00:00.000Z"), paymentStatus: "OPEN",
   numeroParcela: null, parcelamentoId: null, paymentConfirmedAt: null,
-  liberadaCliente: true, ...extra,
+  liberadaCliente: true,
+  // Fixtures de pagamento incluem evidência explícita; PAID sozinho não prova valor.
+  ...(extra.paymentStatus === "PAID" ? { extracted: { comprovante: {
+    total: extra.valor ?? 1200, dataArrecadacao: extra.paymentConfirmedAt,
+  } } } : {}), ...extra,
 });
 
 const nota = (extra = {}) => ({
@@ -47,7 +51,7 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null, despesas = [], previstas = null } = {}) {
+function clientDe({ guias = [], baixas = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null, despesas = [], previstas = null } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
@@ -94,7 +98,7 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
      */
     ...(previstas === null ? {} : { lancamentoDeclarado: { findMany: jest.fn(async () => previstas) } }),
     accountingEntry: {
-      findMany: jest.fn(async ({ where } = {}) => (where?.tipo === "DESPESA" ? despesas : folhas)),
+      findMany: jest.fn(async ({ where } = {}) => (where?.tipo?.in?.includes("BAIXA") ? baixas : where?.tipo === "DESPESA" ? despesas : folhas)),
     },
     chartOfAccount: { findMany: jest.fn(async () => contasDeFolha) },
     /**
@@ -138,6 +142,40 @@ const montar = (client, extra = {}) =>
   montarFluxoDeCaixa({ portalClientId: "emp-1", cicloAtual: CICLO, hoje: HOJE, client, ...extra });
 
 const doMes = (r, competencia) => r.meses.find((m) => m.competencia === competencia);
+
+describe('valor efetivo de pagamento separado da cobrança', () => {
+  const baixa = (valor = 1000, extra = {}) => ({ id: 'b', portalClientId: 'emp-1', sourceGuideId: 'g-1',
+    tipo: 'BAIXA', tipoLinha: 'PRINCIPAL', status: 'RASCUNHO', data: '2026-06-20',
+    lines: [{ tipo: 'D', valor }, { tipo: 'C', valor }], ...extra });
+  it('baixa corrigida prevalece mesmo após recaptura e preserva origem do rascunho', async () => {
+    const client = clientDe({ guias: [guia({ tipo: 'INSS', valor: 1100, paymentStatus: 'PAID', extracted: null })], baixas: [baixa()] });
+    const r = await montar(client);
+    expect(doMes(r, '2026-06').totais.fato.saida).toBe(1000);
+    expect(doMes(r, '2026-06').linhas[0].base).toMatchObject({ fontePagamento: 'BAIXA_CONTABIL', estadoContabil: 'RASCUNHO' });
+    client.guide.findMany.mockResolvedValue([guia({ tipo: 'INSS', valor: 1300, paymentStatus: 'PAID', extracted: null })]);
+    expect(doMes(await montar(client), '2026-06').totais.fato.saida).toBe(1000);
+  });
+  it('PAID sem baixa/comprovante não atribui valor da cobrança ao caixa', async () => {
+    const r = await montar(clientDe({ guias: [guia({ paymentStatus: 'PAID', extracted: null })] }));
+    expect(r.semMes).toEqual(expect.arrayContaining([expect.objectContaining({ motivo: SEM_MES.GUIA_PAGA_SEM_VALOR, valor: null })]));
+    expect(r.meses.every(m => m.totais.fato.saida === 0)).toBe(true);
+  });
+  it('estorno de mês fechado mantém comprovante como evidência, sem inventar devolução', async () => {
+    const b = baixa();
+    const r = await montar(clientDe({ guias: [guia({ paymentStatus: 'PAID', extracted: { comprovante: { total: 1000, dataArrecadacao: '20/06/2026' } } })],
+      baixas: [b, { ...b, id: 'est', tipo: 'ESTORNO', estornoDeEntryId: b.id }] }));
+    expect(doMes(r, '2026-06').totais.fato.saida).toBe(1000);
+    expect(doMes(r, '2026-06').linhas[0].base.fontePagamento).toBe('COMPROVANTE');
+  });
+  it('parcial confirma somente a baixa e projeta apenas o saldo da provisão', async () => {
+    const b = baixa(400, { sourceGuideId: null, openEntryId: 'p' });
+    b.openEntry = { id: 'p', sourceGuideId: 'g-1', statusPagamento: 'PARCIAL',
+      lines: [{ tipo: 'D', valor: 1000 }, { tipo: 'C', valor: 1000 }], baixas: [{ ...b }] };
+    const r = await montar(clientDe({ guias: [guia({ valor: 1100 })], baixas: [b] }));
+    expect(doMes(r, '2026-06').totais.fato.saida).toBe(400);
+    expect(doMes(r, '2026-08').totais.compromisso.saida).toBe(600);
+  });
+});
 const linhasDe = (r, fonte) => r.meses.flatMap((m) => m.linhas).filter((l) => l.fonte === fonte);
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

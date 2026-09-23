@@ -2,6 +2,12 @@
 
 Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamento do mês.
 
+## Valor efetivamente pago — 23/09/2026
+
+`pagamentoGuiaEfetivo.js` resolve baixa vigente antes do comprovante, sem assumir que `Guide.valor` é pagamento. Soma apenas débitos e exclui baixas estornadas; ausência de composição não vira juros/multa zero. Baixa inválida exige conferência, sem fallback silencioso. Circular distingue obrigação, documento e pagamento; DARF consolidado usa as baixas de cada provisão, nunca replica o comprovante inteiro em cada tributo. INSS automático exige composição e data válidas do comprovante, aceitando encargos zero. Recaptura preserva pagamento e comprovante com atualização condicional; não reescreve competência fechada. Pró-labore não usa o total da guia como retenção individual.
+
+Diagnóstico somente leitura: `scripts/diagnosticar-pagamentos-guias.mjs --company <id> [--competencia AAAA-MM]`. Não há reparo em lote nem migração automática de históricos. Testes com clientes substituídos não equivalem a ensaio concorrente em PostgreSQL real.
+
 ## Revisão de parcelamento — 21/09/2026
 
 Baixa por guia também reserva a prestação correspondente (empresa, contrato e número/vínculo), na ordem guia → prestação usada pela captura. Uma prestação já baixada por declaração ou histórico não gera segundo lote quando a guia chega depois. A recusa aborta a transação, inclusive a reserva da guia. O estorno da declaração preserva uma guia recebida posteriormente e compara o vínculo observado na conferência; somente mudança durante o ato é recusada. Data declarada ilegível na baixa não pode cair silenciosamente na data de hoje. Forma dos lançamentos, memória de contas e tratamento de competências fechadas permanecem os existentes. Testes usam banco substituído; não constituem ensaio concorrente de PostgreSQL nem operação fiscal real.

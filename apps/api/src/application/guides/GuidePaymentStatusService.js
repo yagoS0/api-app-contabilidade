@@ -1,5 +1,7 @@
+import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { SELECT_PARCELAMENTO_DA_GUIA } from "./guideContract.js";
+import { dataDoComprovante, comprovanteParaRegistro } from "./lib/comprovantePagamento.js";
 
 // ⚠⚠ AS REGRAS PURAS SAÍRAM DAQUI EM 27/08/2026 e moram em `lib/recalculoDaGuia.js`.
 //
@@ -60,14 +62,21 @@ async function updateGuidePaymentStatus(guideId, data) {
  *
  * @param {{guideId: string, userId: string, pagoEm?: Date|null}} p
  */
-export async function markGuidePaidManual({ guideId, userId, pagoEm = null }) {
-  return updateGuidePaymentStatus(guideId, {
+export async function markGuidePaidManual({ guideId, userId, pagoEm = null, comprovante = null, preservarBaixa = false }) {
+  const data = {
     paymentStatus: "PAID",
     paymentStatusSource: "MANUAL",
     paymentConfirmedAt: pagoEm instanceof Date ? pagoEm : null,
     paymentConfirmedByUserId: String(userId),
     serproLastCheckResult: "MANUAL_CONFIRMED",
-  });
+  };
+  if (comprovante || preservarBaixa) {
+    return atualizarGuiaComEvidencia(prisma, guideId, anterior => ({
+      ...(preservarBaixa && anterior.baixada ? {} : data),
+      ...(comprovante ? { extracted: { ...(anterior.extracted || {}), comprovante: comprovanteParaRegistro(comprovante) } } : {}),
+    }), { include: { parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA } } });
+  }
+  return updateGuidePaymentStatus(guideId, data);
 }
 
 /**
@@ -128,18 +137,19 @@ export async function markGuidePaidBySerpro({ guideId }) {
 // Q40: pagamento confirmado pelo comprovante oficial (PAGTOWEB/COMPARRECADACAO).
 // Diferente de markGuidePaidBySerpro (que usa a heurística "sem débito = pago"): aqui o
 // SERPRO devolveu o comprovante de arrecadação, então gravamos paymentConfirmedAt + o PDF.
-export async function markGuidePaidByComprovante({ guideId, comprovantePdfFileId = null }) {
+export async function markGuidePaidByComprovante({ guideId, comprovantePdfFileId = null, comprovante = null }) {
   const now = new Date();
-  return updateGuidePaymentStatus(guideId, {
+  return atualizarGuiaComEvidencia(prisma, guideId, anterior => ({
     paymentStatus: "PAID",
     paymentStatusSource: "SERPRO",
-    paymentConfirmedAt: now,
-    paymentConfirmedByUserId: null,
+    // Baixa registrada conserva data/autoria; evidência divergente continua separada.
+    ...(anterior.baixada ? {} : { paymentConfirmedAt: dataDoComprovante(comprovante), paymentConfirmedByUserId: null }),
     serproLastCheckedAt: now,
     serproLastSeenAt: now,
     serproLastCheckResult: "COMPROVANTE_FOUND",
     ...(comprovantePdfFileId ? { comprovantePdfFileId } : {}),
-  });
+    ...(comprovante ? { extracted: { ...(anterior.extracted || {}), comprovante: comprovanteParaRegistro(comprovante) } } : {}),
+  }), { include: { parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA } } });
 }
 
 export async function markGuideOverdueBySerpro({ guideId }) {

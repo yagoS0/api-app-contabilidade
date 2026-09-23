@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   enviosPorGuia,
@@ -688,17 +689,18 @@ export async function createOrUpdateGuideFromProcessing({
 
   let savedGuide;
   if (existingGuideId) {
-    // Uma recaptura substitui os dados extraídos, mas não apaga a evidência do recálculo
-    // explícito que a Circular e os Lançamentos consultam.
-    const anterior = await prisma.guide.findUnique({ where: { id: String(existingGuideId) }, select: { extracted: true } });
-    if (anterior?.extracted?.recalculoGuia) {
-      data.extracted = { ...data.extracted, recalculoGuia: anterior.extracted.recalculoGuia };
-    }
-    // valorOriginal NÃO é incluído no update — preservado da 1ª captura mesmo se SERPRO recalcular.
-    savedGuide = await prisma.guide.update({
-      where: { id: String(existingGuideId) },
-      data,
-    });
+    // Captura documental não confirma nem desfaz pagamento. Omitir estes campos preserva
+    // inclusive uma confirmação concorrente, em vez de regravar o snapshot lido antes da API.
+    for (const campo of ["paymentStatus", "paymentStatusSource", "paymentConfirmedAt", "paymentConfirmedByUserId"]) delete data[campo];
+    // Cada tentativa relê a evidência; confirmação concorrente não é perdida.
+    savedGuide = await atualizarGuiaComEvidencia(prisma, existingGuideId, anterior => ({
+      ...data,
+      extracted: {
+        ...data.extracted,
+        ...(anterior.extracted?.recalculoGuia ? { recalculoGuia: anterior.extracted.recalculoGuia } : {}),
+        ...(anterior.extracted?.comprovante ? { comprovante: anterior.extracted.comprovante } : {}),
+      },
+    }));
   } else {
     // Na criação, valorOriginal = valor (mesmo número da 1ª captura, imutável depois).
     savedGuide = await prisma.guide.create({

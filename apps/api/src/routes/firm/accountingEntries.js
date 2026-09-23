@@ -46,6 +46,8 @@ import { baixaPodeDatarAGuia, guiaQuitadaPelaBaixa } from "../../application/gui
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
 // Saldo da provisão — mesma conta usada pelo estorno (ver `saldoProvisao.js`).
 import { computeSaldoProvisao } from "../../application/accounting/saldoProvisao.js";
+import { baixasVigentes, resumirBaixas, resolverPagamentoGuia, carregarBaixasDasGuias } from "../../application/accounting/pagamentoGuiaEfetivo.js";
+import { dataDoComprovante } from "../../application/guides/lib/comprovantePagamento.js";
 // O DETECTOR de "o razão discorda da circular". Derivado na leitura, nunca coluna — ver
 // `divergenciaDeFonte.js` para o motivo (a coluna `hasAccountingDivergence` é guarda MORTA).
 import {
@@ -762,6 +764,8 @@ export function createAccountingEntriesRouter({ log }) {
             select: {
               id: true,
               tipo: true,
+              valor: true,
+              extracted: true,
               paymentStatus: true,
               paymentStatusSource: true,
               paymentConfirmedAt: true,
@@ -806,6 +810,7 @@ export function createAccountingEntriesRouter({ log }) {
           competencia: true,
           valor: true,
           valorOriginal: true,
+          extracted: true,
           source: true, // usado só pra desempatar SERPRO × upload no mesmo mês
           paymentStatus: true,
           paymentStatusSource: true, // Q41: selo verde SERPRO
@@ -847,7 +852,7 @@ export function createAccountingEntriesRouter({ log }) {
           parcelamentoId: null,
         },
         select: {
-          competencia: true, valor: true, valorOriginal: true, updatedAt: true,
+          competencia: true, tipo: true, valor: true, valorOriginal: true, updatedAt: true,
           // Q45: reflete o pagamento confirmado da guia (SERPRO/manual) na provisão DAS da Circular.
           id: true, paymentStatus: true, paymentStatusSource: true, paymentConfirmedAt: true, comprovantePdfFileId: true,
           // `vencimento`/`source`: data e desempate da provisão DAS sintética (guia de upload).
@@ -870,12 +875,8 @@ export function createAccountingEntriesRouter({ log }) {
     // Inclui também as guias de DAS: a linha sintética do DAS precisa saber se já FOI BAIXADA,
     // senão ela se pinta de paga só porque o pagamento foi localizado no SERPRO.
     const guiaIdsComBaixa = [...inssGuides.map((g) => g.id), ...simplesGuides.map((g) => g.id)];
-    const inssBaixas = guiaIdsComBaixa.length
-      ? await prisma.accountingEntry.findMany({
-          where: { portalClientId, tipo: "BAIXA", sourceGuideId: { in: guiaIdsComBaixa } },
-          include: { lines: { orderBy: { ordem: "asc" } } },
-        })
-      : [];
+    const movimentosGuias = await carregarBaixasDasGuias(prisma, portalClientId, guiaIdsComBaixa);
+    const inssBaixas = baixasVigentes(movimentosGuias);
     // ⚠ UMA GUIA PODE TER TRÊS BAIXAS — principal, juros e multa são lançamentos separados.
     //
     // Aqui havia `new Map(inssBaixas.map((b) => [b.sourceGuideId, b]))`, que guarda só a ÚLTIMA:
@@ -885,13 +886,14 @@ export function createAccountingEntriesRouter({ log }) {
     // que a UI mostra como "a" baixa.
     const inssBaixasByGuide = new Map();
     for (const b of inssBaixas) {
-      if (!inssBaixasByGuide.has(b.sourceGuideId)) inssBaixasByGuide.set(b.sourceGuideId, []);
-      inssBaixasByGuide.get(b.sourceGuideId).push(b);
+      const guideId = b.sourceGuideId || b.openEntry?.sourceGuideId;
+      if (!inssBaixasByGuide.has(guideId)) inssBaixasByGuide.set(guideId, []);
+      inssBaixasByGuide.get(guideId).push(b);
     }
     for (const lista of inssBaixasByGuide.values()) {
       // Sufixo no histórico é o que distingue os três (" (juros)" / " (multa)") — o principal não
       // tem sufixo, então ele é o que NÃO casa.
-      lista.sort((a, b) => Number(/\((juros|multa)\)/i.test(a.historico)) - Number(/\((juros|multa)\)/i.test(b.historico)));
+      lista.sort((a, b) => Number(["JUROS", "MULTA"].includes(a.tipoLinha)) - Number(["JUROS", "MULTA"].includes(b.tipoLinha)));
     }
     const inssBaixaByGuide = new Map([...inssBaixasByGuide].map(([guiaId, lista]) => [guiaId, lista[0]]));
 
@@ -1012,7 +1014,9 @@ export function createAccountingEntriesRouter({ log }) {
       const valorAtual = Number(g.valor || 0);
       const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
       const principalEditado = Number(acrescimosByMonth[g.competencia]?.INSS?.principal) || 0;
-      const valor = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal; // principal editado > original
+      const valorObrigacao = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal;
+      const pagamentoEfetivo = resolverPagamentoGuia({ guia: g, baixas: movimentosGuias, portalClientId });
+      const valor = pagamentoEfetivo?.fonte === "BAIXA_CONTABIL" && pagamentoEfetivo.total != null ? pagamentoEfetivo.total : valorObrigacao;
       const recalculado = g.valorOriginal != null && Math.abs(valorAtual - valorOriginal) > 0.01;
       const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
       // Baixa contábil real associada à guia (existe quando o INSS foi baixado pela Circular).
@@ -1031,6 +1035,8 @@ export function createAccountingEntriesRouter({ log }) {
         : null;
       return {
         id: `synthetic-inss-${g.id}`,
+        valorObrigacao,
+        pagamentoEfetivo,
         portalClientId,
         circularId: null,
         ruleId: null,
@@ -1117,11 +1123,15 @@ export function createAccountingEntriesRouter({ log }) {
         const valorAtual = Number(g.valor || 0);
         const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
         const principalEditado = Number(acrescimosByMonth[g.competencia]?.DAS?.principal) || 0;
-        const valor = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal;
+        const valorObrigacao = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal;
+        const pagamentoEfetivo = resolverPagamentoGuia({ guia: g, baixas: movimentosGuias, portalClientId });
+        const valor = pagamentoEfetivo?.fonte === "BAIXA_CONTABIL" && pagamentoEfetivo.total != null ? pagamentoEfetivo.total : valorObrigacao;
         const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
         const baixa = inssBaixaByGuide.get(g.id) || null;
         return {
           id: `synthetic-das-${g.id}`,
+          valorObrigacao,
+          pagamentoEfetivo,
           portalClientId,
           circularId: null,
           ruleId: null,
@@ -1178,7 +1188,18 @@ export function createAccountingEntriesRouter({ log }) {
     return res.json({
       year,
       provisoes: await sinalizarRecalculosNosLancamentos(prisma, portalClientId, [
-        ...provisoes.map((p) => enrichDasProvisao(entryToResponse(p))),
+        ...provisoes.map((p) => {
+          const response = enrichDasProvisao(entryToResponse(p));
+          const guide = p.eventType === "DAS_SIMPLES" ? simplesGuideByComp.get(p.competencia) || p.sourceGuide : p.sourceGuide;
+          // Comprovante da guia consolidada não é o pagamento de CADA tributo (PIS/COFINS etc).
+          const pagamentoEfetivo = guide && ["SIMPLES", "INSS"].includes(guide.tipo) ? resolverPagamentoGuia({ guia: guide, portalClientId,
+            baixas: [...(p.baixas || []).map(b => ({ ...b, openEntry: { sourceGuideId: guide.id } })), ...movimentosGuias],
+          }) : resumirBaixas(p.baixas || []);
+          const valorObrigacao = response.valor;
+          return { ...response, valorObrigacao, pagamentoEfetivo,
+            ...(response.statusPagamento === "PAGO" && !response.parcial && pagamentoEfetivo?.fonte === "BAIXA_CONTABIL" && pagamentoEfetivo.total != null
+              ? { valor: pagamentoEfetivo.total, totalD: pagamentoEfetivo.total, totalC: pagamentoEfetivo.total } : {}) };
+        }),
         ...inssSynthetic,
         ...dasSynthetic,
       ]),
@@ -3381,7 +3402,7 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(400).json({ error: "guia_nao_e_inss" });
     }
 
-    const data = body.data ? new Date(body.data) : null;
+    const data = dataDoComprovante({ dataArrecadacao: body.data });
     const historico = String(body.historico || "").trim();
     const lines = body.lines;
     if (!data || isNaN(data.getTime())) return res.status(400).json({ error: "data_invalida" });

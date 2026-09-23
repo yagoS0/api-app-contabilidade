@@ -207,6 +207,9 @@ export async function resolvePayrollTemplate({ portalClientId, kind, competencia
     historicoTemplate: template.historicoTemplate,
     lines,
     baixa,
+    // Guia consolidada pode conter empregados, contribuição patronal e encargos.
+    // Sem origem específica da retenção, não converter seu total em desconto da folha.
+    valorRetencaoInss: null,
     inssGuide: inssGuide
       ? {
           guideId: inssGuide.id,
