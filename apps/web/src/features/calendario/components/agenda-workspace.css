@@ -178,4 +178,4 @@
   .agenda-company-identity .agenda-company-status { font-size:11px; }
 }
 
-.agenda-scope input.agenda-company-search { width:100%; height:36px; min-height:36px; padding:0 10px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:6px; box-sizing:border-box; }
+.agenda-scope input.agenda-company-search { width:100%; height:36px; min-height:36px; padding:0 10px; color:var(--text); background:var(--bg-page); border:1px solid var(--border); border-radius:6px; box-sizing:border-box; }
