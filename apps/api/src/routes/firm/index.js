@@ -1,3 +1,4 @@
+import { dataDoComprovante } from "../../application/guides/lib/comprovantePagamento.js";
 import { createLaboratorioRouter } from "./laboratorio.js";
 import { Router } from "express";
 import { createExportacaoLoteRouter } from "./exportacaoLote.js";
@@ -194,6 +195,7 @@ import {
   isGuidePaid,
   markGuideOpenBySerpro,
   markGuidePaidManual,
+  markGuidePaidByComprovante,
 } from "../../application/guides/GuidePaymentStatusService.js";
 import {
   SERPRO_PGDASD_SERVICE_COBRANCA,
@@ -3914,32 +3916,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
 
         const c = r.comprovante || null;
-        // Guarda a leitura do comprovante na própria guia — é o que pré-preenche a baixa depois.
-        const extractedAtual = (scoped.guide.extracted && typeof scoped.guide.extracted === "object")
-          ? scoped.guide.extracted
-          : {};
-        await prisma.guide.update({
-          where: { id: scoped.guide.id },
-          data: {
-            // PAID aqui = "pagamento localizado no SERPRO". A baixa contábil é o passo seguinte
-            // (guide.baixada/lancamentoId continuam vazios até o contador lançar).
-            paymentStatus: "PAID",
-            paymentStatusSource: "SERPRO",
-            paymentConfirmedAt: new Date(),
-            serproLastCheckedAt: new Date(),
-            serproLastCheckResult: "COMPROVANTE_LOCALIZADO",
-            extracted: {
-              ...extractedAtual,
-              comprovante: c
-                ? {
-                    dataArrecadacao: c.dataArrecadacaoBR || null,
-                    principal: c.principal, juros: c.juros, multa: c.multa, total: c.total,
-                    meioPagamento: c.meioPagamento, confiavel: c.confiavel,
-                  }
-                : { confiavel: false },
-            },
-          },
-        });
+        await markGuidePaidByComprovante({ guideId: scoped.guide.id, comprovante: c });
 
         return res.json({
           ok: true,
@@ -3971,9 +3948,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       // Busca o COMPROVANTE no SERPRO (PAGTOWEB) pra usar a DATA e os VALORES reais do pagamento
-      // em vez de "hoje" + valor devido da guia. Decisão do dono: baixa automática SÓ quando o
-      // comprovante é confiável E o total bate com a guia; havendo divergência (juros/multa,
-      // pagamento parcial), a guia é marcada como paga mas o lançamento fica pro contador conferir.
+      // em vez de "hoje" + valor devido da guia. Divergência com cobrança pede conferência;
+      // esta confirmação não gera baixa nem substitui a já lançada pelo contador.
       // Best-effort: falha na consulta não impede a confirmação manual.
       let comprovante = null;
       let comprovanteAviso = null;
@@ -3998,7 +3974,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.warn({ err: err?.message, guideId: scoped.guide.id }, "PAGTOWEB: consulta falhou (segue com confirmação manual)");
       }
 
-      // O comprovante só COMANDA a baixa quando é confiável e o total confere com a guia.
+      // Comparação documental: diferença pede conferência, sem descartar a data real.
       const totalGuia = Number(scoped.guide.valor || 0);
       const batendo = Boolean(
         comprovante?.confiavel
@@ -4010,21 +3986,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           ? `Comprovante encontrado com total R$ ${Number(comprovante.total).toFixed(2)}, diferente da guia (R$ ${totalGuia.toFixed(2)}) — confira antes de lançar.`
           : "Comprovante encontrado, mas não foi possível ler os valores com segurança — confira antes de lançar.";
       }
-      /**
-       * ⚠⚠ A DATA DO PAGAMENTO: a da ARRECADAÇÃO do comprovante — e desde 30/08/2026 ela É USADA.
-       *
-       * ⚠⚠ **Esta variável era calculada AQUI e nunca lida em lugar nenhum**, enquanto
-       * `markGuidePaidManual` carimbava `new Date()`. O comentário dela ainda dizia *"senão o dia
-       * da confirmação"*, descrevendo um comportamento que morava em outro arquivo. Medido antes do
-       * conserto: das 20 guias com comprovante guardado, **20** tinham `paymentConfirmedAt`
-       * diferente da arrecadação — a LENTE com INSS de 04/2026 arrecadado em **16/07** e gravado
-       * em **27/08**, dois meses adiante, num campo que decide o MÊS do fluxo.
-       *
-       * ⚠ `batendo` continua sendo o portão: comprovante cujo total não confere com a guia não
-       * comanda nada, e aí a data fica **nula** — "pago, dia desconhecido" é uma resposta; um
-       * carimbo do relógio não é.
-       */
-      const dataPagamentoReal = batendo && comprovante?.dataArrecadacao ? comprovante.dataArrecadacao : null;
+      // A divergência com a cobrança não invalida a data do pagamento identificado.
+      const dataPagamentoReal = dataDoComprovante(comprovante);
 
       // Esta rota não cria mais NENHUM lançamento — logo, não há mês contábil a proteger aqui.
       // A trava de mês fechado vive junto do lançamento: na Circular (tributos) e na aba
@@ -4035,13 +3998,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         guideId: scoped.guide.id,
         userId: req.auth.user.id,
         pagoEm: dataPagamentoReal,
+        comprovante,
+        preservarBaixa: true,
       });
 
       // ⚠⚠ SEM DATA, O CONTADOR PRECISA SABER — senão a guia fica paga "em lugar nenhum" no fluxo
       // e ninguém descobre por quê. A saída já existe e está nomeada: "Dar baixa" na Circular pede
       // a data. ⚠ A frase entra no aviso que a tela já mostra, em vez de um canal novo.
       if (!dataPagamentoReal) {
-        const semData = "Marcada como paga, mas SEM a data do pagamento — o comprovante não trouxe "
+        const semData = "Marcada como paga, mas SEM uma data válida do pagamento — confira "
           + "a data da arrecadação. Ela é o dia em que o dinheiro saiu, e o fluxo depende dela: "
           + "informe-a ao dar baixa na Circular.";
         comprovanteAviso = comprovanteAviso ? `${comprovanteAviso} ${semData}` : semData;

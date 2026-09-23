@@ -145,20 +145,51 @@ describe("baixa automática a partir do comprovante", () => {
     expect(__criados).toHaveLength(0);
   });
 
-  it("pago EM DIA sem rateio segue com um lançamento só — ali não há acréscimo a separar", async () => {
+  it("pagamento pontual sem composição não presume o valor da cobrança emitida depois", async () => {
     const r = await gerarPagamentoInssFromGuide({
       portalClientId: "p1", guideId: "g1", dataPagamento: EM_DIA,
     });
-    expect(r.ok).toBe(true);
-    expect(__criados).toHaveLength(1);
+    expect(r.reason).toBe("sem_rateio_do_acrescimo");
+    expect(__criados).toHaveLength(0);
   });
 
-  it("guia sem vencimento não é presumida em atraso", async () => {
+  it("guia sem vencimento também exige composição para baixa automática", async () => {
     prisma.guide.findFirst.mockResolvedValue({ ...guiaInss(), vencimento: null });
     const r = await gerarPagamentoInssFromGuide({
       portalClientId: "p1", guideId: "g1", dataPagamento: EM_ATRASO,
     });
+    expect(r.reason).toBe("sem_rateio_do_acrescimo");
+    expect(__criados).toHaveLength(0);
+  });
+
+  it("comprovante sem encargos baixa 1000 mesmo se a guia tardia cobra 1100", async () => {
+    prisma.guide.findFirst.mockResolvedValue(guiaInss({ valor: 1100 }));
+    const r = await gerarPagamentoInssFromGuide({ portalClientId: "p1", guideId: "g1", dataPagamento: EM_DIA,
+      rateio: { principal: 1000, juros: 0, multa: 0, total: 1000 } });
     expect(r.ok).toBe(true);
     expect(__criados).toHaveLength(1);
+    expect(__criados[0].tipoLinha).toBe("PRINCIPAL");
+    expect(__criados[0].lines.map(l => l.valor)).toEqual([1000, 1000]);
+  });
+
+  it.each([NaN, "inválido", 900])("total inválido/divergente %s não gera baixa", async total => {
+    const r = await gerarPagamentoInssFromGuide({ portalClientId: "p1", guideId: "g1", dataPagamento: EM_DIA,
+      rateio: { principal: 1000, juros: 0, multa: 0, total } });
+    expect(r.skipped).toBe(true);
+    expect(__criados).toHaveLength(0);
+  });
+
+  it("sem data real não grava pagamento com a data da consulta", async () => {
+    const r = await gerarPagamentoInssFromGuide({ portalClientId: "p1", guideId: "g1",
+      rateio: { principal: 1000, juros: 0, multa: 0 } });
+    expect(r.reason).toBe("data_pagamento_ausente");
+    expect(__criados).toHaveLength(0);
+  });
+
+  it("data civil inexistente não é normalizada para outro mês", async () => {
+    const r = await gerarPagamentoInssFromGuide({ portalClientId: "p1", guideId: "g1", dataPagamento: "2026-02-31",
+      rateio: { principal: 1000, juros: 0, multa: 0 } });
+    expect(r.reason).toBe("data_pagamento_ausente");
+    expect(__criados).toHaveLength(0);
   });
 });

@@ -119,7 +119,7 @@ describe("reserva atômica da guia", () => {
   it("o ramo do lançamento ÚNICO também reserva antes de criar", async () => {
     __tx.guide.updateMany.mockResolvedValue({ count: 0 });
     const r = await gerarPagamentoInssFromGuide({
-      portalClientId: "p1", guideId: "g1", dataPagamento: new Date("2026-07-18T00:00:00Z"),
+      portalClientId: "p1", guideId: "g1", dataPagamento: new Date("2026-07-18T00:00:00Z"), rateio: { principal: 1000, juros: 0, multa: 0 },
     });
     expect(r).toEqual({ skipped: true, reason: "ja_baixada" });
     expect(__criados).toHaveLength(0);
@@ -189,7 +189,7 @@ describe("a chave composta separa o lote legítimo e repete na duplicada", () =>
 
   it("o ramo do lançamento ÚNICO (pago em dia) também nasce com papel — e é o principal", async () => {
     await gerarPagamentoInssFromGuide({
-      portalClientId: "p1", guideId: "g1", dataPagamento: new Date("2026-07-18T00:00:00Z"),
+      portalClientId: "p1", guideId: "g1", dataPagamento: new Date("2026-07-18T00:00:00Z"), rateio: { principal: 1000, juros: 0, multa: 0 },
     });
     expect(__criados).toHaveLength(1);
     expect(__criados[0].tipoLinha).toBe("PRINCIPAL");

@@ -7,6 +7,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { isMonthClosed } from "./fechamentoContabil.js";
 import { PAYROLL_TEMPLATES } from "./payrollTemplate.js";
 import { CONTA_JUROS, CONTA_MULTA } from "./contasAcrescimo.js";
+import { dataDoComprovante } from "../guides/lib/comprovantePagamento.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -88,7 +89,7 @@ async function matchAccountByHints(portalClientId, normalizedHints) {
 
 /**
  * Gera a baixa do INSS a partir da guia confirmada como paga.
- * D INSS a Recolher (conta da folha do mês) / C Caixa — valor da guia, data = pagamento (ou hoje).
+ * D INSS a Recolher (conta da folha do mês) / C Caixa — composição e data do pagamento.
  * Idempotente; lança erro `MES_FECHADO` se o mês do pagamento estiver fechado.
  *
  * Q47: aceita override manual do modal "Dar baixa" da Circular:
@@ -100,14 +101,10 @@ async function matchAccountByHints(portalClientId, normalizedHints) {
  * o total). O serviço resolve as contas e marca os papéis — o chamador não precisa saber de conta
  * nenhuma, que é o motivo de o rateio entrar aqui em vez de o worker montar `lines`.
  *
- * Sem override e sem rateio, resolve conta INSS/caixa da folha e faz um lançamento só.
- *
- * ⚠ GUIA PAGA EM ATRASO SEM RATEIO CONFIÁVEL NÃO GERA LANÇAMENTO (`sem_rateio_do_acrescimo`).
- * O `guide.valor` de uma guia em atraso já inclui juros e multa; lançar esse total contra "INSS a
- * Recolher" amortizaria o passivo por mais do que foi provisionado e esconderia despesa do mês do
- * pagamento dentro do principal. Sem saber a divisão, a resposta certa é não lançar e deixar para o
- * contador — regra 5 do projeto: nunca gravar ato contábil por suposição. Pago em dia segue com um
- * lançamento só, que é o correto: ali não há acréscimo a separar.
+ * Sem linhas manuais, exige composição confiável e data real do pagamento. Encargos zero
+ * são válidos. O total documental não é fallback: mesmo um pagamento pontual pode ser
+ * consultado com uma guia reemitida depois do vencimento, já com juros e multa.
+ * Sem evidência suficiente, deixa a contabilização para conferência na Circular.
  */
 export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, historico, lines, rateio, userId }) {
   void userId; // reservado p/ auditoria futura
@@ -127,10 +124,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   });
   if (baixaExistente) return { skipped: true, reason: "ja_baixada" };
 
-  const valor = round2(guide.valor);
-  if (!Number.isFinite(valor) || valor <= 0) return { skipped: true, reason: "sem_valor" };
-
-  const data = dataPagamento ? new Date(dataPagamento) : new Date();
+  const data = dataDoComprovante({ dataArrecadacao: dataPagamento });
+  if (!data || !Number.isFinite(data.getTime())) return { skipped: true, reason: "data_pagamento_ausente" };
   const competenciaPag = competenciaFromDate(data);
   if (await isMonthClosed(portalClientId, competenciaPag)) {
     const err = new Error(`Mês ${competenciaPag} fechado — reabra antes de baixar o INSS.`);
@@ -166,18 +161,17 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
 
   // Override manual (modal da Circular) tem prioridade; senão resolve as contas da folha do mês.
   const hasOverride = Array.isArray(lines) && lines.length > 0;
-  const acrescimoDoRateio = round2(rateio?.juros) + round2(rateio?.multa);
-  const temRateio = Boolean(rateio) && round2(rateio.principal) > 0 && acrescimoDoRateio > 0;
-
-  // Pago depois do vencimento ⇒ o valor da guia embute acréscimo. Sem rateio para dividir, não há
-  // lançamento honesto a fazer.
-  const pagoEmAtraso = Boolean(guide.vencimento) && data > new Date(guide.vencimento);
-  if (!hasOverride && !temRateio && pagoEmAtraso) {
+  // Zero é uma composição válida. A data pontual do pagamento não transforma o total de uma
+  // guia emitida posteriormente em valor pago: a cobrança pode já ter encargos novos.
+  const temRateio = Boolean(rateio) && ["principal", "juros", "multa"].every((k) =>
+    rateio[k] != null && Number.isFinite(Number(rateio[k])) && Number(rateio[k]) >= 0,
+  ) && Number(rateio.principal) > 0;
+  const valor = temRateio ? round2(Number(rateio.principal) + Number(rateio.juros) + Number(rateio.multa)) : null;
+  if (!hasOverride && (!temRateio || (rateio.total != null && (!Number.isFinite(Number(rateio.total)) || Math.abs(Number(rateio.total) - valor) > 0.01)))) {
     return {
       skipped: true,
       reason: "sem_rateio_do_acrescimo",
-      message: "Guia paga em atraso sem o rateio de juros e multa do comprovante. "
-        + "Dê a baixa pelo modal da Circular, que separa principal, juros e multa.",
+      message: "Pagamento sem composição confiável. Confira principal, juros e multa ao dar baixa pela Circular.",
     };
   }
 
@@ -194,8 +188,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
       papel: l.papel ? String(l.papel).toUpperCase() : undefined,
       ordem: i,
     }));
-  } else if (temRateio) {
-    // Caminho automático COM acréscimo: monta as três pernas já com papel, e deixa
+  } else {
+    // Caminho automático com composição comprovada (encargos podem ser zero).
     // `separarPorPapel` fazer o resto. Nenhuma lógica de separação nova.
     contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
     contaCaixa = await resolveCaixaAccount(portalClientId);
@@ -205,14 +199,6 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
       { conta: CONTA_MULTA, tipo: "D", valor: round2(rateio.multa), papel: "MULTA", ordem: 2 },
       { conta: contaCaixa || "", tipo: "C", valor, ordem: 3 },
     ].filter((l) => l.tipo === "C" || l.valor > 0); // componente zerado não vira lançamento
-  } else {
-    // Conta "INSS a Recolher" vem da folha da competência da guia (decisão do dono); caixa por hints.
-    contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
-    contaCaixa = await resolveCaixaAccount(portalClientId);
-    entryLines = [
-      { conta: contaInss || "", tipo: "D", valor, ordem: 0 },
-      { conta: contaCaixa || "", tipo: "C", valor, ordem: 1 },
-    ];
   }
   const historicoFinal = String(historico || "").trim() || `PAGO INSS - ${competenciaLabel(guide.competencia)}`;
 

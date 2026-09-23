@@ -149,7 +149,8 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
   // Acréscimo (juros/multa) — e, p/ INSS sintético, o valor principal — editado no MESMO modal.
   // INSS não tem lançamento real (synthetic): modo "acréscimo-only" edita só valor/juros/multa.
   const isAcrOnly = entry.synthetic === true;
-  const acrKeys = SUBTIPO_TO_ACRESCIMO[entry.subtipo] || [];
+  // Editar pagamento altera a baixa; encargos da guia consultada são outro fato.
+  const acrKeys = entry.tipo === "BAIXA" ? [] : (SUBTIPO_TO_ACRESCIMO[entry.subtipo] || []);
   const [acr, setAcr] = useState(() =>
     acrKeys.map((k) => {
       const src = (acrescimosComp && acrescimosComp[k]) || {};
@@ -383,6 +384,8 @@ function LinhaResumo({ rotulo, valor, cor, forte }) {
  */
 function ResumoDaGuia({ entry, acrescimo, aparencia }) {
   const guia = entry?.sourceGuide || null;
+  const pagamento = entry?.pagamentoEfetivo;
+  const valorPagamento = (v) => v == null ? "—" : `R$ ${fmtValor(v) || "0,00"}`;
   const principal = Number(acrescimo?.principal ?? entry?.valor ?? entry?.totalD ?? 0) || 0;
   const juros = Number(acrescimo?.acrescimo || 0) || 0;
   const atualizado = entry?.recalculatedToValor != null ? Number(entry.recalculatedToValor) : (principal + juros);
@@ -406,15 +409,29 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
         </span>
       </div>
 
-      <LinhaResumo rotulo="Valor original" valor={principal ? `R$ ${fmtValor(principal)}` : null} />
-      {juros > 0 && (
+      {pagamento?.pendencia && <div role="status" style={{ padding: 4, fontSize: "0.8125rem", color: "var(--state-warn)" }}>Baixa sem valor confiável. Confira os lançamentos antes de considerar este pagamento correto.</div>}
+      {pagamento?.total != null ? <>
+        <LinhaResumo rotulo={pagamento.fonte === "BAIXA_CONTABIL" ? "Valor baixado" : "Pagamento localizado"} valor={valorPagamento(pagamento.total)} forte />
+        {pagamento.composicaoConhecida && <>
+          <LinhaResumo rotulo="Principal pago" valor={valorPagamento(pagamento.principal)} />
+          <LinhaResumo rotulo="Juros pagos" valor={valorPagamento(pagamento.juros)} />
+          <LinhaResumo rotulo="Multa paga" valor={valorPagamento(pagamento.multa)} />
+        </>}
+        {!pagamento.composicaoConhecida && <LinhaResumo rotulo="Composição do pagamento" valor="Não informada" />}
+        {entry.valorObrigacao != null && <LinhaResumo rotulo="Valor da obrigação" valor={valorPagamento(entry.valorObrigacao)} />}
+        {pagamento.data && <LinhaResumo rotulo="Data do pagamento" valor={fmtDataCivil(pagamento.data)} />}
+        {pagamento.estadoContabil === "RASCUNHO" && <LinhaResumo rotulo="Conferência contábil" valor="Baixa a conferir" cor="var(--state-warn)" />}
+        {pagamento.divergencia && <div style={{ padding: 4, fontSize: "0.8125rem", color: "var(--state-warn)" }}>A baixa difere do comprovante. Confira os valores registrados.</div>}
+        {entry?.recalculatedToValor != null && <LinhaResumo rotulo="Guia consultada" valor={`R$ ${fmtValor(entry.recalculatedToValor)}`} />}
+      </> : <LinhaResumo rotulo="Valor original" valor={principal ? `R$ ${fmtValor(principal)}` : null} />}
+      {pagamento?.total == null && juros > 0 && (
         <LinhaResumo
           rotulo={entry?.recalculatedAt ? `Juros/multa (${fmtDate(entry.recalculatedAt)})` : "Juros/multa"}
           valor={`+ R$ ${fmtValor(juros)}`}
           cor="#FFB347"
         />
       )}
-      {juros > 0 && <LinhaResumo rotulo="Valor atualizado" valor={`R$ ${fmtValor(atualizado)}`} forte />}
+      {pagamento?.total == null && juros > 0 && <LinhaResumo rotulo="Valor atualizado" valor={`R$ ${fmtValor(atualizado)}`} forte />}
       <LinhaResumo rotulo="Vencimento" valor={guia?.vencimento ? fmtDataCivil(guia.vencimento) : null} />
       {informacaoRecalculo(entry) && <div style={{ padding: "4px", borderTop: "1px solid var(--border)" }}><DetalheRecalculoGuia entry={entry} /></div>}
       {Number.isFinite(Number(entry?.saldo)) && String(entry?.statusPagamento).toUpperCase() === "PARCIAL" && (
@@ -1057,7 +1074,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
         }
       }
       // 2) Acréscimo (juros/multa; e o principal, no caso do INSS) → acrescimos da circular.
-      if (Array.isArray(form.acrescimoTributos) && onSaveCircular) {
+      if (form.acrescimoTributos?.length && onSaveCircular) {
         const comp = editEntry.competencia;
         const merged = { ...(circularData?.acrescimos?.[comp] || {}) };
         for (const t of form.acrescimoTributos) {

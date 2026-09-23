@@ -40,11 +40,12 @@ describe("mockApi.getPayrollTemplate — o par que faltava", () => {
     const { template } = await api.getPayrollTemplate(companyId, "FOLHA", "2026-07");
 
     expect(Object.keys(template).sort()).toEqual(
-      ["baixa", "competencia", "historicoTemplate", "inssGuide", "kind", "label", "lines"].sort(),
+      ["baixa", "competencia", "historicoTemplate", "inssGuide", "kind", "label", "lines", "valorRetencaoInss"].sort(),
     );
     expect(template.kind).toBe("FOLHA");
     expect(template.label).toBe("Folha de Pagamento");
     expect(template.competencia).toBe("2026-07");
+    expect(template.valorRetencaoInss).toBeNull();
 
     // A linha, campo por campo — é o que o modal lê para montar cada `row`.
     for (const line of template.lines) {

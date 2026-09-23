@@ -13,6 +13,7 @@ const mockAtualizados = [];
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
     guide: {
+      updateMany: jest.fn(async ({ data }) => { mockAtualizados.push(data); return { count: 1 }; }),
       create: jest.fn(async ({ data }) => {
         mockCriados.push(data);
         return { id: "g1", ...data };
@@ -22,6 +23,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
         return { id: "g1", ...data };
       }),
       findUnique: jest.fn(async () => ({
+        updatedAt: new Date("2026-09-01"),
         emailStatus: "SENT",
         emailSentAt: null,
         emailAttempts: 0,
@@ -117,6 +119,18 @@ describe("o funil grava a linha digitável", () => {
     expect(mockCriados[0].linhaDigitavel).toBeNull();
     expect(mockCriados[0].linhaDigitavelLidaEm).toBeNull();
     expect(mockCriados[0].linhaDigitavelMotivo).toBeNull();
+  });
+
+  test("recaptura conserva comprovante e não escreve sobre status, data ou autoria do pagamento", async () => {
+    const { prisma } = require("../../../infrastructure/db/prisma.js");
+    const comprovante = { total: 3000, principal: 3000, juros: 0, multa: 0, confiavel: true };
+    const anterior = { id: "g1", updatedAt: new Date("2026-09-01"), extracted: { comprovante, recalculoGuia: { guiaId: "g1" } } };
+    // Uma leitura do CAS e uma da resposta; e-mail só é lido no modo PRESERVE.
+    prisma.guide.findUnique.mockResolvedValueOnce(anterior).mockResolvedValueOnce(anterior);
+    await chamar({ existingGuideId: "g1", extracted: { numeroDocumento: "novo" }, paymentStatus: "OPEN" });
+    const data = mockAtualizados[0];
+    expect(data.extracted).toMatchObject({ comprovante, numeroDocumento: "novo", recalculoGuia: { guiaId: "g1" } });
+    for (const campo of ["paymentStatus", "paymentStatusSource", "paymentConfirmedAt", "paymentConfirmedByUserId", "valorOriginal", "baixada", "lancamentoId"]) expect(data).not.toHaveProperty(campo);
   });
 
   test("PDF ilegível não derruba a gravação da guia", async () => {

@@ -1666,6 +1666,25 @@ const mockEntregasObrigacao = new Map();
 // que colapsasse as duas esconderia exatamente a distinção que a tela existe para mostrar.
 const mockEntregaPgdasExterna = new Map();
 const mockEntriesByCompany = new Map();
+const mockInssPagamentoInicializado = new Set();
+function prepararInssPagoMock(companyId) {
+  if (companyId !== "04bf356c-cfe9-43fa-bee4-a0180cf8f114" || mockInssPagamentoInicializado.has(companyId)) return;
+  mockInssPagamentoInicializado.add(companyId);
+  const ano = new Date().getFullYear();
+  const competencia = `${ano}-08`;
+  const guideId = `mock-inss-pago-${companyId}`;
+  const guia = { id: guideId, tipo: "INSS", source: "SERPRO", status: "PROCESSED", competencia,
+    valor: 1100, valorOriginal: 1100, updatedAt: new Date().toISOString(), paymentStatus: "PAID", paymentStatusSource: "MANUAL",
+    vencimento: `${ano}-09-20`, paymentConfirmedAt: `${ano}-09-18T12:00:00Z`,
+    emailStatus: "SENT", envios: [], extracted: { comprovante: { valorTotal: 1000, valorPrincipal: 1000, valorJuros: 0, valorMulta: 0 } } };
+  mockGuidesByCompany.set(companyId, [...(mockGuidesByCompany.get(companyId) || []), guia]);
+  const id = `mock-baixa-inss-corrigida-${companyId}`;
+  const baixa = { id, portalClientId: companyId, competencia: `${ano}-09`, data: `${ano}-09-18T12:00:00Z`,
+    tipo: "BAIXA", subtipo: "INSS", tipoLinha: "PRINCIPAL", origem: "MANUAL", status: "CONFIRMADO",
+    historico: "PAGO INSS - 08/" + ano, sourceGuideId: guideId, valor: 1000, totalD: 1000, totalC: 1000,
+    lines: [{ conta: "240", tipo: "D", valor: 1000, ordem: 0 }, { conta: "5", tipo: "C", valor: 1000, ordem: 1 }] };
+  mockEntriesByCompany.set(companyId, [...(mockEntriesByCompany.get(companyId) || []), baixa]);
+}
 const mockMonthlyCirculars = new Map();
 
 // Históricos mockados globais (não atrelados a empresa específica)
@@ -5636,6 +5655,7 @@ export function createMockApi() {
     // ── Lançamentos (mock) ─────────────────────────────────────────────────
     async getAccountingEntries(companyId, params = {}) {
       await delay();
+      prepararInssPagoMock(companyId);
       let list = mockEntriesByCompany.get(companyId) || [];
       if (params.competencia) list = list.filter((e) => e.competencia === params.competencia);
       if (params.tipo) list = list.filter((e) => e.tipo === params.tipo);
@@ -5750,6 +5770,7 @@ export function createMockApi() {
     // resolução de conta por dicas (`PAYROLL_TEMPLATES_MOCK`, lá em cima) e o mesmo
     // `UNKNOWN_PAYROLL_KIND` para tipo desconhecido.
     async getPayrollTemplate(companyId, kind, competencia) {
+      prepararInssPagoMock(companyId);
       await delay();
       const chave = String(kind || "").toUpperCase();
       const template = PAYROLL_TEMPLATES_MOCK[chave];
@@ -5803,7 +5824,7 @@ export function createMockApi() {
       // mock, com o MESMO filtro do real (tipo INSS + competência + PROCESSED); não havendo, é
       // `null`, que é o caso normal e não um erro.
       const guias = mockGuidesByCompany.get(companyId) || [];
-      const inss = guias.find(
+      const inss = [...guias].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).find(
         (g) => String(g.tipo).toUpperCase() === "INSS"
           && String(g.competencia) === String(competencia)
           && String(g.status).toUpperCase() === "PROCESSED",
@@ -5818,6 +5839,7 @@ export function createMockApi() {
           historicoTemplate: template.historicoTemplate,
           lines,
           baixa,
+          valorRetencaoInss: null,
           inssGuide: inss
             ? {
                 guideId: inss.id,
@@ -6280,6 +6302,7 @@ export function createMockApi() {
     },
     async getCircular(companyId, { year } = {}) {
       await delay();
+      prepararInssPagoMock(companyId);
       const y = year || new Date().getFullYear();
       const meses = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
       const list = mockEntriesByCompany.get(companyId) || [];
@@ -6380,6 +6403,21 @@ export function createMockApi() {
           ],
           baixas: [], sourceGuide: darfLp,
         });
+      }
+
+      const guiaPaga = (mockGuidesByCompany.get(companyId) || []).find((g) => g.id === `mock-inss-pago-${companyId}` && meses.includes(g.competencia));
+      if (guiaPaga) {
+        const baixa = list.find((e) => e.sourceGuideId === guiaPaga.id && e.tipo === "BAIXA");
+        const pago = baixa ? (baixa.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor), 0) : null;
+        const valor = pago ?? 1000;
+        provisoes.push({ id: `synthetic-inss-${guiaPaga.id}`, competencia: guiaPaga.competencia,
+          tipo: "PROVISAO", subtipo: "INSS", eventType: "INSS_GUIDE_SYNTHETIC", synthetic: true,
+          statusPagamento: baixa ? "PAGO" : "ABERTO", valor, totalD: valor, totalC: valor, valorObrigacao: 1000,
+          sourceGuide: guiaPaga, baixaEntry: baixa || null, baixas: baixa ? [{ id: baixa.id }] : [],
+          recalculatedToValor: 1100,
+          pagamentoEfetivo: baixa ? { total: pago, principal: pago, juros: 0, multa: 0, composicaoConhecida: true,
+            fonte: "BAIXA_CONTABIL", divergencia: pago !== 1000, data: baixa.data, estadoContabil: baixa.status } : null,
+          lines: [{ conta: "INSS", tipo: "D", valor, ordem: 0 }, { conta: "INSS", tipo: "C", valor, ordem: 1 }] });
       }
 
       // ⚠ A PARCELA JÁ PAGA — a única fixture com `baixas`, e por isso a única célula que oferece

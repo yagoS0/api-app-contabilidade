@@ -31,6 +31,8 @@ import { inicioDoHistoricoFluxo, aplicarSaldosProjetados } from "./SaldoInicialF
 // isto só deixou de ser o caminho por onde a falta dela quebrava a tela.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { carregarBaixasDasGuias, resolverPagamentoGuia } from "../accounting/pagamentoGuiaEfetivo.js";
+import { computeSaldoProvisao } from "../accounting/saldoProvisao.js";
 import { derivarCiclo, SITUACAO } from "../notas/cicloNota.js";
 import { whereFaturamentoEmit } from "../notas/apuracao/v2/FechamentoService.js";
 import { derivarFolha12m } from "../notas/apuracao/v2/FolhaDerivadaService.js";
@@ -182,6 +184,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
     orderBy: { vencimento: "asc" },
   });
 
+  const baixasGuias = await carregarBaixasDasGuias(client, String(portalClientId), guias.map(g => g.id));
   const linhas = [];
   const semMes = [];
   const emAberto = [];
@@ -195,11 +198,43 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   let ultimoPagamento = null;
 
   for (const g of guias) {
-    if (g.paymentStatus === "PAID" && g.paymentConfirmedAt && !g.parcelamentoId) {
-      if (!ultimoPagamento || g.paymentConfirmedAt > ultimoPagamento) ultimoPagamento = g.paymentConfirmedAt;
-    }
     const rotulo = rotuloDaGuia(g);
-    const valor = numero(g.valor);
+    const referencia = { tipo: "guia", id: g.id };
+    const pagamento = resolverPagamentoGuia({ guia: g, baixas: baixasGuias, portalClientId: String(portalClientId) });
+    const abertas = [...new Map(baixasGuias.filter(b => b.openEntry?.sourceGuideId === g.id)
+      .map(b => [b.openEntry.id, b.openEntry])).values()];
+    const saldoContabil = abertas.length ? abertas.reduce((s, e) => s + computeSaldoProvisao(e).saldo, 0) : null;
+    const paga = g.paymentStatus === "PAID";
+    let valor = numero(g.valor);
+    if (paga || pagamento?.fonte === "BAIXA_CONTABIL") {
+      if (!pagamento || pagamento.total == null) {
+        semMes.push({ motivo: SEM_MES.GUIA_PAGA_SEM_VALOR, frase: FRASE_DO_SEM_MES[SEM_MES.GUIA_PAGA_SEM_VALOR],
+          rotulo, valor: null, referencia });
+        continue;
+      }
+      for (const movimento of pagamento.pagamentos) {
+        const dataPagamento = movimento.data ? new Date(movimento.data) : null;
+        const competencia = competenciaDaData(dataPagamento);
+        if (!competencia) {
+          semMes.push({ motivo: SEM_MES.GUIA_PAGA_SEM_DATA, frase: FRASE_DO_SEM_MES[SEM_MES.GUIA_PAGA_SEM_DATA],
+            rotulo, valor: movimento.total, referencia });
+          continue;
+        }
+        if (!g.parcelamentoId && (!ultimoPagamento || dataPagamento > ultimoPagamento)) ultimoPagamento = dataPagamento;
+        linhas.push(montarLinha({ fonte: FONTE.GUIA, direcao: DIRECAO.SAIDA, procedencia: PROCEDENCIA.FATO,
+          competencia, dia: diaDaData(dataPagamento), valor: movimento.total, rotulo, referencia,
+          base: { frase: `${rotulo} — ${pagamento.fonte === "BAIXA_CONTABIL" ? "pagamento registrado na baixa" : "pagamento do comprovante"}${pagamento.divergencia ? "; conferir diferença com o comprovante" : ""}`,
+            pagaEm: competencia, tipoDaGuia: texto(g.tipo) || "OUTRA", ehParcelamento: Boolean(g.parcelamentoId),
+            competenciaDaGuia: texto(g.competencia) || null, fontePagamento: pagamento.fonte,
+            estadoContabil: pagamento.estadoContabil, divergencia: pagamento.divergencia, saldoContabil },
+        }));
+      }
+      if (paga) continue;
+      // Uma baixa genérica pode ser parcial: só o saldo da provisão permanece projetado.
+      if (!abertas.length) continue; // baixa INSS/guia é quitação; não repetir a cobrança
+      valor = saldoContabil;
+      if (valor <= 0) continue;
+    }
 
     /**
      * ⚠⚠ GUIA DE R$ 0,00 NÃO É COMPROMISSO — ela é MARCADOR (30/08/2026).
@@ -221,37 +256,6 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
         valor,
         referencia: { tipo: "guia", id: g.id },
       });
-      continue;
-    }
-
-    const referencia = { tipo: "guia", id: g.id };
-    const paga = g.paymentStatus === "PAID";
-
-    if (paga) {
-      const competencia = competenciaDaData(g.paymentConfirmedAt);
-      if (!competencia) {
-        // ⚠⚠ PAGA E SEM DATA DE PAGAMENTO. Ela **aconteceu**, então não é compromisso; mas não se
-        // sabe em que mês, então não entra em mês nenhum. Escolher um (o do vencimento, o de hoje)
-        // seria o sistema decidindo quando o dinheiro saiu. Sai nomeada, como a guia sem vencimento.
-        semMes.push({
-          motivo: SEM_MES.GUIA_PAGA_SEM_DATA,
-          frase: FRASE_DO_SEM_MES[SEM_MES.GUIA_PAGA_SEM_DATA],
-          rotulo, valor, referencia,
-        });
-        continue;
-      }
-      linhas.push(montarLinha({
-        fonte: FONTE.GUIA,
-        direcao: DIRECAO.SAIDA,
-        // ⚠⚠ O ÚNICO `FATO` DESTE MÓDULO. Saiu dinheiro, e há prova.
-        procedencia: PROCEDENCIA.FATO,
-        competencia,
-        dia: diaDaData(g.paymentConfirmedAt),
-        valor,
-        rotulo,
-        base: { frase: `${rotulo} paga`, pagaEm: competencia, tipoDaGuia: texto(g.tipo) || "OUTRA", ehParcelamento: Boolean(g.parcelamentoId), competenciaDaGuia: texto(g.competencia) || null },
-        referencia,
-      }));
       continue;
     }
 

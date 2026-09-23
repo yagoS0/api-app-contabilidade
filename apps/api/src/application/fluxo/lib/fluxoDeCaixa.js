@@ -241,6 +241,7 @@ export const SEM_MES = Object.freeze({
    * que mês. Pôr no mês do vencimento seria afirmar quando o dinheiro saiu.
    */
   GUIA_PAGA_SEM_DATA: "guia_paga_sem_data",
+  GUIA_PAGA_SEM_VALOR: "guia_paga_sem_valor_confirmado",
   /**
    * ⚠⚠ GUIA DE R$ 0,00 — ela é MARCADOR, não compromisso (30/08/2026). Medido na ERISANGELA:
    * 4 guias `SIMPLES` de zero, competências 01 a 04. Não há dinheiro a sair, e uma linha de zero na
@@ -250,6 +251,8 @@ export const SEM_MES = Object.freeze({
 });
 
 export const FRASE_DO_SEM_MES = Object.freeze({
+  [SEM_MES.GUIA_PAGA_SEM_VALOR]:
+    "A guia consta como paga, mas falta um valor confiável na baixa ou no comprovante. Confira o pagamento; o valor atualizado da cobrança não foi tratado como saída.",
   [SEM_MES.GUIA_SEM_VENCIMENTO]:
     "Esta guia está em aberto e não tem data de vencimento gravada, então não dá para dizer em que "
     + "mês o dinheiro sai. Recapture a guia para trazer o vencimento.",

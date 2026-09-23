@@ -311,10 +311,10 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
-  async function handleLoadPayrollTemplate(kind, competencia) {
+  const handleLoadPayrollTemplate = useCallback(async (kind, competencia) => {
     if (!selectedCompanyId) return null;
     return api.getPayrollTemplate(selectedCompanyId, kind, competencia);
-  }
+  }, [api, selectedCompanyId]);
 
   async function handleLoadBaixaTemplate(entryId) {
     if (!selectedCompanyId) return null;
