@@ -1,5 +1,10 @@
 # CLAUDE.md — Portal Contábil
 
+## Emissor do cliente e avisos — 23/09/2026
+
+Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
+
+
 ## Proposta, contrato e chat na ficha — 21/09/2026
 
 PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
@@ -225,6 +225,38 @@ function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, escopo, to
 }
 
 export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoReaproveitar, aoEmitir, aoPrepararLote, visitaDoEscritorio = false }) {
+  const [carregandoModelo, setCarregandoModelo] = useState(null);
+  const [erroModelo, setErroModelo] = useState(null);
+  const pedidoModelo = useRef(0);
+  const empresaDoModelo = useRef(empresa.companyId);
+  empresaDoModelo.current = empresa.companyId;
+  useEffect(() => {
+    pedidoModelo.current += 1;
+    setCarregandoModelo(null);
+    setErroModelo(null);
+    return () => { pedidoModelo.current += 1; };
+  }, [empresa.companyId, competenciaDaCasca]);
+
+  async function reaproveitar(nota) {
+    const pedido = ++pedidoModelo.current;
+    const empresaId = empresa.companyId;
+    setCarregandoModelo(nota.invoiceId);
+    setErroModelo(null);
+    try {
+      const detalhe = await api.getInvoiceDetail(empresaId, nota.invoiceId);
+      if (pedido !== pedidoModelo.current || empresaDoModelo.current !== empresaId) return;
+      if (!detalhe || detalhe.invoiceId !== nota.invoiceId) throw new Error("Não foi possível conferir os dados da nota escolhida.");
+      const completa = { ...nota, ...detalhe, descricao: detalhe.descricao ?? nota.descricao,
+        tomador: { ...nota.tomador, ...detalhe.tomador } };
+      const modelo = modeloDeEmissaoDaNota(completa, { companyId: empresaId, cnpjDaEmpresa: empresa.cnpj });
+      if (!modelo) throw new Error("Esta nota não pode ser usada como modelo.");
+      aoReaproveitar?.(modelo);
+    } catch (erro) {
+      if (pedido === pedidoModelo.current && empresaDoModelo.current === empresaId) setErroModelo(erro);
+    } finally {
+      if (pedido === pedidoModelo.current && empresaDoModelo.current === empresaId) setCarregandoModelo(null);
+    }
+  }
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
@@ -423,6 +455,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         />
       </div>
 
+      <AlertaErro erro={erroModelo} padrao="Não foi possível carregar os dados da nota. Tente usar como modelo novamente." />
       <AlertaErro
         erro={query.erro}
         padrao="Não foi possível carregar as notas."
@@ -614,18 +647,11 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                         <button
                           type="button"
                           className="btn-link"
-                          disabled={!permissao.pode}
+                          disabled={!permissao.pode || carregandoModelo === nota.invoiceId}
                           title={permissao.texto || undefined}
-                          onClick={() =>
-                            aoReaproveitar?.(
-                              modeloDeEmissaoDaNota(nota, {
-                                companyId,
-                                cnpjDaEmpresa: empresa.cnpj,
-                              })
-                            )
-                          }
+                          onClick={() => reaproveitar(nota)}
                         >
-                          Usar como modelo
+                          {carregandoModelo === nota.invoiceId ? "Carregando modelo…" : "Usar como modelo"}
                         </button>
                         {permissao.pode ? null : (
                           <span className="meta">

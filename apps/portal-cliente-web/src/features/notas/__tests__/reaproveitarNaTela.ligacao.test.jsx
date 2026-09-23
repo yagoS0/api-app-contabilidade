@@ -18,6 +18,7 @@ import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../../../api";
 import { AppShell } from "../../shell/AppShell";
+import { NotasPage } from '../NotasPage';
 
 const CNPJ_DA_EMPRESA = "11222333000181";
 
@@ -76,6 +77,7 @@ beforeEach(() => {
   });
   jest.spyOn(api, "getCompanies").mockResolvedValue([EMPRESA]);
   jest.spyOn(api, "getInvoices").mockResolvedValue(respostaDeNotas([nota()]));
+  jest.spyOn(api, "getInvoiceDetail").mockImplementation(async (_empresa, invoiceId) => ({ invoiceId }));
   jest.spyOn(api, "getAliquotas").mockResolvedValue([]);
   jest.spyOn(api, "consultarCnpj").mockResolvedValue({
     ok: false,
@@ -127,7 +129,58 @@ async function abrirNotas() {
 const botaoModelo = () => screen.getByRole("button", { name: "Usar como modelo" });
 const campo = (id) => document.getElementById(id);
 
+test('falha ao ler detalhe conserva a lista e permite tentar novamente', async () => {
+  api.getInvoiceDetail.mockRejectedValueOnce(new Error('Falha ao consultar nota'));
+  const abrir = jest.fn();
+  render(<NotasPage empresa={EMPRESA} competencia="2026-06" aoReaproveitar={abrir} />);
+  await act(async () => {});
+  fireEvent.click(botaoModelo());
+  await act(async () => {});
+  expect(abrir).not.toHaveBeenCalled();
+  expect(botaoModelo()).toBeEnabled();
+  expect(screen.getByText(/Não foi possível carregar os dados da nota/)).toBeInTheDocument();
+});
+
+test('resposta de modelo não atravessa troca de empresa', async () => {
+  let resolver;
+  api.getInvoiceDetail.mockImplementationOnce(() => new Promise(r => { resolver = r; }));
+  const abrir = jest.fn();
+  const tela = render(<NotasPage empresa={EMPRESA} competencia="2026-06" aoReaproveitar={abrir} />);
+  await act(async () => {});
+  fireEvent.click(botaoModelo());
+  tela.rerender(<NotasPage empresa={{...EMPRESA, companyId:'pc-outra'}} competencia="2026-06" aoReaproveitar={abrir} />);
+  await act(async () => { resolver({ invoiceId: nota().invoiceId }); });
+  expect(abrir).not.toHaveBeenCalled();
+});
+
+test('escolher outra nota descarta o primeiro detalhe atrasado', async () => {
+  api.getInvoices.mockResolvedValue(respostaDeNotas([nota(), nota({ invoiceId:'nota-2', numero:'13001' })]));
+  const resolvers = {};
+  api.getInvoiceDetail.mockImplementation((_empresa,id) => new Promise(r => { resolvers[id] = r; }));
+  const abrir = jest.fn();
+  render(<NotasPage empresa={EMPRESA} competencia="2026-06" aoReaproveitar={abrir} />);
+  await act(async () => {});
+  fireEvent.click(screen.getAllByRole('button', {name:'Usar como modelo'})[0]);
+  fireEvent.click(screen.getByRole('button', {name:'Usar como modelo'}));
+  await act(async () => { resolvers['nota-2']({ invoiceId:'nota-2' }); });
+  await act(async () => { resolvers[nota().invoiceId]({ invoiceId:nota().invoiceId }); });
+  expect(abrir).toHaveBeenCalledTimes(1);
+  expect(abrir.mock.calls[0][0].origem.invoiceId).toBe('nota-2');
+});
+
 describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
+  test('endereço histórico chega ao formulário completo', async () => {
+    api.getInvoiceDetail.mockResolvedValue({ ...nota(), tomador: { ...nota().tomador, email:'antigo@example.test',
+      endereco: {cMun:'3550308',CEP:'01234000',xLgr:'Rua Antiga',nro:'007',xCpl:'Sala 2',xBairro:'Centro'} } });
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole('button', {name:'Emitir nota'});
+    expect(campo('emitir-logradouro').value).toBe('Rua Antiga');
+    expect(campo('emitir-numero').value).toBe('007');
+    expect(campo('emitir-bairro').value).toBe('Centro');
+    expect(campo('emitir-complemento').value).toBe('Sala 2');
+  });
   test("o tomador vem da nota, e a tela diz de qual nota veio", async () => {
     await abrirNotas();
     fireEvent.click(botaoModelo());

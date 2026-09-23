@@ -67,6 +67,7 @@ beforeEach(() => {
     throw new Error("nenhum teste desta suíte pode tocar a rede");
   });
   jest.spyOn(api, "getCompanies").mockResolvedValue([empresa()]);
+  jest.spyOn(api, "getInvoiceDetail").mockImplementation(async (_empresa, invoiceId) => ({ invoiceId }));
   jest.spyOn(api, "getInvoices").mockResolvedValue({
     data: [nota()],
     page: 1,

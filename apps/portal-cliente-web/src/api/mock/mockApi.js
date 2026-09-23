@@ -16,6 +16,7 @@
 //   GET /fluxo         -> idem
 
 import { ApiError } from "../ApiError";
+import { consultarCep as consultarCepAuxiliar } from "../real/cep";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
 import { competenciaPadrao } from "../../lib/format";
@@ -1648,6 +1649,13 @@ export function createMockApi() {
     },
 
     // --- Notas --------------------------------------------------------------
+    async getInvoiceDetail(companyId, invoiceId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const nota = estado.notas.find(n => n.clientId === id && n.invoiceId === invoiceId);
+      if (!nota) throw new ApiError(404, "not_found", "Nota não encontrada.");
+      return JSON.parse(JSON.stringify(nota));
+    },
     async getInvoices(companyId, { competencia, direcao = "emitidas", page = 1, limit = 25 } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
@@ -2528,6 +2536,18 @@ export function createMockApi() {
     //
     // ⚠ CPF NÃO CHEGA AQUI — quem não pergunta é a tela (`decidirConsulta`). Se chegasse mesmo
     // assim, cai no `cnpj_incompleto` abaixo, que é o mesmo do real.
+    // Dados postais deterministas; jamais acessa o serviço externo no modo demonstração.
+    async consultarCep(cep) {
+      return consultarCepAuxiliar(cep, {
+        municipios: [["3550308", "São Paulo", "SP"]],
+        fetchImpl: async (url) => ({
+          ok: true, status: 200,
+          json: async () => url.includes("/01001000/")
+            ? { cep: "01001-000", logradouro: "Praça da Sé", bairro: "Sé", localidade: "São Paulo", uf: "SP", ibge: "3550308" }
+            : { erro: true },
+        }),
+      });
+    },
     async consultarCnpj(cnpj) {
       await dormir(320); // consulta externa demora mais que uma leitura local
       const digitos = String(cnpj || "").replace(/\D+/g, "").slice(0, 14);

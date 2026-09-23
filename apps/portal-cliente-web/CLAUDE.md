@@ -1,5 +1,10 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Emissor do cliente e avisos — 23/09/2026
+
+Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
+
+
 ## Emissão durante navegação — 18/09/2026
 
 A emissão avulsa comunica à casca quando está enviando. Até receber o desfecho, bloqueia troca de empresa, saída, retorno e navegação interna; mudança direta do hash mantém o emissor montado e retorna a Notas. O resultado fica visível na mesma instância. Há trava imediata contra submit duplo e aviso de saída/recarregamento do navegador. Após resposta, a navegação volta a funcionar; desfecho desconhecido mantém as restrições de reenvio já existentes. Testes com promessa controlada verificam os dois elos, sem emitir ou consultar serviço externo.

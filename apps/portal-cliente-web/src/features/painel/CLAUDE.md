@@ -1,3 +1,7 @@
+# Painel sem alertas de guias vencidas — 23/09/2026
+
+O pedido atual remove o popup de ciência e o bloco de guias vencidas do painel, tanto no Fluxo quanto na DRE. Não renderizar esses avisos nem registrar ciência automaticamente. A aba Guias e os dados de pagamento permanecem; guias continuam compondo impostos e saídas do fluxo pelas regras existentes. O payload alertaDeGuias pode continuar chegando com o fluxo, mas não é apresentado no painel. Esta decisão substitui instruções antigas que exigiam popup/tabela permanente.
+
 # Fluxo mensal — 20/09/2026
 
 Pedido atual substitui a apresentação diária: quatro cards do mês selecionado, Entradas, Saídas (despesas + impostos, sem folha), Folha e Resultado (entradas − saídas − folha). Clique detalha o mês inteiro, inclusive linhas sem dia. Shared fluxoMensal usa a agregação existente; não muda motor, fontes ou procedência. Acumulado continua separado. Escritório somente leitura; cliente preserva a declaração de saída para conferência. DRE permanece restrita aos fechamentos contábeis.

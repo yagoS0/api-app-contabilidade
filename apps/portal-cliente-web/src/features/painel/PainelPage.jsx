@@ -44,7 +44,7 @@ function textoDaAliquota(l, competencia) {
     : base;
 }
 
-export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato, somenteLeitura = false }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoEnviarExtrato, somenteLeitura = false }) {
 
   const competencia = competenciaDaCasca || competenciaPadrao();
   const setCompetencia = aoTrocarCompetencia || (() => {});
@@ -97,11 +97,6 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   const atualizarResumo = () => {
     notasQuery.recarregar();
     aliquotaQuery.recarregar();
-  };
-
-  const verTodasAsGuias = () => {
-    aoTrocarCompetencia?.("");
-    aoNavegar("guias");
   };
 
   const carregando = notasQuery.carregando || aliquotaQuery.carregando;
@@ -176,7 +171,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         </div>
       )}
 
-      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoVerGuias={verTodasAsGuias} aoAtualizarFluxo={atualizarResumo} somenteLeitura={somenteLeitura} />
+      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoAtualizarFluxo={atualizarResumo} somenteLeitura={somenteLeitura} />
     </div>
   );
 }

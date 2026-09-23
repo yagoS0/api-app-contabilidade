@@ -25,14 +25,14 @@ const cenario = { doAdn: [], nossas: [], portalClient: null, eventos: [], relaci
 jest.mock("../../infrastructure/db/prisma.js", () => {
   const prisma = {
     portalClient: { findUnique: jest.fn() },
-    portalInvoice: { findMany: jest.fn(), count: jest.fn(), aggregate: jest.fn() },
+    portalInvoice: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), aggregate: jest.fn() },
     // ⚠ Entrou em 24/08/2026, com o `ciclo`: a listagem passou a ler os eventos da página para
     // distinguir CANCELADA de SUBSTITUÍDA. Sem esta chave no dublê, a rota inteira dava 500 — e o
     // teste apontava para a paginação, que não tinha nada com isso.
     portalInvoiceEvent: { findMany: jest.fn() },
     // ⚠ Entrou em 31/08/2026, com a sobreposição do cancelamento: a listagem pergunta se NÓS
     // cancelamos as notas EMIT da página (`ServiceInvoice.status = "cancelled"`).
-    serviceInvoice: { findMany: jest.fn(async () => []) },
+    serviceInvoice: { findFirst: jest.fn(), findMany: jest.fn(async () => []) },
     portalSyncState: { findUnique: jest.fn() },
     companyClientUser: { findUnique: jest.fn() },
     companyFirmAccess: { findUnique: jest.fn() },
@@ -52,6 +52,32 @@ import { lerEmitidasNaoConfirmadas } from "../../application/notas/notasEmitidas
 const CLIENT = "portal-1";
 const LEGACY = "company-legacy-1";
 const CNPJ = "00000000000191";
+
+describe('detalhe para modelo preserva a origem do tomador', () => {
+  const xml = '<DPS><infDPS><toma><CNPJ>11222333000181</CNPJ><end><endNac><cMun>3550308</cMun><CEP>01234000</CEP></endNac><xLgr>Rua Antiga</xLgr><nro>007</nro><xBairro>Centro</xBairro></end></toma></infDPS></DPS>';
+  it('lê somente nota da empresa autorizada e inclui endereço do XML', async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue({ ...pi(1), xmlRaw: xml });
+    const r = await request(montarApp()).get(`/clients/${CLIENT}/invoices/pi-1`);
+    expect(r.status).toBe(200);
+    expect(prisma.portalInvoice.findFirst).toHaveBeenCalledWith({ where: { id: 'pi-1', clientId: CLIENT } });
+    expect(r.body.tomador.endereco).toMatchObject({ xLgr: 'Rua Antiga', nro: '007', CEP: '01234000' });
+    expect(r.body.descricao).toBe('SERVICO DA NOTA 1');
+  });
+  it('emissão própria usa a empresa vinculada e somente status com nota emitida', async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue(null);
+    prisma.serviceInvoice.findFirst.mockResolvedValue({ ...si(1), xml });
+    const r = await request(montarApp()).get(`/clients/${CLIENT}/invoices/si-1`);
+    expect(r.status).toBe(200);
+    expect(prisma.serviceInvoice.findFirst).toHaveBeenCalledWith({ where: { id: 'si-1', companyId: LEGACY, status: { in: ['issued', 'cancelled'] } } });
+    expect(r.body.tomador.endereco.nro).toBe('007');
+  });
+  it('não oferece emissão própria fora do portal cliente opt-in', async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue(null);
+    const r = await request(montarApp({ incluirEmitidasNaoConfirmadas: false })).get(`/clients/${CLIENT}/invoices/si-1`);
+    expect(r.status).toBe(404);
+    expect(prisma.serviceInvoice.findFirst).not.toHaveBeenCalled();
+  });
+});
 
 /** Uma linha do ADN. `updatedAt` é a chave de ordenação padrão. */
 function pi(n) {
