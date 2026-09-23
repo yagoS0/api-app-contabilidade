@@ -2,7 +2,8 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { gerarPropostaPdf, propostaParaCliente } from "../PropostaComercialPdf.js";
 import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
-import { calcularOpcoes } from "../CatalogoComercial.js";
+import { calcularOpcoes as calcular } from "../CatalogoComercial.js";
+const calcularOpcoes = args => calcular({ ...args, diagnostico: { regularizacao: { necessaria: false, justificativa: "Sem regularização anterior no caso sintético.", condicaoInicioMensal: "SEM_REGULARIZACAO" } } });
 import { CATALOGO_SINTETICO } from "./fixtures/catalogoSintetico.js";
 import { createPublicOnboardingRouter } from "../../../routes/publicOnboarding.js";
 import { OnboardingError } from "../OnboardingService.js";
@@ -18,7 +19,7 @@ test("PDF inclui apenas os dados e o preço deste lead, sem a tabela interna", a
   expect(lido.text).toContain("Empresa Sintética"); expect(lido.text).toContain(ficha.cnpj);
   expect(lido.text).toContain("137,11"); expect(lido.text).toContain("Honorários mensais");
   expect(lido.text).not.toContain("SEGREDO"); expect(lido.text).not.toContain("781,33");
-  expect(lido.text).toContain("orçamento separado");
+  expect(lido.text).toContain("Não foi identificada regularização anterior necessária");
 });
 test("escopo extenso quebra páginas sem perder o final e rascunho fica identificado", async () => {
   const pdf = await gerarPropostaPdf({ ...propostaParaCliente(p), status: "RASCUNHO", condicoes: "Linha de condições para paginação.\n".repeat(100) + "ÚLTIMA CONDIÇÃO", pendencias: ["Conferir serviço adicional"] });

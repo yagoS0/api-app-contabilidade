@@ -69,7 +69,8 @@ test("cliente, identidade ambígua e humano bloqueiam o perfil comercial", () =>
   expect(decidirRespostaComercial({ r, flag: true, piloto: [] }).responde).toBe(false);
 });
 test("proposta pública não expõe preço interno, diagnóstico, tokenHash ou ids", async () => {
-  const p = { id: "interno", onboardingId: "lead", versao: 3, status: "APROVADA", fichaVersao: 0, expiraEm: new Date(), tokenHash: "hash", snapshot: { destinatario: "Ana", opcoes: [], catalogoId: "privado", justificativa: "negociação interna", diagnostico: "privado" } };
+  const snapshot = calcularOpcoes({ ficha: ficha({ modalidadeServico: "AVULSO" }), ajustes: { aberturaCentavos: 123456, justificativa: "Honorários conferidos" } });
+  const p = { id: "interno", onboardingId: "lead", versao: 3, status: "APROVADA", fichaVersao: 0, expiraEm: new Date(), tokenHash: "hash", snapshot: { ...snapshot, destinatario: "Ana", catalogoId: "privado", justificativa: "negociação interna", diagnostico: "privado" } };
   const s = criarPropostasComerciais({ db: { onboarding: { findUnique: async () => ({ versao: 0, status: "RASCUNHO" }) }, propostaComercial: { findFirst: async () => p } } });
   const r = await s.publico("a".repeat(43));
   expect(r.proposta).not.toHaveProperty("id"); expect(r.proposta).not.toHaveProperty("justificativa"); expect(r.proposta).not.toHaveProperty("catalogoId");

@@ -11,10 +11,14 @@ import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
 import { resolverConversaEnvioComercial } from "./CanalEnvioComercialService.js";
+import { normalizarDiagnosticoComercial, pendenciasDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 const erro = (codigo, mensagem) => new OnboardingError(codigo, mensagem, 409);
 const confirmados = new Set(["enviado", "entregue", "lido"]);
 const tiposConferencia = ["JORNADA_PUBLICA_CONFERIDA", "JORNADA_PUBLICA_MANUAL_CONFERIDA", "JORNADA_SITFIS_CONFERIDA"];
+// JSONB pode devolver as chaves em outra ordem; isso não representa nova análise.
+const conteudoCanonico = valor => JSON.stringify(valor, (_, v) => v && typeof v === "object" && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 function conferenciaPublica(analises, conferencias, ficha) {
   const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA" && a.cnpj === ficha.cnpj);
   const evento = conferencias.find(e => e.tipo === "JORNADA_PUBLICA_CONFERIDA" ? Boolean(publica && e.dados?.analiseId === publica.id)
@@ -29,12 +33,22 @@ export function dadosIniciaisPendentes(ficha) {
     [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]]
     .filter(([v]) => !String(v || "").trim()).map(([, nome]) => nome);
 }
-function contextoDoDiagnostico(ficha, analiseId, conferencia = null) {
+function perfilDaAnalise(ficha) {
+  const d = ficha.dados || {};
+  return Object.fromEntries(Object.entries({ regime: d.regimeAtual || d.regimePretendido, qtdFuncionarios: d.qtdFuncionarios, notasRecebidasMes: d.notasRecebidasMes, consultoriaMensal: d.consultoriaMensal, pretendeReativar: d.pretendeReativar }).filter(([, v]) => v != null && v !== ""));
+}
+function contextoDoDiagnostico(ficha, analiseId, conferencia = null, roteiroVersao = 0, perfilConferido = {}) {
   const d = ficha.dados || {};
   const partes = [ficha.origem, ficha.cnpj || null, analiseId,
     d.atividadePretendida || null, d.municipioAtendimento || d.municipioPretendido || null, d.enderecoPretendido || null];
   // Preserva os hashes anteriores de conferências por consulta oficial.
   if (conferencia?.modo === "MANUAL") partes.push("CADASTRO_MANUAL", conferencia.id);
+  if (roteiroVersao) {
+    const atual = perfilDaAnalise(ficha);
+    // Preencher um dado antes ausente não invalida uma análise que não o usou.
+    // Alterar um dado efetivamente conferido exige revisão, inclusive zero/false.
+    partes.push("ROTEIRO", roteiroVersao, Object.keys(perfilConferido).sort().map(k => [k, atual[k] ?? null]));
+  }
   return createHash("sha256").update(JSON.stringify(partes)).digest("hex");
 }
 
@@ -52,7 +66,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     ]);
     const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
     const publicaConferencia = conferenciaPublica(analises, conferencias, ficha);
-    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia);
+    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia, registros[0]?.dados?.roteiro?.versao, registros[0]?.dados?.perfilConferido);
     const diagnostico = registros[0]?.dados?.contexto === referencia ? registros[0] : null;
     const saidas = diagnostico ? await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
       orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } }) : [];
@@ -62,10 +76,12 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     });
     const apresentacao = diagnostico ? await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: diagnostico.id } }, orderBy: { createdAt: "desc" } }) : null;
     return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
+      diagnosticoPendencias: pendenciasDiagnosticoComercial(diagnostico?.dados, ficha.origem),
       publicaConferida: Boolean(publicaConferencia), publicaConferencia,
       fiscalConferido: Boolean(fiscal && conferencias.some(e => e.tipo === "JORNADA_SITFIS_CONFERIDA" && e.dados?.analiseId === fiscal.id)),
       diagnosticoDesatualizado: Boolean(registros[0] && !diagnostico),
       diagnosticoAnterior: !diagnostico && registros[0] ? registros[0].dados : null,
+      diagnosticoAnteriorId: !diagnostico ? registros[0]?.id || null : null,
       devolutiva: { partes, apresentacao, concluida: Boolean(diagnostico) && (Boolean(apresentacao) || partes.every(p => confirmados.has(p.status))),
         incerta: partes.some(p => ["enviando", "indeterminado"].includes(p.status)) } };
   }
@@ -78,7 +94,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       const reserva = await tx.onboarding.updateMany({ where: { id, versao: body.versao, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date() } });
       if (!Number.isInteger(body.versao) || !reserva.count) throw erro("formulario_alterado", "A ficha mudou. Recarregue e confira o diagnóstico.");
       if (dadosIniciaisPendentes(ficha).length) throw erro("dados_incompletos", "Conclua os dados iniciais antes de registrar o diagnóstico.");
-      if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10 && t.length <= 1200)) throw erro("diagnostico_incompleto", "Descreva o que foi conferido e os serviços necessários (10 a 1.200 caracteres por campo).");
+      if (typeof body.servicos !== "string" || body.servicos.trim().length < 10 || body.servicos.length > 1200) throw erro("diagnostico_incompleto", "Descreva os serviços necessários (10 a 1.200 caracteres).");
       let analiseId = null;
       let conferenciaCadastro = null;
       const dispensaConsultaPrivada = typeof body.dispensaConsultaPrivada === "string" ? body.dispensaConsultaPrivada.trim() : null;
@@ -95,13 +111,18 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
         if (!await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_SITFIS_CONFERIDA", dados: { path: ["analiseId"], equals: fiscal.id } } })) throw erro("analise_pendente", "Registre a conferência do relatório antes do diagnóstico.");
         analiseId = fiscal.id;
       }
-      const contexto = contextoDoDiagnostico(ficha, analiseId, conferenciaCadastro);
+      const estruturado = normalizarDiagnosticoComercial({ ...body, roteiro: { ...body.roteiro, dados: { ...body.roteiro?.dados, funcionariosClt: ficha.dados?.qtdFuncionarios, documentosEntradaMes: ficha.dados?.notasRecebidasMes } } }, ficha.origem);
+      const perfilConferido = perfilDaAnalise(ficha);
+      const contexto = contextoDoDiagnostico(ficha, analiseId, conferenciaCadastro, estruturado.roteiro.versao, perfilConferido);
       const anterior = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-      const achados = body.achados.trim(), servicos = body.servicos.trim();
-      if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos && (anterior.dados.dispensaConsultaPrivada || null) === dispensaConsultaPrivada) return anterior;
+      const achados = Object.values(estruturado.devolutiva).join("\n\n"), servicos = body.servicos.trim();
+      if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos && (anterior.dados.dispensaConsultaPrivada || null) === dispensaConsultaPrivada
+        && conteudoCanonico(anterior.dados.roteiro) === conteudoCanonico(estruturado.roteiro) && conteudoCanonico(anterior.dados.regularizacao) === conteudoCanonico(estruturado.regularizacao)) return anterior;
+      if (Object.hasOwn(body, "diagnosticoBaseId") && body.diagnosticoBaseId !== (anterior?.id || null)) throw erro("diagnostico_alterado", "Outro atendente atualizou o diagnóstico. Confira a versão atual antes de salvar.");
+      const texto = textoDaDevolutiva({ ...estruturado, servicos, dispensaConsultaPrivada }, { cnpj: ficha.cnpj, manual: conferenciaCadastro?.modo === "MANUAL" });
+      if (texto.length > 3800) throw erro("diagnostico_incompleto", "Resuma a devolutiva e o escopo para até 3.800 caracteres no total, incluindo as limitações e pendências.");
       return tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO", atorId: user.id,
-        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, analiseId, achados, servicos, dispensaConsultaPrivada, conferenciaCadastro,
-          texto: `Conferimos ${ficha.origem === "ABERTURA" ? "as informações para a abertura" : `as informações do atendimento da empresa de CNPJ ${ficha.cnpj}`}:\n\n${achados}${conferenciaCadastro?.modo === "MANUAL" ? "\n\nDados cadastrais conferidos manualmente pelo escritório; consulta automática não utilizada. Esta conferência não comprova regularidade fiscal." : ""}\n\nServiços propostos:\n${servicos}${dispensaConsultaPrivada ? `\n\nLimitação do escopo, sem consulta fiscal privada: ${dispensaConsultaPrivada}` : ""}\n\nNa próxima etapa, apresentaremos os valores dos serviços e, se desejar, da contabilidade mensal.` } } });
+        dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, fichaVersao: ficha.versao, perfilConferido, analiseId, achados, servicos, dispensaConsultaPrivada, conferenciaCadastro, ...estruturado, texto } } });
     });
   }
 

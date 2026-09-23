@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { camposDoContrato, sugerirVariaveisContrato, problemasDosCamposContrato } from "../../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
+import { motivoIncompatibilidadeContrato } from "../../../../../../packages/shared/src/onboarding/modeloContrato.js";
 
 export function FormularioContrato({ onboarding, proposta, recursos, onGerar }) {
   const [edicoes, setEdicoes] = useState({}), [validou, setValidou] = useState(false);
   const raiz = useRef(null);
   const opcao = proposta.snapshot?.opcoes?.find(o => o.chave === proposta.opcaoAceita);
-  const compativeis = recursos.filter(r => r.tipo === "CONTRATO" && r.dados?.recorrente === opcao?.recorrente && (onboarding.cnpj || r.dados?.permitePreCnpj)).sort((a, b) => b.versao - a.versao);
+  const compativeis = recursos.filter(modelo => !motivoIncompatibilidadeContrato({ modelo, onboarding, opcao })).sort((a, b) => b.versao - a.versao);
   const recentes = compativeis.filter((m, index) => compativeis.findIndex(v => (v.chave || v.id) === (m.chave || m.id) && Boolean(v.aprovadoEm) === Boolean(m.aprovadoEm)) === index);
   const aprovados = recentes.filter(m => m.aprovadoEm);
   const automatico = aprovados.length === 1 ? aprovados[0] : recentes.length === 1 ? recentes[0] : null;
@@ -40,8 +41,9 @@ export function FormularioContrato({ onboarding, proposta, recursos, onGerar }) 
   });
   return <section ref={raiz} className="commercial-contract-form" aria-label="Preenchimento do contrato">
     <p>Confira os dados preenchidos pela ficha e complete o que falta. Os valores e o escopo permanecem vinculados à proposta aceita.</p>
+    {!onboarding.cnpj && onboarding.origem === "ABERTURA" && <p>A contratação inicial identifica a pessoa responsável pela abertura, com CPF e endereço próprio. O CNPJ definitivo será registrado na ficha quando a empresa for constituída.</p>}
     {indisponivel && <p role="alert">A versão do modelo que estava sendo preenchida não está mais disponível para esta contratação. Selecione explicitamente outro modelo e confira seus campos antes de gerar o contrato.</p>}
-    {!modelos.length ? <p role="status">{recursos.some(r => r.tipo === "CONTRATO" && !r.aprovadoEm) ? "Há modelos em rascunho na biblioteca. Revise o texto e aprove uma versão compatível antes de gerar o contrato." : "Cadastre e aprove na biblioteca um modelo compatível com a opção aceita."} <AbrirBiblioteca /></p> : <label>Modelo do contrato<select value={modelo?.id || ""} onChange={e => { const m = compativeis.find(r => r.id === e.target.value); setSelecao({ id: m?.id || "", versao: m?.versao }); setEdicoes({}); setValidou(false); }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao} · {m.aprovadoEm ? "Aprovado" : "Rascunho"}</option>)}</select></label>}
+    {!modelos.length ? <p role="status">{!onboarding.cnpj ? "Falta um modelo próprio para abertura antes do CNPJ, na modalidade aceita." : opcao?.recorrente === false ? "Falta um modelo de serviço avulso compatível com esta solicitação." : "Falta um modelo de contabilidade mensal compatível com esta solicitação."} Revise e aprove a versão adequada na biblioteca. <AbrirBiblioteca /></p> : <label>Modelo do contrato<select value={modelo?.id || ""} onChange={e => { const m = compativeis.find(r => r.id === e.target.value); setSelecao({ id: m?.id || "", versao: m?.versao }); setEdicoes({}); setValidou(false); }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao} · {m.aprovadoEm ? "Aprovado" : "Rascunho"}</option>)}</select></label>}
     {modelo && !modelo.aprovadoEm && <p role="status"><strong>Rascunho da biblioteca.</strong> Você pode preencher os dados e conferir a prévia. Revise e aprove o modelo na biblioteca para gerar contrato. <AbrirBiblioteca /></p>}
     {modelo && <>
       {grupos.map(grupo => <fieldset key={grupo}><legend>{grupo}</legend>{campos.filter(c => c.grupo === grupo && !c.protegido).map(c => {

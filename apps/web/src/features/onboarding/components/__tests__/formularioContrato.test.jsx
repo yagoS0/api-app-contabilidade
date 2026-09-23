@@ -6,6 +6,26 @@ const props = () => ({
   recursos: [{ id: "modelo", tipo: "CONTRATO", titulo: "Modelo mensal", versao: 2, aprovadoEm: "2026-09-01", texto: "{{contratante}} {{nome}} {{endereco}} {{cargo}} {{diaVencimento}} {{honorariosMensais}} {{servico}} {{limiteDocumentos}}", dados: { recorrente: true, camposPadrao: { diaVencimento: 10 } } }],
   onGerar: jest.fn(),
 });
+
+test('abertura pré-CNPJ explica identificação PF e apresenta somente o modelo apropriado', () => {
+  const p = props();
+  p.onboarding = { origem: 'ABERTURA', responsavelNome: 'Ana', dados: {} };
+  p.proposta.snapshot.opcoes[0].recorrente = false;
+  p.recursos.push({ id: 'pre-cnpj', tipo: 'CONTRATO', titulo: 'Abertura antes do CNPJ', versao: 1, texto: '{{nome}} {{cpf}} {{enderecoRepresentante}}', dados: { recorrente: false, permitePreCnpj: true, identificacaoContratante: 'PESSOA_FISICA', origens: ['ABERTURA'] } });
+  render(<FormularioContrato {...p} />);
+  expect(screen.getByText(/pessoa responsável pela abertura, com CPF/)).toBeVisible();
+  expect(screen.getByLabelText('Modelo do contrato')).toHaveValue('pre-cnpj');
+  expect(screen.getByLabelText('Endereço completo da pessoa contratante')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Gerar contrato da opção aceita' })).toBeDisabled();
+  expect(screen.getByText(/Rascunho da biblioteca/)).toBeVisible();
+});
+
+test('falta de modelo pré-CNPJ tem orientação específica, não manda aprovar o modelo errado', () => {
+  const p = props(); p.onboarding = { origem: 'ABERTURA', dados: {} };
+  render(<FormularioContrato {...p} />);
+  expect(screen.getByRole('status')).toHaveTextContent('Falta um modelo próprio para abertura antes do CNPJ');
+  expect(screen.queryByLabelText('Modelo do contrato')).not.toBeInTheDocument();
+});
 test("seleciona o único modelo compatível, preenche a ficha e envia apenas os campos editáveis", () => {
   const p = props(); render(<FormularioContrato {...p} />);
   expect(screen.getByLabelText("Modelo do contrato")).toHaveValue("modelo");
@@ -26,7 +46,7 @@ test("avulso, minuta e contrato que exige CNPJ não são oferecidos para a contr
   const p = props(); p.onboarding.cnpj = null;
   p.recursos.push({ ...p.recursos[0], id: "avulso", titulo: "Serviço isolado", dados: { recorrente: false, permitePreCnpj: true } }, { ...p.recursos[0], id: "rascunho", aprovadoEm: null });
   render(<FormularioContrato {...p} />);
-  expect(screen.getByRole("status")).toHaveTextContent("modelos em rascunho");
+  expect(screen.getByRole("status")).toHaveTextContent("Falta um modelo próprio para abertura antes do CNPJ");
   expect(screen.getByRole("button", { name: "Gerar contrato da opção aceita" })).toBeDisabled();
   expect(screen.queryByLabelText("Modelo do contrato")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: /biblioteca/ })).toHaveAttribute("target", "_blank");

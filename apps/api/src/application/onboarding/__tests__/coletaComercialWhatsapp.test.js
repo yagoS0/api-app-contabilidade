@@ -310,3 +310,64 @@ test("intervenção humana depois da coleta impede a saída pendente", async () 
   await expect(t.chamar("Me chamo Ana", { enviar })).rejects.toMatchObject({ code: "atendimento_alterado" });
   expect(t.ficha.dados.responsavelNome).toBe("Ana");
 });
+
+test("pergunta sobre modalidades explica sem escolher avulso ou perder os botões atuais", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ" } });
+  await t.chamar("Voltei");
+  const anterior = structuredClone(t.ficha);
+  const pergunta = await t.chamar("Qual a diferença entre só abertura e mensal?");
+  expect(pergunta.resultado.texto).toContain("O serviço pontual");
+  expect(pergunta.resultado.botoes).toHaveLength(3);
+  expect(t.caso.triagem.campoEsperado).toBe("modalidadeServico");
+  expect(t.ficha).toEqual(anterior);
+  await t.chamar("Quero contabilidade mensal");
+  expect(t.ficha.dados.modalidadeServico).toBe("RECORRENTE");
+  expect(t.caso.triagem.campoEsperado).toBe("qtdFuncionarios");
+});
+test("FAQ de abertura durante transferência não troca origem ou encaminha uma nova solicitação", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", cnpj: "11222333000181", motivoTroca: "Atendimento" } });
+  t.ficha.origem = "TRANSFERENCIA"; t.ficha.cnpj = "11222333000181";
+  t.caso.triagem = { campoEsperado: "modalidadeServico" };
+  const r = await t.chamar("Qual a diferença entre só abertura e mensal?");
+  expect(r.motivo).toBe("COLETA_COMERCIAL");
+  expect(t.ficha.origem).toBe("TRANSFERENCIA"); expect(t.ficha.dados.modalidadeServico).toBeUndefined();
+  expect(t.caso.triagem.proximaSolicitacao).toBeUndefined(); expect(t.conversa.atendidaDesde).toBeUndefined();
+});
+test("pausa e retorno conservam atividade ausente sem somar erro", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana" } });
+  await t.chamar("Voltei");
+  const versao = t.ficha.versao;
+  expect((await t.chamar("Aguarda um pouco")).resultado.texto).toContain("Quando quiser continuar");
+  expect((await t.chamar("Voltei")).resultado.texto).toContain("Qual atividade");
+  expect(t.ficha.versao).toBe(versao); expect(t.ficha.dados.atividadePretendida).toBeUndefined();
+  expect(t.caso.triagem.esclarecimentos).toBe(0);
+  await t.chamar("Sou médica"); expect(t.caso.triagem.campoEsperado).toBe("municipioAtendimento");
+});
+test("dúvida inicial é respondida antes de perguntar nome e não confirma viabilidade", async () => {
+  const t = banco();
+  const r = await t.chamar("Sou médica. Preciso abrir um CNPJ. Consigo usar meu endereço de casa?");
+  expect(r.resultado.texto).toContain("depende da atividade");
+  expect(r.resultado.texto.indexOf("viabilidade")).toBeLessThan(r.resultado.texto.indexOf("Como você se chama"));
+  expect(t.ficha.dados).toEqual({ atividadePretendida: "médica" });
+});
+test("FAQ continua na resposta final quando os outros dados já permitem handoff", async () => {
+  const t = banco({ dados: { responsavelNome: "Ana", atividadePretendida: "Medicina", municipioAtendimento: "Rio/RJ", modalidadeServico: "AVULSO" } });
+  t.caso.triagem = { campoEsperado: "enderecoPretendido" };
+  const r = await t.chamar("endereço: Rua Teste, 10; Preciso de alvará?");
+  expect(r.motivo).toBe("ENCAMINHADA"); expect(r.resultado.texto).toContain("licença ou alvará");
+  expect(r.resultado.texto).toContain("A equipe vai conferir");
+  expect((await t.chamar("Obrigada")).motivo).toBe("AUTOMACAO_INVALIDADA");
+});
+test("pergunta sobre baixa conserva objetivo; decisão explícita encerra triagem sem oferecer mensalidade", async () => {
+  const t = inativaComDataPendente();
+  await t.chamar("janeiro de 2023");
+  const duvida = await t.chamar("Posso dar baixa com dívida?");
+  expect(duvida.resultado.texto).toContain("situação fiscal");
+  expect(t.ficha.dados.pretendeReativar).toBeUndefined(); expect(t.ficha.dados.modalidadeServico).toBeUndefined();
+  expect(t.caso.triagem.campoEsperado).toBe("pretendeReativar");
+  const baixa = await t.chamar("Quero dar baixa");
+  expect(baixa.motivo).toBe("ENCAMINHADA"); expect(baixa.resultado.texto).toContain("orçamento do encerramento");
+  expect(baixa.resultado.botoes).toBeUndefined();
+  expect(t.ficha.dados).toMatchObject({ pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" });
+  expect(t.ficha.dados.qtdFuncionarios).toBeUndefined(); expect(t.ficha.dados.notasRecebidasMes).toBeUndefined();
+});

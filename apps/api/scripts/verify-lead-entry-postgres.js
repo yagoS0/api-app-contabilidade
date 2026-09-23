@@ -14,7 +14,7 @@ const run = `entrada-lead-${crypto.randomUUID()}`;
 const comercial = process.argv.includes("--commercial");
 const canalId = `${run}-canal`;
 const base = Number(String(Date.now()).slice(-7));
-const telefones = Array.from({ length: 21 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
+const telefones = Array.from({ length: 24 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
 Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", WHATSAPP_IDENTIDADE_V2: comercial ? "1" : "0", WHATSAPP_CHAT_V2: "0",
   WHATSAPP_MULTICANAL: comercial ? "1" : "0", WHATSAPP_COLETA_COMERCIAL: "1", IA_COMERCIAL_TELEFONES_PILOTO: comercial ? "" : telefones.filter((_, i) => i !== 4).join(","),
   WHATSAPP_TESTE_TOKEN: "fake-offline-commercial-token", WHATSAPP_PHONE_NUMBER_ID: "fixture-channel", WHATSAPP_WABA_ID: "fixture-waba",
@@ -217,6 +217,19 @@ try {
 
   cenario = "Odontologia: comparar abertura avulsa e mensal";
   await entrada(comparar, "Sou dentista e quero abrir uma empresa; me chamo Bianca; cidade: Rio de Janeiro/RJ");
+  const antesDuvidaModalidade = await casoAtivo(comparar);
+  const botoesAntesDuvida = saidas.at(-1).botoes;
+  await entrada(comparar, "Qual a diferença entre só abertura e mensal?");
+  atual = await casoAtivo(comparar);
+  assert.deepEqual(atual.onboarding.dados, antesDuvidaModalidade.onboarding.dados);
+  assert.equal(atual.onboarding.versao, antesDuvidaModalidade.onboarding.versao);
+  assert.equal(atual.triagem.campoEsperado, "modalidadeServico");
+  assert.equal(atual.onboarding.dados.modalidadeServico, undefined, "Perguntar a diferença não pode escolher AVULSO");
+  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
+  assert.deepEqual(saidas.at(-1).botoes, botoesAntesDuvida, "A dúvida mantém os três botões da mesma solicitação");
+  assert.match(saidas.at(-1).texto, /O serviço pontual/);
+  assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
+  ok("Pergunta sobre modalidades explica, conserva os dados e aguarda a escolha pelos botões ou texto");
   await entrada(comparar, "quero ver as duas opções");
   await entrada(comparar, "só eu");
   await entrada(comparar, "não sei");
@@ -368,6 +381,90 @@ try {
   assert.match(saidas.at(-1).texto, /solicita|separar/i);
   assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
   ok("Segundo serviço preserva a primeira solicitação e pede separação humana dos atendimentos");
+
+  const [baixar, pausa, viabilidade] = telefones.slice(21);
+  cenario = "Encerramento: dúvidas não decidem; baixa explícita é avulsa";
+  await entrada(baixar, "Minha empresa está sem movimento; me chamo Diana; CNPJ 11222333000181");
+  assert.equal((await casoAtivo(baixar)).onboarding.origem, "INATIVA");
+  await entrada(baixar, "janeiro de 2023");
+  const antesDuvidaBaixa = await casoAtivo(baixar);
+  for (const texto of ["Posso dar baixa com dívida?", "Se eu reativar, como funciona?", "Não quero reativar"]) {
+    await entrada(baixar, texto);
+    atual = await casoAtivo(baixar);
+    assert.deepEqual(atual.onboarding.dados, antesDuvidaBaixa.onboarding.dados);
+    assert.equal(atual.onboarding.versao, antesDuvidaBaixa.onboarding.versao);
+    assert.equal(atual.triagem.campoEsperado, "pretendeReativar");
+    assert.equal(atual.onboarding.dados.pretendeReativar, undefined);
+    assert.equal(atual.onboarding.dados.modalidadeServico, undefined);
+    assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
+    assert.equal(saidas.at(-1).tipo, "enviarTexto");
+    assert.match(saidas.at(-1).texto, /empresa|reativar|encerramento/i);
+  }
+  const idBaixa = await entrada(baixar, "Quero dar baixa");
+  atual = await casoAtivo(baixar);
+  assert.equal(atual.onboarding.dados.pretendeReativar, "BAIXAR");
+  assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
+  assert.equal(atual.onboarding.dados.qtdFuncionarios, undefined);
+  assert.equal(atual.onboarding.dados.notasRecebidasMes, undefined);
+  assert.equal(atual.triagem.campoEsperado, null);
+  assert.equal(saidas.at(-1).tipo, "enviarTexto");
+  assert.equal(saidas.at(-1).botoes, undefined);
+  assert.match(saidas.at(-1).texto, /orçamento do encerramento/);
+  assert.doesNotMatch(saidas.at(-1).texto, /contabilidade mensal|funcionários|notas de compras/);
+  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
+  const depoisBaixa = saidas.length, dadosBaixa = structuredClone(atual.onboarding.dados);
+  await entrada(baixar, "Quero dar baixa", { id: idBaixa });
+  await entrada(baixar, "Quero contabilidade mensal");
+  assert.equal(saidas.length, depoisBaixa, "Replay e fala posterior não desfazem handoff do encerramento");
+  assert.deepEqual((await casoAtivo(baixar)).onboarding.dados, dadosBaixa);
+  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
+  ok("Dúvidas e negação não gravam baixa; decisão explícita prepara avulso sem mensalidade e conserva pausa humana");
+
+  cenario = "Pausas coloquiais preservam a atividade e a retomada";
+  await entrada(pausa, "Quero abri uma empresa; me chamo Clara");
+  const antesPausa = await casoAtivo(pausa);
+  assert.equal(antesPausa.onboarding.origem, "ABERTURA");
+  assert.equal(antesPausa.triagem.campoEsperado, "atividadePretendida");
+  for (const texto of ["Aguarda um pouco", "Pera aí", "Só um minutinho", "Já te mando", "Voltei"]) {
+    await entrada(pausa, texto);
+    atual = await casoAtivo(pausa);
+    assert.equal(atual.onboarding.versao, antesPausa.onboarding.versao);
+    assert.deepEqual(atual.onboarding.dados, antesPausa.onboarding.dados);
+    assert.equal(atual.triagem.campoEsperado, "atividadePretendida");
+    assert.equal(atual.triagem.esclarecimentos, 0);
+    assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
+    assert.match(saidas.at(-1).texto, texto === "Voltei" ? /Qual atividade/ : /Quando quiser continuar/);
+  }
+  await entrada(pausa, "Sou médica");
+  atual = await casoAtivo(pausa);
+  assert.equal(atual.onboarding.dados.atividadePretendida, "médica");
+  assert.equal(atual.triagem.campoEsperado, "municipioAtendimento");
+  ok("Pausas naturais e retorno não viram atividade, não somam incompreensão e retomam a coleta correta");
+
+  cenario = "Dúvida de viabilidade antes da qualificação e antes do handoff";
+  await entrada(viabilidade, "Sou médica. Quero abrir um CNPJ. Consigo usar meu endereço de casa?");
+  let textoViabilidade = saidas.at(-1).texto;
+  assert.match(textoViabilidade, /depende da atividade/);
+  assert.match(textoViabilidade, /viabilidade/);
+  assert.match(textoViabilidade, /Como você se chama/);
+  assert(textoViabilidade.indexOf("viabilidade") < textoViabilidade.indexOf("Como você se chama"));
+  atual = await casoAtivo(viabilidade);
+  assert.equal(atual.onboarding.dados.atividadePretendida, "médica");
+  assert.equal(atual.onboarding.dados.responsavelNome, undefined);
+  assert.equal(atual.onboarding.dados.enderecoPretendido, undefined);
+  await entrada(viabilidade, "Me chamo Fernanda; cidade: Rio de Janeiro/RJ; só abertura");
+  assert.equal((await casoAtivo(viabilidade)).triagem.campoEsperado, "enderecoPretendido");
+  await entrada(viabilidade, "endereço: Rua de Teste 100; Preciso de alvará?");
+  textoViabilidade = saidas.at(-1).texto;
+  assert.match(textoViabilidade, /licença ou alvará depende/);
+  assert.match(textoViabilidade, /A equipe vai conferir/);
+  assert(textoViabilidade.indexOf("licença") < textoViabilidade.indexOf("A equipe vai conferir"));
+  atual = await casoAtivo(viabilidade);
+  assert.equal(atual.onboarding.dados.enderecoPretendido, "Rua de Teste 100");
+  assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
+  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
+  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
+  ok("Dúvida recebe orientação antes da qualificação e do handoff, sem inventar viabilidade ou licença aprovada");
 
   if (comercial) {
     cenario = "Responsável conhecido de duas empresas, sem permissão fiscal";

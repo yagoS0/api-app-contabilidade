@@ -1,3 +1,4 @@
+import { pendenciasDiagnosticoComercial } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 const nomes = { ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" };
 const existe = v => Boolean(String(v || "").trim());
 
@@ -24,8 +25,9 @@ export function montarJornada(estado, agora = Date.now()) {
     add("autorizacao", "Obter autorização", autorizada || (fiscal && estado.atendimento?.representanteVerificadoEm && autorizacao?.cnpj === o.cnpj), "Envie o passo a passo, confira o representante e verifique a procuração. A mensagem enviada não comprova autorização.", autorizada ? [] : ["Representante conferido e procuração verificada para SITFIS"]);
     add("fiscal", "Consultar situação fiscal", fiscal && j.fiscalConferido, "Solicite a análise, aguarde o resultado e confira o PDF e a tabela antes de definir o serviço.", j.fiscalConferido ? [] : [fiscal ? "Conferir o relatório antes de continuar" : "Relatório fiscal disponível para conferência"]);
   }
-  add("diagnostico", abertura ? "Conferir viabilidade e escopo" : nomes[o.origem] === "Transferência" ? "Definir transferência e regularização" : "Definir regularização", j.diagnostico,
-    abertura ? "Registre a conferência do endereço, da atividade e das exigências de abertura. Descreva condições ainda a confirmar sem prometer viabilidade não verificada." : "Descreva as pendências encontradas e os serviços necessários. Separe regularização pontual da contabilidade mensal.", j.diagnostico ? [] : [j.diagnosticoDesatualizado ? "Os dados ou o relatório mudaram. Revise o diagnóstico." : "Diagnóstico e escopo conferidos pelo contador"]);
+  const pendenciasDiagnostico = pendenciasDiagnosticoComercial(j.diagnostico?.dados, o.origem);
+  add("diagnostico", abertura ? "Conferir viabilidade e escopo" : nomes[o.origem] === "Transferência" ? "Definir transferência e regularização" : "Definir regularização", j.diagnostico && !pendenciasDiagnostico.length,
+    abertura ? "Registre a conferência do endereço, da atividade e das exigências de abertura. Descreva condições ainda a confirmar sem prometer viabilidade não verificada." : "Descreva as pendências encontradas e os serviços necessários. Separe regularização pontual da contabilidade mensal.", pendenciasDiagnostico);
   add("devolutiva", "Apresentar os serviços ao lead", j.devolutiva?.concluida, abertura ? "Confira e envie a mensagem com a análise da abertura e os serviços propostos." : "Confira a devolutiva. O envio inclui o relatório fiscal em PDF e a mensagem com as pendências e os serviços.", j.devolutiva?.concluida ? [] : [j.devolutiva?.incerta ? "Envio sem confirmação: confira o histórico." : "Devolutiva enviada ao lead"]);
   const expirou = proposta && !aceita && new Date(proposta.expiraEm).getTime() <= agora;
   add("proposta", "Valores e aceite da proposta", aceita, "Escolha avulso, contabilidade mensal ou comparação. Confira os valores, aprove a versão e envie a proposta para o aceite do lead.", aceita ? [] : [expirou ? "A proposta expirou. Prepare outra versão." : proposta?.status === "ENVIADA" ? "Aguardando o aceite do lead no link" : "Proposta revisada, enviada e aceita"]);

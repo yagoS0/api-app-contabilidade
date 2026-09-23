@@ -60,7 +60,10 @@ function setup(origem = "TRANSFERENCIA") {
   const jornada = criarJornadaLead({ db });
   return { ficha, eventos, analises, propostas, contratos, db, jornada,
     conferir: (body = {}) => jornada.conferirAnalise(ficha.id, user, { tipo: "PUBLICA", versao: ficha.versao, manual, ...body }),
-    diagnosticar: () => jornada.diagnosticar(ficha.id, user, { versao: ficha.versao, achados: "Cadastro conferido pelo contador para delimitar o atendimento.", servicos: "Serviço cadastral solicitado pelo interessado.", dispensaConsultaPrivada: "Escopo restrito ao serviço cadastral; não foi consultada a situação fiscal privada." }),
+    diagnosticar: (body = {}) => jornada.diagnosticar(ficha.id, user, { versao: ficha.versao,
+      devolutiva: { certo: "Cadastro conferido pelo contador para delimitar o atendimento.", atencao: "A situação fiscal privada ainda não foi consultada.", corrigir: "Atualização cadastral restrita ao serviço solicitado." },
+      regularizacao: { necessaria: false, justificativa: "Não identificada no escopo cadastral restrito conferido.", condicaoInicioMensal: "SEM_REGULARIZACAO" },
+      servicos: "Serviço cadastral solicitado pelo interessado.", dispensaConsultaPrivada: "Escopo restrito ao serviço cadastral; não foi consultada a situação fiscal privada.", ...body }),
   };
 }
 
@@ -130,11 +133,70 @@ test("nova conferência manual invalida diagnóstico e apresentação anteriores
   await expect(t.jornada.registrarApresentacao(t.ficha.id, user, { versao: t.ficha.versao, diagnosticoId: d.id, meio: "Reunião", evidencia: "Conferida" })).rejects.toMatchObject({ code: "diagnostico_alterado" });
 });
 
+test("diagnóstico preserva pendências e não transforma roteiro vazio em consultas realizadas", async () => {
+  const t = setup(); await t.conferir(); const d = await t.diagnosticar();
+  expect(Object.values(d.dados.roteiro.conferencias).every(c => c.estado === "PENDENTE")).toBe(true);
+  expect(d.dados.roteiroPendencias).toContain("Certidões RFB e PGFN");
+  expect(d.dados.texto).toContain("O que está certo:");
+  expect(d.dados.texto).toContain("Pontos de atenção e o que falta conferir:");
+  expect(d.dados.texto).toContain("O que podemos corrigir ou fazer a seguir:");
+  expect(d.dados.texto).toContain("Ainda não conferido nesta análise:");
+  expect(d.dados.fichaVersao).toBe(t.ficha.versao);
+  expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled();
+});
+
+test("diagnóstico novo exige os três blocos e uma decisão sobre regularização", async () => {
+  const t = setup(); await t.conferir();
+  await expect(t.diagnosticar({ devolutiva: undefined })).rejects.toMatchObject({ code: "diagnostico_incompleto" });
+  await expect(t.diagnosticar({ regularizacao: undefined })).rejects.toMatchObject({ code: "diagnostico_incompleto" });
+  await expect(t.diagnosticar({ regularizacao: { necessaria: true, justificativa: "Regularização de declarações omissas.", condicaoInicioMensal: "SEM_REGULARIZACAO" } })).rejects.toMatchObject({ code: "diagnostico_incompleto" });
+  expect(t.eventos.filter(e => e.tipo === "JORNADA_DIAGNOSTICO")).toHaveLength(0);
+});
+
+test("conferido ou não aplicável precisa de evidência; alteração exige nova apresentação", async () => {
+  const t = setup(); await t.conferir();
+  for (const estado of ["FEITO", "NAO_APLICAVEL"]) await expect(t.diagnosticar({ roteiro: { conferencias: { certidoesFederais: { estado, evidencia: "ok" } } } })).rejects.toMatchObject({ code: "diagnostico_incompleto" });
+  const d = await t.diagnosticar({ roteiro: { conferencias: { certidoesFederais: { estado: "FEITO", evidencia: "Certidões apresentadas e validade conferida manualmente." } } } });
+  await t.jornada.registrarApresentacao(t.ficha.id, user, { versao: t.ficha.versao, diagnosticoId: d.id, meio: "Reunião", evidencia: "Apresentação sintética conferida." });
+  const novo = await t.diagnosticar({ diagnosticoBaseId: d.id, roteiro: { conferencias: { certidoesFederais: { estado: "FEITO", evidencia: "Nova certidão apresentada com validade revisada." } } } });
+  expect(novo.id).not.toBe(d.id); expect((await t.jornada.carregar(t.ficha.id, user)).devolutiva.concluida).toBe(false);
+  await expect(t.diagnosticar({ diagnosticoBaseId: d.id, servicos: "Escopo de um rascunho concorrente desatualizado." })).rejects.toMatchObject({ code: "diagnostico_alterado" });
+});
+
+test("mudança material de regime ou folha invalida diagnóstico estruturado sem apagar evidências", async () => {
+  const t = setup(); t.ficha.dados = { regimeAtual: "SIMPLES", qtdFuncionarios: 2 }; await t.conferir(); const d = await t.diagnosticar();
+  t.ficha.dados.qtdFuncionarios = 4; t.ficha.versao++;
+  const j = await t.jornada.carregar(t.ficha.id, user);
+  expect(j.diagnostico).toBeNull(); expect(j.diagnosticoAnteriorId).toBe(d.id); expect(j.diagnosticoAnterior.roteiro).toEqual(d.dados.roteiro);
+  expect(j.diagnosticoDesatualizado).toBe(true);
+});
+
+test("primeiro preenchimento de perfil ausente conserva o diagnóstico que não utilizou esses dados", async () => {
+  const t = setup(); await t.conferir(); const d = await t.diagnosticar();
+  expect(d.dados.perfilConferido).toEqual({});
+  Object.assign(t.ficha.dados, { regimeAtual: "SIMPLES", qtdFuncionarios: 2, notasRecebidasMes: 20, consultoriaMensal: false }); t.ficha.versao++;
+  const j = await t.jornada.carregar(t.ficha.id, user);
+  expect(j.diagnostico.id).toBe(d.id); expect(j.diagnosticoDesatualizado).toBe(false);
+  expect(j.diagnostico.dados.roteiroPendencias).toContain("Funcionários CLT"); // snapshot antigo não foi reescrito como conferido
+});
+
+test("a ficha é a fonte da folha e dos documentos usados na análise e no orçamento", async () => {
+  const t = setup(); t.ficha.dados = { qtdFuncionarios: 2, notasRecebidasMes: 20 }; await t.conferir();
+  const d = await t.diagnosticar({ roteiro: { dados: { funcionariosClt: 100, documentosEntradaMes: 999, receita12Meses: 120000 } } });
+  expect(d.dados.roteiro.dados).toMatchObject({ funcionariosClt: 2, documentosEntradaMes: 20, receita12Meses: 120000 });
+});
+
+test("devolutiva longa é recusada antes da gravação para caber no WhatsApp com a assinatura", async () => {
+  const t = setup(); await t.conferir();
+  await expect(t.diagnosticar({ devolutiva: { certo: "a".repeat(1200), atencao: "b".repeat(1200), corrigir: "c".repeat(1200) }, servicos: "d".repeat(1200) })).rejects.toMatchObject({ code: "diagnostico_incompleto" });
+  expect(t.eventos.filter(e => e.tipo === "JORNADA_DIAGNOSTICO")).toHaveLength(0);
+});
+
 test("origem manual fica no snapshot; contrato conserva exatamente preço e escopo aceitos", async () => {
   const t = setup(); await t.conferir(); const diagnostico = await t.diagnosticar();
   await t.jornada.registrarApresentacao(t.ficha.id, user, { versao: t.ficha.versao, diagnosticoId: diagnostico.id, meio: "Presencial", evidencia: "Cliente conferiu o escopo durante reunião." });
   const s = criarPropostasComerciais({ db: t.db });
-  const p = await s.gerar(t.ficha.id, user, { versao: t.ficha.versao, ajustes: { servicoCentavos: 24680, justificativa: "Honorário sintético conferido", escopoAvulso: "Serviço cadastral sintético." } });
+  const p = await s.gerar(t.ficha.id, user, { versao: t.ficha.versao, ajustes: { tipoServicoAvulso: "OUTRO", servicoCentavos: 24680, justificativa: "Honorário sintético conferido", escopoAvulso: "Serviço cadastral sintético." } });
   const aprovada = await s.aprovar(t.ficha.id, p.id, user);
   expect(aprovada.snapshot.conferenciaCadastro).toMatchObject({ modo: "MANUAL", id: diagnostico.dados.conferenciaCadastro.id });
   const publica = propostaParaCliente(aprovada);

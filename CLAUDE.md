@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Validação integral de leads — 23/09/2026
+
+Perguntas, negações e pausas não definem contratação nem objetivo da empresa parada. Baixa explícita segue avulso; o servidor também impede proposta mensal/comparação para esse objetivo em fichas manuais ou antigas. O diagnóstico tem devolutiva em três blocos, roteiro com evidências e decisão de regularização separada antes da mensalidade. Pendências e limites de consulta ficam visíveis, sem exigir API para avançar. O perfil inicialmente ausente pode ser completado; alteração de informação já conferida pede revisão e preserva o rascunho. JSONB exige comparação canônica para não duplicar confirmações concorrentes.
+
+Pisos e adicionais vêm do catálogo privado aprovado e ficam congelados na proposta; revisar rascunhos antigos antes de aprovar, gerar PDF/link ou aceitar. Propostas aceitas permanecem preservadas. Contratos distinguem modalidade, origem e identificação PF/PJ; abertura sem CNPJ pede modelo próprio e endereço da pessoa, sem reutilizar o endereço futuro da empresa. Regularização entra uma única vez no total inicial, taxas ficam separadas. Dados institucionais/CRC e textos/preços reais permanecem somente na biblioteca privada, nunca no Git. Minuta não equivale a modelo aprovado. Plano e validações em `docs/ajustes-leads-validacao-20260923.md`; testes locais sem Anthropic, mensagens, consultas pagas, assinatura ou cobrança reais.
+
 ## Proposta, contrato e chat na ficha — 21/09/2026
 
 PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.

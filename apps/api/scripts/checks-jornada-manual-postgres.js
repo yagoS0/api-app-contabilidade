@@ -1,3 +1,4 @@
+import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -54,7 +55,7 @@ try {
   assert.equal((await conferir(0, evento.dados.evidencia)).id, evento.id);
   ok("CAS PostgreSQL aceita somente uma conferência concorrente e repetições não criam análise fictícia");
 
-  const diagnosticar = async () => j.diagnosticar(ficha.id, user, { versao: (await atual()).versao, achados: "Dados cadastrais conferidos manualmente para o serviço solicitado.", servicos: "Atualização cadastral sintética com escopo restrito.", dispensaConsultaPrivada: "Não foi consultada a situação fiscal privada; serviço restrito à atualização cadastral." });
+  const diagnosticar = async () => j.diagnosticar(ficha.id, user, { versao: (await atual()).versao, ...diagnosticoSintetico("Dados cadastrais conferidos manualmente para o serviço solicitado."), servicos: "Atualização cadastral sintética com escopo restrito.", dispensaConsultaPrivada: "Não foi consultada a situação fiscal privada; serviço restrito à atualização cadastral." });
   const apresentar = async d => j.registrarApresentacao(ficha.id, user, { versao: (await atual()).versao, diagnosticoId: d.id, meio: "Reunião sintética", evidencia: "O interessado conferiu o escopo limitado na reunião de teste." });
   const diagnostico = await diagnosticar(); await apresentar(diagnostico);
   const carregada = await j.carregar(ficha.id, user);
@@ -67,7 +68,7 @@ try {
   const recursos = criarRecursosComerciais({ db });
   const cat = await recursos.criar({ tipo: "CATALOGO", chave: "honorarios", titulo: `Catálogo sintético ${prefixo}`, dados: CATALOGO_SINTETICO }, user);
   await recursos.aprovar(cat.id, user); ids.catalogo = cat.id;
-  const gerar = async () => propostas.gerar(ficha.id, user, { versao: (await atual()).versao, ajustes: { servicoCentavos: 24680, escopoAvulso: "Atualização cadastral sintética.", justificativa: "Valor sintético conferido para a prova." } });
+  const gerar = async () => propostas.gerar(ficha.id, user, { versao: (await atual()).versao, ajustes: { tipoServicoAvulso: "OUTRO", servicoCentavos: 24680, escopoAvulso: "Atualização cadastral sintética.", justificativa: "Valor sintético conferido para a prova." } });
   const primeira = await gerar(); await propostas.aprovar(ficha.id, primeira.id, user);
   const primeiroLink = await propostas.emitirLink(ficha.id, primeira.id, user);
   assert.equal((await propostas.publico(primeiroLink.token)).proposta.conferenciaCadastro.modo, "MANUAL");
@@ -103,7 +104,7 @@ try {
   const outra = await db.onboarding.create({ data: { origem: "INATIVA", cnpj, criadoPorId: user.id, dados: { modalidadeServico: "AVULSO" } } });
   ids.fichaCnpjAlterado = outra.id;
   await j.conferirAnalise(outra.id, user, { tipo: "PUBLICA", versao: 0, manual });
-  const corpo = { versao: 1, achados: "Cadastro sintético conferido manualmente.", servicos: "Serviço cadastral delimitado pelo contador.", dispensaConsultaPrivada: "Sem análise fiscal privada neste escopo sintético." };
+  const corpo = { versao: 1, ...diagnosticoSintetico("Cadastro sintético conferido manualmente."), servicos: "Serviço cadastral delimitado pelo contador.", dispensaConsultaPrivada: "Sem análise fiscal privada neste escopo sintético." };
   await j.diagnosticar(outra.id, user, corpo);
   await db.onboarding.update({ where: { id: outra.id }, data: { cnpj: "99888777000166", versao: { increment: 1 } } });
   const alterada = await j.carregar(outra.id, user);
