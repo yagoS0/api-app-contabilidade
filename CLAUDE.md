@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Emissor do cliente e avisos — 23/09/2026
+
+Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
+
 ## Validação integral de leads — 23/09/2026
 
 Perguntas, negações e pausas não definem contratação nem objetivo da empresa parada. Baixa explícita segue avulso; o servidor também impede proposta mensal/comparação para esse objetivo em fichas manuais ou antigas. O diagnóstico tem devolutiva em três blocos, roteiro com evidências e decisão de regularização separada antes da mensalidade. Pendências e limites de consulta ficam visíveis, sem exigir API para avançar. O perfil inicialmente ausente pode ser completado; alteração de informação já conferida pede revisão e preserva o rascunho. JSONB exige comparação canônica para não duplicar confirmações concorrentes.

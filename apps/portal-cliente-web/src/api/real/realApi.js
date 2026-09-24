@@ -11,6 +11,7 @@ import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 import { consultarCnpjNaBrasilApi } from "./brasilApi";
+import { consultarCep } from "./cep";
 import { competenciaPadrao } from "../../lib/format";
 // ⚠ Só o DRE ainda é demonstração — o fluxo de caixa passou a vir do servidor em 27/08/2026.
 
@@ -179,6 +180,9 @@ export function createRealApi() {
 
     // --- Notas --------------------------------------------------------------
     // -> { data, page, limit, total, summary:{ totalInvoices, totalAmount, pageAmount }, sync }
+    async getInvoiceDetail(companyId, invoiceId) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/invoices/${encodeURIComponent(invoiceId)}`);
+    },
     async getInvoices(companyId, { competencia, page = 1, limit = 25 } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/invoices${qs({
@@ -559,6 +563,8 @@ export function createRealApi() {
     // ⚠ Ela NUNCA lança. A recusa é `{ ok:false, motivo, mensagem }`, e é assim de propósito: um
     // erro lançado daqui entraria no `real_with_mock_fallback` de `api/index.js` e uma queda da
     // BrasilAPI viraria **dados do mock** numa tela que emite nota fiscal de verdade.
+    consultarCep,
+
     async consultarCnpj(cnpj) {
       return consultarCnpjNaBrasilApi(cnpj);
     },

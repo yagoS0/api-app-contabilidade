@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { TRACO, brl, fmtCompetencia, pct, texto } from "../../lib/format";
+import { TRACO, brl, pct, texto } from "../../lib/format";
 import { useCarregamento } from "../../lib/hooks";
 import { roleLabel } from "../../lib/roles";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
@@ -29,11 +29,7 @@ import {
 // sim, no caso do presumido"*) — LEITURA, nunca campo. Ver o bloco `A CARGA TRIBUTÁRIA APROXIMADA`,
 // abaixo, e o cabeçalho de `lib/cargaTributaria.js` para o porquê de ela não ir no payload.
 import {
-  CARGA_NAO_RECEBIDA,
   ESTADO_CARGA,
-  O_QUE_E_A_CARGA,
-  QUEM_CONFIGURA,
-  frasePendencia,
   lerCargaTributaria,
 } from "./lib/cargaTributaria";
 import { registrarDescricao, sugerirDescricoes } from "./lib/descricoesRecentes";
@@ -196,24 +192,6 @@ function formVazio() {
 }
 
 const CONSULTA_OCIOSA = { estado: "ocioso", recusa: null, aviso: null, endereco: null, nome: "" };
-
-/**
- * Campos que `NfseService` exige da EMPRESA antes de qualquer emissão (`REQUIRED_COMPANY_FIELDS`).
- *
- * ⚠ **`cnpj` FICOU DE FORA DE PROPÓSITO, e isso foi medido, não suposto.** O servidor exige cinco
- * campos; o `legacyCompanySelect` de `GET /client/companies`
- * (`apps/api/src/routes/client/index.js`) devolve só quatro deles — `Company.cnpj` **não está no
- * select**. Conferir um campo que nunca chega faria esta tela acusar "falta o CNPJ" em **todas** as
- * empresas, inclusive nas que emitem sem problema: um aviso que está sempre aceso não é aviso, é
- * ruído, e ensina o cliente a ignorar o painel. (O CNPJ que a tela recebe é o do `PortalClient`,
- * `empresa.cnpj` — outra coluna, de outra tabela; usá-lo aqui responderia a pergunta errada.)
- */
-const CAMPOS_EXIGIDOS_DA_EMPRESA = [
-  ["inscricaoMunicipal", "inscrição municipal"],
-  ["codigoServicoNacional", "código de serviço nacional"],
-  ["codigoServicoMunicipal", "código de serviço municipal"],
-  ["rpsSerie", "série do RPS"],
-];
 
 // ⚠⚠ `REGIME` E `lerRegime` MUDARAM-SE PARA `lib/impostosDaNota.js` EM 20/08/2026, junto com as
 // três decisões que dependem deles (o bloco de ISS, a alíquota de ISS e o `pTotTribSN`). Estavam
@@ -407,7 +385,12 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   const [origemNome, setOrigemNome] = useState(ORIGEM.AUSENTE);
   const [origemEndereco, setOrigemEndereco] = useState(ORIGEM.AUSENTE);
   const ultimoConsultado = useRef(null);
+  const consultaCnpjPendente = useRef(null);
   const [gatilhoConsulta, setGatilhoConsulta] = useState(0);
+  const cepPreenchido = useRef(null);
+  const completarEnderecoModelo = useRef(false);
+  const [pedidoCep, setPedidoCep] = useState(null);
+  const [consultaCep, setConsultaCep] = useState(null);
 
   // A última escolha no seletor de tomadores já emitidos — para a tela poder DIZER o que ela fez, e
   // para os rótulos de origem. ⚠ `null` é "ninguém escolheu nada"; não é "escolheu e nada mudou".
@@ -438,6 +421,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     setConsulta(CONSULTA_OCIOSA);
     setOrigemNome(ORIGEM.AUSENTE);
     setOrigemEndereco(ORIGEM.AUSENTE);
+    cepPreenchido.current = null;
+    setPedidoCep(null);
+    setConsultaCep(null);
     setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
     // ⚠ A MEMÓRIA É DA EMPRESA. Um tomador escolhido que sobrevivesse à troca deixaria na tela o
     // rótulo "de uma nota já emitida" apontando para uma nota que a empresa NOVA nunca emitiu.
@@ -488,7 +474,12 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // impede a consulta de CNPJ, que o próprio preenchimento do documento dispara, de trocá-lo
     // sozinho pelo da Receita.
     setOrigemNome(modelo.campos.tomadorNome ? ORIGEM.DIGITADO : ORIGEM.AUSENTE);
-    setOrigemEndereco(ORIGEM.AUSENTE);
+    const temEnderecoModelo = ["cep", "cMun", "logradouro", "numero", "bairro"].some(campo => modelo.campos[campo]);
+    completarEnderecoModelo.current = temEnderecoModelo;
+    setOrigemEndereco(temEnderecoModelo ? ORIGEM.DIGITADO : ORIGEM.AUSENTE);
+    cepPreenchido.current = null;
+    setPedidoCep(null);
+    setConsultaCep(null);
     // ⚠ A alíquota efetiva volta a ser recalculada: o `setForm` acima zerou `pTotTribSN`, e sem
     // devolver a origem para `AUSENTE` o efeito que preenche o campo não reexecutaria — o campo
     // ficaria vazio com "preenchido pelo portal" ao lado.
@@ -501,6 +492,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     setDesfecho(null);
     setRetryInvoiceId(null);
     setModeloNaTela(modelo);
+    setGatilhoConsulta(n => n + 1);
   }, [modelo, companyId]);
 
   /** Tira o modelo do caminho — o formulário volta a ser um formulário em branco. */
@@ -520,9 +512,6 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
    * espelho afirmava outro. Hoje ela pergunta `codigoQueANotaDeclara`, que responde o que vai SAIR
    * na nota. ⚠ A montagem fica logo abaixo do `cadastroDeCodigos`, que é quem sabe a situação.
    */
-  const cadastroIncompleto = legacy
-    ? CAMPOS_EXIGIDOS_DA_EMPRESA.filter(([campo]) => !legacy[campo]).map(([, nome]) => nome)
-    : [];
 
   const regime = lerRegime(empresa);
   // ── OS CAMPOS DE IMPOSTO DESTA NOTA ───────────────────────────────────────────────────────
@@ -578,9 +567,25 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // continua exatamente como estava.
   const documento = form.tomadorDoc;
   useEffect(() => {
+    const preenchido = cepPreenchido.current;
+    if (!preenchido || preenchido.documento === documento) return;
+    const limpos = {};
+    for (const [campo, valor] of Object.entries(preenchido.campos)) {
+      if (formRef.current[campo] === valor) limpos[campo] = "";
+    }
+    cepPreenchido.current = null;
+    formRef.current = { ...formRef.current, ...limpos };
+    setForm(anterior => ({ ...anterior, ...limpos }));
+  }, [documento]);
+  useEffect(() => {
     const decisao = decidirConsulta(documento, { ultimoConsultado: ultimoConsultado.current });
+    const chaveConsulta = `${companyId}:${decisao.digitos}:${gatilhoConsulta}`;
+    // StrictMode e mudança apenas da máscara podem cancelar o consumidor anterior.
+    // Reusar a promessa evita repetir a rede sem abandonar a resposta no novo efeito.
+    if (decisao.motivo === NAO_CONSULTA.REPETIDA && consultaCnpjPendente.current?.chave === chaveConsulta) decisao.consultar = true;
     if (!decisao.consultar) {
       if (decisao.motivo === NAO_CONSULTA.CPF || decisao.motivo === NAO_CONSULTA.FORA_DE_FORMA) {
+        ultimoConsultado.current = null;
         setConsulta((anterior) => (anterior === CONSULTA_OCIOSA ? anterior : CONSULTA_OCIOSA));
       }
       return undefined;
@@ -621,8 +626,12 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       setForm((anterior) => ({ ...anterior, ...vazio }));
     }
 
+    if (consultaCnpjPendente.current?.chave !== chaveConsulta) {
+      consultaCnpjPendente.current = { chave: chaveConsulta, promessa: Promise.resolve().then(() => api.consultarCnpj(decisao.digitos)) };
+    }
+    const promessaCnpj = consultaCnpjPendente.current.promessa;
     (async () => {
-      const resposta = await api.consultarCnpj(decisao.digitos);
+      const resposta = await promessaCnpj;
       // A lista oficial é esperada AQUI, e não lida de um estado que talvez ainda não tenha
       // chegado: sem ela, `codigoMunicipioVerificado` recusa o código e o endereço inteiro cai
       // junto — uma consulta boa viraria "a consulta não trouxe o município" por corrida de carga.
@@ -659,6 +668,15 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         origemAtual: origemEnderecoRef.current,
         endereco: leituraEndereco.endereco,
       });
+      if (completarEnderecoModelo.current && leituraEndereco.endereco) {
+        const recebido = leituraEndereco.endereco;
+        const campos = passoEndereco.endereco;
+        const compativel = ["CEP", "cMun", "xLgr", "xBairro"].every(chave =>
+          !campos[chave] || String(campos[chave]).replace(/\W/g, "").toLowerCase() === String(recebido[chave] || "").replace(/\W/g, "").toLowerCase());
+        if (compativel) for (const chave of Object.keys(recebido)) {
+          if (!campos[chave]) campos[chave] = recebido[chave];
+        }
+      }
       if (passoNome.aplicou) setOrigemNome(ORIGEM.DA_RECEITA);
       if (passoEndereco.aplicou) setOrigemEndereco(ORIGEM.DA_RECEITA);
       setForm((anterior) => ({
@@ -679,7 +697,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         endereco: mensagemEndereco(leituraEndereco),
         nome,
       });
-    })();
+    })().catch(() => {
+      if (!descartado) setConsulta({ ...CONSULTA_OCIOSA, estado: "recusa", recusa: "Não foi possível consultar o CNPJ. Tente novamente ou preencha os dados." });
+    });
 
     return () => {
       descartado = true;
@@ -692,6 +712,51 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // uma queda de rede exigiria apagar e redigitar o documento inteiro.
     ultimoConsultado.current = null;
     setGatilhoConsulta((n) => n + 1);
+  }
+
+  useEffect(() => {
+    if (!pedidoCep || pedidoCep.companyId !== companyId || pedidoCep.documento !== documento) {
+      setConsultaCep(null);
+      return;
+    }
+    let descartado = false;
+    setConsultaCep({ estado: "consultando" });
+    Promise.resolve().then(() => api.consultarCep(pedidoCep.cep)).then(resposta => {
+      if (descartado || apenasDigitos(formRef.current.cep) !== pedidoCep.cep) return;
+      if (!resposta?.ok) {
+        setConsultaCep({ estado: "erro", mensagem: resposta?.mensagem || "Não foi possível consultar o CEP. Preencha o endereço ou tente novamente." });
+        return;
+      }
+      const endereco = resposta.endereco || {};
+      const atual = formRef.current;
+      const campos = {};
+      for (const [campo, fonte] of Object.entries({ cMun: "cMun", logradouro: "xLgr", bairro: "xBairro" })) {
+        if (atual[campo] === pedidoCep.anterior[campo] && endereco[fonte]) campos[campo] = endereco[fonte];
+      }
+      cepPreenchido.current = { cep: pedidoCep.cep, companyId, documento, campos };
+      formRef.current = { ...atual, ...campos };
+      setForm(anterior => ({ ...anterior, ...campos }));
+      setConsultaCep({ estado: "ok" });
+    }).catch(() => {
+      if (!descartado) setConsultaCep({ estado: "erro", mensagem: "Não foi possível consultar o CEP. Preencha o endereço ou tente novamente." });
+    });
+    return () => { descartado = true; };
+  }, [pedidoCep, companyId, documento]);
+
+  function consultarCepDigitado(valor) {
+    const cep = apenasDigitos(valor);
+    const anterior = { ...formRef.current };
+    const preenchido = cepPreenchido.current;
+    if (preenchido && preenchido.companyId === companyId && preenchido.documento === documento && preenchido.cep !== cep) {
+      for (const [campo, conteudo] of Object.entries(preenchido.campos)) {
+        if (anterior[campo] === conteudo) anterior[campo] = "";
+      }
+      cepPreenchido.current = null;
+      formRef.current = anterior;
+      setForm(anterior);
+    }
+    setConsultaCep(null);
+    setPedidoCep(/^\d{5}-?\d{3}$/.test(String(valor).trim()) ? { cep, companyId, documento, anterior } : null);
   }
 
   // ── OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU ─────────────────────────────────────────
@@ -992,7 +1057,11 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   function campoDoTomador(nome, marcarOrigem) {
     return (evento) => {
       const valor = evento.target.value;
+      if (marcarOrigem === setOrigemEndereco) completarEnderecoModelo.current = false;
       marcarOrigem(ORIGEM.DIGITADO);
+      if (marcarOrigem === setOrigemEndereco) origemEnderecoRef.current = ORIGEM.DIGITADO;
+      if (marcarOrigem === setOrigemNome) origemNomeRef.current = ORIGEM.DIGITADO;
+      formRef.current = { ...formRef.current, [nome]: valor };
       // ⚠ E O RÓTULO DA MEMÓRIA SAI JUNTO. Escrever por cima de um campo que veio de uma nota
       // anterior torna "de uma nota já emitida" uma frase FALSA sobre aquele campo — e a frase que
       // descreve um comportamento é parte do comportamento. A saída é por GRUPO (nome × endereço),
@@ -1206,91 +1275,6 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
               aoNovaNota={() => setDesfecho(null)}
             />
           ) : null}
-          {cadastroIncompleto.length ? (
-            // ⚠ AVISO, NÃO BLOQUEIO — e a diferença é de fonte do dado. O portão é bloqueio porque
-            // `emissaoNfseLiberada` existe justamente para a tela decidir. Isto aqui é a MESMA
-            // regra do servidor lida de segunda mão (uma projeção da empresa legada), e bloquear
-            // por uma leitura de segunda mão pararia uma emissão legítima. Se ela vier a ser
-            // recusada, a recusa é da camada NOSSA: nada sai da máquina e nenhum número se perde.
-            <div className="alerta alerta-aviso" role="status">
-              <p>
-                <strong>O cadastro fiscal desta empresa parece incompleto.</strong> Falta:{" "}
-                {cadastroIncompleto.join(", ")}.
-              </p>
-              <p>
-                Você pode preencher a nota, mas ela provavelmente será recusada antes de sair daqui.
-                Fale com o seu contador.
-              </p>
-            </div>
-          ) : null}
-
-          {/* ⚠⚠ ESTE AVISO ERA FALSO, E A MEDIÇÃO ESTÁ AQUI. Ele afirmava que *"a emissão pelo
-              portal do cliente ainda não cobre esse caso"* e que a nota *"provavelmente será
-              recusada"* — verdade enquanto os três percentuais só pudessem vir no corpo da emissão,
-              e MENTIRA desde que o cadastro passou a ser a fonte deles (18/08/2026, a pedido do
-              dono: *"deve ser configurado do lado do contador, no portal do contador"*).
-              O que `NfseService` faz hoje, lido e não deduzido: cada um de
-              `pTotTribFed`/`pTotTribEst`/`pTotTribMun` resolve SOZINHO, **payload → cadastro**, e
-              só falta o que não estiver em nenhum dos dois (`MISSING_TOT_TRIB_NAO_SIMPLES`, com a
-              lista nomeada). Ou seja: com o cadastro completo, esta tela emite para o não optante
-              sem precisar de campo nenhum a mais.
-              ⚠⚠ **E DESDE 19/08/2026 A TELA SABE**, a pedido do dono: *"o portal do cliente deve
-              enxergar sim, no caso do presumido"*. Os três percentuais entraram no
-              `legacyCompanySelect` de `GET /client/companies` (`apps/api/src/routes/client/index.js`,
-              com o ⚠ do porquê ao lado deles), então o texto abaixo virou UMA resposta em vez de
-              duas — e a que descrevia as duas saídas sobrou só para o estado em que ela continua
-              verdadeira: quando a resposta **não trouxe** as chaves (`ESTADO_CARGA.NAO_RECEBIDA`).
-              ⚠ CHEGOU PARA VER, NÃO PARA MEXER. Não há campo aqui, e não pode haver: isto é
-              configuração fiscal do ESCRITÓRIO, e o payload da emissão **não** leva os três — se
-              levasse, o payload venceria o cadastro (`NfseService` resolve por campo, payload →
-              cadastro) e um valor velho preso neste formulário sobrescreveria em silêncio a
-              correção que o contador acabou de fazer.
-              ⚠ AVISO, NÃO BLOQUEIO — pela mesma razão do cadastro incompleto logo acima: o regime
-              que chega aqui é a SEGUNDA leitura do servidor (`Company.regimeTributario`), e a
-              primeira (`CadastroFiscal.regime`) pode dizer outra coisa. */}
-          {carga && carga.estado === ESTADO_CARGA.NAO_RECEBIDA ? (
-            <div className="alerta alerta-aviso" role="status">
-              <p>
-                <strong>Esta empresa não é optante pelo Simples Nacional.</strong>
-              </p>
-              <p>{CARGA_NAO_RECEBIDA}</p>
-            </div>
-          ) : null}
-
-          {/* ⚠ O CADASTRO ESTÁ COMPLETO: A TELA NÃO INSINUA RECUSA. O aviso antigo dizia que a nota
-              "provavelmente será recusada" para toda empresa não optante — e com os três
-              percentuais gravados isso é simplesmente falso: `NfseService` cai no cadastro e a nota
-              sai. Um aviso que está sempre aceso não é aviso, é ruído.
-              ⚠ `alerta-info`, não `alerta-aviso`: não há nada a consertar. O que há é um número que
-              vai IMPRESSO ao tomador e que o cliente precisava ver antes de emitir. */}
-          {carga && carga.estado === ESTADO_CARGA.COMPLETA ? (
-            <div className="alerta alerta-info" role="status">
-              <p>{O_QUE_E_A_CARGA}</p>
-              <p>
-                {carga.itens.map((item, i) => (
-                  <span key={item.campo}>
-                    {i ? " · " : ""}
-                    {item.rotulo} <strong>{pct(item.valor)}</strong>
-                  </span>
-                ))}
-              </p>
-              <p className="hint">{QUEM_CONFIGURA}</p>
-            </div>
-          ) : null}
-
-          {/* ⚠ FALTANDO: A TELA DIZ QUAIS, E DE QUEM É A CANETA. "Falta a carga tributária" mandaria
-              o cliente conferir três números que ele não pode editar; e sem dizer que quem configura
-              é o contador, ele procura o campo nesta tela até desistir. É o mesmo molde da recusa
-              `MISSING_TOT_TRIB_NAO_SIMPLES` do servidor, que também NOMEIA o que falta. */}
-          {carga && carga.estado === ESTADO_CARGA.PENDENTE ? (
-            <div className="alerta alerta-aviso" role="status">
-              <p>
-                <strong>{frasePendencia(carga)}</strong>
-              </p>
-              <p>{QUEM_CONFIGURA}</p>
-            </div>
-          ) : null}
-
           {retryInvoiceId ? (
             <div className="alerta alerta-info" role="status">
               <p>
@@ -1300,31 +1284,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
             </div>
           ) : null}
 
-          {/* ⚠⚠ O PAINEL DO MODELO. Ele é a metade que impede a emissão errada, e por isso os
-              avisos vêm da REGRA (`lib/reaproveitarNota.js`), não escritos aqui: quem muda o que se
-              copia muda o que a tela diz, no mesmo arquivo — e foi essa disciplina que fez a
-              reviravolta de 19/08/2026 custar uma linha, não uma caçada.
-
-              ⚠ ATÉ 19/08/2026 o segundo aviso incondicional era "o valor NÃO foi copiado". O dono
-              reverteu: o valor passou a ser COPIADO, e a linha virou CONFERÊNCIA. A frase antiga
-              não sobreviveu ao comportamento — ela já estaria mentindo. */}
           {modeloNaTela ? (
-            <div className="alerta alerta-info" role="status">
-              <p>
-                <strong>
-                  Preenchido a partir da nota nº {texto(modeloNaTela.origem.numero)}
-                  {modeloNaTela.origem.competencia
-                    ? ` · ${fmtCompetencia(modeloNaTela.origem.competencia)}`
-                    : ""}
-                </strong>
-              </p>
-              {modeloNaTela.avisos.map((aviso) => (
-                <p key={aviso.codigo}>
-                  {aviso.tom === "atencao" ? <strong>{aviso.texto}</strong> : aviso.texto}
-                </p>
-              ))}
-              <p>
-                <button type="button" className="btn-link" onClick={() => {
+            <div>
+                <button type="button" className="btn" disabled={enviando} onClick={() => {
                   setForm(formVazio());
                   marcarDescricaoDigitada(false);
                   setOrigemNome(ORIGEM.AUSENTE);
@@ -1334,9 +1296,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   ultimoConsultado.current = null;
                   esquecerModelo();
                 }}>
-                  Começar do zero
+                  Apagar tudo
                 </button>
-              </p>
             </div>
           ) : null}
 
@@ -1515,8 +1476,20 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                 </legend>
                 <label htmlFor="emitir-cep">
                   CEP
-                  <input id="emitir-cep" inputMode="numeric" required value={form.cep} onChange={campoDoTomador("cep", setOrigemEndereco)} />
+                  <input id="emitir-cep" inputMode="numeric" required value={form.cep} onChange={event => {
+                    const cepAnterior = apenasDigitos(formRef.current.cep);
+                    if (cepAnterior && cepAnterior !== apenasDigitos(event.target.value)) {
+                      const limpos = { cMun: "", logradouro: "", bairro: "" };
+                      formRef.current = { ...formRef.current, ...limpos };
+                      setForm(anterior => ({ ...anterior, ...limpos }));
+                    }
+                    campoDoTomador("cep", setOrigemEndereco)(event);
+                    consultarCepDigitado(event.target.value);
+                  }} />
                 </label>
+                  {consultaCep?.estado === "consultando" ? <span role="status">Consultando CEP…</span> : null}
+                  {consultaCep?.estado === "erro" ? <span role="status">{consultaCep.mensagem}</span> : null}
+                  {consultaCep?.estado === "erro" ? <button type="button" className="btn-link" onClick={() => consultarCepDigitado(form.cep)}>Consultar CEP novamente</button> : null}
 
                 {/* ⚠ ERAM SETE DÍGITOS DIGITADOS À MÃO. Agora se busca pelo NOME, na tabela oficial
                     do IBGE versionada no repositório — ver `SeletorMunicipio.jsx`. */}
@@ -1525,7 +1498,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   rotulo="Município do tomador"
                   valor={form.cMun}
                   onChange={(codigo) => {
+                    completarEnderecoModelo.current = false;
                     setOrigemEndereco(ORIGEM.DIGITADO);
+                    origemEnderecoRef.current = ORIGEM.DIGITADO;
+                    formRef.current = { ...formRef.current, cMun: codigo };
                     // ⚠ O município tem seletor próprio e não passa por `campoDoTomador` — o
                     // rótulo da memória precisa sair aqui também, senão ele sobrevive a uma troca
                     // de município e passa a descrever um endereço que já não é o da nota anterior.

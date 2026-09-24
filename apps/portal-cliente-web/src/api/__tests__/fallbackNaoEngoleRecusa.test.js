@@ -19,6 +19,7 @@ const chamadas = { real: [], mock: [] };
 
 jest.mock("../real/realApi", () => ({
   createRealApi: () => ({
+    getInvoiceDetail: async () => { throw new TypeError('rede indisponível'); },
     fetchDanfseBlob: async () => {
       chamadas.real.push("fetchDanfseBlob");
       throw Object.assign(new Error("sem QR Code"), { status: 503, code: "danfse_sem_qrcode" });
@@ -46,6 +47,7 @@ jest.mock("../real/realApi", () => ({
 
 jest.mock("../mock/mockApi", () => ({
   createMockApi: () => ({
+    getInvoiceDetail: async () => { chamadas.mock.push('getInvoiceDetail'); return {invoiceId:'ficticia'}; },
     fetchDanfseBlob: async () => { chamadas.mock.push("fetchDanfseBlob"); return "PDF-DO-MOCK"; },
     emitirNfse: async () => { chamadas.mock.push("emitirNfse"); return { status: "issued" }; },
     getInvoices: async () => { chamadas.mock.push("getInvoices"); return { data: [] }; },
@@ -69,6 +71,10 @@ afterEach(() => {
 });
 
 describe("⚠⚠ recusa NOMEADA do backend NUNCA vira resposta do mock", () => {
+  test('detalhe usado para emissão não vira modelo fictício nem em falha de rede', async () => {
+    await expect(createApiClient().getInvoiceDetail('pc-001','inv-1')).rejects.toThrow('rede indisponível');
+    expect(chamadas.mock).not.toContain('getInvoiceDetail');
+  });
   test("`503 danfse_sem_qrcode` SOBE — o mock não entrega um PDF no lugar da recusa", async () => {
     const api = createApiClient();
     await expect(api.fetchDanfseBlob("pc-001", "inv-1")).rejects.toMatchObject({

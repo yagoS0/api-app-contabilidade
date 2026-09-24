@@ -1,11 +1,6 @@
-// A LIGAÇÃO DA CARGA TRIBUTÁRIA APROXIMADA — do `GET /client/companies` até a frase e a prévia.
-//
-// ⚠⚠ **É ESTA SUÍTE QUE PROVA QUE O `select` DO BACKEND FOI AMPLIADO.** O teste de regra ao lado
-// (`lib/__tests__/cargaTributaria.test.js`) ficaria VERDE para sempre com o `legacyCompanySelect` de
-// `apps/api/src/routes/client/index.js` intocado: ele chama a função com um objeto escrito à mão.
-// Aqui a empresa entra na tela com a MESMA FORMA que a rota devolve — `legacyCompany` com as três
-// chaves, os valores como STRING (`Decimal` do Prisma serializa em texto) — e o que se mede é a
-// frase que o cliente lê. Componente sem chamador é o defeito favorito deste projeto.
+// Carga tributária: a prévia preserva percentuais e o payload não sobrescreve o cadastro.
+// Pedido de 23/09/2026 remove os avisos superiores, inclusive cadastro incompleto/não recebido.
+// Esta suíte usa fixtures no formato da API; não comprova sozinha a seleção do backend.
 //
 // ⚠ **DENTRO DE `<StrictMode>`**, como o teste de ligação do reaproveitamento: o React 19 roda cada
 // efeito duas vezes ali, e um defeito desta tela já apareceu SÓ nessa segunda passada.
@@ -103,10 +98,10 @@ describe("PRESUMIDO com o cadastro COMPLETO — a tela não insinua recusa", () 
     expect(textoDaTela()).not.toMatch(/Esta tela não recebeu esse cadastro/i);
   });
 
-  it("diz o que a nota declara ao tomador, e que o número sai impresso", async () => {
+  it("não mostra a explicação superior dos tributos impressos", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/Lei 12\.741\/2012/);
-    expect(textoDaTela()).toMatch(/saem impressos na nota/i);
+    expect(textoDaTela()).not.toMatch(/Lei 12\.741\/2012/);
+    expect(textoDaTela()).not.toMatch(/saem impressos na nota/i);
   });
 
   it("⚠ OS TRÊS PERCENTUAIS CHEGAM DA ROTA ATÉ A TELA, com rótulo e valor", async () => {
@@ -120,9 +115,9 @@ describe("PRESUMIDO com o cadastro COMPLETO — a tela não insinua recusa", () 
     expect(texto).toContain("0,00%");
   });
 
-  it("diz de quem é a caneta: quem configura é o CONTADOR", async () => {
+  it("não mostra aviso superior de configuração pelo contador", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/Quem configura estes percentuais é o seu contador/i);
+    expect(textoDaTela()).not.toMatch(/Quem configura estes percentuais é o seu contador/i);
   });
 
   it("⚠ O ESPELHO DA NOTA mostra a carga que vai declarada", async () => {
@@ -136,25 +131,25 @@ describe("PRESUMIDO com o cadastro COMPLETO — a tela não insinua recusa", () 
   });
 });
 
-describe("PRESUMIDO com o cadastro INCOMPLETO — a tela diz QUAIS faltam", () => {
+describe("PRESUMIDO com cadastro incompleto — sem aviso superior, prévia fiel", () => {
   const empresa = empresaDoPortal({ regime: "LUCRO_PRESUMIDO", carga: CARGA_SO_MUNICIPAL });
 
-  it("⚠ NOMEIA as parcelas que faltam — nunca 'falta a carga tributária'", async () => {
+  it("não mostra aviso superior das parcelas ausentes", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/Falta configurar as parcelas federal e estadual/i);
+    expect(textoDaTela()).not.toMatch(/Falta configurar as parcelas federal e estadual/i);
   });
 
-  it("diz que nada sai e nenhum número se perde", async () => {
+  it("não mostra explicação superior de numeração", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/sem consumir numeração/i);
+    expect(textoDaTela()).not.toMatch(/sem consumir numeração/i);
   });
 
-  it("diz que quem configura é o contador — o cliente não procura o campo aqui", async () => {
+  it("não mostra orientação superior ao contador", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/Quem configura estes percentuais é o seu contador/i);
+    expect(textoDaTela()).not.toMatch(/Quem configura estes percentuais é o seu contador/i);
   });
 
-  it("⚠ AVISO, NÃO BLOQUEIO: o formulário continua de pé e o botão Emitir continua lá", async () => {
+  it("o formulário e o botão Emitir permanecem disponíveis", async () => {
     await renderizar(empresa);
     // O regime que chega é a SEGUNDA leitura do servidor; bloquear por ela pararia uma emissão
     // legítima. A recusa, se vier, é da nossa camada — antes da numeração.
@@ -221,10 +216,10 @@ describe("⚠ O GUARDA VALE NOS DOIS SENTIDOS — o mesmo do portal do escritór
 describe("⚠ O TERCEIRO ESTADO: a resposta não trouxe as chaves", () => {
   const empresa = empresaDoPortal({ regime: "LUCRO_PRESUMIDO", carga: CARGA_NAO_RECEBIDA });
 
-  it("volta a descrever as DUAS saídas — é o único caso em que isso continua verdade", async () => {
+  it("não reapresenta aviso superior quando as chaves não vieram", async () => {
     await renderizar(empresa);
-    expect(textoDaTela()).toMatch(/Esta tela não recebeu esse cadastro/i);
-    expect(textoDaTela()).toMatch(/se ele estiver completo/i);
+    expect(textoDaTela()).not.toMatch(/Esta tela não recebeu esse cadastro/i);
+    expect(textoDaTela()).not.toMatch(/se ele estiver completo/i);
   });
 
   it("⚠ NÃO diz que falta configurar nada — isso mandaria o cliente ligar para o escritório à toa", async () => {
