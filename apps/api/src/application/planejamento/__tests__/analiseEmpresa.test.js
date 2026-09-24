@@ -15,3 +15,9 @@ test('guias inválidas não somam e nota sem valor não vira zero',()=>{const d=
 test('fechamento contábil é obrigatório e reabertura invalida dados',()=>{const d=dados();d.circulares=[];expect(()=>montarAnalise(d)).toThrow(/Feche a contabilidade/);});
 test('atual fechado permanece acessível, anterior aberto e série sem valores',()=>{const d=dados();d.circulares=d.circulares.filter(c=>c.competencia==='2026-08');const r=montarAnalise(d);expect(r.atual.indicadores.resultado).toBe(800);expect(r.anterior.indisponivel).toBe(true);expect(r.anterior.indicadores.resultado).toBeNull();expect(r.anterior.dre.linhas.every(l=>l.valor===null&&l.contas.length===0)).toBe(true);expect(r.variacoes.resultado.percentual).toBeNull();expect(r.serie.find(m=>m.competencia==='2026-07').indicadores.faturamento).toBeNull();});
 test('mês calendário atual pode aparecer quando contabilidade está fechada',()=>{const d=dados();d.hoje='2026-08-15';expect(montarAnalise(d).atual.indicadores.resultado).toBe(800);});
+
+test('portal aceita lacunas antigas sem incluir valores de competências abertas',()=>{
+ const d=dados();d.periodos=definirPeriodos({de:'2026-05',ate:'2026-08'});d.lancamentos.push(entry('2026-05','1','C',999999));d.notas.push({competencia:'2026-05-01',total:999999});
+ const r=montarAnalise({...d,permitirLacunas:true});expect(r.atual.indicadores.resultado).toBe(1600);expect(r.atual.indicadores.faturamento).toBe(1000);expect(r.atual.mesesSemFechamento).toEqual(['2026-05','2026-06']);expect(r.atual.parcial).toBe(true);expect(r.serie.find(m=>m.competencia==='2026-05').indicadores.resultado).toBeNull();expect(r.variacoes.resultado.percentual).toBeNull();
+ expect(()=>montarAnalise(d)).toThrow(/Feche a contabilidade/);
+});

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 const mes = s => `${s.slice(5)}/${s.slice(0,4)}`;
 const mover=(s,n)=>{const [a,m]=s.split('-').map(Number);return new Date(Date.UTC(a,m-1+n,1)).toISOString().slice(0,7);};
-export function FiltroPeriodo({de,ate,comparar,onAplicar,competenciasFechadas}) {
+export function FiltroPeriodo({de,ate,comparar,onAplicar,competenciasFechadas,limites=null,permitirLacunas=false}) {
   const [aberto,setAberto]=useState(false),[rascunho,setRascunho]=useState({de,ate,comparar});
   const raiz=useRef(null),botao=useRef(null),inicio=useRef(null),id=useId();
   function fechar(){setAberto(false);botao.current?.focus();}
@@ -16,7 +16,7 @@ export function FiltroPeriodo({de,ate,comparar,onAplicar,competenciasFechadas}) 
   const n=s=>Number(s.slice(0,4))*12+Number(s.slice(5));
   const pendentes=[];
   if(competenciasFechadas&&/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.de)&&/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.ate)&&rascunho.de<=rascunho.ate&&n(rascunho.ate)-n(rascunho.de)<24){for(let m=rascunho.de;m<=rascunho.ate;m=mover(m,1))if(!competenciasFechadas.includes(m))pendentes.push(m);}
-  const valido=/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.de)&&/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.ate)&&rascunho.de<=rascunho.ate&&n(rascunho.ate)-n(rascunho.de)<24&&pendentes.length===0;
+  const valido=/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.de)&&/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.ate)&&rascunho.de<=rascunho.ate&&n(rascunho.ate)-n(rascunho.de)<24&&(permitirLacunas||pendentes.length===0)&&(!limites||(rascunho.de>=limites.de&&rascunho.ate<=limites.ate));
   function atalho(tipo){setRascunho(v=>({...v,de:tipo==='ano'?`${v.ate.slice(0,4)}-01`:mover(v.ate,tipo==='12'?-11:tipo==='6'?-5:tipo==='3'?-2:0)}));}
   return <div ref={raiz} className="bi-periodo">
     <button ref={botao} type="button" className="bi-periodo-botao" aria-expanded={aberto} aria-controls={id} aria-haspopup="dialog" onClick={()=>{setRascunho({de,ate,comparar});setAberto(v=>!v);}}>
@@ -29,7 +29,7 @@ export function FiltroPeriodo({de,ate,comparar,onAplicar,competenciasFechadas}) 
       <div className="bi-periodo-datas"><label>De<input ref={inicio} type="month" value={rascunho.de} onChange={e=>setRascunho(v=>({...v,de:e.target.value}))}/></label><label>Até<input type="month" value={rascunho.ate} onChange={e=>setRascunho(v=>({...v,ate:e.target.value}))}/></label></div>
       <div className="bi-atalhos bi-periodo-atalhos">{[['mes','Mês'],['3','3 meses'],['6','6 meses'],['12','12 meses'],['ano','Acumulado no ano']].map(([k,n])=><button type="button" key={k} disabled={!/^\d{4}-(0[1-9]|1[0-2])$/.test(rascunho.ate)} onClick={()=>atalho(k)}>{n}</button>)}</div>
       <label>Comparar com<select value={rascunho.comparar} onChange={e=>setRascunho(v=>({...v,comparar:e.target.value}))}><option value="anterior">Período anterior</option><option value="ano">Mesmo período do ano anterior</option></select></label>
-      {!valido&&<p role="alert">{pendentes.length?`Sem fechamento contábil: ${pendentes.map(mes).join(', ')}. Confira em Lançamentos.`:'Escolha um intervalo de até 24 meses.'}</p>}
+      {!valido&&<p role="alert">{limites?'Escolha um intervalo dentro dos últimos 12 meses concluídos.':pendentes.length?`Sem fechamento contábil: ${pendentes.map(mes).join(', ')}. Confira em Lançamentos.`:'Escolha um intervalo de até 24 meses.'}</p>}
       <div className="bi-painel-acoes"><button type="button" onClick={fechar}>Cancelar</button><button className="bi-primary" disabled={!valido}>Aplicar período</button></div>
     </form>}
   </div>;

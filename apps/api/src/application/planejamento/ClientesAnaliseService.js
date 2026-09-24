@@ -3,11 +3,11 @@ import { whereFaturamentoEmit } from '../notas/apuracao/v2/FechamentoService.js'
 import { definirPeriodos, moverMes, exigirFechamento } from './analiseEmpresa.js';
 import { montarClientes } from '../../../../../packages/shared/src/analise/clientes.js';
 
-export async function obterClientesAnalise({portalClientId,de,ate,comparar,client=prisma,agora=new Date()}) {
-  if (client === prisma && client.$transaction) return client.$transaction(tx => obterClientesAnalise({portalClientId,de,ate,comparar,client:tx,agora}), {isolationLevel:'RepeatableRead',timeout:20000});
+export async function obterClientesAnalise({portalClientId,de,ate,comparar,client=prisma,agora=new Date(),permitirLacunas=false}) {
+  if (client === prisma && client.$transaction) return client.$transaction(tx => obterClientesAnalise({portalClientId,de,ate,comparar,client:tx,agora,permitirLacunas}), {isolationLevel:'RepeatableRead',timeout:20000});
   definirPeriodos({de,ate,comparar});
   const circulares = await client.companyMonthlyCircular.findMany({where:{portalClientId,competencia:{lte:ate}},select:{competencia:true,fechadoContabilEm:true}});
-  const fechados = exigirFechamento(de,ate,circulares);
+  const fechados = permitirLacunas ? new Set(circulares.filter(c=>c.fechadoContabilEm).map(c=>c.competencia)) : exigirFechamento(de,ate,circulares);
   // Histórico até o fim selecionado: primeira observação e acumulado não usam apenas a janela visível.
   // Cabeçalhos apenas, nunca XML/PDF. Limite explícito evita truncamento silencioso.
   const notas=await client.portalInvoice.findMany({where:{...whereFaturamentoEmit(),clientId:portalClientId,competencia:{lt:new Date(`${moverMes(ate,1)}-01T00:00:00Z`)}},select:{id:true,numero:true,competencia:true,total:true,tomadorDoc:true,tomadorNome:true},orderBy:[{competencia:'asc'},{id:'asc'}],take:20001});

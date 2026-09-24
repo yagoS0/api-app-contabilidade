@@ -124,6 +124,9 @@ function qs(params) {
 
 export function createRealApi() {
   return {
+    getFechamentosRelatorio: companyId => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/fechamentos`),
+    getAnalisePlanejamento: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/analise?${new URLSearchParams(filtros)}`),
+    getAnaliseClientes: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/clientes?${new URLSearchParams(filtros)}`),
     // --- Auth ---------------------------------------------------------------
     async login(email, password) {
       const data = await pedir("/auth/login", {
