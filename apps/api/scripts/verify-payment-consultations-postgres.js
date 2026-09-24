@@ -78,10 +78,16 @@ async function duringWrite(g, mutation) {
 }
 
 try {
-  const [server] = await a.$queryRaw`SELECT current_database() AS db, host(inet_server_addr()) AS host, inet_server_port() AS port`;
+  const [server] = await a.$queryRaw`SELECT current_database() AS db, current_user AS role, host(inet_server_addr()) AS host, inet_server_port() AS port`;
   assert.equal(server.db, "consulta_pagamento_check");
-  assert.equal(server.host, "127.0.0.1");
-  assert.equal(server.port, 55447);
+  assert.equal(server.role, "consulta_test");
+  // No Actions, a URL local 55447 (validada acima) é encaminhada ao container 5432.
+  // inet_server_addr/port descrevem o backend, não o endereço usado pelo cliente.
+  if (process.env.GITHUB_ACTIONS === "true") assert.equal(server.port, 5432);
+  else {
+    assert.equal(server.host, "127.0.0.1");
+    assert.equal(server.port, 55447);
+  }
   const migration = await a.$queryRaw`SELECT migration_name FROM _prisma_migrations
     WHERE migration_name = '20260924210000_guide_payment_observations' AND finished_at IS NOT NULL`;
   assert.equal(migration.length, 1);

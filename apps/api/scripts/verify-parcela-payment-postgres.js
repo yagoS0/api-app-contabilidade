@@ -112,8 +112,15 @@ async function withRealLock(f, table, mutation) {
 }
 
 try {
-  const [db] = await a.$queryRaw`SELECT current_database() AS db, host(inet_server_addr()) AS host, inet_server_port() AS port`;
-  assert.deepEqual(db, { db: "consulta_pagamento_check", host: "127.0.0.1", port: 55447 });
+  const [db] = await a.$queryRaw`SELECT current_database() AS db, current_user AS role, host(inet_server_addr()) AS host, inet_server_port() AS port`;
+  assert.equal(db.db, "consulta_pagamento_check");
+  assert.equal(db.role, "consulta_test");
+  // O Actions encaminha a URL local validada (55447) para o PostgreSQL do container.
+  if (process.env.GITHUB_ACTIONS === "true") assert.equal(db.port, 5432);
+  else {
+    assert.equal(db.host, "127.0.0.1");
+    assert.equal(db.port, 55447);
+  }
   await a.portalClient.create({ data: { id: companyId, cnpj, razao: "Empresa sintética — ensaio de parcelas" } });
   const accountingBefore = await a.accountingEntry.count();
   ok("banco local confirmado; bloqueio de HTTP e transporte simulado carregados");

@@ -92,12 +92,14 @@ PostgreSQL real: **15 verificações de guias/agenda e 17 de parcelas**, com dad
 
 O simulador executou 430 testes na primeira rodada e 165 na rodada final do chat. O revisor executou 155 testes em 11 suítes, com 72 repetidos depois do último ajuste. Esses totais se sobrepõem; não devem ser somados como casos únicos. O workflow `payment-consultations.yml` repete regressões e os dois ensaios PostgreSQL sem serviços externos.
 
+A regressão conjunta local passou em **1.369 testes/90 suítes da API e 34 testes/6 suítes da interface**; build Vite aprovado, com avisos existentes de tamanho de pacote. Durante a validação, a tarefa do portal integrou autenticação à main `96bf1d92`; essa entrega foi incorporada sem conflitos e elevou o banco local a 177 migrations. A verificação do endereço interno dos ensaios foi adaptada ao encaminhamento de porta do container do GitHub, mantendo destino/usuário/banco de teste obrigatórios.
+
 Limitação separada: um trigger artificial `DEFERRABLE INITIALLY DEFERRED` produziu rollback no banco, mas a pilha Prisma local retornou sucesso. O schema/código migrado não possui constraints diferidas e o cenário operacional de falha durante escrita passou. Não tratar essa injeção como aprovada; revalidar o ORM caso sejam introduzidas constraints diferidas. Os registros de diagnóstico ficam nos relatórios locais, sem alteração de dependências nesta tarefa.
 
 ## Critérios antes da ativação operacional
 
 1. Integração Fiscal e revisão concluídas localmente; conferir a versão efetivamente publicada antes da ativação.
-2. As 176 migrations estão aplicadas no banco local isolado. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
+2. As 177 migrations da integração final estão aplicadas no banco local isolado, com os 32 cenários PostgreSQL repetidos. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
 3. Fazer piloto fiscal de leitura controlado, com amostra de documentos pagos/não localizados/retificados e comparação manual, respeitando orçamento. Não realizado nesta entrega.
 4. Conferir agenda salva, fuso, empresas elegíveis, flag do executor e próxima execução. Dia 25 é preferência operacional, não garantia de atualização da Receita.
 5. Observar uma execução realmente disparada pela agenda antes de habilitar mensagens a clientes.
