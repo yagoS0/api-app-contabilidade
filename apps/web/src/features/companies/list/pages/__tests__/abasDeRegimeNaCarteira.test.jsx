@@ -93,18 +93,18 @@ function razoesVisiveis() {
 describe("as abas ficam acima da tabela, com a contagem", () => {
   test("duas abas quando toda a carteira é Simples ou Presumido — `Outros` não aparece", () => {
     montar();
-    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)"]);
+    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)", "●Desativadas(0)"]);
   });
 
   test("⚠ a contagem sai da lista JÁ FILTRADA — buscar reduz a aba junto com a tabela", () => {
     montar();
     fireEvent.change(screen.getByPlaceholderText(/Clínica/i), { target: { value: "ALFA" } });
-    expect(abas()).toEqual(["●Simples Nacional(1)", "●Lucro Presumido(0)"]);
+    expect(abas()).toEqual(["●Simples Nacional(1)", "●Lucro Presumido(0)", "●Desativadas(0)"]);
   });
 
   test("⚠ `Outros` APARECE quando há empresa fora dos dois regimes, e a linha DIZ por quê", () => {
     montar({ companies: [...CARTEIRA, empresa("x1", "DELTA SEM REGIME LTDA", null)] });
-    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)", "●Outros(1)"]);
+    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)", "●Outros(1)", "●Desativadas(0)"]);
     clicarAba("Outros");
     expect(screen.getByText("DELTA SEM REGIME LTDA")).toBeInTheDocument();
     expect(screen.getByText("Sem regime cadastrado")).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe("são duas tabelas: trocar de aba troca as linhas", () => {
   test("⚠ aba guardada que não existe mais cai no padrão — a tabela nunca fica vazia sem aba marcada", () => {
     localStorage.setItem("dashboard:abaRegime", "OUTROS"); // ninguém em `Outros` nesta carteira
     montar();
-    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)"]);
+    expect(abas()).toEqual(["●Simples Nacional(2)", "●Lucro Presumido(1)", "●Desativadas(0)"]);
     expect(razoesVisiveis()).toEqual(["ALFA SIMPLES LTDA", "BETA SIMPLES LTDA"]);
   });
 });
@@ -265,8 +265,8 @@ describe("⚠ o VAZIO da aba não pode dizer a coisa errada", () => {
   test("filtro de verdade dentro da aba continua contando e oferecendo a limpeza", () => {
     montar();
     fireEvent.change(screen.getByPlaceholderText(/Clínica/i), { target: { value: "ALFA" } });
-    expect(screen.getByText(/Exibindo/)).toHaveTextContent("Exibindo 1 de 2 empresas");
-    expect(screen.getByRole("button", { name: "Limpar filtros" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader",{name:/Empresa/})).toHaveTextContent("(1/2)");
+    expect(screen.getByPlaceholderText(/Clínica/i)).toHaveValue("ALFA");
   });
 });
 
@@ -299,3 +299,5 @@ describe("ações locais da carteira", () => {
     expect(screen.queryByRole("button", { name: "Abrir central do WhatsApp" })).not.toBeInTheDocument();
   });
 });
+
+test("desativadas preservam acesso e ficam fora das abas ativas",()=>{const abrir=jest.fn(); montar({companies:[...CARTEIRA,empresa("x","EMPRESA SUSPENSA","SIMPLES",{status:"SUSPENSA"})],onOpenCompany:abrir}); expect(screen.queryByText("EMPRESA SUSPENSA")).not.toBeInTheDocument(); clicarAba("Desativadas"); expect(screen.getByText("EMPRESA SUSPENSA")).toBeInTheDocument(); expect(screen.queryByText("ALFA SIMPLES LTDA")).not.toBeInTheDocument(); expect(screen.queryByRole("checkbox")).not.toBeInTheDocument(); });

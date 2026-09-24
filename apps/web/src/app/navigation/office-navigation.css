@@ -91,6 +91,8 @@
 .office-navigation .office-navigation__trigger {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 36px;
   gap: var(--space-2);
   min-height: 36px;
   padding: var(--space-2) var(--space-3);
@@ -108,8 +110,7 @@
   color: var(--text);
 }
 .office-navigation__trigger:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.office-navigation__chevron { font-size: 16px; line-height: 1; }
-.office-navigation__menu-icon { display: none; }
+.office-navigation__menu-icon { display: block; }
 .office-navigation__destinations--popover {
   position: absolute;
   top: calc(100% + var(--space-2));
@@ -141,8 +142,6 @@
   .office-navigation__top > .workspace-home svg { width: 32px; height: auto; }
   .office-navigation .office-navigation__area { padding-inline: 6px; font-size: 12px; }
   .office-navigation .office-navigation__trigger { padding-inline: 6px; font-size: 12px; }
-  .office-navigation__trigger-label, .office-navigation__chevron { display: none; }
-  .office-navigation__menu-icon { display: block; }
   .office-navigation__areas { gap: 0; }
   .office-navigation__badge { margin-left: 4px; }
 }
