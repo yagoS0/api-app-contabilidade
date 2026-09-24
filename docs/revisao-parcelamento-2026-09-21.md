@@ -1,5 +1,7 @@
 # Revisão de parcelamento — 21/09/2026
 
+Continuidade: [acompanhamento fiscal e agendas de 24/09/2026](parcelamentos-acompanhamento-2026-09-24.md), com captura/pagamento independentes da abertura contábil e condições de homologação.
+
 Pedido: validar baixa, clareza e usabilidade conforme os padrões do app, com múltiplos agentes e revisão independente. Alterações em desenvolvimento; esta revisão não publica em produção.
 
 ## Problemas corrigidos

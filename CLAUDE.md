@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Parcelas sem esquecimento — 24/09/2026
+
+O indicador da carteira e a Situação Fiscal levam a Guias, onde “Falta guia de parcelamento” permite subir a parcela. Preservar a aba contábil original: sem painel novo de acompanhamento, demonstração ou conferência obrigatória do indício. Upload pode ficar sem contabilização; identidade fiscal interna GUIA_AVULSA distingue a parcela do DAS mensal sem inventar contrato, valor ou calendário. Vínculo posterior preserva PDF, pagamento e valores; o mesmo wizard contábil abre e retorna à tela de Guias. Indícios de atrasos anteriores não desaparecem por subir a guia atual. Reutilizar relatório salvo, proteger concorrência e manter agenda por rotina em Brasília. Detalhes e validações em `docs/parcelamentos-acompanhamento-2026-09-24.md`. Publicação em main/produção autorizada pelo dono após revisão do mock; conferir migração, backup e deploys antes de declarar concluída.
+
 ## Pré-atendimento curto — 24/09/2026
 
 O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.

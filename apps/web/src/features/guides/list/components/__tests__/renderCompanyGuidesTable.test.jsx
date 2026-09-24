@@ -266,13 +266,13 @@ describe("+ Subir Guia → PARCELAMENTO", () => {
     expect(screen.getByRole("button", { name: "PARCELAMENTO" })).toBeInTheDocument();
   });
 
-  it("⚠ desabilitado COM MOTIVO quando os parcelamentos não foram carregados", () => {
+  it("permite subir parcela mesmo sem parcelamento cadastrado", () => {
     renderTabela([], { onUploadGuide: jest.fn(), parcelamentos: null });
     fireEvent.click(screen.getByRole("button", { name: /Subir Guia/ }));
 
     const item = screen.getByRole("button", { name: "PARCELAMENTO" });
-    expect(item).toBeDisabled();
-    expect(item.getAttribute("title")).toMatch(/não foram carregados/i);
+    expect(item).toBeEnabled();
+    expect(item.getAttribute("title")).toMatch(/contabilizar depois/i);
   });
 });
 

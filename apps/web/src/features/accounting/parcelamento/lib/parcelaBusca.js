@@ -109,9 +109,9 @@ function motivoSemGuia(formaPagamento) {
   if (formaPagamento === "DEBITO_AUTOMATICO") {
     return {
       rotulo: "débito automático — sem guia",
-      motivo: "Este parcelamento é pago por débito automático: a prestação sai direto da conta e "
-        + "não gera guia, então não existe documento para consultar no PAGTOWEB — e não vai "
-        + "existir. O pagamento se comprova pelo extrato bancário, não por comprovante do SERPRO.",
+      motivo: "Esta prestação é paga por débito automático e não tem guia anexada. "
+        + "Confira o pagamento no acompanhamento fiscal por contrato, quando a modalidade for suportada, "
+        + "ou pelo extrato bancário. A ausência de guia não confirma o débito.",
     };
   }
   if (formaPagamento === "GUIA_MENSAL") {
@@ -125,7 +125,7 @@ function motivoSemGuia(formaPagamento) {
     rotulo: "sem guia capturada",
     motivo: "Esta prestação não tem guia capturada, então não há documento para consultar no "
       + "PAGTOWEB. A forma de pagamento deste parcelamento não foi declarada: se for débito "
-      + "automático, guia não existe e não vai existir; se for guia mensal, ela entra pela captura "
+      + "automático, confira o pagamento por contrato ou extrato; se for guia mensal, ela entra pela captura "
       + "do SERPRO ou por upload na aba Guias.",
   };
 }

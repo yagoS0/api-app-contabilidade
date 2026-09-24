@@ -1,0 +1,30 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { RotinasPage } from "../renderRotinasPage.jsx";
+
+test("horário meia-noite e frequência diária são conservados ao salvar", async () => {
+  const api = {
+    getRotinas: jest.fn(async () => ({
+      rotinas: [{ key: "pagamento", label: "Pagamento" }],
+      agenda: { pagamento: { enabled: true, day: 20, hour: 8, frequency: "MONTHLY" } }, empresas: [],
+    })),
+    saveRotinas: jest.fn(async (body) => ({ agenda: body.agenda })),
+  };
+  render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  fireEvent.change(await screen.findByLabelText("Horário de Pagamento"), { target: { value: "00:00" } });
+  fireEvent.change(screen.getByLabelText("Frequência da consulta de pagamentos"), { target: { value: "DAILY" } });
+  expect(screen.getByLabelText("Dia de Pagamento")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Salvar rotinas" }));
+  await waitFor(() => expect(api.saveRotinas).toHaveBeenCalledWith(expect.objectContaining({
+    agenda: { pagamento: { enabled: true, day: 20, hour: 0, frequency: "DAILY" } },
+  })));
+});
+
+test("executor sem sinal não aparece como consulta bem-sucedida", async () => {
+  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }],
+    agenda: {}, empresas: [], executions: [{ routine: "pagamento", enabled: true, alive: false,
+      lastRun: null, nextAt: "2026-09-25T11:00:00Z" }] })) };
+  render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  expect(await screen.findByText("Sem sinal do executor")).toBeVisible();
+  expect(screen.queryByText("Concluída")).not.toBeInTheDocument();
+});

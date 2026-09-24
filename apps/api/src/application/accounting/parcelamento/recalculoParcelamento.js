@@ -42,6 +42,7 @@ export function parcelaQuitada(guide) {
  * lido aqui, a F2.2 mudou UMA escrita e todas as derivações passaram a enxergar a quitação sozinhas.
  */
 export function parcelaRowQuitada(parcela) {
+  if (parcela?.pagamentoStatus === "CONFIRMADO") return true;
   if (parcela?.origemBaixa) return true;
   return parcela?.guia ? parcelaQuitada(parcela.guia) : false;
 }
@@ -61,7 +62,7 @@ export function parcelaRowQuitada(parcela) {
  * FORA do cálculo de risco e é reportada em `parcelasSemEvidencia` — visível, nomeada, não contada.
  */
 export function temEvidenciaDePagamento(parcela) {
-  return Boolean(parcela?.origemBaixa) || Boolean(parcela?.guia);
+  return parcela?.pagamentoStatus === "CONFIRMADO" || Boolean(parcela?.origemBaixa) || Boolean(parcela?.guia);
 }
 
 /**
@@ -119,6 +120,10 @@ export const SELECT_PARCELA_PARA_QUADRO = Object.freeze({
   vencimento: true,
   valorPrevisto: true,
   origemBaixa: true,
+  pagamentoStatus: true,
+  pagamentoEm: true,
+  valorPago: true,
+  pagamentoEvidencia: true,
   guia: { select: { id: true, vencimento: true, paymentStatus: true, baixada: true } },
 });
 
@@ -226,7 +231,11 @@ export function linhaDaFilaSemGuia(p, agora = new Date()) {
     // (`PATCH .../parcelas/:parcelaId/valor-previsto`): a fonte segue única, e a correção escreve
     // NA fonte em vez de contorná-la. Corrigir o contrato e declarar um pagamento são dois atos.
     valorPrevisto,
-    situacao: situacaoDaPrestacaoSemGuia(p, agora),
+    situacao: p.pagamentoStatus === "CONFIRMADO" ? "PAGAMENTO_CONFIRMADO" : situacaoDaPrestacaoSemGuia(p, agora),
+    pagamentoConfirmado: p.pagamentoStatus === "CONFIRMADO",
+    pagamentoEm: p.pagamentoEm || null,
+    valorPago: p.valorPago != null ? Number(p.valorPago) : null,
+    comprovante: p.pagamentoEvidencia?.comprovante || null,
     parcelamentoId: p.parcelamentoId ?? parc?.id ?? null,
     parcelamento: parc
       ? {

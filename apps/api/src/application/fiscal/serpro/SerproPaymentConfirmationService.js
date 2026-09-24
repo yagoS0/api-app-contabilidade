@@ -14,7 +14,8 @@ import { classificarDocumentoArrecadado } from "./classificarDocumentoArrecadado
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
 import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
-import { INTEGRACAO_SERPRO_PAGTOWEB } from "../../../config.js";
+import { INTEGRACAO_SERPRO_PAGTOWEB, INTEGRACAO_SERPRO_PARCELAMENTO } from "../../../config.js";
+import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "./SerproParcelaPagamentoService.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
 // O número do documento (DAS/DARF/INSS) fica em guide.extracted.numeroDocumento (não é coluna).
@@ -41,7 +42,8 @@ function maskCnpj(cnpj) {
  * - não pago → marca OPEN (mantém em aberto).
  * Idempotente: guia já PAID → skip. Guia sem numeroDocumento → skip.
  */
-export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null }) {
+export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {} }) {
+  await assertActive();
   const guide = await prisma.guide.findUnique({
     where: { id: String(guideId) },
     include: { portalClient: { select: { id: true, cnpj: true } } },
@@ -54,34 +56,16 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   const tipoUpper = String(guide.tipo || "").toUpperCase();
 
-  // ⚠⚠ A PARCELA DE PARCELAMENTO É `tipo:"SIMPLES"` E **NÃO** PODE SER RESPONDIDA PELO ÍNDICE DO
-  // PGDAS-D. Medido em 20/08/2026, antes de qualquer mudança.
-  //
-  // `confirmarPagamentoDas` pergunta `CONSDECLARACAO13` pela DECLARAÇÃO da competência da guia e
-  // decide por `dasPago`. Numa parcela de PARCSN isso é a pergunta errada sobre o documento errado:
-  // a competência dela é o mês da PRESTAÇÃO, e a declaração daquele mês, quando existe, é a do DAS
-  // de APURAÇÃO — outro documento, com outro número, com outro pagamento. Se o DAS de apuração
-  // estivesse pago, a parcela seria marcada `PAID` por causa dele. É afirmação falsa sobre a dívida
-  // de um cliente, gerada por um documento que ninguém pediu para consultar.
-  //
-  // O que separa as duas é `parcelamentoId` — a MESMA regra que `guideContract.isGuiaDeParcelamento`
-  // já aplica no compliance e no `batch-report`, pelo mesmo motivo (a parcela satisfazia o nó `das`
-  // e a empresa aparecia com "DAS gerada" sem nunca ter gerado o DAS).
-  //
-  // ⚠⚠ E ELA **NÃO** É REDIRECIONADA PARA O PAGTOWEB AQUI, DE PROPÓSITO. Esta função é o corpo do
-  // WORKER e da confirmação em lote, que varrem até 500 guias num laço — mandar parcela para o
-  // PAGTOWEB neste ponto transformaria cada prestação em aberto da carteira numa CHAMADA PAGA, por
-  // execução, sem ninguém ter pedido. Consulta automática de parcela é decisão do dono, não efeito
-  // colateral de um conserto. O caminho da parcela é o BOTÃO
-  // (`POST /firm/guides/:id/buscar-pagamento`), que pergunta pelo `numeroDocumento` DELA, um clique
-  // humano por vez, com a confirmação que já repete documento, valor e competência.
+  // Parcela consulta seu próprio contrato/referência, nunca o índice do DAS mensal.
   if (guide.parcelamentoId) {
-    return { ok: true, skipped: "parcela_sem_confirmacao_automatica", guideId: guide.id };
+    const parcela = await prisma.parcela.findFirst({ where: { guiaId: guide.id, portalClientId: guide.portalClientId }, select: { id: true } });
+    if (!parcela) return { ok: true, skipped: "identificacao_incompleta", guideId: guide.id };
+    return confirmarPagamentoParcela({ parcelaId: parcela.id, portalClientId: guide.portalClientId, logger, assertActive });
   }
 
   // Q46: DAS (Simples) — sinal de pago AUTORITATIVO vem do `dasPago` (CONSDECLARACAO13), não do PAGTOWEB.
   if (tipoUpper === "SIMPLES") {
-    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger });
+    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive });
   }
 
   // Q46: INSS (e demais) — confirma via PAGTOWEB pelo numeroDocumento do DARF (GERARGUIA31).
@@ -90,6 +74,7 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   let result;
   try {
+    await assertActive();
     result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
   } catch (err) {
     logger?.warn?.(
@@ -120,7 +105,7 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
  * faltar, consulta on-demand. O PAGTOWEB só é chamado (se ligado) para BUSCAR O COMPROVANTE, com o
  * numeroDocumento CORRETO (dasNumeroDocumento), não o heurístico do GERARDAS.
  */
-async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger }) {
+async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive = () => {} }) {
   let numeroDocumento = null;
   let dasPago = null;
 
@@ -138,6 +123,7 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger }
   // Sem sinal na circular → consulta o índice do DAS on-demand (barato; /Consultar).
   if (dasPago == null && guide.competencia) {
     try {
+      await assertActive();
       const idx = await consultarDasIndexPorCompetencia({
         portalClientId: guide.portalClientId, competencia: guide.competencia, contribuinteCnpj,
       });
@@ -161,6 +147,7 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger }
   let comprovante = null;
   if (INTEGRACAO_SERPRO_PAGTOWEB && numeroDocumento) {
     try {
+      await assertActive();
       const result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
       if (result?.pago) comprovante = result.comprovante || null;
       if (result?.pago && result.comprovantePdfBuffer?.length) {
@@ -271,7 +258,7 @@ async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, log
  * @param {string} [opts.portalClientId] limita a uma empresa (botão por empresa)
  * @param {string} [opts.competencia] limita a uma competência
  */
-export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null } = {}) {
+export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {} } = {}) {
   // Rotina `pagamento`: quando roda em lote (cron ou "confirmar agora"), só as empresas
   // marcadas na página Rotinas. Com `portalClientId` explícito o filtro NÃO se aplica —
   // é o botão por empresa, escolha direta do contador.
@@ -313,16 +300,23 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     ...(competencia ? { competencia: String(competencia) } : {}),
   };
 
-  const guides = await prisma.guide.findMany({
-    where,
-    select: { id: true, tipo: true, competencia: true, extracted: true, portalClientId: true },
-    orderBy: { updatedAt: "asc" },
-    take: 500,
-  });
+  // Chave estável: a consulta muda updatedAt e retirar pagas não pode deslocar páginas.
+  const guides = [];
+  let cursor;
+  while (true) {
+    await assertActive();
+    const page = await prisma.guide.findMany({ where: { ...where, ...(cursor ? { id: { gt: cursor } } : {}) },
+      select: { id: true, tipo: true, competencia: true, extracted: true, portalClientId: true },
+      orderBy: { id: "asc" }, take: 500 });
+    guides.push(...page);
+    if (page.length < 500) break;
+    cursor = page.at(-1).id;
+  }
 
   const results = [];
   let firstError = null; // Q43: 1º código de erro — para o chamador sinalizar falha (não reportar OK falso)
   for (const g of guides) {
+    await assertActive();
     // Q46: o DAS (SIMPLES) confirma pelo `dasPago` (índice PGDAS-D) — não depende do numeroDocumento
     // da guia. Só pré-filtramos as NÃO-Simples sem número (INSS precisa do nº do DARF pro PAGTOWEB).
     const tipoUpper = String(g.tipo || "").toUpperCase();
@@ -332,7 +326,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger });
+      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive });
       results.push({ guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open") });
     } catch (err) {
       const code = err?.code || err?.message || "ERRO";
@@ -341,7 +335,12 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
   }
 
-  const total = guides.length;
+  const parcelas = INTEGRACAO_SERPRO_PARCELAMENTO
+    ? await confirmarPagamentosParcelasEmLote({ portalClientIds: portalClientId ? [portalClientId] : filtroRotina?.portalClientId.in, logger, assertActive })
+    : { total: 0, results: [], skipped: "integracao_parcelamento_desabilitada" };
+  results.push(...parcelas.results);
+  firstError ||= parcelas.results.find(r => r.status === "error")?.error || null;
+  const total = guides.length + parcelas.total;
   const paid = results.filter((r) => r.status === "paid").length;
   const naoLocalizado = results.filter((r) => r.status === "open").length; // consultou, mas não achou comprovante
   const semDoc = results.filter((r) => r.status === "sem_numero_documento").length;
@@ -366,6 +365,6 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
 
   return {
     total, paid, open: naoLocalizado, naoLocalizado, semDoc, jaPago, errors,
-    pagtowebDisabled, firstError, mensagem, results,
+    pagtowebDisabled, firstError, mensagem, results, parcelas,
   };
 }

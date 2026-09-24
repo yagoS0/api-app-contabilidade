@@ -108,6 +108,7 @@ export function envioDeEmailFalhou(guide) {
  */
 export const SELECT_PARCELAMENTO_DA_GUIA = Object.freeze({
   id: true,
+  origem: true,
   tipo: true,
   numeroParcelamento: true,
   label: true,

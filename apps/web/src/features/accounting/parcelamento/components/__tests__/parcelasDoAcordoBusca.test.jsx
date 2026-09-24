@@ -93,7 +93,7 @@ describe("nada está 'Buscando…' antes de alguém clicar", () => {
   // mandar esperá-la.
   it("débito automático não manda esperar captura nem upload", () => {
     semGuia(3, "DEBITO_AUTOMATICO");
-    expect(screen.getByText(/não vai existir/i)).toBeTruthy();
+    expect(screen.getByText(/acompanhamento fiscal por contrato/i)).toBeTruthy();
     expect(screen.queryByText(/captura do SERPRO ou por upload/i)).toBeNull();
   });
 });

@@ -114,6 +114,24 @@ const somaPorPapel = (papel) => Math.round(
   __criados.filter((e) => e.tipoLinha === papel).reduce((s, e) => s + Number(e.lines[0].valor), 0) * 100,
 ) / 100;
 
+test("comprovante fiscal da parcela prevalece sobre o PDF recapturado com encargos posteriores", async () => {
+  prisma.guide.findFirst.mockResolvedValue(guiaCom({ ...EXTRACTED_COM_COMPOSICAO,
+    comprovante: { confiavel: true, meioPagamento: "SERPRO_INTEGRA_PARCELAMENTO", principal: 100, juros: 0, multa: 0, total: 100 } }));
+  expect((await baixar()).ok).toBe(true);
+  expect(somaPorPapel("PARC")).toBe(100);
+  expect(somaPorPapel("CAIXA")).toBe(100);
+  expect(somaPorPapel("JUROS")).toBe(0);
+  expect(somaPorPapel("MULTA")).toBe(0);
+  expect(prisma.tributoParcela.findMany).not.toHaveBeenCalled();
+});
+
+test("comprovante de parcela inconsistente não recua silenciosamente para a cobrança do PDF", async () => {
+  prisma.guide.findFirst.mockResolvedValue(guiaCom({ ...EXTRACTED_COM_COMPOSICAO,
+    comprovante: { confiavel: true, meioPagamento: "SERPRO_INTEGRA_PARCELAMENTO", principal: 100, juros: 0, multa: 0, total: 90 } }));
+  expect(await baixar()).toMatchObject({ skipped: true, motivoDocumento: "comprovante_pagamento_inconsistente" });
+  expect(__criados).toHaveLength(0);
+});
+
 describe("a composição do PDF baixa a parcela sozinha", () => {
   it("com `extracted.composicao`, a baixa sai SEM ninguém declarar nada", async () => {
     prisma.guide.findFirst.mockResolvedValue(guiaCom(EXTRACTED_COM_COMPOSICAO));

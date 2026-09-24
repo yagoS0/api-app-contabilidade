@@ -44,13 +44,18 @@ const labelStyle = { display: "block", fontSize: "0.8125rem", color: PANEL.muted
 
 export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorContratado, onClose }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
-  const [textoPrincipal, setTextoPrincipal] = useState(() => principalInicial(linha?.valorPrevisto));
-  const [textoJuros, setTextoJuros] = useState("");
-  const [textoMulta, setTextoMulta] = useState("");
-  const [dataPagamento, setDataPagamento] = useState(hojeISO());
+  const principalConfirmado = linha?.pagamentoConfirmado && Number(linha?.comprovante?.principal) > 0 ? Number(linha.comprovante.principal) : null;
+  const [textoPrincipal, setTextoPrincipal] = useState(() => principalInicial(principalConfirmado ?? linha?.valorPrevisto));
+  const [textoJuros, setTextoJuros] = useState(() => principalInicial(linha?.comprovante?.juros));
+  const [textoMulta, setTextoMulta] = useState(() => principalInicial(linha?.comprovante?.multa));
+  const [dataPagamento, setDataPagamento] = useState(() => {
+    const data = linha?.pagamentoEm || linha?.comprovante?.dataArrecadacao;
+    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}/.test(data)) return data.slice(0, 10);
+    return hojeISO();
+  });
   const [enviando, setEnviando] = useState(false);
   const [recusa, setRecusa] = useState(null);
-  const [valorContratado, setValorContratado] = useState(linha?.valorPrevisto);
+  const [valorContratado, setValorContratado] = useState(principalConfirmado ?? linha?.valorPrevisto);
   const [contratoAtualizado, setContratoAtualizado] = useState(false);
   const botaoConfirmarRef = useRef(null);
   const confirmacaoAnterior = useRef(false);
@@ -184,15 +189,15 @@ export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorCon
         {linha.competencia && <span> · {linha.competencia}</span>}
       </div>
       <p style={{ ...ajuda, margin: "0 0 14px" }}>
-        <strong>Pagamento declarado por você, sem comprovante fiscal.</strong> Confira o débito no extrato antes de lançar.
+        {linha.pagamentoConfirmado ? <><strong>Pagamento confirmado pela Receita.</strong> Confira os valores antes de lançar. Suas alterações ficam registradas como declaração.</> : <><strong>Pagamento declarado por você, sem comprovante fiscal.</strong> Confira o débito no extrato antes de lançar.</>}
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         <div>
-          <label style={labelStyle} htmlFor="baixa-manual-principal">Principal (valor contratado)</label>
+          <label style={labelStyle} htmlFor="baixa-manual-principal">{principalConfirmado != null ? "Principal confirmado" : "Principal (valor contratado)"}</label>
           <input id="baixa-manual-principal" type="text" inputMode="decimal" value={textoPrincipal}
             onChange={(e) => setTextoPrincipal(e.target.value)} placeholder="0,00"
-            disabled={enviando || !podeAlterarContrato} style={inputStyle}
-            title={podeAlterarContrato ? "Alterar este valor modifica o contrato." : "O principal vem do contrato."} />
+            disabled={enviando || !podeAlterarContrato || principalConfirmado != null} style={inputStyle}
+            title={principalConfirmado != null ? "Principal da evidência fiscal confirmada." : podeAlterarContrato ? "Alterar este valor modifica o contrato." : "O principal vem do contrato."} />
           {decomposicao.erroPrincipal && <div style={{ ...ajuda, color: "var(--state-danger)" }}>{decomposicao.erroPrincipal}</div>}
         </div>
         <div>

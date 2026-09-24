@@ -23,11 +23,12 @@
 
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
+import { acquireGuideLease } from "../application/guides/GuideLockService.js";
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
 import { conferirCompetencia } from "../application/notas/apuracao/v2/ConferenciaAdnService.js";
-import { matchesCron } from "./cronMatch.js";
+import { runRoutineLoop } from "./runRoutineLoop.js";
+import { previousCompetencia } from "./routineSchedule.js";
 
 const LOCK_ID = "conferencia_adn_lock";
 const LOCK_TTL_MS = 60 * 60 * 1000; // varredura do ADN é lenta; TTL folgado
@@ -46,15 +47,23 @@ export function competenciaAnterior(ref = new Date()) {
   return `${ano}-${String(mes).padStart(2, "0")}`;
 }
 
-export async function runConferenciaAdnWorkerOnce({ competencia: competenciaForcada, forcar = false } = {}) {
-  const competencia = competenciaForcada || competenciaAnterior();
+export async function runConferenciaAdnWorkerOnce(options = {}) {
+  const lease = await acquireGuideLease(LOCK_ID, LOCK_TTL_MS);
+  if (!lease) return { skipped: true, reason: "lock_active" };
+  try {
+    return await executarConferencia({ ...options, assertActive: () => { lease.assertActive(); options.assertActive?.(); } });
+  } finally { await lease.release(); }
+}
+
+async function executarConferencia({ competencia: competenciaForcada, forcar = false, assertActive } = {}) {
+  const competencia = competenciaForcada || previousCompetencia();
   const alvos = await idsComRotinaAtiva("conferencia");
   if (!alvos.size) {
     log.info({ competencia }, "Conferência ADN: nenhuma empresa com a rotina ligada");
     return { competencia, empresas: 0, ok: 0, divergentes: 0, naoConferiveis: 0, falhas: 0 };
   }
 
-  const resumo = { competencia, empresas: alvos.size, ok: 0, divergentes: 0, naoConferiveis: 0, falhas: 0, marcadasCanceladas: 0, pulados: 0 };
+  const resumo = { competencia, empresas: alvos.size, ok: 0, divergentes: 0, naoConferiveis: 0, falhas: 0, marcadasCanceladas: 0, pulados: 0, results: [] };
 
   // A agenda tem janela de retry (dias 1 a 3): se o worker estiver fora do ar no dia 1, ele ainda
   // pega. Sem este corte, porém, a janela viraria TRÊS varreduras completas do ADN por empresa
@@ -69,17 +78,19 @@ export async function runConferenciaAdnWorkerOnce({ competencia: competenciaForc
         portalClientId: { in: [...alvos] },
         competencia,
         conferidaEm: { gte: inicioDoMes },
-        conferenciaStatus: { not: null },
+        conferenciaStatus: { in: ["ok", "divergente"] },
       },
       select: { portalClientId: true },
     })).map((r) => r.portalClientId),
   );
 
   for (const portalClientId of alvos) {
+    assertActive?.();
     if (jaConferidas.has(portalClientId)) { resumo.pulados += 1; continue; }
     try {
       // eslint-disable-next-line no-await-in-loop
       const r = await conferirCompetencia({ portalClientId, competencia });
+      resumo.results.push({ companyId: portalClientId, status: r.status, reason: r.reason || r.resultado?.motivo || null });
       if (r.status === "ok") resumo.ok += 1;
       else if (r.status === "divergente") resumo.divergentes += 1;
       else resumo.naoConferiveis += 1;
@@ -102,6 +113,7 @@ export async function runConferenciaAdnWorkerOnce({ competencia: competenciaForc
       }
     } catch (err) {
       resumo.falhas += 1;
+      resumo.results.push({ companyId: portalClientId, status: "erro", reason: err?.message || "Falha na conferência" });
       log.error({ err: err?.message || err, portalClientId, competencia }, "Conferência ADN falhou nesta empresa");
     }
     // eslint-disable-next-line no-await-in-loop
@@ -112,39 +124,7 @@ export async function runConferenciaAdnWorkerOnce({ competencia: competenciaForc
 }
 
 export async function runConferenciaAdnWorkerLoop() {
-  let lastTickKey = null;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      const settings = await getSerproRuntimeSettings();
-      const now = new Date();
-      const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const cfg = settings.rotinas?.conferencia;
-      const bateu = Boolean(cfg && cfg.enabled !== false && matchesCron(cfg.cron, now));
-
-      if (bateu && tickKey !== lastTickKey) {
-        lastTickKey = tickKey;
-        // Lock: a varredura é longa e cara; duas instâncias conferindo a mesma competência só
-        // gastariam o dobro de chamadas ao ADN pelo mesmo resultado.
-        const gotLock = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
-        if (!gotLock) {
-          log.info({ tickKey }, "Conferência ADN: outra instância já está rodando");
-        } else {
-          try {
-            const resumo = await runConferenciaAdnWorkerOnce();
-            log.info({ resumo, tickKey }, "Ciclo do conferenciaAdnWorker concluído");
-          } finally {
-            await releaseGuideLock(LOCK_ID);
-          }
-        }
-      }
-    } catch (err) {
-      log.error({ err: err?.message || err }, "Erro no ciclo do conferenciaAdnWorker");
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, LOOP_INTERVAL_MS));
-  }
+  return runRoutineLoop({ worker: "CONFERENCIA_ADN_WORKER_ENABLED", routines: ["conferencia"], run: runConferenciaAdnWorkerOnce, independent: true });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("conferenciaAdnWorker.js")) {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { prepararParcelamentoDaGuia, vincularGuiaParcelamento } from "../accounting/parcelamento/GuiaAvulsaParcelamentoService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideParserClient } from "./GuideParserClient.js";
 import { getGuideRuntimeSettings } from "./GuideRuntimeSettings.js";
@@ -495,11 +496,15 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
   const sourceFileId = buildUploadSourceFileId(hash);
   const existingGuide = await prisma.guide.findFirst({
     where: { sourceFileId },
-    select: { id: true },
+    select: { id: true, portalClientId: true, parcelamentoId: true },
   });
+
+  if (existingGuide?.portalClientId && existingGuide.portalClientId !== portalClient.id) throw Object.assign(new Error("Este documento pertence a outra empresa."), { code: "GUIDE_CNPJ_MISMATCH" });
+  const contratoGuia = await prepararParcelamentoDaGuia({ portalClientId: portalClient.id, metadata, guiaExistente: existingGuide });
 
   const guide = await createOrUpdateGuideFromProcessing({
     existingGuideId: existingGuide?.id || null,
+    ...(contratoGuia ? { parcelamentoId: contratoGuia.id } : {}),
     portalClientId: portalClient.id,
     legacyCompanyId: portalClient.companyId || null,
     parsed: {
@@ -521,9 +526,16 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
     status: "PROCESSED",
     errors: [],
     extracted: buildExtractedPayload({
-      parsed: { ...parsedData, ...merged }, hash, fileName: fileName || "guia.pdf", parserError,
+      parsed: { ...parsedData, ...merged, ...(contratoGuia ? { isParcelamento: true, parcelamentoAvulso: contratoGuia.origem === "GUIA_AVULSA", indicacaoParcelamentoId: metadata.indicacaoId || null } : {}) }, hash, fileName: fileName || "guia.pdf", parserError,
     }),
   });
+
+  if (contratoGuia) {
+    await vincularGuiaParcelamento({ portalClientId: portalClient.id, guideId: guide.id, parcelamentoId: contratoGuia.id, numeroParcela: metadata.numeroParcela });
+    guide.parcelamentoId = contratoGuia.id;
+    guide.parcelamento = contratoGuia;
+    guide.numeroParcela = metadata.numeroParcela == null ? guide.numeroParcela : Number(metadata.numeroParcela);
+  }
 
   return { needsMetadata: false, guide, guideId: guide.id };
 }

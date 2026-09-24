@@ -15,10 +15,12 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ParcelamentoTab } from "../renderParcelamentoTab.jsx";
 
 const mockListPendentes = jest.fn();
+const mockGetAcompanhamento = jest.fn(async () => ({ indicacoes: [], contratos: [], itens: [], resumo: {} }));
 
 jest.mock("../../../../../api/client", () => ({
   createApiClient: () => ({
     listParcelasPendentesBaixa: (...a) => mockListPendentes(...a),
+    getAcompanhamentoParcelamentos: (...a) => mockGetAcompanhamento(...a),
     lancarBaixaParcela: jest.fn(),
     buscarPagamentoGuia: jest.fn(),
   }),
@@ -49,16 +51,21 @@ function montar(pendentes = []) {
 }
 
 beforeAll(() => { Element.prototype.scrollIntoView = jest.fn(); });
-beforeEach(() => { mockListPendentes.mockReset(); });
+beforeEach(() => { mockListPendentes.mockReset(); mockGetAcompanhamento.mockClear(); });
 
 // ⚠ O ÚLTIMO, não o primeiro: a fila fica ACIMA dos cards, e o "Dar baixa" dela (o que realmente
 // lança) apareceria primeiro no DOM sempre que houvesse parcela pendente. O botão sob teste é o do
 // CARD — o que só navega até a fila.
-const darBaixaDoCard = () => screen.getAllByRole("button", { name: "Dar baixa" }).at(-1);
+const darBaixaDoCard = () => screen.getByTitle("Vai para a fila de parcelas pagas aguardando lançamento, no topo desta aba.");
 
 describe("o 'Dar baixa' do card responde mesmo quando não há o que baixar", () => {
   it("fila vazia para aquele contrato: diz que não há nenhuma, e por quê", async () => {
     await act(async () => { montar([]); });
+    expect(screen.queryByText("Acompanhar acordo")).toBeNull();
+    expect(screen.queryByText("Localizar na Receita")).toBeNull();
+    expect(screen.queryByText("Demonstração")).toBeNull();
+    expect(screen.queryByText("Registrar conferência da indicação")).toBeNull();
+    expect(mockGetAcompanhamento).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(darBaixaDoCard()); });
 
     expect(screen.getByText(/Nenhuma parcela de OUTRO 2026/i)).toBeTruthy();
@@ -90,6 +97,17 @@ describe("o 'Dar baixa' do card responde mesmo quando não há o que baixar", ()
 
     expect(screen.getByText(/Destacadas: as do contrato/i)).toBeTruthy();
     expect(screen.queryByText(/ainda não existe no sistema/i)).toBeNull();
+  });
+
+  it("confirma baixa pelo valor pago e data oficial quando o documento foi atualizado depois", async () => {
+    await act(async () => montar([{ guideId: "g1", parcelaId: "p1", parcelamentoId: "parc-sem-guia", numeroParcela: 1, competencia: "2026-08", valor: 100, valorDocumento: 110, comprovante: { principal: 100, juros: 0, multa: 0, total: 100, dataArrecadacao: "10/09/2026" }, confirmadoEm: "2026-09-24T12:00:00Z" }]));
+    expect(screen.getByText(/100,00/)).toBeTruthy();
+    expect(screen.getByText("10/09/2026 (comprovante)")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByTitle("Grava os lançamentos de baixa desta parcela (pede confirmação).")));
+    const dialogo = screen.getByRole("dialog");
+    expect(dialogo.textContent).toContain("100,00");
+    expect(dialogo.textContent).toContain("10/09/2026");
+    expect(dialogo.textContent).not.toContain("110,00");
   });
 
   // ⚠ Falha de rede NÃO pode virar "não há nada pendente" — são a mesma quantidade de linhas na
