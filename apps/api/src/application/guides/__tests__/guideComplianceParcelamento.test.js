@@ -10,6 +10,9 @@
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    parcelamento: { findMany: jest.fn(async () => []) },
+    parcelamentoIndicacao: { findMany: jest.fn(async () => []) },
+    companyFiscalStatus: { findUnique: jest.fn(async () => null) },
     accountingEntry: { findMany: jest.fn() },
     companyMonthlyCircular: { findMany: jest.fn() },
     guide: { findMany: jest.fn() },

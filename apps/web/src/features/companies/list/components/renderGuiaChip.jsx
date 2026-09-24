@@ -127,9 +127,11 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   const [resultado, setResultado] = useState(null);
   const [motivo, setMotivo] = useState("");
 
-  const meta = ESTADO[tag.state] || ESTADO.missing;
+  const meta = tag.key === "parcDas" && tag.itens?.length && tag.pendenciaOperacional ? { ...ESTADO.gerada, icone: "⚠", rotulo: "acompanhamento pendente" } : ESTADO[tag.state] || ESTADO.missing;
   const canaisEnviados = rotuloCanaisEnviados(tag);
-  const rotuloEstado = canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
+  const estadosParcela = tag.key === "parcDas" ? [...new Set((tag.itens || []).filter(i => i.estado !== "RESOLVIDA").map(i => i.estado))] : [];
+  const rotuloParcela = { IDENTIFICAR: "identificar parcelamento", CONFERIR_PARCELA: "conferir parcelas", CONSULTAR_PAGAMENTO: "confirmar pagamento", CONTABILIZAR: "pagamento confirmado, falta contabilizar", OBTER_GUIA: "obter guia", ENVIAR: "enviar guia", DIVERGENCIA: "conferir divergência", CONFERIR_DOCUMENTO: "conferir documento", CONSULTA_FALHOU: "consulta não concluída" };
+  const rotuloEstado = estadosParcela.length ? estadosParcela.length === 1 ? rotuloParcela[estadosParcela[0]] || "conferir acompanhamento" : `${tag.pendencias || estadosParcela.length} tarefas de acompanhamento` : canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
   // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
   const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";
@@ -173,9 +175,9 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         }}
       >
         <span aria-hidden="true">{meta.icone}</span>
-        {tag.label}
-        {tag.state === "enviada" && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
-        {tag.state === "gerada" && <span style={{ fontWeight: 500 }}>enviar</span>}
+        {tag.label}{tag.key === "parcDas" && tag.pendencias > 0 ? ` · ${tag.pendencias} pendente(s)` : ""}
+        {tag.state === "enviada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
+        {tag.state === "gerada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>enviar</span>}
         {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
       </button>
 
@@ -183,6 +185,10 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         <Popover onFechar={() => { setAberto(false); setErro(null); }}>
           <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {competencia}</div>
           <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{rotuloEstado}</div>
+          {ehParcela && <div style={{ marginBottom: 10 }}>
+            {tag.itens?.length > 0 && <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{tag.itens.map((item, idx) => <li key={item.id || `${item.parcelamentoId}-${item.referencia}-${idx}`} style={{ marginBottom: 5 }}>{item.tipo || item.tipoParcelamento || "Parcelamento"}{item.numeroParcelamento ? ` nº ${item.numeroParcelamento}` : " · identificar acordo"}{item.referencia ? ` · ${item.referencia}` : ""}{item.numeroParcela ? ` · parcela ${item.numeroParcela}` : ""}{item.label ? ` — ${item.label}` : ""}</li>)}</ul>}
+            <a href={`/companies/${encodeURIComponent(empresa.companyId)}/guides`} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</a>
+          </div>}
 
           {/* Qual parcelamento e qual parcela — sem isto o chip diria só "Parcelamento", e numa
               empresa com mais de um acordo não dá para saber de qual se trata. */}
@@ -210,7 +216,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
             </div>
           )}
 
-          {tag.state === "enviada" && (
+          {tag.state === "enviada" && !tag.itens?.length && (
             <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
               {/* Por ONDE saiu importa: com dois canais, "enviada" sem o canal deixa o contador sem
                   saber onde procurar quando o cliente diz que não recebeu. */}
@@ -239,10 +245,8 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
           {tag.state === "missing" && ehParcela && (
             <>
               <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
-                A parcela do mês ainda não foi capturada. Busque o parcelamento na aba Guias da
-                empresa.
+                Falta a guia de parcelamento. Use “Subir parcela” na aba Guias da empresa.
               </div>
-              <BotaoAcao onClick={() => acoes.onAbrirEmpresa?.(empresa.companyId)}>Abrir empresa</BotaoAcao>
             </>
           )}
 
@@ -323,7 +327,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
               manual não espera janela de retry — `whereGuiaPendenteDeEnvio()` sem `retryAntesDe`),
               e dar um botão separado a "tentar de novo" sugeriria que existe um mecanismo de
               retentativa em algum lugar. Não existe: é o mesmo envio, de novo. */}
-          {(tag.state === "gerada" || tag.state === "falhou") && (
+          {!ehParcela && (tag.state === "gerada" || tag.state === "falhou") && (
             <>
               <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
                 Liberar no portal e enviar por e-mail e WhatsApp aos contatos cadastrados.
@@ -363,7 +367,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 /** Todas as guias em estado TERMINAL (enviada ou vazio)? É o que autoriza condensar. */
 export function todasConcluidas(tags) {
   const exigidas = (tags || []).filter((t) => t.state !== "na");
-  return exigidas.length > 0 && exigidas.every((t) => t.state === "enviada" || t.state === "vazio");
+  return exigidas.length > 0 && exigidas.every((t) => !t.pendenciaOperacional && (t.state === "enviada" || t.state === "vazio"));
 }
 
 /**

@@ -50,7 +50,7 @@ it("trocar empresa com confirmação aberta cancela o pedido sem lançar na ante
   const state = hook();
   const { rerender } = render(<ParcelamentoTab companyId="A" parcelamentos={state} />);
   await act(async () => {});
-  fireEvent.click(screen.getAllByRole("button", { name: "Dar baixa" })[0]);
+  fireEvent.click(screen.getByTitle("Grava os lançamentos de baixa desta parcela (pede confirmação)."));
   expect(screen.getByRole("dialog", { name: "Confirmar baixa da parcela" })).toBeInTheDocument();
   await act(async () => { rerender(<ParcelamentoTab companyId="B" parcelamentos={{ ...state, parcelamentos: [] }} />); });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

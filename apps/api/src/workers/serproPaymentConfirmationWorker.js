@@ -1,10 +1,11 @@
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
+import { acquireGuideLease } from "../application/guides/GuideLockService.js";
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { runPaymentConfirmationOnce } from "../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
-import { matchesCron } from "./cronMatch.js";
+import { runRoutineLoop } from "./runRoutineLoop.js";
+import { previousCompetencia } from "./routineSchedule.js";
 
 // Q40 Fase B: cron PRÓPRIO de confirmação de pagamento (PAGTOWEB). Independente da captura.
 const LOCK_ID = "serpro_payment_confirmation_lock";
@@ -16,8 +17,8 @@ export async function runSerproPaymentConfirmationWorkerOnce(options = {}) {
   return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_pagamento" }, () => executarPagamento(options));
 }
 async function executarPagamento(options = {}) {
-  const locked = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
-  if (!locked) return { skipped: true, reason: "lock_active" };
+  const lease = await acquireGuideLease(LOCK_ID, LOCK_TTL_MS);
+  if (!lease) return { skipped: true, reason: "lock_active" };
   try {
     const settings = await getSerproRuntimeSettings();
     if (!settings.enabled) return { skipped: true, reason: "serpro_disabled" };
@@ -27,6 +28,7 @@ async function executarPagamento(options = {}) {
       portalClientId: options.portalClientId || null,
       competencia: options.competencia || null,
       logger: log,
+      assertActive: () => { lease.assertActive(); options.assertActive?.(); },
     });
 
     const result = { skipped: false, durationMs: Date.now() - startedAt, ...summary };
@@ -42,42 +44,12 @@ async function executarPagamento(options = {}) {
     });
     return result;
   } finally {
-    await releaseGuideLock(LOCK_ID);
+    await lease.release();
   }
 }
 
 export async function runSerproPaymentConfirmationWorkerLoop() {
-  let lastTickKey = null;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      const settings = await getSerproRuntimeSettings();
-      const now = new Date();
-      const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-      // Agenda da rotina `pagamento`. Cai no paymentConfirmation* legado se ela não existir.
-      const cfgPag = settings.rotinas?.pagamento;
-      const pagamentoLigado = cfgPag ? cfgPag.enabled !== false : settings.paymentConfirmationEnabled;
-      const pagamentoBateu = cfgPag
-        ? matchesCron(cfgPag.cron, now)
-        : matchesCron(settings.paymentConfirmationCron, now);
-
-      if (
-        settings.enabled &&
-        pagamentoLigado &&
-        pagamentoBateu &&
-        tickKey !== lastTickKey
-      ) {
-        lastTickKey = tickKey;
-        const result = await runSerproPaymentConfirmationWorkerOnce();
-        log.info({ result, tickKey }, "Ciclo do serproPaymentConfirmationWorker concluído");
-      }
-    } catch (err) {
-      log.error({ err: err?.message || err }, "Erro no ciclo do serproPaymentConfirmationWorker");
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, LOOP_INTERVAL_MS));
-  }
+  return runRoutineLoop({ worker: "SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED", routines: ["pagamento"], run: (options) => runSerproPaymentConfirmationWorkerOnce({ ...options, competencia: null }) });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("serproPaymentConfirmationWorker.js")) {

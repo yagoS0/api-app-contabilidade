@@ -389,6 +389,7 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
     liberadaCliente: Boolean(item.liberadaCliente),
     // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
     parcelamentoId: item.parcelamentoId || null,
+    parcelamentoAvulso: item.parcelamento ? item.parcelamento.origem === "GUIA_AVULSA" : item.extracted?.parcelamentoAvulso === true,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,
     // ⚠ Sem o TOTAL, "parcela 3" não diz se o acordo está no começo ou acabando — que é a única
     // leitura útil do número. O campo já era gravado (`ParcelamentoV2Service`) e só não saía daqui.
@@ -499,6 +500,7 @@ export function toPendingGuideReportItem(item) {
     // Mesmos campos de parcelamento do `toGuideResponse`: as duas listagens usam o MESMO helper de
     // rótulo no front, e um contrato pela metade faria a parcela voltar a se chamar "SIMPLES" aqui.
     parcelamentoId: item.parcelamentoId || null,
+    parcelamentoAvulso: item.parcelamento ? item.parcelamento.origem === "GUIA_AVULSA" : item.extracted?.parcelamentoAvulso === true,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,
     quantidadeParcelas: item.quantidadeParcelas != null ? Number(item.quantidadeParcelas) : null,
     parcelamentoTipo: item.parcelamento?.tipo || null,
@@ -540,6 +542,7 @@ export function toUnidentifiedGuideResponse(item) {
 
 export async function createOrUpdateGuideFromProcessing({
   existingGuideId = null,
+  parcelamentoId,
   portalClientId,
   legacyCompanyId,
   parsed,
@@ -610,6 +613,7 @@ export async function createOrUpdateGuideFromProcessing({
   }
 
   const data = {
+    ...(parcelamentoId !== undefined ? { parcelamentoId } : {}),
     portalClientId: portalClientId ? String(portalClientId) : null,
     legacyCompanyId: legacyCompanyId ? String(legacyCompanyId) : null,
     competencia: normalizeCompetencia(parsed?.competencia),

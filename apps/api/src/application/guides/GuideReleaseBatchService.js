@@ -1,3 +1,4 @@
+import { conferirParcelasParaEnvio } from "./GuiaParcelaEnvioGuard.js";
 import { createHash } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { WHATSAPP_ENVIO_DELAY_MS } from "../../config.js";
@@ -39,6 +40,7 @@ export function createGuideReleaseBatchService(deps = {}) {
     const linhas = [];
     for (const item of [...items].sort((a, b) => a.portalClientId.localeCompare(b.portalClientId))) {
       const { guias } = await conferir({ ...item, portalClientIds: [item.portalClientId] });
+      await conferirParcelasParaEnvio(guias, { client: db });
       const destinos = await contatos(item.portalClientId);
       const avaliacao = avaliarLinha({ canal, guide: guias[0], destinatario: await destinatario(item.portalClientId) });
       linhas.push({ ...item, guideIds: [...item.guideIds].sort(), guias,
@@ -84,6 +86,7 @@ export function createGuideReleaseBatchService(deps = {}) {
           const guide = await db.guide.findFirst({ where: { id: anterior.id, portalClientId: linha.portalClientId },
             select: { ...SELECT_GUIA_PARA_ENVIO, liberadaCliente: true } });
           if (!guide || assinaturaDocumento(guide) !== assinaturaDocumento(anterior)) throw loteAlterado();
+          await conferirParcelasParaEnvio([guide], { client: db });
           if (!guide.liberadaCliente) {
             const upd = await db.guide.updateMany({ where: { id: guide.id, portalClientId: linha.portalClientId,
               updatedAt: guide.updatedAt, status: "PROCESSED", liberadaCliente: false },

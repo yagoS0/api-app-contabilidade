@@ -9,6 +9,10 @@ on:
       - 'apps/api/scripts/verify-whatsapp-confirmacao-postgres.js'
       - 'apps/api/scripts/verify-whatsapp-coleta-postgres.js'
       - 'apps/api/scripts/verify-whatsapp-multiempresa-postgres.js'
+      - 'apps/api/scripts/verify-parcelamento-postgres.js'
+      - 'apps/api/src/application/accounting/parcelamento/**'
+      - 'apps/api/src/workers/scheduledRoutineService.js'
+      - 'apps/api/src/workers/routineSchedule.js'
       - '.github/workflows/whatsapp-confirmacao-postgres.yml'
       - 'package-lock.json'
   push:
@@ -42,6 +46,9 @@ jobs:
       - run: npm run prisma:generate -w @contabilidade/api
       - name: Apply complete migration history
         run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Validate installment links and scheduled leases under concurrency
+        working-directory: apps/api
+        run: node scripts/verify-parcelamento-postgres.js --url "$DATABASE_URL"
       - name: Validate fiscal confirmation reservation and concurrent corrections
         working-directory: apps/api
         run: node scripts/verify-whatsapp-confirmacao-postgres.js --url "$DATABASE_URL"

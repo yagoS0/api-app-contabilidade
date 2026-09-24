@@ -1,3 +1,6 @@
+import { mockExecucoesRotinas, mockCarregarRotinas, mockSalvarRotinas } from "./rotinasMock";
+import { criarMockAcompanhamentoParcelamentos } from "./acompanhamentoParcelamentosMock";
+import { relatorioParcelasGuiasMock } from "./parcelasGuiasRelatorioMock";
 import { importarNotasMock } from "./importarNotasMock";
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
@@ -174,7 +177,8 @@ function makeCompanies(count = 6) {
     return {
       companyId,
       myRole,
-      razao: faker.company.name(),
+      razao: i === 4 ? "Talbot Pereira Consultoria (demo)" : i === 5 ? "Klaus Nigro Tráfego Pago (demo)" : faker.company.name(),
+      parcelamentoDemoAtrasos: i === 4 ? 3 : i === 5 ? 2 : 0,
       cnpj: faker.helpers.replaceSymbols("##.###.###/####-##"),
       municipio: ehMangaratiba ? "Mangaratiba" : "Rio de Janeiro",
       uf: "RJ",
@@ -670,6 +674,7 @@ function makeGuidesByCompany(companies) {
 
 const mockCompanies = makeCompanies();
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
+const acompanhamentoMock = criarMockAcompanhamentoParcelamentos({ empresas: mockCompanies, guias: mockGuidesByCompany });
 const mockRecalculosGuias = new Map();
 
 function registrarRecalculoGuiaMock(guia, valorAnterior, especie) {
@@ -3193,7 +3198,8 @@ function atualizarContratoParcelamentoMock(companyId, contrato) {
 
 function contratosParcelamentoMock(companyId) {
   const estado = estadoParcelamentoMock(companyId);
-  return [...estado.mockParcelamentosCriados.values(), ...construirParcelamentosFixos(companyId)]
+  return [...estado.mockParcelamentosCriados.values(), ...(mockCompanies.find(c => c.companyId === companyId)?.parcelamentoDemoAtrasos ? [] : construirParcelamentosFixos(companyId))]
+    .filter((p, index, todos) => todos.findIndex(t => t.id === p.id) === index)
     .filter(p => !estado.mockParcelamentosExcluidos.has(p.id))
     .map(p => atualizarContratoParcelamentoMock(companyId, p));
 }
@@ -3499,7 +3505,8 @@ function construirFilaSemGuiaMock(companyId) {
         competencia: c.competencia ?? null,
         vencimento: c.vencimento,
         valorPrevisto,
-        situacao: new Date(c.vencimento).getTime() < agora ? "VENCIDA" : "VENCE_HOJE",
+        situacao: c.pagamentoConfirmado ? "PAGAMENTO_CONFIRMADO" : new Date(c.vencimento).getTime() < agora ? "VENCIDA" : "VENCE_HOJE",
+        pagamentoConfirmado: Boolean(c.pagamentoConfirmado), pagamentoEm: c.pagamentoEm, valorPago: c.valorPago, comprovante: c.comprovante,
         parcelamentoId: p.id,
         parcelamento: {
           id: p.id, label: p.label, tipo: p.tipo, numParcelas: p.numParcelas,
@@ -3752,6 +3759,7 @@ export function createMockApi() {
   let accessToken = "";
 
   return {
+    ...acompanhamentoMock,
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras),
     setUnauthorizedHandler() {},
@@ -3804,14 +3812,14 @@ export function createMockApi() {
       // e nada mudaria — o mesmo mock inerte que já escondeu bug duas vezes neste projeto.
       return mockCompanies.map((c, i) => ({
         ...c,
-        guideCompliance: mockGuideComplianceRow({
+        guideCompliance: acompanhamentoMock.complianceAcompanhamentoParcelamentos(c.companyId, mockGuideComplianceRow({
           companyId: c.companyId,
           indice: i,
           hasProlabore: c.hasProlabore,
           regimeTributario: c.legacyCompany?.regimeTributario,
           competencia: comp,
           faturamento: mockFaturamentoDaCompetencia(c.companyId, comp),
-        }),
+        })),
       }));
     },
     async createCompany(input) {
@@ -4053,24 +4061,57 @@ export function createMockApi() {
         };
       }
       const id = `mock-guide-upload-${Date.now()}`;
+      const isParcelamento = metadata.isParcelamento === true || metadata.isParcelamento === "true";
+      if (isParcelamento && !metadata.parcelamentoTipo) throw new Error("Informe a modalidade do parcelamento.");
       const guide = {
         id,
         guideId: id,
+        portalClientId: companyId,
         tipo: String(metadata.tipo).toUpperCase(),
         competencia: metadata.competencia,
         valor: metadata.valor != null ? Number(metadata.valor) : null,
         vencimento: metadata.vencimento || null,
         status: "PROCESSED",
         paymentStatus: "OPEN",
-        emailStatus: "SENT",
+        emailStatus: isParcelamento ? "PENDING" : "SENT",
+        ...(isParcelamento ? { envio: { jaEnviada: false, canais: [] } } : {}),
         source: "UPLOAD",
+        fileName: file?.name || "guia.pdf",
+        hasPdf: true,
         canConfirmPayment: true,
         canRecalculate: false,
       };
+      if (isParcelamento) acompanhamentoMock.registrarGuiaAvulsaParcelamento(companyId, guide, metadata);
       const list = mockGuidesByCompany.get(companyId) || [];
       list.unshift(guide);
       mockGuidesByCompany.set(companyId, list);
-      return { ok: true, guide, emailStatus: "SENT", emailMessage: "Guia processada e e-mail enviado com sucesso." };
+      return { ok: true, guide, emailStatus: guide.emailStatus, emailMessage: isParcelamento ? "Parcela salva. Você pode enviá-la pela aba Guias." : "Guia processada e e-mail enviado com sucesso." };
+    },
+    async vincularGuiaParcelamento(companyId, guideId, { parcelamentoId, numeroParcela } = {}) {
+      const guia = (mockGuidesByCompany.get(companyId) || []).find(g => g.id === guideId);
+      const estado = estadoParcelamentoMock(companyId);
+      const contrato = estado.mockParcelamentosCriados.get(parcelamentoId)
+        || (!mockCompanies.find(c => c.companyId === companyId)?.parcelamentoDemoAtrasos && construirParcelamentosFixos(companyId).find(p => p.id === parcelamentoId))
+        || acompanhamentoMock.snapshotAcompanhamentoParcelamentos(companyId).contratos.find(p => p.id === parcelamentoId);
+      if (!guia?.parcelamentoId || !contrato) throw new Error("Guia ou parcelamento não encontrado nesta empresa.");
+      if (contrato.status === "EXCLUIDO" || estado.mockParcelamentosExcluidos.has(contrato.id)) throw new Error("Parcelamento não encontrado nesta empresa.");
+      const numero = numeroParcela === undefined ? guia.numeroParcela : numeroParcela == null || numeroParcela === "" ? null : Number(numeroParcela);
+      if (numero != null && (!Number.isInteger(numero) || numero < 1)) throw new Error("Informe um número de parcela válido.");
+      if (guia.parcelamentoId === contrato.id && (guia.numeroParcela ?? null) === (numero ?? null)) return { ok: true, guide: { ...guia }, parcelamentoId: contrato.id };
+      if (guia.parcelamentoTipo && guia.parcelamentoTipo !== contrato.tipo) throw new Error("A modalidade da guia não corresponde ao parcelamento.");
+      if (!guia.parcelamentoAvulso && guia.parcelamentoId !== contrato.id) throw new Error("A guia já está vinculada a outro contrato.");
+      if (guia.baixada || guia.lancamentoId || estado.baixasComGuia.has(guia.id)) throw new Error("A guia já possui baixa. Confira os lançamentos antes de alterar o vínculo.");
+      let destino = numero == null ? null : (contrato.parcelasContratadas || []).find(p => p.numeroParcela === numero);
+      if (destino && (destino.guia?.id || destino.origemBaixa || destino.baixadaEm || destino.pagamentoStatus)) throw new Error("Esta prestação já possui guia ou evidência de pagamento.");
+      if (!destino) {
+        destino = { id: `parcela-${guia.id}`, numeroParcela: numero, competencia: guia.competencia, vencimento: guia.vencimento, valorPrevisto: guia.valor };
+        contrato.parcelasContratadas = [...(contrato.parcelasContratadas || []), destino];
+      }
+      acompanhamentoMock.vincularGuiaAvulsaParcelamento(companyId, guia, contrato, numero);
+      destino.guia = { ...guia };
+      contrato.guides = [...(contrato.guides || []).filter(g => g.id !== guideId), { ...guia }];
+      estado.mockParcelamentosCriados.set(contrato.id, contrato);
+      return { ok: true, guide: { ...guia }, parcelamentoId: contrato.id };
     },
     async fetchGuidePdfBlob() {
       await delay(120);
@@ -4099,6 +4140,7 @@ export function createMockApi() {
       await delay(500);
       const list = mockGuidesByCompany.get(companyId) || [];
       const pending = list.filter((item) => item.status === "PROCESSED" && item.emailStatus !== "SENT");
+      pending.forEach(g => acompanhamentoMock.conferirEnvioGuiaAcompanhamento(companyId, g.id));
       const toSendNow = pending.slice(0, faker.number.int({ min: 1, max: 4 }));
       for (const guide of toSendNow) {
         guide.emailStatus = "SENT";
@@ -4116,6 +4158,7 @@ export function createMockApi() {
       for (const [companyId, guides] of mockGuidesByCompany.entries()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
+          acompanhamentoMock.conferirEnvioGuiaAcompanhamento(companyId, guideId);
           const temEmail = (mockContatosWhatsapp[String(companyId)] || [])
             .some((c) => c.ativo !== false && String(c.email || "").trim());
           if (!temEmail) {
@@ -4126,6 +4169,7 @@ export function createMockApi() {
             };
           }
           target.emailStatus = "SENT";
+          if (target.parcelamentoId) target.envio = { jaEnviada: true, canais: [{ canal: "EMAIL", status: "enviado", em: new Date().toISOString() }] };
           return { ok: true, guideId, emailStatus: "SENT", sent: true, envio: { feito: true } };
         }
       }
@@ -4137,6 +4181,7 @@ export function createMockApi() {
       for (const [companyId, guides] of mockGuidesByCompany.entries()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
+          acompanhamentoMock.conferirEnvioGuiaAcompanhamento(companyId, guideId);
           target.liberadaCliente = true;
           target.liberadaEm = new Date().toISOString();
           // ⚠ O CAMINHO DO LOCK PRESO PRECISA EXISTIR NO MOCK. É ele que produzia a mensagem
@@ -4175,6 +4220,7 @@ export function createMockApi() {
             };
           }
           target.emailStatus = "SENT";
+          if (target.parcelamentoId) target.envio = { jaEnviada: true, canais: [{ canal: "EMAIL", status: "enviado", em: new Date().toISOString() }] };
           return { ok: true, guideId, liberadas: 1, emailStatus: "SENT", sent: true, envio: { feito: true } };
         }
       }
@@ -4601,6 +4647,7 @@ export function createMockApi() {
         throw mockRecusa("MES_FECHADO", `Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
       }
 
+      acompanhamentoMock.registrarBaixaAcompanhamento(companyId, id);
       mockBaixasManuais.set(id, { declaradaEm: new Date().toISOString(), dataPagamento: body.dataPagamento, competencia, principal, juros, multa, total });
       return {
         ok: true,
@@ -4772,6 +4819,7 @@ export function createMockApi() {
         ok: true,
         workerEnabled: true,
         lastRun: mockSerproLastRun,
+        routines: mockExecucoesRotinas(),
       };
     },
     async updateSerproSettings(input) {
@@ -5218,42 +5266,11 @@ export function createMockApi() {
     // Rotinas: espelha o shape do GET /firm/rotinas (rotinas + agenda + empresas).
     async getRotinas() {
       await delay();
-      return {
-        ok: true,
-        rotinas: [
-          { key: "das", label: "DAS" },
-          { key: "inss", label: "INSS" },
-          { key: "extrato", label: "Extrato" },
-          { key: "presumido", label: "Presumido" },
-          { key: "parcelamento", label: "Parcelamento" },
-          { key: "pagamento", label: "Pagamento" },
-        ],
-        agenda: {
-          das: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
-          inss: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
-          extrato: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
-          presumido: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
-          parcelamento: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
-          pagamento: { enabled: true, day: 20, hour: 8, cron: "0 8 20-22 * *" },
-        },
-        empresas: mockCompanies.map((c, i) => ({
-          companyId: c.companyId,
-          razao: c.razao,
-          cnpj: c.cnpj,
-          status: "ATIVA",
-          regime: i % 3 === 0 ? "LUCRO_PRESUMIDO" : "SIMPLES",
-          rotinas: i % 3 === 0
-            ? { das: false, inss: true, extrato: false, presumido: true, parcelamento: false, pagamento: true }
-            : { das: true, inss: true, extrato: true, presumido: false, parcelamento: true, pagamento: true },
-        })),
-      };
+      return mockCarregarRotinas(mockCompanies);
     },
     async saveRotinas(input = {}) {
       await delay(400);
-      const atualizadas = Array.isArray(input.empresas)
-        ? input.empresas.reduce((s, e) => s + Object.keys(e.rotinas || {}).length, 0)
-        : 0;
-      return { ok: true, atualizadas, agenda: input.agenda || {} };
+      return mockSalvarRotinas(input);
     },
     async runSerproCron(input = {}) {
       await delay(800);
@@ -6092,8 +6109,8 @@ export function createMockApi() {
     // sumir junto: um mock que continua respondendo `ok:true` para uma rota que o backend removeu
     // é a forma mais eficiente de esconder um 404 até a produção.
     async getCompanyGuideDueReport(companyId, mesVencimento) {
-      const report = relatorioVencimentoMock(mockCompanies, { mesVencimento });
-      return { ...report, simples: report.simples.filter((c) => c.portalClientId === companyId) };
+      return relatorioParcelasGuiasMock({ companyId, mesVencimento, empresa: mockCompanies.find(c => c.companyId === companyId),
+        guias: mockGuidesByCompany.get(companyId) || [], acompanhamento: acompanhamentoMock.snapshotAcompanhamentoParcelamentos(companyId) });
     },
     async getBatchEmailReport(competencia) {
       await delay(200);
@@ -6174,6 +6191,7 @@ export function createMockApi() {
     },
     async sendBatchEmails(items) {
       await delay(800);
+      items.forEach(i => (i.guideIds || []).forEach(g => acompanhamentoMock.conferirEnvioGuiaAcompanhamento(i.portalClientId, g)));
       if (items.some((it) => it.mesVencimento)) return enviarVencimentoMock(items);
       return {
         ok: true,
@@ -6186,9 +6204,11 @@ export function createMockApi() {
       };
     },
     async preverLiberacaoGuias(input) {
+      (input?.items || []).forEach(i => (i.guideIds || []).forEach(g => acompanhamentoMock.conferirEnvioGuiaAcompanhamento(i.portalClientId, g)));
       return preverLiberacaoVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
     },
     async liberarGuiasLote(input) {
+      (input?.items || []).forEach(i => (i.guideIds || []).forEach(g => acompanhamentoMock.conferirEnvioGuiaAcompanhamento(i.portalClientId, g)));
       return liberarVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
     },
     // ── ENVIO DE GUIAS POR WHATSAPP — o MESMO contrato de `realApi` ──────────────────────────────
@@ -6202,6 +6222,7 @@ export function createMockApi() {
     },
     async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false } = {}) {
       await delay(300);
+      acompanhamentoMock.conferirEnvioGuiaAcompanhamento(companyId, guideId);
       const contatos = mockContatosWhatsapp[String(companyId)] || [];
       // ⚠ TODOS os que têm opt-in (05/09/2026) — o envio deixou de ser para um contato só.
       const recebem = contatos.filter((c) => c.ativo !== false && c.optInEm && c.telefoneE164);
@@ -6215,6 +6236,11 @@ export function createMockApi() {
         throw recusa("GUIA_JA_ENVIADA", "Esta guia já foi enviada ao cliente por WhatsApp.");
       }
       mockGuiasEnviadasWhatsapp.add(String(guideId));
+      const guiaEnviada = (mockGuidesByCompany.get(companyId) || []).find(g => g.id === guideId);
+      if (guiaEnviada?.parcelamentoId) guiaEnviada.envio = { jaEnviada: true, canais: [
+        ...(guiaEnviada.envio?.canais || []).filter(c => c.canal !== "WHATSAPP"),
+        ...recebem.map(c => ({ canal: "WHATSAPP", status: "enviado", destino: c.telefoneE164, em: new Date().toISOString() })),
+      ] };
       return {
         ok: true, guideId, enviada: true, canal: "WHATSAPP",
         destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length, aceitas: recebem.length, falhas: 0, parcial: false, estado: "aceito",
@@ -6271,6 +6297,7 @@ export function createMockApi() {
       //   `undefined`. A prévia é pré-requisito aqui como no servidor (que a recalcula por dentro).
       const previa = mockUltimaPreviaWhatsapp && mockUltimaPreviaWhatsapp.competencia === competencia ? mockUltimaPreviaWhatsapp : null;
       if (!previa) { const e = new Error("Gere a prévia do lote antes de enviar."); e.status = 400; e.code = "CONFERENCIA_OBRIGATORIA"; throw e; }
+      previa.linhas.forEach(l => acompanhamentoMock.conferirEnvioGuiaAcompanhamento(l.portalClientId, l.guideId));
       if (!conferencia) { const e = new Error("Confira os números da prévia antes de enviar."); e.status = 400; e.code = "CONFERENCIA_OBRIGATORIA"; throw e; }
       const r = previa.resumo;
       if (Number(conferencia.total) !== r.total || Number(conferencia.porWhatsapp) !== r.porWhatsapp || Number(conferencia.porEmail) !== r.porEmail) {
@@ -10755,6 +10782,7 @@ export function createMockApi() {
         // débito automático saudável seria inventar inadimplência a partir de ausência de dado.
         risco: { avaliavel: false, nivel: null, emAtraso: 0, parcelasEmAtraso: [], regra: null },
       };
+      acompanhamentoMock.vincularContabilizacaoAcompanhamento(companyId, novo);
       mockParcelamentosCriados.set(novo.id, novo);
       return { ok: true, data: { parcelamentoId: novo.id, criouParcelamento: true, marcadasHistorico: jaPagas } };
     },

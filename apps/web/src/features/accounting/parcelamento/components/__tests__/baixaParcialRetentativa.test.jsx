@@ -1,5 +1,25 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { BaixaManualParcelaModal } from "../BaixaManualParcelaModal";
+it("prefill fiscal é aplicado na abertura e não sobrescreve a edição do contador", () => {
+  const linha = { parcelaId: "p1", valorPrevisto: 100, pagamentoConfirmado: true, pagamentoEm: "2026-09-10T00:00:00Z", comprovante: { principal: 100, juros: 0, multa: 0 } };
+  const { rerender } = render(<BaixaManualParcelaModal linha={linha} />);
+  expect(screen.getByText("Pagamento confirmado pela Receita.")).toBeInTheDocument();
+  const juros = screen.getByLabelText("Juros (você declara)");
+  fireEvent.change(juros, { target: { value: "2,00" } });
+  rerender(<BaixaManualParcelaModal linha={{ ...linha, comprovante: { ...linha.comprovante, juros: 8 } }} />);
+  expect(juros).toHaveValue("2,00");
+});
+it("principal confirmado não modifica o contrato que foi consultado depois do pagamento", async () => {
+  const corrigir = jest.fn();
+  const confirmar = jest.fn().mockResolvedValue({ ok: true });
+  render(<BaixaManualParcelaModal linha={{ parcelaId: "p1", valorPrevisto: 110, pagamentoConfirmado: true, pagamentoEm: "2026-09-10", comprovante: { principal: 100, juros: 0, multa: 0 } }} onCorrigirValorContratado={corrigir} onConfirmar={confirmar} />);
+  expect(screen.getByLabelText("Principal confirmado")).toBeDisabled();
+  expect(screen.getByLabelText("Principal confirmado")).toHaveValue("100,00");
+  fireEvent.click(screen.getByRole("button", { name: "Declarar e lançar a baixa" }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar pagamento declarado" })); });
+  expect(corrigir).not.toHaveBeenCalled();
+  expect(confirmar).toHaveBeenCalledWith(expect.objectContaining({ totalConferido: 100 }));
+});
 
 it("valor contratual salvo sobrevive à falha de baixa e não é reenviado com valor anterior vencido", async () => {
   const onCorrigirValorContratado = jest.fn().mockResolvedValue({ ok: true });

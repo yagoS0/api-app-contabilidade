@@ -82,10 +82,15 @@ function Progresso({ passo }) {
 export function ParcelamentoWizard({
   onIngest, onClose, onConsultSerpro, getContasProvisao, onLerRecibo,
   accounts = [], onSearchHistoricos, onGetHistoricosByCode,
-  saving = false,
+  saving = false, contratoInicial = null,
 }) {
   const [passo, setPasso] = useState(1);
-  const [dados, setDados] = useState(estadoInicial);
+  const [dados, setDados] = useState(() => ({ ...estadoInicial(), ...(contratoInicial ? {
+    tipo: contratoInicial.tipo, modeloContas: contratoInicial.tipo,
+    numeroParcelamento: contratoInicial.numeroParcelamento || "",
+    descricao: contratoInicial.label || "", formaPagamento: contratoInicial.formaPagamento || "",
+    situacao: "EM_ANDAMENTO",
+  } : {}) }));
   const [tocado, setTocado] = useState(false);        // já tentou avançar neste passo?
   const [erroServidor, setErroServidor] = useState("");
   const [busy, setBusy] = useState(false);

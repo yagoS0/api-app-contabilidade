@@ -1,5 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
+import { listarPendenciasParcelamento } from "../accounting/parcelamento/ParcelamentoAcompanhamentoService.js";
+import { complianceParcelamentos, mesOperacionalDaCompetencia } from "../accounting/parcelamento/pendenciasParcelamento.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
@@ -194,6 +196,8 @@ export async function computeGuideComplianceMap(rows, competencia) {
   // Nenhum produz `PARC_DAS`. A query custava uma varredura de `accounting_entries` sobre a
   // carteira inteira, a cada montagem do dashboard, para devolver sempre vazio.
   const allPortalIds = rows.map((r) => r.portalId).filter(Boolean);
+  const acompanhamento = await listarPendenciasParcelamento({ portalClientIds: allPortalIds, mesOperacional: mesOperacionalDaCompetencia(competencia) });
+  const acompanhamentoByPortal = new Map(allPortalIds.map(id => [id, acompanhamento.itens.filter(i => i.portalClientId === id)]));
   const parcGuiaByPortal = new Map();
   if (allPortalIds.length > 0) {
     const parcGuides = await prisma.guide.findMany({
@@ -267,7 +271,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
 
   for (const row of rows) {
     const regime = normalizeRegimeFromLegacy(row.legacy);
-    const hasParcDasAtivo = parcGuiaByPortal.has(row.portalId);
+    const hasParcDasAtivo = Boolean(acompanhamentoByPortal.get(row.portalId)?.length) || parcGuiaByPortal.has(row.portalId);
     const req = getRequirements({
       hasProlabore: Boolean(row.hasProlabore),
       regimeTributario: regime,
@@ -461,7 +465,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
     // escrita acima ("folha, ISS e parcelas seguem exigidas"). Por isso os dois últimos argumentos
     // ficam vazios de propósito.
     const parcGuia = parcGuiaByPortal.get(portalId);
-    const parcDas = {
+    const legacyParcDas = {
       ...resolveNode(current.parcDas, parcGuia, undefined, {}),
       // Contexto para o popover do chip: "PARCSN nº 123 · parcela 3/60". É o que impede o chip de
       // se apresentar como "PARC DAS" numa parcela de INSS.
@@ -471,8 +475,11 @@ export async function computeGuideComplianceMap(rows, competencia) {
       quantidadeParcelas: parcGuia?.quantidadeParcelas || null,
       atrasada: Boolean(parcGuia?.atrasada),
     };
+    const itensParc = acompanhamentoByPortal.get(portalId) || [];
+    const parcDas = itensParc.length ? complianceParcelamentos(itensParc) : legacyParcDas;
     map.set(portalId, {
       ...current, inss, das, irpj, csll, pisCofins, iss, parcDas,
+      hasPendenciasParcelamento: Boolean(parcDas.pendenciaOperacional),
       // `parcDas.ok` entra no agregado: parcela do mês sem guia É pendência. O `base.ok` lá em cima
       // já a considerava — as duas metades discordavam entre si.
       ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && parcDas.ok,

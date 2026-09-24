@@ -1,3 +1,4 @@
+import { bloqueioEnvioParcela } from "./GuiaParcelaEnvioGuard.js";
 import { createHash } from "node:crypto";
 
 export function periodoVencimento(mes) {
@@ -31,7 +32,7 @@ export function loteAlterado() {
   });
 }
 
-export function montarRelatorioVencimento({ mesVencimento, companies, guides, parcelas, enviada }) {
+export function montarRelatorioVencimento({ mesVencimento, companies, guides, parcelas = [], acompanhamento = null, enviada }) {
   periodoVencimento(mesVencimento);
   const rows = new Map();
   const empresas = new Map(companies.map((c) => [c.id, c]));
@@ -43,17 +44,18 @@ export function montarRelatorioVencimento({ mesVencimento, companies, guides, pa
       if (!c) return null;
       rows.set(id, { portalClientId: id, razao: c.razao, cnpj: c.cnpj,
         regimeTributario: String(c.company?.regimeTributario || c.company?.tipoTributario || "").toUpperCase(),
-        mesVencimento, competencia: mesVencimento, documentos: [], faltantes: [], pendingGuideIds: [], tiposGuias: {} });
+        mesVencimento, competencia: mesVencimento, documentos: [], faltantes: [], acompanhamento: [], pendingGuideIds: [], tiposGuias: {} });
     }
     return rows.get(id);
   }
   for (const g of guides) {
     if (!empresas.has(g.portalClientId)) continue;
-    const doc = { guideId: g.id, portalClientId: g.portalClientId, razao: empresas.get(g.portalClientId).razao,
+    const bloqueio = bloqueioEnvioParcela(g);
+    const doc = { bloqueioEnvio: bloqueio, guideId: g.id, portalClientId: g.portalClientId, razao: empresas.get(g.portalClientId).razao,
       tipo: g.tipo, competencia: g.competencia, vencimento: g.vencimento, valor: Number(g.valor || 0),
       parcelamentoId: g.parcelamentoId, numeroParcela: g.numeroParcela,
       acordo: g.parcelamento?.numeroParcelamento || g.parcelamento?.label,
-      paga: g.paymentStatus === "PAID", enviada: enviada(g), emailStatus: g.emailStatus,
+      paga: g.paymentStatus === "PAID" || bloqueio?.code === "PARCELA_PAGA", enviada: enviada(g), emailStatus: g.emailStatus,
       falhou: g.emailStatus === "ERROR", erro: g.emailLastError };
     const mes = mesDaData(g.vencimento);
     if (!mes) { if (!doc.paga) conferirVencimento.push(doc); continue; }
@@ -61,7 +63,7 @@ export function montarRelatorioVencimento({ mesVencimento, companies, guides, pa
     if (mes !== mesVencimento) continue;
     const row = rowFor(g.portalClientId);
     row.documentos.push(doc);
-    if (!doc.paga && !doc.enviada && (g.emailStatus == null || ["PENDING", "ERROR"].includes(g.emailStatus))) row.pendingGuideIds.push(g.id);
+    if (!bloqueio && !doc.paga && !doc.enviada && (g.emailStatus == null || ["PENDING", "ERROR"].includes(g.emailStatus))) row.pendingGuideIds.push(g.id);
   }
   for (const p of parcelas) {
     if (p.baixadaEm || p.guia?.paymentStatus === "PAID" || p.parcelamento?.formaPagamento === "DEBITO_AUTOMATICO") continue;
@@ -74,12 +76,25 @@ export function montarRelatorioVencimento({ mesVencimento, companies, guides, pa
       vencimento: data, motivo: p.parcelamento?.formaPagamento === "GUIA_MENSAL"
         ? "Guia da parcela ainda não disponível" : "Conferir forma de pagamento e guia da parcela" });
   }
+  for (const item of acompanhamento?.itens || []) {
+    if (item.estado === "RESOLVIDA") continue;
+    const row = rowFor(item.portalClientId);
+    if (!row) continue;
+    row.acompanhamento.push(item);
+    // Falta de documento, pagamento e contabilização são tarefas distintas.
+    if (item.guideId || item.pagamentoConfirmado || item.formaPagamento === "DEBITO_AUTOMATICO") continue;
+    const falta = { ...item, acordo: item.numeroParcelamento, motivo: item.label };
+    if (item.anterior) pendenciasAnteriores.push(falta);
+    else if (!item.vencimento && item.estado === "IDENTIFICAR") conferirVencimento.push(falta);
+    else row.faltantes.push(falta);
+  }
   const result = { mesVencimento, competencia: mesVencimento, simples: [], presumidos: [], outros: [], pendenciasAnteriores, conferirVencimento };
   for (const row of rows.values()) {
     row.assinatura = assinaturaGuias(guides.filter((g) => row.pendingGuideIds.includes(g.id)));
-    row.situacao = row.faltantes.length ? "incompleto" : row.pendingGuideIds.length ? "pendente" : "documentos_tratados";
+    row.situacao = row.faltantes.length || row.documentos.some(d => d.bloqueioEnvio && !d.paga) ? "incompleto" : row.pendingGuideIds.length ? "pendente" : "documentos_tratados";
+    row.pendenciasParcelamento = row.acompanhamento.length;
     const grupo = row.regimeTributario === "SIMPLES" ? "simples" : ["LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(row.regimeTributario) ? "presumidos" : "outros";
     result[grupo].push(row);
   }
-  return result;
+  return { ...result, acompanhamento };
 }

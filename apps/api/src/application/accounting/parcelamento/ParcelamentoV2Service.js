@@ -22,6 +22,7 @@ import { ORIGEM_BAIXA } from "../ancoraBaixa.js";
 import { tipoLinhaDaBaixa } from "../tipoLinhaBaixa.js";
 import { sincronizarParcelas } from "./parcelaSync.js";
 import { SELECT_PARCELA_PARA_QUADRO, recalcularParcelamento } from "./recalculoParcelamento.js";
+import { lerComposicaoDoDocumento } from "./composicaoDocumentoParcela.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -537,7 +538,7 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
  * ser criado aqui — é gerado depois, ao marcar a guia como paga (gerarPagamentoParcelaFromGuide).
  * Q28: guarda a CONFIG de provisão e de pagamento por parcelamento (papel/lado/conta), pra reusar.
  */
-export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, parcelasJaPagas, userId }) {
+export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoId = null, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, parcelasJaPagas, userId }) {
   const dto = normalizeParcelamentoDTO(parcelamentoDTO);
   const parc = normalizeParcelaDTO(parcelaDTO);
 
@@ -558,9 +559,28 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
 
     // 1) Busca parcelamento por (cliente, tipo, numero)
     let parcelamento = await tx.parcelamento.findFirst({
-      where: { portalClientId, tipo: dto.tipo, numeroParcelamento: dto.numeroParcelamento },
+      where: { portalClientId, ...(parcelamentoId ? { id: parcelamentoId } : { tipo: dto.tipo, numeroParcelamento: dto.numeroParcelamento }) },
     });
+    if (parcelamentoId && (!parcelamento || parcelamento.status === "EXCLUIDO" || parcelamento.tipo !== dto.tipo)) throw Object.assign(new Error("Selecione um parcelamento desta empresa e modalidade."), { code: "PARCELAMENTO_DIVERGENTE" });
+    if (parcelamentoId && parcelamento.numeroParcelamento && parcelamento.numeroParcelamento !== dto.numeroParcelamento) throw Object.assign(new Error("O número informado diverge do parcelamento selecionado."), { code: "PARCELAMENTO_DIVERGENTE" });
     let criouParcelamento = false;
+
+    // A descoberta fiscal não informa consolidado/calendário. Só o cadastro contábil explícito
+    // e completo pode transformar esse acompanhamento em provisão.
+    if (parcelamento?.fiscalSituacao && !parcelamento.aberturaEntryId) {
+      if (!Number.isInteger(dto.quantidadeParcelas) || dto.quantidadeParcelas < 1 || !(dto.valorPrincipal > 0) || !(dto.valorTotal > 0) || !compLabel || !dto.dataAdesao) {
+        throw Object.assign(new Error("Complete principal, total, quantidade, competência e data da adesão antes de contabilizar este acompanhamento fiscal."), { code: "PARCELAMENTO_CONTABIL_INCOMPLETO" });
+      }
+      parcelamento = await tx.parcelamento.update({ where: { id: parcelamento.id }, data: {
+        ...(parcelamento.origem === "GUIA_AVULSA" ? { origem: "MANUAL", numeroParcelamento: dto.numeroParcelamento, fiscalSituacao: "NAO_CONFERIDO", label: `PARCELAMENTO ${dto.tipo} Nº ${dto.numeroParcelamento}` } : {}),
+        numParcelas: dto.quantidadeParcelas, principalTotal: dto.valorPrincipal, totalValue: dto.valorTotal,
+        jurosTotal: dto.valorJuros, valorMulta: dto.valorMulta,
+        competenciaInicial: compLabel, dataAdesao: new Date(dto.dataAdesao),
+        principalPerParcela: parc.valorTotal > 0 ? parc.valorTotal : null,
+        valorParcelaReferencia: parc.valorTotal > 0 ? parc.valorTotal : null,
+        ...(dto.diaPagamento != null ? { diaPagamento: dto.diaPagamento } : {}),
+      } });
+    }
 
     if (!parcelamento) {
       parcelamento = await tx.parcelamento.create({
@@ -642,6 +662,10 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
     // 2/3) Q28: só quando há GUIA (caminho manual). No caminho SERPRO (sem guia), o worker traz as
     // guias depois — aqui criamos só o parcelamento + provisão + config.
     if (guideId) {
+      if (parcelamentoId) {
+        const { vincularGuiaParcelamentoTx } = await import("./GuiaAvulsaParcelamentoService.js");
+        await vincularGuiaParcelamentoTx(tx, { portalClientId, guideId, parcelamentoId: parcelamento.id, numeroParcela: parc.numeroParcela });
+      }
       // ⚠ O ESTADO INICIAL SÓ VALE SE FOR MESMO INICIAL. A ingestão é idempotente e roda de novo
       // na recaptura; escrevendo `estadoEmAberto` sem olhar o estado atual, uma parcela já
       // PAGA_A_CONFERIR (ou CONFIRMADA) voltava para PREVISTA — o pagamento desaparecia da fila de
@@ -878,24 +902,6 @@ function lerComposicaoDeclarada(raw) {
  *
  * @returns {null | {recusa: string} | {tributos: Array, valorTotal: number}}
  */
-function lerComposicaoDoDocumento(guide) {
-  const bruta = Array.isArray(guide?.extracted?.composicao) ? guide.extracted.composicao : [];
-  // Item sem código de receita não é prova documental — é o formato da DECLARAÇÃO. Fora.
-  const comCodigo = bruta.filter((c) => String(c?.codigoTributo || c?.codigo || "").trim());
-  if (!comCodigo.length) return null;
-
-  // Reusa o contrato: `normalizeParcelaDTO` já traduz `codigo`/`denominacao`, arredonda e AGREGA
-  // por código (o mesmo código aparece em competências diferentes num DAS de parcelamento).
-  const { tributos, valorTotal } = normalizeParcelaDTO({ tributos: comCodigo });
-  if (!tributos.length || round2(valorTotal) <= 0) return null;
-
-  const valorGuia = guide?.valor == null ? null : round2(Number(guide.valor));
-  if (valorGuia != null && Math.abs(round2(valorTotal) - valorGuia) > 0.01) {
-    return { recusa: "composicao_nao_confere" };
-  }
-  return { tributos, valorTotal: round2(valorTotal) };
-}
-
 /**
  * Q23 — Gatilho do "pago": gera o lançamento de PAGAMENTO (BAIXA) de uma guia de parcela já
  * registrada (parcelamentoId + TributoParcela). Juros LIDO da composição. Data padrão = hoje (dia
@@ -997,6 +1003,17 @@ export async function gerarPagamentoParcelaFromGuide({
   // parcela. Não se lança nada — registra e avisa. Um DARF pago em atraso tem multa e juros
   // exatamente como uma parcela tem, e baixar por engano amortizaria dívida que não foi paga.
   const usaComprovante = Boolean(classificacaoComprovante?.classificavel);
+  const comprovanteParcela = guide.extracted?.comprovante;
+  const valoresComprovante = [comprovanteParcela?.principal, comprovanteParcela?.multa, comprovanteParcela?.juros, comprovanteParcela?.total].map(Number);
+  const pagamentoFiscal = !usaComprovante && ["PARCSN", "PARCMEI"].includes(parcelamento.tipo)
+    && comprovanteParcela?.confiavel === true && comprovanteParcela.meioPagamento === "SERPRO_INTEGRA_PARCELAMENTO"
+    && [comprovanteParcela.principal, comprovanteParcela.multa, comprovanteParcela.juros, comprovanteParcela.total].every(v => v != null)
+    && valoresComprovante.every(v => Number.isFinite(v) && v >= 0) && valoresComprovante[3] > 0
+    && Math.abs(round2(valoresComprovante[0] + valoresComprovante[1] + valoresComprovante[2]) - valoresComprovante[3]) <= 0.01
+    ? { tributos: [{ codigoTributo: null, nomeTributo: null, principal: valoresComprovante[0], multa: valoresComprovante[1], juros: valoresComprovante[2], total: valoresComprovante[3] }], valorTotal: valoresComprovante[3] } : null;
+  if (!usaComprovante && comprovanteParcela?.meioPagamento === "SERPRO_INTEGRA_PARCELAMENTO" && !pagamentoFiscal) {
+    return { skipped: true, reason: "sem_composicao", motivoDocumento: "comprovante_pagamento_inconsistente" };
+  }
   if (usaComprovante && classificacaoComprovante.tipo !== "PARCELA_PARCELAMENTO") {
     return { skipped: true, reason: "comprovante_nao_e_parcela", tipoDocumento: classificacaoComprovante.tipo };
   }
@@ -1004,7 +1021,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // A composição do comprovante dispensa a do banco — e precisa dispensar: parcelamento de DARF
   // não é capturado hoje (só PARCSN/PARCSN_ESPECIAL/RELP_SN), então essas parcelas não têm
   // `TributoParcela` nenhum e morreriam aqui em `sem_composicao`.
-  const tributosParcela = usaComprovante
+  const tributosParcela = usaComprovante || pagamentoFiscal
     ? []
     : await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
 
@@ -1017,7 +1034,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // de o `pdf-reader` colher a composição do DAS ficaram com `TributoParcela = 0` para sempre —
   // reingerir cada uma à mão é o trabalho que este caminho evita. O PDF continua no banco; a
   // composição só não tinha sido lida.
-  const documento = !usaComprovante && tributosParcela.length === 0
+  const documento = !usaComprovante && !pagamentoFiscal && tributosParcela.length === 0
     ? lerComposicaoDoDocumento(guide)
     : null;
   const composicaoDoPdf = documento && !documento.recusa ? documento : null;
@@ -1027,7 +1044,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // prova → declaração é a mesma de `buildDTOsFromManual`, e aceitar a declaração aqui criaria a
   // segunda fonte para um número que já tem uma. A recusa é NOMEADA para a tela poder dizer que a
   // composição apareceu (a captura do SERPRO roda sozinha) e que basta usar o botão normal.
-  const temDocumento = usaComprovante || tributosParcela.length > 0 || Boolean(composicaoDoPdf);
+  const temDocumento = usaComprovante || Boolean(pagamentoFiscal) || tributosParcela.length > 0 || Boolean(composicaoDoPdf);
   if (composicaoDeclarada && temDocumento) return { skipped: true, reason: "composicao_ja_existe" };
 
   // ⚠ A CONFERÊNCIA SÓ RODA NO VÃO — e por isso a leitura vem DEPOIS da guarda acima: lançar
@@ -1066,7 +1083,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // `configPagamento`/`MapaContaTributo`. É a MESMA forma que a via SERPRO já produz — lá
   // `serproParcelamentoMap` também devolve uma linha por tributo; o que muda é que o PDF traz o
   // código de receita REAL (1004) onde o SERPRO traz o nome ("DAS").
-  const parcela = declarada
+  const parcela = pagamentoFiscal || (declarada
     ? {
       tributos: [{
         codigoTributo: null, nomeTributo: null,
@@ -1082,7 +1099,7 @@ export async function gerarPagamentoParcelaFromGuide({
         principal: Number(t.principal), multa: Number(t.multa), juros: Number(t.juros), total: Number(t.total),
       })),
       valorTotal: round2(tributosParcela.reduce((s, t) => s + Number(t.total || 0), 0)),
-    };
+    });
 
   // Q28: contas por papel vindas da config do parcelamento (definida no modal de entrada).
   const { contaPorPapel, historicoPorPapel } = mapasDaConfigPagamento(parcelamento.configPagamento);
@@ -1250,6 +1267,7 @@ export async function gerarPagamentoParcelaManual({
     select: {
       id: true, parcelamentoId: true, numeroParcela: true, competencia: true,
       valorPrevisto: true, guiaId: true, origemBaixa: true,
+      pagamentoStatus: true, pagamentoEm: true, pagamentoEvidencia: true,
     },
   });
   if (!parcela) return { skipped: true, reason: "parcela_not_found" };
@@ -1284,12 +1302,14 @@ export async function gerarPagamentoParcelaManual({
   // ⚠ O PRINCIPAL VEM DO CONTRATO, NÃO DA TELA. `valorPrevisto` é o que `sincronizarParcelas`
   // materializou do cabeçalho do parcelamento. Sem ele não há o que amortizar, e aceitar um valor
   // digitado no lugar transformaria a baixa numa segunda fonte para o valor da prestação.
-  const principal = round2(parcela.valorPrevisto != null ? Number(parcela.valorPrevisto) : NaN);
+  const comprovanteFiscal = parcela.pagamentoStatus === "CONFIRMADO" && parcela.pagamentoEvidencia?.comprovante?.confiavel
+    ? parcela.pagamentoEvidencia.comprovante : null;
+  const principal = round2(comprovanteFiscal?.principal ?? (parcela.valorPrevisto != null ? Number(parcela.valorPrevisto) : NaN));
   if (!Number.isFinite(principal) || principal <= 0) {
     return { skipped: true, reason: "sem_valor_previsto" };
   }
-  const juros = round2(valorJuros);
-  const multa = round2(valorMulta);
+  const juros = round2(valorJuros ?? comprovanteFiscal?.juros);
+  const multa = round2(valorMulta ?? comprovanteFiscal?.multa);
   if (juros < 0 || multa < 0) return { skipped: true, reason: "acrescimo_negativo" };
   const total = round2(principal + juros + multa);
 

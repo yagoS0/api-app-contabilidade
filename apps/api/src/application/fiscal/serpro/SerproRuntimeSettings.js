@@ -17,6 +17,7 @@ function normalizeCron(value) {
 }
 
 function clampInt(value, min, max, fallback) {
+  if (value == null || value === "") return fallback;
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
@@ -115,11 +116,14 @@ function resolveRotinas(stored) {
 
     const day = clampInt(salva?.day, 1, 31, legadoDia);
     const hour = clampInt(salva?.hour, 0, 23, legadoHora);
+    const frequency = key === "pagamento" && salva?.frequency === "DAILY" ? "DAILY" : "MONTHLY";
     out[key] = {
       enabled: salva?.enabled === undefined ? legadoEnabled : salva.enabled === true,
       day,
       hour,
-      cron: deriveMonthlyCron(day, hour),
+      frequency,
+      timeZone: "America/Sao_Paulo",
+      cron: frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour),
     };
   }
   return out;
@@ -357,6 +361,9 @@ export async function updateSerproRuntimeSettings(input = {}) {
       enabled: entrada?.enabled === undefined ? atual.enabled : entrada.enabled === true,
       day: entrada?.day === undefined ? atual.day : clampInt(entrada.day, 1, 31, atual.day),
       hour: entrada?.hour === undefined ? atual.hour : clampInt(entrada.hour, 0, 23, atual.hour),
+      frequency: key === "pagamento"
+        ? (entrada?.frequency === undefined ? atual.frequency : entrada.frequency === "DAILY" ? "DAILY" : "MONTHLY")
+        : "MONTHLY",
     };
   }
 

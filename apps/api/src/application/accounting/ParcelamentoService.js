@@ -687,6 +687,7 @@ export async function listParcelamentos({ portalClientId, status }) {
   const rows = await prisma.parcelamento.findMany({
     where: {
       portalClientId,
+      origem: { not: "GUIA_AVULSA" },
       // ⚠ O CONTRATO EXCLUÍDO NÃO VOLTA À LISTA — mas a linha dele pode ter sobrevivido.
       //
       // `excluirParcelamento` apaga o cabeçalho quando dá; quando SOBRA lançamento em competência

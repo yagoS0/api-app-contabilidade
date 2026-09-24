@@ -1,19 +1,18 @@
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
-import { getReferenceCompetencia } from "../application/guides/guideCompliance.js";
+import { acquireGuideLease } from "../application/guides/GuideLockService.js";
 import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { syncSerproInssForCompany } from "../application/fiscal/serpro/SerproDctfwebService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
 import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
-import { matchesCron } from "./cronMatch.js";
+import { runRoutineLoop } from "./runRoutineLoop.js";
+import { previousCompetencia } from "./routineSchedule.js";
 
 const LOCK_ID = "serpro_dctfweb_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
-const LOOP_INTERVAL_MS = 60 * 1000;
 
 
 async function listEligiblePortalCompanies() {
@@ -39,7 +38,7 @@ async function listEligiblePortalCompanies() {
   for (const company of companies) {
     // eslint-disable-next-line no-await-in-loop
     const email = await resolveCompanyNotificationEmail(company.id);
-    if (!email) continue;
+
     eligible.push({
       id: company.id,
       razao: company.razao,
@@ -55,8 +54,8 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
   return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_dctfweb" }, () => executarDctfweb(options));
 }
 async function executarDctfweb(options = {}) {
-  const locked = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
-  if (!locked) return { skipped: true, reason: "lock_active" };
+  const lease = await acquireGuideLease(LOCK_ID, LOCK_TTL_MS);
+  if (!lease) return { skipped: true, reason: "lock_active" };
 
   try {
     const settings = await getSerproRuntimeSettings();
@@ -64,7 +63,7 @@ async function executarDctfweb(options = {}) {
       return { skipped: true, reason: "serpro_disabled" };
     }
 
-    const competencia = options.competencia || getReferenceCompetencia();
+    const competencia = options.competencia || previousCompetencia();
     const companies = await listEligiblePortalCompanies();
     const procurationService = new SerproProcurationService();
     const results = [];
@@ -79,11 +78,12 @@ async function executarDctfweb(options = {}) {
     // na tela e pode desmarcar quem não precisa.
     const cfgInss = settings.rotinas?.inss;
     const idsInss = await idsComRotinaAtiva("inss");
-    const janelaInss = cfgInss
-      ? (cfgInss.enabled !== false && now.getDate() >= (cfgInss.day ?? fetchDay))
-      : isCaptureWindow;
+    const janelaInss = cfgInss?.enabled !== false && (!options.routines || options.routines.includes("inss"));
 
     for (const company of companies) {
+      lease.assertActive();
+      options.assertActive?.();
+      if (!janelaInss || !idsInss.has(company.id)) continue;
       try {
         // eslint-disable-next-line no-await-in-loop
         const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id });
@@ -104,6 +104,8 @@ async function executarDctfweb(options = {}) {
             portalClientId: company.id,
             source: "SERPRO",
             tipo: "INSS",
+            parcelamentoId: null,
+            NOT: { sourceFileId: { startsWith: "PARC-" } },
             competencia,
             status: "PROCESSED",
           },
@@ -113,6 +115,7 @@ async function executarDctfweb(options = {}) {
         if (janelaInss && idsInss.has(company.id) && !existingForCompetencia) {
           try {
             // eslint-disable-next-line no-await-in-loop
+            lease.assertActive(); options.assertActive?.();
             const sync = await syncSerproInssForCompany({ portalClientId: company.id, competencia });
             // `NOT_INSS`: o DARF que o GERARGUIA31 devolveu é de PIS/COFINS/IRPJ/CSLL (empresa de
             // Lucro Presumido) — nada foi gravado. Fica com nome PRÓPRIO no log: cair no balde
@@ -183,37 +186,12 @@ async function executarDctfweb(options = {}) {
     });
     return summary;
   } finally {
-    await releaseGuideLock(LOCK_ID);
+    await lease.release();
   }
 }
 
 export async function runSerproDctfwebWorkerLoop() {
-  let lastTickKey = null;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      const settings = await getSerproRuntimeSettings();
-      const now = new Date();
-      const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-      // Agenda própria da rotina `inss` (antes era o fetchCron global, compartilhado com o PGDAS).
-      const cfgInss = settings.rotinas?.inss;
-      const inssBateu = cfgInss
-        ? (cfgInss.enabled !== false && matchesCron(cfgInss.cron, now))
-        : matchesCron(settings.fetchCron, now);
-
-      if (settings.enabled && inssBateu && tickKey !== lastTickKey) {
-        lastTickKey = tickKey;
-        const result = await runSerproDctfwebWorkerOnce();
-        log.info({ result, tickKey }, "Ciclo do serproDctfwebWorker concluído");
-      }
-    } catch (err) {
-      log.error({ err: err?.message || err }, "Erro no ciclo do serproDctfwebWorker");
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, LOOP_INTERVAL_MS));
-  }
+  return runRoutineLoop({ worker: "SERPRO_DCTFWEB_WORKER_ENABLED", routines: ["inss"], run: runSerproDctfwebWorkerOnce });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("serproDctfwebWorker.js")) {

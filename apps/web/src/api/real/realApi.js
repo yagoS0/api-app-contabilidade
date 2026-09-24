@@ -1,5 +1,6 @@
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 import { importarNotasEmLotes } from "./importarNotasEmLotes";
+import { acompanhamentoParcelamentosApi } from "./acompanhamentoParcelamentosApi";
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
@@ -417,6 +418,7 @@ export function createRealApi() {
   }
 
   return {
+    ...acompanhamentoParcelamentosApi(request),
     setUnauthorizedHandler(handler) {
       unauthorizedHandler = typeof handler === "function" ? handler : null;
     },

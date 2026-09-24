@@ -5,6 +5,7 @@
 // combinações que não queriam dizer nada ("Falta apurar" + "Sem pendência" em verde).
 
 import { SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
+import { temPendenciaParcelamento } from "./pendenciaParcelamento";
 
 // ⚠ DADO VELHO NÃO É GARANTIA. Uma consulta de três meses atrás dizendo "em dia" não prova nada
 // sobre hoje — e é justamente o "em dia" que dá permissão para parar de olhar. Por isso o frescor
@@ -52,6 +53,9 @@ export function situacaoFiscalDaLinha(company) {
   if (situacao === "COM_PENDENCIA") {
     return { estado: FISCAL.pendencia, rotulo: FISCAL.pendencia.rotulo, titulo: comIdade("Empresa COM PENDÊNCIA na Receita (SITFIS)"), dias, precisaConsultar: velha };
   }
+  if (temPendenciaParcelamento(company)) {
+    return { estado: { ...FISCAL.parcelamento, cor: "var(--state-warn)", fundo: "var(--state-warn-surface)", severidade: 1 }, rotulo: "Parcelamento a conferir", titulo: comIdade("Há tarefas de parcelamento pendentes, incluindo identificação ou confirmação de pagamento"), dias, precisaConsultar: velha };
+  }
 
   // Nunca consultada ou consulta velha: não afirmamos nada sobre o fisco.
   if (nunca || velha) {
@@ -76,7 +80,7 @@ export function situacaoFiscalDaLinha(company) {
     return {
       estado: FISCAL.parcelamento,
       rotulo: n && de ? `Parcelamento ${n}/${de}` : "Parcelamento",
-      titulo: comIdade(`Débito parcelado${parc?.tipoParcelamento ? ` (${parc.tipoParcelamento})` : ""} — em dia`),
+      titulo: comIdade(`Débito parcelado${parc?.tipoParcelamento ? ` (${parc.tipoParcelamento})` : ""} — confira o acompanhamento das parcelas`),
       dias,
       precisaConsultar: false,
     };

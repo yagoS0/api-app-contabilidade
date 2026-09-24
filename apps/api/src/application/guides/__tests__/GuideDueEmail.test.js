@@ -8,7 +8,7 @@ jest.mock("../GuideScheduledEmailService.js", () => ({ SEM_DESTINATARIO_DE_GUIA:
 jest.mock("../EnvioGuiaService.js", () => ({ enviosPorGuia: jest.fn(async () => new Map()), foiEnviadaComLegado: jest.fn(() => false) }));
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { EmailService } from "../../../infrastructure/mail/EmailService.js";
-import { sendCompanyGuidesEmail } from "../GuideCompanyEmailService.js";
+import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../GuideCompanyEmailService.js";
 import { assinaturaGuias } from "../loteVencimento.js";
 const guides = ["das", "parcela"].map((id, i) => ({ id, portalClientId: "c", tipo: "SIMPLES", competencia: i ? "2026-09" : "2026-08",
   vencimento: new Date("2026-09-20Z"), valor: 100, hash: id, paymentStatus: "OPEN", status: "PROCESSED", emailStatus: "PENDING", updatedAt: new Date("2026-09-01Z") }));
@@ -45,4 +45,17 @@ test("pagamento confirmado enquanto monta os anexos impede o disparo", async () 
   prisma.guide.findMany.mockResolvedValueOnce(guides).mockResolvedValueOnce(guides).mockResolvedValueOnce(guides.map((g) => ({ ...g, paymentStatus: "PAID" })));
   await expect(sendCompanyGuidesEmail(input)).rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
   expect(send).not.toHaveBeenCalled();
+});
+
+test("envio automático não inclui PDF não conferido e não esconde motivo", async () => {
+ const bloqueada = { ...guides[0], id: "bloqueada", parcelamentoId: "p", extracted: { conferenciaDocumentoPendente: true } };
+ prisma.guide.findMany.mockResolvedValue([bloqueada, guides[1]]);
+ await expect(sendLatestGuidesEmailByCompany({ portalClientId: "c", to: "teste@example.com" })).resolves.toMatchObject({ sentNow: 1, bloqueadas: [{ code: "PARCELA_DOCUMENTO_PENDENTE" }] });
+ expect(send).toHaveBeenCalledTimes(1);
+ expect(send.mock.calls[0][0].attachments).toHaveLength(1);
+});
+test("envio automático apenas com débito automático recusa sem reservar ou enviar", async () => {
+ prisma.guide.findMany.mockResolvedValue([{ ...guides[0], parcelamentoId: "p", parcelamento: { formaPagamento: "DEBITO_AUTOMATICO" } }]);
+ await expect(sendLatestGuidesEmailByCompany({ portalClientId: "c", to: "teste@example.com" })).rejects.toMatchObject({ code: "PARCELA_DEBITO_AUTOMATICO" });
+ expect(send).not.toHaveBeenCalled(); expect(prisma.guide.updateMany).not.toHaveBeenCalled();
 });

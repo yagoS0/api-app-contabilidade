@@ -2956,15 +2956,15 @@ model Parcelamento {
 
   // Estrutura financeira
   numEntradas         Int      @default(0) // quantas das primeiras parcelas são "entrada"
-  numParcelas         Int // total inclui entradas (ex: 52 = 1 entrada + 51)
-  principalPerParcela Decimal  @db.Decimal(18, 2)
+  numParcelas         Int? // desconhecido enquanto só há confirmação fiscal
+  principalPerParcela Decimal? @db.Decimal(18, 2)
   principalTotal      Decimal? @db.Decimal(18, 2)
   jurosTotal          Decimal? @db.Decimal(18, 2)
-  totalValue          Decimal  @db.Decimal(18, 2)
+  totalValue          Decimal? @db.Decimal(18, 2)
 
   // Calendário
   dataAbertura          DateTime?
-  competenciaInicial    String // YYYY-MM da 1ª parcela
+  competenciaInicial    String? // YYYY-MM da 1ª parcela; não inventar calendário fiscal
   diaPagamento          Int       @default(1)
   periodosReferenciados String?
 
@@ -2994,6 +2994,12 @@ model Parcelamento {
   /// Este campo existe para EXIBIR e para CONFERIR contra o extrato do SERPRO. Quem o ligar a um
   /// lançamento reabre aquele defeito.
   saldoConsolidado Decimal? @db.Decimal(18, 2)
+
+  fiscalSituacao String?
+  fiscalConfirmadoEm DateTime?
+  fiscalRawPayload Json?
+  ultimaConsultaParcelasEm DateTime?
+  ultimaConsultaParcelasResultado String?
 
   // Q28 Fase 1: configuração de lançamento POR PARCELAMENTO (papéis/contas), independente entre
   // PROVISÃO e PAGAMENTO. Cada uma = lista de linhas { papel, tipo (D|C), conta }. Quando nula, o
@@ -3092,6 +3098,14 @@ model Parcela {
   /// Como a linha nasceu: CONTRATO (materializada do cabeçalho) | GUIA (existe guia para ela).
   origem String @default("CONTRATO")
 
+  // Confirmação fiscal não é lançamento/baixa contábil.
+  pagamentoStatus String?
+  pagamentoEm DateTime?
+  valorPago Decimal? @db.Decimal(18, 2)
+  pagamentoEvidencia Json?
+  pagamentoConsultadoEm DateTime?
+  pagamentoErro String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3104,6 +3118,65 @@ model Parcela {
   @@index([parcelamentoId])
   @@index([portalClientId, parcelamentoId])
   @@map("parcelas")
+}
+
+// Evidência fiscal incompleta não exige valores nem abertura contábil.
+// IDs de origem são preservados no histórico mesmo após exclusão do contrato.
+model ParcelamentoIndicacao {
+  id String @id @default(uuid())
+  portalClientId String
+  chaveOrigem String
+  modalidade String?
+  numeroParcelamento String?
+  parcelasEmAtraso Int?
+  origem String @default("SITFIS")
+  evidenciaEm DateTime
+  descricao String
+  status String @default("PENDENTE")
+  parcelamentoId String?
+  resolvidoEm DateTime?
+  resolvidoPor String?
+  motivo String?
+  rawPayload Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([portalClientId, chaveOrigem])
+  @@index([portalClientId, status])
+  @@map("parcelamento_indicacoes")
+}
+
+model ParcelamentoIndicacaoEvento {
+  id String @id @default(uuid())
+  indicacaoId String
+  portalClientId String
+  tipo String
+  usuarioId String?
+  dados Json
+  createdAt DateTime @default(now())
+  @@index([indicacaoId, createdAt])
+  @@map("parcelamento_indicacao_eventos")
+}
+
+// Reserva durável por parcela: recuperação de emissão sem repetir a chamada externa.
+model ParcelamentoCaptura {
+  id String @id @default(uuid())
+  portalClientId String
+  parcelamentoId String
+  tipo String
+  anoMesParcela String
+  estado String @default("PENDENTE")
+  owner String?
+  reservadoAte DateTime?
+  pdfBytes Bytes?
+  numeroDocumento String?
+  rawPayload Json?
+  guideId String?
+  erro String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([parcelamentoId, anoMesParcela])
+  @@index([portalClientId, estado])
+  @@map("parcelamento_capturas")
 }
 
 // Q21 (spec v2): composição por tributo de uma guia de parcela.
