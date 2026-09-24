@@ -147,10 +147,10 @@ export function fraseDoConsumo(consumo) {
   return `Assistente (IA) neste mês: ${usd(e.centavos)} de ${usd(e.teto)} (estimativa, ${e.chamadas} chamada${e.chamadas === 1 ? "" : "s"})${estado}.`;
 }
 
-/** Ordena: fila do escritório/sem empresa primeiro (é pendência), depois por atualização. */
+/** A última mensagem coloca a pessoa no topo, sem prioridade por fila ou relacionamento. */
 export function ordenarConversas(lista) {
-  const peso = (c) => (situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA || situacaoDoFio(c) === SITUACAO_FIO.FILA_DO_ESCRITORIO ? 0 : 1);
-  return [...(lista || [])].sort((a, b) => peso(a) - peso(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  const instante = c => Date.parse(c.ultimaMensagem?.registradaEm || c.updatedAt || c.createdAt) || 0;
+  return [...(lista || [])].sort((a, b) => instante(b) - instante(a));
 }
 
 
