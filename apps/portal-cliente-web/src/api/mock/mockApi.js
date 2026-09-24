@@ -1526,7 +1526,20 @@ function pdfDoDanfse(texto) {
 }
 
 export function createMockApi() {
+  const codes = new Map();
   return {
+    async solicitarCodigoAcesso(email) {
+      const challengeId=crypto.randomUUID();
+      codes.set(challengeId,{email:String(email).trim().toLowerCase(),expires:Date.now()+600000,attempts:0});
+      return {ok:true,challengeId,expiresIn:600,resendAfter:60};
+    },
+    async confirmarCodigoAcesso(challengeId,code) {
+      const challenge=codes.get(challengeId);
+      const usuario=challenge&&estado.usuarios.find(u=>u.email===challenge.email&&u.accountType==='CLIENT');
+      if(!challenge||challenge.expires<=Date.now()||challenge.attempts++>=5||code!=='12345678'||!usuario)throw new ApiError(401,'invalid_login_code');
+      codes.delete(challengeId);
+      return exigirContaDeCliente({...emitirTokens(usuario),user:{id:usuario.id,role:usuario.role,accountType:usuario.accountType,defaultClientId:usuario.defaultClientId,name:usuario.name}});
+    },
     async getFechamentosRelatorio(companyId) {
       const id = exigirAcessoEmpresa(companyId);
       return {ok:true,...disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao())};

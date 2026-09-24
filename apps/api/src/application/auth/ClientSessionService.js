@@ -29,10 +29,10 @@ function refreshTtlMs() {
 
 export class ClientSessionService {
   // Cria uma sessão nova e devolve o refresh opaco (uma única vez) para o app guardar.
-  static async createSession(userId, { deviceLabel } = {}) {
+  static async createSession(userId, { deviceLabel, client = prisma } = {}) {
     const rawRefresh = newRawToken();
     const expiresAt = new Date(Date.now() + refreshTtlMs());
-    await prisma.clientSession.create({
+    const session = await client.clientSession.create({
       data: {
         userId: String(userId),
         refreshTokenHash: hashToken(rawRefresh),
@@ -40,7 +40,7 @@ export class ClientSessionService {
         expiresAt,
       },
     });
-    return { refreshToken: rawRefresh, expiresAt };
+    return { refreshToken: rawRefresh, expiresAt, sessionId: session.id };
   }
 
   // Valida um refresh opaco e ROTACIONA (revoga o antigo emitindo um novo hash na mesma linha).
@@ -56,15 +56,16 @@ export class ClientSessionService {
 
     const nextRaw = newRawToken();
     const expiresAt = new Date(Date.now() + refreshTtlMs());
-    await prisma.clientSession.update({
-      where: { id: session.id },
+    const claimed = await prisma.clientSession.updateMany({
+      where: { id: session.id, refreshTokenHash: hashToken(rawRefresh), revokedAt: null, expiresAt: { gt: new Date() } },
       data: {
         refreshTokenHash: hashToken(nextRaw),
         lastUsedAt: new Date(),
         expiresAt,
       },
     });
-    return { userId: session.userId, refreshToken: nextRaw };
+    if (claimed.count !== 1) return null;
+    return { userId: session.userId, refreshToken: nextRaw, sessionId: session.id };
   }
 
   // Revoga a sessão associada a um refresh opaco (logout do dispositivo).
