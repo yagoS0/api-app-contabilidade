@@ -14,9 +14,12 @@ import {
 // do contador precisa saber que ELE não foi o último a trocar. Ver `SenhaDoPortalService.js`.
 import { registrarTroca, ORIGENS } from "../application/auth/SenhaDoPortalService.js";
 import { safeLogError } from "../lib/safeLogError.js";
+import { createEmailLoginRouter } from './emailLogin.js';
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
   const router = Router();
+  router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  router.use(createEmailLoginRouter({ AuthService, log }));
   const authAttemptMap = new Map();
   const AUTH_WINDOW_MS = 60 * 1000;
   const AUTH_MAX_ATTEMPTS = 20;
@@ -93,7 +96,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.status(429).json({ error: "too_many_requests" });
     }
     const { name, email, password } = req.body || {};
-    if (!email || !password) {
+    if (typeof email !== "string" || email.length > 254 || typeof password !== "string" || !email || !password) {
       return res.status(400).json({ error: "email_password_required" });
     }
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -106,14 +109,11 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.status(400).json({ error: "weak_password", message: strongPasswordMessage(pwCheck.errors), missing: pwCheck.errors });
     }
     try {
+      const passwordHash = await bcrypt.hash(String(password), 10);
       const existing = await UserRepository.findByEmail(normalizedEmail);
       if (existing) {
-        const status = existing.status || "active";
-        return res
-          .status(409)
-          .json({ error: status === "pending" ? "user_pending" : "user_exists" });
+        return res.status(201).json({ status: "pending", message: "Cadastro aguardando aprovação." });
       }
-      const passwordHash = await bcrypt.hash(String(password), 10);
       await UserRepository.createPending({
         name: name ? String(name).trim() : null,
         email: normalizedEmail,
@@ -142,7 +142,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.status(400).json({ error: "username_password_required" });
     }
     const loginId = (email || username || identifier || "").trim();
-    if (!loginId || !password) {
+    if (!loginId || loginId.length > 254 || !password || password.length > 1024) {
       return res.status(400).json({ error: "username_password_required" });
     }
     // Q27.C: trava por conta — bloqueia o e-mail após N falhas (defesa direcionada além do IP).
@@ -155,7 +155,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       const result = await AuthService.authenticate(loginId, password);
       if (result.ok) {
         clearFailedLogin(loginId);
-        const accessToken = AuthService.generateToken(result.user);
+        let sessionId;
         // Portal do cliente (app): refresh OPACO revogável por dispositivo (ClientSession).
         // FIRM/env seguem com o refresh JWT stateless de antes.
         let refreshToken;
@@ -164,9 +164,11 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
             deviceLabel: req.headers["x-device-label"],
           });
           refreshToken = session.refreshToken;
+          sessionId = session.sessionId;
         } else {
           refreshToken = AuthService.generateRefreshToken(result.user);
         }
+        const accessToken = AuthService.generateToken({ ...result.user, sessionId });
         return res.json({
           accessToken,
           refreshToken,
@@ -277,6 +279,8 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
           role: user.role,
           accountType: user.accountType || "CLIENT",
           source: "db",
+          passwordHash: user.passwordHash,
+          sessionId: rotated.sessionId,
         });
         return res.json({ accessToken, refreshToken: rotated.refreshToken });
       } catch (err) {
@@ -362,7 +366,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
 
   // Troca de senha do usuário logado. Valida a senha atual, exige senha forte, grava e
   // REVOGA todas as sessões do usuário (força re-login em todos os dispositivos).
-  router.post("/change-password", async (req, res) => {
+  router.post("/change-password", authStrictLimiter, async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) {
       return;
     }
@@ -485,7 +489,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     }
 
     const { email } = req.body || {};
-    if (typeof email !== "string" || !email.trim()) {
+    if (typeof email !== "string" || email.length > 254 || !email.trim()) {
       return res.status(400).json({ error: "email_required" });
     }
     const normalizedEmail = email.trim().toLowerCase();

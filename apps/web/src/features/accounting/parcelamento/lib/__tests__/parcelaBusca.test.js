@@ -137,7 +137,7 @@ describe("sem guia — o motivo depende da FORMA DE PAGAMENTO do contrato", () =
     const e = semGuia("DEBITO_AUTOMATICO");
     expect(e.podeBuscar).toBe(false);
     expect(e.motivo).toMatch(/débito automático/i);
-    expect(e.motivo).toMatch(/não vai existir/i);
+    expect(e.motivo).toMatch(/acompanhamento fiscal por contrato/i);
     // A regressão que importa: nada de "capture no SERPRO" nem "suba na aba Guias".
     expect(e.motivo).not.toMatch(/captura do SERPRO/i);
     expect(e.motivo).not.toMatch(/upload na aba Guias/i);

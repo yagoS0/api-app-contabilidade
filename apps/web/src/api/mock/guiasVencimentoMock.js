@@ -1,3 +1,4 @@
+import { conferirEnvioParcelaMock } from "./guiaParcelaEnvioMock";
 const carteiras = new Map();
 export function preverLiberacaoVencimentoMock(empresas, contatos, { items } = {}) {
   const erro = () => Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE", status: 409 });
@@ -6,6 +7,7 @@ export function preverLiberacaoVencimentoMock(empresas, contatos, { items } = {}
     const r = relatorioVencimentoMock(empresas, item).simples.find((c) => c.portalClientId === item.portalClientId);
     if (!r || !item.guideIds?.length || item.assinatura !== r.assinatura
       || JSON.stringify(item.guideIds) !== JSON.stringify(r.pendingGuideIds)) throw erro();
+    r.documentos.filter(d => item.guideIds.includes(d.guideId)).forEach(conferirEnvioParcelaMock);
     const ativos = (contatos[item.portalClientId] || []).filter((c) => c.ativo !== false);
     const emails = [...new Set(ativos.map((c) => c.email).filter(Boolean))];
     const telefones = [...new Set(ativos.filter((c) => c.optInEm).map((c) => c.telefoneE164).filter(Boolean))];
@@ -51,6 +53,7 @@ export function relatorioVencimentoMock(empresas, { mesVencimento, competencia =
   return { mesVencimento, competencia: mesVencimento, competenciaFiltro: competencia, simples, presumidos: [], outros: [], pendenciasAnteriores: [], conferirVencimento: [] };
 }
 export function enviarVencimentoMock(items) {
+  items.forEach(it => carteiras.get(it.mesVencimento)?.find(r => r.portalClientId === it.portalClientId)?.documentos.filter(d => it.guideIds?.includes(d.guideId)).forEach(conferirEnvioParcelaMock));
   return { ok: true, total: items.length, sent: items.length, results: items.map((it) => {
     const row = carteiras.get(it.mesVencimento)?.find((r) => r.portalClientId === it.portalClientId);
     const ids = row?.documentos.filter((d) => it.guideIds?.includes(d.guideId) && !d.enviada && !d.paga).map((d) => d.guideId) || [];

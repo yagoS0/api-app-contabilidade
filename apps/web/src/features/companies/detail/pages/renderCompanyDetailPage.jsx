@@ -383,7 +383,7 @@ function PerfilFiscalTabWrapper({ companyId, feedback, podeEditar }) {
 const sitfisApi = createApiClient();
 function SitfisTabWrapper({ companyId, guidesPanel, feedback }) {
   const panel = useSitfis({ api: sitfisApi, companyId });
-  return <SitfisTab sitfisPanel={panel} guidesPanel={guidesPanel} feedback={feedback} />;
+  return <SitfisTab companyId={companyId} sitfisPanel={panel} guidesPanel={guidesPanel} feedback={feedback} />;
 }
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
@@ -418,8 +418,11 @@ function CompanyDetailContent({
   // Sem esta intenção, o clique só trocava de aba e o contador tinha de achar o botão de novo —
   // que é onde a intenção se perde. A criação continua tendo UMA porta só (o wizard).
   const [abrirWizardParcelamento, setAbrirWizardParcelamento] = useState(false);
+  const [guiaOrigemParcelamento, setGuiaOrigemParcelamento] = useState(null);
+  const [grupoOrigemParcelamento, setGrupoOrigemParcelamento] = useState("contabilidade");
 
   function switchTab(tab) {
+    if (tab === "parcelamento") setGrupoOrigemParcelamento(["notasFiscais", "cadastroFiscal", "planejamento", "guides", "sitfis"].includes(companyDetailTab) ? "fiscal" : "contabilidade");
     setCompanyDetailTab(tab);
     if (tab === "lancamentos") { accountingPanel.onLoadAccounts(); accountingPanel.onLoadEntries(); }
     // ⚠ A CIRCULAR NÃO CARREGA MAIS DAQUI — e não é esquecimento.
@@ -526,6 +529,9 @@ function CompanyDetailContent({
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
+            key={companyId}
+            guiaDeOrigem={guiaOrigemParcelamento?.companyId === companyId ? guiaOrigemParcelamento : null}
+            onLimparGuiaDeOrigem={() => setGuiaOrigemParcelamento(null)}
             companyId={companyId}
             competencia={circularPanel?.competencia}
             companyRegime={companyRegime}
@@ -549,9 +555,6 @@ function CompanyDetailContent({
             onIdentifyGuide={guidesPanel.onIdentifyGuide}
             onFetchGuidePdf={guidesPanel.onFetchGuidePdf}
             parcelamentos={accountingPanel.parcelamentos}
-            /* "＋ Criar novo…" no modal de anexo leva ao WIZARD, que vive na aba Parcelamentos —
-               uma porta de criação só, em vez de um segundo formulário aqui. */
-            onCriarParcelamento={() => { setAbrirWizardParcelamento(true); switchTab("parcelamento"); }}
             accounts={accountingPanel.accounts}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
@@ -1245,6 +1248,7 @@ function CompanyDetailContent({
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="parcelamento"
+          parcelamentoGrupo={grupoOrigemParcelamento}
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
@@ -1262,7 +1266,7 @@ function CompanyDetailContent({
                 onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
                 /* A guia é anexada na aba Guias (+ Subir Guia → PARCELAMENTO). O card leva até lá
                    em vez de mostrar um item desabilitado sem saída. */
-                onIrParaGuias={() => switchTab("guides")}
+                onIrParaGuias={(item) => { setGuiaOrigemParcelamento(item?.guideId ? { companyId, id: item.guideId } : null); switchTab("guides"); }}
                 abrirWizardAoMontar={abrirWizardParcelamento}
                 onWizardAberto={() => setAbrirWizardParcelamento(false)}
               />

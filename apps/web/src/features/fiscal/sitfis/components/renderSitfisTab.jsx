@@ -36,7 +36,7 @@ function SituacaoBadge({ situacao }) {
   );
 }
 
-export function SitfisTab({ sitfisPanel, guidesPanel, feedback }) {
+export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
   // O PDF é o documento oficial, mas a leitura do dia a dia é a tabela. Por isso ele é opcional,
   // sob clique — e não mais o único jeito de ver o relatório.
   const [verPdf, setVerPdf] = useState(false);
@@ -93,6 +93,10 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback }) {
           {notice}
         </div>
       )}
+
+      {companyId && status && <div style={{ marginTop: 16 }}>
+        <a href={`/companies/${encodeURIComponent(companyId)}/guides`} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</a>
+      </div>}
 
       <div style={{ marginTop: 20, padding: 20, borderRadius: 12, background: "#21222C", border: "1px solid #44475A" }}>
         {loading ? (

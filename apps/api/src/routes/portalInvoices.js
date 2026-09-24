@@ -8,6 +8,7 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { decimalToNumber, dateToIso } from "../utils/serializers.js";
 import { parseDate } from "../utils/date.js";
 import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
+import { tomadorDoModelo } from "../application/nfse/tomadorDoModelo.js";
 import { XMLValidator } from "fast-xml-parser";
 import { raizDoXml } from "../application/notas/importXml/loteNfe.js";
 // ⚠ O import de XML usa A MESMA ingestão da captura automática. Ver o cabeçalho de `ingestaoNfse.js`:
@@ -640,6 +641,17 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       const inv = await prisma.portalInvoice.findFirst({
         where: { id: String(invoiceId), clientId: String(clientId) },
       });
+      if (!inv && incluirEmitidasNaoConfirmadas) {
+        const portal = await prisma.portalClient.findUnique({ where: { id: String(clientId) }, select: { companyId: true, razao: true, cnpj: true } });
+        const emitida = portal?.companyId ? await prisma.serviceInvoice.findFirst({
+          where: { id: String(invoiceId), companyId: portal.companyId, status: { in: ["issued", "cancelled"] } },
+        }) : null;
+        if (emitida) {
+          const detalhe = serializeEmitidaNaoConfirmada(emitida, { emitenteNome: portal.razao, emitenteDoc: portal.cnpj });
+          const tomador = tomadorDoModelo(emitida.xml, emitida.tomadorDoc);
+          return res.json({ ...detalhe, tomador: { ...detalhe.tomador, ...(tomador || {}) } });
+        }
+      }
       if (!inv) return res.status(404).json({ error: "not_found" });
       const sync = await prisma.portalSyncState.findUnique({ where: { clientId: String(clientId) } });
       return res.json({
@@ -651,7 +663,10 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         status: inv.status,
         total: decimalToNumber(inv.total),
         emitente: { nome: inv.emitenteNome || null, cnpj: inv.emitenteDoc || null, im: null },
-        tomador: { nome: inv.tomadorNome || null, cnpjCpf: inv.tomadorDoc || null, im: null },
+        tomador: { nome: inv.tomadorNome || null, cnpjCpf: inv.tomadorDoc || null, im: null,
+          ...(inv.type === "NFSE" ? tomadorDoModelo(inv.xmlRaw, inv.tomadorDoc) || {} : {}),
+        },
+        descricao: inv.xDescServ || null,
         items: [],
         taxes: null,
         storage: { xml: Boolean(inv.xmlRaw), pdf: Boolean(inv.pdfUrl) },

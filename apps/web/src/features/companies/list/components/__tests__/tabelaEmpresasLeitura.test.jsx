@@ -60,6 +60,18 @@ function montar(props = {}) {
   );
 }
 
+test("empresa zerada e fechada mantém indicação PARC visível, sem reabrir fechamento", () => {
+  const c = empresa({ empresaZerada: true, fechamentoContabil: { fechado: true }, guideCompliance: { hasPendenciasParcelamento: true, parcDas: { required: true, state: "missing", pendenciaOperacional: true, pendencias: 1, itens: [{ id: "i1", estado: "IDENTIFICAR", label: "Identificar parcelamento" }] } } });
+  montar({ companies: [c] });
+  const chip = screen.getByRole("button", { name: "Parcelamento: identificar parcelamento" });
+  expect(chip).toBeVisible();
+  expect(screen.getByText("Zerada")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /Fechadas \(/ })).toBeNull();
+  fireEvent.click(chip);
+  expect(screen.getByRole("link", { name: "Abrir guias da empresa" })).toHaveAttribute("href", "/companies/c1/guides");
+  expect(c.fechamentoContabil.fechado).toBe(true);
+});
+
 describe("CNPJ: máscara para o olho, dígitos para o e-CAC", () => {
   test("a tela mostra COM máscara", () => {
     montar();

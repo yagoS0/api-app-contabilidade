@@ -1,3 +1,4 @@
+import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // A carteira em TABELA — a visão padrão no desktop.
 //
 // POR QUE ELA EXISTE
@@ -66,7 +67,7 @@ function severidadeGuias(company) {
  */
 function severidadeDaLinha(company, trava) {
   const ap = estadoApuracao(company, trava);
-  if (ap.chave === "fechada") return 3;
+  if (ap.chave === "fechada" && !temPendenciaParcelamento(company)) return 3;
   return Math.min(ap.severidade, situacaoFiscalDaLinha(company).estado.severidade, severidadeGuias(company));
 }
 
@@ -248,7 +249,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
     <tr
       tabIndex={0}
       data-linha-empresa={company.companyId}
-      style={{ opacity: fechada ? 0.55 : 1, outlineOffset: -2 }}
+      style={{ opacity: fechada && !temPendenciaParcelamento(company) ? 0.55 : 1, outlineOffset: -2 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
@@ -395,6 +396,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
 
       <td data-label="Envio de guias" style={{ ...CELULA }}>
         <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {zerada && tags.filter(ehParcela).map(tag => <GuiaChip key={tag.key} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
           {zerada ? (
             /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada — coluna
                vazia significaria "não sabemos", e aqui sabemos. Mas basta a TAG: a frase inteira
@@ -411,7 +413,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
             >
               <span aria-hidden="true">◌</span>Zerada
             </span>
-          ) : concluidas && canaisEnviados !== null ? (
+          ) : concluidas && canaisEnviados !== null && !temPendenciaParcelamento(company) ? (
             <span
               style={{ fontSize: "0.74rem", fontWeight: 500, color: "var(--text-muted)" }}
               title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : rotuloCanaisEnviados(t) ? `enviada por ${rotuloCanaisEnviados(t)}` : "enviada"}`).join(" · ")}
@@ -570,7 +572,7 @@ export function CompaniesTable({
       });
       return copia;
     };
-    const ehFechada = (c) => estadoApuracao(c, trava(c)).chave === "fechada";
+    const ehFechada = (c) => estadoApuracao(c, trava(c)).chave === "fechada" && !temPendenciaParcelamento(c);
     return {
       abertas: ordenar((companies || []).filter((c) => !ehFechada(c))),
       fechadas: ordenar((companies || []).filter(ehFechada)),

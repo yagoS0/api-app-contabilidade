@@ -1,3 +1,4 @@
+import { conferirParcelasParaEnvio, SELECT_PARCELA_ENVIO } from "../guides/GuiaParcelaEnvioGuard.js";
 // O ENVIO DA GUIA PELO WHATSAPP — individual e em LOTE. É o MVP da Entrega 1 (plano, P0).
 //
 // ⚠ ESTE É O PRIMEIRO ESCRITOR DE PRODUÇÃO DE `envios_guia`. Até aqui as funções de escrita de
@@ -100,6 +101,7 @@ export const MOTIVOS_SERVICO = Object.freeze({
 
 /** Os campos da guia que o envio precisa — um `select` só, para os dois caminhos. */
 export const SELECT_GUIA_PARA_ENVIO = Object.freeze({
+  ...SELECT_PARCELA_ENVIO,
   id: true,
   portalClientId: true,
   tipo: true,
@@ -352,6 +354,9 @@ export async function enviarGuiaPorWhatsapp({
   log = logPadrao,
   reenviar = false,
 }) {
+  try { await conferirParcelasParaEnvio([guide]); } catch (err) {
+    return { ok: false, estado: "bloqueado", enviada: false, guideId: guide.id, motivo: err.code, mensagem: err.message, podeTentarDeNovo: false };
+  }
   const { materializou } = await materializarEnvioDeEmailLegado(guide);
 
   const { envio, jaEnviado, emAndamento } = await registrarEnvio({
@@ -393,6 +398,7 @@ export async function enviarGuiaPorWhatsapp({
   let aceitoWamid = null;
   let vinculoReservado = null, conversaReservada = null;
   const conferirDestinatario = async () => {
+    await conferirParcelasParaEnvio([guide]);
     if (!identidadeWhatsappV2Ativa()) return;
     const atual = await prisma.contatoWhatsapp.findFirst({ where: { id: contato.id, ativo: true, portalClientId: guide.portalClientId, telefoneE164: contato.telefoneE164 } });
     if (!atual?.vinculoNumeroId || !atual.optInEm || (vinculoReservado && atual.vinculoNumeroId !== vinculoReservado)) throw Object.assign(new Error("Confira a identificação e a autorização do destinatário."), { codigo: "DESTINATARIO_ALTERADO" });
@@ -456,7 +462,7 @@ export async function enviarGuiaPorWhatsapp({
       nomeArquivo: nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia }),
       template: canal.nomeMeta,
       idioma: canal.idioma,
-      ...(identidadeWhatsappV2Ativa() ? { antesDoTemplate: conferirDestinatario } : {}),
+      antesDoTemplate: conferirDestinatario,
       variaveis: variaveisDaGuia({
         // Primeiro nome, como no esqueleto do dono [E]: a mensagem cumprimenta a pessoa.
         nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",

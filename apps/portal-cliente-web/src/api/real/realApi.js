@@ -11,6 +11,7 @@ import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 import { consultarCnpjNaBrasilApi } from "./brasilApi";
+import { consultarCep } from "./cep";
 import { competenciaPadrao } from "../../lib/format";
 // ⚠ Só o DRE ainda é demonstração — o fluxo de caixa passou a vir do servidor em 27/08/2026.
 
@@ -123,7 +124,12 @@ function qs(params) {
 
 export function createRealApi() {
   return {
+    getFechamentosRelatorio: companyId => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/fechamentos`),
+    getAnalisePlanejamento: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/analise?${new URLSearchParams(filtros)}`),
+    getAnaliseClientes: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/clientes?${new URLSearchParams(filtros)}`),
     // --- Auth ---------------------------------------------------------------
+    solicitarCodigoAcesso: email => pedir('/auth/email-code/request', { method: 'POST', body: { email }, auth: false }),
+    confirmarCodigoAcesso: async (challengeId, code) => exigirContaDeCliente(await pedir('/auth/email-code/verify', { method: 'POST', body: { challengeId, code }, auth: false })),
     async login(email, password) {
       const data = await pedir("/auth/login", {
         method: "POST",
@@ -135,7 +141,7 @@ export function createRealApi() {
 
     async logout() {
       try {
-        await pedir("/auth/logout", { method: "POST" });
+        await pedir("/auth/logout", { method: "POST", body: { refreshToken: lerSessao().refreshToken } });
       } catch {
         // Best-effort: mesmo falhando, a casca limpa o token local.
       }
@@ -179,6 +185,9 @@ export function createRealApi() {
 
     // --- Notas --------------------------------------------------------------
     // -> { data, page, limit, total, summary:{ totalInvoices, totalAmount, pageAmount }, sync }
+    async getInvoiceDetail(companyId, invoiceId) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/invoices/${encodeURIComponent(invoiceId)}`);
+    },
     async getInvoices(companyId, { competencia, page = 1, limit = 25 } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/invoices${qs({
@@ -559,6 +568,8 @@ export function createRealApi() {
     // ⚠ Ela NUNCA lança. A recusa é `{ ok:false, motivo, mensagem }`, e é assim de propósito: um
     // erro lançado daqui entraria no `real_with_mock_fallback` de `api/index.js` e uma queda da
     // BrasilAPI viraria **dados do mock** numa tela que emite nota fiscal de verdade.
+    consultarCep,
+
     async consultarCnpj(cnpj) {
       return consultarCnpjNaBrasilApi(cnpj);
     },

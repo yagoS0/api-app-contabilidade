@@ -3960,7 +3960,6 @@ export function createAccountingEntriesRouter({ log }) {
           },
         },
         orderBy: { guia: { competencia: "asc" } },
-        take: 100,
       });
       return res.json({
         ok: true,
@@ -3969,7 +3968,10 @@ export function createAccountingEntriesRouter({ log }) {
           guideId: p.guia.id,
           numeroParcela: p.numeroParcela,
           competencia: p.guia.competencia,
-          valor: p.guia.valor != null ? Number(p.guia.valor) : null,
+          valor: p.guia.extracted?.comprovante?.confiavel === true
+            && Number.isFinite(Number(p.guia.extracted.comprovante.total)) && Number(p.guia.extracted.comprovante.total) > 0
+            ? Number(p.guia.extracted.comprovante.total) : p.guia.valor != null ? Number(p.guia.valor) : null,
+          valorDocumento: p.guia.valor != null ? Number(p.guia.valor) : null,
           vencimento: p.guia.vencimento,
           parcelamentoId: p.parcelamentoId,
           confirmadoEm: p.guia.paymentConfirmedAt,
@@ -4311,6 +4313,7 @@ export function createAccountingEntriesRouter({ log }) {
       const { parcelamentoDTO, parcelaDTO } = buildDTOsFromManual({ guide, header, tributos });
       const data = await ingestParcelamentoFromGuide({
         portalClientId, guideId: guide?.id || null, parcelamentoDTO, parcelaDTO,
+        parcelamentoId: header?.parcelamentoId || req.body?.parcelamentoId || null,
         provisaoLines, pagamentoLines, descricao: header?.descricao,
         // F2.3: N prestações quitadas ANTES do sistema → `origemBaixa: "HISTORICO"`, sem lançamento.
         parcelasJaPagas,

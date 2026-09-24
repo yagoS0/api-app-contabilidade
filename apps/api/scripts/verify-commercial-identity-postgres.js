@@ -116,13 +116,14 @@ try {
   const inativa = await coletar(c2, mi, { consultaPublica: async onboardingId => { const o = await db.onboarding.findUnique({ where: { id: onboardingId } }); cnpjConsultado = o.cnpj; return { razaoSocial: "EMPRESA SINTÉTICA PARA REGULARIZAR", situacaoCadastral: "ATIVA", atividadePrincipal: "Atividade sintética", municipio: "Rio de Janeiro", uf: "RJ" }; } });
   assert.equal(inativa.tratado, true, JSON.stringify(inativa));
   fichasIds.push(inativa.resultado.onboardingId);
-  assert.equal(cnpjConsultado, "11222333000181");
+  assert.equal(cnpjConsultado, null);
+  assert.equal((await db.onboarding.findUnique({ where: { id: inativa.resultado.onboardingId } })).cnpj, "11222333000181");
   assert.notEqual(cnpjConsultado, empresa.cnpj);
-  assert.ok(inativa.resultado.texto.includes("não comprova regularidade fiscal"));
+  assert.ok(inativa.resultado.texto.includes("gostaria de resolver"));
   const casoInativa = await db.atendimentoLead.findUnique({ where: { id: inativa.resultado.atendimentoId } });
   assert.equal(casoInativa.representanteVerificadoEm, null); assert.deepEqual(casoInativa.autorizacao, {});
   assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: inativa.resultado.onboardingId } }), 0);
-  ok("Consulta pública usa o CNPJ declarado no novo caso, sem herdar autorização fiscal da empresa operacional");
+  ok("CNPJ voluntário fica no novo caso, sem consulta automática nem herdar autorização fiscal da empresa operacional");
   const semSaber = await entrada(c2, "Não sei");
   let enviouDepoisDaMudanca = false;
   await assert.rejects(coletar(c2, semSaber, { enviar: async ({ antesDeEnviar }) => { await db.interlocutorComunicacao.update({ where: { id: identidade.interlocutor.id }, data: { versao: { increment: 1 } } }); await antesDeEnviar(); enviouDepoisDaMudanca = true; } }), e => e.code === "identidade_alterada");

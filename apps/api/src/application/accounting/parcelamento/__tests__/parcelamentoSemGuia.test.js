@@ -137,6 +137,15 @@ const HEADER = {
 
 beforeEach(limpar);
 
+test("contabilizar guia avulsa usa o identificador explícito e completa o mesmo cadastro interno", async () => {
+  __store.parcelamentos.push({ id: "avulso", portalClientId: "pc1", tipo: "PARCSN", origem: "GUIA_AVULSA", fiscalSituacao: "GUIA_AVULSA", status: "ATIVO", numeroParcelamento: null, aberturaEntryId: null });
+  const result = await criarContrato({ ...HEADER, dataAdesao: "2026-01-05" }, { parcelamentoId: "avulso" });
+  expect(result.parcelamentoId).toBe("avulso");
+  expect(__store.parcelamentos).toHaveLength(1);
+  expect(__store.parcelamentos[0]).toMatchObject({ origem: "MANUAL", numeroParcelamento: HEADER.numeroParcelamento });
+  expect(__store.entries.length).toBeGreaterThan(0);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 describe("criar o contrato SEM guia nenhuma", () => {
   test("nasce com o cronograma inteiro materializado, e nenhuma guia é exigida", async () => {

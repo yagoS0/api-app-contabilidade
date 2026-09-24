@@ -239,12 +239,18 @@ function descricaoDosItens(nota) {
 export function camposDaNota(nota) {
   if (!nota) return null;
   const { descricao } = descricaoDosItens(nota);
+  const endereco = nota.tomador?.endereco || {};
   return {
     tomadorDoc: soDigitos(nota.tomador?.cnpjCpf),
     tomadorNome: String(nota.tomador?.nome ?? "").trim(),
-    // ⚠ Vazio porque NÃO TEMOS, não porque escolhemos não mandar: a nota capturada não traz e-mail
-    // do tomador em campo nenhum. Com o CNPJ preenchido, a consulta à Receita oferece o endereço.
-    tomadorEmail: "",
+    // O detalhe lê o XML da própria nota; ausência de campo permanece vazia.
+    tomadorEmail: String(nota.tomador?.email ?? "").trim(),
+    cep: soDigitos(endereco.CEP),
+    cMun: soDigitos(endereco.cMun),
+    logradouro: String(endereco.xLgr ?? "").trim(),
+    numero: String(endereco.nro ?? "").trim(),
+    complemento: String(endereco.xCpl ?? "").trim(),
+    bairro: String(endereco.xBairro ?? "").trim(),
     descricao,
     // ⚠⚠ COPIADO (dono, 19/08/2026 — a história das duas decisões está no cabeçalho acima).
     // `formatarValorParaCampo` devolve `""` quando o total não é número positivo: nota sem total

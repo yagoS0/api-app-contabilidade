@@ -1,5 +1,22 @@
 # CLAUDE.md — Portal Contábil
 
+## Parcelas sem esquecimento — 24/09/2026
+
+O indicador da carteira e a Situação Fiscal levam a Guias, onde “Falta guia de parcelamento” permite subir a parcela. Preservar a aba contábil original: sem painel novo de acompanhamento, demonstração ou conferência obrigatória do indício. Upload pode ficar sem contabilização; identidade fiscal interna GUIA_AVULSA distingue a parcela do DAS mensal sem inventar contrato, valor ou calendário. Vínculo posterior preserva PDF, pagamento e valores; o mesmo wizard contábil abre e retorna à tela de Guias. Indícios de atrasos anteriores não desaparecem por subir a guia atual. Reutilizar relatório salvo, proteger concorrência e manter agenda por rotina em Brasília. Detalhes e validações em `docs/parcelamentos-acompanhamento-2026-09-24.md`. Publicação em main/produção autorizada pelo dono após revisão do mock; conferir migração, backup e deploys antes de declarar concluída.
+
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
+## Ordem do chat — 24/09/2026
+
+O dono definiu que conversas com mensagens mais recentes aparecem primeiro. Em Todos, clientes, leads e contatos a identificar compartilham a mesma lista cronológica; não agrupar em blocos fixos nem priorizar a fila. Preservar filtros, identificação, não lidas, destinatário selecionado e rascunho. A inbox ordena no banco antes do cursor/limite pela última mensagem visível recebida ou enviada; leitura, cadastro, status e notas internas não promovem uma conversa. A ordenação respeita a resolução de contexto e a carteira autorizada. Testes PostgreSQL sem rede e teste de polling na tela cobrem a mudança.
+
+## Emissor do cliente e avisos — 23/09/2026
+
+Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
+
 ## Validação integral de leads — 23/09/2026
 
 Perguntas, negações e pausas não definem contratação nem objetivo da empresa parada. Baixa explícita segue avulso; o servidor também impede proposta mensal/comparação para esse objetivo em fichas manuais ou antigas. O diagnóstico tem devolutiva em três blocos, roteiro com evidências e decisão de regularização separada antes da mensalidade. Pendências e limites de consulta ficam visíveis, sem exigir API para avançar. O perfil inicialmente ausente pode ser completado; alteração de informação já conferida pede revisão e preserva o rascunho. JSONB exige comparação canônica para não duplicar confirmações concorrentes.
@@ -981,3 +998,13 @@ Procuração SERPRO ATIVA, com validade futura e sistema `TODOS`, também habili
 Proposta PDF é determinística e usa somente a projeção do snapshot daquela versão: identificação, perfil, serviços, opções, taxas e condições. Download interno exige gestor/escopo/versão; download público usa o mesmo Bearer pessoal e validade do aceite, sem token na URL nem cache. Envio é um único documento com link de aceite na legenda, preservando reserva e bloqueio de duplicidade/incerteza. Preços reais continuam exclusivamente no catálogo privado aprovado. Avulsos sem preço não são inventados; rascunho fica identificado no PDF.
 
 Na jornada, mostrar a etapa atual e recolher as demais. Abrir campos/prévia por ação explícita; recolher após sucesso e preservar rascunhos nos erros. Onboarding aberto diretamente reutiliza `atendimento.conversaId` para enviar pela conversa vinculada. Mensagens rápidas aprovadas na biblioteca NÃO são templates aprovados pela Meta: fora das 24h só modelos Meta aprovados. Referências e operação em `docs/jornada-lead-passo-a-passo.md`. Testes com provedores simulados e PostgreSQL local; nenhum token Anthropic, destinatário real, assinatura ou cobrança.
+
+## Início do cliente com relatórios contábeis — 24/09/2026
+
+Decisão do dono: substitui o resumo anterior e a área Horizonte/Fluxo/DRE do início do cliente por AnaliseEmpresa, a mesma apresentação de Relatórios do contador (Visão geral, Clientes, Resultado, Tributário), somente leitura. Cinco cards no topo usam o período: Entradas, Saídas, Folha, Impostos, Resultado. Grupos disjuntos da DRE evitam duplicidade; impostos incluem deduções da receita e são identificados. Não afirmar saldo bancário ou valores pagos a partir de competência.
+
+Exigir no servidor fechamento contábil dos TRÊS MESES ANTERIORES AO ATUAL, pelo calendário de São Paulo; três fechamentos antigos não bastam. Janela padrão: 12 meses terminando no mês anterior; cliente pode reduzir dentro dela. Lacunas antigas são permitidas, com valores indisponíveis e fora dos totais, nunca zeros presumidos. Comparação com intervalo incompleto fica indisponível. Revalidar em cada consulta, inclusive Clientes/impressão, na mesma transação de leitura. Rotas /client/companies/:companyId/relatorios mantêm autenticação e vínculo; guias individuais não liberadas ficam fora da resposta. Sem fallback para dados fictícios no modo real. O escritório conserva comportamento e ferramentas anteriores.
+
+## Login do cliente por código — 24/09/2026
+
+Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão das rotas de autenticação. Branch codex/cliente-login-email, ainda sem publicação. Ver docs/login-email-seguranca-20260924.md para regras, migration, cenários e limites. Código de 8 dígitos, 10 minutos, cinco tentativas, reenvio após 60s e cinco envios por endereço/hora, consumo serializável. Apenas User CLIENT ativo com vínculo ativo, sem criar conta nem conceder permissões FIRM. Não usar e-mail geral da empresa/contatos como prova de acesso. Tokens vinculados à versão da senha, refresh separado de access; sessōes novas CLIENT vinculadas ao acesso e revogadas no logout. Não usar fallback de autenticação real para mock. Nenhum e-mail real enviado nos testes.

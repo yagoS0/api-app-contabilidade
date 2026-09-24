@@ -27,3 +27,9 @@ Mock usa fixture do cliente copiado em `api/mock/fluxoRelatoriosFixture.js`; nã
 ## Saldo projetado — 08/09/2026
 
 Relatórios espelha Resultado mensal e Saldo projetado do cliente, sem ações de escrita. mes.saldo vem do backend; nunca reiniciar esse saldo por mês nem calculá-lo apenas com meses visíveis. Sem saldoInicial o acumulado fica indisponível. Paridade de tabelaFluxoLeitura com tabelaDoFluxo inclui saldo diário e final.
+
+## Início do cliente com relatórios contábeis — 24/09/2026
+
+Decisão do dono: substitui o resumo anterior e a área Horizonte/Fluxo/DRE do início do cliente por AnaliseEmpresa, a mesma apresentação de Relatórios do contador (Visão geral, Clientes, Resultado, Tributário), somente leitura. Cinco cards no topo usam o período: Entradas, Saídas, Folha, Impostos, Resultado. Grupos disjuntos da DRE evitam duplicidade; impostos incluem deduções da receita e são identificados. Não afirmar saldo bancário ou valores pagos a partir de competência.
+
+Exigir no servidor fechamento contábil dos TRÊS MESES ANTERIORES AO ATUAL, pelo calendário de São Paulo; três fechamentos antigos não bastam. Janela padrão: 12 meses terminando no mês anterior; cliente pode reduzir dentro dela. Lacunas antigas são permitidas, com valores indisponíveis e fora dos totais, nunca zeros presumidos. Comparação com intervalo incompleto fica indisponível. Revalidar em cada consulta, inclusive Clientes/impressão, na mesma transação de leitura. Rotas /client/companies/:companyId/relatorios mantêm autenticação e vínculo; guias individuais não liberadas ficam fora da resposta. Sem fallback para dados fictícios no modo real. O escritório conserva comportamento e ferramentas anteriores.

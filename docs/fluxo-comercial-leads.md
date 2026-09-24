@@ -1,5 +1,10 @@
 # Atendimento comercial pelo WhatsApp
 
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
 Atualização de 14/09/2026: a operação e a interface seguem também [Comunicação e atendimento comercial](comunicacao-atendimento-20260914.md), com anexos manuais, mensagens rápidas à esquerda, histórico por pessoa, consulta pública visível e reinício de solicitação preservando a anterior. Asaas e DocuSign por API permanecem como integração futura.
 
 Implementação de setembro/2026. Abertura pode ser avulsa ou acompanhada de contabilidade. O interessado responde pela conversa; o formulário interno continua como cadastro estruturado e local de revisão.

@@ -107,7 +107,7 @@ export function alertaDeAtraso(parcelamento) {
 /** A leitura declarada de COMO se paga. `null` = não declarado, e isso não é o mesmo que nenhuma. */
 export function rotuloFormaPagamento(forma) {
   const v = String(forma || "").toUpperCase();
-  if (v === "DEBITO_AUTOMATICO") return { texto: "Débito automático", detalhe: "As prestações não geram guia." };
+  if (v === "DEBITO_AUTOMATICO") return { texto: "Débito automático", detalhe: "Confirme o pagamento de cada prestação; a ausência de guia não confirma o débito." };
   if (v === "GUIA_MENSAL") return { texto: "Guia mensal", detalhe: "Cada prestação tem uma guia." };
   return { texto: "Forma de pagamento não declarada", detalhe: "Ninguém declarou como este contrato é pago." };
 }

@@ -1,5 +1,10 @@
 # CLAUDE.md — API (apps/api)
 
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
 ## Proposta, contrato e chat na ficha — 21/09/2026
 
 PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.
@@ -4863,3 +4868,8 @@ Migração 20260908090000_onboarding_comercial aditiva: versão/fase/proposta e 
 # Validação comercial — 23/09/2026
 
 `CatalogoComercial` congela a política do catálogo e valida pisos/adicionais/regularização em gerar, aprovar, PDF, link e aceite; ACEITA conserva seu snapshot. INATIVA/BAIXAR exige AVULSO/BAIXA também na API. `JornadaLeadService` registra devolutiva estruturada, decisão de regularização e roteiro com evidências sem depender de consulta externa obrigatória. Limite da mensagem completa é conferido antes de gravar. Contexto considera somente perfil efetivamente conferido; comparar JSONB por conteúdo canônico para idempotência. `modeloContrato` compartilha compatibilidade com a tela; autorização para pré-CNPJ não permite reutilizar modelo de transferência ou PJ. Total inicial discrimina regularização sem duplicá-la e mantém taxas à parte. Planos/modelos reais ficam privados; nunca aprovar silenciosamente uma minuta de referência. Ver `docs/ajustes-leads-validacao-20260923.md` na raiz.
+
+
+## Login do cliente por código — 24/09/2026
+
+Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão das rotas de autenticação. Branch codex/cliente-login-email, ainda sem publicação. Ver docs/login-email-seguranca-20260924.md para regras, migration, cenários e limites. Código de 8 dígitos, 10 minutos, cinco tentativas, reenvio após 60s e cinco envios por endereço/hora, consumo serializável. Apenas User CLIENT ativo com vínculo ativo, sem criar conta nem conceder permissões FIRM. Não usar e-mail geral da empresa/contatos como prova de acesso. Tokens vinculados à versão da senha, refresh separado de access; sessōes novas CLIENT vinculadas ao acesso e revogadas no logout. Não usar fallback de autenticação real para mock. Nenhum e-mail real enviado nos testes.

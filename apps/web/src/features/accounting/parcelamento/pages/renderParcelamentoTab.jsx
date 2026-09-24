@@ -763,7 +763,7 @@ function ParcelasSemGuiaPendentes({
             {parcelas.map((p) => {
               const desfecho = desfechos[p.parcelaId];
               const destacada = Boolean(foco) && p.parcelamentoId === foco.id;
-              const sit = rotuloDaSituacao(p.situacao);
+              const sit = p.pagamentoConfirmado ? { texto: "Pagamento confirmado · falta contabilizar", titulo: "A Receita confirmou o pagamento; a baixa contábil continua pendente.", cor: "var(--state-warn)", fundo: "var(--state-warn-surface)" } : rotuloDaSituacao(p.situacao);
               // ⚠ OS DOIS BLOQUEIOS NÃO SÃO O MESMO, E TRATÁ-LOS IGUAL FECHAVA A ÚNICA SAÍDA.
               // `provisao_inexistente` se resolve em OUTRA tela (lançar a adesão) — o botão fica
               // desabilitado com o motivo. `sem_valor_previsto` se resolve NESTE modal: é o estado
@@ -1339,7 +1339,8 @@ function ParcelamentoTabContent({
       />
 
       <ParcelamentosList
-        parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO")}
+        emptyMessage="Nenhum contrato contabilizado."
+        parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO" && (p.aberturaEntryId || !p.fiscalSituacao))}
         loading={parcelamentos.loading}
         onRescindir={async (parcId, body) => { await parcelamentos.rescindir(parcId, body); await aposAto(); }}
         onOpenCreate={() => setWizardAberto(true)}

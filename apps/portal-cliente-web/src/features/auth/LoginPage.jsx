@@ -3,6 +3,7 @@ import { api } from "../../api";
 import { definirSessao, reconhecerExpiracao } from "../../api/sessionStore";
 import { mensagemDeErro } from "../../lib/mensagens";
 import { LogoAltan } from "../../components/LogoAltan";
+import { EmailCodeLogin } from './EmailCodeLogin';
 
 /**
  * Entrada do portal do CLIENTE.
@@ -13,6 +14,7 @@ import { LogoAltan } from "../../components/LogoAltan";
  *     indistinguível de um app que desloga sozinho.
  */
 export function LoginPage({ expirou, aoEsquecerSenha }) {
+  const [porCodigo,setPorCodigo] = useState(false);
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
@@ -40,6 +42,7 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
     }
   }
 
+  if (porCodigo) return <EmailCodeLogin voltar={()=>setPorCodigo(false)}/>;
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={aoEnviar}>
@@ -93,6 +96,8 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
             onChange={(e) => setSenha(e.target.value)}
           />
         </label>
+
+        <button type="button" className="btn btn-block" style={{ marginBottom: "var(--gap)" }} disabled={enviando} onClick={()=>setPorCodigo(true)}>Entrar com código por e-mail</button>
 
         <button className="btn btn-primary btn-block" type="submit" disabled={enviando}>
           {enviando ? "Entrando…" : "Entrar"}

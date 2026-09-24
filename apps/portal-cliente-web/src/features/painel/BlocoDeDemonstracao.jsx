@@ -51,11 +51,9 @@ import {
 // ⚠ `diasDoMes` é aritmética de STRING, nunca `toISOString()`: às 22h de Brasília o ISO devolveria
 // o dia seguinte. Ela é a única coisa que sobrou de `dadosDeDemonstracao` no caminho do fluxo.
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
-import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
 import { FluxoMensal } from "./FluxoMensal";
 import { GavetaDoDia } from "./GavetaDoDia";
-import { GuiasVencidas } from "./GuiasVencidas";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -656,7 +654,7 @@ function Dre({ dados }) {
   );
 }
 
-export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtualizarFluxo, somenteLeitura = false, hoje: hojeInjetado = null }) {
+export function BlocoDeDemonstracao({ companyId, competencia, aoAtualizarFluxo, somenteLeitura = false, hoje: hojeInjetado = null }) {
   const [mensagemDoFluxo, setMensagemDoFluxo] = useState("");
   const notificarMudanca = () => { fluxoQuery.recarregar(); aoAtualizarFluxo?.(); };
   const [visao, setVisao] = useState("fluxo");
@@ -683,8 +681,6 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
    */
   const [janelaInicio, setJanelaInicio] = useState(null);
   const [mesEsquerda, setMesEsquerda] = useState(null);
-  /** ⚠ Fechar o pop-up com Esc vale só para ESTA sessão — e não grava nada. */
-  const [popUpDispensado, setPopUpDispensado] = useState(false);
   /**
    * ⚠⚠ A GAVETA — UMA SÓ, e o estado mora AQUI (30/08/2026).
    *
@@ -747,22 +743,6 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
    * escondê-la por omissão faria a folha sumir sem ninguém saber. Mesma regra do selo.
    */
   const comFolha = dados?.folha?.disponivel !== false;
-
-  /**
-   * ⚠⚠ O ALERTA SAI DO FLUXO, NUNCA DE `atual` (31/08/2026).
-   *
-   * Lia `dados?.alertaDeGuias`, e `dados` é o payload da visão ATUAL — no DRE ele não tem esse
-   * campo, então a tabela de guias vencidas **sumia do Início** ao alternar. Quem deixasse o painel
-   * em DRE deixava de ver a guia vencida, que é exatamente a perda que `GuiasVencidas` existe para
-   * impedir (o corte do card "Próximos vencimentos" a deixou nomeada).
-   *
-   * ⚠ A visão nasce em `fluxo`, então quando alguém alterna para o DRE este payload já veio. Dado
-   * de alguns segundos atrás sobre guia VENCIDA continua verdadeiro — e a alternativa (esconder)
-   * é a que mente.
-   */
-  const alerta = fluxoQuery.dados?.alertaDeGuias || null;
-  const mostraPopUp = visao === "fluxo" && !popUpDispensado
-    && Boolean(alerta?.ackPending) && (alerta?.itens?.length > 0);
 
   /**
    * ⚠⚠ AS SETAS ANDAM **MÊS A MÊS** NA VISÃO DE DIAS, e **janela a janela** no horizonte.
@@ -912,29 +892,6 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
         aoTentarNovamente={atual.recarregar}
       />
 
-      {/*
-        ⚠⚠ A TABELA DE GUIAS EM ATRASO, ACIMA DO FLUXO — decisão do dono, 30/08/2026: *"a parte que
-        eu falei da tabela com as guias vencidas em cima do fluxo não aparece; ela deve aparecer com
-        duas linhas e meia caso tenha mais de 3 guias, para que o cliente saiba que precisa rolar
-        para ver mais."*
-
-        ⚠⚠ ELA NÃO SUBSTITUI O POP-UP, e as duas respondem perguntas diferentes: o pop-up
-        INTERROMPE uma vez e se dispensa com "Estou ciente"; a tabela FICA, e é onde o cliente volta
-        para ver quanto e quando. Sem ela, dispensado o pop-up, a guia vencida some do Início — que
-        é a perda que o corte do card "Próximos vencimentos" (28/08) deixou nomeada.
-
-        ⚠⚠ ESTA LINHA DIZIA "só na visão de FLUXO: no DRE ela não tem o que fazer" — e ela
-        contradizia o parágrafo logo acima, que é o motivo de o componente existir. Achado em teste
-        de usabilidade em 31/08/2026: alternando para o DRE, a guia vencida sumia do Início, que é
-        a perda que este bloco existe para impedir. Guia vencida não é assunto do fluxo — é a linha
-        mais urgente da tela, e ela vale nas duas visões.
-        ⚠ Ela some sozinha quando não há guia em atraso, e nada é dito — frase que descreve uma
-        ausência já visível é ruído (critério do dono).
-      */}
-      {!atual.carregando && !atual.erro ? (
-        <GuiasVencidas alerta={alerta} aoVerGuias={aoVerGuias} />
-      ) : null}
-
       {!atual.carregando && !atual.erro && dados ? (
         visao === "fluxo" ? (
           modo === "mensal" ? (
@@ -982,19 +939,6 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
         aoMudar={(resposta) => { setMensagemDoFluxo(resposta?.mensagem || ""); setGaveta(null); notificarMudanca(); }}
       />
 
-      {mostraPopUp ? (
-        <PopUpDeGuias
-          companyId={companyId}
-          alerta={alerta}
-          aoVerGuias={() => { setPopUpDispensado(true); aoVerGuias?.(); }}
-          /* ⚠⚠ `Esc` e o X fecham SEM gravar — a confirmação é só pelo botão (v3 §1). O aviso volta
-             na próxima abertura, que é exatamente o desenho. */
-          aoFechar={() => setPopUpDispensado(true)}
-          /* ⚠ Gravou ⇒ o payload muda (`ackPending: false`), então a tela recarrega em vez de
-             esconder o pop-up por conta própria: quem decide se avisa é o servidor. */
-          aoConfirmar={() => { setPopUpDispensado(true); atual.recarregar(); }}
-        />
-      ) : null}
     </section>
   );
 }

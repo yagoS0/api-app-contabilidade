@@ -48,14 +48,19 @@ const compData = (d) => d ? new Date(d).toISOString().slice(0, 7) : null;
 const despesasChaves = ['pessoal', 'gerais', 'tributarias', 'depreciacao', 'despesasFinanceiras'];
 
 // Uma guia composta participa pelo total, nunca também por seus componentes.
-export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje, circulares=[] }) {
-  exigirFechamento(periodos.atual.de, periodos.atual.ate, circulares);
+export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje, circulares=[], permitirLacunas=false }) {
+  if (!permitirLacunas) exigirFechamento(periodos.atual.de, periodos.atual.ate, circulares);
   const meses = listaMeses(periodos.inicio, periodos.fim);
   const fechados = new Set(circulares.filter(c=>c.fechadoContabilEm).map(c=>c.competencia));
+  if (permitirLacunas) {
+    lancamentos = lancamentos.filter(e => fechados.has(e.competencia));
+    notas = notas.filter(n => fechados.has(compData(n.competencia)));
+  }
   const guiasValidas = guias.filter(g => fechados.has(g.competencia) && g.status === 'PROCESSED' && g.parcelaEstado !== 'CANCELADA');
   function calcular(de, ate) {
     const mesesSemFechamento = listaMeses(de, ate).filter(m => !circulares.some(c => c.competencia === m && c.fechadoContabilEm));
-    const indisponivel = mesesSemFechamento.length > 0;
+    const parcialPermitido = permitirLacunas && de === periodos.atual.de && ate === periodos.atual.ate;
+    const indisponivel = mesesSemFechamento.length > 0 && (!parcialPermitido || listaMeses(de, ate).every(m => !fechados.has(m)));
     const entradas = lancamentos.filter(e => e.competencia >= de && e.competencia <= ate);
     const dre = montarDreGerencial({ lancamentos: entradas, planoPorCodigo: plano, competencia: `${de} a ${ate}` });
     const docs = notas.filter(n => compData(n.competencia) >= de && compData(n.competencia) <= ate);
@@ -82,12 +87,12 @@ export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje
       tributos, margemBruta: margem('lucroBruto'), margemOperacional: margem('resultadoOperacional'), margemLiquida: margem('resultadoDoPeriodo'),
       carga: faturamento > 0 && tributos != null ? tributos / faturamento * 100 : null,
     };
-    return {de, ate, dre, faltas, parcial:parcial || indisponivel, indisponivel, mesesSemFechamento, indicadores:indisponivel ? Object.fromEntries(Object.keys(indicadores).map(k => [k,null])) : indicadores};
+    return {de, ate, dre, faltas, parcial:parcial || mesesSemFechamento.length > 0, indisponivel, mesesSemFechamento, indicadores:indisponivel ? Object.fromEntries(Object.keys(indicadores).map(k => [k,null])) : indicadores};
   }
   const atual = calcular(periodos.atual.de, periodos.atual.ate);
   const anterior = calcular(periodos.anterior.de, periodos.anterior.ate);
   const serie = meses.map(m => ({ competencia: m, ...calcular(m, m) }));
-  const variacoes = Object.fromEntries(Object.keys(atual.indicadores).map(k => [k, compararValores(atual.indicadores[k], anterior.indicadores[k], k.startsWith('margem') || k === 'carga')]));
+  const variacoes = Object.fromEntries(Object.keys(atual.indicadores).map(k => [k, compararValores(atual.mesesSemFechamento.length ? null : atual.indicadores[k], anterior.indicadores[k], k.startsWith('margem') || k === 'carga')]));
   const insights = [];
   if (!atual.parcial && !anterior.parcial) {
     if (variacoes.faturamento.percentual < -10) insights.push({ secao: 'geral', texto: `Faturamento caiu ${Math.abs(variacoes.faturamento.percentual).toFixed(1)}% no período comparado.` });

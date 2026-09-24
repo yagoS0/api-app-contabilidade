@@ -1,5 +1,10 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Emissor do cliente e avisos — 23/09/2026
+
+Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
+
+
 ## Emissão durante navegação — 18/09/2026
 
 A emissão avulsa comunica à casca quando está enviando. Até receber o desfecho, bloqueia troca de empresa, saída, retorno e navegação interna; mudança direta do hash mantém o emissor montado e retorna a Notas. O resultado fica visível na mesma instância. Há trava imediata contra submit duplo e aviso de saída/recarregamento do navegador. Após resposta, a navegação volta a funcionar; desfecho desconhecido mantém as restrições de reenvio já existentes. Testes com promessa controlada verificam os dois elos, sem emitir ou consultar serviço externo.
@@ -2358,3 +2363,18 @@ serviço no painel (o Railway as passa como build args). Dev local: `npm run dev
 O cliente pode informar por nota IRRF e contribuição previdenciária retidos (valores monetários explícitos), CNO/CEI ou CIB da obra com inscrição imobiliária opcional, e CPF/CNPJ/nome do destinatário diferente do tomador. As regras ficam em emitir/lib/dadosDaOperacao.js; o backend continua sendo a autoridade fiscal, inclusive para exigir IBS/CBS no destinatário separado. Nenhuma alíquota é inferida. Os grupos opcionais vazios não viajam. A prévia mostra os mesmos dados do payload e desconta as retenções explícitas do líquido. Troca de empresa, nova nota e uso de modelo limpam esses campos. Testes de regra e ligação em dadosDaOperacao; nenhum teste emite nota real.
 
 A leitura dos perfis agora bloqueia a emissão durante carregamento, erro HTTP ou resposta inválida. A prévia e os campos de código/local não apresentam defaults até confirmar a resposta da empresa atual. O botão Recarregar tipos de serviço refaz a consulta. Somente resposta válida vazia ou habilitado:false permite seguir sem perfil; o backend também deve devolver erro de consulta, nunca lista vazia em falha.
+
+Emissor (23/09/2026): o quadro explicativo do modelo foi retirado por pedido do dono. Mostrar somente o botão 'Apagar tudo', que limpa o formulário; o reaproveitamento dos dados permanece.
+
+## Início do cliente com relatórios contábeis — 24/09/2026
+
+Empacotamento: o Dockerfile copia também apps/web/src, origem dos componentes de relatórios reutilizados. O watchPatterns do Railway inclui essa árvore para atualizar o portal quando os componentes compartilhados mudarem.
+
+Decisão do dono: substitui o resumo anterior e a área Horizonte/Fluxo/DRE do início do cliente por AnaliseEmpresa, a mesma apresentação de Relatórios do contador (Visão geral, Clientes, Resultado, Tributário), somente leitura. Cinco cards no topo usam o período: Entradas, Saídas, Folha, Impostos, Resultado. Grupos disjuntos da DRE evitam duplicidade; impostos incluem deduções da receita e são identificados. Não afirmar saldo bancário ou valores pagos a partir de competência.
+
+Exigir no servidor fechamento contábil dos TRÊS MESES ANTERIORES AO ATUAL, pelo calendário de São Paulo; três fechamentos antigos não bastam. Janela padrão: 12 meses terminando no mês anterior; cliente pode reduzir dentro dela. Lacunas antigas são permitidas, com valores indisponíveis e fora dos totais, nunca zeros presumidos. Comparação com intervalo incompleto fica indisponível. Revalidar em cada consulta, inclusive Clientes/impressão, na mesma transação de leitura. Rotas /client/companies/:companyId/relatorios mantêm autenticação e vínculo; guias individuais não liberadas ficam fora da resposta. Sem fallback para dados fictícios no modo real. O escritório conserva comportamento e ferramentas anteriores.
+
+
+## Login do cliente por código — 24/09/2026
+
+Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão das rotas de autenticação. Branch codex/cliente-login-email, ainda sem publicação. Ver docs/login-email-seguranca-20260924.md para regras, migration, cenários e limites. Código de 8 dígitos, 10 minutos, cinco tentativas, reenvio após 60s e cinco envios por endereço/hora, consumo serializável. Apenas User CLIENT ativo com vínculo ativo, sem criar conta nem conceder permissões FIRM. Não usar e-mail geral da empresa/contatos como prova de acesso. Tokens vinculados à versão da senha, refresh separado de access; sessōes novas CLIENT vinculadas ao acesso e revogadas no logout. Não usar fallback de autenticação real para mock. Nenhum e-mail real enviado nos testes.

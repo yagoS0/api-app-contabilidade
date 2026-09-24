@@ -70,7 +70,7 @@ const modelo = (patch, opcoes) =>
   modeloDeEmissaoDaNota(notaEmitida(patch), { companyId: "pc-001", cnpjDaEmpresa: CNPJ_DA_EMPRESA, ...opcoes });
 
 describe("⚠⚠ nota nova é nota nova — nenhum identificador atravessa", () => {
-  const IDENTIFICADORES = ["numero", "chaveAcesso", "idNfse", "idDps", "serie", "rpsSerie", "rpsNumero"];
+  const IDENTIFICADORES = ["chaveAcesso", "idNfse", "idDps", "serie", "rpsSerie", "rpsNumero"];
 
   it.each(IDENTIFICADORES)("os campos do formulário não têm `%s`", (campo) => {
     expect(camposDaNota(notaEmitida())).not.toHaveProperty(campo);
@@ -93,9 +93,9 @@ describe("⚠⚠ nota nova é nota nova — nenhum identificador atravessa", () 
   });
 
   // ⚠ A LISTA FECHADA: campo novo no modelo tem de ser uma decisão, não um efeito colateral.
-  it("os campos são EXATAMENTE os cinco do formulário — nem um a mais", () => {
+  it("os campos incluem somente dados do serviço e do tomador", () => {
     expect(Object.keys(camposDaNota(notaEmitida())).sort()).toEqual([
-      "descricao",
+      "bairro", "cMun", "cep", "complemento", "descricao", "logradouro", "numero",
       "tomadorDoc",
       "tomadorEmail",
       "tomadorNome",
@@ -220,13 +220,23 @@ describe("⚠⚠ a DESCRIÇÃO vem da nota de origem (19/08/2026)", () => {
 
   it("⚠ a descrição NÃO é identificador — a varredura de identificadores continua valendo", () => {
     const campos = camposDaNota(notaEmitida({ descricao: "SERVICO X" }));
-    expect(campos).not.toHaveProperty("numero");
+    expect(campos.numero).toBe(""); // Número do endereço; nunca o número fiscal.
     expect(campos).not.toHaveProperty("chaveAcesso");
     expect(campos).not.toHaveProperty("competencia");
   });
 });
 
 describe("o que É copiado", () => {
+  it("copia endereço e e-mail da própria nota sem confundir número do imóvel com número fiscal", () => {
+    const n = notaEmitida({ tomador: { cnpjCpf: "44555666000177", nome: "Tomador", email: "antigo@example.test",
+      endereco: { cMun: "3550308", CEP: "01234-000", xLgr: " Rua Antiga ", nro: "007", xCpl: "Sala 2", xBairro: "Centro" } } });
+    expect(camposDaNota(n)).toMatchObject({ tomadorEmail: "antigo@example.test", cMun: "3550308", cep: "01234000", logradouro: "Rua Antiga", numero: "007", complemento: "Sala 2", bairro: "Centro" });
+    expect(camposDaNota(n).numero).not.toBe(n.numero);
+  });
+  it("endereço ausente ou parcial não recebe valores inferidos", () => {
+    expect(camposDaNota(notaEmitida())).toMatchObject({ cep: "", cMun: "", logradouro: "", numero: "", complemento: "", bairro: "" });
+    expect(camposDaNota(notaEmitida({ tomador: { endereco: { xLgr: "Rua" } } }))).toMatchObject({ logradouro: "Rua", numero: "", cep: "" });
+  });
   it("documento (só dígitos) e nome do tomador", () => {
     const campos = camposDaNota(notaEmitida());
     expect(campos.tomadorDoc).toBe("44555666000177");

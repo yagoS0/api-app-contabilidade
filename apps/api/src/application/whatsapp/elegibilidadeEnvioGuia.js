@@ -1,3 +1,4 @@
+import { bloqueioEnvioParcela } from "../guides/GuiaParcelaEnvioGuard.js";
 // POSSO MANDAR ESTA GUIA POR WHATSAPP? — a regra, PURA.
 //
 // Sem prisma, sem rede, sem relógio escondido. Recebe os FATOS já carregados (a flag, o template, o
@@ -134,6 +135,8 @@ export function avaliarCanal({ integracaoLigada, template, chaveTemplate = "guia
  * @param {boolean} p.jaEnviada  a resposta de `foiEnviadaComLegado` (envios + legado do e-mail)
  */
 export function avaliarLinha({ canal, guide, destinatario, envios = [], jaEnviada = false }) {
+  const bloqueioParcela = bloqueioEnvioParcela(guide);
+  if (bloqueioParcela) return { pode: false, motivo: bloqueioParcela.code, mensagem: bloqueioParcela.message, canalSugerido: null };
   if (guide?.paymentStatus === "PAID") return { pode: false, motivo: "GUIA_PAGA",
     mensagem: "Esta guia está paga e não entra no lote.", canalSugerido: null };
   const recusa = (motivo, mensagem, extra = {}) => ({

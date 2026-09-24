@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { act, render, renderHook, fireEvent, screen, within } from "@testing-library/react";
 import { useConversasWhatsapp } from "../../hooks/useConversasWhatsapp";
 import { ChatDaEmpresa } from "../ChatDaEmpresa";
+import { WhatsappPage } from "../../pages/renderWhatsappPage";
 
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const adiada = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -9,6 +10,22 @@ const conversa = (id, updatedAt = "2026-09-06T12:00:00Z") => ({ id, updatedAt, p
 const fio = id => ({ conversa: conversa(id), mensagens: [], temMais: false });
 beforeEach(() => { jest.useFakeTimers(); Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" }); });
 afterEach(() => { jest.useRealTimers(); });
+
+test.each([false, true])("lista central sobe nova mensagem e conserva rascunho (V2: %s)", async v2 => {
+  const a = { ...conversa("Ana"), relacionamento: { tipo: "CLIENTE" }, ultimaMensagem: { registradaEm: "2026-09-24T12:00:00Z" } };
+  const b = { ...conversa("Bruno"), relacionamento: { tipo: "LEAD" }, portalClientId: null, ultimaMensagem: { registradaEm: "2026-09-24T11:00:00Z" } };
+  const resposta = conversas => ({ conversas, ...(v2 ? { versaoContrato: 2 } : {}) });
+  const api = { whatsappContratoV2: v2, listarConversasWhatsapp: jest.fn(async () => resposta([b, a])), getMensagensWhatsapp: jest.fn(async id => fio(id)) };
+  render(<WhatsappPage api={api} />); await flush();
+  expect(screen.getAllByTestId(/^conversa-/).map(el => el.dataset.testid)).toEqual(["conversa-Ana", "conversa-Bruno"]);
+  fireEvent.click(screen.getByTestId("conversa-Ana")); await flush();
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Rascunho para Ana" } });
+  api.listarConversasWhatsapp.mockResolvedValue(resposta([a, { ...b, ultimaMensagem: { registradaEm: "2026-09-24T13:00:00Z" } }]));
+  await act(async () => { jest.advanceTimersByTime(10000); }); await flush();
+  expect(screen.getAllByTestId(/^conversa-/).map(el => el.dataset.testid)).toEqual(["conversa-Bruno", "conversa-Ana"]);
+  expect(screen.getByTestId("conversa-Ana")).toHaveAttribute("aria-current", "true");
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Rascunho para Ana");
+});
 
 test("trocar o filtro durante polling do fio não restaura a lista anterior", async () => {
   const espera = adiada();

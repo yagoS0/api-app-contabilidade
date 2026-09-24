@@ -15,6 +15,17 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GuiaChip, todasConcluidas } from "../renderGuiaChip.jsx";
 
+test("parcela com pagamento a confirmar não afirma envio nem permite condensar pendência", () => {
+  const tag = { key: "parcDas", label: "Parcelamento", state: "enviada", pendenciaOperacional: true, pendencias: 1, itens: [{ id: "p", estado: "CONSULTAR_PAGAMENTO" }] };
+  render(<GuiaChip tag={tag} empresa={{ companyId: "c", ownerEmail: "cadastro@empresa.com" }} competencia="2026-09" />);
+  const button = screen.getByRole("button", { name: /confirmar pagamento/ });
+  expect(button.textContent).toContain("⚠");
+  expect(button.textContent).not.toContain("✓");
+  fireEvent.click(button);
+  expect(screen.queryByText(/Enviada.*cadastro@empresa/)).toBeNull();
+  expect(todasConcluidas([tag])).toBe(false);
+});
+
 const EMPRESA = { companyId: "c1", razao: "ACME LTDA", guideNotificationEmail: "cliente@acme.com.br" };
 
 function tagFalhou(over = {}) {

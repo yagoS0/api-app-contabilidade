@@ -54,12 +54,12 @@ async function montar(api = apiFalso()) {
 }
 
 describe("a lista", () => {
-  it("a fila vem PRIMEIRO, em destaque, com a contagem e o consumo do assistente (estimativa)", async () => {
+  it("mensagem recente vem primeiro; fila, contagem e consumo continuam visíveis", async () => {
     await montar();
     const linhas = screen.getAllByTestId(/^conversa-/);
-    expect(linhas[0]).toHaveAttribute("data-testid", "conversa-cv3");
-    expect(linhas[0]).toHaveAttribute("data-situacao", "FILA_SEM_EMPRESA");
-    expect(linhas[0]).toHaveTextContent(/A identificar/);
+    expect(linhas[0]).toHaveAttribute("data-testid", "conversa-cv1");
+    expect(screen.getByTestId("conversa-cv3")).toHaveAttribute("data-situacao", "FILA_SEM_EMPRESA");
+    expect(screen.getByTestId("conversa-cv3")).toHaveTextContent(/A identificar/);
     expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número aguardando atendimento/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
     expect(screen.getByTestId("conversa-cv1")).not.toHaveTextContent(/monta a atualizada/i);

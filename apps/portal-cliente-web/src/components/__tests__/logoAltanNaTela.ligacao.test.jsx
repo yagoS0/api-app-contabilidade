@@ -163,8 +163,8 @@ describe("⚠⚠ na barra do topo a marca é SÓ O SOL — e ela volta ao iníci
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    // O seletor do Painel só existe na tela de Início.
-    expect(document.querySelector("#competencia-home")).toBeTruthy();
+    // A página inicial agora contém os relatórios, sem seletor mensal legado.
+    expect(screen.getByRole("heading", { name: "Início", exact: true })).toBeInTheDocument();
   });
 
   test("⚠ Ctrl/Cmd+clique NÃO é interceptado — é o navegador que assume", async () => {

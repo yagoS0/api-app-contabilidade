@@ -16,6 +16,11 @@
 //   GET /fluxo         -> idem
 
 import { ApiError } from "../ApiError";
+import { analisePlanejamentoMock } from '../../../../web/src/api/mock/analisePlanejamentoMock';
+import { clientesAnaliseMock } from '../../../../web/src/api/mock/clientesAnaliseMock';
+import { fechamentosRelatorioMock } from '../../../../web/src/api/mock/fechamentosRelatorioMock';
+import { disponibilidadeRelatorios, validarPeriodoPortal } from '../../../../../packages/shared/src/analise/portalCliente.js';
+import { consultarCep as consultarCepAuxiliar } from "../real/cep";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
 import { competenciaPadrao } from "../../lib/format";
@@ -1521,7 +1526,36 @@ function pdfDoDanfse(texto) {
 }
 
 export function createMockApi() {
+  const codes = new Map();
   return {
+    async solicitarCodigoAcesso(email) {
+      const challengeId=crypto.randomUUID();
+      codes.set(challengeId,{email:String(email).trim().toLowerCase(),expires:Date.now()+600000,attempts:0});
+      return {ok:true,challengeId,expiresIn:600,resendAfter:60};
+    },
+    async confirmarCodigoAcesso(challengeId,code) {
+      const challenge=codes.get(challengeId);
+      const usuario=challenge&&estado.usuarios.find(u=>u.email===challenge.email&&u.accountType==='CLIENT');
+      if(!challenge||challenge.expires<=Date.now()||challenge.attempts++>=5||code!=='12345678'||!usuario)throw new ApiError(401,'invalid_login_code');
+      codes.delete(challengeId);
+      return exigirContaDeCliente({...emitirTokens(usuario),user:{id:usuario.id,role:usuario.role,accountType:usuario.accountType,defaultClientId:usuario.defaultClientId,name:usuario.name}});
+    },
+    async getFechamentosRelatorio(companyId) {
+      const id = exigirAcessoEmpresa(companyId);
+      return {ok:true,...disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao())};
+    },
+    async getAnalisePlanejamento(companyId,filtros) {
+      const id = exigirAcessoEmpresa(companyId);
+      const acesso = disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao());
+      if (!acesso.liberado) throw new ApiError(409,'FECHAMENTOS_PENDENTES');
+      return {...analisePlanejamentoMock(id,validarPeriodoPortal(filtros,acesso)),disponibilidade:acesso};
+    },
+    async getAnaliseClientes(companyId,filtros) {
+      const id = exigirAcessoEmpresa(companyId);
+      const acesso = disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao());
+      if (!acesso.liberado) throw new ApiError(409,'FECHAMENTOS_PENDENTES');
+      return clientesAnaliseMock(id,validarPeriodoPortal(filtros,acesso));
+    },
     // --- Auth ---------------------------------------------------------------
     async login(email, password) {
       await dormir();
@@ -1648,6 +1682,13 @@ export function createMockApi() {
     },
 
     // --- Notas --------------------------------------------------------------
+    async getInvoiceDetail(companyId, invoiceId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const nota = estado.notas.find(n => n.clientId === id && n.invoiceId === invoiceId);
+      if (!nota) throw new ApiError(404, "not_found", "Nota não encontrada.");
+      return JSON.parse(JSON.stringify(nota));
+    },
     async getInvoices(companyId, { competencia, direcao = "emitidas", page = 1, limit = 25 } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
@@ -2528,6 +2569,18 @@ export function createMockApi() {
     //
     // ⚠ CPF NÃO CHEGA AQUI — quem não pergunta é a tela (`decidirConsulta`). Se chegasse mesmo
     // assim, cai no `cnpj_incompleto` abaixo, que é o mesmo do real.
+    // Dados postais deterministas; jamais acessa o serviço externo no modo demonstração.
+    async consultarCep(cep) {
+      return consultarCepAuxiliar(cep, {
+        municipios: [["3550308", "São Paulo", "SP"]],
+        fetchImpl: async (url) => ({
+          ok: true, status: 200,
+          json: async () => url.includes("/01001000/")
+            ? { cep: "01001-000", logradouro: "Praça da Sé", bairro: "Sé", localidade: "São Paulo", uf: "SP", ibge: "3550308" }
+            : { erro: true },
+        }),
+      });
+    },
     async consultarCnpj(cnpj) {
       await dormir(320); // consulta externa demora mais que uma leitura local
       const digitos = String(cnpj || "").replace(/\D+/g, "").slice(0, 14);

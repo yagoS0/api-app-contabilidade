@@ -4,6 +4,7 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { sendCompanyGuidesEmail } from "./GuideCompanyEmailService.js";
+import { conferirParcelasParaEnvio } from "./GuiaParcelaEnvioGuard.js";
 
 function validar({ portalClientId, competencia }) {
   const cid = String(portalClientId || "").trim();
@@ -19,9 +20,19 @@ function validar({ portalClientId, competencia }) {
 // Libera todas as guias PROCESSED da competência + dispara o e-mail de guias ao cliente.
 export async function liberarGuiasCliente({ portalClientId, competencia, userId }) {
   const { cid, comp } = validar({ portalClientId, competencia });
-  const upd = await prisma.guide.updateMany({
-    where: { portalClientId: cid, competencia: comp, status: "PROCESSED", liberadaCliente: false },
-    data: { liberadaCliente: true, liberadaEm: new Date(), liberadaPor: userId ? String(userId) : null },
+  const guias = await prisma.guide.findMany({ where: { portalClientId: cid, competencia: comp, status: "PROCESSED" } });
+  await conferirParcelasParaEnvio(guias);
+  const upd = await prisma.$transaction(async tx => {
+    let count = 0;
+    for (const guide of guias.filter(g => !g.liberadaCliente)) {
+      const r = await tx.guide.updateMany({
+        where: { id: guide.id, portalClientId: cid, updatedAt: guide.updatedAt, competencia: comp, status: "PROCESSED", liberadaCliente: false },
+        data: { liberadaCliente: true, liberadaEm: new Date(), liberadaPor: userId ? String(userId) : null },
+      });
+      if (r.count !== 1) throw Object.assign(new Error("Uma guia mudou durante a conferência. Atualize a lista antes de liberar."), { code: "CONFERENCIA_DIVERGENTE", status: 409 });
+      count += r.count;
+    }
+    return { count };
   });
   // Decisão do dono: liberar dispara o e-mail. Falha de e-mail não desfaz a liberação.
   let emailResult = null;
@@ -43,8 +54,10 @@ export async function liberarGuiaCliente({ guideId, userId }) {
     err.code = "INVALID_INPUT";
     throw err;
   }
+  const guide = await prisma.guide.findUnique({ where: { id: gid } });
+  await conferirParcelasParaEnvio(guide ? [guide] : []);
   const upd = await prisma.guide.updateMany({
-    where: { id: gid, status: "PROCESSED", liberadaCliente: false },
+    where: { id: gid, ...(guide?.updatedAt ? { updatedAt: guide.updatedAt } : {}), status: "PROCESSED", liberadaCliente: false },
     data: { liberadaCliente: true, liberadaEm: new Date(), liberadaPor: userId ? String(userId) : null },
   });
   return { liberadas: upd.count };
