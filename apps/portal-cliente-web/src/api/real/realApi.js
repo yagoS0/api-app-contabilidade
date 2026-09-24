@@ -128,6 +128,8 @@ export function createRealApi() {
     getAnalisePlanejamento: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/analise?${new URLSearchParams(filtros)}`),
     getAnaliseClientes: (companyId, filtros) => pedir(`/client/companies/${encodeURIComponent(companyId)}/relatorios/clientes?${new URLSearchParams(filtros)}`),
     // --- Auth ---------------------------------------------------------------
+    solicitarCodigoAcesso: email => pedir('/auth/email-code/request', { method: 'POST', body: { email }, auth: false }),
+    confirmarCodigoAcesso: async (challengeId, code) => exigirContaDeCliente(await pedir('/auth/email-code/verify', { method: 'POST', body: { challengeId, code }, auth: false })),
     async login(email, password) {
       const data = await pedir("/auth/login", {
         method: "POST",
@@ -139,7 +141,7 @@ export function createRealApi() {
 
     async logout() {
       try {
-        await pedir("/auth/logout", { method: "POST" });
+        await pedir("/auth/logout", { method: "POST", body: { refreshToken: lerSessao().refreshToken } });
       } catch {
         // Best-effort: mesmo falhando, a casca limpa o token local.
       }

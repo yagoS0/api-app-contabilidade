@@ -34,7 +34,7 @@ let mockSeq = 0;
 
 jest.mock("../../infrastructure/db/prisma.js", () => {
   const casa = (linha, where) =>
-    Object.entries(where).every(([k, v]) => (v === null ? linha[k] === null : linha[k] === v));
+    Object.entries(where).every(([k, v]) => (v === null ? linha[k] === null : v && typeof v === "object" && "gt" in v ? linha[k] > v.gt : linha[k] === v));
 
   const prisma = {
     user: {
