@@ -33,3 +33,11 @@ describe('relacionamento é evidência, não permissão', () => {
   test('caso encerrado não declara interesse atual', () => expect(decidir({caso:{...caso,encerradoEm:new Date()}}).relacionamento.tipo).toBe('A_IDENTIFICAR'));
   test('suspensão operacional não reclassifica cadastro como lead', () => expect(decidir({contatos:[{...contato,portalClient:{status:'SUSPENSA'}}]}).relacionamento.tipo).toBe('CLIENTE'));
 });
+
+test.each(['PLANEJAMENTO', 'GESTAO'])('caso %s sem ficha classifica lead sem conceder acesso e conserva cliente conhecido', intencao => {
+  const casoCurto = { id: 'curto', triagem: { preatendimento: { intencao, estado: 'ENCAMINHADO' } } };
+  const r = decidir({ caso: casoCurto });
+  expect(r.relacionamento.tipo).toBe('LEAD'); expect(r.solicitacaoComercial).toMatchObject({ onboardingId: null, intencao });
+  expect(r.identidade.estado).toBe('NAO_VERIFICADA'); expect(r).not.toHaveProperty('podeEmitir');
+  expect(decidir({ contatos: [contato], caso: casoCurto }).relacionamento.tipo).toBe('CLIENTE');
+});

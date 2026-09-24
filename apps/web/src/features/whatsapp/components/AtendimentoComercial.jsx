@@ -3,6 +3,7 @@ import { Button } from "../../../components/ui/Button";
 import { canalComercialDaConversa } from "../lib/identidadeAtendimento";
 import { FluxoComercial } from "../../onboarding/components/FluxoComercial";
 import { AbrirBiblioteca } from "../../onboarding/components/AbrirBiblioteca";
+import { ResumoPreatendimento } from "./ResumoPreatendimento";
 import { descricaoMensagem, lerUsosMensagens, normalizarBuscaMensagem, registrarUsoMensagem, ultimasOrientacoes } from "../lib/mensagensRapidas";
 
 export const AtualizacaoAtendimento = createContext({ revisao: 0, atualizar: () => {} });
@@ -24,7 +25,7 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
     let atual = true;
     setErro(""); setCarregando(true);
     if (!api.comercial) { setCarregando(false); return; }
-    api.comercial(path).then(r => { if (atual) { setLead(r.atendimento); setAnteriores(r.anteriores || []); onEstado?.(Boolean(r.atendimento?.onboardingId)); } }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
+    api.comercial(path).then(r => { if (atual) { setLead(r.atendimento); setAnteriores(r.anteriores || []); onEstado?.(Boolean(r.atendimento?.onboardingId || r.atendimento?.triagem?.preatendimento)); } }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
     return () => { atual = false; };
   }, [api, path, recarga, revisao]);
   async function iniciar(body) {
@@ -32,22 +33,23 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
     trava.current = true; setOcupado(true); setErro("");
     try {
       const r = await api.comercial(path + "/iniciar", body);
-      if (vivo.current) { setLead(r.atendimento); onEstado?.(Boolean(r.atendimento?.onboardingId)); setReinicio(""); setRecarga(v => v + 1); await onCriado?.(); }
+      if (vivo.current) { setLead(r.atendimento); onEstado?.(Boolean(r.atendimento?.onboardingId || r.atendimento?.triagem?.preatendimento)); setReinicio(""); setRecarga(v => v + 1); await onCriado?.(); }
     } catch (e) { if (vivo.current) setErro(e.message); }
     finally { trava.current = false; if (vivo.current) setOcupado(false); }
   }
   if (!api.comercial) return <p>Atendimento comercial disponível com a API atualizada.</p>;
   return <section className="wa-commercial-intake" aria-label="Atendimento do interessado">
-    {!lead?.onboardingId && <p>Escolha o motivo para iniciar o atendimento deste contato.</p>}
+    <ResumoPreatendimento atendimento={lead} atendimentoHumano={Boolean(conversa.atendidaPor || conversa.atendidaDesde)} />
+    {!lead?.onboardingId && !lead?.triagem?.preatendimento && <p>Escolha o motivo para iniciar o atendimento deste contato.</p>}
     {erro && <div role="alert">{erro} <Button type="button" variant="secondary" disabled={ocupado} onClick={() => setRecarga(v => v + 1)}>Recarregar atendimento comercial</Button></div>}
     {carregando && !lead ? <p role="status">Carregando atendimento…</p> : lead?.onboardingId ? <><div className="wa-case-toolbar"><div className="wa-case-actions"><a className="btn btn-secondary btn-md wa-case-link" aria-label="Abrir ficha do cliente em nova aba" href={`/onboardings/${encodeURIComponent(lead.onboardingId)}`} target="_blank" rel="noopener noreferrer">Ficha ↗</a><Button variant="secondary" onClick={() => setReinicio("CORRIGIR_MOTIVO")}>Recomeçar</Button><Button variant="secondary" onClick={() => setReinicio("NOVA_SOLICITACAO")}>Nova solicitação</Button></div>
-      {anteriores.length > 0 && <details className="wa-previous-requests"><summary>Solicitações anteriores ({anteriores.length})</summary>{anteriores.map(a => <p key={a.id}>{a.onboarding ? <a href={`/onboardings/${a.onboarding.id}`}>{a.onboarding.origem} · {a.onboarding.status}</a> : "Atendimento sem ficha"}</p>)}</details>}
-    </div>{reinicio && <fieldset className="wa-case-reset" disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><div className="wa-case-reset-actions"><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></div></fieldset>}<FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={destinoEnvio} janela={canalComercial?.janela || conversa.janela} canalDisponivel={destinoEnvio !== null && (canalComercial?.podeResponder ?? conversa.podeResponder) !== false} canalDeEnvio={canalDeEnvio} /></> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
+      {anteriores.length > 0 && <details className="wa-previous-requests"><summary>Solicitações anteriores ({anteriores.length})</summary>{anteriores.map(a => <div key={a.id}>{a.onboarding ? <p><a href={`/onboardings/${a.onboarding.id}`}>{a.onboarding.origem} · {a.onboarding.status}</a></p> : !a.triagem?.preatendimento && <p>Atendimento sem ficha</p>}<ResumoPreatendimento atendimento={a} atendimentoHumano /></div>)}</details>}
+    </div>{reinicio && <fieldset className="wa-case-reset" disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><div className="wa-case-reset-actions"><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></div></fieldset>}<FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={destinoEnvio} janela={canalComercial?.janela || conversa.janela} canalDisponivel={destinoEnvio !== null && (canalComercial?.podeResponder ?? conversa.podeResponder) !== false} canalDeEnvio={canalDeEnvio} /></> : lead?.triagem?.preatendimento ? <><Button variant="secondary" onClick={() => setReinicio(reinicio ? "" : "NOVA_SOLICITACAO")}>Nova solicitação</Button>{reinicio && <fieldset className="wa-case-reset" disabled={ocupado}><legend>Iniciar outra solicitação</legend><p>O resumo anterior será preservado.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: "NOVA_SOLICITACAO" })}>Preservar anterior e iniciar</Button></fieldset>}</> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
       {candidatos.filter(c => !["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(c.status)).map(c => <p key={c.id}><a href={`/onboardings/${encodeURIComponent(c.id)}`}>Conferir ficha {c.origem} · {c.status}</a>{" "}<Button type="button" onClick={() => iniciar({ onboardingId: c.id })}>Conferi: vincular esta ficha</Button></p>)}
       <label>Motivo do atendimento<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Ainda não definido</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label>
       <Button type="button" onClick={() => iniciar({ origem: origem || null })}>{ocupado ? "Salvando…" : lead ? "Definir motivo do atendimento" : "Iniciar atendimento"}</Button>
     </fieldset>}
-    {!carregando && !erro && !lead?.onboardingId && slotEmpresa}
+    {!carregando && !erro && !lead?.onboardingId && !lead?.triagem?.preatendimento && slotEmpresa}
   </section>;
 }
 

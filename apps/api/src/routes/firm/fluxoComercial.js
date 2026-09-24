@@ -124,7 +124,7 @@ export function createFluxoComercialRouter({
     });
     return {
       atendimento,
-      proximaPergunta: proximaPergunta(atendimento?.onboarding),
+      proximaPergunta: atendimento?.triagem?.preatendimento ? null : proximaPergunta(atendimento?.onboarding),
       anteriores: await db.atendimentoLead.findMany({ where: { ...escopoCaso, encerradoEm: { not: null } }, include: { onboarding: { select: { id: true, origem: true, status: true } } }, orderBy: { encerradoEm: "desc" }, take: 20 })
     };
   }));

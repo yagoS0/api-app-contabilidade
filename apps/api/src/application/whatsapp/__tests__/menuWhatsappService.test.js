@@ -76,7 +76,7 @@ describe("acolhimento no canal comercial sem acesso fiscal", () => {
     const enviar = (opcoes = {}) => responderMenuWhatsapp({ registro: entrada, texto, agora: AGORA, client, cloud, executar, coleta, resolverVinculo, conferirJanela: janelaAberta, logger: log, ...opcoes });
     return { entrada, pessoa, vinculo, client, cloud, executar, coleta, resolverVinculo, enviar };
   }
-  const titulos = ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"];
+  const titulos = ["Abrir uma empresa", "Trocar de contador", "Planejamento tributário", "Regularizar empresa", "Falar com a equipe"];
   it.each([{ semPessoa: false }, { semPessoa: true }, { situacao: "AMBIGUO" }])("acolhe contato existente %j mesmo sem sessão e conserva apenas opções comerciais", async opcoes => {
     const c = comercial(opcoes);
     expect(await c.enviar()).toMatchObject({ tratado: true, acao: "MENU" });

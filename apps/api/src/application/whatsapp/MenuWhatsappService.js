@@ -427,8 +427,8 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
         const linhas = [
           { id: "altan.comercial.abertura.v1", titulo: "Abrir uma empresa" },
           { id: "altan.comercial.transferencia.v1", titulo: "Trocar de contador" },
-          { id: "altan.comercial.inativa.v1", titulo: "Empresa parada" },
-          { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },
+          { id: "altan.comercial.planejamento.v1", titulo: "Planejamento tributário" },
+          { id: "altan.comercial.inativa.v1", titulo: "Regularizar empresa" },
           { id: IDS_MENU_WHATSAPP.LEAD_EQUIPE, titulo: "Falar com a equipe" },
         ];
         await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });

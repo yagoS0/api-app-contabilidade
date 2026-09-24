@@ -1,5 +1,10 @@
 # Revisão do diálogo comercial — 20/09/2026
 
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
 ## Evidência e escopo
 
 A revisão começou reproduzindo entradas sintéticas nas funções existentes, sem banco de produção, chamadas de IA ou mensagens reais. Encontramos intenções comerciais comuns sem reconhecimento, negação interpretada como contratação mensal, retomadas gravadas como nome, respostas naturais recusadas e uma resposta genérica de preços para qualquer pergunta com `?`. A saudação com ficha antiga já estava corrigida; esta revisão cobre também os turnos seguintes.
