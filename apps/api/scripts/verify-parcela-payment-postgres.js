@@ -35,7 +35,7 @@ const failureTriggers = [];
 const cnpj = "00000000000001";
 let checks = 0, calls = 0;
 const ok = title => console.log(`OK ${++checks}: ${title}`);
-const validRaw = { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
+const validRaw = { status: 200, contribuinte: { numero: cnpj, tipo: 2 }, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
   dataPagamento: 20260920, valorPagoArrecadacao: 100,
   pagamentoDebitos: [{ discriminacoesDebito: [{ principal: 100, juros: 0, multa: 0, total: 100 }] }] } };
 let transport = async () => ({ raw: structuredClone(validRaw) });
@@ -143,6 +143,18 @@ try {
   assert.equal(saved.observations[0].applied, true);
   assert.equal(saved.guide.extracted.consultaPagamento.observacaoId, saved.observations[0].id);
   ok("confirmação real grava Guia + Parcela + observação coerentes, sem baixa contábil");
+
+  const withoutGuide = await fixture();
+  await a.parcela.update({ where: { id: withoutGuide.parcelaId }, data: { guiaId: null } });
+  const noGuideResult = await query(withoutGuide);
+  const noGuideState = await read(withoutGuide);
+  assert.equal(noGuideResult.pago, true);
+  assert.equal(noGuideState.parcela.pagamentoStatus, "CONFIRMADO");
+  assert.equal(Number(noGuideState.parcela.valorPago), 100);
+  assert.equal(noGuideState.parcela.origemBaixa, null);
+  assert.equal(noGuideState.guide.paymentStatus, "OPEN");
+  assert.equal(noGuideState.observations.length, 0);
+  ok("parcela sem guia usa valorPrevisto Prisma.Decimal real sem relaxar parser monetário");
 
   const lostAfterHttp = await fixture();
   let active = true;

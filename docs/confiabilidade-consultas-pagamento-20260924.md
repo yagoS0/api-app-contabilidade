@@ -6,7 +6,7 @@ Implementação local autorizada pelo usuário, com três agentes e revisão int
 
 O trabalho inicial `7598ece3` foi reaplicado na branch `fix/integracao-consultas` sobre a entrega real da tarefa Fiscal, `4c193a85` (PR 86, integrado à main `8d4c2ec3`). O snapshot intermediário `79716cbf` permanece somente no histórico local de desenvolvimento e não integra a branch de entrega. O workspace original da tarefa Fiscal não foi editado.
 
-Não foram ativados workers, alteradas agendas reais, enviados avisos, feitas consultas fiscais pagas ou usados tokens Anthropic. O plano de acompanhamento por portal/WhatsApp permanece posterior à homologação fiscal.
+No desenvolvimento e nos ensaios sintéticos não foram feitas consultas fiscais pagas. O piloto posterior, descrito abaixo, usa consultas reais autorizadas e limitadas. Nenhuma dessas etapas ativou workers, alterou agendas reais, enviou avisos ou usou tokens Anthropic. O plano de acompanhamento por portal/WhatsApp permanece posterior à homologação fiscal.
 
 ## Contrato de resultado
 
@@ -96,17 +96,39 @@ A regressão conjunta local passou em **1.369 testes/90 suítes da API e 34 test
 
 Limitação separada: um trigger artificial `DEFERRABLE INITIALLY DEFERRED` produziu rollback no banco, mas a pilha Prisma local retornou sucesso. O schema/código migrado não possui constraints diferidas e o cenário operacional de falha durante escrita passou. Não tratar essa injeção como aprovada; revalidar o ORM caso sejam introduzidas constraints diferidas. Os registros de diagnóstico ficam nos relatórios locais, sem alteração de dependências nesta tarefa.
 
+## Piloto fiscal real de leitura
+
+Rodada autorizada em 24/09/2026, limitada a seis tentativas de negócio: três `CONSDECLARACAO13`, duas `COMPARRECADACAO72` e uma `DETPAGTOPARC165`. Código novo executado localmente com o transporte/credencial/guarda centrais, sem implantar a branch ou chamar registradores financeiros. A migration de observações ainda não estava no banco de produção. Escritas permitidas no runner: somente ledger SERPRO e auditoria de acesso ao certificado; respostas e comprovante guardados fora do repositório público.
+
+Resultado: cinco confirmações e um `INDETERMINADO / SEM_COMPROVANTE`. Os três documentos DAS atuais retornaram booleano literal `true`, inclusive dois ainda abertos no cadastro. Os índices das versões anteriores retornaram `false`, sem contaminar a seleção do documento atual. O comprovante PAGTOWEB positivo foi renderizado e conferido visualmente; CNPJ/documento, data e composição corresponderam ao parser. A ausência de comprovante no outro caso não foi convertida em inadimplência. A parcela teve CNPJ, contrato, referência, ordinal, documento e composição conferidos.
+
+A revisão interrompeu a expansão antes da consulta de parcela e corrigiu:
+
+- Identidade numérica de contrato: `1` e `0001` são equivalentes, sem arredondamento de inteiros longos ou aceitação de caracteres inválidos.
+- CNPJ esperado conferido contra o envelope e identidades adicionais presentes; ausência/divergência impede confirmação e marca `identidadeConferida:false`.
+- Valores, somas e pisos exigem centavos finitos/seguros; booleanos, objetos, transbordamento e valores positivos que arredondariam a zero são recusados. Decimais do Prisma são convertidos explicitamente na borda do serviço; zeros monetários legítimos continuam válidos.
+
+Validação complementar: **156 testes em duas suítes**, revisão independente de contraprovas e **18 cenários PostgreSQL** com transporte sintético, incluindo parcela sem guia e piso `Prisma.Decimal`. O último endurecimento de valor subcentavo foi validado offline, sem repetir a consulta real. As evidências reais foram reprocessadas localmente para conferir o parser corrigido.
+
+Seis chamadas únicas registradas como `ok`, HTTP 200, sem forçar guarda, e orçamento interno de 728 para 734 de um teto observado de 1.520. Esses números são tentativas contabilizadas, não uma fatura em reais. Nenhum token Anthropic, envio a cliente, recálculo ou lançamento contábil foi usado no piloto.
+
+Ressalvas: não houve negativa explícita de um DAS **vigente** nesta amostra; não usar a negativa das versões antigas como substituto desse teste. O replay também encontrou ordinais e vínculo de guia inconsistentes em um cadastro de parcelamento, mantidos intactos para reconciliação. Seis casos não medem taxa estatística de confiabilidade ou disponibilidade do provedor.
+
+Na inspeção, o executor de consultas existente já estava habilitado, com agenda no **dia 20 às 8h, America/Sao_Paulo**. O piloto não ativou/desativou esse executor nem alterou a agenda. A preferência pelo dia 25 permanece uma configuração da futura ativação. Avisos automáticos continuam fora do escopo implementado.
+
 ## Critérios antes da ativação operacional
 
 1. Integração Fiscal e revisão concluídas localmente; conferir a versão efetivamente publicada antes da ativação.
 2. As 177 migrations da integração final estão aplicadas no banco local isolado, com os 32 cenários PostgreSQL repetidos. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
-3. Fazer piloto fiscal de leitura controlado, com amostra de documentos pagos/não localizados/retificados e comparação manual, respeitando orçamento. Não realizado nesta entrega.
+3. Fazer piloto fiscal de leitura controlado, com amostra de documentos pagos/não localizados/retificados e comparação manual, respeitando orçamento. A rodada descrita abaixo deve conservar suas lacunas de cobertura; não equivale a comprovar toda a carteira.
 4. Conferir agenda salva, fuso, empresas elegíveis, flag do executor e próxima execução. Dia 25 é preferência operacional, não garantia de atualização da Receita.
 5. Observar uma execução realmente disparada pela agenda antes de habilitar mensagens a clientes.
 
 ## Plano posterior preservado: acompanhamento de guias
 
 Após consulta suficientemente recente e completa, criar pendência no portal e comunicação deduplicada por obrigação/destinatário. A mensagem deverá dizer que o pagamento **não foi localizado na Receita até aquela consulta**, permitindo recalcular ou informar pagamento. A declaração do cliente exige comprovante no novo fluxo proposto, fica separada da confirmação oficial e encaminha divergências à equipe.
+
+Antes de gerar pendência, resolver a versão vigente da obrigação. Um índice antigo `dasPago:false` ou uma guia histórica ainda `OPEN` não autoriza aviso quando existe documento substituto pago. Recalcular/retificar precisa preservar a relação entre versões; documento exato é necessário para interpretar o retorno, mas sozinho não prova que a versão ainda deve ser cobrada. Se a cadeia de substituição estiver ambígua, encaminhar à conferência interna.
 
 Ainda não implementados: geração dessas pendências, templates Meta, disparo automático, coleta de comprovante para essa jornada e recálculo por ação da mensagem. Revalidar pagamento, identidade e versão antes de cada envio/recálculo; respeitar contatos compartilhados entre empresas, janela/template e consentimento existentes. Uma consulta inconclusiva deve gerar trabalho interno, nunca cobrança automática.
 

@@ -8,7 +8,7 @@ jest.mock("../SerproParcelamentoService.js", () => ({ SerproParcelamentoService:
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { SerproParcelamentoService } from "../SerproParcelamentoService.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "../SerproParcelaPagamentoService.js";
-const raw = { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
+const raw = { status: 200, contribuinte: { numero: "22222222000191", tipo: 2 }, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
   dataPagamento: 20260920, valorPagoArrecadacao: 100, pagamentoDebitos: [{ discriminacoesDebito: [{ principal: 100, juros: 0, multa: 0, total: 100 }] }] } };
 const consultar = jest.fn();
 const item = extra => ({ id: "p", portalClientId: "empresa", parcelamentoId: "contrato", anoMesParcela: "202609", numeroParcela: 3, valorPrevisto: 100,
@@ -35,6 +35,18 @@ test("confirma sem guia e sem abertura contábil, sem criar nenhum lançamento",
   expect(data).toMatchObject({ pagamentoStatus: "CONFIRMADO", valorPago: 100, pagamentoEm: new Date("2026-09-20Z") });
   expect(data).not.toHaveProperty("origemBaixa");
   expect(prisma.guide.updateMany).not.toHaveBeenCalled();
+});
+
+test.each([undefined, { numero: "11111111000191", tipo: 2 }])("serviço não confirma retorno sem CNPJ correspondente ao cadastro: %j", async contribuinte => {
+  consultar.mockResolvedValueOnce({ raw: { ...raw, contribuinte } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(r).toMatchObject({ pago: null, status: "DIVERGENTE", resultadoConsulta: { identidadeConferida: false, estado: "PARCIAL_OU_DIVERGENTE" } });
+  expect(prisma.parcela.updateMany.mock.calls.every(([args]) => args.data.pagamentoStatus !== "CONFIRMADO" && !args.data.pagamentoEm)).toBe(true);
+});
+
+test("valorPrevisto decimal do banco é passado como texto, preservando validação do parser", async () => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ valorPrevisto: { toString: () => "100.00" } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: true, status: "CONFIRMADO" });
 });
 test("MEI usa sua modalidade e confirmação não requer regime atual da empresa", async () => {
   prisma.parcela.findFirst.mockResolvedValue(item({ parcelamento: { tipo: "PARCMEI", numeroParcelamento: "123" } }));
@@ -216,7 +228,7 @@ test.each([true, false])("declaração do cliente recebe consulta oficial %s, se
     clienteConfirmouEm: new Date("2026-09-21Z"), clienteConfirmouPorUserId: "cliente" };
   prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia }));
   prisma.guide.findUnique.mockResolvedValue(guia);
-  if (!pago) consultar.mockResolvedValueOnce({ raw: { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3, valorPagoArrecadacao: 0, dataPagamento: null } } });
+  if (!pago) consultar.mockResolvedValueOnce({ raw: { ...raw, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3, valorPagoArrecadacao: 0, dataPagamento: null } } });
   const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
   expect(consultar).toHaveBeenCalledTimes(1);
   expect(r.pago).toBe(pago);

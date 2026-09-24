@@ -21,7 +21,8 @@ function revisaoParcela(p) {
 
 function observacaoParcela(p, r, agora, cnpj, extra = {}) {
   const estado = r.status === "CONFIRMADO" ? "CONFIRMADO" : r.status === "NAO_LOCALIZADO" ? "NAO_LOCALIZADO" : r.status === "INDETERMINADO" ? "INDETERMINADO" : "PARCIAL_OU_DIVERGENTE";
-  const identidadeConferida = !["IDENTIFICACAO_DIVERGENTE", "PARCELA_DIVERGENTE", "DOCUMENTO_DIVERGENTE"].includes(r.motivo);
+  const identidadeConferida = !["IDENTIFICACAO_DIVERGENTE", "PARCELA_DIVERGENTE", "DOCUMENTO_DIVERGENTE",
+    "CNPJ_ESPERADO_INVALIDO", "CNPJ_AUSENTE", "CNPJ_DIVERGENTE"].includes(r.motivo);
   return {
     estado, fonte: `PARCELAMENTO_${p.parcelamento.tipo}`, consultadoEm: agora.toISOString(), cnpj: digits(cnpj),
     numeroDocumento: r.numeroDocumento ?? p.guia?.extracted?.numeroDocumento ?? p.guia?.extracted?.numeroDas ?? null,
@@ -74,8 +75,9 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
       ? p.guia.tributosParcela.reduce((total, t) => total + Number(t.principal || 0), 0) : null;
     const leituraPdf = lerComposicaoDoDocumento(p.guia);
     const principalPdf = leituraPdf?.tributos && !leituraPdf.recusa ? leituraPdf.tributos.reduce((s, t) => s + t.principal, 0) : null;
-    const minimo = extracted.principal ?? extracted.valorPrincipal ?? principalDocumental ?? principalPdf ?? p.valorPrevisto ?? p.guia?.valor;
-    const r = interpretarPagamentoParcela(raw, { numeroParcelamento: p.parcelamento.numeroParcelamento,
+    const minimo = extracted.principal ?? extracted.valorPrincipal ?? principalDocumental ?? principalPdf
+      ?? (p.valorPrevisto == null ? null : String(p.valorPrevisto)) ?? (p.guia?.valor == null ? null : String(p.guia.valor));
+    const r = interpretarPagamentoParcela(raw, { contribuinteCnpj: company.cnpj, numeroParcelamento: p.parcelamento.numeroParcelamento,
       anoMesParcela: p.anoMesParcela, numeroParcela: p.numeroParcela,
       numeroDocumento: extracted.numeroDocumento ?? extracted.numeroDas, valorMinimo: minimo,
       principalEsperado: extracted.principal ?? extracted.valorPrincipal ?? principalDocumental ?? principalPdf });
