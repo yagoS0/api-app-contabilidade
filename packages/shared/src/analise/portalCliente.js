@@ -14,7 +14,9 @@ export function disponibilidadeRelatorios(competenciasFechadas, referencia) {
 }
 export function validarPeriodoPortal({ de, ate, comparar = 'anterior' }, acesso) {
   if (!mesValido(de) || !mesValido(ate) || de > ate || de < acesso.de || ate > acesso.ate || !['anterior', 'ano'].includes(comparar)) throw new Error('PERIODO_INVALIDO');
-  return { de, ate, comparar };
+  const meses = acesso.competenciasFechadas.filter(m => m >= de && m <= ate).sort();
+  if (!meses.length) throw new Error('SEM_MESES_FECHADOS');
+  return { de: meses[0], ate: meses.at(-1), comparar };
 }
 // Mesma base da DRE, com grupos disjuntos: tributos e folha não são descontados duas vezes.
 export function cardsContabeis(dre) {

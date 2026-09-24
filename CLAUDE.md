@@ -1008,3 +1008,7 @@ Exigir no servidor fechamento contábil dos TRÊS MESES ANTERIORES AO ATUAL, pel
 ## Login do cliente por código — 24/09/2026
 
 Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão das rotas de autenticação. Branch codex/cliente-login-email, ainda sem publicação. Ver docs/login-email-seguranca-20260924.md para regras, migration, cenários e limites. Código de 8 dígitos, 10 minutos, cinco tentativas, reenvio após 60s e cinco envios por endereço/hora, consumo serializável. Apenas User CLIENT ativo com vínculo ativo, sem criar conta nem conceder permissões FIRM. Não usar e-mail geral da empresa/contatos como prova de acesso. Tokens vinculados à versão da senha, refresh separado de access; sessōes novas CLIENT vinculadas ao acesso e revogadas no logout. Não usar fallback de autenticação real para mock. Nenhum e-mail real enviado nos testes.
+
+
+## Períodos do portal do cliente — ajuste de 24/09/2026
+O período inicial usa o primeiro e último mês efetivamente fechado dentro da janela de 12 meses. Seleção mista considera somente fechados, sem banners sobre lacunas; gráficos omitem os meses abertos. Seleção sem nenhum fechamento informa diretamente no filtro e a API recusa com SEM_MESES_FECHADOS, sem gerar relatório vazio. Resultado identifica a competência no título e nas colunas. Ajuste local ainda não publicado.
