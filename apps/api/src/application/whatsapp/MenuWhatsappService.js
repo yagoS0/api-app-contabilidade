@@ -21,7 +21,7 @@ import { ehPedidoDeEmissao } from "../assistente/coletaEmissaoWhatsapp.js";
 import { chaveLeaseResponsavel, conferirContextoResponsavel, encaminharResponsavelParaEquipe } from "./AtendimentoResponsavelWhatsappService.js";
 import { vincularOpcoesAoContexto } from "./contextoMenuWhatsapp.js";
 import { resolverConsultaCliente, atenderConsultaCliente } from "./ConsultasClienteWhatsappService.js";
-import { pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
+import { declarouPagamento, pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
 import { pediuMenuWhatsapp, pediuMenuExplicitamente, pediuEquipeWhatsapp } from "./navegacaoWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
@@ -89,6 +89,7 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   if (!t) return null;
   if (pediuMenuWhatsapp(texto)) return "MENU";
   if (cliente) {
+    if (declarouPagamento(texto)) return "EQUIPE";
     if (ehPedidoDeEmissao(texto)) return "EMISSAO";
     if (/^nova (?:emissao|nota)$/.test(t)) return "EMISSAO";
     if (pedidoDeConsulta(texto)?.acao === "FATURAMENTO") return "FATURAMENTO";
@@ -277,6 +278,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const avisoRascunho = rascunhoPausado?.estado?.status === "PAUSADO" && new Date(rascunhoPausado.expiraEm) > agora
     ? " Há uma emissão pausada desta empresa. Escreva “retomar” para continuar ou “nova emissão” para começar outra." : "";
   const idRecebido = String(interacao?.id || "").trim();
+  const avisoPagamento = cliente && !idRecebido && declarouPagamento(texto);
   const menuExplicito = !idRecebido && pediuMenuExplicitamente(texto);
   let acao = idRecebido ? ACAO_POR_ID[idRecebido] || "ID_DESCONHECIDO" : acaoDoTextoLivre(texto, { cliente });
   if (!comercialPublico && !idRecebido && registro.contexto?.resultado?.acaoOperacao === "EMISSAO") acao = "EMISSAO";
@@ -448,7 +450,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     const corpo = rotularEmpresa(`Como posso ajudar? Escolha uma opção ou escreva seu pedido.${avisoRascunho}`, conversa);
     await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, tituloBotao: "Ver opções", tituloSecao: "Atendimento", linhas }) });
   } else if (acao === "EQUIPE") {
-    const corpo = `Encaminhei sua mensagem para a equipe. ${expedienteDoEscritorio(agora).mensagem}`;
+    const corpo = `${avisoPagamento ? 'Obrigado por avisar. Encaminhei sua mensagem à equipe para conferir o pagamento.' : 'Encaminhei sua mensagem para a equipe.'} ${expedienteDoEscritorio(agora).mensagem}`;
     await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
   } else if (["EMISSAO", "CANCELAMENTO"].includes(acao)) {

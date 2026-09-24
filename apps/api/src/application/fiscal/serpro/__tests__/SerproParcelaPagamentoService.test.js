@@ -98,7 +98,9 @@ test("lote inclui anteriores e exclui futuro, prioriza nunca consultadas e passa
     orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }] });
   expect(consultar).not.toHaveBeenCalled();
   expect(prisma.parcela.findMany.mock.calls[0][0].where.parcelamento.status).toEqual({ not: "EXCLUIDO" });
-  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { OR: [{ paymentStatus: "PAID" }, { baixada: true }] } } });
+  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { OR: [
+    { paymentStatus: "PAID", OR: [{ paymentStatusSource: { not: "CLIENTE" } }, { paymentStatusSource: null }] }, { baixada: true },
+  ] } } });
 });
 
 test.each([[[]], [[null, "", "  "]]])("seleção explícita vazia %j não amplia para todas as parcelas", async parcelaIds => {
@@ -199,6 +201,62 @@ test("guia vinculada usa observação append-only na mesma transação, sem lan�
   expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   expect(prisma.guidePaymentObservation.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ guideId: "g", state: "CONFIRMADO" }) }));
   expect(prisma.guide.update.mock.calls[0][0].data).toMatchObject({ paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-09-20Z"), extracted: { comprovante: { principal: 100, multa: 0, juros: 0 } } });
+});
+
+test.each(["MANUAL", "SERPRO", null])("parcela com guia PAID de origem %s preserva confirmação e não consulta", async paymentStatusSource => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ guia: { paymentStatus: "PAID", paymentStatusSource } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "already_paid" });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test.each([true, false])("declaração do cliente recebe consulta oficial %s, sem apagar declaração ou reabrir guia", async pago => {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3,
+    tipo: "SIMPLES", competencia: "2026-08", valor: 100, status: "PROCESSED", extracted: {}, tributosParcela: [],
+    paymentStatus: "PAID", paymentStatusSource: "CLIENTE", paymentConfirmedAt: new Date("2026-09-20Z"), paymentConfirmedByUserId: "cliente",
+    clienteConfirmouEm: new Date("2026-09-21Z"), clienteConfirmouPorUserId: "cliente" };
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia }));
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  if (!pago) consultar.mockResolvedValueOnce({ raw: { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3, valorPagoArrecadacao: 0, dataPagamento: null } } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(r.pago).toBe(pago);
+  const persistida = prisma.guide.update.mock.calls[0][0].data;
+  expect(persistida).not.toHaveProperty("clienteConfirmouEm");
+  expect(persistida).not.toHaveProperty("clienteConfirmouPorUserId");
+  if (pago) expect(persistida).toMatchObject({ paymentStatus: "PAID", paymentStatusSource: "SERPRO" });
+  else {
+    expect(persistida).not.toHaveProperty("paymentStatus");
+    expect(persistida).not.toHaveProperty("paymentStatusSource");
+    expect(persistida).not.toHaveProperty("paymentConfirmedAt");
+    expect(persistida).not.toHaveProperty("paymentConfirmedByUserId");
+  }
+});
+
+test("declaração do cliente com baixa existente não dispara consulta de parcela", async () => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ guia: { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", baixada: true } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "already_paid" });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test("observação mais recente da guia recusa também a parcela e conserva auditoria e cooldown da tentativa", async () => {
+  const ultimaConsulta = new Date("2026-09-20T12:00:00Z");
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3,
+    tipo: "SIMPLES", competencia: "2026-08", valor: 100, status: "PROCESSED", extracted: {}, tributosParcela: [] };
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia, pagamentoConsultadoEm: ultimaConsulta, pagamentoStatus: "NAO_LOCALIZADO" }));
+  prisma.guide.findUnique.mockResolvedValue({ ...guia, extracted: { consultaPagamento: {
+    estado: "INDETERMINADO", consultadoEm: "2026-09-24T15:01:00Z", observacaoId: "observacao-t1",
+  } } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(r).toMatchObject({ pago: null, aplicada: false, aplicadaGuia: false, motivo: "OBSERVACAO_SUPERADA" });
+  expect(prisma.guidePaymentObservation.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    state: "CONFIRMADO", applied: false, ignoredReason: "OBSERVACAO_SUPERADA",
+  }) }));
+  expect(prisma.parcela.updateMany.mock.calls.every(([args]) => !Object.hasOwn(args.data, "pagamentoStatus"))).toBe(true);
+  expect(prisma.parcela.updateMany.mock.calls.at(-1)[0].data).toEqual({ pagamentoConsultadoEm: new Date("2026-09-24T15:00:00Z") });
+  expect(prisma.guide.update).not.toHaveBeenCalled();
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia, pagamentoConsultadoEm: new Date("2026-09-24T15:00:00Z"), pagamentoStatus: "NAO_LOCALIZADO" }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "intervalo_minimo" });
+  expect(consultar).toHaveBeenCalledTimes(1);
 });
 
 test("recálculo de PDF da guia durante HTTP invalida resultado da parcela", async () => {

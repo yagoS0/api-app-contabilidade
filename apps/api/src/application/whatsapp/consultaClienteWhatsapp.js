@@ -1,5 +1,20 @@
 // Interpretação determinística de pedidos de consulta. Não decide empresa nem concede acesso.
 export const normalizarConsulta = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Relatar pagamento pede conferência humana; não equivale a pedir uma lista de guias PAID.
+// A primeira afirmação pode vir acompanhada de "pode conferir?", sem transformar perguntas,
+// hipóteses, negações ou campos de uma emissão em declaração de pagamento.
+export function declarouPagamento(texto) {
+  let t = normalizarConsulta(texto);
+  if (/(?:descricao|servico|tomador|cliente|valor)\s*[:=]/.test(t)) return false;
+  t = t.replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)\b[\s!,.]*/, '').trim();
+  const [, frase = '', fim = ''] = /^(.*?)([,;.!?]|$)/.exec(t) || [];
+  if (!frase || fim === '?' || /\b(?:nao|nunca|nem|talvez|acho|se|quando|vou|vamos|preciso|quero|devo)\b/.test(frase)) return false;
+  if (/^(?:(?:eu|nos)\s+)?(?:ja\s+)?(?:paguei|pagamos|efetuei (?:o )?pagamento|realizei (?:o )?pagamento|fiz (?:o )?pagamento)\b/.test(frase)) return true;
+  if (/^(?:(?:essa|esta|a|o|as|os|minha|minhas|meu|meus|essas|estas|esse|este)\s+)?(?:guias?|das|darf|inss|fgts|boletos?)\b.*\b(?:pag[ao]s?|paguei|pagamos)\b/.test(frase)) return true;
+  if (/^(?:o )?pagamento\b.*\b(?:realizado|efetuado|feito)\b/.test(frase)) return true;
+  return /^(?:segue|enviei|estou enviando|encaminho)\s+(?:(?:o|meu|um)\s+)?comprovante\b/.test(frase);
+}
 export const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 export function mesAtualConsulta(agora = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(agora).map(x => [x.type, x.value]));
@@ -39,6 +54,7 @@ export function periodoDaConsulta(texto, agora = new Date()) {
 
 export function pedidoDeConsulta(texto, agora) {
   const t = normalizarConsulta(texto);
+  if (declarouPagamento(texto)) return null;
   if (!t || /\b(?:nao quero|nao precisa|nao envie|nao mande)\b/.test(t) || /(?:descricao|servico|tomador|cliente|valor)\s*[:=]/.test(t)) return null;
   if (/^(?:o que e|como funciona|por que)\b/.test(t)) return null;
   // Erro observado no atendimento; vocabulário fechado, sem aproximar nomes de empresas.

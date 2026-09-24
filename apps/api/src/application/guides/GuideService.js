@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
+import { capturarRevisaoConsulta } from "./ConsultaPagamentoGuiaService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   enviosPorGuia,
@@ -712,14 +713,29 @@ export async function createOrUpdateGuideFromProcessing({
     // inclusive uma confirmação concorrente, em vez de regravar o snapshot lido antes da API.
     for (const campo of ["paymentStatus", "paymentStatusSource", "paymentConfirmedAt", "paymentConfirmedByUserId"]) delete data[campo];
     // Cada tentativa relê a evidência; confirmação concorrente não é perdida.
-    savedGuide = await atualizarGuiaComEvidencia(prisma, existingGuideId, anterior => ({
-      ...data,
-      extracted: {
+    savedGuide = await atualizarGuiaComEvidencia(prisma, existingGuideId, anterior => {
+      const proximo = { ...data, extracted: {
         ...data.extracted,
         ...(anterior.extracted?.recalculoGuia ? { recalculoGuia: anterior.extracted.recalculoGuia } : {}),
         ...(anterior.extracted?.comprovante ? { comprovante: anterior.extracted.comprovante } : {}),
-      },
-    }));
+        ...(anterior.extracted?.pagamentoDeclaradoCliente ? { pagamentoDeclaradoCliente: anterior.extracted.pagamentoDeclaradoCliente } : {}),
+      } };
+      const consulta = anterior.extracted?.consultaPagamento;
+      if (consulta) {
+        const mesmoDocumento = capturarRevisaoConsulta(anterior) === capturarRevisaoConsulta({ ...anterior, ...proximo });
+        // Recapturar PDF não é uma consulta de pagamento. Preservar instante e ID da
+        // observação; se a obrigação mudou, mostrar a limitação, nunca uma prova atual.
+        proximo.extracted.consultaPagamento = mesmoDocumento ? consulta : {
+          ...consulta, estado: "INDETERMINADO", motivo: "DOCUMENTO_ALTERADO",
+          cobertura: "NAO_CONSULTADA", identidadeConferida: false,
+          evidencia: { ...consulta.evidencia, estadoObservado: consulta.evidencia?.estadoObservado || consulta.estado },
+        };
+        proximo.serproLastCheckedAt = anterior.serproLastCheckedAt;
+        proximo.serproLastCheckResult = mesmoDocumento ? anterior.serproLastCheckResult : "INDETERMINADO";
+        proximo.serproLastSeenAt = anterior.serproLastSeenAt;
+      }
+      return proximo;
+    });
   } else {
     // Na criação, valorOriginal = valor (mesmo número da 1ª captura, imutável depois).
     savedGuide = await prisma.guide.create({

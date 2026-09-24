@@ -38,7 +38,7 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
   const p = await prisma.parcela.findFirst({ where: { id: parcelaId, portalClientId }, include: includeParcela });
   if (!p) return { ok: false, skipped: "parcela_nao_encontrada" };
   if (p.parcelamento.status === "EXCLUIDO") return { ok: true, skipped: "contrato_excluido" };
-  if (parcelaPagamentoConfirmado(p)) return { ok: true, pago: true, skipped: "already_paid" };
+  if (parcelaPagamentoConfirmado(p, { aceitarDeclaracaoCliente: false })) return { ok: true, pago: true, skipped: "already_paid" };
   if (!["PARCSN", "PARCMEI"].includes(p.parcelamento.tipo)) return { ok: true, skipped: "modalidade_manual" };
   if (!/^\d+$/.test(String(p.parcelamento.numeroParcelamento || "")) || !/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.anoMesParcela || ""))) return { ok: true, skipped: "identificacao_incompleta" };
   const agora = new Date();
@@ -95,14 +95,13 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
       await assertActive();
       let recusada = !atual || revisaoParcela(atual) !== revisao ? "REFERENCIA_ALTERADA" : null;
       if (!recusada && digits(empresaAtual?.cnpj) !== digits(company.cnpj)) recusada = "EMPRESA_ALTERADA";
-      if (!recusada && parcelaPagamentoConfirmado(atual)) recusada = "PAGAMENTO_JA_REGISTRADO";
+      if (!recusada && parcelaPagamentoConfirmado(atual, { aceitarDeclaracaoCliente: false })) recusada = "PAGAMENTO_JA_REGISTRADO";
       if (recusada) return { ok: true, pago: null, status: "INDETERMINADO", aplicada: false, motivo: recusada, parcelaId: p.id,
         resultadoConsulta: { ...resultadoConsulta, estado: "INDETERMINADO", motivo: recusada, cobertura: "PARCIAL", identidadeConferida: false } };
       // Reavalia também a reserva: uma tentativa superada não escreve sobre outra.
-      const gravada = await tx.parcela.updateMany({ where: { id: p.id, portalClientId, origemBaixa: null,
-        baixadaEm: null, pagamentoConsultadoEm: agora, OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] },
-        data: { pagamentoStatus: r.status, pagamentoEvidencia: { raw, comprovante: r.comprovante || null, valorPago: r.valorPago ?? null, resultado: r.status, consultadoEm: agora.toISOString(), resultadoConsulta }, pagamentoErro: r.motivo || null,
-          ...(r.status === "CONFIRMADO" ? { pagamentoEm: r.pagoEm, valorPago: r.valorPago } : {}) } });
+      const whereReserva = { id: p.id, portalClientId, origemBaixa: null,
+        baixadaEm: null, pagamentoConsultadoEm: agora, OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] };
+      const gravada = await tx.parcela.updateMany({ where: whereReserva, data: { pagamentoConsultadoEm: agora } });
       if (!gravada.count) return { ok: true, pago: null, status: "INDETERMINADO", aplicada: false, motivo: "CONSULTA_SUPERADA", parcelaId: p.id,
         resultadoConsulta: { ...resultadoConsulta, estado: "INDETERMINADO", motivo: "CONSULTA_SUPERADA", cobertura: "PARCIAL" } };
       let registroGuia = null;
@@ -111,6 +110,23 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
           comprovante: r.status === "CONFIRMADO" ? r.comprovante : null, assertActive,
           client: { $transaction: fn => fn(tx) } });
       }
+      await assertActive();
+      if (registroGuia && (!registroGuia.aplicada || registroGuia.resultadoConsulta.estado !== resultadoConsulta.estado)) {
+        // A mesma prova não pode quitar a parcela quando foi recusada para sua guia.
+        // Conserva a observação recusada (sem rollback) e o estado anterior da parcela.
+        // pagamentoConsultadoEm continua sendo a tentativa real, que consumiu consulta:
+        // apagá-lo permitiria nova chamada paga imediata. Não é data de confirmação.
+        const motivo = registroGuia.motivoNaoAplicada || registroGuia.resultadoConsulta.motivo || "EVIDENCIA_NAO_APLICADA";
+        return { ok: true, pago: null, status: "INDETERMINADO", aplicada: false, motivo, parcelaId: p.id,
+          resultadoConsulta: { ...resultadoConsulta, estado: "INDETERMINADO", motivo, cobertura: "PARCIAL" },
+          aplicadaGuia: registroGuia.aplicada, resultadoConsultaGuia: registroGuia.resultadoConsulta };
+      }
+      const aplicada = await tx.parcela.updateMany({ where: whereReserva,
+        data: { pagamentoStatus: r.status, pagamentoEvidencia: { raw, comprovante: r.comprovante || null, valorPago: r.valorPago ?? null, resultado: r.status, consultadoEm: agora.toISOString(), resultadoConsulta }, pagamentoErro: r.motivo || null,
+          ...(r.status === "CONFIRMADO" ? { pagamentoEm: r.pagoEm, valorPago: r.valorPago } : {}) } });
+      // Após os locks e a reserva conferida, uma falha aqui aborta a aplicação positiva
+      // inteira. O caminho de recusa acima já retornou e preservou sua auditoria.
+      if (aplicada.count !== 1) throw Object.assign(new Error("A reserva da consulta foi alterada."), { code: "CONSULTA_SUPERADA" });
       return { ok: true, pago: r.status === "CONFIRMADO" ? true : r.status === "NAO_LOCALIZADO" ? false : null,
         status: r.status, motivo: r.motivo || null, parcelaId: p.id, aplicada: true, resultadoConsulta,
         ...(registroGuia ? { aplicadaGuia: registroGuia.aplicada, resultadoConsultaGuia: registroGuia.resultadoConsulta } : {}) };
@@ -150,7 +166,10 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parce
   while (results.length < limite) {
     await assertActive();
     const rows = await prisma.parcela.findMany({ where: { portalClientId: { in: ids }, origemBaixa: null, baixadaEm: null,
-      anoMesParcela: { not: null, lte: mesAtual }, guia: { isNot: { OR: [{ paymentStatus: "PAID" }, { baixada: true }] } },
+      anoMesParcela: { not: null, lte: mesAtual }, guia: { isNot: { OR: [
+        { paymentStatus: "PAID", OR: [{ paymentStatusSource: { not: "CLIENTE" } }, { paymentStatusSource: null }] },
+        { baixada: true },
+      ] } },
       parcelamento: { status: { not: "EXCLUIDO" }, tipo: { in: ["PARCSN", "PARCMEI"] }, numeroParcelamento: { not: null } },
       AND: [{ OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] },
         { OR: [{ pagamentoConsultadoEm: null }, { pagamentoConsultadoEm: { lte: new Date(Date.now() - 86_400_000) } }] },

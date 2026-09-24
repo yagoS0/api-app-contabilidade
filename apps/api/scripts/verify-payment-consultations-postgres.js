@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import http from "node:http";
+import https from "node:https";
+import { syncBuiltinESMExports } from "node:module";
 import { PrismaClient } from "@prisma/client";
 
 const arg = process.argv.indexOf("--url");
@@ -13,8 +16,11 @@ if (url.protocol !== "postgresql:" || url.hostname !== "127.0.0.1" || url.port !
 }
 process.env.DATABASE_URL = url.href;
 process.env.NODE_ENV = "test";
-globalThis.fetch = () => { throw new Error("HTTP proibido neste ensaio"); };
+const noHttp = () => { throw new Error("HTTP proibido neste ensaio"); };
+globalThis.fetch = http.request = http.get = https.request = https.get = noHttp;
+syncBuiltinESMExports();
 const { registrarConsultaPagamentoGuia } = await import("../src/application/guides/ConsultaPagamentoGuiaService.js");
+const { createOrUpdateGuideFromProcessing } = await import("../src/application/guides/GuideService.js");
 const { prisma: singleton } = await import("../src/infrastructure/db/prisma.js");
 const { claimScheduledRun, finishScheduledRun, runScheduledRoutine } = await import("../src/workers/scheduledRoutineService.js");
 const { localCalendar, describeSchedule } = await import("../src/workers/routineSchedule.js");
@@ -174,6 +180,24 @@ try {
   assert.equal((await save(foreignDocument, evidence("CONFIRMADO", { numeroDocumento: "76543210987654321" }))).motivoNaoAplicada, "IDENTIDADE_RESULTADO_DIVERGENTE");
   assert.equal((await read(foreignDocument.id)).paymentStatus, "OPEN");
   ok("replay após recálculo e observação de outro documento não confirmam guia");
+
+  const recaptured = await guide();
+  const checked = await save(recaptured, evidence("NAO_LOCALIZADO"));
+  const captureInput = { existingGuideId: recaptured.id, portalClientId: companyId,
+    parsed: { cnpj: recaptured.cnpj, tipo: recaptured.tipo, competencia: recaptured.competencia, valor: recaptured.valor },
+    source: recaptured.source, status: recaptured.status, hash: recaptured.hash, extracted: recaptured.extracted };
+  const sameCapture = await createOrUpdateGuideFromProcessing(captureInput);
+  assert.deepEqual(sameCapture.extracted.consultaPagamento, checked.guia.extracted.consultaPagamento);
+  assert.deepEqual(sameCapture.serproLastCheckedAt, checked.guia.serproLastCheckedAt);
+  const olderAfterCapture = await save(sameCapture, evidence("CONFIRMADO", { consultadoEm: "2026-09-25T10:00:00.000Z" }));
+  assert.equal(olderAfterCapture.motivoNaoAplicada, "OBSERVACAO_SUPERADA");
+  const newCapture = await createOrUpdateGuideFromProcessing({ ...captureInput, hash: `${recaptured.id}-v2` });
+  assert.equal(newCapture.extracted.consultaPagamento.estado, "INDETERMINADO");
+  assert.equal(newCapture.extracted.consultaPagamento.motivo, "DOCUMENTO_ALTERADO");
+  assert.deepEqual(newCapture.serproLastCheckedAt, checked.guia.serproLastCheckedAt);
+  assert.equal(await a.guidePaymentObservation.count({ where: { guideReferenceId: recaptured.id } }), 2);
+  assert.equal(newCapture.paymentStatus, "OPEN");
+  ok("recaptura preserva observação/cronologia e versão alterada pede nova consulta");
 
   await a.guide.delete({ where: { id: same.id } });
   const retained = await a.guidePaymentObservation.findMany({ where: { guideReferenceId: same.id } });

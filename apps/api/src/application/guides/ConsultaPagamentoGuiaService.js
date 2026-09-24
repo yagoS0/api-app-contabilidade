@@ -108,7 +108,7 @@ export async function registrarConsultaPagamentoGuia({
       motivoNaoAplicada = "DOCUMENTO_RESULTADO_AUSENTE";
     }
     const anterior = atual?.extracted?.consultaPagamento;
-    if (!motivoNaoAplicada && anterior?.consultadoEm && anterior.observacaoId !== repetida?.id
+    if (!motivoNaoAplicada && anterior?.consultadoEm && (!repetida || anterior.observacaoId !== repetida.id)
         && new Date(anterior.consultadoEm) >= new Date(observado.consultadoEm)) {
       motivoNaoAplicada = "OBSERVACAO_SUPERADA";
     }

@@ -31,6 +31,15 @@ function memoria(inicial) {
 }
 
 describe("observações fiscais de pagamento", () => {
+  test("projeção antiga sem observacaoId também impede resposta atrasada", async () => {
+    const g = guiaBase();
+    g.extracted.consultaPagamento = { estado: "INDETERMINADO", consultadoEm: "2026-09-25T12:00:00Z" };
+    const db = memoria(g);
+    const r = await registrarConsultaPagamentoGuia({ guide: g, resultadoConsulta: resultado("CONFIRMADO"), client: db.client });
+    expect(r).toMatchObject({ aplicada: false, motivoNaoAplicada: "OBSERVACAO_SUPERADA" });
+    expect(db.atual().paymentStatus).toBe("OPEN");
+    expect(db.registros[0]).toMatchObject({ state: "CONFIRMADO", applied: false });
+  });
   test.each(["INDETERMINADO", "PARCIAL_OU_DIVERGENTE", "NAO_APLICAVEL", "NAO_LOCALIZADO"])("%s não muda pagamento", async estado => {
     const g = guiaBase(), db = memoria(g);
     const r = await registrarConsultaPagamentoGuia({ guide: g, resultadoConsulta: resultado(estado), client: db.client });

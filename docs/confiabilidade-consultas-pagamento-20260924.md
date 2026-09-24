@@ -4,7 +4,7 @@
 
 Implementação local autorizada pelo usuário, com três agentes e revisão integrada. Prioridade: corrigir o significado e a rastreabilidade das consultas antes de implementar avisos de guias em aberto.
 
-O checkout `fix/confiabilidade-consultas` parte de `b5162066` e contém um snapshot local da tarefa Fiscal (`79716cbf`) como dependência. Esse snapshot inclui agenda, reservas e acompanhamento de parcelamentos ainda em desenvolvimento. A correção desta tarefa é o delta posterior ao snapshot; não publicar a dependência como se já fosse main. O workspace original da tarefa Fiscal não foi editado.
+O trabalho inicial `7598ece3` foi reaplicado na branch `fix/integracao-consultas` sobre a entrega real da tarefa Fiscal, `4c193a85` (PR 86, integrado à main `8d4c2ec3`). O snapshot intermediário `79716cbf` permanece somente no histórico local de desenvolvimento e não integra a branch de entrega. O workspace original da tarefa Fiscal não foi editado.
 
 Não foram ativados workers, alteradas agendas reais, enviados avisos, feitas consultas fiscais pagas ou usados tokens Anthropic. O plano de acompanhamento por portal/WhatsApp permanece posterior à homologação fiscal.
 
@@ -78,10 +78,26 @@ O aceite final complementar de PAGTOWEB/parcelas passou em 175 testes/6 suítes,
 
 Os relatórios locais de execução contêm os resultados finais das suítes da API, interface e compilação. A validação sintética não mede disponibilidade, atraso da Receita ou taxa real de acerto do parser em toda a carteira.
 
+## Rodada de integração e simulação entre agentes
+
+A segunda rodada separou três papéis: revisão fiscal da integração, execução concorrente em PostgreSQL real e simulação das falas do cliente/atendimento do contador. Os testes identificaram e corrigiram:
+
+- Recaptura de PDF apagava a projeção da última consulta. Mesma revisão agora conserva observação, data e declaração do cliente; revisão alterada mantém a referência histórica com `INDETERMINADO / DOCUMENTO_ALTERADO`, sem carimbar uma nova consulta.
+- Parcelas `PAID/CLIENTE` eram puladas. O consumidor oficial agora as verifica sem reabrir a guia nem apagar autoria/data declaradas. As confirmações manuais, oficiais e baixas anteriores continuam protegidas.
+- Uma observação mais recente da guia podia recusar o resultado antigo enquanto a parcela recebia `CONFIRMADO`. Guia, parcela e observação agora têm aplicação coerente na mesma transação. A recusa fica auditada e conserva o intervalo da tentativa real, evitando nova chamada paga imediata.
+- Projeção legada sem `observacaoId` escapava da comparação cronológica. A guarda também cobre esse estado.
+- “Já paguei” recebia resposta de consulta de guias. Agora encaminha à equipe pelo fluxo humano existente, preservando empresa e pausa de atendimento. Perguntas como “quais guias já paguei?” continuam consultas históricas, com mensagem vazia adequada ao período.
+
+PostgreSQL real: **15 verificações de guias/agenda e 17 de parcelas**, com dados sintéticos. O ensaio de parcelas mantém serviço/parser/Prisma reais e substitui somente credenciais e transporte; 15 chamadas sintéticas, sem SERPRO, Meta ou Anthropic. Inclui erro durante escrita e rollback, locks de empresa/contrato/guia, mudança cadastral, documento recalculado, baixa concorrente, duplicação, proprietário substituído, declaração CLIENTE e intervalo mínimo.
+
+O simulador executou 430 testes na primeira rodada e 165 na rodada final do chat. O revisor executou 155 testes em 11 suítes, com 72 repetidos depois do último ajuste. Esses totais se sobrepõem; não devem ser somados como casos únicos. O workflow `payment-consultations.yml` repete regressões e os dois ensaios PostgreSQL sem serviços externos.
+
+Limitação separada: um trigger artificial `DEFERRABLE INITIALLY DEFERRED` produziu rollback no banco, mas a pilha Prisma local retornou sucesso. O schema/código migrado não possui constraints diferidas e o cenário operacional de falha durante escrita passou. Não tratar essa injeção como aprovada; revalidar o ORM caso sejam introduzidas constraints diferidas. Os registros de diagnóstico ficam nos relatórios locais, sem alteração de dependências nesta tarefa.
+
 ## Critérios antes da ativação operacional
 
-1. Integrar a dependência Fiscal e este delta, revisar conflitos e gerar o Prisma Client da versão final.
-2. Aplicar migrations em homologação e repetir os ensaios isolados.
+1. Integração Fiscal e revisão concluídas localmente; conferir a versão efetivamente publicada antes da ativação.
+2. As 176 migrations estão aplicadas no banco local isolado. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
 3. Fazer piloto fiscal de leitura controlado, com amostra de documentos pagos/não localizados/retificados e comparação manual, respeitando orçamento. Não realizado nesta entrega.
 4. Conferir agenda salva, fuso, empresas elegíveis, flag do executor e próxima execução. Dia 25 é preferência operacional, não garantia de atualização da Receita.
 5. Observar uma execução realmente disparada pela agenda antes de habilitar mensagens a clientes.

@@ -234,6 +234,24 @@ describe("roteamento sem modelo", () => {
     expect(r).toMatchObject({ tratado: true, acao: "EQUIPE" });
     expect(client.conversaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ atendidaDesde: AGORA }) }));
   });
+  it.each(['já paguei', 'já paguei a guia', 'essa guia já foi paga', 'Bom dia, já paguei o DAS, pode conferir?', 'segue o comprovante'])('relato "%s" encaminha para conferência sem consulta, confirmação fiscal ou IA', async texto => {
+    const client = banco({ cliente: true, permissoes: ['GUIAS'] }), cloud = nuvem(), executar = jest.fn();
+    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto }), texto, agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
+    expect(r).toMatchObject({ tratado: true, acao: 'EQUIPE' });
+    expect(client.conversaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { atendidaDesde: AGORA } }));
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toContain('Obrigado por avisar. Encaminhei sua mensagem à equipe para conferir o pagamento.');
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toMatch(/pagamento confirmado|quitad|guia liberada para pagar|Receita confirmou/i);
+    expect(cloud.enviarLista).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(executar).not.toHaveBeenCalled();
+  });
+  it('relato de pagamento só anuncia encaminhamento depois de gravar a fila', async () => {
+    const client = banco({ cliente: true, permissoes: ['GUIAS'] }), cloud = nuvem(), executar = jest.fn();
+    client.conversaWhatsapp.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(responderMenuWhatsapp({ registro: registro({ cliente: true, texto: 'já paguei' }), texto: 'já paguei', agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente })).rejects.toMatchObject({ codigo: 'AUTOMACAO_INVALIDADA' });
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(executar).not.toHaveBeenCalled();
+  });
   it("o aviso de encaminhamento depende da gravação e a falha de transporte preserva a fila", async () => {
     const client = banco({ cliente: true }), cloud = nuvem();
     client.conversaWhatsapp.updateMany.mockResolvedValueOnce({ count: 0 });
