@@ -141,14 +141,30 @@ describe("import — casa pelo reduzido e só acrescenta", () => {
   });
 });
 
-describe("import GLOBAL — propaga para as contas PRÓPRIAS das empresas", () => {
-  it("acrescenta `codigoCompleto` na conta da empresa, sem tocar nome/tipo/natureza", async () => {
+describe("import GLOBAL — preserva as contas PRÓPRIAS das empresas", () => {
+  it("preserva a conta 286 dos sócios e sua classificação ao importar o global", async () => {
+    const propria = { id: "socio", portalClientId: "empresa-1", codigo: "286", nome: "SOCIO EMPRESA A", tipo: "PASSIVO", natureza: "CREDORA", codigoCompleto: "211990001", analitica: true };
+    mockContas.push({ ...propria });
+    await importChartOfAccountsFromBuffer({ portalClientId: null, buffer: csv("211880001;SOCIOS PADRAO;286;0;0;0"), filename: "plano.csv" });
+    expect(mockContas.find(c => c.id === "socio")).toEqual(propria);
+  });
+  it("importar novamente na empresa atualiza só a própria 286", async () => {
+    mockContas.push({id:"global286",portalClientId:null,codigo:"286",nome:"PADRAO"});
+    mockContas.push({id:"outra286",portalClientId:"empresa-2",codigo:"286",nome:"OUTRO SOCIO"});
+    await importChartOfAccountsFromBuffer({portalClientId:"empresa-1",buffer:csv("286;SOCIO A;PASSIVO;CREDORA"),filename:"plano.csv"});
+    await importChartOfAccountsFromBuffer({portalClientId:"empresa-1",buffer:csv("286;SOCIO NOVO;PASSIVO;CREDORA"),filename:"plano.csv"});
+    expect(mockContas.filter(c=>c.portalClientId==="empresa-1" && c.codigo==="286")).toHaveLength(1);
+    expect(mockContas.find(c=>c.portalClientId==="empresa-1").nome).toBe("SOCIO NOVO");
+    expect(mockContas.find(c=>c.id==="global286").nome).toBe("PADRAO");
+    expect(mockContas.find(c=>c.id==="outra286").nome).toBe("OUTRO SOCIO");
+  });
+  it("não altera código completo nem nome/tipo/natureza da empresa", async () => {
     mockContas.push({ id: "emp", portalClientId: "empresa-1", codigo: "5", nome: "CAIXA DA EMPRESA", tipo: "ATIVO", natureza: "DEVEDORA", codigoCompleto: null, analitica: null });
 
     await importChartOfAccountsFromBuffer({ portalClientId: null, buffer: csv(ARQUIVO_REAL), filename: "plano.csv" });
 
     const daEmpresa = mockContas.find((c) => c.id === "emp");
-    expect(daEmpresa.codigoCompleto).toBe("111010001");
+    expect(daEmpresa.codigoCompleto).toBeNull();
     expect(daEmpresa.nome).toBe("CAIXA DA EMPRESA"); // ⚠ o arquivo global não manda no nome dela
     expect(daEmpresa.codigo).toBe("5");
   });
@@ -173,14 +189,13 @@ describe("import GLOBAL — propaga para as contas PRÓPRIAS das empresas", () =
 });
 
 describe("import — a derivação NÃO cruza escopos", () => {
-  it("a empresa que só tem a MÃE (sem as filhas) sai ANALÍTICA — o erro tem direção segura", async () => {
-    // A empresa tem só a conta "1" (completo "1"). No global ela é sintética; no plano DELA não há
-    // filha nenhuma, então ela sai analítica — continua sugerível, que é o estado de hoje.
+  it("import global não classifica nem preenche a conta própria sem código completo", async () => {
+    // A conta global é sintética; a própria permanece sem resposta, sem herdar código ou filhas.
     mockContas.push({ id: "emp1", portalClientId: "empresa-1", codigo: "1", nome: "ATIVO DA EMPRESA", tipo: "ATIVO", natureza: "DEVEDORA", codigoCompleto: null, analitica: null });
 
     await importChartOfAccountsFromBuffer({ portalClientId: null, buffer: csv(ARQUIVO_REAL), filename: "plano.csv" });
 
     expect(mockContas.find((c) => c.codigo === "1" && !c.portalClientId).analitica).toBe(false);
-    expect(mockContas.find((c) => c.id === "emp1").analitica).toBe(true);
+    expect(mockContas.find((c) => c.id === "emp1").analitica).toBeNull();
   });
 });

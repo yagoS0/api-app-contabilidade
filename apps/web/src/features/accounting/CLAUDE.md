@@ -697,3 +697,6 @@ nunca tinha aparecido na tela.
 API: `getFechamentoContabil`, `fecharFechamentoContabil`, `reabrirFechamentoContabil`
 (em `realApi`/`mockApi`). Backend valida por lançamento; o painel também pré-valida no
 cliente para feedback imediato. Empresa fechada reflete no card do dashboard (cor inteira).
+# Plano específico por empresa — 24/09/2026
+
+Em Lançamentos → Configurações → Plano de contas, Personalizar na empresa copia uma conta global para o cadastro específico (ex.: 286 com o nome dos sócios). Editar conta altera nome, tipo, natureza e código completo; reduzido permanece fixo porque identifica lançamentos existentes. Importação CSV/PDF da empresa já usa endpoint próprio. O global continua padrão para códigos sem personalização. Remover a conta própria faz o padrão global reaparecer, se existir. Não propagar futuras importações globais para contas próprias.

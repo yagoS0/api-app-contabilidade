@@ -105,6 +105,14 @@ export function ChartOfAccountsPage({
 }) {
   const isGlobal = scope === "GLOBAL";
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [editingAccount, setEditingAccount] = useState(null);
+  const formRef = useRef(null);
+  function editAccount(account) {
+    setEditingAccount(account);
+    setForm({ codigo: account.codigo, nome: account.nome, codigoCompleto: account.codigoCompleto || "", tipo: account.tipo, natureza: account.natureza });
+    setError(""); setMessage("");
+    formRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const [saving, setSaving] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -181,9 +189,14 @@ export function ChartOfAccountsPage({
     setError("");
     setSaving(true);
     try {
-      await onCreateAccount(form);
+      const personalizing = editingAccount && !isGlobal && editingAccount.scope === "GLOBAL";
+      if (editingAccount && !personalizing) {
+        const { codigo, ...changes } = form;
+        await onUpdateAccount(codigo, changes);
+      } else await onCreateAccount(form);
       setForm({ ...EMPTY_FORM });
-      setMessage("Conta adicionada. Confirme a criação no ERP para remover o aviso.");
+      setEditingAccount(null);
+      setMessage(personalizing ? "Conta personalizada nesta empresa. O plano global foi preservado. Confira a conta no ERP." : editingAccount ? "Conta atualizada." : "Conta adicionada. Confirme a criação no ERP para remover o aviso.");
     } catch (err) {
       const msg = err?.message;
       if (msg === "codigo_ja_existe") {
@@ -223,7 +236,7 @@ export function ChartOfAccountsPage({
   }
 
   async function handleDelete(codigo) {
-    if (!await confirmar({ titulo: "Excluir conta", texto: "A conta sai do plano. Lançamentos existentes não serão afetados.", itens: [`${codigo} · ${accounts.find(a => a.codigo === codigo)?.nome || "Conta"}`], acao: "Excluir conta", perigo: true })) return;
+    if (!await confirmar({ titulo: "Excluir conta", texto: isGlobal ? "A conta sai do plano global. Lançamentos existentes mantêm o código." : "A conta própria será removida. Se existir o mesmo código no plano global, ele voltará a ser usado nesta empresa, inclusive na identificação dos lançamentos existentes.", itens: [`${codigo} · ${accounts.find(a => a.codigo === codigo)?.nome || "Conta"}`], acao: "Excluir conta", perigo: true })) return;
     setSaving(true); setError("");
     try {
       await onDeleteAccount(codigo);
@@ -234,7 +247,7 @@ export function ChartOfAccountsPage({
   async function handleBulkDelete() {
     const ids = visibleIds.filter((id) => selectedIds.has(id));
     if (ids.length === 0) return;
-    if (!await confirmar({ titulo: `Excluir ${ids.length} conta(s)`, texto: "Estas contas saem do plano. Lançamentos existentes não serão afetados.", itens: ids.map(id => `${id} · ${accounts.find(a => a.codigo === id)?.nome || "Conta"}`), acao: "Excluir contas", perigo: true })) return;
+    if (!await confirmar({ titulo: `Excluir ${ids.length} conta(s)`, texto: isGlobal ? "Estas contas saem do plano global. Lançamentos existentes mantêm os códigos." : "As contas próprias serão removidas. Para códigos existentes no global, o padrão voltará a ser usado nesta empresa, inclusive nos lançamentos existentes.", itens: ids.map(id => `${id} · ${accounts.find(a => a.codigo === id)?.nome || "Conta"}`), acao: "Excluir contas", perigo: true })) return;
     setBulkBusy(true); setError(""); setMessage("");
     let ok = 0, fail = 0;
     const falhas = [];
@@ -299,7 +312,7 @@ export function ChartOfAccountsPage({
       } else if (errs.length > 0) {
         setMessage(`Importação concluída: ${created} criada(s), ${skipped} ignorada(s), ${errs.length} com erro.${sufixo}`);
       } else {
-        setMessage(`Importação concluída: ${created} conta(s) criada(s)${skipped > 0 ? `, ${skipped} ignorada(s)` : ""}.${sufixo}`);
+        setMessage(`Importação concluída: ${Number(result?.novas ?? created)} nova(s), ${Number(result?.atualizadas || 0)} atualizada(s)${skipped > 0 ? `, ${skipped} ignorada(s)` : ""}.${sufixo}`);
       }
     } catch (err) {
       const code = err?.message || "";
@@ -333,7 +346,7 @@ export function ChartOfAccountsPage({
       <div style={{ ...sectionStyle, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700 }}>
-            {isGlobal ? "Plano de Contas Global" : "Plano de Contas"}
+            {isGlobal ? "Plano de Contas Global" : "Plano de contas da empresa"}
           </h2>
           <p style={{ margin: "4px 0 0", color: PANEL.muted, fontSize: "0.875rem" }}>
             {isGlobal
@@ -346,6 +359,7 @@ export function ChartOfAccountsPage({
         </div>
         {onBack && <BackButton onClick={onBack} />}
       </div>
+      {!isGlobal && <p>As contas da empresa têm prioridade pelo código reduzido. Os demais códigos usam o plano global. Personalizar ou importar aqui altera somente esta empresa.</p>}
 
       {message && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(105,255,71,0.12)", color: PANEL.success, borderRadius: 8, fontSize: "0.9rem" }}>{message}</p>}
       {error && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(255,87,87,0.12)", color: PANEL.danger, borderRadius: 8, fontSize: "0.9rem" }}>{error}</p>}
@@ -354,7 +368,7 @@ export function ChartOfAccountsPage({
       {onImportFile && (
         <div style={sectionStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <span style={{ fontSize: "0.9375rem", color: PANEL.muted }}>Importar plano de contas:</span>
+            <span style={{ fontSize: "0.9375rem", color: PANEL.muted }}>{isGlobal ? "Importar plano global:" : "Importar plano desta empresa:"}</span>
             <label style={{ ...ACTION, cursor: "pointer" }}>
               {importLoading ? "Importando..." : "CSV / PDF"}
               <input ref={fileRef} type="file" accept=".csv,.pdf" style={{ display: "none" }} onChange={handleImportFile} disabled={importLoading} />
@@ -370,12 +384,12 @@ export function ChartOfAccountsPage({
       )}
 
       {/* Adicionar conta */}
-      <form onSubmit={handleCreate} style={sectionStyle}>
-        <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 700 }}>Adicionar conta</h3>
+      <form ref={formRef} onSubmit={handleCreate} style={sectionStyle}>
+        <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 700 }}>{editingAccount ? (!isGlobal && editingAccount.scope === "GLOBAL" ? "Personalizar conta nesta empresa" : "Editar conta") : "Adicionar conta"}</h3>
         <div className="chart-account-create-grid" style={{ display: "grid", gap: 10, alignItems: "end" }}>
           <label style={LABEL}>
             Código
-            <input type="text" value={form.codigo} onChange={(e) => handleField("codigo", e.target.value)} placeholder="ex: 464" style={FIELD} />
+            <input type="text" disabled={Boolean(editingAccount)} value={form.codigo} onChange={(e) => handleField("codigo", e.target.value)} placeholder="ex: 464" style={FIELD} />
           </label>
           <label style={LABEL}>
             Nome
@@ -407,8 +421,9 @@ export function ChartOfAccountsPage({
               ao lado do selo verde "Confirmada" da tabela logo abaixo, que precisa ser lido como
               estado. Ação primária usa o accent. */}
           <Button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ alignSelf: "end" }}>
-            {saving ? "..." : "Adicionar"}
+            {saving ? "..." : editingAccount ? "Salvar conta" : "Adicionar"}
           </Button>
+          {editingAccount && <Button type="button" variant="secondary" disabled={saving} onClick={() => { setEditingAccount(null); setForm({ ...EMPTY_FORM }); }}>Cancelar edição</Button>}
         </div>
         <p style={{ margin: "10px 0 0", color: PANEL.muted, fontSize: "0.8125rem" }}>
           <strong style={{ color: PANEL.text }}>Conta mãe</strong> é o código completo do ERP e é <strong>opcional</strong> —
@@ -556,6 +571,7 @@ export function ChartOfAccountsPage({
                       </td>
                       <td style={CELL}>
                         <span style={CODE}>{account.codigo}</span>
+                        {!isGlobal && !isAccountGlobal && <span style={{ marginLeft: 6, fontSize: "0.75rem", color: PANEL.accent }}>EMPRESA</span>}
                         {isAccountGlobal && (
                           <span style={{ marginLeft: 6, fontSize: "0.8125rem", fontWeight: 700, color: PANEL.page, background: "#8BE9FD", padding: "2px 6px", borderRadius: 999 }}>
                             GLOBAL
@@ -619,9 +635,10 @@ export function ChartOfAccountsPage({
                           : <span style={{ display: "inline-block", background: "rgba(105,255,71,0.18)", color: PANEL.success, borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px" }}>Confirmada</span>}
                       </td>
                       <td style={{ ...CELL, textAlign: "right", whiteSpace: "nowrap" }}>
+                        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => editAccount(account)}>{isReadOnly ? "Personalizar na empresa" : "Editar conta"}</Button>
                         {isReadOnly ? (
                           <span style={{ fontSize: "0.75rem", color: PANEL.muted, fontStyle: "italic" }}>
-                            Editar no plano global
+                            Padrão global
                           </span>
                         ) : (
                           <>

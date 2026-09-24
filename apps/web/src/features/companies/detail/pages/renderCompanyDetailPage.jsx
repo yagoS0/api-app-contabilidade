@@ -583,6 +583,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <Suspense fallback={<TabLoadingFallback />}>
           <ChartOfAccountsPage
+            key={selectedCompany.id || selectedCompany.companyId}
             accounts={accountingPanel.accounts || []}
             onCreateAccount={accountingPanel.onCreateAccount}
             onUpdateAccount={accountingPanel.onUpdateAccount}

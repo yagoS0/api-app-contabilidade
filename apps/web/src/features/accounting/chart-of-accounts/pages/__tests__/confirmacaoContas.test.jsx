@@ -1,6 +1,25 @@
 import { fireEvent,render,screen,waitFor,within } from '@testing-library/react';
 import { ChartOfAccountsPage } from '../renderChartOfAccountsPage';
 const accounts=[{codigo:'1',nome:'Caixa',tipo:'ATIVO',natureza:'DEVEDORA',status:'PENDENTE_ERP'},{codigo:'2',nome:'Banco',tipo:'ATIVO',natureza:'DEVEDORA',status:'PENDENTE_ERP'}];
+test('personaliza 286 na empresa sem editar o global',async()=>{
+ const create=jest.fn().mockResolvedValue({}), update=jest.fn();
+ render(<ChartOfAccountsPage accounts={[{codigo:'286',nome:'Sócios padrão',tipo:'PASSIVO',natureza:'CREDORA',scope:'GLOBAL'}]} onCreateAccount={create} onUpdateAccount={update}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Personalizar na empresa'}));
+ expect(screen.getByLabelText('Código',{exact:true})).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('Nome',{exact:true}),{target:{value:'Sócio da empresa A'}});
+ fireEvent.click(screen.getByRole('button',{name:'Salvar conta'}));
+ await waitFor(()=>expect(create).toHaveBeenCalledWith(expect.objectContaining({codigo:'286',nome:'Sócio da empresa A',tipo:'PASSIVO'})));
+ expect(update).not.toHaveBeenCalled();
+});
+test('edita conta própria e mantém o código reduzido',async()=>{
+ const update=jest.fn().mockResolvedValue({}),create=jest.fn();
+ render(<ChartOfAccountsPage accounts={[{codigo:'286',nome:'Sócio antigo',tipo:'PASSIVO',natureza:'CREDORA',scope:'COMPANY'}]} onUpdateAccount={update} onCreateAccount={create}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Editar conta',exact:true}));
+ fireEvent.change(screen.getByLabelText('Nome',{exact:true}),{target:{value:'Sócio atualizado'}});
+ fireEvent.click(screen.getByRole('button',{name:'Salvar conta'}));
+ await waitFor(()=>expect(update).toHaveBeenCalledWith('286',expect.objectContaining({nome:'Sócio atualizado'})));
+ expect(update.mock.calls[0][1]).not.toHaveProperty('codigo');expect(create).not.toHaveBeenCalled();
+});
 test('exclusão identifica conta e cancelar não escreve',async()=>{
  const excluir=jest.fn();render(<ChartOfAccountsPage accounts={accounts} onDeleteAccount={excluir}/>);
  fireEvent.click(screen.getAllByRole('button',{name:'Excluir'})[0]);

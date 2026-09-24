@@ -1,6 +1,13 @@
 import { prepararLote, validarPedidoLote } from '../exportacaoLote.js';
-import { entriesToCsv } from '../exportacaoIndividual.js';
+import { entriesToCsv, preflightExportacao } from '../exportacaoIndividual.js';
 const pedido={companyIds:['a','b'],competenciaInicio:'2026-08',competenciaFim:'2026-08'};
+test.each([false,true])('conferência usa status da conta própria independente da ordem (%s)',async(reverse)=>{
+ const prisma=client();
+ const contas=[{codigo:'1',portalClientId:'a',status:'PENDENTE_ERP'},{codigo:'1',portalClientId:null,status:'CONFIRMADA'},{codigo:'2',portalClientId:null,status:'CONFIRMADA'}];
+ prisma.chartOfAccount.findMany.mockResolvedValue(reverse?contas.reverse():contas);
+ const r=await preflightExportacao(prisma,'a','2026-08');
+ expect(r.alertas).toEqual(expect.arrayContaining([expect.objectContaining({motivo:expect.stringContaining('conta 1 ainda não confirmada')})]));
+});
 const entry={id:'e',competencia:'2026-08',data:new Date('2026-08-01T00:00:00Z'),historico:'Receita; teste',tipo:'RECEITA',status:'PENDENTE',lines:[{tipo:'D',conta:'1',valor:123.45},{tipo:'C',conta:'2',valor:123.45}]};
 function client(){return {portalClient:{findUnique:jest.fn(async({where})=>({id:where.id,razao:'Empresa '+where.id,cnpj:where.id==='a'?'11111111000111':'22222222000122'}))},accountingEntry:{findMany:jest.fn(async()=>[entry])},chartOfAccount:{findMany:jest.fn(async()=>[{codigo:'1',status:'CONFIRMADO'},{codigo:'2',status:'CONFIRMADO'}])},companyMonthlyCircular:{findUnique:jest.fn(async()=>({fechadoContabilEm:new Date()}))}};}
 async function conferir(prisma) {
