@@ -615,6 +615,7 @@ export function createAccountingEntriesRouter({ log }) {
 
     const TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
     if (!TIPOS.includes(tipo)) return res.status(400).json({ error: "tipo_invalido" });
+    if (!["DEVEDORA", "CREDORA"].includes(natureza)) return res.status(400).json({ error: "natureza_invalida" });
 
     // Override semantic: per-empresa pode coexistir com global de mesmo código.
     // Quando ambos existem, empresa tem prioridade na visualização (dedupe na rota GET).
@@ -657,6 +658,9 @@ export function createAccountingEntriesRouter({ log }) {
     if (body.nome !== undefined) data.nome = String(body.nome).trim();
     if (body.tipo !== undefined) data.tipo = String(body.tipo).toUpperCase();
     if (body.natureza !== undefined) data.natureza = String(body.natureza).toUpperCase();
+    if (data.nome !== undefined && !data.nome) return res.status(400).json({ error: "nome_required" });
+    if (data.tipo !== undefined && !["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"].includes(data.tipo)) return res.status(400).json({ error: "tipo_invalido" });
+    if (data.natureza !== undefined && !["DEVEDORA", "CREDORA"].includes(data.natureza)) return res.status(400).json({ error: "natureza_invalida" });
     // ⚠ `codigo` NÃO é editável por aqui, e nunca foi: `AccountingEntryLine.conta` aponta para ele
     // em texto, sem FK. `codigoCompleto` é o que se edita — a conta mãe, para análise.
     if (body.codigoCompleto !== undefined) data.codigoCompleto = String(body.codigoCompleto).trim() || null;

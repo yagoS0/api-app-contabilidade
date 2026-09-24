@@ -1,6 +1,7 @@
 // Contrato único usado na exportação individual e em lote.
 import { dataCivilBR } from '../../../utils/dataCivil.js';
 import { createHash } from 'node:crypto';
+import { resolverPlanoPorCodigo } from '../lib/gateContaSintetica.js';
 import { computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS } from '../fechamentoBlockers.js';
 function dedupePorTexto(itens) {
   const porMotivo = new Map();
@@ -102,10 +103,10 @@ export async function preflightExportacao(prisma, portalClientId, competencia, i
       const contasDoPlano = codigosUsados.length
         ? await prisma.chartOfAccount.findMany({
           where: { codigo: { in: codigosUsados }, OR: [{ portalClientId }, { portalClientId: null }] },
-          select: { codigo: true, status: true },
+          select: { codigo: true, status: true, portalClientId: true },
         })
         : [];
-      const porCodigo = new Map(contasDoPlano.map((c) => [c.codigo, c]));
+      const porCodigo = resolverPlanoPorCodigo(contasDoPlano);
 
       const alertas = [];
       for (const e of entries) {

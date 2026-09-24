@@ -20,7 +20,7 @@ test.each(["TRANSFERENCIA", "INATIVA"])("%s percorre análise pública, autoriza
   j.analises.push({ id: "f", cnpj: e.onboarding.cnpj, tipo: "SITFIS", status: "CONCLUIDA", resultado: { relatorioDisponivel: true } });
   expect(montarJornada(e).atual).toBe("fiscal");
   j.fiscalConferido = true; expect(montarJornada(e).atual).toBe("diagnostico");
-  j.diagnostico = { id: "d" }; expect(montarJornada(e).atual).toBe("devolutiva");
+  j.diagnostico = { id: "d", dados: { devolutiva: { certo: "Cadastro conferido.", atencao: "Limitações conferidas.", corrigir: "Correções definidas." }, regularizacao: { necessaria: false, justificativa: "Sem regularização no escopo conferido." } } }; expect(montarJornada(e).atual).toBe("devolutiva");
   j.devolutiva = { incerta: true }; expect(montarJornada(e).atual).toBe("devolutiva");
   j.devolutiva = { concluida: true }; expect(montarJornada(e).atual).toBe("proposta");
   e.propostas = [{ id: "pr", status: "ENVIADA" }]; expect(montarJornada(e).atual).toBe("proposta");

@@ -192,45 +192,6 @@ async function upsertAccount({ portalClientId, codigo, nome, tipo, natureza, cod
 }
 
 /**
- * Leva `codigoCompleto` do arquivo para as contas PRÓPRIAS das empresas — casando pelo REDUZIDO,
- * e só nele. Decisão do dono: *"atualiza tudo, mantém"* — o import atualiza o escopo global E as
- * contas próprias das empresas.
- *
- * ⚠ SÓ ACRESCENTA `codigoCompleto`. Nome, tipo e natureza da conta PRÓPRIA de uma empresa são dela;
- * o arquivo global não é autoridade sobre eles, e sobrescrevê-los apagaria em silêncio a
- * customização que motivou a empresa a ter conta própria.
- *
- * ⚠ NÃO CRIA CONTA NENHUMA. Conta do arquivo que a empresa não tem continua não existindo lá —
- * criar despejaria as 593 contas globais dentro de cada empresa, transformando um plano
- * compartilhado em 30 cópias.
- *
- * @returns {Promise<Set<string>>} os `portalClientId` que tiveram alguma conta tocada
- */
-async function propagarCodigoCompletoParaEmpresas(parsed) {
-  const comCompleto = parsed.filter((a) => a.codigoCompleto);
-  if (comCompleto.length === 0) return new Set();
-
-  const escoposTocados = new Set();
-  for (const acc of comCompleto) {
-    const alvos = await prisma.chartOfAccount.findMany({
-      where: { codigo: acc.codigo, portalClientId: { not: null } },
-      select: { id: true, portalClientId: true, codigoCompleto: true },
-    });
-    const desatualizadas = alvos.filter((a) => a.codigoCompleto !== String(acc.codigoCompleto));
-    if (desatualizadas.length === 0) {
-      for (const a of alvos) escoposTocados.add(a.portalClientId);
-      continue;
-    }
-    await prisma.chartOfAccount.updateMany({
-      where: { id: { in: desatualizadas.map((a) => a.id) } },
-      data: { codigoCompleto: String(acc.codigoCompleto) },
-    });
-    for (const a of alvos) escoposTocados.add(a.portalClientId);
-  }
-  return escoposTocados;
-}
-
-/**
  * Processa o arquivo enviado e retorna { ok, created, skipped, errors } ou error code.
  * @param {Object} opts
  * @param {string|null} opts.portalClientId - ID da empresa, ou null para escopo global
@@ -294,18 +255,8 @@ export async function importChartOfAccountsFromBuffer({ portalClientId, buffer, 
     }
   }
 
-  // ⚠ A PROPAGAÇÃO SÓ SAI DO IMPORT **GLOBAL**. O arquivo global é o plano do escritório e é
-  // autoridade sobre a conta mãe; o CSV que uma empresa sobe é dela, e deixá-lo reescrever o plano
-  // global (e o das outras 30 empresas) faria um upload de uma empresa mudar o de todas.
-  const escoposEmpresa = portalClientId == null
-    ? await propagarCodigoCompletoParaEmpresas(parsed)
-    : new Set();
-
-  // A derivação, escopo por escopo — nunca cruzando planos.
+  // Importação altera somente seu escopo; a empresa prevalece inclusive no código completo.
   const derivacao = { escopo: await rederivarAnaliticaDoEscopo(portalClientId ?? null), empresas: [] };
-  for (const empresaId of escoposEmpresa) {
-    derivacao.empresas.push({ portalClientId: empresaId, ...(await rederivarAnaliticaDoEscopo(empresaId)) });
-  }
 
   if (errors.length > 0) {
     // Log do primeiro erro no servidor para facilitar debug

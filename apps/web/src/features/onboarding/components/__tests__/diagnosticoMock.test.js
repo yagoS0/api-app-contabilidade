@@ -1,10 +1,11 @@
 import { criarMockComercial } from '../../../../api/mock/comercialMock';
+const devolutiva = { certo: 'Atividade e endereço conferidos.', atencao: 'Limites e pendências sintéticos.', corrigir: 'Execução restrita ao escopo conferido.' };
 
 async function preparado() {
   const o = { id: 'ficha-sintetica', origem: 'ABERTURA', versao: 1, dados: { atividadePretendida: 'Consultoria', municipioAtendimento: 'Cidade de teste', enderecoPretendido: 'Rua de exemplo, 10' } };
   const api = criarMockComercial({ onboardings: new Map([[o.id, o]]), persistir: jest.fn() });
   const base = `/onboardings/${o.id}`;
-  const { diagnostico } = await api.comercial(`${base}/jornada/diagnostico`, { versao: 1, achados: 'Atividade e endereço conferidos.', servicos: 'Abertura e acompanhamento mensal.' });
+  const { diagnostico } = await api.comercial(`${base}/jornada/diagnostico`, { versao: 1, devolutiva, servicos: 'Abertura e acompanhamento mensal.' });
   await api.comercial(`${base}/jornada/apresentacao`, { versao: 1, diagnosticoId: diagnostico.id, meio: 'Reunião de teste', evidencia: 'Escopo apresentado ao interessado.' });
   return { api, base, diagnostico };
 }
@@ -29,7 +30,7 @@ test.each(['enderecoPretendido', 'municipioAtendimento', 'atividadePretendida', 
   expect(r.jornada.diagnosticoAnterior).toMatchObject({ achados: diagnostico.dados.achados, servicos: diagnostico.dados.servicos });
   expect(r.jornada.devolutiva.concluida).toBe(false);
   await expect(api.comercial(`${base}/jornada/apresentacao`, { versao: 2, diagnosticoId: diagnostico.id, meio: 'Reunião antiga', evidencia: 'Apresentação antiga não valida dado novo.' })).rejects.toThrow();
-  const nova = await api.comercial(`${base}/jornada/diagnostico`, { versao: 2, achados: 'Dados atualizados conferidos.', servicos: 'Escopo revisto para a abertura.' });
+  const nova = await api.comercial(`${base}/jornada/diagnostico`, { versao: 2, devolutiva, servicos: 'Escopo revisto para a abertura.' });
   expect(nova.diagnostico.id).not.toBe(diagnostico.id);
   expect((await api.comercial(base)).jornada.devolutiva.concluida).toBe(false);
 });

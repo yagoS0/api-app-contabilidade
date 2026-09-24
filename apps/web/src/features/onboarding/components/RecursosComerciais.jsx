@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { descricaoMensagem, normalizarBuscaMensagem } from "../../whatsapp/lib/mensagensRapidas";
 import { CAMPOS_CONTRATO, variaveisDoModelo } from "../../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
+import { configuracaoModeloContratoValida, ORIGENS_CONTRATO } from "../../../../../../packages/shared/src/onboarding/modeloContrato.js";
 import "../commercial-library.css";
 
 const style = { width: "100%", padding: 8, background: "var(--bg-subtle)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5, marginBlock: 5 };
@@ -76,6 +77,10 @@ function prepararRecurso(r) {
     if (!dados.escritorio?.trim()) erros.push("Preencha o nome do escritório.");
     if (!/^\d{14}$/.test(dados.procuradorCnpj)) erros.push("Informe o CNPJ do procurador com 14 dígitos.");
     try { if (new URL(dados.linkAutorizacao).protocol !== "https:") throw new Error(); } catch { erros.push("Informe um endereço HTTPS válido para as instruções de autorização."); }
+  }
+  if (r.tipo === "CONTRATO") {
+    dados.recorrente = dados.recorrente === true;
+    if (!configuracaoModeloContratoValida(dados)) erros.push("Confira modalidade, origens e identificação do contratante. O modelo de pessoa física é próprio da abertura antes do CNPJ.");
   }
   return { erros, body: { tipo: r.tipo, chave, titulo, texto, dados } };
 }
@@ -172,7 +177,7 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar, onUsarMens
       </div> : <><label>Texto<textarea style={style} rows={10} value={editando.texto} onChange={e => setEditando({ ...editando, texto: e.target.value })} /></label>
         <p>Campos substituíveis: {(editando.tipo === "ORIENTACAO" ? variaveisDaOrientacao : variaveis).map(k => `{{${k}}}`).join(", ")}. Em mensagens rápidas, nome, CNPJ e serviço vêm do atendimento; os dados do escritório vêm da configuração aprovada. Os demais campos dependem do fluxo que preencherá o modelo.</p>
       </>}
-      {editando.tipo === "CONTRATO" && <div><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.recorrente === true} onChange={e => mudarDado("recorrente", e.target.checked)} /> Contabilidade recorrente</label><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.permitePreCnpj === true} onChange={e => mudarDado("permitePreCnpj", e.target.checked)} /> Modelo validado para contratação antes do CNPJ</label><p>Revise a minuta e substitua os marcadores de revisão antes de aprovar.</p></div>}
+      {editando.tipo === "CONTRATO" && <fieldset><legend>Quando usar este modelo</legend><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.recorrente === true} onChange={e => mudarDado("recorrente", e.target.checked)} /> Contabilidade recorrente</label><label style={{ display: "block" }}><input type="checkbox" checked={editando.dados.permitePreCnpj === true} onChange={e => mudarDado("permitePreCnpj", e.target.checked)} /> Modelo validado para contratação antes do CNPJ</label><label>Identificação do contratante<select style={style} value={editando.dados.identificacaoContratante || "CADASTRO"} onChange={e => mudarDado("identificacaoContratante", e.target.value)}><option value="CADASTRO">Conforme o cadastro e o texto do modelo</option><option value="PESSOA_JURIDICA">Empresa com CNPJ</option><option value="PESSOA_FISICA">Pessoa responsável pela abertura</option></select></label><p>Solicitações atendidas pelo texto:</p>{ORIGENS_CONTRATO.map(origem => <label key={origem} style={{ display: "block" }}><input type="checkbox" checked={(editando.dados.origens || ORIGENS_CONTRATO).includes(origem)} onChange={e => mudarDado("origens", e.target.checked ? [...(editando.dados.origens || ORIGENS_CONTRATO), origem].filter((v, i, a) => a.indexOf(v) === i) : (editando.dados.origens || ORIGENS_CONTRATO).filter(v => v !== origem))} />{{ ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" }[origem]}</label>)}<p>Revise o texto e seus campos antes de aprovar. Selecionar uma opção aqui não adapta as cláusulas automaticamente.</p></fieldset>}
       {editando.tipo === "CONTRATO" && <><h4>Valores padrão do formulário</h4><p>Preencha o que se repete entre contratos. Os dados da empresa e da proposta aceita completam o restante; valores e escopo aceitos ficam protegidos.</p><div style={grid}>{CAMPOS_CONTRATO.filter(c => !c.protegido && variaveisDoModelo(editando.texto).includes(c.chave)).map(c => <Campo key={c.chave} rotulo={c.rotulo} numero={c.tipo === "number"} valor={editando.dados.camposPadrao?.[c.chave]} onChange={v => mudarGrupo("camposPadrao", c.chave, v)} ajuda={c.tipo === "date" ? "Data no formato AAAA-MM-DD." : undefined} />)}</div></>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}><Button type="button" onClick={salvar}>Salvar nova versão em rascunho</Button><Button type="button" variant="secondary" onClick={() => { setEditando(null); setErros([]); }}>Fechar edição</Button></div>
     </fieldset>}

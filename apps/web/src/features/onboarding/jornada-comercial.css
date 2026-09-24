@@ -79,6 +79,9 @@
 .lead-stage-action > [role=tabpanel] > :first-child { margin-top: 0; }
 .lead-support > h4 { margin: 12px 0; font-size: 1rem; }
 .lead-support > dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
+.lead-analysis-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0 16px; }
+.lead-analysis-check summary { display: flex; justify-content: space-between; gap: 12px; }
+.lead-analysis-check summary span { font-weight: 400; flex-shrink: 0; color: var(--text-muted); }
 @container (max-width: 420px) {
   .lead-steps button { flex-direction: column; gap: 5px; padding: 9px; font-size: .8125rem; }
   .lead-step-number { flex-basis: auto; width: 22px; min-height: 22px; }

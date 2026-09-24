@@ -3,15 +3,19 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { exigirEscopo } from "./ComercialService.js";
 import { exigirGestor } from "./RecursosComerciaisService.js";
-import { calcularOpcoes, preencherTexto } from "./CatalogoComercial.js";
+import { calcularOpcoes, preencherTexto, pendenciasPoliticaComercial, normalizarDecisaoRegularizacao } from "./CatalogoComercial.js";
 import { encerrado } from "./LeadService.js";
 import { encryptSecret, decryptSecret } from "../../utils/crypto.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
 import { propostaParaCliente } from "./PropostaComercialPdf.js";
 import { prepararCamposContrato } from "./ContratoComercialCampos.js";
+import { motivoIncompatibilidadeContrato } from "../../../../../packages/shared/src/onboarding/modeloContrato.js";
 import { exigirPropostaDefinitiva, exigirContratoAvulsoConcluivel } from "./PoliticaJornadaComercial.js";
 const hash = v => crypto.createHash("sha256").update(v).digest("hex");
 const erro = (c, m, s = 409) => new OnboardingError(c, m, s);
+function exigirPoliticaComercial(proposta) {
+  if (proposta.status !== "ACEITA" && pendenciasPoliticaComercial(proposta.snapshot).length) throw erro("proposta_revisao_comercial", "A proposta precisa de revisão dos valores e do diagnóstico. Gere uma nova versão antes de aprovar, enviar ou aceitar.");
+}
 const evento = (tx, onboardingId, tipo, atorId, dados = {}) => tx.onboardingEvento.create({
   data: {
     onboardingId,
@@ -76,7 +80,7 @@ export function criarPropostasComerciais({
       propostas: propostas.map(({
         tokenHash,
         ...p
-      }) => p),
+      }) => p.status === "ACEITA" ? p : { ...p, snapshot: { ...p.snapshot, pendencias: pendenciasPoliticaComercial(p.snapshot) } }),
       contratos,
       documentos,
       atendimento,
@@ -123,10 +127,12 @@ export function criarPropostasComerciais({
         }
       });
       if (!catalogo) throw erro("catalogo_nao_aprovado", "Aprove uma versão do catálogo primeiro.");
+      const diagnostico = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       const proposta = calcularOpcoes({
         ficha: r,
         catalogo: catalogo.dados,
-        ajustes: body.ajustes || {}
+        ajustes: { ...body.ajustes, escopoAvulso: body.ajustes?.escopoAvulso || diagnostico?.dados?.servicos },
+        diagnostico: diagnostico?.dados
       });
       const publica = r.cnpj ? await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: r.cnpj, tipo: "PUBLICA", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } }) : null;
       const anterior = await tx.propostaComercial.findFirst({
@@ -145,6 +151,7 @@ export function criarPropostasComerciais({
           expiraEm: new Date(agora().getTime() + 7 * 86400000),
           snapshot: {
             ...proposta,
+            diagnosticoId: diagnostico?.id || null,
             catalogoId: catalogo.id,
             catalogoVersao: catalogo.versao,
             origem: r.origem,
@@ -191,9 +198,11 @@ export function criarPropostasComerciais({
         }
       });
       if (!p || encerrado(r) || p.status !== "RASCUNHO" || p.fichaVersao !== r.versao || p.expiraEm <= agora()) throw erro("proposta_desatualizada", "Gere uma proposta com os dados atuais.");
+      exigirPoliticaComercial(p);
       if (p.snapshot.pendencias?.length || !p.snapshot.opcoes?.length || p.snapshot.opcoes.some(o => o.unicoCentavos === null || o.mensalCentavos === null)) throw erro("proposta_incompleta", "Resolva as pendências de preço e escopo.");
       if (await tx.propostaComercial.findFirst({ where: { onboardingId: id, status: "ACEITA", revogadaEm: null } })) throw erro("contratacao_ja_aceita", "Existe uma contratação aceita. Preserve-a e inicie outra solicitação para alterar o escopo.");
       const jornada = await exigirPropostaDefinitiva({ db: tx, ficha: r, user });
+      if (p.snapshot.diagnosticoId !== jornada.diagnostico.id || JSON.stringify(p.snapshot.decisaoRegularizacao) !== JSON.stringify(normalizarDecisaoRegularizacao(jornada.diagnostico.dados.regularizacao))) throw erro("proposta_desatualizada", "O diagnóstico ou a decisão de regularização mudou. Gere uma proposta com o escopo atual.");
       await tx.propostaComercial.updateMany({
         where: {
           onboardingId: id,
@@ -230,6 +239,7 @@ export function criarPropostasComerciais({
     const ficha = await exigirEscopo(id, user, db);
     const proposta = await db.propostaComercial.findFirst({ where: { id: propostaId, onboardingId: id, revogadaEm: null } });
     if (!proposta || proposta.fichaVersao !== ficha.versao) throw erro("proposta_indisponivel", "Confira a versão atual da proposta.");
+    exigirPoliticaComercial(proposta);
     await conferirDiagnosticoDaProposta(db, proposta);
     const token = crypto.randomBytes(32).toString("base64url");
     const p = await db.propostaComercial.updateMany({
@@ -273,6 +283,7 @@ export function criarPropostasComerciais({
     });
     if (!p) throw erro("link_invalido", "Link inválido ou expirado.", 404);
     if (p.status !== "ACEITA") {
+      exigirPoliticaComercial(p);
       const ficha = await db.onboarding.findUnique({
         where: {
           id: p.onboardingId
@@ -288,6 +299,7 @@ export function criarPropostasComerciais({
       } else await db.$transaction(async tx => {
         const reserva = await tx.onboarding.updateMany({ where: { id: p.onboardingId, versao: p.fichaVersao, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: agora() } });
         if (!reserva.count) throw erro("proposta_alterada", "O atendimento mudou. Reabra a proposta revisada.");
+        exigirPoliticaComercial(p);
         await conferirDiagnosticoDaProposta(tx, p);
         const mudou = await tx.propostaComercial.updateMany({
           where: {
@@ -331,6 +343,7 @@ export function criarPropostasComerciais({
     const r = await exigirEscopo(id, user, db);
     const p = await db.propostaComercial.findFirst({ where: { id: propostaId, onboardingId: id, revogadaEm: null } });
     if (!p || (p.status !== "ACEITA" && (p.fichaVersao !== r.versao || encerrado(r) || new Date(p.expiraEm) <= agora()))) throw erro("proposta_indisponivel", "A proposta mudou ou expirou. Gere uma versão com os dados atuais.");
+    if (p.status !== "RASCUNHO") exigirPoliticaComercial(p);
     await conferirDiagnosticoDaProposta(db, p);
     return propostaParaCliente(p);
   }
@@ -352,7 +365,9 @@ export function criarPropostasComerciais({
       }
     });
     const opcao = p.snapshot.opcoes.find(o => o.chave === p.opcaoAceita);
-    if (modelo?.tipo !== "CONTRATO" || !modelo.aprovadoEm || modelo.dados.recorrente !== opcao.recorrente || !r.cnpj && modelo.dados.permitePreCnpj !== true) throw erro("modelo_incompativel", "Selecione um modelo aprovado para esta modalidade e identificação do contratante.");
+    const incompatibilidade = motivoIncompatibilidadeContrato({ modelo, onboarding: r, opcao });
+    if (incompatibilidade) throw erro("modelo_incompativel", incompatibilidade);
+    if (!modelo.aprovadoEm) throw erro("modelo_incompativel", "O modelo está em rascunho. Revise e aprove a versão na biblioteca antes de gerar o contrato.");
     const institucional = await db.recursoComercial.findFirst({
       where: { tipo: "INSTITUCIONAL", chave: "escritorio", aprovadoEm: { not: null } }, orderBy: { versao: "desc" }
     });

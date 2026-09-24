@@ -12,7 +12,8 @@ export function propostaParaCliente(p) {
     limitesPlano: s.limitesPlano ? Object.fromEntries(inteirosPublicos.filter(k => Number.isSafeInteger(s.limitesPlano[k]) && s.limitesPlano[k] >= 0).map(k => [k, s.limitesPlano[k]])) : null,
     servicosConferidos: s.servicosConferidos, limitacaoEscopo: s.limitacaoEscopo || null,
     conferenciaCadastro: s.conferenciaCadastro?.modo === "MANUAL" ? { modo: "MANUAL" } : null,
-    opcoes: (s.opcoes || []).map(o => ({ chave: o.chave, titulo: o.titulo, recorrente: o.recorrente, unicoCentavos: o.unicoCentavos, mensalCentavos: o.mensalCentavos, escopo: o.escopo })),
+    opcoes: (s.opcoes || []).map(o => ({ chave: o.chave, titulo: o.titulo, recorrente: o.recorrente, unicoCentavos: o.unicoCentavos, mensalCentavos: o.mensalCentavos, escopo: o.escopo, ...(o.regularizacaoIncluida === true ? { regularizacaoIncluida: true } : {}) })),
+    decisaoRegularizacao: typeof s.decisaoRegularizacao?.necessaria === "boolean" ? { necessaria: s.decisaoRegularizacao.necessaria, condicaoInicioMensal: s.decisaoRegularizacao.necessaria ? "APOS_REGULARIZACAO" : "SEM_REGULARIZACAO" } : null,
     regularizacaoCentavos: s.regularizacaoCentavos, taxasCentavos: s.taxasCentavos,
     taxasConfirmadas: s.taxasConfirmadas, condicoes: s.condicoes,
     ...(p.status === "RASCUNHO" ? { pendencias: s.pendencias || [] } : {}) };
@@ -99,7 +100,9 @@ export async function gerarPropostaPdf(p) {
   else texto(recorrente ? (perfil.consultoriaMensal === false ? "O acompanhamento segue o escopo apresentado acima. Consultoria gerencial mensal pode ser contratada separadamente." : "O acompanhamento segue as entregas e condições registradas no escopo desta proposta.") : "Acompanhamento da execução e da entrega do serviço descrito nesta proposta. Contabilidade mensal e consultoria gerencial não fazem parte da opção avulsa.");
   if (comparacao) texto("Serviços recorrentes e benefícios mensais se aplicam somente à opção de contabilidade mensal.", { pequeno: true });
 
-  doc.addPage();
+  // Se o escopo já ocupou outra página, aproveite o espaço após a gestão;
+  // uma quebra incondicional deixava uma página quase vazia na comparação.
+  if (doc.bufferedPageRange().count === 1 || doc.y > doc.page.height / 2) doc.addPage();
   secao(4, "Investimento");
   for (const o of p.opcoes || []) {
     const titulo = limpo(o.titulo || "Serviço");
@@ -110,8 +113,10 @@ export async function gerarPropostaPdf(p) {
     doc.roundedRect(x, y, largura, altura, 9).fill(o.recorrente ? tinta.destaque : tinta.suave);
     doc.font("Helvetica-Bold").fontSize(11).fillColor(o.recorrente ? "#FFFFFF" : tinta.titulo).text(titulo, x + 16, y + 14, { width: largura - 32 });
     doc.font("Helvetica-Bold").fontSize(29).text(`${dinheiro(o.recorrente ? o.mensalCentavos : o.unicoCentavos)}${o.recorrente ? " / mês" : ""}`, x + 16, y + alturaTitulo + 22, { width: largura - 32 });
-    doc.font("Helvetica").fontSize(9).fillColor(o.recorrente ? "#E1E6F0" : tinta.apoio).text(o.recorrente ? `Honorários mensais${o.unicoCentavos !== 0 ? ` · Serviço inicial: ${dinheiro(o.unicoCentavos)}` : " · Sem honorário inicial nesta opção"}` : "Pagamento pelo serviço avulso. Sem mensalidade nesta opção.", x + 16, y + altura - 24, { width: largura - 32 });
+    doc.font("Helvetica").fontSize(9).fillColor(o.recorrente ? "#E1E6F0" : tinta.apoio).text(o.recorrente ? `Honorários mensais${o.unicoCentavos !== 0 ? ` · Serviço inicial: ${dinheiro(o.unicoCentavos)}` : p.regularizacaoCentavos != null ? " · Regularização inicial orçada separadamente" : " · Sem honorário inicial nesta opção"}` : "Pagamento pelo serviço avulso. Sem mensalidade nesta opção.", x + 16, y + altura - 24, { width: largura - 32 });
     doc.x = x; doc.y = y + altura + 12;
+    if (o.regularizacaoIncluida) texto("O valor desta opção já inclui a regularização descrita no escopo. Não há cobrança adicional de regularização.", { pequeno: true });
+    else if (p.regularizacaoCentavos != null) texto(`Regularização inicial nesta opção: ${dinheiro(p.regularizacaoCentavos)}, além dos honorários acima.`, { pequeno: true });
   }
 
   secao(5, "Benefícios incluídos");
@@ -121,7 +126,8 @@ export async function gerarPropostaPdf(p) {
   if (recorrente && (limites.funcionarios != null || limites.documentosEntradaMes != null)) texto(`Limites do plano mensal: ${[limites.funcionarios != null ? `até ${limites.funcionarios} funcionários` : null, limites.documentosEntradaMes != null ? `até ${limites.documentosEntradaMes} documentos de entrada por mês` : null].filter(Boolean).join(" e ")}.`, { forte: true });
   if (recorrente && limites.blocoAdicionalQuantidade > 0 && limites.blocoAdicionalCentavos != null) texto(`Volume adicional: ${dinheiro(limites.blocoAdicionalCentavos)} por bloco de ${limites.blocoAdicionalQuantidade} documentos de entrada, conforme revisão do plano.`);
   if (recorrente && a.limites) linhas(a.limites);
-  texto(p.regularizacaoCentavos == null ? "Regularização de períodos anteriores: orçamento separado, quando necessária. Não incluída na mensalidade." : `Regularização: ${dinheiro(p.regularizacaoCentavos)}, separada da mensalidade.`);
+  texto(p.decisaoRegularizacao?.necessaria === false ? "Não foi identificada regularização anterior necessária no escopo conferido." : p.regularizacaoCentavos == null ? "Regularização de períodos anteriores: orçamento separado, quando necessária. Não incluída na mensalidade." : (p.opcoes || []).every(o => o.regularizacaoIncluida) ? "A regularização está incluída no valor do serviço avulso acima." : `Regularização: ${dinheiro(p.regularizacaoCentavos)}, separada da mensalidade e incluída na opção avulsa somente quando indicado acima.`);
+  if (recorrente && p.decisaoRegularizacao?.necessaria) texto("O início da contabilidade mensal fica condicionado à conclusão da regularização prevista nesta proposta.", { forte: true });
   texto(p.taxasCentavos == null ? "Taxas públicas: a confirmar com os órgãos competentes. Não incluídas nos honorários." : `Taxas públicas: ${dinheiro(p.taxasCentavos)}${p.taxasConfirmadas ? " (confirmadas)" : " (estimativa a confirmar)"}.`);
   if (p.limitacaoEscopo) linhas(p.limitacaoEscopo);
   if (p.conferenciaCadastro?.modo === "MANUAL") texto("Dados cadastrais conferidos manualmente pelo escritório; consulta automática não utilizada. Esta conferência não comprova regularidade fiscal.", { pequeno: true });

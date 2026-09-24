@@ -5499,8 +5499,8 @@ export function createMockApi() {
       // servidor discordarem sobre qual conta o contador está usando.
       const daEmpresa = mockChartOfAccounts.get(companyId) || [];
       const porCodigo = new Map();
-      for (const c of mockGlobalChartOfAccounts) porCodigo.set(String(c.codigo), c);
-      for (const c of daEmpresa) porCodigo.set(String(c.codigo), c);
+      for (const c of mockGlobalChartOfAccounts) porCodigo.set(String(c.codigo), { ...c, scope: "GLOBAL" });
+      for (const c of daEmpresa) porCodigo.set(String(c.codigo), { ...c, scope: "COMPANY" });
       return [...porCodigo.values()];
     },
     async createChartOfAccount(companyId, input) {

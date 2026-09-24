@@ -1,3 +1,4 @@
+import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 import assert from "node:assert/strict";
 import { criarJornadaLead } from "../src/application/onboarding/JornadaLeadService.js";
 import { iniciarAtendimento, registrarCampos } from "../src/application/onboarding/LeadService.js";
@@ -17,7 +18,7 @@ export async function verificarJornada({ db, user, ok }) {
     const a = await iniciarAtendimento({ conversaId: c.id, origem, atorId: user.id, client: db });
     return { c, a, o: await db.onboarding.findUnique({ where: { id: a.onboardingId } }) };
   };
-  const diagnostico = o => ({ versao: o.versao, achados: "Análise sintética conferida pelo contador.", servicos: "Serviços sintéticos para teste do atendimento." });
+  const diagnostico = o => ({ versao: o.versao, ...diagnosticoSintetico("Análise sintética conferida pelo contador."), servicos: "Serviços sintéticos para teste do atendimento." });
   const abertura = await criar("ABERTURA"), id = abertura.o.id;
   assert.equal((await j.carregar(id, user)).dadosPendentes.length, 4);
   await assert.rejects(j.diagnosticar(id, user, diagnostico(abertura.o)), e => e.code === "dados_incompletos");

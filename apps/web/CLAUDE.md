@@ -747,3 +747,6 @@ Resolvido na raiz: `babel.config.js` reescreve `import.meta.env` → `process.en
 ## Atendimento comercial de leads — setembro/2026
 
 WhatsApp usa `AtendimentoComercial` e `OrientacoesRapidas`; o detalhe do onboarding usa `FluxoComercial` e a biblioteca versionada `RecursosComerciais`. `/proposta/publica` é renderizada antes da autenticação do escritório. Rede passa pela API; `mock/comercialMock.js` tem dados fictícios e recusa integrações externas. Links comerciais mock dependem da sessão em memória. Ver `docs/fluxo-comercial-leads.md`.
+# Atendimento comercial validado — 23/09/2026
+
+Diagnóstico estruturado e contrato por modalidade/origem/PF-PJ usam metadados compartilhados. Baixa não oferece mensalidade; regularização é discriminada e vinculada ao diagnóstico. Alterar perfil deve preservar o rascunho de diagnóstico, com confirmação da nova versão, nunca remontar o formulário por ID de diagnóstico. Fichas demonstrativas antigas normalizam versão para zero antes da primeira escrita. Minuta permite prévia; somente modelo aprovado gera contrato. Dados, preços e textos privados não entram em mock ou bundle. Detalhes em `src/features/onboarding/CLAUDE.md` e `docs/ajustes-leads-validacao-20260923.md` na raiz.

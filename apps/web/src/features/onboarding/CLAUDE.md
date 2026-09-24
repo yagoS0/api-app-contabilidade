@@ -1,5 +1,11 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Diagnóstico, preços e contratos — 23/09/2026
+
+Diagnóstico mantém três abas: Devolutiva, Dados da análise e Conferências. Regime/CLT/documentos/gestão reutilizam a ficha. As três partes da devolutiva e, fora da abertura, decisão justificada de regularização são necessárias; consultas pendentes não bloqueiam um escopo delimitado. Preservar o componente pelo onboardingId: invalidar diagnóstico ao corrigir um dado não pode apagar texto ou roteiro em edição. Confirmar a versão atual antes de salvar. O primeiro preenchimento de informação antes ausente não invalida a análise no servidor.
+
+BAIXAR exige AVULSO/BAIXA e não oferece mensalidade. ValoresDaProposta recebe decisão do diagnóstico e distingue regularização incluída no avulso de adicional separado. FormularioContrato usa compatibilidade compartilhada PF/PJ, origem e modalidade; pré-CNPJ pede nome, CPF e endereço próprio quando usados pelo modelo. Rascunhos permitem prévia, geração exige aprovação. Honorários, total inicial, taxas e condição mensal são protegidos pela proposta aceita. Não embutir os modelos ou preços privados no frontend/mock.
+
 ## Próximo passo e rascunhos — 21/09/2026
 
 Jornada apresenta a etapa atual e suas pendências antes do mapa completo, recolhido sob demanda. Não usar opacidade para apagar descrições de etapas futuras: elas permanecem bloqueadas pela regra, com texto legível. Campos/diagnóstico continuam montados após a primeira abertura para preservar edição, rascunho e versão ao recolher. Biblioteca tem categorias, descrições e exclusão de versão ainda não aprovada. Na lista de entrada, descarte usa Modal compartilhado, evita duplicação e exibe recusa sem perder a ficha: atendimento com conversa vinculada deve ser conferido/encerrado, sem apagar o histórico. Não marcar passo concluído por abrir painel. Referência: `docs/chat-simples-20260921.md` na raiz.

@@ -30,7 +30,7 @@ test("rascunho antigo com justificativa ausente recupera valores e permite corri
     if (path.endsWith("/aprovar")) { proposta = { ...proposta, status: "APROVADA" }; return { proposta }; }
     if (path.endsWith("/link")) return { token: "teste-proposta" };
     return { onboarding: { id: "o", origem: "INATIVA", dados: { modalidadeServico: "RECORRENTE" }, versao: 3 }, propostas: [proposta], contratos: [], documentos: [], trabalhos: [],
-      jornada: { diagnostico: { dados: { servicos: "Regularização e serviços conferidos." } }, projecao: { atual: "proposta", proposta, passos: [{ id: "proposta", titulo: "Proposta", acessivel: true }] } } };
+      jornada: { diagnostico: { dados: { servicos: "Regularização e serviços conferidos.", regularizacao: { necessaria: false, justificativa: "Períodos anteriores conferidos sem execução pendente.", condicaoInicioMensal: "SEM_REGULARIZACAO" } } }, projecao: { atual: "proposta", proposta, passos: [{ id: "proposta", titulo: "Proposta", acessivel: true }] } } };
   }) };
   render(<FluxoComercial api={api} onboardingId="o" />);
   expect(await screen.findByRole("region", { name: "Corrigir proposta pendente" })).toBeVisible();

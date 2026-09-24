@@ -4,6 +4,11 @@
 
 Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.
 
+## Validação integral de leads — 23/09/2026
+
+Perguntas, negações e pausas não definem contratação nem objetivo da empresa parada. Baixa explícita segue avulso; o servidor também impede proposta mensal/comparação para esse objetivo em fichas manuais ou antigas. O diagnóstico tem devolutiva em três blocos, roteiro com evidências e decisão de regularização separada antes da mensalidade. Pendências e limites de consulta ficam visíveis, sem exigir API para avançar. O perfil inicialmente ausente pode ser completado; alteração de informação já conferida pede revisão e preserva o rascunho. JSONB exige comparação canônica para não duplicar confirmações concorrentes.
+
+Pisos e adicionais vêm do catálogo privado aprovado e ficam congelados na proposta; revisar rascunhos antigos antes de aprovar, gerar PDF/link ou aceitar. Propostas aceitas permanecem preservadas. Contratos distinguem modalidade, origem e identificação PF/PJ; abertura sem CNPJ pede modelo próprio e endereço da pessoa, sem reutilizar o endereço futuro da empresa. Regularização entra uma única vez no total inicial, taxas ficam separadas. Dados institucionais/CRC e textos/preços reais permanecem somente na biblioteca privada, nunca no Git. Minuta não equivale a modelo aprovado. Plano e validações em `docs/ajustes-leads-validacao-20260923.md`; testes locais sem Anthropic, mensagens, consultas pagas, assinatura ou cobrança reais.
 
 ## Proposta, contrato e chat na ficha — 21/09/2026
 
