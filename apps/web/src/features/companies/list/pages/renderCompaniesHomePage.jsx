@@ -600,7 +600,7 @@ export function CompaniesHomePage({
                       style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
                     >‹</button>
                     <span style={{ fontSize: "1.05rem", color: "var(--text-muted)", fontWeight: 600, minWidth: 150, textAlign: "center" }}>
-                      <small className="dashboard-home__context-label">Competência</small>{rotuloCompetencia(dashboardCompetencia)}
+                      {rotuloCompetencia(dashboardCompetencia)}
                     </span>
                     <button
                       type="button"
@@ -911,28 +911,7 @@ export function CompaniesHomePage({
               ⚠ A CONTAGEM VAI NO TEXTO, não no `badge` do componente — aquele badge é vermelho
               (`--state-danger`), e o 22 pareceria 22 problemas. O ponto colorido é a MESMA cor de
               categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
-          {modoVisao === "tabela" && (
-            <div className="dashboard-home__regimes">
-              <Tabs
-                mode="view"
-                align="start"
-                ariaLabel="Regime tributário"
-                items={abasDaCarteira.map((aba) => ({
-                  key: aba.key,
-                  title: aba.title,
-                  label: (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <span aria-hidden="true" style={{ color: aba.cor, fontSize: "0.72em" }}>●</span>
-                      {aba.rotulo}
-                      <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({aba.contagem})</span>
-                    </span>
-                  ),
-                }))}
-                active={abaAtiva}
-                onChange={trocarAba}
-              />
-            </div>
-          )}
+
 
           {/* ⚠⚠ O CALENDÁRIO É O PRIMEIRO RAMO **E** O FALLBACK. Antes a cadeia terminava em
               `… : tabela ? <tabela> : <CARDS>` — ou seja, o Cards era o `else` de tudo que não
@@ -1000,6 +979,29 @@ export function CompaniesHomePage({
                   {search.trim() ? ` · Busca: "${search.trim()}"` : ""}
                 </p>
               </div>
+          {modoVisao === "tabela" && (
+            <div className="dashboard-home__regimes">
+              <Tabs
+                mode="view"
+                pill={false}
+                align="start"
+                ariaLabel="Regime tributário"
+                items={abasDaCarteira.map((aba) => ({
+                  key: aba.key,
+                  title: aba.title,
+                  label: (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: aba.key === "DESATIVADAS" ? "var(--text-muted)" : undefined }}>
+                      <span aria-hidden="true" style={{ color: aba.cor, fontSize: "0.72em" }}>●</span>
+                      {aba.rotulo}
+                      <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({aba.contagem})</span>
+                    </span>
+                  ),
+                }))}
+                active={abaAtiva}
+                onChange={trocarAba}
+              />
+            </div>
+          )}
               <CompaniesTable
                 /* ⚠ A LISTA DA ABA ATIVA — a mesma de onde saem `idsVisiveis` e a seleção. */
                 companies={empresasVisiveis}
@@ -1024,8 +1026,8 @@ export function CompaniesHomePage({
                 erroDeCarga={error || null}
                 onLimparFiltros={() => { limparFiltros(); setSearch(""); }}
                 selecionados={selecionados}
-                onAlternarSelecao={alternarSelecao}
-                onSelecionarTodos={selecionarTodos}
+                onAlternarSelecao={abaAtiva === "DESATIVADAS" ? undefined : alternarSelecao}
+                onSelecionarTodos={abaAtiva === "DESATIVADAS" ? undefined : selecionarTodos}
               />
             </div>
             </>

@@ -8,7 +8,7 @@
 // por isso ela só aparece quando tem gente dentro.
 
 import {
-  ABA_OUTROS, ABA_PADRAO, ABA_PRESUMIDO, ABA_SIMPLES,
+  ABA_DESATIVADAS, ABA_OUTROS, ABA_PADRAO, ABA_PRESUMIDO, ABA_SIMPLES,
   abaDaEmpresa, abasVisiveis, contarPorAba, corDaAba, corRegime,
   descricaoDoRegime, empresasDaAba, normalizarAba, regimeDe, rotuloAba,
 } from "../abaRegime";
@@ -112,8 +112,7 @@ describe("as contagens saem da lista que a tabela vai mostrar", () => {
 
   test("conta cada aba", () => {
     expect(contarPorAba(carteira)).toEqual({
-      [ABA_SIMPLES]: 2, [ABA_PRESUMIDO]: 1, [ABA_OUTROS]: 1,
-    });
+      [ABA_SIMPLES]: 2, [ABA_PRESUMIDO]: 1, [ABA_OUTROS]: 1, [ABA_DESATIVADAS]: 0 });
   });
 
   test("a soma das abas é a lista inteira — ninguém fica fora de todas", () => {
@@ -122,8 +121,8 @@ describe("as contagens saem da lista que a tabela vai mostrar", () => {
   });
 
   test("lista vazia devolve zeros, não `undefined`", () => {
-    expect(contarPorAba([])).toEqual({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0 });
-    expect(contarPorAba(null)).toEqual({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0 });
+    expect(contarPorAba([])).toEqual({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0, [ABA_DESATIVADAS]: 0 });
+    expect(contarPorAba(null)).toEqual({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0, [ABA_DESATIVADAS]: 0 });
   });
 
   test("`empresasDaAba` devolve exatamente as linhas daquela aba", () => {
@@ -134,21 +133,21 @@ describe("as contagens saem da lista que a tabela vai mostrar", () => {
 
 describe("quais abas são desenhadas", () => {
   test("⚠ `Outros` NÃO aparece quando está vazia — é o estado de hoje (33 empresas, zero fora dos dois)", () => {
-    const abas = abasVisiveis({ [ABA_SIMPLES]: 22, [ABA_PRESUMIDO]: 11, [ABA_OUTROS]: 0 });
-    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO]);
+    const abas = abasVisiveis({ [ABA_SIMPLES]: 22, [ABA_PRESUMIDO]: 11, [ABA_OUTROS]: 0, [ABA_DESATIVADAS]: 0 });
+    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO, ABA_DESATIVADAS]);
   });
 
   test("⚠ `Outros` APARECE assim que houver uma empresa nela — ninguém some da página principal", () => {
-    const abas = abasVisiveis({ [ABA_SIMPLES]: 22, [ABA_PRESUMIDO]: 11, [ABA_OUTROS]: 1 });
-    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO, ABA_OUTROS]);
+    const abas = abasVisiveis({ [ABA_SIMPLES]: 22, [ABA_PRESUMIDO]: 11, [ABA_OUTROS]: 1, [ABA_DESATIVADAS]: 0 });
+    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO, ABA_OUTROS, ABA_DESATIVADAS]);
     expect(abas[2].contagem).toBe(1);
     // A aba que denuncia o inesperado precisa dizer o que ela é.
     expect(abas[2].title).toMatch(/sem regime cadastrado/i);
   });
 
   test("as duas fixas ficam mesmo zeradas — aba que some faria parecer que a carteira não tem aquele regime", () => {
-    const abas = abasVisiveis({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0 });
-    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO]);
+    const abas = abasVisiveis({ [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0, [ABA_DESATIVADAS]: 0 });
+    expect(abas.map((a) => a.key)).toEqual([ABA_SIMPLES, ABA_PRESUMIDO, ABA_DESATIVADAS]);
     expect(abas.every((a) => a.contagem === 0)).toBe(true);
   });
 
@@ -180,3 +179,5 @@ describe("a aba guardada não pode apontar para uma aba que não existe", () => 
     expect(normalizarAba(undefined, {})).toBe(ABA_PADRAO);
   });
 });
+
+test("suspensas saem do regime e voltam ao reativar",()=>{ const c=empresa("SIMPLES",{status:"SUSPENSA"}); expect(abaDaEmpresa(c)).toBe(ABA_DESATIVADAS); expect(empresasDaAba([c],ABA_SIMPLES)).toHaveLength(0); expect(contarPorAba([c])[ABA_DESATIVADAS]).toBe(1); expect(abaDaEmpresa({...c,status:"ATIVA"})).toBe(ABA_SIMPLES); expect(normalizarAba(ABA_DESATIVADAS,{})).toBe(ABA_DESATIVADAS); });

@@ -85,7 +85,7 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
 
   const destinations = <nav
     id={destinationsId}
-    className={`office-navigation__destinations${inCompany ? " office-navigation__destinations--popover" : ""}`}
+    className="office-navigation__destinations office-navigation__destinations--popover"
     aria-label={`Navegação de ${activeArea.label}`}
   >
     {activeArea.links.map((link) => <Link
@@ -94,7 +94,7 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
       className="office-navigation__destination"
       aria-current={matchesLink(link, pathname) ? "page" : undefined}
       title={link.to === "/whatsapp" ? resumoWhatsapp?.frase : undefined}
-    >{link.label}{link.to === "/whatsapp" ? unreadBadge : null}</Link>)}
+    >{link.label}</Link>)}
   </nav>;
 
   return <div className={`office-navigation${inCompany ? " office-navigation--company" : ""}`}>
@@ -107,9 +107,9 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
         className="office-navigation__area"
         aria-current={area.id === activeArea.id ? "location" : undefined}
         title={area.id === "relacionamento" ? resumoWhatsapp?.frase : undefined}
-      >{area.label}{area.id === "relacionamento" && activeArea.id !== "relacionamento" ? unreadBadge : null}</Link>)}
+      >{area.label}{area.id === "relacionamento" ? unreadBadge : null}</Link>)}
     </nav>
-    {inCompany && <div className="office-navigation__disclosure" ref={disclosureRef}>
+    <div className="office-navigation__disclosure" ref={disclosureRef}>
       <button
         type="button"
         className="office-navigation__trigger"
@@ -128,13 +128,11 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
             setDestinationsOpen(true);
           }
         }}
-      ><span className="office-navigation__trigger-label">Navegar</span>
-        <span className="office-navigation__chevron" aria-hidden="true">⌄</span>
+      >
         <svg className="office-navigation__menu-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
       {destinationsOpen && destinations}
-    </div>}
     </div>
-    {!inCompany && destinations}
+    </div>
   </div>;
 }

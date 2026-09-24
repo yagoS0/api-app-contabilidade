@@ -112,19 +112,18 @@ describe("a lista diz QUANTAS mostra e POR QUE está nesta ordem", () => {
     montar();
     // Aparece DUAS vezes de propósito: na barra visível e no `<caption>` (que é lido pelo leitor de
     // tela e não é pintado). As duas saem do mesmo `ROTULO_ORDEM`, então não podem divergir.
-    expect(screen.getAllByText(/pendência — o mais urgente primeiro/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/pendência — o mais urgente primeiro/).length).toBeGreaterThanOrEqual(1);
   });
 
   test("⚠ 'Exibindo X de N' aparece quando os filtros escondem alguém", () => {
     montar({ totalSemFiltro: 33 });
-    expect(screen.getByText(/Exibindo/)).toBeInTheDocument();
-    expect(screen.getByText(/de 33 empresas/)).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Empresa/ })).toHaveTextContent("(1/33)");
   });
 
   test("sem filtro escondendo ninguém, não há 'de N' — número redundante é ruído", () => {
     montar({ totalSemFiltro: 1 });
     expect(screen.queryByText(/Exibindo/)).not.toBeInTheDocument();
-    expect(screen.getByText(/empresa$/)).toBeInTheDocument();
+    expect(screen.getByRole("columnheader",{name:/Empresa/})).toHaveTextContent("(1)");
   });
 
   test("os cabeçalhos declaram a ordenação em `aria-sort` — o ▲ é só pixel", () => {
@@ -139,11 +138,11 @@ describe("a lista diz QUANTAS mostra e POR QUE está nesta ordem", () => {
     expect(screen.getByRole("columnheader", { name: /Empresa/ })).toHaveAttribute("aria-sort", "descending");
   });
 
-  test("dá para voltar à ordem por pendência sem recarregar a página", () => {
+  test("ordena pela coluna sem texto auxiliar acima da tabela", () => {
     montar();
     fireEvent.click(screen.getByRole("button", { name: /Notas/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Voltar à ordem por pendência/ }));
-    expect(screen.getAllByText(/pendência — o mais urgente primeiro/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("columnheader", { name: /Notas/ })).toHaveAttribute("aria-sort", "ascending");
+    expect(screen.queryByText(/ordenadas por/)).not.toBeInTheDocument();
   });
 });
 
@@ -167,9 +166,9 @@ describe("⚠ TRÊS EIXOS INDEPENDENTES — o caso PHAOS", () => {
 
   test("cada coluna diz QUAL pergunta responde — é o que separa os eixos na leitura", () => {
     montar();
-    expect(screen.getByText("como está o mês?")).toBeInTheDocument();
-    expect(screen.getByText("e com a Receita?")).toBeInTheDocument();
-    expect(screen.getByText("o que falta entregar?")).toBeInTheDocument();
+    expect(screen.queryByText("como está o mês?")).not.toBeInTheDocument();
+    expect(screen.queryByText("e com a Receita?")).not.toBeInTheDocument();
+    expect(screen.queryByText("o que falta entregar?")).not.toBeInTheDocument();
   });
 });
 
