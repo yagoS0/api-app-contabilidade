@@ -154,24 +154,25 @@ function buildMimeMessage({ from, to, subject, html, attachments }) {
 }
 
 export class EmailService {
-  async send({ to, subject, html, attachments }) {
+  async send({ to, subject, html, attachments, sensitive = false }) {
     if (USE_GMAIL_API) {
-      return this.sendViaGmailApi({ to, subject, html, attachments });
+      return this.sendViaGmailApi({ to, subject, html, attachments, sensitive });
     }
-    return this.sendViaSmtp({ to, subject, html, attachments });
+    return this.sendViaSmtp({ to, subject, html, attachments, sensitive });
   }
 
-  async sendViaGmailApi({ to, subject, html, attachments }) {
+  async sendViaGmailApi({ to, subject, html, attachments, sensitive = false }) {
     const gmail = await getGmailService();
     const mime = buildMimeMessage({ from: FROM, to, subject, html, attachments });
     const raw = Buffer.from(mime).toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
     await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
-    log.info({ to, from: FROM }, "E-mail enviado (Gmail API)");
+    log.info(sensitive ? { purpose: "authentication" } : { to, from: FROM }, "E-mail enviado (Gmail API)");
   }
 
-  async sendViaSmtp({ to, subject, html, attachments }) {
+  async sendViaSmtp({ to, subject, html, attachments, sensitive = false }) {
     const port = Number(SMTP_PORT || 587);
     const transporter = nodemailer.createTransport({
+      requireTLS: sensitive,
       host: SMTP_HOST,
       port,
       secure: port === 465, // TLS implícito em 465
@@ -189,7 +190,7 @@ export class EmailService {
       })),
     };
     await transporter.sendMail(mail);
-    log.info({ to, from: FROM }, "E-mail enviado (SMTP)");
+    log.info(sensitive ? { purpose: "authentication" } : { to, from: FROM }, "E-mail enviado (SMTP)");
   }
 }
 
