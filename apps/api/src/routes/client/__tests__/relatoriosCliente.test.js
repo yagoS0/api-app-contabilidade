@@ -52,3 +52,12 @@ test('cards não descontam folha e tributos duas vezes e ausência não vira zer
  expect(cards.entradas-cards.saidas-cards.folha-cards.impostos).toBe(cards.resultado);
  expect(cardsContabeis({semLancamento:true}).resultado).toBeNull();
 });
+test('seleção sem fechado responde diretamente, sem gerar relatório vazio',async()=>{
+ const r=preparar();
+ for(const tipo of ['analise','clientes']){const res=await request(r.app).get('/companies/a/relatorios/'+tipo+'?de=2026-01&ate=2026-02');expect(res.status).toBe(409);expect(res.body.error).toBe('SEM_MESES_FECHADOS');}
+ expect(r.analise).not.toHaveBeenCalled();expect(r.clientes).not.toHaveBeenCalled();
+});
+test('seleção mista ajusta as extremidades para os fechados',()=>{
+ const a=disponibilidadeRelatorios(['2026-01','2026-03',...meses],'2026-09');
+ expect(validarPeriodoPortal({de:'2025-09',ate:'2026-04'},a)).toEqual({de:'2026-01',ate:'2026-03',comparar:'anterior'});
+});

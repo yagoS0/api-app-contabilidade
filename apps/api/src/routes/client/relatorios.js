@@ -26,6 +26,7 @@ export function createRelatoriosClienteRouter({ client = prisma, acesso = requir
         }, {isolationLevel:'RepeatableRead',timeout:20000});
         return res.status(resultado.ok ? 200 : 409).json(resultado);
       } catch (err) {
+        if (err.message === 'SEM_MESES_FECHADOS') return res.status(409).json({ok:false,error:'SEM_MESES_FECHADOS',message:'Não há meses com fechamento contábil no período selecionado.'});
         const invalido = err.message === 'PERIODO_INVALIDO';
         return res.status(invalido ? 400 : 500).json({ok:false,error:invalido?'PERIODO_INVALIDO':'RELATORIO_INDISPONIVEL',message:invalido?'Escolha um intervalo dentro dos últimos 12 meses concluídos.':'Não foi possível carregar o relatório. Tente novamente.'});
       }
