@@ -30,6 +30,7 @@ const prefix = `payment-test-${randomUUID()}`;
 const companyId = `${prefix}-company`;
 const guideIds = [];
 const scheduleKeys = [];
+const realDateNow = Date.now;
 let checks = 0;
 const ok = title => console.log(`OK ${++checks}: ${title}`);
 const evidence = (estado = "CONFIRMADO", extra = {}) => ({
@@ -213,6 +214,9 @@ try {
   ok("histórico sobrevive à remoção da guia e observações não criam lançamentos");
 
   const scheduleNow = new Date();
+  // Exercita o minuto salvo sem aguardar o relógio nem aceitar catch-up.
+  scheduleNow.setUTCMinutes(0, 0, 0);
+  Date.now = () => +scheduleNow;
   const scheduleConfig = { enabled: true, frequency: "DAILY", hour: localCalendar(scheduleNow).hour };
   const slot = describeSchedule(scheduleConfig, scheduleNow).dueAt;
   const scheduleKey = `fiscal_schedule:pagamento:${slot}`;
@@ -237,12 +241,16 @@ try {
   scheduleKeys.push(firstClaim.key);
   const later = new Date(+scheduleNow + 6 * 60000);
   const nextClaim = await claimScheduledRun({ routine: leaseRoutine, config: scheduleConfig, now: later, db: b });
-  assert.notEqual(firstClaim.value.owner, nextClaim.value.owner);
+  assert.equal(nextClaim, null, "reserva expirada não autoriza outra consulta");
+  // Troca sintética de propriedade verifica o lock sem reconsultar a obrigação.
+  const replacement = { key: firstClaim.key, value: { ...firstClaim.value, owner: randomUUID() } };
+  await b.appSetting.update({ where: { key: firstClaim.key }, data: { value: replacement.value } });
   assert.equal(await finishScheduledRun(firstClaim, {}, null, { db: a, now: later }), false);
-  assert.equal(await finishScheduledRun(nextClaim, {}, null, { db: b, now: later }), true);
-  ok("troca real de proprietário da agenda impede finalização pelo executor antigo");
+  assert.equal(await finishScheduledRun(replacement, {}, null, { db: b, now: later }), true);
+  ok("reserva expirada não reconsulta; mudança de proprietário impede finalização antiga");
   console.log(`PASS: ${checks} verificações PostgreSQL, dados sintéticos, sem HTTP/IA.`);
 } finally {
+  Date.now = realDateNow;
   // Identificadores UUID exclusivos desta execução. Nenhuma limpeza global.
   await a.guidePaymentObservation.deleteMany({ where: { guideReferenceId: { in: guideIds } } });
   await a.guide.deleteMany({ where: { id: { in: guideIds } } });

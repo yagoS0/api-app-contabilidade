@@ -45,6 +45,7 @@ test("destinos são links reais e a mudança de área mantém o histórico e a v
   fireEvent.click(screen.getByText("Escolher tabela"));
   fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }));
   expect(screen.getByLabelText("rota")).toHaveTextContent("/whatsapp");
+  fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   expect(screen.getByRole("link", { name: "Entrada de clientes" })).toHaveAttribute("href", "/onboardings");
   expect(screen.getByRole("link", { name: "Pendências de e-mail" })).toHaveAttribute("href", "/guides/pending");
   fireEvent.click(screen.getByText("Voltar no escritório"));
@@ -115,9 +116,10 @@ test("destinos recolhidos continuam sendo links reais e preservam Ctrl+clique", 
   expect(screen.getByLabelText("rota").textContent).toBe("/funcoes-serpro");
 });
 
-test.each(["/companies", "/companies/new", "/apuracao"])("fora de uma empresa mantém destinos visíveis em %s", (route) => {
+test.each(["/companies", "/companies/new", "/apuracao"])("tela principal recolhe os destinos no menu em %s", (route) => {
   setup(route);
-  expect(screen.queryByRole("button", { name: "Navegar" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Navegação de Operação" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   expect(screen.getByRole("navigation", { name: "Navegação de Operação" })).toBeVisible();
 });
 

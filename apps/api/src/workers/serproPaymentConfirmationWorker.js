@@ -28,6 +28,7 @@ async function executarPagamento(options = {}) {
       portalClientId: options.portalClientId || null,
       competencia: options.competencia || null,
       retomadaPagamento: options.retomadaPagamento || null,
+      scheduledAt: options.scheduledAt || null,
       logger: log,
       assertActive: () => { lease.assertActive(); options.assertActive?.(); },
     });

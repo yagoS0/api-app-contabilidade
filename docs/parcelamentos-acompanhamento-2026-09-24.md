@@ -35,7 +35,7 @@ Revisão cruzada corrigiu perda do upload por Escape no cadastro, sobrescrita do
 
 Cada rotina tem agenda própria, fuso `America/Sao_Paulo`, suporte a 00h e ajuste dos dias 29–31 ao último dia disponível. Pagamento admite frequência diária configurável; configurações mensais existentes não são convertidas silenciosamente.
 
-As execuções ficam em `AppSetting` com identidade rotina/horário, reserva de cinco minutos renovável, até três tentativas por horário e espera de quinze minutos. A recuperação é limitada a 72 horas para agenda mensal e 24 horas para diária. O worker de ingestão também usa reserva renovável, cuja liberação não interfere no novo proprietário após expiração.
+As execuções ficam em `AppSetting` com identidade rotina/horário e reserva de cinco minutos renovável. Por orientação posterior do usuário, cada horário permite somente uma execução, sem novas tentativas automáticas ou recuperação de horários perdidos. Rotina e empresa precisam estar explicitamente habilitadas. Ver `agenda-fiscal-explicita-2026-09-24.md`. O worker de ingestão também usa reserva renovável, cuja liberação não interfere no novo proprietário após expiração.
 
 O status mostra habilitação efetiva, atividade do executor, último resultado, tentativa esgotada, execução atrasada e próximo horário. Falhas parciais de descoberta, captura, extrato e pagamento não aparecem como sucesso geral. A conferência ADN apresenta divergências e resultados inconclusivos por empresa.
 

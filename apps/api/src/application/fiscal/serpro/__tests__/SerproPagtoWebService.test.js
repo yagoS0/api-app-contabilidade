@@ -75,6 +75,14 @@ describe("PAGTOWEB: evidência positiva, sem inferir inadimplência", () => {
   it.each([null, "", "{}", { mensagem: "Nenhum documento encontrado" }, { arquivo: "a".repeat(300) }])("sem PDF (%j) permanece inconclusivo", async (saida) => {
     expect(await consultar(success({ dados: saida }))).toMatchObject({ pago: null, comprovantePdfBuffer: null, resultadoConsulta: { estado: "INDETERMINADO" } });
   });
+  it("retorno observado no piloto: Comprovante não existe não é negativa fiscal nem gatilho de aviso", async () => {
+    const r = await consultar(success({ ...envelope(), dados: null,
+      mensagens: [{ codigo: "Sucesso-PAGTOWEB-00000", texto: "Comprovante não existe." }] }));
+    expect(r).toMatchObject({ pago: null, resultadoConsulta: {
+      estado: "INDETERMINADO", motivo: "SEM_COMPROVANTE", cobertura: "PARCIAL", identidadeConferida: false,
+    } });
+    expect(pdfParse).not.toHaveBeenCalled();
+  });
   it.each([400, 401, 403, 404, 422, 429, 202, 204, 302])("HTTP %i não confirma pagamento nem consulta negativa", async (status) => {
     const r = await consultar(success(), status);
     expect(r).toMatchObject({ pago: null, resultadoConsulta: { estado: "INDETERMINADO", motivo: `HTTP_${status}` } });

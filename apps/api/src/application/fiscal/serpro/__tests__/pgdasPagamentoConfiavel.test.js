@@ -54,6 +54,47 @@ test("seleciona o documento exato, não o primeiro DAS pago antigo", () => {
   expect(parse(response)).toMatchObject({ dasPago: null, resultadoConsulta: { motivo: "MULTIPLOS_DOCUMENTOS_NO_PERIODO" } });
 });
 
+test("negativa do DAS antigo mantém documento exato e impede aviso se outra versão já foi paga", () => {
+  const r = parse(payload([op(DOC, false), op(DOC2, true)]), { numeroDocumento: DOC });
+  expect(r.resultadoConsulta).toMatchObject({ estado: "NAO_LOCALIZADO", numeroDocumento: DOC,
+    evidencia: { periodoPgdas: { competencia: "2026-08", cobertura: "COMPLETA", impedimentoAviso: "OUTRO_DAS_PAGO_NO_PERIODO",
+      documentos: [{ numeroDocumento: DOC, dasPago: false }, { numeroDocumento: DOC2, dasPago: true }] } } });
+});
+
+test("dois DAS não pagos têm vigência ambígua e não autorizam aviso pelo índice individual", () => {
+  const r = parse(payload([op(DOC, false), op(DOC2, false)]), { numeroDocumento: DOC });
+  expect(r.dasPago).toBe(false);
+  expect(r.resultadoConsulta.evidencia.periodoPgdas.impedimentoAviso).toBe("MULTIPLOS_DOCUMENTOS_NO_PERIODO");
+});
+
+test.each([op(DOC2, "false"), op("123", true), { indiceDas: "inválido" }, null])("operação incompleta no PA impede aviso sem alterar sinal exato %j", invalida => {
+  const r = parse(payload([op(DOC, false), invalida]), { numeroDocumento: DOC });
+  expect(r.dasPago).toBe(false);
+  expect(r.resultadoConsulta.evidencia.periodoPgdas).toMatchObject({ cobertura: "PARCIAL", impedimentoAviso: expect.any(String) });
+});
+
+test("documento único false é elegível; duplicata idêntica não inventa uma segunda versão", () => {
+  const r = parse(payload([op(DOC, false), op(DOC, false)]), { numeroDocumento: DOC });
+  expect(r.resultadoConsulta.evidencia.periodoPgdas).toEqual({ competencia: "2026-08", cobertura: "COMPLETA", impedimentoAviso: null,
+    documentos: [{ numeroDocumento: DOC, dasPago: false }] });
+});
+
+test("retificadora posterior à guia exata conserva negativo mas impede aviso da obrigação", () => {
+  const r = parse(payload([op(DOC, false), { indiceDeclaracao: { dataHoraTransmissao: "20260922120000" } }]), { numeroDocumento: DOC });
+  expect(r.dasPago).toBe(false);
+  expect(r.resultadoConsulta.evidencia.periodoPgdas.impedimentoAviso).toBe("DECLARACAO_POSTERIOR_OU_SEM_DATA");
+});
+
+test("DAS pago de outro PA não impede aviso do único DAS false do PA consultado", () => {
+  const response = { dados: JSON.stringify({ periodos: [
+    { periodoApuracao: 202607, operacoes: [op(DOC2, true)] },
+    { periodoApuracao: 202608, operacoes: [op(DOC, false)] },
+  ] }) };
+  expect(parse(response, { numeroDocumento: DOC }).resultadoConsulta.evidencia.periodoPgdas).toEqual({
+    competencia: "2026-08", cobertura: "COMPLETA", impedimentoAviso: null, documentos: [{ numeroDocumento: DOC, dasPago: false }],
+  });
+});
+
 test("seleciona o período correto em resposta anual e nunca transfere pagamento entre empresas", () => {
   const response = { dados: JSON.stringify({ periodos: [
     { periodoApuracao: 202607, operacoes: [op(DOC, true)] },

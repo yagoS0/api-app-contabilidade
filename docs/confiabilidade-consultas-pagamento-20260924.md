@@ -114,13 +114,25 @@ Seis chamadas únicas registradas como `ok`, HTTP 200, sem forçar guarda, e or�
 
 Ressalvas: não houve negativa explícita de um DAS **vigente** nesta amostra; não usar a negativa das versões antigas como substituto desse teste. O replay também encontrou ordinais e vínculo de guia inconsistentes em um cadastro de parcelamento, mantidos intactos para reconciliação. Seis casos não medem taxa estatística de confiabilidade ou disponibilidade do provedor.
 
-Na inspeção, o executor de consultas existente já estava habilitado, com agenda no **dia 20 às 8h, America/Sao_Paulo**. O piloto não ativou/desativou esse executor nem alterou a agenda. A preferência pelo dia 25 permanece uma configuração da futura ativação. Avisos automáticos continuam fora do escopo implementado.
+Na inspeção inicial, o executor de consultas existente já estava habilitado, com agenda no dia 20 às 8h. Durante o piloto, outra tarefa integrou a agenda explícita e os avisos pelo PR 90. A releitura final do cadastro confirmou **dia 25 às 8h, America/Sao_Paulo**, frequência mensal e habilitada. Esta tarefa não alterou esses campos nem disparou avisos.
+
+## Compatibilização com a agenda explícita e avisos
+
+A main avançou para `b4d88d40` durante o piloto. A integração conserva as alterações paralelas do portal e da agenda: apenas minuto configurado, sem recuperar horário perdido, sem retry automático após erro/reserva expirada. Isso substitui a retomada automática descrita nos ensaios anteriores; eventual retomada manual delimitada continua separada da agenda. As ressalvas fiscais permanecem no resumo e na interface, sem transformar uma execução técnica em confirmação de todos os pagamentos.
+
+O aviso acrescentado pela tarefa Fiscal passa a exigir observação negativa completa, aplicada, identificada e da revisão atual, com fonte autorizada e consulta recente da rodada. Projeção, histórico append-only, CNPJ, contrato e versão são reconferidos antes do transporte. Pagamento, baixa, declaração CLIENTE, resultado inconclusivo/recusado, identidade alterada ou ambiguidade de versão impedem aviso. `COMPARRECADACAO72` sem comprovante permanece inconclusivo mesmo quando o envelope diz sucesso.
+
+Pagamentos declarados pelo cliente continuam elegíveis à conferência oficial, inclusive na agenda explicitamente habilitada, sem reabrir pagamento ou gerar aviso negativo. O aviso ocorre depois da persistência fiscal; falha de transporte não autoriza nova consulta ao provedor. O código de avisos veio da outra entrega; o piloto desta tarefa permanece sem mensagens reais ou deploy.
+
+Uma contraprova reproduziu aviso indevido para uma guia antiga com negativa recente aplicada e outra guia mensal paga. O aviso agora exige panorama completo do PA com um único documento negativo, sem impedimento fiscal, e ausência de outra guia mensal conflitante no cadastro. Retificação, múltiplos documentos, declaração posterior, índice parcial ou outro DAS pago exigem conferência. A comparação não agrupa obrigações distintas de INSS/DARF ou parcelas. Replay dos retornos reais manteve três documentos atuais confirmados e bloqueou aviso das cinco versões antigas, sem nova chamada fiscal. Os 33 cenários PostgreSQL integrados, 42 testes de agenda, quatro da interface e o build da interface passaram.
+
+A regressão integrada final passou em **562 testes de 21 suítes da API**, cobrindo pagamentos mensais, parcelas, observações, avisos, concorrência, contábil, simulação WhatsApp e agenda. As rodadas focais de 42 testes de agenda e 123 de avisos se sobrepõem a esse total. Nenhuma dessas simulações usa chamadas externas.
 
 ## Critérios antes da ativação operacional
 
 1. Integração Fiscal e revisão concluídas localmente; conferir a versão efetivamente publicada antes da ativação.
-2. As 177 migrations da integração final estão aplicadas no banco local isolado, com os 32 cenários PostgreSQL repetidos. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
-3. Fazer piloto fiscal de leitura controlado, com amostra de documentos pagos/não localizados/retificados e comparação manual, respeitando orçamento. A rodada descrita abaixo deve conservar suas lacunas de cobertura; não equivale a comprovar toda a carteira.
+2. As 177 migrations da integração final estão aplicadas no banco local isolado, com os 33 cenários PostgreSQL repetidos. Aplicar e conferir também no ambiente da ativação; homologação local não comprova operação em produção.
+3. O piloto fiscal de leitura controlado foi concluído com seis consultas. Conservar a lacuna de uma negativa explícita do documento vigente antes de homologar avisos; a amostra não equivale a comprovar toda a carteira.
 4. Conferir agenda salva, fuso, empresas elegíveis, flag do executor e próxima execução. Dia 25 é preferência operacional, não garantia de atualização da Receita.
 5. Observar uma execução realmente disparada pela agenda antes de habilitar mensagens a clientes.
 
@@ -130,7 +142,7 @@ Após consulta suficientemente recente e completa, criar pendência no portal e 
 
 Antes de gerar pendência, resolver a versão vigente da obrigação. Um índice antigo `dasPago:false` ou uma guia histórica ainda `OPEN` não autoriza aviso quando existe documento substituto pago. Recalcular/retificar precisa preservar a relação entre versões; documento exato é necessário para interpretar o retorno, mas sozinho não prova que a versão ainda deve ser cobrada. Se a cadeia de substituição estiver ambígua, encaminhar à conferência interna.
 
-Ainda não implementados: geração dessas pendências, templates Meta, disparo automático, coleta de comprovante para essa jornada e recálculo por ação da mensagem. Revalidar pagamento, identidade e versão antes de cada envio/recálculo; respeitar contatos compartilhados entre empresas, janela/template e consentimento existentes. Uma consulta inconclusiva deve gerar trabalho interno, nunca cobrança automática.
+A main do PR 90 passou a fornecer avisos por canal cadastrado e links autenticados para confirmar/recalcular no portal; a compatibilização acima restringe sua evidência fiscal. Continuam fora desta entrega: template Meta específico aprovado para janela fechada, coleta/análise do comprovante recebido pelo WhatsApp e conclusão de recálculo pelo próprio chat. Revalidar pagamento, identidade e versão antes de cada envio/recálculo; respeitar contatos compartilhados entre empresas, janela/template e consentimento existentes. Uma consulta inconclusiva deve gerar trabalho interno, nunca cobrança automática.
 
 ## Fontes oficiais consultadas
 

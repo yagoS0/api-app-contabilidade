@@ -88,8 +88,7 @@ async function executarPgdasd(options = {}) {
     const isCaptureWindow = now.getDate() >= fetchDay; // a partir do dia configurado
 
     // Rotinas: QUEM (CompanyRotina, por empresa) × QUANDO (agenda por rotina).
-    // Antes isso era implícito — o regime decidia tudo dentro deste laço. O seed do
-    // CompanyRotinasService reproduz a regra antiga, então ligar isto não muda nada.
+    // Somente escolhas persistidas habilitam a empresa; cadastro/regime não autorizam consultas.
     const agenda = settings.rotinas || {};
     const [idsDas, idsExtrato, idsPresumido, idsParcelamento] = await Promise.all([
       idsComRotinaAtiva("das"),
@@ -97,10 +96,10 @@ async function executarPgdasd(options = {}) {
       idsComRotinaAtiva("presumido"),
       idsComRotinaAtiva("parcelamento"),
     ]);
-    // Cada rotina tem sua própria janela (dia do mês a partir do qual pode rodar).
-    // Sem agenda salva, cai no fetchDay legado — mesma janela de antes.
+    // O scheduler reserva somente os horários salvos e informa a rotina desta execução.
+    // A execução manual ainda respeita as rotinas explicitamente habilitadas.
     function janelaAberta(rotina) {
-      return agenda[rotina]?.enabled !== false && (!options.routines || options.routines.includes(rotina));
+      return agenda[rotina]?.enabled === true && (!options.routines || options.routines.includes(rotina));
     }
 
     for (const company of companies) {

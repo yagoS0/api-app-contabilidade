@@ -64,20 +64,9 @@ function resolvePaymentConfirmationHour(stored) {
   return clampInt(stored.paymentConfirmationHour, 0, 23, 8);
 }
 
-// Q54: janela de retry — o cron dispara do dia D até D+FETCH_RETRY_DAYS (ex.: dia 10 → 10,11,12).
-// Não é re-fetch: as travas de idempotência (Stage 1 `!existente`, Stage 3 `serproSyncStatus="SUCCESS"`)
-// fazem a captura acontecer UMA vez; os dias seguintes só re-tentam SE a captura do dia D falhou.
-const FETCH_RETRY_DAYS = 2;
-
-// Q54: fetchCron derivado = MENSAL a partir do dia+hora escolhidos ("0 H D-Dend * *"). No dia
-// configurado (ex.: dia 10) o worker busca a ÚLTIMA competência (mês anterior) de DAS/INSS/extrato,
-// com uma pequena janela de retry nos dias seguintes. Antes era diário; recálculo pontual é manual.
+// Uma agenda mensal autoriza somente o dia escolhido, sem tentativas em dias extras.
 function deriveMonthlyCron(day, hour) {
-  const d = clampInt(day, 1, 31, 5);
-  const h = clampInt(hour, 0, 23, 7);
-  const end = Math.min(d + FETCH_RETRY_DAYS, 31);
-  const dayField = end > d ? `${d}-${end}` : `${d}`;
-  return `0 ${h} ${dayField} * *`;
+  return `0 ${hour} ${day} * *`;
 }
 
 // Vocabulário REAL do SERPRO — o mesmo das "Funções em lote" (OP_DEFS no frontend).
@@ -86,47 +75,69 @@ function deriveMonthlyCron(day, hour) {
 // separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
 export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
 
-// Rotinas que NÃO herdam a agenda legada por não existirem antes dela.
-// `conferencia` (confere as NFS-e da competência contra o ADN nacional) tem que rodar no
-// PRIMEIRO DIA DO MÊS SEGUINTE: ela valida o faturamento do mês que acabou, antes do fechamento.
-// Sair do dia 1 esvazia o propósito — conferir depois de fechar não impede nada.
-const DEFAULTS_POR_ROTINA = {
-  conferencia: { day: 1, hour: 6, enabled: true },
-};
-
-// Agenda por rotina. Semeada a partir da agenda global legada (fetchDay/fetchHour e, para o
-// pagamento, paymentConfirmation*) — assim ligar esta feature NÃO muda o comportamento de quem
-// já está em produção: cada rotina nasce no mesmo dia/hora que já rodava.
+// Sugestões de preenchimento não autorizam execução nem herdam a agenda global.
+const SUGESTOES_POR_ROTINA = { conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
+const objeto = value => value != null && typeof value === "object" && !Array.isArray(value);
+function inteiroExplicito(value, min, max) {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+function frequenciaValida(key, value) {
+  return value === undefined || value === "MONTHLY" || (key === "pagamento" && value === "DAILY");
+}
 function resolveRotinas(stored) {
-  const fetchDay = resolveFetchDay(stored);
-  const fetchHour = resolveFetchHour(stored);
-  const salvas = stored.rotinas && typeof stored.rotinas === "object" ? stored.rotinas : {};
-
-  const out = {};
-  for (const key of ROTINA_KEYS) {
-    const salva = salvas[key] && typeof salvas[key] === "object" ? salvas[key] : null;
-    const proprio = DEFAULTS_POR_ROTINA[key] || null;
-    const legadoDia = proprio ? proprio.day
-      : key === "pagamento" ? resolvePaymentConfirmationDay(stored) : fetchDay;
-    const legadoHora = proprio ? proprio.hour
-      : key === "pagamento" ? resolvePaymentConfirmationHour(stored) : fetchHour;
-    // O pagamento já tinha on/off próprio; as demais sempre rodaram junto da captura.
-    const legadoEnabled = proprio ? proprio.enabled
-      : key === "pagamento" ? resolvePaymentConfirmationEnabled(stored) : true;
-
-    const day = clampInt(salva?.day, 1, 31, legadoDia);
-    const hour = clampInt(salva?.hour, 0, 23, legadoHora);
-    const frequency = key === "pagamento" && salva?.frequency === "DAILY" ? "DAILY" : "MONTHLY";
-    out[key] = {
-      enabled: salva?.enabled === undefined ? legadoEnabled : salva.enabled === true,
-      day,
-      hour,
-      frequency,
-      timeZone: "America/Sao_Paulo",
-      cron: frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour),
-    };
+  const salvas = objeto(stored.rotinas) ? stored.rotinas : {};
+  return Object.fromEntries(ROTINA_KEYS.map(key => {
+    const salva = objeto(salvas[key]) ? salvas[key] : {};
+    const sugestao = SUGESTOES_POR_ROTINA[key] || { day: 5, hour: 7 };
+    const diaSalvo = inteiroExplicito(salva.day, 1, 31);
+    const horaSalva = inteiroExplicito(salva.hour, 0, 23);
+    const day = diaSalvo ?? sugestao.day, hour = horaSalva ?? sugestao.hour;
+    const frequency = key === "pagamento" && salva.frequency === "DAILY" ? "DAILY" : "MONTHLY";
+    return [key, { enabled: salva.enabled === true && diaSalvo !== null && horaSalva !== null && frequenciaValida(key, salva.frequency),
+      day, hour, frequency, timeZone: "America/Sao_Paulo",
+      cron: frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour) }];
+  }));
+}
+function erroAgenda(key, field) {
+  return Object.assign(new Error(`Confira a configuração da rotina ${key}: ${field}.`), { code: "SERPRO_ROTINA_AGENDA_INVALIDA", status: 400, rotina: key, campo: field });
+}
+function atualizarRotinas(stored, input) {
+  if (input.rotinas === undefined) return stored.rotinas;
+  if (!objeto(input.rotinas)) throw erroAgenda("rotinas", "informe um objeto de rotinas");
+  const next = objeto(stored.rotinas) ? { ...stored.rotinas } : {};
+  for (const [key, entrada] of Object.entries(input.rotinas)) {
+    if (!ROTINA_KEYS.includes(key)) throw erroAgenda(key, "rotina desconhecida");
+    if (!objeto(entrada)) throw erroAgenda(key, "configuração inválida");
+    const atual = objeto(next[key]) ? next[key] : {};
+    const merged = { ...atual };
+    if (entrada.enabled !== undefined) {
+      if (typeof entrada.enabled !== "boolean") throw erroAgenda(key, "enabled deve ser verdadeiro ou falso");
+      merged.enabled = entrada.enabled;
+    }
+    for (const [field, min, max] of [["day", 1, 31], ["hour", 0, 23]]) {
+      if (entrada[field] === undefined) continue;
+      const n = inteiroExplicito(entrada[field], min, max);
+      if (n === null) throw erroAgenda(key, field === "day" ? "dia deve ser um inteiro entre 1 e 31" : "hora deve ser um inteiro entre 0 e 23");
+      merged[field] = n;
+    }
+    if (entrada.frequency !== undefined) {
+      if (!frequenciaValida(key, entrada.frequency)) throw erroAgenda(key, "frequência inválida");
+      merged.frequency = entrada.frequency;
+    }
+    if (merged.enabled === true && (inteiroExplicito(merged.day, 1, 31) === null || inteiroExplicito(merged.hour, 0, 23) === null || !frequenciaValida(key, merged.frequency))) {
+      throw erroAgenda(key, "habilitar exige dia e hora válidos explicitamente informados");
+    }
+    next[key] = merged;
   }
-  return out;
+  return next;
+}
+
+// A rota valida antes de mudar a seleção das empresas. Recebe dados persistidos,
+// nunca as sugestões de formulário devolvidas por resolveRotinas.
+export function validarAgendaRotinas(agenda, stored = {}) {
+  return atualizarRotinas(stored, { rotinas: agenda });
 }
 
 function normalizeTimeout(value, fallback) {
@@ -350,22 +361,8 @@ export async function updateSerproRuntimeSettings(input = {}) {
     ? clampInt(input.paymentConfirmationHour, 0, 23, 8)
     : resolvePaymentConfirmationHour(stored);
 
-  // Agenda por rotina: merge por chave, igual ao resto. Grava só {enabled,day,hour} — o `cron`
-  // é derivado na leitura, nunca armazenado (mesma regra do fetchCron).
-  const rotinasAtuais = resolveRotinas(stored);
-  const nextRotinas = {};
-  for (const key of ROTINA_KEYS) {
-    const entrada = input.rotinas && typeof input.rotinas === "object" ? input.rotinas[key] : undefined;
-    const atual = rotinasAtuais[key];
-    nextRotinas[key] = {
-      enabled: entrada?.enabled === undefined ? atual.enabled : entrada.enabled === true,
-      day: entrada?.day === undefined ? atual.day : clampInt(entrada.day, 1, 31, atual.day),
-      hour: entrada?.hour === undefined ? atual.hour : clampInt(entrada.hour, 0, 23, atual.hour),
-      frequency: key === "pagamento"
-        ? (entrada?.frequency === undefined ? atual.frequency : entrada.frequency === "DAILY" ? "DAILY" : "MONTHLY")
-        : "MONTHLY",
-    };
-  }
+  // Valida a agenda salva, nunca as sugestões devolvidas para o formulário.
+  const nextRotinas = atualizarRotinas(stored, input);
 
   const next = {
     ...stored,
@@ -384,7 +381,7 @@ export async function updateSerproRuntimeSettings(input = {}) {
     paymentConfirmationEnabled: nextPaymentEnabled,
     paymentConfirmationDay: nextPaymentDay,
     paymentConfirmationHour: nextPaymentHour,
-    rotinas: nextRotinas,
+    ...(nextRotinas === undefined ? {} : { rotinas: nextRotinas }),
   };
 
   if (input.consumerSecret !== undefined) {

@@ -33,6 +33,7 @@ const companyId = `${prefix}-company`;
 const guideIds = [], parcelaIds = [], contractIds = [], scheduleKeys = [];
 const failureTriggers = [];
 const cnpj = "00000000000001";
+const realDateNow = Date.now;
 let checks = 0, calls = 0;
 const ok = title => console.log(`OK ${++checks}: ${title}`);
 const validRaw = { status: 200, contribuinte: { numero: cnpj, tipo: 2 }, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
@@ -248,8 +249,12 @@ try {
   ok("duas consultas concorrentes compartilham reserva persistente: uma chamada e uma observação");
 
   const ownership = await fixture();
-  const now = new Date(), config = { enabled: true, frequency: "DAILY", hour: localCalendar(now).hour };
+  const now = new Date();
+  now.setUTCMinutes(0, 0, 0);
+  Date.now = () => +now;
+  const config = { enabled: true, frequency: "DAILY", hour: localCalendar(now).hour };
   const firstOwner = await claimScheduledRun({ routine: `${prefix}-owner`, config, now, db: a });
+  assert(firstOwner, "reserva sintética é criada somente no minuto configurado");
   scheduleKeys.push(firstOwner.key);
   let nextOwner;
   const assertOwner = async () => {
@@ -257,7 +262,11 @@ try {
     if (state.value.owner !== firstOwner.value.owner) throw Error("OWNER_CHANGED_TEST");
   };
   transport = async () => {
-    nextOwner = await claimScheduledRun({ routine: `${prefix}-owner`, config, now: new Date(+now + 6 * 60000), db: b });
+    const repeat = await claimScheduledRun({ routine: `${prefix}-owner`, config, now: new Date(+now + 6 * 60000), db: b });
+    assert.equal(repeat, null, "reserva expirada não autoriza repetir consulta automática");
+    // Troca exclusiva desta fixture testa o proprietário sem reintroduzir retry na agenda.
+    nextOwner = { key: firstOwner.key, value: { ...firstOwner.value, owner: randomUUID() } };
+    await b.appSetting.update({ where: { key: nextOwner.key }, data: { value: nextOwner.value } });
     assert.notEqual(nextOwner.value.owner, firstOwner.value.owner);
     return { raw: structuredClone(validRaw) };
   };
@@ -277,7 +286,8 @@ try {
   } })).pago, true);
   assert.equal(await finishScheduledRun(nextOwner, {}, null, { db: b }), true);
   assert.equal((await read(ownership)).observations.length, 1);
-  ok("novo proprietário real bloqueia escrita/finalização antiga, respeita custo e pode retomar após intervalo");
+  Date.now = realDateNow;
+  ok("reserva não repete automaticamente; troca sintética de proprietário preserva custo e permite conferência manual após intervalo");
 
   for (const confirmed of [true, false]) {
     const declared = await fixture();
@@ -339,6 +349,7 @@ try {
   ok("nenhum lançamento contábil criado ou removido em todos os cenários");
   console.log(`PASS: ${checks} verificações PostgreSQL reais; ${calls} chamadas sintéticas; zero HTTP/IA/credenciais reais.`);
 } finally {
+  Date.now = realDateNow;
   delete globalThis[Symbol.for("altan.parcela-postgres-fixture")];
   for (const name of failureTriggers) {
     await a.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${name}" ON "parcelas"`);

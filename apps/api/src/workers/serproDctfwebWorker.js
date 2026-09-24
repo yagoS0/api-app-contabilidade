@@ -74,11 +74,10 @@ async function executarDctfweb(options = {}) {
     const isCaptureWindow = now.getDate() >= fetchDay;
 
     // Rotina `inss`: antes este worker tentava INSS em TODA empresa (não filtrava regime).
-    // O seed marcou `inss` em todas justamente pra preservar isso — agora o contador vê
-    // na tela e pode desmarcar quem não precisa.
+    // Somente as empresas explicitamente marcadas pelo contador entram no lote.
     const cfgInss = settings.rotinas?.inss;
     const idsInss = await idsComRotinaAtiva("inss");
-    const janelaInss = cfgInss?.enabled !== false && (!options.routines || options.routines.includes("inss"));
+    const janelaInss = cfgInss?.enabled === true && (!options.routines || options.routines.includes("inss"));
 
     for (const company of companies) {
       lease.assertActive();

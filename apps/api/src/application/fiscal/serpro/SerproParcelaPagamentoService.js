@@ -5,9 +5,13 @@ import { interpretarPagamentoParcela } from "./parcelaPagamento.js";
 import { parcelaPagamentoConfirmado } from "../../accounting/parcelamento/pendenciasParcelamento.js";
 import { capturarRevisaoConsulta, registrarConsultaPagamentoGuia } from "../../guides/ConsultaPagamentoGuiaService.js";
 import { lerComposicaoDoDocumento } from "../../accounting/parcelamento/composicaoDocumentoParcela.js";
+import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
+import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 
 const digits = value => String(value ?? "").replace(/\D/g, "");
 const includeParcela = { guia: { include: { tributosParcela: true } }, parcelamento: true };
+const declarouPagamento = p => Boolean(p.guia?.clienteConfirmouEm || p.guia?.paymentStatusSource === "CLIENTE");
+const negativaConfiavel = resultado => resultado?.estado === "NAO_LOCALIZADO" && resultado.cobertura === "COMPLETA" && resultado.identidadeConferida === true;
 function revisaoParcela(p) {
   return JSON.stringify({
     id: p.id, portalClientId: p.portalClientId, parcelamentoId: p.parcelamentoId,
@@ -34,12 +38,22 @@ function observacaoParcela(p, r, agora, cnpj, extra = {}) {
   };
 }
 
-export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {} }) {
+export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
   const p = await prisma.parcela.findFirst({ where: { id: parcelaId, portalClientId }, include: includeParcela });
   if (!p) return { ok: false, skipped: "parcela_nao_encontrada" };
   if (p.parcelamento.status === "EXCLUIDO") return { ok: true, skipped: "contrato_excluido" };
   if (parcelaPagamentoConfirmado(p, { aceitarDeclaracaoCliente: false })) return { ok: true, pago: true, skipped: "already_paid" };
+  const vencimentoReal = p.guia?.vencimento || (p.origem !== "CONTRATO" ? p.vencimento : null);
+  const vencimentoRecusa = scheduledAt ? elegibilidadeVencimentoAutomatico(vencimentoReal) : null;
+  if (vencimentoRecusa) return { ok: true, skipped: vencimentoRecusa, parcelaId: p.id };
+  if (!declarouPagamento(p) && await consultaAutomaticaEncerrada({ parcelaId: p.id, guideId: p.guiaId, scheduledAt })) {
+    const anterior = p.guia?.extracted?.consultaPagamento;
+    return { ok: true, skipped: "conferencia_manual", status: "NAO_LOCALIZADO", parcelaId: p.id,
+      // O aviso pode ser retomado sem chamada fiscal, mas exige observação aplicada
+      // identificável. O serviço de avisos confere a observação e projeção novamente.
+      ...(negativaConfiavel(anterior) && anterior.observacaoId ? { resultadoConsultaGuia: anterior } : {}) };
+  }
   if (!["PARCSN", "PARCMEI"].includes(p.parcelamento.tipo)) return { ok: true, skipped: "modalidade_manual" };
   if (!/^\d+$/.test(String(p.parcelamento.numeroParcelamento || "")) || !/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.anoMesParcela || ""))) return { ok: true, skipped: "identificacao_incompleta" };
   const agora = new Date();
@@ -129,8 +143,13 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
       // Após os locks e a reserva conferida, uma falha aqui aborta a aplicação positiva
       // inteira. O caminho de recusa acima já retornou e preservou sua auditoria.
       if (aplicada.count !== 1) throw Object.assign(new Error("A reserva da consulta foi alterada."), { code: "CONSULTA_SUPERADA" });
+      if (scheduledAt && r.status === "NAO_LOCALIZADO" && negativaConfiavel(resultadoConsulta) && !declarouPagamento(atual)) {
+        await assertActive();
+        await registrarNegativaAutomatica({ parcelaId: p.id, guideId: p.guiaId, scheduledAt }, tx);
+      }
       return { ok: true, pago: r.status === "CONFIRMADO" ? true : r.status === "NAO_LOCALIZADO" ? false : null,
         status: r.status, motivo: r.motivo || null, parcelaId: p.id, aplicada: true, resultadoConsulta,
+        avisoElegivel: !declarouPagamento(atual) && !parcelaPagamentoConfirmado(atual),
         ...(registroGuia ? { aplicadaGuia: registroGuia.aplicada, resultadoConsultaGuia: registroGuia.resultadoConsulta } : {}) };
     });
   } catch (err) {
@@ -144,7 +163,7 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
   }
 }
 
-export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parcelaIds, logger = null, limite = 500, assertActive = () => {} } = {}) {
+export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parcelaIds, logger = null, limite = 500, assertActive = () => {}, scheduledAt = null } = {}) {
   if (parcelaIds !== undefined && !Array.isArray(parcelaIds)) {
     throw Object.assign(new Error("A seleção de parcelas deve ser uma lista."), { code: "PARCELA_IDS_INVALIDOS" });
   }
@@ -162,10 +181,11 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parce
     return { results, total: results.length };
   }
   const results = [];
+  let consultas = 0;
   const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
   const mesAtual = partes.find(p => p.type === "year").value + partes.find(p => p.type === "month").value;
   const vistos = [];
-  while (results.length < limite) {
+  while (consultas < limite) {
     await assertActive();
     const rows = await prisma.parcela.findMany({ where: { portalClientId: { in: ids }, origemBaixa: null, baixadaEm: null,
       anoMesParcela: { not: null, lte: mesAtual }, guia: { isNot: { OR: [
@@ -176,19 +196,31 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parce
       AND: [{ OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] },
         { OR: [{ pagamentoConsultadoEm: null }, { pagamentoConsultadoEm: { lte: new Date(Date.now() - 86_400_000) } }] },
         ...(selecionadas ? [{ id: { in: selecionadas } }] : [])],
-      ...(vistos.length ? { id: { notIn: vistos } } : {}) }, orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }], take: Math.min(100, limite - results.length),
+      ...(vistos.length ? { id: { notIn: vistos } } : {}) }, orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }], take: Math.min(100, limite - consultas),
       select: { id: true, portalClientId: true } });
     if (!rows.length) break;
     for (const p of rows) {
+      if (consultas >= limite) break;
       await assertActive();
       try {
-        const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive });
+        const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt });
+        if (!r.skipped) consultas++;
+        const resultadoAviso = r.resultadoConsultaGuia || r.resultadoConsulta;
+        const podeAvisar = scheduledAt && negativaConfiavel(resultadoAviso)
+          && ((r.aplicada === true && r.pago === false && r.aplicadaGuia !== false && r.avisoElegivel === true) || r.skipped === "conferencia_manual");
+        let aviso = null;
+        if (podeAvisar) {
+          // Falha de transporte não altera o resultado fiscal nem autoriza reconsulta.
+          try { aviso = await avisarPagamentoNaoConfirmado({ parcelaId: p.id, scheduledAt, assertActive, resultadoConsulta: resultadoAviso }); }
+          catch (err) { aviso = { status: "PENDENTE", motivo: err.code || "AVISO_INDISPONIVEL" }; }
+        }
         const estado = r.resultadoConsulta?.estado;
         results.push({ parcelaId: p.id, status: r.skipped || (estado === "PARCIAL_OU_DIVERGENTE" ? "divergente" : estado === "NAO_APLICAVEL" ? "nao_aplicavel"
           : r.pago === true ? "paid" : r.pago === false ? "open" : "indeterminado"),
           ...(r.resultadoConsulta ? { resultadoConsulta: metadadosConsulta(r.resultadoConsulta), aplicada: r.aplicada } : {}),
-          ...(r.resultadoConsultaGuia ? { aplicadaGuia: r.aplicadaGuia, resultadoConsultaGuia: metadadosConsulta(r.resultadoConsultaGuia) } : {}) });
+          ...(r.resultadoConsultaGuia ? { aplicadaGuia: r.aplicadaGuia, resultadoConsultaGuia: metadadosConsulta(r.resultadoConsultaGuia) } : {}), ...(aviso ? { aviso } : {}) });
       } catch (err) {
+        consultas++;
         results.push({ parcelaId: p.id, status: "error", error: err.code || "CONSULTA_FALHOU",
           ...(err.resultadoConsulta ? { resultadoConsulta: metadadosConsulta(err.resultadoConsulta) } : {}) });
       }
@@ -198,8 +230,8 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, parce
   // O intervalo continua valendo na retomada. Itens do snapshot que não puderam ser
   // consultados permanecem visíveis, sem carimbo novo nem cobertura completa fictícia.
   for (const id of selecionadas || []) if (!vistos.includes(id)) results.push(semConsulta(id,
-    results.length >= limite ? "LIMITE_DO_LOTE" : "FORA_DO_ESCOPO_OU_INTERVALO_MINIMO"));
-  return { total: results.length, results };
+    consultas >= limite ? "LIMITE_DO_LOTE" : "FORA_DO_ESCOPO_OU_INTERVALO_MINIMO"));
+  return { total: results.length, ...(scheduledAt ? { consultas } : {}), results };
 }
 
 function metadadosConsulta(resultado) {

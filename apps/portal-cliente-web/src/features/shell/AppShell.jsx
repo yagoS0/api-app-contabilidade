@@ -18,6 +18,7 @@ import { ExtratoOfxPage } from "../extrato/ExtratoOfxPage";
 // 24/08/2026, e a barra lateral tem quatro icones: um quinto e permanente.
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
+import { lerLinkDaGuia, limparLinkDaGuia } from "../guias/lib/linkDaGuia";
 import { LogoAltan } from "../../components/LogoAltan";
 import { SituacaoFiscalPage } from "../fiscal/SituacaoFiscalPage";
 
@@ -39,7 +40,10 @@ const ABAS = [
 
 export function AppShell({ user }) {
   const { rota, navegar } = useRota();
-  const [empresaEscolhida, setEmpresaEscolhida] = useState(() => lerEmpresaSalva());
+  const [linkGuia, setLinkGuia] = useState(lerLinkDaGuia);
+  const [empresaEscolhida, setEmpresaEscolhida] = useState(() => lerLinkDaGuia()?.companyId || lerEmpresaSalva());
+  useEffect(() => { if (linkGuia) navegar("guias"); }, [linkGuia, navegar]);
+  function encerrarLinkGuia() { setLinkGuia(null); limparLinkDaGuia(); }
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [saindo, setSaindo] = useState(false);
   // ⚠ O MODELO DE EMISSÃO ATRAVESSA DUAS TELAS, e é por isso que ele mora aqui: quem escolhe a nota
@@ -81,7 +85,7 @@ export function AppShell({ user }) {
   //
   // ⚠ O DEFAULT NÃO MUDOU: `competenciaPadrao` é o mês CORRENTE, decisão do dono de 18/08/2026 que
   // inverte o padrão do escritório (mês anterior). O porquê está em `lib/format.js`.
-  const [competencia, setCompetencia] = useState(competenciaPadrao);
+  const [competencia, setCompetencia] = useState(() => lerLinkDaGuia()?.competencia || competenciaPadrao());
   // ⚠ O LOTE POR PLANILHA É O SEGUNDO MODO DA MESMA ROTA, pelo mesmo motivo da emissão: o
   // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
   // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
@@ -118,6 +122,7 @@ export function AppShell({ user }) {
 
   function escolherEmpresa(companyId) {
     if (envioEmCurso.current) return;
+    if (linkGuia) encerrarLinkGuia();
     setEmpresaEscolhida(companyId);
     salvarEmpresa(companyId);
     setSeletorAberto(false);
@@ -146,6 +151,7 @@ export function AppShell({ user }) {
    */
   function irPara(destino) {
     if (envioEmCurso.current) return;
+    if (linkGuia && destino !== "guias") encerrarLinkGuia();
     setEmissaoAberta(false);
     setLoteAberto(false);
     setExtratoAberto(false);
@@ -348,6 +354,11 @@ export function AppShell({ user }) {
             padrao="Não foi possível carregar suas empresas."
             aoTentarNovamente={empresasQuery.recarregar}
           />
+        ) : linkGuia && !empresas.some(e => e.companyId === linkGuia.companyId) ? (
+          <div className="alerta alerta-erro" role="alert">
+            <p>Seu acesso não permite abrir a empresa deste aviso. Entre com a conta correta ou fale com seu contador.</p>
+            <button type="button" className="btn" onClick={encerrarLinkGuia}>Voltar às minhas empresas</button>
+          </div>
         ) : !empresaAtiva ? (
           <Vazio>
             Nenhuma empresa está vinculada ao seu acesso. Fale com o seu contador para liberar.
@@ -397,9 +408,12 @@ export function AppShell({ user }) {
           )
         ) : rota === "guias" ? (
           <GuiasPage
+            key={empresaAtiva.companyId}
             empresa={empresaAtiva}
             competencia={competencia}
             aoTrocarCompetencia={setCompetencia}
+            linkGuia={linkGuia?.companyId === empresaAtiva.companyId ? linkGuia : null}
+            aoEncerrarLink={encerrarLinkGuia}
           />
         ) : rota === "fiscal" ? (
           /* ⚠ SEM `competencia`, e isso é decisão: a situação fiscal é uma FOTO do dia em que o

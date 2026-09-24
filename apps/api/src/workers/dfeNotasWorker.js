@@ -1,13 +1,12 @@
-// Q12.B+++.5: worker automático de captura DFe (NF-e SEFAZ + NFS-e ADN).
+// Captura manual DFe (NF-e SEFAZ + NFS-e ADN); o laço autônomo está bloqueado.
 //
 // REGRAS DO MERCADO FISCAL (NT 2014.002 v1.10):
 // - Cada CNPJ pode ter UM único agente consultando NFeDistribuicaoDFe.
 // - Intervalo mínimo recomendado entre ciclos: 1 hora (senão risco de
 //   "Rejeição: Consumo Indevido" com bloqueio de 1h).
-// - CNPJ inativo por 60+ dias perde geração de NSU no AN. Este worker
-//   garante atividade contínua pra TODOS os CNPJs ativos do sistema.
+// - A manutenção da atividade depende de uma captura explicitamente solicitada.
 //
-// Loop:
+// Uma execução manual:
 //   1) Lock global (1 instância). Cada CNPJ tem seu próprio sub-lock implícito
 //      via PortalSyncState.dfeLastSyncAt + intervalo mínimo.
 //   2) Lista CNPJs ATIVOS (não SUSPENSA) com A1 cadastrado.
@@ -15,9 +14,9 @@
 //      Se sim, roda 1 ciclo de captura.
 //   4) Erro = isolado (não bloqueia outros CNPJs).
 //
-// Ativação opcional via env: DFE_NOTAS_WORKER_ENABLED=1
+// DFE_NOTAS_WORKER_ENABLED não autoriza um laço: faltam agenda e empresas escolhidas na interface.
 
-import { log, DFE_NOTAS_WORKER_ENABLED, DFE_NOTAS_WORKER_INTERVAL_MIN, DFE_NOTAS_HEARTBEAT_DAYS } from "../config.js";
+import { log, DFE_NOTAS_WORKER_INTERVAL_MIN, DFE_NOTAS_HEARTBEAT_DAYS } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { syncDfeForCompany } from "../application/notas/dfe/DfeSyncService.js";
@@ -27,7 +26,7 @@ import { varrerEmpresasComVarreduraAutomatica } from "../application/declarados/
 
 const LOCK_ID = "dfe_notas_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min
-const LOOP_INTERVAL_MS = 60 * 1000; // 1 min de poll do worker
+
 const MIN_INTERVAL_BETWEEN_SYNCS_MS = (DFE_NOTAS_WORKER_INTERVAL_MIN || 60) * 60 * 1000; // 1h default
 // Q12.B+++.6: heartbeat — threshold pra considerar CNPJ "atrasado"
 const HEARTBEAT_THRESHOLD_MS = (DFE_NOTAS_HEARTBEAT_DAYS || 7) * 24 * 60 * 60 * 1000;
@@ -330,35 +329,11 @@ export async function runDfeNotasWorkerOnce(options = {}) {
   }
 }
 
+// Sem agenda persistida própria, um intervalo/env não autoriza consultas automáticas.
 export async function runDfeNotasWorkerLoop() {
-  log.info({
-    enabled: DFE_NOTAS_WORKER_ENABLED,
-    intervalMin: MIN_INTERVAL_BETWEEN_SYNCS_MS / 60000,
-  }, "[dfeNotasWorker] loop iniciado");
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      if (DFE_NOTAS_WORKER_ENABLED) {
-        const result = await runDfeNotasWorkerOnce();
-        if (!result.skipped) {
-          log.info({
-            totalCnpjs: result.totalCnpjs,
-            dfeOk: result.dfe?.filter((d) => d.ok).length,
-            adnOk: result.adn?.filter((a) => a.ok).length,
-            heartbeatsDfe: result.heartbeats?.dfe || 0,
-            heartbeatsAdn: result.heartbeats?.adn || 0,
-            manifestSent: result.manifest?.totalSent || 0,
-            durationMs: result.durationMs,
-          }, "[dfeNotasWorker] ciclo concluído");
-        }
-      }
-    } catch (err) {
-      log.error({ err: err?.message || err }, "[dfeNotasWorker] erro no ciclo");
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, LOOP_INTERVAL_MS));
-  }
+  throw Object.assign(new Error("Captura automática DFe/ADN indisponível sem agenda configurada. Use a captura manual na interface ou --once."), {
+    code: "DFE_AGENDA_NAO_CONFIGURADA",
+  });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("dfeNotasWorker.js")) {

@@ -2,11 +2,14 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: {
   parcela: { findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn(), update: jest.fn() }, $transaction: jest.fn(), $queryRaw: jest.fn(),
   guidePaymentObservation: { findUnique: jest.fn(), create: jest.fn() },
+  appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
 } }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { document: "11111111000191" } })) }));
 jest.mock("../SerproParcelamentoService.js", () => ({ SerproParcelamentoService: jest.fn() }));
+jest.mock("../../../guides/AvisoPagamentoService.js", () => ({ avisarPagamentoNaoConfirmado: jest.fn(async () => ({ status: "JA_ENVIADO" })) }));
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { SerproParcelamentoService } from "../SerproParcelamentoService.js";
+import { avisarPagamentoNaoConfirmado } from "../../../guides/AvisoPagamentoService.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "../SerproParcelaPagamentoService.js";
 const raw = { status: 200, contribuinte: { numero: "22222222000191", tipo: 2 }, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
   dataPagamento: 20260920, valorPagoArrecadacao: 100, pagamentoDebitos: [{ discriminacoesDebito: [{ principal: 100, juros: 0, multa: 0, total: 100 }] }] } };
@@ -15,8 +18,13 @@ const item = extra => ({ id: "p", portalClientId: "empresa", parcelamentoId: "co
   parcelamento: { id: "contrato", portalClientId: "empresa", tipo: "PARCSN", numeroParcelamento: "123" }, ...extra });
 beforeEach(() => {
   jest.clearAllMocks();
+  avisarPagamentoNaoConfirmado.mockReset().mockResolvedValue({ status: "JA_ENVIADO" });
+  const ledger = new Map();
+  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key));
+  prisma.appSetting.upsert.mockImplementation(async ({ create }) => { ledger.set(create.key, create); return create; });
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
   prisma.parcela.findFirst.mockResolvedValue(item({}));
+  prisma.parcela.findMany.mockReset().mockResolvedValue([]);
   prisma.parcela.updateMany.mockResolvedValue({ count: 1 });
   prisma.portalClient.findUnique.mockResolvedValue({ cnpj: "22222222000191" });
   prisma.$transaction.mockImplementation(fn => fn(prisma));
@@ -26,6 +34,23 @@ beforeEach(() => {
   prisma.guide.update.mockImplementation(async ({data}) => data);
   consultar.mockResolvedValue({ raw });
   SerproParcelamentoService.mockImplementation(() => ({ consultarPagamentoParcela: consultar }));
+});
+test("negativa de parcela não é consultada novamente no automático após vínculo/novo PDF", async () => {
+  const p = item({ guiaId: "g-estavel", origem: "GUIA", vencimento: "2026-09-20" });
+  prisma.parcela.findFirst.mockResolvedValue(p);
+  consultar.mockResolvedValue({ raw: { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null, pagamentoDebitos: [] } } });
+  await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p", scheduledAt: "2026-09-24T15:00:00Z" });
+  prisma.parcela.findFirst.mockResolvedValue({ ...p, id: "p-vinculada", parcelamento: { tipo: "PARCSN", numeroParcelamento: "456" } });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p-vinculada", scheduledAt: "2026-09-25T15:00:00Z" })).toMatchObject({ skipped: "conferencia_manual" });
+  expect(consultar).toHaveBeenCalledTimes(1);
+});
+test("500 negativas encerradas não escondem a próxima parcela elegível", async () => {
+  const rows = Array.from({ length: 501 }, (_, i) => ({ id: `p${i}`, portalClientId: "empresa" }));
+  prisma.parcela.findMany.mockImplementation(async ({ where, take }) => rows.filter(p => !where.id?.notIn?.includes(p.id)).slice(0, take));
+  prisma.parcela.findFirst.mockImplementation(async ({ where }) => item({ id: where.id, origem: "GUIA", vencimento: "2026-09-20" }));
+  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => where.key.endsWith(":p500") ? null : { value: { status: "CONFERENCIA_MANUAL" } });
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], scheduledAt: "2026-09-24T15:00:00Z" });
+  expect(r.total).toBe(501); expect(r.consultas).toBe(1); expect(consultar).toHaveBeenCalledTimes(1);
 });
 afterEach(() => jest.useRealTimers());
 test("confirma sem guia e sem abertura contábil, sem criar nenhum lançamento", async () => {
@@ -311,4 +336,112 @@ test("lote distingue parcela divergente de consulta inconclusiva", async () => {
   consultar.mockResolvedValueOnce({ raw: { ...raw, dados: { ...raw.dados, numeroParcela: 9 } } });
   const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p"] });
   expect(r.results[0]).toMatchObject({ status: "divergente", resultadoConsulta: { estado: "PARCIAL_OU_DIVERGENTE" } });
+});
+
+const scheduledAt = "2026-09-24T15:00:00Z";
+const negativa = { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null, pagamentoDebitos: [] } };
+function prepararAviso(extraGuia = {}, resposta = negativa) {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3, anoMesParcela: "202609",
+    tipo: "SIMPLES", competencia: "2026-09", vencimento: new Date("2026-09-20Z"), valor: 100, status: "PROCESSED", hash: "v1", extracted: {}, tributosParcela: [], ...extraGuia };
+  const parcela = item({ guiaId: "g", guia });
+  prisma.parcela.findFirst.mockResolvedValue(parcela);
+  prisma.parcela.findMany.mockResolvedValueOnce([{ id: "p", portalClientId: "empresa" }]).mockResolvedValueOnce([]);
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  consultar.mockResolvedValue({ raw: resposta });
+  return { guia, parcela };
+}
+const executarAviso = extra => confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], scheduledAt, ...extra });
+
+test("aviso sai somente após commit de negativa confiável e recebe a observação aplicada", async () => {
+  prepararAviso();
+  prisma.$transaction.mockImplementation(async fn => {
+    const result = await fn(prisma);
+    expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+    expect(prisma.appSetting.upsert).toHaveBeenCalledTimes(2);
+    return result;
+  });
+  const r = await executarAviso();
+  expect(r).toMatchObject({ consultas: 1, results: [{ status: "open", aplicada: true, aviso: { status: "JA_ENVIADO" } }] });
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledWith(expect.objectContaining({ parcelaId: "p", scheduledAt,
+    resultadoConsulta: expect.objectContaining({ observacaoId: "observacao", estado: "NAO_LOCALIZADO", cobertura: "COMPLETA", identidadeConferida: true }) }));
+});
+
+test.each([
+  { ...raw, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3 } },
+  { ...negativa, dados: { ...negativa.dados, numeroParcela: 99 } },
+  { ...negativa, dados: { ...negativa.dados, pagamentoDebitos: raw.dados.pagamentoDebitos } },
+  { ...negativa, contribuinte: { numero: "11111111000191", tipo: 2 } },
+])("resposta inconclusiva/divergente não encerra consulta automática nem avisa: %j", async resposta => {
+  prepararAviso({}, resposta);
+  await executarAviso();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test.each([true, false])("declaração CLIENTE continua consultável na agenda, resultado %s não avisa nem cria marcador", async pago => {
+  prepararAviso({ paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-21Z") }, pago ? raw : negativa);
+  const r = await executarAviso();
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(r.results[0]).toMatchObject({ status: pago ? "paid" : "open", aplicada: true });
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("declaração CLIENTE permite conferir oficialmente mesmo após marcador negativo anterior", async () => {
+  prepararAviso({ paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-21Z") });
+  prisma.appSetting.findUnique.mockResolvedValue({ value: { status: "CONFERENCIA_MANUAL" } });
+  await executarAviso();
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("declaração recebida durante HTTP conserva confirmação do cliente e impede aviso", async () => {
+  const { guia, parcela } = prepararAviso();
+  const declarada = { ...guia, paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-24T15:00:01Z") };
+  prisma.parcela.findFirst.mockResolvedValueOnce(parcela).mockResolvedValueOnce({ ...parcela, guia: declarada });
+  prisma.guide.findUnique.mockResolvedValue(declarada);
+  await executarAviso();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("retorno negativo recusado por observação mais recente não gera marcador nem aviso", async () => {
+  const { guia } = prepararAviso();
+  prisma.guide.findUnique.mockResolvedValue({ ...guia, extracted: { consultaPagamento: {
+    estado: "INDETERMINADO", observacaoId: "mais-recente", consultadoEm: "2026-09-24T15:01:00Z",
+  } } });
+  const r = await executarAviso();
+  expect(r.results[0]).toMatchObject({ status: "indeterminado", aplicada: false });
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("falha do aviso mantém negativa aplicada e não repete consulta fiscal", async () => {
+  prepararAviso();
+  avisarPagamentoNaoConfirmado.mockRejectedValueOnce(Error("transporte indisponível"));
+  const r = await executarAviso();
+  expect(r).toMatchObject({ consultas: 1, results: [{ status: "open", aplicada: true, aviso: { status: "PENDENTE" } }] });
+  expect(consultar).toHaveBeenCalledTimes(1);
+});
+
+test("marcador legado sozinho não autoriza aviso; projeção identificada passa à revalidação do aviso", async () => {
+  prepararAviso();
+  prisma.appSetting.findUnique.mockResolvedValue({ value: { status: "CONFERENCIA_MANUAL" } });
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+  prepararAviso({ extracted: { consultaPagamento: { estado: "NAO_LOCALIZADO", cobertura: "COMPLETA", identidadeConferida: true,
+    observacaoId: "observacao-anterior", fonte: "PARCELAMENTO_PARCSN", consultadoEm: scheduledAt } } });
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledTimes(1);
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledWith(expect.objectContaining({ resultadoConsulta: expect.objectContaining({ observacaoId: "observacao-anterior" }) }));
+});
+
+test.each([{ paymentStatus: "PAID", paymentStatusSource: "MANUAL" }, { baixada: true }])("guia já paga/baixada não consulta, marca ou avisa: %j", async extra => {
+  prepararAviso(extra);
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
 });

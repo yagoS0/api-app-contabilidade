@@ -172,6 +172,30 @@ export function parseDasIndexResponse(responseData, { competencia, numeroDocumen
   if (sinais.some(value => typeof value !== "boolean")) return indeterminado("SINAL_PAGAMENTO_AUSENTE_OU_INVALIDO");
   if (new Set(sinais).size !== 1) return indeterminado("SINAIS_PAGAMENTO_DIVERGENTES");
   const dasPago = sinais[0];
+  // O estado acima pertence ao documento exato. Um DAS antigo false continua
+  // false mesmo com outro DAS pago; isso não autoriza avisar dívida do período.
+  // Guardamos o panorama do PA para a decisão de aviso, sem presumir vigência
+  // pela ordem das operações nem pela data de emissão de uma retificadora.
+  const documentos = [...new Set(candidatos.map(op => op.numero))].map(numero => {
+    const valores = candidatos.filter(op => op.numero === numero).map(op => op.indiceDas.dasPago);
+    return { numeroDocumento: numero || null,
+      dasPago: valores.every(value => typeof value === "boolean") && new Set(valores).size === 1 ? valores[0] : null };
+  });
+  const periodoCompleto = documentos.length > 0
+    && documentos.every(doc => /^\d{17}$/.test(doc.numeroDocumento || "") && typeof doc.dasPago === "boolean")
+    && operacoes.every(op => op && typeof op === "object" && !Array.isArray(op)
+      && (op.indiceDas == null || (typeof op.indiceDas === "object" && !Array.isArray(op.indiceDas))));
+  const declaracaoPosterior = operacoes.filter(op => op?.indiceDeclaracao).some(op => {
+    const transmitidaEm = parseCompactDateTime(op.indiceDeclaracao.dataHoraTransmissao);
+    return !dataHoraEmissaoDas || !transmitidaEm || transmitidaEm > dataHoraEmissaoDas;
+  });
+  const impedimentoAviso = documentos.some(doc => doc.numeroDocumento !== selecionados[0].numero && doc.dasPago === true)
+    ? "OUTRO_DAS_PAGO_NO_PERIODO" : !periodoCompleto ? "INDICE_PERIODO_INCOMPLETO"
+      : documentos.length !== 1 ? "MULTIPLOS_DOCUMENTOS_NO_PERIODO"
+        : declaracaoPosterior ? "DECLARACAO_POSTERIOR_OU_SEM_DATA"
+          : selecionados.some(op => /avulso|judicial/i.test(String(op.tipoOperacao))) ? "TIPO_DAS_SEM_VINCULO_COM_GUIA" : null;
+  const periodoPgdas = { competencia: normalizeCompetencia(competencia), documentos,
+    cobertura: periodoCompleto ? "COMPLETA" : "PARCIAL", impedimentoAviso };
   return {
     numeroDocumento: selecionados[0].numero,
     dasPago,
@@ -181,6 +205,7 @@ export function parseDasIndexResponse(responseData, { competencia, numeroDocumen
     resultadoConsulta: { ...base, numeroDocumento: selecionados[0].numero, estado: dasPago ? "CONFIRMADO" : "NAO_LOCALIZADO",
       identidadeConferida: true, cobertura: "COMPLETA", motivo: dasPago ? "DAS_PAGO" : "PAGAMENTO_NAO_REGISTRADO_ATE_CONSULTA",
       evidencia: { competencia: normalizeCompetencia(competencia), cnpj: onlyDigits(contribuinteCnpj), dasPago,
+        periodoPgdas,
         vinculo: numeroEsperado ? "DOCUMENTO_EXATO" : "DOCUMENTO_UNICO_DO_PERIODO" } },
   };
 }
