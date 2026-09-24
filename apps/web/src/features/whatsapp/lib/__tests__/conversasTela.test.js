@@ -56,13 +56,22 @@ describe("fraseDoConsumo e ordenação", () => {
     expect(fraseDoConsumo({ escritorio: { centavos: 6000, teto: 6000, chamadas: 9, estourado: true } })).toMatch(/TETO ATINGIDO/);
     expect(fraseDoConsumo(null)).toMatch(/não foi possível/);
   });
-  it("a fila vem primeiro, depois por atualização", () => {
+  it("conversas recentes vêm antes da fila antiga", () => {
     const l = ordenarConversas([
       { id: "a", portalClientId: "pc", updatedAt: "2026-09-02T10:00:00Z" },
       { id: "b", portalClientId: null, updatedAt: "2026-09-01T10:00:00Z" },
       { id: "c", portalClientId: "pc", updatedAt: "2026-09-02T12:00:00Z" },
     ]);
-    expect(l.map((x) => x.id)).toEqual(["b", "c", "a"]);
+    expect(l.map((x) => x.id)).toEqual(["c", "a", "b"]);
+  });
+  it("usa a última mensagem, sem promover conversa por leitura ou alteração de cadastro", () => {
+    const lista = [
+      { id: "antiga", updatedAt: "2026-09-24T15:00:00Z", ultimaMensagem: { registradaEm: "2026-09-23T12:00:00Z" } },
+      { id: "recebida", updatedAt: "2026-09-24T13:00:00Z", ultimaMensagem: { direcao: "in", registradaEm: "2026-09-24T13:00:00Z" } },
+      { id: "enviada", ultimaMensagem: { direcao: "out", registradaEm: "2026-09-24T14:00:00Z" } },
+    ];
+    expect(ordenarConversas(lista).map(c => c.id)).toEqual(["enviada", "recebida", "antiga"]);
+    expect(lista.map(c => c.id)).toEqual(["antiga", "recebida", "enviada"]);
   });
   it("os filtros separam conversas atuais, histórico e lixeira no servidor", () => {
     expect(FILTROS.map((f) => f.valor)).toEqual(["todas", "nao-vinculadas", "atendidas-por-mim", "historico", "lixeira"]);

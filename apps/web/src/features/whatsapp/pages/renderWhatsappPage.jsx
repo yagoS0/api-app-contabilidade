@@ -121,7 +121,7 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
   const [detalhes, setDetalhes] = useState(false);
   const [verChat, setVerChat] = useState(false);
   const listaRef = useRef(null);
-  const lista = useMemo(() => hook.buscaServidor ? hook.conversas : ordenarConversas(hook.conversas), [hook.conversas, hook.buscaServidor]);
+  const lista = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const fila = lista.filter((c) => c.relacionamento ? relacionamentoDaConversa(c).tipo === "A_IDENTIFICAR" : situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
   const avisoDaLista = frasePaginacao(hook.temMais);
   // A classificação e o caso comercial chegam na própria página; nunca carregar a carteira de fichas.
@@ -133,7 +133,7 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
   const normalizar = valor => String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const termo = normalizar(busca).trim();
   const visiveis = hook.buscaServidor ? lista : lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresas || []).flatMap(e => [e.razao, e.cnpj, ...(e.apelidosWhatsapp || [])]), c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
-  const grupos = ["CLIENTE", "LEAD", "A_IDENTIFICAR"].map(tipo => ({ tipo, titulo: ({ CLIENTE: "Clientes", LEAD: "Leads", A_IDENTIFICAR: "A identificar" })[tipo], itens: visiveis.filter(c => relacionamentoDaConversa(c).tipo === tipo) }));
+  const contatosVisiveis = visiveis.filter(c => !relacionamento || relacionamentoDaConversa(c).tipo === relacionamento);
   const abrir = id => { setVerChat(true); hook.abrir(id); };
   const voltar = () => {
     setVerChat(false); setDetalhes(false); setListaOculta(false);
@@ -165,7 +165,7 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
               {hook.erro ? <p role="status" className="wa-list-note" style={{ color: "var(--state-warn)" }}>Não foi possível ler as conversas{hook.erro.mensagem ? `: ${hook.erro.mensagem}` : ""}. A lista pode existir e não ter sido carregada.</p> : null}
               {hook.carregando && lista.length === 0 ? <p role="status" className="wa-list-note">Carregando conversas…</p> : null}
               {!hook.carregando && !hook.erro && visiveis.length === 0 ? <div className="wa-empty"><WhatsappIcon nome="busca" size={28} /><p>{termo || soNaoLidas ? hook.buscaServidor ? "Nenhuma conversa corresponde à busca e aos filtros." : "Nenhuma conversa carregada corresponde à busca e aos filtros." : "Nenhuma conversa neste filtro."}</p></div> : null}
-              {grupos.filter(g => !relacionamento || g.tipo === relacionamento).map(g => g.itens.length ? <section key={g.tipo} aria-label={g.titulo} className="wa-contact-group"><h3>{g.titulo}</h3>{g.itens.map(c => <LinhaConversa key={chaveDoInterlocutor(c)} c={c} ativa={chaveDoInterlocutor(hook.aberta?.conversa) === chaveDoInterlocutor(c)} onAbrir={abrir} />)}</section> : null)}
+              <section aria-label="Conversas recentes" className="wa-contact-group">{contatosVisiveis.map(c => <LinhaConversa key={chaveDoInterlocutor(c)} c={c} ativa={chaveDoInterlocutor(hook.aberta?.conversa) === chaveDoInterlocutor(c)} onAbrir={abrir} />)}</section>
               {hook.cursorLista ? <Button variant="secondary" size="sm" disabled={hook.carregandoMais} onClick={hook.carregarMais}>{hook.carregandoMais ? "Carregando…" : "Carregar mais conversas"}</Button> : null}
               {lista.length > 0 && avisoDaLista ? <p data-testid="aviso-paginacao-lista" className="wa-list-note">{avisoDaLista}</p> : null}
               {(termo || soNaoLidas) && !hook.buscaServidor ? <p className="wa-list-note">Busca e filtro de não lidas aplicados às conversas carregadas.</p> : null}

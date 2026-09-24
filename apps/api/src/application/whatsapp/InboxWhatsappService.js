@@ -42,7 +42,7 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
           AND NOT EXISTS (SELECT 1 FROM contatos_whatsapp co JOIN vinculos_numero_interlocutor vn ON vn.id=co."vinculoNumeroId"
             WHERE vn."interlocutorId"=b."interlocutorId" AND co."portalClientId" NOT IN (${empresasSql}))))
     ), grupos AS (
-      SELECT grupo, MAX("updatedAt") AS instante, MIN("interlocutorId") AS "interlocutorId",
+      SELECT grupo, MAX("createdAt") AS "criadoEm", MIN("interlocutorId") AS "interlocutorId",
         ARRAY_AGG(id ORDER BY ("portalClientId" IS NOT NULL) DESC,"updatedAt" DESC,id DESC) AS segmentos,
         BOOL_OR(${!q ? Prisma.sql`true` : Prisma.sql`COALESCE("nomePerfilProvedor",'') ILIKE ${busca} OR COALESCE(razao,'') ILIKE ${busca}
           OR COALESCE(cnpj,'') ILIKE ${busca} OR COALESCE(array_to_string("apelidosWhatsapp",' '),'') ILIKE ${busca}
@@ -51,19 +51,20 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
         BOOL_OR(${empresaId ? Prisma.sql`"portalClientId"=${empresaId}` : Prisma.sql`true`}) AS da_empresa,
         BOOL_OR(${filtro === 'atendidas-por-mim' ? Prisma.sql`"atendidaPor"=${operadorId}` : Prisma.sql`true`}) AS do_operador
       FROM vis GROUP BY grupo
-    ), nao_lidas AS (
-      SELECT s.grupo, COUNT(*)::int AS total
+    ), atividade AS (
+      SELECT s.grupo, MAX(m."registradaEm") AS "ultimaMensagemEm",
+        COUNT(*) FILTER (WHERE m.direcao='in' AND (s."lidaAteEm" IS NULL OR m."registradaEm">s."lidaAteEm"))::int AS total
       FROM mensagens_whatsapp m LEFT JOIN resolucoes_contexto_whatsapp r ON r."mensagemId"=m.id
       JOIN vis s ON s.id=COALESCE(r."conversaId",m."conversaId")
-      WHERE m.direcao='in' AND (s."lidaAteEm" IS NULL OR m."registradaEm">s."lidaAteEm")
       GROUP BY s.grupo
     ), classificados AS (
-      SELECT g.*, CASE WHEN EXISTS (SELECT 1 FROM contatos_whatsapp co JOIN vinculos_numero_interlocutor vn ON vn.id=co."vinculoNumeroId"
+      SELECT g.*, COALESCE(n."ultimaMensagemEm",g."criadoEm") AS instante,
+        CASE WHEN EXISTS (SELECT 1 FROM contatos_whatsapp co JOIN vinculos_numero_interlocutor vn ON vn.id=co."vinculoNumeroId"
         WHERE vn."interlocutorId"=g."interlocutorId" AND vn."encerrouEm" IS NULL AND co.ativo=true AND co."portalClientId" IN (${empresasSql})) THEN 'CLIENTE'
         WHEN EXISTS (SELECT 1 FROM atendimentos_lead a WHERE a."interlocutorId"=g."interlocutorId" AND a."encerradoEm" IS NULL AND a."onboardingId" IS NOT NULL) THEN 'LEAD'
         ELSE 'A_IDENTIFICAR' END AS relacionamento,
         COALESCE(n.total,0) AS "naoLidas"
-      FROM grupos g LEFT JOIN nao_lidas n ON n.grupo=g.grupo
+      FROM grupos g LEFT JOIN atividade n ON n.grupo=g.grupo
       WHERE g.encontrou AND g.da_empresa AND g.do_operador
     )`;
 }
@@ -72,7 +73,7 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
 export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'todas', empresaId = null, relacionamento = '', q = '', naoLidas = false, cursor = null, limite = 100, client = prisma }) {
   const ids = [...new Set(visiveis || [])].sort();
   const lim = Math.min(200, Math.max(1, Number(limite) || 100));
-  const assinatura = createHash('sha256').update(JSON.stringify({ ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas })).digest('hex').slice(0, 20);
+  const assinatura = createHash('sha256').update(JSON.stringify({ ordem: 'ultima-mensagem', ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas })).digest('hex').slice(0, 20);
   const c = lerCursorInbox(cursor, assinatura);
   if (empresaId && !ids.includes(empresaId)) return { conversas: [], temMais: false, proximoCursor: null, versaoContrato: 2, buscaConfigurada: true };
   if (empresaId && filtro === 'nao-vinculadas') throw erro('filtro_incompativel');
