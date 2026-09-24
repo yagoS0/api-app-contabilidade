@@ -23,6 +23,8 @@ export function interpretarPagamentoParcela(raw, { numeroParcelamento, anoMesPar
   if (numeroParcela != null && d.numeroParcela != null && Number(d.numeroParcela) !== Number(numeroParcela)) return divergencia("PARCELA_DIVERGENTE");
   if (numeroDocumento && d.numeroDas && digits(numeroDocumento) !== digits(d.numeroDas)) return divergencia("DOCUMENTO_DIVERGENTE");
   const total = cents(d.valorPagoArrecadacao);
+  if (!Object.hasOwn(d, "valorPagoArrecadacao") || !Object.hasOwn(d, "dataPagamento")
+    || (total == null && d.valorPagoArrecadacao != null && d.valorPagoArrecadacao !== "")) throw erro("PARCELA_PAGAMENTO_RETORNO_INVALIDO");
   if ((total == null || total === 0) && !d.dataPagamento) return { status: "NAO_LOCALIZADO", raw };
   const pagoEm = dataPagamento(d.dataPagamento);
   if (!pagoEm || total == null || total <= 0) return divergencia("PAGAMENTO_INCOMPLETO");

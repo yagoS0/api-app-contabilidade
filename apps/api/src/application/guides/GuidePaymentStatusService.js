@@ -183,13 +183,13 @@ export async function markGuideOverdueBySerpro({ guideId }) {
  */
 export async function markGuideOpenBySerpro({ guideId, checkResult = "FOUND" }) {
   const now = new Date();
-  return updateGuidePaymentStatus(guideId, {
+  return atualizarGuiaComEvidencia(prisma, guideId, atual => atual.baixada || atual.paymentStatus === "PAID" || atual.clienteConfirmouEm ? { serproLastCheckedAt: now } : {
     paymentStatus: "OPEN",
     paymentStatusSource: "SERPRO",
     serproLastCheckedAt: now,
     serproLastSeenAt: now,
     serproLastCheckResult: checkResult,
-  });
+  }, { include: { parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA } } });
 }
 
 /** O que se grava quando o PAGTOWEB não localizou o comprovante. Vocabulário do mock desde sempre. */

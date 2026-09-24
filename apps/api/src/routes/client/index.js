@@ -1168,13 +1168,17 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
   });
   router.get("/companies/:companyId/guides", requireClientCompanyAccess(), async (req, res) => {
     const { companyId } = req.params || {};
-    const { competencia, status, page, limit } = req.query || {};
+    const { competencia, status, page, limit, guideId } = req.query || {};
+    if (guideId !== undefined && (typeof guideId !== "string" || !/^[a-zA-Z0-9_.-]{1,150}$/.test(guideId))) {
+      return res.status(400).json({ error: "guide_id_invalid" });
+    }
     const result = await listGuidesByCompany({
       portalClientId: companyId,
-      competencia,
+      guideId,
+      competencia: guideId ? undefined : competencia,
       status,
-      page,
-      limit,
+      page: guideId ? 1 : page,
+      limit: guideId ? 1 : limit,
       /**
        * ⚠⚠⚠ A LISTA VOLTOU A FILTRAR POR `liberadaCliente` EM 02/09/2026 — decisão do dono:
        * *"as únicas guias que devem aparecer no portal do cliente são as liberadas pelo contador"*.

@@ -17,7 +17,7 @@ function memoryDb() {
   } };
 }
 const config = { enabled: true, day: 9, hour: 7 };
-const now = new Date("2026-09-09T10:05:00Z");
+const now = new Date("2026-09-09T10:00:05Z");
 test("duas instâncias disputam o mesmo horário, só uma adquire", async () => {
   const db = memoryDb();
   const claims = await Promise.all([1, 2].map(() => claimScheduledRun({ routine: "das", config, now, db })));
@@ -28,24 +28,29 @@ test("sucesso persistido impede repetição após reinício", async () => {
   await finishScheduledRun(claim, { failed: 0 }, null, { db, now });
   expect(await claimScheduledRun({ routine: "das", config, now: new Date(now.getTime() + 60000), db })).toBeNull();
 });
-test("falha tem espera e limite de tentativas", async () => {
+test("falha nunca gera nova consulta no mesmo horário ou nos dias seguintes", async () => {
   const db = memoryDb();
-  for (let i = 0; i < 3; i += 1) {
-    const at = new Date(now.getTime() + i * 16 * 60000);
-    const claim = await claimScheduledRun({ routine: "das", config, now: at, db });
-    expect(claim).not.toBeNull();
-    await finishScheduledRun(claim, { failed: 1 }, null, { db, now: at });
-    expect(await claimScheduledRun({ routine: "das", config, now: new Date(at.getTime() + 60000), db })).toBeNull();
+  const claim = await claimScheduledRun({ routine: "das", config, now, db });
+  await finishScheduledRun(claim, { failed: 1 }, null, { db, now });
+  expect(db.rows.get(claim.key).value.retryAt).toBeNull();
+  for (const delta of [1000, 16 * 60000, 24 * 3600000, 48 * 3600000]) {
+    expect(await claimScheduledRun({ routine: "das", config, now: new Date(now.getTime() + delta), db })).toBeNull();
   }
-  expect(await claimScheduledRun({ routine: "das", config, now: new Date(now.getTime() + 60 * 60000), db })).toBeNull();
+  expect(await claimScheduledRun({ routine: "das", config, now: new Date("2026-10-09T10:00:05Z"), db })).not.toBeNull();
 });
-test("reserva expirada é retomada, dono antigo não finaliza a nova", async () => {
+test("reserva expirada não repete chamada de resultado desconhecido", async () => {
   const db = memoryDb();
   const first = await claimScheduledRun({ routine: "das", config, now, db });
   const next = await claimScheduledRun({ routine: "das", config, now: new Date(now.getTime() + 6 * 60000), db });
-  expect(next.value.owner).not.toBe(first.value.owner);
-  expect(await finishScheduledRun(first, {}, null, { db, now })).toBe(false);
-  expect(db.rows.get(next.key).value.owner).toBe(next.value.owner);
+  expect(next).toBeNull();
+  expect(db.rows.get(first.key).value.attempts).toBe(1);
+});
+
+test("registro antigo com retry pendente também não autoriza nova consulta", async () => {
+  const db = memoryDb();
+  const claim = await claimScheduledRun({ routine: "das", config, now, db });
+  db.rows.get(claim.key).value = { ...claim.value, status: "FAILED", retryAt: now.toISOString() };
+  expect(await claimScheduledRun({ routine: "das", config, now, db })).toBeNull();
 });
 
 test("suspensão do processo além da reserva impede a próxima chamada mesmo antes do timer", async () => {
@@ -60,7 +65,7 @@ test("suspensão do processo além da reserva impede a próxima chamada mesmo an
   } finally { jest.useRealTimers(); }
 });
 
-test.each([{ parcelasErro: 1 }, { extratoErro: 1 }, { errors: 2 }, { naoConferiveis: 1 }])("falha parcial não aparece como conclusão: %j", async (result) => {
+test.each([{ parcelasErro: 1 }, { extratoErro: 1 }, { errors: 2 }, { naoConferiveis: 1 }, { avisosPendentes: 1 }])("falha parcial não aparece como conclusão: %j", async (result) => {
   const db = memoryDb();
   const claim = await claimScheduledRun({ routine: "parcelamento", config, now, db });
   await finishScheduledRun(claim, result, null, { db, now });

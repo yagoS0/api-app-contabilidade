@@ -16,6 +16,8 @@ import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB, INTEGRACAO_SERPRO_PARCELAMENTO } from "../../../config.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "./SerproParcelaPagamentoService.js";
+import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
+import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
 // O número do documento (DAS/DARF/INSS) fica em guide.extracted.numeroDocumento (não é coluna).
@@ -42,14 +44,18 @@ function maskCnpj(cnpj) {
  * - não pago → marca OPEN (mantém em aberto).
  * Idempotente: guia já PAID → skip. Guia sem numeroDocumento → skip.
  */
-export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {} }) {
+export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
   const guide = await prisma.guide.findUnique({
     where: { id: String(guideId) },
     include: { portalClient: { select: { id: true, cnpj: true } } },
   });
   if (!guide) return { ok: false, skipped: "guide_not_found" };
-  if (isGuidePaid(guide)) return { ok: true, skipped: "already_paid", guideId: guide.id };
+  const conferirDeclaracaoCliente = !scheduledAt && guide.paymentStatusSource === "CLIENTE" && !guide.baixada;
+  if (!conferirDeclaracaoCliente && (isGuidePaid(guide) || guide.clienteConfirmouEm || guide.baixada)) return { ok: true, skipped: "already_paid", guideId: guide.id };
+  const vencimentoRecusa = scheduledAt ? elegibilidadeVencimentoAutomatico(guide.vencimento) : null;
+  if (vencimentoRecusa) return { ok: true, skipped: vencimentoRecusa, guideId: guide.id };
+  if (await consultaAutomaticaEncerrada({ guideId: guide.id, scheduledAt })) return { ok: true, skipped: "conferencia_manual", negativaConfirmada: true, guideId: guide.id };
 
   const contribuinteCnpj = guide.portalClient?.cnpj || guide.cnpj;
   if (!contribuinteCnpj) return { ok: false, skipped: "sem_cnpj", guideId: guide.id };
@@ -60,12 +66,12 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
   if (guide.parcelamentoId) {
     const parcela = await prisma.parcela.findFirst({ where: { guiaId: guide.id, portalClientId: guide.portalClientId }, select: { id: true } });
     if (!parcela) return { ok: true, skipped: "identificacao_incompleta", guideId: guide.id };
-    return confirmarPagamentoParcela({ parcelaId: parcela.id, portalClientId: guide.portalClientId, logger, assertActive });
+    return confirmarPagamentoParcela({ parcelaId: parcela.id, portalClientId: guide.portalClientId, logger, assertActive, scheduledAt });
   }
 
   // Q46: DAS (Simples) — sinal de pago AUTORITATIVO vem do `dasPago` (CONSDECLARACAO13), não do PAGTOWEB.
   if (tipoUpper === "SIMPLES") {
-    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive });
+    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive, scheduledAt });
   }
 
   // Q46: INSS (e demais) — confirma via PAGTOWEB pelo numeroDocumento do DARF (GERARGUIA31).
@@ -90,7 +96,8 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
     // continua `OPEN` — o estado em que já estava —, e o registro passa a DIZER que nada foi
     // localizado, em vez de gravar `"FOUND"` sobre uma busca que não achou nada.
     await markGuideOpenBySerpro({ guideId: guide.id, checkResult: CHECK_RESULT_NAO_LOCALIZADO });
-    return { ok: true, pago: false, guideId: guide.id, mensagem: result.mensagem };
+    await registrarNegativaAutomatica({ guideId: guide.id, scheduledAt });
+    return { ok: true, pago: false, negativaConfirmada: true, guideId: guide.id, mensagem: result.mensagem };
   }
 
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
@@ -101,51 +108,37 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
 /**
  * Q46: confirma o pagamento do DAS (Simples). O sinal de pago é o `dasPago` do índice PGDAS-D
- * (CONSDECLARACAO13) — prefere o valor já gravado na CompanyMonthlyCircular (Q17, sem custo); se
- * faltar, consulta on-demand. O PAGTOWEB só é chamado (se ligado) para BUSCAR O COMPROVANTE, com o
+ * (CONSDECLARACAO13), consultado uma vez nesta execução. O PAGTOWEB só é chamado no fluxo manual
+ * (se ligado) para BUSCAR O COMPROVANTE, com o
  * numeroDocumento CORRETO (dasNumeroDocumento), não o heurístico do GERARDAS.
  */
-async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive = () => {} }) {
+async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive = () => {}, scheduledAt = null }) {
   let numeroDocumento = null;
   let dasPago = null;
 
-  const circ = (guide.competencia && guide.portalClientId)
-    ? await prisma.companyMonthlyCircular.findFirst({
-        where: { portalClientId: guide.portalClientId, competencia: guide.competencia },
-        select: { dasNumeroDocumento: true, dasPago: true },
-      }).catch(() => null)
-    : null;
-  if (circ && (circ.dasNumeroDocumento || circ.dasPago != null)) {
-    numeroDocumento = circ.dasNumeroDocumento || null;
-    dasPago = circ.dasPago;
-  }
-
-  // Sem sinal na circular → consulta o índice do DAS on-demand (barato; /Consultar).
-  if (dasPago == null && guide.competencia) {
-    try {
-      await assertActive();
-      const idx = await consultarDasIndexPorCompetencia({
-        portalClientId: guide.portalClientId, competencia: guide.competencia, contribuinteCnpj,
-      });
-      if (idx) { numeroDocumento = numeroDocumento || idx.numeroDocumento; dasPago = idx.dasPago; }
-    } catch (err) {
-      logger?.warn?.({ code: err?.code || err?.message, guideId: guide.id }, "DAS: falha ao consultar índice (CONSDECLARACAO13)");
-    }
+  // Uma consulta atual. O negativo salvo na circular pode anteceder o pagamento do cliente.
+  if (guide.competencia) {
+    await assertActive();
+    const idx = await consultarDasIndexPorCompetencia({
+      portalClientId: guide.portalClientId, competencia: guide.competencia, contribuinteCnpj,
+    });
+    if (idx) { numeroDocumento = idx.numeroDocumento; dasPago = idx.dasPago; }
   }
   numeroDocumento = numeroDocumento || getGuideNumeroDocumento(guide);
 
-  if (dasPago == null) {
-    return { ok: true, pago: false, guideId: guide.id, mensagem: "Não foi possível consultar o pagamento do DAS (índice indisponível)." };
+  if (typeof dasPago !== "boolean") {
+    throw Object.assign(new Error("Não foi possível conferir o pagamento do DAS: índice indisponível."), { code: "DAS_PAGAMENTO_INDISPONIVEL" });
   }
   if (dasPago !== true) {
     await markGuideOpenBySerpro({ guideId: guide.id });
-    return { ok: true, pago: false, guideId: guide.id, mensagem: "DAS ainda não consta pago na Receita." };
+    await registrarNegativaAutomatica({ guideId: guide.id, scheduledAt });
+    return { ok: true, pago: false, negativaConfirmada: true, guideId: guide.id, mensagem: "DAS ainda não consta pago na Receita." };
   }
 
   // DAS pago (autoritativo). Busca o comprovante via PAGTOWEB se ligado + número disponível (best-effort).
   let comprovantePdfFileId = null;
   let comprovante = null;
-  if (INTEGRACAO_SERPRO_PAGTOWEB && numeroDocumento) {
+  if (!scheduledAt && INTEGRACAO_SERPRO_PAGTOWEB && numeroDocumento) {
     try {
       await assertActive();
       const result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
@@ -258,7 +251,7 @@ async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, log
  * @param {string} [opts.portalClientId] limita a uma empresa (botão por empresa)
  * @param {string} [opts.competencia] limita a uma competência
  */
-export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {} } = {}) {
+export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {}, scheduledAt = null } = {}) {
   // Rotina `pagamento`: quando roda em lote (cron ou "confirmar agora"), só as empresas
   // marcadas na página Rotinas. Com `portalClientId` explícito o filtro NÃO se aplica —
   // é o botão por empresa, escolha direta do contador.
@@ -283,7 +276,9 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   const where = {
     source: "SERPRO",
     status: "PROCESSED",
-    paymentStatus: { in: ["OPEN", "OVERDUE"] },
+    ...(scheduledAt ? { paymentStatus: { in: ["OPEN", "OVERDUE"] } } : {
+      AND: [{ OR: [{ paymentStatus: { in: ["OPEN", "OVERDUE"] } }, { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", baixada: false }] }],
+    }),
     // ⚠ PARCELA DE PARCELAMENTO FICA DE FORA DA VARREDURA — a mesma exclusão que `confirmarPagamentoGuia`
     // faz por guia, aqui na QUERY para ela nem entrar na contagem do resumo (senão a mensagem diria
     // "N guias consultadas" incluindo as que ninguém consultou). O motivo está lá: o índice do
@@ -326,8 +321,9 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive });
-      results.push({ guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open") });
+      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
+      const aviso = scheduledAt && r.negativaConfirmada ? await avisarPagamentoNaoConfirmado({ guideId: g.id, scheduledAt, assertActive }) : null;
+      results.push({ guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
     } catch (err) {
       const code = err?.code || err?.message || "ERRO";
       if (!firstError) firstError = code;
@@ -336,17 +332,22 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   }
 
   const parcelas = INTEGRACAO_SERPRO_PARCELAMENTO
-    ? await confirmarPagamentosParcelasEmLote({ portalClientIds: portalClientId ? [portalClientId] : filtroRotina?.portalClientId.in, logger, assertActive })
+    ? await confirmarPagamentosParcelasEmLote({ portalClientIds: portalClientId ? [portalClientId] : filtroRotina?.portalClientId.in, logger, assertActive, scheduledAt })
     : { total: 0, results: [], skipped: "integracao_parcelamento_desabilitada" };
   results.push(...parcelas.results);
   firstError ||= parcelas.results.find(r => r.status === "error")?.error || null;
   const total = guides.length + parcelas.total;
   const paid = results.filter((r) => r.status === "paid").length;
-  const naoLocalizado = results.filter((r) => r.status === "open").length; // consultou, mas não achou comprovante
+  const naoLocalizado = results.filter((r) => ["open", "NAO_LOCALIZADO"].includes(r.status)).length;
+  const conferenciaManual = results.filter(r => r.status === "conferencia_manual").length;
   const semDoc = results.filter((r) => r.status === "sem_numero_documento").length;
   const jaPago = results.filter((r) => r.status === "already_paid").length;
+  const naoVencidas = results.filter(r => r.status === "ainda_nao_vencida").length;
+  const semVencimento = results.filter(r => r.status === "sem_vencimento_confirmado").length;
   const errors = results.filter((r) => r.status === "error").length;
   const pagtowebDisabled = firstError === "SERPRO_PAGTOWEB_DISABLED";
+  const avisosPendentes = results.filter(r => r.aviso?.status === "PENDENTE").length;
+  const avisosEnviados = results.filter(r => r.aviso?.status === "ENVIADO").length;
 
   // Q45: resultado auto-descritivo — em vez de "ok" genérico, diz o que aconteceu.
   let mensagem;
@@ -359,12 +360,17 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     if (naoLocalizado) partes.push(`${naoLocalizado} não localizada(s)`);
     if (jaPago) partes.push(`${jaPago} já constava(m) paga(s)`);
     if (semDoc) partes.push(`${semDoc} sem nº do documento`);
+    if (naoVencidas) partes.push(`${naoVencidas} ainda não vencida(s), sem consulta`);
+    if (semVencimento) partes.push(`${semVencimento} sem vencimento confirmado, sem consulta`);
+    if (conferenciaManual) partes.push(`${conferenciaManual} aguardando conferência manual, sem nova consulta`);
     if (errors) partes.push(`${errors} com erro${firstError ? ` (${firstError})` : ""}`);
+    if (avisosEnviados) partes.push(`${avisosEnviados} aviso(s) enviado(s)`);
+    if (avisosPendentes) partes.push(`${avisosPendentes} aviso(s) pendente(s): conferir canal/destinatário`);
     mensagem = `${total} guia(s) verificada(s): ${partes.join(", ")}.`;
   }
 
   return {
     total, paid, open: naoLocalizado, naoLocalizado, semDoc, jaPago, errors,
-    pagtowebDisabled, firstError, mensagem, results, parcelas,
+    pagtowebDisabled, firstError, mensagem, results, parcelas, avisosPendentes, avisosEnviados, conferenciaManual, naoVencidas, semVencimento,
   };
 }

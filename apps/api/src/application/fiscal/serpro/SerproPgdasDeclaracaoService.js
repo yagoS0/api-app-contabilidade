@@ -130,13 +130,14 @@ function findDasIndexNode(input) {
   return null;
 }
 
-function parseDasIndexResponse(responseData) {
+export function parseDasIndexResponse(responseData) {
   const dados = parseSerproJsonField(responseData);
   const indiceDas = findDasIndexNode(dados) || findDasIndexNode(responseData);
   if (!indiceDas) return null;
   const numeroDocumento = String(indiceDas.numeroDas || indiceDas.numeroDocumento || "").trim() || null;
   const dasPagoRaw = indiceDas.dasPago;
-  const dasPago = dasPagoRaw === true || String(dasPagoRaw || "").trim().toLowerCase() === "true";
+  const booleano = String(dasPagoRaw ?? "").trim().toLowerCase();
+  const dasPago = booleano === "true" ? true : booleano === "false" ? false : null;
   const dataHoraEmissaoDas = parseCompactDateTime(indiceDas.dataHoraEmissaoDas || indiceDas.dataEmissaoDas || "");
   return {
     numeroDocumento,
@@ -150,8 +151,8 @@ function parseDasIndexResponse(responseData) {
  * Q46: resolve o índice do DAS de uma competência (número do documento de arrecadação + dasPago)
  * via CONSDECLARACAO13. Usado pela confirmação de pagamento para obter o numeroDocumento CORRETO
  * (não o heurístico do GERARDAS) e o sinal autoritativo de pagamento (`dasPago`). Chamada barata
- * (/Consultar); NÃO gera lançamentos. Prefira o valor já gravado em companyMonthlyCircular.
- * @returns {Promise<{numeroDocumento: string|null, dasPago: boolean, dataHoraEmissaoDas: string|null}|null>}
+ * (/Consultar); NÃO gera lançamentos. Confirmação de pagamento usa uma leitura atual.
+ * @returns {Promise<{numeroDocumento: string|null, dasPago: boolean|null, dataHoraEmissaoDas: string|null}|null>}
  */
 export async function consultarDasIndexPorCompetencia({ portalClientId, competencia, contribuinteCnpj = null, contratanteCnpj = null }) {
   const runtime = await getResolvedSerproCredentials();

@@ -173,7 +173,7 @@ export function RotinasPage({
             <div className="serpro-settings-card__head">
               <h1 className="serpro-settings-card__title">Agenda</h1>
               <p className="serpro-settings-card__description">
-                Horário de Brasília. Capturas mensais têm duas novas tentativas nos dias seguintes.
+                Horário de Brasília. Consultas apenas na agenda salva, sem novas tentativas automáticas. Se o mês não tiver o dia escolhido, a rotina não será executada naquele mês.
                 Se o dia não existir no mês, usamos o último dia disponível.
               </p>
             </div>
@@ -399,16 +399,22 @@ export function RotinasPage({
                 <tbody>{(workerStatus?.routines || executionStatus).map((row) => (
                   <tr key={row.routine} style={{ borderTop: "1px solid var(--border)" }}>
                     <td style={td}>{rotinas.find((r) => r.key === row.routine)?.label || row.routine}</td>
-                    <td style={td}>{!row.enabled ? "Desativada" : !row.alive ? "Sem sinal do executor" : row.lastRun?.status === "RUNNING" ? "Em execução" : row.retryExhausted ? "Tentativas esgotadas" : row.lastRun?.status === "FAILED" ? "Consultar falha" : row.overdue ? "Execução pendente" : "Aguardando horário"}</td>
+                    <td style={td}>{!row.enabled ? "Desativada" : row.interrupted ? "Execução interrompida" : !row.alive ? "Sem sinal do executor" : row.lastRun?.status === "RUNNING" ? "Em execução" : row.lastRun?.status === "FAILED" ? "Consultar falha" : row.overdue ? "Horário não executado" : "Aguardando horário"}</td>
                     <td style={td}>
                       {formatDateTime(row.lastRun?.finishedAt || row.lastRun?.startedAt)}
                       {row.lastRun && <details><summary>Resultado</summary>
-                        <p>{row.lastRun.status === "SUCCEEDED" ? "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
+                        <p>{row.interrupted ? "Execução interrompida" : row.lastRun.status === "SUCCEEDED" ? "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
                         {row.lastRun.result?.divergentes > 0 && <p>{row.lastRun.result.divergentes} empresa(s) com divergência fiscal para conferir.</p>}
                         {row.lastRun.error && <p>{row.lastRun.error}</p>}
-                        <p>Tentativa {row.lastRun.attempts || 1} de {row.maxAttempts || 3}{row.retryExhausted ? ". Requer conferência; próxima execução na agenda." : row.lastRun.retryAt ? `. Nova tentativa a partir de ${formatDateTime(row.lastRun.retryAt)}.` : ""}</p>
+                        {row.lastRun.result?.mensagem && <p>{row.lastRun.result.mensagem}</p>}
+                        {row.lastRun.result?.avisosEnviados > 0 && <p>{row.lastRun.result.avisosEnviados} aviso(s) de pagamento enviado(s).</p>}
+                        {row.lastRun.result?.avisosPendentes > 0 && <p>{row.lastRun.result.avisosPendentes} aviso(s) aguardam ação do contador. Confira o canal e o destinatário.</p>}
+                        <p>Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
                         {[...(row.lastRun.result?.results || []), ...(row.lastRun.result?.extratoResults || []), ...(row.lastRun.result?.parcelaResults || [])].map((item, i) => <div key={`${item.companyId || "item"}-${i}`}>
                           <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || item.status}</p>
+                          {item.aviso && <p>{item.aviso.status === "ENVIADO" ? "Aviso enviado ao cliente." : item.aviso.status === "JA_ENVIADO" ? "Cliente já avisado; sem novo envio." : item.aviso.status === "IGNORADO" ? "Aviso não enviado: pagamento ou confirmação precisa ser conferido." : "Aviso pendente para o contador; nenhuma nova consulta à Receita será feita automaticamente."}</p>}
+                          {item.aviso?.mensagem && <p>{item.aviso.mensagem}</p>}
+                          {(item.aviso?.resultados || []).filter(resultado => resultado.mensagem && !["ENVIADO", "JA_ENVIADO"].includes(resultado.status)).map((resultado, j) => <p key={`aviso-${j}`}>{resultado.mensagem}</p>)}
                           {(item.parcelas || []).map((parcela, j) => <p key={j}>Parcela {parcela.anoMes || parcela.anoMesParcela || parcela.numeroParcela || "consultada"}: {parcela.reason || parcela.error || parcela.status}</p>)}
                         </div>)}
                       </details>}

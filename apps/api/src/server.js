@@ -4,7 +4,7 @@ import express from "express";
 import { iniciarWorkerWhatsappDuravel, pararWorkerWhatsappDuravel } from "./workers/whatsappDurableWorker.js";
 import { iniciarWorkerArquivosWhatsapp, pararWorkerArquivosWhatsapp } from "./workers/whatsappArquivosWorker.js";
 import cors from "cors";
-import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, CONFERENCIA_ADN_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
+import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, CONFERENCIA_ADN_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
@@ -24,8 +24,8 @@ import { createInternalRouter } from "./routes/internal.js";
 import { createWhatsappWebhookRouter, CAMINHO_WEBHOOK_WHATSAPP } from "./routes/webhooks/whatsapp.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
-import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
 import { runConferenciaAdnWorkerLoop } from "./workers/conferenciaAdnWorker.js";
+import { iniciarWorkerVarreduraNotasLocal, pararWorkerVarreduraNotasLocal } from "./workers/varreduraNotasLocalWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
 import { seedMapaContaTributoGlobal } from "./application/accounting/parcelamento/MapaContaTributoSeeds.js";
@@ -185,6 +185,7 @@ const servidor = app.listen(PORT, HOST, () => {
 
 iniciarWorkerWhatsappDuravel();
 iniciarWorkerArquivosWhatsapp();
+iniciarWorkerVarreduraNotasLocal();
 let encerrando = false;
 async function encerrarWhatsapp() {
   if (encerrando) return;
@@ -193,7 +194,7 @@ async function encerrarWhatsapp() {
   const limite = setTimeout(() => process.exit(0), 35000);
   limite.unref();
   servidor.close();
-  await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp()]);
+  await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp(), pararWorkerVarreduraNotasLocal()]);
   await prisma.$disconnect();
   process.exit(0);
 }
@@ -223,14 +224,9 @@ if (SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED) {
   });
 }
 
-// Q12.B+++.5: worker automático de captura DFe (NF-e SEFAZ + NFS-e ADN).
-// Opt-in via DFE_NOTAS_WORKER_ENABLED=1. Intervalo entre ciclos por CNPJ
-// configurável via DFE_NOTAS_WORKER_INTERVAL_MIN (default 60 = 1h conforme NT).
-if (DFE_NOTAS_WORKER_ENABLED) {
-  runDfeNotasWorkerLoop().catch((err) => {
-    log.error({ err: err?.message || err }, "dfeNotasWorker loop fatal");
-  });
-}
+// DFe/ADN não inicia consultas no boot. O laço legado usava intervalos de ambiente,
+// sem agenda nem seleção de empresas salvas na interface. Até existir essa configuração,
+// a captura permanece sob comando explícito (tela de Notas ou CLI --once).
 
 // Confere o faturamento da competência contra o ADN nacional no dia 1 do mês seguinte — pega nota
 // que falta e nota que o cliente cancelou no nacional (e que aqui ainda somava). Opt-in.

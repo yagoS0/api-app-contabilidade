@@ -10,8 +10,8 @@ import { ROTINA_KEYS } from "./SerproRuntimeSettings.js";
  *   - serproDctfwebWorker: INSS em TODA empresa (não filtra regime)
  * Agora é DECLARADO — o contador vê e escolhe na página Rotinas.
  *
- * O seed abaixo reproduz exatamente a regra acima, para que ligar esta feature não mude o
- * comportamento de quem já está em produção.
+ * Só o salvamento explícito autoriza a rotina. Empresa nova e ausência de registro
+ * permanecem desligadas; as escolhas existentes não são reescritas na leitura.
  *
  * A AGENDA (dia/hora por rotina) NÃO vive aqui: está em SerproRuntimeSettings.rotinas.
  */
@@ -32,7 +32,7 @@ function normalizaRegime(legacyRow) {
     .toUpperCase();
 }
 
-/** Rotinas que a empresa faria HOJE, pela regra implícita dos workers. Base do seed. */
+/** Sugestão legada para escolha explícita; não autoriza execução nem deve alimentar seeds. */
 export function rotinasPadraoPorRegime(regime) {
   const set = new Set();
   // serproDctfwebWorker não filtra regime: INSS é tentado em toda empresa.
@@ -50,25 +50,15 @@ export function rotinasPadraoPorRegime(regime) {
 }
 
 /**
- * Cria as linhas que faltam, sem tocar nas existentes. Idempotente e não-destrutivo:
- * se o contador desligou `das` numa empresa, a linha já existe (enabled=false) e o seed
- * NÃO a religa.
+ * Compatibilidade para manutenção explícita: cria somente linhas desligadas e preserva
+ * todas as escolhas existentes. Não é chamado pela leitura da página.
  */
 export async function seedRotinasFromLegacy() {
   const portalRows = await prisma.portalClient.findMany({
     where: { cnpj: { not: "" } },
-    select: { id: true, companyId: true },
+    select: { id: true },
   });
   if (portalRows.length === 0) return { criadas: 0, empresas: 0 };
-
-  const legacyIds = portalRows.map((p) => p.companyId).filter(Boolean);
-  const legacy = legacyIds.length > 0
-    ? await prisma.company.findMany({
-        where: { id: { in: legacyIds } },
-        select: { id: true, regimeTributario: true, tipoTributario: true },
-      })
-    : [];
-  const legacyMap = new Map(legacy.map((c) => [c.id, c]));
 
   const existentes = await prisma.companyRotina.findMany({
     select: { portalClientId: true, rotina: true },
@@ -77,11 +67,9 @@ export async function seedRotinasFromLegacy() {
 
   const novas = [];
   for (const p of portalRows) {
-    const regime = normalizaRegime(p.companyId ? legacyMap.get(p.companyId) : null);
-    const padrao = rotinasPadraoPorRegime(regime);
     for (const rotina of ROTINA_KEYS) {
       if (jaTem.has(`${p.id}:${rotina}`)) continue;
-      novas.push({ portalClientId: p.id, rotina, enabled: padrao.has(rotina) });
+      novas.push({ portalClientId: p.id, rotina, enabled: false });
     }
   }
   if (novas.length === 0) return { criadas: 0, empresas: portalRows.length };
@@ -90,10 +78,8 @@ export async function seedRotinasFromLegacy() {
   return { criadas: novas.length, empresas: portalRows.length };
 }
 
-/** Dados da tabela da página Rotinas: empresa × rotina. Semeia antes, para não vir vazio. */
+/** Leitura sem mutações. Ausência de escolha é desligado, independentemente do regime. */
 export async function listCompanyRotinas() {
-  await seedRotinasFromLegacy();
-
   const portalRows = await prisma.portalClient.findMany({
     where: { cnpj: { not: "" } },
     select: { id: true, razao: true, cnpj: true, status: true, companyId: true },

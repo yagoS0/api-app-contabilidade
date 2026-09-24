@@ -2000,7 +2000,7 @@ export function createMockApi() {
     },
 
     // --- Guias --------------------------------------------------------------
-    async getGuides(companyId, { competencia, page = 1, limit = 25 } = {}) {
+    async getGuides(companyId, { competencia, guideId, page = 1, limit = 25 } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
@@ -2008,9 +2008,10 @@ export function createMockApi() {
 
       const filtradas = estado.guias
         .filter((g) => g._clientId === id)
+        .filter((g) => !guideId || (g.guideId === guideId && g.liberadaCliente === true))
         // ⚠⚠ O FILTRO SAIU EM 30/08/2026, junto com o da rota real — e as duas têm de sair juntas:
         // mock que esconde o que o servidor mostra treina a tela para um estado que não existe.
-        .filter((g) => (competencia ? g.competencia === competencia : true));
+        .filter((g) => (competencia && !guideId ? g.competencia === competencia : true));
 
       const total = filtradas.length;
       const inicio = (pageNum - 1) * take;

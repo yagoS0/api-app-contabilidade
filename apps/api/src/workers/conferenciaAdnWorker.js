@@ -12,12 +12,11 @@
 //    cancelada e sai do faturamento (senão a apuração sai A MAIOR, sem nada indicar).
 //
 // QUEM × QUANDO: `CompanyRotina` (rotina "conferencia" ligada por empresa) × a agenda da rotina
-// em `SerproRuntimeSettings.rotinas.conferencia` (default dia 1, 6h, com janela de retry — se o
-// worker estiver fora do ar no dia 1, ele ainda pega nos dias seguintes).
+// em `SerproRuntimeSettings.rotinas.conferencia`, explicitamente habilitada com dia e hora.
+// Não há agenda padrão, recuperação de horários perdidos ou novas tentativas automáticas.
 //
 // CUSTO: cada conferência é uma varredura por NSU no ADN. Roda uma empresa por vez, com pausa
-// entre elas, e falha de uma NUNCA derruba o ciclo — a próxima continua. A janela de retry da
-// agenda (dias 1-3) NÃO multiplica o custo: quem já foi conferido no mês é pulado.
+// entre elas, e falha de uma não derruba o ciclo — a próxima continua.
 //
 // Opt-in, como todo worker do projeto: CONFERENCIA_ADN_WORKER_ENABLED=1.
 
@@ -65,10 +64,7 @@ async function executarConferencia({ competencia: competenciaForcada, forcar = f
 
   const resumo = { competencia, empresas: alvos.size, ok: 0, divergentes: 0, naoConferiveis: 0, falhas: 0, marcadasCanceladas: 0, pulados: 0, results: [] };
 
-  // A agenda tem janela de retry (dias 1 a 3): se o worker estiver fora do ar no dia 1, ele ainda
-  // pega. Sem este corte, porém, a janela viraria TRÊS varreduras completas do ADN por empresa
-  // todo mês — as outras rotinas se auto-limitam porque pulam o que já capturaram; a conferência
-  // não tinha esse freio. Só reconfere se ainda não foi conferida nesta rodada mensal.
+  // Reutiliza a conferência já concluída nesta competência, sem nova consulta externa.
   // `forcar` (--force) reconfere mesmo o que já foi conferido: é o modo de investigar um número
   // que não bate, quando reler o ADN é justamente o que se quer.
   const inicioDoMes = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));

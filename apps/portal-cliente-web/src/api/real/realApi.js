@@ -315,9 +315,9 @@ export function createRealApi() {
     // GET /client/companies/:id/guides -> { data, page, limit, total }
     // ⚠ A rota já filtra `apenasLiberadas: true` — o cliente só vê guia que o
     // contador liberou. Não existe filtro nosso a acrescentar aqui.
-    async getGuides(companyId, { competencia, page = 1, limit = 25 } = {}) {
+    async getGuides(companyId, { competencia, guideId, page = 1, limit = 25 } = {}) {
       return pedir(
-        `/client/companies/${encodeURIComponent(companyId)}/guides${qs({ competencia, page, limit })}`
+        `/client/companies/${encodeURIComponent(companyId)}/guides${qs({ competencia, guideId, page, limit })}`
       );
     },
 

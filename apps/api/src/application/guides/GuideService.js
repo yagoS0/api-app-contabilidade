@@ -129,6 +129,7 @@ export async function getGuidePdfBuffer(guide) {
 
 export async function listGuidesByCompany({
   portalClientId,
+  guideId,
   competencia,
   status,
   paymentStatus,
@@ -151,6 +152,7 @@ export async function listGuidesByCompany({
   const skip = (pageNum - 1) * take;
   const where = {
     portalClientId: String(portalClientId),
+    ...(guideId ? { id: String(guideId) } : {}),
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),
     // Processamento e pagamento são estados distintos; o WhatsApp consulta o segundo.

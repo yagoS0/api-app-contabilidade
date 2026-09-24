@@ -290,44 +290,12 @@ describe("POST /firm/companies — caracterização do provisionamento de empres
     expect(res.body.regrasAplicadas).toBeNull();
   });
 
-  // 8-bis — MUDANÇA DE COMPORTAMENTO introduzida junto da extração (decisão 3 do plano):
-  // até aqui empresa nova só ganhava `CompanyRotina` quando ALGUÉM abria a página Rotinas e o
-  // `seedRotinasFromLegacy` rodava. Agora o pós-criação semeia as 7 rotinas na hora, nos DOIS
-  // caminhos de criação.
-  //
-  // ⚠ O payload precisa ser um OBJETO com as 7 chaves, não o Set que `rotinasPadraoPorRegime`
-  // devolve: `saveCompanyRotinas` lê `rotinas[chave] === undefined` e pularia todas, gravando
-  // zero linha sem erro nenhum.
-  test("empresa nova nasce com as rotinas SERPRO do regime semeadas", async () => {
+  test("empresa nova não autoriza consultas pagas pelo regime", async () => {
     const res = await request(app).post("/firm/companies").send(payloadValido());
-
     expect(res.status).toBe(201);
-    expect(saveCompanyRotinas).toHaveBeenCalledTimes(1);
-    const [itens] = saveCompanyRotinas.mock.calls[0];
-    expect(itens).toEqual([
-      {
-        companyId: "portal-1",
-        rotinas: {
-          // regime SIMPLES: inss + pagamento (toda empresa) + das/extrato/parcelamento
-          das: true,
-          inss: true,
-          extrato: true,
-          presumido: false,
-          parcelamento: true,
-          pagamento: true,
-          conferencia: false,
-        },
-      },
-    ]);
-  });
-
-  test("falha ao semear rotinas NÃO derruba o 201 (pós-criação é best-effort)", async () => {
-    saveCompanyRotinas.mockRejectedValue(new Error("banco fora do ar"));
-
-    const res = await request(app).post("/firm/companies").send(payloadValido());
-
-    expect(res.status).toBe(201);
-    expect(res.body.regrasAplicadas).toEqual({ regrasAvaliadas: 2, obrigacoesCriadas: 5 });
+    expect(saveCompanyRotinas).not.toHaveBeenCalled();
+    expect(prismaMock.companyRotina.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.companyRotina.upsert).not.toHaveBeenCalled();
   });
 
   // 9 — MEI/OUTRO passam no Zod (`companyCreateSchema` os aceita) e morrem na normalização.

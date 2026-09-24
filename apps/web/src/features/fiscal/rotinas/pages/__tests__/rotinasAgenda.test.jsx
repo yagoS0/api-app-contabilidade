@@ -28,3 +28,13 @@ test("executor sem sinal não aparece como consulta bem-sucedida", async () => {
   expect(await screen.findByText("Sem sinal do executor")).toBeVisible();
   expect(screen.queryByText("Concluída")).not.toBeInTheDocument();
 });
+
+test("falha mostra ação do contador e não promete retry antigo", async () => {
+  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }], agenda: {}, empresas: [],
+    executions: [{ routine: "pagamento", enabled: true, alive: true, retryExhausted: true,
+      lastRun: { status: "FAILED", attempts: 3, retryAt: "2026-09-25T11:15:00Z" }, nextAt: "2026-10-20T11:00:00Z" }] })) };
+  render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  expect(await screen.findByText("Consultar falha")).toBeVisible();
+  expect(screen.getByText("Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.")).toBeInTheDocument();
+  expect(screen.queryByText(/Nova tentativa a partir/)).not.toBeInTheDocument();
+});

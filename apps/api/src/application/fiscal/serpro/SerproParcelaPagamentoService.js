@@ -6,13 +6,20 @@ import { parcelaPagamentoConfirmado } from "../../accounting/parcelamento/penden
 import { atualizarGuiaComEvidencia } from "../../guides/atualizarGuiaComEvidencia.js";
 import { comprovanteParaRegistro } from "../../guides/lib/comprovantePagamento.js";
 import { lerComposicaoDoDocumento } from "../../accounting/parcelamento/composicaoDocumentoParcela.js";
+import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
+import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 
-export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {} }) {
+export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
   const p = await prisma.parcela.findFirst({ where: { id: parcelaId, portalClientId }, include: { guia: { include: { tributosParcela: true } }, parcelamento: true } });
   if (!p) return { ok: false, skipped: "parcela_nao_encontrada" };
   if (p.parcelamento.status === "EXCLUIDO") return { ok: true, skipped: "contrato_excluido" };
-  if (parcelaPagamentoConfirmado(p)) return { ok: true, pago: true, skipped: "already_paid" };
+  const conferirDeclaracaoCliente = !scheduledAt && p.guia?.paymentStatusSource === "CLIENTE" && !p.guia?.baixada && !p.origemBaixa && !p.baixadaEm && p.pagamentoStatus !== "CONFIRMADO";
+  if (!conferirDeclaracaoCliente && (parcelaPagamentoConfirmado(p) || p.guia?.clienteConfirmouEm)) return { ok: true, pago: true, skipped: "already_paid" };
+  const vencimentoReal = p.guia?.vencimento || (p.origem !== "CONTRATO" ? p.vencimento : null);
+  const vencimentoRecusa = scheduledAt ? elegibilidadeVencimentoAutomatico(vencimentoReal) : null;
+  if (vencimentoRecusa) return { ok: true, skipped: vencimentoRecusa, parcelaId: p.id };
+  if (await consultaAutomaticaEncerrada({ parcelaId: p.id, guideId: p.guiaId, scheduledAt })) return { ok: true, skipped: "conferencia_manual", status: "NAO_LOCALIZADO", parcelaId: p.id };
   if (!["PARCSN", "PARCMEI"].includes(p.parcelamento.tipo)) return { ok: true, skipped: "modalidade_manual" };
   if (!/^\d+$/.test(String(p.parcelamento.numeroParcelamento || "")) || !/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.anoMesParcela || ""))) return { ok: true, skipped: "identificacao_incompleta" };
   const agora = new Date();
@@ -52,12 +59,13 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
           ...(r.status === "CONFIRMADO" ? { pagamentoEm: r.pagoEm, valorPago: r.valorPago } : {}) } });
       if (!gravada.count || !p.guiaId || r.status !== "CONFIRMADO") return;
       await atualizarGuiaComEvidencia(tx, p.guiaId, atual => {
-        if (atual.baixada || atual.paymentStatus === "PAID") return {};
+        if (atual.baixada || (atual.paymentStatus === "PAID" && atual.paymentStatusSource !== "CLIENTE")) return {};
         return { paymentStatus: "PAID", paymentStatusSource: "SERPRO", paymentConfirmedAt: r.pagoEm,
           paymentConfirmedByUserId: null, serproLastCheckedAt: agora, serproLastCheckResult: "PARCELA_PAGAMENTO_CONFIRMADO",
           extracted: { ...(atual.extracted || {}), comprovante: comprovanteParaRegistro(r.comprovante) } };
       });
     });
+    if (r.status === "NAO_LOCALIZADO") await registrarNegativaAutomatica({ parcelaId: p.id, guideId: p.guiaId, scheduledAt });
     return { ok: true, pago: r.status === "CONFIRMADO", status: r.status, motivo: r.motivo || null, parcelaId: p.id };
   } catch (err) {
     await prisma.parcela.updateMany({ where: { id: p.id, portalClientId, pagamentoConsultadoEm: agora }, data: { pagamentoErro: err.code || "CONSULTA_FALHOU" } });
@@ -65,29 +73,37 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
   }
 }
 
-export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logger = null, limite = 500, assertActive = () => {} } = {}) {
+export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logger = null, limite = 500, assertActive = () => {}, scheduledAt = null } = {}) {
   const ids = [...new Set((portalClientIds || []).filter(Boolean))];
   if (!ids.length) return { results: [], total: 0 };
   const results = [];
+  let consultas = 0;
   const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
   const mesAtual = partes.find(p => p.type === "year").value + partes.find(p => p.type === "month").value;
   const vistos = [];
-  while (results.length < limite) {
+  while (consultas < limite) {
     await assertActive();
     const rows = await prisma.parcela.findMany({ where: { portalClientId: { in: ids }, origemBaixa: null, baixadaEm: null,
-      anoMesParcela: { not: null, lte: mesAtual }, guia: { isNot: { OR: [{ paymentStatus: "PAID" }, { baixada: true }] } },
+      anoMesParcela: { not: null, lte: mesAtual }, guia: { isNot: scheduledAt ? { OR: [{ paymentStatus: "PAID" }, { baixada: true }] } : { baixada: true } },
       parcelamento: { status: { not: "EXCLUIDO" }, tipo: { in: ["PARCSN", "PARCMEI"] }, numeroParcelamento: { not: null } },
       AND: [{ OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] },
         { OR: [{ pagamentoConsultadoEm: null }, { pagamentoConsultadoEm: { lte: new Date(Date.now() - 86_400_000) } }] }],
-      ...(vistos.length ? { id: { notIn: vistos } } : {}) }, orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }], take: Math.min(100, limite - results.length),
+      ...(vistos.length ? { id: { notIn: vistos } } : {}) }, orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }], take: 100,
       select: { id: true, portalClientId: true } });
     if (!rows.length) break;
     for (const p of rows) {
+      if (consultas >= limite) break;
       await assertActive();
-      try { const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive }); results.push({ parcelaId: p.id, status: r.skipped || (r.pago ? "paid" : r.status || "open") }); }
-      catch (err) { results.push({ parcelaId: p.id, status: "error", error: err.code || "CONSULTA_FALHOU" }); }
+      try {
+        const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt });
+        if (!r.skipped) consultas++;
+        const aviso = scheduledAt && r.status === "NAO_LOCALIZADO" && (!r.skipped || r.skipped === "conferencia_manual")
+          ? await avisarPagamentoNaoConfirmado({ parcelaId: p.id, scheduledAt, assertActive }) : null;
+        results.push({ parcelaId: p.id, status: r.skipped || (r.pago ? "paid" : r.status || "open"), ...(aviso ? { aviso } : {}) });
+      }
+      catch (err) { consultas++; results.push({ parcelaId: p.id, status: "error", error: err.code || "CONSULTA_FALHOU" }); }
     }
     vistos.push(...rows.map(p => p.id));
   }
-  return { total: results.length, results };
+  return { total: results.length, consultas, results };
 }

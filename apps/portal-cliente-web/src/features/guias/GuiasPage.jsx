@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, BotaoCopiar, Carregando, Chip, Vazio } from "../../components/ui";
 import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
@@ -120,8 +120,11 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
  * (apps/api/src/application/guides/GuideService.js) — o app mobile não consome
  * esta rota, então ela foi conferida na origem, não copiada de lá.
  */
-export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia }) {
+export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, linkGuia = null, aoEncerrarLink }) {
   const companyId = empresa.companyId;
+  const guiaDoAviso = linkGuia?.companyId === companyId ? linkGuia.guideId : null;
+  const linkProcessado = useRef(null);
+  const [avisoDoLink, setAvisoDoLink] = useState(null);
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas".
   //
@@ -144,13 +147,14 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     setPagina(1);
   }, [companyId, competencia]);
 
-  const query = useCarregamento(
-    () => api.getGuides(companyId, { competencia: competencia || undefined, page: pagina, limit: LIMITE }),
-    [companyId, competencia, pagina]
-  );
+  const contextoDaConsulta = JSON.stringify([companyId, guiaDoAviso, competencia, pagina]);
+  const query = useCarregamento(async () => ({
+    ...await api.getGuides(companyId, guiaDoAviso ? { guideId: guiaDoAviso, page: 1, limit: 1 }
+      : { competencia: competencia || undefined, page: pagina, limit: LIMITE }), contextoDaConsulta,
+  }), [contextoDaConsulta]);
 
-  const resposta = query.dados;
-  const guias = resposta?.data || [];
+  const resposta = query.dados?.contextoDaConsulta === contextoDaConsulta ? query.dados : null;
+  const guias = (resposta?.data || []).filter(g => !guiaDoAviso || (g.guideId === guiaDoAviso && g.liberadaCliente === true));
   const [pedido, setPedido] = useState(null);        // { guia, aviso }
   const [pedindo, setPedindo] = useState(false);
   const [recusa, setRecusa] = useState(null);
@@ -174,6 +178,32 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
   const paginaAtual = resposta?.page ?? pagina;
+
+  useEffect(() => {
+    setPedido(null); setConfirmacao(null); setPagoEm(""); setRecusa(null); setAvisoDoLink(null);
+    linkProcessado.current = null;
+  }, [companyId, guiaDoAviso]);
+  useEffect(() => {
+    if (!guiaDoAviso || query.carregando || !resposta) return;
+    const chave = `${companyId}:${guiaDoAviso}:${linkGuia?.acao || "ver"}`;
+    if (linkProcessado.current === chave) return;
+    linkProcessado.current = chave;
+    const guia = guias[0];
+    if (!guia) { setAvisoDoLink("A guia deste aviso não está disponível para seu acesso. Ela pode ter sido substituída ou ainda precisar de liberação. Fale com seu contador."); return; }
+    if (guia.paymentStatus === "PAID") { setAvisoDoLink("O pagamento desta guia já está registrado."); return; }
+    if (linkGuia.acao === "confirmar") {
+      const aviso = avisoAntesDeConfirmar(guia);
+      if (aviso) { setConfirmacao({ guia, aviso }); setPagoEm(""); }
+      else setAvisoDoLink("Esta guia não está disponível para confirmar pagamento pelo portal. Fale com seu contador.");
+    } else if (linkGuia.acao === "recalcular") {
+      const aviso = avisoAntesDePedir(guia);
+      if (aviso) setPedido({ guia, aviso });
+      else setAvisoDoLink(guia.canRecalculate !== true
+        ? "A atualização desta guia precisa ser providenciada pelo seu contador."
+          + (podeConfirmarPagamento(guia) ? " Se você já pagou, use Já paguei para informar o pagamento." : "")
+        : "Esta guia não está vencida ou não precisa ser atualizada agora. Confira o documento antes de pagar.");
+    }
+  }, [companyId, guiaDoAviso, linkGuia, query.carregando, resposta, guias]);
 
   // ⚠⚠ PEDIR A GUIA ATUALIZADA É O PRIMEIRO BOTÃO DESTE PORTAL QUE GASTA DINHEIRO DO ESCRITÓRIO:
   // uma consulta PAGA ao SERPRO, contra o teto mensal da carteira inteira. Por isso ele só aparece
@@ -245,6 +275,10 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       <div className="page-header">
         <h1>Guias</h1>
       </div>
+      {guiaDoAviso && <div className="alerta alerta-atencao" role="status">
+        <p>{avisoDoLink || "Você está vendo a guia indicada no aviso."}</p>
+        <button type="button" className="btn" onClick={() => { aoEncerrarLink?.(); setCompetencia(""); }}>Ver todas as guias</button>
+      </div>}
 
       <div className="card">
         <div className="filters">
@@ -254,9 +288,10 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
               id="competencia-guias"
               disabled={!aoTrocarCompetencia}
               value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
+              onChange={(e) => { if (guiaDoAviso) aoEncerrarLink?.(); setCompetencia(e.target.value); }}
             >
               <option value="">Todas</option>
+              {competencia && !OPCOES_COMPETENCIA.includes(competencia) && <option value={competencia}>{fmtCompetencia(competencia)}</option>}
               {OPCOES_COMPETENCIA.map((c) => (
                 <option key={c} value={c}>
                   {fmtCompetencia(c)}
