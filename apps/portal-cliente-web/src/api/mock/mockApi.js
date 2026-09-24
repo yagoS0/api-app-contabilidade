@@ -16,6 +16,10 @@
 //   GET /fluxo         -> idem
 
 import { ApiError } from "../ApiError";
+import { analisePlanejamentoMock } from '../../../../web/src/api/mock/analisePlanejamentoMock';
+import { clientesAnaliseMock } from '../../../../web/src/api/mock/clientesAnaliseMock';
+import { fechamentosRelatorioMock } from '../../../../web/src/api/mock/fechamentosRelatorioMock';
+import { disponibilidadeRelatorios, validarPeriodoPortal } from '../../../../../packages/shared/src/analise/portalCliente.js';
 import { consultarCep as consultarCepAuxiliar } from "../real/cep";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
@@ -1523,6 +1527,22 @@ function pdfDoDanfse(texto) {
 
 export function createMockApi() {
   return {
+    async getFechamentosRelatorio(companyId) {
+      const id = exigirAcessoEmpresa(companyId);
+      return {ok:true,...disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao())};
+    },
+    async getAnalisePlanejamento(companyId,filtros) {
+      const id = exigirAcessoEmpresa(companyId);
+      const acesso = disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao());
+      if (!acesso.liberado) throw new ApiError(409,'FECHAMENTOS_PENDENTES');
+      return {...analisePlanejamentoMock(id,validarPeriodoPortal(filtros,acesso)),disponibilidade:acesso};
+    },
+    async getAnaliseClientes(companyId,filtros) {
+      const id = exigirAcessoEmpresa(companyId);
+      const acesso = disponibilidadeRelatorios(id==='pc-007'?[]:fechamentosRelatorioMock(id),competenciaPadrao());
+      if (!acesso.liberado) throw new ApiError(409,'FECHAMENTOS_PENDENTES');
+      return clientesAnaliseMock(id,validarPeriodoPortal(filtros,acesso));
+    },
     // --- Auth ---------------------------------------------------------------
     async login(email, password) {
       await dormir();

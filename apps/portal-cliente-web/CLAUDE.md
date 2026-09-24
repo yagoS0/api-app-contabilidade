@@ -2365,3 +2365,11 @@ O cliente pode informar por nota IRRF e contribuição previdenciária retidos (
 A leitura dos perfis agora bloqueia a emissão durante carregamento, erro HTTP ou resposta inválida. A prévia e os campos de código/local não apresentam defaults até confirmar a resposta da empresa atual. O botão Recarregar tipos de serviço refaz a consulta. Somente resposta válida vazia ou habilitado:false permite seguir sem perfil; o backend também deve devolver erro de consulta, nunca lista vazia em falha.
 
 Emissor (23/09/2026): o quadro explicativo do modelo foi retirado por pedido do dono. Mostrar somente o botão 'Apagar tudo', que limpa o formulário; o reaproveitamento dos dados permanece.
+
+## Início do cliente com relatórios contábeis — 24/09/2026
+
+Empacotamento: o Dockerfile copia também apps/web/src, origem dos componentes de relatórios reutilizados. O watchPatterns do Railway inclui essa árvore para atualizar o portal quando os componentes compartilhados mudarem.
+
+Decisão do dono: substitui o resumo anterior e a área Horizonte/Fluxo/DRE do início do cliente por AnaliseEmpresa, a mesma apresentação de Relatórios do contador (Visão geral, Clientes, Resultado, Tributário), somente leitura. Cinco cards no topo usam o período: Entradas, Saídas, Folha, Impostos, Resultado. Grupos disjuntos da DRE evitam duplicidade; impostos incluem deduções da receita e são identificados. Não afirmar saldo bancário ou valores pagos a partir de competência.
+
+Exigir no servidor fechamento contábil dos TRÊS MESES ANTERIORES AO ATUAL, pelo calendário de São Paulo; três fechamentos antigos não bastam. Janela padrão: 12 meses terminando no mês anterior; cliente pode reduzir dentro dela. Lacunas antigas são permitidas, com valores indisponíveis e fora dos totais, nunca zeros presumidos. Comparação com intervalo incompleto fica indisponível. Revalidar em cada consulta, inclusive Clientes/impressão, na mesma transação de leitura. Rotas /client/companies/:companyId/relatorios mantêm autenticação e vínculo; guias individuais não liberadas ficam fora da resposta. Sem fallback para dados fictícios no modo real. O escritório conserva comportamento e ferramentas anteriores.

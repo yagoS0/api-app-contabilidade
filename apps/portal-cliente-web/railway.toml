@@ -8,6 +8,7 @@ dockerfilePath = "apps/portal-cliente-web/Dockerfile"
 # front, e o navegador continua servindo a tabela antiga -- divergencia silenciosa.
 watchPatterns = [
   "apps/portal-cliente-web/**",
+  "apps/web/src/**",
   "packages/**",
   "package.json",
   "package-lock.json"

@@ -1,0 +1,11 @@
+.portal-relatorios { width: 100%; min-width: 0; }
+.portal-relatorios .analise-empresa { --text-primary: var(--text); --bg-card: var(--surface); --border-color: var(--border); }
+.portal-relatorios .bi-cabecalho { flex-wrap: wrap; }
+.portal-relatorios .bi-cabecalho > *, .portal-relatorios .bi-relatorios > * { min-width: 0; max-width: 100%; }
+.portal-relatorios .portal-resumo { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; }
+.portal-relatorios .portal-resumo .bi-card { display: flex; flex-direction: column; gap: 8px; }
+.portal-relatorios .portal-resumo strong { font-size: clamp(1rem,1.8vw,1.55rem); overflow-wrap: anywhere; }
+.portal-relatorios .bi-tabs { overflow-x: auto; flex-wrap: nowrap; }
+.portal-relatorios .bi-tabs button { min-height: 44px; flex-shrink: 0; }
+@media(max-width:1000px) { .portal-relatorios .portal-resumo { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media(max-width:600px) { .portal-relatorios .portal-resumo { grid-template-columns: repeat(2,minmax(0,1fr)); } .portal-relatorios .portal-resumo .bi-card:last-child { grid-column: 1/-1; } .portal-relatorios .bi-acoes { width: 100%; } .portal-relatorios .bi-periodo { width: 100%; } }

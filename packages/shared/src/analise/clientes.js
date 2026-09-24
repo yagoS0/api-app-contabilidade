@@ -13,7 +13,7 @@ export function montarClientes({notas,de,ate,comparar='anterior',hoje,competenci
   const anterior={de:deslocarMes(de,-recuo),ate:deslocarMes(ate,-recuo)};
   const fechados=competenciasFechadas ? new Set(competenciasFechadas) : null;
   const janelaFechada=(a,b)=>!fechados||meses(a,b).every(m=>fechados.has(m));
-  const comparacaoDisponivel=janelaFechada(anterior.de,anterior.ate);
+  const comparacaoDisponivel=janelaFechada(de,ate)&&janelaFechada(anterior.de,anterior.ate);
   const recorrenciaDisponivel=janelaFechada(deslocarMes(ate,-3),ate);
   const grupos=new Map(),vistos=new Set();let semIdentificacao=0,valorSemIdentificacao=0,invalidas=0,inicioHistorico=null;
   for(const nota of notas){

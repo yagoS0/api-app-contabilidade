@@ -4,8 +4,8 @@ import { whereFaturamentoEmit } from '../notas/apuracao/v2/FechamentoService.js'
 import { definirPeriodos, montarAnalise, moverMes } from './analiseEmpresa.js';
 
 // Leitura em lote, escopada pela empresa. Sem provedores, gravações ou uma query por mês.
-export async function obterAnaliseEmpresa({ portalClientId, de, ate, comparar, client = prisma, agora = new Date() }) {
-  if (client === prisma && client.$transaction) return client.$transaction(tx => obterAnaliseEmpresa({portalClientId,de,ate,comparar,client:tx,agora}), {isolationLevel:'RepeatableRead',timeout:20000});
+export async function obterAnaliseEmpresa({ portalClientId, de, ate, comparar, client = prisma, agora = new Date(), permitirLacunas = false }) {
+  if (client === prisma && client.$transaction) return client.$transaction(tx => obterAnaliseEmpresa({portalClientId,de,ate,comparar,client:tx,agora,permitirLacunas}), {isolationLevel:'RepeatableRead',timeout:20000});
   const periodos = definirPeriodos({ de, ate, comparar });
   const [lancamentos, notas, guias, plano, circulares] = await Promise.all([
     client.accountingEntry.findMany({ where: { portalClientId, competencia: { gte: periodos.inicio, lte: periodos.fim } }, select: { competencia: true, status: true, lines: { select: { tipo: true, valor: true, conta: true } } } }),
@@ -14,5 +14,5 @@ export async function obterAnaliseEmpresa({ portalClientId, de, ate, comparar, c
     carregarPlano(portalClientId, client),
     client.companyMonthlyCircular.findMany({where:{portalClientId,competencia:{gte:periodos.inicio,lte:periodos.fim}},select:{competencia:true,semFaturamento:true,fechadoContabilEm:true}}),
   ]);
-  return { ok: true, demonstracao: false, ...montarAnalise({ periodos, lancamentos, notas, guias, plano, circulares, hoje: agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) }) };
+  return { ok: true, demonstracao: false, ...montarAnalise({ permitirLacunas, periodos, lancamentos, notas, guias, plano, circulares, hoje: agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) }) };
 }
