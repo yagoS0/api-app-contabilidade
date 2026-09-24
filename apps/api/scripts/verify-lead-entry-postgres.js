@@ -14,7 +14,7 @@ const run = `entrada-lead-${crypto.randomUUID()}`;
 const comercial = process.argv.includes("--commercial");
 const canalId = `${run}-canal`;
 const base = Number(String(Date.now()).slice(-7));
-const telefones = Array.from({ length: 24 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
+const telefones = Array.from({ length: 30 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
 Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", WHATSAPP_IDENTIDADE_V2: comercial ? "1" : "0", WHATSAPP_CHAT_V2: "0",
   WHATSAPP_MULTICANAL: comercial ? "1" : "0", WHATSAPP_COLETA_COMERCIAL: "1", IA_COMERCIAL_TELEFONES_PILOTO: comercial ? "" : telefones.filter((_, i) => i !== 4).join(","),
   WHATSAPP_TESTE_TOKEN: "fake-offline-commercial-token", WHATSAPP_PHONE_NUMBER_ID: "fixture-channel", WHATSAPP_WABA_ID: "fixture-waba",
@@ -90,7 +90,7 @@ try {
         assert.equal(saidas.length, antes + 1);
         assert.equal(saidas.at(-1).tipo, "enviarLista");
         assert.equal(saidas.at(-1).texto, "Olá! Como a Altan pode ajudar?");
-        assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"]);
+        assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Planejamento tributário", "Regularizar empresa", "Falar com a equipe"]);
         assert.deepEqual((await db.atendimentoLead.findUnique({ where: { id: caso.id } })).triagem, triagem);
         assert.deepEqual((await db.onboarding.findUnique({ where: { id: ficha.id } })).dados, ficha.dados);
         assert.equal((await casos(telefone)).length, 1);
@@ -99,13 +99,13 @@ try {
       }
       if (indice === 0) {
         await entrada(telefone, "Trocar de contador", { interacao: "altan.comercial.transferencia.v1" });
-        assert.equal(saidas.at(-1).texto, "Como você se chama?");
+        assert.match(saidas.at(-1).texto, /melhorar/);
         await entrada(telefone, "Me chamo Caio");
         const retomada = (await casos(telefone))[0];
         assert.equal(retomada.id, caso.id); assert.equal(retomada.onboardingId, ficha.id);
         assert.equal(retomada.onboarding.dados.responsavelNome, "Caio");
         assert.equal(retomada.onboarding.cnpj, "11222333000181");
-        assert.match(saidas.at(-1).texto, /troca/i);
+        assert.match(saidas.at(-1).texto, /melhorar/i);
         ok("Histórico de outro canal: saudações/menu não alteram ficha nem acumulam erro; retomada conserva CNPJ e não duplica caso");
       } else {
         const escolhas = [null,
@@ -125,346 +125,149 @@ try {
     }
   }
   const [medico, transferencia, inativa, desconhecido, fora] = telefones;
-  cenario = "Médico: abertura avulsa, preço e mensagens repetidas";
+  let atual;
+  const resumo = async tel => (await casoAtivo(tel)).triagem.preatendimento;
+  const pausaConfirmada = async tel => {
+    const c = await casoAtivo(tel);
+    assert.equal(c.triagem.preatendimento.estado, "ENCAMINHADO");
+    assert((await db.conversaWhatsapp.findUnique({ where: { id: c.conversaId } })).atendidaDesde);
+    const n = saidas.length;
+    await entrada(tel, "obrigado"); await entrada(tel, "Olá");
+    assert.equal(saidas.length, n, "Após handoff, automação não disputa a conversa com a equipe");
+  };
+  cenario = "Abertura curta: médico, preço, dados fora de ordem e replay";
   await entrada(medico, "Olá");
-  assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"]);
+  assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Planejamento tributário", "Regularizar empresa", "Falar com a equipe"]);
   assert.equal((await casos(medico)).length, 0);
-  ok("Saudação abre lista nativa válida sem criar ficha nem depender do piloto operacional");
-
   const id = await entrada(medico, "Sou médico e quero abrir uma empresa");
-  assert.equal(saidas.at(-1).texto, "Como você se chama?");
-  let ficha = (await casos(medico))[0].onboarding;
-  assert.equal(ficha.dados.atividadePretendida, "médico"); assert.equal(ficha.cnpj, null);
-  const quantidade = saidas.length; await entrada(medico, "Sou médico e quero abrir uma empresa", { id });
-  assert.equal(saidas.length, quantidade); assert.equal((await casos(medico)).length, 1);
-  ok("Pedido direto inicia abertura e replay não duplica ficha nem resposta");
-
-  await entrada(medico, "Quanto custa?");
   assert.match(saidas.at(-1).texto, /Como você se chama/);
-  assert.equal((await casos(medico))[0].onboarding.dados.responsavelNome, undefined);
-  await entrada(medico, "Me chamo Caio");
-  assert.match(saidas.at(-1).texto, /cidade e estado/);
-  await entrada(medico, "Rio de Janeiro/RJ");
-  assert.match(saidas.at(-1).texto, /apenas a abertura/);
-  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
-  assert.deepEqual(saidas.at(-1).botoes.map(b => b.titulo), ["Só abertura", "Abertura + mensal", "Comparar opções"]);
-  const opcaoAvulso = saidas.at(-1).botoes[0].id;
-  const escolhaAvulso = await entrada(medico, "Só abertura", { interacao: opcaoAvulso, botao: true });
-  const saidasDepoisEscolha = saidas.length;
-  await entrada(medico, "Só abertura", { id: escolhaAvulso, interacao: opcaoAvulso, botao: true });
-  assert.equal(saidas.length, saidasDepoisEscolha, "Replay do clique não repete pergunta nem envio");
-  assert.match(saidas.at(-1).texto, /endereço/);
-  await entrada(medico, "endereco: Rua Sintética 123");
-  assert.match(saidas.at(-1).texto, /equipe/);
-  ficha = (await casos(medico))[0].onboarding;
-  assert.equal(ficha.dados.modalidadeServico, "AVULSO");
-  assert.equal(ficha.dados.responsavelNome, "Caio");
-  assert.equal(ficha.dados.qtdFuncionarios, undefined);
-  const antesHumano = saidas.length; await entrada(medico, "Olá");
-  assert.equal(saidas.length, antesHumano);
-  ok("Coleta responde dúvida, aproveita atividade, oferece avulso e entrega ficha à equipe");
+  const n = saidas.length; await entrada(medico, "Sou médico e quero abrir uma empresa", { id });
+  assert.equal(saidas.length, n); assert.equal((await casos(medico)).length, 1);
+  await entrada(medico, "Quanto custa?"); assert.match(saidas.at(-1).texto, /valor depende/);
+  assert.equal((await resumo(medico)).nome, null);
+  await entrada(medico, "Me chamo Caio; cidade: Rio de Janeiro/RJ");
+  assert.match(saidas.at(-1).texto, /contador/); assert.equal((await resumo(medico)).atividade, "médico");
+  assert.equal((await casoAtivo(medico)).onboarding.cnpj, null);
+  await pausaConfirmada(medico);
+  ok("Abertura curta responde dúvida, reutiliza dados, não pede contratação e encerra na equipe; replay não duplica");
 
-  cenario = "Transferência: CNPJ e consulta pública";
-  await entrada(transferencia, "Trocar de contador", { interacao: "altan.comercial.transferencia.v1" });
-  assert.equal(saidas.at(-1).texto, "Qual é o CNPJ da empresa?");
-  await entrada(transferencia, "11.222.333/0001-81");
-  assert.match(saidas.at(-1).texto, /EMPRESA SINTÉTICA/);
-  assert.match(saidas.at(-1).texto, /não comprova regularidade fiscal/);
-  ficha = (await casos(transferencia))[0].onboarding;
-  assert.equal(ficha.cnpj, "11222333000181");
-  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: ficha.id } }), 0);
-  ok("Seleção de transferência coleta CNPJ numérico e consulta pública sem operação fiscal");
+  cenario = "Transferência: contador só manda guias";
+  await entrada(transferencia, "Quero trocar de contador"); assert.match(saidas.at(-1).texto, /melhorar/);
+  await entrada(transferencia, "Meu contador só manda guias");
+  assert.match(saidas.at(-1).texto, /resultados/);
+  assert.equal((await resumo(transferencia)).necessidade, "Meu contador só manda guias");
+  assert.equal((await casoAtivo(transferencia)).onboarding.cnpj, null);
+  await pausaConfirmada(transferencia);
+  ok("Reclamação sobre guias é comercial e encaminha com contexto, sem pedir CNPJ, modalidade ou volumes");
 
-  cenario = "Empresa parada sem CNPJ";
-  await entrada(inativa, "Minha empresa está parada e não sei o que fazer");
-  assert.equal(saidas.at(-1).texto, "Qual é o CNPJ da empresa?");
-  await entrada(inativa, "Não sei");
-  assert.match(saidas.at(-1).texto, /equipe/);
-  assert.equal((await casos(inativa))[0].onboarding.cnpj, null);
-  ok("Empresa parada sem CNPJ é encaminhada sem inventar dados nem repetir perguntas");
+  cenario = "Regularização: não sabe o que fazer";
+  await entrada(inativa, "Minha empresa está parada e não sei o que fazer; CNPJ 11222333000181");
+  assert.equal((await casoAtivo(inativa)).onboarding.cnpj, "11222333000181");
+  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: (await casoAtivo(inativa)).onboardingId } }), 0);
+  await pausaConfirmada(inativa);
+  ok("Empresa parada encaminha sem obrigar data exata, procuração ou diagnóstico automático");
 
-  cenario = "Pedido de atendimento humano";
-  await entrada(desconhecido, "Olá");
-  await entrada(desconhecido, "quero falar com uma pessoa");
-  assert.match(saidas.at(-1).texto, /equipe|atendimento/i);
-  assert.equal((await casos(desconhecido)).length, 0);
-  ok("Pedido de pessoa aciona equipe sem abrir solicitação comercial fictícia");
+  cenario = "Desconhecimento e retorno de contato já atendido";
+  await entrada(desconhecido, "ABRIR"); await entrada(desconhecido, "Não sei");
+  assert.equal((await resumo(desconhecido)).palavraEntrada, "ABRIR");
+  await pausaConfirmada(desconhecido);
+  ok("Não saber um dado não bloqueia o lead nem reinicia automação na próxima saudação");
 
-  const [mensal, comparar, pontual, reativar, retornante, recuperacao, encerrada, arquivo, atrasada, cliqueAntigo, variosPedidos] = telefones.slice(9);
-  cenario = "Comércio: abertura e contabilidade mensal, respostas curtas";
-  await entrada(mensal, "Quero abrir uma empresa; meu nome é Marina; atividade: loja de roupas; cidade: Niterói/RJ");
-  assert.match(saidas.at(-1).texto, /abertura|contabilidade/i);
-  const opcaoMensal = saidas.at(-1).botoes[1].id;
-  await entrada(mensal, "Abertura + mensal", { interacao: opcaoMensal, botao: true });
-  assert.equal((await casoAtivo(mensal)).onboarding.dados.modalidadeServico, "RECORRENTE");
-  const triagemAntesCliqueAntigo = (await casoAtivo(mensal)).triagem;
-  await entrada(mensal, "Só abertura", { interacao: opcaoAvulso, botao: true });
-  assert.equal((await casoAtivo(mensal)).onboarding.dados.modalidadeServico, "RECORRENTE");
-  assert.deepEqual((await casoAtivo(mensal)).triagem, triagemAntesCliqueAntigo);
-  assert.match(saidas.at(-1).texto, /outra solicitação|etapa que já passou/);
-  await entrada(mensal, "não");
-  assert.equal((await casoAtivo(mensal)).onboarding.dados.qtdFuncionarios, 0);
-  await entrada(mensal, "20");
-  await entrada(mensal, "endereço: Rua do Comércio 123, Niterói/RJ");
-  let atual = await casoAtivo(mensal);
-  assert.equal(atual.onboarding.dados.notasRecebidasMes, 20);
-  assert.equal(atual.onboarding.dados.responsavelNome, "Marina");
-  assert.equal(atual.onboarding.dados.atividadePretendida, "loja de roupas");
-  assert.equal(atual.onboarding.cnpj, null);
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
-  ok("Comércio chega à revisão mensal sem exigir jargão nem pedir novamente os dados da primeira mensagem");
-
-  cenario = "Odontologia: comparar abertura avulsa e mensal";
-  await entrada(comparar, "Sou dentista e quero abrir uma empresa; me chamo Bianca; cidade: Rio de Janeiro/RJ");
-  const antesDuvidaModalidade = await casoAtivo(comparar);
-  const botoesAntesDuvida = saidas.at(-1).botoes;
-  await entrada(comparar, "Qual a diferença entre só abertura e mensal?");
-  atual = await casoAtivo(comparar);
-  assert.deepEqual(atual.onboarding.dados, antesDuvidaModalidade.onboarding.dados);
-  assert.equal(atual.onboarding.versao, antesDuvidaModalidade.onboarding.versao);
-  assert.equal(atual.triagem.campoEsperado, "modalidadeServico");
-  assert.equal(atual.onboarding.dados.modalidadeServico, undefined, "Perguntar a diferença não pode escolher AVULSO");
-  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
-  assert.deepEqual(saidas.at(-1).botoes, botoesAntesDuvida, "A dúvida mantém os três botões da mesma solicitação");
-  assert.match(saidas.at(-1).texto, /O serviço pontual/);
-  assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
-  ok("Pergunta sobre modalidades explica, conserva os dados e aguarda a escolha pelos botões ou texto");
-  await entrada(comparar, "quero ver as duas opções");
-  await entrada(comparar, "só eu");
-  await entrada(comparar, "não sei");
-  await entrada(comparar, "endereço: Avenida Exemplo 50, Rio de Janeiro/RJ");
-  atual = await casoAtivo(comparar);
-  assert.equal(atual.onboarding.dados.modalidadeServico, "COMPARAR");
-  assert.equal(atual.onboarding.dados.qtdFuncionarios, 0);
-  assert.equal(atual.onboarding.dados.notasRecebidasMes, undefined);
-  assert(atual.triagem.desconhecidos.includes("notasRecebidasMes"));
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  ok("Comparação conserva as duas opções e desconhecimento de volume sem inventar números");
-
-  cenario = "Transferência: motivo natural e serviço pontual";
-  await entrada(pontual, "Quero trocar de contador; me chamo Sérgio; CNPJ 11222333000181");
-  await entrada(pontual, "Preço");
-  assert.equal((await casoAtivo(pontual)).onboarding.dados.motivoTroca, "Preço");
-  assert.equal(saidas.at(-1).tipo, "enviarBotoes");
-  assert.deepEqual(saidas.at(-1).botoes.map(b => b.titulo), ["Serviço avulso", "Contabilidade mensal", "Comparar opções"]);
-  await entrada(pontual, "serviço pontual");
-  atual = await casoAtivo(pontual);
-  assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
-  assert.equal(atual.onboarding.dados.qtdFuncionarios, undefined);
-  assert.equal(atual.onboarding.dados.notasRecebidasMes, undefined);
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  ok("Transferência aproveita a explicação do motivo e encerra coleta avulsa sem perguntas de mensalidade");
-
-  cenario = "Empresa parada: período, reativação e mensalidade";
-  await entrada(reativar, "Minha empresa está parada; me chamo Daniela; CNPJ 11222333000181");
-  await entrada(reativar, "desde 2020");
-  assert.equal((await casoAtivo(reativar)).onboarding.dados.paradaDesde, undefined, "Ano sem mês não pode inventar janeiro");
-  assert.match(saidas.at(-1).texto, /mês|mes/i);
-  assert.equal((saidas.at(-1).texto.match(/\?/g) || []).length, 1, "A clarificação do mês deve substituir a pergunta genérica, sem perguntas duplicadas");
-  await entrada(reativar, "janeiro");
-  assert.equal((await casoAtivo(reativar)).onboarding.dados.paradaDesde, "2020-01", "Mês sozinho completa o ano da última pergunta, sem exigir repetição");
-  await entrada(reativar, "quero voltar");
-  const opcaoComparar = saidas.at(-1).botoes[2].id;
-  await entrada(reativar, "Comparar opções", { interacao: opcaoComparar, botao: true });
-  await entrada(reativar, "2");
-  await entrada(reativar, "não sei");
-  atual = await casoAtivo(reativar);
-  assert.equal(atual.onboarding.dados.paradaDesde, "2020-01");
-  assert.equal(atual.onboarding.dados.pretendeReativar, "REATIVAR");
-  assert.equal(atual.onboarding.dados.modalidadeServico, "COMPARAR");
-  assert.equal(atual.onboarding.dados.qtdFuncionarios, 2);
-  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  ok("Empresa parada completa triagem após CNPJ; período parcial pede precisão e consulta pública não autoriza serviço fiscal");
-
-  cenario = "Retorno: Voltei e Pode continuar preservam cadastro";
-  await entrada(retornante, "Sou médica e quero abrir uma empresa");
-  const inicioRetorno = await casoAtivo(retornante);
-  for (const texto of ["Voltei", "Pode continuar", "Já falei com vocês antes"]) {
-    await entrada(retornante, texto);
-    atual = await casoAtivo(retornante);
-    assert.equal(atual.id, inicioRetorno.id);
-    assert.equal(atual.onboarding.versao, inicioRetorno.onboarding.versao);
-    assert.deepEqual(atual.onboarding.dados, inicioRetorno.onboarding.dados);
-    assert.equal(atual.triagem.esclarecimentos || 0, inicioRetorno.triagem.esclarecimentos || 0);
-    assert.match(saidas.at(-1).texto, /chama|nome/i);
-    assert.doesNotMatch(saidas.at(-1).texto, /Não consegui identificar/);
+  const exemplos = [
+    [9, "IMPOSTO", "Tenho uma loja; me chamo Ana", "PLANEJAMENTO"],
+    [10, "DRE", "Tenho um restaurante; me chamo Bento", "GESTAO"],
+    [11, "MARGEM", "Sou dentista; me chamo Carla", "GESTAO"],
+    [12, "Quero pagar menos impostos", "Tenho uma clínica; me chamo Dani", "PLANEJAMENTO"],
+    [13, "CONTADOR", "O preço está muito alto", "TRANSFERENCIA"],
+  ];
+  for (const [i, primeira, segunda, intencao] of exemplos) {
+    cenario = `Pedido comercial ${primeira}`;
+    await entrada(telefones[i], primeira);
+    assert.notEqual((await resumo(telefones[i])).estado, "ENCAMINHADO", "A palavra de entrada inicia a conversa antes do handoff");
+    await entrada(telefones[i], segunda);
+    const a = await casoAtivo(telefones[i]); assert.equal(a.triagem.preatendimento.intencao, intencao);
+    if (intencao === "TRANSFERENCIA") assert.equal(a.triagem.preatendimento.necessidade, segunda);
+    if (["GESTAO", "PLANEJAMENTO"].includes(intencao)) {
+      assert.equal(a.onboardingId, null, "Não cria transferência fictícia para planejamento/gestão");
+      if (comercial) {
+        const c = await db.conversaWhatsapp.findUnique({ where: { id: a.conversaId } });
+        assert.equal((await projetarIdentidadeConversa(c, { client: db })).relacionamento.tipo, "LEAD");
+      }
+    }
+    await pausaConfirmada(telefones[i]); ok(`${primeira}: intenção correta, dados essenciais e handoff sem ficha artificial`);
   }
-  await entrada(retornante, "Sou Ana");
-  assert.equal((await casoAtivo(retornante)).onboarding.dados.responsavelNome, "Ana");
-  ok("Contato retornante retoma a pergunta pendente sem gravar Voltei como nome ou penalizar o cliente");
 
-  cenario = "Informação desconhecida e enviada depois";
-  await entrada(recuperacao, "Quero abrir uma empresa; me chamo Paulo; atividade: arquitetura; cidade: Rio de Janeiro/RJ");
-  await entrada(recuperacao, "não sei");
-  assert((await casoAtivo(recuperacao)).triagem.desconhecidos.includes("modalidadeServico"));
-  await entrada(recuperacao, "quero contabilidade mensal");
-  assert(!(await casoAtivo(recuperacao)).triagem.desconhecidos.includes("modalidadeServico"));
-  await entrada(recuperacao, "não");
-  await entrada(recuperacao, "não sei");
-  assert((await casoAtivo(recuperacao)).triagem.desconhecidos.includes("notasRecebidasMes"));
-  await entrada(recuperacao, "recebo 12 notas de compras");
-  atual = await casoAtivo(recuperacao);
-  assert.equal(atual.onboarding.dados.notasRecebidasMes, 12);
-  assert(!atual.triagem.desconhecidos.includes("notasRecebidasMes"));
-  await entrada(recuperacao, "endereço: Rua da Arquitetura 12");
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  ok("Resposta posterior remove a pendência desconhecida e entra na ficha sem perder os dados anteriores");
+  cenario = "Botão de planejamento e origem de campanha explícita";
+  await entrada(telefones[14], "Olá");
+  await entrada(telefones[14], "Planejamento tributário", { interacao: "altan.comercial.planejamento.v1" });
+  await entrada(telefones[14], "Vim pelo Instagram; tenho uma loja; me chamo Eva");
+  assert.equal((await resumo(telefones[14])).origemDeclarada, "Instagram");
+  await pausaConfirmada(telefones[14]); ok("Botão funciona pelo ID e origem de campanha só é registrada quando declarada");
 
-  cenario = "Lead encerrado retorna para novo serviço";
-  await entrada(encerrada, "Quero trocar de contador; me chamo Otávio; CNPJ 11222333000181");
-  const casoEncerrado = await casoAtivo(encerrada);
-  await db.onboarding.update({ where: { id: casoEncerrado.onboardingId }, data: { status: "DESISTIU" } });
-  // Reproduz legado: ficha encerrada, vínculo do atendimento ainda sem encerradoEm.
-  await entrada(encerrada, "Quero abrir uma empresa; me chamo Otávio; atividade: consultoria");
-  const listaRetorno = await casos(encerrada);
-  atual = listaRetorno.find(c => !c.encerradoEm);
-  assert.equal(listaRetorno.length, 2);
-  assert(listaRetorno.find(c => c.id === casoEncerrado.id).encerradoEm);
-  assert.notEqual(atual.onboardingId, casoEncerrado.onboardingId);
-  assert.equal(atual.onboarding.origem, "ABERTURA");
-  assert.equal(atual.onboarding.cnpj, null);
-  assert.equal(atual.onboarding.dados.responsavelNome, "Otávio");
-  assert.equal(listaRetorno.find(c => c.id === casoEncerrado.id).onboarding.cnpj, "11222333000181");
-  ok("Solicitação antiga encerrada permanece intacta; novo pedido cria a ficha correta sem herdar CNPJ");
-
-  cenario = "Imagem sem legenda durante pergunta de nome";
-  await entrada(arquivo, "Quero abrir uma empresa");
-  const antesArquivo = await casoAtivo(arquivo);
-  const idArquivo = await entrada(arquivo, null, { midia: "image" });
-  atual = await casoAtivo(arquivo);
-  assert.deepEqual(atual.onboarding.dados, antesArquivo.onboarding.dados);
-  assert.equal(atual.onboarding.versao, antesArquivo.onboarding.versao);
-  assert.equal(atual.onboarding.dados.responsavelNome, undefined);
-  assert.match(saidas.at(-1).texto, /equipe|contador/i);
-  const mensagemArquivo = await db.mensagemWhatsapp.findUnique({ where: { providerMessageId: idArquivo } });
-  assert(await db.arquivoWhatsapp.findUnique({ where: { mensagemId: mensagemArquivo.id } }));
-  ok("Anexo é registrado e encaminhado à equipe sem fingir leitura nem gravar marcador como nome");
-
-  cenario = "Mensagem antiga chega depois da correção";
-  await entrada(atrasada, "Quero abrir uma empresa; me chamo Renata; atividade: design");
-  const antesAtrasada = await casoAtivo(atrasada), saidasAntesAtrasada = saidas.length;
-  await entrada(atrasada, "Me chamo Nome Antigo", { ocorridaEm: new Date(Date.now() - 120000) });
-  atual = await casoAtivo(atrasada);
-  assert.equal(saidas.length, saidasAntesAtrasada, "Mensagem atrasada não provoca nova pergunta");
-  assert.deepEqual(atual.onboarding.dados, antesAtrasada.onboarding.dados);
-  assert.deepEqual(atual.triagem, antesAtrasada.triagem);
-  assert.equal(atual.onboarding.versao, antesAtrasada.onboarding.versao);
-  ok("Ordenação usa instante do provedor: nome de mensagem atrasada não substitui a ficha atual");
-
-  cenario = "Clique em menu antigo depois de avançar a coleta";
-  await entrada(cliqueAntigo, "Olá");
-  const menuAntigo = await db.mensagemWhatsapp.findFirst({ where: { conversa: { telefoneE164: cliqueAntigo }, direcao: "out", tipo: "interactive" }, orderBy: { registradaEm: "desc" } });
-  assert(menuAntigo?.providerMessageId);
-  await entrada(cliqueAntigo, "Quero trocar de contador; me chamo Joana; CNPJ 11222333000181");
-  const antesClique = await casoAtivo(cliqueAntigo);
-  await entrada(cliqueAntigo, "Abrir uma empresa", { interacao: "altan.comercial.abertura.v1", respostaA: menuAntigo.providerMessageId });
-  atual = await casoAtivo(cliqueAntigo);
-  assert.equal((await casos(cliqueAntigo)).length, 1);
-  assert.deepEqual(atual.onboarding.dados, antesClique.onboarding.dados);
-  assert.deepEqual(atual.triagem, antesClique.triagem);
-  assert.equal(atual.onboarding.versao, antesClique.onboarding.versao);
-  assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
-  assert.match(saidas.at(-1).texto, /menu/i);
-  ok("Menu antigo não substitui origem, não altera ficha nem inicia pausa humana");
-
-  cenario = "Duas solicitações da mesma pessoa";
-  await entrada(variosPedidos, "Sou médico e quero abrir uma empresa");
-  await entrada(variosPedidos, "Me chamo André");
-  const primeiraSolicitacao = await casoAtivo(variosPedidos);
-  await entrada(variosPedidos, "Também quero transferir outra empresa");
-  atual = await casoAtivo(variosPedidos);
-  assert.equal((await casos(variosPedidos)).length, 1);
-  assert.equal(atual.onboardingId, primeiraSolicitacao.onboardingId);
-  assert.deepEqual(atual.onboarding.dados, primeiraSolicitacao.onboarding.dados);
-  assert.match(saidas.at(-1).texto, /solicita|separar/i);
-  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
-  ok("Segundo serviço preserva a primeira solicitação e pede separação humana dos atendimentos");
-
-  const [baixar, pausa, viabilidade] = telefones.slice(21);
-  cenario = "Encerramento: dúvidas não decidem; baixa explícita é avulsa";
-  await entrada(baixar, "Minha empresa está sem movimento; me chamo Diana; CNPJ 11222333000181");
-  assert.equal((await casoAtivo(baixar)).onboarding.origem, "INATIVA");
-  await entrada(baixar, "janeiro de 2023");
-  const antesDuvidaBaixa = await casoAtivo(baixar);
-  for (const texto of ["Posso dar baixa com dívida?", "Se eu reativar, como funciona?", "Não quero reativar"]) {
-    await entrada(baixar, texto);
-    atual = await casoAtivo(baixar);
-    assert.deepEqual(atual.onboarding.dados, antesDuvidaBaixa.onboarding.dados);
-    assert.equal(atual.onboarding.versao, antesDuvidaBaixa.onboarding.versao);
-    assert.equal(atual.triagem.campoEsperado, "pretendeReativar");
-    assert.equal(atual.onboarding.dados.pretendeReativar, undefined);
-    assert.equal(atual.onboarding.dados.modalidadeServico, undefined);
-    assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
-    assert.equal(saidas.at(-1).tipo, "enviarTexto");
-    assert.match(saidas.at(-1).texto, /empresa|reativar|encerramento/i);
-  }
-  const idBaixa = await entrada(baixar, "Quero dar baixa");
-  atual = await casoAtivo(baixar);
-  assert.equal(atual.onboarding.dados.pretendeReativar, "BAIXAR");
-  assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
-  assert.equal(atual.onboarding.dados.qtdFuncionarios, undefined);
-  assert.equal(atual.onboarding.dados.notasRecebidasMes, undefined);
-  assert.equal(atual.triagem.campoEsperado, null);
-  assert.equal(saidas.at(-1).tipo, "enviarTexto");
-  assert.equal(saidas.at(-1).botoes, undefined);
-  assert.match(saidas.at(-1).texto, /orçamento do encerramento/);
-  assert.doesNotMatch(saidas.at(-1).texto, /contabilidade mensal|funcionários|notas de compras/);
-  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
-  const depoisBaixa = saidas.length, dadosBaixa = structuredClone(atual.onboarding.dados);
-  await entrada(baixar, "Quero dar baixa", { id: idBaixa });
-  await entrada(baixar, "Quero contabilidade mensal");
-  assert.equal(saidas.length, depoisBaixa, "Replay e fala posterior não desfazem handoff do encerramento");
-  assert.deepEqual((await casoAtivo(baixar)).onboarding.dados, dadosBaixa);
-  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
-  ok("Dúvidas e negação não gravam baixa; decisão explícita prepara avulso sem mensalidade e conserva pausa humana");
-
-  cenario = "Pausas coloquiais preservam a atividade e a retomada";
-  await entrada(pausa, "Quero abri uma empresa; me chamo Clara");
-  const antesPausa = await casoAtivo(pausa);
-  assert.equal(antesPausa.onboarding.origem, "ABERTURA");
-  assert.equal(antesPausa.triagem.campoEsperado, "atividadePretendida");
+  cenario = "Pausa, retorno, pergunta sem resposta conhecida e limite de perguntas";
+  await entrada(telefones[15], "Quero abrir uma empresa; me chamo Clara");
+  const antesPausa = await casoAtivo(telefones[15]);
   for (const texto of ["Aguarda um pouco", "Pera aí", "Só um minutinho", "Já te mando", "Voltei"]) {
-    await entrada(pausa, texto);
-    atual = await casoAtivo(pausa);
-    assert.equal(atual.onboarding.versao, antesPausa.onboarding.versao);
+    await entrada(telefones[15], texto);
+    atual = await casoAtivo(telefones[15]);
     assert.deepEqual(atual.onboarding.dados, antesPausa.onboarding.dados);
-    assert.equal(atual.triagem.campoEsperado, "atividadePretendida");
-    assert.equal(atual.triagem.esclarecimentos, 0);
-    assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde, null);
-    assert.match(saidas.at(-1).texto, texto === "Voltei" ? /Qual atividade/ : /Quando quiser continuar/);
+    assert.equal(atual.triagem.preatendimento.perguntasFeitas, antesPausa.triagem.preatendimento.perguntasFeitas);
   }
-  await entrada(pausa, "Sou médica");
-  atual = await casoAtivo(pausa);
-  assert.equal(atual.onboarding.dados.atividadePretendida, "médica");
-  assert.equal(atual.triagem.campoEsperado, "municipioAtendimento");
-  ok("Pausas naturais e retorno não viram atividade, não somam incompreensão e retomam a coleta correta");
+  await entrada(telefones[15], "???"); await entrada(telefones[15], "???"); await entrada(telefones[15], "???");
+  assert.equal((await resumo(telefones[15])).perguntasFeitas, 3);
+  await pausaConfirmada(telefones[15]); ok("Pausas não viram dados; falta de compreensão chama equipe após no máximo três perguntas");
 
-  cenario = "Dúvida de viabilidade antes da qualificação e antes do handoff";
-  await entrada(viabilidade, "Sou médica. Quero abrir um CNPJ. Consigo usar meu endereço de casa?");
-  let textoViabilidade = saidas.at(-1).texto;
-  assert.match(textoViabilidade, /depende da atividade/);
-  assert.match(textoViabilidade, /viabilidade/);
-  assert.match(textoViabilidade, /Como você se chama/);
-  assert(textoViabilidade.indexOf("viabilidade") < textoViabilidade.indexOf("Como você se chama"));
-  atual = await casoAtivo(viabilidade);
-  assert.equal(atual.onboarding.dados.atividadePretendida, "médica");
-  assert.equal(atual.onboarding.dados.responsavelNome, undefined);
-  assert.equal(atual.onboarding.dados.enderecoPretendido, undefined);
-  await entrada(viabilidade, "Me chamo Fernanda; cidade: Rio de Janeiro/RJ; só abertura");
-  assert.equal((await casoAtivo(viabilidade)).triagem.campoEsperado, "enderecoPretendido");
-  await entrada(viabilidade, "endereço: Rua de Teste 100; Preciso de alvará?");
-  textoViabilidade = saidas.at(-1).texto;
-  assert.match(textoViabilidade, /licença ou alvará depende/);
-  assert.match(textoViabilidade, /A equipe vai conferir/);
-  assert(textoViabilidade.indexOf("licença") < textoViabilidade.indexOf("A equipe vai conferir"));
-  atual = await casoAtivo(viabilidade);
-  assert.equal(atual.onboarding.dados.enderecoPretendido, "Rua de Teste 100");
-  assert.equal(atual.onboarding.dados.modalidadeServico, "AVULSO");
-  assert((await db.conversaWhatsapp.findUnique({ where: { id: atual.conversaId } })).atendidaDesde);
-  assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: atual.onboardingId } }), 0);
-  ok("Dúvida recebe orientação antes da qualificação e do handoff, sem inventar viabilidade ou licença aprovada");
+  cenario = "Anexo durante coleta não é interpretado como nome";
+  await entrada(telefones[16], "Quero abrir uma empresa");
+  const idArquivo = await entrada(telefones[16], "Meu nome é Legenda", { midia: "image" });
+  assert.equal((await casoAtivo(telefones[16])).onboarding.dados.responsavelNome, undefined);
+  const arquivo = await db.mensagemWhatsapp.findUnique({ where: { providerMessageId: idArquivo } });
+  assert(await db.arquivoWhatsapp.findUnique({ where: { mensagemId: arquivo.id } }));
+  await pausaConfirmada(telefones[16]); ok("Anexo é armazenado e passa à equipe, sem fingir leitura");
+
+  cenario = "Mensagem atrasada não sobrescreve o resumo";
+  await entrada(telefones[17], "Quero abrir uma empresa; me chamo Renata; atividade: design");
+  const antesAtrasada = await casoAtivo(telefones[17]), antesSaidas = saidas.length;
+  await entrada(telefones[17], "Me chamo Nome Antigo", { ocorridaEm: new Date(Date.now() - 120000) });
+  assert.deepEqual((await casoAtivo(telefones[17])).triagem, antesAtrasada.triagem); assert.equal(saidas.length, antesSaidas);
+  ok("Mensagem antiga é guardada no histórico, mas não troca os dados nem responde");
+
+  cenario = "Clique em menu antigo preserva o pedido atual";
+  await entrada(telefones[18], "Olá");
+  const menuAntigo = await db.mensagemWhatsapp.findFirst({ where: { conversa: { telefoneE164: telefones[18] }, direcao: "out", tipo: "interactive" } });
+  await entrada(telefones[18], "Quero trocar de contador; me chamo Joana");
+  const antesClique = await casoAtivo(telefones[18]);
+  await entrada(telefones[18], "Abrir uma empresa", { interacao: "altan.comercial.abertura.v1", respostaA: menuAntigo.providerMessageId });
+  assert.deepEqual((await casoAtivo(telefones[18])).triagem, antesClique.triagem);
+  assert.match(saidas.at(-1).texto, /anterior/); ok("Menu antigo não muda a intenção nem faz novo cadastro");
+
+  cenario = "Duas solicitações na mesma conversa";
+  await entrada(telefones[19], "Sou médico e quero abrir uma empresa");
+  await entrada(telefones[19], "Também quero transferir outra empresa");
+  atual = await casoAtivo(telefones[19]); assert.equal(atual.onboarding.origem, "ABERTURA");
+  assert.equal(atual.triagem.proximaSolicitacao.intencao, "TRANSFERENCIA");
+  await pausaConfirmada(telefones[19]); ok("Pedido adicional preserva a primeira ficha e entrega os dois relatos à equipe");
+
+  cenario = "Dados completos e dúvida de viabilidade na primeira mensagem";
+  await entrada(telefones[21], "Sou médica; quero abrir empresa; me chamo Fernanda; cidade: Rio/RJ; posso usar meu endereço de casa?");
+  assert.match(saidas.at(-1).texto, /depende da atividade/);
+  assert.doesNotMatch(saidas.at(-1).texto, /Como você se chama/);
+  await pausaConfirmada(telefones[21]); ok("Dúvida recebe resposta sem promessa e os dados completos dispensam perguntas repetidas");
+
+  cenario = "Pedido operacional durante coleta não altera campos";
+  await entrada(telefones[22], "Quero abrir uma empresa");
+  const antesOperacional = await casoAtivo(telefones[22]);
+  await entrada(telefones[22], "Me manda as guias");
+  assert.deepEqual((await casoAtivo(telefones[22])).onboarding.dados, antesOperacional.onboarding.dados);
+  ok("Pedido de guia não vira atividade ou nome no pré-atendimento");
+
+  cenario = "Pedido humano explícito conserva o contexto e encerra a automação";
+  await entrada(telefones[23], "Quero abrir uma empresa");
+  await entrada(telefones[23], "Quero falar com uma pessoa");
+  const cHumana = await db.conversaWhatsapp.findUnique({ where: { id: (await casoAtivo(telefones[23])).conversaId } });
+  assert(cHumana.atendidaDesde);
+  const antesHumana = saidas.length; await entrada(telefones[23], "Me chamo Ana"); assert.equal(saidas.length, antesHumana);
+  ok("Equipe solicitada explicitamente pausa o bot sem perder o pedido");
 
   if (comercial) {
     cenario = "Responsável conhecido de duas empresas, sem permissão fiscal";
@@ -475,7 +278,7 @@ try {
       empresasSinteticas.push(empresa.id);
       await db.contatoWhatsapp.create({ data: { portalClientId: empresa.id, nome: "Responsável sintético", telefoneE164: conhecido, vinculoNumeroId: identidade.vinculoNumero.id, permissoesAssistente: [] } });
       await entrada(conhecido, "Olá");
-      assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"]);
+      assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Planejamento tributário", "Regularizar empresa", "Falar com a equipe"]);
       assert.equal((await casos(conhecido)).length, 0);
     }
     const conversaConhecida = await db.conversaWhatsapp.findFirst({ where: { telefoneE164: conhecido, canalId } });

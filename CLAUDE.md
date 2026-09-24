@@ -1,5 +1,14 @@
 # CLAUDE.md — Portal Contábil
 
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
+## Ordem do chat — 24/09/2026
+
+O dono definiu que conversas com mensagens mais recentes aparecem primeiro. Em Todos, clientes, leads e contatos a identificar compartilham a mesma lista cronológica; não agrupar em blocos fixos nem priorizar a fila. Preservar filtros, identificação, não lidas, destinatário selecionado e rascunho. A inbox ordena no banco antes do cursor/limite pela última mensagem visível recebida ou enviada; leitura, cadastro, status e notas internas não promovem uma conversa. A ordenação respeita a resolução de contexto e a carteira autorizada. Testes PostgreSQL sem rede e teste de polling na tela cobrem a mudança.
+
 ## Emissor do cliente e avisos — 23/09/2026
 
 Usar como modelo carrega o detalhe da nota e seu endereço, com isolamento por empresa/documento e descarte de resposta tardia. Consulta de CNPJ permite retentativa e conserva edições; CEP digitado consulta ViaCEP independentemente de falha no CNPJ, confere município pela lista IBGE e não inventa número/complemento. Trocar CEP limpa os campos postais anteriores; edições durante a consulta vencem. Avisos superiores de tributos/cadastro fiscal e alertas de guias vencidas no painel removidos por pedido do dono. Prévia fiscal, validações de emissão, aba Guias e cálculos permanecem. Testes sem emissão real ou consultas fiscais pagas.

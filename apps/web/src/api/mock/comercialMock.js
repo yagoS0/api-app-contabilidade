@@ -2,10 +2,11 @@
 import { normalizarDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 export function criarMockComercial({
   onboardings,
-  persistir
+  persistir,
+  atendimentosIniciais = []
 }) {
   const recursos = [],
-    atendimentos = new Map(),
+    atendimentos = new Map(atendimentosIniciais.map(a => [a.conversaId, JSON.parse(JSON.stringify(a))])),
     historicoAtendimentos = [],
     propostas = new Map(),
     contratos = new Map(),

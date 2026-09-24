@@ -121,6 +121,45 @@ try {
     conferir('Encerrar o único caso altera a categoria sem perder mensagens não lidas', () => {
       assert.deepEqual(diferenca(encerrado, antes), { TODOS: 6, LEAD: 0, CLIENTE: 0, A_IDENTIFICAR: 6 });
     });
+    const listar = extras => listarInboxWhatsapp({ visiveis, operadorId: 'teste', q: prefixo, client: tx, ...extras });
+    const ordemEsperada = [desconhecido.interlocutor.id, lead.interlocutor.id, cliente.interlocutor.id];
+    const aposLeitura = await listar();
+    conferir('Leitura, encerramento e cadastro não promovem conversas sem mensagem nova', () => {
+      assert.deepEqual(aposLeitura.conversas.map(c => c.interlocutorId), ordemEsperada);
+    });
+    const paginados = [];
+    let cursor = null;
+    do {
+      const paginaOrdenada = await listar({ limite: 1, cursor });
+      paginados.push(...paginaOrdenada.conversas.map(c => c.interlocutorId));
+      cursor = paginaOrdenada.proximoCursor;
+    } while (cursor);
+    conferir('Paginação usa a última mensagem antes do limite, sem repetir nem pular contatos', () => {
+      assert.deepEqual(paginados, ordemEsperada);
+    });
+    await mensagens(segmentos[0], 1, { direcao: 'out', registradaEm: new Date() });
+    const aposSaida = await listar();
+    conferir('Resposta enviada coloca o cliente no topo, mesmo com leads não lidos', () => {
+      assert.equal(aposSaida.conversas[0].interlocutorId, cliente.interlocutor.id);
+    });
+    await mensagens(leadComercial, 1, { registradaEm: new Date(Date.now() + 1000) });
+    const aposEntrada = await listar();
+    conferir('Nova entrada em outro canal coloca a pessoa no topo sem duplicá-la', () => {
+      assert.equal(aposEntrada.conversas[0].interlocutorId, lead.interlocutor.id);
+      assert.equal(aposEntrada.conversas.length, 3);
+    });
+    for (const intencao of ['PLANEJAMENTO', 'GESTAO']) {
+      await tx.atendimentoLead.update({ where: { id: atendimentoLead.id }, data: { encerradoEm: null, onboardingId: null, triagem: { preatendimento: { intencao, estado: 'ENCAMINHADO' } } } });
+      const curto = await listar({ relacionamento: 'LEAD' });
+      const totais = await resumoInboxWhatsapp(visiveis, { client: tx });
+      conferir(`${intencao} sem ficha aparece em Leads com os mesmos totais e sem perder o histórico`, () => {
+        assert.equal(curto.conversas.length, 1);
+        assert.equal(curto.conversas[0].interlocutorId, lead.interlocutor.id);
+        assert.equal(curto.conversas[0].solicitacaoComercial.onboardingId, null);
+        assert.equal(curto.conversas[0].solicitacaoComercial.intencao, intencao);
+        assert.equal(totais.contagensNaoLidas.LEAD - antes.contagensNaoLidas.LEAD, 6);
+      });
+    }
     throw rollback;
   }, { timeout: 60000 });
 } catch (err) { if (err !== rollback) throw err; }

@@ -341,3 +341,12 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-company-chat > .wa-section-heading label { min-width: 0; max-width: 100%; }
 .wa-compose-channel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: .8125rem; color: var(--text-muted); }
 .wa-compose-channel select { max-width: 100%; padding: 5px 7px; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+
+.wa-pre-summary { padding: 16px; margin-block: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
+.wa-pre-summary header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wa-pre-summary h3 { margin: 0; font-size: 1rem; }
+.wa-pre-summary header span, .wa-pre-summary dt { color: var(--text-muted); }
+.wa-pre-summary dl { display: grid; gap: 10px; margin-block: 16px; }
+.wa-pre-summary dt { font-size: .8125rem; }
+.wa-pre-summary dd { margin: 2px 0 0; }
+.wa-pre-summary summary { cursor: pointer; min-height: 32px; }
