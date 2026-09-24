@@ -511,3 +511,15 @@ describe("estadoBuscaParcela — a quitação é lida ANTES da ausência de guia
     expect(grupos.map((g) => g.quantidade).sort((a, b) => a - b)).toEqual([22, 38]);
   });
 });
+
+describe("resultado de consulta confiável distingue desconhecido e negativo", () => {
+  it.each(["INDETERMINADO", "PARCIAL_OU_DIVERGENTE", "NAO_APLICAVEL"])("%s não informa falta de pagamento", (estado) => {
+    const r = resumoDoResultado({ encontrado: false, resultadoConsulta: { estado } });
+    expect(r.tom).toBe("neutro"); expect(r.titulo).not.toMatch(/não localizado/i);
+    expect(r.detalhe).not.toMatch(/Receita ainda não tem/);
+  });
+  it("resposta vazia ou encontrado nulo não é negativo", () => {
+    expect(resumoDoResultado({ encontrado: null }).titulo).toBe("Consulta inconclusiva");
+    expect(resumoDoResultado({}).titulo).toBe("Consulta inconclusiva");
+  });
+});

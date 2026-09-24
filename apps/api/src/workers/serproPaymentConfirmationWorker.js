@@ -27,6 +27,7 @@ async function executarPagamento(options = {}) {
     const summary = await runPaymentConfirmationOnce({
       portalClientId: options.portalClientId || null,
       competencia: options.competencia || null,
+      retomadaPagamento: options.retomadaPagamento || null,
       logger: log,
       assertActive: () => { lease.assertActive(); options.assertActive?.(); },
     });

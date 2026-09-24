@@ -1,3 +1,8 @@
+## Confiabilidade das consultas de pagamento — 24/09/2026
+
+Implementação local sobre o snapshot da tarefa Fiscal; ainda exige integração e piloto controlado antes de ativar o executor. Resultado fiscal é CONFIRMADO, NAO_LOCALIZADO, INDETERMINADO, PARCIAL_OU_DIVERGENTE ou NAO_APLICAVEL. `pago/encontrado` aceita null; não converter falha em guia aberta. DAS usa consulta atual com vínculo do documento; circular antiga não confirma pagamento de hoje. PAGTOWEB valida status, PDF e identidade antes de confirmar; ausência de comprovante não prova inadimplência.
+
+`ConsultaPagamentoGuiaService` registra observações com instante/origem/revisão e lock após HTTP; protege duplicação, resultado atrasado, recálculo e baixa manual. Evidência de pagamento não autoriza baixa contábil com data/composição estimadas. Resumos e agenda distinguem conclusão técnica de ressalvas fiscais; retomada de lote preserva resultados concluídos e consulta apenas falhas identificadas. Plano, limites, migration e ensaio PostgreSQL: `docs/confiabilidade-consultas-pagamento-20260924.md` na raiz. Avisos automáticos a clientes permanecem posteriores à homologação; não ativados nesta tarefa.
 # CLAUDE.md — API (apps/api)
 
 ## Pré-atendimento curto — 24/09/2026

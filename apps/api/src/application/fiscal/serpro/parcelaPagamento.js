@@ -23,7 +23,15 @@ export function interpretarPagamentoParcela(raw, { numeroParcelamento, anoMesPar
   if (numeroParcela != null && d.numeroParcela != null && Number(d.numeroParcela) !== Number(numeroParcela)) return divergencia("PARCELA_DIVERGENTE");
   if (numeroDocumento && d.numeroDas && digits(numeroDocumento) !== digits(d.numeroDas)) return divergencia("DOCUMENTO_DIVERGENTE");
   const total = cents(d.valorPagoArrecadacao);
-  if ((total == null || total === 0) && !d.dataPagamento) return { status: "NAO_LOCALIZADO", raw };
+  if (!Object.hasOwn(d, "valorPagoArrecadacao") || !Object.hasOwn(d, "dataPagamento")) {
+    return { status: "INDETERMINADO", motivo: "CAMPOS_PAGAMENTO_AUSENTES", raw };
+  }
+  // Somente ausência explícita e correlacionada. Campos faltantes, valores inválidos ou
+  // composição contraditória não representam resposta negativa de pagamento.
+  if ((d.valorPagoArrecadacao == null || total === 0) && d.dataPagamento == null
+    && (!d.pagamentoDebitos || (Array.isArray(d.pagamentoDebitos) && d.pagamentoDebitos.length === 0))) {
+    return { status: "NAO_LOCALIZADO", raw };
+  }
   const pagoEm = dataPagamento(d.dataPagamento);
   if (!pagoEm || total == null || total <= 0) return divergencia("PAGAMENTO_INCOMPLETO");
   if (d.pagamentoParcial === true || Number(d.saldoDevedor || d.saldoRemanescente || 0) > 0) return divergencia("PAGAMENTO_PARCIAL");

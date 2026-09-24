@@ -118,20 +118,30 @@ describe("conferência de vencimentos dentro da empresa", () => {
     expect(res.status).toBe(403);
     expect(prisma.guide.findMany).not.toHaveBeenCalled();
     expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+    expect(prisma.parcelamento.findMany).not.toHaveBeenCalled();
+    expect(prisma.parcelamentoIndicacao.findMany).not.toHaveBeenCalled();
+    expect(prisma.companyFiscalStatus.findUnique).not.toHaveBeenCalled();
   });
   test("consulta somente a empresa autorizada, sem restringir competência", async () => {
     prisma.companyFirmAccess.findUnique.mockResolvedValueOnce({ status: "ACTIVE", role: "STAFF", scopes: [] });
     prisma.portalClient.findUnique.mockResolvedValueOnce({ id: MINHA, razao: "Minha" });
     prisma.guide.findMany.mockResolvedValueOnce([]);
-    prisma.parcela.findMany.mockResolvedValueOnce([]);
+    // A base Fiscal carrega as parcelas pelos contratos e também as indicações do
+    // relatório salvo. A leitura antiga direta de `parcela` deixou de ser utilizada.
+    prisma.companyFiscalStatus.findUnique.mockResolvedValueOnce(null);
+    prisma.parcelamento.findMany.mockResolvedValueOnce([]);
+    prisma.parcelamentoIndicacao.findMany.mockResolvedValueOnce([]);
     const res = await request(montarApp(STAFF)).get(`/firm/companies/${MINHA}/guides/due-report?mesVencimento=2026-09`);
     expect(res.status).toBe(200);
     expect(res.body.mesVencimento).toBe("2026-09");
-    for (const model of [prisma.guide, prisma.parcela]) {
+    for (const model of [prisma.guide, prisma.parcelamento, prisma.parcelamentoIndicacao]) {
       const where = model.findMany.mock.calls[0][0].where;
       expect(where.portalClientId).toEqual({ in: [MINHA] });
       expect(where.competencia).toBeUndefined();
     }
+    expect(prisma.companyFiscalStatus.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { portalClientId: MINHA },
+    }));
   });
 });
 

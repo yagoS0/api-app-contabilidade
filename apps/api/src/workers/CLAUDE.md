@@ -47,3 +47,8 @@ o Stage 3, o disparo manual também traz guia **+ extrato + lançamentos**.
 - **Custo SERPRO:** cada chamada é paga. Só buscar o que falta (guardas acima).
 - Nunca hardcodar credenciais/URLs/cron — tudo via `SerproRuntimeSettings`/`config.js`.
 - Isolamento multi-tenant: sempre filtrar por `portalClientId`.
+
+## Confiabilidade da consulta — 24/09/2026
+
+A agenda separa conclusão técnica e qualidade fiscal. `finishScheduledRun` conserva `SUCCEEDED` quando o executor terminou, mas grava `qualidadeConsulta: PARCIAL` quando o lote contém indeterminados, divergências, cobertura parcial ou documentos sem identificação. A tela mostra “Concluída com ressalvas”. Uma resposta fiscal inconclusiva não inicia outra consulta paga automática; erros técnicos mantêm a espera e o limite anteriores. `serproPaymentConfirmationWorker` guarda o resumo completo no log. A prova de execução usa mocks/fontes sintéticas e banco de testes, nunca a rotina produtiva nem provedores reais.
+Se o lote mistura resultados e falha técnica, a retomada transporta `retomadaPagamento: { guideIds, parcelaIds, concluidos }`. Somente IDs com erro são consultados novamente, dentro da carteira autorizada; [] não significa todos. Os resultados concluídos e inconclusivos conservam seu instante original e aparecem como concluídos em tentativa anterior. A reserva persistida conserva esse subconjunto também se o processo reiniciar durante a retentativa.

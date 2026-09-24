@@ -14,9 +14,18 @@ test.each([{ dataPagamento: 20260230 }, { valorPagoArrecadacao: 90 }, { pagament
   expect(parse(extra).status).toBe("DIVERGENTE");
 });
 test("ausência correlacionada é diferente de erro e pagamento", () => {
-  expect(parse({ dataPagamento: null, valorPagoArrecadacao: null })).toMatchObject({ status: "NAO_LOCALIZADO" });
+  expect(parse({ dataPagamento: null, valorPagoArrecadacao: null, pagamentoDebitos: [] })).toMatchObject({ status: "NAO_LOCALIZADO" });
   expect(() => interpretarPagamentoParcela({ status: 500, dados: {} }, esperado)).toThrow();
   expect(() => interpretarPagamentoParcela({ status: 200, dados: "erro" }, esperado)).toThrow();
+});
+
+test("dados de pagamento omitidos não viram resposta negativa", () => {
+  const semPagamento = { numeroParcelamento: dados.numeroParcelamento, paDasGerado: dados.paDasGerado, numeroParcela: dados.numeroParcela };
+  expect(interpretarPagamentoParcela({ status: 200, dados: semPagamento }, esperado)).toMatchObject({ status: "INDETERMINADO", motivo: "CAMPOS_PAGAMENTO_AUSENTES" });
+});
+
+test.each([{ valorPagoArrecadacao: "indisponível", dataPagamento: null, pagamentoDebitos: [] }, { valorPagoArrecadacao: null, dataPagamento: null }])("retorno incoerente não vira pagamento não localizado (%j)", extra => {
+  expect(parse(extra).status).toBe("DIVERGENTE");
 });
 test("documento recalculado não impõe total maior ao comprovante original", () => {
   expect(interpretarPagamentoParcela({ status: 200, dados }, { ...esperado, valorMinimo: 100 }).status).toBe("CONFIRMADO");

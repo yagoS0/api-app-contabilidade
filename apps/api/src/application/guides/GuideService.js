@@ -338,6 +338,20 @@ export async function listPendingGuidesReport({
  * chamador novo que esquecesse o parâmetro VAZARIA; com o default no estreito, ele perde a frase do
  * custo, que é visível e barato de consertar. Falha para o lado seguro.
  */
+function resultadoConsultaParaEscritorio(item) {
+  const resultado = item.extracted?.consultaPagamento;
+  if (!resultado || typeof resultado !== "object" || Array.isArray(resultado)) return null;
+  // A consulta contém evidência técnica e retornos fiscais privados. O DTO expõe somente
+  // os metadados necessários para o contador compreender a última verificação.
+  const texto = campo => typeof resultado[campo] === "string" ? resultado[campo] : null;
+  return {
+    estado: texto("estado"), fonte: texto("fonte"), consultadoEm: texto("consultadoEm"),
+    numeroDocumento: texto("numeroDocumento")?.replace(/\D/g, "") || null,
+    cobertura: texto("cobertura"), identidadeConferida: resultado.identidadeConferida === true,
+    motivo: texto("motivo"), observacaoId: texto("observacaoId"),
+  };
+}
+
 export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
   const now = new Date();
   return {
@@ -356,6 +370,7 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
     paymentConfirmedAt: item.paymentConfirmedAt ? new Date(item.paymentConfirmedAt).toISOString() : null,
     serproLastCheckedAt: item.serproLastCheckedAt ? new Date(item.serproLastCheckedAt).toISOString() : null,
     serproLastCheckResult: item.serproLastCheckResult || null,
+    ...(publico === PUBLICO.ESCRITORIO ? { resultadoConsulta: resultadoConsultaParaEscritorio(item) } : {}),
     serproService: item.serproService || null,
     canConfirmPayment: canGuideConfirmPayment(item),
     canRecalculate: canGuideRecalculate(item, now),

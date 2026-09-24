@@ -19,7 +19,7 @@ export function mockExecucoesRotinas() {
       nextAt: next.toISOString(), overdue: routine === "conferencia", retryExhausted: failed, maxAttempts: 3,
       lastRun: failed ? { status: "FAILED", attempts: 3, scheduledAt: new Date(+now - 3600000).toISOString(),
         finishedAt: new Date(+now - 1800000).toISOString(), result: { parcelaResults: [{ razao: "Empresa de demonstração", status: "erro", reason: "Procuração precisa ser conferida (simulação)." }] } }
-        : routine === "pagamento" ? { status: "SUCCEEDED", attempts: 1, finishedAt: new Date(+now - 3600000).toISOString(), result: { results: [{ razao: "Empresa de demonstração", status: "Pagamento conferido (simulação)" }] } } : null };
+        : routine === "pagamento" ? { status: "SUCCEEDED", qualidadeConsulta: "PARCIAL", attempts: 1, finishedAt: new Date(+now - 3600000).toISOString(), result: { total: 2, paid: 1, indeterminados: 1, results: [{ razao: "Empresa de demonstração", status: "Pagamento confirmado (simulação)" }, { razao: "Outra empresa de demonstração", status: "Consulta inconclusiva (simulação)" }] } } : null };
   });
 }
 

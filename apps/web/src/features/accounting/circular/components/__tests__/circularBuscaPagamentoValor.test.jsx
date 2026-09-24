@@ -108,3 +108,15 @@ describe("Circular — o desfecho da busca de pagamento fala pt-BR", () => {
     expect(texto).not.toContain("null");
   });
 });
+
+test.each(["INDETERMINADO", "PARCIAL_OU_DIVERGENTE"])("Circular apresenta %s sem sugerir baixa nem pagamento ausente", async (estado) => {
+  const alerta = jest.spyOn(window, "alert").mockImplementation(() => {});
+  try {
+    mockBuscarPagamentoGuia.mockResolvedValue({ encontrado: null, resultadoConsulta: { estado } });
+    renderTab(); buscar();
+    await waitFor(() => expect(alerta).toHaveBeenCalled());
+    const texto = alerta.mock.calls[0][0];
+    expect(texto).not.toMatch(/Pagamento ainda não localizado|Use.*Dar baixa/i);
+    expect(texto).toMatch(/inconclusiva|conferência/i);
+  } finally { alerta.mockRestore(); }
+});

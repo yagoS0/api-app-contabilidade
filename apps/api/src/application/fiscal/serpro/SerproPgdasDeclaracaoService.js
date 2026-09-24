@@ -7,7 +7,7 @@ import { generateEntriesFromCircular, FONTE_VALOR_EXTRATO } from "../../accounti
 // automático de afirmar algo que o caminho manual recusaria.
 import { marcarSemFaturamento } from "../../accounting/semFaturamento.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
-import { markGuideOpenBySerpro, markGuidePaidBySerpro } from "../../guides/GuidePaymentStatusService.js";
+import { registrarConsultaPagamentoGuia } from "../../guides/ConsultaPagamentoGuiaService.js";
 import { capturePgdasGuideForCompany } from "./CaptureSerproGuidesService.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
@@ -111,7 +111,8 @@ function parseCompactDateTime(value) {
   const raw = String(value || "").trim();
   const match = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
   if (!match) return null;
-  return new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}-03:00`);
+  const date = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}-03:00`);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 function parseSerproJsonField(responseData) {
@@ -124,25 +125,63 @@ function parseSerproJsonField(responseData) {
   }
 }
 
-function findDasIndexNode(input) {
-  const node = searchValueDeep(input, (key, value) => /indice.*das/i.test(String(key || "")) && value && typeof value === "object");
-  if (node && typeof node === "object") return node;
-  return null;
-}
-
-function parseDasIndexResponse(responseData) {
+// CONSDECLARACAO13 retorna todas as operações do período, inclusive DAS antigos e
+// retificadoras. O primeiro índice não identifica o documento da guia consultada.
+export function parseDasIndexResponse(responseData, { competencia, numeroDocumento = null, contribuinteCnpj = null, consultadoEm = null } = {}) {
   const dados = parseSerproJsonField(responseData);
-  const indiceDas = findDasIndexNode(dados) || findDasIndexNode(responseData);
-  if (!indiceDas) return null;
-  const numeroDocumento = String(indiceDas.numeroDas || indiceDas.numeroDocumento || "").trim() || null;
-  const dasPagoRaw = indiceDas.dasPago;
-  const dasPago = dasPagoRaw === true || String(dasPagoRaw || "").trim().toLowerCase() === "true";
-  const dataHoraEmissaoDas = parseCompactDateTime(indiceDas.dataHoraEmissaoDas || indiceDas.dataEmissaoDas || "");
+  let temDasNoPeriodo = false;
+  const base = { fonte: "PGDASD_CONSDECLARACAO13", consultadoEm, numeroDocumento: onlyDigits(numeroDocumento) || null,
+    cobertura: "PARCIAL", identidadeConferida: false };
+  const indeterminado = (motivo) => ({ numeroDocumento: base.numeroDocumento, dasPago: null, dataHoraEmissaoDas: null,
+    rawDados: dados, temDasNoPeriodo, resultadoConsulta: { ...base, estado: "INDETERMINADO", motivo } });
+  if (responseData?.status != null && Number(responseData.status) !== 200) return indeterminado("RESPOSTA_FISCAL_INVALIDA");
+  if (Array.isArray(responseData?.mensagens) && responseData.mensagens.some(m => /^erro(?:-|$)/i.test(String(m?.codigo || "")))) {
+    return indeterminado("RESPOSTA_FISCAL_INVALIDA");
+  }
+  if (!dados || typeof dados !== "object" || Array.isArray(dados)) return indeterminado("INDICE_DAS_INVALIDO");
+  const periodoEsperado = normalizeCompetenciaAaaamm(competencia);
+  if (!periodoEsperado) return indeterminado("COMPETENCIA_INVALIDA");
+  const cnpjRetornado = dados.cnpj || dados.contribuinte?.numero || responseData?.contribuinte?.numero;
+  if (cnpjRetornado && onlyDigits(cnpjRetornado) !== onlyDigits(contribuinteCnpj)) return indeterminado("CNPJ_DIVERGENTE");
+  const periodos = Array.isArray(dados.periodos) ? dados.periodos : dados.periodo ? [dados.periodo] : [];
+  const encontrados = periodos.filter(p => String(p?.periodoApuracao) === periodoEsperado);
+  if (encontrados.length !== 1 || !Array.isArray(encontrados[0]?.operacoes)) return indeterminado("PERIODO_AUSENTE_OU_AMBIGUO");
+  const operacoes = encontrados[0].operacoes;
+  const candidatos = operacoes.filter(op => op?.indiceDas && typeof op.indiceDas === "object")
+    .map(op => ({ ...op, numero: onlyDigits(op.indiceDas.numeroDas || op.indiceDas.numeroDocumento) }));
+  temDasNoPeriodo = candidatos.some(op => /^\d{17}$/.test(op.numero));
+  const numeroEsperado = onlyDigits(numeroDocumento);
+  if (numeroDocumento && !/^\d{17}$/.test(numeroEsperado)) return indeterminado("NUMERO_DOCUMENTO_INVALIDO");
+  const selecionados = numeroEsperado ? candidatos.filter(op => op.numero === numeroEsperado) : candidatos;
+  if (!selecionados.length) return indeterminado("DOCUMENTO_NAO_IDENTIFICADO");
+  if (selecionados.some(op => !/^\d{17}$/.test(op.numero))) return indeterminado("NUMERO_DOCUMENTO_INVALIDO");
+  if (new Set(selecionados.map(op => op.numero)).size !== 1) return indeterminado("MULTIPLOS_DOCUMENTOS_NO_PERIODO");
+  const indiceDas = selecionados[0].indiceDas;
+  const dataHoraEmissaoDas = parseCompactDateTime(indiceDas.dataHoraEmissaoDas || indiceDas.datahoraEmissaoDas || indiceDas.dataEmissaoDas);
+  if (!numeroEsperado) {
+    // Sem número na guia, não associar DAS avulso/judicial nem documento anterior a uma retificação.
+    if (selecionados.some(op => /avulso|judicial/i.test(String(op.tipoOperacao)))) return indeterminado("TIPO_DAS_SEM_VINCULO_COM_GUIA");
+    const declaracoes = operacoes.filter(op => op?.indiceDeclaracao);
+    if (declaracoes.some(op => {
+      const transmitidaEm = parseCompactDateTime(op.indiceDeclaracao.dataHoraTransmissao);
+      return !dataHoraEmissaoDas || !transmitidaEm || transmitidaEm > dataHoraEmissaoDas;
+    })) return indeterminado("DECLARACAO_POSTERIOR_OU_SEM_DATA");
+  }
+  // A documentação define Boolean. Ausência, string, zero e null não equivalem a false.
+  const sinais = selecionados.map(op => op.indiceDas.dasPago);
+  if (sinais.some(value => typeof value !== "boolean")) return indeterminado("SINAL_PAGAMENTO_AUSENTE_OU_INVALIDO");
+  if (new Set(sinais).size !== 1) return indeterminado("SINAIS_PAGAMENTO_DIVERGENTES");
+  const dasPago = sinais[0];
   return {
-    numeroDocumento,
+    numeroDocumento: selecionados[0].numero,
     dasPago,
     dataHoraEmissaoDas: dataHoraEmissaoDas ? dataHoraEmissaoDas.toISOString() : null,
     rawDados: dados,
+    temDasNoPeriodo,
+    resultadoConsulta: { ...base, numeroDocumento: selecionados[0].numero, estado: dasPago ? "CONFIRMADO" : "NAO_LOCALIZADO",
+      identidadeConferida: true, cobertura: "COMPLETA", motivo: dasPago ? "DAS_PAGO" : "PAGAMENTO_NAO_REGISTRADO_ATE_CONSULTA",
+      evidencia: { competencia: normalizeCompetencia(competencia), cnpj: onlyDigits(contribuinteCnpj), dasPago,
+        vinculo: numeroEsperado ? "DOCUMENTO_EXATO" : "DOCUMENTO_UNICO_DO_PERIODO" } },
   };
 }
 
@@ -150,10 +189,11 @@ function parseDasIndexResponse(responseData) {
  * Q46: resolve o índice do DAS de uma competência (número do documento de arrecadação + dasPago)
  * via CONSDECLARACAO13. Usado pela confirmação de pagamento para obter o numeroDocumento CORRETO
  * (não o heurístico do GERARDAS) e o sinal autoritativo de pagamento (`dasPago`). Chamada barata
- * (/Consultar); NÃO gera lançamentos. Prefira o valor já gravado em companyMonthlyCircular.
- * @returns {Promise<{numeroDocumento: string|null, dasPago: boolean, dataHoraEmissaoDas: string|null}|null>}
+ * (/Consultar); NÃO gera lançamentos. A confirmação exige consulta fresca; somente a mesma
+ * rodada pode compartilhar a resposta entre guias da mesma empresa e competência.
  */
-export async function consultarDasIndexPorCompetencia({ portalClientId, competencia, contribuinteCnpj = null, contratanteCnpj = null }) {
+export async function consultarDasIndexPorCompetencia({ portalClientId, competencia, contribuinteCnpj = null, contratanteCnpj = null, numeroDocumento = null, consultasDaRodada = null, assertActive = () => {} }) {
+  await assertActive();
   const runtime = await getResolvedSerproCredentials();
   const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
   if (!procuradorCnpj || procuradorCnpj.length !== 14) {
@@ -173,11 +213,27 @@ export async function consultarDasIndexPorCompetencia({ portalClientId, competen
     err.code = "SERPRO_INVALID_CONTRIBUINTE_CNPJ";
     throw err;
   }
-  const pgdasService = new SerproPgdasdService();
-  const resp = await pgdasService.consultarDeclaracaoIndice({
-    contratanteCnpj: procuradorCnpj, contribuinteCnpj: cnpj, periodoApuracao: competencia,
-  });
-  return parseDasIndexResponse(resp);
+  const chave = `${procuradorCnpj}:${cnpj}:${normalizeCompetencia(competencia)}`;
+  const consultar = async () => {
+    await assertActive();
+    const consultadoEm = new Date().toISOString();
+    const pgdasService = new SerproPgdasdService();
+    try {
+      const resp = await pgdasService.consultarDeclaracaoIndice({
+        contratanteCnpj: procuradorCnpj, contribuinteCnpj: cnpj, periodoApuracao: competencia,
+      });
+      return { resp, consultadoEm };
+    } catch (err) {
+      // Compartilhar a falha também preserva o instante original; não inventa uma
+      // nova tentativa para cada guia que encontrou a mesma reserva/budget bloqueado.
+      err.resultadoConsulta = { estado: "INDETERMINADO", fonte: "PGDASD_CONSDECLARACAO13", consultadoEm,
+        numeroDocumento: null, motivo: err?.code || "FALHA_CONSULTA", cobertura: "NAO_CONSULTADA", identidadeConferida: false };
+      throw err;
+    }
+  };
+  if (consultasDaRodada && !consultasDaRodada.has(chave)) consultasDaRodada.set(chave, consultar());
+  const { resp, consultadoEm } = await (consultasDaRodada ? consultasDaRodada.get(chave) : consultar());
+  return parseDasIndexResponse(resp, { competencia, numeroDocumento, contribuinteCnpj: cnpj, consultadoEm });
 }
 
 /**
@@ -255,10 +311,13 @@ async function ensureDasGuideRecord({ portalClientId, competencia, contratanteCn
 
   if (!guide) return null;
 
-  if (dasIndex?.dasPago) {
-    await markGuidePaidBySerpro({ guideId: guide.id });
-  } else {
-    await markGuideOpenBySerpro({ guideId: guide.id });
+  if (dasIndex?.resultadoConsulta?.consultadoEm) {
+    const indiceDaGuia = parseDasIndexResponse({ dados: JSON.stringify(dasIndex.rawDados) }, {
+      competencia, contribuinteCnpj: guide.cnpj,
+      numeroDocumento: guide.extracted?.numeroDocumento || guide.extracted?.numeroDoc || guide.extracted?.numeroDas || null,
+      consultadoEm: dasIndex.resultadoConsulta.consultadoEm,
+    });
+    await registrarConsultaPagamentoGuia({ guide, resultadoConsulta: indiceDaGuia.resultadoConsulta });
   }
 
   return prisma.guide.findUnique({ where: { id: guide.id } });
@@ -590,12 +649,15 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     }
 
     const pgdasService = new SerproPgdasdService();
+    const indiceConsultadoEm = indiceExistente ? null : new Date().toISOString();
     const declarationIndexResponse = indiceExistente ?? await pgdasService.consultarDeclaracaoIndice({
       contratanteCnpj: procuradorCnpj,
       contribuinteCnpj: company.cnpj,
       periodoApuracao: competenciaStorage,
     });
-    const dasIndex = parseDasIndexResponse(declarationIndexResponse);
+    const dasIndex = parseDasIndexResponse(declarationIndexResponse, {
+      competencia: competenciaStorage, contribuinteCnpj: company.cnpj, consultadoEm: indiceConsultadoEm,
+    });
 
     const client = new SerproHttpClient();
     const response = await client.post(
@@ -617,7 +679,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
           dasNumeroDocumento: dasIndex?.numeroDocumento || null,
           dasPago: dasIndex?.dasPago ?? null,
           dasDataEmissao: dasIndex?.dataHoraEmissaoDas ? new Date(dasIndex.dataHoraEmissaoDas) : null,
-          dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : "NOT_FOUND",
+          dasStatus: dasIndex?.numeroDocumento && dasIndex.dasPago != null ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : "NOT_FOUND",
           serproSyncStatus: "NOT_FOUND",
           serproLastSyncAt: new Date(),
           serproLastError: null,
@@ -633,7 +695,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
           },
         },
       });
-      const guideResult = dasIndex?.numeroDocumento
+      const guideResult = dasIndex?.temDasNoPeriodo
         ? await tryEnsureDasGuideRecord({
             portalClientId: company.id,
             competencia: competenciaStorage,
@@ -728,7 +790,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         pgdasReciboFileId: reciboFile?.id || null,
         pgdasReciboFileUrl: reciboFile?.url || null,
         receitaStatus: receitaBruta ? "SUCCESS" : "NOT_FOUND",
-        dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : dasTotal ? "SUCCESS" : "NOT_FOUND",
+        dasStatus: dasIndex?.numeroDocumento && dasIndex.dasPago != null ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : dasTotal ? "SUCCESS" : "NOT_FOUND",
         serproSyncStatus: "SUCCESS",
         serproLastSyncAt: new Date(),
         serproLastError: null,
@@ -752,7 +814,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       tributosPorTributo: parsedPgdas.tributosPorTributo,
     });
 
-    const guideResult = dasIndex?.numeroDocumento
+    const guideResult = dasIndex?.temDasNoPeriodo
       ? await tryEnsureDasGuideRecord({
           portalClientId: company.id,
           competencia: competenciaStorage,

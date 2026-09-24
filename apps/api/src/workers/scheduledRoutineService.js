@@ -9,6 +9,21 @@ const MAX_ATTEMPTS = 3;
 
 const jsonValue = (value) => JSON.parse(JSON.stringify(value));
 
+function retomadaDosPagamentos(old) {
+  if (old?.status === "RUNNING") return old.retomadaPagamento || null;
+  if (old?.status !== "FAILED") return null;
+  const results = old.result?.results;
+  if (!Array.isArray(results)) return old.retomadaPagamento || null;
+  const erros = results.filter(r => r.status === "error");
+  // Sem identificação completa da falha não inventamos uma cobertura/sublista.
+  if (!erros.length || erros.some(r => !r.guideId && !r.parcelaId)) return null;
+  return {
+    guideIds: [...new Set(erros.map(r => r.guideId).filter(Boolean))],
+    parcelaIds: [...new Set(erros.map(r => r.parcelaId).filter(Boolean))],
+    concluidos: results.filter(r => r.status !== "error"),
+  };
+}
+
 export async function claimScheduledRun({ routine, config, now = new Date(), db = prisma }) {
   const { dueAt } = describeSchedule(config, now);
   if (!dueAt) return null;
@@ -18,11 +33,13 @@ export async function claimScheduledRun({ routine, config, now = new Date(), db 
   if (old?.status === "SUCCEEDED" || Number(old?.attempts || 0) >= MAX_ATTEMPTS) return null;
   if (old?.status === "RUNNING" && new Date(old.leaseUntil) > now) return null;
   if (old?.retryAt && new Date(old.retryAt) > now) return null;
+  const retomadaPagamento = routine === "pagamento" ? retomadaDosPagamentos(old) : null;
   const value = {
     routine, scheduledAt: dueAt, status: "RUNNING", owner: crypto.randomUUID(),
     attempts: Number(old?.attempts || 0) + 1, startedAt: now.toISOString(),
     leaseUntil: new Date(now.getTime() + LEASE_MS).toISOString(),
     competencia: previousCompetencia(new Date(dueAt)),
+    ...(retomadaPagamento ? { retomadaPagamento } : {}),
   };
   if (existing) {
     const changed = await db.appSetting.updateMany({
@@ -42,8 +59,14 @@ export async function finishScheduledRun(claim, result, error, { db = prisma, no
   const failed = Boolean(error || result?.skipped || result?.failed || result?.falhas
     || result?.naoConferiveis || result?.extratoErro || result?.parcelasErro || result?.skippedByProcuration
     || (Array.isArray(result?.errors) ? result.errors.length : Number(result?.errors || 0)));
+  // A execução técnica pode terminar sem responder a situação fiscal. Isso exige conferência,
+  // não outra rodada paga automática de uma resposta já recebida.
+  const ressalvasPagamento = claim.value.routine === "pagamento" && Boolean(
+    result?.indeterminados || result?.divergentes || result?.naoAplicavel || result?.semDoc
+    || result?.cobertura === "PARCIAL" || result?.qualidadeConsulta === "PARCIAL");
   const value = jsonValue({ ...current.value, owner: null, leaseUntil: null,
     status: failed ? "FAILED" : "SUCCEEDED", finishedAt: now.toISOString(),
+    ...(claim.value.routine === "pagamento" ? { qualidadeConsulta: failed || ressalvasPagamento ? "PARCIAL" : "COMPLETA" } : {}),
     retryAt: failed ? new Date(now.getTime() + RETRY_MS).toISOString() : null,
     error: error ? String(error.code || error.message || error) : null,
     result: result ?? null,
@@ -78,7 +101,8 @@ export async function runScheduledRoutine(routine, config, run, { db = prisma, n
   timer.unref?.();
   try {
     const result = await run({ routines: [routine], competencia: claim.value.competencia,
-      scheduledAt: claim.value.scheduledAt, assertActive });
+      scheduledAt: claim.value.scheduledAt, assertActive,
+      ...(claim.value.retomadaPagamento ? { retomadaPagamento: claim.value.retomadaPagamento } : {}) });
     clearInterval(timer);
     await pending;
     assertActive();
