@@ -1,3 +1,4 @@
+import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "./GuiaParcelaEnvioGuard.js";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -78,7 +79,8 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   }
   to = await validarDestinatariosAtuais(portal.id, to);
 
-  const pendingAll = await prisma.guide.findMany({
+  const candidatos = await prisma.guide.findMany({
+    include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela },
     where: {
       portalClientId: portal.id,
       status: "PROCESSED",
@@ -90,6 +92,9 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     take: 500,
   });
 
+  const bloqueadas = candidatos.filter(bloqueioEnvioParcela).map(g => bloqueioEnvioParcela(g));
+  const pendingAll = candidatos.filter(g => !bloqueioEnvioParcela(g));
+  if (!pendingAll.length && bloqueadas.length) throw Object.assign(new Error(bloqueadas[0].message), bloqueadas[0], { bloqueadas });
   if (!pendingAll.length) {
     return {
       companyId: portal.id,
@@ -154,6 +159,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     });
     // Os anexos podem demorar a carregar. Um contato removido nesse intervalo não recebe.
     to = await validarDestinatariosAtuais(portal.id, to);
+    await conferirParcelasParaEnvio(toSend);
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();
@@ -176,6 +182,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       alreadySent: 0,
       pendingToSend: pendingGuides.length,
       remainingAfterRun: Math.max(pendingGuides.length - toSend.length, 0),
+      bloqueadas,
       maxFilesPerRun: maxFilesPerRun || null,
       attachmentsCount: toSend.length,
       attachmentsBytes,
@@ -282,6 +289,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
     await conferirGuiasVencimento({ portalClientIds: [portal.id], mesVencimento, guideIds: selectedGuideIds, assinatura });
   }
   const guides = await prisma.guide.findMany({
+    include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela },
     where: {
       portalClientId: portal.id,
       ...(mesVencimento ? { vencimento: periodoVencimento(mesVencimento), id: { in: selectedGuideIds },
@@ -305,6 +313,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
 
   // Marca como SENDING antes de tentar enviar (evita race com outros workers).
   if (mesVencimento && assinaturaGuias(guides) !== assinatura) throw loteAlterado();
+  await conferirParcelasParaEnvio(guides, { atualizar: false });
   const guideIds = guides.map((g) => g.id);
   const reservaEm = new Date();
   const reservar = (db) => db.guide.updateMany({
@@ -361,6 +370,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
         || String(g.valor) !== String(guides.find((x) => x.id === g.id)?.valor)
         || g.competencia !== guides.find((x) => x.id === g.id)?.competencia)) throw loteAlterado();
     }
+    await conferirParcelasParaEnvio(guides);
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();

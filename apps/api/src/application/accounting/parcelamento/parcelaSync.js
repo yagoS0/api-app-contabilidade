@@ -107,7 +107,7 @@ export async function sincronizarParcelas(client, { portalClientId, parcelamento
   let vinculadas = 0;
 
   // 1) O cronograma contratado: 1 … numParcelas.
-  const total = Math.max(Number(parc.numParcelas) || 1, 1);
+  const total = parc.numParcelas != null && Number.isInteger(Number(parc.numParcelas)) ? Math.max(Number(parc.numParcelas), 0) : 0;
   for (let n = 1; n <= total; n += 1) {
     if (porNumero.has(n)) continue;
     const cal = calendarioDaParcela(parc, n);

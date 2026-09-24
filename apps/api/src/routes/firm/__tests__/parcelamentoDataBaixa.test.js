@@ -5,7 +5,7 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
   },
 }));
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
-  prisma: { guide: { findFirst: jest.fn() } },
+  prisma: { guide: { findFirst: jest.fn() }, parcela: { findMany: jest.fn() } },
 }));
 jest.mock("../../../application/accounting/parcelamento/ParcelamentoV2Service.js", () => ({
   gerarPagamentoParcelaFromGuide: jest.fn(async () => ({ ok: true })),
@@ -27,6 +27,16 @@ const baixar = (body) => request(app).post("/firm/companies/p1/parcelamentos/par
 beforeEach(() => {
   jest.clearAllMocks();
   prisma.guide.findFirst.mockResolvedValue({ extracted: {} });
+});
+
+test("fila de baixa mostra valor arrecadado sem substituir o valor do documento", async () => {
+  prisma.parcela.findMany.mockResolvedValue([{ id: "p1", numeroParcela: 1, parcelamentoId: "c1",
+    guia: { id: "g1", valor: 110, competencia: "2026-08", extracted: { comprovante: { confiavel: true, total: 100, dataArrecadacao: "20/08/2026" } } } }]);
+  const res = await request(app).get("/firm/companies/p1/parcelamentos/parcelas-pendentes-baixa");
+  expect(res.status).toBe(200);
+  expect(res.body.parcelas[0]).toMatchObject({ valor: 100, valorDocumento: 110, comprovante: { dataArrecadacao: "20/08/2026" } });
+  expect(prisma.parcela.findMany.mock.calls[0][0].where.portalClientId).toBe("p1");
+  expect(prisma.parcela.findMany.mock.calls[0][0].take).toBeUndefined();
 });
 
 test("data declarada inválida não vira baixa hoje", async () => {

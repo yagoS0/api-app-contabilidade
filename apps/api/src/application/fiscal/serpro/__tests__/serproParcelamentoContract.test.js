@@ -43,7 +43,7 @@ describe("Contrato SERPRO — OBTERPARC164", () => {
     const dto = normalizeParcelamentoDTO(mapearParcelamento(ENV_OBTER, { tipo: "PARCSN" }));
     expect(dto.numeroParcelamento).toBe("9102");
     expect(round2(dto.valorTotal)).toBe(53742.95);
-    expect(dto.quantidadeParcelas).toBe(5);
+    expect(dto.quantidadeParcelas).toBeNull(); // cinco entradas não são cinco prestações totais
     expect(dto.origem).toBe("SERPRO");
   });
 });
@@ -88,7 +88,8 @@ describe("Contrato SERPRO — GERARDAS161 (emitir DAS da parcela)", () => {
     expect(emitirDasServico("PARCSN")).toBe("GERARDAS161");
     expect(emitirDasServico("PARCSN_ESPECIAL")).toBe("GERARDAS171");
     expect(emitirDasServico("RELP_SN")).toBe("GERARDAS191");
-    expect(() => emitirDasServico("PARCMEI")).toThrow(/MODALIDADE|suportad/i);
+    expect(emitirDasServico("PARCMEI")).toBe("GERARDAS201");
+    expect(() => emitirDasServico("PERT_MEI")).toThrow(/MODALIDADE|suportad/i);
   });
 
   test("decodifica docArrecadacaoPdfB64 → Buffer começando com %PDF", () => {

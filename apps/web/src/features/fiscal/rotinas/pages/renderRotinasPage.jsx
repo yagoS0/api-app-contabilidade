@@ -25,7 +25,7 @@ const ROTINA_HINT = {
   extrato: "Extrato do PGDAS-D — gera os lançamentos",
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
-  pagamento: "Confirma pagamento pelo comprovante (PAGTOWEB)",
+  pagamento: "Confirma pagamentos de DAS, INSS e parcelas acompanhadas",
   conferencia: "Confere as NFS-e contra o ADN nacional no dia 1 — antes do fechamento",
 };
 
@@ -37,7 +37,7 @@ function formatDateTime(value) {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleString("pt-BR");
+  return parsed.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
 export function RotinasPage({
@@ -53,6 +53,7 @@ export function RotinasPage({
 }) {
   const [rotinas, setRotinas] = useState([]);
   const [agenda, setAgenda] = useState({});
+  const [executionStatus, setExecutionStatus] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
@@ -67,6 +68,7 @@ export function RotinasPage({
       const out = await api.getRotinas();
       setRotinas(Array.isArray(out?.rotinas) ? out.rotinas : []);
       setAgenda(out?.agenda || {});
+      setExecutionStatus(out?.executions || []);
       setEmpresas(Array.isArray(out?.empresas) ? out.empresas : []);
     } catch (err) {
       setNotice({ type: "error", text: err?.message || "Falha ao carregar rotinas." });
@@ -124,7 +126,8 @@ export function RotinasPage({
         payloadAgenda[r.key] = {
           enabled: cfg.enabled !== false,
           day: Number(cfg.day) || 5,
-          hour: Number(cfg.hour) || 7,
+          hour: cfg.hour == null || cfg.hour === "" ? 7 : Number(cfg.hour),
+          frequency: cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
         };
       }
       const out = await api.saveRotinas({
@@ -132,6 +135,7 @@ export function RotinasPage({
         agenda: payloadAgenda,
       });
       if (out?.agenda) setAgenda(out.agenda);
+      onRefreshWorkerStatus?.();
       setNotice({ type: "ok", text: "Rotinas salvas." });
     } catch (err) {
       setNotice({ type: "error", text: err?.message || "Falha ao salvar rotinas." });
@@ -169,8 +173,8 @@ export function RotinasPage({
             <div className="serpro-settings-card__head">
               <h1 className="serpro-settings-card__title">Agenda</h1>
               <p className="serpro-settings-card__description">
-                Dia e hora de cada rotina. Vale para todas as empresas marcadas nela — a captura
-                roda no dia escolhido e re-tenta nos 2 dias seguintes se falhar.
+                Horário de Brasília. Capturas mensais têm duas novas tentativas nos dias seguintes.
+                Se o dia não existir no mês, usamos o último dia disponível.
               </p>
             </div>
 
@@ -197,10 +201,19 @@ export function RotinasPage({
                           <td style={{ padding: "6px", color: "#F8F8F2" }}>
                             <strong>{r.label}</strong>
                             <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{ROTINA_HINT[r.key]}</div>
+                            {r.key === "pagamento" && (
+                              <select aria-label="Frequência da consulta de pagamentos" disabled={!ligada}
+                                value={cfg.frequency || "MONTHLY"}
+                                onChange={(e) => setAgendaCampo(r.key, "frequency", e.target.value)}>
+                                <option value="MONTHLY">Mensal</option>
+                                <option value="DAILY">Diária</option>
+                              </select>
+                            )}
                           </td>
                           <td style={td}>
                             <input
                               type="checkbox"
+                              aria-label={`Ligar ${r.label}`}
                               checked={ligada}
                               onChange={(e) => setAgendaCampo(r.key, "enabled", e.target.checked)}
                               style={{ width: 16, height: 16, cursor: "pointer" }}
@@ -209,7 +222,8 @@ export function RotinasPage({
                           <td style={td}>
                             <select
                               value={String(cfg.day ?? 5)}
-                              disabled={!ligada}
+                              disabled={!ligada || cfg.frequency === "DAILY"}
+                              aria-label={`Dia de ${r.label}`}
                               onChange={(e) => setAgendaCampo(r.key, "day", Number(e.target.value))}
                               style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             >
@@ -219,9 +233,11 @@ export function RotinasPage({
                           <td style={td}>
                             <input
                               type="time"
+                              step="3600"
+                              aria-label={`Horário de ${r.label}`}
                               value={`${pad2(cfg.hour ?? 7)}:00`}
                               disabled={!ligada}
-                              onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(23, Number(String(e.target.value || "07:00").split(":")[0]) || 7)))}
+                              onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(23, Number(String(e.target.value || "07:00").split(":")[0]))))}
                               style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             />
                           </td>
@@ -375,15 +391,33 @@ export function RotinasPage({
               )}
             </div>
 
-            <div className="serpro-settings-status-grid" style={{ marginTop: 16 }}>
-              <div className="serpro-settings-status-item">
-                <span>Worker</span>
-                <strong>{workerStatus?.workerEnabled ? "Ativo" : "Inativo"}</strong>
-              </div>
-              <div className="serpro-settings-status-item">
-                <span>Última captura</span>
-                <strong>{formatDateTime(workerStatus?.lastRun?.updatedAt)}</strong>
-              </div>
+            <h3>Execuções programadas</h3>
+            <Button type="button" variant="secondary" onClick={() => onRefreshWorkerStatus?.()}>Atualizar execuções</Button>
+            <div style={{ overflowX: "auto", marginTop: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 650 }}>
+                <thead><tr><th style={th}>Rotina</th><th style={th}>Situação</th><th style={th}>Última execução</th><th style={th}>Próximo horário</th></tr></thead>
+                <tbody>{(workerStatus?.routines || executionStatus).map((row) => (
+                  <tr key={row.routine} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={td}>{rotinas.find((r) => r.key === row.routine)?.label || row.routine}</td>
+                    <td style={td}>{!row.enabled ? "Desativada" : !row.alive ? "Sem sinal do executor" : row.lastRun?.status === "RUNNING" ? "Em execução" : row.retryExhausted ? "Tentativas esgotadas" : row.lastRun?.status === "FAILED" ? "Consultar falha" : row.overdue ? "Execução pendente" : "Aguardando horário"}</td>
+                    <td style={td}>
+                      {formatDateTime(row.lastRun?.finishedAt || row.lastRun?.startedAt)}
+                      {row.lastRun && <details><summary>Resultado</summary>
+                        <p>{row.lastRun.status === "SUCCEEDED" ? "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
+                        {row.lastRun.result?.divergentes > 0 && <p>{row.lastRun.result.divergentes} empresa(s) com divergência fiscal para conferir.</p>}
+                        {row.lastRun.error && <p>{row.lastRun.error}</p>}
+                        <p>Tentativa {row.lastRun.attempts || 1} de {row.maxAttempts || 3}{row.retryExhausted ? ". Requer conferência; próxima execução na agenda." : row.lastRun.retryAt ? `. Nova tentativa a partir de ${formatDateTime(row.lastRun.retryAt)}.` : ""}</p>
+                        {[...(row.lastRun.result?.results || []), ...(row.lastRun.result?.extratoResults || []), ...(row.lastRun.result?.parcelaResults || [])].map((item, i) => <div key={`${item.companyId || "item"}-${i}`}>
+                          <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || item.status}</p>
+                          {(item.parcelas || []).map((parcela, j) => <p key={j}>Parcela {parcela.anoMes || parcela.anoMesParcela || parcela.numeroParcela || "consultada"}: {parcela.reason || parcela.error || parcela.status}</p>)}
+                        </div>)}
+                      </details>}
+                    </td>
+                    <td style={td}>{row.enabled ? formatDateTime(row.nextEffectiveAt || row.nextAt) : "—"}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {!(workerStatus?.routines || executionStatus).length && <p>Histórico por rotina ainda não disponível. O último registro geral não confirma todas as consultas.</p>}
             </div>
           </section>
 

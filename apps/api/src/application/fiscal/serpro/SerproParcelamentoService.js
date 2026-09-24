@@ -1,18 +1,15 @@
 // Q21 (spec v2) — Adapter SERPRO Integra-Parcelamento (implementa o port FornecedorParcelamento).
 //
-// FRONTEIRA: este é o único caminho que fala com o SERPRO. Devolve SEMPRE o DTO interno
-// (via serproParcelamentoMap) já validado pelos invariantes. Atrás da flag
-// INTEGRACAO_SERPRO_PARCELAMENTO (default OFF) e do teste de contrato (sandbox).
-//
-// ⚠ NÃO INVENTAR: os nomes de campo das respostas vivem só em serproParcelamentoMap.js, que
-// lança SERPRO_PARC_MAP_NOT_CONFIGURED até confirmação no sandbox. O serviço persiste/loga o
-// rawPayload pra o dono colar um exemplo real e finalizar o mapa.
+// Contratos por modalidade ficam no mapper. Emissão, descoberta e pagamento são operações
+// independentes; somente a antiga prévia contábil exige composição completa.
+// A flag de integração continua protegendo chamadas reais.
 
 import { SerproHttpClient } from "./SerproHttpClient.js";
 import { INTEGRACAO_SERPRO_PARCELAMENTO } from "../../../config.js";
 import {
   mapearParcelamento, mapearParcela, MODALIDADE_SISTEMA,
   mapearEmissaoDasParcela, mapearParcelasGeraveis, emitirDasServico, PARCELAS_GERAVEIS_SERVICO,
+  mapearParcelasDisponiveis, mapearPedidosParcelamento, PEDIDOS_SERVICO, OBTER_SERVICO, PAGAMENTO_SERVICO, servicoDaModalidade, parseEnvelope,
 } from "./serproParcelamentoMap.js";
 import { normalizeParcelamentoDTO, normalizeParcelaDTO } from "../../accounting/parcelamento/contracts.js";
 import { reconciliarParcelamento, validarParcela } from "../../accounting/parcelamento/invariantes.js";
@@ -37,7 +34,7 @@ export class SerproParcelamentoService {
   buildEnvelope({ contratanteCnpj, contribuinteCnpj, tipo, idServico, dados }) {
     const contratante = onlyDigits(contratanteCnpj);
     const contribuinte = onlyDigits(contribuinteCnpj);
-    const idSistema = MODALIDADE_SISTEMA[String(tipo).toUpperCase()] || "PARCSN"; // TODO(sandbox): confirmar
+    const idSistema = servicoDaModalidade(MODALIDADE_SISTEMA, tipo);
     return {
       contratante: { numero: contratante, tipo: 2 },
       autorPedidoDados: { numero: contratante, tipo: 2 },
@@ -46,7 +43,7 @@ export class SerproParcelamentoService {
         idSistema,
         idServico: String(idServico),
         versaoSistema: "1.0",
-        dados: JSON.stringify(dados || {}),
+        dados: dados === "" ? "" : JSON.stringify(dados || {}),
       },
     };
   }
@@ -56,7 +53,7 @@ export class SerproParcelamentoService {
     if (!INTEGRACAO_SERPRO_PARCELAMENTO) throw flagOff();
     const payload = this.buildEnvelope({
       contratanteCnpj, contribuinteCnpj, tipo,
-      idServico: SERPRO_PARC_SERVICE_OBTER, dados: { numeroParcelamento },
+      idServico: servicoDaModalidade(OBTER_SERVICO, tipo), dados: { numeroParcelamento: Number(numeroParcelamento) },
     });
     const raw = await this.client.post("/Consultar", payload);
     this.log?.info?.({ servico: SERPRO_PARC_SERVICE_OBTER, numeroParcelamento }, "SERPRO parcelamento: rawPayload recebido");
@@ -69,7 +66,7 @@ export class SerproParcelamentoService {
     if (!INTEGRACAO_SERPRO_PARCELAMENTO) throw flagOff();
     const payload = this.buildEnvelope({
       contratanteCnpj, contribuinteCnpj, tipo,
-      idServico: SERPRO_PARC_SERVICE_DETPAGTO, dados: { numeroParcelamento, anoMesParcela },
+      idServico: servicoDaModalidade(PAGAMENTO_SERVICO, tipo), dados: { numeroParcelamento: Number(numeroParcelamento), anoMesParcela: Number(anoMesParcela) },
     });
     const raw = await this.client.post("/Consultar", payload);
     this.log?.info?.({ servico: SERPRO_PARC_SERVICE_DETPAGTO, numeroParcelamento, anoMesParcela }, "SERPRO parcelamento: rawPayload recebido");
@@ -93,10 +90,10 @@ export class SerproParcelamentoService {
       err.code = "MODALIDADE_NAO_SUPORTADA";
       throw err;
     }
-    const payload = this.buildEnvelope({ contratanteCnpj, contribuinteCnpj, tipo, idServico, dados: { numeroParcelamento } });
+    const payload = this.buildEnvelope({ contratanteCnpj, contribuinteCnpj, tipo, idServico, dados: "" });
     const raw = await this.client.post("/Consultar", payload);
     this.log?.info?.({ servico: idServico, numeroParcelamento }, "SERPRO parcelamento: parcelas geráveis");
-    return { competencias: mapearParcelasGeraveis(raw), raw };
+    return { competencias: mapearParcelasGeraveis(raw), parcelas: mapearParcelasDisponiveis(raw), raw };
   }
 
   // GERARDAS16x → PDF (Buffer) da DAS da parcela. dados: { parcelaParaEmitir: AAAAMM }.
@@ -105,12 +102,27 @@ export class SerproParcelamentoService {
     const idServico = emitirDasServico(tipo); // lança MODALIDADE_NAO_SUPORTADA se não confirmado
     const payload = this.buildEnvelope({
       contratanteCnpj, contribuinteCnpj, tipo, idServico,
-      dados: { numeroParcelamento, parcelaParaEmitir: Number(String(anoMesParcela).replace(/\D+/g, "")) },
+      dados: { parcelaParaEmitir: Number(String(anoMesParcela).replace(/\D+/g, "")) },
     });
     const raw = await this.client.post("/Emitir", payload);
     this.log?.info?.({ servico: idServico, numeroParcelamento, anoMesParcela }, "SERPRO parcelamento: DAS emitida");
     const { pdfBuffer, numeroDas } = mapearEmissaoDasParcela(raw);
     return { pdfBuffer, numeroDas, raw };
+  }
+
+  async listarPedidos({ contratanteCnpj, contribuinteCnpj, tipo }) {
+    if (!INTEGRACAO_SERPRO_PARCELAMENTO) throw flagOff();
+    const idServico = servicoDaModalidade(PEDIDOS_SERVICO, tipo);
+    const raw = await this.client.post("/Consultar", this.buildEnvelope({ contratanteCnpj, contribuinteCnpj, tipo, idServico, dados: "" }));
+    return { pedidos: mapearPedidosParcelamento(raw, { tipo }), raw };
+  }
+
+  async consultarPagamentoParcela({ contratanteCnpj, contribuinteCnpj, tipo, numeroParcelamento, anoMesParcela }) {
+    if (!INTEGRACAO_SERPRO_PARCELAMENTO) throw flagOff();
+    const idServico = servicoDaModalidade(PAGAMENTO_SERVICO, tipo);
+    const raw = await this.client.post("/Consultar", this.buildEnvelope({ contratanteCnpj, contribuinteCnpj, tipo, idServico, dados: { numeroParcelamento: Number(numeroParcelamento), anoMesParcela: Number(anoMesParcela) } }));
+    parseEnvelope(raw, idServico);
+    return { raw };
   }
 }
 

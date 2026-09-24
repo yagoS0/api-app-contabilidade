@@ -798,13 +798,13 @@ function AlertaDeAtraso({ parcelamento, onDarBaixa }) {
           <button
             type="button"
             onClick={onDarBaixa}
-            title="Vai para a fila de parcelas pagas aguardando lançamento, no topo desta aba."
+            title="Mostra as parcelas para conferir documentos e pagamentos."
             style={{
               flexShrink: 0, fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: 4,
               background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)", cursor: "pointer",
             }}
           >
-            Dar baixa
+            Conferir parcelas
           </button>
         )}
       </div>
@@ -925,7 +925,7 @@ export function ParcelamentosList({
   onDarBaixa, onBaixaEmLote, onSubirGuia,
   // ⚠ EXCLUIR O CONTRATO — pedido do dono. Opcional pelo mesmo motivo dos outros; quem o passa é a
   // aba Parcelamentos, que tem o modal de confirmação com os números reais.
-  onExcluir,
+  onExcluir, emptyMessage = "Nenhum parcelamento ativo.",
 }) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
@@ -957,7 +957,7 @@ export function ParcelamentosList({
   if (!parcelamentos || parcelamentos.length === 0) {
     return (
       <div style={{ padding: 20, color: PANEL.muted, textAlign: "center", border: `1px dashed ${PANEL.border}`, borderRadius: 8 }}>
-        Nenhum parcelamento ativo.{" "}
+        {emptyMessage}{" "}
         {onOpenCreate && (
           <button type="button" onClick={onOpenCreate} style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontWeight: 700, textDecoration: "underline" }}>
             Criar parcelamento
@@ -1012,7 +1012,7 @@ export function ParcelamentosList({
 
               <AlertaDeAtraso
                 parcelamento={p}
-                onDarBaixa={onDarBaixa ? () => onDarBaixa(p) : null}
+                onDarBaixa={() => { if (!historicoAberto) alternarHistorico(p.id); }}
               />
 
               {/* Próxima parcela — a linha que responde "o que vence agora?". */}

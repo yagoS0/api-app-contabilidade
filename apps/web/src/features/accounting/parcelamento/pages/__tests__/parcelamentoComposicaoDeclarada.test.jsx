@@ -71,8 +71,8 @@ beforeEach(() => {
 });
 afterEach(() => { jest.restoreAllMocks(); });
 
-// A fila fica ACIMA dos cards; o "Dar baixa" dela é o PRIMEIRO do DOM (o do card é o último).
-const darBaixaDaFila = () => screen.getAllByRole("button", { name: "Dar baixa" })[0];
+// A fila contábil pode mudar de posição; identificar a ação pelo seu propósito.
+const darBaixaDaFila = () => screen.getByTitle("Grava os lançamentos de baixa desta parcela (pede confirmação).");
 
 async function recusarPorSemComposicao() {
   mockLancarBaixa.mockResolvedValueOnce({ ok: false, skipped: true, motivo: "sem_composicao" });

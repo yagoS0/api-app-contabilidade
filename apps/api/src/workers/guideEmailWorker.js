@@ -1,3 +1,4 @@
+import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "../application/guides/GuiaParcelaEnvioGuard.js";
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
@@ -60,6 +61,9 @@ function escapeHtml(text) {
 }
 
 async function processOneGuide({ guide, emailService }) {
+  try { await conferirParcelasParaEnvio([guide]); } catch (err) {
+    return { guideId: guide.id, status: "SKIPPED", code: err.code, reason: err.message, willRetry: false };
+  }
   // ⚠⚠ O DESTINATÁRIO É RESOLVIDO ANTES DE TOCAR NA GUIA (05/09/2026).
   //
   // > Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver apenas um
@@ -134,6 +138,7 @@ async function processOneGuide({ guide, emailService }) {
     `;
     try {
       await validarDestinatariosAtuais(source.portalClientId, to);
+      await conferirParcelasParaEnvio([source]);
       await emailService.send({
         to,
         subject,
@@ -192,18 +197,33 @@ export async function runGuideEmailWorkerOnce(options = {}) {
     const now = new Date();
     // Mesma pergunta do envio em lote, mesma fonte (`guideContract`). A diferença é só o `now`:
     // aqui guia em ERROR espera a janela de retry; no envio manual, não.
-    const guides = await prisma.guide.findMany({
+    const guides = [];
+    const bloqueadas = [];
+    const visitadas = new Set(ignoradas);
+    while (guides.length < batchSize) {
+    const pagina = await prisma.guide.findMany({
+      include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela },
       where: {
         status: "PROCESSED",
         ...whereGuiaPendenteDeEnvio(now),
-        ...(ignoradas.length ? { id: { notIn: ignoradas } } : {}),
+        ...(visitadas.size ? { id: { notIn: [...visitadas] } } : {}),
       },
       orderBy: { updatedAt: "asc" },
       take: batchSize,
     });
+    const novas = pagina.filter(g => !visitadas.has(g.id));
+    for (const guide of novas) {
+      visitadas.add(guide.id);
+      const bloqueio = bloqueioEnvioParcela(guide);
+      if (bloqueio) bloqueadas.push({ guideId: guide.id, status: "SKIPPED", code: bloqueio.code, reason: bloqueio.message, willRetry: false });
+      else guides.push(guide);
+      if (guides.length === batchSize) break;
+    }
+    if (!novas.length || pagina.length < batchSize) break;
+    }
 
     const emailService = new EmailService();
-    const results = [];
+    const results = [...bloqueadas];
     for (const guide of guides) {
       // processa em série para evitar burst no provedor
       // eslint-disable-next-line no-await-in-loop
@@ -212,7 +232,7 @@ export async function runGuideEmailWorkerOnce(options = {}) {
 
     return {
       skipped: false,
-      total: guides.length,
+      total: results.length,
       sent: results.filter((r) => r.status === "SENT").length,
       errors: results.filter((r) => r.status === "ERROR").length,
       results,

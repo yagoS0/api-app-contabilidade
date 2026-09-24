@@ -71,6 +71,10 @@ export function getComplianceTags(guideCompliance) {
         numeroParcela: node.numeroParcela || null,
         quantidadeParcelas: node.quantidadeParcelas || null,
         atrasada: Boolean(node.atrasada),
+        itens: Array.isArray(node.itens) ? node.itens : [],
+        quantidade: Number(node.quantidade) || 0,
+        pendencias: Number(node.pendencias) || 0,
+        pendenciaOperacional: Boolean(node.pendenciaOperacional),
       });
     }
   }

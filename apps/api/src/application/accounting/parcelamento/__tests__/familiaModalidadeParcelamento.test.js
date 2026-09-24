@@ -144,6 +144,22 @@ async function criarContrato(tipo, extra = {}) {
 
 beforeEach(limpar);
 
+test("acompanhamento fiscal incompleto não vira provisão ao reingerir", async () => {
+  __store.parcelamentos.push({ id: "fiscal", portalClientId: "pc1", tipo: "PARCSN", numeroParcelamento: "1234567", fiscalSituacao: "ATIVO", aberturaEntryId: null });
+  await expect(criarContrato("PARCSN", { parcelamentoDTO: { tipo: "PARCSN", numeroParcelamento: "1234567" } })).rejects.toMatchObject({ code: "PARCELAMENTO_CONTABIL_INCOMPLETO" });
+  expect(__store.entries).toHaveLength(0);
+  expect(__store.parcelas).toHaveLength(0);
+});
+
+test("cadastro contábil completo vincula acompanhamento fiscal existente", async () => {
+  __store.parcelamentos.push({ id: "fiscal", portalClientId: "pc1", tipo: "PARCSN", numeroParcelamento: "1234567", fiscalSituacao: "ATIVO", aberturaEntryId: null });
+  await criarContrato("PARCSN", { parcelamentoDTO: { ...HEADER, tipo: "PARCSN", dataAdesao: "2026-01-01" } });
+  expect(__store.parcelamentos).toHaveLength(1);
+  expect(__store.parcelamentos[0].id).toBe("fiscal");
+  expect(__store.parcelamentos[0].numParcelas).toBe(3);
+  expect(__store.entries.length).toBeGreaterThan(0);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 describe("o grupo da busca automática — as OITO entram, INSS/OUTRO ficam fora", () => {
   test.each(AS_OITO)("%s → sn_mei", (tipo) => {

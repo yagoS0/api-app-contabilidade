@@ -21,6 +21,21 @@ const guides = [
   guia("SEM-DATA", "2026-08", null),
 ];
 beforeEach(() => { jest.clearAllMocks(); mockReport.mockResolvedValue({ outros: [] }); });
+test("atalho do acompanhamento seleciona a guia anterior sem alterar a competência", async () => {
+  const limpar = jest.fn();
+  const props = { companyId: "c1", competencia: "2026-08", guides, loadingGuides: false, guiaDeOrigem: { companyId: "c1", id: "ANTIGA" }, onLimparGuiaDeOrigem: limpar };
+  const { rerender } = render(<CompanyGuidesTable {...props} />);
+  expect(screen.getByText("ANTIGA")).toBeInTheDocument();
+  expect(screen.queryByText("DAS-AGOSTO")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Selecionar guia ANTIGA/ })).toBeChecked());
+  rerender(<CompanyGuidesTable {...props} loadingGuides />);
+  rerender(<CompanyGuidesTable {...props} guides={[...guides]} />);
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Selecionar guia ANTIGA/ })).toBeChecked());
+  fireEvent.click(screen.getByRole("button", { name: "Mostrar todas as guias" }));
+  expect(limpar).toHaveBeenCalledTimes(1);
+  rerender(<CompanyGuidesTable {...props} guiaDeOrigem={null} />);
+  expect(screen.getByText("DAS-AGOSTO")).toBeInTheDocument();
+});
 function montar(items = guides) {
   const props = { companyId: "c1", competencia: "2026-08", guides: items, loadingGuides: false };
   const result = render(<CompanyGuidesTable {...props} />);
@@ -57,10 +72,11 @@ test("trocar a competência encerra a consulta auxiliar e dezembro mostra janeir
   await waitFor(() => expect(mockReport).toHaveBeenLastCalledWith("c1", "2027-01"));
 });
 test("mês sem documento mostra parcela faltante sem concluir que não há tributo", async () => {
-  mockReport.mockResolvedValue({ outros: [{ faltantes: [{ parcelaId: "p1", acordo: "123", numeroParcela: 9, vencimento: "2026-09-20", motivo: "Guia ainda não disponível" }] }] });
+  mockReport.mockResolvedValue({ outros: [{ portalClientId: "c1", faltantes: [{ parcelaId: "p1", acordo: "123", numeroParcela: 9, vencimento: "2026-09-20", motivo: "Guia ainda não disponível" }] }] });
   montar([]);
-  expect(await screen.findByText("Atenção: faltam guias de parcelamento neste vencimento")).toBeInTheDocument();
-  expect(screen.getByText(/Isso não confirma ausência de tributos/)).toBeInTheDocument();
+  expect(await screen.findByText("Falta guia de parcelamento")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Subir parcela" })).toBeInTheDocument();
+  expect(screen.queryByText(/Confira essas parcelas na aba Parcelamentos/)).toBeNull();
   expect(mockFechamento).not.toHaveBeenCalled();
 });
 test("falha de conferência é explícita e permite repetir leitura", async () => {

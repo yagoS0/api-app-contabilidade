@@ -1,7 +1,8 @@
+import { prepararAcompanhamentoParcelamentosEmpresa } from "../application/fiscal/serpro/ParcelamentoDescobertaService.js";
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log, INTEGRACAO_SERPRO_PARCELAMENTO } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
+import { acquireGuideLease } from "../application/guides/GuideLockService.js";
 import { getReferenceCompetencia } from "../application/guides/guideCompliance.js";
 import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
@@ -12,19 +13,12 @@ import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdas
 import { capturarParcelaGuideForCompany } from "../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
 import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
-import { matchesCron } from "./cronMatch.js";
+import { runRoutineLoop } from "./runRoutineLoop.js";
+import { previousCompetencia } from "./routineSchedule.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
 const LOOP_INTERVAL_MS = 60 * 1000;
-
-async function acquireLock() {
-  return tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
-}
-
-async function releaseLockSafely() {
-  await releaseGuideLock(LOCK_ID);
-}
 
 async function listEligiblePortalCompanies() {
   // PortalClient não tem relação `company` (só FK `companyId`). Buscamos Companies
@@ -54,10 +48,10 @@ async function listEligiblePortalCompanies() {
       .trim()
       .toUpperCase();
     // Módulo Fiscal M2: o cron também processa Lucro Presumido (captura DCTFWeb → provisão).
-    if (regime !== "SIMPLES" && regime !== "LUCRO_PRESUMIDO") continue;
+
     // eslint-disable-next-line no-await-in-loop
     const email = await resolveCompanyNotificationEmail(p.id);
-    if (!email) continue;
+
     eligible.push({
       id: p.id, razao: p.razao, cnpj: p.cnpj, email,
       regimeTributario: regime,
@@ -72,8 +66,8 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
   return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_pgdasd" }, () => executarPgdasd(options));
 }
 async function executarPgdasd(options = {}) {
-  const locked = await acquireLock();
-  if (!locked) return { skipped: true, reason: "lock_active" };
+  const lease = await acquireGuideLease(LOCK_ID, LOCK_TTL_MS);
+  if (!lease) return { skipped: true, reason: "lock_active" };
 
   try {
     const settings = await getSerproRuntimeSettings();
@@ -81,7 +75,7 @@ async function executarPgdasd(options = {}) {
       return { skipped: true, reason: "serpro_disabled" };
     }
 
-    const competencia = options.competencia || getReferenceCompetencia();
+    const competencia = options.competencia || previousCompetencia();
     const companies = await listEligiblePortalCompanies();
     const procurationService = new SerproProcurationService();
     const results = [];
@@ -106,13 +100,14 @@ async function executarPgdasd(options = {}) {
     // Cada rotina tem sua própria janela (dia do mês a partir do qual pode rodar).
     // Sem agenda salva, cai no fetchDay legado — mesma janela de antes.
     function janelaAberta(rotina) {
-      const cfg = agenda[rotina];
-      if (!cfg) return isCaptureWindow;
-      if (cfg.enabled === false) return false;
-      return now.getDate() >= (cfg.day ?? fetchDay);
+      return agenda[rotina]?.enabled !== false && (!options.routines || options.routines.includes(rotina));
     }
 
     for (const company of companies) {
+      lease.assertActive();
+      options.assertActive?.();
+      if (![["das", idsDas], ["extrato", idsExtrato], ["presumido", idsPresumido], ["parcelamento", idsParcelamento]]
+        .some(([key, ids]) => janelaAberta(key) && ids.has(company.id))) continue;
       try {
         // eslint-disable-next-line no-await-in-loop
         const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id });
@@ -129,8 +124,32 @@ async function executarPgdasd(options = {}) {
           continue;
         }
 
-        // Módulo Fiscal M2: Lucro Presumido → captura DCTFWeb (provisão por tributo + split na circular).
-        // Idempotente: pula se já houver guia LP PROCESSED da competência (evita re-hit no SERPRO).
+        // O acompanhamento fiscal independe da abertura contábil do acordo.
+        if (INTEGRACAO_SERPRO_PARCELAMENTO && janelaAberta("parcelamento") && idsParcelamento.has(company.id)) {
+          const preparacao = await prepararAcompanhamentoParcelamentosEmpresa({ portalClientId: company.id, assertActive: () => { lease.assertActive(); options.assertActive?.(); } });
+          const descoberta = preparacao.resultado || preparacao;
+          for (const erro of (descoberta.resultados || []).filter(item => item.ok === false)) {
+            parcelaResults.push({ companyId: company.id, razao: company.razao, status: "erro", etapa: "localizacao", reason: erro.reason || erro.error });
+          }
+          // eslint-disable-next-line no-await-in-loop
+          const parcelamentos = await prisma.parcelamento.findMany({
+            // Q28 Fase 4: grupo "outros" (PGFN/estadual/municipal) NÃO integra SERPRO — fica fora.
+            where: { portalClientId: company.id, status: "ATIVO", tipo: { in: ["PARCSN", "PARCMEI"] }, OR: [{ fiscalSituacao: null }, { fiscalSituacao: { notIn: ["QUITADO", "RESCINDIDO"] } }], numeroParcelamento: { not: null }, grupo: { not: "outros" } },
+
+          });
+          for (const parc of parcelamentos) {
+            lease.assertActive();
+            options.assertActive?.();
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              const r = await capturarParcelaGuideForCompany({ portalClientId: company.id, parcelamento: parc, log, assertActive: () => { lease.assertActive(); options.assertActive?.(); } });
+              parcelaResults.push({ companyId: company.id, razao: company.razao, numeroParcelamento: parc.numeroParcelamento, status: r.ok === false && !(r.parcelas || []).some(p => p.status === "erro") ? "erro" : "consultado", parcelas: r.parcelas, reason: r.reason || null });
+            } catch (err) {
+              parcelaResults.push({ companyId: company.id, numeroParcelamento: parc.numeroParcelamento, status: "erro", reason: err?.code || err?.message });
+            }
+          }
+        }
+
         if (company.regimeTributario === "LUCRO_PRESUMIDO") {
           if (janelaAberta("presumido") && idsPresumido.has(company.id)) {
             const cnpjDigits = String(company.cnpj || "").replace(/\D+/g, "");
@@ -142,6 +161,7 @@ async function executarPgdasd(options = {}) {
             if (!existingLp) {
               try {
                 // eslint-disable-next-line no-await-in-loop
+                lease.assertActive(); options.assertActive?.();
                 const cap = await capturarLpDaCompetencia({ portalClientId: company.id, competencia });
                 results.push({
                   companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
@@ -160,8 +180,10 @@ async function executarPgdasd(options = {}) {
               }
             }
           }
-          continue; // LP não roda as stages de Simples (DAS/extrato/parcelamento)
+          continue; // DAS e extrato abaixo são exclusivos do Simples.
         }
+
+        if (company.regimeTributario !== "SIMPLES") continue;
 
         // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)
         // eslint-disable-next-line no-await-in-loop
@@ -170,6 +192,8 @@ async function executarPgdasd(options = {}) {
             portalClientId: company.id,
             source: "SERPRO",
             tipo: "SIMPLES",
+            parcelamentoId: null,
+            NOT: { sourceFileId: { startsWith: "PARC-" } },
             competencia,
             status: "PROCESSED",
           },
@@ -179,7 +203,8 @@ async function executarPgdasd(options = {}) {
         if (janelaAberta("das") && idsDas.has(company.id) && !existingForCompetencia) {
           try {
             // eslint-disable-next-line no-await-in-loop
-            const capture = await capturePgdasGuideForCompany({
+            lease.assertActive(); options.assertActive?.();
+                const capture = await capturePgdasGuideForCompany({
               portalClientId: company.id,
               competencia,
               // emailStatusOverride padrão = PENDING (envia email da captura inicial)
@@ -217,7 +242,8 @@ async function executarPgdasd(options = {}) {
           if (circ?.serproSyncStatus !== "SUCCESS") {
             try {
               // eslint-disable-next-line no-await-in-loop
-              await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
+              lease.assertActive(); options.assertActive?.();
+                await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
               extratoResults.push({
                 companyId: company.id, razao: company.razao, competencia, status: "extrato_ok",
               });
@@ -231,28 +257,6 @@ async function executarPgdasd(options = {}) {
             }
           } else {
             extratoResults.push({ companyId: company.id, competencia, status: "extrato_ja_sincronizado" });
-          }
-        }
-
-        // Stage 4 (Q22): guias de PARCELAMENTO. Atrás da flag INTEGRACAO_SERPRO_PARCELAMENTO.
-        // Itera só os parcelamentos ATIVOS já criados na base (decisão do dono); para cada um,
-        // lista as competências geráveis e traz a parcela (composição + PDF) → lançamento + guia.
-        if (INTEGRACAO_SERPRO_PARCELAMENTO && janelaAberta("parcelamento") && idsParcelamento.has(company.id)) {
-          // eslint-disable-next-line no-await-in-loop
-          const parcelamentos = await prisma.parcelamento.findMany({
-            // Q23: só busca automática depois que a 1ª parcela manual gerou a provisão (aberturaEntryId).
-            // Q28 Fase 4: grupo "outros" (PGFN/estadual/municipal) NÃO integra SERPRO — fica fora.
-            where: { portalClientId: company.id, status: "ATIVO", numeroParcelamento: { not: null }, aberturaEntryId: { not: null }, grupo: { not: "outros" } },
-            select: { id: true, tipo: true, numeroParcelamento: true, totalValue: true, principalTotal: true, valorMulta: true, jurosTotal: true, numParcelas: true },
-          });
-          for (const parc of parcelamentos) {
-            try {
-              // eslint-disable-next-line no-await-in-loop
-              const r = await capturarParcelaGuideForCompany({ portalClientId: company.id, parcelamento: parc, log });
-              parcelaResults.push({ companyId: company.id, razao: company.razao, numeroParcelamento: parc.numeroParcelamento, parcelas: r.parcelas, reason: r.reason || null });
-            } catch (err) {
-              parcelaResults.push({ companyId: company.id, numeroParcelamento: parc.numeroParcelamento, status: "erro", reason: err?.code || err?.message });
-            }
           }
         }
 
@@ -286,7 +290,7 @@ async function executarPgdasd(options = {}) {
       extratoJaSincronizado: extratoResults.filter((item) => item.status === "extrato_ja_sincronizado").length,
       // Q22: parcelas trazidas (flatten dos resultados por parcelamento).
       parcelasOk: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => String(x.status).startsWith("ok")).length, 0),
-      parcelasErro: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => x.status === "erro").length, 0),
+      parcelasErro: parcelaResults.reduce((s, p) => s + (p.status === "erro" ? 1 : 0) + (p.parcelas || []).filter((x) => x.status === "erro").length, 0),
       durationMs: Date.now() - startedAt,
       results,
       extratoResults,
@@ -305,42 +309,12 @@ async function executarPgdasd(options = {}) {
     });
     return summary;
   } finally {
-    await releaseLockSafely();
+    await lease.release();
   }
 }
 
 export async function runSerproPgdasdWorkerLoop() {
-  let lastTickKey = null;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      const settings = await getSerproRuntimeSettings();
-      const now = new Date();
-      const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-      // Este worker atende 4 rotinas, cada uma com sua agenda. O ciclo roda se QUALQUER
-      // uma bater agora; lá dentro, cada stage confere a própria janela e as empresas
-      // marcadas. Com a agenda semeada (todas no mesmo dia/hora), equivale ao fetchCron
-      // de antes. O ciclo é idempotente, então rodar mais de uma vez no mês é inofensivo.
-      const rotinasDoWorker = ["das", "extrato", "presumido", "parcelamento"];
-      const algumaBateu = rotinasDoWorker.some((r) => {
-        const cfg = settings.rotinas?.[r];
-        if (!cfg || cfg.enabled === false) return false;
-        return matchesCron(cfg.cron, now);
-      });
-
-      if (settings.enabled && algumaBateu && tickKey !== lastTickKey) {
-        lastTickKey = tickKey;
-        const result = await runSerproPgdasdWorkerOnce();
-        log.info({ result, tickKey }, "Ciclo do serproPgdasdWorker concluído");
-      }
-    } catch (err) {
-      log.error({ err: err?.message || err }, "Erro no ciclo do serproPgdasdWorker");
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, LOOP_INTERVAL_MS));
-  }
+  return runRoutineLoop({ worker: "SERPRO_PGDASD_WORKER_ENABLED", routines: ["das","extrato","presumido","parcelamento"], run: runSerproPgdasdWorkerOnce });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("serproPgdasdWorker.js")) {

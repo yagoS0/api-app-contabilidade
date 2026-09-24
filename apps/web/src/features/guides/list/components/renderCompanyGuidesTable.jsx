@@ -9,6 +9,8 @@ import { Button } from "../../../../components/ui/Button";
 import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { ModalCorrigirValorGuia } from "./ModalCorrigirValorGuia";
+import { ParcelamentoWizard } from "../../../accounting/parcelamento/components/ParcelamentoWizard";
+import { parcelasFaltantesDoRelatorio, parcelasFaltantesDaVisao } from "../lib/parcelasFaltantes";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
@@ -566,6 +568,7 @@ export function CompanyGuidesTable({
   // `null` mantém o comportamento pretendido (não recarrega nada) e tira o erro. Quem quiser a
   // recarga só precisa passá-la — que é o que o código já esperava poder fazer.
   onRefresh = null,
+  guiaDeOrigem = null, onLimparGuiaDeOrigem,
 }) {
   // R4 — "+ Subir Guia → PARCELAMENTO": anexar uma guia a um contrato que JÁ EXISTE.
   //
@@ -575,6 +578,9 @@ export function CompanyGuidesTable({
   // pagamento dela). Os três eram o desenho guia-first.
   const [anexoParcelamentoOpen, setAnexoParcelamentoOpen] = useState(false);
   const [anexoArquivo, setAnexoArquivo] = useState(null);
+  const [anexoGuia, setAnexoGuia] = useState(null);
+  const [anexoIndicacao, setAnexoIndicacao] = useState(null);
+  const [wizardParcela, setWizardParcela] = useState(false);
   const [anexoParcelamentoId, setAnexoParcelamentoId] = useState("");
   const [anexoSaving, setAnexoSaving] = useState(false);
   const anexoFileInputRef = useRef(null);
@@ -610,16 +616,16 @@ export function CompanyGuidesTable({
   useEffect(() => { setSelectedIds(new Set()); }, [companyId, visao, mesVencimento, competenciaFiscal]);
   const [conferencia, setConferencia] = useState({ loading: false, erro: null, faltantes: [] });
   useEffect(() => {
-    if (!companyId || visao !== "vencimento" || loadingGuides || !expectedGuidesApi.getCompanyGuideDueReport) return undefined;
+    if (!companyId || loadingGuides || !expectedGuidesApi.getCompanyGuideDueReport) return undefined;
     let cancel = false;
     setConferencia({ loading: true, erro: null, faltantes: [] });
     expectedGuidesApi.getCompanyGuideDueReport(companyId, mesVencimento).then((report) => {
       if (cancel) return;
-      const rows = [...(report.simples || []), ...(report.presumidos || []), ...(report.outros || [])];
-      setConferencia({ loading: false, erro: null, faltantes: rows.flatMap((r) => r.faltantes || []) });
+      setConferencia({ loading: false, erro: null, faltantes: parcelasFaltantesDoRelatorio(report, companyId) });
     }).catch((erro) => { if (!cancel) setConferencia({ loading: false, erro, faltantes: [] }); });
     return () => { cancel = true; };
-  }, [companyId, mesVencimento, visao, loadingGuides, guides, vazioRefreshKey]);
+  }, [companyId, mesVencimento, loadingGuides, guides, vazioRefreshKey]);
+  const faltantesVisiveis = guiaDeOrigem ? [] : parcelasFaltantesDaVisao(conferencia.faltantes, { visao, mes: mesVencimento, competencia: competenciaFiscal });
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
@@ -655,9 +661,14 @@ export function CompanyGuidesTable({
   const [completingSaving, setCompletingSaving] = useState(false);
 
   const filteredGuides = useMemo(() => {
+    if (guiaDeOrigem?.companyId === companyId) return (guides || []).filter(g => (g.guideId || g.id) === guiaDeOrigem.id);
     return guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal });
-  }, [visao, mesVencimento, competenciaFiscal, guides]);
-  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length;
+  }, [visao, mesVencimento, competenciaFiscal, guides, guiaDeOrigem, companyId]);
+  useEffect(() => {
+    if (guiaDeOrigem?.companyId === companyId && !loadingGuides) setSelectedIds(new Set([guiaDeOrigem.id]));
+  }, [guiaDeOrigem, companyId, loadingGuides]);
+  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length
+    + parcelasFaltantesDaVisao(conferencia.faltantes, { visao: "anteriores", mes: mesVencimento }).length;
   const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento }).length;
 
   // ── POR QUE NÃO HÁ GUIA — o contexto que transforma o vazio em resposta ──────────────────────
@@ -886,6 +897,8 @@ export function CompanyGuidesTable({
     setUploadMenuOpen(false);
     if (tipo === TIPO_UPLOAD_PARCELAMENTO) {
       setAnexoArquivo(null);
+      setAnexoGuia(null);
+      setAnexoIndicacao(null);
       setAnexoParcelamentoId("");
       setAnexoParcelamentoOpen(true);
       return;
@@ -933,34 +946,32 @@ export function CompanyGuidesTable({
     if (file) setAnexoArquivo(file);
   }
 
-  async function handleAnexoSalvar({ metadata, header }) {
-    if (!onUploadGuide || !parcelamentos) return { ok: false, message: "Upload indisponível." };
+  async function handleAnexoSalvar({ metadata, header, somenteGuia, parcelamentoId, numeroParcela }) {
+    if (!anexoGuia && !onUploadGuide) return { ok: false, message: "Upload indisponível." };
     setAnexoSaving(true);
+    let guide = anexoGuia;
     try {
-      const result = await onUploadGuide(anexoArquivo, metadata);
-      const guide = result?.guide || result;
-      const guideId = guide?.guideId || guide?.id;
-      if (!guideId) {
-        return { ok: false, message: result?.message || result?.error || "A guia não foi criada — nada foi vinculado." };
+      if (!guide) {
+        const result = await onUploadGuide(anexoArquivo, { ...metadata, isParcelamento: true,
+          indicacaoId: anexoIndicacao?.indicacaoId || undefined });
+        guide = result?.guide || result;
+        if (result?.ok === false || !(guide?.guideId || guide?.id)) return { ok: false, message: result?.message || "A guia não foi salva. Tente novamente." };
+        setAnexoGuia(guide); // Uma falha no vínculo não repete o upload.
       }
-      // Vincula a guia à prestação do contrato. `POST /parcelamentos/ingestao` com o parcelamento
-      // já existente NÃO recria a provisão (`aberturaEntryId` já está setado) — ele só casa a guia
-      // com a parcela e grava a composição.
-      //
-      // ⚠ E SÓ ISSO. O caminho antigo chamava `onConfirmGuidePayment(gid)` logo aqui, dentro de um
-      // `try { } catch {}` mudo: anexar o documento CONFIRMAVA o pagamento dele, e quando essa
-      // confirmação falhava (mês fechado, por exemplo) ninguém ficava sabendo.
-      await parcelamentos.ingest({ guideId, header });
+      if (!somenteGuia) {
+        await expectedGuidesApi.vincularGuiaParcelamento(companyId, guide.guideId || guide.id, {
+          parcelamentoId, numeroParcela: numeroParcela || header?.numeroParcela,
+        });
+        await parcelamentos?.load?.();
+      }
       setAnexoParcelamentoOpen(false);
-      setAnexoArquivo(null);
-      setAnexoParcelamentoId("");
+      setAnexoArquivo(null); setAnexoGuia(null); setAnexoIndicacao(null); setAnexoParcelamentoId("");
+      setVazioRefreshKey(k => k + 1);
       if (onRefresh) await onRefresh();
       return { ok: true };
     } catch (err) {
-      return { ok: false, message: err?.message || "Falha ao anexar a guia ao parcelamento." };
-    } finally {
-      setAnexoSaving(false);
-    }
+      return { ok: false, message: guide ? "A guia está salva. Não foi possível vinculá-la: " + (err?.message || "tente novamente.") : err?.message || "Falha ao subir a parcela." };
+    } finally { setAnexoSaving(false); }
   }
 
   // Fluxo de completar guia já existente (modal split com fetch do PDF)
@@ -1014,6 +1025,10 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
+      {guiaDeOrigem?.companyId === companyId && <div role="status" style={{ padding: "10px 12px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: "var(--text-muted)" }}>
+        {filteredGuides.length ? "Parcela selecionada a partir do acompanhamento." : loadingGuides ? "Localizando a guia da parcela…" : "A guia da parcela não foi localizada nesta listagem. Atualize os documentos para conferir."}
+        <Button variant="secondary" size="sm" onClick={onLimparGuiaDeOrigem}>Mostrar todas as guias</Button>
+      </div>}
       {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
@@ -1156,19 +1171,15 @@ export function CompanyGuidesTable({
                             key={tipo}
                             type="button"
                             onClick={() => handleStartUpload(tipo)}
-                            disabled={tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos}
-                            title={tipo === TIPO_UPLOAD_PARCELAMENTO
-                              ? (parcelamentos
-                                ? "Anexa a guia a uma prestação de um parcelamento que já existe."
-                                : "Indisponível: os parcelamentos desta empresa não foram carregados.")
-                              : undefined}
+                            disabled={false}
+                            title={tipo === TIPO_UPLOAD_PARCELAMENTO ? "Subir parcela; você pode vincular e contabilizar depois." : undefined}
                             style={{
                               display: "block", width: "100%", textAlign: "left",
                               padding: "8px 12px", background: "transparent", border: "none",
                               borderTop: tipo === TIPO_UPLOAD_PARCELAMENTO ? "1px solid #44475A" : "none",
-                              color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "var(--text-faint)" : "var(--text)",
+                              color: "var(--text)",
                               fontSize: "0.875rem",
-                              cursor: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "not-allowed" : "pointer",
+                              cursor: "pointer",
                               fontWeight: 500,
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
@@ -1222,10 +1233,7 @@ export function CompanyGuidesTable({
           {conferencia.erro && <Aviso className="guides-notice" tom="erro" titulo="Não foi possível conferir as parcelas previstas">Não é possível confirmar se faltam guias de parcelamento. {conferencia.erro.message}
             <Button variant="secondary" size="sm" onClick={() => setVazioRefreshKey((k) => k + 1)}>Tentar novamente</Button>
           </Aviso>}
-          {conferencia.faltantes.length > 0 && <Aviso className="guides-notice" tom="neutro" titulo="Atenção: faltam guias de parcelamento neste vencimento">
-            <ul>{conferencia.faltantes.map((p) => <li key={p.parcelaId}>Acordo {p.acordo || "sem número"} · Parcela {p.numeroParcela} · Vencimento {fmtDataCivil(p.vencimento)} — {p.motivo}</li>)}</ul>
-            <p>Confira essas parcelas na aba Parcelamentos antes de concluir o envio do mês.</p>
-          </Aviso>}
+
 
         </>}
         {selectedCount > 0 ? (
@@ -1243,6 +1251,9 @@ export function CompanyGuidesTable({
               {/* Barra única de ações da guia selecionada (uma guia por vez). */}
               {selectedCount === 1 && selectedGuide && (
                 <>
+                  {selectedGuide.parcelamentoAvulso && <Button variant="secondary" size="sm" onClick={() => {
+                    setAnexoArquivo(null); setAnexoGuia(selectedGuide); setAnexoIndicacao(null); setAnexoParcelamentoId(""); setAnexoParcelamentoOpen(true);
+                  }}>Vincular parcelamento</Button>}
                   {/* Recalcular: um botão só — INSS (SERPRO DCTFweb) ou DAS (PGDAS-D), conforme o tipo. */}
                   {canShowRecalcular && (
                     <Button
@@ -1348,7 +1359,7 @@ export function CompanyGuidesTable({
 
         {loadingGuides ? (
           <p className="text-muted">Carregando...</p>
-        ) : filteredGuides.length === 0 ? (
+        ) : filteredGuides.length === 0 && faltantesVisiveis.length === 0 ? (
           // ⚠ ERA UMA FRASE SÓ — "Nenhuma guia encontrada para os filtros atuais." — para situações
           // que exigem ações OPOSTAS, e uma delas era o servidor não ter respondido. Ver a regra e
           // o porquê em `../lib/estadoVazioGuias.js`.
@@ -1412,6 +1423,25 @@ export function CompanyGuidesTable({
             </div>
 
             <div className="guides-grid__body" role="rowgroup">
+              {faltantesVisiveis.map(p => (
+                <div className="guides-grid__row" role="row" key={p.key}>
+                  <span className="guides-grid__cell guides-grid__cell--check" role="cell" />
+                  <span className="guides-grid__cell guides-grid__cell--type" role="cell">
+                    <strong>Falta guia de parcelamento</strong>
+                    <span><Button size="sm" variant="secondary" disabled={!onUploadGuide} onClick={() => {
+                    handleStartUpload(TIPO_UPLOAD_PARCELAMENTO); setAnexoIndicacao(p); setAnexoParcelamentoId(p.parcelamentoId || "");
+                  }}>Subir parcela</Button></span>
+                    {(p.acordo || p.numeroParcela) && <small>{[p.acordo && "Acordo " + p.acordo, p.numeroParcela && "Parcela " + p.numeroParcela].filter(Boolean).join(" · ")}</small>}
+                    {p.atrasosInformados > 0 && <small>{p.atrasosInformados} parcela(s) em atraso no relatório fiscal.</small>}
+                  </span>
+                  <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{p.referencia ? formatCompetencia(p.referencia) : "—"}</span>
+                  <span className="guides-grid__cell guides-grid__cell--valor" role="cell">—</span>
+                  <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{p.vencimento ? fmtDataCivil(p.vencimento) : "—"}</span>
+                  <span className="guides-grid__cell guides-grid__cell--status" role="cell">—</span>
+                  <span className="guides-grid__cell guides-grid__cell--email" role="cell">—</span>
+                  <span className="guides-grid__cell guides-grid__cell--linha" role="cell">—</span>
+                </div>
+              ))}
               {filteredGuides.map((guide) => {
                 const guideId = guide.guideId || guide.id;
                 const isSelected = selectedIds.has(guideId);
@@ -1515,8 +1545,8 @@ export function CompanyGuidesTable({
       </div>
 
       {/* R4 — "+ Subir Guia → PARCELAMENTO": o contrato primeiro, a guia como anexo dele. */}
-      {anexoParcelamentoOpen && parcelamentos && (
-        <>
+      {anexoParcelamentoOpen && (
+        <div hidden={wizardParcela}>
           <input
             ref={anexoFileInputRef}
             type="file"
@@ -1525,20 +1555,29 @@ export function CompanyGuidesTable({
             onChange={handleAnexoFileChange}
           />
           <GuiaDeParcelamentoModal
-            parcelamentosAtivos={parcelamentos.parcelamentos || []}
+            parcelamentosAtivos={parcelamentos?.parcelamentos || []}
+            guiaExistente={anexoGuia}
+            indicacaoId={anexoIndicacao?.indicacaoId}
+            modalidadeInicial={anexoIndicacao?.tipo}
+            competenciaInicial={anexoIndicacao?.referencia || mesVencimento}
             guias={guides}
             arquivo={anexoArquivo}
             onEscolherArquivo={() => anexoFileInputRef.current?.click()}
             /* "＋ Criar novo…" leva ao wizard, que vive na aba Parcelamentos — a mesma porta de
                criação, sem uma segunda cópia do formulário aqui. */
-            onCriarNovoParcelamento={onCriarParcelamento ? () => { setAnexoParcelamentoOpen(false); onCriarParcelamento(); } : null}
+            onCriarNovoParcelamento={parcelamentos?.ingest ? () => setWizardParcela(true) : null}
             parcelamentoIdInicial={anexoParcelamentoId}
             saving={anexoSaving || uploadingGuide}
             onSalvar={handleAnexoSalvar}
-            onClose={() => { setAnexoParcelamentoOpen(false); setAnexoArquivo(null); }}
+            onClose={() => { if (wizardParcela) return; setAnexoParcelamentoOpen(false); setAnexoArquivo(null); }}
           />
-        </>
+        </div>
       )}
+      {wizardParcela && <ParcelamentoWizard onIngest={body => parcelamentos.ingest(body)}
+        onConsultSerpro={parcelamentos.consultarSerpro} getContasProvisao={parcelamentos.getContasProvisao}
+        onLerRecibo={parcelamentos.lerRecibo} accounts={accounts} onSearchHistoricos={onSearchHistoricos}
+        onGetHistoricosByCode={onGetHistoricosByCode} saving={parcelamentos.saving}
+        onClose={result => { setWizardParcela(false); const id = result?.data?.parcelamentoId || result?.parcelamentoId; if (id) setAnexoParcelamentoId(id); }} />}
     </section>
   );
 }

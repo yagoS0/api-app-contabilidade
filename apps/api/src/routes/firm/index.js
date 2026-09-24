@@ -1,3 +1,6 @@
+import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
+import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
+import { getRoutineExecutionStatus } from "../../workers/scheduledRoutineService.js";
 import { dataDoComprovante } from "../../application/guides/lib/comprovantePagamento.js";
 import { createLaboratorioRouter } from "./laboratorio.js";
 import { Router } from "express";
@@ -553,6 +556,7 @@ function sanitizeFirmRole(role) {
 export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createExportacaoLoteRouter());
   router.use(createLaboratorioRouter());
   // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.
@@ -2246,8 +2250,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       select: { key: true, value: true, updatedAt: true },
     });
 
+    const rotinaStatus = await getRoutineExecutionStatus(await getSerproRuntimeSettings());
     return res.json({
       ok: true,
+      routines: rotinaStatus,
       workerEnabled: Boolean(process.env.SERPRO_PGDASD_WORKER_ENABLED === "1"),
       lastRun: latestRun
         ? {
@@ -2420,6 +2426,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ok: true,
       rotinas: ROTINA_KEYS.map((key) => ({ key, label: ROTINA_LABELS[key] })),
       agenda: settings.rotinas,
+      executions: await getRoutineExecutionStatus(settings),
       empresas,
     });
   });
@@ -4646,15 +4653,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ ok: false, error: "company_id_required" });
       }
       try {
+        await prepararAcompanhamentoParcelamentosEmpresa({ portalClientId: portalCompanyId });
         const parcelamentos = await prisma.parcelamento.findMany({
           where: {
             portalClientId: portalCompanyId,
             status: "ATIVO",
             numeroParcelamento: { not: null },
-            aberturaEntryId: { not: null },
             grupo: { not: "outros" },
           },
-          select: { id: true, tipo: true, numeroParcelamento: true, totalValue: true, principalTotal: true, valorMulta: true, jurosTotal: true, numParcelas: true },
         });
         if (!parcelamentos.length) {
           return res.json({ ok: true, parcelamentos: [], skipped: "sem_parcelamento_ativo" });
@@ -4736,6 +4742,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         },
       });
       if (!status) return res.json({ ok: true, status: null });
+      await reprocessarSitfisParcelamentos({ portalClientId: portalCompanyId });
       const { rawPayload, ...statusPublico } = status;
       // C11: a aba usa isto pra saber se o botão "Consultar" já está liberado (trava de 4h).
       // Ancorado no ÚLTIMO RELATÓRIO, não na última tentativa — tentativa que voltou
@@ -5004,6 +5011,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           update: updateData,
         });
 
+        if (temRelatorioNovo) await reprocessarSitfisParcelamentos({ portalClientId: portal.id });
         return res.json({
           ok: true,
           processando: Boolean(result.processando),
