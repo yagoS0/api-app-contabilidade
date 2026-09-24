@@ -41,14 +41,16 @@ export function regimeDe(company) {
 export const ABA_SIMPLES = "SIMPLES";
 export const ABA_PRESUMIDO = "LUCRO_PRESUMIDO";
 export const ABA_OUTROS = "OUTROS";
+export const ABA_DESATIVADAS = "DESATIVADAS";
 
 /** A aba que abre quando não há escolha salva (ou quando a salva não vale mais). */
 export const ABA_PADRAO = ABA_SIMPLES;
 
 /** As duas fixas, na ordem em que aparecem. `OUTROS` entra depois delas, e só quando tem gente. */
-export const ORDEM_ABAS = [ABA_SIMPLES, ABA_PRESUMIDO, ABA_OUTROS];
+export const ORDEM_ABAS = [ABA_SIMPLES, ABA_PRESUMIDO, ABA_OUTROS, ABA_DESATIVADAS];
 
 const ROTULOS = {
+  [ABA_DESATIVADAS]: "Desativadas",
   [ABA_SIMPLES]: "Simples Nacional",
   [ABA_PRESUMIDO]: "Lucro Presumido",
   [ABA_OUTROS]: "Outros",
@@ -84,6 +86,7 @@ export function corDaAba(aba) {
  * Valor fora dos dois vai para `OUTROS`, onde a linha DIZ qual é o regime.
  */
 export function abaDaEmpresa(company) {
+  if (company?.status === "SUSPENSA") return ABA_DESATIVADAS;
   const regime = regimeDe(company);
   if (regime === ABA_SIMPLES) return ABA_SIMPLES;
   if (regime === ABA_PRESUMIDO) return ABA_PRESUMIDO;
@@ -110,7 +113,7 @@ export function descricaoDoRegime(company) {
  * a mesma pergunta, que é o defeito que este projeto passa o dia matando.
  */
 export function contarPorAba(companies = []) {
-  const out = { [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0 };
+  const out = { [ABA_SIMPLES]: 0, [ABA_PRESUMIDO]: 0, [ABA_OUTROS]: 0, [ABA_DESATIVADAS]: 0 };
   for (const c of companies || []) out[abaDaEmpresa(c)] += 1;
   return out;
 }
@@ -156,6 +159,7 @@ export function abasVisiveis(contagens = {}) {
  * uma aba que não está desenhada — a tabela ficaria vazia e nenhum botão apareceria selecionado.
  */
 export function normalizarAba(aba, contagens = {}) {
+  if (aba === ABA_DESATIVADAS) return aba;
   if (aba === ABA_SIMPLES || aba === ABA_PRESUMIDO) return aba;
   if (aba === ABA_OUTROS && (contagens[ABA_OUTROS] || 0) > 0) return ABA_OUTROS;
   return ABA_PADRAO;

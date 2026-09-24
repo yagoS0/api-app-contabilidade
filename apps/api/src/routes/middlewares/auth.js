@@ -52,10 +52,12 @@ export function createEnsureAuthorized({ AuthService, API_KEYS = [], log }) {
           return false;
         }
         if (user.status && user.status !== "active") {
-          return res.status(403).json({ error: "user_not_active", status: user.status });
+          res.status(403).json({ error: "user_not_active", status: user.status });
+          return false;
         }
         if (requireRole && user.role !== requireRole) {
-          return res.status(403).json({ error: "forbidden" });
+          res.status(403).json({ error: "forbidden" });
+          return false;
         }
         req.auth = { type: "jwt", payload, user };
         return true;

@@ -1,4 +1,6 @@
 import bcrypt from "bcryptjs";
+import { versaoCredencial } from './credentialSecurity.js';
+import { prisma } from '../../infrastructure/db/prisma.js';
 import jwt from "jsonwebtoken";
 import {
   AUTH_USERS,
@@ -57,6 +59,7 @@ function sanitizeUser(user, overrides = {}) {
      */
     podeAbrirPortalDoCliente: user.podeAbrirPortalDoCliente === true,
     source: user.source || "db",
+    credentialVersion: user.passwordHash ? versaoCredencial(user) : undefined,
     ...overrides,
   };
 }
@@ -151,6 +154,7 @@ export class AuthService {
         role: "client",
         accountType: "CLIENT",
         source: "client",
+        credentialVersion: versaoCredencial(client),
       },
     };
   }
@@ -166,6 +170,8 @@ export class AuthService {
       role: user.role,
       accountType: user.accountType || "CLIENT",
       source: user.source || "db",
+      cv: user.credentialVersion || (user.passwordHash ? versaoCredencial(user) : undefined),
+      sid: user.sessionId,
     };
     const expiresIn = normalizeExpiresIn();
     return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
@@ -184,6 +190,7 @@ export class AuthService {
       accountType: client.accountType || "CLIENT",
       source: client.source || "client",
       type: "client",
+      cv: client.credentialVersion || (client.passwordHash ? versaoCredencial(client) : undefined),
     };
     const expiresIn = normalizeExpiresIn();
     return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
@@ -203,6 +210,7 @@ export class AuthService {
       source: client.source || "client",
       type: "client",
       tokenType: "refresh",
+      cv: client.credentialVersion || (client.passwordHash ? versaoCredencial(client) : undefined),
     };
     const expiresIn = normalizeRefreshExpiresIn();
     return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
@@ -225,6 +233,7 @@ export class AuthService {
       accountType: user.accountType || "CLIENT",
       source: user.source || "db",
       tokenType: "refresh",
+      cv: user.credentialVersion || (user.passwordHash ? versaoCredencial(user) : undefined),
     };
     const expiresIn = normalizeRefreshExpiresIn();
     return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
@@ -236,11 +245,12 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  static verifyToken(token) {
+  static verifyToken(token, { allowRefresh = false } = {}) {
     if (!this.isEnabled()) {
       throw new Error("AuthService: autenticação não configurada");
     }
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (!payload?.sub || !Number.isFinite(payload.exp) || (!allowRefresh && payload.tokenType === 'refresh')) throw new Error('invalid_token');
     // Portal Cliente (Contrato #1): rejeita token de OUTRA superfície (ex.: "portal-cliente").
     // Migração gradual: token legado SEM `aud` é aceito na transição e ganha `aud` no próximo
     // login/refresh. NÃO usar a opção { audience } do jwt.verify — ela rejeitaria o legado.
@@ -253,7 +263,7 @@ export class AuthService {
   }
 
   static verifyRefreshToken(token) {
-    const payload = this.verifyToken(token);
+    const payload = this.verifyToken(token, { allowRefresh: true });
     if (payload?.tokenType !== "refresh") {
       const err = new Error("invalid_refresh_token");
       err.code = "INVALID_REFRESH_TOKEN";
@@ -278,8 +288,9 @@ export class AuthService {
     if (!payload) return null;
     if (payload.type === "client") {
       if (!payload.sub) return null;
-      const client = await ClientRepository.getClientById(payload.sub);
+      const client = await prisma.client.findUnique({ where: { id: payload.sub } });
       if (!client) return null;
+      if (!payload.cv || payload.cv !== versaoCredencial(client)) return null;
       return {
         id: client.id,
         login: client.login,
@@ -289,18 +300,20 @@ export class AuthService {
         status: "active",
         accountType: "CLIENT",
         source: "client",
+        credentialVersion: versaoCredencial(client),
       };
     }
     if (payload.source === "env") {
+      const configured = AUTH_USERS.find(item => item.username === payload.sub);
+      if (!configured) return null;
       return sanitizeUser({
         id: payload.sub,
         email: payload.email || payload.sub,
         name: payload.name || payload.email || payload.sub,
-        role: payload.role || "user",
+        role: configured.role || "user",
         status: "active",
         accountType:
-          payload.accountType ||
-          (payload.role === "admin" || payload.role === "contador"
+          (configured.role === "admin" || configured.role === "contador"
             ? "FIRM"
             : "CLIENT"),
         source: "env",
@@ -309,6 +322,11 @@ export class AuthService {
     if (!payload.sub) return null;
     const user = await UserRepository.findById(payload.sub);
     if (!user || user.status !== "active") return null;
+    if (!payload.cv || payload.cv !== versaoCredencial(user)) return null;
+    if (payload.sid) {
+      const session = await prisma.clientSession.findUnique({ where: { id: payload.sid } });
+      if (!session || session.userId !== user.id || session.revokedAt || session.expiresAt <= new Date()) return null;
+    }
     return sanitizeUser(user, { source: "db" });
   }
 }

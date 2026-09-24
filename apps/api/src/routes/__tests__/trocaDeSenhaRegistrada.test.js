@@ -183,6 +183,8 @@ describe("POST /auth/reset-password — o cliente pelo link do e-mail", () => {
   const TOKEN = "a".repeat(64);
 
   beforeEach(() => {
+    prismaMock.user.findUnique.mockResolvedValue(usuario);
+    prismaMock.passwordResetToken.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.passwordResetToken.findUnique.mockResolvedValue({
       id: "prt-1",
       userId: USER_ID,

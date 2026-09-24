@@ -666,57 +666,6 @@ export function CompaniesTable({
 
   return (
     <>
-      {/* ⚠ "EXIBINDO X DE N" — a resposta ao relato do "chip Todas · 33 com a lista pela metade".
-          O contador contava as linhas na tela, comparava com o número do chip e concluía que a
-          lista estava errada. Os dois números são verdadeiros e falam de coisas diferentes: o chip
-          conta a CARTEIRA, a tabela mostra o RECORTE. Enquanto ninguém escrevia os dois juntos, a
-          diferença só podia ser lida como defeito.
-          ⚠ E o critério de ordenação vem escrito ao lado, pelo mesmo motivo: sem ele, "as pendentes
-          no topo" é indistinguível de "só as pendentes". */}
-      {!carregando && (visiveis > 0 || escondidasPorFiltro > 0) && (
-        <div
-          style={{
-            display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-            margin: "0 0 6px", fontSize: "0.76rem", color: "var(--text-muted)",
-          }}
-        >
-          <span>
-            {escondidasPorFiltro > 0
-              ? <>Exibindo <strong style={{ color: "var(--text)" }}>{visiveis}</strong> de {total} empresas</>
-              : <><strong style={{ color: "var(--text)" }}>{visiveis}</strong> empresa{visiveis === 1 ? "" : "s"}</>}
-          </span>
-          <span aria-hidden="true" style={{ color: "var(--text-faint)" }}>·</span>
-          <span>
-            ordenadas por <strong style={{ color: "var(--text)" }}>{ROTULO_ORDEM[ordem.campo] || ordem.campo}</strong>
-            {ordem.campo !== "urgencia" && !ordem.asc ? " (invertida)" : ""}
-          </span>
-          {ordem.campo !== "urgencia" && (
-            <button
-              type="button"
-              onClick={() => setOrdem({ campo: "urgencia", asc: true })}
-              style={{
-                padding: "1px 8px", borderRadius: 999, cursor: "pointer", fontSize: "0.72rem",
-                background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)", font: "inherit",
-              }}
-            >
-              Voltar à ordem por pendência
-            </button>
-          )}
-          {escondidasPorFiltro > 0 && onLimparFiltros && (
-            <button
-              type="button"
-              onClick={onLimparFiltros}
-              style={{
-                padding: "1px 8px", borderRadius: 999, cursor: "pointer", fontSize: "0.72rem",
-                background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)", font: "inherit",
-              }}
-            >
-              Limpar filtros
-            </button>
-          )}
-        </div>
-      )}
-
       <div data-print-tabela className="companies-table-scroll">
       {/* ⚠ `minWidth` — em tela estreita a coluna Guias era ESMAGADA: os chips (que já embrulham em
           várias linhas) viravam uma pilha vertical de uma letra por linha, e a linha da empresa
@@ -775,10 +724,10 @@ export function CompaniesTable({
                 />
               </th>
             )}
-            <Cabecalho campo="empresa" largura="27%">Empresa</Cabecalho>
-            <Cabecalho campo="apuracao" largura="11%" pergunta="como está o mês?">Apuração</Cabecalho>
-            <Cabecalho campo="fiscal" largura="14%" pergunta="e com a Receita?">Situação fiscal</Cabecalho>
-            <Cabecalho campo="guias" largura="25%" pergunta="o que falta entregar?">Guias</Cabecalho>
+            <Cabecalho campo="empresa" largura="27%">Empresa <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({carregando ? "…" : escondidasPorFiltro > 0 ? `${visiveis}/${total}` : visiveis})</span></Cabecalho>
+            <Cabecalho campo="apuracao" largura="11%">Apuração</Cabecalho>
+            <Cabecalho campo="fiscal" largura="14%">Situação fiscal</Cabecalho>
+            <Cabecalho campo="guias" largura="25%">Guias</Cabecalho>
             <Cabecalho campo="notas" alinhar="right" largura="13%">Notas</Cabecalho>
             <th scope="col" data-coluna-acao style={{ ...CABECALHO, textAlign: "right", width: "10%" }}>Ação</th>
           </tr>
@@ -885,7 +834,7 @@ export function CompaniesTable({
                      na carteira, só porque a aba do Lucro Real está vazia, é a ausência respondendo
                      a pergunta errada. */
                   <div style={{ color: "var(--text-muted)" }}>
-                    Nenhuma empresa de <strong>{rotuloDoRecorte}</strong> nesta carteira.
+                    {rotuloDoRecorte === "Desativadas" ? "Nenhuma empresa desativada nesta carteira." : <>Nenhuma empresa de <strong>{rotuloDoRecorte}</strong> nesta carteira.</>}
                   </div>
                 ) : (
                   <div style={{ color: "var(--text-muted)" }}>

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { registrarTroca, ORIGENS } from "./SenhaDoPortalService.js";
+import { transacaoAuth } from './credentialSecurity.js';
 import {
   PASSWORD_RESET_TTL_MINUTES,
   PORTAL_CLIENTE_WEB_URL,
@@ -123,6 +124,7 @@ export async function enviarEmailRedefinicao({ to, nome, token, expiraEmMinutos 
     </body></html>
   `;
   await new EmailService().send({
+    sensitive: true,
     to,
     subject: "Redefinição de senha — Portal do Cliente",
     html,
@@ -142,7 +144,7 @@ export class PasswordResetService {
     const tokenCru = novoTokenCru();
     const agora = new Date();
 
-    await prisma.$transaction(async (tx) => {
+    await transacaoAuth(prisma, async (tx) => {
       await tx.passwordResetToken.updateMany({
         where: { userId: String(userId), usedAt: null },
         data: { usedAt: agora },
@@ -209,7 +211,14 @@ export class PasswordResetService {
     // pelo e-mail — o estado errado exatamente no caso em que ele importa.
     //
     // ⚠ NADA DA SENHA, NEM DO TOKEN, entra nessa linha (ver a assinatura de `registrarTroca`).
-    await prisma.$transaction(async (tx) => {
+    const consumed = await transacaoAuth(prisma, async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: registro.userId } });
+      if (!user || user.status !== 'active') return false;
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: registro.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: agora },
+      });
+      if (claimed.count !== 1) return false;
       await tx.user.update({
         where: { id: registro.userId },
         data: { passwordHash },
@@ -231,8 +240,9 @@ export class PasswordResetService {
         origem: ORIGENS.CLIENTE_RECUPERACAO,
         ator: { id: registro.userId },
       });
+      return true;
     });
 
-    return { ok: true, userId: registro.userId };
+    return consumed ? { ok: true, userId: registro.userId } : { ok: false };
   }
 }
