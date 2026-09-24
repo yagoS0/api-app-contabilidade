@@ -54,7 +54,6 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
           <LogoAltan altura={40} />
         </h1>
         <p className="sub">Acompanhe suas notas, guias e impostos.</p>
-        <button type="button" className="btn btn-block stack-gap" disabled={enviando} onClick={()=>setPorCodigo(true)}>Entrar com código por e-mail</button>
 
         {expirou && !erro ? (
           <div className="alerta alerta-aviso" role="status" style={{ marginBottom: "var(--gap)" }}>
@@ -97,6 +96,8 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
             onChange={(e) => setSenha(e.target.value)}
           />
         </label>
+
+        <button type="button" className="btn btn-block" style={{ marginBottom: "var(--gap)" }} disabled={enviando} onClick={()=>setPorCodigo(true)}>Entrar com código por e-mail</button>
 
         <button className="btn btn-primary btn-block" type="submit" disabled={enviando}>
           {enviando ? "Entrando…" : "Entrar"}
