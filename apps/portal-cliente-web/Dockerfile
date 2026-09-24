@@ -22,6 +22,7 @@ RUN npm ci --include=dev --workspace=@contabilidade/portal-cliente-web
 
 COPY packages/shared ./packages/shared
 COPY apps/portal-cliente-web ./apps/portal-cliente-web
+COPY apps/web/src ./apps/web/src
 
 ARG VITE_API_BASE_URL
 ARG VITE_API_MODE
