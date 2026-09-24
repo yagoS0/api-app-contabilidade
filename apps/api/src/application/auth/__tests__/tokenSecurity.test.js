@@ -38,3 +38,11 @@ test('renovação usa consumo condicional: perdedor da corrida não recebe refre
  const results=await Promise.all([ClientSessionService.rotate('a'.repeat(96)),ClientSessionService.rotate('a'.repeat(96))]);
  expect(results.filter(Boolean)).toHaveLength(1);expect(prisma.clientSession.updateMany.mock.calls[0][0].where).toMatchObject({id:'s',revokedAt:null,refreshTokenHash:expect.any(String)});
 });
+
+import {createEnsureAuthorized} from '../../../routes/middlewares/auth.js';
+test('403 retorna falso ao chamador e não autoriza a continuação',async()=>{
+ const res={status:jest.fn().mockReturnThis(),json:jest.fn().mockReturnThis()};
+ const ensure=createEnsureAuthorized({AuthService:{isEnabled:()=>true,verifyToken:()=>({}),resolveUserFromPayload:async()=>({...user,role:'user'})},log:{warn:jest.fn()}});
+ const req={get:()=> 'Bearer example',path:'/restricted'};
+ expect(await ensure(req,res,{requireRole:'admin'})).toBe(false);expect(res.status).toHaveBeenCalledWith(403);expect(req.auth).toBeUndefined();
+});

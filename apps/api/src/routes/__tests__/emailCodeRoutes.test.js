@@ -32,3 +32,14 @@ test('limite por origem para pedidos e logs sem credenciais quando transporte fa
  expect((await request(a).post('/email-code/request').send({email:'a@b.com'})).status).toBe(429);
  expect(JSON.stringify(log.error.mock.calls)).not.toMatch(/12345678|secret@example.com/);
 });
+
+import {createAuthRouter} from '../auth.js';
+test('cadastro público não revela conta existente e valida o tipo do e-mail',async()=>{
+ const repository={findByEmail:jest.fn().mockResolvedValueOnce({status:'active'}).mockResolvedValueOnce(null),createPending:jest.fn()};
+ const a=express();a.use(express.json());a.use(createAuthRouter({AuthService:{isEnabled:()=>true},UserRepository:repository,log:{error:jest.fn(),warn:jest.fn()},ensureAuthorized:async()=>false}));
+ const body={email:'a@b.com',password:'StrongTest#2026'};
+ const exists=await request(a).post('/signup').send(body),created=await request(a).post('/signup').send(body);
+ expect(exists.status).toBe(201);expect(created.status).toBe(201);expect(exists.body).toEqual(created.body);
+ expect((await request(a).post('/signup').send({...body,email:{value:'a@b.com'}})).status).toBe(400);
+ expect(repository.createPending).toHaveBeenCalledTimes(1);
+});

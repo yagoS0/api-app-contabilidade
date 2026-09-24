@@ -34,4 +34,27 @@ Limites por IP e o bloqueio do login por senha usam memória da instância; em m
 O portal conserva tokens no armazenamento do navegador: endurecimento completo contra XSS e migração para cookies HttpOnly exigem uma evolução separada de todos os consumidores. CORS e HTTPS dependem da configuração de produção. Nenhuma dessas propriedades foi presumida apenas porque os testes passaram.
 
 ## Validação
-Testes de serviço, HTTP, JWT e interface adicionados. Ensaio verify-email-login-postgres.js usa somente banco local descartável terminado em _check, cria fixtures isoladas e não envia e-mails. Resultados efetivamente executados serão registrados ao concluir.
+Testes de serviço, HTTP, JWT e interface adicionados. Ensaio verify-email-login-postgres.js usa somente banco local descartável terminado em _check, cria fixtures isoladas e não envia e-mails. Evidências executadas estão registradas abaixo.
+
+Mensagens de autenticação exigem TLS no transporte SMTP; Gmail usa sua API HTTPS. O transporte omite o destinatário nos logs desses envios. A consulta de vínculo também é executada para endereço desconhecido, sem depender do tempo do provedor para responder.
+
+## Evidências concluídas
+- 55 testes locais de API, código, JWT, transporte e recuperação aprovados; 9 testes da tela e proibição de fallback aprovados.
+- Schema Prisma válido; build do portal aprovado.
+- CI 36064832583 aprovado integralmente, incluindo o ensaio com PostgreSQL real de concorrência de emissão, código, refresh e recuperação.
+- Navegador local: código incorreto recusado, correto abre o portal. Tela a 390 px sem transbordamento, campos de 44 px e fonte de 16 px.
+- Relatórios anteriores publicados na main pelo PR 85, commit 38a742ace7baec440ecfa451dad7dcc6b50fbcab, com sucesso dos três serviços Railway. Login fica no PR 87 em rascunho.
+
+## Rotas conferidas
+| Rota | Controle principal |
+| --- | --- |
+| POST /auth/signup | Tipos, senha forte, limite por IP e resposta uniforme |
+| POST /auth/login | Bcrypt, limite por IP/conta, estado do usuário, sem fallback de demonstração |
+| POST /auth/email-code/request | Endereço de acesso, elegibilidade, limite durável, resposta genérica |
+| POST /auth/email-code/verify | Prazo, cinco erros, uso único serializável, vínculo e credencial revalidados |
+| POST /auth/refresh | Tipo de token, versão da senha, sessão válida, rotação condicional |
+| GET /auth/me | Token de acesso e usuário ativo; nenhuma chave de API como alternativa |
+| POST /auth/logout | Revogação do refresh da própria pessoa, acesso vinculado à sessão |
+| POST /auth/change-password | Sessão, senha atual/forte, limite por IP, revogação e auditoria |
+| POST /auth/forgot-password | Resposta genérica antes do transporte, limite por IP, configuração do envio |
+| POST /auth/reset-password | Token hash/expiração/uso único, estado ativo, transação e revogação |

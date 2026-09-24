@@ -124,6 +124,7 @@ export async function enviarEmailRedefinicao({ to, nome, token, expiraEmMinutos 
     </body></html>
   `;
   await new EmailService().send({
+    sensitive: true,
     to,
     subject: "Redefinição de senha — Portal do Cliente",
     html,
