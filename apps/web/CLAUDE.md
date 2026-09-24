@@ -1,5 +1,10 @@
 # CLAUDE.md — Web (apps/web)
 
+## Pré-atendimento curto — 24/09/2026
+
+O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.
+
+
 ## Proposta, contrato e chat na ficha — 21/09/2026
 
 PDF em sete seções usa apresentação e franquias congeladas do catálogo aprovado, preserva escopo específico e mantém proposta antiga sem benefícios retroativos. Consultoria continua condicionada à contratação/faixa; não mudar preços para corresponder a exemplos da conversa. Contrato usa formulário de metadados compartilhados, dados institucionais/cadastrais e padrões privados. Preço/escopo/condições aceitos, CNPJ e regime/franquias disponíveis no snapshot são protegidos no servidor. Modelo rascunho permite prévia; somente aprovado gera contrato. Catálogo/minuta reais não vão ao Git. Ver `docs/proposta-contrato-formulario-20260921.md`.

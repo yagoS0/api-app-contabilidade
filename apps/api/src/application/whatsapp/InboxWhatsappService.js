@@ -61,7 +61,8 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
       SELECT g.*, COALESCE(n."ultimaMensagemEm",g."criadoEm") AS instante,
         CASE WHEN EXISTS (SELECT 1 FROM contatos_whatsapp co JOIN vinculos_numero_interlocutor vn ON vn.id=co."vinculoNumeroId"
         WHERE vn."interlocutorId"=g."interlocutorId" AND vn."encerrouEm" IS NULL AND co.ativo=true AND co."portalClientId" IN (${empresasSql})) THEN 'CLIENTE'
-        WHEN EXISTS (SELECT 1 FROM atendimentos_lead a WHERE a."interlocutorId"=g."interlocutorId" AND a."encerradoEm" IS NULL AND a."onboardingId" IS NOT NULL) THEN 'LEAD'
+        WHEN EXISTS (SELECT 1 FROM atendimentos_lead a WHERE a."interlocutorId"=g."interlocutorId" AND a."encerradoEm" IS NULL
+          AND (a."onboardingId" IS NOT NULL OR a.triagem->'preatendimento'->>'intencao' IN ('ABERTURA','TRANSFERENCIA','INATIVA','PLANEJAMENTO','GESTAO'))) THEN 'LEAD'
         ELSE 'A_IDENTIFICAR' END AS relacionamento,
         COALESCE(n.total,0) AS "naoLidas"
       FROM grupos g LEFT JOIN atividade n ON n.grupo=g.grupo

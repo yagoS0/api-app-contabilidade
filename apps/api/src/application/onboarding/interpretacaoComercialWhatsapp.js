@@ -66,6 +66,8 @@ export function identificarOrigemDeclarada(texto) {
 
 export function pedidoOperacionalComercial(texto) {
   const t = normalizar(texto);
+  const queixaDeAtendimento = /\b(?:meu contador|contabilidade atual)\b.{0,40}\b(?:so|apenas)\b.{0,30}\bguias?\b/.test(t);
+  if (queixaDeAtendimento && !/\b(?:me (?:manda|mande|envia|envie)|(?:quero|preciso|enviar|receber|consultar|ver).{0,20}guias?|guias? em aberto|emitir|emissao|documentos da empresa|trocar de empresa)\b/.test(t)) return false;
   if (/\b(?:guia|guias|boleto|boletos|cancelar nota|documentos da empresa|mand[ae] o documento|envie o documento|trocar empresa|trocar de empresa|mudar de empresa)\b/.test(t)) return true;
   // A declaração de volume para a proposta não é uma consulta à empresa atual.
   const declaracaoFaturamento = !/\?|\b(?:qual|quanto|consultar|ver|informe|me diga)\b/.test(t)

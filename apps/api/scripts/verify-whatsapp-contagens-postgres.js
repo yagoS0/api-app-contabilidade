@@ -148,6 +148,18 @@ try {
       assert.equal(aposEntrada.conversas[0].interlocutorId, lead.interlocutor.id);
       assert.equal(aposEntrada.conversas.length, 3);
     });
+    for (const intencao of ['PLANEJAMENTO', 'GESTAO']) {
+      await tx.atendimentoLead.update({ where: { id: atendimentoLead.id }, data: { encerradoEm: null, onboardingId: null, triagem: { preatendimento: { intencao, estado: 'ENCAMINHADO' } } } });
+      const curto = await listar({ relacionamento: 'LEAD' });
+      const totais = await resumoInboxWhatsapp(visiveis, { client: tx });
+      conferir(`${intencao} sem ficha aparece em Leads com os mesmos totais e sem perder o histórico`, () => {
+        assert.equal(curto.conversas.length, 1);
+        assert.equal(curto.conversas[0].interlocutorId, lead.interlocutor.id);
+        assert.equal(curto.conversas[0].solicitacaoComercial.onboardingId, null);
+        assert.equal(curto.conversas[0].solicitacaoComercial.intencao, intencao);
+        assert.equal(totais.contagensNaoLidas.LEAD - antes.contagensNaoLidas.LEAD, 6);
+      });
+    }
     throw rollback;
   }, { timeout: 60000 });
 } catch (err) { if (err !== rollback) throw err; }

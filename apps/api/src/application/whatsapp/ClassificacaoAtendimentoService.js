@@ -4,7 +4,9 @@ export function classificarRelacionamento({ contatos = [], caso = null, interloc
     && (!vinculoNumero?.id || c.vinculoNumeroId === vinculoNumero.id));
   const usuarios = new Set(ativos.map(c => c.userId).filter(Boolean));
   const revisao = interlocutor?.estado === 'EM_REVISAO' || Boolean(vinculoNumero?.encerrouEm) || usuarios.size > 1;
-  const comercial = Boolean(caso && !caso.encerradoEm && (caso.onboardingId || caso.triagem?.origem));
+  const pre = caso?.triagem?.preatendimento;
+  const comercial = Boolean(caso && !caso.encerradoEm && (caso.onboardingId || caso.triagem?.origem
+    || ['ABERTURA', 'TRANSFERENCIA', 'INATIVA', 'PLANEJAMENTO', 'GESTAO'].includes(pre?.intencao)));
   const tipo = ativos.length ? 'CLIENTE' : comercial ? 'LEAD' : 'A_IDENTIFICAR';
   return {
     relacionamento: {
@@ -21,7 +23,7 @@ export function classificarRelacionamento({ contatos = [], caso = null, interloc
       evidencia: vinculoNumero?.evidencia || null, verificadoEm: vinculoNumero?.verificadoEm || null, verificadoPor: vinculoNumero?.verificadoPor || null,
     },
     solicitacaoComercial: comercial ? { id: caso.id, onboardingId: caso.onboardingId || null,
-      origem: caso.onboarding?.origem || caso.triagem?.origem || null,
-      etapa: caso.onboarding?.status || 'COLETA' } : null,
+      origem: caso.onboarding?.origem || caso.triagem?.origem || null, intencao: pre?.intencao || null,
+      etapa: caso.onboarding?.status || pre?.estado || 'COLETA' } : null,
   };
 }
