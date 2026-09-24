@@ -24,11 +24,6 @@ import {
 import { mesclarAtividades } from "../company/atividadesDaEmpresa.js";
 import { getGlobalChartStatus } from "../accounting/globalChartStatus.js";
 import { aplicarRegrasAEmpresaNova } from "../obrigacoes/RegrasObrigacaoService.js";
-import { ROTINA_KEYS } from "../fiscal/serpro/SerproRuntimeSettings.js";
-import {
-  rotinasPadraoPorRegime,
-  saveCompanyRotinas,
-} from "../fiscal/serpro/CompanyRotinasService.js";
 
 /**
  * Erro de provisionamento com resposta HTTP pronta. A rota só repassa `status` e `body` — assim as
@@ -403,28 +398,9 @@ export async function aplicarPosCriacao({ portalClientId, portalIds = [], regime
     );
   }
 
-  // Rotinas SERPRO da empresa nova.
-  //
-  // Antes disto, empresa nova só ganhava `CompanyRotina` quando ALGUÉM abria a página Rotinas e o
-  // `seedRotinasFromLegacy` rodava — até lá as linhas não existiam. Semear aqui fecha a lacuna nos
-  // dois caminhos de criação de empresa de uma vez.
-  //
-  // ⚠ `rotinasPadraoPorRegime` devolve um **Set**, e `saveCompanyRotinas` espera um **objeto**
-  // (`rotinas[chave] === true`). Passar o Set direto faria o laço pular TODAS as chaves
-  // (`rotinas[rotina] === undefined` → `continue`) e a função retornaria "0 atualizadas" sem gravar
-  // nada — falha silenciosa. O mapa abaixo cobre as 7 chaves com true/false, exatamente como o
-  // `seedRotinasFromLegacy` faz, para que os dois caminhos produzam a mesma linha.
-  let rotinasCriadas = null;
-  try {
-    const padrao = rotinasPadraoPorRegime(String(regime || "").trim().toUpperCase());
-    const rotinas = Object.fromEntries(ROTINA_KEYS.map((chave) => [chave, padrao.has(chave)]));
-    rotinasCriadas = await saveCompanyRotinas([{ companyId: portalClientId, rotinas }]);
-  } catch (err) {
-    log?.warn?.(
-      { err: err?.message || err, companyId: portalClientId },
-      "Rotinas SERPRO não semeadas para a empresa nova"
-    );
-  }
+  // Cadastro não autoriza consultas pagas. Ausência de escolha permanece desligada
+  // na página Rotinas; apenas o salvamento explícito pode habilitar a empresa.
+  const rotinasCriadas = null;
 
   return { regrasAplicadas, rotinasCriadas };
 }

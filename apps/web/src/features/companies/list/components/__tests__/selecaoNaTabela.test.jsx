@@ -78,7 +78,7 @@ describe('⚠ "SELECIONAR TODOS" RESPEITA O FILTRO — e o rótulo diz o número
     });
     expect(screen.getByRole("checkbox", { name: "Selecionar as 4 empresas desta lista" })).toBeInTheDocument();
     // A tabela continua declarando os dois números, que é o que evita o relato "o chip diz 33".
-    expect(screen.getByText(/de 33 empresas/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Empresa\s*\(4\/33\)/ })).toBeInTheDocument();
   });
 
   test("marcar todos entrega EXATAMENTE os ids do recorte", () => {

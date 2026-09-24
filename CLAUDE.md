@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Consultas só pela configuração salva — 24/09/2026
+
+Consulta fiscal automática exige rotina e empresa habilitadas explicitamente, no dia/hora salvos (Brasília). Não criar agenda por código, herdar habilitação na ausência de cadastro, rodar ao iniciar fora da agenda, recuperar horários perdidos ou repetir falhas/negativos nos dias seguintes. Reservar cada horário uma única vez; resultado incerto exige conferência manual, pois pode ter gerado custo. A checagem local do relógio e o processamento local não são consultas externas. Após retorno de pagamento não confirmado válido, avisar pelo canal cadastrado uma única vez, sem tratar erro técnico como inadimplência; reconsulta da mesma obrigação fica a cargo do contador. Confirmação do cliente no portal após recálculo continua como declaração, sem inventar confirmação da Receita ou baixa contábil. A instrução substitui regras anteriores de retry/catchup ou rotinas inferidas por regime. Detalhes em `docs/agenda-fiscal-explicita-2026-09-24.md`.
+
 ## Parcelas sem esquecimento — 24/09/2026
 
 O indicador da carteira e a Situação Fiscal levam a Guias, onde “Falta guia de parcelamento” permite subir a parcela. Preservar a aba contábil original: sem painel novo de acompanhamento, demonstração ou conferência obrigatória do indício. Upload pode ficar sem contabilização; identidade fiscal interna GUIA_AVULSA distingue a parcela do DAS mensal sem inventar contrato, valor ou calendário. Vínculo posterior preserva PDF, pagamento e valores; o mesmo wizard contábil abre e retorna à tela de Guias. Indícios de atrasos anteriores não desaparecem por subir a guia atual. Reutilizar relatório salvo, proteger concorrência e manter agenda por rotina em Brasília. Detalhes e validações em `docs/parcelamentos-acompanhamento-2026-09-24.md`. Publicação em main/produção autorizada pelo dono após revisão do mock; conferir migração, backup e deploys antes de declarar concluída.

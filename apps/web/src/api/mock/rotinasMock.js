@@ -16,8 +16,8 @@ export function mockExecucoesRotinas() {
     const failed = routine === "parcelamento";
     return { routine, enabled: cfg.enabled, workerEnabled: true, integrationEnabled: true,
       alive: routine !== "conferencia", heartbeatAt: routine === "conferencia" ? null : now.toISOString(),
-      nextAt: next.toISOString(), overdue: routine === "conferencia", retryExhausted: failed, maxAttempts: 3,
-      lastRun: failed ? { status: "FAILED", attempts: 3, scheduledAt: new Date(+now - 3600000).toISOString(),
+      nextAt: next.toISOString(), overdue: routine === "conferencia", retryExhausted: failed, maxAttempts: 1,
+      lastRun: failed ? { status: "FAILED", attempts: 1, scheduledAt: new Date(+now - 3600000).toISOString(),
         finishedAt: new Date(+now - 1800000).toISOString(), result: { parcelaResults: [{ razao: "Empresa de demonstração", status: "erro", reason: "Procuração precisa ser conferida (simulação)." }] } }
         : routine === "pagamento" ? { status: "SUCCEEDED", attempts: 1, finishedAt: new Date(+now - 3600000).toISOString(), result: { results: [{ razao: "Empresa de demonstração", status: "Pagamento conferido (simulação)" }] } } : null };
   });

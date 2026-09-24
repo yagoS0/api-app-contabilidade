@@ -71,7 +71,8 @@ function extractNotFoundMessage(payload) {
   const value = searchValueDeep(payload, (key, val) => {
     const normalized = String(key || "").toLowerCase();
     if (!/(mensagem|status|texto|erro|situac)/.test(normalized)) return false;
-    return typeof val === "string" || typeof val === "number";
+    if (typeof val !== "string" || /certificado|cadastro|servi[cç]o|autentica|autoriza|credencial|procura[cç][aã]o|par[aâ]metro/i.test(val)) return false;
+    return /(?:comprovante|pagamento|documento).{0,100}(?:n[aã]o (?:localiz|encontrad)|inexist|sem registro)|(?:nenhum|n[aã]o (?:foi )?(?:localiz|encontrad)).{0,80}(?:comprovante|pagamento|documento)|sem pagamento/i.test(val);
   });
   if (value == null) return null;
   const text = String(value);
@@ -176,9 +177,9 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
 
   // 200 com comprovante (PDF base64) = PAGO.
   const pdfBase64 = extractComprovantePdfBase64(data);
-  if (pdfBase64) {
+  if (httpStatus === 200 && pdfBase64) {
     const pdfBuffer = Buffer.from(pdfBase64, "base64");
-    if (pdfBuffer.length > 0) {
+    if (pdfBuffer.subarray(0, 5).toString("ascii") === "%PDF-") {
       // O comprovante só vem como PDF (validado: `dados` = { pdf }, sem campos estruturados).
       // Lemos o texto pra obter a DATA DE ARRECADAÇÃO e a quebra principal/juros/multa — é isso
       // que permite baixar na data certa em vez de "hoje" + valor devido da guia.
@@ -222,11 +223,19 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
     throw err;
   }
 
-  // Sem comprovante (200 sem PDF, ou 4xx de negócio) = NÃO PAGO / não localizado.
+  // Falta de autorização/entrada inválida/retorno vazio não é resposta sobre pagamento.
+  const negativa = extractNotFoundMessage(data);
+  if (![200, 400, 404].includes(httpStatus) || !negativa
+      || /autoriza|autentica|certificado|cadastro|servi[cç]o.*(?:inexist|encontrad)|procura[cç][aã]o|credencial|par[aâ]metro|entrada.*incorreta/i.test(mensagem)) {
+    throw Object.assign(new Error(mensagem || "Retorno de pagamento não reconhecido."), {
+      code: "SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA", details: { httpStatus },
+    });
+  }
+  // Uma resposta negativa explícita significa apenas que o comprovante não foi localizado.
   return {
     pago: false,
     comprovantePdfBuffer: null,
-    mensagem: extractNotFoundMessage(data) || mensagem || "Comprovante de pagamento não localizado no SERPRO.",
+    mensagem: negativa,
     verificadoTrial: VERIFICADO_TRIAL,
     rawPayload: data,
   };

@@ -1,9 +1,10 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: {
   parcela: { findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
-  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(),
+  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(), appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
 } }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { document: "11111111000191" } })) }));
 jest.mock("../SerproParcelamentoService.js", () => ({ SerproParcelamentoService: jest.fn() }));
+jest.mock("../../../guides/AvisoPagamentoService.js", () => ({ avisarPagamentoNaoConfirmado: jest.fn(async () => ({ status: "JA_ENVIADO" })) }));
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { SerproParcelamentoService } from "../SerproParcelamentoService.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "../SerproParcelaPagamentoService.js";
@@ -14,6 +15,9 @@ const item = extra => ({ id: "p", portalClientId: "empresa", anoMesParcela: "202
   parcelamento: { tipo: "PARCSN", numeroParcelamento: "123" }, ...extra });
 beforeEach(() => {
   jest.clearAllMocks();
+  const ledger = new Map();
+  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key));
+  prisma.appSetting.upsert.mockImplementation(async ({ create }) => { ledger.set(create.key, create); return create; });
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
   prisma.parcela.findFirst.mockResolvedValue(item({}));
   prisma.parcela.updateMany.mockResolvedValue({ count: 1 });
@@ -21,6 +25,23 @@ beforeEach(() => {
   prisma.$transaction.mockImplementation(fn => fn(prisma));
   consultar.mockResolvedValue({ raw });
   SerproParcelamentoService.mockImplementation(() => ({ consultarPagamentoParcela: consultar }));
+});
+test("negativa de parcela não é consultada novamente no automático após vínculo/novo PDF", async () => {
+  const p = item({ guiaId: "g-estavel", origem: "GUIA", vencimento: "2026-09-20" });
+  prisma.parcela.findFirst.mockResolvedValue(p);
+  consultar.mockResolvedValue({ raw: { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null } } });
+  await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p", scheduledAt: "2026-09-24T15:00:00Z" });
+  prisma.parcela.findFirst.mockResolvedValue({ ...p, id: "p-vinculada", parcelamento: { tipo: "PARCSN", numeroParcelamento: "456" } });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p-vinculada", scheduledAt: "2026-09-25T15:00:00Z" })).toMatchObject({ skipped: "conferencia_manual" });
+  expect(consultar).toHaveBeenCalledTimes(1);
+});
+test("500 negativas encerradas não escondem a próxima parcela elegível", async () => {
+  const rows = Array.from({ length: 501 }, (_, i) => ({ id: `p${i}`, portalClientId: "empresa" }));
+  prisma.parcela.findMany.mockImplementation(async ({ where, take }) => rows.filter(p => !where.id?.notIn?.includes(p.id)).slice(0, take));
+  prisma.parcela.findFirst.mockImplementation(async ({ where }) => item({ id: where.id, origem: "GUIA", vencimento: "2026-09-20" }));
+  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => where.key.endsWith(":p500") ? null : { value: { status: "CONFERENCIA_MANUAL" } });
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], scheduledAt: "2026-09-24T15:00:00Z" });
+  expect(r.total).toBe(501); expect(r.consultas).toBe(1); expect(consultar).toHaveBeenCalledTimes(1);
 });
 afterEach(() => jest.useRealTimers());
 test("confirma sem guia e sem abertura contábil, sem criar nenhum lançamento", async () => {
@@ -93,5 +114,5 @@ test("lote inclui anteriores e exclui futuro, prioriza nunca consultadas e passa
     orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }] });
   expect(consultar).not.toHaveBeenCalled();
   expect(prisma.parcela.findMany.mock.calls[0][0].where.parcelamento.status).toEqual({ not: "EXCLUIDO" });
-  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { OR: [{ paymentStatus: "PAID" }, { baixada: true }] } } });
+  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { baixada: true } } });
 });

@@ -93,7 +93,7 @@ try {
     ok(`pagamento concorrente na ${competing === "target" ? "prestação de destino" : "parcela de origem"} impede troca e preserva evidência`);
   }
 
-  const now = new Date("2026-09-24T14:00:00Z"), config = { enabled: true, frequency: "DAILY", hour: 8 };
+  const now = new Date("2026-09-24T11:00:00Z"), config = { enabled: true, frequency: "DAILY", hour: 8 };
   const routine = prefix;
   const claims = await Promise.all(Array.from({ length: 12 }, () => claimScheduledRun({ routine, config, now, db })));
   const first = claims.find(Boolean); settingKeys.push(first.key);
@@ -101,17 +101,16 @@ try {
   assert.equal(first.value.scheduledAt, "2026-09-24T11:00:00.000Z");
   assert.equal(await claimScheduledRun({ routine, config, now: new Date(now.getTime() + 60000), db }), null);
   const replacement = await claimScheduledRun({ routine, config, now: new Date(now.getTime() + 6 * 60000), db });
-  assert(replacement); assert.notEqual(replacement.value.owner, first.value.owner);
-  assert.equal(await finishScheduledRun(first, {}, null, { db, now }), false);
-  assert.equal(await finishScheduledRun(replacement, { failed: 1 }, null, { db, now }), true);
+  assert.equal(replacement, null, "reserva expirada não autoriza consulta paga extra");
+  assert.equal(await finishScheduledRun(first, { failed: 1 }, null, { db, now }), true);
   assert.equal(await claimScheduledRun({ routine, config, now: new Date(now.getTime() + 14 * 60000), db }), null);
   const retry = await claimScheduledRun({ routine, config, now: new Date(now.getTime() + 16 * 60000), db });
-  assert.equal(retry.value.attempts, 3);
-  await finishScheduledRun(retry, {}, null, { db, now });
+  assert.equal(retry, null, "falha não agenda retry automático");
   assert.equal(await claimScheduledRun({ routine, config, now: new Date(now.getTime() + 30 * 60000), db }), null);
-  const independent = await claimScheduledRun({ routine: `${prefix}-payment`, config: { ...config, hour: 10 }, now, db });
+  assert.equal(await claimScheduledRun({ routine: `${prefix}-payment`, config: { ...config, hour: 10 }, now, db }), null);
+  const independent = await claimScheduledRun({ routine: `${prefix}-payment`, config: { ...config, hour: 10 }, now: new Date("2026-09-24T13:00:00Z"), db });
   settingKeys.push(independent.key); assert.equal(independent.value.scheduledAt, "2026-09-24T13:00:00.000Z");
-  ok("12 reservas reais: execução única, retomada de lease, dono antigo rejeitado, intervalo/limite e horários independentes");
+  ok("12 reservas reais: execução única, sem retry de falha/lease expirada, horários independentes sem antecipação");
   assert.equal(await db.accountingEntry.count({ where: { portalClientId: { in: companies } } }), 0);
   ok("todos os vínculos fiscais permanecem sem lançamentos automáticos");
   console.log(`PASS: ${checks} verificações em PostgreSQL real, sem rede externa.`);

@@ -62,7 +62,12 @@ jest.mock("../../application/notas/dfe/NfeManifestacaoService.js", () => ({
 }));
 
 import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
-import { runDfeNotasWorkerOnce } from "../dfeNotasWorker.js";
+import { runDfeNotasWorkerOnce, runDfeNotasWorkerLoop } from "../dfeNotasWorker.js";
+
+test("loop automático sem agenda persistida recusa antes de consultar", async () => {
+  await expect(runDfeNotasWorkerLoop()).rejects.toMatchObject({ code: "DFE_AGENDA_NAO_CONFIGURADA" });
+  expect(syncAdnNotasForCompany).not.toHaveBeenCalled();
+});
 
 beforeEach(() => {
   jest.clearAllMocks();

@@ -150,6 +150,7 @@ import {
   deleteSerproCertificate,
   getSerproRuntimeSettings,
   updateSerproRuntimeSettings,
+  validarAgendaRotinas,
   uploadSerproCertificate,
   ROTINA_KEYS,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
@@ -2437,6 +2438,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
     }
     const { empresas, agenda } = req.body || {};
+    if (agenda !== undefined) {
+      const persistido = await prisma.appSetting.findUnique({ where: { key: "serpro_runtime_settings" } });
+      try {
+        validarAgendaRotinas(agenda, persistido?.value || {});
+      } catch (err) {
+        return res.status(err.status || 400).json({ ok: false, error: err.code, message: err.message });
+      }
+    }
     const resultado = { atualizadas: 0 };
     if (Array.isArray(empresas) && empresas.length > 0) {
       const r = await saveCompanyRotinas(empresas);
@@ -2444,7 +2453,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
     // Só os campos de agenda — updateSerproRuntimeSettings faz merge e preserva credenciais.
     let settings = null;
-    if (agenda && typeof agenda === "object") {
+    if (agenda !== undefined) {
       settings = await updateSerproRuntimeSettings({ rotinas: agenda });
     } else {
       settings = await getSerproRuntimeSettings();

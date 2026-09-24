@@ -1,5 +1,9 @@
 # Guarda SERPRO — 2026-09-08
 
+## Agenda e retorno negativo — 24/09/2026
+
+Consultas automáticas somente conforme rotina e empresa explicitamente habilitadas na configuração salva. Não herdar habilitação por regime, data padrão, startup, retry ou catchup. Após retorno válido sem confirmação, avisar cliente com opções de recálculo e confirmação, sem anexar guia vencida. Não reconsultar automaticamente a mesma obrigação; contador decide nova consulta. Falha técnica não é retorno negativo. Preservar declaração de pagamento do cliente e baixa manual; nada disso cria baixa contábil automática. Veja `docs/agenda-fiscal-explicita-2026-09-24.md` na raiz; esta orientação substitui descrições antigas de agendamento.
+
 O ledger `SerproChamada` registra tentativas internas, não comprova cobrança. Não afirmar que o total de 2.555 relatado pelo usuário foi conciliado: faltam período, origem e extrato do provedor.
 
 `autorizarChamada` reserva antes de autenticar/enviar. Transação PostgreSQL ReadCommitted com `pg_advisory_xact_lock(73517001)` serializa a checagem dos tetos e criação da reserva globalmente neste banco. Não manter a transação aberta durante HTTP. O modelo atual não tem firmId: o teto mensal é da instalação/contrato, não um isolamento multi-escritório.
