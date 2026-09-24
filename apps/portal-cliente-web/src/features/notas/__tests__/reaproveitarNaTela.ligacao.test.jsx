@@ -181,7 +181,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     expect(campo('emitir-bairro').value).toBe('Centro');
     expect(campo('emitir-complemento').value).toBe('Sala 2');
   });
-  test("o tomador vem da nota, e a tela diz de qual nota veio", async () => {
+  test("o tomador vem da nota sem quadro explicativo", async () => {
     await abrirNotas();
     fireEvent.click(botaoModelo());
     await act(async () => {});
@@ -190,7 +190,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     await screen.findByRole("button", { name: "Emitir nota" });
     expect(campo("emitir-doc").value).toBe("44555666000177");
     expect(campo("emitir-nome").value).toBe("TOMADOR EXEMPLO LTDA");
-    expect(screen.getByText(/Preenchido a partir da nota nº 13000/)).toBeInTheDocument();
+    expect(screen.queryByText(/Preenchido a partir da nota nº 13000/)).not.toBeInTheDocument();
   });
 
   // ⚠⚠ INVERTIDO EM 19/08/2026 — e este é o caso mais caro do arquivo, nas duas versões.
@@ -203,7 +203,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
   // ⚠ O caso NÃO foi apagado nem relaxado: ele mede o oposto, e mede a FORMA — que é onde estava o
   // risco real da mudança. O campo é mascarado, e um número cru (`2300`) ou a string do backend
   // (`"2300.00"`) entrariam nele como lixo silencioso.
-  test("⚠⚠ o VALOR vem COPIADO, mascarado, e a tela pede CONFERÊNCIA", async () => {
+  test("⚠⚠ o VALOR vem COPIADO, mascarado, e sem aviso de conferência", async () => {
     await abrirNotas();
     fireEvent.click(botaoModelo());
     await act(async () => {});
@@ -217,7 +217,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     // ⚠ A frase de 18/08 NÃO pode ter sobrevivido ao comportamento — ela já estaria mentindo.
     expect(screen.queryByText(/O valor NÃO foi copiado/i)).not.toBeInTheDocument();
     // ⚠ E a linha nova é conferência, não instrução de digitar.
-    expect(screen.getByText(/confira antes de emitir/i)).toBeInTheDocument();
+    expect(screen.queryByText(/confira antes de emitir/i)).not.toBeInTheDocument();
   });
 
   // ⚠⚠ A PROVA DO PAYLOAD, SEM EMITIR NADA.
@@ -268,7 +268,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     expect(campo("emitir-valor").value).not.toBe("0,00");
     // ⚠ A frase do VALOR, não a da descrição — as duas começam igual ("não veio da nota de
     // origem"), e um regex frouxo aqui casaria com a errada e passaria por acidente.
-    expect(screen.getByText(/O valor não veio da nota de origem: digite o valor desta nota\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/O valor não veio da nota de origem: digite o valor desta nota\./i)).not.toBeInTheDocument();
   });
 
   // ⚠⚠ A DESCRIÇÃO CHEGA AO CAMPO — 19/08/2026, pedido do dono.
@@ -296,7 +296,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     await screen.findByRole("button", { name: "Emitir nota" });
 
     expect(campo("emitir-descricao").value).toBe("");
-    expect(screen.getByText(/A descrição do serviço não veio da nota de origem/i)).toBeInTheDocument();
+    expect(screen.queryByText(/A descrição do serviço não veio da nota de origem/i)).not.toBeInTheDocument();
   });
 
   // ⚠ NOTA NOVA É NOTA NOVA: nenhum identificador da original pode virar campo do formulário. A
@@ -345,15 +345,15 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     expect(screen.getByText("OUTRO NOME NA RECEITA LTDA")).toBeInTheDocument();
   });
 
-  // ⚠ "Começar do zero" é a saída: o painel some e o formulário volta a ser um formulário em
+  // ⚠ "Apagar tudo" é a saída: o painel some e o formulário volta a ser um formulário em
   // branco. Sem ela, o único jeito de largar o modelo seria apagar campo por campo.
-  test("Começar do zero limpa o formulário e tira o painel", async () => {
+  test("Apagar tudo limpa o formulário e tira o painel", async () => {
     await abrirNotas();
     fireEvent.click(botaoModelo());
     await act(async () => {});
     await screen.findByRole("button", { name: "Emitir nota" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Começar do zero" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apagar tudo" }));
     await act(async () => {});
 
     expect(campo("emitir-doc").value).toBe("");
@@ -390,7 +390,7 @@ describe("botão impossível NÃO SOME — fica desabilitado com o motivo", () =
   });
 });
 
-describe("os avisos que não podem faltar", () => {
+describe("modelo mantém apenas a ação de limpar", () => {
   test("origem CANCELADA: a tela diz que ela continua cancelada", async () => {
     api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ status: "CANCELADA" })]));
     await abrirNotas();
@@ -398,8 +398,8 @@ describe("os avisos que não podem faltar", () => {
     await act(async () => {});
     await screen.findByRole("button", { name: "Emitir nota" });
 
-    expect(screen.getByText(/continua cancelada/i)).toBeInTheDocument();
-    expect(screen.getByText(/não a corrige nem a substitui/i)).toBeInTheDocument();
+    expect(screen.queryByText(/continua cancelada/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/não a corrige nem a substitui/i)).not.toBeInTheDocument();
   });
 
   test("origem SUBSTITUÍDA: a tela manda conferir, e diz que esta seria uma terceira nota", async () => {
@@ -409,15 +409,15 @@ describe("os avisos que não podem faltar", () => {
     await act(async () => {});
     await screen.findByRole("button", { name: "Emitir nota" });
 
-    expect(screen.getByText(/TERCEIRO documento/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TERCEIRO documento/i)).not.toBeInTheDocument();
   });
 
-  test("sempre diz que é uma nota NOVA — mesmo numa origem sem nenhuma ressalva", async () => {
+  test("omite o texto explicativo de nota nova", async () => {
     await abrirNotas();
     fireEvent.click(botaoModelo());
     await act(async () => {});
     await screen.findByRole("button", { name: "Emitir nota" });
 
-    expect(screen.getByText(/nota NOVA, com número novo reservado na emissão/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nota NOVA, com número novo reservado na emissão/i)).not.toBeInTheDocument();
   });
 });

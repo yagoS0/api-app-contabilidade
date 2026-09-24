@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { TRACO, brl, fmtCompetencia, pct, texto } from "../../lib/format";
+import { TRACO, brl, pct, texto } from "../../lib/format";
 import { useCarregamento } from "../../lib/hooks";
 import { roleLabel } from "../../lib/roles";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
@@ -1284,31 +1284,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
             </div>
           ) : null}
 
-          {/* ⚠⚠ O PAINEL DO MODELO. Ele é a metade que impede a emissão errada, e por isso os
-              avisos vêm da REGRA (`lib/reaproveitarNota.js`), não escritos aqui: quem muda o que se
-              copia muda o que a tela diz, no mesmo arquivo — e foi essa disciplina que fez a
-              reviravolta de 19/08/2026 custar uma linha, não uma caçada.
-
-              ⚠ ATÉ 19/08/2026 o segundo aviso incondicional era "o valor NÃO foi copiado". O dono
-              reverteu: o valor passou a ser COPIADO, e a linha virou CONFERÊNCIA. A frase antiga
-              não sobreviveu ao comportamento — ela já estaria mentindo. */}
           {modeloNaTela ? (
-            <div className="alerta alerta-info" role="status">
-              <p>
-                <strong>
-                  Preenchido a partir da nota nº {texto(modeloNaTela.origem.numero)}
-                  {modeloNaTela.origem.competencia
-                    ? ` · ${fmtCompetencia(modeloNaTela.origem.competencia)}`
-                    : ""}
-                </strong>
-              </p>
-              {modeloNaTela.avisos.map((aviso) => (
-                <p key={aviso.codigo}>
-                  {aviso.tom === "atencao" ? <strong>{aviso.texto}</strong> : aviso.texto}
-                </p>
-              ))}
-              <p>
-                <button type="button" className="btn-link" onClick={() => {
+            <div>
+                <button type="button" className="btn" disabled={enviando} onClick={() => {
                   setForm(formVazio());
                   marcarDescricaoDigitada(false);
                   setOrigemNome(ORIGEM.AUSENTE);
@@ -1318,9 +1296,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   ultimoConsultado.current = null;
                   esquecerModelo();
                 }}>
-                  Começar do zero
+                  Apagar tudo
                 </button>
-              </p>
             </div>
           ) : null}
 
