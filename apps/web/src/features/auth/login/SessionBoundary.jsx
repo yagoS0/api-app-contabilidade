@@ -1,10 +1,12 @@
+import { useLocation } from "react-router-dom";
+import { modoAtendimento } from "../../whatsapp/lib/atendimentoPwa";
 import { useManageAppFeedback } from "../../../app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "../../../app/hooks/useManageAuthSession";
 import { LoginPage } from "./pages/renderLoginPage";
 import { OfficeNavigation } from "../../../app/navigation/OfficeNavigation";
 import { useResumoWhatsapp } from "../../whatsapp/hooks/useResumoWhatsapp";
 
-function AuthenticatedWorkspace({ api, children }) {
+function OfficeWorkspace({ api, children }) {
   const resumoWhatsapp = useResumoWhatsapp({ api });
   return <div className="office-workspace">
     <OfficeNavigation resumoWhatsapp={resumoWhatsapp} />
@@ -12,6 +14,10 @@ function AuthenticatedWorkspace({ api, children }) {
   </div>;
 }
 
+function AuthenticatedWorkspace({ api, children }) {
+  const location = useLocation();
+  return modoAtendimento(location) ? <div className="atendimento-workspace">{children}</div> : <OfficeWorkspace api={api}>{children}</OfficeWorkspace>;
+}
 // A área privada (inclusive seus hooks de dados) só monta após /auth/me confirmar a sessão.
 export function SessionBoundary({ api, tokenStorageKey, children }) {
   const feedback = useManageAppFeedback();
@@ -20,6 +26,7 @@ export function SessionBoundary({ api, tokenStorageKey, children }) {
   if (session.sessionChecking) {
     return <main className="page"><p role="status">Verificando sessão…</p></main>;
   }
+  if (session.sessionError) return <main className="page"><p role="alert">{session.sessionError}</p><button type="button" onClick={session.retrySession}>Tentar novamente</button></main>;
   if (!session.user || session.page === "login") {
     return <LoginPage
       apiMode={api.mode}

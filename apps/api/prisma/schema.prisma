@@ -1449,6 +1449,7 @@ model ConversaWhatsapp {
 
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
+  intencaoEnvioId String? @unique
   contexto ResolucaoContextoWhatsapp?
   /// Opções efetivamente oferecidas pelo atendimento, com empresa/versão e validade.
   /// Só a saída do sistema grava; número digitado resolve contra esta lista imutável.
@@ -1533,6 +1534,9 @@ model MensagemWhatsapp {
 /// ⚠ Por isso `nomeMeta` NASCE NULO: o nome exato só existe depois da aprovação. Copiar a chave
 /// para lá seria transformar a nossa intenção em cadastro do provedor.
 model EnvioGuiaTentativa {
+  snapshot Json?
+  arquivoPdfFileId String?
+  arquivoSha256 String?
   canalId String?
   canalWhatsapp CanalWhatsapp? @relation(fields: [canalId], references: [id], onDelete: Restrict)
   id String @id @default(uuid())
@@ -2021,6 +2025,85 @@ model AppSetting {
   value     Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Intenção humana persistida antes da chamada externa; timeout não autoriza nova tentativa.
+model IntencaoEnvioAtendimento {
+  id String @id @default(uuid())
+  userId String
+  clientRequestId String
+  conversaId String
+  canalId String?
+  destinoHash String
+  payloadHash String
+  status String @default("RESERVADA")
+  mensagemId String?
+  resultado Json?
+  erroCodigo String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId, clientRequestId])
+  @@index([conversaId, createdAt])
+}
+
+/// Rascunho privado do operador, com versão para evitar sobrescrita entre aparelhos.
+model RascunhoAtendimento {
+  id String @id @default(uuid())
+  userId String
+  chaveEscopo String
+  conversaId String
+  conteudo Json
+  versao Int @default(1)
+  expiraEm DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId, chaveEscopo])
+  @@index([expiraEm])
+}
+
+model InscricaoPushAtendimento {
+  id String @id @default(uuid())
+  userId String
+  endpointHash String @unique
+  subscription Json
+  deviceName String
+  vinculo String @default(uuid())
+  minhas Boolean @default(true)
+  fila Boolean @default(true)
+  ativa Boolean @default(true)
+  ativadaEm DateTime @default(now())
+  revogadaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, ativa])
+}
+
+/// Outbox gravada na mesma transação da entrada, nunca a partir de histórico antigo.
+model EventoPushAtendimento {
+  id String @id
+  conversaId String
+  createdAt DateTime @default(now())
+  expiraEm DateTime
+  processadoEm DateTime?
+  @@index([processadoEm, createdAt])
+}
+
+model EntregaPushAtendimento {
+  id String @id @default(uuid())
+  eventoId String
+  inscricaoId String
+  vinculo String
+  status String @default("PENDENTE")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  reservaToken String?
+  leaseAte DateTime?
+  erroCodigo String?
+  aceitaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([eventoId, inscricaoId])
+  @@index([status, proximaTentativaEm])
 }
 
 // Q30 Fase 1: trilha de auditoria de acesso aos certificados digitais (LGPD).

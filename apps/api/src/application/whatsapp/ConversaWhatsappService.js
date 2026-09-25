@@ -7,6 +7,7 @@ import { SITUACOES } from "./vinculoTelefone.js";
 import { avaliarJanela24h, instanteQueAbreAJanela } from "./janela24h.js";
 import { identidadeWhatsappV2Ativa, filtroSegmentosDoCanal, CANAL_PRINCIPAL } from "./CanalWhatsappService.js";
 import { garantirIdentidadeWhatsapp, conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
+import { registrarEventoPush } from "./AtendimentoPushService.js";
 
 /** Vocabulário do plano do dono, travado por CHECK no banco. */
 export const DIRECAO = Object.freeze({ ENTRADA: "in", SAIDA: "out" });
@@ -170,6 +171,7 @@ export async function registrarMensagemRecebida({
       },
     });
     const atualizada = await tx.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });
+    await registrarEventoPush({ mensagem, conversa: atualizada, client: tx });
     return { mensagem, conversa: atualizada, duplicada: false, vinculo, identidade };
     });
     return resultado;

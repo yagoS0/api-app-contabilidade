@@ -65,7 +65,7 @@ test("token salvo só libera a área após validação; logout desmonta e bloque
 test("sessão expirada vai ao login sem montar nem consultar o calendário", async () => {
   const request = deferred();
   const { children, api } = setup({ stored: "expired", path: "/companies", me: jest.fn(() => request.promise) });
-  await act(async () => request.reject(new Error("401")));
+  await act(async () => request.reject(Object.assign(new Error("Sessão expirada"), { status: 401 })));
   expect(screen.getByRole("button", { name: "Entrar" })).toBeVisible();
   expect(children).not.toHaveBeenCalled();
   expect(api.clearSession).toHaveBeenCalled();

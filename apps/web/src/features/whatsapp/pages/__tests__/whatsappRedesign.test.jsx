@@ -96,9 +96,9 @@ test("Enter normal não envia; Ctrl+Enter envia ao contato aberto e falha preser
   // jsdom não executa a edição nativa de textarea; explicita a quebra que Enter permite.
   fireEvent.change(campo, { target: { value: "Primeira linha\nSegunda linha" } });
   expect(fireEvent.keyDown(campo, { key: "Enter", ctrlKey: true })).toBe(false);
-  await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("a", "Primeira linha\nSegunda linha"));
+  await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("a", "Primeira linha\nSegunda linha", { clientRequestId: expect.any(String) }));
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Serviço indisponível neste momento."));
-  await waitFor(() => expect(campo).not.toBeDisabled());
+  await waitFor(() => expect(campo).toBeDisabled());
   expect(campo).toHaveValue("Primeira linha\nSegunda linha");
   expect(api.responderConversaWhatsapp).toHaveBeenCalledTimes(1);
   expect(screen.getByTestId("conversa-a")).toHaveAttribute("aria-current", "true");

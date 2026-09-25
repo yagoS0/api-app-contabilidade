@@ -1,3 +1,5 @@
+import { limparRascunhosDaSessao } from "../../features/whatsapp/hooks/useRascunhoServidor";
+import { destinoInternoSeguro, desligarNotificacoesLocais } from "../../features/whatsapp/lib/atendimentoPwa";
 import { useWorkspaceNavigation } from "../navigation/WorkspaceNavigation";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -94,6 +96,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [sessionError, setSessionError] = useState("");
   const [sessionChecking, setSessionChecking] = useState(true);
   const sessionVersion = useRef(0);
 
@@ -132,12 +135,15 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
 
   async function ensureSession() {
     const version = ++sessionVersion.current;
+    setSessionChecking(true); setSessionError("");
     const tokenFromStorage = localStorage.getItem(tokenStorageKey) || "";
     if (!tokenFromStorage) {
+      limparRascunhosDaSessao(api);
+      if (navigator.serviceWorker) desligarNotificacoesLocais(api).catch(() => {});
       api.clearSession();
       setUser(null);
       setSessionChecking(false);
-      if (location.pathname !== "/login") navigate("/login", { replace: true });
+      if (location.pathname !== "/login") navigate(`/login?redirect=${encodeURIComponent(destinoInternoSeguro(location.pathname + location.search))}`, { replace: true });
       return false;
     }
     api.setAccessToken(tokenFromStorage);
@@ -147,15 +153,13 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
       if (!me) throw new Error("Sessão inválida");
       setUser(me);
       if (location.pathname === "/login" || location.pathname === "/") {
-        navigate("/companies", { replace: true });
+        navigate(destinoInternoSeguro(new URLSearchParams(location.search).get("redirect")), { replace: true });
       }
       return true;
-    } catch {
+    } catch (err) {
       if (version !== sessionVersion.current) return false;
-      localStorage.removeItem(tokenStorageKey);
-      api.clearSession();
-      setUser(null);
-      navigate("/login", { replace: true });
+      if (![401, 403].includes(err?.status)) { setUser(null); setSessionError("Não foi possível verificar sua sessão. Confira a conexão e tente novamente."); return false; }
+      await clearSession();
       return false;
     } finally {
       if (version === sessionVersion.current) setSessionChecking(false);
@@ -179,7 +183,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
       // Honra ?redirect= se vier do RequireAuth
       const search = new URLSearchParams(location.search);
       const redirect = search.get("redirect");
-      navigate(redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/companies");
+      navigate(destinoInternoSeguro(redirect));
       setLoginPassword("");
     } catch (err) {
       feedback.setError(err?.message || "Falha ao autenticar");
@@ -188,14 +192,17 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
     }
   }
 
-  function clearSession() {
+  async function clearSession() {
+    limparRascunhosDaSessao(api);
     sessionVersion.current += 1;
     setSessionChecking(false);
     workspaceNavigation?.resetSession();
-    api.clearSession();
     localStorage.removeItem(tokenStorageKey);
     setUser(null);
-    navigate("/login", { replace: true });
+    navigate(`/login?redirect=${encodeURIComponent(destinoInternoSeguro(location.pathname + location.search))}`, { replace: true });
+    try { if (navigator.serviceWorker) await desligarNotificacoesLocais(api); }
+    catch { feedback.setError("A sessão foi encerrada. Confira a permissão de notificações deste aparelho."); }
+    finally { api.clearSession(); }
   }
 
   useEffect(() => {
@@ -216,6 +223,8 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
     setLoginPassword,
     authLoading,
     sessionChecking,
+    sessionError,
+    retrySession: ensureSession,
     handleLogin,
     clearSession,
   };

@@ -6,6 +6,7 @@ import { createLaboratorioRouter } from "./laboratorio.js";
 import { Router } from "express";
 import { createExportacaoLoteRouter } from "./exportacaoLote.js";
 import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
+import { createAtendimentoPushRouter } from "./atendimentoPush.js";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
@@ -5474,6 +5475,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use("/", createCorrigirValorGuiaRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
+  router.use("/", createAtendimentoPushRouter());
   router.use("/", createWhatsappComunicadosRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página

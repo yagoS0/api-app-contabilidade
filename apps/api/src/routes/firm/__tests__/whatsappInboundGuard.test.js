@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// A central atende quem já escreveu. Hoje nenhuma rota firm chama os métodos
-// de template diretamente; guias usam o serviço próprio com suas guardas.
-// Reabrir conversa futuramente exige rever esta regra e provar a origem do destino.
-test("rotas firm não introduzem envio direto de template para prospecção", () => {
+// Retomada contextual foi autorizada no plano PWA. Sua única rota resolve o destino
+// da conversa autorizada, exige prévia aprovada no canal e intenção idempotente.
+// A prova de envio ao telefone do servidor e janela mantida fechada fica no teste HTTP.
+test("somente a retomada contextual pode usar template nas rotas firm", () => {
   const raiz = path.resolve(__dirname, "..");
   function arquivos(dir) {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((item) => {
@@ -16,5 +16,5 @@ test("rotas firm não introduzem envio direto de template para prospecção", ()
   const enviosDiretos = arquivos(raiz).filter((arquivo) =>
     /\.\s*enviarTemplate(?:ComDocumento)?\s*\(/.test(fs.readFileSync(arquivo, "utf8"))
   ).map((arquivo) => path.relative(raiz, arquivo));
-  expect(enviosDiretos).toEqual([]);
+  expect(enviosDiretos).toEqual(["whatsappConversas.js"]);
 });

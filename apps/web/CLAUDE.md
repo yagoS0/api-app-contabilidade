@@ -1,3 +1,17 @@
+# Atendimento móvel e auditoria — 25/09/2026
+
+Implantação, flags e homologação: `../../docs/atendimento-pwa-implantacao-20260925.md`.
+
+- `/whatsapp?app=atendimento` monta `AtendimentoMovel` antes de `AppInterno`: não carrega a carteira/calendário fiscal. Usa a mesma autenticação, componentes e API. Empresa do vínculo é consultada ao focar a seleção.
+- Manifest específico `atendimento.webmanifest`; `atendimento-sw.js` não intercepta fetch e não usa cache de rede. IndexedDB do SW guarda somente id e vínculo opaco do aparelho; nada de token, texto ou PDF. Push tem texto genérico, nonce, destino interno. Logout invalida o vínculo local antes da revogação remota; fallback remove o receptor. Click envia pedido à aba existente e respeita rascunho pendente; não recarrega a edição. Atualização do SW só em gesto explícito, com rascunhos resolvidos.
+- Evolução deliberada do antigo rascunho somente em memória: `useRascunhoServidor` guarda conteúdo no servidor por usuário/conversa/canal/modo, com versão e tombstone. Cache de falhas só em memória da sessão, recuperável ao retornar e limpo no logout. Conflito nunca sobrescreve silenciosamente. Métodos ficam presos ao contexto original mesmo quando uma resposta termina depois da troca de contato.
+- Texto, orientação, anexo e documento usam `clientRequestId`; salvar a intenção precede o transporte. Timeout mantém estado incerto; a ação consulta resultado, não cria uma nova intenção. O servidor assume o atendimento humano e decide posse/janela. Templates de retomada são consultados só ao pedir e não abrem janela livre.
+- `MODOS_RASCUNHO_ATENDIMENTO` é contrato compartilhado com a API, incluindo `retomar`. HTTP 409 com intenção `INCERTA`, `PROCESSANDO` ou `ACEITA` também exige conferir a mesma chave; o código HTTP sozinho não autoriza repetir envio. Trocar empresa/canal não elimina essa pendência.
+- Até 760px, o fio usa cabeçalho único, avisos expansíveis, compositor de uma linha e painel `+`; os componentes de envio continuam montados e pendências permanecem anunciadas ao recolher o painel. O menu da mensagem mantém a criação de notas. Desktop conserva sua estrutura. Lista móvel tem estilo isolado em `mobileInbox.css`. Validar 390×844 e 360×740, sem rolagem horizontal ou externa.
+- Fio compartilhado usa `cartaoGuia`/`arquivo` do servidor. PDF enviado só quando original comprovado e tentativa aceita; tentativa incerta e legado têm rótulos próprios. Download autenticado vira blob temporário revogado. Busca consulta somente dados salvos e abre contexto histórico, com volta explícita às recentes.
+- Leitura exige entrada efetivamente visível: lista móvel, aba oculta, biblioteca, atendimento ou modal suspendem inclusive callback antigo. Recência usa mensagem, não edição cadastral. Central reutiliza `AcoesRapidas` da ficha e exige empresa/destinatários explícitos.
+- Testes simulados não ativam Meta, push externo, SERPRO ou IA. Instalação/notificações em aparelhos físicos continuam etapa de homologação; emulador não comprova entrega no iOS/Android.
+
 # CLAUDE.md — Web (apps/web)
 
 ## Pré-atendimento curto — 24/09/2026
