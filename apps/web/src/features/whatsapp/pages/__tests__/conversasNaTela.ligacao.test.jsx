@@ -62,7 +62,7 @@ describe("a lista", () => {
     expect(screen.getByTestId("conversa-cv3")).toHaveTextContent(/A identificar/);
     expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número aguardando atendimento/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
-    expect(screen.getByTestId("conversa-cv1")).not.toHaveTextContent(/monta a atualizada/i);
+    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/monta a atualizada/i);
     expect(screen.getByTestId("conversa-cv2")).not.toHaveTextContent(/BETA LTDA/);
   });
 });
@@ -77,7 +77,7 @@ describe("o fio", () => {
     expect(within(fio).getByTestId("balao-m3")).toHaveTextContent(/mensagem fixa/);
     expect(within(fio).getByTestId("pendencia-aberta")).toHaveTextContent(/K9M3/);
     // Com a IA: oferece Assumir, não Devolver.
-    expect(within(fio).getByRole("button", { name: /Assumir/ })).toBeInTheDocument();
+    expect(within(fio).getByRole("button", { name: /^Assumir$/ })).toBeInTheDocument();
     expect(within(fio).queryByRole("button", { name: /Devolver/ })).toBeNull();
   });
 
@@ -88,7 +88,7 @@ describe("o fio", () => {
     expect(within(fio).getByTestId("resposta-bloqueada")).toHaveTextContent(/fechou/);
     const campo = within(fio).getByLabelText("Responder ao cliente");
     expect(campo).toBeDisabled();
-    expect(within(fio).getByRole("button", { name: /^Responder$/ })).toBeDisabled();
+    expect(within(fio).getByRole("button", { name: /responder$/i })).toBeDisabled();
     expect(api.responderConversaWhatsapp).not.toHaveBeenCalled();
     // Assumida: oferece Devolver.
     fireEvent.click(within(fio).getByRole("button", { name: /Devolver ao automático/ }));
@@ -101,10 +101,10 @@ describe("o fio", () => {
     const fio = await screen.findByTestId("fio");
     const campo = within(fio).getByLabelText("Responder ao cliente");
     fireEvent.change(campo, { target: { value: "Já vi, respondo em instantes." } });
-    fireEvent.click(within(fio).getByRole("button", { name: /^Responder$/ }));
-    await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("cv1", "Já vi, respondo em instantes."));
+    fireEvent.click(within(fio).getByRole("button", { name: /responder$/i }));
+    await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("cv1", "Já vi, respondo em instantes.", { clientRequestId: expect.any(String) }));
     await waitFor(() => expect(within(screen.getByTestId("fio")).getByLabelText("Responder ao cliente")).toHaveValue(""));
-    fireEvent.click(within(screen.getByTestId("fio")).getByRole("button", { name: /Assumir/ }));
+    fireEvent.click(within(screen.getByTestId("fio")).getByRole("button", { name: /^Assumir$/ }));
     await waitFor(() => expect(api.assumirConversaWhatsapp).toHaveBeenCalledWith("cv1"));
   });
 
@@ -114,7 +114,7 @@ describe("o fio", () => {
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     const fio = await screen.findByTestId("fio");
     fireEvent.change(within(fio).getByLabelText("Responder ao cliente"), { target: { value: "oi" } });
-    fireEvent.click(within(fio).getByRole("button", { name: /^Responder$/ }));
+    fireEvent.click(within(fio).getByRole("button", { name: /responder$/i }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/só modelo aprovado agora/));
   });
 });

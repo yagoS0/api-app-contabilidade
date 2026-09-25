@@ -97,27 +97,43 @@ export async function garantirAtendimentoResponsavel({ conversa, empresas = [], 
 }
 
 /** O atendimento humano é do interlocutor inteiro. Histórico e carteira continuam por empresa. */
-export async function alterarAtendimentoHumano({ conversa, atendidaPor = null, atendidaDesde = null, client = prisma }) {
+export async function alterarAtendimentoHumano({ conversa, atendidaPor = null, atendidaDesde = null, preservarResponsavel = false, preservarContextoOperacional = false, client = prisma }) {
   const atendimento = conversa.atendimentoId
     ? await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: conversa.atendimentoId } })
     : await garantirAtendimentoResponsavel({ conversa, client });
   return client.$transaction(async tx => {
     const quando = new Date();
+    let contextoMantido = null;
+    if(preservarContextoOperacional && atendidaPor && conversa.atendimentoId) {
+      const esperado = conversa.atendimento;
+      if(!esperado || esperado.aguardandoSelecao || esperado.conversaId !== conversa.id || esperado.portalClientId !== conversa.portalClientId || (esperado.expiraEm && new Date(esperado.expiraEm) <= quando)) throw falha('CONTEXTO_ALTERADO');
+      const r = await tx.atendimentoResponsavelWhatsapp.updateMany({where:{id:atendimento.id,versao:esperado.versao,aguardandoSelecao:false,conversaId:conversa.id,portalClientId:conversa.portalClientId,expiraEm:esperado.expiraEm ? {gt:quando} : null},data:{aguardandoSelecao:false}});
+      if(r.count !== 1) throw falha('CONTEXTO_ALTERADO');
+      contextoMantido = {aguardandoSelecao:false,conversaId:conversa.id,portalClientId:conversa.portalClientId,expiraEm:esperado.expiraEm};
+    }
     if (conversa.vinculoNumeroId) {
       const vinculo = await tx.vinculoNumeroInterlocutor.findUnique({ where: { id: conversa.vinculoNumeroId } });
       if (!vinculo || vinculo.encerrouEm) throw falha("IDENTIDADE_ALTERADA");
       const escopoPessoa = { vinculoNumero: { interlocutorId: vinculo.interlocutorId, encerrouEm: null } };
-      await tx.interlocutorComunicacao.update({ where: { id: vinculo.interlocutorId }, data: { atendidaPor, atendidaDesde, versao: { increment: 1 } } });
+      if (preservarResponsavel) {
+        const reserva = await tx.interlocutorComunicacao.updateMany({where:{id:vinculo.interlocutorId,atendidaPor:conversa.atendidaPor || null},data:{atendidaPor,atendidaDesde,versao:{increment:1}}});
+        if(reserva.count !== 1) throw falha('ATENDIMENTO_OCUPADO','Outro atendente assumiu esta conversa. Atualize o atendimento.');
+      } else await tx.interlocutorComunicacao.update({ where: { id: vinculo.interlocutorId }, data: { atendidaPor, atendidaDesde, versao: { increment: 1 } } });
       await tx.atendimentoResponsavelWhatsapp.updateMany({ where: escopoPessoa, data: {
         atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando, versao: { increment: 1 },
         aguardandoSelecao: true, expiraEm: null, pedidoPendente: null, coletaPendenteConversaId: null, interacaoPendente: Prisma.DbNull,
       } });
+      if(contextoMantido) await tx.atendimentoResponsavelWhatsapp.update({where:{id:atendimento.id},data:contextoMantido});
       await tx.conversaWhatsapp.updateMany({ where: escopoPessoa, data: { atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando } });
       await tx.acaoPendenteWhatsapp.updateMany({ where: { conversa: { is: escopoPessoa }, status: "pendente" }, data: { status: "cancelada" } });
       const segmentos = await tx.conversaWhatsapp.findMany({ where: escopoPessoa, select: { id: true } });
       await tx.turnoIaWhatsapp.updateMany({ where: { conversaId: { in: segmentos.map(s => s.id) }, status: { in: ["pendente", "falhou", "processando"] } }, data: { status: "ignorado", motivo: "ASSUMIDA_POR_HUMANO", reservaToken: null, leaseAte: null, concluidoEm: quando } });
       for (const segmento of segmentos) await pausarRascunho(tx, segmento.id);
       return { atendimento: await tx.atendimentoResponsavelWhatsapp.findUnique({ where: { id: atendimento.id } }), conversa: await tx.conversaWhatsapp.findUnique({ where: { id: conversa.id } }) };
+    }
+    if(preservarResponsavel) {
+      const reserva = await tx.atendimentoResponsavelWhatsapp.updateMany({where:{id:atendimento.id,atendidaPor:conversa.atendidaPor || null,versao:atendimento.versao},data:{atendidaPor,atendidaDesde}});
+      if(reserva.count !== 1) throw falha('ATENDIMENTO_OCUPADO','Outro atendente assumiu esta conversa. Atualize o atendimento.');
     }
     const atual = await tx.atendimentoResponsavelWhatsapp.update({ where: { id: atendimento.id }, data: {
       atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando, versao: { increment: 1 },

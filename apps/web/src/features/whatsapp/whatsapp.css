@@ -350,3 +350,112 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-pre-summary dt { font-size: .8125rem; }
 .wa-pre-summary dd { margin: 2px 0 0; }
 .wa-pre-summary summary { cursor: pointer; min-height: 32px; }
+
+/* Atendimento móvel: áreas seguras, teclado e alvos de toque. */
+.atendimento-workspace, .atendimento-workspace .wa-page, .atendimento-workspace .page-shell { height: var(--atendimento-height, 100dvh); min-height: 0; }
+.wa-contact-preview { font-size: .8125rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
+.wa-app-tools { font-size: .8125rem; }
+.wa-app-tools summary { cursor: pointer; padding-block: 8px; }
+.wa-app-options { display: grid; gap: 8px; max-height: 40dvh; overflow: auto; }
+.wa-app-options p { margin: 0; line-height: 1.5; color: var(--text-muted); }
+.wa-file-card { display: grid; gap: 6px; min-width: 0; padding: 10px; margin-block: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-page); }
+.wa-file-card p { margin: 3px 0; font-size: .875rem; }
+.wa-file-card dl { margin: 4px 0; display: grid; gap: 6px; }
+.wa-file-card dl > div { display: grid; grid-template-columns: 90px minmax(0,1fr); gap: 8px; }
+.wa-file-card dt { color: var(--text-muted); }
+.wa-file-card dd { margin: 0; overflow-wrap: anywhere; }
+.wa-file-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 200px; overflow: auto; }
+.wa-file-card a { display: block; padding: 8px 0; color: var(--text); text-decoration: underline; }
+.wa-content-search { display: grid; gap: 10px; }
+.wa-content-search label { display: grid; gap: 6px; }
+.wa-content-search input { min-height: 44px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; }
+.wa-search-results { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 12px; }
+.wa-search-results > li { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.wa-search-results p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wa-composer-documents select { max-width: 100%; font: inherit; padding: 8px; border: 1px solid var(--border); background: var(--bg-page); color: var(--text); }
+.wa-company-context > summary, .wa-notice-expandable > summary { display: none; }
+.wa-compose-footer[hidden] { display: none; }
+@media (max-width: 760px) {
+  .office-workspace:has(.wa-page), .wa-page .page-shell { height: var(--atendimento-height, 100dvh); }
+  .wa-page--app .page-shell__header { padding-top: max(8px, env(safe-area-inset-top)); }
+  .wa-page .wa-workspace { min-width: 0; }
+  .wa-page :is(button, .btn, summary), .wa-thread :is(button, .btn, summary) { min-height: 44px; }
+  .wa-sidebar-footer, .wa-composer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .wa-thread-header .wa-thread-actions { flex-basis: auto; gap: 4px; }
+  .wa-thread-header .wa-thread-identity { min-width: 110px; flex: 1; }
+  .wa-thread-header { padding: 8px; }
+  .wa-thread-actions > .btn { padding-inline: 8px; }
+  .wa-composer-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wa-composer-hint > span { display: none; }
+  .wa-composer-hint { justify-content: flex-end; }
+  .wa-page .wa-bubble-text { font-size: 1rem; }
+  .wa-message-row { max-width: 94%; }
+  .wa-file-card dl > div { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .wa-quick-drawer, .wa-details, .wa-lead-panel { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 760px) {
+  .wa-page:has(.wa-workspace--open) .page-shell__header { display: none; }
+  .wa-page .layout.wa-shell { padding: 0; margin: 0; box-sizing: border-box; }
+  .wa-page, .wa-page .page-shell, .wa-page .page-shell__content { box-sizing: border-box; min-height: 0; overflow: hidden; }
+  .wa-page:has(.wa-workspace--open) .wa-thread-header { padding-top: max(8px, env(safe-area-inset-top)); }
+  .wa-thread-header .wa-thread-subtitle { font-size: .75rem; }
+  .wa-thread-header .wa-thread-subtitle .wa-status { white-space: normal; }
+  .wa-thread-header .wa-thread-company { font-size: .75rem; }
+  .wa-thread-header .wa-thread-actions { width: 100%; justify-content: flex-end; flex-basis: 100%; }
+  .wa-thread-header .wa-thread-actions > .btn { min-height: 36px; }
+  .wa-thread .wa-notice { margin: 0; padding: 8px 12px; font-size: .8125rem; }
+}
+
+/* Conversa no telefone: uma barra de identidade e uma linha para escrever. */
+@media (max-width: 760px) {
+  html:has(.wa-page), body:has(.wa-page) { overflow: hidden; scrollbar-gutter: auto; }
+  .wa-thread-header { flex-wrap: nowrap; min-height: 64px; box-sizing: border-box; padding: 10px 8px; gap: 4px; }
+  .wa-thread-header .wa-thread-identity, .wa-company-chat .wa-thread-header .wa-thread-identity { flex: 1 1 0; min-width: 0; }
+  .wa-thread-name, .wa-thread-name > strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wa-thread-header .wa-thread-subtitle { display: flex; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; gap: 6px; font-size: 12px; line-height: 1.4; }
+  .wa-thread-header .wa-thread-subtitle .wa-status { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  .wa-thread-header .wa-thread-subtitle .wa-status > span { display: none; }
+  .wa-thread-header .wa-relationship { padding: 0; border: 0; background: none; font-size: 12px; }
+  .wa-thread-header .wa-thread-actions { flex: 0 0 auto; width: auto; gap: 0; flex-wrap: nowrap; margin: 0; }
+  .wa-thread-header .wa-thread-actions > .btn, .wa-thread-header .wa-mobile-back { width: 44px; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
+  .wa-more-actions > summary { width: 44px; min-height: 44px; padding: 0; justify-content: center; font-size: 24px; }
+  .wa-more-menu { z-index: 20; width: 265px; max-width: calc(100vw - 24px); }
+  .wa-more-identity { padding: 8px; display: grid; gap: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+  .wa-thread .wa-more-menu > :is(a, .btn) { min-height: 44px; }
+  .wa-company-context { display: block; padding: 0 12px; font-size: 12px; }
+  .wa-thread .wa-company-context > summary, .wa-thread .wa-notice-expandable > summary { display: block; min-height: 32px; line-height: 32px; padding: 0 16px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; position: relative; }
+  .wa-company-context > summary::after, .wa-notice-expandable > summary::after { content: "⌄"; position: absolute; right: 0; top: 0; }
+  .wa-company-context[open] > summary::after, .wa-notice-expandable[open] > summary::after { content: "⌃"; }
+  .wa-company-context > p, .wa-notice-expandable > div { padding-block: 6px 10px; }
+  .wa-thread .wa-notice-expandable { padding: 0 12px; }
+  .wa-messages { padding: 12px; scrollbar-width: none; background: color-mix(in srgb, var(--bg-page) 92%, var(--text)); }
+  .wa-messages::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  .wa-message-row { max-width: 90%; gap: 0; }
+  .wa-message-row > .wa-bubble { padding: 9px 12px 7px; box-shadow: none; background: var(--bg-surface); }
+  .wa-message-row--out > .wa-bubble { background: color-mix(in srgb, var(--primary) 15%, var(--bg-surface)); }
+  .wa-page .wa-bubble-text, .wa-company-chat .wa-bubble-text { font-size: 15px; line-height: 1.45; }
+  .wa-message-actions { position: absolute; top: 0; right: 0; margin: 0; }
+  .wa-bubble:has(.wa-message-actions) .wa-bubble-author { padding-right: 30px; }
+  .wa-thread .wa-message-actions > button:first-child { width: 44px; min-height: 44px; padding: 0; border-radius: 10px; }
+  .wa-message-actions > button:not(:first-child) { position: absolute; top: 38px; right: 0; z-index: 5; width: 176px; min-height: 44px; padding: 10px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow); text-align: left; }
+  .wa-composer { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); background: var(--bg-surface); }
+  .wa-composer-row { gap: 6px; align-items: flex-end; }
+  .wa-composer textarea { min-height: 44px; max-height: 96px; resize: none; overflow-y: auto; font-size: 16px; line-height: 22px; padding: 10px 12px; border-radius: 22px; background: var(--bg-page); }
+  .wa-thread .wa-composer-plus, .wa-thread .wa-composer-send { flex: 0 0 44px; min-width: 44px; width: 44px; min-height: 44px; height: 44px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+  .wa-thread .wa-composer-plus { border: 0; background: transparent; font-size: 28px; font-weight: 400; }
+  .wa-compose-sheet { position: absolute; left: 8px; right: 8px; bottom: max(68px, calc(60px + env(safe-area-inset-bottom))); z-index: 12; display: flex; flex-direction: column; align-items: stretch; gap: 8px; max-height: 70%; padding: 12px; overflow: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-surface); box-shadow: var(--shadow); }
+  .wa-compose-sheet-heading { display: flex; align-items: center; justify-content: space-between; }
+  .wa-compose-sheet-heading > .btn { padding: 0; width: 44px; border: 0; background: transparent; }
+  .wa-compose-sheet .wa-composer-tools { display: grid; align-items: stretch; gap: 4px; }
+  .wa-compose-sheet .wa-composer-tools > .btn, .wa-compose-sheet .wa-quick-library > .btn { width: 100%; justify-content: flex-start; text-align: left; color: var(--text); }
+  .wa-compose-sheet .wa-composer-documents > summary { color: var(--text); font-size: 14px; }
+  .wa-compose-sheet .wa-composer-documents .wa-quick-actions { position: static; max-height: none; padding: 8px 0; box-shadow: none; border: 0; }
+  .wa-compose-sheet .wa-composer-hint { justify-content: space-between; }
+  .wa-compose-sheet .wa-composer-hint > span { display: inline; }
+  .wa-compose-sheet .wa-compose-channel { margin: 0; }
+  .wa-compose-sheet .wa-compose-channel select { min-height: 44px; font-size: 16px; }
+  .wa-compose-sheet .wa-quick-drawer { position: fixed; inset: 0; height: var(--atendimento-height, 100dvh); width: 100%; z-index: 25; }
+  .wa-thread .wa-pending-send { display: block; width: 100%; border: 0; padding: 6px 8px; background: var(--state-warn-surface); color: var(--text); text-align: left; font: inherit; font-size: 13px; }
+  .wa-composer .wa-draft-preview { max-height: 170px; overflow: auto; }
+}
