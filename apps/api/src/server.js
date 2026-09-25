@@ -3,6 +3,7 @@ import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 import express from "express";
 import { iniciarWorkerWhatsappDuravel, pararWorkerWhatsappDuravel } from "./workers/whatsappDurableWorker.js";
 import { iniciarWorkerArquivosWhatsapp, pararWorkerArquivosWhatsapp } from "./workers/whatsappArquivosWorker.js";
+import { iniciarWorkerAtendimento, pararWorkerAtendimento } from "./workers/atendimentoManutencaoWorker.js";
 import cors from "cors";
 import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, CONFERENCIA_ADN_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
@@ -185,6 +186,7 @@ const servidor = app.listen(PORT, HOST, () => {
 
 iniciarWorkerWhatsappDuravel();
 iniciarWorkerArquivosWhatsapp();
+iniciarWorkerAtendimento();
 iniciarWorkerVarreduraNotasLocal();
 let encerrando = false;
 async function encerrarWhatsapp() {
@@ -194,7 +196,7 @@ async function encerrarWhatsapp() {
   const limite = setTimeout(() => process.exit(0), 35000);
   limite.unref();
   servidor.close();
-  await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp(), pararWorkerVarreduraNotasLocal()]);
+  await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp(), pararWorkerVarreduraNotasLocal(), pararWorkerAtendimento()]);
   await prisma.$disconnect();
   process.exit(0);
 }

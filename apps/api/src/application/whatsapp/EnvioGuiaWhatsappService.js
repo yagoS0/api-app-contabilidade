@@ -31,6 +31,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   INTEGRACAO_WHATSAPP,
   WHATSAPP_TEMPLATE_GUIA,
+  WHATSAPP_TEMPLATE_IDIOMA,
   WHATSAPP_ENVIO_DELAY_MS,
   log as logPadrao,
 } from "../../config.js";
@@ -45,7 +46,8 @@ import {
   destinatariosDeEnvio,
   gravarWaIdDoContato,
 } from "./ContatoWhatsappService.js";
-import { registrarMensagemEnviada, garantirConversa } from "./ConversaWhatsappService.js";
+import { garantirConversa } from "./ConversaWhatsappService.js";
+import { prepararHistoricoGuia, reconciliarTentativaGuia } from "./HistoricoArquivoWhatsappService.js";
 import { whatsappPorCanal, identidadeWhatsappV2Ativa, CANAL_PRINCIPAL } from "./CanalWhatsappService.js";
 import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
@@ -454,25 +456,27 @@ export async function enviarGuiaPorWhatsapp({
       };
     }
 
+    const nomeArquivo = nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia });
+    const variaveis = variaveisDaGuia({
+      nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
+      tipoGuia: tipoLabel, competencia: competenciaLabel, valorFormatado: valorDaGuia,
+      vencimentoFormatado: guide.vencimento ? dataCivilBR(guide.vencimento) : "",
+    });
+    conversaReservada ||= await garantirConversa({ telefone: contato.telefoneE164,
+      portalClientId: guide.portalClientId, canalId: CANAL_PRINCIPAL, vinculoNumeroId: vinculoReservado });
+    const idiomaDoEnvio = canal.idioma || cliente.idioma || WHATSAPP_TEMPLATE_IDIOMA;
+    await prepararHistoricoGuia({ tentativaId, envioGuiaId: envio.id, guide, conversa: conversaReservada,
+      contato, canal: { ...canal, idioma: idiomaDoEnvio }, variaveis, nomeArquivo, conteudoPdf, tipoLabel });
     const comecouEm = Date.now();
     await conferirDestinatario();
-    const { wamid, waId, input } = await cliente.enviarGuia({
+    const { wamid, waId } = await cliente.enviarGuia({
       telefone: contato.telefoneE164,
       conteudoPdf,
-      nomeArquivo: nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia }),
+      nomeArquivo,
       template: canal.nomeMeta,
-      idioma: canal.idioma,
+      idioma: idiomaDoEnvio,
       antesDoTemplate: conferirDestinatario,
-      variaveis: variaveisDaGuia({
-        // Primeiro nome, como no esqueleto do dono [E]: a mensagem cumprimenta a pessoa.
-        nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
-        tipoGuia: tipoLabel,
-        competencia: competenciaLabel,
-        valorFormatado: valorDaGuia,
-        // ⚠ `dataCivilBR`, nunca `toLocaleDateString` sem fuso: `Guide.vencimento` é DATA CIVIL em
-        // meia-noite UTC, e o e-mail já anunciou vencimento um dia antes por causa disso.
-        vencimentoFormatado: guide.vencimento ? dataCivilBR(guide.vencimento) : "",
-      }),
+      variaveis,
     });
 
     aceitoWamid = wamid;
@@ -518,26 +522,18 @@ export async function enviarGuiaPorWhatsapp({
       log?.warn?.({ err: e?.message || e, envioId: envio.id }, "guia enviada, mas o waId do contato não foi gravado");
     }
 
-    // O balão no fio. ⚠ BEST-EFFORT: a mensagem JÁ saiu para o cliente; falha ao registrar histórico
-    // não pode virar "falhou" e mandar o contador reenviar.
+    // The attempt and original bytes already exist. Repairing a balloon never calls Meta.
+    let historicoPendente = false;
     try {
-      await registrarMensagemEnviada({
-        telefone: waId || contato.waId || contato.telefoneE164,
-        portalClientId: guide.portalClientId,
-        tipo: "template",
-        providerMessageId: wamid,
-        envioGuiaId: envio.id,
-        envioGuiaTentativaId: tentativaId,
-        canalId: CANAL_PRINCIPAL,
-        ...(conversaReservada ? {conversaId:conversaReservada.id,vinculoNumeroId:vinculoReservado} : {}),
-      });
+      await reconciliarTentativaGuia(tentativaId);
     } catch (e) {
-      log?.warn?.({ err: e?.message || e, guideId: guide.id }, "guia enviada por WhatsApp, mas o balão do fio não foi registrado");
+      historicoPendente = true;
+      log?.warn?.({ tentativaId, guideId: guide.id }, "guia aceita; histórico aguardando reconciliação local");
     }
 
     return {
       ok: true, estado: "aceito", enviada: true, jaEnviada: false, guideId: guide.id, envioId: envio.id, tentativaId,
-      providerMessageId: wamid, destino: contato.telefoneE164, legadoMaterializado: materializou,
+      providerMessageId: wamid, destino: contato.telefoneE164, legadoMaterializado: materializou, historicoPendente,
     };
   } catch (err) {
     const indeterminado = Boolean(aceitoWamid) || (err?.desfechoIndeterminado !== false && ["WHATSAPP_FALHA_DE_TRANSPORTE", "WHATSAPP_SEM_WAMID", "WHATSAPP_RESPOSTA_NAO_RECONHECIDA"].includes(err?.codigo));

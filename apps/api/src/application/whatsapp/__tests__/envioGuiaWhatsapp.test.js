@@ -19,15 +19,18 @@ jest.mock("../../../config.js", () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
+jest.mock("../../guides/GuideStorageService.js", () => ({ GuideStorageService: jest.fn().mockImplementation(() => ({ upload: jest.fn().mockResolvedValue({}) })) }));
+
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    portalClient: { findUnique: jest.fn() },
     templateWhatsapp: { findUnique: jest.fn() },
     guide: { findMany: jest.fn(), findUnique: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
-    envioGuiaTentativa: { create: jest.fn(), updateMany: jest.fn() },
+    envioGuiaTentativa: { create: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn(), updateMany: jest.fn() },
-    conversaWhatsapp: { upsert: jest.fn() },
-    mensagemWhatsapp: { create: jest.fn() },
+    conversaWhatsapp: { upsert: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+    mensagemWhatsapp: { create: jest.fn(), upsert: jest.fn(), findUnique: jest.fn() },
   },
 }));
 
@@ -117,11 +120,25 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
   prisma.envioGuia.findFirst.mockResolvedValue(null);
   prisma.envioGuia.upsert.mockResolvedValue({ id: "e1", status: "pendente" });
   prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
-  prisma.envioGuiaTentativa.create.mockImplementation(async ({ data }) => data);
-  prisma.envioGuiaTentativa.updateMany.mockResolvedValue({ count: 1 });
+  const tentativas = new Map();
+  const mensagens = new Map();
+  prisma.portalClient.findUnique.mockResolvedValue(GUIA.portalClient);
+  prisma.envioGuiaTentativa.create.mockImplementation(async ({ data }) => { tentativas.set(data.id, data); return data; });
+  prisma.envioGuiaTentativa.findUnique.mockImplementation(async ({ where }) => tentativas.get(where.id));
+  prisma.envioGuiaTentativa.updateMany.mockImplementation(async ({ where, data }) => {
+    if (tentativas.has(where.id)) Object.assign(tentativas.get(where.id), data);
+    return { count: 1 };
+  });
+  prisma.mensagemWhatsapp.upsert.mockImplementation(async ({ where, create, update }) => {
+    const m = mensagens.get(where.id); if (m) Object.assign(m, update); else mensagens.set(where.id, create);
+    return mensagens.get(where.id);
+  });
+  prisma.mensagemWhatsapp.findUnique.mockImplementation(async ({ where }) => [...mensagens.values()].find(m => m.providerMessageId === where.providerMessageId) || null);
+  prisma.conversaWhatsapp.findFirst.mockResolvedValue({ id: "conv1", portalClientId: "emp1" });
   prisma.envioGuia.update.mockResolvedValue({ id: "e1" });
   prisma.envioGuia.create.mockImplementation(async ({ data }) => ({ id: data?.destino ? "e1" : "eLegado", ...data }));
   prisma.conversaWhatsapp.upsert.mockResolvedValue({ id: "conv1" });
+  prisma.conversaWhatsapp.updateMany.mockResolvedValue({ count: 1 });
   prisma.mensagemWhatsapp.create.mockResolvedValue({ id: "m1" });
 }
 
@@ -148,7 +165,11 @@ describe("resultados parciais e persistência depois do aceite", () => {
   });
   it("preserva tentativa e wamid se o banco falha depois do aceite", async () => {
     cenarioLimpo();
-    prisma.envioGuiaTentativa.updateMany.mockRejectedValueOnce(new Error("banco indisponível após aceite"));
+    const atualizar = prisma.envioGuiaTentativa.updateMany.getMockImplementation();
+    prisma.envioGuiaTentativa.updateMany.mockImplementation(async args => {
+      if (args.data.status === "enviado") throw new Error("banco indisponível após aceite");
+      return atualizar(args);
+    });
     const cliente = clienteFalso({ wamid: "wamid-aceito" });
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf });
     expect(cliente.enviarGuia).toHaveBeenCalledTimes(1);
@@ -299,17 +320,23 @@ describe("o envio de uma guia", () => {
   it("o balão do fio aponta para o ENVIO (e a mensagem não guarda status)", async () => {
     cenarioLimpo();
     await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente: clienteFalso(), carregarPdf: pdf });
-    const dados = prisma.mensagemWhatsapp.create.mock.calls[0][0].data;
-    expect(dados).toMatchObject({ direcao: "out", envioGuiaId: "e1", providerMessageId: "wamid.OK" });
+    const dados = prisma.mensagemWhatsapp.upsert.mock.calls[0][0].create;
+    expect(dados).toMatchObject({ direcao: "out", envioGuiaId: "e1", corpo: expect.stringContaining("LENTE LTDA") });
+    expect(prisma.mensagemWhatsapp.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ update: expect.objectContaining({ providerMessageId: "wamid.OK" }) }));
     expect(dados).not.toHaveProperty("status");
   });
 
   it("⚠ falha ao gravar o balão NÃO transforma envio feito em falha", async () => {
     // A mensagem já saiu para o cliente. Reportar falha faria o contador reenviar.
     cenarioLimpo();
-    prisma.mensagemWhatsapp.create.mockRejectedValue(new Error("banco fora"));
+    const registrar = prisma.mensagemWhatsapp.upsert.getMockImplementation();
+    prisma.mensagemWhatsapp.upsert.mockImplementation(async args => {
+      if (args.update.providerMessageId) throw new Error("banco fora");
+      return registrar(args);
+    });
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente: clienteFalso(), carregarPdf: pdf });
     expect(r.ok).toBe(true);
+    expect(r.historicoPendente).toBe(true);
   });
 
   it("PDF ausente: falha declarada, com o conserto na mensagem", async () => {
