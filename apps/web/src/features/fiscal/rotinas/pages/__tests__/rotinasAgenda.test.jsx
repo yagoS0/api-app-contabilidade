@@ -29,6 +29,15 @@ test("executor sem sinal não aparece como consulta bem-sucedida", async () => {
   expect(screen.queryByText("Concluída")).not.toBeInTheDocument();
 });
 
+test("execução técnica concluída mostra ressalvas fiscais e não promete nova tentativa", async () => {
+  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }],
+    agenda: {}, empresas: [], executions: [{ routine: "pagamento", enabled: true, alive: true,
+      lastRun: { status: "SUCCEEDED", qualidadeConsulta: "PARCIAL", attempts: 1, result: { indeterminados: 2, semDoc: 1 } }, nextAt: "2026-09-25T11:00:00Z" }] })) };
+  render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  expect(await screen.findByText("Concluída com ressalvas — pagamentos a conferir")).toBeInTheDocument();
+  expect(screen.getByText(/2 consulta\(s\) inconclusiva/)).toBeInTheDocument();
+  expect(screen.queryByText(/Nova tentativa a partir/)).not.toBeInTheDocument();
+});
 test("falha mostra ação do contador e não promete retry antigo", async () => {
   const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }], agenda: {}, empresas: [],
     executions: [{ routine: "pagamento", enabled: true, alive: true, retryExhausted: true,

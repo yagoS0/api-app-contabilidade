@@ -1,7 +1,14 @@
-import { projetarPendenciasParcelamento, complianceParcelamentos, mesOperacionalDaCompetencia } from "../pendenciasParcelamento.js";
+import { projetarPendenciasParcelamento, complianceParcelamentos, mesOperacionalDaCompetencia, parcelaPagamentoConfirmado } from "../pendenciasParcelamento.js";
 const contrato = extra => ({ id: "c1", portalClientId: "empresa", status: "ATIVO", tipo: "PARCSN", formaPagamento: "GUIA_MENSAL", parcelas: [], ...extra });
 const parcela = extra => ({ id: "p1", numeroParcela: 1, competencia: "2026-09", vencimento: "2026-09-20", ...extra });
 const projetar = (contratos, indicacoes = []) => projetarPendenciasParcelamento({ contratos, indicacoes, mesOperacional: "2026-09", agora: new Date("2026-09-24Z"), enviada: g => g.emailStatus === "SENT" });
+
+test("declaração do cliente suspende pendência operacional mas não dispensa consulta fiscal", () => {
+  const p = { guia: { paymentStatus: "PAID", paymentStatusSource: "CLIENTE" } };
+  expect(parcelaPagamentoConfirmado(p)).toBe(true);
+  expect(parcelaPagamentoConfirmado(p, { aceitarDeclaracaoCliente: false })).toBe(false);
+  expect(parcelaPagamentoConfirmado({ ...p, pagamentoStatus: "CONFIRMADO" }, { aceitarDeclaracaoCliente: false })).toBe(true);
+});
 
 test("indício SITFIS aparece sem inventar três parcelas, valor ou provisão", () => {
   const r = projetar([], [{ id: "i", status: "PENDENTE", portalClientId: "empresa", parcelasEmAtraso: 3 }]);

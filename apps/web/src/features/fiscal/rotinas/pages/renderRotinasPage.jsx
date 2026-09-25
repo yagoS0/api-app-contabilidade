@@ -403,7 +403,9 @@ export function RotinasPage({
                     <td style={td}>
                       {formatDateTime(row.lastRun?.finishedAt || row.lastRun?.startedAt)}
                       {row.lastRun && <details><summary>Resultado</summary>
-                        <p>{row.interrupted ? "Execução interrompida" : row.lastRun.status === "SUCCEEDED" ? "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
+                        <p>{row.interrupted ? "Execução interrompida" : row.lastRun.status === "SUCCEEDED" ? row.lastRun.qualidadeConsulta === "PARCIAL" ? "Concluída com ressalvas — pagamentos a conferir" : "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
+                        {row.lastRun.result?.indeterminados > 0 && <p>{row.lastRun.result.indeterminados} consulta(s) inconclusiva(s), sem afirmar falta de pagamento.</p>}
+                        {row.lastRun.result?.semDoc > 0 && <p>{row.lastRun.result.semDoc} guia(s) sem identificação suficiente para consultar.</p>}
                         {row.lastRun.result?.divergentes > 0 && <p>{row.lastRun.result.divergentes} empresa(s) com divergência fiscal para conferir.</p>}
                         {row.lastRun.error && <p>{row.lastRun.error}</p>}
                         {row.lastRun.result?.mensagem && <p>{row.lastRun.result.mensagem}</p>}

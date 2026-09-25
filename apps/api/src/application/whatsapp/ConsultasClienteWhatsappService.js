@@ -181,7 +181,12 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     else if (!historico && !pedido.todas) { const mes = pedido.periodo?.inicio || mesAtualConsulta(agora); guias = guias.filter(g => mesDoVencimento(g) === mes); }
     const dados = await completarPagina({ guias, filtro, tipoFiltro: pedido.tipo, proximaPagina: historico ? r.proximaPagina : null }, PAGINA + 1);
     if (dados.erro) { await texto(dados.erro); return; }
-    if (!dados.guias.length && !dados.proximaPagina) { await texto(`Ainda não encontrei uma guia liberada${pedido.recalculo || pedido.vencidas ? ' vencida' : pedido.periodo ? ` para ${rotuloMesConsulta(pedido.periodo.inicio)}` : pedido.todas ? ' em aberto' : ' para pagar neste mês'}. A equipe pode conferir se falta liberar algum arquivo.`, contexto({ tipo: 'PERIODO', alvo: 'GUIAS' })); return; }
+    if (!dados.guias.length && !dados.proximaPagina) {
+      const aviso = pedido.pagas
+        ? `Não encontrei guias registradas como pagas${pedido.periodo ? ` para ${rotuloMesConsulta(pedido.periodo.inicio)}` : ' no histórico disponível'}. A equipe pode conferir se o pagamento ainda não foi registrado.`
+        : `Ainda não encontrei uma guia liberada${pedido.recalculo || pedido.vencidas ? ' vencida' : pedido.periodo ? ` para ${rotuloMesConsulta(pedido.periodo.inicio)}` : pedido.todas ? ' em aberto' : ' para pagar neste mês'}. A equipe pode conferir se falta liberar algum arquivo.`;
+      await texto(aviso, contexto({ tipo: 'PERIODO', alvo: 'GUIAS' })); return;
+    }
     const meta = contexto({ ...dados, tipo: 'GUIAS', offset: 0, recalculo: Boolean(pedido.recalculo) });
     if (meta.guias.length === 1 && !meta.proximaPagina) { await enviarGuia(meta.guias[0], meta); return; }
     await mostrarGuias(meta); return;

@@ -700,3 +700,7 @@ cliente para feedback imediato. Empresa fechada reflete no card do dashboard (co
 # Plano específico por empresa — 24/09/2026
 
 Em Lançamentos → Configurações → Plano de contas, Personalizar na empresa copia uma conta global para o cadastro específico (ex.: 286 com o nome dos sócios). Editar conta altera nome, tipo, natureza e código completo; reduzido permanece fixo porque identifica lançamentos existentes. Importação CSV/PDF da empresa já usa endpoint próprio. O global continua padrão para códigos sem personalização. Remover a conta própria faz o padrão global reaparecer, se existir. Não propagar futuras importações globais para contas próprias.
+
+## Resultado da busca de pagamento — 24/09/2026
+
+`encontrado` agora é `true`, `false` ou `null`, com `resultadoConsulta`. Apenas confirmação com identidade documental pode preencher os valores do comprovante. Consulta inconclusiva, divergente e não aplicável têm textos próprios na Circular e nas parcelas; não significam pagamento não localizado. `resumoDoResultado` centraliza essa leitura. A baixa continua sendo uma decisão do contador e confirmação manual não transforma retorno duvidoso da API em prova fiscal.

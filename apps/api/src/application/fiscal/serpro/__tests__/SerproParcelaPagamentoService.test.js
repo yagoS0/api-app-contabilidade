@@ -1,35 +1,44 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: {
   parcela: { findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
-  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(), appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
+  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn(), update: jest.fn() }, $transaction: jest.fn(), $queryRaw: jest.fn(),
+  guidePaymentObservation: { findUnique: jest.fn(), create: jest.fn() },
+  appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
 } }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { document: "11111111000191" } })) }));
 jest.mock("../SerproParcelamentoService.js", () => ({ SerproParcelamentoService: jest.fn() }));
 jest.mock("../../../guides/AvisoPagamentoService.js", () => ({ avisarPagamentoNaoConfirmado: jest.fn(async () => ({ status: "JA_ENVIADO" })) }));
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { SerproParcelamentoService } from "../SerproParcelamentoService.js";
+import { avisarPagamentoNaoConfirmado } from "../../../guides/AvisoPagamentoService.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "../SerproParcelaPagamentoService.js";
-const raw = { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
+const raw = { status: 200, contribuinte: { numero: "22222222000191", tipo: 2 }, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
   dataPagamento: 20260920, valorPagoArrecadacao: 100, pagamentoDebitos: [{ discriminacoesDebito: [{ principal: 100, juros: 0, multa: 0, total: 100 }] }] } };
 const consultar = jest.fn();
-const item = extra => ({ id: "p", portalClientId: "empresa", anoMesParcela: "202609", numeroParcela: 3, valorPrevisto: 100,
-  parcelamento: { tipo: "PARCSN", numeroParcelamento: "123" }, ...extra });
+const item = extra => ({ id: "p", portalClientId: "empresa", parcelamentoId: "contrato", anoMesParcela: "202609", numeroParcela: 3, valorPrevisto: 100,
+  parcelamento: { id: "contrato", portalClientId: "empresa", tipo: "PARCSN", numeroParcelamento: "123" }, ...extra });
 beforeEach(() => {
   jest.clearAllMocks();
+  avisarPagamentoNaoConfirmado.mockReset().mockResolvedValue({ status: "JA_ENVIADO" });
   const ledger = new Map();
   prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key));
   prisma.appSetting.upsert.mockImplementation(async ({ create }) => { ledger.set(create.key, create); return create; });
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
   prisma.parcela.findFirst.mockResolvedValue(item({}));
+  prisma.parcela.findMany.mockReset().mockResolvedValue([]);
   prisma.parcela.updateMany.mockResolvedValue({ count: 1 });
   prisma.portalClient.findUnique.mockResolvedValue({ cnpj: "22222222000191" });
   prisma.$transaction.mockImplementation(fn => fn(prisma));
+  prisma.$queryRaw.mockResolvedValue([]);
+  prisma.guidePaymentObservation.findUnique.mockResolvedValue(null);
+  prisma.guidePaymentObservation.create.mockImplementation(async ({data}) => ({ id: "observacao", ...data }));
+  prisma.guide.update.mockImplementation(async ({data}) => data);
   consultar.mockResolvedValue({ raw });
   SerproParcelamentoService.mockImplementation(() => ({ consultarPagamentoParcela: consultar }));
 });
 test("negativa de parcela não é consultada novamente no automático após vínculo/novo PDF", async () => {
   const p = item({ guiaId: "g-estavel", origem: "GUIA", vencimento: "2026-09-20" });
   prisma.parcela.findFirst.mockResolvedValue(p);
-  consultar.mockResolvedValue({ raw: { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null } } });
+  consultar.mockResolvedValue({ raw: { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null, pagamentoDebitos: [] } } });
   await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p", scheduledAt: "2026-09-24T15:00:00Z" });
   prisma.parcela.findFirst.mockResolvedValue({ ...p, id: "p-vinculada", parcelamento: { tipo: "PARCSN", numeroParcelamento: "456" } });
   expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p-vinculada", scheduledAt: "2026-09-25T15:00:00Z" })).toMatchObject({ skipped: "conferencia_manual" });
@@ -51,6 +60,18 @@ test("confirma sem guia e sem abertura contábil, sem criar nenhum lançamento",
   expect(data).toMatchObject({ pagamentoStatus: "CONFIRMADO", valorPago: 100, pagamentoEm: new Date("2026-09-20Z") });
   expect(data).not.toHaveProperty("origemBaixa");
   expect(prisma.guide.updateMany).not.toHaveBeenCalled();
+});
+
+test.each([undefined, { numero: "11111111000191", tipo: 2 }])("serviço não confirma retorno sem CNPJ correspondente ao cadastro: %j", async contribuinte => {
+  consultar.mockResolvedValueOnce({ raw: { ...raw, contribuinte } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(r).toMatchObject({ pago: null, status: "DIVERGENTE", resultadoConsulta: { identidadeConferida: false, estado: "PARCIAL_OU_DIVERGENTE" } });
+  expect(prisma.parcela.updateMany.mock.calls.every(([args]) => args.data.pagamentoStatus !== "CONFIRMADO" && !args.data.pagamentoEm)).toBe(true);
+});
+
+test("valorPrevisto decimal do banco é passado como texto, preservando validação do parser", async () => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ valorPrevisto: { toString: () => "100.00" } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: true, status: "CONFIRMADO" });
 });
 test("MEI usa sua modalidade e confirmação não requer regime atual da empresa", async () => {
   prisma.parcela.findFirst.mockResolvedValue(item({ parcelamento: { tipo: "PARCMEI", numeroParcelamento: "123" } }));
@@ -97,7 +118,7 @@ test("composição parcial do PDF não reduz o limiar para quitar pagamento inco
   prisma.parcela.findFirst.mockResolvedValue(item({ valorPrevisto: 110, guia: { valor: 110, extracted: { fields: {
     composicao: [{ codigo: "1001", principal: 50, juros: 10, multa: 0, total: 60 }],
   } } } }));
-  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: false, status: "DIVERGENTE" });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, status: "DIVERGENTE" });
 });
 test("contrato excluído não gera chamada individual", async () => {
   prisma.parcela.findFirst.mockResolvedValue(item({ parcelamento: { tipo: "PARCSN", status: "EXCLUIDO", numeroParcelamento: "123" } }));
@@ -114,5 +135,313 @@ test("lote inclui anteriores e exclui futuro, prioriza nunca consultadas e passa
     orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }] });
   expect(consultar).not.toHaveBeenCalled();
   expect(prisma.parcela.findMany.mock.calls[0][0].where.parcelamento.status).toEqual({ not: "EXCLUIDO" });
-  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { baixada: true } } });
+  expect(prisma.parcela.findMany.mock.calls[0][0].where).toMatchObject({ baixadaEm: null, guia: { isNot: { OR: [
+    { paymentStatus: "PAID", OR: [{ paymentStatusSource: { not: "CLIENTE" } }, { paymentStatusSource: null }] }, { baixada: true },
+  ] } } });
+});
+
+test.each([[[]], [[null, "", "  "]]])("seleção explícita vazia %j não amplia para todas as parcelas", async parcelaIds => {
+  expect(await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds })).toEqual({ total: 0, results: [] });
+  expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test.each([null, "p1", {}])("seleção inválida %j não executa lote geral", async parcelaIds => {
+  await expect(confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds })).rejects.toMatchObject({ code: "PARCELA_IDS_INVALIDOS" });
+  expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+});
+
+test("retomada consulta somente subconjunto selecionado dentro da carteira autorizada", async () => {
+  const rows = [{ id: "p1", portalClientId: "empresa" }, { id: "p2", portalClientId: "empresa" }, { id: "p3", portalClientId: "outra-empresa" }];
+  prisma.parcela.findMany.mockImplementation(async ({ where, take }) => {
+    const selecionadas = where.AND.find(filtro => filtro.id)?.id.in;
+    return rows.filter(r => where.portalClientId.in.includes(r.portalClientId) && selecionadas.includes(r.id) && !(where.id?.notIn || []).includes(r.id)).slice(0, take);
+  });
+  prisma.parcela.findFirst.mockImplementation(async ({ where }) => item({ id: where.id, pagamentoStatus: "CONFIRMADO" }));
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p2", "p3", "p2"], limite: 600 });
+  expect(r.total).toBe(2);
+  expect(r.results[0]).toEqual({ parcelaId: "p2", status: "already_paid" });
+  expect(r.results[1]).toMatchObject({ parcelaId: "p3", status: "nao_consultado", resultadoConsulta: { consultadoEm: null, cobertura: "NAO_CONSULTADA" } });
+  expect(prisma.parcela.findFirst).toHaveBeenCalledTimes(1);
+  expect(prisma.parcela.findFirst.mock.calls[0][0].where).toEqual({ id: "p2", portalClientId: "empresa" });
+  const filtros = prisma.parcela.findMany.mock.calls[0][0].where;
+  expect(filtros.AND).toContainEqual({ id: { in: ["p2", "p3"] } });
+  expect(filtros.AND).toContainEqual({ OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] });
+  expect(filtros).toMatchObject({ portalClientId: { in: ["empresa"] }, origemBaixa: null, baixadaEm: null, anoMesParcela: { not: null, lte: "202609" }, parcelamento: { status: { not: "EXCLUIDO" } } });
+});
+
+test("seleção explícita preserva lease antes da consulta do lote", async () => {
+  const assertActive = jest.fn(() => { throw Error("lease perdida"); });
+  await expect(confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p1"], assertActive })).rejects.toThrow("lease perdida");
+  expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test("resposta divergente tem resultado comum e nunca pago falso", async () => {
+  consultar.mockResolvedValueOnce({ raw: { ...raw, dados: { ...raw.dados, numeroParcela: 9 } } });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, resultadoConsulta: {
+    estado: "PARCIAL_OU_DIVERGENTE", fonte: "PARCELAMENTO_PARCSN", consultadoEm: "2026-09-24T15:00:00.000Z", cobertura: "PARCIAL", identidadeConferida: false,
+  } });
+  expect(prisma.parcela.updateMany.mock.calls.at(-1)[0].data).not.toHaveProperty("pagamentoEm");
+});
+
+test("confirmação conserva instante original embora consulta demore", async () => {
+  consultar.mockImplementationOnce(async () => { jest.setSystemTime(new Date("2026-09-24T15:02:00Z")); return { raw }; });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: true, resultadoConsulta: {
+    estado: "CONFIRMADO", consultadoEm: "2026-09-24T15:00:00.000Z", identidadeConferida: true, cobertura: "COMPLETA",
+  } });
+});
+
+test.each([
+  { anoMesParcela: "202610" },
+  { numeroParcela: 4 },
+  { parcelamentoId: "outro" },
+  { guiaId: "outra-guia" },
+  { valorPrevisto: 200 },
+  { parcelamento: { id: "contrato", portalClientId: "empresa", tipo: "PARCSN", numeroParcelamento: "456" } },
+  { parcelamento: { id: "contrato", portalClientId: "empresa", tipo: "PARCSN", numeroParcelamento: "123", status: "EXCLUIDO" } },
+])("referência alterada durante HTTP não recebe confirmação (%j)", async change => {
+  prisma.parcela.findFirst.mockResolvedValueOnce(item({})).mockResolvedValueOnce(item(change));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, aplicada: false, motivo: "REFERENCIA_ALTERADA" });
+  expect(prisma.parcela.updateMany).toHaveBeenCalledTimes(1);
+  expect(prisma.guide.update).not.toHaveBeenCalled();
+});
+
+test("CNPJ alterado durante HTTP não recebe confirmação da empresa anterior", async () => {
+  prisma.portalClient.findUnique.mockResolvedValueOnce({ cnpj: "22222222000191" }).mockResolvedValueOnce({ cnpj: "33333333000191" });
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, aplicada: false, motivo: "EMPRESA_ALTERADA" });
+  expect(prisma.parcela.updateMany).toHaveBeenCalledTimes(1);
+});
+
+test.each([{ origemBaixa: "MANUAL" }, { baixadaEm: new Date("2026-09-20Z") }, { pagamentoStatus: "CONFIRMADO" }])("baixa concorrente preservada (%j)", async change => {
+  prisma.parcela.findFirst.mockResolvedValueOnce(item({})).mockResolvedValueOnce(item(change));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, aplicada: false, motivo: "PAGAMENTO_JA_REGISTRADO" });
+  expect(prisma.parcela.updateMany).toHaveBeenCalledTimes(1);
+});
+
+test.each(["depois_http", "dentro_tx"])("lease perdida %s impede gravar resposta fiscal", async local => {
+  let ativa = true;
+  if (local === "depois_http") consultar.mockImplementationOnce(async () => { ativa = false; return { raw }; });
+  else prisma.$queryRaw.mockImplementationOnce(async () => { ativa = false; return []; });
+  const assertActive = () => { if (!ativa) throw Error("lease perdida"); };
+  await expect(confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p", assertActive })).rejects.toThrow("lease perdida");
+  expect(prisma.parcela.updateMany).toHaveBeenCalledTimes(1);
+});
+
+test("guia vinculada usa observação append-only na mesma transação, sem lançamento", async () => {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3,
+    tipo: "SIMPLES", competencia: "2026-08", valor: 100, status: "PROCESSED", hash: "v1", extracted: {}, tributosParcela: [] };
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia }));
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(r).toMatchObject({ pago: true, aplicada: true });
+  expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  expect(prisma.guidePaymentObservation.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ guideId: "g", state: "CONFIRMADO" }) }));
+  expect(prisma.guide.update.mock.calls[0][0].data).toMatchObject({ paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-09-20Z"), extracted: { comprovante: { principal: 100, multa: 0, juros: 0 } } });
+});
+
+test.each(["MANUAL", "SERPRO", null])("parcela com guia PAID de origem %s preserva confirmação e não consulta", async paymentStatusSource => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ guia: { paymentStatus: "PAID", paymentStatusSource } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "already_paid" });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test.each([true, false])("declaração do cliente recebe consulta oficial %s, sem apagar declaração ou reabrir guia", async pago => {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3,
+    tipo: "SIMPLES", competencia: "2026-08", valor: 100, status: "PROCESSED", extracted: {}, tributosParcela: [],
+    paymentStatus: "PAID", paymentStatusSource: "CLIENTE", paymentConfirmedAt: new Date("2026-09-20Z"), paymentConfirmedByUserId: "cliente",
+    clienteConfirmouEm: new Date("2026-09-21Z"), clienteConfirmouPorUserId: "cliente" };
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia }));
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  if (!pago) consultar.mockResolvedValueOnce({ raw: { ...raw, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3, valorPagoArrecadacao: 0, dataPagamento: null } } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(r.pago).toBe(pago);
+  const persistida = prisma.guide.update.mock.calls[0][0].data;
+  expect(persistida).not.toHaveProperty("clienteConfirmouEm");
+  expect(persistida).not.toHaveProperty("clienteConfirmouPorUserId");
+  if (pago) expect(persistida).toMatchObject({ paymentStatus: "PAID", paymentStatusSource: "SERPRO" });
+  else {
+    expect(persistida).not.toHaveProperty("paymentStatus");
+    expect(persistida).not.toHaveProperty("paymentStatusSource");
+    expect(persistida).not.toHaveProperty("paymentConfirmedAt");
+    expect(persistida).not.toHaveProperty("paymentConfirmedByUserId");
+  }
+});
+
+test("declaração do cliente com baixa existente não dispara consulta de parcela", async () => {
+  prisma.parcela.findFirst.mockResolvedValue(item({ guia: { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", baixada: true } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "already_paid" });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test("observação mais recente da guia recusa também a parcela e conserva auditoria e cooldown da tentativa", async () => {
+  const ultimaConsulta = new Date("2026-09-20T12:00:00Z");
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3,
+    tipo: "SIMPLES", competencia: "2026-08", valor: 100, status: "PROCESSED", extracted: {}, tributosParcela: [] };
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia, pagamentoConsultadoEm: ultimaConsulta, pagamentoStatus: "NAO_LOCALIZADO" }));
+  prisma.guide.findUnique.mockResolvedValue({ ...guia, extracted: { consultaPagamento: {
+    estado: "INDETERMINADO", consultadoEm: "2026-09-24T15:01:00Z", observacaoId: "observacao-t1",
+  } } });
+  const r = await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" });
+  expect(r).toMatchObject({ pago: null, aplicada: false, aplicadaGuia: false, motivo: "OBSERVACAO_SUPERADA" });
+  expect(prisma.guidePaymentObservation.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    state: "CONFIRMADO", applied: false, ignoredReason: "OBSERVACAO_SUPERADA",
+  }) }));
+  expect(prisma.parcela.updateMany.mock.calls.every(([args]) => !Object.hasOwn(args.data, "pagamentoStatus"))).toBe(true);
+  expect(prisma.parcela.updateMany.mock.calls.at(-1)[0].data).toEqual({ pagamentoConsultadoEm: new Date("2026-09-24T15:00:00Z") });
+  expect(prisma.guide.update).not.toHaveBeenCalled();
+  prisma.parcela.findFirst.mockResolvedValue(item({ guiaId: "g", guia, pagamentoConsultadoEm: new Date("2026-09-24T15:00:00Z"), pagamentoStatus: "NAO_LOCALIZADO" }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ skipped: "intervalo_minimo" });
+  expect(consultar).toHaveBeenCalledTimes(1);
+});
+
+test("recálculo de PDF da guia durante HTTP invalida resultado da parcela", async () => {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", hash: "v1", valor: 100, extracted: {} };
+  prisma.parcela.findFirst.mockResolvedValueOnce(item({ guiaId: "g", guia })).mockResolvedValueOnce(item({ guiaId: "g", guia: { ...guia, hash: "v2", valor: 110 } }));
+  expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).toMatchObject({ pago: null, aplicada: false, motivo: "REFERENCIA_ALTERADA" });
+  expect(prisma.guidePaymentObservation.create).not.toHaveBeenCalled();
+});
+
+test("retomada bloqueada por intervalo não desaparece como sucesso de zero consultas", async () => {
+  prisma.parcela.findMany.mockResolvedValue([]);
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p"] });
+  expect(r).toEqual({ total: 1, results: [{ parcelaId: "p", status: "nao_consultado", motivo: "FORA_DO_ESCOPO_OU_INTERVALO_MINIMO",
+    resultadoConsulta: { estado: "INDETERMINADO", fonte: "VALIDACAO_LOCAL", consultadoEm: null, cobertura: "NAO_CONSULTADA", identidadeConferida: false, motivo: "FORA_DO_ESCOPO_OU_INTERVALO_MINIMO" } }] });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test("lote conserva metadados da observação sem devolver retorno fiscal bruto", async () => {
+  prisma.parcela.findMany.mockResolvedValueOnce([{ id: "p", portalClientId: "empresa" }]).mockResolvedValueOnce([]);
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p"] });
+  expect(r.results[0]).toMatchObject({ status: "paid", aplicada: true, resultadoConsulta: { estado: "CONFIRMADO", consultadoEm: "2026-09-24T15:00:00.000Z", identidadeObrigacao: { tipo: "PARCELA", parcelamentoId: "contrato" } } });
+  expect(r.results[0]).not.toHaveProperty("raw");
+  expect(r.results[0].resultadoConsulta).not.toHaveProperty("raw");
+});
+
+test("snapshot explícito sem carteira autorizada permanece não consultado", async () => {
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: [], parcelaIds: ["p"] });
+  expect(r).toMatchObject({ total: 1, results: [{ parcelaId: "p", status: "nao_consultado" }] });
+  expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+});
+
+test("guia vinculada a outro contrato não fornece valores para confirmar esta parcela", async () => {
+  prisma.parcela.findFirst.mockResolvedValueOnce(item({ guiaId: "g", guia: { id: "g", parcelamentoId: "outro-contrato", valor: 50, extracted: { principal: 50 } } }));
+  await expect(confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p" })).rejects.toMatchObject({ code: "PARCELA_EMPRESA_DIVERGENTE" });
+  expect(consultar).not.toHaveBeenCalled();
+});
+
+test("lote distingue parcela divergente de consulta inconclusiva", async () => {
+  prisma.parcela.findMany.mockResolvedValueOnce([{ id: "p", portalClientId: "empresa" }]).mockResolvedValueOnce([]);
+  consultar.mockResolvedValueOnce({ raw: { ...raw, dados: { ...raw.dados, numeroParcela: 9 } } });
+  const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], parcelaIds: ["p"] });
+  expect(r.results[0]).toMatchObject({ status: "divergente", resultadoConsulta: { estado: "PARCIAL_OU_DIVERGENTE" } });
+});
+
+const scheduledAt = "2026-09-24T15:00:00Z";
+const negativa = { ...raw, dados: { ...raw.dados, dataPagamento: null, valorPagoArrecadacao: null, pagamentoDebitos: [] } };
+function prepararAviso(extraGuia = {}, resposta = negativa) {
+  const guia = { id: "g", portalClientId: "empresa", cnpj: "22222222000191", parcelamentoId: "contrato", numeroParcela: 3, anoMesParcela: "202609",
+    tipo: "SIMPLES", competencia: "2026-09", vencimento: new Date("2026-09-20Z"), valor: 100, status: "PROCESSED", hash: "v1", extracted: {}, tributosParcela: [], ...extraGuia };
+  const parcela = item({ guiaId: "g", guia });
+  prisma.parcela.findFirst.mockResolvedValue(parcela);
+  prisma.parcela.findMany.mockResolvedValueOnce([{ id: "p", portalClientId: "empresa" }]).mockResolvedValueOnce([]);
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  consultar.mockResolvedValue({ raw: resposta });
+  return { guia, parcela };
+}
+const executarAviso = extra => confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], scheduledAt, ...extra });
+
+test("aviso sai somente após commit de negativa confiável e recebe a observação aplicada", async () => {
+  prepararAviso();
+  prisma.$transaction.mockImplementation(async fn => {
+    const result = await fn(prisma);
+    expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+    expect(prisma.appSetting.upsert).toHaveBeenCalledTimes(2);
+    return result;
+  });
+  const r = await executarAviso();
+  expect(r).toMatchObject({ consultas: 1, results: [{ status: "open", aplicada: true, aviso: { status: "JA_ENVIADO" } }] });
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledWith(expect.objectContaining({ parcelaId: "p", scheduledAt,
+    resultadoConsulta: expect.objectContaining({ observacaoId: "observacao", estado: "NAO_LOCALIZADO", cobertura: "COMPLETA", identidadeConferida: true }) }));
+});
+
+test.each([
+  { ...raw, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3 } },
+  { ...negativa, dados: { ...negativa.dados, numeroParcela: 99 } },
+  { ...negativa, dados: { ...negativa.dados, pagamentoDebitos: raw.dados.pagamentoDebitos } },
+  { ...negativa, contribuinte: { numero: "11111111000191", tipo: 2 } },
+])("resposta inconclusiva/divergente não encerra consulta automática nem avisa: %j", async resposta => {
+  prepararAviso({}, resposta);
+  await executarAviso();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test.each([true, false])("declaração CLIENTE continua consultável na agenda, resultado %s não avisa nem cria marcador", async pago => {
+  prepararAviso({ paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-21Z") }, pago ? raw : negativa);
+  const r = await executarAviso();
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(r.results[0]).toMatchObject({ status: pago ? "paid" : "open", aplicada: true });
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("declaração CLIENTE permite conferir oficialmente mesmo após marcador negativo anterior", async () => {
+  prepararAviso({ paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-21Z") });
+  prisma.appSetting.findUnique.mockResolvedValue({ value: { status: "CONFERENCIA_MANUAL" } });
+  await executarAviso();
+  expect(consultar).toHaveBeenCalledTimes(1);
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("declaração recebida durante HTTP conserva confirmação do cliente e impede aviso", async () => {
+  const { guia, parcela } = prepararAviso();
+  const declarada = { ...guia, paymentStatus: "PAID", paymentStatusSource: "CLIENTE", clienteConfirmouEm: new Date("2026-09-24T15:00:01Z") };
+  prisma.parcela.findFirst.mockResolvedValueOnce(parcela).mockResolvedValueOnce({ ...parcela, guia: declarada });
+  prisma.guide.findUnique.mockResolvedValue(declarada);
+  await executarAviso();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("retorno negativo recusado por observação mais recente não gera marcador nem aviso", async () => {
+  const { guia } = prepararAviso();
+  prisma.guide.findUnique.mockResolvedValue({ ...guia, extracted: { consultaPagamento: {
+    estado: "INDETERMINADO", observacaoId: "mais-recente", consultadoEm: "2026-09-24T15:01:00Z",
+  } } });
+  const r = await executarAviso();
+  expect(r.results[0]).toMatchObject({ status: "indeterminado", aplicada: false });
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test("falha do aviso mantém negativa aplicada e não repete consulta fiscal", async () => {
+  prepararAviso();
+  avisarPagamentoNaoConfirmado.mockRejectedValueOnce(Error("transporte indisponível"));
+  const r = await executarAviso();
+  expect(r).toMatchObject({ consultas: 1, results: [{ status: "open", aplicada: true, aviso: { status: "PENDENTE" } }] });
+  expect(consultar).toHaveBeenCalledTimes(1);
+});
+
+test("marcador legado sozinho não autoriza aviso; projeção identificada passa à revalidação do aviso", async () => {
+  prepararAviso();
+  prisma.appSetting.findUnique.mockResolvedValue({ value: { status: "CONFERENCIA_MANUAL" } });
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+  prepararAviso({ extracted: { consultaPagamento: { estado: "NAO_LOCALIZADO", cobertura: "COMPLETA", identidadeConferida: true,
+    observacaoId: "observacao-anterior", fonte: "PARCELAMENTO_PARCSN", consultadoEm: scheduledAt } } });
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledTimes(1);
+  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledWith(expect.objectContaining({ resultadoConsulta: expect.objectContaining({ observacaoId: "observacao-anterior" }) }));
+});
+
+test.each([{ paymentStatus: "PAID", paymentStatusSource: "MANUAL" }, { baixada: true }])("guia já paga/baixada não consulta, marca ou avisa: %j", async extra => {
+  prepararAviso(extra);
+  await executarAviso();
+  expect(consultar).not.toHaveBeenCalled();
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
 });

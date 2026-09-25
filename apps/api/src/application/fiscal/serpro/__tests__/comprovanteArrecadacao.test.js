@@ -79,4 +79,10 @@ describe("parseComprovanteArrecadacao", () => {
     const r = parseComprovanteArrecadacao("");
     expect(r.confiavel).toBeFalsy();
   });
+
+  it.each(["31/02/2026", "31/04/2026", "29/02/2025", "00/08/2026", "04/13/2026"])("data civil inválida %s não vira data de outro mês", (data) => {
+    const r = parseComprovanteArrecadacao(COMPROVANTE_COM_ACRESCIMO.replace("04/08/2026", data));
+    expect(r.dataArrecadacao).toBeNull();
+    expect(r.dataArrecadacaoBR).toBeNull();
+  });
 });

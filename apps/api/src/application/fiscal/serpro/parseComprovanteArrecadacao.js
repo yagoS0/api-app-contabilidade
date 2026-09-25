@@ -39,7 +39,7 @@ function parseDataBR(txt) {
   if (!m) return null;
   const [d, mes, a] = m[1].split("/").map(Number);
   const dt = new Date(Date.UTC(a, mes - 1, d));
-  return Number.isNaN(dt.getTime()) ? null : dt;
+  return Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== a || dt.getUTCMonth() !== mes - 1 || dt.getUTCDate() !== d ? null : dt;
 }
 
 /**
@@ -65,8 +65,8 @@ export function parseComprovanteArrecadacao(texto) {
     const depois = t.slice(idxRotulo);
     const m = depois.match(RE_DATA_G);
     if (m && m.length) {
-      out.dataArrecadacaoBR = m[0];
       out.dataArrecadacao = parseDataBR(m[0]);
+      out.dataArrecadacaoBR = out.dataArrecadacao ? m[0] : null;
     }
     const mPag = depois.match(/Documento\s+pago\s+via\s+([A-Za-zÀ-ú]+)/i);
     if (mPag) out.meioPagamento = mPag[1].toUpperCase();

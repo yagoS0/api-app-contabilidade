@@ -13,9 +13,10 @@ export function mesOperacionalDaCompetencia(competencia) {
   return d.toISOString().slice(0, 7);
 }
 
-export function parcelaPagamentoConfirmado(p) {
+export function parcelaPagamentoConfirmado(p, { aceitarDeclaracaoCliente = true } = {}) {
   return Boolean(p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO"
-    || p?.guia?.baixada || p?.guia?.paymentStatus === "PAID");
+    || p?.guia?.baixada || (p?.guia?.paymentStatus === "PAID"
+      && (aceitarDeclaracaoCliente || p.guia.paymentStatusSource !== "CLIENTE")));
 }
 
 export function complianceParcelamentos(itens) {

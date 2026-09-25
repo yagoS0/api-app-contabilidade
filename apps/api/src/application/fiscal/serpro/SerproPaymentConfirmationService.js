@@ -1,12 +1,8 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
 import { dataDoComprovante } from "../../guides/lib/comprovantePagamento.js";
-import {
-  isGuidePaid,
-  markGuidePaidByComprovante,
-  markGuideOpenBySerpro,
-  CHECK_RESULT_NAO_LOCALIZADO,
-} from "../../guides/GuidePaymentStatusService.js";
+import { isGuidePaid } from "../../guides/GuidePaymentStatusService.js";
+import { registrarConsultaPagamentoGuia } from "../../guides/ConsultaPagamentoGuiaService.js";
 import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoService.js";
 import { gerarPagamentoParcelaFromGuide, recalcularEstadosParcelasEmAberto } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
 import { confirmarPagamento } from "./SerproPagtoWebService.js";
@@ -41,24 +37,38 @@ function maskCnpj(cnpj) {
 /**
  * Confirma o pagamento de uma guia consultando o comprovante no SERPRO (PAGTOWEB).
  * - pago → marca PAID + grava o comprovante (PDF) + dispara a baixa contábil (best-effort, idempotente).
- * - não pago → marca OPEN (mantém em aberto).
+ * - não localizado/inconclusivo → registra observação sem reabrir pagamento já confirmado.
  * Idempotente: guia já PAID → skip. Guia sem numeroDocumento → skip.
  */
-export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {}, scheduledAt = null }) {
+export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {}, consultasDaRodada = null, scheduledAt = null }) {
   await assertActive();
   const guide = await prisma.guide.findUnique({
     where: { id: String(guideId) },
     include: { portalClient: { select: { id: true, cnpj: true } } },
   });
   if (!guide) return { ok: false, skipped: "guide_not_found" };
-  const conferirDeclaracaoCliente = !scheduledAt && guide.paymentStatusSource === "CLIENTE" && !guide.baixada;
-  if (!conferirDeclaracaoCliente && (isGuidePaid(guide) || guide.clienteConfirmouEm || guide.baixada)) return { ok: true, skipped: "already_paid", guideId: guide.id };
+  // A declaração do cliente ainda precisa ser conferida na Receita. Baixa e
+  // confirmações existentes (inclusive origem legada desconhecida) são preservadas.
+  if (guide.baixada || (isGuidePaid(guide) && guide.paymentStatusSource !== "CLIENTE")) {
+    return { ok: true, skipped: "already_paid", guideId: guide.id };
+  }
   const vencimentoRecusa = scheduledAt ? elegibilidadeVencimentoAutomatico(guide.vencimento) : null;
   if (vencimentoRecusa) return { ok: true, skipped: vencimentoRecusa, guideId: guide.id };
-  if (await consultaAutomaticaEncerrada({ guideId: guide.id, scheduledAt })) return { ok: true, skipped: "conferencia_manual", negativaConfirmada: true, guideId: guide.id };
+  // A declaração posterior do cliente exige conferência oficial mesmo se uma
+  // consulta negativa anterior já encerrou os avisos automáticos desta obrigação.
+  if (guide.paymentStatusSource !== "CLIENTE" && !guide.clienteConfirmouEm
+    && await consultaAutomaticaEncerrada({ guideId: guide.id, scheduledAt })) {
+    const resultadoConsulta = guide.extracted?.consultaPagamento;
+    return { ok: true, skipped: "conferencia_manual", guideId: guide.id,
+      negativaConfirmada: negativaElegivelParaAviso(guide, resultadoConsulta, scheduledAt),
+      ...(resultadoConsulta ? { resultadoConsulta } : {}) };
+  }
 
   const contribuinteCnpj = guide.portalClient?.cnpj || guide.cnpj;
-  if (!contribuinteCnpj) return { ok: false, skipped: "sem_cnpj", guideId: guide.id };
+  if (!contribuinteCnpj) return registrarResultado({ guide, resultadoConsulta: resultadoSemConsulta("CNPJ_AUSENTE"), assertActive });
+  if (guide.cnpj && String(guide.cnpj).replace(/\D/g, "") !== String(contribuinteCnpj).replace(/\D/g, "")) {
+    return registrarResultado({ guide, resultadoConsulta: resultadoSemConsulta("CNPJ_DIVERGENTE"), assertActive });
+  }
 
   const tipoUpper = String(guide.tipo || "").toUpperCase();
 
@@ -71,69 +81,109 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   // Q46: DAS (Simples) — sinal de pago AUTORITATIVO vem do `dasPago` (CONSDECLARACAO13), não do PAGTOWEB.
   if (tipoUpper === "SIMPLES") {
-    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive, scheduledAt });
+    return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive, consultasDaRodada, scheduledAt });
   }
 
   // Q46: INSS (e demais) — confirma via PAGTOWEB pelo numeroDocumento do DARF (GERARGUIA31).
   const numeroDocumento = getGuideNumeroDocumento(guide);
-  if (!numeroDocumento) return { ok: true, skipped: "sem_numero_documento", guideId: guide.id };
+  if (!numeroDocumento) return registrarResultado({ guide, resultadoConsulta: resultadoSemConsulta("NUMERO_DOCUMENTO_AUSENTE"), assertActive });
 
   let result;
+  await assertActive();
+  const consultadoEm = new Date().toISOString();
   try {
-    await assertActive();
     result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
   } catch (err) {
     logger?.warn?.(
       { code: err?.code, cnpj: maskCnpj(contribuinteCnpj), guideId: guide.id },
       "PAGTOWEB: falha ao consultar comprovante",
     );
+    await registrarResultado({ guide, assertActive, resultadoConsulta: err?.resultadoConsulta || err?.details?.resultadoConsulta || {
+      estado: "INDETERMINADO", fonte: "PAGTOWEB", consultadoEm, numeroDocumento,
+      motivo: err?.code || "FALHA_CONSULTA", cobertura: "NAO_CONSULTADA", identidadeConferida: false,
+    } });
     throw err;
   }
 
-  if (!result.pago) {
-    // ⚠ "NÃO LOCALIZADO" ≠ "NÃO PAGO". O comprovante pode não estar lá por atraso de processamento
-    // na Receita, por número de documento errado, ou porque o documento é de outro tipo. A guia
-    // continua `OPEN` — o estado em que já estava —, e o registro passa a DIZER que nada foi
-    // localizado, em vez de gravar `"FOUND"` sobre uma busca que não achou nada.
-    await markGuideOpenBySerpro({ guideId: guide.id, checkResult: CHECK_RESULT_NAO_LOCALIZADO });
-    await registrarNegativaAutomatica({ guideId: guide.id, scheduledAt });
-    return { ok: true, pago: false, negativaConfirmada: true, guideId: guide.id, mensagem: result.mensagem };
-  }
+  const resultadoConsulta = result?.resultadoConsulta || { estado: "INDETERMINADO", fonte: "PAGTOWEB",
+    consultadoEm, numeroDocumento, motivo: "RESPOSTA_SEM_CLASSIFICACAO", cobertura: "PARCIAL", identidadeConferida: false };
+  if (resultadoConsulta.estado !== "CONFIRMADO") return registrarResultado({ guide, resultadoConsulta, assertActive, scheduledAt });
 
+  await assertActive();
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
-  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante: result?.comprovante });
+  const registrado = await registrarResultado({ guide, resultadoConsulta, comprovantePdfFileId, comprovante: result?.comprovante, assertActive });
+  if (!registrado.pago || !registrado.aplicada) return registrado;
+  await assertActive();
   const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, composicao: result?.composicao, userId, logger });
-  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, baixa };
+  return { ...registrado, comprovantePdfFileId, baixa };
 }
 
-/**
- * Q46: confirma o pagamento do DAS (Simples). O sinal de pago é o `dasPago` do índice PGDAS-D
- * (CONSDECLARACAO13), consultado uma vez nesta execução. O PAGTOWEB só é chamado no fluxo manual
- * (se ligado) para BUSCAR O COMPROVANTE, com o
- * numeroDocumento CORRETO (dasNumeroDocumento), não o heurístico do GERARDAS.
- */
-async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, assertActive = () => {}, scheduledAt = null }) {
-  let numeroDocumento = null;
-  let dasPago = null;
+function resultadoSemConsulta(motivo) {
+  return { estado: "NAO_APLICAVEL", fonte: "VALIDACAO_LOCAL", consultadoEm: new Date().toISOString(),
+    numeroDocumento: null, motivo, cobertura: "NAO_CONSULTADA", identidadeConferida: false };
+}
 
-  // Uma consulta atual. O negativo salvo na circular pode anteceder o pagamento do cliente.
-  if (guide.competencia) {
+function negativaElegivelParaAviso(guide, resultado, scheduledAt) {
+  // COMPARRECADACAO72 sem PDF não fornece negativa fiscal. A fonte do DAS
+  // mensal admite false literal, correlacionado ao documento exato e já auditado.
+  if (!scheduledAt || !guide || !["OPEN", "OVERDUE"].includes(guide.paymentStatus)
+    || guide.baixada || guide.clienteConfirmouEm || ["CLIENTE", "MANUAL"].includes(guide.paymentStatusSource)) return false;
+  const checkedAt = new Date(resultado?.consultadoEm).getTime();
+  const slot = new Date(scheduledAt).getTime();
+  const doc = value => String(value ?? "").replace(/\D/g, "");
+  const periodo = resultado?.evidencia?.periodoPgdas;
+  const documentos = periodo?.documentos;
+  return resultado?.estado === "NAO_LOCALIZADO" && resultado.fonte === "PGDASD_CONSDECLARACAO13"
+    && resultado.cobertura === "COMPLETA" && resultado.identidadeConferida === true
+    && Boolean(resultado.observacaoId && resultado.consultaId)
+    && /^\d{17}$/.test(doc(resultado.numeroDocumento))
+    && doc(resultado.numeroDocumento) === doc(getGuideNumeroDocumento(guide))
+    && periodo?.cobertura === "COMPLETA" && periodo.impedimentoAviso === null
+    && periodo.competencia === guide.competencia && Array.isArray(documentos) && documentos.length === 1
+    && documentos[0].numeroDocumento === doc(resultado.numeroDocumento) && documentos[0].dasPago === false
+    && Number.isFinite(checkedAt) && Number.isFinite(slot) && checkedAt >= slot
+    && checkedAt <= Date.now() && Date.now() - checkedAt <= 24 * 60 * 60 * 1000;
+}
+
+async function registrarResultado({ guide, resultadoConsulta, comprovantePdfFileId = null, comprovante = null, assertActive, scheduledAt = null }) {
+  await assertActive();
+  const registrado = await registrarConsultaPagamentoGuia({ guide, resultadoConsulta, comprovantePdfFileId, comprovante, assertActive });
+  const final = registrado.resultadoConsulta;
+  const pago = final.estado === "CONFIRMADO" ? true : final.estado === "NAO_LOCALIZADO" ? false : null;
+  const negativaConfirmada = registrado.aplicada === true && negativaElegivelParaAviso(registrado.guia, final, scheduledAt);
+  if (negativaConfirmada) {
     await assertActive();
-    const idx = await consultarDasIndexPorCompetencia({
-      portalClientId: guide.portalClientId, competencia: guide.competencia, contribuinteCnpj,
-    });
-    if (idx) { numeroDocumento = idx.numeroDocumento; dasPago = idx.dasPago; }
-  }
-  numeroDocumento = numeroDocumento || getGuideNumeroDocumento(guide);
-
-  if (typeof dasPago !== "boolean") {
-    throw Object.assign(new Error("Não foi possível conferir o pagamento do DAS: índice indisponível."), { code: "DAS_PAGAMENTO_INDISPONIVEL" });
-  }
-  if (dasPago !== true) {
-    await markGuideOpenBySerpro({ guideId: guide.id });
     await registrarNegativaAutomatica({ guideId: guide.id, scheduledAt });
-    return { ok: true, pago: false, negativaConfirmada: true, guideId: guide.id, mensagem: "DAS ainda não consta pago na Receita." };
   }
+  return { ok: true, pago, guideId: guide.id, resultadoConsulta: final, aplicada: registrado.aplicada,
+    negativaConfirmada,
+    motivoNaoAplicada: registrado.motivoNaoAplicada || null,
+    mensagem: pago === true ? "Pagamento confirmado na Receita." : pago === false
+      ? "Não consta pagamento registrado na Receita até o momento desta consulta."
+      : "Consulta inconclusiva. O pagamento da guia não foi alterado; confira o motivo antes de tentar novamente." };
+}
+
+// A circular não é cache de pagamento: uma resposta negativa antiga não pode afirmar
+// o resultado da consulta de hoje. A rodada compartilha somente o HTTP recém-executado.
+async function confirmarPagamentoDas({ guide, contribuinteCnpj, logger, assertActive = () => {}, consultasDaRodada = null, scheduledAt = null }) {
+  if (!guide.competencia) return registrarResultado({ guide, resultadoConsulta: resultadoSemConsulta("COMPETENCIA_AUSENTE"), assertActive });
+  const consultadoEm = new Date().toISOString();
+  let idx;
+  await assertActive();
+  try {
+    idx = await consultarDasIndexPorCompetencia({ portalClientId: guide.portalClientId, competencia: guide.competencia,
+      contribuinteCnpj, numeroDocumento: getGuideNumeroDocumento(guide), consultasDaRodada, assertActive });
+  } catch (err) {
+    logger?.warn?.({ code: err?.code, guideId: guide.id }, "DAS: falha ao consultar índice (CONSDECLARACAO13)");
+    await registrarResultado({ guide, assertActive, resultadoConsulta: err?.resultadoConsulta || { estado: "INDETERMINADO", fonte: "PGDASD_CONSDECLARACAO13",
+      consultadoEm, numeroDocumento: getGuideNumeroDocumento(guide), motivo: err?.code || "FALHA_CONSULTA",
+      cobertura: "NAO_CONSULTADA", identidadeConferida: false } });
+    throw err;
+  }
+  const resultadoConsulta = idx?.resultadoConsulta || { estado: "INDETERMINADO", fonte: "PGDASD_CONSDECLARACAO13", consultadoEm,
+    numeroDocumento: null, motivo: "INDICE_DAS_INDISPONIVEL", cobertura: "PARCIAL", identidadeConferida: false };
+  if (resultadoConsulta.estado !== "CONFIRMADO") return registrarResultado({ guide, resultadoConsulta, assertActive, scheduledAt });
+  const numeroDocumento = idx.numeroDocumento;
 
   // DAS pago (autoritativo). Busca o comprovante via PAGTOWEB se ligado + número disponível (best-effort).
   let comprovantePdfFileId = null;
@@ -142,17 +192,17 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, 
     try {
       await assertActive();
       const result = await confirmarPagamento({ contribuinteCnpj, numeroDocumento, logger });
-      if (result?.pago) comprovante = result.comprovante || null;
-      if (result?.pago && result.comprovantePdfBuffer?.length) {
+      if (result?.resultadoConsulta?.estado === "CONFIRMADO") comprovante = result.comprovante || null;
+      if (result?.resultadoConsulta?.estado === "CONFIRMADO" && result.comprovantePdfBuffer?.length) {
         comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
       }
     } catch (err) {
       logger?.warn?.({ code: err?.code, guideId: guide.id }, "PAGTOWEB: comprovante do DAS não obtido (segue como pago)");
     }
   }
-  await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante });
+  const registrado = await registrarResultado({ guide, resultadoConsulta, comprovantePdfFileId, comprovante, assertActive });
   // DAS não gera baixa contábil automática (o contador dá baixa se quiser); a Circular reflete o pago (Q45).
-  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId };
+  return { ...registrado, comprovantePdfFileId };
 }
 
 /** Salva o comprovante (PDF) do PAGTOWEB no storage e devolve o fileId (ou null). Best-effort. */
@@ -190,16 +240,21 @@ async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, log
   const tipoUpper = String(guide.tipo || "").toUpperCase();
   try {
     if (guide.parcelamentoId) {
+      const dataPagamento = dataDoComprovante(comprovante);
+      if (!dataPagamento || !comprovante?.confiavel || composicao?.confiavel !== true) {
+        return { skipped: true, reason: "sem_evidencia_pagamento" };
+      }
       // ⚠ A COMPOSIÇÃO POR CÓDIGO É O QUE PERMITE BAIXAR CERTO. Numa parcela, os códigos-tributo
       // são dívida consolidada sendo amortizada (debitam o passivo) e os códigos TJLP são encargo
       // corrente (despesa do mês). Sem ela o pagamento cai no caminho antigo, que debita o passivo
       // só pelo principal e reconhece multa e juros como despesa nova.
       const classificacaoComprovante = composicao ? classificarDocumentoArrecadado(composicao) : null;
+      if (!classificacaoComprovante?.classificavel) return { skipped: true, reason: "sem_evidencia_pagamento" };
       const r = await gerarPagamentoParcelaFromGuide({
         portalClientId: guide.portalClientId, guideId: guide.id, userId,
         // ⚠ A data é a da ARRECADAÇÃO, não "hoje". Sem ela a baixa caía na competência em que o
         // worker rodou, que pode ser outro mês — e o mês do pagamento é o da despesa do TJLP.
-        dataPagamento: comprovante?.dataArrecadacao || undefined,
+        dataPagamento,
         classificacaoComprovante,
       });
       // Recusa consciente, e precisa aparecer: guia paga sem lançamento é indistinguível de
@@ -251,7 +306,7 @@ async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, log
  * @param {string} [opts.portalClientId] limita a uma empresa (botão por empresa)
  * @param {string} [opts.competencia] limita a uma competência
  */
-export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {}, scheduledAt = null } = {}) {
+export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {}, retomadaPagamento = null, scheduledAt = null } = {}) {
   // Rotina `pagamento`: quando roda em lote (cron ou "confirmar agora"), só as empresas
   // marcadas na página Rotinas. Com `portalClientId` explícito o filtro NÃO se aplica —
   // é o botão por empresa, escolha direta do contador.
@@ -276,9 +331,10 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   const where = {
     source: "SERPRO",
     status: "PROCESSED",
-    ...(scheduledAt ? { paymentStatus: { in: ["OPEN", "OVERDUE"] } } : {
-      AND: [{ OR: [{ paymentStatus: { in: ["OPEN", "OVERDUE"] } }, { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", baixada: false }] }],
-    }),
+    AND: [{ OR: [
+      { paymentStatus: { in: ["OPEN", "OVERDUE"] } },
+      { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", baixada: false },
+    ] }],
     // ⚠ PARCELA DE PARCELAMENTO FICA DE FORA DA VARREDURA — a mesma exclusão que `confirmarPagamentoGuia`
     // faz por guia, aqui na QUERY para ela nem entrar na contagem do resumo (senão a mensagem diria
     // "N guias consultadas" incluindo as que ninguém consultou). O motivo está lá: o índice do
@@ -293,6 +349,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
     ...(filtroRotina || {}),
     ...(competencia ? { competencia: String(competencia) } : {}),
+    ...(retomadaPagamento ? { id: { in: [...new Set((retomadaPagamento.guideIds || []).map(String))] } } : {}),
   };
 
   // Chave estável: a consulta muda updatedAt e retirar pagas não pode deslocar páginas.
@@ -300,7 +357,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   let cursor;
   while (true) {
     await assertActive();
-    const page = await prisma.guide.findMany({ where: { ...where, ...(cursor ? { id: { gt: cursor } } : {}) },
+    const page = await prisma.guide.findMany({ where: { ...where, ...(cursor ? { id: { ...(where.id || {}), gt: cursor } } : {}) },
       select: { id: true, tipo: true, competencia: true, extracted: true, portalClientId: true },
       orderBy: { id: "asc" }, take: 500 });
     guides.push(...page);
@@ -308,7 +365,11 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     cursor = page.at(-1).id;
   }
 
-  const results = [];
+  // Retentar somente falhas da mesma execução agendada. Os demais resultados
+  // preservam data/evidência originais, sem gastar outra consulta nem parecer atuais.
+  const results = (retomadaPagamento?.concluidos || []).filter(r => r && r.status !== "error");
+  const concluidosAnteriores = results.length;
+  const consultasDaRodada = new Map();
   let firstError = null; // Q43: 1º código de erro — para o chamador sinalizar falha (não reportar OK falso)
   for (const g of guides) {
     await assertActive();
@@ -321,22 +382,33 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
-      const aviso = scheduledAt && r.negativaConfirmada ? await avisarPagamentoNaoConfirmado({ guideId: g.id, scheduledAt, assertActive }) : null;
-      results.push({ guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
+      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, consultasDaRodada, scheduledAt });
+      const aviso = scheduledAt && r.negativaConfirmada === true
+        ? await avisarPagamentoNaoConfirmado({ guideId: g.id, scheduledAt, resultadoConsulta: r.resultadoConsulta, assertActive }) : null;
+      const estado = r.resultadoConsulta?.estado;
+      results.push({ guideId: g.id, status: r.skipped || (estado === "NAO_APLICAVEL" ? "nao_aplicavel" : estado === "PARCIAL_OU_DIVERGENTE" ? "divergente"
+        : r.pago === true ? "paid" : r.pago === false ? "open" : "indeterminado"),
+        ...(r.resultadoConsulta ? { resultadoConsulta: r.resultadoConsulta, aplicada: r.aplicada } : {}),
+        ...(aviso ? { aviso } : {}) });
     } catch (err) {
       const code = err?.code || err?.message || "ERRO";
       if (!firstError) firstError = code;
-      results.push({ guideId: g.id, status: "error", error: code });
+      results.push({ guideId: g.id, status: "error", error: code,
+        ...(err?.resultadoConsulta || err?.details?.resultadoConsulta ? { resultadoConsulta: err.resultadoConsulta || err.details.resultadoConsulta } : {}) });
     }
   }
 
   const parcelas = INTEGRACAO_SERPRO_PARCELAMENTO
-    ? await confirmarPagamentosParcelasEmLote({ portalClientIds: portalClientId ? [portalClientId] : filtroRotina?.portalClientId.in, logger, assertActive, scheduledAt })
+    ? await confirmarPagamentosParcelasEmLote({ portalClientIds: portalClientId ? [portalClientId] : filtroRotina?.portalClientId.in,
+      ...(retomadaPagamento ? { parcelaIds: retomadaPagamento.parcelaIds || [] } : {}), logger, assertActive, scheduledAt })
     : { total: 0, results: [], skipped: "integracao_parcelamento_desabilitada" };
-  results.push(...parcelas.results);
+  // Parcelas possuem parser próprio; o resumo adota o vocabulário comum sem misturar
+  // identificadores nem usar o índice do DAS mensal para confirmar uma prestação.
+  results.push(...parcelas.results.map(r => ({ ...r, status: ({ CONFIRMADO: "paid", NAO_LOCALIZADO: "open",
+    INDETERMINADO: "indeterminado", DIVERGENTE: "divergente", PARCIAL_OU_DIVERGENTE: "divergente", NAO_APLICAVEL: "nao_aplicavel" })[r.status] || r.status })));
   firstError ||= parcelas.results.find(r => r.status === "error")?.error || null;
-  const total = guides.length + parcelas.total;
+  const retomados = retomadaPagamento ? guides.length + parcelas.total : 0;
+  const total = guides.length + parcelas.total + concluidosAnteriores;
   const paid = results.filter((r) => r.status === "paid").length;
   const naoLocalizado = results.filter((r) => ["open", "NAO_LOCALIZADO"].includes(r.status)).length;
   const conferenciaManual = results.filter(r => r.status === "conferencia_manual").length;
@@ -345,15 +417,18 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   const naoVencidas = results.filter(r => r.status === "ainda_nao_vencida").length;
   const semVencimento = results.filter(r => r.status === "sem_vencimento_confirmado").length;
   const errors = results.filter((r) => r.status === "error").length;
-  const pagtowebDisabled = firstError === "SERPRO_PAGTOWEB_DISABLED";
+  const indeterminados = results.filter((r) => r.status === "indeterminado").length;
+  const divergentes = results.filter((r) => r.status === "divergente").length;
+  const naoAplicavel = results.filter((r) => r.status === "nao_aplicavel").length;
+  const cobertura = errors + indeterminados + divergentes + naoAplicavel + semDoc > 0
+    || results.some(r => r.aplicadaGuia === false || !["paid", "open", "already_paid"].includes(r.status)) ? "PARCIAL" : "COMPLETA";
+  const pagtowebDisabled = results.some(r => r.error === "SERPRO_PAGTOWEB_DISABLED");
   const avisosPendentes = results.filter(r => r.aviso?.status === "PENDENTE").length;
   const avisosEnviados = results.filter(r => r.aviso?.status === "ENVIADO").length;
 
   // Q45: resultado auto-descritivo — em vez de "ok" genérico, diz o que aconteceu.
   let mensagem;
-  if (pagtowebDisabled) {
-    mensagem = "Confirmação de pagamento (PAGTOWEB) desabilitada — nenhuma guia foi consultada no SERPRO. Ligue INTEGRACAO_SERPRO_PAGTOWEB após validar no trial.";
-  } else if (total === 0) {
+  if (total === 0) {
     mensagem = `Nenhuma guia SERPRO em aberto para confirmar${competencia ? ` (competência ${competencia})` : ""}.`;
   } else {
     const partes = [`${paid} paga(s)`];
@@ -363,14 +438,20 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     if (naoVencidas) partes.push(`${naoVencidas} ainda não vencida(s), sem consulta`);
     if (semVencimento) partes.push(`${semVencimento} sem vencimento confirmado, sem consulta`);
     if (conferenciaManual) partes.push(`${conferenciaManual} aguardando conferência manual, sem nova consulta`);
+    if (indeterminados) partes.push(`${indeterminados} inconclusiva(s)`);
+    if (divergentes) partes.push(`${divergentes} com informação parcial ou divergente`);
+    if (naoAplicavel) partes.push(`${naoAplicavel} sem identificação para consulta`);
     if (errors) partes.push(`${errors} com erro${firstError ? ` (${firstError})` : ""}`);
     if (avisosEnviados) partes.push(`${avisosEnviados} aviso(s) enviado(s)`);
     if (avisosPendentes) partes.push(`${avisosPendentes} aviso(s) pendente(s): conferir canal/destinatário`);
     mensagem = `${total} guia(s) verificada(s): ${partes.join(", ")}.`;
+    if (concluidosAnteriores) mensagem += ` ${concluidosAnteriores} resultado(s) anterior(es) preservado(s); ${retomados} item(ns) reavaliado(s) nesta retomada.`;
+    if (pagtowebDisabled) mensagem += " PAGTOWEB desabilitado para as guias que dependem desse serviço.";
   }
 
   return {
-    total, paid, open: naoLocalizado, naoLocalizado, semDoc, jaPago, errors,
-    pagtowebDisabled, firstError, mensagem, results, parcelas, avisosPendentes, avisosEnviados, conferenciaManual, naoVencidas, semVencimento,
+    total, paid, open: naoLocalizado, naoLocalizado, semDoc, jaPago, errors, indeterminados, divergentes, naoAplicavel, cobertura,
+    pagtowebDisabled, firstError, mensagem, results, parcelas, concluidosAnteriores, retomados,
+    avisosPendentes, avisosEnviados, conferenciaManual, naoVencidas, semVencimento,
   };
 }

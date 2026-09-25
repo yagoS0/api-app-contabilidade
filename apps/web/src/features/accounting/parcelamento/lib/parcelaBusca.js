@@ -346,6 +346,15 @@ export function textoDaConfirmacao(linha, parcelamentoLabel) {
  * `encontrado: false` é um desfecho legítimo, não uma falha — daí o tom próprio.
  */
 export function resumoDoResultado(resposta) {
+  const estado = resposta?.resultadoConsulta?.estado;
+  if (["INDETERMINADO", "PARCIAL_OU_DIVERGENTE", "NAO_APLICAVEL"].includes(estado)
+    || (resposta?.encontrado !== true && resposta?.encontrado !== false)) {
+    return { tom: "neutro",
+      titulo: estado === "PARCIAL_OU_DIVERGENTE" ? "Resultado exige conferência"
+        : estado === "NAO_APLICAVEL" ? "Pagamento não consultado" : "Consulta inconclusiva",
+      detalhe: resposta?.motivo || "Não foi possível confirmar a situação deste pagamento. Confira antes de orientar o cliente.",
+    };
+  }
   if (resposta?.encontrado) {
     const c = resposta.comprovante || null;
     const total = c?.total != null

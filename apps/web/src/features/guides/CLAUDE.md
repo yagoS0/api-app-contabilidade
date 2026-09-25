@@ -523,3 +523,7 @@ Revisão fiscal (18/09/2026): mensagens de envio/reenvio individual e em seleç�
 ## Consulta explícita DAS/INSS — 23/09/2026
 
 A barra Guias oferece Consultar SERPRO, separada de Recalcular e do upload. Usa a competência fiscal do cabeçalho, não o vencimento derivado. DAS usa captura PGDAS-D; INSS usa sincronização DCTFWeb; ambas sem `atualizar`, preservando reaproveitamento e limites de consumo. A confirmação informa possibilidade de consulta paga; consultar não confirma pagamento. Trava concorrente e contexto da empresa impedem duplicação e retorno de outra empresa. Nenhuma chamada paga ao abrir a tela.
+
+## Resumo da consulta de pagamentos — 24/09/2026
+
+`lib/resumoConsultaPagamento.js` distingue pagamentos confirmados, não localizados até a consulta e respostas inconclusivas. Lote com falhas/parcialidade não aparece como OK só porque confirmou outra guia. O mock de Rotinas tem confirmação e ressalva no mesmo lote; a execução concluída com ressalvas não promete nova consulta automática.

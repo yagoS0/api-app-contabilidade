@@ -33,8 +33,14 @@ export async function finishScheduledRun(claim, result, error, { db = prisma, no
   const failed = Boolean(error || result?.skipped || result?.failed || result?.falhas
     || result?.naoConferiveis || result?.extratoErro || result?.parcelasErro || result?.skippedByProcuration || result?.avisosPendentes
     || (Array.isArray(result?.errors) ? result.errors.length : Number(result?.errors || 0)));
+  // A execução técnica pode terminar sem responder a situação fiscal. Isso exige conferência,
+  // não outra rodada paga automática de uma resposta já recebida.
+  const ressalvasPagamento = claim.value.routine === "pagamento" && Boolean(
+    result?.indeterminados || result?.divergentes || result?.naoAplicavel || result?.semDoc
+    || result?.cobertura === "PARCIAL" || result?.qualidadeConsulta === "PARCIAL");
   const value = jsonValue({ ...current.value, owner: null, leaseUntil: null,
     status: failed ? "FAILED" : "SUCCEEDED", finishedAt: now.toISOString(),
+    ...(claim.value.routine === "pagamento" ? { qualidadeConsulta: failed || ressalvasPagamento ? "PARCIAL" : "COMPLETA" } : {}),
     retryAt: null,
     error: error ? String(error.code || error.message || error) : null,
     result: result ?? null,

@@ -1,3 +1,8 @@
+## Confiabilidade das consultas de pagamento — 24/09/2026
+
+Integração sobre a tarefa Fiscal publicada no PR 86, com ensaio entre agentes e piloto fiscal real de seis consultas de leitura. Cinco confirmações e um resultado inconclusivo, sem alterar pagamentos; negativa explícita de DAS vigente não ocorreu na amostra. Resultado fiscal é CONFIRMADO, NAO_LOCALIZADO, INDETERMINADO, PARCIAL_OU_DIVERGENTE ou NAO_APLICAVEL. `pago/encontrado` aceita null; não converter falha em guia aberta. DAS usa consulta atual com vínculo do documento; circular antiga não confirma pagamento de hoje. PAGTOWEB valida status, PDF e identidade antes de confirmar; ausência de comprovante não prova inadimplência.
+
+`ConsultaPagamentoGuiaService` registra observações com instante/origem/revisão e lock após HTTP; protege duplicação, resultado atrasado, recálculo e baixa manual. Evidência de pagamento não autoriza baixa contábil com data/composição estimadas. Resumos distinguem conclusão técnica de ressalvas fiscais. A regra posterior de agenda explícita elimina retries automáticos; eventual retomada manual delimitada conserva os resultados anteriores. A main do PR 90 acrescentou avisos, integrados com exigência de observação negativa válida, aplicada e da revisão vigente. Nunca avisar por guia antiga, retorno inconclusivo ou declaração de pagamento do cliente. Plano, limites, migration e ensaios: `docs/confiabilidade-consultas-pagamento-20260924.md`.
 # Guarda SERPRO — 2026-09-08
 
 ## Agenda e retorno negativo — 24/09/2026

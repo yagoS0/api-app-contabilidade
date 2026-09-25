@@ -1,3 +1,4 @@
+import { resumoConsultaPagamentoLote } from "../../features/guides/lib/resumoConsultaPagamento.js";
 import { useEffect, useRef, useState } from "react";
 import { detalhesDaConfirmacaoDoResponsavel } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -611,15 +612,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         case "pagamento": {
           // Q40/Q43: confirma pagamento das guias OPEN (via PAGTOWEB). competencia é opcional.
           const r = await api.confirmarPagamentoSerpro(companyId, competencia ? { competencia } : {});
-          const res = r?.result || {};
-          const paid = res.paid ?? 0;
-          const errors = res.errors ?? 0;
-          // Q45: usa a mensagem detalhada do backend (pagas / não localizadas / sem nº / desabilitado).
-          const message = res.mensagem
-            || (paid ? `${paid} pago(s)` : (res.total ? "Nenhum pago" : "Sem guias a confirmar"));
-          // Não reporta OK quando PAGTOWEB está desligado ou tudo falhou.
-          const ok = !res.pagtowebDisabled && !(errors > 0 && paid === 0);
-          return { ok, message };
+          return resumoConsultaPagamentoLote(r?.result || {});
         }
         case "sitfis": {
           // Q40: relatório de situação fiscal.

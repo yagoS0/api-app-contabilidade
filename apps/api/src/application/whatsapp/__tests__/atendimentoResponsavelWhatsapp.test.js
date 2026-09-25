@@ -171,6 +171,21 @@ const GUIAS_DA_JORNADA = [
 ];
 const dizerNaJornada = async (f, texto) => { jest.setSystemTime(new Date(Date.now() + 1000)); const e = await f.novo(texto); await f.rodar(e); return e; };
 
+it('responsável de três empresas informa pagamento da empresa atual e segue à equipe sem alterar guia', async () => {
+  const f = await fixtureComMenu(['GUIAS']);
+  await f.selecionar('menu', 'lente');
+  await dizerNaJornada(f, 'já paguei a guia');
+  expect(f.atendimento().portalClientId).toBe('lente');
+  expect(new Date(f.atendimento().atendidaDesde).getTime()).toBe(Date.now());
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('conferir o pagamento');
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
+  const saidas = f.cloud.enviarTexto.mock.calls.length;
+  await dizerNaJornada(f, 'paguei ontem');
+  expect(f.cloud.enviarTexto).toHaveBeenCalledTimes(saidas);
+});
+
 it.each(['2', 'a segunda', 'INSS'])('cliente escolhe a guia por %s e recebe o PDF sem IA nem campos técnicos', async escolha => {
   const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
   await f.selecionar('me manda a guia', 'lente');

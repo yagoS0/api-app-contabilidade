@@ -1,3 +1,4 @@
+import { resumoDoResultado } from "../../parcelamento/lib/parcelaBusca.js";
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { informacaoRecalculo, DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
 import { useEffect, useState, useMemo } from "react";
@@ -909,7 +910,8 @@ export function CircularTab({
     setBuscandoPagamento(guideId);
     try {
       const r = await circularApi.buscarPagamentoGuia(guideId);
-      if (r?.encontrado) {
+      const resumo = resumoDoResultado(r);
+      if (r?.encontrado && resumo.tom === "ok") {
         const c = r.comprovante;
         // ⚠ O VALOR SAI PELO FORMATADOR DA TELA, não por `toFixed(2)`. Este era o único número
         // desta aba em formato americano: "R$ 193.03" no meio de um quadro em que todo o resto
@@ -924,7 +926,7 @@ export function CircularTab({
 A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           : "Pagamento localizado no SERPRO. Use \"Dar baixa\" para lançar.");
       } else {
-        window.alert(r?.motivo || "Pagamento ainda não localizado no SERPRO.");
+        window.alert(`${resumo.titulo}. ${resumo.detalhe}`);
       }
       await onLoad?.();
     } catch (err) {

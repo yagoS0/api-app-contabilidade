@@ -180,3 +180,53 @@ it('recaptura preserva aviso do recálculo sem conservar dados fiscais substitu�
   await chamar({ existingGuideId: 'g1', extracted: { numeroDocumento: 'novo' } });
   expect(mockAtualizados[0].extracted).toEqual({ recalculoGuia, numeroDocumento: 'novo' });
 });
+
+describe('recaptura depois da consulta de pagamento', () => {
+  async function consultada() {
+    const extra = { hash: 'pdf-original', extracted: { numeroDocumento: '12345678901234567' } };
+    const anterior = await chamar(extra);
+    const consulta = { observacaoId: 'obs-1', consultaId: 'consulta-1', estado: 'NAO_LOCALIZADO',
+      fonte: 'PGDASD_CONSDECLARACAO13', consultadoEm: '2026-09-24T12:00:00.000Z',
+      numeroDocumento: extra.extracted.numeroDocumento, cobertura: 'COMPLETA', identidadeConferida: true };
+    anterior.extracted = { ...anterior.extracted, consultaPagamento: consulta,
+      pagamentoDeclaradoCliente: { pagoEmInformado: '2026-09-21T00:00:00.000Z', porUserId: 'cliente-1' } };
+    Object.assign(anterior, { updatedAt: new Date(), serproLastCheckedAt: new Date(consulta.consultadoEm),
+      serproLastCheckResult: 'NAO_LOCALIZADO', serproLastSeenAt: new Date(consulta.consultadoEm) });
+    return { anterior, consulta, extra };
+  }
+  test('mesmo PDF mantém observação, data e declaração do cliente sem inventar consulta nova', async () => {
+    const { prisma } = require('../../../infrastructure/db/prisma.js');
+    const { anterior, consulta, extra } = await consultada();
+    prisma.guide.findUnique.mockResolvedValueOnce(anterior).mockResolvedValueOnce(anterior);
+    await chamar({ ...extra, existingGuideId: anterior.id, serproLastCheckedAt: new Date('2026-09-25') });
+    expect(mockAtualizados[0].extracted.consultaPagamento).toEqual(consulta);
+    expect(mockAtualizados[0].extracted.pagamentoDeclaradoCliente).toEqual(anterior.extracted.pagamentoDeclaradoCliente);
+    expect(mockAtualizados[0].serproLastCheckedAt).toEqual(anterior.serproLastCheckedAt);
+    expect(mockAtualizados[0].serproLastCheckResult).toBe('NAO_LOCALIZADO');
+  });
+  test('PDF substituído mantém referência auditável e sinaliza que a nova versão não foi consultada', async () => {
+    const { prisma } = require('../../../infrastructure/db/prisma.js');
+    const { anterior, consulta, extra } = await consultada();
+    prisma.guide.findUnique.mockResolvedValueOnce(anterior).mockResolvedValueOnce(anterior);
+    await chamar({ ...extra, existingGuideId: anterior.id, hash: 'pdf-novo', pdfBytes: Buffer.from('%PDF-outro') });
+    expect(mockAtualizados[0].extracted.consultaPagamento).toMatchObject({ observacaoId: consulta.observacaoId,
+      consultadoEm: consulta.consultadoEm, estado: 'INDETERMINADO', motivo: 'DOCUMENTO_ALTERADO',
+      cobertura: 'NAO_CONSULTADA', identidadeConferida: false });
+    expect(mockAtualizados[0].serproLastCheckedAt).toEqual(anterior.serproLastCheckedAt);
+    expect(mockAtualizados[0].serproLastCheckResult).toBe('INDETERMINADO');
+    expect(mockAtualizados[0]).not.toHaveProperty('paymentStatus');
+  });
+  test('confirmação concorrente é relida pelo CAS e não perde a observação mais recente', async () => {
+    const { prisma } = require('../../../infrastructure/db/prisma.js');
+    const { anterior, extra } = await consultada();
+    const confirmado = { ...anterior, updatedAt: new Date(+anterior.updatedAt + 1000),
+      serproLastCheckedAt: new Date('2026-09-25'), serproLastCheckResult: 'PGDAS_PAGAMENTO_CONFIRMADO',
+      extracted: { ...anterior.extracted, consultaPagamento: { ...anterior.extracted.consultaPagamento,
+        observacaoId: 'obs-2', consultadoEm: '2026-09-25T00:00:00.000Z', estado: 'CONFIRMADO' } } };
+    prisma.guide.findUnique.mockResolvedValueOnce(anterior).mockResolvedValueOnce(confirmado).mockResolvedValueOnce(confirmado);
+    prisma.guide.updateMany.mockResolvedValueOnce({ count: 0 });
+    await chamar({ ...extra, existingGuideId: anterior.id });
+    expect(mockAtualizados[0].extracted.consultaPagamento).toEqual(confirmado.extracted.consultaPagamento);
+    expect(mockAtualizados[0].serproLastCheckedAt).toEqual(confirmado.serproLastCheckedAt);
+  });
+});

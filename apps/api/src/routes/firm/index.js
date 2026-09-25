@@ -1,3 +1,5 @@
+import { createBuscarPagamentoHandler, identificacaoConsultaDaGuia, leituraComprovanteConfirmada, mensagemResultadoConsulta } from "./guidePaymentLookup.js";
+import { capturarRevisaoConsulta } from "../../application/guides/ConsultaPagamentoGuiaService.js";
 import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
 import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
 import { getRoutineExecutionStatus } from "../../workers/scheduledRoutineService.js";
@@ -199,7 +201,6 @@ import {
   isGuidePaid,
   markGuideOpenBySerpro,
   markGuidePaidManual,
-  markGuidePaidByComprovante,
 } from "../../application/guides/GuidePaymentStatusService.js";
 import {
   SERPRO_PGDASD_SERVICE_COBRANCA,
@@ -528,6 +529,7 @@ async function attachSerproStatusToCompaniesList(data) {
 async function getGuideWithFirmAccess({ guideId, user }) {
   const guide = await prisma.guide.findUnique({
     where: { id: String(guideId) },
+    include: { portalClient: { select: { cnpj: true } } },
   });
   if (!guide) return { guide: null, error: "not_found", status: 404 };
   if (!guide.portalClientId) return { guide: null, error: "guide_has_no_company", status: 400 };
@@ -3902,56 +3904,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/guides/:guideId/buscar-pagamento",
     requireAccountType("FIRM"),
-    async (req, res) => {
-      const { guideId } = req.params || {};
-      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
-      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
-
-      const numeroDoc = String(scoped.guide.extracted?.numeroDocumento || "").trim();
-      if (!numeroDoc) {
-        return res.json({
-          ok: true, encontrado: false,
-          motivo: "Guia sem número de documento — o comprovante é localizado por ele.",
-        });
-      }
-
-      try {
-        const { confirmarPagamento } = await import(
-          "../../application/fiscal/serpro/SerproPagtoWebService.js"
-        );
-        const r = await confirmarPagamento({
-          contribuinteCnpj: scoped.guide.cnpj,
-          numeroDocumento: numeroDoc,
-          logger: log,
-        });
-        if (!r?.pago) {
-          return res.json({
-            ok: true, encontrado: false,
-            motivo: r?.mensagem || "Pagamento ainda não localizado no SERPRO.",
-          });
-        }
-
-        const c = r.comprovante || null;
-        await markGuidePaidByComprovante({ guideId: scoped.guide.id, comprovante: c });
-
-        return res.json({
-          ok: true,
-          encontrado: true,
-          comprovante: c
-            ? {
-                dataArrecadacao: c.dataArrecadacaoBR, principal: c.principal,
-                juros: c.juros, multa: c.multa, total: c.total,
-                meioPagamento: c.meioPagamento, confiavel: c.confiavel,
-              }
-            : null,
-        });
-      } catch (err) {
-        log.error({ err: err?.message, guideId: scoped.guide.id }, "Falha ao buscar pagamento (PAGTOWEB)");
-        return res.status(502).json({ ok: false, error: err?.code || "PAGTOWEB_FALHOU", reason: err?.message });
-      }
-    }
+    createBuscarPagamentoHandler({ getGuideWithFirmAccess, log })
   );
-
   router.post(
     "/guides/:guideId/confirm-payment",
     requireAccountType("FIRM"),
@@ -3969,25 +3923,36 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Best-effort: falha na consulta não impede a confirmação manual.
       let comprovante = null;
       let comprovanteAviso = null;
+      let resultadoConsulta = null;
       try {
         const { confirmarPagamento } = await import(
           "../../application/fiscal/serpro/SerproPagtoWebService.js"
         );
-        const numeroDoc = String(scoped.guide.extracted?.numeroDocumento || "").trim();
-        if (numeroDoc) {
+        const identificacao = identificacaoConsultaDaGuia(scoped.guide);
+        if (identificacao.motivo) {
+          comprovanteAviso = "Não foi possível consultar: confira o CNPJ da guia e o cadastro da empresa.";
+        } else if (identificacao.numeroDocumento) {
           const r = await confirmarPagamento({
-            contribuinteCnpj: scoped.guide.cnpj,
-            numeroDocumento: numeroDoc,
+            contribuinteCnpj: identificacao.contribuinteCnpj,
+            numeroDocumento: identificacao.numeroDocumento,
             logger: log,
           });
-          if (r?.pago && r?.comprovante) comprovante = r.comprovante;
-          else if (!r?.pago) comprovanteAviso = r?.mensagem || "Comprovante não localizado no SERPRO.";
+          resultadoConsulta = r.resultadoConsulta || null;
+          if (leituraComprovanteConfirmada(r) && r.comprovante) comprovante = r.comprovante;
+          else comprovanteAviso = mensagemResultadoConsulta(resultadoConsulta, r?.mensagem);
         } else {
           comprovanteAviso = "Guia sem número de documento — não dá pra buscar o comprovante.";
         }
       } catch (err) {
         comprovanteAviso = `Não foi possível consultar o comprovante: ${err?.message || err}`;
         log.warn({ err: err?.message, guideId: scoped.guide.id }, "PAGTOWEB: consulta falhou (segue com confirmação manual)");
+      }
+
+      const atual = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!atual.guide) return res.status(atual.status).json({ error: atual.error });
+      if (capturarRevisaoConsulta(atual.guide) !== capturarRevisaoConsulta(scoped.guide)
+        || atual.guide.portalClient?.cnpj !== scoped.guide.portalClient?.cnpj) {
+        return res.status(409).json({ error: "guia_alterada", reason: "A guia mudou durante a consulta. Confira a versão atual antes de confirmar o pagamento." });
       }
 
       // Comparação documental: diferença pede conferência, sem descartar a data real.
@@ -4062,6 +4027,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             }
           : null,
         comprovanteAviso,
+        resultadoConsulta,
         circular: {
           atualizada: circularAtualizada,
           provisoesMarcadas: Number(baixa?.provisoesMarcadas || 0),
