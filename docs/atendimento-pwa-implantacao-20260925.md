@@ -42,3 +42,7 @@ Ordem: conferir backup/armazenamento e main atual → testes locais/CI → integ
 - Retomada inicial exige modelo estático aprovado no canal, sem parâmetros/mídia/botões. Configuração pendente é exibida; não criar modelo ou enviar mensagem em teste.
 - O catálogo atual não armazena corpo/versão Meta dos modelos de guia; o histórico conserva nome, idioma, parâmetros e hash e declara ausência da renderização exata. Legados não recebem conteúdo inventado.
 - Teste de navegador em tamanho de celular não substitui homologação em iPhone/Android físicos, teclado virtual e entrega real de push. Esses resultados devem ser registrados separadamente.
+
+## Critério visual móvel
+
+A primeira composição móvel foi rejeitada na revisão de uso: cabeçalho e ferramentas consumiam aproximadamente metade da tela. A publicação deve usar cabeçalho compacto, campo de mensagem e envio na mesma linha, ações auxiliares recolhidas no botão de adicionar e detalhes do contato separados. Conferir em 390 × 844 e 360 × 740, sem rolagem horizontal, sem duplicar a rolagem da página com a do histórico e sem esconder falhas, destino alterado ou envio ainda sem confirmação. O layout do computador e o acesso às operações existentes devem ser preservados.

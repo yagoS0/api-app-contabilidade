@@ -1,0 +1,29 @@
+/* A lista móvel é uma tela própria; o desktop mantém o cabeçalho existente. */
+.wa-mobile-inbox-actions { display: none; }
+@media (max-width: 760px) {
+  .wa-page .page-shell > .page-shell__header { display: none; }
+  .wa-page .wa-sidebar { border: 0; }
+  .wa-page .wa-sidebar-top { padding: max(6px, env(safe-area-inset-top)) 12px 8px; }
+  .wa-page .wa-inbox-heading { min-height: 44px; margin-bottom: 8px; gap: 8px; }
+  .wa-page .wa-inbox-heading h2 { font-size: 22px; letter-spacing: -.4px; }
+  .wa-page .wa-inbox-heading > .wa-count { margin-right: auto; }
+  .wa-page .wa-mobile-inbox-actions { display: flex; gap: 4px; }
+  .wa-page .wa-mobile-inbox-actions .btn { width: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; }
+  .wa-page .wa-search { min-height: 44px; border-radius: 12px; }
+  .wa-page .wa-search input { font-size: 16px; padding: 10px 0; }
+  .wa-page .wa-sidebar-filterline { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; margin-top: 6px; }
+  .wa-page .wa-sidebar-filterline .wa-relationship-filters { flex: 1; display: flex; min-width: 0; }
+  .wa-page .wa-sidebar-filterline .wa-relationship-filters > button { flex: 1; font-size: 14px; padding: 6px 4px; min-height: 44px; }
+  .wa-page .wa-list-filters { flex: 0 0 auto; margin-left: 0; }
+  .wa-page .wa-list-filters > summary { min-height: 44px; padding: 0 7px; font-size: 13px; }
+  .wa-page .wa-sidebar-top .wa-list-note { margin: 4px 0 0; padding: 0 !important; font-size: 12px; line-height: 1.5; }
+  .wa-page .wa-conversation-list { padding: 4px 6px; scrollbar-width: thin; }
+  .wa-page .wa-conversation { gap: 12px; padding: 12px 8px; border-radius: 10px; }
+  .wa-page .wa-conversation .wa-avatar { width: 40px; height: 40px; border-radius: 50%; font-size: 13px; margin-top: 3px; }
+  .wa-page .wa-conversation-title > strong { font-size: 16px !important; }
+  .wa-page .wa-contact-preview { font-size: 14px; margin-top: 3px; }
+  .wa-page .wa-contact-meta { margin-top: 2px; font-size: 12px; }
+  .wa-page .wa-sidebar-footer { padding: 4px 12px max(4px, env(safe-area-inset-bottom)); gap: 10px; }
+  .wa-page .wa-sidebar-footer :is(summary, a, button) { font-size: 12px; min-height: 44px; }
+  .wa-page .wa-app-tools { min-width: 0; }
+}

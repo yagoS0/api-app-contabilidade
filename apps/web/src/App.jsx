@@ -1,3 +1,4 @@
+import { modoAtendimento } from "./features/whatsapp/lib/atendimentoPwa";
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
 import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
@@ -45,9 +46,13 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
   const location = useLocation();
-  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><SessionBoundary api={api} tokenStorageKey={TOKEN_STORAGE_KEY}>{(session, feedback) => <AppInterno session={session} feedback={feedback} />}</SessionBoundary></WorkspaceNavigationProvider>;
+  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><SessionBoundary api={api} tokenStorageKey={TOKEN_STORAGE_KEY}>{(session, feedback) => modoAtendimento(location) ? <AtendimentoMovel session={session} feedback={feedback} /> : <AppInterno session={session} feedback={feedback} />}</SessionBoundary></WorkspaceNavigationProvider>;
 }
 
+function AtendimentoMovel({ session, feedback }) {
+  useEffect(() => { api.setUnauthorizedHandler?.(() => session.clearSession()); return () => api.setUnauthorizedHandler?.(null); }, [session.clearSession]);
+  return <WhatsappPage api={api} usuarioId={session.user?.id} onSair={session.clearSession} error={feedback.error} onBack={() => session.setPage("companies")} />;
+}
 function AppInterno({ session, feedback }) {
   // Só a escolha da mensagem acompanha a navegação. Destinatário e texto são
   // conferidos novamente na conversa, sem enviar ou transportar dados na URL.

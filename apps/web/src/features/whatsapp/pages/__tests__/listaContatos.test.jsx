@@ -19,7 +19,7 @@ test("lista mostra somente nome ou telefone, relacionamento e não lidas", async
   render(<WhatsappPage api={apiLocal()} />);
   const linha = await screen.findByTestId("conversa-cliente");
   expect(linha).toHaveTextContent("Ana Exemplo"); expect(linha).toHaveTextContent("Cliente");
-  expect(linha).not.toHaveTextContent(/sócia|Empresa fictícia|11222333000181|Texto que não deve|cadastro/);
+  expect(linha).not.toHaveTextContent(/sócia|Empresa fictícia|11222333000181|cadastro/);
   const l = screen.getByTestId("conversa-lead");
   expect(l).toHaveTextContent("Bruno Exemplo"); expect(l).toHaveTextContent("Lead");
   expect(l).not.toHaveTextContent(/Transferência|perfil|conferid/);

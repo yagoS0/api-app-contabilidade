@@ -100,7 +100,7 @@ describe("enviar documento", () => {
     const select = await within(painel).findByLabelText("Documento a enviar");
     fireEvent.change(select, { target: { value: "doc-1" } });
     fireEvent.click(within(painel).getByRole("button", { name: "Enviar" }));
-    await waitFor(() => expect(api.enviarDocumentoWhatsapp).toHaveBeenCalledWith("cv1", "doc-1"));
+    await waitFor(() => expect(api.enviarDocumentoWhatsapp).toHaveBeenCalledWith("cv1", "doc-1", { clientRequestId: expect.any(String) }));
   });
 
   it("⚠ a recusa do SERVIDOR aparece com a frase dele, nunca 'falhou'", async () => {

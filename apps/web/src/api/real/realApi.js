@@ -1,5 +1,6 @@
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 import { importarNotasEmLotes } from "./importarNotasEmLotes";
+import { atendimentoMovelApi } from "./atendimentoMovelApi";
 import { acompanhamentoParcelamentosApi } from "./acompanhamentoParcelamentosApi";
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
@@ -419,6 +420,7 @@ export function createRealApi() {
 
   return {
     ...acompanhamentoParcelamentosApi(request),
+    ...atendimentoMovelApi(request),
     setUnauthorizedHandler(handler) {
       unauthorizedHandler = typeof handler === "function" ? handler : null;
     },
@@ -1074,19 +1076,20 @@ export function createRealApi() {
       if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null, mensagemId = null } = {}) {
       const qs = new URLSearchParams({ v2: "1" });
       if (empresa) qs.set("empresa", String(empresa));
       if (cursor) qs.set("cursor", String(cursor));
       if (limite) qs.set("limite", String(limite));
+      if (mensagemId) qs.set("mensagemId", mensagemId);
       return request(`/firm/whatsapp/conversas/${conversaId}/mensagens${qs.size ? `?${qs}` : ""}`);
     },
     // ⚠ É MENSAGEM DE SERVIÇO: fora da janela de 24h o servidor responde 409 FORA_DA_JANELA, com o
     // MESMO corpo do `responder`. A empresa do documento vem do FIO, nunca do corpo.
-    async enviarDocumentoWhatsapp(conversaId, documentId, { legenda = null } = {}) {
+    async enviarDocumentoWhatsapp(conversaId, documentId, { legenda = null, clientRequestId } = {}) {
       return request(`/firm/whatsapp/conversas/${conversaId}/enviar-documento`, {
         method: "POST",
-        body: JSON.stringify({ documentId, ...(legenda ? { legenda } : {}) }),
+        body: JSON.stringify({ documentId, ...(legenda ? { legenda } : {}), ...(clientRequestId ? { clientRequestId } : {}) }),
       });
     },
     async conferirIdentificacaoWhatsapp(conversaId, body) {
@@ -1112,13 +1115,14 @@ export function createRealApi() {
     },
     // ⚠ Fora da janela de 24h o servidor responde 409 FORA_DA_JANELA — chega como erro com `code`
     // e `payload.message`; a tela mostra o motivo, nunca "falhou".
-    async responderConversaWhatsapp(conversaId, texto) {
-      return request(`/firm/whatsapp/conversas/${conversaId}/responder`, { method: "POST", body: JSON.stringify({ texto }) });
+    async responderConversaWhatsapp(conversaId, texto, opcoes = {}) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/responder`, { method: "POST", body: JSON.stringify({ texto, ...opcoes, assumir: true }) });
     },
-    async enviarAnexoWhatsapp(conversaId, arquivo, legenda = "") {
+    async enviarAnexoWhatsapp(conversaId, arquivo, legenda = "", opcoes = {}) {
       const body = new FormData();
       body.append("arquivo", arquivo);
       body.append("legenda", legenda);
+      if (opcoes.clientRequestId) body.append("clientRequestId", opcoes.clientRequestId);
       return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/enviar-anexo`, { method: "POST", body });
     },
     async vincularConversaWhatsapp(conversaId, body) {

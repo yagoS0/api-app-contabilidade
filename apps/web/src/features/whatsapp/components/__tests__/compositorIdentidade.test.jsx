@@ -32,8 +32,8 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   expect(texto).toHaveValue("");
   fireEvent.change(texto, { target: { value: "Mensagem comercial" } });
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
-  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Mensagem comercial"));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Mensagem comercial", { clientRequestId: expect.any(String) }));
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "principal" }} />);
   expect(texto).toHaveValue("Mensagem pelo atendimento");
 });
@@ -45,17 +45,17 @@ test("troca de telefone no mesmo canal bloqueia envio até conferir e preserva o
   const ui = render(<CompositorConversa conversa={anterior} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto preparado antes da associação" } });
   ui.rerender(<CompositorConversa conversa={atual} hook={h} />);
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
   fireEvent.keyDown(screen.getByLabelText("Responder ao cliente"), { key: "Enter", ctrlKey: true });
   expect(h.responder).not.toHaveBeenCalled();
   expect(screen.getByRole("alert")).toHaveTextContent("(21) *****-2222");
   ui.unmount(); render(<CompositorConversa conversa={atual} hook={h} />);
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Texto preparado antes da associação");
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Conferi o destinatário: manter este rascunho" }));
   expect(h.responder).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
-  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-nova", "Texto preparado antes da associação"));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-nova", "Texto preparado antes da associação", { clientRequestId: expect.any(String) }));
 });
 
 test("mudança de vigência também exige conferência quando conversa e canal permanecem iguais", () => {
@@ -63,7 +63,7 @@ test("mudança de vigência também exige conferência quando conversa e canal p
   const ui = render(<CompositorConversa conversa={anterior} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Mensagem na vigência anterior" } });
   ui.rerender(<CompositorConversa conversa={{ ...anterior, canais: anterior.canais.map(canal => ({ ...canal, vinculoNumeroId: "v2" })) }} hook={h} />);
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Mensagem na vigência anterior");
   expect(h.responder).not.toHaveBeenCalled();
 });
@@ -78,11 +78,25 @@ test("compositor não oferece nota nem seletor de canal; notas ficam nas ações
   expect(h.responder).not.toHaveBeenCalled();
   expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
 });
+
+test("mudar canal fecha a prévia de retomada e exige preparar o novo destinatário", async () => {
+  const h = hook(); h.api.getRetomadaWhatsapp = jest.fn(async id => ({ disponivel: true, previaHash: id, texto: `Prévia para ${id}` }));
+  const fechada = { ...c, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) };
+  const ui = render(<CompositorConversa conversa={fechada} hook={h} />);
+  fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" }));
+  expect(await screen.findByText("Prévia para conversa-a")).toBeVisible();
+  ui.rerender(<CompositorConversa conversa={fechada} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
+  expect(screen.queryByText("Prévia para conversa-a")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Enviar modelo de retomada" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" }));
+  expect(await screen.findByText("Prévia para conversa-b")).toBeVisible();
+  expect(h.api.getRetomadaWhatsapp.mock.calls).toEqual([["conversa-a"], ["conversa-b"]]);
+});
 test("contexto fiscal pendente não impede resposta manual pela janela aberta", async () => {
   const h = hook(); render(<CompositorConversa conversa={{ ...c, contextoOperacional: { pendente: true }, capacidades: { fiscal: false } }} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Vou conferir o seu cadastro." } });
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
-  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-a", "Vou conferir o seu cadastro."));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-a", "Vou conferir o seu cadastro.", { clientRequestId: expect.any(String) }));
 });
 
 test("lead responde pelo comercial e ignora pedido para trocar ao principal", async () => {
@@ -92,8 +106,8 @@ test("lead responde pelo comercial e ignora pedido para trocar ao principal", as
   ui.rerender(<CompositorConversa conversa={lead} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "principal" }} />);
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Atendimento comercial preparado.");
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
-  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Atendimento comercial preparado."));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-b", "Atendimento comercial preparado.", { clientRequestId: expect.any(String) }));
   expect(h.responder).toHaveBeenCalledTimes(1);
 });
 
@@ -101,7 +115,7 @@ test("lead sem comercial não envia pelo principal mesmo com janela aberta", () 
   const h = hook();
   render(<CompositorConversa conversa={{ ...c, relacionamento: { tipo: "LEAD" }, canais: [c.canais[0]] }} hook={h} />);
   expect(screen.getByLabelText("Responder ao cliente")).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
   expect(screen.getByTestId("resposta-bloqueada")).toHaveTextContent("ainda não tem conversa nesse número");
   expect(h.responder).not.toHaveBeenCalled();
 });
@@ -114,7 +128,7 @@ test("orientação editada exige prévia e guarda origem sem certificar texto ap
   fireEvent.keyDown(screen.getByLabelText("Responder ao cliente"), { key: "Enter", ctrlKey: true });
   expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Conferi: enviar adaptação" }));
-  await waitFor(() => expect(h.api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("conversa-a", { texto: "Texto adaptado pela equipe", assumir: true, orientacaoAdaptada: { id: "orientacao-1", versao: 2, atendimentoLeadId: "caso-1" } }));
+  await waitFor(() => expect(h.api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("conversa-a", { texto: "Texto adaptado pela equipe", assumir: true, clientRequestId: expect.any(String), orientacaoAdaptada: { id: "orientacao-1", versao: 2, atendimentoLeadId: "caso-1" } }));
   expect(h.responder).not.toHaveBeenCalled();
 });
 
@@ -142,7 +156,7 @@ test("desfazer descarte recupera texto e referência da mensagem rápida sem env
   fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Orientação aprovada");
   expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
   await waitFor(() => expect(h.api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("conversa-a", expect.objectContaining({ orientacaoId: "orientacao-1", orientacaoVersao: 2 })));
 });
 
@@ -153,11 +167,11 @@ test("janela fechada permite descartar, sem liberar envio nem apagar a nota inte
   h.rascunhosRef.current.set(chave, "Texto preparado ontem");
   h.rascunhosRef.current.set(chaveNota, "Nota preservada");
   render(<CompositorConversa conversa={{ ...c, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) }} hook={h} />);
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   expect(h.rascunhosRef.current.has(chave)).toBe(false);
   expect(h.rascunhosRef.current.get(chaveNota)).toBe("Nota preservada");
-  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
 });
 
 test("envio em andamento impede descarte", async () => {
@@ -165,7 +179,7 @@ test("envio em andamento impede descarte", async () => {
   h.responder.mockImplementation(() => new Promise(resolve => { concluir = resolve; }));
   render(<CompositorConversa conversa={c} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Em envio" } });
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
   expect(screen.getByRole("button", { name: "Descartar rascunho" })).toBeDisabled();
   concluir({ ok: true });
   await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""));

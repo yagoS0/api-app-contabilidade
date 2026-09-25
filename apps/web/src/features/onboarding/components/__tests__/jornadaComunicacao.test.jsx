@@ -45,7 +45,7 @@ test("anexo exige conferência, envia ao contato certo e não repete timeout", a
   expect(api.enviarAnexoWhatsapp).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Assumir e enviar anexo" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Assumir e enviar anexo" })).toBeDisabled());
-  expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("c1", arquivo, ""); expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
+  expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("c1", arquivo, "", { clientRequestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) }); expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
 });
 
 test("formulário preparado atualiza o atendimento e retira o vínculo com outra empresa sem recarregar a página", async () => {

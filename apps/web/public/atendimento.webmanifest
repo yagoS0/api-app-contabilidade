@@ -1,0 +1,16 @@
+{
+  "id": "/whatsapp?app=atendimento",
+  "name": "Altan Atendimento",
+  "short_name": "Atendimento",
+  "description": "Conversas e atendimento da equipe Altan.",
+  "start_url": "/whatsapp?app=atendimento",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#1A1B26",
+  "background_color": "#1A1B26",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" }
+  ]
+}
