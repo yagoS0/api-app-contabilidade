@@ -1,5 +1,11 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Envio em segundo plano — 25/09/2026
+
+O envio e o reenvio da empresa mostram progresso no topo do shell, com empresa de origem, quantidade processada e resultado por guia. `GuideSendActivity` permanece ao navegar internamente; não é uma fila persistente no servidor e não promete continuidade após fechar/recarregar o navegador. Confirmação de reenvio fecha antes de aguardar a requisição. Lock síncrono impede cliques duplicados entre envio individual/lote/reenvio.
+
+`usePollingEntrega` faz releituras locais limitadas com `{ background: true }`; o workspace preserva linhas, seleção e mensagens nessas leituras e após o envio. Falha da releitura não apaga guias nem o resultado do transporte. Nunca consultar o SERPRO ou reenviar para atualizar a coluna. Resposta de outra empresa não altera a tabela atual. Aceite da Meta continua distinto de entrega. Publicação na main autorizada pelo usuário em 25/09/2026 após revisão do mock. Validação local: 71 testes relacionados aprovados, compilação e navegação visual conferidas; regressão integrada obrigatória antes do merge.
+
 ## Acesso às guias antigas — 18/09/2026
 
 O usuário não encontrou “Pendências anteriores”: o acesso era condicionado à contagem positiva na visão do mês. Agora “Pendências anteriores” e “Histórico completo” são ações sempre visíveis acima da lista, com indicação da visão ativa. A contagem aparece somente após carregar e quando positiva; o vazio orienta consultar o histórico. Apenas a consulta por competência fiscal permanece em “Outras consultas”. Recalcular continua na seleção de uma guia, com as mesmas regras por tipo, pagamento e parcelamento. Alteração em desenvolvimento, sem publicação.

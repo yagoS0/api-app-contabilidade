@@ -8,7 +8,7 @@ test("24 ciclos são por tentativa; um reenvio novo reinicia a observação",asy
  const atualizar=jest.fn(async()=>{});
  const {result,rerender}=renderHook(({id})=>usePollingEntrega(guia(id),atualizar,"pc"),{initialProps:{id:"t1"}});
  for(let i=0;i<24;i++) await avancar();
- expect(atualizar).toHaveBeenCalledTimes(24);expect(result.current.esgotou).toBe(true);
+ expect(atualizar).toHaveBeenCalledTimes(24);expect(atualizar).toHaveBeenCalledWith({background:true});expect(result.current.esgotou).toBe(true);
  await avancar();expect(atualizar).toHaveBeenCalledTimes(24);
  rerender({id:"t2"});await avancar();expect(atualizar).toHaveBeenCalledTimes(25);expect(result.current.esgotou).toBe(false);
 });
