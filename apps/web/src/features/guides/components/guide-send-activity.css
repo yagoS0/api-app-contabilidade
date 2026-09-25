@@ -1,0 +1,20 @@
+.guide-send-activity {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  flex: 0 0 auto;
+  padding: 10px clamp(16px, 3vw, 40px);
+  background: var(--bg-surface, var(--bg-page));
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  font-size: 0.85rem;
+}
+.guide-send-activity__summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guide-send-activity__count { display: inline-block; margin-left: 12px; color: var(--text-muted); }
+.guide-send-activity progress { display: block; width: 100%; height: 4px; margin: 8px 0 5px; accent-color: var(--accent-purple); }
+.guide-send-activity small { color: var(--text-muted); }
+.guide-send-activity details { margin-top: 6px; max-height: 30vh; overflow: auto; overflow-wrap: anywhere; }
+.guide-send-activity summary { cursor: pointer; }
+.guide-send-activity p { margin: 8px 0; white-space: pre-wrap; }
+@media (max-width: 600px) { .guide-send-activity__count { display: block; margin-left: 0; } }

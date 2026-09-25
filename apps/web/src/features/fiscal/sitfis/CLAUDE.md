@@ -1,5 +1,7 @@
 # Situação Fiscal — recálculo de guias (18/09/2026)
 
+25/09/2026: a pedido do usuário, removido o atalho redundante “Abrir guias da empresa” dentro do relatório. O acesso à lista continua pela aba Guias da navegação fiscal. A área e o botão de recálculo permanecem; não confundir a retirada do link com exclusão dessa função.
+
 `RecalcularGuiasSitfis` é uma área recolhível abaixo do relatório salvo. Usa as guias cadastradas da empresa recebidas em `guidesPanel`, já carregadas pelo workspace. O filtro inicial mostra vencidas conforme o DTO do servidor; há opção de incluir não vencidas. Guias pagas são excluídas e modalidades sem recálculo ficam visíveis com motivo. Parcelamentos não são enviados ao recálculo do DAS mensal.
 
 O relatório SITFIS continua documental e não tem `guideId`: nunca vincular seus débitos a uma guia apenas por valor, competência ou rótulo. Não alterar suas colunas nem afirmar que recalcular quitou/atualizou o diagnóstico salvo.
