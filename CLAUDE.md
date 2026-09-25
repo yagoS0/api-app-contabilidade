@@ -1016,3 +1016,6 @@ Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão d
 
 ## Períodos do portal do cliente — ajuste de 24/09/2026
 O período inicial usa o primeiro e último mês efetivamente fechado dentro da janela de 12 meses. Seleção mista considera somente fechados, sem banners sobre lacunas; gráficos omitem os meses abertos. Seleção sem nenhum fechamento informa diretamente no filtro e a API recusa com SEM_MESES_FECHADOS, sem gerar relatório vazio. Resultado identifica a competência no título e nas colunas. Ajuste local ainda não publicado.
+
+## WhatsApp: pagamento e emissão — 25/09/2026
+Novo fluxo em desenvolvimento: solicita pagamento de todas as guias vencidas/liberadas/em aberto, incluindo manuais/FGTS/municipais, apenas nas empresas com rotina pagamento ativa. Somente WhatsApp, sem fallback e-mail. Botão coleta data, depois comprovante opcional; preserva declaração separada da evidência e baixa pelo contador. Detalhes e migration em apps/api/src/application/guides/CLAUDE.md. Planejamento de mensagens da emissão em docs/plano-emissao-whatsapp-20260925.md; emissão ainda não alterada.

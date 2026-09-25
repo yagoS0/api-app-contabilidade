@@ -1,3 +1,4 @@
+import { fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { Prisma } from "@prisma/client";
 import { INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO, WHATSAPP_MENU_TELEFONES_PILOTO } from "../../config.js";
@@ -205,10 +206,20 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const rascunho = atual.conversaId ? await client.rascunhoEmissaoWhatsapp.findUnique({ where: { conversaId: atual.conversaId } }) : null;
   const pendencia = atual.conversaId ? await client.acaoPendenteWhatsapp.findFirst({ where: { conversaId: atual.conversaId, status: "pendente" }, select: { id: true } }) : null;
   const coletaAtiva = Boolean(pendencia || (rascunho && dataMs(rascunho.expiraEm) > agora.getTime() && ["COLETANDO", "PRONTO", "REVISAO"].includes(rascunho.estado?.status)));
-  const empresaCitadaId = await empresaDaReferencia({ mensagem, atendimento: atual, empresas: acesso.empresas, client });
+  let empresaCitadaId = await empresaDaReferencia({ mensagem, atendimento: atual, empresas: acesso.empresas, client });
+  const pagamentoPendente = await fluxoPagamentoAtual(client, registro.conversa, agora);
+  const tokenPagamento = String(interacao?.id || '').startsWith('altan.payment.confirm.') ? interacao.id : pagamentoPendente?.token;
+  let empresaPagamentoId = null;
+  if (tokenPagamento) {
+    const aviso = await client.appSetting.findUnique({ where: { key: tokenPagamento } });
+    const v = aviso?.value;
+    if (v?.telefone === registro.conversa.telefoneE164 && Date.parse(v.expiraEm) > agora.getTime() && acesso.empresas.some(e => e.portalClientId === v.companyId)) empresaPagamentoId = v.companyId;
+  }
   const decisao = pedeEquipe(texto, interacao) ? { acao: "EQUIPE" }
     : acesso.bloqueado || !acesso.empresas.length || (atual.userId && atual.userId !== acesso.userId)
     ? { acao: "BLOQUEAR", motivo: "CADASTRO_RESPONSAVEL_AMBIGUO" }
+    : empresaPagamentoId
+    ? { acao: "SELECIONAR", portalClientId: empresaPagamentoId, motivo: "CONFIRMACAO_PAGAMENTO", textoOperacao: texto }
     : decidirSelecaoEmpresa({ empresas: acesso.empresas, contexto: atual, texto, interacao, agora, empresaCitadaId, coletaAtiva });
   const selecionada = ["SELECIONAR", "CONTINUAR"].includes(decisao.acao) ? acesso.empresas.find(e => e.portalClientId === (decisao.portalClientId || atual.portalClientId)) : null;
   const segmento = selecionada ? await garantirConversa({ telefone: atual.telefoneE164, portalClientId: selecionada.portalClientId, canalId: atual.canalId || "principal", vinculoNumeroId: atual.vinculoNumeroId, client }) : null;
@@ -222,16 +233,16 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const contexto = { ...atual, versao, aguardandoSelecao: pedir, empresaIdsOferecidos: acesso.empresas.map(e => e.portalClientId) };
   const coletaPendenteConversaId = pedir && coletaAtiva && ["CONTEXTO_EXPIRADO", "CONFIRMACAO_EXIGE_CONTEXTO"].includes(decisao.motivo) ? atual.conversaId
     : pedir && atual.aguardandoSelecao ? atual.coletaPendenteConversaId : null;
-  const retomarColeta = Boolean(selecionada && atual.coletaPendenteConversaId === segmento?.id);
+  const retomarColeta = Boolean(!empresaPagamentoId && selecionada && atual.coletaPendenteConversaId === segmento?.id);
   const resultado = selecionada ? (decisao.menuDesatualizado ? { menuDesatualizado: true } : retomarColeta ? { retomarColeta: true, textoRetomada: atual.pedidoPendente || null } : decisao.acaoOperacao ? { acaoOperacao: decisao.acaoOperacao } : null) : handoff
     ? { texto: decisao.acao === "EQUIPE" ? "Encaminhei sua mensagem para a equipe. Um contador vai continuar este atendimento por aqui."
       : "Este número precisa de uma conferência de acesso no cadastro. Encaminhei para a equipe verificar as empresas e o responsável antes de continuar.", opcoes: [], bloqueado: true }
     : decisao.acao === "TODAS" ? { empresas: acesso.empresas.map(e => e.portalClientId) }
     : { texto: (["MENU_DESATUALIZADO", "MENU_SEM_CONTEXTO", "SELECAO_EXPIRADA"].includes(decisao.motivo) ? "Esse menu é de uma seleção anterior. Confira a empresa para continuar.\n\n" : "")
       + textoSelecaoEmpresa({ empresas: acesso.empresas, contexto }), opcoes: opcoesSelecaoEmpresa({ empresas: acesso.empresas, contexto }), motivo: decisao.motivo };
-  const efetivo = selecionada ? (decisao.menuDesatualizado ? "menu" : retomarColeta ? "retomar emissão" : atual.coletaPendenteConversaId ? "menu" : decisao.acao === "CONTINUAR" ? texto : decisao.textoOperacao || decisao.pedido || "menu") : null;
+  const efetivo = selecionada ? (empresaPagamentoId ? texto : decisao.menuDesatualizado ? "menu" : retomarColeta ? "retomar emissão" : atual.coletaPendenteConversaId ? "menu" : decisao.acao === "CONTINUAR" ? texto : decisao.textoOperacao || decisao.pedido || "menu") : null;
   const interacaoValidada = decisao.interacaoId ? { ...interacao, id: decisao.interacaoId } : interacao;
-  const interacaoEfetiva = selecionada && !decisao.descartarInteracao ? (atual.aguardandoSelecao ? atual.interacaoPendente : interacaoValidada) : null;
+  const interacaoEfetiva = selecionada && !decisao.descartarInteracao ? (empresaPagamentoId ? interacaoValidada : atual.aguardandoSelecao ? atual.interacaoPendente : interacaoValidada) : null;
   const interacaoPendente = decisao.descartarInteracao ? null : pedir && atual.aguardandoSelecao && pedido === atual.pedidoPendente ? atual.interacaoPendente
     : pedir && !interacao?.id?.startsWith("altan.company.") ? interacao : null;
   const recibo = await client.$transaction(async tx => {
@@ -266,11 +277,12 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
   resolverVinculo = resolverVinculoPorTelefone, conferirJanela = janelaDaConversa, log = console }) {
   // O webhook já preservou a reação. Ela não é pedido e não altera versões, seleção ou coleta.
   if (item?.tipo === "reaction") return { tratadoContexto: true, motivo: "REACAO_SEM_ATENDIMENTO" };
-  if (!flag) return processar(registro, item, {});
+  const pagamentoDireto = String(item?.interacao?.id || '').startsWith('altan.payment.confirm.') || Boolean(await fluxoPagamentoAtual(client, registro.conversa, agora));
+  if (!flag && !pagamentoDireto) return processar(registro, item, {});
   const conhecido = registro.conversa.atendimentoId ? await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: registro.conversa.atendimentoId } }) : null;
   if (!registro.vinculo?.empresas?.length && !conhecido?.userId) return processar(registro, item, {});
   const noPiloto = telefonesPiloto.includes(registro.conversa.telefoneE164) || (registro.vinculo.empresas || []).some(e => piloto.includes(e.portalClientId)) || (conhecido?.portalClientId && piloto.includes(conhecido.portalClientId));
-  if (!noPiloto) return conhecido?.userId ? { tratadoContexto: true, motivo: "FORA_DO_PILOTO" } : processar(registro, item, {});
+  if (!noPiloto && !pagamentoDireto) return conhecido?.userId ? { tratadoContexto: true, motivo: "FORA_DO_PILOTO" } : processar(registro, item, {});
   const acesso = empresasAutorizadas(registro.vinculo);
   const atendimento = await garantirAtendimentoResponsavel({ conversa: registro.conversa, empresas: acesso.empresas, userId: acesso.userId, client });
   const conversa = { ...registro.conversa, atendimentoId: atendimento.id };
@@ -313,7 +325,7 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
       return { tratadoContexto: true, motivo: "SELECAO_EMPRESA" };
     }
     await conferirContextoResponsavel({ conversa: resolvida.registro.conversa, mensagem: resolvida.registro.mensagem, contexto: recibo, client, resolverVinculo });
-    if (!telefonesPiloto.includes(conversa.telefoneE164) && !piloto.includes(recibo.portalClientId)) {
+    if (!pagamentoDireto && !telefonesPiloto.includes(conversa.telefoneE164) && !piloto.includes(recibo.portalClientId)) {
       const destino = resolvida.registro.conversa;
       const texto = `Empresa: ${destino.portalClient?.razao || "selecionada"}. A equipe vai continuar este atendimento por aqui; o atendimento automático ainda não está habilitado para esta empresa.`;
       await encaminharResponsavelParaEquipe({ conversa: destino, mensagem: resolvida.registro.mensagem, contexto: recibo, client, quando: agora });

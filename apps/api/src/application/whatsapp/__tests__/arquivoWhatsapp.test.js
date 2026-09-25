@@ -49,3 +49,5 @@ test("falha transitória agenda nova tentativa com registro persistido", async (
   expect(db.arquivoWhatsapp.updateMany.mock.calls.at(-1)[0].data).toMatchObject({ estado: "FALHOU", erroCodigo: "MIDIA_DOWNLOAD_FALHOU", proximaTentativaEm: new Date("2026-01-01T00:01:00Z") });
   jest.useRealTimers();
 });
+
+test('comprovante vinculado permanece acessível após 90 dias e fica fora da limpeza',async()=>{const db={arquivoWhatsapp:{updateMany:jest.fn()}};await expirarArquivosWhatsapp(db,new Date('2026-09-25'));expect(db.arquivoWhatsapp.updateMany.mock.calls[0][0].where.comprovanteGuiaId).toBeNull();expect(arquivoParaTela({comprovanteGuiaId:'g',estado:'DISPONIVEL',expiraEm:'2026-01-01',mimeType:'application/pdf'},new Date('2026-09-25')).podeAbrir).toBe(true);});

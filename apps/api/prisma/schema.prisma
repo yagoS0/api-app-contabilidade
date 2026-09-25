@@ -1655,6 +1655,9 @@ model WhatsappLease {
 }
 
 model ArquivoWhatsapp {
+  comprovanteGuiaId String?
+  dataPagamentoDeclarada DateTime?
+  analiseComprovante Json?
   id String @id @default(uuid())
   mensagemId String @unique
   portalClientId String?

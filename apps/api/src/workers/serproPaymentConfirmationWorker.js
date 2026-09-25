@@ -1,3 +1,4 @@
+import { solicitarPagamentosWhatsapp } from "../application/guides/SolicitarPagamentosWhatsappService.js";
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { acquireGuideLease } from "../application/guides/GuideLockService.js";
@@ -21,7 +22,8 @@ async function executarPagamento(options = {}) {
   if (!lease) return { skipped: true, reason: "lock_active" };
   try {
     const settings = await getSerproRuntimeSettings();
-    if (!settings.enabled) return { skipped: true, reason: "serpro_disabled" };
+    const solicitar = () => solicitarPagamentosWhatsapp({ portalClientId: options.portalClientId || null, scheduledAt: options.scheduledAt || null, assertActive: () => { lease.assertActive(); options.assertActive?.(); } });
+    if (!settings.enabled) return { skipped: false, serproSkipped: "serpro_disabled", solicitacoesWhatsapp: await solicitar() };
 
     const startedAt = Date.now();
     const summary = await runPaymentConfirmationOnce({
@@ -32,7 +34,7 @@ async function executarPagamento(options = {}) {
       assertActive: () => { lease.assertActive(); options.assertActive?.(); },
     });
 
-    const result = { skipped: false, durationMs: Date.now() - startedAt, ...summary };
+    const result = { skipped: false, durationMs: Date.now() - startedAt, ...summary, solicitacoesWhatsapp: await solicitar() };
     await createSerproExecutionLog({
       worker: "serpro_payment_confirmation",
       createdAt: new Date().toISOString(),
@@ -50,7 +52,7 @@ async function executarPagamento(options = {}) {
 }
 
 export async function runSerproPaymentConfirmationWorkerLoop() {
-  return runRoutineLoop({ worker: "SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED", routines: ["pagamento"], run: (options) => runSerproPaymentConfirmationWorkerOnce({ ...options, competencia: null }) });
+  return runRoutineLoop({ worker: "SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED", independent: true, routines: ["pagamento"], run: (options) => runSerproPaymentConfirmationWorkerOnce({ ...options, competencia: null }) });
 }
 
 if (process.argv[1] && process.argv[1].endsWith("serproPaymentConfirmationWorker.js")) {

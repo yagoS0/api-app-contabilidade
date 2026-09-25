@@ -1,23 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { canGuideRecalculate } from "./lib/recalculoDaGuia.js";
 import { elegibilidadeVencimentoAutomatico } from "../fiscal/serpro/ConsultaPagamentoAutomaticaService.js";
 
-const esc = value => String(value ?? "").replace(/[&<>\"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const erro = (code, message) => Object.assign(new Error(message), { code });
 
 async function transportePadrao() {
   const contatos = await import("../whatsapp/ContatoWhatsappService.js");
   return {
-    canais: contatos.canaisParaEnvio,
     destinatarios: contatos.destinatariosDeEnvio,
-    async email({ to, texto, acoes, conferir }) {
-      const { EmailService } = await import("../../infrastructure/mail/EmailService.js");
-      await conferir();
-      const botoes = acoes.map(a => `<a href="${esc(a.url)}" style="display:inline-block;padding:12px 18px;margin:8px 8px 0 0;background:#1b4167;color:#fff;text-decoration:none;border-radius:6px">${esc(a.label)}</a>`).join("");
-      return new EmailService().send({ to, subject: "Confirmação de pagamento da guia", html: `<p>${esc(texto).replaceAll("\n", "<br>")}</p>${botoes}`, attachments: [] });
-    },
-    async whatsapp({ companyId, contato, texto, acoes, key, conferir }) {
+    async whatsapp({ companyId, contato, texto, acoes, botaoId, key, conferir }) {
       const { INTEGRACAO_WHATSAPP } = await import("../../config.js");
       if (!INTEGRACAO_WHATSAPP) throw erro("WHATSAPP_DESLIGADO", "WhatsApp desativado; aviso pendente para o contador.");
       const { garantirConversa, janelaDaConversa } = await import("../whatsapp/ConversaWhatsappService.js");
@@ -31,8 +23,8 @@ async function transportePadrao() {
       await checar();
       const cloud = await whatsappPorCanal(conversa);
       const corpo = `${texto}\n\n${acoes.map(a => `${a.label}: ${a.url}`).join("\n")}`;
-      return enviarMensagemRastreada({ conversa, corpo, autor: "SISTEMA", turnoIaId: key,
-        antesDeEnviar: checar, enviar: () => cloud.enviarTexto({ telefone: contato.telefoneE164, texto: corpo }) });
+      return enviarMensagemRastreada({ conversa, corpo, tipo: "interactive", autor: "SISTEMA", turnoIaId: key,
+        antesDeEnviar: checar, enviar: () => cloud.enviarBotoes({ telefone: contato.telefoneE164, texto: corpo, botoes: [{ id: botaoId, titulo: "Confirmar pagamento" }] }) });
     },
   };
 }
@@ -63,8 +55,8 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const portalUrl = deps.portalUrl ?? (await import("../../config.js")).PORTAL_CLIENTE_WEB_URL;
   let baseUrl;
   try { baseUrl = new URL(portalUrl); if (!["https:", "http:"].includes(baseUrl.protocol)) throw Error(); }
-  catch { return { status: "PENDENTE", motivo: "PORTAL_NAO_CONFIGURADO", mensagem: "Configure o endereço do portal para enviar as ações ao cliente." }; }
-  const acoes = [{ acao: "confirmar", label: "Confirmar pagamento" }, ...(canGuideRecalculate(g) ? [{ acao: "recalcular", label: "Recalcular guia" }] : [])].map(a => {
+  catch { baseUrl = null; }
+  const acoes = (baseUrl && canGuideRecalculate(g) ? [{ acao: "recalcular", label: "Recalcular guia" }] : []).map(a => {
     const link = new URL(baseUrl.href); link.hash = "/guias"; link.search = new URLSearchParams({ empresa: companyId, guia: g.id, competencia: g.competencia || p?.competencia || "", acao: a.acao }).toString();
     return { ...a, url: link.href };
   });
@@ -72,13 +64,11 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const base = createHash("sha256").update(JSON.stringify([companyId, g.id, g.competencia || referencia])).digest("hex");
   const transporte = deps.transporte || await transportePadrao();
   const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true } });
-  const { escolha } = await transporte.canais(companyId);
   const destinos = await transporte.destinatarios(companyId);
-  const targets = escolha === "EMAIL" ? destinos.emails.map(email => ({ canal: "EMAIL", destino: email }))
-    : escolha === "WHATSAPP" ? destinos.telefones.map(contato => ({ canal: "WHATSAPP", destino: contato.telefoneE164, contato })) : [];
-  if (!targets.length) return { status: "PENDENTE", motivo: !escolha || escolha === "PERGUNTAR" ? "CANAL_REQUER_ESCOLHA" : "SEM_DESTINATARIO_CADASTRADO", mensagem: !escolha || escolha === "PERGUNTAR" ? "Escolha o canal para avisar este cliente." : "Cadastre um destinatário de guias para avisar este cliente.", companyId, guideId: g?.id || null, parcelaId: p?.id || null };
+  const targets = destinos.telefones.map(contato => ({ canal: "WHATSAPP", destino: contato.telefoneE164, contato }));
+  if (!targets.length) return { status: "PENDENTE", motivo: "SEM_DESTINATARIO_WHATSAPP", mensagem: "Cadastre um destinatário WhatsApp com autorização de envio para confirmar o pagamento.", companyId, guideId: g.id, parcelaId: p?.id || null };
   const tipo = p ? `parcela${p.numeroParcela ? ` ${p.numeroParcela}` : ""} do parcelamento${p.parcelamento?.numeroParcelamento ? ` ${p.parcelamento.numeroParcelamento}` : ""}` : g.tipo;
-  const texto = `${company?.razao || "Empresa"}\nA Receita ainda não confirmou o pagamento de ${tipo}, referência ${referencia}. Isso pode ocorrer enquanto o pagamento é processado.\nSe você já pagou, confirme no portal do cliente, informando a data do pagamento. Não é necessário pagar novamente.\nSe ainda não pagou, ${canGuideRecalculate(g) ? "use Recalcular guia para conferir a atualização antes de solicitar a emissão" : "solicite a atualização desta guia ao contador"}.`;
+  const texto = `${company?.razao || "Empresa"}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.\nSe ainda não pagou, ${acoes.length ? "use Recalcular guia para conferir a atualização antes de solicitar a emissão" : "solicite a atualização desta guia ao contador"}.`;
   const resultados = [];
   for (const target of targets) {
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
@@ -92,15 +82,16 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     let iniciou = false;
     const conferir = async () => {
       await assertActive(); await carregar();
-      const atual = await transporte.canais(companyId), cadastro = await transporte.destinatarios(companyId);
-      if (atual.escolha !== target.canal || (target.canal === "EMAIL" ? !cadastro.emails.includes(target.destino) : !cadastro.telefones.some(c => c.id === target.contato.id && c.telefoneE164 === target.destino))) throw erro("DESTINATARIO_ALTERADO", "Configuração de envio mudou; aviso pendente.");
+      const cadastro = await transporte.destinatarios(companyId);
+      if (!cadastro.telefones.some(c => c.id === target.contato.id && c.telefoneE164 === target.destino)) throw erro("DESTINATARIO_ALTERADO", "Configuração de envio mudou; aviso pendente.");
     };
     try {
       await conferir();
       // Transporte repete as guardas imediatamente antes da rede; a reserva nunca é reenviada após timeout.
       const checarTransporte = async () => { await conferir(); iniciou = true; };
-      if (target.canal === "EMAIL") await transporte.email({ to: target.destino, texto, acoes, conferir: checarTransporte });
-      else await transporte.whatsapp({ companyId, contato: target.contato, texto, acoes, key, conferir: checarTransporte });
+      const botaoId = 'altan.payment.confirm.' + randomUUID();
+      await db.appSetting.create({ data: { key: botaoId, value: { companyId, guideId: g.id, competencia: g.competencia || null, hash: g.hash || null, contatoId: target.contato.id, telefone: target.destino, expiraEm: new Date(Date.now()+7*86400000).toISOString() } } });
+      await transporte.whatsapp({ companyId, contato: target.contato, texto, acoes, botaoId, key, conferir: checarTransporte });
       await db.appSetting.update({ where: { key }, data: { value: { ...value, status: "ENVIADO", concluidoEm: new Date().toISOString() } } });
       resultados.push({ status: "ENVIADO", canal: target.canal });
     } catch (e) {

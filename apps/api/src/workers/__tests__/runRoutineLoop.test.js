@@ -40,3 +40,17 @@ test("integração desligada não reserva consultas", async () => {
   await runRoutineTick({ routines: ["das", "extrato"], run: jest.fn() });
   expect(runScheduledRoutine).not.toHaveBeenCalled();
 });
+
+ test("rotina independente mantém agenda própria ativa quando SERPRO está desligado", async () => {
+ getSerproRuntimeSettings.mockResolvedValue({enabled:false,rotinas:{pagamento:{enabled:true,day:9,hour:7}}});
+ const run=jest.fn();
+ await runRoutineTick({routines:['pagamento'],independent:true,run});
+ expect(runScheduledRoutine).toHaveBeenCalledTimes(1);
+ expect(run).toHaveBeenCalledTimes(1);
+ });
+ test("rotina independente também respeita desativação da própria agenda", async () => {
+ getSerproRuntimeSettings.mockResolvedValue({enabled:false,rotinas:{pagamento:{enabled:false,day:9,hour:7}}});
+ const run=jest.fn();
+ await runRoutineTick({routines:['pagamento'],independent:true,run});
+ expect(run).not.toHaveBeenCalled();
+ });

@@ -68,7 +68,7 @@ export function createWhatsappArquivosRouter({ db = prisma, acesso = requireFirm
       res.set("Cache-Control", "no-store");
       res.set("X-Content-Type-Options", "nosniff");
       if (!arquivo) return res.status(404).json({ error: "arquivo_nao_encontrado" });
-      if (new Date(arquivo.expiraEm) <= new Date()) return res.status(410).json({ error: "arquivo_expirado", message: "O prazo de 90 dias deste arquivo terminou." });
+      if (!arquivo.comprovanteGuiaId && new Date(arquivo.expiraEm) <= new Date()) return res.status(410).json({ error: "arquivo_expirado", message: "O prazo de 90 dias deste arquivo terminou." });
       if (arquivo.estado !== "DISPONIVEL" || !arquivo.conteudo) return res.status(409).json({ error: "arquivo_indisponivel", message: "O arquivo ainda não está disponível para abrir." });
       return res.json({ nomeArquivo: arquivo.nomeArquivo, mimeType: arquivo.mimeType, base64: Buffer.from(arquivo.conteudo).toString("base64") });
     } catch (e) { return falha(res, e); }
