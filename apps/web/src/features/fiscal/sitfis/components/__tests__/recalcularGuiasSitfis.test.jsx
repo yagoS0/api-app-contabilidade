@@ -90,3 +90,9 @@ it('atalho do topo abre a área de recálculo sem chamar serviços', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Recalcular guia' }));
   expect(details.open).toBe(true); expect(consultar).not.toHaveBeenCalled(); expect(recalcular).not.toHaveBeenCalled();
 });
+
+it('relatório salvo não cria outro acesso para a aba Guias', () => {
+  render(<SitfisTab companyId="empresa" sitfisPanel={{ status: { situacao: "REGULAR" } }} guidesPanel={{ guides: [] }} />);
+  expect(screen.queryByRole('link', { name: /Abrir guias da empresa/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Recalcular guia' })).toBeInTheDocument();
+});

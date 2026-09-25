@@ -94,10 +94,6 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
         </div>
       )}
 
-      {companyId && status && <div style={{ marginTop: 16 }}>
-        <a href={`/companies/${encodeURIComponent(companyId)}/guides`} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</a>
-      </div>}
-
       <div style={{ marginTop: 20, padding: 20, borderRadius: 12, background: "#21222C", border: "1px solid #44475A" }}>
         {loading ? (
           <p style={{ color: "#A7B0C0", textAlign: "center", margin: 0 }}>Carregando…</p>

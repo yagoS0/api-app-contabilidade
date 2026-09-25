@@ -1100,8 +1100,8 @@ export function CompanyGuidesTable({
                 disabled={!!resendingGuideId}
                 onClick={async () => {
                   const gid = resendConfirm.guideId || resendConfirm.id;
-                  await onResendGuide?.(gid);
                   setResendConfirm(null);
+                  await onResendGuide?.(gid);
                 }}
               >
                 {resendingGuideId ? "Reenviando..." : "Reenviar"}

@@ -22,7 +22,7 @@ export function usePollingEntrega(guias, atualizar, escopo) {
     if (!visivel || !atualizarRef.current || !devePolir(guias, ciclos)) return undefined;
     let viva = true;
     const t = setTimeout(async () => {
-      try { await atualizarRef.current(); } catch { /* A próxima tentativa continua no orçamento deste envio. */ }
+      try { await atualizarRef.current({ background: true }); } catch { /* Apenas releitura local; nunca reenvia a guia. */ }
       if (viva) setEspera({ chave, ciclos: ciclos + 1 });
     }, 2500);
     return () => { viva = false; clearTimeout(t); };

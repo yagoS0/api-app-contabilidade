@@ -117,6 +117,19 @@ describe("⚠⚠ os estados chegam ao DOM, e não se parecem", () => {
 });
 
 describe("⚠⚠ o aviso de reenvio vale para QUALQUER canal", () => {
+  it("confirmar reenvio fecha o modal e mantém a tabela durante a requisição", async () => {
+    let concluir;
+    const onResendGuide = jest.fn(() => new Promise(resolve => { concluir = resolve; }));
+    render(<CompanyGuidesTable companyId="c1" competencia={COMP} guides={[guia(zap("entregue"))]} loadingGuides={false}
+      onLiberarGuia={jest.fn()} onResendGuide={onResendGuide} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Selecionar guia/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Liberar ao cliente/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Reenviar" }));
+    expect(screen.queryByText("Guia já enviada")).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Lista de guias" })).toBeInTheDocument();
+    expect(onResendGuide).toHaveBeenCalledWith("g1");
+    await act(async () => concluir());
+  });
   // Experimento executado antes deste bloco: devolvendo `alreadySent` para `emailStatus === "SENT"`
   // a suíte ficava VERDE — a guarda não tinha prova nenhuma. Guia enviada só por WhatsApp passava
   // direto pelo aviso, e a segunda cópia saía sem ninguém perguntar.

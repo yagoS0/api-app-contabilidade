@@ -1,7 +1,7 @@
 import { liberarComCanais } from "./liberarComCanais";
 
 // Um clique processa os IDs escolhidos e mantém o resultado de cada documento.
-export async function liberarSelecao({ api, companyId, items, perguntar = (texto) => window.confirm(texto) }) {
+export async function liberarSelecao({ api, companyId, items, onProgress, perguntar = (texto) => window.confirm(texto) }) {
   const resultados = [];
   const perguntas = new Map();
   for (const item of items) {
@@ -17,6 +17,7 @@ export async function liberarSelecao({ api, companyId, items, perguntar = (texto
     } catch (erro) {
       resultados.push({ ...item, ok: false, tom: "erro", texto: erro?.message || "Não foi possível confirmar o envio. Confira o histórico antes de repetir." });
     }
+    onProgress?.([...resultados]);
   }
   return resultados;
 }

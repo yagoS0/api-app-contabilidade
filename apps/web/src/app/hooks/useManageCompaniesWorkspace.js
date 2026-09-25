@@ -10,7 +10,6 @@ import { useCompanyGuides } from "../../features/guides/list/hooks/useManageComp
 // clique a outro. Os nomes e o conteúdo não mudaram; só o endereço.
 import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from "../../features/companies/detail/lib/rotasDaEmpresa";
 // "Liberar ao cliente" com os dois canais (e-mail sempre; WhatsApp conforme o canal padrão da empresa).
-import { liberarComCanais } from "../../features/guides/lib/liberarComCanais";
 import { liberarSelecao } from "../../features/guides/lib/liberarSelecao";
 import {
   getInitialCompanyFormState,
@@ -76,10 +75,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const empresaAtualGuias = useRef(null);
   empresaAtualGuias.current = page === "login" ? null : companyIdDaUrl || companiesState.selectedCompanyId;
   const leituraGuias = useRef(0);
+  const cargaInicialGuias = useRef(false);
   const [empresaDasGuias, setEmpresaDasGuias] = useState(null);
   const guiasVigentes = useRef(null);
   guiasVigentes.current = { companyId: empresaDasGuias, guides: guidesState.guides, loading: guidesState.loadingGuides };
   const recalculoEmCurso = useRef(false);
+  const envioGuiasEmCurso = useRef(false);
+  const [envioGuiasProgresso, setEnvioGuiasProgresso] = useState(null);
   useEffect(() => {
     if (companyIdDaUrl && companyIdDaUrl !== companiesState.selectedCompanyId) {
       companiesState.setSelectedCompanyId(companyIdDaUrl);
@@ -188,25 +190,39 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
-  async function loadGuides(companyId = companiesState.selectedCompanyId) {
+  async function loadGuides(companyId = companiesState.selectedCompanyId, { background = false } = {}) {
     if (!companyId || companyId !== empresaAtualGuias.current) return;
+    // Releituras de entrega preservam linhas, seleção e o desfecho do envio.
+    // Não podem substituir a primeira carga de uma empresa ainda em andamento.
+    if (background && (cargaInicialGuias.current || guiasVigentes.current?.loading)) return;
     const telaOrigem = telaAtual.current;
     const leitura = ++leituraGuias.current;
     const vigente = () => leitura === leituraGuias.current && companyId === empresaAtualGuias.current;
-    guidesState.setLoadingGuides(true);
-    feedback.clearFeedback();
+    if (!background) {
+      cargaInicialGuias.current = true;
+      guidesState.setLoadingGuides(true);
+      feedback.clearFeedback();
+    }
     try {
       const items = await api.getCompanyGuides(companyId);
       if (!vigente()) return;
       guidesState.setGuides(items);
       setEmpresaDasGuias(companyId);
+      return { ok: true };
     } catch (err) {
       if (!vigente()) return;
-      if (telaAtual.current === telaOrigem) feedback.setError(err?.message || "Falha ao carregar guias");
-      guidesState.setGuides([]);
-      setEmpresaDasGuias(companyId);
+      const error = err?.message || "Falha ao carregar guias";
+      if (!background) {
+        if (telaAtual.current === telaOrigem) feedback.setError(error);
+        guidesState.setGuides([]);
+        setEmpresaDasGuias(companyId);
+      }
+      return { ok: false, error };
     } finally {
-      if (vigente()) guidesState.setLoadingGuides(false);
+      if (!background && vigente()) {
+        cargaInicialGuias.current = false;
+        guidesState.setLoadingGuides(false);
+      }
     }
   }
 
@@ -748,38 +764,52 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     setConfirmacaoAcessoProprio(null);
   }
 
-  async function handleResendGuide(guideId) {
+  async function executarEnvioGuias(items, { reenvio = false, lote = false } = {}) {
+    const companyId = companyIdDaUrl || companiesState.selectedCompanyId;
+    if (!companyId || companyId !== empresaAtualGuias.current || !items?.length || envioGuiasEmCurso.current) return [];
     const telaOrigem = telaAtual.current;
-    const vigente = () => telaAtual.current === telaOrigem;
-    const companyId = companiesState.selectedCompanyId;
-    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
-    if (!guideId) {
-      feedback.setError("guide_id_not_found");
-      return;
-    }
-    guidesState.setResendingGuideId(guideId);
+    const vigente = () => telaAtual.current === telaOrigem && companyId === empresaAtualGuias.current;
+    const empresa = companiesState.companies.find(c => c.companyId === companyId);
+    const contexto = { companyId, companyName: empresa?.nomeFantasia || empresa?.razaoSocial || empresa?.razao || "Empresa", total: items.length };
+    envioGuiasEmCurso.current = true;
+    setEnvioGuiasProgresso({ ...contexto, status: "running", completed: 0, resultados: [] });
+    setLiberarGuiasBusy(true);
+    if (reenvio) guidesState.setResendingGuideId(items[0].guideId);
     feedback.clearFeedback();
+    let resultados = [];
     try {
-      const r = await liberarComCanais({ api, companyId, guideId, reenviarConfirmado: true });
-      // ⚠ A ORDEM IMPORTA: `loadGuides` começa com `feedback.clearFeedback()`. Setar a mensagem
-      // antes dele APAGA a mensagem — o clique não devolvia retorno nenhum à tela, nem de sucesso
-      // nem de falha. "O sistema diz que fez" tem uma variante pior: o sistema não diz nada.
-      if (!vigente()) return;
-      await loadGuides(companyId);
-      if (!vigente()) return;
-      // ⚠ Dizia "Guia colocada na fila de reenvio". Não existe fila: o laço automático saiu na Q55
-      // e nada drena `emailNextRetryAt`. O reenvio é SÍNCRONO — ou saiu agora, ou não saiu.
-      if (!r.ok) {
-        feedback.setError(r.texto);
-      } else {
-        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
+      resultados = await liberarSelecao({ api, companyId, items, onProgress: (concluidos) => {
+        setEnvioGuiasProgresso({ ...contexto, status: "running", completed: concluidos.length, resultados: concluidos });
+      } });
+      const falhas = resultados.filter(r => !r.ok);
+      const pendente = resultados.some(r => r.tom === "pendente");
+      const texto = resultados.map(r => lote ? r.rotulo + ": " + r.texto : r.texto).join("\n");
+      // O resultado continua disponível no topo mesmo depois de navegar para outra empresa.
+      // Somente a tabela de origem pode receber a releitura, sem esconder suas linhas.
+      const atualizacao = vigente() ? await loadGuides(companyId, { background: true }) : null;
+      setEnvioGuiasProgresso({ ...contexto, status: falhas.length ? "error" : pendente ? "pending" : "done",
+        completed: resultados.length, resultados,
+        refreshError: atualizacao?.ok === false ? "Não foi possível atualizar os status da tabela. O resultado do envio foi preservado; confira o histórico antes de reenviar." : null });
+      if (vigente()) {
+        if (falhas.length) feedback.setError(lote ? falhas.length + " de " + resultados.length + " guias com falha.\n" + texto : texto);
+        else feedback.setMessage(pendente ? { texto, tom: "pendente" } : texto);
       }
-    } catch (err) {
-      if (!vigente()) return;
-      feedback.setError(err?.message || "Falha ao reenviar guia");
+      return resultados;
+    } catch (erro) {
+      const texto = erro?.message || "Não foi possível confirmar o envio. Confira o histórico antes de repetir.";
+      setEnvioGuiasProgresso({ ...contexto, status: "error", completed: resultados.length, resultados, error: texto });
+      if (vigente()) feedback.setError(texto);
+      return resultados;
     } finally {
+      envioGuiasEmCurso.current = false;
+      setLiberarGuiasBusy(false);
       guidesState.setResendingGuideId("");
     }
+  }
+
+  function handleResendGuide(guideId) {
+    if (!guideId) return;
+    return executarEnvioGuias([{ guideId, rotulo: "Guia", reenviarConfirmado: true }], { reenvio: true });
   }
 
   async function handleConfirmGuidePayment(guideId) {
@@ -963,69 +993,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   // Portal Cliente: libera SÓ a guia selecionada ao cliente e envia SÓ ela por e-mail
   // (página da empresa). O empacotamento DAS+INSS fica no envio em lote da página principal.
-  async function handleLiberarGuia(guideId) {
-    const telaOrigem = telaAtual.current;
-    const vigente = () => telaAtual.current === telaOrigem;
-    const companyId = companiesState.selectedCompanyId;
-    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
-    if (!guideId) { feedback.setError("Selecione uma guia."); return; }
-    setLiberarGuiasBusy(true);
-    feedback.clearFeedback();
-    try {
-      // ⚠ DOIS CANAIS, UMA LIGAÇÃO (02/09/2026): o e-mail sai como sempre saiu, e o WhatsApp é o
-      // terceiro passo, decidido por `PortalClient.canalPadraoEnvio` (WHATSAPP manda, PERGUNTAR
-      // pergunta, EMAIL não tenta). A sequência mora em `liberarComCanais` porque o chip do
-      // dashboard faz a MESMA coisa — duas cópias divergiriam na primeira correção.
-      const r = await liberarComCanais({ api, companyId, guideId });
-      // ⚠ `sent: false` NÃO É SUCESSO. A liberação ao app do cliente deu certo, o e-mail não — e a
-      // mensagem do backend ("o e-mail NÃO foi enviado…") aparecia em VERDE, na caixa de sucesso,
-      // logo abaixo de um botão que o contador acabou de clicar. Verde é a cor de "pode ir embora";
-      // era a última coisa que ele via antes de ir. O chip do dashboard já fazia isso certo
-      // (`renderCompaniesHomePage.acoesGuia.onEnviar`); esta metade tinha ficado para trás.
-      // ⚠ A ORDEM IMPORTA: `loadGuides` abre com `feedback.clearFeedback()`. Enquanto a mensagem
-      // era setada ANTES dele, o clique em "Liberar ao cliente" não devolvia NADA à tela — nem o
-      // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
-      if (!vigente()) return;
-      await loadGuides(companyId);
-      if (!vigente()) return;
-      if (r.ok) {
-        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
-      } else {
-        feedback.setError(r.texto);
-      }
-    } catch (err) {
-      if (!vigente()) return;
-      feedback.setError(err?.message || "Falha ao liberar a guia ao cliente.");
-    } finally {
-      setLiberarGuiasBusy(false);
-    }
+  function handleLiberarGuia(guideId, { reenviarConfirmado = false } = {}) {
+    if (!guideId) return;
+    return executarEnvioGuias([{ guideId, rotulo: "Guia", reenviarConfirmado }]);
   }
 
-  async function handleLiberarGuias(items) {
-    const telaOrigem = telaAtual.current;
-    const vigente = () => telaAtual.current === telaOrigem;
-    const companyId = companiesState.selectedCompanyId;
-    if (!companyId || !items?.length || liberarGuiasBusy) return [];
-    setLiberarGuiasBusy(true);
-    feedback.clearFeedback();
-    let resultados = [];
-    try {
-      resultados = await liberarSelecao({ api, companyId, items });
-      if (!vigente()) return resultados;
-      await loadGuides(companyId);
-      if (!vigente()) return resultados;
-      const falhas = resultados.filter((r) => !r.ok);
-      const texto = resultados.map((r) => `${r.rotulo}: ${r.texto}`).join("\n");
-      if (falhas.length) feedback.setError(`${falhas.length} de ${resultados.length} guias com falha.\n${texto}`);
-      else feedback.setMessage(resultados.some((r) => r.tom === "pendente") ? { texto, tom: "pendente" } : texto);
-      return resultados;
-    } catch (erro) {
-      if (!vigente()) return resultados;
-      feedback.setError(erro?.message || "Não foi possível atualizar o resultado do envio. Confira o histórico antes de repetir.");
-      return resultados;
-    } finally {
-      setLiberarGuiasBusy(false);
-    }
+  function handleLiberarGuias(items) {
+    return executarEnvioGuias(items, { lote: true });
   }
 
   async function handleGuideUpload(files) {
@@ -1164,6 +1138,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   function resetWorkspace() {
     leituraGuias.current += 1;
+    cargaInicialGuias.current = false;
+    setEnvioGuiasProgresso(null);
     empresaAtualGuias.current = null;
     setEmpresaDasGuias(null);
     guidesState.setLoadingGuides(false);
@@ -1409,6 +1385,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   return {
+    envioGuiasProgresso,
+    fecharEnvioGuiasProgresso: () => { if (!envioGuiasEmCurso.current) setEnvioGuiasProgresso(null); },
     companiesState,
     guidesState: {
       ...guidesState,

@@ -39,6 +39,7 @@ import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 import { usePendencias } from "./features/pendencias/hooks/usePendencias";
 import { useBackgroundJobs } from "./features/companies/list/hooks/useBackgroundJobs";
+import { GuideSendActivity } from "./features/guides/components/GuideSendActivity";
 
 
 const api = createApiClient();
@@ -425,7 +426,7 @@ function AppInterno({ session, feedback }) {
         guidesPanel={{
           guides: companiesWorkspace.guidesState.guides,
           loading: companiesWorkspace.guidesState.loadingGuides,
-          onRefresh: () => companiesWorkspace.loadGuides(),
+          onRefresh: (options) => companiesWorkspace.loadGuides(undefined, options),
           onResendGuide: companiesWorkspace.handleResendGuide,
           onConfirmGuidePayment: companiesWorkspace.handleConfirmGuidePayment,
           onRecalculateGuide: companiesWorkspace.handleRecalculateGuide,
@@ -650,7 +651,7 @@ function AppInterno({ session, feedback }) {
     />
   );
   }
-  return <>{renderPagina()}{notasFiscais.importModalAberto && <ImportacaoNotasModal andamento={notasFiscais.importAndamento} resultado={notasFiscais.importModalResultado} ocupado={notasFiscais.importing} aoFechar={notasFiscais.fecharImportModal} />}</>;
+  return <><GuideSendActivity activity={companiesWorkspace.envioGuiasProgresso} onDismiss={companiesWorkspace.fecharEnvioGuiasProgresso} />{renderPagina()}{notasFiscais.importModalAberto && <ImportacaoNotasModal andamento={notasFiscais.importAndamento} resultado={notasFiscais.importModalResultado} ocupado={notasFiscais.importing} aoFechar={notasFiscais.fecharImportModal} />}</>;
 }
 
 export default App;
