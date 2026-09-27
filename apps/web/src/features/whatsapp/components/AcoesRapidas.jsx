@@ -1,3 +1,5 @@
+import { novaIntencao, precisaConferirIntencao } from "../lib/atendimentoPwa";
+import { useRascunhoServidor } from "../hooks/useRascunhoServidor";
 // Envios da ficha, acessíveis pelo menu "Guias e documentos" do compositor.
 // A empresa vem da ficha aberta; o destinatário e o canal vêm da conversa preparada.
 // Notas são criadas no menu da mensagem; o callback de anotação abaixo conserva
@@ -23,7 +25,11 @@ function recortar(texto, max = 70) {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-export function AcoesRapidas({
+export function AcoesRapidas(props) {
+  return <AcoesRapidasContexto key={`${props.conversa.id}:${props.companyId || ""}`} {...props} />;
+}
+
+function AcoesRapidasContexto({
   conversa,
   mensagens = [],
   janela = null,
@@ -43,6 +49,8 @@ export function AcoesRapidas({
   const [resultado, setResultado] = useState(null);
   const [reenvio, setReenvio] = useState(false);
   const [incerto, setIncerto] = useState(false);
+  const intencaoDocumento = useRef(null);
+  const remoto = useRascunhoServidor({ api, conversaId: conversa.id, modo: "documento", onRestaurar: r => { if (r.envioIncerto && r.clientRequestId) { intencaoDocumento.current = r.clientRequestId; setIncerto(true); } } });
   const empresa = conversa.empresas?.find(e => e.id === companyId) || (conversa.portalClientId === companyId ? conversa.empresa || { id: companyId } : null);
   const versao = useRef(0);
   const envioEmCurso = useRef(null);
@@ -50,7 +58,7 @@ export function AcoesRapidas({
     versao.current++;
     envioEmCurso.current = null;
     setAberta(null); setItens([]); setEscolhido(""); setDestinatarios([]);
-    setRecusa(null); setResultado(null); setReenvio(false); setIncerto(false); setCarregando(false); setOcupado(false);
+    setRecusa(null); setResultado(null); setReenvio(false); setCarregando(false); setOcupado(false);
     return () => { versao.current++; };
   }, [companyId, conversa.id]);
   const recebem = r => {
@@ -162,16 +170,20 @@ export function AcoesRapidas({
           const atual = disponibilidadeAtual.current.find(a => a.acao === ACAO.ENVIAR_DOCUMENTO);
           if (!atual?.pode) throw new Error(atual?.frase || "Confira o canal antes de enviar o documento.");
           const arquivo = new File([blob], item.rotulo, { type: blob.type || item.mimeType || "application/pdf" });
+          intencaoDocumento.current ||= novaIntencao();
+          if (!(await remoto.salvar({ texto: "", clientRequestId: intencaoDocumento.current, intencaoTexto: item.rotulo, envioIncerto: true }, true))) throw new Error("Não foi possível guardar a identificação desta tentativa. Nenhum documento foi enviado.");
           envioIniciado = true;
-          r = await api.enviarAnexoWhatsapp(conversa.id, arquivo, `${empresa.razao || "Empresa desta ficha"} · ${item.rotulo}`);
+          r = await api.enviarAnexoWhatsapp(conversa.id, arquivo, `${empresa.razao || "Empresa desta ficha"} · ${item.rotulo}`, { clientRequestId: intencaoDocumento.current });
         } else {
           if (conversa.portalClientId !== companyId) throw new Error("Atualize o sistema para enviar documentos desta ficha ao contato.");
+          intencaoDocumento.current ||= novaIntencao();
+          if (!(await remoto.salvar({ texto: "", clientRequestId: intencaoDocumento.current, intencaoTexto: escolhido, envioIncerto: true }, true))) throw new Error("Não foi possível guardar esta tentativa. Nenhum documento foi enviado.");
           envioIniciado = true;
-          r = await api.enviarDocumentoWhatsapp(conversa.id, escolhido);
+          r = await api.enviarDocumentoWhatsapp(conversa.id, escolhido, { clientRequestId: intencaoDocumento.current });
         }
         if (v !== versao.current) return;
         if (r?.ok === false) throw Object.assign(new Error(r.message || r.mensagem || "O envio não foi confirmado."), { payload: r });
-        envioConfirmado = true;
+        envioConfirmado = true; await remoto.excluir(); intencaoDocumento.current = null;
         setResultado({ tom: "pendente", texto: "Documento aceito pela Meta; aguarde a confirmação de entrega no fio." });
       }
       if (v !== versao.current) return;
@@ -184,13 +196,22 @@ export function AcoesRapidas({
       if (v !== versao.current) return;
       setRecusa(err?.payload?.message || err?.payload?.mensagem || err?.message || "Não foi possível enviar.");
       setReenvio(err?.code === "GUIA_JA_ENVIADA");
-      if (envioIniciado && !envioConfirmado && err.payload?.podeTentarDeNovo !== true && (!err.status || err.status >= 500 || err.payload?.podeTentarDeNovo === false)) setIncerto(true);
+      if (envioIniciado && !envioConfirmado && precisaConferirIntencao(err)) setIncerto(true);
     } finally {
       if (envioEmCurso.current === operacao) envioEmCurso.current = null;
       if (v === versao.current) setOcupado(false);
     }
   }
 
+  async function conferirDocumento() {
+    if (!intencaoDocumento.current || ocupado) return;
+    setOcupado(true);
+    try {
+      const r = await api.getIntencaoWhatsapp(conversa.id, intencaoDocumento.current);
+      if (["ACEITA", "FALHOU"].includes(r?.intencao?.status)) { await remoto.excluir(); intencaoDocumento.current = null; setIncerto(false); cancelar(); setResultado({ tom: "pendente", texto: r.intencao.status === "ACEITA" ? "Documento aceito pelo WhatsApp; confira a entrega no histórico." : "O documento não foi aceito. Você pode preparar uma nova tentativa." }); await onEnviado?.(); }
+      else setRecusa("O envio continua sem confirmação. Nenhum documento foi reenviado.");
+    } catch(e) { setRecusa(e.message); } finally { setOcupado(false); }
+  }
   return (
     <div data-testid="acoes-rapidas" className="wa-quick-actions">
       <div style={linha}>
@@ -199,7 +220,7 @@ export function AcoesRapidas({
             key={a.acao}
             variant="secondary"
             data-testid={`acao-${a.acao}`}
-            disabled={!a.pode || ocupado}
+            disabled={!a.pode || ocupado || (a.acao === ACAO.ENVIAR_DOCUMENTO && (incerto || !remoto.pronto))}
             onClick={() => abrir(a.acao)}
           >
             {a.rotulo}
@@ -260,7 +281,7 @@ export function AcoesRapidas({
 
       {resultado ? <p role={resultado.tom === "erro" ? "alert" : "status"} style={{ color: resultado.tom === "erro" ? "var(--state-danger)" : "var(--text-muted)" }}>{resultado.texto}</p> : null}
       {aberta === ACAO.ENVIAR_GUIA && reenvio && escolhido ? <Button disabled={ocupado} onClick={() => confirmar(true)}>Confirmar reenvio aos destinatários acima</Button> : null}
-      {incerto && <div><p role="status">Envio sem confirmação. Confira o histórico antes de preparar outro envio.</p><Button variant="secondary" disabled={ocupado} onClick={() => { cancelar(); setIncerto(false); }}>Conferi o histórico: preparar outro envio</Button></div>}
+      {incerto && <div data-envio-pendente="true"><p role="status">Envio sem confirmação. Confira o histórico antes de preparar outro envio.</p>{api.getIntencaoWhatsapp && <Button variant="secondary" disabled={ocupado} onClick={conferirDocumento}>Conferir resultado do documento</Button>}</div>}
       {recusa ? <p role="alert" className="wa-send-error">{recusa}</p> : null}
     </div>
   );

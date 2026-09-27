@@ -1,3 +1,4 @@
+import { enriquecerMensagensWhatsapp, resumoMensagemHistorico } from './HistoricoArquivoWhatsappService.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../infrastructure/db/prisma.js';
@@ -162,6 +163,7 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     FROM mensagens_whatsapp m JOIN conversas_whatsapp c ON c.id=m."conversaId" WHERE c.id IN (${Prisma.join(ids)}) AND m.direcao='in'
     ORDER BY c."canalId",c."vinculoNumeroId",CASE WHEN c."vinculoNumeroId" IS NULL THEN c."telefoneE164" END,
       LEAST(COALESCE(m."ocorridaEmProvedor",m."registradaEm"),m."registradaEm") DESC,m."registradaEm" DESC,m.id DESC`);
+  const mensagensComCartao = await enriquecerMensagensWhatsapp(mensagens,{client,empresasPermitidas:visiveis});
   return grupos.map(g => {
     const vigente = s => !s.vinculoNumero?.encerrouEm;
     const maisRecente = lista => [...lista].sort((a,b) => new Date(b.updatedAt)-new Date(a.updatedAt) || b.id.localeCompare(a.id))[0];
@@ -174,7 +176,7 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     const atual = segmento.atendimento;
     const propria = doGrupo.find(c => c.ativo && c.nome && c.vinculoNumeroId === segmento.vinculoNumeroId)
       || doGrupo.find(c => c.ativo && c.nome && g.segmentos.some(s => s.vinculoNumeroId === c.vinculoNumeroId && vigente(s)));
-    const ultimas = mensagens.filter(m => g.segmentos.some(s => s.id === m.segmentoEfetivo)).sort((a,b) => new Date(b.registradaEm)-new Date(a.registradaEm) || b.id.localeCompare(a.id));
+    const ultimas = mensagensComCartao.filter(m => g.segmentos.some(s => s.id === m.segmentoEfetivo)).sort((a,b) => new Date(b.registradaEm)-new Date(a.registradaEm) || b.id.localeCompare(a.id));
     const ultima = ultimas[0];
     const empresas = [...new Map(g.segmentos.filter(s => s.portalClientId).map(s => [s.portalClientId, empresa(s)])).values()];
     const completo = g.completo ?? !fora.some(s => s.interlocutorId === interlocutor?.id);
@@ -201,7 +203,7 @@ async function resumirGrupos(grupos, { visiveis, client }) {
       portalClientId: segmento.portalClientId, empresa: empresa(segmento), empresas, escopoVerificado: segmento.escopoVerificado, excluidaEm: segmento.excluidaEm,
       atendidaPor: interlocutor?.atendidaPor || segmento.atendidaPor, atendidaDesde: interlocutor?.atendidaDesde || segmento.atendidaDesde, atendente: segmento.atendente ? { id: segmento.atendente.id, nome: segmento.atendente.name, email: segmento.atendente.email } : null,
       naFilaDoEscritorio: Boolean(segmento.atendidaDesde && !segmento.atendidaPor), updatedAt: g.instante || segmento.updatedAt, lidaAteEm: segmento.lidaAteEm,
-      ultimaMensagem: ultima ? { id:ultima.id,direcao:ultima.direcao,tipo:ultima.tipo,corpo:ultima.corpo,autor:ultima.autor,registradaEm:ultima.registradaEm,
+      ultimaMensagem: ultima ? { id:ultima.id,direcao:ultima.direcao,tipo:ultima.tipo,corpo:resumoMensagemHistorico(ultima),autor:ultima.autor,registradaEm:ultima.registradaEm,
         empresa:ultima.referenciaComercial?.escopo === 'PESSOA' ? null : empresa(g.segmentos.find(s => s.id === ultima.segmentoEfetivo)) } : null,
       naoLidas: Number(g.naoLidas || 0), janela: canal?.janela, pendencia: pendencia ? { id: pendencia.id, tipo: pendencia.tipo, codigo: pendencia.codigo, expiraEm: pendencia.expiraEm } : null,
       ...projecao, canais, capacidades: { notaInterna: escoposNotas.length > 0, conferirIdentidade: Boolean(interlocutor && completo), escoposNotas },
@@ -210,9 +212,14 @@ async function resumirGrupos(grupos, { visiveis, client }) {
   });
 }
 
-export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = null, limite = 100, client = prisma }) {
+export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = null, mensagemId = null, limite = 100, client = prisma }) {
   const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
-  const where = filtroMensagensIdentidade(grupo.segmentos);
+  let where = filtroMensagensIdentidade(grupo.segmentos);
+  if(mensagemId) {
+    const alvo = await client.mensagemWhatsapp.findFirst({where:{AND:[where,{id:String(mensagemId)}]},select:{id:true,registradaEm:true}});
+    if(!alvo) throw erro('mensagem_nao_encontrada',404);
+    where = {AND:[where,{OR:[{registradaEm:{lt:alvo.registradaEm}},{registradaEm:alvo.registradaEm,id:{lte:alvo.id}}]}]};
+  }
   if (cursor && !await client.mensagemWhatsapp.findFirst({ where: { AND: [where, { id: cursor }] }, select: { id: true } })) throw erro('cursor_invalido');
   const lim = Math.min(200, Math.max(1, Number(limite) || 100));
   const achadas = await client.mensagemWhatsapp.findMany({ where, orderBy: [{ registradaEm: 'desc' }, { id: 'desc' }], take: lim + 1,
@@ -220,17 +227,17 @@ export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = nu
   const pagina = achadas.slice(0, lim), [conversa] = await resumirGrupos([grupo], { visiveis, client });
   const notas = grupo.interlocutorId ? await client.notaInternaAtendimento.findMany({ where: { interlocutorId: grupo.interlocutorId,
     OR: [{ escopo: 'EMPRESA', portalClientId: { in: grupo.segmentos.map(s => s.portalClientId).filter(Boolean) } }, ...(grupo.completo ? [{ escopo: { in: ['PESSOA','CASO'] } }] : [])] }, orderBy: [{ criadaEm: 'desc' }, { id: 'desc' }], take: 100 }) : [];
-  return { ok: true, versaoContrato: 2, conversa, temMais: achadas.length > lim, proximoCursor: achadas.length > lim ? pagina.at(-1).id : null,
-    mensagens: pagina.reverse().map(m => { const s = grupo.segmentos.find(c => c.id === porMensagem(m)); return { id: m.id, direcao: m.direcao, tipo: m.tipo, corpo: m.corpo, autor: m.autor,
+  return { ok: true, versaoContrato: 2, conversa, contextoHistorico:Boolean(mensagemId), mensagemAlvoId:mensagemId || null, temMais: achadas.length > lim, proximoCursor: achadas.length > lim ? pagina.at(-1).id : null,
+    mensagens: await enriquecerMensagensWhatsapp(pagina.reverse().map(m => { const s = grupo.segmentos.find(c => c.id === porMensagem(m)); return { id: m.id, direcao: m.direcao, tipo: m.tipo, corpo: m.corpo, autor: m.autor,
       empresa: m.referenciaComercial?.escopo === 'PESSOA' ? null : empresa(s), escopoPessoa: m.referenciaComercial?.escopo === 'PESSOA', canal: { id: s?.canalId || 'principal', chave: s?.canalWhatsapp?.chave || 'principal', finalidade: s?.canalWhatsapp?.finalidade || 'PRINCIPAL' },
-      providerMessageId: m.providerMessageId, envioGuiaId: m.envioGuiaId, ocorridaEmProvedor: m.ocorridaEmProvedor, registradaEm: m.registradaEm, temMidia: Boolean(m.midiaProvedorId),
-      statusEnvio: m.envioGuiaTentativa?.status || m.statusEnvio, erroEnvio: m.erroEnvioCodigo ? { codigo: m.erroEnvioCodigo, mensagem: m.erroEnvioMensagem } : null }; }),
+      providerMessageId: m.providerMessageId, envioGuiaId: m.envioGuiaId, envioGuiaTentativaId: m.envioGuiaTentativaId, ocorridaEmProvedor: m.ocorridaEmProvedor, registradaEm: m.registradaEm, temMidia: Boolean(m.midiaProvedorId),
+      statusEnvio: m.envioGuiaTentativa?.status || m.statusEnvio, erroEnvio: m.erroEnvioCodigo ? { codigo: m.erroEnvioCodigo, mensagem: m.erroEnvioMensagem } : null }; }), {client,empresasPermitidas:visiveis}),
     notasInternas: notas.reverse().map(n => ({ ...n, autor: { id: n.autorId, nome: n.autorNome } })) };
 }
 
 export async function registrarLeituraIdentidade({ conversaId, mensagemId, visiveis, client = prisma }) {
   const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
-  const mensagem = await client.mensagemWhatsapp.findFirst({ where: { AND: [filtroMensagensIdentidade(grupo.segmentos), { id: String(mensagemId || '') }] } });
+  const mensagem = await client.mensagemWhatsapp.findFirst({ where: { AND: [filtroMensagensIdentidade(grupo.segmentos), { id: String(mensagemId || ''), direcao: 'in' }] } });
   if (!mensagem) throw erro('mensagem_nao_encontrada', 404);
   await client.conversaWhatsapp.updateMany({ where: { id: { in: grupo.segmentos.map(s => s.id) }, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: mensagem.registradaEm } }] }, data: { lidaAteEm: mensagem.registradaEm } });
   return { ok: true, lidaAteEm: mensagem.registradaEm };
@@ -247,4 +254,25 @@ export async function salvarNotaInterna({ conversaId, visiveis, autor, texto, es
   const nota = await client.notaInternaAtendimento.upsert({ where: { interlocutorId_chaveIdempotencia: { interlocutorId: grupo.interlocutorId, chaveIdempotencia } }, create:dados,update:{} });
   if (['texto','escopo','portalClientId','atendimentoLeadId','autorId'].some(k => nota[k] !== dados[k])) throw erro('idempotencia_divergente',409);
   return { ok: true, nota: { ...nota, autor: { id: nota.autorId, nome: nota.autorNome } } };
+}
+
+
+/** Pesquisa apenas conteúdo persistido e já autorizado no mesmo grupo. Nunca consulta serviços fiscais. */
+export async function buscarMensagensIdentidade({ conversaId, visiveis, q, cursor = null, limite = 20, client = prisma }) {
+  const texto = String(q || '').trim();
+  if (texto.length < 2 || texto.length > 200) throw erro('busca_invalida');
+  const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
+  const autorizado = filtroMensagensIdentidade(grupo.segmentos);
+  const where = { AND: [autorizado, { OR: [
+    { corpo: { contains: texto, mode: 'insensitive' } },
+    { arquivoWhatsapp: { is: { nomeArquivo: { contains: texto, mode: 'insensitive' }, OR:[{portalClientId:null},{portalClientId:{in:visiveis}}] } } },
+    { referenciaComercial: { path: ['nome'], string_contains: texto } },
+    { envioGuia: { is: { guide: { is: { portalClientId:{in:visiveis}, OR: [{ tipo: { contains: texto, mode: 'insensitive' } }, { competencia: { contains: texto, mode: 'insensitive' } }] } } } } },
+  ] }] };
+  if (cursor && !await client.mensagemWhatsapp.findFirst({ where: { AND: [where, { id: String(cursor) }] }, select: { id: true } })) throw erro('cursor_invalido');
+  const lim = Math.min(50, Math.max(1, Number(limite) || 20));
+  const rows = await client.mensagemWhatsapp.findMany({ where, orderBy: [{ registradaEm: 'desc' }, { id: 'desc' }], take: lim + 1,
+    ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}), include: { envioGuiaTentativa: true, contexto: { select: { conversaId: true } } } });
+  const pagina = rows.slice(0, lim);
+  return { ok: true, resultados: pagina.map(m => ({ id:m.id,corpo:m.corpo,tipo:m.tipo,direcao:m.direcao,autor:m.autor,registradaEm:m.registradaEm,providerMessageId:m.providerMessageId,statusEnvio:m.envioGuiaTentativa?.status || m.statusEnvio,envioGuiaId:m.envioGuiaId,envioGuiaTentativaId:m.envioGuiaTentativaId, conversaId: porMensagem(m), empresa: empresa(grupo.segmentos.find(s => s.id === porMensagem(m))) })), temMais: rows.length > lim, proximoCursor: rows.length > lim ? pagina.at(-1).id : null };
 }

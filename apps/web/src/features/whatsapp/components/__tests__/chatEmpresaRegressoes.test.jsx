@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import "@testing-library/jest-dom";
 import { ChatDaEmpresa } from "../ChatDaEmpresa";
 import { AcoesRapidas } from "../AcoesRapidas";
+import { criarAtendimentoMovelMock } from "../../../../api/mock/atendimentoMovelMock";
 
 const EMPRESA = { id: "empresa-1", razao: "Empresa da ficha", cnpj: "12345678000190" };
 const OUTRA = { id: "empresa-2", razao: "Outra empresa" };
@@ -35,6 +36,8 @@ function apiFalsa(conversas = [CONVERSA], extra = {}) {
   };
 }
 async function prepararDocumento() {
+  const plus = screen.queryByRole("button", { name: "Ações da mensagem e arquivos" });
+  if (plus?.getAttribute("aria-expanded") === "false") fireEvent.click(plus);
   const summary = screen.queryByText("Guias e documentos", { selector: "summary" });
   if (summary && !summary.parentElement.open) fireEvent.click(summary);
   fireEvent.click(screen.getByTestId("acao-ENVIAR_DOCUMENTO"));
@@ -50,7 +53,7 @@ test("documento vem da ficha aberta e sai no canal escolhido sem trocar contexto
   expect(screen.getByTestId("escolha-do-envio")).toHaveTextContent("Empresa da ficha");
   expect(screen.getByTestId("escolha-do-envio")).toHaveTextContent("WhatsApp Comercial");
   fireEvent.click(enviar);
-  await waitFor(() => expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("conversa-comercial", expect.any(File), "Empresa da ficha · Documento.pdf"));
+  await waitFor(() => expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("conversa-comercial", expect.any(File), "Empresa da ficha · Documento.pdf", { clientRequestId: expect.any(String) }));
   expect(api.fetchCompanyDocumentBlob).toHaveBeenCalledWith(EMPRESA.id, "doc-1");
   expect(api.enviarDocumentoWhatsapp).not.toHaveBeenCalled();
 });
@@ -67,8 +70,8 @@ test("rascunhos de escritório e comercial ficam separados e a resposta usa o ca
   expect(texto).toHaveValue("Texto do escritório");
   fireEvent.change(screen.getByLabelText("Canal da mensagem"), { target: { value: "comercial" } });
   expect(texto).toHaveValue("Texto comercial");
-  fireEvent.click(screen.getByRole("button", { name: "Responder", exact: true }));
-  await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("conversa-comercial", "Texto comercial"));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i, exact: true }));
+  await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("conversa-comercial", "Texto comercial", { clientRequestId: expect.any(String) }));
 });
 
 test("reordenar contatos na atualização conserva a pessoa selecionada e seu rascunho", async () => {
@@ -76,6 +79,7 @@ test("reordenar contatos na atualização conserva a pessoa selecionada e seu ra
   render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Mensagem preparada para Maria" } });
   api.listarConversasWhatsapp.mockResolvedValue({ conversas: [{ ...OUTRO_CONTATO, updatedAt: "2026-09-22T12:00:00Z" }, CONVERSA], temMais: false });
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await waitFor(() => expect(api.listarConversasWhatsapp).toHaveBeenCalledTimes(2));
   expect(screen.getByLabelText("Contato da conversa")).toHaveValue("pessoa-1");
@@ -89,6 +93,7 @@ test("trocar de ficha descarta o rascunho anterior e ignora uma leitura tardia d
   const ui = render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Rascunho só da primeira ficha" } });
   api.getMensagensWhatsapp.mockImplementationOnce(() => leituraAntiga.promise);
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledTimes(2));
   ui.rerender(<ChatDaEmpresa api={api} companyId={OUTRA.id} />);
@@ -119,6 +124,7 @@ test("falha inicial de listagem permite recuperação pelo botão atualizar", as
   api.listarConversasWhatsapp.mockRejectedValueOnce(new Error("Falha temporária"));
   render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   await screen.findByTestId("chat-falha");
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await screen.findByTestId("fio");
   expect(screen.queryByTestId("chat-falha")).not.toBeInTheDocument();
@@ -152,17 +158,33 @@ test("falha de download permite tentar novamente porque nenhum envio foi iniciad
   await waitFor(() => expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1));
 });
 
-test("rede incerta depois do envio bloqueia repetição e orienta conferir o histórico", async () => {
-  const api = apiFalsa([CONVERSA], { enviarAnexoWhatsapp: jest.fn(async () => { throw new Error("Conexão interrompida"); }) });
+test.each([null, "INCERTA", "PROCESSANDO", "ACEITA"])("documento com falha %s bloqueia repetição e permite conferir o resultado", async status => {
+  const api = apiFalsa([CONVERSA], { enviarAnexoWhatsapp: jest.fn(async () => { throw Object.assign(new Error("Conexão interrompida"), status ? { status: 409, payload: { intencao: { status } } } : {}); }), getIntencaoWhatsapp: jest.fn(async () => ({ intencao: { status: "ACEITA" } })) });
   render(<AcoesRapidas api={api} companyId={EMPRESA.id} conversa={CONVERSA} janela={CONVERSA.janela} />);
   fireEvent.click(await prepararDocumento());
   await screen.findByText(/Envio sem confirmação/);
   expect(within(screen.getByTestId("escolha-do-envio")).getByRole("button", { name: "Enviar" })).toBeDisabled();
   expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Conferi o histórico: preparar outro envio" }));
-  expect(screen.queryByTestId("escolha-do-envio")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Conferir resultado do documento" }));
+  await waitFor(() => expect(screen.queryByTestId("escolha-do-envio")).not.toBeInTheDocument());
   expect(screen.queryByText(/Envio sem confirmação/)).not.toBeInTheDocument();
   expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
+});
+
+test("trocar a empresa do mesmo contato conserva a intenção pendente de documento", async () => {
+  const drafts = criarAtendimentoMovelMock({ conversas: [CONVERSA], usuario: () => "contador" });
+  const api = apiFalsa([CONVERSA], { getRascunhoWhatsapp: drafts.getRascunhoWhatsapp, salvarRascunhoWhatsapp: drafts.salvarRascunhoWhatsapp, excluirRascunhoWhatsapp: drafts.excluirRascunhoWhatsapp,
+    enviarAnexoWhatsapp: jest.fn(async () => { throw Object.assign(new Error("Conferência pendente"), { status: 409, payload: { intencao: { status: "INCERTA" } } }); }), getIntencaoWhatsapp: jest.fn(async () => ({ intencao: { status: "ACEITA" } })) });
+  const ui = render(<AcoesRapidas api={api} companyId={EMPRESA.id} conversa={CONVERSA} janela={CONVERSA.janela} />);
+  await waitFor(() => expect(screen.getByTestId("acao-ENVIAR_DOCUMENTO")).toBeEnabled());
+  fireEvent.click(await prepararDocumento()); await screen.findByText(/Envio sem confirmação/);
+  const chave = api.enviarAnexoWhatsapp.mock.calls[0][3].clientRequestId;
+  ui.rerender(<AcoesRapidas api={api} companyId={OUTRA.id} conversa={CONVERSA} janela={CONVERSA.janela} />);
+  await screen.findByRole("button", { name: "Conferir resultado do documento" });
+  expect(screen.getByTestId("acao-ENVIAR_DOCUMENTO")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Conferir resultado do documento" }));
+  await waitFor(() => expect(screen.getByTestId("acao-ENVIAR_DOCUMENTO")).toBeEnabled());
+  expect(api.getIntencaoWhatsapp).toHaveBeenCalledWith(CONVERSA.id, chave); expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
 });
 
 test("resultado incerto de documento não bloqueia o envio independente de uma guia", async () => {

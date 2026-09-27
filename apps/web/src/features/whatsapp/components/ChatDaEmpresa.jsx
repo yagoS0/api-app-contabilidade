@@ -60,7 +60,7 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
     <section data-testid="chat-da-empresa" className="wa-company-chat">
       <div className="wa-section-heading" style={{ flexWrap: "wrap" }}>
         <h2 className="wa-inline"><WhatsappIcon size={19} />WhatsApp</h2>
-        <Button variant="secondary" size="sm" disabled={hook.carregando || hook.carregandoFio || hook.ocupado} onClick={() => hook.atualizarConversa(aberto?.conversa.id)}>Atualizar conversa</Button>
+        {!aberto && <Button variant="secondary" size="sm" disabled={hook.carregando || hook.carregandoFio || hook.ocupado} onClick={() => hook.atualizarConversa()}>Atualizar conversa</Button>}
         <select aria-label="Visualização das conversas da empresa" style={{ ...campo, width: "auto" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setEscolhido(null); tentado.current = null; hook.setFiltro(e.target.value); }}>
           <option value="todas">Conversas atuais</option><option value="historico">Histórico anterior</option><option value="lixeira">Lixeira</option>
         </select>

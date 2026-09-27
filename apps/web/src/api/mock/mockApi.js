@@ -1,3 +1,4 @@
+import { criarAtendimentoMovelMock } from "./atendimentoMovelMock";
 import { mockExecucoesRotinas, mockCarregarRotinas, mockSalvarRotinas } from "./rotinasMock";
 import { criarMockAcompanhamentoParcelamentos } from "./acompanhamentoParcelamentosMock";
 import { relatorioParcelasGuiasMock } from "./parcelasGuiasRelatorioMock";
@@ -1119,6 +1120,14 @@ const mockConversasWhatsapp = [
     ],
   },
 ];
+
+// Cartões reais do contrato: novo snapshot, legado sem original, histórico pendente e arquivo ausente.
+mockConversasWhatsapp[0].mensagens.unshift(
+  { id: "mock-guia-original", direcao: "out", autor: "SISTEMA", tipo: "template", corpo: null, statusEnvio: "entregue", registradaEm: haMs(4 * 3600_000), cartaoGuia: { origem: "ORIGINAL_REGISTRADO", empresa: "Empresa de demonstração", cnpj: "11222333000181", tipo: "DAS", competencia: "2026-08", valor: 490.12, vencimento: "2026-09-21", tentativaId: "mock-tentativa-1", statusEnvio: "entregue", template: { nome: "guia_disponivel", idioma: "pt_BR", variaveis: ["Empresa de demonstração", "08/2026", "490,12"] }, arquivo: { nomeArquivo: "das-agosto.pdf", mimeType: "application/pdf", estado: "DISPONIVEL", podeAbrir: true, origem: "ORIGINAL_REGISTRADO" } } },
+  { id: "mock-guia-legada", direcao: "out", autor: "SISTEMA", tipo: "template", corpo: null, statusEnvio: "enviado", registradaEm: haMs(3 * 3600_000), cartaoGuia: { origem: "RECUPERADO_DO_VINCULO", empresa: "Empresa de demonstração", tipo: "INSS", competencia: "2026-07", valor: 230.45, vencimento: "2026-08-20", arquivo: { nomeArquivo: "inss-associado.pdf", mimeType: "application/pdf", estado: "INDISPONIVEL", podeAbrir: false, origem: "RECUPERADO_DO_VINCULO" } } },
+  { id: "mock-guia-pendente", direcao: "out", autor: "SISTEMA", tipo: "template", corpo: null, statusEnvio: "enviado", registradaEm: haMs(2 * 3600_000), cartaoGuia: { origem: "ORIGINAL_REGISTRADO", empresa: "Empresa de demonstração", tipo: "DAS", competencia: "2026-09", valor: 501.23, vencimento: "2026-10-20", historicoPendente: true } }
+);
+mockConversasWhatsapp[3].mensagens[0].arquivo = { nomeArquivo: "documento-recebido.jpg", mimeType: "image/jpeg", estado: "INDISPONIVEL", podeAbrir: false, origem: "ORIGINAL_REGISTRADO" };
 
 // ⚠ O NOME DO CADASTRO, casado como no servidor: `(portalClientId, telefoneE164)`, digito a digito.
 // Fio sem empresa nao tem contato por construcao — e isso e `null`, nunca um nome deduzido.
@@ -3757,8 +3766,10 @@ export function createMockApi() {
   const obsoleto = () => ({ ok: false, error: "CALCULO_DESATUALIZADO", message: "Calcule novamente e confira o resultado antes de fechar ou transmitir." });
 
   let accessToken = "";
+  const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
   return {
+    ...atendimentoMovel,
     ...acompanhamentoMock,
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras),
@@ -8013,17 +8024,20 @@ export function createMockApi() {
       const termo = normalizar(q).trim();
       const lista = (empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro).filter(c =>
         (!relacionamento || c.relacionamento.tipo === relacionamento) && (!naoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.telefoneE164, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresa?.apelidosWhatsapp || [])].filter(Boolean).join(" ")).includes(termo)));
-      const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))), cursor, limite);
+      const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.ultimaMensagem?.registradaEm || "").localeCompare(String(a.ultimaMensagem?.registradaEm || "")) || String(b.id).localeCompare(String(a.id))), cursor, limite);
       return { ok: true, versaoContrato: 2, buscaConfigurada: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null, mensagemId = null } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
       if (empresa && c.portalClientId !== empresa) { const e = new Error("Empresa não encontrada."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       // A leitura é explícita: GET e polling não marcam mensagens vistas.
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
-      const pagina = paginaWhatsappMock([...c.mensagens].reverse(), cursor, limite);
+      const ordenadas = [...c.mensagens].reverse();
+      const alvo = mensagemId ? ordenadas.findIndex(m => m.id === mensagemId) : 0;
+      if (mensagemId && alvo < 0) throw Object.assign(new Error("Mensagem não encontrada."), { status: 404 });
+      const pagina = paginaWhatsappMock(mensagemId ? ordenadas.slice(alvo) : ordenadas, cursor, limite);
       return { ok: true, versaoContrato: 2, notasInternas: c.notasInternas || [], conversa: resumoMockDaConversa(c), temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, mensagens: pagina.itens.reverse().map((m) => ({ ...m, statusEnvio: m.statusEnvio || (m.direcao === "out" && m.providerMessageId ? "enviado" : null), erroEnvio: m.erroEnvio || null, temMidia: Boolean(m.midiaProvedorId) })) };
     },
     // ⚠ O MESMO contrato do real, recusas incluídas — mock permissivo esconde ramo, e este projeto
@@ -8126,24 +8140,6 @@ export function createMockApi() {
       recusarChatExcluidoMock(c);
       c.atendidaPor = null; c.atendente = null; c.atendidaDesde = null;
       return { ok: true, conversa: resumoMockDaConversa(c) };
-    },
-    async responderConversaWhatsapp(conversaId, texto) {
-      await delay(200);
-      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
-      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
-      recusarChatExcluidoMock(c);
-      if (!String(texto || "").trim()) { const e = new Error("Escreva a mensagem."); e.status = 400; e.code = "texto_obrigatorio"; throw e; }
-      if (c.janela.situacao !== "ABERTA") {
-        const e = new Error(c.janela.situacao === "NUNCA_ABERTA"
-          ? "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem DELE."
-          : "A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.");
-        e.status = 409; e.code = "FORA_DA_JANELA"; e.payload = { error: "FORA_DA_JANELA", message: e.message, reabrirConversa: { chave: "reabrir_conversa", statusAprovacao: "DECLARADO", disponivel: false } };
-        throw e;
-      }
-      const m = { id: `mock-msg-${Date.now()}`, direcao: "out", tipo: "text", corpo: String(texto).trim(), autor: "HUMANO", providerMessageId: `wamid.mock.${Date.now()}`, ocorridaEmProvedor: null, registradaEm: new Date().toISOString() };
-      c.mensagens.push(m);
-      c.updatedAt = m.registradaEm;
-      return { ok: true, mensagem: { id: m.id, providerMessageId: m.providerMessageId, autor: "HUMANO", corpo: m.corpo } };
     },
     async vincularConversaWhatsapp(conversaId, body) {
       await delay(150);

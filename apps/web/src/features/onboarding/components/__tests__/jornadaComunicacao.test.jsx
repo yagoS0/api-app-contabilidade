@@ -45,7 +45,7 @@ test("anexo exige conferência, envia ao contato certo e não repete timeout", a
   expect(api.enviarAnexoWhatsapp).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Assumir e enviar anexo" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Assumir e enviar anexo" })).toBeDisabled());
-  expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("c1", arquivo, ""); expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
+  expect(api.enviarAnexoWhatsapp).toHaveBeenCalledWith("c1", arquivo, "", { clientRequestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) }); expect(api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
 });
 
 test("formulário preparado atualiza o atendimento e retira o vínculo com outra empresa sem recarregar a página", async () => {
@@ -60,13 +60,18 @@ test("formulário preparado atualiza o atendimento e retira o vínculo com outra
   render(<FioDaConversa fio={{ conversa, mensagens: [] }} hook={{ api }} slotVincular={<AtendimentoComercial api={api} conversa={conversa} slotEmpresa={<p>Vincular empresa existente</p>} />} />);
   fireEvent.click(screen.getByRole("button", { name: "Abrir atendimento" }));
   expect(await screen.findByText("Vincular empresa existente")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Fechar atendimento e cadastro" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
   const preparar = within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" });
   await waitFor(() => expect(preparar).toBeEnabled());
   fireEvent.click(preparar);
   expect(await screen.findByText(/preencha este formulário:/)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("Vincular empresa existente")).not.toBeInTheDocument());
-  expect(await screen.findByRole("button", { name: "Nova solicitação", exact: true })).toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole("complementary", { name: "Mensagens rápidas" })).getByRole("button", { name: "Fechar", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Fechar ações da mensagem" }));
+  fireEvent.click(screen.getByRole("button", { name: "Abrir atendimento" }));
+  expect(await screen.findByRole("button", { name: "Nova solicitação", exact: true })).toBeVisible();
 });
 
 test("atualizar atendimento recupera resultado fiscal mesmo sem mudança na versão da ficha", async () => {

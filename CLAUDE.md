@@ -3,6 +3,9 @@
 ## Central de tarefas — 27/09/2026 (desenvolvimento)
 
 Operações demoradas iniciadas pelo usuário aparecem em **Tarefas (N)** no topo do portal. Aceite e resultados são persistidos em `ManualTask`; acompanhamento só lê o banco, nunca repete consultas, envios ou transmissões. A agenda fiscal salva permanece soberana. Navegação não cancela tarefas aceitas; uploads precisam terminar antes de fechar o navegador. Reinício marca interrupção sem replay automático. Preservar autorização por carteira/dono, confirmações, prévias e travas existentes. Migration aditiva e API precedem publicação do frontend. Cobertura, limites e validações em `docs/central-tarefas-20260927.md`. Ainda não publicado nesta etapa.
+## Atendimento PWA e auditoria — 25/09/2026
+
+O dono autorizou implementar o plano completo e publicar na main/produção. O atendimento tem entrada móvel própria, instalação, rascunhos autenticados versionados, intenções de envio persistidas e push opcional por conta/aparelho. GET não marca leitura. Interação humana assume o atendimento; timeout não autoriza reenvio automático. Guias congelam parâmetros/PDF por tentativa antes da Meta e reconciliam histórico localmente. Nunca cachear dados privados no service worker nem reutilizar inscrição após troca de conta. Expiração/exclusão de rascunho preserva versão; conteúdo expira em sete dias. Preservar trabalho fiscal e a pré-triagem curta. Detalhes, testes, limitações e implantação: `docs/atendimento-pwa-implantacao-20260925.md`, `docs/atendimento-pwa-api.md`, `docs/chat-historico-arquivos-20260925.md`. Os relatos de implantação antigos abaixo não comprovam o estado desta versão. Não usar Anthropic, provedores fiscais nem enviar mensagens a clientes nos testes.
 
 ## Consultas só pela configuração salva — 24/09/2026
 
@@ -1020,3 +1023,6 @@ Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão d
 
 ## Períodos do portal do cliente — ajuste de 24/09/2026
 O período inicial usa o primeiro e último mês efetivamente fechado dentro da janela de 12 meses. Seleção mista considera somente fechados, sem banners sobre lacunas; gráficos omitem os meses abertos. Seleção sem nenhum fechamento informa diretamente no filtro e a API recusa com SEM_MESES_FECHADOS, sem gerar relatório vazio. Resultado identifica a competência no título e nas colunas. Ajuste local ainda não publicado.
+
+## WhatsApp: pagamento e emissão — 25/09/2026
+Novo fluxo em desenvolvimento: solicita pagamento de todas as guias vencidas/liberadas/em aberto, incluindo manuais/FGTS/municipais, apenas nas empresas com rotina pagamento ativa. Somente WhatsApp, sem fallback e-mail. Botão coleta data, depois comprovante opcional; preserva declaração separada da evidência e baixa pelo contador. Detalhes e migration em apps/api/src/application/guides/CLAUDE.md. Planejamento de mensagens da emissão em docs/plano-emissao-whatsapp-20260925.md; emissão ainda não alterada.

@@ -16,3 +16,9 @@ createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </StrictMode>,
 )
+
+// Manifest específico: escritório mantém sua identidade; instalação do chat abre o atendimento.
+if (window.location.pathname === "/whatsapp" || new URLSearchParams(window.location.search).get("redirect")?.startsWith("/whatsapp")) {
+  document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/atendimento.webmanifest");
+  document.title = "Altan Atendimento";
+}

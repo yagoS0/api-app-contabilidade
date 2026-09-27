@@ -25,6 +25,8 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const [carregandoAnteriores, setCarregandoAnteriores] = useState(false);
   const paginas = useRef({ lista: false, fio: false, filtro: null });
   const rascunhosRef = useRef(new Map());
+  const alvoHistorico = useRef(null);
+  const [contextoHistorico, setContextoHistorico] = useState(false);
   const [aberta, setAberta] = useState(null);
   const [carregandoFio, setCarregandoFio] = useState(false);
   const [ocupado, setOcupado] = useState(false);
@@ -69,7 +71,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
           const novas = new Map(r.conversas.map(c => [chaveDoInterlocutor(c), c]));
           return cursor ? unirPorId(antigas, r.conversas, chaveDoInterlocutor) : [...r.conversas, ...antigas.filter(c => !novas.has(chaveDoInterlocutor(c)))];
         }
-        return unirPorId(antigas, r.conversas, chaveDoInterlocutor).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id)));
+        return unirPorId(antigas, r.conversas, chaveDoInterlocutor).sort((a, b) => String(b.ultimaAtividadeEm || b.ultimaMensagem?.registradaEm || "").localeCompare(String(a.ultimaAtividadeEm || a.ultimaMensagem?.registradaEm || "")) || String(b.id).localeCompare(String(a.id)));
       });
       if (!manter || cursor) {
         setTemMais(r?.temMais === undefined ? null : r.temMais);
@@ -91,12 +93,12 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     if (!api || !conversaId || !contextoVigente()) return null;
     const versao = ++versaoFio.current;
     const mesmoFio = selecionada.current === conversaId;
-    if (!mesmoFio) { setAberta(null); setCursorFio(null); paginas.current.fio = false; setErroAcao(null); empresaHistoricoRef.current = null; setEmpresaHistorico(null); }
+    if (!mesmoFio) { alvoHistorico.current = null; setContextoHistorico(false); setAberta(null); setCursorFio(null); paginas.current.fio = false; setErroAcao(null); empresaHistoricoRef.current = null; setEmpresaHistorico(null); }
     selecionada.current = conversaId;
     if (cursor) setCarregandoAnteriores(true);
     else if (!silencioso) setCarregandoFio(true);
     try {
-      const opcoes = { ...(cursor ? { cursor } : {}) };
+      const opcoes = { ...(cursor ? { cursor } : alvoHistorico.current ? { mensagemId: alvoHistorico.current } : {}) };
       const r = await api.getMensagensWhatsapp(conversaId, ...(Object.keys(opcoes).length ? [opcoes] : []));
       if (versao !== versaoFio.current || selecionada.current !== conversaId) return null;
       if (r?.conversa?.id !== conversaId || !Array.isArray(r?.mensagens)) throw new Error("Resposta inválida ao ler a conversa.");
@@ -128,10 +130,10 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     const loops = [ { tipo: "fio", ms: 2500 }, { tipo: "lista", ms: 10000 } ];
     const agendar = l => {
       clearTimeout(l.timer);
-      if (!cancelado && document.visibilityState !== "hidden") l.timer = setTimeout(() => ciclo(l), l.ms);
+      if (!cancelado && document.visibilityState !== "hidden" && navigator.onLine !== false) l.timer = setTimeout(() => ciclo(l), l.ms);
     };
     async function ciclo(l) {
-      if (cancelado || l.pendente || document.visibilityState === "hidden") return;
+      if (cancelado || l.pendente || document.visibilityState === "hidden" || navigator.onLine === false) return;
       l.pendente = true;
       try {
         const p = polling.current;
@@ -143,8 +145,9 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     }
     const visibilidade = () => loops.forEach(l => { clearTimeout(l.timer); if (document.visibilityState !== "hidden") ciclo(l); });
     document.addEventListener("visibilitychange", visibilidade);
+    window.addEventListener("online", visibilidade); window.addEventListener("offline", visibilidade);
     loops.forEach(agendar);
-    return () => { cancelado = true; loops.forEach(l => clearTimeout(l.timer)); document.removeEventListener("visibilitychange", visibilidade); };
+    return () => { cancelado = true; loops.forEach(l => clearTimeout(l.timer)); document.removeEventListener("visibilitychange", visibilidade); window.removeEventListener("online", visibilidade); window.removeEventListener("offline", visibilidade); };
   }, [api, empresa]);
 
   const acao = useCallback(async (fn, { sucesso = null } = {}) => {
@@ -173,9 +176,9 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     const r = await acao(() => api.devolverConversaWhatsapp(id), { sucesso: "Conversa devolvida ao assistente." });
     await recarregarTudo(id); return r;
   }, [acao, api, recarregarTudo]);
-  const responder = useCallback(async (id, texto) => {
+  const responder = useCallback(async (id, texto, opcoes = {}) => {
     const abertaInicio = selecionada.current;
-    const r = await acao(() => api.responderConversaWhatsapp(id, texto));
+    const r = await acao(() => api.responderConversaWhatsapp(id, texto, opcoes));
     await recarregarTudo(abertaInicio || id); return r;
   }, [acao, api, recarregarTudo]);
   const vincular = useCallback(async (id, body) => {
@@ -217,7 +220,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     const r = await acao(() => api.criarNotaInternaWhatsapp(id, body));
     await recarregarTudo(abertaInicio || id); return r;
   }, [api, acao, recarregarTudo]);
-  const fechar = () => { versaoFio.current++; selecionada.current = null; setAberta(null); setErroFio(null); setErroAcao(null); setCursorFio(null); setCarregandoFio(false); };
+  const fechar = () => { alvoHistorico.current = null; setContextoHistorico(false); versaoFio.current++; selecionada.current = null; setAberta(null); setErroFio(null); setErroAcao(null); setCursorFio(null); setCarregandoFio(false); };
   const trocarFiltro = (novo) => {
     if (novo === filtro) return;
     fechar();
@@ -235,7 +238,10 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     }
     return r;
   };
-  return { api, consulta, setConsulta, buscaServidor, marcarLida, salvarNota, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef, empresaFixa: empresa, empresaHistorico, filtrarHistorico, selecionarEmpresa, salvarApelidos,
+  return { api, contextoHistorico,
+    abrirMensagem: async mensagemId => { alvoHistorico.current = mensagemId; paginas.current.fio = false; setContextoHistorico(true); await abrir(selecionada.current); },
+    voltarRecentes: async () => { alvoHistorico.current = null; paginas.current.fio = false; setContextoHistorico(false); await abrir(selecionada.current); },
+    consulta, setConsulta, buscaServidor, marcarLida, salvarNota, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef, empresaFixa: empresa, empresaHistorico, filtrarHistorico, selecionarEmpresa, salvarApelidos,
     excluir: id => moverConversa(id, "excluirConversaWhatsapp"),
     restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),

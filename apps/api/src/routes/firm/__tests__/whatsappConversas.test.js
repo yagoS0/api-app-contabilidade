@@ -7,8 +7,11 @@
 
 import request from "supertest";
 import express from "express";
+import { MODOS_RASCUNHO_ATENDIMENTO } from "@contabilidade/shared";
 
 const mockSaidas = [];
+const mockIntencoes = [];
+const mockRascunhos = [];
 const FIO_DA_CARTEIRA = { excluidaEm: null, automacaoInvalidadaEm: null, chaveEscopo: "empresa:pc-1:5521999998888", escopoVerificado: true, id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, lidaAteEm: null, updatedAt: new Date(), portalClient: { id: "pc-1", razao: "ACME", cnpj: "1" }, atendente: null };
 const FIO_DE_FORA = { ...FIO_DA_CARTEIRA, id: "cv2", portalClientId: "pc-9", portalClient: { id: "pc-9", razao: "OUTRA", cnpj: "2" } };
 const FIO_NA_FILA = { ...FIO_DA_CARTEIRA, id: "cv3", chaveEscopo:"sem-empresa:5521999998888", portalClientId: null, portalClient: null };
@@ -19,6 +22,21 @@ let mockAtendimento = null;
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const prisma = {
+    rascunhoAtendimento: {
+      create:jest.fn(async({data})=>{if(mockRascunhos.some(r=>r.userId===data.userId && r.chaveEscopo===data.chaveEscopo)) throw Object.assign(new Error('unique'),{code:'P2002'});const r={id:`d${mockRascunhos.length}`,...data};mockRascunhos.push(r);return{...r};}),
+      findUnique:jest.fn(async({where:{userId_chaveEscopo:k}})=>{const r=mockRascunhos.find(r=>r.userId===k.userId && r.chaveEscopo===k.chaveEscopo);return r?{...r}:null;}),
+      updateMany:jest.fn(async({where,data})=>{let count=0;for(const r of mockRascunhos){
+        if(where.userId && r.userId!==where.userId || where.chaveEscopo && r.chaveEscopo!==where.chaveEscopo || where.versao!==undefined && r.versao!==where.versao || where.expiraEm?.lte && r.expiraEm>where.expiraEm.lte || where.NOT && r.conteudo.apagado)continue;
+        Object.assign(r,{...data,...(data.versao?.increment?{versao:r.versao+data.versao.increment}:{})});count++;
+      }return{count};}),
+    },
+    intencaoEnvioAtendimento: {
+      create:jest.fn(async({data})=>{if(mockIntencoes.some(r=>r.userId===data.userId && r.clientRequestId===data.clientRequestId)) throw Object.assign(new Error('unique'),{code:'P2002'}); const r={id:`i${mockIntencoes.length}`,status:'RESERVADA',createdAt:new Date(),...data};mockIntencoes.push(r);return r;}),
+      findUnique:jest.fn(async({where:{userId_clientRequestId:k}})=>mockIntencoes.find(r=>r.userId===k.userId && r.clientRequestId===k.clientRequestId) || null),
+      update:jest.fn(async({where,data})=>Object.assign(mockIntencoes.find(r=>r.id===where.id),data)),
+      updateMany:jest.fn(async({where,data})=>{Object.assign(mockIntencoes.find(r=>r.id===where.id),data);return{count:1};}),
+    },
+    arquivoWhatsapp: { findMany: jest.fn(async () => []), upsert: jest.fn(async ({create}) => ({id:'arquivo-test',...create})) },
     portalClient: { findMany: jest.fn(async () => [{ id: "pc-1" }]), update: jest.fn(async ({ where, data }) => ({ id: where.id, ...data })) },
     companyFirmAccess: { findMany: jest.fn(async () => []) },
     conversaWhatsapp: {
@@ -71,7 +89,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
         return { count: 1 };
       }),
     },
-    mensagemWhatsapp: { create: jest.fn(async ({data}) => { const m={id:`out${mockSaidas.length+1}`,...data}; mockSaidas.push(m); return m; }), update: jest.fn(async ({where,data}) => Object.assign(mockSaidas.find(m=>m.id===where.id),data)), updateMany: jest.fn(async()=>({count:1})), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    mensagemWhatsapp: { findUnique:jest.fn(async({where})=>mockSaidas.find(m=>m.intencaoEnvioId===where.intencaoEnvioId) || null), create: jest.fn(async ({data}) => { const m={id:`out${mockSaidas.length+1}`,...data}; mockSaidas.push(m); return m; }), update: jest.fn(async ({where,data}) => Object.assign(mockSaidas.find(m=>m.id===where.id),data)), updateMany: jest.fn(async()=>({count:1})), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     atendimentoLead: { findFirst: jest.fn(async () => null) },
     atendimentoResponsavelWhatsapp: { findUnique: jest.fn(async () => mockAtendimento ? { ...mockAtendimento } : null) },
     // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
@@ -152,6 +170,7 @@ const cloud = {
   enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })),
   enviarDocumento: jest.fn(async () => ({ wamid: "wamid.doc" })),
   enviarImagem: jest.fn(async () => ({ wamid: "wamid.img" })),
+  enviarTemplate: jest.fn(async () => ({ wamid: 'wamid.template' })),
 };
 
 function montarApp(user = { id: "u-contador", name: "Contador Teste", role: "contador", accountType: "FIRM" }, opcoes = {}) {
@@ -166,7 +185,8 @@ beforeEach(() => {
   cloud.enviarDocumento.mockClear(); cloud.enviarImagem.mockClear();
   prisma.atendimentoLead.findFirst.mockReset().mockResolvedValue(null);
   cloud.enviarTexto.mockClear();
-  mockSaidas.length=0;
+  mockSaidas.length=0; mockIntencoes.length=0; mockRascunhos.length=0;
+  cloud.enviarTemplate.mockClear();
   prisma.mensagemWhatsapp.create.mockClear();
   prisma.mensagemWhatsapp.update.mockClear();
   registrarMensagemEnviada.mockClear();
@@ -371,11 +391,11 @@ describe("a lista e o fio", () => {
     const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv2/mensagens");
     expect(r.status).toBe(404);
   });
-  it("o fio da carteira volta com as mensagens em ordem cronológica e marca lidaAteEm", async () => {
+  it("o GET volta com histórico e não marca leitura", async () => {
     const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens");
     expect(r.status).toBe(200);
     expect(r.body.mensagens[0]).toMatchObject({ id: "m1", direcao: "in", corpo: "oi" });
-    expect(mockConversas.get("cv1").lidaAteEm).toBeInstanceOf(Date);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
   });
 });
 
@@ -398,16 +418,17 @@ describe("marca de leitura", () => {
     jest.setSystemTime(inicioNovo);
     const nova = await request(app).get("/firm/whatsapp/conversas/cv1/mensagens");
     expect(nova.status).toBe(200);
-    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicioNovo);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
     liberarAntiga([]);
     expect((await antiga).status).toBe(200);
-    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicioNovo);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
   });
 
-  it("mantém não lida a mensagem que chega durante a consulta e propaga erro ao gravar", async () => {
+  it("mantém não lida a entrada que chega durante a consulta sem gravação", async () => {
     jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "clearTimeout", "hrtime", "performance"] });
     const inicio = new Date("2026-09-06T12:00:00Z");
     const chegada = new Date("2026-09-06T12:00:10Z");
+    prisma.conversaWhatsapp.updateMany.mockClear();
     jest.setSystemTime(inicio);
     listarMensagens.mockImplementationOnce(async () => {
       jest.setSystemTime(chegada);
@@ -415,12 +436,8 @@ describe("marca de leitura", () => {
     });
     const app = montarApp();
     expect((await request(app).get("/firm/whatsapp/conversas/cv1/mensagens")).status).toBe(200);
-    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicio);
-    expect(chegada > mockConversas.get("cv1").lidaAteEm).toBe(true);
-    prisma.conversaWhatsapp.updateMany.mockRejectedValueOnce(new Error("falha de gravação"));
-    const falha = await request(app).get("/firm/whatsapp/conversas/cv1/mensagens");
-    expect(falha.status).toBe(500);
-    expect(falha.body.error).toBe("erro_interno");
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
+    expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -495,12 +512,12 @@ describe("responder — só dentro da janela", () => {
     expect(r.status).toBe(409);
     expect(r.body.message).toMatch(/nunca escreveu/);
   });
-  it("dentro da janela: envia pela Meta e registra o balão como HUMANO — sem assumir o fio", async () => {
+  it("dentro da janela: assume, pausa automação e registra HUMANO", async () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Bom dia, já vi aqui." });
     expect(r.status).toBe(200);
     expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "*Contador Teste*\n\nBom dia, já vi aqui." });
     expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ autor: "HUMANO", corpo: "*Contador Teste*\n\nBom dia, já vi aqui.", })});
-    expect(mockConversas.get("cv1").atendidaPor).toBeNull();
+    expect(mockConversas.get("cv1").atendidaPor).toBe("u-contador");
   });
   it("texto vazio: 400, sem chamada", async () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "  " });
@@ -882,5 +899,66 @@ describe("segmentos históricos e exclusão reversível", () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("CHAT_EXCLUIDO");
     expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('operação PWA: recuperação, leitura e retomada',()=>{
+  it('resposta humana com intenção recupera o mesmo resultado sem Meta duplicada',async()=>{
+    const app=montarApp();const body={texto:'Tudo certo',clientRequestId:'request-test-001'};
+    const a=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);
+    const b=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);
+    expect(a.status).toBe(200);expect(b.status).toBe(200);expect(a.body.mensagem.id).toBe(b.body.mensagem.id);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    const status=await request(app).get('/firm/whatsapp/conversas/cv1/intencoes/request-test-001');expect(status.body.intencao.status).toBe('ACEITA');
+    mockCenario.janela={situacao:'EXPIRADA',avisos:[]}; const tardio=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);expect(tardio.status).toBe(200);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    const outro=await request(app).get('/firm/whatsapp/conversas/cv3/intencoes/request-test-001');expect(outro.status).toBe(404);
+    const conflito=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({...body,texto:'Conteúdo diferente'});expect(conflito.status).toBe(409);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+  });
+  it('outro atendente não é substituído por texto, orientação ou anexo',async()=>{
+    const app=montarApp();mockConversas.get('cv1').atendidaPor='colega';
+    const r=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({texto:'Oi'});expect(r.status).toBe(409);expect(r.body.error).toBe('ATENDIMENTO_OCUPADO');expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    const a=await request(app).post('/firm/whatsapp/conversas/cv1/enviar-anexo').attach('arquivo',Buffer.from('%PDF-1.4\nconteudo'),{filename:'teste.pdf',contentType:'application/pdf'});expect(a.status).toBe(409);expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    mockConversas.get('cv1').atendidaPor=null;
+  });
+  it('leitura exige POST com entrada autorizada, inclusive consumidor legado',async()=>{
+    const app=montarApp(); const t=new Date('2026-09-25T10:00Z');
+    prisma.mensagemWhatsapp.findFirst.mockResolvedValueOnce({id:'entrada-visivel',direcao:'in',registradaEm:t});
+    const r=await request(app).post('/firm/whatsapp/conversas/cv1/lida').send({mensagemId:'entrada-visivel'});expect(r.status).toBe(200);
+    expect(prisma.mensagemWhatsapp.findFirst.mock.calls.at(-1)[0].where.AND.at(-1)).toEqual({id:'entrada-visivel',direcao:'in'});
+    const fora=await request(app).post('/firm/whatsapp/conversas/cv2/lida').send({mensagemId:'entrada-visivel'});expect(fora.status).toBe(404);
+  });
+  it('retomada aprovada é idempotente e não libera texto fora da janela',async()=>{
+    const modelo={id:'meta-retomada',name:'retomar',status:'APPROVED',language:'pt_BR',category:'UTILITY',components:[{type:'BODY',text:'Podemos retomar seu atendimento?'}]};
+    prisma.templateWhatsapp.findUnique.mockResolvedValue({nomeMeta:'retomar',statusAprovacao:'APROVADO',idioma:'pt_BR'});
+    const app=montarApp(undefined,{consultarModelo:async()=>modelo});mockCenario.janela={situacao:'EXPIRADA',avisos:[]};
+    const previa=await request(app).get('/firm/whatsapp/conversas/cv1/retomar');expect(previa.body.disponivel).toBe(true);
+    const body={clientRequestId:'request-retomar-01',previaHash:previa.body.previaHash,telefone:'5521999990000'};
+    const enviado=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body);expect(enviado.status).toBe(200);expect(enviado.body.aguardandoRespostaCliente).toBe(true);
+    const repetido=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body);expect(repetido.status).toBe(200);expect(cloud.enviarTemplate).toHaveBeenCalledTimes(1);expect(cloud.enviarTemplate).toHaveBeenCalledWith({telefone:FIO_DA_CARTEIRA.telefoneE164,template:'retomar',idioma:'pt_BR',variaveis:[]});
+    const texto=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({texto:'Não pode sair'});expect(texto.status).toBe(409);expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    prisma.templateWhatsapp.findUnique.mockResolvedValue({chave:'reabrir_conversa',statusAprovacao:'DECLARADO',nomeMeta:null});
+  });
+});
+
+
+describe('contrato HTTP dos rascunhos por modo compartilhado',()=>{
+  it('o contrato inclui a retomada e o anexo utilizados pelo aplicativo',()=>{
+    expect(MODOS_RASCUNHO_ATENDIMENTO).toEqual(['texto','orientacao','anexo','documento','retomar']);
+  });
+  it.each(MODOS_RASCUNHO_ATENDIMENTO)('GET/PUT/DELETE de %s preserva intenção, revisão e isolamento',async modo=>{
+    const app=montarApp(),url='/firm/whatsapp/conversas/cv1/rascunho';
+    const inicial=await request(app).get(url).query({modo});expect(inicial.status).toBe(200);expect(inicial.body.rascunho).toBeNull();
+    const conteudo={texto:'Prévia sintética',clientRequestId:`request-${modo}-001`,intencaoTexto:'hash-da-previa',envioIncerto:true};
+    const salvo=await request(app).put(url).send({modo,versao:0,conteudo});expect(salvo.status).toBe(200);expect(salvo.body.rascunho).toMatchObject({versao:1,conteudo});
+    const lido=await request(app).get(url).query({modo});expect(lido.body.rascunho).toMatchObject({versao:1,conteudo});
+    const outroModo=modo==='texto'?'retomar':'texto';const isolado=await request(app).get(url).query({modo:outroModo});expect(isolado.body.rascunho).toBeNull();
+    const descarte=await request(app).delete(url).send({modo,versao:1});expect(descarte.status).toBe(200);expect(descarte.body).toMatchObject({excluido:true,versao:2});
+    const tombstone=await request(app).get(url).query({modo});expect(tombstone.body.rascunho).toMatchObject({versao:2,conteudo:{texto:''}});
+    const atrasado=await request(app).put(url).send({modo,versao:1,conteudo});expect(atrasado.status).toBe(409);expect(atrasado.body.error).toBe('RASCUNHO_CONFLITO');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();expect(cloud.enviarTemplate).not.toHaveBeenCalled();
+  });
+  it('modo desconhecido é recusado e carteira externa permanece inacessível',async()=>{
+    const app=montarApp();expect((await request(app).get('/firm/whatsapp/conversas/cv1/rascunho?modo=inventado')).status).toBe(400);
+    expect((await request(app).get('/firm/whatsapp/conversas/cv2/rascunho?modo=retomar')).status).toBe(404);
   });
 });

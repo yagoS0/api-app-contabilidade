@@ -18,10 +18,11 @@ test("orientação enviada em A termina depois da troca para B sem reabrir A nem
   const api = apiLocal(), envio = respostaPendente(); api.enviarOrientacaoWhatsapp.mockReturnValue(envio.promessa);
   render(<WhatsappPage api={api} />);
   fireEvent.click(await screen.findByTestId("conversa-a"));
+  fireEvent.click(await screen.findByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(await screen.findByRole("button", { name: "Mensagens rápidas" }));
   fireEvent.click(await screen.findByRole("button", { name: "Usar no chat" }));
   fireEvent.click(await screen.findByRole("button", { name: "Inserir na conversa" }));
-  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  fireEvent.click(screen.getByRole("button", { name: /responder/i }));
   await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByTestId("conversa-b"));
   await waitFor(() => expect(screen.getByTestId("conversa-b")).toHaveAttribute("aria-current", "true"));

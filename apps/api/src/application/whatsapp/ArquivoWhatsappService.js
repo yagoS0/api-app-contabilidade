@@ -91,8 +91,9 @@ export async function enqueueArquivoWhatsapp({ mensagem, conversa, nomeArquivo, 
 }
 
 export function arquivoParaTela(a, agora = new Date()) {
-  const expirado = new Date(a.expiraEm) <= agora;
+  const expirado = !a.comprovanteGuiaId && new Date(a.expiraEm) <= agora;
   return {
+    comprovanteGuiaId: a.comprovanteGuiaId || null, dataPagamentoDeclarada: a.dataPagamentoDeclarada || null, analiseComprovante: a.analiseComprovante || null,
     id: a.id, mensagemId: a.mensagemId, companyId: a.portalClientId, nomeArquivo: a.nomeArquivo,
     mimeType: a.mimeType, tamanho: a.tamanho, estado: expirado ? "EXPIRADO" : a.estado,
     erroCodigo: a.erroCodigo, recebidoEm: a.recebidoEm, expiraEm: a.expiraEm,
@@ -102,6 +103,7 @@ export function arquivoParaTela(a, agora = new Date()) {
 }
 
 export const SELECT_ARQUIVO = {
+  comprovanteGuiaId: true, dataPagamentoDeclarada: true, analiseComprovante: true,
   id: true, mensagemId: true, portalClientId: true, nomeArquivo: true, mimeType: true, tamanho: true,
   estado: true, erroCodigo: true, recebidoEm: true, expiraEm: true, importadoEm: true,
 };
@@ -109,7 +111,7 @@ export const SELECT_ARQUIVO = {
 /** Clears only original bytes, never imported accounting entries or their origin metadata. */
 export async function expirarArquivosWhatsapp(db = prisma, agora = new Date()) {
   return db.arquivoWhatsapp.updateMany({
-    where: { expiraEm: { lte: agora }, estado: { not: "EXPIRADO" } },
+    where: { comprovanteGuiaId: null, expiraEm: { lte: agora }, estado: { not: "EXPIRADO" } },
     data: { conteudo: null, estado: "EXPIRADO", reservadoEm: null, reservaToken: null, proximaTentativaEm: null },
   });
 }

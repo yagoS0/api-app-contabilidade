@@ -3,7 +3,7 @@ import { log } from "../../config.js";
 import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 
 // Uma saída é registrada antes da rede. Timeout nunca dispara reenvio automático.
-export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, client = prisma }) {
+export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, aposRegistrar = null, intencaoEnvioId = null, client = prisma }) {
   const conferirOrigem = async () => {
     if (conversa.vinculoNumeroId) await conferirIdentidadeVigente({ vinculoNumeroId: conversa.vinculoNumeroId, telefone: conversa.telefoneE164, permitirRevisao: autor === "HUMANO", client });
     if (conversa.canalId) {
@@ -15,12 +15,14 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
   if (antesDeEnviar) await antesDeEnviar();
   const mensagem = await client.mensagemWhatsapp.create({ data: {
     conversaId: conversa.id, direcao: "out", tipo, corpo, autor, turnoIaId, referenciaComercial, statusEnvio: "enviando",
+    ...(intencaoEnvioId ? { intencaoEnvioId } : {}),
     ...(contextoConsulta === undefined ? {} : { contextoConsulta }),
   } });
   let iniciouRede = false;
   let aceitou = false;
   let wamid = null;
   try {
+    if (aposRegistrar) await aposRegistrar(mensagem);
     await conferirOrigem();
     if (antesDeEnviar) await antesDeEnviar();
     iniciouRede = true;

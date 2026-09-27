@@ -46,10 +46,15 @@ import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsap
 import { assinarMensagemHumana } from "../../application/whatsapp/assinaturaAtendente.js";
 import { INCLUDE_CONVERSA, grupoNoEscopo, resumoDoGrupo, filtroMensagensDoGrupo, empresaDaMensagem } from "./whatsappAtendimento.js";
 import { WHATSAPP_CHAT_V2 } from '../../config.js';
-import { listarInboxWhatsapp, resumoInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade, salvarNotaInterna, carregarGrupoIdentidade } from '../../application/whatsapp/InboxWhatsappService.js';
+import { listarInboxWhatsapp, resumoInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade, salvarNotaInterna, carregarGrupoIdentidade, buscarMensagensIdentidade, filtroMensagensIdentidade } from '../../application/whatsapp/InboxWhatsappService.js';
 import { conferirIdentificacao, conferirIdentidadeVigente } from '../../application/whatsapp/IdentidadeComunicacaoService.js';
 import { whatsappPorCanal } from '../../application/whatsapp/CanalWhatsappService.js';
 import { associarNumeroConferido } from '../../application/whatsapp/AssociacaoNumeroComunicacaoService.js';
+
+import { comIntencaoEnvio, consultarIntencaoEnvio, recuperarIntencaoEnvio, erroAtendimento } from '../../application/whatsapp/IntencaoEnvioAtendimentoService.js';
+import { lerRascunhoAtendimento, salvarRascunhoAtendimento, excluirRascunhoAtendimento } from '../../application/whatsapp/RascunhoAtendimentoService.js';
+import { prepararRetomadaAtendimento } from '../../application/whatsapp/RetomadaAtendimentoService.js';
+import { enriquecerMensagensWhatsapp, obterArquivoDaMensagem, salvarArquivoManual } from '../../application/whatsapp/HistoricoArquivoWhatsappService.js';
 
 export const AUTOR_HUMANO = "HUMANO";
 
@@ -127,8 +132,9 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
   };
 }
 
-export function createWhatsappConversasRouter({ log, client = prisma, cloud = null, chatV2 = WHATSAPP_CHAT_V2 } = {}) {
+export function createWhatsappConversasRouter({ log, client = prisma, cloud = null, chatV2 = WHATSAPP_CHAT_V2, consultarModelo = null } = {}) {
   const router = Router({ mergeParams: true });
+  router.use((_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
 
   router.post("/whatsapp/empresas/:portalClientId/apelidos", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
@@ -157,7 +163,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   function falhar(res, err, contexto) {
     const codigo = err?.codigo || err?.code;
-    if (err?.status && [400,404,409].includes(err.status)) return res.status(err.status).json({ ok: false, error: codigo, message: err.message });
+    if (err.intencao && !err.status) return res.status(409).json({ok:false,error:codigo || 'ENVIO_INDETERMINADO',message:err.indeterminado ? 'Envio sem confirmação. Consulte esta tentativa antes de reenviar.' : 'Confira o resultado desta tentativa.',intencao:err.intencao});
+    if (err?.status && [400,403,404,409,410,413,422,503].includes(err.status)) return res.status(err.status).json({ ok: false, error: codigo, message: err.message, ...(err.intencao ? { intencao: err.intencao } : {}) });
     if (codigo === "FORA_DA_JANELA" && err.janela) return recusarForaDaJanela(res, err.janela);
     if (["FIO_OCUPADO", "LEASE_PERDIDA", "CONTEXTO_INVALIDO", "CONTEXTO_CONCORRENTE", "EMPRESA_NAO_E_CANDIDATA", "ACESSO_REVOGADO", "AUTOMACAO_INVALIDADA", "CONTEXTO_ALTERADO"].includes(codigo)) return res.status(409).json({ ok: false, error: codigo, message: err.message });
     if (err?.code === "CHAT_EXCLUIDO") return res.status(409).json({ ok: false, error: err.code, message: err.message });
@@ -201,18 +208,32 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
   }
 
-  async function alterarHumano(conversa, atendidaPor, atendidaDesde) {
+  async function alterarHumano(conversa, atendidaPor, atendidaDesde, {preservarContextoOperacional=false}={}) {
+    if (atendidaPor && conversa.atendidaPor && conversa.atendidaPor !== atendidaPor) throw erroAtendimento('ATENDIMENTO_OCUPADO', 'Outro atendente assumiu esta conversa. Combine a transferência antes de responder.');
+    if (atendidaPor && conversa.atendidaPor === atendidaPor) return null;
     if (conversa.atendimentoId) {
       const { alterarAtendimentoHumano } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
-      return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, client });
+      return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client });
     }
     const mudou = await client.conversaWhatsapp.updateMany({
-      where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null },
-      data: { atendidaPor, atendidaDesde },
+      where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null, atendidaPor: conversa.atendidaPor || null },
+      data: { atendidaPor, atendidaDesde, automacaoInvalidadaEm: new Date() },
     });
     if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
+    await client.turnoIaWhatsapp.updateMany({where:{conversaId:conversa.id,status:{in:['pendente','falhou','processando']}},data:{status:'ignorado',motivo:'ASSUMIDA_POR_HUMANO',reservaToken:null,leaseAte:null,concluidoEm:new Date()}});
+    await client.acaoPendenteWhatsapp.updateMany({where:{conversaId:conversa.id,status:'pendente'},data:{status:'cancelada'}});
     return null;
   }
+
+  async function assumirParaEnvio(req, conversa, opcoes={}) {
+    await alterarHumano(conversa, String(req.auth.user.id), new Date(),opcoes);
+    const atual = await conversaNoEscopo(req, conversa.id, { client });
+    if (!atual) throw erroAtendimento('conversa_nao_encontrada', 'Conversa não encontrada.', 404);
+    return atual;
+  }
+
+  const recuperarIntencao = (req,conversa,payload) => recuperarIntencaoEnvio({userId:String(req.auth.user.id),clientRequestId:req.body?.clientRequestId,conversa,payload,client});
+  const enviarIntencao = (req, conversa, payload, enviar) => comIntencaoEnvio({ userId: String(req.auth.user.id), clientRequestId: req.body?.clientRequestId, conversa, payload, enviar, client });
 
   async function comEnvioDoResponsavel(conversa, enviar) {
     if (!conversa.atendimentoId) return enviar(async () => true);
@@ -223,6 +244,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   async function conferirEnvio(conversa, conferirLease, opcoes = {}) {
     if (await conferirLease() === false) throw new ConversaWhatsappError("ATENDIMENTO_OCUPADO", "Outro envio está em andamento para este responsável. Atualize o atendimento antes de tentar novamente.");
     await conferirConversaAtiva(conversa, opcoes);
+    const dono = await client.conversaWhatsapp.findUnique({where:{id:conversa.id},select:{atendidaPor:true}});
+    if (!dono?.atendidaPor || dono.atendidaPor !== conversa.atendidaPor) throw erroAtendimento('ATENDIMENTO_OCUPADO','O responsável pelo atendimento mudou. Atualize antes de enviar.');
     const janela = await janelaDaConversa(conversa.id);
     if (janela.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new ConversaWhatsappError("FORA_DA_JANELA", "A janela de resposta fechou durante este envio."), { janela });
   }
@@ -239,7 +262,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     const empresa = String(req.query?.empresa || "").trim() || null;
     try {
       const visiveis = await empresasVisiveis(req);
-      if (chatV2 && req.query?.v2 === '1') {
+      if (chatV2) {
         const resultado = await listarInboxWhatsapp({ visiveis, operadorId: req.auth.user.id, filtro, empresaId: empresa,
           relacionamento: String(req.query.relacionamento || ''), q: String(req.query.q || '').slice(0,200), naoLidas: req.query.naoLidas === '1',
           cursor: req.query.cursor || null, limite: req.query.limite, client });
@@ -362,17 +385,15 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
   });
 
-  /** O FIO. As mensagens (escopadas) + a janela + a pendência. Marca `lidaAteEm` = agora. */
+  /** GET é somente leitura; o navegador confirma uma entrada visível por POST /lida. */
   router.get("/whatsapp/conversas/:conversaId/mensagens", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     const { conversaId } = req.params || {};
     try {
-      if (chatV2 && req.query?.v2 === '1') return res.json(await lerHistoricoIdentidade({ conversaId,
-        visiveis: await empresasVisiveis(req), cursor: req.query.cursor || null, limite: req.query.limite, client }));
+      if (chatV2) return res.json(await lerHistoricoIdentidade({ conversaId,
+        visiveis: await empresasVisiveis(req), cursor: req.query.cursor || null, mensagemId: req.query.mensagemId || null, limite: req.query.limite, client }));
       let conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      const { sincronizarComunicacaoDoContato } = await import("../../application/whatsapp/sincronizarComunicacaoDoContato.js");
-      conversa = await sincronizarComunicacaoDoContato({ telefone: conversa.telefoneE164, conversa, client });
       const grupo = await grupoNoEscopo({ conversa, visiveis: await empresasVisiveis(req), client });
       const empresa = String(req.query?.empresa || "").trim() || null;
       if (empresa && (grupo ? !grupo.segmentos.some(c => c.portalClientId === empresa) : conversa.portalClientId !== empresa)) {
@@ -383,7 +404,6 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       // fila do escritório, e o escritório inteiro o lê — só admin|contador chegam aqui.
       // ⚠ UM a mais do que se mostra — ver `LIMITE_MENSAGENS`. Um fio com 300 mensagens mostrava 200
       // sem avisar, e o contador lia como se fosse a conversa inteira.
-      const lidaAteEm = new Date();
       const limite = Math.min(LIMITE_MENSAGENS, Math.max(1, Number(req.query?.limite) || LIMITE_MENSAGENS));
       const cursor = req.query?.cursor ? String(req.query.cursor) : null;
       if (cursor && !await client.mensagemWhatsapp.findFirst({ where: { id: cursor, ...whereMensagem }, select: { id: true } })) {
@@ -397,12 +417,6 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const temMais = achadas.length > limite;
       const mensagens = temMais ? achadas.slice(0, limite) : achadas;
       const [janela, pendencia] = await Promise.all([janelaDaConversa(conversa.id), pendenciaAberta(conversa.id, { client })]);
-      // Mensagens que chegarem durante a leitura continuam não lidas; erro de gravação é dito.
-      // Uma leitura lenta não pode recuar a marca gravada por outra aba ou atendente.
-      const segmentosLidos = grupo ? [...grupo.segmentos.filter(c => !empresa || c.portalClientId === empresa), ...(!empresa ? grupo.segmentosNeutros || [] : [])] : [conversa];
-      await Promise.all(segmentosLidos.map(c => client.conversaWhatsapp.updateMany({
-        where: { id: c.id, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: lidaAteEm } }] }, data: { lidaAteEm },
-      })));
       // ⚠ O contato também aqui: abrir a conversa precisa dizer QUEM está falando, não só de qual
       // empresa. Uma consulta, e só quando há empresa (fio da fila não tem cadastro por construção).
       const contato = conversa.portalClientId
@@ -418,11 +432,11 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         // ⚠ `temMais` diz que existe conversa ANTES da primeira mensagem mostrada.
         temMais,
         proximoCursor: temMais ? mensagens[mensagens.length - 1]?.id || null : null,
-        mensagens: [...mensagens].reverse().map((m) => ({
+        mensagens: await enriquecerMensagensWhatsapp([...mensagens].reverse().map((m) => ({
           id: m.id, direcao: m.direcao, tipo: m.tipo, corpo: m.corpo, autor: m.autor || null,
           escopoPessoa: m.referenciaComercial?.escopo === "PESSOA",
           empresa: grupo ? empresaDaMensagem(m, grupo) : conversa.portalClient ? { id: conversa.portalClientId, razao: conversa.portalClient.razao, cnpj: conversa.portalClient.cnpj } : null,
-          providerMessageId: m.providerMessageId || null, envioGuiaId: m.envioGuiaId || null,
+          providerMessageId: m.providerMessageId || null, envioGuiaId: m.envioGuiaId || null, envioGuiaTentativaId: m.envioGuiaTentativaId || null,
           ocorridaEmProvedor: m.ocorridaEmProvedor || null, registradaEm: m.registradaEm,
           // ⚠ Só o PONTEIRO (o id na Meta), nunca uma URL: a da Meta expira, e este sistema ainda
           // não baixa arquivo. A tela usa isto para dizer "veio um áudio" em vez de "[audio]".
@@ -431,7 +445,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
           erroEnvio: m.envioGuiaTentativa?.erroCodigo
             ? { codigo: m.envioGuiaTentativa.erroCodigo, mensagem: m.envioGuiaTentativa.erroMensagemUsuario }
             : m.erroEnvioCodigo ? { codigo: m.erroEnvioCodigo, mensagem: m.erroEnvioMensagem } : null,
-        })),
+        })), {client,empresasPermitidas:await empresasVisiveis(req)}),
       });
     } catch (err) {
       return falhar(res, err, { conversaId });
@@ -440,7 +454,6 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   router.post('/whatsapp/conversas/:conversaId/lida', async (req,res) => {
     if (!somenteAdminOuContador(req,res)) return;
-    if (!chatV2) return res.status(409).json({ ok:false,error:'CHAT_V2_DESABILITADO' });
     try { return res.json(await registrarLeituraIdentidade({ conversaId:req.params.conversaId,mensagemId:req.body?.mensagemId,visiveis:await empresasVisiveis(req),client })); }
     catch(err) { return falhar(res,err,{operacao:'leitura-whatsapp'}); }
   });
@@ -483,7 +496,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   // Uma aba antiga não pode agir sobre um chat que já foi para a lixeira.
   router.post("/whatsapp/conversas/:conversaId/:acao", async (req, res, next) => {
-    if (!["assumir", "devolver", "responder", "enviar-anexo", "enviar-documento", "vincular", "selecionar-empresa"].includes(req.params.acao)) return next();
+    if (!["assumir", "devolver", "responder", "enviar-anexo", "enviar-documento", "vincular", "selecionar-empresa", "retomar"].includes(req.params.acao)) return next();
     if (!somenteAdminOuContador(req, res)) return undefined;
     try {
       const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
@@ -577,7 +590,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   /**
    * RESPONDER À MÃO. Texto livre — SÓ dentro da janela de 24h. Fora dela: 409 `FORA_DA_JANELA`
    * com a situação e o que existe (o template `reabrir_conversa`, quando aprovado).
-   * ⚠ Não assume o fio sozinho: responder não é assumir. Quem quer calar a IA clica em Assumir.
+   * Resposta humana assume o fio e invalida automações pendentes antes do transporte.
    */
   router.post("/whatsapp/conversas/:conversaId/responder", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
@@ -621,17 +634,15 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         }
         referenciaComercial = {recursoId:recurso.id,chave:recurso.chave,versao:recurso.versao,adaptada:true,textoAprovado:false,atendimentoLeadId:adaptacao.atendimentoLeadId || null};
       }
+      texto = assinarMensagemHumana(texto, req.auth.user);
+      const recuperada = await recuperarIntencao(req,conversa,{tipo:'text',texto,referenciaComercial});
+      if(recuperada) return res.json({ok:true,mensagem:recuperada.mensagem,intencao:recuperada.intencao,repetida:true});
       await conferirConversaAtiva(conversa, { porPessoa: true });
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela, conversa);
       const cliente = await whatsappPorCanal(conversa, { cloud, client });
-      texto = assinarMensagemHumana(texto, req.auth.user);
-      if (req.body?.assumir === true) {
-        await alterarHumano(conversa, String(req.auth.user.id), new Date());
-        conversa = await conversaNoEscopo(req, conversa.id, { client });
-        if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      }
-      const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, referenciaComercial: { ...referenciaComercial, escopo: "PESSOA" }, client,
+      conversa = await assumirParaEnvio(req, conversa);
+      const r = await enviarIntencao(req, conversa, { tipo: 'text', texto, referenciaComercial }, intencaoEnvioId => comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ intencaoEnvioId, conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, referenciaComercial: { ...referenciaComercial, escopo: "PESSOA" }, client,
         antesDeEnviar: async () => {
           await conferirEnvio(conversa, conferirLease, { porPessoa: true });
           if (casoComercial) {
@@ -640,7 +651,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
           }
         },
         enviar: () => cliente.enviarTexto({ telefone: conversa.telefoneE164, texto }),
-      }));
+      })));
       if (!referenciaComercial?.adaptada && ["autorizacao", "autorizacao-acesso"].includes(referenciaComercial?.chave)) {
         const lead = await client.atendimentoLead.findFirst({ where: { ...(casoComercial ? { id: casoComercial.id } : { conversaId }), encerradoEm: null }, include: { onboarding: true } });
         if (lead) await client.atendimentoLead.updateMany({ where: { id: lead.id, encerradoEm: null, autorizacao: { equals: lead.autorizacao || {} }, onboarding: { cnpj: lead.onboarding?.cnpj || null } }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: lead.autorizacao?.cnpj === lead.onboarding?.cnpj && lead.autorizacao?.estado === "ATIVA" ? "ATIVA" : "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
@@ -709,7 +720,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     const documentId = String(req.body?.documentId || "").trim();
     if (!documentId) return res.status(400).json({ ok: false, error: "documento_obrigatorio", message: "Escolha o documento." });
     try {
-      const conversa = await conversaNoEscopo(req, conversaId, { client });
+      let conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
       // ⚠ Fio da FILA não tem empresa, logo não há documento DELA para enviar — e não se escolhe uma.
       if (!conversa.portalClientId) {
@@ -720,23 +731,29 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         });
       }
       if (conversa.escopoVerificado !== true) return res.status(409).json({ ok: false, error: "ESCOPO_NAO_VERIFICADO", message: "Abra um novo segmento vinculado à empresa antes de enviar documentos. O histórico anterior precisa de conferência." });
+      const payloadIntencao = {tipo:'document',documentId,legenda:String(req.body?.legenda || '').trim()};
+      const recuperada = await recuperarIntencao(req,conversa,payloadIntencao);
+      if(recuperada) return res.json({ok:true,mensagem:recuperada.mensagem,intencao:recuperada.intencao,repetida:true});
       await conferirConversaAtiva(conversa);
 
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela, conversa);
 
       const { doc, buffer } = await baixarBuffer({ portalClientId: conversa.portalClientId, documentId });
+      await conferirConversaAtiva(conversa);
 
       const cliente = await whatsappPorCanal(conversa, { cloud, client });
       const legenda = String(req.body?.legenda || "").trim() || doc.nome;
       const corpo = assinarMensagemHumana(conversa.atendimentoId ? `${conversa.portalClient.razao} · ${legenda}` : legenda, req.auth.user, { limite: 1024 });
-      const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client, antesDeEnviar: () => conferirEnvio(conversa, conferirLease), enviar: () => cliente.enviarDocumento({
+      conversa = await assumirParaEnvio(req, conversa,{preservarContextoOperacional:true});
+      const r = await enviarIntencao(req, conversa, payloadIntencao, intencaoEnvioId => comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ intencaoEnvioId, conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client,
+        aposRegistrar: mensagem => salvarArquivoManual({mensagem,conversa,buffer,nomeArquivo:doc.nome,mimeType:doc.mimeType || 'application/pdf'},{client}), antesDeEnviar: () => conferirEnvio(conversa, conferirLease), enviar: () => cliente.enviarDocumento({
         telefone: conversa.telefoneE164,
         conteudo: buffer,
         nomeArquivo: doc.nome,
         mimeType: doc.mimeType || "application/pdf",
         legenda: corpo,
-      }) }));
+      }) })));
 
       // ⚠ O balão diz O QUE saiu — o nome do arquivo. Sem isso o histórico teria "um documento", e o
       // contador não saberia qual dos alvarás da empresa foi mandado.
@@ -752,7 +769,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
   });
 
-  const uploadAnexo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2 } }).single("arquivo");
+  const uploadAnexo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 4 } }).single("arquivo");
   router.post("/whatsapp/conversas/:conversaId/enviar-anexo", (req, res) => {
     if (!somenteAdminOuContador(req, res)) return;
     uploadAnexo(req, res, async erroUpload => {
@@ -763,25 +780,95 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         anexo.legenda = assinarMensagemHumana(anexo.legenda, req.auth.user, { limite: 1024 });
         let conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
         if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+        const recuperada = await recuperarIntencao(req,conversa,{tipo:anexo.tipo,corpo,hash:anexo.sha256});
+        if(recuperada) return res.json({ok:true,mensagem:recuperada.mensagem,intencao:recuperada.intencao,repetida:true});
         await conferirConversaAtiva(conversa, { porPessoa: true });
         const janela = await janelaDaConversa(conversa.id);
         if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela, conversa);
-        await alterarHumano(conversa, String(req.auth.user.id), new Date());
-        conversa = await conversaNoEscopo(req, conversa.id, { client });
-        if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+        conversa = await assumirParaEnvio(req, conversa);
         const cliente = await whatsappPorCanal(conversa, { cloud, client });
-        const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({
-          conversa, tipo: anexo.tipo, corpo, autor: AUTOR_HUMANO, client,
+        const r = await enviarIntencao(req, conversa, { tipo: anexo.tipo, corpo, hash: anexo.sha256 }, intencaoEnvioId => comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({
+          intencaoEnvioId, conversa, tipo: anexo.tipo, corpo, autor: AUTOR_HUMANO, client,
           referenciaComercial: { tipo: "ANEXO_MANUAL", escopo: "PESSOA", nome: anexo.nomeArquivo, mime: anexo.mimeType, sha256: anexo.sha256 },
+          aposRegistrar: mensagem => salvarArquivoManual({mensagem,conversa,buffer:anexo.conteudo,nomeArquivo:anexo.nomeArquivo,mimeType:anexo.mimeType},{client}),
           antesDeEnviar: () => conferirEnvio(conversa, conferirLease, { porPessoa: true }),
           enviar: () => cliente[anexo.tipo === "image" ? "enviarImagem" : "enviarDocumento"]({ ...anexo, telefone: conversa.telefoneE164 }),
-        }));
+        })));
         return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, statusEnvio: r.mensagem.statusEnvio } });
       } catch (e) {
         if (["ANEXO_INVALIDO", "LEGENDA_INVALIDA"].includes(e.code)) return res.status(400).json({ ok: false, error: e.code, message: e.message });
         return falhar(res, e, { conversaId: req.params.conversaId, operacao: "enviar-anexo" });
       }
     });
+  });
+  router.get('/whatsapp/conversas/:conversaId/intencoes/:clientRequestId', async (req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
+      if (!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
+      const intencao = await consultarIntencaoEnvio({userId:String(req.auth.user.id),clientRequestId:req.params.clientRequestId,conversa,client});
+      return intencao ? res.json({ok:true,intencao}) : res.status(404).json({ok:false,error:'intencao_nao_encontrada'});
+    } catch(e) { return falhar(res,e,{operacao:'consultar-intencao'}); }
+  });
+  for (const metodo of ['get','put','delete']) router[metodo]('/whatsapp/conversas/:conversaId/rascunho', async (req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
+      if (!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
+      const args = {userId:String(req.auth.user.id),conversa,modo:(metodo === 'get' ? req.query.modo : req.body?.modo) || 'texto',client};
+      if(metodo === 'get') return res.json({ok:true,rascunho:await lerRascunhoAtendimento(args)});
+      if(metodo === 'delete') return res.json({ok:true,...await excluirRascunhoAtendimento({...args,versao:req.body?.versao})});
+      if(conversa.excluidaEm) throw erroAtendimento('CHAT_EXCLUIDO','Restaure a conversa antes de editar o rascunho.');
+      return res.json({ok:true,rascunho:await salvarRascunhoAtendimento({...args,versao:req.body?.versao,conteudo:req.body?.conteudo})});
+    } catch(e) { return falhar(res,e,{operacao:'rascunho-atendimento'}); }
+  });
+  router.get('/whatsapp/conversas/:conversaId/buscar', async(req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const resultado = await buscarMensagensIdentidade({conversaId:req.params.conversaId,visiveis:await empresasVisiveis(req),q:req.query.q,cursor:req.query.cursor,limite:req.query.limite,client});
+      return res.json({...resultado,resultados:await enriquecerMensagensWhatsapp(resultado.resultados,{client,empresasPermitidas:await empresasVisiveis(req)})});
+    } catch(e) { return falhar(res,e,{operacao:'busca-mensagem'}); }
+  });
+  router.get('/whatsapp/conversas/:conversaId/mensagens/:mensagemId/arquivo', async(req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const visiveis = await empresasVisiveis(req);
+      const grupo = await carregarGrupoIdentidade({conversaId:req.params.conversaId,visiveis,client});
+      const mensagem = await client.mensagemWhatsapp.findFirst({where:{AND:[filtroMensagensIdentidade(grupo.segmentos),{id:req.params.mensagemId}]}});
+      if(!mensagem) return res.status(404).json({ok:false,error:'arquivo_nao_encontrado'});
+      const arquivo = await obterArquivoDaMensagem({mensagemId:mensagem.id,mensagemIds:[mensagem.id],conversaIds:[mensagem.conversaId],empresasPermitidas:visiveis},{client});
+      res.set('Cache-Control','no-store'); res.set('X-Content-Type-Options','nosniff');
+      return res.json({ok:true,arquivo});
+    } catch(e) { return falhar(res,e,{operacao:'arquivo-mensagem'}); }
+  });
+  router.get('/whatsapp/conversas/:conversaId/retomar', async(req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
+      if(!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
+      return res.json({ok:true,...await prepararRetomadaAtendimento({conversa,client,consultarModelo})});
+    } catch(e) { return falhar(res,e,{operacao:'preparar-retomada'}); }
+  });
+  router.post('/whatsapp/conversas/:conversaId/retomar', async(req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      let conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
+      if(!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
+      if(!req.body?.clientRequestId || !req.body?.previaHash) throw erroAtendimento('PREVIA_OBRIGATORIA','Prepare e confira a retomada antes de enviar.',400);
+      const r = await enviarIntencao(req,conversa,{tipo:'retomada',previaHash:req.body.previaHash},async intencaoEnvioId => {
+        const previa = await prepararRetomadaAtendimento({conversa,client,consultarModelo});
+        if(!previa.disponivel) throw erroAtendimento(previa.motivo,previa.message);
+        if(previa.previaHash !== req.body.previaHash) throw erroAtendimento('PREVIA_ALTERADA','O modelo ou destinatário mudou. Prepare a retomada novamente.');
+        await conferirConversaAtiva(conversa,{porPessoa:true});
+        conversa = await assumirParaEnvio(req,conversa);
+        const cliente = await whatsappPorCanal(conversa,{cloud,client});
+        return comEnvioDoResponsavel(conversa,conferirLease => enviarMensagemRastreada({intencaoEnvioId,conversa,tipo:'template',corpo:previa.texto,autor:AUTOR_HUMANO,client,
+          referenciaComercial:{tipo:'RETOMADA',escopo:'PESSOA',modelo:previa.modelo,previaHash:previa.previaHash},
+          antesDeEnviar:async()=>{await conferirLease();await conferirConversaAtiva(conversa,{porPessoa:true});},
+          enviar:()=>cliente.enviarTemplate({telefone:conversa.telefoneE164,template:previa.modelo.nome,idioma:previa.modelo.idioma,variaveis:[]})}));
+      });
+      return res.json({ok:true,mensagem:r.mensagem,intencao:r.intencao,aguardandoRespostaCliente:true});
+    } catch(e) { return falhar(res,e,{operacao:'retomar-conversa'}); }
   });
   return router;
 }
