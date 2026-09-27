@@ -10,8 +10,6 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { transmitirFechamento } from "../application/notas/apuracao/v2/FechamentoService.js";
 
 const ITEMS_POR_CICLO = 4;   // cap por ciclo (throttling/custo SERPRO)
-const MAX_TENTATIVAS = 3;
-const BACKOFF_MS = 5 * 60 * 1000;
 
 /**
  * Processa 1 item da fila (idempotente; consulta-antes via FechamentoService).
@@ -40,15 +38,11 @@ async function processarItem(item, job) {
     });
     return { ok: true };
   } catch (err) {
-    const transitorio = /timeout|429|ETIMEDOUT|ECONNRESET|throttl/i.test(String(err?.message || ""));
-    const podeReatentar = !["TRANSMISSAO_RESULTADO_INCERTO", "TRANSMISSAO_PENDENTE_CONFERENCIA"].includes(err?.code) && transitorio && item.tentativas + 1 < MAX_TENTATIVAS;
     await prisma.apuracaoBatchItem.update({
       where: { id: item.id },
-      data: podeReatentar
-        ? { status: "pendente", backoffUntil: new Date(Date.now() + BACKOFF_MS), erroMensagem: `retry: ${err?.message}`.slice(0, 400) }
-        : { status: "erro", erroMensagem: `[${err?.code || "ERR"}] ${err?.message}`.slice(0, 400), processadoEm: new Date() },
+      data: { status: "erro", erroMensagem: `[${err?.code || "ERR"}] ${err?.message}`.slice(0, 400), processadoEm: new Date() },
     });
-    return { ok: false, reatentou: podeReatentar };
+    return { ok: false, reatentou: false };
   }
 }
 
@@ -130,4 +124,19 @@ export async function criarBatchJob({ portalClientIds, competencia, userId }) {
     data: elegiveis.map((pcId) => ({ jobId: job.id, portalClientId: pcId, competencia, status: "pendente" })),
   });
   return { jobId: job.id, totalEmpresas: elegiveis.length, ignoradas: ids.length - elegiveis.length };
+}
+
+// Continuação do clique autorizado; nunca busca trabalhos antigos ou repete itens com erro.
+export async function runApuracaoBatchToCompletion(jobId, progress = async () => {}) {
+  for (;;) {
+    const { processados } = await runApuracaoBatchOnce(jobId);
+    const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
+    await progress(job?.processadas || 0, { jobId, okCount: job?.okCount, errorCount: job?.errorCount });
+    if (!processados || job?.status === "completed") break;
+  }
+  const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
+  const items = await prisma.apuracaoBatchItem.findMany({ where: { jobId }, select: {
+    portalClientId: true, status: true, erroMensagem: true, numeroDeclaracao: true, dasValor: true } });
+  return { ok: job?.status === "completed" && job.errorCount === 0, jobId, job, items,
+    message: job?.errorCount ? "Transmissão concluída com pendências. Confira cada empresa antes de uma nova tentativa." : "Processamento da apuração concluído." };
 }

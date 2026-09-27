@@ -59,8 +59,9 @@ export function useApuracao({ api, feedback, enabled = true }) {
     try {
       const out = await api.criarApuracaoBatch({ portalClientIds: ids, competencia });
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
-      feedback?.notifySuccess?.(`Lote criado: ${out.totalEmpresas} empresa(s)${out.ignoradas ? ` (${out.ignoradas} ignoradas)` : ""}.`);
-      setBatchJobId(out.jobId);
+      if (!out.taskId) feedback?.notifySuccess?.(`Lote criado: ${out.totalEmpresas} empresa(s)${out.ignoradas ? ` (${out.ignoradas} ignoradas)` : ""}.`);
+      setBatchJobId(out.taskId ? null : out.jobId);
+      if (out.taskId) feedback?.notifySuccess?.("Apuração iniciada. Acompanhe em Tarefas, no topo da tela.");
       setSelected(new Set());
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro ao criar lote");

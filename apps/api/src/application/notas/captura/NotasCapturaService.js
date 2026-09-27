@@ -205,6 +205,11 @@ export async function processarNotasCapturaJob(jobId) {
   const ids = Array.isArray(job.companyIds) ? job.companyIds : [];
   const alvos = Array.isArray(job.alvos) ? job.alvos : [];
   let totalNotas = 0;
+  // Sinal local de vida: não consulta provedores nem repete capturas.
+  const heartbeat = setInterval(() => {
+    prisma.notasCapturaJob.updateMany({ where: { id: jobId, status: "processando" }, data: { updatedAt: new Date() } }).catch(() => {});
+  }, 20000);
+  heartbeat.unref?.();
 
   try {
     for (const portalClientId of ids) {
@@ -281,6 +286,7 @@ export async function processarNotasCapturaJob(jobId) {
       .update({ where: { id: jobId }, data: { status: "erro", erroMensagem: String(err?.message || err).slice(0, 500) } })
       .catch(() => null);
   } finally {
+    clearInterval(heartbeat);
     await releaseGuideLock(LOCK_ID).catch(() => null);
   }
 }

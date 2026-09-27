@@ -9,12 +9,12 @@ export function ImportacaoNotasModal({ andamento, resultado, ocupado, aoFechar }
   const percentual = Math.floor(concluidos / total * 100);
   const titulo = ocupado ? "Importando notas" : p.etapa === "interrompida" || resultado?.falhou ? "Importação precisa de atenção" : resultado?.quantidadeProblemas > 0 ? "Importação concluída com pendências" : "Importação concluída";
   const totais = p.totais || {};
-  return <Modal titulo={titulo} tamanho="md" ocupado={ocupado} aoFechar={aoFechar}
-    rodape={ocupado ? <span style={{ color: "var(--text-muted)", fontSize: ".8rem" }}>Aguarde a conclusão para sair desta tela.</span> : <Button onClick={aoFechar}>Concluir</Button>}>
+  return <Modal titulo={titulo} tamanho="md" aoFechar={aoFechar}
+    rodape={<Button onClick={aoFechar}>{ocupado ? "Continuar em segundo plano" : "Concluir"}</Button>}>
     <p style={{ marginTop: 0, overflowWrap: "anywhere" }}><strong>{empresa}</strong> · {type === "NFE" ? "NF-e · venda e compra" : "NFS-e · serviços"}</p>
     {mock && <p style={{ color: "var(--state-warn)" }}>Demonstração: nenhuma nota será gravada.</p>}
     <div aria-live="polite" aria-atomic="true">
-      {ocupado && <p>{p.etapa === "preparando" ? "Preparando os arquivos…" : p.etapa === "concluida" ? "Atualizando a lista de notas…" : `Enviando e processando lote ${p.loteAtual || 1} de ${total}…`}</p>}
+      {ocupado && <p>{p.etapa === "preparando" ? "Preparando os arquivos…" : p.etapa === "enviando" ? `Enviando arquivos: ${p.arquivosEnviados || 0} de ${p.totalArquivos}. Mantenha o navegador aberto até concluir o envio.` : p.etapa === "concluida" ? "Atualizando a lista de notas…" : p.segundoPlano ? "Arquivos recebidos. Processando no servidor…" : `Enviando e processando lote ${p.loteAtual || 1} de ${total}…`}</p>}
       <progress aria-label="Lotes de importação concluídos" value={concluidos} max={total} style={{ width: "100%", height: 14, accentColor: "var(--accent-purple)" }} />
       <p style={{ color: "var(--text-muted)", fontSize: ".85rem" }}>{percentual}% · {concluidos} de {total} lotes concluídos · {p.arquivosConcluidos || 0} de {p.totalArquivos || 0} arquivos processados</p>
     </div>

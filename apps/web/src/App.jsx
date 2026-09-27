@@ -38,7 +38,7 @@ import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 import { usePendencias } from "./features/pendencias/hooks/usePendencias";
 import { useBackgroundJobs } from "./features/companies/list/hooks/useBackgroundJobs";
-import { GuideSendActivity } from "./features/guides/components/GuideSendActivity";
+import { TaskCenter } from "./features/tasks/TaskCenter";
 
 
 const api = createApiClient();
@@ -132,7 +132,18 @@ function AppInterno({ session, feedback }) {
   });
 
   // C9: processos em segundo plano (downloads em lote) — selo no dashboard. Só enquanto logado.
-  const backgroundJobs = useBackgroundJobs({ api, enabled: Boolean(session.user) });
+  const backgroundJobs = useBackgroundJobs({ api, enabled: Boolean(session.user), sessionKey: session.user?.id });
+  const localTasks = useMemo(() => {
+    const tasks = [], send = companiesWorkspace.envioGuiasProgresso, imp = notasFiscais.importAndamento;
+    if (send && !send.serverTask) tasks.push({ jobId: send.activityId || "envio-atual", tipo: "envio-guias", companyIds: [send.companyId], companyName: send.companyName,
+      status: send.status, total: send.total, processadas: send.completed, browserDependent: true,
+      erroMensagem: send.error || send.refreshError, result: { resultados: send.resultados } });
+    if (imp && !imp.progresso?.segundoPlano) tasks.push({ jobId: imp.activityId || "importacao-atual", tipo: imp.type === "NFE" ? "import-nfe" : "import-nfse",
+      companyIds: [imp.companyId], companyName: imp.empresa, total: imp.progresso?.totalArquivos,
+      processadas: imp.progresso?.arquivosConcluidos, status: notasFiscais.importing ? "running" : notasFiscais.importModalResultado?.falhou ? "error" : notasFiscais.importModalResultado?.quantidadeProblemas ? "partial" : "done",
+      browserDependent: true, result: { mensagem: notasFiscais.importModalResultado?.mensagem, items: notasFiscais.importModalResultado?.problemas } });
+    return tasks;
+  }, [companiesWorkspace.envioGuiasProgresso, notasFiscais.importAndamento, notasFiscais.importing, notasFiscais.importModalResultado]);
 
   // Q41/C10: situação fiscal (SITFIS) — hoje vive como aba dentro de "Consultas"
   // (a página top-level "Pendências" deixou de existir), então carrega junto dela.
@@ -646,7 +657,7 @@ function AppInterno({ session, feedback }) {
     />
   );
   }
-  return <><GuideSendActivity activity={companiesWorkspace.envioGuiasProgresso} onDismiss={companiesWorkspace.fecharEnvioGuiasProgresso} />{renderPagina()}{notasFiscais.importModalAberto && <ImportacaoNotasModal andamento={notasFiscais.importAndamento} resultado={notasFiscais.importModalResultado} ocupado={notasFiscais.importing} aoFechar={notasFiscais.fecharImportModal} />}</>;
+  return <><TaskCenter key={session.user?.id} background={backgroundJobs} localTasks={localTasks} api={api} companies={companiesWorkspace.companiesState.companies} />{renderPagina()}{notasFiscais.importModalAberto && <ImportacaoNotasModal andamento={notasFiscais.importAndamento} resultado={notasFiscais.importModalResultado} ocupado={notasFiscais.importing} aoFechar={notasFiscais.fecharImportModal} />}</>;
 }
 
 export default App;

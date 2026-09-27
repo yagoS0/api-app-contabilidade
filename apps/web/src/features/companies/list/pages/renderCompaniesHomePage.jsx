@@ -694,29 +694,6 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
-              fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
-              continua na página do job — aqui é só o aviso. */}
-          {backgroundJobs?.total > 0 && (
-            <div
-              role="status"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12,
-                padding: "6px 12px", borderRadius: 999,
-                background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)",
-                fontSize: "0.82rem", fontWeight: 600,
-              }}
-              title="Downloads em lote rodando no servidor. Acompanhe o progresso em Consultas."
-            >
-              ⏳ {backgroundJobs.total} processo{backgroundJobs.total > 1 ? "s" : ""} em segundo plano
-              {backgroundJobs.empresas > 0 && (
-                <span style={{ color: "var(--state-neutral)", fontWeight: 400 }}>
-                  ({backgroundJobs.processadas}/{backgroundJobs.empresas} empresas)
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Busca e filtros pertencem à lista de empresas; a agenda tem navegação própria. */}
           {modoVisao === "tabela" && (
           <section
@@ -928,6 +905,7 @@ export function CompaniesHomePage({
               /* ⚠ O MESMO indicador de processo em segundo plano que já desenha o selo acima —
                  não um segundo contador. É ele que impede disparar o mesmo lote duas vezes. */
               jobsAtivos={backgroundJobs?.total || 0}
+              jobs={backgroundJobs?.jobs || []}
               onLimparSelecao={limparSelecao}
               onConcluido={async () => { await onRefreshCompanies?.(); await carregarTravas(); }}
               avisoDeRecorte={avisoDeRecorte}

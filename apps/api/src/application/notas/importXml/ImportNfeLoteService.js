@@ -86,7 +86,7 @@ function anotar(res, detalhe) {
  * @param {Object}   [opts.db]             prisma (injetável no teste)
  * @param {Object}   [opts.log]
  */
-export async function importarLoteNfe({ portalClientId, cnpjEmpresa, arquivos, db = prismaPadrao, log = null }) {
+export async function importarLoteNfe({ portalClientId, cnpjEmpresa, arquivos, db = prismaPadrao, log = null, onProgress = async () => {} }) {
   const res = novoResultado();
   const empresa = apenasDigitos(cnpjEmpresa);
 
@@ -148,6 +148,7 @@ export async function importarLoteNfe({ portalClientId, cnpjEmpresa, arquivos, d
       log?.warn?.({ err, arquivo: arquivo.nome }, "Falha ao ler arquivo do lote de NF-e");
     }
     res.arquivos.push(linha);
+    await onProgress(res.arquivos.length, res);
   }
 
   // ⚠ VAZIO É RESPOSTA, e ela tem nome próprio. O Fisco Fácil devolve "Processada sem resultado"

@@ -65,6 +65,8 @@ jest.mock("../../../application/notas/download/NotasDownloadService.js", () => {
 });
 
 import request from "supertest";
+jest.mock("../../../application/accounting/parcelamento/ParcelamentoAcompanhamentoService.js", () => ({ listarPendenciasParcelamento: jest.fn(async () => []) }));
+import { listarPendenciasParcelamento } from "../../../application/accounting/parcelamento/ParcelamentoAcompanhamentoService.js";
 import express from "express";
 import { createFirmPortalRouter } from "../index.js";
 import { prisma } from "../../../infrastructure/db/prisma.js";
@@ -111,6 +113,37 @@ beforeEach(() => {
   bancoDeEmpresas();
 });
 
+describe("central de tarefas preserva carteira e usuário", () => {
+  beforeEach(() => {
+    prisma.manualTask.updateMany.mockResolvedValue({ count: 0 });
+    prisma.manualTask.findMany.mockResolvedValue([]);
+    prisma.notasDownloadJob.findMany.mockResolvedValue([]);
+    prisma.sitfisDownloadJob.findMany.mockResolvedValue([]);
+    prisma.notasCapturaJob.findMany.mockResolvedValue([]);
+  });
+  test("lista somente jobs inteiramente autorizados, sem iniciar processamento", async () => {
+    prisma.notasDownloadJob.findMany.mockResolvedValue([
+      { id: "meu", companyIds: [MINHA], status: "processando" },
+      { id: "misto", companyIds: [MINHA, OUTRA], status: "processando" },
+    ]);
+    const res = await request(montarApp(STAFF)).get("/firm/jobs/ativos").expect(200);
+    expect(res.body.jobs.map(j => j.jobId)).toEqual(["meu"]);
+    expect(runApuracaoBatchOnce).not.toHaveBeenCalled(); expect(criarBatchJob).not.toHaveBeenCalled();
+    expect(prisma.manualTask.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ ownerId: STAFF.id }) }));
+  });
+  test("detalhe requer dono e acesso a todas as empresas", async () => {
+    prisma.manualTask.findFirst.mockResolvedValue({ id: "a", companyIds: [OUTRA], result: { private: "segredo" } });
+    const res = await request(montarApp(STAFF)).get("/firm/jobs/tarefas/a").expect(404);
+    expect(JSON.stringify(res.body)).not.toContain("segredo");
+    expect(prisma.manualTask.findFirst).toHaveBeenCalledWith({ where: { id: "a", ownerId: STAFF.id } });
+  });
+  test("falha de banco não é apresentada como nenhuma tarefa", async () => {
+    prisma.manualTask.findMany.mockRejectedValueOnce(new Error("offline"));
+    const res = await request(montarApp(CONTADOR)).get("/firm/jobs/ativos").expect(503);
+    expect(res.body.ok).toBe(false); expect(res.body.jobs).toBeUndefined();
+  });
+});
+
 describe("conferência de vencimentos dentro da empresa", () => {
   test("sem vínculo ativo não consulta documentos nem parcelas", async () => {
     prisma.companyFirmAccess.findUnique.mockResolvedValueOnce(null);
@@ -127,11 +160,12 @@ describe("conferência de vencimentos dentro da empresa", () => {
     const res = await request(montarApp(STAFF)).get(`/firm/companies/${MINHA}/guides/due-report?mesVencimento=2026-09`);
     expect(res.status).toBe(200);
     expect(res.body.mesVencimento).toBe("2026-09");
-    for (const model of [prisma.guide, prisma.parcela]) {
+    for (const model of [prisma.guide]) {
       const where = model.findMany.mock.calls[0][0].where;
       expect(where.portalClientId).toEqual({ in: [MINHA] });
       expect(where.competencia).toBeUndefined();
     }
+    expect(listarPendenciasParcelamento).toHaveBeenCalledWith({ portalClientIds: [MINHA], mesOperacional: "2026-09" });
   });
 });
 
@@ -158,13 +192,12 @@ describe("A — POST /firm/apuracao/batch: transmissão em lote", () => {
   });
 
   test("pedindo SÓ o que não é da carteira, a fila recebe lista vazia (e a rota recusa)", async () => {
-    criarBatchJob.mockRejectedValueOnce(Object.assign(new Error("Sem empresas selecionadas"), { code: "NO_COMPANIES" }));
 
     const res = await request(montarApp(CONTADOR))
       .post("/firm/apuracao/batch")
       .send({ portalClientIds: ["portal-inexistente"], competencia: "2026-07" });
 
-    expect(criarBatchJob.mock.calls[0][0].portalClientIds).toEqual([]);
+    expect(criarBatchJob).not.toHaveBeenCalled();
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("NO_COMPANIES");
   });

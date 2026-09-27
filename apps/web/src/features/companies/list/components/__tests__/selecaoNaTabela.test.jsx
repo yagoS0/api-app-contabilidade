@@ -187,7 +187,7 @@ describe("a barra diz PARA QUANTAS — e por que uma ação não se aplica", () 
   test("⚠ com processo em segundo plano, as ações que criam JOB travam — com o motivo", async () => {
     await montarBarra({ jobsAtivos: 1 });
     expect(screen.getByRole("button", { name: /Baixar XMLs/ })).toBeDisabled();
-    expect(screen.getAllByText(/1 processo em segundo plano/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/operação deste tipo em segundo plano/).length).toBeGreaterThan(0);
   });
 
   test("a poda pelo filtro NÃO é silenciosa", async () => {

@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Central de tarefas — 27/09/2026 (desenvolvimento)
+
+Operações demoradas iniciadas pelo usuário aparecem em **Tarefas (N)** no topo do portal. Aceite e resultados são persistidos em `ManualTask`; acompanhamento só lê o banco, nunca repete consultas, envios ou transmissões. A agenda fiscal salva permanece soberana. Navegação não cancela tarefas aceitas; uploads precisam terminar antes de fechar o navegador. Reinício marca interrupção sem replay automático. Preservar autorização por carteira/dono, confirmações, prévias e travas existentes. Migration aditiva e API precedem publicação do frontend. Cobertura, limites e validações em `docs/central-tarefas-20260927.md`. Ainda não publicado nesta etapa.
+
 ## Consultas só pela configuração salva — 24/09/2026
 
 Consulta fiscal automática exige rotina e empresa habilitadas explicitamente, no dia/hora salvos (Brasília). Não criar agenda por código, herdar habilitação na ausência de cadastro, rodar ao iniciar fora da agenda, recuperar horários perdidos ou repetir falhas/negativos nos dias seguintes. Reservar cada horário uma única vez; resultado incerto exige conferência manual, pois pode ter gerado custo. A checagem local do relógio e o processamento local não são consultas externas. Após retorno de pagamento não confirmado válido, avisar pelo canal cadastrado uma única vez, sem tratar erro técnico como inadimplência; reconsulta da mesma obrigação fica a cargo do contador. Confirmação do cliente no portal após recálculo continua como declaração, sem inventar confirmação da Receita ou baixa contábil. A instrução substitui regras anteriores de retry/catchup ou rotinas inferidas por regime. Detalhes em `docs/agenda-fiscal-explicita-2026-09-24.md`.

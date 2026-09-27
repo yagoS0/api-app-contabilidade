@@ -4,6 +4,7 @@ import { getRoutineExecutionStatus } from "../../workers/scheduledRoutineService
 import { dataDoComprovante } from "../../application/guides/lib/comprovantePagamento.js";
 import { createLaboratorioRouter } from "./laboratorio.js";
 import { Router } from "express";
+import { manualTasks, taskSummary, respondWithTask, captureTaskResponse, backgroundRoute, listTaskRecords } from "../../application/tasks/ManualTaskService.js";
 import { createExportacaoLoteRouter } from "./exportacaoLote.js";
 import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 import multer from "multer";
@@ -46,7 +47,7 @@ import { createCalendarioRouter } from "./calendario.js";
 import { createAgendaRouter } from "./agenda.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
-import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
+import { createWhatsappGuiasRouter, createIndividualGuideHandler } from "./whatsappGuias.js";
 import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
 import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
@@ -65,7 +66,7 @@ import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
-import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
+import { criarBatchJob, runApuracaoBatchOnce, runApuracaoBatchToCompletion } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
 import fsNotasDownload from "node:fs";
 import {
@@ -556,6 +557,16 @@ function sanitizeFirmRole(role) {
 
 export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
+  // A guia precisa pertencer à carteira antes de aceitar a tarefa.
+  async function authorizeGuideTask(req, res, next) {
+    try {
+      const scoped = await getGuideWithFirmAccess({ guideId: req.params.guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+      if (!(await jobDaCarteira(req, [scoped.guide.portalClientId]))) return res.status(404).json({ error: "not_found" });
+      req.taskCompanyIds = [scoped.guide.portalClientId];
+      next();
+    } catch (err) { next(err); }
+  }
   router.use(requireAuth(), requireAccountType("FIRM"));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createExportacaoLoteRouter());
@@ -3619,6 +3630,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     if (!items.length) {
       return res.status(400).json({ ok: false, error: "items_required" });
     }
+    const ids = await idsDaCarteira(req, items.map(i => i.portalClientId));
+    if (items.some(i => !ids.includes(i.portalClientId))) return res.status(404).json({ ok: false, error: "not_found" });
+    return respondWithTask(req, res, { kind: "envio-guias", companyIds: ids, total: items.length, description: "Envio de guias por e-mail", fingerprint: items }, async (res, progress) => {
     const results = [];
     for (const it of items) {
       const portalClientId = String(it?.portalClientId || "").trim();
@@ -3641,8 +3655,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         });
       }
     }
+    await progress(results.length, { results });
     const sent = results.filter((r) => r.ok && r.status === "sent").length;
     return res.json({ ok: true, total: items.length, sent, results });
+    });
   });
 
   // Portal Cliente (#3.1): POST /guides/liberar-cliente
@@ -3902,7 +3918,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/guides/:guideId/buscar-pagamento",
     requireAccountType("FIRM"),
-    async (req, res) => {
+    authorizeGuideTask,
+    backgroundRoute("consulta-pagamentos", async (req, res) => {
       const { guideId } = req.params || {};
       const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
       if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
@@ -3949,7 +3966,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message, guideId: scoped.guide.id }, "Falha ao buscar pagamento (PAGTOWEB)");
         return res.status(502).json({ ok: false, error: err?.code || "PAGTOWEB_FALHOU", reason: err?.message });
       }
-    }
+    }, "Consultar pagamento da guia")
   );
 
   router.post(
@@ -4074,7 +4091,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/guides/:guideId/recalculate",
     requireAccountType("FIRM"),
-    async (req, res) => {
+    authorizeGuideTask,
+    backgroundRoute("recalculo-guia", async (req, res) => {
       const { guideId } = req.params || {};
       const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
       if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
@@ -4180,13 +4198,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, guideId }, "Falha no recalculo manual PGDAS-D");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
       }
-    }
+    }, "Recalcular guia")
   );
 
-  router.post(
-    "/guides/:guideId/resend-email",
-    requireAccountType("FIRM"),
-    async (req, res) => {
+  const resendGuideHandler = async (req, res) => {
       const { guideId } = req.params || {};
       const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
       if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
@@ -4271,16 +4286,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           message: mensagemEnvioFalhou(err?.message),
         });
       }
-    }
-  );
+    };
+  router.post("/guides/:guideId/resend-email", requireAccountType("FIRM"), resendGuideHandler);
 
   // Portal Cliente: POST /guides/:guideId/liberar-cliente — libera SÓ esta guia e envia SÓ ela
   // por e-mail (worker por-guia). O empacotamento DAS+INSS fica exclusivo do envio em lote da
   // página principal (batch-send / emails/send-pending|send-selected). Molde da rota de resend.
-  router.post(
-    "/guides/:guideId/liberar-cliente",
-    requireAccountType("FIRM"),
-    async (req, res) => {
+  const releaseGuideHandler = async (req, res) => {
       const appRole = String(req.auth?.user?.role || "").toLowerCase();
       if (!["admin", "contador"].includes(appRole)) {
         return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
@@ -4358,8 +4370,48 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           message: mensagemEnvioFalhou(err?.message, prefixo),
         });
       }
+    };
+  router.post("/guides/:guideId/liberar-cliente", requireAccountType("FIRM"), releaseGuideHandler);
+
+  router.post("/companies/:companyId/guides/send-task", requireFirmCompanyAccess(), async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    const companyId = String(req.params.companyId), raw = req.body?.items;
+    if (!Array.isArray(raw) || !raw.length || raw.length > 500 || new Set(raw.map(i => i?.guideId)).size !== raw.length) {
+      return res.status(400).json({ ok: false, message: "Selecione as guias que deseja enviar." });
     }
-  );
+    const items = raw.map(i => ({ guideId: String(i.guideId || ""), rotulo: String(i.rotulo || "Guia").slice(0, 120), reenviarConfirmado: i.reenviarConfirmado === true }));
+    for (const item of items) {
+      const scoped = await getGuideWithFirmAccess({ guideId: item.guideId, user: req.auth.user });
+      if (!scoped.guide || scoped.guide.portalClientId !== companyId) return res.status(404).json({ ok: false, message: "Guia não encontrada nesta empresa." });
+    }
+    const whatsappRequested = req.body?.whatsappRequested === true;
+    const sendWhatsapp = createIndividualGuideHandler({ log });
+    return respondWithTask(req, res, { kind: "envio-guias", companyIds: [companyId], total: items.length, fingerprint: "envio-da-empresa" }, async (res, progress) => {
+      const resultados = [];
+      for (const item of items) {
+        let email, whatsapp = null;
+        try {
+          const scopedReq = { auth: req.auth, params: { companyId, guideId: item.guideId },
+            body: item.reenviarConfirmado ? { reenviar: true } : { complementar: true } };
+          const output = await captureTaskResponse(r => (item.reenviarConfirmado ? resendGuideHandler : releaseGuideHandler)(scopedReq, r));
+          email = output.body;
+          // Uma recusa de autorização/dados encerra o item; nunca atravessa para outro canal.
+          if (whatsappRequested && output.statusCode < 400) {
+            whatsapp = (await captureTaskResponse(r => sendWhatsapp(scopedReq, r))).body;
+          }
+          const emailOk = email?.sent === true || email?.envio?.naoSeAplica === true;
+          const ok = output.statusCode < 400 && emailOk && Boolean(email?.sent || whatsapp?.ok) && (!whatsappRequested || whatsapp?.ok === true && !whatsapp?.parcial);
+          const texto = [email?.message || email?.reason || "Confira o resultado do e-mail.",
+            whatsapp ? whatsapp.ok ? "WhatsApp: solicitação aceita; entrega depende da confirmação do provedor." : whatsapp.message || "WhatsApp não enviado. Confira o histórico antes de repetir." : null].filter(Boolean).join(" ");
+          resultados.push({ ...item, ok, tom: !ok ? "erro" : whatsapp ? "pendente" : "ok", texto, email, whatsapp });
+        } catch {
+          resultados.push({ ...item, ok: false, tom: "erro", texto: "Não foi possível confirmar este envio. Confira o histórico antes de repetir.", email, whatsapp });
+        }
+        await progress(resultados.length, { resultados });
+      }
+      return res.json({ ok: true, resultados });
+    });
+  });
 
   router.post(
     "/companies/:companyId/guides/send-email-latest",
@@ -4415,7 +4467,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/companies/:companyId/serpro/pgdasd/capture",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-das", async (req, res) => {
       const portalCompanyId = String(req.params.companyId || "").trim();
       const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
       const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
@@ -4472,13 +4524,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na captura manual PGDAS-D");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
       }
-    }
+    }, "Consulta do DAS")
   );
 
   router.post(
     "/companies/:companyId/serpro/inss/sync",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-inss", async (req, res) => {
       const portalCompanyId = String(req.params.companyId || "").trim();
       const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
       const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
@@ -4548,7 +4600,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na sincronização de INSS SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
       }
-    }
+    }, "Consulta de INSS")
   );
 
   // Módulo Fiscal M2 — SPIKE read-only: probe da Consultar Declaração Completa DCTFWeb.
@@ -4592,7 +4644,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/companies/:companyId/serpro/lp/capture",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-lp", async (req, res) => {
       const portalClientId = String(req.params.companyId || "").trim();
       const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
       if (!portalClientId) return res.status(400).json({ ok: false, error: "company_id_required" });
@@ -4647,7 +4699,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, portalClientId, competencia }, "Falha na captura de Lucro Presumido");
         return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
       }
-    }
+    }, "Consulta do Lucro Presumido")
   );
 
   // Q36: captura manual de parcelamento — itera os parcelamentos ATIVOS da empresa (mesmo where do
@@ -4656,7 +4708,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/companies/:companyId/serpro/parcelamento/capture",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-parcelas", async (req, res) => {
       const portalCompanyId = String(req.params.companyId || "").trim();
       if (!portalCompanyId) {
         return res.status(400).json({ ok: false, error: "company_id_required" });
@@ -4694,7 +4746,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na captura de parcelamento SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message });
       }
-    }
+    }, "Consulta de parcelas")
   );
 
   // Q40 Fase A/B: confirmação de pagamento por empresa (PAGTOWEB). Ação manual do contador —
@@ -4702,7 +4754,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/companies/:companyId/serpro/payment-confirmation",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-pagamentos", async (req, res) => {
       const portalCompanyId = String(req.params.companyId || "").trim();
       const competencia = String(req.body?.competencia || req.query?.competencia || "").trim() || null;
       if (!portalCompanyId) {
@@ -4725,7 +4777,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na confirmação de pagamento SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message });
       }
-    }
+    }, "Consulta de pagamentos")
   );
 
   // Q41: leitura do último status fiscal gravado (SEM chamar o SERPRO). Usado pela aba Situação Fiscal
@@ -4861,7 +4913,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post(
     "/companies/:companyId/serpro/sitfis/relatorio",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("consulta-sitfis", async (req, res) => {
       const portalCompanyId = String(req.params.companyId || "").trim();
       if (!portalCompanyId) {
         return res.status(400).json({ ok: false, error: "company_id_required" });
@@ -5073,7 +5125,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           detalhes: err?.details || null,
         });
       }
-    }
+    }, "Consulta da situação fiscal")
   );
 
   router.get(
@@ -5641,12 +5693,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       return res.status(400).json({ ok: false, error: "invalid_competencia" });
     }
     try {
+      const ids = await idsDaCarteira(req, portalClientIds);
+      if (!ids.length) return res.status(400).json({ ok: false, error: "NO_COMPANIES", message: "Selecione empresas da sua carteira." });
+      return await respondWithTask(req, res, { kind: "apuracao", companyIds: ids, total: ids.length, competencia,
+        fingerprint: [competencia, [...ids].sort()] }, async (res, progress) => {
       const result = await criarBatchJob({
-        portalClientIds: await idsDaCarteira(req, portalClientIds),
+        portalClientIds: ids,
         competencia,
         userId: req.auth?.user?.id,
       });
+      if (req.get?.("Prefer") === "respond-async") {
+        return res.json(await runApuracaoBatchToCompletion(result.jobId, progress));
+      }
       return res.json({ ok: true, ...result });
+      });
     } catch (err) {
       log.warn({ err: err?.message }, "Falha ao criar batch de apuração");
       return res.status(err?.code === "NO_COMPANIES" || err?.code === "NONE_CLOSED" ? 400 : 500)
@@ -5941,30 +6001,53 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   });
 
-  router.get("/jobs/ativos", async (_req, res) => {
+  router.get("/jobs/tarefas/:taskId", async (req, res) => {
     try {
-      const emAndamento = {
-        where: { status: "processando" },
-        select: { id: true, totalEmpresas: true, processadas: true },
-      };
-      const [notas, sitfis, captura] = await Promise.all([
-        prisma.notasDownloadJob.findMany(emAndamento),
-        prisma.sitfisDownloadJob.findMany(emAndamento),
+      const where = { id: String(req.params.taskId), ownerId: req.auth.user.id };
+      await manualTasks.expire(where);
+      const task = await prisma.manualTask.findFirst({ where });
+      if (!task || (task.companyIds?.length && !(await jobDaCarteira(req, task.companyIds)))) {
+        return res.status(404).json({ ok: false, error: "task_not_found" });
+      }
+      return res.json({ ok: true, task: { ...taskSummary(task), result: task.result, responseStatus: task.responseStatus } });
+    } catch { return res.status(503).json({ ok: false, message: "Não foi possível consultar o andamento agora." }); }
+  });
+
+  router.get("/jobs/ativos", async (req, res) => {
+    try {
+      await manualTasks.expire({ ownerId: req.auth.user.id });
+      // Mesmo limite dos downloads existentes. Marca interrupção, sem reexecutar nada.
+      await Promise.all([prisma.notasDownloadJob, prisma.sitfisDownloadJob, prisma.notasCapturaJob].map(model => model.updateMany({
+        where: { status: "processando", updatedAt: { lt: new Date(Date.now() - 10 * 60000) } },
+        data: { status: "erro", erroMensagem: "Processamento sem atualização. Confira os resultados antes de iniciar outra tentativa." },
+      })));
+      const [notas, sitfis, captura, manuais] = await Promise.all([
+        listTaskRecords(prisma.notasDownloadJob, "processando"),
+        listTaskRecords(prisma.sitfisDownloadJob, "processando"),
         // A consulta em lote é a mais demorada das três (chama ADN/SEFAZ empresa por empresa) —
         // é justamente a que o contador precisa ver rodando ao sair da página.
-        prisma.notasCapturaJob.findMany(emAndamento),
+        listTaskRecords(prisma.notasCapturaJob, "processando", {}, { include: { itens: { select: { status: true } } } }),
+        listTaskRecords(prisma.manualTask, "running", { ownerId: req.auth.user.id }),
       ]);
       const mapa = (arr, tipo) => arr.map((j) => ({
         tipo,
         jobId: j.id,
         total: Number(j.totalEmpresas || 0),
         processadas: Number(j.processadas || 0),
+        companyIds: idsDoJob(j.companyIds), status: j.status === "concluido" && j.expiresAt && new Date(j.expiresAt) < new Date() ? "expirado"
+          : j.status === "concluido" && j.itens?.some(i => ["erro", "recusado"].includes(i.status)) ? "partial" : j.status, createdAt: j.createdAt,
+        erroMensagem: j.erroMensagem, competencia: j.competencia || j.competenciaDe,
+        arquivoDisponivel: Boolean(j.arquivoPath && j.status === "concluido" && (!j.expiresAt || new Date(j.expiresAt) > new Date())),
       }));
-      const jobs = [...mapa(notas, "notas"), ...mapa(sitfis, "sitfis"), ...mapa(captura, "captura-notas")];
-      return res.json({ ok: true, total: jobs.length, jobs });
+      const existentes = await jobsDaCarteira(req, [...mapa(notas, "notas"), ...mapa(sitfis, "sitfis"), ...mapa(captura, "captura-notas")]);
+      const restritas = await jobsDaCarteira(req, manuais.filter(j => j.companyIds?.length));
+      const tarefas = [...existentes, ...[...restritas, ...manuais.filter(j => !j.companyIds?.length)].map(taskSummary)]
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const jobs = tarefas.filter(j => ["processando", "running"].includes(j.status));
+      return res.json({ ok: true, total: jobs.length, jobs, tarefas });
     } catch (err) {
-      // Nunca derruba o dashboard por causa do selo — devolve vazio.
-      return res.json({ ok: false, total: 0, jobs: [], message: err?.message });
+      // Falha no acompanhamento não significa que a lista esteja vazia.
+      return res.status(503).json({ ok: false, message: "Não foi possível atualizar as tarefas agora. O último andamento foi preservado." });
     }
   });
 
