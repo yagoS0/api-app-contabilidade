@@ -27,6 +27,7 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   fireEvent.change(texto, { target: { value: "Mensagem pelo atendimento" } });
   ui.rerender(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
   expect(screen.queryByLabelText("Canal da resposta")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   expect(screen.getByText(/WhatsApp Atendimento/)).toBeVisible();
   expect(texto).toHaveValue("Mensagem pelo atendimento");
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
@@ -123,6 +124,7 @@ test("lead sem comercial não envia pelo principal mesmo com janela aberta", () 
 test("orientação editada exige prévia e guarda origem sem certificar texto aprovado", async () => {
   const h = hook(); h.api.comercial = jest.fn();
   render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByText("Preparar exemplo"));
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto adaptado pela equipe" } });
   fireEvent.keyDown(screen.getByLabelText("Responder ao cliente"), { key: "Enter", ctrlKey: true });
@@ -137,6 +139,7 @@ test("descartar só apaga o rascunho do canal atual e não o restaura ao reabrir
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Manter no principal" } });
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Descartar no comercial" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("");
   expect(screen.getByRole("status")).toHaveTextContent("Rascunho descartado");
@@ -151,7 +154,9 @@ test("descartar só apaga o rascunho do canal atual e não o restaura ao reabrir
 test("desfazer descarte recupera texto e referência da mensagem rápida sem enviar", async () => {
   const h = hook(); h.api.comercial = jest.fn();
   render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByText("Preparar exemplo"));
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Orientação aprovada");
@@ -168,6 +173,7 @@ test("janela fechada permite descartar, sem liberar envio nem apagar a nota inte
   h.rascunhosRef.current.set(chaveNota, "Nota preservada");
   render(<CompositorConversa conversa={{ ...c, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) }} hook={h} />);
   expect(screen.getByRole("button", { name: /responder/i })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   expect(h.rascunhosRef.current.has(chave)).toBe(false);
   expect(h.rascunhosRef.current.get(chaveNota)).toBe("Nota preservada");
@@ -180,6 +186,7 @@ test("envio em andamento impede descarte", async () => {
   render(<CompositorConversa conversa={c} hook={h} />);
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Em envio" } });
   fireEvent.click(screen.getByRole("button", { name: /responder/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   expect(screen.getByRole("button", { name: "Descartar rascunho" })).toBeDisabled();
   concluir({ ok: true });
   await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""));

@@ -43,6 +43,7 @@ test("mensagem pronta não substitui um rascunho existente nem conta uso", async
   const api = apiLocal(); render(<Caminho api={api} iniciarNaBiblioteca={false} />);
   fireEvent.click(await screen.findByTestId("conversa-a"));
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Texto já digitado" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
   fireEvent.click(await screen.findByRole("button", { name: "Usar no chat" }));
   fireEvent.click(await screen.findByRole("button", { name: "Inserir na conversa" }));
