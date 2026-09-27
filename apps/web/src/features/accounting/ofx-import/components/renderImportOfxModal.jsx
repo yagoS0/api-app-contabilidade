@@ -572,7 +572,7 @@ export function ImportOFXModal({
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="secondary" onClick={() => { setStep("upload"); setTransactions([]); rowRefs.current = []; setError(""); }}>Voltar</Button>
-              <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+              <Button variant="secondary" onClick={onClose}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
               <Button variant="primary" onClick={handleCommit} disabled={!canCommit} title="Ctrl+Enter">
                 {saving ? "Importando..." : `Importar ${completeRows} ${completeRows === 1 ? "linha" : "linhas"}`}
               </Button>

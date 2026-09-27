@@ -2,7 +2,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-li
 import { ImportacaoNotasModal } from "../ImportacaoNotasModal";
 import { useNotasFiscais } from "../../hooks/useNotasFiscais";
 
-test("modal trava saídas durante o processamento e mantém o resultado ao concluir", () => {
+test("modal pode ser recolhido durante o processamento e mantém o resultado ao concluir", () => {
   const aoFechar = jest.fn();
   const andamento = { empresa: "Empresa A", type: "NFE", temZip: true, progresso: { etapa: "processando", loteAtual: 2, totalLotes: 3, lotesConcluidos: 1, totalArquivos: 45, arquivosConcluidos: 20, totais: { novas: 19 } } };
   const { rerender } = render(<ImportacaoNotasModal andamento={andamento} ocupado aoFechar={aoFechar} />);
@@ -11,12 +11,14 @@ test("modal trava saídas durante o processamento e mantém o resultado ao concl
   expect(screen.getByText(/Cada ZIP conta como um arquivo/)).toBeInTheDocument();
   fireEvent.keyDown(document, { key: "Escape" });
   fireEvent.click(screen.getByRole("dialog"));
-  expect(aoFechar).not.toHaveBeenCalled();
+  expect(aoFechar).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Continuar em segundo plano" }));
+  expect(aoFechar).toHaveBeenCalledTimes(3);
   expect(screen.queryByRole("button", { name: "Concluir" })).not.toBeInTheDocument();
   rerender(<ImportacaoNotasModal andamento={andamento} resultado={{ mensagem: "19 novas e uma recusada.", quantidadeProblemas: 1, problemas: [{ arquivo: "errada.xml", mensagem: "Outra empresa." }] }} ocupado={false} aoFechar={aoFechar} />);
   expect(screen.getByRole("alert")).toHaveTextContent("19 novas");
   fireEvent.click(screen.getByRole("button", { name: "Concluir" }));
-  expect(aoFechar).toHaveBeenCalledTimes(1);
+  expect(aoFechar).toHaveBeenCalledTimes(4);
 });
 
 test("trava imediata evita envio duplo e conserva a empresa original se a navegação mudar", async () => {
@@ -28,7 +30,7 @@ test("trava imediata evita envio duplo e conserva a empresa original se a navega
   act(() => { tarefa = result.current.importNotas([new File(["a"], "nota.xml")], { type: "NFE" }); result.current.importNotas([new File(["b"], "outra.xml")]); });
   expect(api.importInvoicesXml).toHaveBeenCalledTimes(1);
   act(() => result.current.fecharImportModal());
-  expect(result.current.importModalAberto).toBe(true);
+  expect(result.current.importModalAberto).toBe(false);
   const antes = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(antes);
   expect(antes.defaultPrevented).toBe(true);
   rerender({ companyId: "b", companyName: "Empresa B" });

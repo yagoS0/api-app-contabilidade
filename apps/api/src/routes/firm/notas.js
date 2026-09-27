@@ -1,3 +1,4 @@
+import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 // Q12.A.3: endpoints do módulo Notas Fiscais.
 //
 // Mountado em /firm/companies/:companyId/* (mergeParams).
@@ -348,7 +349,7 @@ export function createNotasRouter({ log }) {
   // ─── Q12.B: captura DFe (NF-e via SEFAZ) ──────────────────────────────────
 
   // POST /dfe/sync?env=prod|hom — dispara captura imediata. Sem worker em background nessa fase.
-  router.post("/dfe/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/dfe/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-fiscal", async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const env = String(req.query.env || "prod") === "hom" ? "hom" : "prod";
     try {
@@ -358,7 +359,7 @@ export function createNotasRouter({ log }) {
       log?.warn({ err: err?.message, portalClientId }, "Falha ao sincronizar DFe");
       return bad(res, 500, "dfe_sync_failed", err?.message || "Erro");
     }
-  });
+  }, "Consulta de NF-e"));
 
   // GET /dfe/state — retorna cursor + último erro + backoff (UI mostra status)
   // POST /dfe/clear-error — limpa backoff e último erro (desbloqueia botão)
@@ -793,7 +794,7 @@ export function createNotasRouter({ log }) {
 
   // ─── Q12.B+: captura NFS-e via ADN ─────────────────────────────────────────
 
-  router.post("/adn/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/adn/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-fiscal", async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const env = String(req.query.env || "prod") === "hom" ? "hom" : "prod";
     try {
@@ -803,7 +804,7 @@ export function createNotasRouter({ log }) {
       log?.warn({ err: err?.message, portalClientId }, "Falha ao sincronizar ADN");
       return bad(res, 500, "adn_sync_failed", err?.message || "Erro");
     }
-  });
+  }, "Consulta de NFS-e"));
 
   router.get("/adn/state", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
@@ -830,7 +831,7 @@ export function createNotasRouter({ log }) {
 
   // POST /classificar — reclassifica todos os itens de notas da empresa
   // (lookup DeparaAnexo EMPRESA > GLOBAL > default III).
-  router.post("/classificar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/classificar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-fiscal", async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const force = String(req.query.force || "false") === "true";
     try {
@@ -840,12 +841,12 @@ export function createNotasRouter({ log }) {
       log?.warn({ err: err?.message, portalClientId }, "Falha ao classificar");
       return bad(res, 500, "classify_failed", err?.message || "Erro");
     }
-  });
+  }, "Classificação de notas"));
 
   // POST /apuracao/:competencia/calcular — calcula RB12/Fator R/receita por anexo
   // (não transmite — só persiste em Apuracao + CompanyMonthlyCircular).
   // Body opcional: { fs12 } pra sobrescrever FS12 manual.
-  router.post("/apuracao/:competencia/calcular", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/apuracao/:competencia/calcular", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-fiscal", async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const competencia = String(req.params.competencia);
     const { fs12 } = req.body || {};
@@ -859,7 +860,7 @@ export function createNotasRouter({ log }) {
       log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao calcular apuração");
       return bad(res, 500, "calc_failed", err?.message || "Erro");
     }
-  });
+  }, "Cálculo da apuração"));
 
   // Q55: transmissão LEGADA (v1) DESABILITADA. Ela re-derivava as atividades da classificação
   // automática das notas (ignorando o que o contador preenchia) e mandava receita externa = 0 —
@@ -875,7 +876,7 @@ export function createNotasRouter({ log }) {
 
   // POST /apuracao/:competencia/conferir — confere declaração transmitida contra extrato SERPRO (CONSDECLARACAO13).
   // Marca estado=confirmada se tudo bate; senão cria ApuracaoDivergencia(s).
-  router.post("/apuracao/:competencia/conferir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/apuracao/:competencia/conferir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-fiscal", async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const competencia = String(req.params.competencia);
     try {
@@ -894,7 +895,7 @@ export function createNotasRouter({ log }) {
         currentState: err?.currentState,
       });
     }
-  });
+  }, "Conferência da apuração"));
 
   // POST /apuracao/:competencia/revisar — marca como revisada (libera transmissão)
   router.post("/apuracao/:competencia/revisar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {

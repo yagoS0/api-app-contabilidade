@@ -1,60 +1,53 @@
-// C9: resumo dos processos que rodam em SEGUNDO PLANO (downloads de notas e de situações
-// fiscais), pra o dashboard avisar que há coisa acontecendo mesmo depois de sair da página
-// que disparou. É só um contador — o progresso detalhado continua na página de cada job.
-//
-// Envio de e-mails em lote NÃO entra aqui: hoje é uma chamada bloqueante, não um job de fundo.
-//
-// Polling só enquanto a aba está visível e para de vez quando não há job (volta a checar no
-// intervalo normal) — o endpoint é barato, mas não há motivo pra bater nele com a aba escondida.
-
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const INTERVALO_OCIOSO_MS = 30000; // nada rodando: só confere de vez em quando
-const INTERVALO_ATIVO_MS = 4000;   // com job rodando: atualiza o contador mais rápido
-
-export function useBackgroundJobs({ api, enabled = true }) {
-  const [jobs, setJobs] = useState([]);
-  const timerRef = useRef(null);
-
-  const check = useCallback(async () => {
-    if (!api || typeof api.getJobsAtivos !== "function") return [];
-    try {
-      const out = await api.getJobsAtivos();
-      const lista = Array.isArray(out?.jobs) ? out.jobs : [];
-      setJobs(lista);
-      return lista;
-    } catch {
-      // Selo é informativo — falha nunca aparece como erro pro usuário.
-      setJobs([]);
-      return [];
-    }
-  }, [api]);
-
+export function useBackgroundJobs({ api, enabled = true, sessionKey = "" }) {
+  const [tarefas, setTarefas] = useState([]);
+  const [error, setError] = useState("");
+  const refreshRef = useRef(async () => []);
   useEffect(() => {
-    if (!enabled) { setJobs([]); return undefined; }
-    let cancelado = false;
-
-    async function ciclo() {
-      if (cancelado) return;
-      if (document.visibilityState === "visible") {
-        const lista = await check();
-        if (cancelado) return;
-        timerRef.current = setTimeout(ciclo, lista.length ? INTERVALO_ATIVO_MS : INTERVALO_OCIOSO_MS);
-        return;
+    let alive = true, pending = false, refreshQueued = false, timer;
+    setTarefas([]); setError("");
+    async function check() {
+      if (!alive || !enabled || !api?.getJobsAtivos) return [];
+      if (pending) { refreshQueued = true; return []; }
+      pending = true; clearTimeout(timer);
+      let active = false;
+      try {
+        const out = await api.getJobsAtivos();
+        if (out?.ok === false) throw new Error("jobs_unavailable");
+        const list = out?.tarefas || out?.jobs || [];
+        active = list.some(j => ["running", "processando"].includes(j.status) || !j.status);
+        if (alive) { setTarefas(list); setError(""); }
+        return list;
+      } catch {
+        if (alive) setError("Não foi possível atualizar as tarefas. O último andamento foi preservado.");
+        return [];
+      } finally {
+        pending = false;
+        if (alive && enabled) timer = setTimeout(cycle, refreshQueued ? 0 : active ? 4000 : 30000);
+        refreshQueued = false;
       }
-      timerRef.current = setTimeout(ciclo, INTERVALO_OCIOSO_MS);
     }
-    ciclo();
-
+    function cycle() {
+      if (document.visibilityState === "visible") void check();
+      else if (alive) timer = setTimeout(cycle, 30000);
+    }
+    function wake() { if (document.visibilityState === "visible") void check(); }
+    refreshRef.current = check;
+    if (enabled) {
+      cycle();
+      window.addEventListener("background-task-changed", wake);
+      document.addEventListener("visibilitychange", wake);
+    }
     return () => {
-      cancelado = true;
-      if (timerRef.current) clearTimeout(timerRef.current);
+      alive = false; clearTimeout(timer);
+      window.removeEventListener("background-task-changed", wake);
+      document.removeEventListener("visibilitychange", wake);
     };
-  }, [enabled, check]);
-
-  const total = jobs.length;
-  const processadas = jobs.reduce((s, j) => s + Number(j.processadas || 0), 0);
-  const empresas = jobs.reduce((s, j) => s + Number(j.total || 0), 0);
-
-  return { jobs, total, processadas, empresas, refresh: check };
+  }, [api, enabled, sessionKey]);
+  const jobs = tarefas.filter(j => !j.status || ["running", "processando"].includes(j.status));
+  const refresh = useCallback(() => refreshRef.current(), []);
+  return { jobs, tarefas, error, total: jobs.length,
+    processadas: jobs.reduce((s, j) => s + Number(j.processadas || 0), 0),
+    empresas: jobs.reduce((s, j) => s + Number(j.total || 0), 0), refresh };
 }

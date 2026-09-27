@@ -273,6 +273,7 @@ export function BarraSelecaoEmpresas({
   empresasSelecionadas = [],
   competencia,
   jobsAtivos = 0,
+  jobs = null,
   onLimparSelecao,
   onConcluido,
   /** ⚠ Mensagem de "a seleção encolheu porque o filtro mudou" — ver a decisão na página. */
@@ -289,7 +290,7 @@ export function BarraSelecaoEmpresas({
   const mesVencimento = competencia ? deslocarCompetencia(competencia, 1) : "";
 
   const ids = empresasSelecionadas.map((c) => c.companyId);
-  const plano = planoDaSelecao({ empresas: empresasSelecionadas, competencia, jobsAtivos });
+  const plano = planoDaSelecao({ empresas: empresasSelecionadas, competencia, jobsAtivos, jobs });
   const acao = aberta ? acaoDoPlano(plano, aberta) : null;
 
   // A prévia do envio é uma LEITURA (GET) e não custa nada — mas só é buscada quando o modal do
@@ -336,6 +337,7 @@ export function BarraSelecaoEmpresas({
   async function executar() {
     if (!acao || executando) return;
     setExecutando(true);
+    setAberta(null);
     setResultado(null);
     const alvoIds = acao.chave === "email"
       ? (previaEnvio?.resumo?.linhas || []).map((l) => l.companyId)
@@ -355,7 +357,7 @@ export function BarraSelecaoEmpresas({
         // avisou que ele revalida; aqui o número dele aparece, não uma estimativa nossa.
         setResultado({
           tom: "ok",
-          texto: `Lote criado: ${out.totalEmpresas} empresa(s)`
+          texto: out.taskId ? "Apuração iniciada. Acompanhe em Tarefas, no topo da tela." : `Lote criado: ${out.totalEmpresas} empresa(s)`
             + (out.ignoradas ? ` · ${out.ignoradas} ignorada(s) pelo servidor (apuração não fechada).` : "."),
         });
         if (out.jobId) setBatchJobId(out.jobId);
@@ -365,7 +367,7 @@ export function BarraSelecaoEmpresas({
         // no topo daria `undefined` em silêncio.
         const jobId = out?.job?.jobId || null;
         if (!out?.ok || !jobId) throw new Error(out?.message || "o servidor não criou o job.");
-        setResultado({ tom: "ok", texto: `Captura em andamento para ${alvoIds.length} empresa(s). Acompanhe em Consultas → Consultar notas.` });
+          setResultado({ tom: "ok", texto: `Captura iniciada para ${alvoIds.length} empresa(s). Acompanhe em Tarefas, no alto da página.` });
       } else if (acao.chave === "baixarNotas") {
         const out = await api.createNotasDownload({
           companyIds: alvoIds,
@@ -373,11 +375,11 @@ export function BarraSelecaoEmpresas({
           competenciaAte: competencia,
         });
         if (!out?.ok || !out.jobId) throw new Error(out?.message || "o servidor não criou o job.");
-        setResultado({ tom: "ok", texto: `ZIP em preparo para ${alvoIds.length} empresa(s). Baixe em Consultas → Baixar XMLs.` });
+          setResultado({ tom: "ok", texto: `ZIP solicitado para ${alvoIds.length} empresa(s). Acompanhe e baixe em Tarefas, no alto da página.` });
       } else if (acao.chave === "baixarSitfis") {
         const out = await api.createSitfisDownload(alvoIds);
         if (!out?.ok || !out.jobId) throw new Error(out?.message || "o servidor não criou o job.");
-        setResultado({ tom: "ok", texto: `ZIP em preparo para ${alvoIds.length} empresa(s). Baixe em Consultas → Situação Fiscal.` });
+          setResultado({ tom: "ok", texto: `ZIP solicitado para ${alvoIds.length} empresa(s). Acompanhe e baixe em Tarefas, no alto da página.` });
       }
       setAberta(null);
       try { await onConcluido?.(); } catch {
@@ -484,9 +486,7 @@ export function BarraSelecaoEmpresas({
         />
       )}
 
-      {/* ⚠ REUSO: o acompanhamento da fila de apuração é o MESMO modal da página Apuração — é ele
-          que faz o `run-now` sob demanda quando o worker de fundo está desligado. Um segundo
-          acompanhamento divergiria dele na primeira correção. */}
+        {/* Compatibilidade com respostas antigas: acompanhamento somente de leitura. */}
       {batchJobId && (
         <BatchProgressModal
           api={api}

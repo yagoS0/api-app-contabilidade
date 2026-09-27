@@ -1,0 +1,18 @@
+.task-center { position: sticky; top: 0; z-index: 60; flex: 0 0 auto; width: 100%; max-width: 100vw; box-sizing: border-box; background: var(--bg-surface, var(--bg-page)); color: var(--text); border-bottom: 1px solid var(--border); font-size: .85rem; }
+.task-center__bar { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 7px clamp(16px, 3vw, 40px); }
+.task-center__trigger { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 7px; padding: 7px 12px; background: var(--bg-surface); color: var(--text); cursor: pointer; font: inherit; font-weight: 600; }
+.task-center__trigger:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+.task-center__hint, .task-center__context, .task-center small { color: var(--text-muted); }
+.task-center__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-purple); }
+.task-center__panel { position: absolute; right: clamp(12px, 3vw, 40px); width: min(540px, calc(100vw - 24px)); max-height: min(70vh, 650px); overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface, var(--bg-page)); box-shadow: 0 12px 35px rgb(0 0 0 / 25%); }
+.task-center__panel ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.task-center__item { padding: 14px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.task-center__item:last-child { border-bottom: 0; }
+.task-center__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.task-center__status { font-size: .75rem; color: var(--text-muted); text-align: right; }
+.task-center__status--warning { color: var(--state-warn); }
+.task-center p { margin: 7px 0; }
+.task-center progress { width: 100%; height: 5px; accent-color: var(--accent-purple); }
+.task-center__actions { display: flex; gap: 14px; align-items: center; margin-top: 10px; }
+.task-center__result { max-height: 220px; overflow: auto; font-size: .8rem; }
+@media (max-width: 600px) { .task-center__hint { display: none; } }

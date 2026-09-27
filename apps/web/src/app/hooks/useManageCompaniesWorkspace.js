@@ -770,7 +770,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     const telaOrigem = telaAtual.current;
     const vigente = () => telaAtual.current === telaOrigem && companyId === empresaAtualGuias.current;
     const empresa = companiesState.companies.find(c => c.companyId === companyId);
-    const contexto = { companyId, companyName: empresa?.nomeFantasia || empresa?.razaoSocial || empresa?.razao || "Empresa", total: items.length };
+    const contexto = { activityId: `envio-${Date.now()}`, serverTask: Boolean(api.sendGuidesTask), companyId, companyName: empresa?.nomeFantasia || empresa?.razaoSocial || empresa?.razao || "Empresa", total: items.length };
     envioGuiasEmCurso.current = true;
     setEnvioGuiasProgresso({ ...contexto, status: "running", completed: 0, resultados: [] });
     setLiberarGuiasBusy(true);

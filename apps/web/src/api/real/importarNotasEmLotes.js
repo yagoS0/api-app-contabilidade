@@ -1,6 +1,7 @@
 // Respeita os limites de cada rota sem exigir seleção manual de vários lotes.
 // Nunca repete automaticamente uma requisição cujo resultado ficou desconhecido.
-export async function importarNotasEmLotes(request, companyId, files, type, onProgress, shouldContinue = () => true) {
+export async function importarNotasEmLotes(request, companyId, files, type, onProgress, shouldContinue = () => true, background = null) {
+  if (background) return importarEmSegundoPlano(background, companyId, files, type, onProgress, shouldContinue);
   const list = (Array.isArray(files) ? files : files ? [files] : []).filter(Boolean);
   const nfe = type === "NFE";
   const limite = nfe ? 20 : 50;
@@ -49,4 +50,44 @@ export async function importarNotasEmLotes(request, companyId, files, type, onPr
     if (out?.ok === false) return { ...totais, ok: false, mensagem: out.mensagem || "A importação foi interrompida. Confira o resultado dos lotes já enviados antes de tentar novamente." };
   }
   return totais;
+}
+
+async function importarEmSegundoPlano(background, companyId, files, type, onProgress, shouldContinue) {
+  const list = (Array.isArray(files) ? files : [files]).filter(Boolean), limit = type === "NFE" ? 20 : 50;
+  const batches = [], totalLotes = Math.ceil(list.length / limit);
+  let failure = null, arquivosEnviados = 0, arquivosConcluidos = 0, lotesConcluidos = 0;
+  const totals = { ok: true, errors: [], arquivos: [], detalhes: [], motivos: {} };
+  const report = (etapa) => onProgress?.({ etapa, totalLotes, lotesConcluidos, loteAtual: Math.min(batches.length + 1, totalLotes),
+    totalArquivos: list.length, arquivosEnviados, arquivosConcluidos, segundoPlano: true,
+    totais: { novas: (totals.created || 0) + (totals.importadas || 0), atualizadas: totals.updated || 0,
+      duplicadas: (totals.duplicates || 0) + (totals.duplicadas || 0), recusadas: (totals.recusadas || 0) + totals.errors.length } });
+  // Primeiro envia os arquivos. A partir do aceite, o servidor processa independentemente da página.
+  for (let i = 0; i < list.length; i += limit) {
+    if (!shouldContinue()) { failure = "A sessão foi encerrada. Os arquivos já recebidos continuam em Tarefas."; break; }
+    const part = list.slice(i, i + limit), form = new FormData();
+    part.forEach(file => form.append("files", file)); report("enviando");
+    try {
+      const out = await background.start(`/clients/${companyId}/invoices/import/${type === "NFE" ? "nfe" : "xml"}`, { method: "POST", body: form });
+      batches.push({ out, size: part.length }); arquivosEnviados += part.length; report("enviando");
+    } catch (err) { failure = `O envio dos arquivos foi interrompido. ${err.message} Confira Tarefas antes de repetir; os lotes já aceitos continuam no servidor.`; break; }
+  }
+  report("processando");
+  for (const batch of batches) {
+    try {
+      const out = await background.result(batch.out);
+      if (!out || typeof out !== "object" || !(type === "NFE" ? "importadas" in out || out.ok === false : "created" in out)) {
+        throw new Error("Não foi possível confirmar o resultado deste lote. Confira as notas antes de repetir.");
+      }
+      for (const [key, value] of Object.entries(out || {})) {
+        if (typeof value === "number") totals[key] = (totals[key] || 0) + value;
+        else if (["errors", "arquivos", "detalhes"].includes(key) && Array.isArray(value)) totals[key].push(...value);
+        else if (key === "motivos") for (const [motivo, n] of Object.entries(value || {})) totals.motivos[motivo] = (totals.motivos[motivo] || 0) + n;
+      }
+      if (out?.ok === false) failure = out.mensagem || "Há arquivos que não puderam ser importados.";
+      totals.detalhesTruncados ||= out?.detalhesTruncados;
+      arquivosConcluidos += batch.size; lotesConcluidos++; report("processando");
+    } catch (err) { failure = `${err.message} Os resultados dos lotes aceitos estão disponíveis em Tarefas.`; }
+  }
+  report(failure ? "interrompida" : "concluida");
+  return { ...totals, ok: !failure, ...(failure ? { mensagem: failure } : {}) };
 }

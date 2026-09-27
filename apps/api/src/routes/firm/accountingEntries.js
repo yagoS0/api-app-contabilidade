@@ -4,6 +4,7 @@ import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { parseOfx } from "../../application/accounting/lib/ofx.js";
+import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { importarOfxWhatsapp, ImportarOfxWhatsappError } from "../../application/accounting/ImportarOfxWhatsappService.js";
 import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "../../application/accounting/AccountingEntryGeneratorService.js";
 import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
@@ -1364,7 +1365,7 @@ export function createAccountingEntriesRouter({ log }) {
     return res.json({ ok: true, circular, accounting });
   });
 
-  router.post("/circular/:competencia/sync-pgdas", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  router.post("/circular/:competencia/sync-pgdas", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), backgroundRoute("consulta-extrato", async (req, res) => {
     const portalClientId = String(req.params.companyId || "").trim();
     const competencia = String(req.params.competencia || "").trim();
     const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
@@ -1425,7 +1426,7 @@ export function createAccountingEntriesRouter({ log }) {
       log.error({ err: err?.message || err, code, portalClientId, competencia }, "Falha ao sincronizar PGDAS-D");
       return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
     }
-  });
+  }, "Consultar extrato da apuração"));
 
   // GET /firm/companies/:companyId/entries/provisoes  (deve vir antes de /entries/:entryId)
   router.get("/entries/provisoes", requireFirmCompanyAccess(), async (req, res) => {
@@ -3505,7 +3506,7 @@ export function createAccountingEntriesRouter({ log }) {
     "/entries/import/ofx",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
     upload.single("file"),
-    async (req, res) => {
+    backgroundRoute("import-ofx", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const userId = req.auth?.user?.id;
       const isPreview = req.query.preview === "1" || req.body?.preview === true || Boolean(req.file?.buffer);
@@ -3638,7 +3639,7 @@ export function createAccountingEntriesRouter({ log }) {
       }
 
       return res.status(resultadoImportacao.repetido ? 200 : 201).json(resultadoImportacao);
-    }
+    }, "Importar lançamentos OFX")
   );
 
   // POST /firm/companies/:companyId/entries/import/excel?preview=1
@@ -3647,7 +3648,7 @@ export function createAccountingEntriesRouter({ log }) {
     "/entries/import/excel",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
     upload.single("file"),
-    async (req, res) => {
+    backgroundRoute("import-excel", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const userId = req.auth?.user?.id;
       const isPreview = req.query.preview === "1" || req.body?.preview === true;
@@ -3793,7 +3794,7 @@ export function createAccountingEntriesRouter({ log }) {
         loteImportacao,
         details: { created, failed },
       });
-    }
+    }, "Importar lançamentos de planilha")
   );
 
   // ─── Q6: Funções de Lançamento ──────────────────────────────────────────

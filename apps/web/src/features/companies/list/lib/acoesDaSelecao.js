@@ -130,7 +130,7 @@ function montarAcao(meta, empresas, classificar, detalhar) {
  * @param {number}   agora      Date.now() injetável — a janela de 4 h do SITFIS depende dele
  * @param {number}   jobsAtivos `useBackgroundJobs().total` (ver a regra abaixo)
  */
-export function planoDaSelecao({ empresas = [], competencia = null, agora = Date.now(), jobsAtivos = 0 } = {}) {
+export function planoDaSelecao({ empresas = [], competencia = null, agora = Date.now(), jobsAtivos = 0, jobs = null } = {}) {
   const total = empresas.length;
 
   const acoes = [];
@@ -223,11 +223,13 @@ export function planoDaSelecao({ empresas = [], competencia = null, agora = Date
       // ⚠ O contador de `/firm/jobs/ativos` é GLOBAL, não escopado por carteira: ele pode acender
       // por um lote de outro usuário do escritório. Por isso o motivo diz "há processo rodando",
       // não "o SEU processo".
-      if (a.criaJob && jobsAtivos > 0) {
+      const tipo = { capturarNotas: "captura-notas", baixarNotas: "notas", baixarSitfis: "sitfis" }[a.chave];
+      const conflito = jobs ? jobs.some(j => tipo && j.tipo === tipo && ["running", "processando"].includes(j.status)) : jobsAtivos > 0;
+      if (a.criaJob && conflito) {
         return {
           ...a,
           disponivel: false,
-          motivo: `há ${plural(jobsAtivos, "processo", "processos")} em segundo plano — aguarde para não disparar o mesmo lote duas vezes`,
+          motivo: "há uma operação deste tipo em segundo plano — acompanhe em Tarefas antes de iniciar outra",
         };
       }
       // ⚠ O ENVIO NÃO É GATEADO PELA LEITURA LOCAL, e as outras quatro são. A diferença tem causa:

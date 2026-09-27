@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { createHash } from "node:crypto";
+import { respondWithTask } from "../application/tasks/ManualTaskService.js";
 import os from "node:os";
 import { unlink } from "node:fs/promises";
 import multer from "multer";
@@ -1139,6 +1141,8 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     });
     const companyCnpj = normalizeDoc(portalClient?.cnpj);
 
+    return respondWithTask(req, res, { kind: "import-nfse", companyIds: [String(clientId)], total: files.length,
+      fingerprint: files.map(f => createHash("sha256").update(f.buffer).digest("hex")).sort() }, async (res, progress) => {
     let created = 0;
     let updated = 0;
     let duplicates = 0;
@@ -1242,10 +1246,11 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       } catch (err) {
         errors.push({ file: file.originalname, reason: "import_failed" });
         log.warn({ err }, "Falha ao importar XML");
-      }
+      } finally { await progress(files.indexOf(file) + 1, { created, updated, duplicates, errors }); }
     }
 
     return res.json({ created, updated, duplicates, rejeitadas, errors });
+    });
   });
 
   // POST /clients/:clientId/invoices/import/nfe  (upload do lote do Fisco Fácil)
@@ -1287,11 +1292,14 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       return res.status(422).json({ error: "empresa_sem_cnpj" });
     }
 
+    return respondWithTask(req, res, { kind: "import-nfe", companyIds: [String(clientId)], total: files.length,
+      fingerprint: files.map(f => [f.originalname, f.size]).sort(), onDiscard: () => limparTemporarios(files) }, async (res, progress) => {
     try {
       const resultado = await importarLoteNfe({
         portalClientId: String(clientId),
         cnpjEmpresa: companyCnpj,
         arquivos: files.map((f) => ({ nome: f.originalname, caminho: f.path })),
+        onProgress: progress,
         log,
       });
       // ⚠ A FRASE VAI JUNTO, e ela sai do serviço (`textoDoResultado`), não da tela. "importadas 0"
@@ -1305,6 +1313,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     } finally {
       await limparTemporarios(files);
     }
+    });
   });
 
   return router;

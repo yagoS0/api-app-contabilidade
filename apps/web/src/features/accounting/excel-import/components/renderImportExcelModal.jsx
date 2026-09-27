@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { historicoSugeridoDaLinha } from "../lib/historicoSugerido";
@@ -63,6 +63,8 @@ const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
 });
 
 export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, onClose }) {
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [step, setStep] = useState("upload"); // "upload" | "review"
   const [file, setFile] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -164,7 +166,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
     try {
       const res = await onCommit(toSend);
       if (res?.ok) {
-        onClose();
+        if (alive.current) onClose();
       } else {
         setError(res?.message || "Falha ao importar.");
       }
@@ -359,7 +361,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="secondary" onClick={() => { setStep("upload"); setTransactions([]); setError(""); }}>Voltar</Button>
-              <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+              <Button variant="secondary" onClick={onClose}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
               <Button variant="primary" onClick={handleCommit} disabled={!canCommit}>
                 {saving ? "Importando..." : `Importar ${completeRows} ${completeRows === 1 ? "linha" : "linhas"}`}
               </Button>

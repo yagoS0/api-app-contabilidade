@@ -1,5 +1,8 @@
 # CLAUDE.md — Portal Contábil
 
+## Central de tarefas — 27/09/2026 (desenvolvimento)
+
+Operações demoradas iniciadas pelo usuário aparecem em **Tarefas (N)** no topo do portal. Aceite e resultados são persistidos em `ManualTask`; acompanhamento só lê o banco, nunca repete consultas, envios ou transmissões. A agenda fiscal salva permanece soberana. Navegação não cancela tarefas aceitas; uploads precisam terminar antes de fechar o navegador. Reinício marca interrupção sem replay automático. Preservar autorização por carteira/dono, confirmações, prévias e travas existentes. Migration aditiva e API precedem publicação do frontend. Cobertura, limites e validações em `docs/central-tarefas-20260927.md`. Ainda não publicado nesta etapa.
 ## Atendimento PWA e auditoria — 25/09/2026
 
 O dono autorizou implementar o plano completo e publicar na main/produção. O atendimento tem entrada móvel própria, instalação, rascunhos autenticados versionados, intenções de envio persistidas e push opcional por conta/aparelho. GET não marca leitura. Interação humana assume o atendimento; timeout não autoriza reenvio automático. Guias congelam parâmetros/PDF por tentativa antes da Meta e reconciliam histórico localmente. Nunca cachear dados privados no service worker nem reutilizar inscrição após troca de conta. Expiração/exclusão de rascunho preserva versão; conteúdo expira em sete dias. Preservar trabalho fiscal e a pré-triagem curta. Detalhes, testes, limitações e implantação: `docs/atendimento-pwa-implantacao-20260925.md`, `docs/atendimento-pwa-api.md`, `docs/chat-historico-arquivos-20260925.md`. Os relatos de implantação antigos abaixo não comprovam o estado desta versão. Não usar Anthropic, provedores fiscais nem enviar mensagens a clientes nos testes.
