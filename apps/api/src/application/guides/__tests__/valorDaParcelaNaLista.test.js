@@ -21,13 +21,14 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     companyMonthlyCircular: { findMany: jest.fn(async () => []) },
     // ⚠ A listagem passou a carregar o estado de ENVIO (05/09/2026) — uma query para a página
     // inteira. Sem o dublê, o teste morre num `findMany` de um model que ele não conhecia.
+    arquivoWhatsapp: { findMany: jest.fn(async () => []) },
     envioGuia: { findMany: jest.fn(async () => []) },
   };
   return { __db: db, prisma: { ...db, $transaction: (ops) => Promise.all(ops) } };
 });
 
 import { __db } from "../../../infrastructure/db/prisma.js";
-import { PUBLICO, listGuidesByCompany } from "../GuideService.js";
+import { PUBLICO, listGuidesByCompany, toGuideResponse } from "../GuideService.js";
 
 const { guide, companyMonthlyCircular } = __db;
 
@@ -112,4 +113,18 @@ describe("⚠⚠ o CLIENTE vê quanto PAGAR; o escritório vê o extrato", () =>
     expect(items[0].valor).toBe(1500);
     expect(items[0].valorRecalculado ?? null).toBeNull();
   });
+});
+
+
+test("comprovantes do escritório são consultados por empresa e guias da página, sem conteúdo", async () => {
+  comBanco([DAS], 1437.15);
+  const arquivo = { id: "a1", comprovanteGuiaId: DAS.id, estado: "DISPONIVEL", nomeArquivo: "recibo.pdf" };
+  __db.arquivoWhatsapp.findMany.mockResolvedValueOnce([arquivo]);
+  const { items } = await ler(PUBLICO.ESCRITORIO);
+  expect(__db.arquivoWhatsapp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+    where: { portalClientId: "pc-1", comprovanteGuiaId: { in: [DAS.id] } },
+    select: { id: true, comprovanteGuiaId: true, nomeArquivo: true, estado: true, dataPagamentoDeclarada: true },
+  }));
+  expect(toGuideResponse(items[0], { publico: PUBLICO.ESCRITORIO }).comprovantesCliente).toEqual([arquivo]);
+  expect(toGuideResponse(items[0])).not.toHaveProperty("comprovantesCliente");
 });

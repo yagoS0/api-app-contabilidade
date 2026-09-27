@@ -1026,3 +1026,6 @@ O período inicial usa o primeiro e último mês efetivamente fechado dentro da 
 
 ## WhatsApp: pagamento e emissão — 25/09/2026
 Novo fluxo em desenvolvimento: solicita pagamento de todas as guias vencidas/liberadas/em aberto, incluindo manuais/FGTS/municipais, apenas nas empresas com rotina pagamento ativa. Somente WhatsApp, sem fallback e-mail. Botão coleta data, depois comprovante opcional; preserva declaração separada da evidência e baixa pelo contador. Detalhes e migration em apps/api/src/application/guides/CLAUDE.md. Planejamento de mensagens da emissão em docs/plano-emissao-whatsapp-20260925.md; emissão ainda não alterada.
+
+## Origem e comprovantes na lista de Guias — 27/09/2026
+A lista do contador distingue pagamento informado pelo cliente, confirmado na Receita e confirmado pelo contador, com data civil. Comprovantes do cliente são consultados em lote somente para a empresa e guias da página do escritório; não são serializados para o portal do cliente. O modal de Guias abre PDF/foto pelo endpoint autenticado existente e permite baixar o original. Sem alteração de pagamento, baixa, consultas ou envios.

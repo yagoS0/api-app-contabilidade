@@ -263,7 +263,14 @@ export async function listGuidesByCompany({
   //
   // ⚠ UMA query para a página inteira (`enviosPorGuia` recebe a lista de ids), não uma por guia.
   const enviosPorId = paraOEscritorio ? await enviosPorGuia(items.map((g) => g.id)) : new Map();
-  const itensComEnvio = items.map((g) => ({ ...g, envios: enviosPorId.get(g.id) || [] }));
+  const comprovantes = paraOEscritorio && items.length ? await prisma.arquivoWhatsapp.findMany({
+    where: { portalClientId: String(portalClientId), comprovanteGuiaId: { in: items.map(g => g.id) } },
+    select: { id: true, comprovanteGuiaId: true, nomeArquivo: true, estado: true, dataPagamentoDeclarada: true },
+    orderBy: [{ recebidoEm: "desc" }, { id: "desc" }],
+  }) : [];
+  const itensComEnvio = items.map((g) => ({ ...g, envios: enviosPorId.get(g.id) || [],
+    comprovantesCliente: comprovantes.filter(a => a.comprovanteGuiaId === g.id),
+  }));
 
   return { items: itensComEnvio, total, page: pageNum, limit: take };
 }
@@ -355,6 +362,7 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
     emailLastError: item.emailLastError || null,
     paymentStatus: item.paymentStatus || "OPEN",
     paymentStatusSource: item.paymentStatusSource || null,
+    ...(publico === PUBLICO.ESCRITORIO ? { comprovantesCliente: item.comprovantesCliente || [] } : {}),
     paymentConfirmedAt: item.paymentConfirmedAt ? new Date(item.paymentConfirmedAt).toISOString() : null,
     serproLastCheckedAt: item.serproLastCheckedAt ? new Date(item.serproLastCheckedAt).toISOString() : null,
     serproLastCheckResult: item.serproLastCheckResult || null,
