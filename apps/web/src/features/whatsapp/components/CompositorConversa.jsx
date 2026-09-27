@@ -48,10 +48,9 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   useEffect(() => {
     const el = textoRef.current;
     if (!el) return;
-    if (!mobile) { el.style.height = ""; return; }
     el.style.height = "0px";
     el.style.height = `${Math.max(44, Math.min(96, el.scrollHeight))}px`;
-  }, [texto, mobile]);
+  }, [texto]);
   useEffect(() => {
     const el = ferramentasRef.current;
     if (!el) return;
@@ -157,27 +156,28 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const dicas = <div className="wa-composer-hint"><span>{`WhatsApp ${comercialObrigatorio ? "Comercial" : canal?.nome || canal?.chave || ""}${mobile ? "" : " · Ctrl + Enter para enviar"}`}</span>{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado || incerto} onClick={descartar}>Descartar rascunho</button>}</div>;
   return <div className="wa-composer">
     <div className="wa-composer-row">
-      {mobile && <Button variant="secondary" className="wa-composer-plus" aria-label="Ações da mensagem e arquivos" aria-expanded={acoesAbertas} onClick={() => setAcoesAbertas(!acoesAbertas)}>{acoesAbertas ? "×" : "+"}</Button>}
-      <textarea ref={textoRef} rows={mobile ? 1 : 2} aria-label="Responder ao cliente" value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder={mobile ? "Mensagem…" : "Escreva uma mensagem para este contato…"} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
-      {mobile && <Button variant="primary" className="wa-composer-send" aria-label={nomeEnviar} title={nomeEnviar} disabled={bloqueado || !texto.trim()} onClick={enviar}><WhatsappIcon nome="enviar" size={21} /></Button>}
+      <Button variant="secondary" className="wa-composer-plus" aria-label="Ações da mensagem e arquivos" aria-expanded={acoesAbertas} onClick={() => setAcoesAbertas(!acoesAbertas)}>{acoesAbertas ? "×" : "+"}</Button>
+      <textarea ref={textoRef} rows={1} aria-label="Responder ao cliente" value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder="Mensagem…" onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
+      <Button variant="primary" className="wa-composer-send" aria-label={nomeEnviar} title={nomeEnviar} disabled={bloqueado || !texto.trim()} onClick={enviar}><WhatsappIcon nome="enviar" size={21} /></Button>
     </div>
-    <div ref={ferramentasRef} className={`wa-compose-footer${mobile ? " wa-compose-sheet" : ""}`} hidden={mobile && !acoesAbertas} onKeyDown={e => { if (mobile && e.key === "Escape") setAcoesAbertas(false); }}>
-      {mobile && <div className="wa-compose-sheet-heading"><strong>Mensagem e arquivos</strong><Button variant="secondary" aria-label="Fechar ações da mensagem" onClick={() => setAcoesAbertas(false)}><WhatsappIcon nome="fechar" size={18} /></Button></div>}
+    <div ref={ferramentasRef} className="wa-compose-footer wa-compose-sheet" hidden={!acoesAbertas} onKeyDown={e => { if (e.key === "Escape") setAcoesAbertas(false); }}>
+      <div className="wa-compose-sheet-heading"><strong>Mensagem e arquivos</strong><Button variant="secondary" aria-label="Fechar ações da mensagem" onClick={() => setAcoesAbertas(false)}><WhatsappIcon nome="fechar" size={18} /></Button></div>
       <div className="wa-composer-tools">
         <AnexoDaConversa key={`anexo-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.atualizarConversa(conversa.id)} />
-        {hook.api?.comercial && <OrientacoesRapidas key={`orientacoes-${destino}`} api={hook.api} conversa={conversaCanal} usuarioId={usuarioId} disabled={bloqueado} onEnviado={() => hook.atualizarConversa(conversa.id)} onPreparado={p => {
+        {hook.api?.comercial && <OrientacoesRapidas key={`orientacoes-${destino}`} api={hook.api} conversa={conversaCanal} usuarioId={usuarioId} onAbrir={setAcoesAbertas} disabled={bloqueado} onEnviado={() => hook.atualizarConversa(conversa.id)} onPreparado={p => {
           if (bloqueado) throw new Error("Este canal não está disponível para preparar uma resposta.");
           if (texto.trim()) throw new Error("Você já tem um rascunho nesta conversa. Envie ou descarte esse texto antes de inserir a mensagem pronta.");
           salvarDraft({ texto: p.texto, orientacao: { ...p, conversaId: destino, canalId } });
+          setAcoesAbertas(false);
           requestAnimationFrame(() => textoRef.current?.focus());
         }} />}
         {slotAcoes && (typeof slotAcoes === "function" || !conversa.atendimento || conversa.atendimento.contextoSelecionado) && <details className="wa-composer-documents"><summary>Guias e documentos</summary>{typeof slotAcoes === "function" ? slotAcoes(conversaCanal) : slotAcoes}</details>}
       </div>
-      {mobile ? <>{seletorCanal}{dicas}</> : <Button variant="primary" disabled={bloqueado || !texto.trim()} onClick={enviar}>{nomeEnviar}</Button>}
+      {seletorCanal}{dicas}
     </div>
-    {mobile && acoesPendentes && !acoesAbertas && <button type="button" className="wa-pending-send" onClick={() => setAcoesAbertas(true)}>Envio aguardando confirmação · Conferir</button>}
-    {remoto.estado === "salvando" && <p role="status" className={mobile ? "wa-visually-hidden" : "wa-list-note"}>Salvando rascunho…</p>}
-    {remoto.estado === "salvo" && <p role="status" className={mobile ? "wa-visually-hidden" : "wa-list-note"}>Rascunho salvo</p>}
+    {acoesPendentes && !acoesAbertas && <button type="button" className="wa-pending-send" onClick={() => setAcoesAbertas(true)}>Envio aguardando confirmação · Conferir</button>}
+    {remoto.estado === "salvando" && <p role="status" className="wa-visually-hidden">Salvando rascunho…</p>}
+    {remoto.estado === "salvo" && <p role="status" className="wa-visually-hidden">Rascunho salvo</p>}
     {remoto.erro && <div role="alert" className="wa-draft-preview"><p>{remoto.erro}</p><Button variant="secondary" onClick={async () => { try { const valor = await remoto.conferir(); if (chaveRef.current === chave) setVersaoRemota(valor); } catch (e) { setErro(e.message); } }}>Ver versão salva</Button>{remoto.estado !== "conflito" && <Button variant="secondary" onClick={remoto.tentarSalvar}>Tentar salvar</Button>}</div>}
     {versaoRemota && <div className="wa-draft-preview"><strong>Texto salvo no servidor</strong><p>{versaoRemota.texto || "Sem texto salvo"}</p><p>Compare os textos. A versão de outro aparelho não foi sobrescrita.</p><Button variant="secondary" onClick={async () => { await remoto.resolverConflito(); setVersaoRemota(null); }}>Usar versão salva</Button><Button variant="secondary" onClick={async () => { await remoto.resolverConflito(typeof rascunho === "string" ? { texto: rascunho, destinoPreparado: destinoAtual } : rascunho); setVersaoRemota(null); }}>Conferi: salvar meu texto</Button><Button variant="secondary" onClick={() => setVersaoRemota(null)}>Fechar comparação</Button></div>}
     {ocupado && <p role="status" className="wa-list-note">{consultandoEnvio ? "Conferindo envio…" : "Enviando…"}</p>}
@@ -187,7 +187,6 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     {!resposta.pode && <p data-testid="resposta-bloqueada" className="wa-list-note">{comercialObrigatorio && !comercialId ? "Leads são atendidos pelo WhatsApp Comercial. Este contato ainda não tem conversa nesse número." : resposta.motivo}</p>}
     {orientacao && <p className="wa-list-note">{editada ? "Texto adaptado: confira a prévia antes de enviar. Não certifica a orientação original." : "Mensagem inserida. Confira o texto e clique em Responder para enviar."}<button type="button" onClick={() => salvarDraft(texto)}>Desvincular orientação</button></p>}
     {previa && <div className="wa-draft-preview"><strong>Confira o texto adaptado</strong><p>{texto}</p></div>}
-    {!mobile && <>{seletorCanal}{dicas}</>}
     {descartado?.chave === chave && <div className="wa-draft-undo" role="status">Rascunho descartado. <button type="button" disabled={ocupado || hook.ocupado} onClick={desfazerDescarte}>Desfazer</button></div>}
     {erro && !hook.erroAcao && <p role="alert" className="wa-list-note">{erro}</p>}
   </div>;

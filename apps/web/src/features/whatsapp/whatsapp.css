@@ -407,9 +407,10 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-thread .wa-notice { margin: 0; padding: 8px 12px; font-size: .8125rem; }
 }
 
-/* Conversa no telefone: uma barra de identidade e uma linha para escrever. */
+/* O app e a web compartilham os controles compactos; só a grade muda por largura. */
 @media (max-width: 760px) {
   html:has(.wa-page), body:has(.wa-page) { overflow: hidden; scrollbar-gutter: auto; }
+}
   .wa-thread-header { flex-wrap: nowrap; min-height: 64px; box-sizing: border-box; padding: 10px 8px; gap: 4px; }
   .wa-thread-header .wa-thread-identity, .wa-company-chat .wa-thread-header .wa-thread-identity { flex: 1 1 0; min-width: 0; }
   .wa-thread-name, .wa-thread-name > strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -429,9 +430,9 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-company-context[open] > summary::after, .wa-notice-expandable[open] > summary::after { content: "⌃"; }
   .wa-company-context > p, .wa-notice-expandable > div { padding-block: 6px 10px; }
   .wa-thread .wa-notice-expandable { padding: 0 12px; }
-  .wa-messages { padding: 12px; scrollbar-width: none; background: color-mix(in srgb, var(--bg-page) 92%, var(--text)); }
-  .wa-messages::-webkit-scrollbar { display: none; width: 0; height: 0; }
-  .wa-message-row { max-width: 90%; gap: 0; }
+  .wa-messages { padding: 16px; scrollbar-width: thin; background: color-mix(in srgb, var(--bg-page) 92%, var(--text)); }
+  .wa-message-row { max-width: min(90%, 760px); gap: 0; }
+  .wa-message-row > .wa-avatar { display: none; }
   .wa-message-row > .wa-bubble { padding: 9px 12px 7px; box-shadow: none; background: var(--bg-surface); }
   .wa-message-row--out > .wa-bubble { background: color-mix(in srgb, var(--primary) 15%, var(--bg-surface)); }
   .wa-page .wa-bubble-text, .wa-company-chat .wa-bubble-text { font-size: 15px; line-height: 1.45; }
@@ -444,7 +445,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-composer textarea { min-height: 44px; max-height: 96px; resize: none; overflow-y: auto; font-size: 16px; line-height: 22px; padding: 10px 12px; border-radius: 22px; background: var(--bg-page); }
   .wa-thread .wa-composer-plus, .wa-thread .wa-composer-send { flex: 0 0 44px; min-width: 44px; width: 44px; min-height: 44px; height: 44px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
   .wa-thread .wa-composer-plus { border: 0; background: transparent; font-size: 28px; font-weight: 400; }
-  .wa-compose-sheet { position: absolute; left: 8px; right: 8px; bottom: max(68px, calc(60px + env(safe-area-inset-bottom))); z-index: 12; display: flex; flex-direction: column; align-items: stretch; gap: 8px; max-height: 70%; padding: 12px; overflow: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-surface); box-shadow: var(--shadow); }
+  .wa-compose-sheet { position: absolute; left: 8px; right: 8px; bottom: max(68px, calc(60px + env(safe-area-inset-bottom))); z-index: 12; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: auto; max-width: 460px; max-height: 70%; padding: 12px; overflow: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-surface); box-shadow: var(--shadow); }
   .wa-compose-sheet-heading { display: flex; align-items: center; justify-content: space-between; }
   .wa-compose-sheet-heading > .btn { padding: 0; width: 44px; border: 0; background: transparent; }
   .wa-compose-sheet .wa-composer-tools { display: grid; align-items: stretch; gap: 4px; }
@@ -455,7 +456,12 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-compose-sheet .wa-composer-hint > span { display: inline; }
   .wa-compose-sheet .wa-compose-channel { margin: 0; }
   .wa-compose-sheet .wa-compose-channel select { min-height: 44px; font-size: 16px; }
-  .wa-compose-sheet .wa-quick-drawer { position: fixed; inset: 0; height: var(--atendimento-height, 100dvh); width: 100%; z-index: 25; }
+  .wa-compose-sheet .wa-quick-drawer { position: fixed; inset: 8px auto 8px 8px; height: auto; width: min(410px, calc(100vw - 16px)); z-index: 25; }
   .wa-thread .wa-pending-send { display: block; width: 100%; border: 0; padding: 6px 8px; background: var(--state-warn-surface); color: var(--text); text-align: left; font: inherit; font-size: 13px; }
   .wa-composer .wa-draft-preview { max-height: 170px; overflow: auto; }
+@media (max-width: 760px) {
+  .wa-messages { padding: 12px; scrollbar-width: none; }
+  .wa-messages::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  .wa-compose-sheet { max-width: none; }
+  .wa-compose-sheet .wa-quick-drawer { inset: 0; height: var(--atendimento-height, 100dvh); width: 100%; }
 }
