@@ -14,16 +14,20 @@ test("histórico por pessoa mostra origem dos balões e empresa selecionada sem 
   expect(screen.getByTestId("empresa-mensagem-m1")).toHaveTextContent("Empresa B");
   expect(screen.getByTestId("contexto-empresa")).toHaveTextContent("Empresa selecionada no atendimento automático: Empresa A");
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Assumir" })); expect(assumir).toHaveBeenCalledWith("ca");
+  fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
+  fireEvent.click(screen.getByRole("button", { name: "Assumir atendimento" })); expect(assumir).toHaveBeenCalledWith("ca");
 });
 test("sem empresa escolhida o escritório responde, mas ações financeiras continuam indisponíveis", () => {
   render(<FioDaConversa fio={{ conversa: conversa("ca", false), mensagens: [] }} hook={{}} slotAcoes={<button>Enviar guia</button>} />);
+  expect(screen.queryByTestId("contexto-empresa")).not.toBeInTheDocument();
+  expect(screen.queryByText("Empresa ainda não selecionada")).not.toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Responder ao cliente" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "Enviar guia" })).not.toBeInTheDocument();
 });
 test("abrir empresa oferece as empresas sem trocar o contexto da automação", () => {
   const selecionarEmpresa=jest.fn();
   render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [] }} hook={{ selecionarEmpresa }} hrefDaEmpresa={id => "/empresa/"+id} />);
+  fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Abrir a empresa →" }));
   expect(screen.getByRole("link", { name: "Empresa A" })).toHaveAttribute("href", "/empresa/a");
   expect(screen.getByRole("link", { name: "Empresa B" })).toHaveAttribute("href", "/empresa/b");

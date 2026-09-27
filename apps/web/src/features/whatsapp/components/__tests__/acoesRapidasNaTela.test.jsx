@@ -43,6 +43,7 @@ function apiFalso(over = {}, fio = FIO) {
 async function montar(api = apiFalso(), props = {}) {
   render(<ChatDaEmpresa api={api} companyId="pc-1" onVirarAnotacao={jest.fn()} {...props} />);
   await screen.findByTestId("acoes-rapidas");
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByText("Guias e documentos", { selector: "summary" }));
   return api;
 }
@@ -154,6 +155,7 @@ test("prévia mostra todos os destinatários autorizados e exige nova escolha se
   const segundo = {id:"ct2",nome:"João",telefoneE164:"5521988887777",optInEm:"2026-09-06"};
   const api = apiFalso({listarContatosWhatsapp: jest.fn().mockResolvedValueOnce({contatos:[contato,segundo,{id:"sem-optin",nome:"Não autorizado",telefoneE164:"5521977776666"}]}).mockResolvedValue({contatos:[contato]})});
   render(<ChatDaEmpresa companyId="pc-1" api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ações da mensagem e arquivos" }));
   await screen.findByTestId("acoes-rapidas");
   fireEvent.click(screen.getByText("Guias e documentos", { selector: "summary" }));
   fireEvent.click(await screen.findByTestId("acao-ENVIAR_GUIA"));

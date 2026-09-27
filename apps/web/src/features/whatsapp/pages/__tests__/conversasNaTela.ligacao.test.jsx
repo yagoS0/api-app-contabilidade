@@ -77,7 +77,8 @@ describe("o fio", () => {
     expect(within(fio).getByTestId("balao-m3")).toHaveTextContent(/mensagem fixa/);
     expect(within(fio).getByTestId("pendencia-aberta")).toHaveTextContent(/K9M3/);
     // Com a IA: oferece Assumir, não Devolver.
-    expect(within(fio).getByRole("button", { name: /^Assumir$/ })).toBeInTheDocument();
+    fireEvent.click(within(fio).getByLabelText("Mais ações da conversa"));
+    expect(within(fio).getByRole("button", { name: "Assumir atendimento" })).toBeInTheDocument();
     expect(within(fio).queryByRole("button", { name: /Devolver/ })).toBeNull();
   });
 
@@ -104,7 +105,8 @@ describe("o fio", () => {
     fireEvent.click(within(fio).getByRole("button", { name: /responder$/i }));
     await waitFor(() => expect(api.responderConversaWhatsapp).toHaveBeenCalledWith("cv1", "Já vi, respondo em instantes.", { clientRequestId: expect.any(String) }));
     await waitFor(() => expect(within(screen.getByTestId("fio")).getByLabelText("Responder ao cliente")).toHaveValue(""));
-    fireEvent.click(within(screen.getByTestId("fio")).getByRole("button", { name: /^Assumir$/ }));
+    fireEvent.click(within(fio).getByLabelText("Mais ações da conversa"));
+    fireEvent.click(within(screen.getByTestId("fio")).getByRole("button", { name: "Assumir atendimento" }));
     await waitFor(() => expect(api.assumirConversaWhatsapp).toHaveBeenCalledWith("cv1"));
   });
 

@@ -14,7 +14,6 @@ import { CartaoArquivoMensagem } from "./CartaoArquivoMensagem";
 import { BuscaMensagens } from "./BuscaMensagens";
 import { AcoesRapidas } from "./AcoesRapidas";
 import { CompositorConversa } from "./CompositorConversa";
-import { useTelaPequena } from "../hooks/useTelaPequena";
 import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota } from "../lib/identidadeAtendimento";
 import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { NotaDaMensagem } from "./NotaDaMensagem";
@@ -81,7 +80,6 @@ export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
 
 export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, pedidoCanal = null, atualizacaoComercialExterna = null, usuarioId = null, onVirarAnotacao = null }) {
   const { conversa } = fio;
-  const mobile = useTelaPequena();
   const mensagens = useMemo(() => [...fio.mensagens, ...(fio.notasInternas || []).map(n => ({ ...n, id: `nota-${n.id}`, tipo: "nota_interna", corpo: n.texto, registradaEm: n.criadaEm || n.createdAt }))].sort((a,b) => String(a.registradaEm).localeCompare(String(b.registradaEm)) || String(a.id).localeCompare(String(b.id))), [fio.mensagens, fio.notasInternas]);
   const relacionamento = relacionamentoDaConversa(conversa);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
@@ -208,38 +206,29 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
         <AvatarConversa nome={identidade.pessoa} />
         <div className="wa-thread-identity">
           <div className="wa-thread-name"><NomeDaPessoa identidade={identidade} tamanho="1rem" /></div>
-          <div className="wa-thread-subtitle"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><SituacaoConversa conversa={conversa} />{!mobile && <SituacaoIdentificacao conversa={conversa} />}</div>
-          {!mobile && !conversa.atendimento && <div className="wa-thread-company"><LinhaDaEmpresa identidade={identidade} tamanho=".8125rem" /></div>}
+          <div className="wa-thread-subtitle"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><SituacaoConversa conversa={conversa} /></div>
         </div>
         <div className="wa-thread-actions">
-          {!mobile && hook.api?.buscarMensagensWhatsapp && <Button variant="secondary" size="sm" onClick={() => setBuscando(true)} aria-label="Buscar mensagens nesta conversa"><WhatsappIcon nome="busca" size={18} /></Button>}
-          {!mobile && !somenteLeitura && Boolean(conversa.atendidaPor || conversa.atendidaDesde) ? (
-            <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder ao responsável nas empresas autorizadas">Devolver ao automático</Button>
-          ) : !mobile && !somenteLeitura ? (
-            <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
-          ) : null}
-          {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={20} />{!mobile && <span>Atendimento</span>}</Button> : null}
-          {!mobile && naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button> : null}
-          {Boolean(mobile || (hrefDaEmpresa && conversa.portalClientId) || (!naLixeira && typeof hook.excluir === "function")) && <details className="wa-more-actions" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label="Mais ações da conversa">{mobile ? "⋯" : "Mais"}</summary><div className="wa-more-menu">
-            {mobile && <><div className="wa-more-identity"><LinhaDaEmpresa identidade={identidade} /><SituacaoIdentificacao conversa={conversa} /></div>
-              {hook.api?.buscarMensagensWhatsapp && <Button variant="secondary" onClick={e => { e.currentTarget.closest("details").open = false; setBuscando(true); }}><WhatsappIcon nome="busca" size={18} /> Buscar mensagens</Button>}
+          {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" title="Atendimento e dados do contato" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={20} /></Button> : null}
+          <details className="wa-more-actions" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label="Mais ações da conversa">⋯</summary><div className="wa-more-menu">
+            <div className="wa-more-identity"><LinhaDaEmpresa identidade={identidade} /><SituacaoIdentificacao conversa={conversa} /></div>
+              {hook.api?.buscarMensagensWhatsapp && <Button variant="secondary" aria-label="Buscar mensagens nesta conversa" onClick={e => { e.currentTarget.closest("details").open = false; setBuscando(true); }}><WhatsappIcon nome="busca" size={18} /> Buscar mensagens</Button>}
               {hook.atualizarConversa && <Button variant="secondary" onClick={e => { e.currentTarget.closest("details").open = false; hook.atualizarConversa(conversa.id); }}>Atualizar conversa</Button>}
               {!somenteLeitura && <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.atendidaPor || conversa.atendidaDesde) && Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={e => { e.currentTarget.closest("details").open = false; conversa.atendidaPor || conversa.atendidaDesde ? hook.devolver(conversa.id) : hook.assumir(conversa.id); }}>{conversa.atendidaPor || conversa.atendidaDesde ? "Devolver ao automático" : "Assumir atendimento"}</Button>}
               {naLixeira && <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button>}
-            </>}
             {hrefDaEmpresa && conversa.portalClientId ? conversa.empresas?.length > 1 ? <Button variant="secondary" size="sm" onClick={e => { e.currentTarget.closest("details").open = false; setEscolherEmpresa(true); }}>Abrir a empresa →</Button> : <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
             {!naLixeira && typeof hook.excluir === "function" && <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={e => { e.currentTarget.closest("details").open = false; setConfirmarExclusao(true); }}>Excluir chat</Button>}
-          </div></details>}
+          </div></details>
         </div>
       </div>
-      {conversa.atendimento && !somenteLeitura ? <details className="wa-company-context" data-testid="contexto-empresa" open={mobile ? undefined : true}>
-        <summary>{conversa.atendimento.empresaAtual && !conversa.atendimento.aguardandoSelecao ? `Empresa: ${conversa.atendimento.empresaAtual.razao}` : "Empresa ainda não selecionada"}</summary>
-        <p>{conversa.atendimento.empresaAtual && !conversa.atendimento.aguardandoSelecao ? <><span>Empresa selecionada no atendimento automático:</span> <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></> : "O cliente ainda não selecionou uma empresa no atendimento automático."}</p>
+      {conversa.atendimento?.empresaAtual && !conversa.atendimento.aguardandoSelecao && !somenteLeitura ? <details className="wa-company-context" data-testid="contexto-empresa">
+        <summary>{`Empresa: ${conversa.atendimento.empresaAtual.razao}`}</summary>
+        <p><span>Empresa selecionada no atendimento automático:</span> <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></p>
         {hook.salvarApelidos && conversa.empresa && <NomesCurtosDaEmpresa key={conversa.portalClientId} conversa={conversa} hook={hook} />}
       </details> : null}
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
-      {conversa.pendencia ? <details data-testid="pendencia-aberta" className="wa-notice wa-notice-expandable" open={mobile ? undefined : true}><summary>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Pedido"} · aguarda confirmação</summary><div>Pedido aguardando confirmação do cliente: <strong>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Operação solicitada"}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div></details> : null}
+      {conversa.pendencia ? <details data-testid="pendencia-aberta" className="wa-notice wa-notice-expandable"><summary>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Pedido"} · aguarda confirmação</summary><div>Pedido aguardando confirmação do cliente: <strong>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Operação solicitada"}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div></details> : null}
       {!somenteLeitura && !onDetalhes && podeAtendimentoComercial(conversa) && Boolean(slotVincular) && (hook.api?.comercial || !conversa.portalClientId) ? <PainelAtendimento>{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</PainelAtendimento> : null}
       {historico ? <details className="wa-thread-setup"><summary>Verificar vínculo e iniciar conversa atual</summary><p>O vínculo abre um segmento verificado e preserva este histórico anterior.</p>{slotVincular || <a href="/whatsapp">Verificar vínculo na central de WhatsApp, em Histórico anterior</a>}</details> : null}
       <div className="wa-messages" ref={historicoRef} onScroll={acompanharLeitura} aria-label="Histórico de mensagens" tabIndex={0}>

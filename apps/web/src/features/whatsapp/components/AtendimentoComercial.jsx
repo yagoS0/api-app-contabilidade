@@ -56,7 +56,7 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
 export function OrientacoesRapidas(props) {
   return <OrientacoesDaConversa key={props.conversa.id} {...props} />;
 }
-function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado, usuarioId }) {
+function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado, usuarioId, onAbrir }) {
   const { atualizar, mensagemBiblioteca, onMensagemBibliotecaAberta } = useContext(AtualizacaoAtendimento);
   const [aberto, setAberto] = useState(Boolean(mensagemBiblioteca)), [recursos, setRecursos] = useState([]), [id, setId] = useState(""), [previa, setPrevia] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [preparando, setPreparando] = useState(false), [carregando, setCarregando] = useState(false);
   const [vars, setVars] = useState({ nome: conversa.contato?.nome || conversa.nomePerfilProvedor || "", cnpj: "", servico: "" });
@@ -71,9 +71,9 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; versaoPrevia.current += 1; }; }, []);
   useEffect(() => {
     if (!mensagemBiblioteca) return;
-    solicitadaRef.current = mensagemBiblioteca; setAberto(true);
+    solicitadaRef.current = mensagemBiblioteca; setAberto(true); onAbrir?.(true);
     onMensagemBibliotecaAberta?.();
-  }, [mensagemBiblioteca, onMensagemBibliotecaAberta]);
+  }, [mensagemBiblioteca, onMensagemBibliotecaAberta, onAbrir]);
   useEffect(() => {
     if (!aberto || !api.comercial) return;
     let atual = true, pedido = 0;

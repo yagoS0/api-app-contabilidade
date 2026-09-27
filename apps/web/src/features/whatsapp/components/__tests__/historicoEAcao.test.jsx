@@ -23,7 +23,8 @@ test("mais conversas são acumuladas, trocar filtro descarta página antiga",asy
 test("assumir recusado fica visível mesmo com recarga bem sucedida e sem feedback externo",async()=>{
  const api={...apiBase(),assumirConversaWhatsapp:jest.fn(async()=>{throw new Error("Conversa assumida por outra pessoa")})};
  render(<WhatsappPage api={api}/>);fireEvent.click(await screen.findByTestId("conversa-cv"));
- fireEvent.click(await screen.findByRole("button",{name:"Assumir"}));
+ fireEvent.click(await screen.findByLabelText("Mais ações da conversa"));
+ fireEvent.click(screen.getByRole("button",{name:"Assumir atendimento"}));
  expect(await screen.findByRole("alert")).toHaveTextContent("Conversa assumida por outra pessoa");
 });
 test("balão distingue aceite, entrega, falha e histórico não verificado",()=>{

@@ -3,8 +3,9 @@ import { CompositorConversa } from "../CompositorConversa";
 import { FioDaConversa } from "../FioDaConversa";
 
 const conversa = { id: "cv", contato: { nome: "Contato com nome longo" }, relacionamento: { tipo: "CLIENTE" }, janela: { situacao: "ABERTA" }, escopoVerificado: true };
+describe.each([true, false])("layout compacto (telefone: %s)", mobile => {
 const matchOriginal = window.matchMedia;
-beforeEach(() => { window.matchMedia = jest.fn(() => ({ matches: true, addEventListener: jest.fn(), removeEventListener: jest.fn() })); });
+beforeEach(() => { window.matchMedia = jest.fn(() => ({ matches: mobile, addEventListener: jest.fn(), removeEventListener: jest.fn() })); });
 afterEach(() => { window.matchMedia = matchOriginal; });
 function criarHook(api = {}) { return { api, rascunhosRef: { current: new Map() }, responder: jest.fn(async () => ({ ok: true })), assumir: jest.fn(), atualizarConversa: jest.fn(), excluir: jest.fn(), marcarLida: jest.fn() }; }
 
@@ -50,4 +51,6 @@ test("anexo incerto continua anunciado quando o painel móvel é recolhido", asy
   fireEvent.click(screen.getByRole("button", { name: "Conferir envio do anexo" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Anexar PDF ou imagem" })).toBeEnabled());
   expect(h.api.enviarAnexoWhatsapp).toHaveBeenCalledTimes(1);
+});
+
 });
