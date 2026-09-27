@@ -58,7 +58,7 @@ function banco() {
     if (name === "mensagemWhatsapp" || name === "acaoPendenteWhatsapp") return { ...row, conversa: rows.conversaWhatsapp.find(c => c.id === row.conversaId) || null };
     return row;
   };
-  const client = { rows, hooks };
+  const client = { rows, hooks, appSetting: { findUnique: jest.fn(async()=>null) } };
   for (const name of Object.keys(rows)) {
     const normalizarWhere = where => where?.canal_telefoneE164 || where || {};
     const encontrar = where => rows[name].find(row => casa(expandir(name, row), normalizarWhere(where)));
@@ -604,4 +604,39 @@ it("guarda real recusa recibo antigo depois de voltar à mesma empresa", async (
   jest.setSystemTime(new Date(Date.now() + 1000)); await f.rodar(await f.novo("trocar para Lente"));
   jest.setSystemTime(new Date(Date.now() + 1000)); await f.rodar(await f.novo("trocar para Klaus"));
   await expect(conferirContextoResponsavel({ conversa: registro.conversa, mensagem: primeira.registro.mensagem, contexto: registro.contexto, client: f.client, resolverVinculo: f.resolverVinculo })).rejects.toMatchObject({ codigo: "CONTEXTO_ALTERADO" });
+});
+
+const ID_PAGAMENTO_TESTE = 'altan.payment.confirm.11111111-1111-4111-8111-111111111111';
+function habilitarPagamentoTeste(f) {
+  f.client.appSetting.findUnique.mockImplementation(async ({ where }) => where.key === ID_PAGAMENTO_TESTE ? { value: { telefone: TELEFONE, companyId: 'lente', expiraEm: '2026-10-01T00:00:00Z' } } : null);
+}
+test('primeiro clique de pagamento preserva botão e escolhe empresa fora do piloto', async () => {
+  const f = await fixture(); habilitarPagamentoTeste(f);
+  const entrada = await f.novo('Confirmar pagamento', { tipo: 'interactive', interacao: { id: ID_PAGAMENTO_TESTE } });
+  const r = await f.rodar(entrada, { flag: false, piloto: [], telefonesPiloto: [] });
+  expect(r).toMatchObject({ processado: true, empresa: 'lente' });
+  expect(f.processar.mock.calls[0][1].interacao.id).toBe(ID_PAGAMENTO_TESTE);
+  expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+});
+test('token de pagamento troca a empresa vigente sem confirmar na anterior', async () => {
+  const f = await fixture(); await f.selecionar('emitir nota', 'klaus'); habilitarPagamentoTeste(f);
+  jest.setSystemTime(new Date(Date.now() + 1000));
+  const entrada = await f.novo('Confirmar pagamento', { tipo: 'interactive', interacao: { id: ID_PAGAMENTO_TESTE } });
+  expect(await f.rodar(entrada, { piloto: [], telefonesPiloto: [] })).toMatchObject({ processado: true, empresa: 'lente' });
+  expect(f.processar.mock.calls.at(-1)[1].interacao.id).toBe(ID_PAGAMENTO_TESTE);
+});
+test('data do pagamento fora do piloto segue para o fluxo ativo da empresa', async () => {
+  const f = await fixture(); habilitarPagamentoTeste(f);
+  const original = f.client.appSetting.findUnique.getMockImplementation();
+  f.client.appSetting.findUnique.mockImplementation(async args => args.where.key.startsWith('pagamento_fluxo:') ? { value: { etapa: 'DATA', token: ID_PAGAMENTO_TESTE, companyId: 'lente', expiraEm: '2026-10-01T00:00:00Z' } } : original(args));
+  expect(await f.rodar(await f.novo('09/09/2026'), { flag: false, piloto: [], telefonesPiloto: [] })).toMatchObject({ processado: true, empresa: 'lente', texto: '09/09/2026' });
+});
+
+test('pagamento não reutiliza interação de seleção ou coleta pendente', async () => {
+  const f = await fixture(); await f.rodar(await f.novo('emitir nota'));
+  Object.assign(f.atendimento(), { interacaoPendente: { id: 'altan.client.guides.v1' }, coletaPendenteConversaId: 'antiga' });
+  habilitarPagamentoTeste(f); jest.setSystemTime(new Date(Date.now() + 1000));
+  const entrada = await f.novo('Confirmar pagamento', { tipo: 'interactive', interacao: { id: ID_PAGAMENTO_TESTE } });
+  expect(await f.rodar(entrada, { piloto: [] })).toMatchObject({ processado: true, empresa: 'lente', texto: 'Confirmar pagamento' });
+  expect(f.processar.mock.calls.at(-1)[1].interacao.id).toBe(ID_PAGAMENTO_TESTE);
 });

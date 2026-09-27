@@ -1,3 +1,4 @@
+import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
 // Menus determinísticos do WhatsApp. Cliques nunca passam pelo modelo: o id estável decide a ação,
 // e toda leitura refaz empresa, contato, pessoa, papel e permissão antes de responder.
 
@@ -350,6 +351,16 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     conversa, tipo, corpo, autor: "SISTEMA", turnoIaId: idTurno, client, contextoConsulta,
     antesDeEnviar: () => antesDeEnviar(ferramenta, assinatura), enviar: chamada,
   });
+
+  // Declaração vinculada ao destinatário da guia: não concede acesso geral ao portal.
+  if (!comercialPublico && (idRecebido.startsWith('altan.payment.confirm.') || await fluxoPagamentoAtual(client, conversa, agora))) {
+    const confirmacao = await confirmarPagamentoWhatsapp({ id: idRecebido, conversa, mensagem, client, agora, conferirAcesso: () => antesDeEnviar(null, assinatura) });
+    if (confirmacao) {
+    await enviar({ corpo: confirmacao.texto, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: confirmacao.texto }) });
+    await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
+    return { tratado: true, acao: 'CONFIRMAR_PAGAMENTO' };
+    }
+  }
 
   // No canal operacional, um contato de empresa sem RBAC segue para conferência.
   // No comercial, qualquer pessoa pode tratar um novo serviço sem acessar dados fiscais.

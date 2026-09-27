@@ -45,7 +45,7 @@ function fixture() {
       update: jest.fn(async ({ where, data }) => { const row = tabelas[nome].find(r => casa(r, where)); if (!row) throw new Error("NOT_FOUND"); Object.assign(row, data); return row; }),
     };
   };
-  const client = Object.fromEntries(["rascunhoEmissaoWhatsapp", "etapaEmissaoWhatsapp", "acaoPendenteWhatsapp", "mensagemWhatsapp", "conversaWhatsapp"].map(n => [n, model(n)]));
+  const client = Object.fromEntries(["appSetting", "rascunhoEmissaoWhatsapp", "etapaEmissaoWhatsapp", "acaoPendenteWhatsapp", "mensagemWhatsapp", "conversaWhatsapp"].map(n => [n, model(n)]));
   tabelas.conversaWhatsapp.push(conversa);
   client.$transaction = async fn => {
     const snapshot = structuredClone(tabelas);

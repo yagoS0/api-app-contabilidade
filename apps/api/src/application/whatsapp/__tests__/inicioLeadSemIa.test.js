@@ -1,3 +1,4 @@
+jest.mock("../../guides/ConfirmarPagamentoWhatsappService.js", () => ({ fluxoPagamentoAtual: jest.fn(async () => null) }));
 jest.mock("../../../config.js", () => ({
   ...jest.requireActual("../../../config.js"),
   WHATSAPP_COLETA_COMERCIAL: true,
