@@ -1,3 +1,4 @@
+import { analisarComprovantesCliente } from "../application/guides/LeituraComprovanteClienteService.js";
 import { processarArquivosWhatsapp } from "../application/whatsapp/ArquivoWhatsappService.js";
 import { INTEGRACAO_WHATSAPP, log } from "../config.js";
 let timer;
@@ -8,7 +9,7 @@ export function iniciarWorkerArquivosWhatsapp() {
   parado = false;
   async function ciclo() {
     if (parado) return;
-    trabalho = processarArquivosWhatsapp();
+    trabalho = processarArquivosWhatsapp().then(() => analisarComprovantesCliente());
     try { await trabalho; } catch { log.error("whatsapp: falha no processamento dos arquivos recebidos"); }
     finally { trabalho = null; if (!parado) { timer = setTimeout(ciclo, 30000); timer.unref?.(); } }
   }
