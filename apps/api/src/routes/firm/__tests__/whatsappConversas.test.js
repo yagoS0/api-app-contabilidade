@@ -962,3 +962,30 @@ describe('contrato HTTP dos rascunhos por modo compartilhado',()=>{
     expect((await request(app).get('/firm/whatsapp/conversas/cv2/rascunho?modo=retomar')).status).toBe(404);
   });
 });
+
+describe('retomada com assunto e gestão no canal autorizado',()=>{
+ const modelo={id:'meta-retomar',name:'reabrir_conversa',status:'APPROVED',language:'pt_BR',category:'MARKETING',components:[{type:'BODY',text:'Retomando sobre {{1}}.'},{type:'BUTTONS',buttons:[{type:'QUICK_REPLY',text:'Falar com a equipe'}]}]};
+ beforeEach(()=>prisma.templateWhatsapp.findUnique.mockResolvedValue({nomeMeta:null,statusAprovacao:'EM_ANALISE',idioma:'pt_BR'}));
+ it('nome ausente no cache não bloqueia descoberta; envio respeita assunto, hash e botão',async()=>{
+  const app=montarApp(undefined,{consultarModelo:async()=>modelo});mockCenario.janela={situacao:'EXPIRADA',avisos:[]};
+  const inicial=await request(app).get('/firm/whatsapp/conversas/cv1/retomar');expect(inicial.body).toMatchObject({disponivel:false,requerAssunto:true,statusMeta:'APPROVED'});
+  const previa=await request(app).post('/firm/whatsapp/conversas/cv1/retomar/previa').send({assunto:'as guias'});expect(previa.body.disponivel).toBe(true);
+  const alterado=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send({assunto:'outro assunto',previaHash:previa.body.previaHash,clientRequestId:'retomar-tampered-1'});expect(alterado.status).toBe(409);expect(cloud.enviarTemplate).not.toHaveBeenCalled();
+  const body={assunto:'as guias',previaHash:previa.body.previaHash,clientRequestId:'retomar-correto-01'};
+  expect((await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body)).status).toBe(200);
+  expect((await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body)).status).toBe(200);
+  expect(cloud.enviarTemplate).toHaveBeenCalledTimes(1);expect(cloud.enviarTemplate).toHaveBeenCalledWith({telefone:FIO_DA_CARTEIRA.telefoneE164,template:'reabrir_conversa',idioma:'pt_BR',variaveis:['as guias'],botoesResposta:['altan.client.human.v1']});
+  expect((await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({texto:'não liberar'})).status).toBe(409);
+ });
+ it.each(['previa','modelo'])('ação %s nega outra carteira e papel de cliente antes da Meta',async acao=>{
+  const consultarModelo=jest.fn(),criarModelo=jest.fn(),app=montarApp(undefined,{consultarModelo,criarModelo});
+  expect((await request(app).post('/firm/whatsapp/conversas/cv2/retomar/'+acao).send({assunto:'guias'})).status).toBe(404);
+  expect((await request(montarApp({id:'cliente',role:'cliente'},{consultarModelo,criarModelo})).post('/firm/whatsapp/conversas/cv1/retomar/'+acao).send({assunto:'guias'})).status).toBe(403);
+  expect(consultarModelo).not.toHaveBeenCalled();expect(criarModelo).not.toHaveBeenCalled();
+ });
+ it('submissão cria apenas o modelo fixo e não dispara mensagem',async()=>{
+  const criarModelo=jest.fn(async()=>({id:'novo',status:'PENDING'})),app=montarApp(undefined,{consultarModelo:async()=>null,criarModelo});
+  const r=await request(app).post('/firm/whatsapp/conversas/cv1/retomar/modelo').send({token:'ignorar',nome:'arbitrario',corpo:'ignorar'});
+  expect(r.status).toBe(200);expect(r.body.statusMeta).toBe('PENDING');expect(criarModelo).toHaveBeenCalledWith(expect.objectContaining({name:'reabrir_conversa'}));expect(cloud.enviarTemplate).not.toHaveBeenCalled();expect(cloud.enviarTexto).not.toHaveBeenCalled();
+ });
+});

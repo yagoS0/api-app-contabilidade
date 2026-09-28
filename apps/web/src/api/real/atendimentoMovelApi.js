@@ -11,6 +11,8 @@ export function atendimentoMovelApi(request) {
     getIntencaoWhatsapp: (id, key) => request(`${base(id)}/intencoes/${encodeURIComponent(key)}`),
     buscarMensagensWhatsapp: (id, { q, cursor, limite = 20 } = {}) => request(`${base(id)}/buscar?${new URLSearchParams({ q: q || "", limite: String(limite), ...(cursor ? { cursor } : {}) })}`),
     getRetomadaWhatsapp: id => request(`${base(id)}/retomar`),
+    prepararRetomadaWhatsapp: (id, body) => request(`${base(id)}/retomar/previa`, json("POST", body)),
+    solicitarModeloRetomadaWhatsapp: id => request(`${base(id)}/retomar/modelo`, json("POST", {})),
     retomarConversaWhatsapp: (id, body) => request(`${base(id)}/retomar`, json("POST", body)),
     getArquivoMensagemWhatsapp: (id, mensagemId) => request(`${base(id)}/mensagens/${encodeURIComponent(mensagemId)}/arquivo`),
     getAtendimentoPushConfig: () => request("/firm/whatsapp/push/config"),
