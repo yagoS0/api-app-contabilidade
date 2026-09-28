@@ -1,3 +1,28 @@
+// Trabalho iniciado explicitamente pelo usuário. Não é agenda nem fila de retry.
+model ManualTask {
+  id String @id @default(uuid())
+  ownerId String
+  requestKey String
+  activeKey String? @unique
+  kind String
+  companyIds Json
+  description String?
+  competencia String?
+  status String @default("running")
+  total Int @default(0)
+  completed Int @default(0)
+  progress Json?
+  result Json?
+  responseStatus Int?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  finishedAt DateTime?
+  @@unique([ownerId, requestKey])
+  @@index([ownerId, createdAt])
+  @@index([status, updatedAt])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -1659,6 +1684,9 @@ model WhatsappLease {
 }
 
 model ArquivoWhatsapp {
+  comprovanteGuiaId String?
+  dataPagamentoDeclarada DateTime?
+  analiseComprovante Json?
   id String @id @default(uuid())
   mensagemId String @unique
   portalClientId String?

@@ -2,6 +2,7 @@
 // Mount: /firm/companies/:companyId/{cadastro-fiscal,produtos-servicos,pendencias,classificar-v2}
 
 import { Router } from "express";
+import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { classificarItensV2 } from "../../application/notas/apuracao/v2/ClassificadorService.js";
@@ -650,7 +651,7 @@ export function createApuracaoV2Router({ log } = {}) {
   router.post(
     "/fechamento/:competencia/conferencia",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("apuracao-conferencia", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       const env = String(req.body?.env || "prod");
@@ -661,13 +662,13 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha conferência ADN");
         return bad(res, statusForFechamentoErr(err), err?.code || "conferencia_failed", err?.message || "Erro");
       }
-    }
+    }, "Conferir notas da apuração")
   );
 
   router.post(
     "/fechamento/:competencia/calcular",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("apuracao-calculo", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       const { atividades, folhaMensal12, regimeApuracao, semMovimento } = req.body || {};
@@ -684,7 +685,7 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
         return bad(res, statusForFechamentoErr(err), err?.code || "calcular_failed", err?.message || "Erro");
       }
-    }
+    }, "Simular apuração")
   );
 
   router.post(
@@ -710,7 +711,7 @@ export function createApuracaoV2Router({ log } = {}) {
   router.post(
     "/fechamento/:competencia/transmitir",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("apuracao-transmissao", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       const { confirmCompetencia, calculoId } = req.body || {};
@@ -728,7 +729,7 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
         return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "transmitir_failed", err?.message || "Erro");
       }
-    }
+    }, "Transmitir apuração confirmada")
   );
 
   /**
@@ -776,12 +777,12 @@ export function createApuracaoV2Router({ log } = {}) {
     }
   );
 
-  router.post('/fechamento/:competencia/conferir-transmissao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+  router.post('/fechamento/:competencia/conferir-transmissao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute("apuracao-conferencia-transmissao", async (req, res) => {
     try {
       const result = await comContextoSerpro({ origem: 'fechamento:conferir-transmissao', atualizar: true, userId: req.auth?.user?.id }, () => conferirTransmissaoFechamento({ portalClientId: String(req.params.companyId), competencia: String(req.params.competencia) }));
       return res.json({ ok: true, result });
     } catch (err) { return bad(res, err?.code === 'ESTADO_INVALIDO' ? 409 : statusForFechamentoErr(err), err?.code || 'conferencia_transmissao_failed', err?.message || 'Erro ao conferir transmissão'); }
-  });
+  }, "Conferir transmissão da apuração"));
 
   // Q55 — Reabrir uma apuração "transmitida" para retificar (rebaixa p/ "calculada").
   router.post(
@@ -804,7 +805,7 @@ export function createApuracaoV2Router({ log } = {}) {
   router.post(
     "/fechamento/:competencia/retificar",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("apuracao-retificacao", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       const { confirmCompetencia, confirmRetificar, calculoId } = req.body || {};
@@ -826,14 +827,14 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha retificar (transmitir)");
         return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "retificar_failed", err?.message || "Erro");
       }
-    }
+    }, "Retificar apuração confirmada")
   );
 
   // ─── Apurar v2 (motor local de cálculo de DAS) ─────────────────────────────
   router.post(
     "/apurar-v2/:competencia",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("apuracao-local", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       const { folha12m } = req.body || {};
@@ -848,7 +849,7 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao apurar v2");
         return bad(res, 500, "apurar_failed", err?.message || "Erro", { code: err?.code });
       }
-    }
+    }, "Calcular apuração local")
   );
 
   // GET apuração calculada (snapshot)
@@ -905,7 +906,7 @@ export function createApuracaoV2Router({ log } = {}) {
   router.post(
     "/relatorio-faturamento/:competencia",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("relatorio-faturamento", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia || "");
       try {
@@ -923,14 +924,14 @@ export function createApuracaoV2Router({ log } = {}) {
           err?.message || "Erro",
         );
       }
-    }
+    }, "Gerar relatório de faturamento")
   );
 
   // ─── Classificar v2 (dispara ClassificadorService) ─────────────────────────
   router.post(
     "/classificar-v2",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
+    backgroundRoute("classificar-notas", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const force = req.query.force === "true" || req.body?.force === true;
       const competencia = req.body?.competencia || req.query.competencia;
@@ -941,7 +942,7 @@ export function createApuracaoV2Router({ log } = {}) {
         log?.warn({ err: err?.message, portalClientId }, "Falha ao classificar v2");
         return bad(res, 500, "classify_failed", err?.message || "Erro");
       }
-    }
+    }, "Classificar notas")
   );
 
   return router;

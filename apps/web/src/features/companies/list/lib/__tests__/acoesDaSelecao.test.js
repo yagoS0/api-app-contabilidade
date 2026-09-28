@@ -131,7 +131,7 @@ describe("um processo rodando não pode ser disparado duas vezes", () => {
     for (const chave of ["capturarNotas", "baixarNotas", "baixarSitfis"]) {
       const a = acaoDoPlano(p, chave);
       expect(a.disponivel).toBe(false);
-      expect(a.motivo).toMatch(/2 processos em segundo plano/);
+      expect(a.motivo).toMatch(/operação deste tipo em segundo plano/);
     }
     // ⚠ O envio de e-mail é chamada BLOQUEANTE e nunca aparece em `/firm/jobs/ativos` — bloqueá-lo
     // por causa de um download de notas seria travar por um sinal que não fala dele.
@@ -141,6 +141,12 @@ describe("um processo rodando não pode ser disparado duas vezes", () => {
   test("sem job ativo nada é bloqueado por este motivo", () => {
     const p = plano([empresa()], { jobsAtivos: 0 });
     expect(acaoDoPlano(p, "baixarNotas").disponivel).toBe(true);
+  });
+  test("tarefas de outro tipo não bloqueiam downloads independentes", () => {
+    const p = plano([empresa()], { jobs: [{ tipo: "captura-notas", status: "processando" }] });
+    expect(acaoDoPlano(p, "capturarNotas").disponivel).toBe(false);
+    expect(acaoDoPlano(p, "baixarNotas").disponivel).toBe(true);
+    expect(acaoDoPlano(p, "baixarSitfis").disponivel).toBe(true);
   });
 });
 

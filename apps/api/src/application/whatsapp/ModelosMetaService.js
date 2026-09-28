@@ -18,9 +18,9 @@ export function criarModelosMeta({ token = WHATSAPP_TOKEN, waba = WHATSAPP_WABA_
     return json;
   }
   return {
-    async consultar(nome) {
+    async consultar(nome, idioma = 'pt_BR') {
       const r = await chamar('GET', { name: nome, fields: 'id,name,status,category,language,components', limit: '100' });
-      return (r.data || []).find(t => t.name === nome && t.language === 'pt_BR') || null;
+      return (r.data || []).find(t => t.name === nome && t.language === idioma) || null;
     },
     criar: modelo => chamar('POST', modelo),
   };

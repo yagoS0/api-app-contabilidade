@@ -48,11 +48,11 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
   const [importAndamento, setImportAndamento] = useState(null);
   const [importModalAberto, setImportModalAberto] = useState(false);
   useEffect(() => {
-    if (!importing) return;
+    if (!importing || (importAndamento?.progresso?.segundoPlano && importAndamento.progresso.etapa !== "enviando")) return;
     const avisar = (event) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", avisar);
     return () => window.removeEventListener("beforeunload", avisar);
-  }, [importing]);
+  }, [importing, importAndamento?.progresso?.segundoPlano, importAndamento?.progresso?.etapa]);
   // Q12.C.1: listagem de notas + resumo
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
@@ -341,7 +341,7 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
     const destino = companyId;
     setImporting(true);
     setImportResult(null);
-    setImportAndamento({ companyId: destino, empresa: companyName || "Empresa selecionada", type, mock: api.mode === "mock", temZip: list.some(f => /\.zip$/i.test(f.name)), progresso: { etapa: "preparando", totalArquivos: list.length, totalLotes: Math.ceil(list.length / (type === "NFE" ? 20 : 50)) } });
+    setImportAndamento({ activityId: `import-${Date.now()}`, companyId: destino, empresa: companyName || "Empresa selecionada", type, mock: api.mode === "mock", temZip: list.some(f => /\.zip$/i.test(f.name)), progresso: { etapa: "preparando", totalArquivos: list.length, totalLotes: Math.ceil(list.length / (type === "NFE" ? 20 : 50)) } });
     setImportModalAberto(true);
     try {
       const out = await api.importInvoicesXml(destino, list, { type, shouldContinue: () => montado.current, onProgress: (progresso) => {
@@ -409,6 +409,7 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
     // Q56: import manual de notas (XML)
     importing, importResult: !importResult?.companyId || importResult.companyId === companyId ? importResult : null, importNotas,
     importAndamento, importModalAberto, importModalResultado: importResult,
-    fecharImportModal: () => { if (!importacaoAtiva.current) setImportModalAberto(false); },
+    fecharImportModal: () => setImportModalAberto(false),
+    abrirImportModal: () => setImportModalAberto(true),
   };
 }

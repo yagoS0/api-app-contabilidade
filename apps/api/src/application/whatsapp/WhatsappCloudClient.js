@@ -578,12 +578,12 @@ export class WhatsappCloudClient {
   }
 
   /** Template só de corpo (`solicitar_documentos`, `lembrete_vencimento`, `sem_movimento`…). [M1] */
-  async enviarTemplate({ telefone, template, idioma = this.idioma, variaveis = [] }) {
+  async enviarTemplate({ telefone, template, idioma = this.idioma, variaveis = [], botoesResposta = [] }) {
     const para = this.destino(telefone);
     const corpo = montarCorpoTemplate(variaveis);
     const json = await this.chamar({
       recurso: "messages",
-      corpo: montarPayloadTemplate({ para, template, idioma, componentes: corpo ? [corpo] : [] }),
+      corpo: montarPayloadTemplate({ para, template, idioma, componentes: [...(corpo ? [corpo] : []), ...botoesResposta.map((payload, index) => ({ type: "button", sub_type: "quick_reply", index: String(index), parameters: [{ type: "payload", payload: textoObrigatorio(payload, "A resposta do botão", 256) }] }))] }),
     });
     const wamid = WhatsappCloudClient.exigirWamid(json, { template });
     const contato = WhatsappCloudClient.contatoDaResposta(json);

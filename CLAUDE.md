@@ -1,5 +1,16 @@
 # CLAUDE.md — Portal Contábil
 
+## Retomada no telefone — 28/09/2026
+
+Retomar conversa consulta a aprovação atual na WABA do canal, inclusive com cache local antigo ou sem nome. Suporta assunto {{1}} e botão Falar com a equipe do modelo real, com prévia vinculada ao assunto/canal/destinatário e intenção idempotente. Modelo ausente pode ser submetido ali mesmo, sem enviar a clientes; aprovação externa continua obrigatória. Não transferir aprovação entre WABAs nem liberar texto antes de resposta. Detalhes em `docs/retomada-whatsapp-mobile-20260928.md`. Testes sem Anthropic, consultas fiscais ou envio real.
+
+## Central de tarefas — visual compacto em 28/09/2026
+
+O dono rejeitou a faixa exclusiva da central por ocupar espaço. Usar um controle discreto na navegação existente, junto de Navegar, com contagem somente durante execução. Lista e resultados abrem sob demanda; no celular fica o ícone. `TaskCenterPlacement` posiciona a interface sem mover o executor ou o histórico. Não reintroduzir mensagens permanentes ou barra de largura inteira. Testes de navegação/histórico, build e conferência visual em desktop/celular realizados. Ajuste visual aprovado pelo dono para publicação na main/produção em 28/09/2026; implantação deve ser conferida após a integração.
+
+## Central de tarefas — 27/09/2026 (publicada)
+
+Operações demoradas iniciadas pelo usuário aparecem em **Tarefas** no topo do portal. Aceite e resultados são persistidos em `ManualTask`; acompanhamento só lê o banco, nunca repete consultas, envios ou transmissões. A agenda fiscal salva permanece soberana. Navegação não cancela tarefas aceitas; uploads precisam terminar antes de fechar o navegador. Reinício marca interrupção sem replay automático. Preservar autorização por carteira/dono, confirmações, prévias e travas existentes. Cobertura, limites e validações em `docs/central-tarefas-20260927.md`. Publicada pela PR #96, main `425f96f2`, com migração e API anteriores à interface; produção saudável conferida em 27/09/2026.
 ## Atendimento PWA e auditoria — 25/09/2026
 
 O dono autorizou implementar o plano completo e publicar na main/produção. O atendimento tem entrada móvel própria, instalação, rascunhos autenticados versionados, intenções de envio persistidas e push opcional por conta/aparelho. GET não marca leitura. Interação humana assume o atendimento; timeout não autoriza reenvio automático. Guias congelam parâmetros/PDF por tentativa antes da Meta e reconciliam histórico localmente. Nunca cachear dados privados no service worker nem reutilizar inscrição após troca de conta. Expiração/exclusão de rascunho preserva versão; conteúdo expira em sete dias. Preservar trabalho fiscal e a pré-triagem curta. Detalhes, testes, limitações e implantação: `docs/atendimento-pwa-implantacao-20260925.md`, `docs/atendimento-pwa-api.md`, `docs/chat-historico-arquivos-20260925.md`. Os relatos de implantação antigos abaixo não comprovam o estado desta versão. Não usar Anthropic, provedores fiscais nem enviar mensagens a clientes nos testes.
@@ -1020,3 +1031,9 @@ Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão d
 
 ## Períodos do portal do cliente — ajuste de 24/09/2026
 O período inicial usa o primeiro e último mês efetivamente fechado dentro da janela de 12 meses. Seleção mista considera somente fechados, sem banners sobre lacunas; gráficos omitem os meses abertos. Seleção sem nenhum fechamento informa diretamente no filtro e a API recusa com SEM_MESES_FECHADOS, sem gerar relatório vazio. Resultado identifica a competência no título e nas colunas. Ajuste local ainda não publicado.
+
+## WhatsApp: pagamento e emissão — 25/09/2026
+Novo fluxo em desenvolvimento: solicita pagamento de todas as guias vencidas/liberadas/em aberto, incluindo manuais/FGTS/municipais, apenas nas empresas com rotina pagamento ativa. Somente WhatsApp, sem fallback e-mail. Botão coleta data, depois comprovante opcional; preserva declaração separada da evidência e baixa pelo contador. Detalhes e migration em apps/api/src/application/guides/CLAUDE.md. Planejamento de mensagens da emissão em docs/plano-emissao-whatsapp-20260925.md; emissão ainda não alterada.
+
+## Origem e comprovantes na lista de Guias — 27/09/2026
+A lista do contador distingue pagamento informado pelo cliente, confirmado na Receita e confirmado pelo contador, com data civil. Comprovantes do cliente são consultados em lote somente para a empresa e guias da página do escritório; não são serializados para o portal do cliente. O modal de Guias abre PDF/foto pelo endpoint autenticado existente e permite baixar o original. Sem alteração de pagamento, baixa, consultas ou envios.

@@ -14,6 +14,7 @@ import zlib from "node:zlib";
 import pdfParse from "pdf-parse";
 import QRCode from "qrcode";
 import { gerarDanfse } from "../gerarDanfse.js";
+import { BLOCOS_IMPRESSAO, apresentarValor } from "../danfseApresentacao.js";
 import { lerNfse } from "../danfseDados.js";
 import {
   truncarComReticencias,
@@ -185,7 +186,7 @@ describe("QR Code no PDF — posição, tamanho e ORDEM DE PINTURA (§2.2 e §2.
     // ⚠ `lastIndexOf`, não `indexOf`: o que se quer travar é que NENHUM desenho do leiaute venha
     // depois do QR, e não só o primeiro deles. Os blocos de 20,40 cm de largura (cabeçalho, dados
     // da NFS-e, informações complementares) são os que já passaram por cima dele uma vez.
-    const larg = (20.4 * PT_CM).toFixed(6);
+    const larg = (20.7 * PT_CM).toFixed(6);
     const posBloco = cs.lastIndexOf(`${larg} `);
     expect(posBloco).toBeGreaterThan(-1);
     expect(posImagem).toBeGreaterThan(posBloco);
@@ -662,23 +663,36 @@ describe("§2.2.3 — sombreado é do CABEÇALHO e dos TÍTULOS, não do bloco i
   }
   // O pdfkit escreve os números com até 6 casas e SEM zeros à direita (32.88189, não 32.881890).
   const rect = (esq, sup, larg, alt) =>
-    [esq + MARGEM_CM, sup + MARGEM_CM, larg, alt]
+    [MARGEM_CM + (esq - 0.3) * 20.7 / 20.4, sup + MARGEM_CM, larg * 20.7 / 20.4, alt]
       .map((v) => String(Number((v * PT_CM).toFixed(6)))).join(" ") + " re";
 
   it("o bloco DADOS DA NFS-e (20,40 × 2,84 em 0,30/1,48) NÃO é pintado de cinza", async () => {
     const { pdf } = await gerarDanfse({ xml: xmlBase });
     const cs = contentStream(pdf);
-    // A caixa continua desenhada (linha divisória de 0,5 pt, §2.2.3) — o que não existe mais é o
-    // preenchimento cinza dela, que sombreava os dez campos de identificação de uma vez.
-    expect(cs).toContain(`${rect(0.3, 1.48, 20.4, 2.84)}\n/DeviceRGB CS`);
+    // Os campos são abertos: não há retângulo de contorno nem fundo cinza no bloco.
+    expect(cs).not.toContain(`${rect(0.3, 1.48, 20.4, 2.84)}\n/DeviceRGB CS`);
     expect(cs).not.toContain(`${rect(0.3, 1.48, 20.4, 2.84)}\n/DeviceRGB cs\n${CINZA}`);
   });
 
   it("o cabeçalho e o campo 'Emitente da NFS-e' CONTINUAM sombreados — o §2.2.3 os nomeia", async () => {
     const { pdf } = await gerarDanfse({ xml: xmlBase });
     const cs = contentStream(pdf);
-    expect(cs).toContain(`${rect(0.3, 0.3, 20.4, 1.16)}\n/DeviceRGB cs\n${CINZA}`);
+    expect(cs).toContain(`${rect(0.3, 0, 20.4, 1.46)}\n/DeviceRGB cs\n${CINZA}`);
     expect(cs).toContain(`${rect(0.3, 3.65, 5.09, 0.67)}\n/DeviceRGB cs\n${CINZA}`);
+  });
+
+  it("usa apenas a moldura externa e separadores horizontais, dentro da página", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const cs = contentStream(pdf);
+    const molduras = [...cs.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) re\n\/DeviceRGB CS\n0 0 0 SCN\nS/g)];
+    expect(molduras).toHaveLength(1);
+    const [x, y, largura, altura] = molduras[0].slice(1).map(Number);
+    expect(x / PT_CM).toBeCloseTo(0.15, 2);
+    expect((x + largura) / PT_CM).toBeCloseTo(20.85, 2);
+    expect((y + altura) / PT_CM).toBeCloseTo(29.55, 2);
+    const linhas = [...cs.matchAll(/([\d.]+) ([\d.]+) m\n([\d.]+) ([\d.]+) l/g)];
+    expect(linhas.length).toBeGreaterThanOrEqual(10);
+    for (const linha of linhas) expect(Number(linha[2])).toBe(Number(linha[4]));
   });
 });
 
@@ -851,51 +865,35 @@ describe("descrição do serviço — a célula CRESCE em vez de cortar o texto"
   it("descrição curta quase não cresce — o crescimento é o necessário, não um bloco fixo", async () => {
     const { conformidade } = await gerarDanfse({ xml: comDescricao("Servicos de consultoria.") });
     const crescido = conformidade.camposCrescidos.find((c) => c.campo === "xDescServ");
-    expect(crescido.paraCm).toBeLessThan(1);
+    expect(crescido?.paraCm ?? 0.63).toBeLessThan(1);
   });
 });
 
-describe("título do bloco × rótulo do primeiro campo — a sobreposição do ISSQN", () => {
-  // ⚠⚠ A NT dá ao bloco TRIBUTAÇÃO MUNICIPAL (ISSQN) e ao campo TIPO DE TRIBUTAÇÃO DO ISSQN
-  // exatamente as mesmas coordenadas (0,63 · 5,09 · 0,30 · 14,43 — p. 18 do PDF versionado). A
-  // transcrição está FIEL; o que faltava era a LEITURA: naquela linha o §2.4.5 descreve a CAIXA
-  // DELIMITADORA do bloco, não uma célula de título. O critério já existia neste projeto para
-  // CABEÇALHO, DADOS DA NFS-e e CANHOTO.
-  // ⚠⚠ A ASSERÇÃO É A AUSÊNCIA DO TEXTO, E NÃO UM `not.toMatch` DE VIZINHANÇA. Experimento
-  // executado: com a regra desligada, um `not.toMatch(/MUNICIPAL \(ISSQN\)\s*Tipo de Tributa/)`
-  // continuava VERDE — o `pdf-parse` achata a página em linhas e não delata dois textos pintados no
-  // MESMO `y`. Teste que não pode falhar é pior que teste nenhum: ele afirmaria que a sobreposição
-  // foi consertada em qualquer estado do código.
-  it("o título não é escrito — a célula pertence ao primeiro campo", async () => {
-    const texto = await textoDoPdf((await gerarDanfse({ xml: xmlBase })).pdf);
-    // ⚠ Comparado contra o `titulo` DO LEIAUTE, nunca contra um literal reescrito aqui: um título
-    // reescrito à mão passa a valer por si e o teste deixa de falar do bloco de verdade.
-    expect(texto).not.toContain(BLOCOS.find((b) => b.id === "issqn").titulo);
+describe("ISSQN — título e campos em colunas independentes", () => {
+  it("imprime o título e os rótulos sem sobreposição horizontal", async () => {
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    const itens = [];
+    await pdfParse(pdf, { pagerender: async (pagina) => {
+      const conteudo = await pagina.getTextContent();
+      itens.push(...conteudo.items);
+      return conteudo.items.map((i) => i.str).join("\n");
+    } });
+    const titulo = itens.find((i) => i.str === "TRIBUTAÇÃO MUNICIPAL (ISSQN)");
+    const tipo = itens.find((i) => i.str === "Tipo de Tributação do ISSQN");
+    const local = itens.find((i) => i.str === "Município / Sigla UF / País de Incidência do ISSQN");
+    expect(titulo).toBeDefined();
+    expect(tipo).toBeDefined();
+    expect(local).toBeDefined();
+    expect(titulo.transform[4] + titulo.width).toBeLessThan(tipo.transform[4]);
+    expect(tipo.transform[4] + tipo.width).toBeLessThan(local.transform[4]);
+    expect(Math.abs(titulo.transform[5] - tipo.transform[5])).toBeLessThan(2);
+    expect(conformidade.titulosNaoImpressos).not.toContainEqual(expect.objectContaining({ bloco: "issqn" }));
   });
 
-  it("o rótulo do campo continua impresso — o que some é o título, nunca o rótulo", async () => {
-    const texto = await textoDoPdf((await gerarDanfse({ xml: xmlBase })).pdf);
-    expect(texto).toMatch(/Tipo de Tributação do ISSQN/);
-  });
-
-  it("declara no relatório qual título deixou de ser impresso, e por qual nota", async () => {
-    const { conformidade } = await gerarDanfse({ xml: xmlBase });
-    expect(conformidade.titulosNaoImpressos).toEqual([
-      { bloco: "issqn", titulo: "TRIBUTAÇÃO MUNICIPAL (ISSQN)", notaDaNt: 4 },
-    ]);
-  });
-
-  // ⚠ A regra é DERIVADA das coordenadas, e não uma bandeira à mão — é isso que impede um bloco
-  // novo de reintroduzir a sobreposição sem ninguém lembrar da armadilha.
-  it("a regra é geométrica: nenhum bloco escreve título onde o primeiro campo já escreve rótulo", () => {
-    const colidem = BLOCOS.filter(
-      (b) =>
-        b.tituloImpresso !== false &&
-        !tituloEhCaixaDelimitadora(b) &&
-        b.campos &&
-        b.campos[0] &&
-        b.esq === b.campos[0].esq &&
-        b.sup === b.campos[0].sup
+  it("não escreve título onde o primeiro campo já escreve rótulo", () => {
+    const colidem = BLOCOS_IMPRESSAO.filter((b) =>
+      b.tituloImpresso !== false && !tituloEhCaixaDelimitadora(b) &&
+      b.campos?.[0] && b.esq === b.campos[0].esq && b.sup === b.campos[0].sup
     ).map((b) => b.id);
     expect(colidem).toEqual([]);
   });
@@ -923,5 +921,30 @@ describe("MUNICÍPIO / SIGLA UF / PAÍS — a UF vem do código do IBGE, nunca d
   it("sem a lista do IBGE cai no nome cru, nunca numa UF inventada", () => {
     const { valores } = lerNfse(xmlBase, { municipios: null });
     expect(valores.locIncid).toBe("Rio de Janeiro / -");
+  });
+});
+
+
+describe("apresentação dos valores — preserva o dado fiscal", () => {
+  it.each([
+    ["vServ", "1.234,56", "R$ 1.234,56"],
+    ["vISSQN", "0,00", "R$ 0,00"],
+    ["vISSQN", "-", "-"],
+    ["pAliqAplic", "5,00", "5,00 %"],
+    ["pAliqEfetCBS", "-", "-"],
+    ["prestFone", "21912345678", "(21) 91234-5678"],
+    ["tomaFone", "-", "-"],
+    ["nNFSe", "15571", "15571"],
+  ])("formata %s sem recalcular nem preencher ausências", (id, valor, esperado) => {
+    expect(apresentarValor(id, valor)).toBe(esperado);
+  });
+
+  it("o PDF contém os valores com unidade e mantém os títulos completos", async () => {
+    const texto = await textoDoPdf((await gerarDanfse({ xml: xmlBase })).pdf);
+    expect(texto).toContain("R$ 198,00");
+    expect(texto).toContain("R$ 9,90");
+    expect(texto).toContain("5,00 %");
+    expect(texto).toContain("Base de Cálculo Após Exclusões e Reduções");
+    expect(texto).toContain("Código de Tributação Nacional / Municipal");
   });
 });

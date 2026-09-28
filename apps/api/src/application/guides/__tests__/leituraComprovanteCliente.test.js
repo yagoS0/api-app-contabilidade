@@ -1,0 +1,4 @@
+import {extrairSugestoesComprovante} from '../LeituraComprovanteClienteService.js';
+test('extrai somente candidatos rotulados, nunca prova automática',()=>{expect(extrairSugestoesComprovante('Data do pagamento: 20/09/2026 Valor pago: R$ 1.234,56','2026-09-19',new Date('2026-09-25'))).toMatchObject({confiavel:false,dataLida:'2026-09-20',valorLido:1234.56,dataDivergente:true,status:'AGUARDA_CONFERENCIA'});});
+test('duas datas ou valores distintos exigem conferência',()=>{expect(extrairSugestoesComprovante('Data pagamento: 20/09/2026 Data pagamento: 21/09/2026 Valor pago: 100,00 Valor pago: 200,00',null,new Date('2026-09-25'))).toMatchObject({dataLida:null,valorLido:null,motivo:'LEITURA_AMBIGUA'});});
+test('vencimento e valor da cobrança não são prova de pagamento',()=>{expect(extrairSugestoesComprovante('Vencimento: 20/09/2026 Valor: 500,00')).toMatchObject({dataLida:null,valorLido:null,confiavel:false});});

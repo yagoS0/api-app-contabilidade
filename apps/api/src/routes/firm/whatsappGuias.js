@@ -16,6 +16,7 @@
 // baixa de parcela e do estorno.
 
 import { Router } from "express";
+import { respondWithTask } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
@@ -47,7 +48,13 @@ export function createWhatsappGuiasRouter({ log } = {}) {
       try {
         const input = { items: req.body?.items, assinatura: req.body?.assinatura,
           permitidas: await empresasVisiveis(req), userId: req.auth?.user?.id, log };
-        return res.json(await liberacao[executar ? "executar" : "prever"](input));
+        if (!executar) return res.json(await liberacao.prever(input));
+        const companyIds = [...new Set((input.items || []).map(i => i.portalClientId))];
+        if (companyIds.some(id => !input.permitidas.includes(id))) return res.status(404).json({ ok: false, error: "not_found" });
+        return respondWithTask(req, res, { kind: "envio-guias", companyIds, total: companyIds.length, fingerprint: "liberacao-lote" }, async (res, progress) => {
+          try { return res.json(await liberacao.executar({ ...input, onProgress: progress })); }
+          catch (err) { return falhar(res, err, { acao: "liberar_guias" }); }
+        });
       } catch (err) { return falhar(res, err, { acao: "liberar_guias" }); }
     });
   }
@@ -92,11 +99,110 @@ export function createWhatsappGuiasRouter({ log } = {}) {
    * template não aprovado e integração desligada são consertos diferentes, e a tela precisa dizer
    * qual é. E a guia continua podendo ir por e-mail — a resposta traz `canalSugerido`.
    */
-  router.post(
-    "/companies/:companyId/guides/:guideId/enviar-whatsapp",
-    requireFirmCompanyAccess(),
-    async (req, res) => {
-      if (!somenteAdminOuContador(req, res)) return undefined;
+  router.post("/companies/:companyId/guides/:guideId/enviar-whatsapp", requireFirmCompanyAccess(), createIndividualGuideHandler({ log }));
+  /**
+   * A PRÉVIA DO LOTE — a tabela que o contador confere. NÃO ENVIA NADA.
+   *
+   * Body: `{ competencia, portalClientIds?, guideIds? }`.
+   */
+  router.post("/guides/whatsapp/lote/previa", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const escopo = await escopoDoLote(req);
+      const previa = await preverLote({
+        portalClientIds: escopo,
+        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento } : {}),
+        competencia: req.body?.competencia,
+        guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
+      });
+      return res.json({ ok: true, ...previa });
+    } catch (err) {
+      return falhar(res, err, { competencia: req.body?.competencia });
+    }
+  });
+
+  /**
+   * O LOTE. Body: `{ competencia, portalClientIds?, guideIds?, conferencia: { total, porWhatsapp,
+   * porEmail }, enviarPorEmail? }`.
+   *
+   * ⚠ AS QUE NÃO PUDERAM IR POR WHATSAPP VÃO POR E-MAIL, pelo caminho de e-mail que já existe
+   * (`runGuideEmailWorkerSelected`) — a mesma função que o "liberar ao cliente" usa. Elas não somem
+   * do lote e não viram uma segunda implementação de envio de e-mail aqui dentro.
+   * `enviarPorEmail: false` desliga essa parte (o contador quis só o canal novo).
+   */
+  router.post("/guides/whatsapp/lote", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const escopo = await escopoDoLote(req);
+      return respondWithTask(req, res, { kind: "envio-guias", companyIds: escopo, total: 0, competencia: req.body?.competencia,
+        description: "Envio de guias por WhatsApp", fingerprint: req.body }, async (res) => {
+      try {
+      const resultado = await executarLote({
+        portalClientIds: escopo,
+        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento, assinatura: req.body.assinatura } : {}),
+        competencia: req.body?.competencia,
+        guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
+        conferencia: req.body?.conferencia || null,
+        log,
+      });
+
+      let email = { ...resultado.email, executado: false };
+      if (req.body?.enviarPorEmail !== false && resultado.email.guideIds.length) {
+        let r;
+        if (req.body?.mesVencimento) {
+          const results = [];
+          for (const portalClientId of [...new Set(resultado.email.linhas.map((l) => l.portalClientId))]) {
+            const selectedGuideIds = resultado.email.linhas.filter((l) => l.portalClientId === portalClientId).map((l) => l.guideId);
+            try {
+              const sent = await sendCompanyGuidesEmail({ portalClientId, mesVencimento: req.body.mesVencimento,
+                selectedGuideIds, assinatura: resultado.email.assinaturasPorEmpresa?.[portalClientId] });
+              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: sent.status === "sent" ? "SENT" : "ERROR" })));
+            } catch (err) {
+              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: "ERROR", reason: err.message, code: err.code })));
+            }
+          }
+          r = { sent: results.filter((x) => x.status === "SENT").length, errors: results.filter((x) => x.status === "ERROR").length, results };
+        } else r = await runGuideEmailWorkerSelected({ guideIds: resultado.email.guideIds });
+        email = {
+          ...resultado.email,
+          executado: !r?.skipped,
+          // `skipped` = o lock global do envio de e-mail está preso. Não há fila que retome: dizer
+          // que "ficará em fila" é a promessa falsa que `guideEmailCopy` documenta.
+          motivo: r?.skipped ? r.reason : null,
+          enviadas: Number(r?.sent || 0),
+          erros: Number(r?.errors || 0),
+          resultados: r?.results || [],
+        };
+      }
+
+      return res.json({ ok: true, ...resultado, email });
+      } catch (err) { return falhar(res, err, { competencia: req.body?.competencia }); }
+      });
+    } catch (err) {
+      return falhar(res, err, { competencia: req.body?.competencia });
+    }
+  });
+
+  /**
+   * ⚠ O ESCOPO É INTERSEÇÃO, NUNCA UNIÃO. O corpo pode PEDIR empresas; quem decide quais existem
+   * para este usuário é `empresasVisiveis`. Pedir uma empresa fora do escopo simplesmente não a
+   * traz — e pedir nenhuma significa "a carteira que eu enxergo".
+   */
+  async function escopoDoLote(req) {
+    const visiveis = await empresasVisiveis(req);
+    const pedidas = Array.isArray(req.body?.portalClientIds)
+      ? req.body.portalClientIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    if (!pedidas.length) return visiveis;
+    const permitidas = new Set(visiveis);
+    return pedidas.filter((id) => permitidas.has(id));
+  }
+
+  return router;
+}
+
+export function createIndividualGuideHandler({ log } = {}) { return async (req, res) => {
+      if (!["admin", "contador"].includes(String(req.auth?.user?.role || "").toLowerCase())) return res.status(403).json({ ok: false, error: "forbidden" });
       const { companyId, guideId } = req.params || {};
       try {
         const guide = await prisma.guide.findFirst({
@@ -161,103 +267,7 @@ export function createWhatsappGuiasRouter({ log } = {}) {
           error: resultado.ok ? undefined : resultado.motivo,
         });
       } catch (err) {
-        return falhar(res, err, { companyId, guideId });
+        log?.error?.({ err: err?.message, companyId, guideId }, "Falha no envio de guia");
+        return res.status(err instanceof EnvioGuiaWhatsappError ? err.status : 500).json({ ok: false, error: err.code || "erro_interno", message: err instanceof EnvioGuiaWhatsappError ? err.message : "Erro interno." });
       }
-    },
-  );
-
-  /**
-   * A PRÉVIA DO LOTE — a tabela que o contador confere. NÃO ENVIA NADA.
-   *
-   * Body: `{ competencia, portalClientIds?, guideIds? }`.
-   */
-  router.post("/guides/whatsapp/lote/previa", async (req, res) => {
-    if (!somenteAdminOuContador(req, res)) return undefined;
-    try {
-      const escopo = await escopoDoLote(req);
-      const previa = await preverLote({
-        portalClientIds: escopo,
-        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento } : {}),
-        competencia: req.body?.competencia,
-        guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
-      });
-      return res.json({ ok: true, ...previa });
-    } catch (err) {
-      return falhar(res, err, { competencia: req.body?.competencia });
-    }
-  });
-
-  /**
-   * O LOTE. Body: `{ competencia, portalClientIds?, guideIds?, conferencia: { total, porWhatsapp,
-   * porEmail }, enviarPorEmail? }`.
-   *
-   * ⚠ AS QUE NÃO PUDERAM IR POR WHATSAPP VÃO POR E-MAIL, pelo caminho de e-mail que já existe
-   * (`runGuideEmailWorkerSelected`) — a mesma função que o "liberar ao cliente" usa. Elas não somem
-   * do lote e não viram uma segunda implementação de envio de e-mail aqui dentro.
-   * `enviarPorEmail: false` desliga essa parte (o contador quis só o canal novo).
-   */
-  router.post("/guides/whatsapp/lote", async (req, res) => {
-    if (!somenteAdminOuContador(req, res)) return undefined;
-    try {
-      const escopo = await escopoDoLote(req);
-      const resultado = await executarLote({
-        portalClientIds: escopo,
-        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento, assinatura: req.body.assinatura } : {}),
-        competencia: req.body?.competencia,
-        guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
-        conferencia: req.body?.conferencia || null,
-        log,
-      });
-
-      let email = { ...resultado.email, executado: false };
-      if (req.body?.enviarPorEmail !== false && resultado.email.guideIds.length) {
-        let r;
-        if (req.body?.mesVencimento) {
-          const results = [];
-          for (const portalClientId of [...new Set(resultado.email.linhas.map((l) => l.portalClientId))]) {
-            const selectedGuideIds = resultado.email.linhas.filter((l) => l.portalClientId === portalClientId).map((l) => l.guideId);
-            try {
-              const sent = await sendCompanyGuidesEmail({ portalClientId, mesVencimento: req.body.mesVencimento,
-                selectedGuideIds, assinatura: resultado.email.assinaturasPorEmpresa?.[portalClientId] });
-              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: sent.status === "sent" ? "SENT" : "ERROR" })));
-            } catch (err) {
-              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: "ERROR", reason: err.message, code: err.code })));
-            }
-          }
-          r = { sent: results.filter((x) => x.status === "SENT").length, errors: results.filter((x) => x.status === "ERROR").length, results };
-        } else r = await runGuideEmailWorkerSelected({ guideIds: resultado.email.guideIds });
-        email = {
-          ...resultado.email,
-          executado: !r?.skipped,
-          // `skipped` = o lock global do envio de e-mail está preso. Não há fila que retome: dizer
-          // que "ficará em fila" é a promessa falsa que `guideEmailCopy` documenta.
-          motivo: r?.skipped ? r.reason : null,
-          enviadas: Number(r?.sent || 0),
-          erros: Number(r?.errors || 0),
-          resultados: r?.results || [],
-        };
-      }
-
-      return res.json({ ok: true, ...resultado, email });
-    } catch (err) {
-      return falhar(res, err, { competencia: req.body?.competencia });
-    }
-  });
-
-  /**
-   * ⚠ O ESCOPO É INTERSEÇÃO, NUNCA UNIÃO. O corpo pode PEDIR empresas; quem decide quais existem
-   * para este usuário é `empresasVisiveis`. Pedir uma empresa fora do escopo simplesmente não a
-   * traz — e pedir nenhuma significa "a carteira que eu enxergo".
-   */
-  async function escopoDoLote(req) {
-    const visiveis = await empresasVisiveis(req);
-    const pedidas = Array.isArray(req.body?.portalClientIds)
-      ? req.body.portalClientIds.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-    if (!pedidas.length) return visiveis;
-    const permitidas = new Set(visiveis);
-    return pedidas.filter((id) => permitidas.has(id));
-  }
-
-  return router;
-}
+    }; }

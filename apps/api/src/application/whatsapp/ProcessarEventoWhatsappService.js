@@ -1,3 +1,5 @@
+import { prisma } from "../../infrastructure/db/prisma.js";
+import { fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
 import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
 import { entradaComercialPublica } from "./entradaComercialWhatsapp.js";
@@ -249,7 +251,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   if (item.tipo === "reaction") {
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "REACAO_SEM_ATENDIMENTO" } };
   }
-  if (WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
+  const fluxoPagamento = r?.conversa ? await fluxoPagamentoAtual(prisma, r.conversa, agora) : null;
+  if (!fluxoPagamento && !String(item.interacao?.id||'').startsWith('altan.payment.confirm.') && WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
     const coletar = responderColeta || (await import("./RespostaColetaComercialWhatsappService.js")).responderColetaComercial;
     const coleta = await coletar({ registro: r, item, agora });
     if (coleta.tratado) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: coleta.motivo }, coleta };
@@ -266,7 +269,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   }
   const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });
-  const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
+  const pagamentoDireto = String(item.interacao?.id || '').startsWith('altan.payment.confirm.') || Boolean(fluxoPagamento);
+  const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}), ...(pagamentoDireto ? { flag: true, piloto: [r.conversa?.portalClientId] } : {}) });
   const decisao = entradaComercialPublica(r) ? { responde: false, motivo: "CANAL_COMERCIAL_SEM_IA" }
     : decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
   // O menu público legado encaminha texto livre à equipe. Leads do piloto comercial seguem a

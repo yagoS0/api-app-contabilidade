@@ -1,0 +1,27 @@
+.wa-retomada { display: grid; gap: 16px; padding: 12px 0 16px; font-size: 15px; line-height: 1.5; }
+.wa-retomada p { margin: 0; }
+.wa-retomada-destino { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.wa-retomada-destino strong { font-size: 17px; }
+.wa-retomada-destino span, .wa-retomada-ajuda, .wa-retomada-campo > span { color: var(--text-muted); font-size: 13px; }
+.wa-retomada-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.wa-retomada-status > span { font-weight: 600; }
+.wa-retomada-status button, .wa-retomada-editar { border: 0; padding: 8px 0; min-height: 44px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.wa-retomada-campo { display: grid; gap: 6px; }
+.wa-retomada-campo label { font-weight: 600; }
+.wa-retomada-campo input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg-input, var(--bg-surface)); border: 1px solid var(--border); border-radius: 8px; }
+.wa-retomada .wa-retomada-legenda { margin-bottom: 8px; color: var(--text-muted); font-size: 13px; }
+.wa-retomada-mensagem { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); overflow-wrap: anywhere; }
+.wa-retomada-mensagem p { padding: 14px; white-space: pre-wrap; }
+.wa-retomada-botao-previa { display: block; padding: 11px; text-align: center; border-top: 1px solid var(--border); color: var(--text); }
+.wa-retomada-acoes { display: flex; width: 100%; gap: 8px; justify-content: flex-end; }
+.wa-retomada-acoes .btn { min-height: 44px; white-space: normal; }
+.modal-caixa:has(.wa-retomada) { max-height: min(92dvh, 900px); }
+@media (max-width: 540px) {
+  .modal-fundo:has(.wa-retomada) { padding: 8px; align-items: center; }
+  .modal-caixa:has(.wa-retomada) { max-height: calc(100dvh - 16px); }
+  .modal-caixa:has(.wa-retomada) .modal-topo { padding: 12px 16px; }
+  .modal-caixa:has(.wa-retomada) .modal-fechar { min-height: 44px; min-width: 44px; }
+  .modal-caixa:has(.wa-retomada) .modal-rodape { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); }
+  .wa-retomada-acoes { display: grid; grid-template-columns: 1fr; }
+  .wa-retomada-acoes > :last-child:not(:first-child) { grid-row: 1; }
+}

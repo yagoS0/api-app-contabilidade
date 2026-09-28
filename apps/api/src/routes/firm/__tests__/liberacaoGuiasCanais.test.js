@@ -40,8 +40,13 @@ test.each(["/previa", ""])("liberação exige contador/admin: %s", async (path) 
   expect(release.prever).not.toHaveBeenCalled(); expect(release.executar).not.toHaveBeenCalled();
 });
 test("execução recebe escopo do servidor e ator, nunca permitidas do corpo", async () => {
-  await request(app()).post("/guides/liberacao/lote").send({ items: [{ portalClientId: "c2" }], assinatura: "x", permitidas: ["c2"], userId: "falso" }).expect(200);
+  await request(app()).post("/guides/liberacao/lote").send({ items: [{ portalClientId: "c1" }], assinatura: "x", permitidas: ["c2"], userId: "falso" }).expect(200);
   expect(release.executar).toHaveBeenCalledWith(expect.objectContaining({ permitidas: ["c1"], userId: "ator", assinatura: "x" }));
+});
+
+test("não aceita envio fora da carteira nem com permitidas forjadas", async () => {
+  await request(app()).post("/guides/liberacao/lote").send({ items: [{ portalClientId: "c2" }], permitidas: ["c2"] }).expect(404);
+  expect(release.executar).not.toHaveBeenCalled();
 });
 test("complementar e-mail enviado permite WhatsApp sem reenviar=true", async () => {
   await request(app()).post("/companies/c1/guides/g1/enviar-whatsapp").send({ complementar: true }).expect(200);

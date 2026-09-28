@@ -36,6 +36,8 @@ function apiFalsa(conversas = [CONVERSA], extra = {}) {
   };
 }
 async function prepararDocumento() {
+  const plus = screen.queryByRole("button", { name: "Ações da mensagem e arquivos" });
+  if (plus?.getAttribute("aria-expanded") === "false") fireEvent.click(plus);
   const summary = screen.queryByText("Guias e documentos", { selector: "summary" });
   if (summary && !summary.parentElement.open) fireEvent.click(summary);
   fireEvent.click(screen.getByTestId("acao-ENVIAR_DOCUMENTO"));
@@ -77,6 +79,7 @@ test("reordenar contatos na atualização conserva a pessoa selecionada e seu ra
   render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Mensagem preparada para Maria" } });
   api.listarConversasWhatsapp.mockResolvedValue({ conversas: [{ ...OUTRO_CONTATO, updatedAt: "2026-09-22T12:00:00Z" }, CONVERSA], temMais: false });
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await waitFor(() => expect(api.listarConversasWhatsapp).toHaveBeenCalledTimes(2));
   expect(screen.getByLabelText("Contato da conversa")).toHaveValue("pessoa-1");
@@ -90,6 +93,7 @@ test("trocar de ficha descarta o rascunho anterior e ignora uma leitura tardia d
   const ui = render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Rascunho só da primeira ficha" } });
   api.getMensagensWhatsapp.mockImplementationOnce(() => leituraAntiga.promise);
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledTimes(2));
   ui.rerender(<ChatDaEmpresa api={api} companyId={OUTRA.id} />);
@@ -120,6 +124,7 @@ test("falha inicial de listagem permite recuperação pelo botão atualizar", as
   api.listarConversasWhatsapp.mockRejectedValueOnce(new Error("Falha temporária"));
   render(<ChatDaEmpresa api={api} companyId={EMPRESA.id} />);
   await screen.findByTestId("chat-falha");
+  if (screen.queryByLabelText("Mais ações da conversa")) fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Atualizar conversa" }));
   await screen.findByTestId("fio");
   expect(screen.queryByTestId("chat-falha")).not.toBeInTheDocument();

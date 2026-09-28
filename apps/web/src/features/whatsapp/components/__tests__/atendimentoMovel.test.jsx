@@ -164,3 +164,37 @@ test("anexo simulado conserva arquivo/card, assume atendimento e deduplica a ten
   expect((await api.getArquivoMensagemWhatsapp("cv", r.mensagem.id)).arquivo.base64).toBe(btoa("%PDF-1.4 exemplo"));
   c.janela = { situacao: "EXPIRADA" }; await expect(api.enviarAnexoWhatsapp("cv", arquivo)).rejects.toMatchObject({ status: 409, code: "FORA_DA_JANELA" });
 });
+
+test('retomada preenche assunto, confere texto e envia exatamente a prévia',async()=>{
+ const configuracao={disponivel:false,statusMeta:'APPROVED',requerAssunto:true,textoModelo:'Vamos retomar sobre {{1}}?',botoes:['Falar com a equipe']};
+ const api={...apiDraft(),getRetomadaWhatsapp:jest.fn(async()=>configuracao),prepararRetomadaWhatsapp:jest.fn(async(id,{assunto})=>({...configuracao,disponivel:true,texto:'Vamos retomar sobre '+assunto+'?',assunto,previaHash:'hash-com-assunto'})),retomarConversaWhatsapp:jest.fn(async()=>({ok:true}))};
+ render(<RetomarConversa api={api} conversa={conversa}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Retomar conversa'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
+ const input=await screen.findByLabelText('Qual é o assunto?');expect(screen.getByRole('button',{name:'Conferir mensagem'})).toBeDisabled();
+ fireEvent.change(input,{target:{value:'o envio das guias'}});fireEvent.click(screen.getByRole('button',{name:'Conferir mensagem'}));
+ const enviar=await screen.findByRole('button',{name:'Enviar modelo de retomada'});expect(await screen.findByText('Vamos retomar sobre o envio das guias?')).toBeVisible();
+ fireEvent.click(enviar);await screen.findByText(/Modelo aceito pelo WhatsApp/);
+ expect(api.prepararRetomadaWhatsapp).toHaveBeenCalledWith('cv',{assunto:'o envio das guias'});expect(api.retomarConversaWhatsapp).toHaveBeenCalledWith('cv',expect.objectContaining({assunto:'o envio das guias',previaHash:'hash-com-assunto'}));
+ expect(screen.queryByRole('link')).not.toBeInTheDocument();limparRascunhosDaSessao(api);
+});
+test('solicita aprovação sem deixar o chat, não envia mensagem e permite consultar de novo',async()=>{
+ const api={getRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,statusMeta:'AUSENTE',podeSolicitarAprovacao:true,textoModelo:'Retomar sobre {{1}}'})),solicitarModeloRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,statusMeta:'PENDING',message:'Aguardando análise'})),retomarConversaWhatsapp:jest.fn()};
+ render(<RetomarConversa api={api} conversa={conversa}/>);fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Solicitar aprovação na Meta'}));await screen.findByText('Aguardando análise');
+ expect(api.solicitarModeloRetomadaWhatsapp).toHaveBeenCalledWith('cv');expect(api.retomarConversaWhatsapp).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Atualizar aprovação'}));await waitFor(()=>expect(api.getRetomadaWhatsapp).toHaveBeenCalledTimes(2));
+});
+test('falha ao atualizar aprovação remove prévia antiga e não deixa enviar',async()=>{
+ const api={getRetomadaWhatsapp:jest.fn().mockResolvedValueOnce({disponivel:true,texto:'Mensagem aprovada',previaHash:'hash'}).mockRejectedValueOnce(new Error('Meta indisponível'))};
+ render(<RetomarConversa api={api} conversa={conversa}/>);fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
+ await screen.findByRole('button',{name:'Enviar modelo de retomada'});fireEvent.click(screen.getByRole('button',{name:'Atualizar aprovação'}));
+ await screen.findByText('Meta indisponível');expect(screen.queryByRole('button',{name:'Enviar modelo de retomada'})).not.toBeInTheDocument();
+});
+
+test('mock de retomada exige prévia, preserva janela e deduplica envio',async()=>{
+ const c={...conversa,janela:{situacao:'EXPIRADA'},mensagens:[]},api=criarAtendimentoMovelMock({conversas:[c],usuario:()=> 'equipe'});
+ expect(await api.getRetomadaWhatsapp('cv')).toMatchObject({disponivel:false,requerAssunto:true,simulado:true});
+ const p=await api.prepararRetomadaWhatsapp('cv',{assunto:'documentos'}),body={assunto:'documentos',previaHash:p.previaHash,clientRequestId:'retomada-1'};
+ await api.retomarConversaWhatsapp('cv',body);await api.retomarConversaWhatsapp('cv',body);
+ expect(c.mensagens).toHaveLength(1);expect(c.janela.situacao).toBe('EXPIRADA');expect(c.mensagens[0].corpo).toContain('sobre documentos');
+});

@@ -28,6 +28,7 @@ const resolverCliente = jest.fn(async () => ({ situacao: "VINCULADO", empresas: 
 function banco({ cliente = false, permissoes = [], menuRecente = false, semPessoa = false, inativo = false } = {}) {
   const conversa = registro({ cliente }).conversa;
   return {
+    appSetting: { findUnique: jest.fn(async()=>null) },
     acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
     mensagemWhatsapp: {
       findFirst: jest.fn(async ({ where }) => where.turnoIaId ? null : menuRecente ? { id: "out-old" } : null),
@@ -452,4 +453,15 @@ describe("situação fiscal pelo botão; texto livre permanece no assistente", (
     expect(acaoDoTextoLivre("Quero saber a situação fiscal da empresa e minhas guias", { cliente: true })).toBeNull();
     expect(acaoDoTextoLivre("Quero a situação fiscal de janeiro", { cliente: true })).toBeNull();
   });
+});
+
+it('botão de pagamento executa diretamente, sem portal nem modelo',async()=>{
+ const entrada=registro({cliente:true});const client=banco({cliente:true});const cloud=nuvem();const executar=jest.fn();const coleta=jest.fn();
+ const id='altan.payment.confirm.11111111-1111-4111-8111-111111111111';
+ client.appSetting={findUnique:jest.fn(async({where})=>where.key===id?({value:{companyId:'pc1',guideId:'g1',contatoId:'ct1',telefone:entrada.conversa.telefoneE164,expiraEm:'2026-10-01'}}):null),update:jest.fn(),upsert:jest.fn(),create:jest.fn()};
+ client.contatoWhatsapp.findFirst=jest.fn(async()=>({id:'ct1',userId:'u1'}));
+ client.guide={findFirst:jest.fn(async()=>({id:'g1',paymentStatus:'OPEN',baixada:false,updatedAt:AGORA})),updateMany:jest.fn(async()=>({count:1}))};
+ client.$transaction=fn=>fn(client);
+ const r=await responderMenuWhatsapp({registro:entrada,interacao:{id},agora:AGORA,client,cloud,executar,coleta,resolverVinculo:resolverCliente,conferirJanela:janelaAberta,logger:log});
+ expect(r).toMatchObject({tratado:true,acao:'CONFIRMAR_PAGAMENTO'});expect(client.guide.updateMany).not.toHaveBeenCalled();expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Em que data')}));expect(executar).not.toHaveBeenCalled();expect(coleta).not.toHaveBeenCalled();
 });

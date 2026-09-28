@@ -594,3 +594,10 @@ describe("⚠⚠ `contacts[0]` — a prova de que o número existe", () => {
     expect(WhatsappCloudClient.contatoDaResposta(null)).toEqual({ waId: null, input: null });
   });
 });
+
+test('retomada envia assunto posicional e resposta rápida nativa',async()=>{
+ const cliente=clienteCom([ok(RESPOSTA_ENVIO)]);
+ await cliente.enviarTemplate({telefone:'5521999998888',template:'reabrir_conversa',variaveis:['o envio das guias'],botoesResposta:['altan.client.human.v1']});
+ const payload=JSON.parse(fetchFalso.mock.calls[0][1].body);
+ expect(payload.template.components).toEqual([{type:'body',parameters:[{type:'text',text:'o envio das guias'}]},{type:'button',sub_type:'quick_reply',index:'0',parameters:[{type:'payload',payload:'altan.client.human.v1'}]}]);
+});

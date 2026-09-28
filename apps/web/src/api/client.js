@@ -1,4 +1,5 @@
 import { createMockApi } from "./mock/mockApi";
+import { withBackgroundTasksMock } from "./mock/backgroundTasksMock";
 import { createRealApi } from "./real/realApi";
 
 export function createApiClient() {
@@ -31,6 +32,6 @@ export function createApiClient() {
 
   return {
     mode: "mock",
-    ...mock,
+    ...withBackgroundTasksMock(mock),
   };
 }

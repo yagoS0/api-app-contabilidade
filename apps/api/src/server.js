@@ -77,7 +77,7 @@ app.use(
   cors({
     origin: corsOriginPolicy,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["content-type", "x-api-key", "authorization"],
+    allowedHeaders: ["content-type", "x-api-key", "authorization", "prefer", "idempotency-key"],
     credentials: true,
   })
 );

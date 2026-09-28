@@ -1,5 +1,6 @@
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 import { importarNotasEmLotes } from "./importarNotasEmLotes";
+import { createBackgroundTaskClient } from "./backgroundTasks";
 import { atendimentoMovelApi } from "./atendimentoMovelApi";
 import { acompanhamentoParcelamentosApi } from "./acompanhamentoParcelamentosApi";
 function getApiBaseUrl() {
@@ -418,7 +419,14 @@ export function createRealApi() {
     return payload;
   }
 
+  const background = createBackgroundTaskClient(request);
   return {
+    getBackgroundTask: (id) => request(`/firm/jobs/tarefas/${encodeURIComponent(id)}`),
+    async sendGuidesTask(companyId, body, onProgress) {
+      const out = await background.request(`/firm/companies/${encodeURIComponent(companyId)}/guides/send-task`,
+        { method: "POST", body: JSON.stringify(body) }, task => onProgress?.(task.progress?.resultados || []));
+      return out.resultados;
+    },
     ...acompanhamentoParcelamentosApi(request),
     ...atendimentoMovelApi(request),
     setUnauthorizedHandler(handler) {
@@ -546,7 +554,7 @@ export function createRealApi() {
       return request(`/firm/guides/${guideId}/confirm-payment`, { method: "POST" });
     },
     async recalculateGuide(guideId) {
-      return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
+      return background.request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
     },
     // Portal Cliente: libera SÓ a guia selecionada ao cliente e envia SÓ ela por e-mail
     // (página da empresa). O empacotamento DAS+INSS fica no envio em lote da página principal.
@@ -679,7 +687,7 @@ export function createRealApi() {
     },
     // Busca o comprovante no SERPRO e só REGISTRA (não lança) — a baixa segue sendo do contador.
     async buscarPagamentoGuia(guideId) {
-      return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });
+      return background.request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });
     },
     // Afirma que a competência não teve faturamento. O backend RECUSA (409) se houver nota EMIT
     // autorizada no mês — é confirmação do que ele já vê, não declaração contra a evidência.
@@ -740,27 +748,27 @@ export function createRealApi() {
       });
     },
     async captureSerproPgdasd(companyId, input = {}) {
-      return request(`/firm/companies/${companyId}/serpro/pgdasd/capture`, {
+      return background.request(`/firm/companies/${companyId}/serpro/pgdasd/capture`, {
         method: "POST",
         body: JSON.stringify(input),
       });
     },
     async syncSerproInss(companyId, input = {}) {
-      return request(`/firm/companies/${companyId}/serpro/inss/sync`, {
+      return background.request(`/firm/companies/${companyId}/serpro/inss/sync`, {
         method: "POST",
         body: JSON.stringify(input),
       });
     },
     // Módulo Fiscal M2 — captura Lucro Presumido (DCTFWeb → provisão por tributo + split na circular).
     async captureSerproLp(companyId, input = {}) {
-      return request(`/firm/companies/${companyId}/serpro/lp/capture`, {
+      return background.request(`/firm/companies/${companyId}/serpro/lp/capture`, {
         method: "POST",
         body: JSON.stringify(input),
       });
     },
     // Q36: captura manual de parcelamento (itera as parcelas geráveis internamente; sem competência).
     async captureSerproParcelamento(companyId) {
-      return request(`/firm/companies/${companyId}/serpro/parcelamento/capture`, {
+      return background.request(`/firm/companies/${companyId}/serpro/parcelamento/capture`, {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -777,14 +785,14 @@ export function createRealApi() {
     },
     // Q40: confirmação de pagamento (PAGTOWEB) por empresa — consulta comprovante das guias OPEN.
     async confirmarPagamentoSerpro(companyId, input = {}) {
-      return request(`/firm/companies/${companyId}/serpro/payment-confirmation`, {
+      return background.request(`/firm/companies/${companyId}/serpro/payment-confirmation`, {
         method: "POST",
         body: JSON.stringify(input),
       });
     },
     // Q40: relatório de situação fiscal (SITFIS) por empresa.
     async getSitfis(companyId) {
-      return request(`/firm/companies/${companyId}/serpro/sitfis/relatorio`, {
+      return background.request(`/firm/companies/${companyId}/serpro/sitfis/relatorio`, {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -1637,7 +1645,7 @@ export function createRealApi() {
     },
     // Envia 1 e-mail por empresa selecionada (com todas as guias da competência anexadas).
     async sendBatchEmails(items) {
-      return request(`/firm/guides/batch-send`, {
+      return background.request(`/firm/guides/batch-send`, {
         method: "POST",
         body: JSON.stringify({ items: Array.isArray(items) ? items : [] }),
       });
@@ -1665,11 +1673,11 @@ export function createRealApi() {
       return request(`/firm/guides/liberacao/lote/previa`, { method: "POST", body: JSON.stringify(body) });
     },
     async liberarGuiasLote(body) {
-      return request(`/firm/guides/liberacao/lote`, { method: "POST", body: JSON.stringify(body) });
+      return background.request(`/firm/guides/liberacao/lote`, { method: "POST", body: JSON.stringify(body) });
     },
     // O LOTE. Exige `conferencia` repetindo os números da prévia (409 CONFERENCIA_DIVERGENTE senão).
     async executarLoteWhatsapp(body) {
-      return request(`/firm/guides/whatsapp/lote`, { method: "POST", body: JSON.stringify(body || {}) });
+      return background.request(`/firm/guides/whatsapp/lote`, { method: "POST", body: JSON.stringify(body || {}) });
     },
     async getCircular(companyId, { year } = {}) {
       const q = year ? `?year=${year}` : "";
@@ -1685,7 +1693,7 @@ export function createRealApi() {
       });
     },
     async syncPgdasCircular(companyId, competencia, input = {}) {
-      return request(`/firm/companies/${companyId}/circular/${encodeURIComponent(competencia)}/sync-pgdas`, {
+      return background.request(`/firm/companies/${companyId}/circular/${encodeURIComponent(competencia)}/sync-pgdas`, {
         method: "POST",
         body: JSON.stringify(input),
       });
@@ -1704,7 +1712,7 @@ export function createRealApi() {
       });
     },
     async importOFX(companyId, { transactions, arquivoWhatsappId }) {
-      return request(`/firm/companies/${companyId}/entries/import/ofx`, {
+      return background.request(`/firm/companies/${companyId}/entries/import/ofx`, {
         method: "POST",
         body: JSON.stringify({ transactions, ...(arquivoWhatsappId ? { arquivoWhatsappId } : {}) }),
       });
@@ -1718,7 +1726,7 @@ export function createRealApi() {
       });
     },
     async commitExcelImport(companyId, transactions) {
-      return request(`/firm/companies/${companyId}/entries/import/excel`, {
+      return background.request(`/firm/companies/${companyId}/entries/import/excel`, {
         method: "POST",
         body: JSON.stringify({ transactions }),
       });
@@ -1962,7 +1970,7 @@ export function createRealApi() {
 
     // ─── Q12.B: captura DFe ─────────────────────────────────────────────────
     async syncDfe(companyId, { env = "prod" } = {}) {
-      return request(`/firm/companies/${companyId}/dfe/sync?env=${env}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/dfe/sync?env=${env}`, { method: "POST" });
     },
     async getDfeState(companyId) {
       const payload = await request(`/firm/companies/${companyId}/dfe/state`);
@@ -1973,7 +1981,7 @@ export function createRealApi() {
     },
     // Q12.B+: NFS-e via ADN
     async syncAdn(companyId, { env = "prod" } = {}) {
-      return request(`/firm/companies/${companyId}/adn/sync?env=${env}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/adn/sync?env=${env}`, { method: "POST" });
     },
     async getAdnState(companyId) {
       const payload = await request(`/firm/companies/${companyId}/adn/state`);
@@ -1984,7 +1992,7 @@ export function createRealApi() {
     },
     // Q56: import MANUAL de notas (XML) — pra quando a captura automática não trouxe as notas.
     async importInvoicesXml(companyId, files, { type = "NFSE", onProgress, shouldContinue } = {}) {
-      return importarNotasEmLotes(request, companyId, files, type, onProgress, shouldContinue);
+      return importarNotasEmLotes(request, companyId, files, type, onProgress, shouldContinue, background);
     },
     // Q48: download de notas em lote (job em segundo plano + zip)
     async createNotasDownload(payload) {
@@ -2437,7 +2445,7 @@ export function createRealApi() {
 
     // Q12.C.4: Apuração por empresa
     async calcularApuracao(companyId, competencia, { fs12 } = {}) {
-      return request(`/firm/companies/${companyId}/apuracao/${competencia}/calcular`, {
+      return background.request(`/firm/companies/${companyId}/apuracao/${competencia}/calcular`, {
         method: "POST",
         body: JSON.stringify({ fs12 }),
       });
@@ -2456,10 +2464,10 @@ export function createRealApi() {
       });
     },
     async conferirApuracao(companyId, competencia) {
-      return request(`/firm/companies/${companyId}/apuracao/${competencia}/conferir`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/apuracao/${competencia}/conferir`, { method: "POST" });
     },
     async classificarNotas(companyId, { force = false } = {}) {
-      return request(`/firm/companies/${companyId}/classificar?force=${force}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/classificar?force=${force}`, { method: "POST" });
     },
 
     // Q12.C.2: Apuração global
@@ -2542,11 +2550,11 @@ export function createRealApi() {
       const q = new URLSearchParams();
       if (force) q.set("force", "true");
       if (competencia) q.set("competencia", competencia);
-      return request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST" });
     },
     // Q14.3 — motor de apuração local
     async apurarV2(companyId, competencia, { folha12m } = {}) {
-      return request(`/firm/companies/${companyId}/apurar-v2/${competencia}`, {
+      return background.request(`/firm/companies/${companyId}/apurar-v2/${competencia}`, {
         method: "POST",
         body: JSON.stringify({ folha12m }),
       });
@@ -2567,7 +2575,7 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/relatorio-faturamento/${competencia}`);
     },
     async gerarRelatorioFaturamento(companyId, competencia) {
-      return request(`/firm/companies/${companyId}/relatorio-faturamento/${competencia}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/relatorio-faturamento/${competencia}`, { method: "POST" });
     },
     // Módulo Fiscal (§1.3) — sugestão de anexo por nota.
     async getSugestaoAnexo(companyId, competencia) {
@@ -2633,13 +2641,13 @@ export function createRealApi() {
     },
     // Q15 — fechamento
     async conferirTransmissaoFechamento(companyId, competencia) {
-      return request('/firm/companies/' + encodeURIComponent(companyId) + '/fechamento/' + encodeURIComponent(competencia) + '/conferir-transmissao', { method: 'POST' });
+      return background.request('/firm/companies/' + encodeURIComponent(companyId) + '/fechamento/' + encodeURIComponent(competencia) + '/conferir-transmissao', { method: 'POST' });
     },
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
     },
     async calcularFechamento(companyId, competencia, payload) {
-      return request(`/firm/companies/${companyId}/fechamento/${competencia}/calcular`, {
+      return background.request(`/firm/companies/${companyId}/fechamento/${competencia}/calcular`, {
         method: "POST", body: JSON.stringify(payload),
       });
     },
@@ -2649,7 +2657,7 @@ export function createRealApi() {
       });
     },
     async transmitirFechamento(companyId, competencia, confirmCompetencia, calculoId) {
-      return request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
+      return background.request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
         method: "POST", body: JSON.stringify({ confirmCompetencia, calculoId }),
       });
     },
@@ -2667,7 +2675,7 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/reabrir`, { method: "POST" });
     },
     async retificarFechamento(companyId, competencia, confirmCompetencia, calculoId) {
-      return request(`/firm/companies/${companyId}/fechamento/${competencia}/retificar`, {
+      return background.request(`/firm/companies/${companyId}/fechamento/${competencia}/retificar`, {
         method: "POST", body: JSON.stringify({ confirmCompetencia, confirmRetificar: true, calculoId }),
       });
     },
@@ -2678,7 +2686,7 @@ export function createRealApi() {
     },
     // Q15 — fila batch
     async criarApuracaoBatch({ portalClientIds, competencia }) {
-      return request(`/firm/apuracao/batch`, {
+      return background.start(`/firm/apuracao/batch`, {
         method: "POST", body: JSON.stringify({ portalClientIds, competencia }),
       });
     },

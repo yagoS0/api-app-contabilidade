@@ -60,7 +60,7 @@ export function createGuideReleaseBatchService(deps = {}) {
       linhas: previa.linhas.map(({ guias, ...linha }) => linha) };
   }
 
-  async function executar({ assinatura, userId, log, ...input }) {
+  async function executar({ assinatura, userId, log, onProgress = async () => {}, ...input }) {
     const previa = await preparar(input);
     if (!assinatura || assinatura !== previa.assinatura) throw loteAlterado();
     const results = [];
@@ -118,6 +118,7 @@ export function createGuideReleaseBatchService(deps = {}) {
       } catch (err) { r.error = err.code; r.message = err.message; }
       r.ok = r.liberadas === linha.guideIds.length && r.email?.ok === true
         && r.whatsapp.length === linha.guideIds.length && r.whatsapp.every((w) => w.ok && !w.parcial);
+      await onProgress(results.length, { results });
     }
     return { ok: true, results };
   }

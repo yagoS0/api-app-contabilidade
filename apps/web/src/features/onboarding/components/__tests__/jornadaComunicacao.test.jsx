@@ -60,13 +60,18 @@ test("formulário preparado atualiza o atendimento e retira o vínculo com outra
   render(<FioDaConversa fio={{ conversa, mensagens: [] }} hook={{ api }} slotVincular={<AtendimentoComercial api={api} conversa={conversa} slotEmpresa={<p>Vincular empresa existente</p>} />} />);
   fireEvent.click(screen.getByRole("button", { name: "Abrir atendimento" }));
   expect(await screen.findByText("Vincular empresa existente")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Fechar atendimento e cadastro" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" }));
   const preparar = within((await screen.findByText("Formulário de abertura")).closest("article")).getByRole("button", { name: "Preparar formulário" });
   await waitFor(() => expect(preparar).toBeEnabled());
   fireEvent.click(preparar);
   expect(await screen.findByText(/preencha este formulário:/)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("Vincular empresa existente")).not.toBeInTheDocument());
-  expect(await screen.findByRole("button", { name: "Nova solicitação", exact: true })).toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole("complementary", { name: "Mensagens rápidas" })).getByRole("button", { name: "Fechar", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Fechar ações da mensagem" }));
+  fireEvent.click(screen.getByRole("button", { name: "Abrir atendimento" }));
+  expect(await screen.findByRole("button", { name: "Nova solicitação", exact: true })).toBeVisible();
 });
 
 test("atualizar atendimento recupera resultado fiscal mesmo sem mudança na versão da ficha", async () => {

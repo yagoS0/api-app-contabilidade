@@ -1,3 +1,4 @@
+import { PagamentoGuia } from "./PagamentoGuia";
 import { ConsultaSerproGuias } from "./ConsultaSerproGuias";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createApiClient } from "../../../../api/client";
@@ -1506,7 +1507,7 @@ export function CompanyGuidesTable({
                         >
                           desfazer vazio
                         </button>
-                      ) : paymentStatus.label}
+                      ) : <PagamentoGuia key={`${companyId}:${guide.guideId || guide.id}`} guide={guide} companyId={companyId} api={expectedGuidesApi} fallback={paymentStatus.label} />}
                     </span>
                     <span
                       className="guides-grid__cell guides-grid__cell--email"
