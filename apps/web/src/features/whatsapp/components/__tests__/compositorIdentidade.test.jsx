@@ -88,7 +88,7 @@ test("mudar canal fecha a prévia de retomada e exige preparar o novo destinatá
   expect(await screen.findByText("Prévia para conversa-a")).toBeVisible();
   ui.rerender(<CompositorConversa conversa={fechada} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   expect(screen.queryByText("Prévia para conversa-a")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Enviar modelo de retomada" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Enviar mensagem" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" }));
   expect(await screen.findByText("Prévia para conversa-b")).toBeVisible();
   expect(h.api.getRetomadaWhatsapp.mock.calls).toEqual([["conversa-a"], ["conversa-b"]]);

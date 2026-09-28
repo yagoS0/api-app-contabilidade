@@ -74,7 +74,7 @@ test("retomada só consulta modelo ao pedir e nunca promete janela aberta", asyn
   const api = { getRetomadaWhatsapp: jest.fn(async () => ({ disponivel: false, motivo: "MODELO_NAO_APROVADO", message: "Modelo não aprovado" })), retomarConversaWhatsapp: jest.fn() };
   render(<RetomarConversa api={api} conversa={conversa} />);
   expect(api.getRetomadaWhatsapp).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" }));
-  expect(await screen.findByText("Modelo não aprovado")).toBeVisible(); expect(screen.queryByRole("button", { name: "Enviar modelo de retomada" })).not.toBeInTheDocument(); expect(api.retomarConversaWhatsapp).not.toHaveBeenCalled();
+  expect(await screen.findByText("Modelo não aprovado")).toBeVisible(); expect(screen.queryByRole("button", { name: "Enviar mensagem" })).not.toBeInTheDocument(); expect(api.retomarConversaWhatsapp).not.toHaveBeenCalled();
 });
 test("voltar à lista suspende inclusive callback de leitura que já estava na fila", () => {
   let callback; global.IntersectionObserver = jest.fn(cb => { callback = cb; return { observe: jest.fn(), disconnect: jest.fn() }; });
@@ -130,12 +130,12 @@ test.each([null, "INCERTA", "PROCESSANDO", "ACEITA"])("retomada %s sobrevive à 
   const api = { ...apiDraft(), getRetomadaWhatsapp: jest.fn(async () => ({ disponivel: true, texto: "Podemos continuar o atendimento?", previaHash: "hash-previa" })), retomarConversaWhatsapp: jest.fn(async () => { throw Object.assign(new Error("Conexão perdida"), status ? { status: 409, payload: { intencao: { status } } } : {}); }), getIntencaoWhatsapp: jest.fn(async () => ({ intencao: { status: "ACEITA" } })) };
   const ui = render(<RetomarConversa api={api} conversa={conversa} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Retomar conversa" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" })); fireEvent.click(await screen.findByRole("button", { name: "Enviar modelo de retomada" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retomar conversa" })); fireEvent.click(await screen.findByRole("button", { name: "Enviar mensagem" }));
   await waitFor(() => expect(api.retomarConversaWhatsapp).toHaveBeenCalledTimes(1));
   await screen.findByText(/Envio de retomada sem confirmação/); const pedido = api.retomarConversaWhatsapp.mock.calls[0][1]; ui.unmount();
   render(<RetomarConversa api={api} conversa={conversa} />); fireEvent.click(await screen.findByRole("button", { name: "Conferir retomada pendente" }));
-  fireEvent.click(screen.getByRole("button", { name: "Conferir resultado da retomada" }));
-  await screen.findByText(/Modelo aceito pelo WhatsApp/); expect(api.getIntencaoWhatsapp).toHaveBeenCalledWith("cv", pedido.clientRequestId); expect(api.retomarConversaWhatsapp).toHaveBeenCalledTimes(1); expect(api.getRetomadaWhatsapp).toHaveBeenCalledTimes(1); limparRascunhosDaSessao(api);
+  fireEvent.click(screen.getByRole("button", { name: "Conferir envio" }));
+  await screen.findByText(/Mensagem aceita pelo WhatsApp/); expect(api.getIntencaoWhatsapp).toHaveBeenCalledWith("cv", pedido.clientRequestId); expect(api.retomarConversaWhatsapp).toHaveBeenCalledTimes(1); expect(api.getRetomadaWhatsapp).toHaveBeenCalledTimes(1); limparRascunhosDaSessao(api);
 });
 
 test.each(["INCERTA", "PROCESSANDO", "ACEITA"])("anexo HTTP409 com intenção %s bloqueia novo arquivo até conferir a mesma chave", async status => {
@@ -170,25 +170,26 @@ test('retomada preenche assunto, confere texto e envia exatamente a prévia',asy
  const api={...apiDraft(),getRetomadaWhatsapp:jest.fn(async()=>configuracao),prepararRetomadaWhatsapp:jest.fn(async(id,{assunto})=>({...configuracao,disponivel:true,texto:'Vamos retomar sobre '+assunto+'?',assunto,previaHash:'hash-com-assunto'})),retomarConversaWhatsapp:jest.fn(async()=>({ok:true}))};
  render(<RetomarConversa api={api} conversa={conversa}/>);
  await waitFor(()=>expect(screen.getByRole('button',{name:'Retomar conversa'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
- const input=await screen.findByLabelText('Qual é o assunto?');expect(screen.getByRole('button',{name:'Conferir mensagem'})).toBeDisabled();
- fireEvent.change(input,{target:{value:'o envio das guias'}});fireEvent.click(screen.getByRole('button',{name:'Conferir mensagem'}));
- const enviar=await screen.findByRole('button',{name:'Enviar modelo de retomada'});expect(await screen.findByText('Vamos retomar sobre o envio das guias?')).toBeVisible();
- fireEvent.click(enviar);await screen.findByText(/Modelo aceito pelo WhatsApp/);
+ const input=await screen.findByLabelText('Assunto');expect(screen.getByRole('button',{name:'Ver mensagem'})).toBeDisabled();
+ fireEvent.change(input,{target:{value:'o envio das guias'}});fireEvent.click(screen.getByRole('button',{name:'Ver mensagem'}));
+ const enviar=await screen.findByRole('button',{name:'Enviar mensagem'});expect(await screen.findByText('Vamos retomar sobre o envio das guias?')).toBeVisible();
+ fireEvent.click(enviar);await screen.findByText(/Mensagem aceita pelo WhatsApp/);
  expect(api.prepararRetomadaWhatsapp).toHaveBeenCalledWith('cv',{assunto:'o envio das guias'});expect(api.retomarConversaWhatsapp).toHaveBeenCalledWith('cv',expect.objectContaining({assunto:'o envio das guias',previaHash:'hash-com-assunto'}));
  expect(screen.queryByRole('link')).not.toBeInTheDocument();limparRascunhosDaSessao(api);
 });
 test('solicita aprovação sem deixar o chat, não envia mensagem e permite consultar de novo',async()=>{
  const api={getRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,statusMeta:'AUSENTE',podeSolicitarAprovacao:true,textoModelo:'Retomar sobre {{1}}'})),solicitarModeloRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,statusMeta:'PENDING',message:'Aguardando análise'})),retomarConversaWhatsapp:jest.fn()};
  render(<RetomarConversa api={api} conversa={conversa}/>);fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
- fireEvent.click(await screen.findByRole('button',{name:'Solicitar aprovação na Meta'}));await screen.findByText('Aguardando análise');
+ fireEvent.click(await screen.findByRole('button',{name:'Solicitar aprovação'}));await screen.findByText('Aguardando aprovação da Meta.');
  expect(api.solicitarModeloRetomadaWhatsapp).toHaveBeenCalledWith('cv');expect(api.retomarConversaWhatsapp).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Atualizar aprovação'}));await waitFor(()=>expect(api.getRetomadaWhatsapp).toHaveBeenCalledTimes(2));
 });
-test('falha ao atualizar aprovação remove prévia antiga e não deixa enviar',async()=>{
- const api={getRetomadaWhatsapp:jest.fn().mockResolvedValueOnce({disponivel:true,texto:'Mensagem aprovada',previaHash:'hash'}).mockRejectedValueOnce(new Error('Meta indisponível'))};
+test('falha ao preparar não deixa enviar e permite nova consulta',async()=>{
+ const api={getRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,requerAssunto:true,statusMeta:'APPROVED'})),prepararRetomadaWhatsapp:jest.fn(async()=>{throw new Error('Meta indisponível');}),retomarConversaWhatsapp:jest.fn()};
  render(<RetomarConversa api={api} conversa={conversa}/>);fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
- await screen.findByRole('button',{name:'Enviar modelo de retomada'});fireEvent.click(screen.getByRole('button',{name:'Atualizar aprovação'}));
- await screen.findByText('Meta indisponível');expect(screen.queryByRole('button',{name:'Enviar modelo de retomada'})).not.toBeInTheDocument();
+ fireEvent.change(await screen.findByLabelText('Assunto'),{target:{value:'guias'}});fireEvent.click(screen.getByRole('button',{name:'Ver mensagem'}));
+ await screen.findByText('Meta indisponível');expect(screen.queryByRole('button',{name:'Enviar mensagem'})).not.toBeInTheDocument();expect(api.retomarConversaWhatsapp).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Tentar novamente'}));expect(await screen.findByLabelText('Assunto')).toHaveValue('guias');
 });
 
 test('mock de retomada exige prévia, preserva janela e deduplica envio',async()=>{
@@ -197,4 +198,14 @@ test('mock de retomada exige prévia, preserva janela e deduplica envio',async()
  const p=await api.prepararRetomadaWhatsapp('cv',{assunto:'documentos'}),body={assunto:'documentos',previaHash:p.previaHash,clientRequestId:'retomada-1'};
  await api.retomarConversaWhatsapp('cv',body);await api.retomarConversaWhatsapp('cv',body);
  expect(c.mensagens).toHaveLength(1);expect(c.janela.situacao).toBe('EXPIRADA');expect(c.mensagens[0].corpo).toContain('sobre documentos');
+});
+
+test('retomada fica no compositor sem popup ou texto do modelo antes da prévia',async()=>{
+ const api={getRetomadaWhatsapp:jest.fn(async()=>({disponivel:false,requerAssunto:true,statusMeta:'APPROVED',textoModelo:'Mensagem longa aprovada sobre {{1}}'}))};
+ render(<RetomarConversa api={api} conversa={conversa}/>);fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));
+ const input=await screen.findByLabelText('Assunto');expect(input).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(screen.getByRole('region',{name:'Retomar conversa'})).toBeVisible();
+ expect(screen.queryByText(/Mensagem longa aprovada/)).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Atualizar aprovação'})).not.toBeInTheDocument();
+ fireEvent.change(input,{target:{value:'documentos'}});fireEvent.keyDown(input,{key:'Escape'});
+ expect(screen.queryByRole('region',{name:'Retomar conversa'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Retomar conversa'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'Retomar conversa'}));expect(await screen.findByLabelText('Assunto')).toHaveValue('documentos');
 });

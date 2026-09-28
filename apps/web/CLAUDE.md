@@ -773,3 +773,7 @@ WhatsApp usa `AtendimentoComercial` e `OrientacoesRapidas`; o detalhe do onboard
 # Atendimento comercial validado — 23/09/2026
 
 Diagnóstico estruturado e contrato por modalidade/origem/PF-PJ usam metadados compartilhados. Baixa não oferece mensalidade; regularização é discriminada e vinculada ao diagnóstico. Alterar perfil deve preservar o rascunho de diagnóstico, com confirmação da nova versão, nunca remontar o formulário por ID de diagnóstico. Fichas demonstrativas antigas normalizam versão para zero antes da primeira escrita. Minuta permite prévia; somente modelo aprovado gera contrato. Dados, preços e textos privados não entram em mock ou bundle. Detalhes em `src/features/onboarding/CLAUDE.md` e `docs/ajustes-leads-validacao-20260923.md` na raiz.
+
+## Retomada integrada ao compositor — 28/09/2026
+
+Substitui o modal de retomada: o dono considerou o popup e os textos excessivos. Mostrar assunto → prévia → envio no compositor, mantendo histórico visível e pessoa/canal explícitos. Aprovação e configuração aparecem apenas quando bloqueiam a ação. Não reintroduzir instruções repetidas, popup ou status aprovado no caminho normal. Guardas, rascunhos, intenção e APIs permanecem.
