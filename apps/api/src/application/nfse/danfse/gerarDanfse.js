@@ -661,6 +661,31 @@ export async function gerarDanfse(params = {}) {
         continue;
       }
 
+      // Campos lado a lado crescem como uma linha só. Aplicar o deslocamento
+      // após desenhar ambos mantém Simples e regime alinhados pelo topo.
+      const alturasMultilinha = linha.campos.filter((c) => c.multilinha).map((campo) => {
+        const valor = valorParaImpressao(campo, dados.valores);
+        doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.conteudoPt);
+        const alturaTexto = doc.heightOfString(apresentarValor(campo.id, valor.texto), {
+          width: larguraPagina(campo.larg) - 4,
+        });
+        const necessaria = (8 + alturaTexto + 1) / cm(1);
+        return { campo, necessaria, extra: Math.max(0, necessaria - campo.alt) };
+      });
+      const crescimentoDaLinha = Math.min(
+        Math.max(0, ...alturasMultilinha.map((c) => c.extra)),
+        Math.max(0, folgaDoElastico - crescimento),
+      );
+      for (const { campo, necessaria } of alturasMultilinha) {
+        if (crescimentoDaLinha > 0 || necessaria > campo.alt) {
+          conformidade.camposCrescidos.push({
+            campo: campo.id, deCm: Number(campo.alt.toFixed(2)),
+            paraCm: Number((campo.alt + crescimentoDaLinha).toFixed(2)),
+            truncado: necessaria > campo.alt + crescimentoDaLinha + 0.000001,
+          });
+        }
+      }
+
       for (const campo of linha.campos) {
         if (campo.id === "quadroQrCode" || campo.id === "quadroComplementoQrCode") continue;
 
@@ -668,7 +693,7 @@ export async function gerarDanfse(params = {}) {
         // SERVIÇO, e os campos abaixo dele — no mesmo bloco — precisam do valor já atualizado.
         const crescimentoAqui = bloco.id === "canhoto" ? 0 : crescimento;
         const sup = campo.sup + deslocamento + deslocamentoNoBloco + crescimentoAqui;
-        let alt = campo.alt;
+        let alt = campo.alt + (campo.multilinha ? crescimentoDaLinha : 0);
         const valorImpresso = campo.semFonteNoXml ? null : valorParaImpressao(campo, dados.valores);
 
         // O bloco elástico (§2.3 e §2.5.3): Informações Complementares absorve tudo que sobra até o
@@ -728,12 +753,13 @@ export async function gerarDanfse(params = {}) {
           conformidade.camposSemFonte.push(campo.id);
         }
 
-        const multilinha = campo.elastico === true || campo.id === "xTrib";
+        const multilinha = campo.multilinha === true || campo.elastico === true || campo.id === "xTrib";
         escreverConteudo(doc, apresentarValor(campo.id, texto), caixa, fontes.conteudo, {
           multilinha,
           topo: campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8,
         });
       }
+      crescimento += crescimentoDaLinha;
     }
 
     separarBloco(doc, topoImpresso);

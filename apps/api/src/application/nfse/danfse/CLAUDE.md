@@ -24,3 +24,17 @@ Validar com as suítes `danfse` e renderizar amostras curta, longa e cancelada c
 canhoto. Conferir página única, títulos sem sobreposição e QR decodificável.
 As fontes proprietárias continuam opcionais; Helvetica é o fallback já existente,
 com o aviso correspondente no relatório de conformidade.
+
+## Ajustes após conferência de notas reais — 28/09/2026
+
+- Percentuais individuais de IBS/CBS chegam como decimal com ponto no XML.
+  A apresentação normaliza vírgula e `%`, preservando todas as casas recebidas;
+  não arredondar, recalcular nem transformar ausência em zero.
+- Simples e regime usam texto multilinha. Medir a altura da linha inteira e
+  deslocar os campos seguintes apenas após desenhar os dois campos lado a lado.
+  O crescimento consome a mesma folga das informações complementares e preserva
+  a página única e o canhoto.
+- Validação local: 145 testes em cinco suítes; seis XMLs reais já salvos,
+  180 conferências por campo, seis QR Codes e inspeção visual das seis páginas.
+  Dados reais e PDFs de evidência permanecem fora do Git. Publicação na main e em
+  produção autorizada pelo dono; conferir a revisão implantada e a saúde da API.
