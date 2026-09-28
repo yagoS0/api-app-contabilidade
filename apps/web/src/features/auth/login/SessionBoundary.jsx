@@ -5,13 +5,14 @@ import { useManageAuthSession } from "../../../app/hooks/useManageAuthSession";
 import { LoginPage } from "./pages/renderLoginPage";
 import { OfficeNavigation } from "../../../app/navigation/OfficeNavigation";
 import { useResumoWhatsapp } from "../../whatsapp/hooks/useResumoWhatsapp";
+import { TaskCenterPlacement } from "../../tasks/TaskCenterPlacement";
 
 function OfficeWorkspace({ api, children }) {
   const resumoWhatsapp = useResumoWhatsapp({ api });
-  return <div className="office-workspace">
+  return <TaskCenterPlacement><div className="office-workspace">
     <OfficeNavigation resumoWhatsapp={resumoWhatsapp} />
     <div className="office-workspace__content">{children}</div>
-  </div>;
+  </div></TaskCenterPlacement>;
 }
 
 function AuthenticatedWorkspace({ api, children }) {
