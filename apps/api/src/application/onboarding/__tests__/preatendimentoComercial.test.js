@@ -1,4 +1,13 @@
 import { identificarIntencaoComercial, prepararPreatendimento, mensagemDeValor } from '../preatendimentoComercial.js';
+import { pedidoOperacionalComercial } from '../interpretacaoComercialWhatsapp.js';
+
+test('queixa sobre guias com pronome mantém contexto da troca sem ocultar pedido de documento', () => {
+  const contexto = { intencao: 'TRANSFERENCIA', campoEsperado: 'necessidade' };
+  expect(pedidoOperacionalComercial('o meu só manda guia pra pagar e não explica nada', contexto)).toBe(false);
+  expect(pedidoOperacionalComercial('o meu só manda guia; me mande a guia em aberto', contexto)).toBe(true);
+  expect(pedidoOperacionalComercial('me manda a guia', contexto)).toBe(true);
+  expect(pedidoOperacionalComercial('o meu só manda guia', { intencao: 'ABERTURA' })).toBe(true);
+});
 
 test.each([
   ['ABRIR', 'ABERTURA'], ['CONTADOR', 'TRANSFERENCIA'], ['contador', 'TRANSFERENCIA'],

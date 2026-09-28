@@ -671,6 +671,13 @@ export const WHATSAPP_ENVIO_DELAY_MS = Math.max(0, Number(process.env.WHATSAPP_E
 // dono tirar a lista. Quem recusa é o SERVIDOR (o gancho no webhook não chama o modelo), não uma tela.
 export const COMERCIAL_WEB_URL = String(process.env.COMERCIAL_WEB_URL || "").replace(/\/+$/, "");
 export const INTEGRACAO_IA_COMERCIAL = process.env.INTEGRACAO_IA_COMERCIAL === "1";
+// Pré-atendimento curto com OpenAI: independente da IA de clientes, sempre em piloto explícito.
+export const IA_LEADS_OPENAI = process.env.IA_LEADS_OPENAI === "1";
+// Listas próprias: o piloto OpenAI não herda os contatos do assistente legado.
+export const IA_LEADS_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_LEADS_TELEFONES_PILOTO || "").split(",").map(v => v.trim()).filter(v => /^\+?\d{10,15}$/.test(v)).map(v => v.replace(/\D/g, "")));
+export const IA_LEADS_CANAIS_PILOTO = Object.freeze(String(process.env.IA_LEADS_CANAIS_PILOTO || "").split(",").map(v => v.trim()).filter(Boolean));
+export const IA_LEADS_TETO_TOTAL_CENTAVOS = Number(process.env.IA_LEADS_TETO_TOTAL_CENTAVOS || 0);
+export const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || "").trim();
 export const INTEGRACAO_FISCAL_LEADS = process.env.INTEGRACAO_FISCAL_LEADS === "1";
 export const IA_COMERCIAL_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_COMERCIAL_TELEFONES_PILOTO || "").split(",").map(v => v.replace(/\D/g, "")).filter(Boolean));
 export const IA_COMERCIAL_TETO_CONVERSA_CENTAVOS = Math.max(1, Number(process.env.IA_COMERCIAL_TETO_CONVERSA_CENTAVOS) || 500);

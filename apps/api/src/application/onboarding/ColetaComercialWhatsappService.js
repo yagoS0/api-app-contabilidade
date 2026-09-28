@@ -6,6 +6,7 @@ import { OnboardingError } from "./OnboardingService.js";
 import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
 import { pediuMenuWhatsapp, declarouSerCliente, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
 import { avisoAtendimentoComercial, modalidadeDoBotao } from "./mensagensComerciais.js";
+import { interpretarMensagemLead } from "../assistente/InterpretarMensagemLeadService.js";
 
 import { pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
 import { identificarIntencaoComercial, origemDaIntencao, prepararPreatendimento, mensagemDeValor } from "./preatendimentoComercial.js";
@@ -61,17 +62,38 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const vinculado = await db.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
   // Um vínculo legado aberto não torna uma ficha concluída uma coleta ativa.
   const existente = vinculado && !encerrado(vinculado.onboarding) ? vinculado : null;
-  const origem = intencaoRecebida;
+  let origem = intencaoRecebida;
   if (mensagemAnterior(mensagem, vinculado?.triagem)) return { tratado: true, motivo: "MENSAGEM_ANTIGA" };
   if (navegacao) return { tratado: false, motivo: "NAVEGACAO_DO_ATENDIMENTO" };
-  if (pedidoOperacionalComercial(textoEntrada) || (conversa.portalClientId && registro.canal?.finalidade !== "COMERCIAL" && /^(IMPOSTO|DRE|MARGEM)$/i.test(String(textoEntrada || "").trim()))) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
+  if (pedidoOperacionalComercial(textoEntrada, existente?.triagem?.preatendimento) || (conversa.portalClientId && registro.canal?.finalidade !== "COMERCIAL" && /^(IMPOSTO|DRE|MARGEM)$/i.test(String(textoEntrada || "").trim()))) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
+  // Rede fora da transação. Replay, botão e anexo não consomem modelo.
+  const versaoAntesIa = { id: vinculado?.id || null, caso: vinculado?.versao, ficha: vinculado?.onboarding?.versao };
+  const ia = !anterior && tipo === "text" && !idInteracao && !escolhaModalidade && origem !== "MULTIPLOS"
+    ? await interpretarMensagemLead({ texto: textoEntrada, intencao: existente?.triagem?.preatendimento?.intencao || existente?.onboarding?.origem || origem,
+      campoEsperado: existente?.triagem?.preatendimento?.campoEsperado || null, conversaId: conversa.id, mensagemId: mensagem.id,
+      resumo: existente?.triagem?.preatendimento || null,
+      telefone: conversa.telefoneE164, canalId: inicial.canalId, client: db, deps: deps.ia || {} }) : null;
+  origem ||= ia?.interpretacao?.intencao || null;
   if (!existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
   const persistido = await db.$transaction(async tx => {
-    const atual = await tx.conversaWhatsapp.findUnique({ where: { id: inicial.id } });
+    let atual = await tx.conversaWhatsapp.findUnique({ where: { id: inicial.id } });
     if (bloqueada(proprioHandoff(atual) ? { ...atual, atendidaDesde: null } : atual) || atual.vinculoNumeroId !== inicial.vinculoNumeroId || atual.canalId !== inicial.canalId) throw new OnboardingError("atendimento_alterado", "A conversa mudou durante a coleta.", 409);
     await identidadeDoCaso(atual, tx, { travar: true });
+    if (ia) {
+      // Mesma ordem de locks do LeadService: pessoa, depois conversa. A conferência
+      // da versão precisa acontecer depois do lock, inclusive nos segmentos antigos.
+      await tx.conversaWhatsapp.updateMany({ where: { id: inicial.id }, data: { updatedAt: new Date() } });
+      atual = await tx.conversaWhatsapp.findUnique({ where: { id: inicial.id } });
+      if (bloqueada(atual) || atual.vinculoNumeroId !== inicial.vinculoNumeroId || atual.canalId !== inicial.canalId)
+        throw new OnboardingError("atendimento_alterado", "A conversa mudou durante a interpretação.", 409);
+    }
     const recibo = await tx.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
     if (recibo) return recibo;
+    if (ia) {
+      const recente = await tx.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
+      if ((recente?.id || null) !== versaoAntesIa.id || recente?.versao !== versaoAntesIa.caso || recente?.onboarding?.versao !== versaoAntesIa.ficha)
+        throw new OnboardingError("atendimento_alterado", "O atendimento mudou durante a interpretação. Nenhuma resposta foi enviada.", 409);
+    }
     if (interlocutorId) { const p = await tx.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }); if (p.versao !== identidadeVersao || p.estado !== "ATIVO" || p.atendidaPor || p.atendidaDesde && !proprioHandoff(p)) throw new OnboardingError("identidade_alterada", "A identificação mudou durante a coleta.", 409); }
     let caso = await iniciarAtendimento({ conversaId: atual.id, origem: existente ? null : origemDaIntencao(origem), client: tx });
     await exigirConversaDoCaso(caso, atual, tx);
@@ -87,9 +109,10 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const escolhaAntiga = escolhaModalidade && escolhaModalidade.atendimentoId !== caso.id;
     const preparo = prepararPreatendimento({ texto: anexo || mudouOrigem || escolhaModalidade ? "" : textoEntrada,
       intencao, anterior: triagem.preatendimento, dadosFicha: caso.onboarding?.dados,
-      nomeConhecido: pessoa?.nome || inicial.nomePerfilProvedor, campoAnterior: triagem.campoEsperado, mensagemId: mensagem.id });
+      nomeConhecido: pessoa?.nome || inicial.nomePerfilProvedor, campoAnterior: triagem.campoEsperado, mensagemId: mensagem.id,
+      falhaIa: ia?.estado === 'FALLBACK', interpretacaoIa: !mudouOrigem && !menuAntigo && !escolhaAntiga ? ia?.interpretacao : null });
     const { leitura, pre } = preparo;
-    const manterColeta = leitura.aguardar || leitura.retomada || menuAntigo || escolhaAntiga;
+    const manterColeta = leitura.aguardar || (leitura.retomada && !preparo.encaminhar) || menuAntigo || escolhaAntiga;
     const encaminhar = !manterColeta && (anexo || mudouOrigem || escolhaModalidade || preparo.encaminhar);
     if (!mudouOrigem && !menuAntigo && !escolhaAntiga && caso.onboardingId && preparo.operacoes.length) {
       caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao,
@@ -112,6 +135,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 },
       ...(!menuAntigo && !escolhaAntiga ? { triagem: { ...triagem,
         preatendimento: { ...pre, valorApresentado: Boolean(pre.valorApresentado || valor), valorTexto: valor || pre.valorTexto || null, estado: encaminhar ? "ENCAMINHADO" : "EM_CONVERSA",
+          ...(ia || pre.ultimaInterpretacaoIa ? { ultimaInterpretacaoIa: { estado: ia?.estado || "NAO_UTILIZADA", modelo: ia?.modelo || null, motivo: ia?.motivo || null, mensagemId: mensagem.id } } : {}),
           ...(handoffEm ? { encaminhadoEm: handoffEm.toISOString() } : {}) },
         campoEsperado: null,
         desconhecidos: (triagem.desconhecidos || []).filter(campo => !preparo.operacoes.some(o => o.campo === campo && o.acao === "set")),

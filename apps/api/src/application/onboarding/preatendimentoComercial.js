@@ -1,4 +1,5 @@
 import { identificarOrigemComercial, interpretarColetaComercial, responderDuvidaComercial } from './interpretacaoComercialWhatsapp.js';
+import { validarInterpretacaoLead } from '../assistente/interpretacaoLeadIa.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 export const INTENCOES_PREATENDIMENTO = ['ABERTURA', 'TRANSFERENCIA', 'INATIVA', 'PLANEJAMENTO', 'GESTAO'];
@@ -33,33 +34,55 @@ export function mensagemDeValor(pre) {
 }
 
 /** Pré-atendimento termina na equipe. Campos da ficha e contratação não são requisitos. */
-export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFicha = {}, nomeConhecido = null, campoAnterior = null, mensagemId }) {
+export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFicha = {}, nomeConhecido = null, campoAnterior = null, mensagemId, interpretacaoIa = null, falhaIa = false }) {
   const raw = String(texto || '').trim(), t = normalizar(raw);
   const origem = origemDaIntencao(intencao);
-  const pre = { ...anterior, versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) } };
+  const pre = { ...anterior, versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) }, ...(anterior.evidenciasIa ? { evidenciasIa: { ...anterior.evidenciasIa } } : {}), ...(anterior.evidenciasDeclaradas ? { evidenciasDeclaradas: { ...anterior.evidenciasDeclaradas } } : {}) };
   const campo = anterior.campoEsperado || ({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })[campoAnterior];
   const campoFicha = ({ nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: intencao === 'TRANSFERENCIA' ? 'motivoTroca' : null })[campo];
   const palavraDeEntrada = palavras[raw.toUpperCase()] === intencao;
   const leitura = interpretarColetaComercial({ texto: palavraDeEntrada ? '' : raw, origem: origem || 'ABERTURA', campoEsperado: campoFicha, dadosAtuais: dadosFicha });
+  const revisaoIdentidade = /\b(?:mude|mudar|troque|trocar|altere|alterar|vincule|vincular|acesse|acessar|mostre|mostrar|revele|revelar|envie|enviar|mande|mandar|use|usar)\b/.test(t)
+    && /\b(?:outro|outra)\b.{0,35}\b(?:cliente|contato|empresa)\b|\bempresa de outro\b/.test(t);
+  // Identidade/acesso de terceiros exige equipe, mesmo com classificação incorreta.
+  if (revisaoIdentidade || falhaIa) Object.assign(leitura, { humano: true, aguardar: false, retomada: false, revisaoIdentidade, operacoes: [] });
+  const ia = revisaoIdentidade || falhaIa ? null : validarInterpretacaoLead(interpretacaoIa, raw);
+  // Pedidos explícitos de humano e navegação determinística têm precedência.
+  if (ia && !leitura.humano && !leitura.reinicio && !leitura.aguardar && !leitura.retomada) {
+    if (ia.comportamento === 'HUMANO' || ia.comportamento === 'DESCONHECIDO') leitura.humano = true;
+    if (ia.comportamento === 'PAUSAR') leitura.aguardar = true;
+    if (ia.comportamento === 'RETOMAR') leitura.retomada = true;
+  }
+  if (ia) {
+    const camposTriagem = { responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' };
+    // O extrator antigo não pode gravar uma resposta livre no campo perguntado
+    // quando a interpretação com evidência identifica outro significado.
+    leitura.operacoes = ia.comportamento !== 'DADOS' ? [] : leitura.operacoes.filter(o => {
+      const campoIa = camposTriagem[o.campo];
+      if (!campoIa) return true;
+      return ia.dados.some(d => d.campo === campoIa && (o.acao === 'set'
+        ? d.valor !== null && normalizar(d.valor) === normalizar(o.valor) : d.valor === null));
+    });
+  }
   const capturados = Object.fromEntries(leitura.operacoes.filter(o => o.acao === 'set').map(o => [o.campo, o.valor]));
-  if (!origem) {
+  if (!revisaoIdentidade && !falhaIa && !origem && (!ia || ia.comportamento === 'DADOS')) {
     const cnpj = interpretarColetaComercial({ texto: raw, origem: 'TRANSFERENCIA' }).operacoes.find(o => o.campo === 'cnpj' && o.acao === 'set');
     if (cnpj) capturados.cnpj = cnpj.valor;
   }
   Object.assign(pre.dadosInformados, capturados);
-  pre.nome ||= dadosFicha.responsavelNome || nomeConhecido || null;
-  pre.atividade ||= dadosFicha.atividadePretendida || null;
-  pre.cidade ||= dadosFicha.municipioAtendimento || null;
-  pre.necessidade ||= dadosFicha.motivoTroca || null;
+  if (pre.evidenciasIa?.nome?.valor !== null) pre.nome ||= dadosFicha.responsavelNome || nomeConhecido || null;
+  if (pre.evidenciasIa?.atividade?.valor !== null) pre.atividade ||= dadosFicha.atividadePretendida || null;
+  if (pre.evidenciasIa?.cidade?.valor !== null) pre.cidade ||= dadosFicha.municipioAtendimento || null;
+  if (pre.evidenciasIa?.necessidade?.valor !== null) pre.necessidade ||= dadosFicha.motivoTroca || null;
   if (capturados.responsavelNome) pre.nome = capturados.responsavelNome;
   if (capturados.atividadePretendida) pre.atividade = capturados.atividadePretendida;
   if (capturados.municipioAtendimento) pre.cidade = capturados.municipioAtendimento;
   if (capturados.motivoTroca) pre.necessidade = capturados.motivoTroca;
   const social = leitura.aguardar || leitura.retomada || leitura.humano || leitura.reinicio;
   const duvida = leitura.resposta || responderDuvidaComercial(raw, { origem });
-  const desconhecido = /^(?:(?:eu |ainda )?nao (?:sei|lembro|tenho certeza|tenho ideia)|a definir)(?: dizer| informar| agora| ainda)?[.!]*$/.test(t);
+  const desconhecido = Boolean(leitura.desconhecido) || /^(?:(?:eu |ainda )?nao (?:sei|lembro|tenho certeza|tenho ideia)|a definir)(?: dizer| informar| agora| ainda)?[.!]*$/.test(t);
   // Usar o extrator de atividade também para empresa existente, sem reclassificar a ficha.
-  if (!social) {
+  if (!social && !ia) {
     const atividade = interpretarColetaComercial({ texto: raw, origem: 'ABERTURA' }).operacoes.find(o => o.campo === 'atividadePretendida')?.valor;
     const tipoEmpresa = raw.match(/\b(?:tenho|somos|trabalho (?:em|com)|minha empresa [ée]|[ée])\s+(?:(?:um|uma)\s+)?((?:cl[íi]nica|loja|com[ée]rcio|restaurante|ag[êe]ncia|consult[óo]rio|empresa de|neg[óo]cio de|presta[çc][ãa]o de servi[çc]os)[^;\n.!?]{0,100})/i)?.[1];
     if (atividade || tipoEmpresa) pre.atividade = atividade || tipoEmpresa.split(/\s+e\s+(?=quero|preciso|meu|minha|pago|n[ãa]o)/i)[0].trim();
@@ -77,9 +100,42 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     if (/\b(?:agendar|marcar (?:uma )?(?:conversa|reuniao)|videochamada)\b/.test(t)) pre.preferenciaContato = 'Solicitou agendamento — a confirmar pela equipe';
   }
   const palavra = raw.toUpperCase();
+  if (ia) {
+    // Valores da IA pertencem à triagem, nunca confirmam dados fiscais/contratuais.
+    const evidencias = { ...(pre.evidenciasIa || {}) };
+    for (const d of ia.dados) {
+      if (['nome', 'atividade', 'cidade'].includes(d.campo) && /^(?:(?:eu |ainda )?nao (?:sei|lembro|tenho certeza|tenho ideia)|a definir)\b/.test(normalizar(d.valor))) continue;
+      // Uma intenção genérica ainda precisa da pergunta curta sobre o problema.
+      if (d.campo === 'necessidade' && /^(?:(?:eu )?(?:quero|preciso|gostaria de|pretendo) )?(?:regularizar (?:a |minha |uma )?empresa|trocar (?:de )?contador)[.!]*$/.test(normalizar(d.valor))) continue;
+      pre[d.campo] = d.valor;
+      evidencias[d.campo] = { valor: d.valor, trecho: d.evidencia, mensagemId };
+      if (pre.evidenciasDeclaradas) delete pre.evidenciasDeclaradas[d.campo];
+    }
+    pre.evidenciasIa = evidencias;
+  }
+  // Preservar o relato inteiro solicitado na triagem, sem atribuir à IA um trecho
+  // que ela omitiu e sem transformar esse relato em dado fiscal confirmado.
+  const queixaLiteral = /\b(?:demora|atrasos?|atrasado|sem (?:resposta|retorno)|nao.{0,15}respond|nao.{0,15}explica)\b/.test(t);
+  const decisaoEmAberto = intencao === 'INATIVA' && /\b(?:nao sei|melhor|compensa)\b/.test(t) && /\b(?:fechar|encerrar|baixar|voltar|reativar)\b/.test(t);
+  const retomadaEmpresa = intencao === 'INATIVA' && ia?.comportamento === 'DADOS'
+    && /\b(?:retomar|voltar|reativar)\b/.test(t) && /\b(?:vendas|vender|operar|atividades|empresa|negocio)\b/.test(t);
+  if (ia && !revisaoIdentidade && campo === 'necessidade' && ['TRANSFERENCIA', 'INATIVA'].includes(intencao) && raw.length <= 700
+    && (ia.dados.some(d => d.campo === 'necessidade' && d.valor !== null)
+      || ia.comportamento === 'HUMANO' && queixaLiteral && !raw.includes('?') || decisaoEmAberto || retomadaEmpresa)) {
+    pre.necessidade = raw;
+    pre.evidenciasDeclaradas = { ...(pre.evidenciasDeclaradas || {}), necessidade: { valor: raw, trecho: raw, mensagemId } };
+    if (pre.evidenciasIa) delete pre.evidenciasIa.necessidade;
+  }
+  // Uma declaração determinística nova também vence a evidência antiga.
+  for (const [chave, evidencia] of Object.entries(pre.evidenciasIa || {})) {
+    if (pre[chave] !== evidencia.valor) delete pre.evidenciasIa[chave];
+  }
+  for (const [chave, evidencia] of Object.entries(pre.evidenciasDeclaradas || {})) {
+    if (pre[chave] !== evidencia.valor) delete pre.evidenciasDeclaradas[chave];
+  }
   if (palavras[palavra] && identificarIntencaoComercial(raw)) pre.palavraEntrada ||= palavra;
   // Guardar o relato sem transformar perguntas ou o perfil observado em dados fiscais confirmados.
-  if (raw && !social) pre.ultimoRelato = raw.slice(0, 1000);
+  if (raw && (!social || leitura.humano)) pre.ultimoRelato = raw.slice(0, 1000);
   pre.mensagensIds = [...new Set([...(pre.mensagensIds || []), mensagemId].filter(Boolean))].slice(-8);
   const perguntas = {
     nome: 'Como você se chama?',
@@ -93,6 +149,7 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
   const campoSeguinte = ordem.find(k => !pre[k]) || null;
   // Três perguntas no máximo, sem penalizar pausas. Dúvida complexa ou desconhecimento segue ao humano.
   const encaminhar = Boolean(leitura.humano || leitura.reinicio || desconhecido || pre.preferenciaContato || conhecido
+    || ia?.comportamento === 'DUVIDA' && !duvida
     || anterior.perguntasFeitas >= 3 || pre.necessidade && (intencao === 'TRANSFERENCIA' || intencao === 'INATIVA'));
   pre.campoEsperado = encaminhar ? null : campoSeguinte;
   pre.perguntasFeitas = (anterior.perguntasFeitas || 0) + (!encaminhar && !social && campoSeguinte ? 1 : 0);

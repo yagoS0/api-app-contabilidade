@@ -13,6 +13,8 @@ export const VIGENCIA_DA_TABELA = "2026-09-02";
 
 /** US$ por MILHÃO de tokens, em centavos de dólar (500 = US$ 5,00). */
 export const PRECOS_POR_MILHAO_CENTAVOS = Object.freeze({
+  // https://developers.openai.com/api/docs/models/gpt-5.4-mini — conferido em 25/09/2026.
+  "gpt-5.4-mini": Object.freeze({ entrada: 75, saida: 450, cacheLeitura: 7.5, cacheEscrita: 0 }),
   "claude-opus-5": Object.freeze({ entrada: 500, saida: 2500, cacheLeitura: 50, cacheEscrita: 625 }),
   "claude-sonnet-5": Object.freeze({ entrada: 300, saida: 1500, cacheLeitura: 30, cacheEscrita: 375 }),
   "claude-haiku-4-5-20251001": Object.freeze({ entrada: 100, saida: 500, cacheLeitura: 10, cacheEscrita: 125 }),

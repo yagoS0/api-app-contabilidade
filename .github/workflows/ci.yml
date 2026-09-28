@@ -87,6 +87,8 @@ jobs:
         run: npm run prisma:generate -w @contabilidade/api
       - name: Conversation evaluation isolation and budget guards
         run: node --test apps/api/scripts/eval-whatsapp-conversacao.test.mjs
+      - name: OpenAI lead lab isolation and budget accounting without network
+        run: node --test apps/api/scripts/__tests__/*.test.mjs
       - name: Invoice preparation and public registration lookups without network
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='src/application/tomador|preparacaoFiscalDoCliente'
@@ -160,6 +162,9 @@ jobs:
       - name: Verify manual evidence journey to signed contract without external calls
         working-directory: apps/api
         run: node scripts/checks-jornada-manual-postgres.js "$DATABASE_URL"
+      - name: OpenAI lead persistence, human handoff and concurrent budget without network
+        working-directory: apps/api
+        run: node scripts/verify-leads-openai-postgres.mjs "$DATABASE_URL"
       - name: Verify atomic OFX imports and tenant isolation
         working-directory: apps/api
         run: node scripts/verify-whatsapp-ofx-postgres.js --url "$DATABASE_URL"

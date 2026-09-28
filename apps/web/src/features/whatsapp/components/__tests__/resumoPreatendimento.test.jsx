@@ -1,9 +1,31 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AtendimentoComercial } from '../AtendimentoComercial';
 import { criarMockComercial } from '../../../../api/mock/comercialMock';
+import { ResumoPreatendimento } from '../ResumoPreatendimento';
 jest.mock('../../../onboarding/components/FluxoComercial', () => ({ FluxoComercial: () => <p>Ferramentas internas do contador</p> }));
 
 const pre = { intencao: 'PLANEJAMENTO', estado: 'ENCAMINHADO', nome: 'Ana', atividade: 'Comércio', necessidade: 'Avaliar tributação', palavraEntrada: 'IMPOSTO', ultimoRelato: 'Tenho uma loja' };
+
+test('relato direto não é apresentado como extração feita pela IA', () => {
+  render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, evidenciasDeclaradas: { necessidade: { valor: 'demora', trecho: 'O atendimento demora' } } } } }} />);
+  expect(screen.getByText('Trechos que sustentam o resumo')).toBeInTheDocument();
+  expect(screen.getByText(/relato registrado diretamente da mensagem/)).toBeInTheDocument();
+  expect(screen.queryByText('Trechos usados pela IA')).not.toBeInTheDocument();
+});
+test('resumo distingue IA aplicada e mostra evidência sem executar HTML', () => {
+  render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, ultimaInterpretacaoIa: { estado: 'APLICADA' }, evidenciasIa: { atividade: { valor: 'Comércio', trecho: '<script>alert(1)</script>' } } } } }} />);
+  expect(screen.getByText(/Última mensagem interpretada com IA/)).toBeVisible();
+  fireEvent.click(screen.getByText('Trechos que sustentam o resumo')); expect(screen.getByText('<script>alert(1)</script>')).toBeInTheDocument(); expect(document.querySelector('script')).toBeNull();
+});
+test('fallback é visível para o contador e não exibe erro técnico', () => {
+  render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, ultimaInterpretacaoIa: { estado: 'FALLBACK', motivo: 'OPENAI_TIMEOUT' } } } }} />);
+  expect(screen.getByText(/A IA não conseguiu interpretar a última mensagem/)).toBeVisible();
+  expect(screen.getByText(/encaminhado à equipe; confira o relato/)).toBeVisible(); expect(screen.queryByText('OPENAI_TIMEOUT')).not.toBeInTheDocument();
+});
+test('remoção de informação fica explícita na evidência', () => {
+  render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, evidenciasIa: { cidade: { valor: null, trecho: 'Não sei a cidade ainda' } } } } }} />);
+  fireEvent.click(screen.getByText('Trechos que sustentam o resumo')); expect(screen.getByText(/informação removida do resumo/)).toBeInTheDocument();
+});
 test('resumo sem ficha permite continuar pelo chat, sem impor uma transferência', async () => {
   const onEstado = jest.fn();
   const api = { comercial: jest.fn().mockResolvedValue({ atendimento: { id: 'a', triagem: { preatendimento: pre } } }) };
