@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { TaskCenter } from "../TaskCenter";
+import { TaskCenterPlacement } from "../TaskCenterPlacement";
+import { OfficeNavigation } from "../../../app/navigation/OfficeNavigation";
 import { useBackgroundJobs } from "../../companies/list/hooks/useBackgroundJobs";
 import { renderHook } from "@testing-library/react";
 
@@ -47,4 +49,21 @@ test("resultado oferece arquivo salvo e atalho correto sem iniciar nova consulta
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     expect(api.fetchSitfisDownloadBlob).toHaveBeenCalledWith("zip-1"); expect(api.getBackgroundTask).not.toHaveBeenCalled();
   } finally { URL.createObjectURL = previous; click.mockRestore(); }
+});
+
+test("controle compacto fica na navegação e mantém histórico sem faixa de mensagens", () => {
+  const ui = localTasks => <MemoryRouter initialEntries={["/companies"]}><TaskCenterPlacement>
+    <OfficeNavigation /><main><TaskCenter api={{}} background={{ tarefas: [] }} localTasks={localTasks} /></main>
+  </TaskCenterPlacement></MemoryRouter>;
+  const { rerender } = render(ui([{ jobId: "local-1", tipo: "envio-guias", status: "done", companyName: "Empresa A" }]));
+  const trigger = screen.getByRole("button", { name: "Tarefas (0)" });
+  expect(trigger.closest(".office-navigation")).not.toBeNull();
+  expect(trigger).toHaveTextContent(/^Tarefas$/);
+  expect(screen.queryByText("Resultados disponíveis")).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Lista de tarefas" })).not.toBeInTheDocument();
+  rerender(ui([]));
+  fireEvent.click(trigger);
+  expect(screen.getByText("Empresa A")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Fechar tarefas" }));
+  expect(trigger).toHaveFocus();
 });

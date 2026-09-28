@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
 import { taskTitles, taskStatuses, taskRunning, taskPath } from "./taskLabels";
 import { resultadoImportacao } from "../notas/lib/resultadoImportacao";
 import "./tasks.css";
+import { useTaskCenterTarget } from "./TaskCenterPlacement";
 
 function Resultado({ result, tipo }) {
   if (!result) return null;
@@ -52,7 +54,7 @@ function TaskItem({ task, api, companies }) {
   return <li className="task-center__item">
     <div className="task-center__row"><strong>{task.descricao || taskTitles[task.tipo] || "Tarefa"}</strong><span className={`task-center__status ${["error", "erro", "partial", "interrupted"].includes(task.status) ? "task-center__status--warning" : ""}`}>{taskStatuses[task.status] || "Em execução"}</span></div>
     <p className="task-center__context">{name}{task.competencia ? ` · ${task.competencia}` : ""}</p>
-    {task.total > 0 && <><progress aria-label={`Progresso: ${taskTitles[task.tipo] || "tarefa"}`} value={task.processadas || 0} max={task.total} /><small>{task.processadas || 0} de {task.total} processados</small></>}
+    {task.total > 0 && taskRunning(task) && <><progress aria-label={`Progresso: ${taskTitles[task.tipo] || "tarefa"}`} value={task.processadas || 0} max={task.total} /><small>{task.processadas || 0} de {task.total} processados</small></>}
     {task.browserDependent && taskRunning(task) && <p className="task-center__context">Você pode navegar pelo sistema. Mantenha esta aba do navegador aberta até concluir.</p>}
     {task.erroMensagem && <p role="alert">{task.erroMensagem}</p>}
     {(task.result || task.progress) && <Resultado result={task.result || task.progress} tipo={task.tipo} />}
@@ -66,6 +68,7 @@ function TaskItem({ task, api, companies }) {
 }
 
 export function TaskCenter({ background, localTasks = [], api, companies }) {
+  const target = useTaskCenterTarget();
   const [open, setOpen] = useState(false), [history, setHistory] = useState({});
   const trigger = useRef(null), panel = useRef(null);
   useEffect(() => {
@@ -83,15 +86,18 @@ export function TaskCenter({ background, localTasks = [], api, companies }) {
   const tasks = [...(background?.tarefas || background?.jobs || []), ...local]
     .sort((a, b) => Number(taskRunning(b)) - Number(taskRunning(a)) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const active = tasks.filter(taskRunning).length;
-  return <aside className="task-center" aria-label="Tarefas em segundo plano">
-    <div className="task-center__bar"><button ref={trigger} className="task-center__trigger" aria-expanded={open} aria-controls="task-center-list" onClick={() => { setOpen(v => !v); void background?.refresh?.(); }}>
-      {active > 0 && <span className="task-center__dot" aria-hidden="true" />}Tarefas ({active}) <span aria-hidden="true">{open ? "▴" : "▾"}</span>
-    </button><span role="status" className="task-center__hint">{background?.error ? "Acompanhamento indisponível" : active ? "Você pode continuar usando o sistema" : tasks.length ? "Resultados disponíveis" : "Nenhuma tarefa em execução"}</span></div>
+  const content = <aside className={`task-center${target ? "" : " task-center--floating"}`} aria-label="Tarefas em segundo plano">
+    <button type="button" ref={trigger} className="task-center__trigger" aria-label={`Tarefas (${active})${background?.error ? ": acompanhamento indisponível" : ""}`} title={background?.error ? "Acompanhamento indisponível — abrir tarefas" : "Tarefas em segundo plano"} aria-expanded={open} aria-controls="task-center-list" onClick={() => { setOpen(v => !v); void background?.refresh?.(); }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5M10 6h11M3 12h4m3 0h11M3 18h4m3 0h11" /></svg>
+      <span className="task-center__label">Tarefas</span>{active > 0 && <span className="task-center__count" aria-hidden="true">{active}</span>}
+      {background?.error && <span className="task-center__warning" aria-hidden="true">!</span>}
+    </button>
     {open && <section ref={panel} id="task-center-list" aria-label="Lista de tarefas" className="task-center__panel">
-      <div className="task-center__row"><strong>Tarefas e resultados recentes</strong><Button size="sm" variant="secondary" onClick={() => { setOpen(false); trigger.current?.focus(); }}>Fechar</Button></div>
+      <div className="task-center__row task-center__heading"><strong>Tarefas</strong><button type="button" className="task-center__close" aria-label="Fechar tarefas" onClick={() => { setOpen(false); trigger.current?.focus(); }}>×</button></div>
       {background?.error && <p role="alert">{background.error} <button onClick={() => background.refresh()}>Atualizar andamento</button></p>}
       {!tasks.length && <p>Nenhuma tarefa recente.</p>}
       <ul>{tasks.map(t => <TaskItem key={`${t.origem || t.tipo}-${t.jobId}`} task={t} api={api} companies={companies} />)}</ul>
     </section>}
   </aside>;
+  return target ? createPortal(content, target) : content;
 }

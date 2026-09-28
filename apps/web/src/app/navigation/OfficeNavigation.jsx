@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { WorkspaceHomeLink } from "./WorkspaceNavigation";
+import { TaskCenterSlot } from "../../features/tasks/TaskCenterPlacement";
 import "./office-navigation.css";
 
 const OFFICE_AREAS = [
@@ -109,6 +110,7 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
         title={area.id === "relacionamento" ? resumoWhatsapp?.frase : undefined}
       >{area.label}{area.id === "relacionamento" ? unreadBadge : null}</Link>)}
     </nav>
+    <TaskCenterSlot />
     <div className="office-navigation__disclosure" ref={disclosureRef}>
       <button
         type="button"
