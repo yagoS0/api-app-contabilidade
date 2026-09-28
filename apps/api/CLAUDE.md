@@ -4869,6 +4869,14 @@ Migração 20260908090000_onboarding_comercial aditiva: versão/fase/proposta e 
 ## Fluxo comercial de leads — setembro/2026
 
 `application/onboarding/LeadService`, `FiscalLeadService`, `RecursosComerciaisService` e `PropostasComerciaisService` atendem leads sem PortalClient. Rotas `/firm/comercial` exigem admin/contador. Propostas e contratos são versionados. A IA registra declarações por função antes de responder livremente; orientações saem na versão aprovada e valores dependem do catálogo e revisão do contador. Mensagens agrupadas conservam suas origens e a correlação de saída evita repetição após timeout. Piloto e consultas privadas vêm desligados. Catálogo e minuta privados são importados como rascunhos, fora do Git. Upload não prova assinatura: há conferência humana explícita. Ver `docs/fluxo-comercial-leads.md` para migração, operação e validação. PATCH interno do onboarding exige `versao`; publicar web/API juntos.
+## DANFSe — modelo visual de 28/09/2026
+
+O modelo solicitado pelo usuário usa campos sem grade, seções horizontais,
+cabeçalho compacto e valores com unidade. Isso substitui as decisões visuais
+anteriores de bordas por campo e supressão do título ISSQN. Regras e validação em
+`src/application/nfse/danfse/CLAUDE.md`; coordenadas de apresentação em
+`danfseApresentacao.js`. Não versionar o PDF real de referência nem seus dados.
+
 # Validação comercial — 23/09/2026
 
 `CatalogoComercial` congela a política do catálogo e valida pisos/adicionais/regularização em gerar, aprovar, PDF, link e aceite; ACEITA conserva seu snapshot. INATIVA/BAIXAR exige AVULSO/BAIXA também na API. `JornadaLeadService` registra devolutiva estruturada, decisão de regularização e roteiro com evidências sem depender de consulta externa obrigatória. Limite da mensagem completa é conferido antes de gravar. Contexto considera somente perfil efetivamente conferido; comparar JSONB por conteúdo canônico para idempotência. `modeloContrato` compartilha compatibilidade com a tela; autorização para pré-CNPJ não permite reutilizar modelo de transferência ou PJ. Total inicial discrimina regularização sem duplicá-la e mantém taxas à parte. Planos/modelos reais ficam privados; nunca aprovar silenciosamente uma minuta de referência. Ver `docs/ajustes-leads-validacao-20260923.md` na raiz.

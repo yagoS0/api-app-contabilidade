@@ -18,7 +18,6 @@ import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import fs from "node:fs";
 import {
-  BLOCOS,
   FORMULARIO,
   TIPOGRAFIA,
   QR_CODE,
@@ -31,6 +30,7 @@ import {
   tituloEhCaixaDelimitadora,
 } from "./danfseLeiaute.js";
 import { lerNfse, valorParaImpressao } from "./danfseDados.js";
+import { BLOCOS_IMPRESSAO as BLOCOS, apresentarValor } from "./danfseApresentacao.js";
 import { municipiosIbgeOuNulo } from "../lote/municipiosIbge.js";
 import path from "node:path";
 
@@ -89,6 +89,19 @@ const MARGEM_CM = 0.15;
 
 const LARGURA_MAXIMA_CORPO_CM = 20.7; // esq 0,30 + larg 20,40
 
+// Distribui as quatro colunas entre margens simétricas. Coordenadas verticais
+// permanecem na tabela para preservar descrição elástica, QR e canhoto.
+const ESCALA_HORIZONTAL = LARGURA_MAXIMA_CORPO_CM / 20.4;
+const xPagina = (esq) => cm(MARGEM_CM + (esq - 0.3) * ESCALA_HORIZONTAL);
+const larguraPagina = (larg) => cm(larg * ESCALA_HORIZONTAL);
+
+function separarBloco(doc, sup) {
+  doc.save().lineWidth(FORMULARIO.espessuraLinhaDivisoriaPt)
+    .moveTo(cm(MARGEM_CM), px(sup))
+    .lineTo(cm(A4.larguraCm - MARGEM_CM), px(sup))
+    .stroke("#000000").restore();
+}
+
 /** Converte coordenada "em relação à margem" (unidade da NT) em ponto absoluto na página. */
 function px(valorCm) {
   return cm(MARGEM_CM + Number(valorCm));
@@ -144,19 +157,15 @@ function registrarFontes(doc, fontes, avisos) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 function celula(doc, { esq, sup, larg, alt, sombreado }) {
-  const x = px(esq);
+  const x = xPagina(esq);
   const y = px(sup);
-  const w = cm(larg);
+  const w = Math.min(larguraPagina(larg), cm(A4.larguraCm - MARGEM_CM) - x);
   const h = cm(alt);
   if (sombreado) {
     // §2.2.3 — cinza claro, 5% de densidade.
     doc.save().rect(x, y, w, h).fill("#F2F2F2").restore();
   }
-  doc.save()
-    .lineWidth(FORMULARIO.espessuraLinhaDivisoriaPt)
-    .rect(x, y, w, h)
-    .stroke("#000000")
-    .restore();
+  // Campos sem grade: apenas o início de cada seção recebe linha horizontal.
   return { x, y, w, h };
 }
 
@@ -248,11 +257,11 @@ function desenharCabecalho(doc, dados, fontes, opcoes, conformidade) {
   const ambGer = bloco.campos.find((c) => c.id === "ambGer");
   const tpAmb = bloco.campos.find((c) => c.id === "tpAmb");
   doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.cabecalhoAmbientePt).fillColor(TIPOGRAFIA.cor);
-  doc.text(`${ambGer.rotulo}: ${dados.valores.ambGer ?? "-"}`, px(ambGer.esq) + 2, px(ambGer.sup), {
-    width: cm(ambGer.larg) - 4, lineBreak: false, ellipsis: true,
+  doc.text(`${ambGer.rotulo}: ${dados.valores.ambGer ?? "-"}`, xPagina(ambGer.esq) + 2, px(ambGer.sup), {
+    width: larguraPagina(ambGer.larg) - 4, lineBreak: false, ellipsis: true,
   });
-  doc.text(`${tpAmb.rotulo}: ${dados.valores.tpAmb ?? "-"}`, px(tpAmb.esq) + 2, px(tpAmb.sup), {
-    width: cm(tpAmb.larg) - 4, lineBreak: false, ellipsis: true,
+  doc.text(`${tpAmb.rotulo}: ${dados.valores.tpAmb ?? "-"}`, xPagina(tpAmb.esq) + 2, px(tpAmb.sup), {
+    width: larguraPagina(tpAmb.larg) - 4, lineBreak: false, ellipsis: true,
   });
 
   return caixa;
@@ -537,13 +546,6 @@ export async function gerarDanfse(params = {}) {
     doc.on("error", reject);
   });
 
-  // §2.2.3 — borda da página com 1 ponto de espessura.
-  doc.save()
-    .lineWidth(FORMULARIO.espessuraBordaPaginaPt)
-    .rect(px(0), px(0), cm(LARGURA_MAXIMA_CORPO_CM + 0.3), cm(A4.alturaCm - 2 * MARGEM_CM))
-    .stroke("#000000")
-    .restore();
-
   desenharCabecalho(doc, dados, fontes, { logoPng }, conformidade);
 
   // ─── Blocos, de cima para baixo, com deslocamento acumulado ───────────────────────────────
@@ -599,34 +601,21 @@ export async function gerarDanfse(params = {}) {
     const { topo, fundo } = extensaoDoBloco(bloco);
     const alturaNatural = fundo - topo;
     const frase = condensavel[bloco.id];
+    const topoImpresso = topo + deslocamento + (bloco.id === "canhoto" ? 0 : crescimento);
 
     if (frase) {
       const alt = bloco.supressao.altMinima;
-      const caixa = celula(doc, { esq: bloco.esq, sup: topo + deslocamento, larg: bloco.supressao.largMinima, alt });
+      const caixa = celula(doc, { esq: bloco.esq, sup: topo + deslocamento + crescimento, larg: bloco.supressao.largMinima, alt });
       doc.font(fontes.tituloBold).fontSize(TIPOGRAFIA.tituloBlocoPt).fillColor(TIPOGRAFIA.cor);
-      doc.text(frase, caixa.x + 2, caixa.y + 1.5, { width: caixa.w - 4, lineBreak: false, ellipsis: true });
+      doc.text(frase, caixa.x + 2, caixa.y + 1.5, { width: caixa.w - 4, lineBreak: false, ellipsis: true, align: "center" });
       conformidade.blocosCondensados.push({ bloco: bloco.id, frase, notaDaNt: bloco.nota });
+      separarBloco(doc, topoImpresso);
       deslocamento -= alturaNatural - alt;
       continue;
     }
 
-    // Título do bloco. Nos blocos de 5,09 de largura ele ocupa a primeira célula da linha e os
-    // campos seguem à direita — é assim que as coordenadas do §2.4.5 se encaixam.
-    //
-    // ⚠ NEM TODO BLOCO TEM TÍTULO A IMPRIMIR. Em CABEÇALHO, DADOS DA NFS-e e CANHOTO a linha do
-    // §2.4.5 é a CAIXA DELIMITADORA (o `esq`/`sup` do bloco coincide com o do primeiro campo), e
-    // escrever o título ali imprimia por cima do primeiro rótulo — "DADOS DA NFS-e" saía sobre
-    // "CHAVE DE ACESSO DA NFS-e". Pior: o `sombreado: true` pintava de cinza 5% os 20,40 × 2,84 cm
-    // do bloco inteiro, quando o §2.2.3 manda sombrear "o cabeçalho, os títulos de cada bloco de
-    // campos e os campos 'Emitente da NFS-e' e 'Valor Líquido da NFS-e + IBS/CBS'" — e mais nada.
-    // O DANFSe oficial confirma: não há um "DADOS DA NFS-e" nem um "CANHOTO" impressos nele.
-    // A caixa é desenhada nos dois casos (§2.2.3 pede a linha divisória de 0,5 pt); o que muda é o
-    // sombreamento e o texto, que só existem onde a linha do §2.4.5 É uma célula de título.
-    //
-    // ⚠⚠ E A COINCIDÊNCIA DE COORDENADAS PASSOU A SER LIDA, em vez de anotada bloco a bloco — ver
-    // `tituloEhCaixaDelimitadora`. O `issqn` satisfazia exatamente este critério (bloco e
-    // `tribISSQN` os dois em `esq 0,30 / sup 14,43`) e nunca tinha sido classificado: o título e o
-    // rótulo saíam no MESMO `y`, um por cima do outro.
+    // A apresentação reserva uma célula para cada título de seção, inclusive
+    // ISSQN. Caixas delimitadoras (identificação/canhoto) não recebem título.
     const ehCaixaDelimitadora = tituloEhCaixaDelimitadora(bloco);
     const temTitulo = bloco.tituloImpresso !== false && !ehCaixaDelimitadora;
     // ⚠ O relatório sai do que a PÁGINA fez (`!temTitulo`), nunca de uma segunda avaliação da
@@ -640,7 +629,7 @@ export async function gerarDanfse(params = {}) {
     const crescimentoDoBloco = bloco.id === "canhoto" ? 0 : crescimento;
     const tituloCaixa = celula(doc, {
       esq: bloco.esq, sup: bloco.sup + deslocamento + crescimentoDoBloco, larg: bloco.larg, alt: bloco.alt,
-      sombreado: temTitulo,
+      sombreado: temTitulo && bloco.id !== "infoComplementares",
     });
     if (temTitulo) {
       doc.font(fontes.tituloBold).fontSize(TIPOGRAFIA.tituloBlocoPt).fillColor(TIPOGRAFIA.cor);
@@ -693,7 +682,7 @@ export async function gerarDanfse(params = {}) {
           const topoDoTexto = campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8;
           doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.conteudoPt);
           const alturaDoTexto = doc.heightOfString(String(valorImpresso.texto), {
-            width: cm(campo.larg) - 4,
+            width: larguraPagina(campo.larg) - 4,
             lineBreak: true,
           });
           // As mesmas três folgas de `escreverConteudo`: o topo do texto, a altura dele, e 1 pt até
@@ -740,13 +729,14 @@ export async function gerarDanfse(params = {}) {
         }
 
         const multilinha = campo.elastico === true || campo.id === "xTrib";
-        escreverConteudo(doc, texto, caixa, fontes.conteudo, {
+        escreverConteudo(doc, apresentarValor(campo.id, texto), caixa, fontes.conteudo, {
           multilinha,
           topo: campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8,
         });
       }
     }
 
+    separarBloco(doc, topoImpresso);
     deslocamento += deslocamentoNoBloco;
   }
 
@@ -762,6 +752,11 @@ export async function gerarDanfse(params = {}) {
   // Pela mesma razão ele vem depois da marca d'água: o §2.5.1/§2.5.2 pede um carimbo diagonal
   // cinza K35 e o §2.2 pede contraste garantido para a leitura do QR — entre os dois, o que não
   // pode ceder é a leitura.
+  // Desenhar a moldura após os fundos cinza preserva as laterais completas.
+  doc.save().lineWidth(FORMULARIO.espessuraBordaPaginaPt)
+    .rect(cm(MARGEM_CM), cm(MARGEM_CM), cm(LARGURA_MAXIMA_CORPO_CM), cm(A4.alturaCm - 2 * MARGEM_CM))
+    .stroke("#000000").restore();
+
   desenharQrCode(doc, dados, fontes,
     { qrCodePng, qrModulos: qrSimbolo.modules.size, qrVersao: qrSimbolo.version }, conformidade);
 
