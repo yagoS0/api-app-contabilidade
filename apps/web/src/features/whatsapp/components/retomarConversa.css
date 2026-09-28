@@ -1,27 +1,29 @@
-.wa-retomada { display: grid; gap: 16px; padding: 12px 0 16px; font-size: 15px; line-height: 1.5; }
+.wa-retomada { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; max-height: min(56dvh, 420px); box-sizing: border-box; font-size: 15px; line-height: 1.5; }
 .wa-retomada p { margin: 0; }
-.wa-retomada-destino { display: grid; gap: 2px; overflow-wrap: anywhere; }
-.wa-retomada-destino strong { font-size: 17px; }
-.wa-retomada-destino span, .wa-retomada-ajuda, .wa-retomada-campo > span { color: var(--text-muted); font-size: 13px; }
-.wa-retomada-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; }
-.wa-retomada-status > span { font-weight: 600; }
-.wa-retomada-status button, .wa-retomada-editar { border: 0; padding: 8px 0; min-height: 44px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.wa-retomada-campo { display: grid; gap: 6px; }
-.wa-retomada-campo label { font-weight: 600; }
-.wa-retomada-campo input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg-input, var(--bg-surface)); border: 1px solid var(--border); border-radius: 8px; }
-.wa-retomada .wa-retomada-legenda { margin-bottom: 8px; color: var(--text-muted); font-size: 13px; }
-.wa-retomada-mensagem { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); overflow-wrap: anywhere; }
-.wa-retomada-mensagem p { padding: 14px; white-space: pre-wrap; }
-.wa-retomada-botao-previa { display: block; padding: 11px; text-align: center; border-top: 1px solid var(--border); color: var(--text); }
-.wa-retomada-acoes { display: flex; width: 100%; gap: 8px; justify-content: flex-end; }
+.wa-retomada-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.wa-retomada-topo > div { display: grid; min-width: 0; gap: 1px; }
+.wa-retomada-topo strong { font-size: 15px; }
+.wa-retomada-topo span { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-retomada .wa-retomada-fechar { width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; font-size: 24px; background: transparent; color: var(--text-muted); }
+.wa-retomada-corpo { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 10px; }
+.wa-retomada-campo { display: grid; gap: 4px; }
+.wa-retomada-campo label { font-size: 13px; color: var(--text-muted); }
+.wa-retomada-campo input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; font-size: 16px; color: var(--text); background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px; }
+.wa-retomada-mensagem { border: 1px solid var(--border); border-radius: 12px 12px 3px 12px; background: var(--bg-subtle); overflow-wrap: anywhere; }
+.wa-retomada-mensagem p { padding: 12px; white-space: pre-wrap; }
+.wa-retomada-botao-previa { display: block; padding: 9px; text-align: center; border-top: 1px solid var(--border); color: var(--text); font-size: 14px; }
+.wa-retomada-status { color: var(--text-muted); }
+.wa-retomada-bloqueio { display: grid; gap: 8px; }
+.wa-retomada-bloqueio summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; }
+.wa-retomada-bloqueio details p { padding-block: 8px; }
+.wa-retomada-bloqueio small { color: var(--text-muted); }
+.wa-retomada-acoes { display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.wa-retomada-acoes:empty { display: none; }
 .wa-retomada-acoes .btn { min-height: 44px; white-space: normal; }
-.modal-caixa:has(.wa-retomada) { max-height: min(92dvh, 900px); }
+/* A retomada ocupa o compositor, mantendo o histórico e a navegação utilizáveis. */
+.wa-composer:has(> .wa-retomada) > .wa-composer-row,
+.wa-composer:has(> .wa-retomada) > .wa-compose-sheet,
+.wa-composer:has(> .wa-retomada) > [data-testid="resposta-bloqueada"] { display: none; }
 @media (max-width: 540px) {
-  .modal-fundo:has(.wa-retomada) { padding: 8px; align-items: center; }
-  .modal-caixa:has(.wa-retomada) { max-height: calc(100dvh - 16px); }
-  .modal-caixa:has(.wa-retomada) .modal-topo { padding: 12px 16px; }
-  .modal-caixa:has(.wa-retomada) .modal-fechar { min-height: 44px; min-width: 44px; }
-  .modal-caixa:has(.wa-retomada) .modal-rodape { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); }
-  .wa-retomada-acoes { display: grid; grid-template-columns: 1fr; }
-  .wa-retomada-acoes > :last-child:not(:first-child) { grid-row: 1; }
+  .wa-retomada-acoes .btn { flex: 1; }
 }

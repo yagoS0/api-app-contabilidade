@@ -20,3 +20,7 @@ Configuração externa: cache do principal corrigido após GET confirmado APPROV
 Referências oficiais:
 - https://www.postman.com/meta/whatsapp-business-platform/request/7whkjje/get-template-by-name-default-fields
 - https://www.postman.com/meta/whatsapp-business-platform/request/lwtlz1k/send-message-template-interactive
+
+## Simplificação solicitada após uso
+
+O dono rejeitou o modal por excesso de texto. A retomada agora substitui temporariamente o compositor, sem overlay: primeiro assunto e Ver mensagem; depois balão da prévia e Enviar mensagem. A aprovação só aparece em caso de bloqueio. Contexto compacto mantém pessoa e canal; Escape/Fechar voltam ao compositor e conservam o assunto, com foco restituído. Histórico permanece acessível. Preservar preparação no servidor, hash, intenção, pendências e troca de canal. Sem mudança de API ou modelo Meta.
