@@ -1,4 +1,10 @@
-# Central de tarefas — implementação em desenvolvimento
+# Central de tarefas
+
+Implementação publicada em 27/09/2026 pela PR #96 (main `425f96f2`), após backup e migração. API e portais conferidos saudáveis.
+
+## Revisão visual de 28/09/2026 — publicação autorizada
+
+Removida a faixa exclusiva acima do conteúdo. O controle fica junto de Navegar na barra existente, sem mensagens permanentes; contagem apenas quando há tarefas ativas. No celular, apenas ícone e contagem. A lista abre sob demanda, com largura e espaçamento reduzidos. Progresso aparece enquanto a tarefa está em execução. Executor, agenda, consultas e resultados mantêm seus contratos. Validado com 41 testes de tarefas/navegação/sessão, build e navegador em largura normal e 390 px.
 
 Pedido: operações demoradas devem continuar durante a navegação, com uma lista compacta no topo do portal, acima das tabelas. A central não é uma agenda e não dispara rotinas fiscais por conta própria.
 
@@ -21,9 +27,9 @@ Prévia de importação, preenchimento, confirmação de competência/retificaç
 - Tarefas ativas são consultadas separadamente do histórico limitado de sete dias: muitas conclusões recentes não escondem uma tarefa ainda em execução.
 - Reinício do servidor não retoma chamadas pagas/transmissões. Tarefas manuais sem sinal de vida por dois minutos ficam interrompidas; jobs antigos usam dez minutos. A captura envia sinal local de vida durante consultas longas. Resultado incerto exige conferência manual.
 
-## Implantação futura
+## Implantação da versão original
 
-Não publicado nesta etapa. Aplicar a migration aditiva `20260925180000_manual_tasks`, gerar Prisma e publicar a API antes do novo portal. Os dois cabeçalhos novos estão permitidos no CORS. Não executar testes contra provedores reais nem habilitar rotinas como parte da implantação. Não copiar bancos descartáveis, uploads, credenciais ou dependências locais ao Git.
+A migration aditiva `20260925180000_manual_tasks` e a API foram publicadas antes do portal. Os dois cabeçalhos novos estão permitidos no CORS. Não executar testes contra provedores reais nem habilitar rotinas como parte da implantação. Não copiar bancos descartáveis, uploads, credenciais ou dependências locais ao Git. A revisão visual de 28/09 não exige migração.
 
 ## Evidências
 
