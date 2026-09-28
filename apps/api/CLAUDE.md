@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Retomada no telefone — 28/09/2026
+
+Retomar conversa consulta a aprovação atual na WABA do canal, inclusive com cache local antigo ou sem nome. Suporta assunto {{1}} e botão Falar com a equipe do modelo real, com prévia vinculada ao assunto/canal/destinatário e intenção idempotente. Modelo ausente pode ser submetido ali mesmo, sem enviar a clientes; aprovação externa continua obrigatória. Não transferir aprovação entre WABAs nem liberar texto antes de resposta. Detalhes em `docs/retomada-whatsapp-mobile-20260928.md`. Testes sem Anthropic, consultas fiscais ou envio real.
+
 ## Pré-atendimento curto — 24/09/2026
 
 O WhatsApp comercial agora coleta somente o essencial, contextualiza o benefício e encaminha ao contador. A automação não conduz proposta/contrato/pagamento. Até três perguntas, sem CNPJ, modalidade ou volumes obrigatórios; pausas não contam. Planejamento/gestão ficam em `triagem.preatendimento`, sem ficha de transferência fictícia. Resumo visível no painel e histórico, classificação LEAD também sem onboarding, mantendo CLIENTE e permissões existentes. Consultas e contratação seguem manuais. Ver `docs/preatendimento-comercial-curto-20260924.md` na raiz. Esta regra substitui os trechos antigos que descrevem questionário comercial longo pelo WhatsApp; as etapas internas da equipe permanecem.

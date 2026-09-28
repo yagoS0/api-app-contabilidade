@@ -53,3 +53,8 @@ test('rejeição Meta é sanitizada, sem conteúdo/credenciais', async () => {
   const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { code: 100, message: 'segredo-sintetico' } }) });
   await expect(meta(fetchImpl).criar({})).rejects.toThrow('código 100');
 });
+
+test('consulta respeita idioma solicitado sem aproveitar aprovação de outro idioma',async()=>{
+ const fetchImpl=jest.fn(async()=>({ok:true,json:async()=>({data:[{name:'modelo',language:'pt_BR',id:'br'},{name:'modelo',language:'pt_PT',id:'pt'}]})}));
+ expect((await meta(fetchImpl).consultar('modelo','pt_PT')).id).toBe('pt');
+});

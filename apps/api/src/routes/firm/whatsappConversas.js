@@ -53,7 +53,7 @@ import { associarNumeroConferido } from '../../application/whatsapp/AssociacaoNu
 
 import { comIntencaoEnvio, consultarIntencaoEnvio, recuperarIntencaoEnvio, erroAtendimento } from '../../application/whatsapp/IntencaoEnvioAtendimentoService.js';
 import { lerRascunhoAtendimento, salvarRascunhoAtendimento, excluirRascunhoAtendimento } from '../../application/whatsapp/RascunhoAtendimentoService.js';
-import { prepararRetomadaAtendimento } from '../../application/whatsapp/RetomadaAtendimentoService.js';
+import { prepararRetomadaAtendimento, solicitarModeloRetomada } from '../../application/whatsapp/RetomadaAtendimentoService.js';
 import { enriquecerMensagensWhatsapp, obterArquivoDaMensagem, salvarArquivoManual } from '../../application/whatsapp/HistoricoArquivoWhatsappService.js';
 
 export const AUTOR_HUMANO = "HUMANO";
@@ -132,7 +132,7 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
   };
 }
 
-export function createWhatsappConversasRouter({ log, client = prisma, cloud = null, chatV2 = WHATSAPP_CHAT_V2, consultarModelo = null } = {}) {
+export function createWhatsappConversasRouter({ log, client = prisma, cloud = null, chatV2 = WHATSAPP_CHAT_V2, consultarModelo = null, criarModelo = null } = {}) {
   const router = Router({ mergeParams: true });
   router.use((_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
 
@@ -573,7 +573,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       ok: false,
       error: "FORA_DA_JANELA",
       situacao: janela.situacao,
-      message: !canalPrincipal ? "A janela deste canal está fechada e ainda não há modelo de retomada configurado para ele."
+      message: !canalPrincipal ? "A janela deste canal está fechada. Use Retomar conversa para conferir a aprovação do modelo neste número."
         : janela.situacao === SITUACOES_JANELA.NUNCA_ABERTA
         ? "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem DELE. Para iniciar, é preciso um modelo aprovado."
         : "A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.",
@@ -849,14 +849,26 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       return res.json({ok:true,...await prepararRetomadaAtendimento({conversa,client,consultarModelo})});
     } catch(e) { return falhar(res,e,{operacao:'preparar-retomada'}); }
   });
+  for (const acao of ['previa', 'modelo']) router.post('/whatsapp/conversas/:conversaId/retomar/' + acao, async(req,res) => {
+    if (!somenteAdminOuContador(req,res)) return;
+    try {
+      const conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
+      if (!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
+      await conferirConversaAtiva(conversa,{porPessoa:true});
+      const resultado = acao === 'modelo'
+        ? await solicitarModeloRetomada({conversa,client,consultarModelo,criarModelo})
+        : await prepararRetomadaAtendimento({conversa,client,consultarModelo,assunto:req.body?.assunto});
+      return res.json({ok:true,...resultado});
+    } catch(e) { return falhar(res,e,{operacao:'retomada-' + acao}); }
+  });
   router.post('/whatsapp/conversas/:conversaId/retomar', async(req,res) => {
     if (!somenteAdminOuContador(req,res)) return;
     try {
       let conversa = await conversaNoEscopo(req,req.params.conversaId,{client});
       if(!conversa) return res.status(404).json({ok:false,error:'conversa_nao_encontrada'});
       if(!req.body?.clientRequestId || !req.body?.previaHash) throw erroAtendimento('PREVIA_OBRIGATORIA','Prepare e confira a retomada antes de enviar.',400);
-      const r = await enviarIntencao(req,conversa,{tipo:'retomada',previaHash:req.body.previaHash},async intencaoEnvioId => {
-        const previa = await prepararRetomadaAtendimento({conversa,client,consultarModelo});
+      const r = await enviarIntencao(req,conversa,{tipo:'retomada',previaHash:req.body.previaHash,assunto:req.body.assunto || ''},async intencaoEnvioId => {
+        const previa = await prepararRetomadaAtendimento({conversa,client,consultarModelo,assunto:req.body.assunto});
         if(!previa.disponivel) throw erroAtendimento(previa.motivo,previa.message);
         if(previa.previaHash !== req.body.previaHash) throw erroAtendimento('PREVIA_ALTERADA','O modelo ou destinatário mudou. Prepare a retomada novamente.');
         await conferirConversaAtiva(conversa,{porPessoa:true});
@@ -865,7 +877,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         return comEnvioDoResponsavel(conversa,conferirLease => enviarMensagemRastreada({intencaoEnvioId,conversa,tipo:'template',corpo:previa.texto,autor:AUTOR_HUMANO,client,
           referenciaComercial:{tipo:'RETOMADA',escopo:'PESSOA',modelo:previa.modelo,previaHash:previa.previaHash},
           antesDeEnviar:async()=>{await conferirLease();await conferirConversaAtiva(conversa,{porPessoa:true});},
-          enviar:()=>cliente.enviarTemplate({telefone:conversa.telefoneE164,template:previa.modelo.nome,idioma:previa.modelo.idioma,variaveis:[]})}));
+          enviar:()=>cliente.enviarTemplate({telefone:conversa.telefoneE164,template:previa.modelo.nome,idioma:previa.modelo.idioma,variaveis:previa.variaveis,...(previa.botoesResposta.length ? {botoesResposta:previa.botoesResposta} : {})})}));
       });
       return res.json({ok:true,mensagem:r.mensagem,intencao:r.intencao,aguardandoRespostaCliente:true});
     } catch(e) { return falhar(res,e,{operacao:'retomar-conversa'}); }

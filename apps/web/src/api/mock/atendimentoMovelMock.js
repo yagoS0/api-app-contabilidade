@@ -9,6 +9,17 @@ function pdfDemonstracao() {
 }
 export function criarAtendimentoMovelMock({ conversas, usuario }) {
   const drafts = new Map(), intencoes = new Map(), arquivos = new Map();
+  const modelosRetomada = new Map();
+  const textoRetomada = 'Olá! Aqui é da Altan Contabilidade. Estamos retomando o atendimento que você solicitou sobre {{1}}. Para continuar, responda a esta mensagem ou toque em "Falar com a equipe".';
+  function previaRetomada(id, assunto = '') {
+    const c=obter(id),canal=c.canalId || 'principal',status=modelosRetomada.get(canal) || (canal === 'principal' ? 'APPROVED' : 'AUSENTE');
+    const base={ok:true,simulado:true,statusMeta:status,disponivel:false,textoModelo:textoRetomada,botoes:['Falar com a equipe']};
+    if(status==='AUSENTE')return {...base,podeSolicitarAprovacao:true,message:'Demonstração: este número ainda não tem o modelo de retomada.'};
+    if(status==='PENDING')return {...base,message:'Demonstração: modelo aguardando análise. Nenhuma solicitação real foi feita à Meta.'};
+    const tema=String(assunto || '').trim();
+    if(!tema || tema.length>120 || /[\r\n\t{}]/.test(tema))return {...base,requerAssunto:true,motivo:'ASSUNTO_OBRIGATORIO'};
+    return {...base,requerAssunto:true,disponivel:true,assunto:tema,texto:textoRetomada.replaceAll('{{1}}',tema),previaHash:JSON.stringify([id,c.telefoneE164,canal,tema])};
+  }
   const copia = v => JSON.parse(JSON.stringify(v));
   const obter = id => { const c = conversas.find(c => c.id === id); if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 }); return c; };
   const chave = (id, modo = "texto") => { if (!MODOS_RASCUNHO_ATENDIMENTO.includes(modo)) throw Object.assign(new Error("Modo de rascunho inválido."), { status: 400 }); return `${usuario()}:${id}:${modo}`; };
@@ -61,8 +72,17 @@ export function criarAtendimentoMovelMock({ conversas, usuario }) {
       const inicio = cursor ? todos.findIndex(m => m.id === cursor) + 1 : 0, mensagens = todos.slice(inicio, inicio + limite).map(m => ({ ...m, conversaId: id }));
       return { ok: true, resultados: mensagens, proximoCursor: inicio + limite < todos.length ? mensagens.at(-1).id : null };
     },
-    async getRetomadaWhatsapp(id) { obter(id); return { ok: true, disponivel: false, motivo: "MODELO_NAO_CONFIRMADO", message: "Demonstração: nenhum modelo aprovado na Meta foi confirmado para este canal.", configuracao: "/configuracoes", texto: null }; },
-    async retomarConversaWhatsapp() { throw Object.assign(new Error("Não há modelo aprovado disponível na demonstração."), { status: 409 }); },
+    async getRetomadaWhatsapp(id) { return previaRetomada(id); },
+    async prepararRetomadaWhatsapp(id, {assunto}) { return previaRetomada(id,assunto); },
+    async solicitarModeloRetomadaWhatsapp(id) { const c=obter(id),canal=c.canalId || 'principal';if(previaRetomada(id).statusMeta==='AUSENTE')modelosRetomada.set(canal,'PENDING');return previaRetomada(id); },
+    async retomarConversaWhatsapp(id, {assunto,previaHash,clientRequestId}) {
+      const c=obter(id),p=previaRetomada(id,assunto),key=chave(id)+':'+clientRequestId,anterior=intencoes.get(key);
+      if(anterior){if(anterior.texto!==previaHash)throw Object.assign(new Error('Tentativa pertence a outra prévia.'),{status:409});return copia(anterior.resultado);}
+      if(!clientRequestId || c.excluidaEm || !p.disponivel || p.previaHash!==previaHash)throw Object.assign(new Error('Confira a prévia da retomada.'),{status:409});
+      const mensagem={id:'mock-retomada-'+crypto.randomUUID(),direcao:'out',autor:'HUMANO',tipo:'template',corpo:p.texto,registradaEm:new Date().toISOString(),statusEnvio:'enviado',providerMessageId:'wamid.mock.'+crypto.randomUUID()};
+      c.mensagens.push(mensagem);c.atendidaPor='mock-user';c.updatedAt=mensagem.registradaEm;
+      const resultado={ok:true,mensagem,aguardandoRespostaCliente:true};intencoes.set(key,{clientRequestId,texto:previaHash,status:'ACEITA',resultado});return copia(resultado);
+    },
     async getArquivoMensagemWhatsapp(id, mensagemId) { const m = obter(id).mensagens.find(m => m.id === mensagemId); const arquivo = m?.cartaoGuia?.arquivo || m?.arquivo; if (!arquivo?.podeAbrir) throw Object.assign(new Error("Arquivo indisponível neste histórico."), { status: 404 }); return { ok: true, arquivo: arquivos.has(mensagemId) ? copia(arquivos.get(mensagemId)) : { nomeArquivo: arquivo.nomeArquivo, mimeType: arquivo.mimeType, base64: pdfDemonstracao(), origem: arquivo.origem } }; },
     async getAtendimentoPushConfig() { return { ok: true, enabled: false, publicKey: null }; },
     async registrarAtendimentoPush() { throw new Error("Notificações reais não são ativadas na demonstração."); },

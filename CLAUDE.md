@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Retomada no telefone — 28/09/2026
+
+Retomar conversa consulta a aprovação atual na WABA do canal, inclusive com cache local antigo ou sem nome. Suporta assunto {{1}} e botão Falar com a equipe do modelo real, com prévia vinculada ao assunto/canal/destinatário e intenção idempotente. Modelo ausente pode ser submetido ali mesmo, sem enviar a clientes; aprovação externa continua obrigatória. Não transferir aprovação entre WABAs nem liberar texto antes de resposta. Detalhes em `docs/retomada-whatsapp-mobile-20260928.md`. Testes sem Anthropic, consultas fiscais ou envio real.
+
 ## Central de tarefas — visual compacto em 28/09/2026
 
 O dono rejeitou a faixa exclusiva da central por ocupar espaço. Usar um controle discreto na navegação existente, junto de Navegar, com contagem somente durante execução. Lista e resultados abrem sob demanda; no celular fica o ícone. `TaskCenterPlacement` posiciona a interface sem mover o executor ou o histórico. Não reintroduzir mensagens permanentes ou barra de largura inteira. Testes de navegação/histórico, build e conferência visual em desktop/celular realizados. Ajuste visual aprovado pelo dono para publicação na main/produção em 28/09/2026; implantação deve ser conferida após a integração.
