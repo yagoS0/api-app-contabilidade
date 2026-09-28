@@ -129,18 +129,22 @@ export const FINALIDADE_IA = Object.freeze({
   CLASSIFICACAO_LANCAMENTOS: "classificacao_lancamentos",
 });
 
-export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, finalidade = null, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY, reservaCentavos = IA_RESERVA_CHAMADA_CENTAVOS } = {}) {
+export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, finalidade = null, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY, modelo = IA_MODELO, reservaCentavos = IA_RESERVA_CHAMADA_CENTAVOS, tetoAcumuladoCentavos = null } = {}) {
   const base = {
     conversaId: conversaId ? String(conversaId) : null,
     portalClientId: portalClientId ? String(portalClientId) : null,
     mensagemId: mensagemId ? String(mensagemId) : null,
     finalidade: finalidade ? String(finalidade) : null,
-    modelo: IA_MODELO,
+    modelo,
   };
 
+  if (tetoAcumuladoCentavos !== null && (!Number.isSafeInteger(tetoAcumuladoCentavos) || tetoAcumuladoCentavos <= 0)) {
+    await registrar({ ...base, status: STATUS_CHAMADA.RECUSADA_CONFIG, erroCodigo: "TETO_PILOTO_INVALIDO" }, client, log);
+    return { ok: false, motivo: "TETO_PILOTO_INVALIDO", mensagem: FRASE_CONFIG };
+  }
   if (!chave) {
     await registrar({ ...base, status: STATUS_CHAMADA.RECUSADA_CONFIG, erroCodigo: MOTIVOS_RECUSA.SEM_CHAVE }, client, log);
-    log?.warn?.({ conversaId: base.conversaId }, "assistente: ANTHROPIC_API_KEY ausente — recusado");
+    log?.warn?.({ conversaId: base.conversaId }, "assistente: chave do provedor ausente — recusado");
     return { ok: false, motivo: MOTIVOS_RECUSA.SEM_CHAVE, mensagem: FRASE_CONFIG };
   }
 
@@ -155,7 +159,10 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
           const escritorio = await somaDoMes({ createdAt: { gte: desde } }, tx);
           const lead = base.finalidade === "comercial_whatsapp" ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: desde } }, tx) : null;
           const diario = lead ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: new Date(agora.getTime() - 86400000) } }, tx) : null;
-          const motivo = lead && (lead.centavos + reservaCentavos > IA_COMERCIAL_TETO_CONVERSA_CENTAVOS || diario.chamadas >= IA_COMERCIAL_MAX_CHAMADAS_DIA) ? "TETO_LEAD"
+          // Não reinicia na virada do mês nem ao criar outra conversa; reservas incertas contam.
+          const acumulado = tetoAcumuladoCentavos !== null ? await somaDoMes({ modelo: base.modelo, finalidade: base.finalidade }, tx) : null;
+          const motivo = acumulado && acumulado.centavos + reservaCentavos > tetoAcumuladoCentavos ? "TETO_PILOTO"
+            : lead && (lead.centavos + reservaCentavos > IA_COMERCIAL_TETO_CONVERSA_CENTAVOS || diario.chamadas >= IA_COMERCIAL_MAX_CHAMADAS_DIA) ? "TETO_LEAD"
             : IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos + reservaCentavos > IA_TETO_MENSAL_EMPRESA_CENTAVOS ? MOTIVOS_RECUSA.TETO_EMPRESA
             : IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 && escritorio.centavos + reservaCentavos > IA_TETO_MENSAL_ESCRITORIO_CENTAVOS ? MOTIVOS_RECUSA.TETO_ESCRITORIO : null;
           if (motivo) {

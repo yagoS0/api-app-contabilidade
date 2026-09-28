@@ -39,7 +39,7 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   const caso = { id: "a", conversaId: "c", onboardingId: "o", onboarding: ficha, triagem: {}, versao: 1 };
   const recibos = new Map(), mensagens = new Map();
   const db = {
-    conversaWhatsapp: { findUnique: jest.fn(async () => ({ ...conversa })), update: jest.fn(async ({ data }) => Object.assign(conversa, data)) },
+    conversaWhatsapp: { findUnique: jest.fn(async () => ({ ...conversa })), update: jest.fn(async ({ data }) => Object.assign(conversa, data)), updateMany: jest.fn(async () => ({ count: 1 })) },
     atendimentoLead: { findFirst: jest.fn(async () => caso), findUnique: jest.fn(async () => caso), update: jest.fn(async ({ data }) => { Object.assign(caso, data, { versao: caso.versao + (data.versao?.increment || 0) }); return caso; }), updateMany: jest.fn(async () => ({ count: 1 })) },
     onboarding: { findUnique: jest.fn(async () => ({ ...ficha })), updateMany: jest.fn(async ({ where, data }) => { if (where.versao !== ficha.versao) return { count: 0 }; Object.assign(ficha, data, { versao: ficha.versao + (data.versao?.increment || 0) }); return { count: 1 }; }) },
     onboardingEvento: { create: jest.fn(async () => ({})) },
@@ -49,10 +49,10 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   db.$transaction = fn => fn(db);
   iniciarAtendimento.mockImplementation(async () => caso);
   let n = 0;
-  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao, tipo = "text", ocorridaEmProvedor, consultaPublica } = {}) => {
+  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao, tipo = "text", ocorridaEmProvedor, consultaPublica, ia = { flag: false } } = {}) => {
     const mensagem = { id: id || `m${++n}`, conversaId: "c", direcao: "in", corpo: texto, tipo, ocorridaEmProvedor, registradaEm: new Date(1760000000000 + n * 1000), conversa };
     mensagens.set(mensagem.id, mensagem);
-    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao, tipo }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, consultaPublica, agora: new Date(1760000010000 + n * 1000) } });
+    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao, tipo }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, consultaPublica, ia, agora: new Date(1760000010000 + n * 1000) } });
   };
   return { db, conversa, ficha, caso, recibos, chamar };
 }
@@ -112,6 +112,81 @@ test.each(["faturamento", "me manda as guias", "Quero emitir nota", "Quero abrir
   const t = banco(); expect((await t.chamar(texto)).motivo).toBe("PEDIDO_OPERACIONAL"); expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
 });
 test("flag desligada não altera nada", async () => { const t = banco(); expect((await t.chamar("Quero abrir", { flag: false })).motivo).toBe("COLETA_DESLIGADA"); expect(t.db.atendimentoLead.update).not.toHaveBeenCalled(); });
+
+function iaTeste(interpretacao, executar) {
+  return { flag: true, piloto: ['5521999990000'], canais: ['principal'], tetoTotalCentavos: 300, chave: 'teste',
+    autorizar: jest.fn(async () => ({ ok: true, contexto: { chamadaId: 'call' } })), concluir: jest.fn(async () => {}),
+    assistente: { interpretar: jest.fn(async () => { await executar?.(); return { interpretacao, usage: { input_tokens: 10, output_tokens: 5 } }; }) } };
+}
+const interpretacaoTeste = dados => ({ intencao: null, evidenciaIntencao: null, comportamento: 'DADOS', dados });
+
+test('retomada com todos os dados encaminha em vez de deixar conversa sem próximo passo', async () => {
+  const t = banco(); await t.chamar('Quero abrir uma empresa'); await t.chamar('Aguarda um pouco');
+  const ia = iaTeste({ ...interpretacaoTeste([
+    { campo: 'nome', valor: 'Marina', evidencia: 'sou a Marina' },
+    { campo: 'atividade', valor: 'fotografia', evidencia: 'faço fotografia' },
+    { campo: 'cidade', valor: 'Recife', evidencia: 'em Recife' },
+  ]), comportamento: 'RETOMAR' });
+  const fim = await t.chamar('voltei, sou a Marina, faço fotografia em Recife', { ia });
+  expect(fim.resultado.encaminhar).toBe(true);
+  expect(fim.resultado.texto).toContain('encaminhar');
+  expect(t.caso.triagem.preatendimento).toMatchObject({ nome: 'Marina', atividade: 'fotografia', cidade: 'Recife', estado: 'ENCAMINHADO' });
+});
+
+test('pausa com dados completos aguarda e retomada posterior encaminha', async () => {
+  const t = banco(); await t.chamar('Quero abrir uma empresa');
+  const ia = iaTeste({ ...interpretacaoTeste([
+    { campo: 'nome', valor: 'Marina', evidencia: 'sou a Marina' },
+    { campo: 'atividade', valor: 'fotografia', evidencia: 'faço fotografia' },
+    { campo: 'cidade', valor: 'Recife', evidencia: 'em Recife' },
+  ]), comportamento: 'PAUSAR' });
+  expect((await t.chamar('espera, sou a Marina, faço fotografia em Recife', { ia })).resultado.encaminhar).toBe(false);
+  const fim = await t.chamar('voltei', { ia: iaTeste({ ...interpretacaoTeste([]), comportamento: 'RETOMAR' }) });
+  expect(fim.resultado.encaminhar).toBe(true);
+});
+test('IA registra evidência no resumo, sem gravar campo fiscal interpretado', async () => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([{ campo: 'atividade', valor: 'cerâmica', evidencia: 'cerâmica' }]));
+  await t.chamar('Produzo cerâmica', { ia });
+  expect(t.caso.triagem.preatendimento).toMatchObject({ atividade: 'cerâmica', ultimaInterpretacaoIa: { estado: 'APLICADA' }, evidenciasIa: { atividade: { mensagemId: 'm1', trecho: 'cerâmica' } } });
+  expect(t.ficha.dados.atividadePretendida).toBeUndefined(); expect(ia.concluir).toHaveBeenCalledTimes(1);
+});
+test('reentrega não chama IA novamente', async () => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([]));
+  await t.chamar('Quero abrir uma empresa', { ia, id: 'replay' }); await t.chamar('Quero abrir uma empresa', { ia, id: 'replay' });
+  expect(ia.assistente.interpretar).toHaveBeenCalledTimes(1); expect(t.db.coletaComercialWhatsapp.create).toHaveBeenCalledTimes(1);
+});
+test('desligar IA não deixa indicação enganosa na mensagem seguinte', async () => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([]));
+  await t.chamar('Quero abrir uma empresa', { ia }); await t.chamar('Aguarda um pouco');
+  expect(t.caso.triagem.preatendimento.ultimaInterpretacaoIa).toMatchObject({ estado: 'NAO_UTILIZADA', mensagemId: 'm2', modelo: null });
+  expect(ia.assistente.interpretar).toHaveBeenCalledTimes(1);
+});
+test.each(['image', 'audio', 'document', 'reaction'])('anexo/reação %s não chama IA', async tipo => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([])); await t.chamar('Conteúdo', { tipo, ia }); expect(ia.autorizar).not.toHaveBeenCalled();
+});
+test.each(['menu', 'Falar com a equipe', 'Me manda a guia'])('navegação ou operação não chega ao modelo: %s', async texto => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([])); await t.chamar(texto, { ia }); expect(ia.autorizar).not.toHaveBeenCalled();
+});
+test('atendente assume durante modelo e impede gravação/envio', async () => {
+  const t = banco(); const enviar = jest.fn(); const ia = iaTeste(interpretacaoTeste([]), () => { t.conversa.atendidaPor = 'contador'; });
+  await expect(t.chamar('Quero abrir uma empresa', { ia, enviar })).rejects.toMatchObject({ code: 'atendimento_alterado' });
+  expect(enviar).not.toHaveBeenCalled(); expect(t.db.coletaComercialWhatsapp.create).not.toHaveBeenCalled(); expect(ia.concluir).toHaveBeenCalledTimes(1);
+});
+test.each(['caso', 'ficha', 'canal'])('mudança de %s durante modelo descarta resultado antigo', async alvo => {
+  const t = banco(); const enviar = jest.fn(); const ia = iaTeste(interpretacaoTeste([]), () => {
+    if (alvo === 'caso') t.caso.versao++;
+    if (alvo === 'ficha') t.ficha.versao++;
+    if (alvo === 'canal') t.conversa.canalId = 'outro';
+  });
+  await expect(t.chamar('Quero abrir uma empresa', { ia, enviar })).rejects.toMatchObject({ code: 'atendimento_alterado' }); expect(enviar).not.toHaveBeenCalled();
+});
+test('limite do modelo encaminha sem inferir novos dados e registra fallback', async () => {
+  const t = banco(); const ia = iaTeste(interpretacaoTeste([])); ia.autorizar.mockResolvedValue({ ok: false, motivo: 'TETO_LEAD' });
+  const r = await t.chamar('Quero abrir uma empresa', { ia });
+  expect(r.resultado.encaminhar).toBe(true); expect(r.resultado.texto).toContain('encaminhar');
+  expect(t.caso.triagem.preatendimento.nome).toBeNull();
+  expect(t.caso.triagem.preatendimento.ultimaInterpretacaoIa).toMatchObject({ estado: 'FALLBACK', motivo: 'TETO_LEAD' }); expect(ia.assistente.interpretar).not.toHaveBeenCalled();
+});
 test("desconhecimento encaminha sem obrigar campos", async () => {
   const t = banco(); await t.chamar("Quero abrir uma empresa"); expect((await t.chamar("Não sei")).motivo).toBe("ENCAMINHADA"); expect(t.ficha.dados).toEqual({});
 });
