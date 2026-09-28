@@ -8,7 +8,8 @@ export const BLOCOS_IMPRESSAO = BLOCOS.map((bloco) => ({
   campos: bloco.campos.map((campo) => {
     if (campo.id === "tribISSQN") return { ...campo, esq: 5.41 };
     if (campo.id === "locIncid") return { ...campo, esq: 10.51 };
-    if (campo.id === "regApTribSN") return { ...campo, esq: 5.41, larg: 15.29 };
+    if (campo.id === "opSimpNac") return { ...campo, multilinha: true };
+    if (campo.id === "regApTribSN") return { ...campo, esq: 5.41, larg: 15.29, multilinha: true };
     if (campo.id === "logomarca") return { ...campo, esq: 0.4, sup: 0.1, larg: 5.3, alt: 1.2 };
     if (campo.id === "quadroDescricao") return { ...campo, larg: 9.0 };
     if (["quadroIdentMunicipio", "municipio", "ambGer", "tpAmb"].includes(campo.id)) {
@@ -29,6 +30,10 @@ const PERCENTUAL = new Set(["pAliqAplic", "pAliqEfetMun", "pAliqEfetUF", "pCBS",
 // Somente apresentação: não recalcula impostos nem transforma ausência em zero.
 export function apresentarValor(id, texto) {
   const valor = String(texto);
+  if (PERCENTUAL.has(id) && /^-?\d+(?:\.\d+)?$/.test(valor)) {
+    const [inteiro, decimais = ""] = valor.split(".");
+    return `${inteiro},${decimais.padEnd(2, "0")} %`;
+  }
   if (/^-?[\d.]+,\d+$/.test(valor)) {
     if (MOEDA.has(id)) return `R$ ${valor}`;
     if (PERCENTUAL.has(id)) return `${valor} %`;

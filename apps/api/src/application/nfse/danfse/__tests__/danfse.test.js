@@ -932,6 +932,14 @@ describe("apresentação dos valores — preserva o dado fiscal", () => {
     ["vISSQN", "-", "-"],
     ["pAliqAplic", "5,00", "5,00 %"],
     ["pAliqEfetCBS", "-", "-"],
+    ["pAliqEfetMun", "0.00", "0,00 %"],
+    ["pAliqEfetUF", "0.10", "0,10 %"],
+    ["pCBS", "0.90", "0,90 %"],
+    ["pAliqEfetCBS", "0.90", "0,90 %"],
+    ["pCBS", "0.1234", "0,1234 %"],
+    ["pCBS", "0", "0,00 %"],
+    ["pCBS", "", ""],
+    ["pCBS", "0,90 %", "0,90 %"],
     ["prestFone", "21912345678", "(21) 91234-5678"],
     ["tomaFone", "-", "-"],
     ["nNFSe", "15571", "15571"],
@@ -946,5 +954,33 @@ describe("apresentação dos valores — preserva o dado fiscal", () => {
     expect(texto).toContain("5,00 %");
     expect(texto).toContain("Base de Cálculo Após Exclusões e Reduções");
     expect(texto).toContain("Código de Tributação Nacional / Municipal");
+  });
+});
+
+describe("Simples Nacional — descrição completa sem deslocar o campo vizinho", () => {
+  it.each([1, 2, 3])("preserva a opção e o regime %s, com canhoto em uma página", async (regime) => {
+    const xml = xmlBase
+      .replace(/<opSimpNac>[^<]*<\/opSimpNac>/, `<opSimpNac>3</opSimpNac><regApTribSN>${regime}</regApTribSN>`);
+    expect(xml).toContain(`<regApTribSN>${regime}</regApTribSN>`);
+    const { pdf, conformidade } = await gerarDanfse({ xml, incluirCanhoto: true });
+    const itens = [];
+    const parsed = await pdfParse(pdf, { pagerender: async (pagina) => {
+      const conteudo = await pagina.getTextContent();
+      itens.push(...conteudo.items);
+      return conteudo.items.map((i) => i.str).join(" ");
+    } });
+    expect(parsed.numpages).toBe(1);
+    expect(semEspacos(parsed.text)).toContain(DESCRICOES.opSimpNac[3]);
+    expect(semEspacos(parsed.text)).toContain(DESCRICOES.regApTribSN[regime]);
+    const simples = itens.find((i) => i.str === "Simples Nacional na Data de Competência");
+    const apuracao = itens.find((i) => i.str === "Regime de Apuração Tributária pelo SN");
+    const tomador = itens.find((i) => i.str === "TOMADOR / ADQUIRENTE");
+    expect(simples).toBeDefined();
+    expect(apuracao).toBeDefined();
+    expect(tomador).toBeDefined();
+    expect(Math.abs(simples.transform[5] - apuracao.transform[5])).toBeLessThan(1);
+    const ultimaLinha = itens.find((i) => i.str.includes("Pequeno Porte (ME/EPP)"));
+    expect(ultimaLinha.transform[5] - tomador.transform[5]).toBeGreaterThan(5);
+    expect(conformidade.camposCrescidos).toContainEqual(expect.objectContaining({ campo: "opSimpNac", truncado: false }));
   });
 });
