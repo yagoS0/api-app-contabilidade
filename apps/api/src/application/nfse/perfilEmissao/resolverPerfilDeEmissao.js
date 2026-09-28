@@ -47,6 +47,7 @@ function valorOuNulo(v) {
  */
 function doCadastro(company) {
   return {
+    ibscbsCategoriaOperacao: { valor: null, fonte: FONTE.INDEFINIDO },
     codigoServicoNacional: {
       valor: valorOuNulo(company?.codigoServicoNacional),
       fonte: FONTE.COMPANY,

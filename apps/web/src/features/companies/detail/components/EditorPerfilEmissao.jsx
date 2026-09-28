@@ -8,9 +8,10 @@ const GRUPOS = [
   ["Serviço e local", ["codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao", "codigoNbs"]],
   ["Tributação municipal e Simples", ["regEspTrib", "regApTribSN", "tribISSQN", "tpImunidade", "exigSuspTipo", "exigSuspProcesso", "pAliq"]],
   ["Tributação federal", ["retencaoFederalArt30", "cstPisCofins"]],
-  ["IBS e CBS", ["ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib"]],
+  ["IBS e CBS", ["ibscbsCategoriaOperacao", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib"]],
 ];
 const OPCOES = {
+  ibscbsCategoriaOperacao: { SERVICO_ISS: 'Serviço sujeito ao ISS, sem intermediação por plataforma', PLATAFORMA: 'Plataforma digital ou serviço por ela intermediado', OUTROS: 'Outras hipóteses do cronograma — confirmar com o fiscal' },
   exigSuspTipo: { 1: "Decisão judicial", 2: "Processo administrativo" },
   regApTribSN: { 1: "Tributos federais e municipal pelo Simples", 2: "Federais pelo Simples; ISSQN fora", 3: "Federais e municipal fora do Simples" },
   tribISSQN: { 1: "Operação tributável", 2: "Imunidade", 3: "Exportação", 4: "Não incidência" },
@@ -118,7 +119,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
                 {c.cIndOp} / {c.cClassTrib} — {c.nomeClassTrib} · {c.localIncidencia}
               </option>)}
             </select>
-            <p>O CST deve ser confirmado pelo contador. A seleção acima preenche somente o indicador e a classificação.</p>
+            <p>As correlações acima são sugestões do Anexo VIII. O contador deve confirmar a operação e o CST; outras combinações válidas podem ser preenchidas nos campos.</p>
           </div>}
         </div></details>)}
         {dados.sugestoes && <p>Fonte das sugestões: <a href={dados.sugestoes.url} target="_blank" rel="noreferrer">{dados.sugestoes.fonte}</a>. Selecione apenas opções aplicáveis à empresa.</p>}

@@ -36,6 +36,10 @@ export const TEXTO_DA_FONTE = Object.freeze({
 
 /** Espelho de `campos.js`. ⚠ A ORDEM importa: é a ordem em que a tela desenha. */
 export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
+  Object.freeze({ id: 'ibscbsCategoriaOperacao', rotulo: 'Enquadramento no cronograma IBS/CBS',
+    tag: null, caminhoNoXml: null, valores: ['SERVICO_ISS', 'PLATAFORMA', 'OUTROS'],
+    formaDescrita: 'serviço sujeito ao ISS; plataforma digital ou serviço intermediado; demais hipóteses do cronograma',
+    obrigatorio: false, cravadoHoje: false }),
   ...[
     { id: "tpImunidade", rotulo: "Tipo de imunidade do ISSQN", tag: "tpImunidade", caminhoNoXml: "infDPS/valores/trib/tribMun/tpImunidade", valores: ["0", "1", "2", "3", "4", "5"], formaDescrita: "0 não informado na origem · 1 entes públicos · 2 templos · 3 entidades do art. 150 VI c · 4 livros e periódicos · 5 fonogramas" },
     { id: "exigSuspTipo", rotulo: "Suspensão da exigibilidade do ISSQN", tag: "tpSusp", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/tpSusp", valores: ["1", "2"], formaDescrita: "1 decisão judicial · 2 processo administrativo" },
@@ -160,7 +164,7 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     rotulo: "Código indicador da operação (IBS/CBS)",
     tag: "cIndOp",
     caminhoNoXml: "infDPS/IBSCBS/cIndOp",
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, do Anexo C oficial",
     obrigatorio: false,
     cravadoHoje: false,
   }),
@@ -178,7 +182,7 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     rotulo: "Classificação tributária do IBS/CBS",
     tag: "cClassTrib",
     caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib",
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, da tabela oficial de classificação tributária",
     obrigatorio: false,
     cravadoHoje: false,
   }),
@@ -186,6 +190,11 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
 
 /** As descrições dos valores — para a tela não mostrar um "3" cru sobre tributação. */
 export const DESCRICAO_DO_VALOR = Object.freeze({
+  ibscbsCategoriaOperacao: {
+    SERVICO_ISS: 'Serviço sujeito ao ISS, sem intermediação por plataforma',
+    PLATAFORMA: 'Plataforma digital ou serviço intermediado',
+    OUTROS: 'Outras hipóteses do cronograma IBS/CBS',
+  },
   tpImunidade: { "0": "Tipo não informado na origem", "1": "Entes públicos (CF, art. 150, VI, a)", "2": "Templos (CF, art. 150, VI, b)", "3": "Entidades do art. 150, VI, c", "4": "Livros e periódicos (CF, art. 150, VI, d)", "5": "Fonogramas (CF, art. 150, VI, e)" },
   exigSuspTipo: { "1": "Decisão judicial", "2": "Processo administrativo" },
   // ⚠ Sim/não do contador — o painel não mostra "true" cru sobre uma decisão fiscal.

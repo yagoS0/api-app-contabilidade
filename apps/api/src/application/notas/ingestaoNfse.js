@@ -38,6 +38,7 @@ import { log } from "../../config.js";
 import { ESTADOS } from "./CompetenciaStateMachine.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
 import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
+import { extrairIbscbsXml } from "../fiscal/ibscbs/projecaoXml.js";
 
 // ─── Competência fechada → vira pendência (mesmo padrão Dfe) ───────────────
 
@@ -176,6 +177,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     // mesmas colunas; XML mudou ⇒ as colunas passam a descrever o XML novo. Nunca há limpeza "para
     // recalcular depois" — o defeito que este projeto já pagou com a classificação dos itens.
     ...camposFiscaisParaPersistir(xmlPlain),
+    ibscbs: extrairIbscbsXml(xmlPlain, 'NFSE'),
   };
 
   if (fechada) {

@@ -92,6 +92,9 @@ jobs:
       - name: Invoice preparation and public registration lookups without network
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='src/application/tomador|preparacaoFiscalDoCliente'
+      - name: IBS CBS, invoice issuance and document ingestion without external calls
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='(nfse/__tests__|nfse/perfilEmissao/__tests__|nfse/danfse/__tests__|fiscal/ibscbs/__tests__|notas/__tests__/ingestao|notas/dfe/__tests__|notas/importXml/__tests__|perfisEmissaoRota.test|perfisEmissaoCliente.test|uniaoNotasDoCliente.test)'
       - name: Commercial proposals, PDFs and contract forms without external calls
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/onboarding/__tests__'

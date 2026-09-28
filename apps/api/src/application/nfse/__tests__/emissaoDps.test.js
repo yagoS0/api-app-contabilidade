@@ -147,6 +147,55 @@ beforeEach(() => {
   prisma.serviceInvoice.update.mockImplementation(async ({ data }) => ({ id: "inv-1", ...data }));
 });
 
+describe('evidência fiscal e falha depois do retorno nacional', () => {
+  it('exige conciliação se o POST responder sem corpo utilizável', async () => {
+    montarCenario({ respostaProvedor: () => ({ data: null }) });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({status:'pending',numeroReutilizavel:false,conciliacaoObrigatoria:true});
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.update.mock.calls.some(([arg]) => ['rejected','falha_envio'].includes(arg.data.status))).toBe(false);
+  });
+  it('duplicidade E0014 não permite reutilizar a numeração sem consulta', async () => {
+    montarCenario();
+    prisma.serviceInvoice.findUnique.mockResolvedValue({id:'anterior',companyId:PAYLOAD_BASE.companyId,status:'rejected',falhaCamada:'RECEITA',falhaCodigo:'E0014',rpsSerie:'1',rpsNumero:'1'});
+    await expect(NfseService.issue({data:PAYLOAD_BASE,log,retryInvoiceId:'anterior'})).rejects.toMatchObject({code:'NFSE_NUMERO_EM_ESTADO_INDETERMINADO'});
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it.each(['pending', 'issued', 'cancelled'])('não reenvia a numeração de uma nota %s', async status => {
+    montarCenario();
+    prisma.serviceInvoice.findUnique.mockResolvedValue({id:'anterior',companyId:PAYLOAD_BASE.companyId,status,rpsSerie:'1',rpsNumero:'1'});
+    await expect(NfseService.issue({data:PAYLOAD_BASE,log,retryInvoiceId:'anterior'})).rejects.toMatchObject({code:'NFSE_NUMERO_EM_ESTADO_INDETERMINADO'});
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it('operação regular em dezembro não reserva número com IBS/CBS desligado', async () => {
+    montarCenario({ cadastroFiscal: {regime:'LUCRO_PRESUMIDO'} });
+    const r = await NfseService.issue({ data: {...PAYLOAD_BASE,competencia:'2026-12-01'}, log });
+    expect(r.codigo).toBe('NFSE_IBSCBS_INTEGRACAO_DESLIGADA');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it('salva a DPS e a classificação usada antes do POST', async () => {
+    montarCenario();
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe('issued');
+    const pedido = prisma.serviceInvoice.update.mock.calls.find(([arg]) => arg.data.pedidoXml)?.[0];
+    expect(pedido.data.pedidoXml).toBe(xmlEnviado());
+    expect(pedido.data.contextoFiscal.catalogo.versao).toBe('svrs-20260928');
+    expect(prisma.serviceInvoice.update.mock.invocationCallOrder[0]).toBeLessThan(postMock.mock.invocationCallOrder[0]);
+  });
+  it('não libera número nem troca retorno por rejeição se o banco falhar após o POST', async () => {
+    montarCenario();
+    prisma.serviceInvoice.update.mockImplementation(async ({ data }) => {
+      if (data.status === 'issued') throw new Error('banco indisponível');
+      return { id:'inv-1', ...data };
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({status:'pending',codigo:'NFSE_RETORNO_PENDENTE_CONCILIACAO',numeroReutilizavel:false,conciliacaoObrigatoria:true});
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.update.mock.calls.some(([arg]) => ['rejected','falha_envio'].includes(arg.data.status))).toBe(false);
+  });
+});
+
 describe("certificado — sem o A1 da empresa NADA é enviado", () => {
   it("⚠ recusa antes de reservar número e antes de qualquer POST", async () => {
     montarCenario();
@@ -599,6 +648,8 @@ describe("reemissão reusa a linha e o número — não queima numeração", () 
       companyId: "company-1",
       rpsSerie: "00001",
       rpsNumero: "42",
+      status: "rejected",
+      falhaCodigo: "E0718",
       falhaCamada: "RECEITA",
     });
 
@@ -617,6 +668,7 @@ describe("reemissão reusa a linha e o número — não queima numeração", () 
       companyId: "company-1",
       rpsSerie: "00001",
       rpsNumero: "42",
+      status: "falha_envio",
       falhaCamada: "TRANSPORTE",
     });
 

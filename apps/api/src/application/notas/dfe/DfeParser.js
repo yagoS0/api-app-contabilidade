@@ -24,6 +24,7 @@
 
 import { gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
+import { extrairIbscbsXml } from "../../fiscal/ibscbs/projecaoXml.js";
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -212,12 +213,14 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
                 : "DEST";
 
     const dhEmi = ide.dhEmi || null;
+    const ibscbs = extrairIbscbsXml(xml, 'NFE');
     const total = parseDecimal(infNFe.total?.ICMSTot?.vNF);
 
-    const items = dets.map((d) => {
+    const items = dets.map((d, i) => {
       const prod = d.prod || {};
       return {
         codigoServico: null,
+        ibscbs: ibscbs.itens[i],
         ncm: String(prod.NCM || ""),
         cfop: String(prod.CFOP || ""),
         descricao: String(prod.xProd || ""),
@@ -251,6 +254,7 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
         statusEfetivo: "autorizada",
         papel,
         xmlRaw: xml,
+        ibscbs,
       },
       items,
     };

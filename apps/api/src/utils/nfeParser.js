@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { extrairIbscbsXml } from "../application/fiscal/ibscbs/projecaoXml.js";
 
 function toNumber(value) {
   if (value === undefined || value === null) return null;
@@ -32,6 +33,7 @@ export function parseNfeXml(xml) {
     attributeNamePrefix: "@_",
     parseTagValue: false,
     trimValues: true,
+    removeNSPrefix: true,
   });
 
   const json = parser.parse(xml.toString());
@@ -86,6 +88,7 @@ export function parseNfeXml(xml) {
     : chaveRaw || ide.chNFe || null;
 
   const header = {
+    ibscbs: extrairIbscbsXml(xml.toString(), 'NFE'),
     chave,
     numero: ide.nNF || null,
     serie: ide.serie || null,

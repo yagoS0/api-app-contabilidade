@@ -523,6 +523,9 @@ model InvoiceItem {
 }
 
 model ServiceInvoice {
+  ibscbs            Json?
+  pedidoXml         String?
+  contextoFiscal    Json?
   id                String    @id @default(uuid())
   companyId         String
   clientId          String?
@@ -2240,6 +2243,7 @@ model PortalSyncState {
 }
 
 model PortalInvoice {
+  ibscbs         Json?
   id          String  @id @default(uuid())
   clientId    String
   type        String // NFSE, NFE, ...
@@ -3445,6 +3449,7 @@ model SerproChamada {
 
 // Q12.A: itens de uma nota (NF-e ou NFS-e). Classificação por anexo SN vem em Q12.C.
 model NotaItem {
+  ibscbs                Json?
   id             String       @id @default(uuid())
   notaId         String
   codigoServico  String? // LC116 (NFS-e)
@@ -3674,6 +3679,8 @@ model CadastroFiscal {
 // disse que não"* de *"ninguém nunca abriu essa tela"*). Só `ativo`, `padrao` e os dois `habilita*`
 // têm default — são de IDENTIDADE e de FORMA, não afirmam nada sobre tributo.
 model PerfilEmissaoNfse {
+  // Hipótese do cronograma confirmada pelo responsável fiscal; ausência exige revisão.
+  ibscbsCategoriaOperacao String?
   id             String @id @default(uuid())
   portalClientId String
 
@@ -3748,19 +3755,13 @@ model PerfilEmissaoNfse {
   /// que o bloco IBS/CBS for informado (**E0322**).
   codigoNbs String?
 
-  /// `IBSCBS/cIndOp` — 6 dígitos. Sai das combinações que o ANEXO VIII autoriza para o item da
-  /// LC 116 embutido no `cTribNac`. ⚠⚠ A tabela OFICIAL de códigos é o **ANEXO C** (E0901), que
-  /// NÃO está versionado neste projeto; conferimos contra o ANEXO VIII, que é um subconjunto —
-  /// mais estrito que a regra exige, portanto na direção segura.
+  /// `IBSCBS/cIndOp` — 6 dígitos, conferidos no Anexo C oficial versionado.
   ibscbsCIndOp String?
   /// `IBSCBS/valores/trib/gIBSCBS/CST` — 3 dígitos.
-  /// ⚠⚠ **NÃO EXISTE LISTA VERSIONADA DISTO.** O XSD diz só `[0-9]{3}` e o ANEXO_I não enumera.
-  /// Os prefixos dos 28 `cClassTrib` do ANEXO VIII (`000`, `011`, `200`, `400`, `820`) PARECEM
-  /// CSTs, e parecer não é fonte: o sistema SUGERE e nomeia a incerteza, o contador declara.
+  /// Existência e relação com cClassTrib conferidas na tabela SVRS versionada.
   ibscbsCst String?
-  /// `IBSCBS/valores/trib/gIBSCBS/cClassTrib` — 6 dígitos, do ANEXO VIII.
-  /// ⚠ O par `(cIndOp, cClassTrib)` é conferido JUNTO: em 7 itens o produto cartesiano das duas
-  /// listas contém combinações que a fonte não autoriza.
+  /// `IBSCBS/valores/trib/gIBSCBS/cClassTrib` — tabela SVRS, com vigência e documentos permitidos.
+  /// O Anexo VIII é orientativo e não limita as classificações aceitas pelo catálogo.
   ibscbsCClassTrib String?
 
   // ── o perfil HABILITA; o cliente informa o fato daquela nota ───────────────────────────────

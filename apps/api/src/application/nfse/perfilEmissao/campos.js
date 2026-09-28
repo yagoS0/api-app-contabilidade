@@ -39,6 +39,14 @@ export const LEITOR = Object.freeze({
  * `comExt`, `obra`) entra na fase que o montar — está em `FORA_DESTA_FASE`, com o motivo.
  */
 export const CAMPOS = Object.freeze([
+  Object.freeze({
+    id: 'ibscbsCategoriaOperacao', rotulo: 'Enquadramento no cronograma IBS/CBS',
+    uso: 'ENQUADRAMENTO',
+    tag: null, caminhoNoXml: null, valores: ['SERVICO_ISS', 'PLATAFORMA', 'OUTROS'],
+    formaDescrita: 'serviço sujeito ao ISS; plataforma digital ou serviço intermediado; demais hipóteses do cronograma',
+    obrigatorio: false, hojeSaiDe: 'decisão do responsável fiscal',
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
   ...[
     { id: "tpImunidade", rotulo: "Tipo de imunidade do ISSQN", tag: "tpImunidade", caminhoNoXml: "infDPS/valores/trib/tribMun/tpImunidade", valores: ["0", "1", "2", "3", "4", "5"], formaDescrita: "0 não informado na origem · 1 entes públicos · 2 templos · 3 entidades do art. 150 VI c · 4 livros e periódicos · 5 fonogramas" },
     { id: "exigSuspTipo", rotulo: "Suspensão da exigibilidade do ISSQN", tag: "tpSusp", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/tpSusp", valores: ["1", "2"], formaDescrita: "1 decisão judicial · 2 processo administrativo" },
@@ -204,10 +212,9 @@ export const CAMPOS = Object.freeze([
     tag: "cIndOp",
     caminhoNoXml: "infDPS/IBSCBS/cIndOp",
     forma: /^[0-9]{6}$/,
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, do Anexo C oficial",
     obrigatorio: false,
-    // ⚠⚠ A tabela OFICIAL é o ANEXO C (E0901), NÃO versionado aqui. Conferimos contra o ANEXO
-    // VIII, que é subconjunto — mais estrito que a norma, portanto falha FECHADA.
+    // Conferido no Anexo C de produção. O Anexo VIII só oferece sugestões.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
@@ -219,8 +226,7 @@ export const CAMPOS = Object.freeze([
     forma: /^[0-9]{3}$/,
     formaDescrita: "3 dígitos",
     obrigatorio: false,
-    // ⚠⚠ **NÃO EXISTE LISTA VERSIONADA DISTO.** O XSD dá `[0-9]{3}` sem enumeração e o ANEXO_I
-    // não enumera. Só a FORMA é conferiível; o conteúdo é declaração do contador.
+    // A forma é conferida aqui; existência e correspondência são validadas na tabela SVRS.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
@@ -230,10 +236,9 @@ export const CAMPOS = Object.freeze([
     tag: "cClassTrib",
     caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib",
     forma: /^[0-9]{6}$/,
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, da tabela oficial de classificação tributária",
     obrigatorio: false,
-    // ⚠ Conferido em PAR com o `cIndOp`: em 7 itens o produto cartesiano das duas listas contém
-    // combinações que a fonte não autoriza.
+    // Conferido por CST, vigência e documento permitido na tabela oficial SVRS.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),

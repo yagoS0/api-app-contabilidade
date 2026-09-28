@@ -95,6 +95,7 @@ export async function substituirItensPreservandoClassificacao(tx, { notaId, iten
     if (antigo) preservados += 1;
     return {
       notaId,
+      ...(it.ibscbs ? { ibscbs: it.ibscbs } : {}),
       codigoServico: it.codigoServico || null,
       ncm: it.ncm || null,
       cfop: it.cfop || null,

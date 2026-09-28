@@ -1,6 +1,8 @@
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseDate } from "../../utils/date.js";
+import { extrairIbscbsXml } from '../../application/fiscal/ibscbs/projecaoXml.js';
+import { lerEnvelopeXml } from '../../application/nfse/lerEnvelopeXml.js';
 
 function serialize(invoice) {
   if (!invoice) return null;
@@ -22,6 +24,7 @@ function serialize(invoice) {
     rpsSerie: invoice.rpsSerie,
     status: invoice.status,
     xml: invoice.xml,
+    ibscbs: invoice.ibscbs ?? null,
     pdfUrl: invoice.pdfUrl,
     // ⚠ O DESFECHO PRECISA CHEGAR À TELA. Antes, o motivo da falha existia só no `log.error` de
     // `NfseService.js` — a lista mostrava "rejeitada" e ninguém sabia se corrigia a nota ou tentava
@@ -62,6 +65,7 @@ function buildUpdateData(data) {
     rpsSerie: data.rpsSerie ?? undefined,
     status: data.status ?? undefined,
     xml: data.xml ?? undefined,
+    ibscbs: data.xml ? extrairIbscbsXml(lerEnvelopeXml(data.xml).xml, 'NFSE') : undefined,
     pdfUrl: data.pdfUrl ?? undefined,
   };
   return Object.fromEntries(
@@ -80,7 +84,7 @@ export class NfseRepository {
   static async markIssued(id, data) {
     const updated = await prisma.serviceInvoice.update({
       where: { id },
-      data,
+      data: { ...data, ...(data.xml ? { ibscbs: extrairIbscbsXml(lerEnvelopeXml(data.xml).xml, 'NFSE') } : {}) },
     });
     return serialize(updated);
   }
@@ -165,6 +169,7 @@ export class NfseRepository {
         rpsSerie: data.rpsSerie || null,
         status: data.status || "issued",
         xml: data.xml || null,
+        ...(data.xml ? { ibscbs: extrairIbscbsXml(lerEnvelopeXml(data.xml).xml, 'NFSE') } : {}),
         pdfUrl: data.pdfUrl || null,
       },
     });

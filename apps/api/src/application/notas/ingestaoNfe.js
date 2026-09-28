@@ -15,6 +15,7 @@
 
 import { ESTADOS } from "./CompetenciaStateMachine.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
+import { extrairIbscbsXml } from "../fiscal/ibscbs/projecaoXml.js";
 
 /**
  * Decide se a competência da nota está FECHADA. Se sim, não atualiza base —
@@ -55,9 +56,14 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   // statusEfetivo="cancelada"). O resumo/nota da NF-e traz statusEfetivo hardcoded "autorizada";
   // sem isso, uma re-captura da nota reverteria o cancelamento.
   const wKey = { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } };
-  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { id: true, statusEfetivo: true } }).catch(() => null);
+  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { id: true, statusEfetivo: true, xmlRaw: true } });
   const existia = Boolean(existente);
   const statusEfetivo = existente?.statusEfetivo === "cancelada" ? "cancelada" : (parsed.statusEfetivo || null);
+
+  // Um resumo posterior não pode apagar o documento completo nem seus tributos.
+  // Falha de leitura do registro também não pode ser interpretada como inexistência.
+  if (existente?.xmlRaw && !parsed.xmlRaw) return { created: existente.id, notaId: existente.id, existia: true, status: 'resumo_preservado' };
+  const ibscbs = extrairIbscbsXml(parsed.xmlRaw, 'NFE');
 
   const dataToWrite = {
     type: parsed.type,
@@ -73,6 +79,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
     tomadorNome: parsed.tomadorNome || null,
     tomadorDoc: parsed.tomadorDoc || null,
     xmlRaw: parsed.xmlRaw || null,
+    ibscbs,
     papel: parsed.papel || null,
     statusEfetivo,
     competenciaPosFechamento: fechada,
@@ -99,7 +106,9 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   const nota = await tx.portalInvoice.upsert({
     where: wKey,
     create: { clientId: portalClientId, ...dataToWrite },
-    update: dataToWrite,
+    // Também protege a corrida: um XML completo pode ter sido gravado depois
+    // da leitura acima. Resumos só criam registros; nunca rebaixam um existente.
+    update: parsed.xmlRaw ? dataToWrite : {},
   });
 
   // Substitui itens (full overwrite): mais simples + idempotente. Volume é pequeno.
@@ -109,7 +118,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   // corrige a nota; ela não pode desfazer a classificação. O casamento item-antigo × item-novo e o
   // motivo do critério estão em `./notaItens.js`.
   if (items && items.length > 0) {
-    await substituirItensPreservandoClassificacao(tx, { notaId: nota.id, itens: items });
+    await substituirItensPreservandoClassificacao(tx, { notaId: nota.id, itens: items.map((item, i) => ({ ...item, ibscbs: ibscbs.itens[i] ?? undefined })) });
   }
   return { created: nota.id, notaId: nota.id, existia, status: "upserted" };
 }

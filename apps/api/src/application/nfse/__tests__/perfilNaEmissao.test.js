@@ -375,12 +375,11 @@ describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que
   });
   const PERFIL_IBSCBS = comPerfil({ codigoNbs: NBS_TERMINAL, ...ibscbsDoPerfil() });
 
-  it("⚠⚠ flag DESLIGADA: perfil com os três campos preenchidos NÃO produz o bloco", async () => {
-    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: false, perfil: PERFIL_IBSCBS });
-    expect(xml).toMatch(/<infDPS/);
-    expect(xml).not.toMatch(/IBSCBS/);
-    // ⚠ O `cNBS` continua saindo: ele é campo próprio, e não depende do IBS/CBS.
-    expect(xml).toMatch(/<cNBS>115021000<\/cNBS>/);
+  it("perfil com IBS/CBS e integração desligada recusa antes de reservar número", async () => {
+    const { resultado, prisma, xml } = await emitirDetalhado({ flagLigada: true, ibscbsLigada: false, perfil: PERFIL_IBSCBS });
+    expect(resultado.codigo).toBe('NFSE_IBSCBS_INTEGRACAO_DESLIGADA');
+    expect(xml).toBe('');
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 
   it("flag LIGADA: o bloco sai com os cinco campos, na ordem do `xs:sequence`", async () => {
@@ -419,7 +418,7 @@ describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que
     expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 
-  it("⚠⚠ combinação que o ANEXO VIII não autoriza recusa — e DIZ quais valem", async () => {
+  it("⚠⚠ CST incompatível com a classificação oficial recusa antes do envio", async () => {
     const { resultado } = await emitirDetalhado({
       flagLigada: true,
       ibscbsLigada: true,
@@ -428,9 +427,9 @@ describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que
         ...ibscbsDoPerfil({ ibscbsCClassTrib: "000001" }),
       }),
     });
-    expect(resultado.codigo).toBe("NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA");
+    expect(resultado.codigo).toBe("NFSE_IBSCBS_CST_DIVERGENTE");
     // Recusa sem saída manda o contador adivinhar.
-    expect(resultado.correcao).toMatch(/100301\/200052/);
+    expect(resultado.correcao).toMatch(/tabela oficial/);
   });
 
   it("meio bloco recusa — os três são obrigatórios no XSD", async () => {

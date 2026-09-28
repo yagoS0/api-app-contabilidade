@@ -104,6 +104,12 @@ describe("⚠⚠ nenhuma coluna sem leitor, nenhum leitor sem coluna", () => {
 
   it("⚠ cada campo diz a TAG e o CAMINHO no XML — é o de-para que o painel mostra", () => {
     for (const c of CAMPOS) {
+      if (c.uso === 'ENQUADRAMENTO') {
+        expect(c.id).toBe('ibscbsCategoriaOperacao');
+        expect(c.tag).toBeNull();
+        expect(c.caminhoNoXml).toBeNull();
+        continue;
+      }
       expect({ id: c.id, tag: Boolean(c.tag), caminho: /^infDPS\//.test(c.caminhoNoXml) })
         .toEqual({ id: c.id, tag: true, caminho: true });
     }

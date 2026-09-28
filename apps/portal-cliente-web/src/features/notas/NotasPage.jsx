@@ -6,6 +6,7 @@ import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import { lerRecusaDanfse, nomeDoArquivoDanfse, podeEntrarNoLoteDeDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
 import { LOTE_MAXIMO, lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
+import { TributosDocumento } from './TributosDocumento';
 import {
   ESCOPO_DO_LOTE,
   avisoDoEscopo,
@@ -613,7 +614,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                           {chip.rotulo}
                         </Chip>
                       </td>
-                      <td className="num">{brl(nota.total)}</td>
+                      <td className="num">{brl(nota.total)}<TributosDocumento ibscbs={nota.ibscbs} /></td>
                       <td>
                         <BotaoDanfse nota={nota} companyId={companyId} />
                       </td>

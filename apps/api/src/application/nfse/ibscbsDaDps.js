@@ -1,48 +1,13 @@
-// O `cNBS` E O BLOCO `IBSCBS` DA DPS — regra PURA, e as recusas que acontecem ANTES de enviar.
-//
-// ⚠⚠ ESTE MÓDULO NÃO MONTA XML. Ele decide **o quê** sai e **recusa nomeando** o que a Receita
-// recusaria — o princípio que o portal do cliente já aplica ("a tela diz antes o que o servidor
-// recusaria, e não cobra caro por erro barato"). Aqui é mais caro ainda: a recusa acontece no
-// pré-voo de `issue`, ANTES de reservar numeração, e **não existe inutilização na NFS-e** — número
-// gasto à toa é buraco permanente.
-//
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-// AS REGRAS, LIDAS DO ANEXO_I VERSIONADO (aba `RN DPS_NFS-e`) — não de memória
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-//
-//   E0322 (linha 324) — "Se o bloco de informações de IBS/CBS (…/infDPS/IBSCBS) for informado na
-//                        DPS, então é obrigatório informar na DPS um item da NBS."
-//   E0318 (linha 322) — o `cNBS` também é obrigatório na EXPORTAÇÃO de serviço (país no exterior
-//                        do tomador/intermediário, ou `cPaisPrestacao` informado). ⚠ A exportação
-//                        NÃO é montada por este projeto ainda; quando for, esta guarda é o lugar.
-//   E0901 (linha 546) — "O código indicador da operação deve constar na tabela de códigos conforme
-//                        ANEXO C." ⚠⚠ O **ANEXO C NÃO ESTÁ VERSIONADO AQUI**. Conferimos contra o
-//                        ANEXO VIII, que correlaciona item→cIndOp e é SUBCONJUNTO daquela tabela:
-//                        mais estrito que a norma exige, portanto na direção segura. Um código
-//                        legítimo do ANEXO C fora do ANEXO VIII é recusado por nós — falha
-//                        FECHADA, e nomeada. Não afrouxe isto "porque o ADN aceitaria".
-//   E0910 (linha 554) — "O destinatário só deve ser identificado quando indDest for 1."
-//
-// ⚠⚠ **`indDest = "0"` NÃO É PALPITE — É FATO SOBRE O DOCUMENTO QUE NÓS EMITIMOS.** Pela E0910, o
-  // grupo `dest` só existe com `indDest = 1`. O padrão deste resolvedor é o tomador;
-  // desde 07/09/2026 `dadosEspeciaisDaNota` valida o destinatário informado na operação,
-  // e `buildDpsXml` substitui o indicador junto com a escrita do grupo `dest`.
-  // No cenário padrão, o
-// destinatário É o tomador identificado na nota. Se um dia o gerador passar a montar `dest`, esta
-// constante deixa de valer e as duas coisas mudam JUNTAS. Há teste varrendo o gerador atrás de
-// `<dest>` exatamente para que essa mudança não passe calada.
-//
-// ⚠ `finNFSe = "0"` é o ÚNICO valor de `TSRTCFinNFSe` no XSD 1.01 ("NFS-e regular"). Não é escolha.
-
-import { conferirCombinacao, itemLc116DoCodigoNacional } from "../fiscal/ibscbs/index.js";
+import { CATALOGO_IBSCBS, validarCodigosIbscbs, classificacaoPorCodigo } from "../fiscal/ibscbs/catalogoOficial.js";
 import { RECUSA_NBS, nbsParaDps } from "../fiscal/nbs/index.js";
+import { exigenciaIbscbs } from './exigenciaIbscbs.js';
 
 /** ⚠ Único valor de `TSRTCFinNFSe` no XSD 1.01. */
 export const FIN_NFSE_REGULAR = "0";
-/** ⚠ Derivado da E0910 + do fato de o gerador nunca montar `dest`. Ver o cabeçalho. */
+/** Tomador como destinatário; dadosEspeciaisDaNota muda para 1 se houver dest. */
 export const IND_DEST_E_O_TOMADOR = "0";
 
-/** ⚠ `TSRTCCodSitTrib` é `[0-9]{3}` no XSD e **não tem enumeração** — só a forma é conferível. */
+/** Forma XSD. A existência e o vínculo com cClassTrib são conferidos no catálogo. */
 const FORMA_CST = /^[0-9]{3}$/;
 
 const texto = (v) => {
@@ -98,18 +63,22 @@ export function nbsDaDps(perfil) {
  * @param {boolean} p.ligado   `INTEGRACAO_NFSE_IBSCBS`
  * @param {string|null} p.cNBS o `cNBS` já resolvido por `nbsDaDps` — a E0322 se confere aqui
  */
-export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
+export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS, dataReferencia, opSimpNac }) {
   const cIndOp = texto(perfil?.ibscbsCIndOp);
   const cst = texto(perfil?.ibscbsCst);
   const cClassTrib = texto(perfil?.ibscbsCClassTrib);
   const declarados = [cIndOp, cst, cClassTrib].filter(Boolean).length;
+  const exigencia = exigenciaIbscbs({ opSimpNac, dataReferencia, cTribNac, categoria: perfil?.ibscbsCategoriaOperacao });
+  if (exigencia.revisao) return { ok: false, codigo: 'NFSE_IBSCBS_ENQUADRAMENTO_PENDENTE', message: exigencia.motivo,
+    correcao: 'O escritório deve revisar o enquadramento fiscal antes da emissão.' };
+  if (exigencia.obrigatorio && !ligado) return { ok: false, codigo: 'NFSE_IBSCBS_INTEGRACAO_DESLIGADA', message: 'Esta operação exige IBS/CBS, mas a integração está desativada.',
+    correcao: 'Habilite e homologue a integração antes da emissão. O desligamento não dispensa os tributos.' };
+  if (exigencia.obrigatorio && !declarados) return { ok: false, codigo: 'NFSE_IBSCBS_OBRIGATORIO', message: 'Esta operação exige IBS/CBS e o perfil não informa a classificação.',
+    correcao: 'Complete NBS, indicador da operação, CST e classificação tributária no perfil.' };
 
-  // ⚠⚠ A FLAG DESLIGADA NÃO É "IGNORE EM SILÊNCIO" QUANDO HÁ DADO. Perfil sem nada declarado é o
-  // caso de 100% das linhas hoje, e ali não há o que dizer. Mas um perfil COM os três campos
-  // preenchidos e a flag OFF é uma configuração que o contador fez e que não está saindo — o
-  // `motivo` existe para o painel poder dizer isso, em vez de o campo sumir sem explicação.
+  // Dados declarados nunca são omitidos silenciosamente por uma flag desligada.
   if (!ligado) {
-    return { ok: true, informar: false, motivo: declarados ? "INTEGRACAO_DESLIGADA" : null };
+    return declarados ? { ok: false, codigo: 'NFSE_IBSCBS_INTEGRACAO_DESLIGADA', message: 'O perfil declara IBS/CBS, mas a integração está desativada. A emissão não pode omitir os tributos configurados.', correcao: 'Solicite ao escritório a habilitação e homologação da integração IBS/CBS.' } : { ok: true, informar: false, motivo: null };
   }
   if (declarados === 0) return { ok: true, informar: false, motivo: null };
 
@@ -125,7 +94,7 @@ export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
       ok: false,
       codigo: "NFSE_IBSCBS_INCOMPLETO",
       message: `O bloco de IBS/CBS do perfil de emissão está incompleto: falta ${faltando.join(" e ")}.`,
-      correcao: "Complete os três campos de IBS/CBS no perfil, ou deixe os três em branco.",
+      correcao: "Complete os três campos de IBS/CBS no perfil conforme a operação.",
       faltando,
     };
   }
@@ -149,62 +118,22 @@ export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
         "Declarar IBS/CBS na nota obriga a informar um item da NBS (regra E0322 do Padrão Nacional), " +
         "e o perfil de emissão não tem código NBS.",
       correcao:
-        "Informe o código NBS no perfil de emissão, ou apague os campos de IBS/CBS dele.",
+        "Informe o código NBS terminal no perfil de emissão.",
     };
   }
 
-  // ⚠ O par é conferido JUNTO contra o ANEXO VIII — duas listas soltas autorizariam, em 7 itens,
-  // combinações que a fonte não traz.
-  const item = itemLc116DoCodigoNacional(cTribNac);
-  const conferencia = conferirCombinacao(item, { cIndOp, cClassTrib });
-  if (!conferencia.ok) {
-    return {
-      ok: false,
-      codigo: "NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA",
-      message:
-        `O ANEXO VIII não correlaciona cIndOp ${cIndOp} com cClassTrib ${cClassTrib} para o ` +
-        `serviço ${cTribNac}${item ? ` (item ${item} da LC 116)` : ""}.`,
-      correcao: conferencia.autorizadas?.length
-        ? "Combinações autorizadas para este serviço: " +
-          conferencia.autorizadas.map((c) => `${c.cIndOp}/${c.cClassTrib}`).join(" · ")
-        : "Este serviço não tem correlação de IBS/CBS no ANEXO VIII — não declare o bloco para ele.",
-      motivo: conferencia.motivo,
-    };
-  }
-
+  const erros = validarCodigosIbscbs({ cst, cClassTrib, cIndOp, dataReferencia });
+  if (erros.length) return { ok: false, codigo: erros[0].codigo, message: erros[0].motivo,
+    correcao: 'Revise os códigos do perfil conforme a tabela oficial e a operação realizada.', erros };
   return {
-    ok: true,
-    informar: true,
-    bloco: Object.freeze({
-      finNFSe: FIN_NFSE_REGULAR,
-      cIndOp,
-      indDest: IND_DEST_E_O_TOMADOR,
-      cst,
-      cClassTrib,
-    }),
+    ok: true, informar: true, catalogo: CATALOGO_IBSCBS,
+    bloco: Object.freeze({ finNFSe: FIN_NFSE_REGULAR, cIndOp, indDest: IND_DEST_E_O_TOMADOR, cst, cClassTrib }),
   };
 }
 
-/**
- * ⚠ SUGESTÃO DE CST A PARTIR DO `cClassTrib` — e ela viaja MARCADA como não verificada.
- *
- * Medido nos 28 `cClassTrib` do ANEXO VIII: os prefixos de três dígitos são `000`, `011`, `200`,
- * `400` e `820`, que PARECEM códigos de situação tributária. **Nenhuma fonte versionada afirma
- * essa correspondência**: o XSD dá só `[0-9]{3}` e o ANEXO_I não enumera. Então isto SUGERE — o
- * contador confirma —, na mesma decisão já registrada para a categoria de presunção do Lucro
- * Presumido: *derivar* (o sistema decide e calcula) virou *sugerir* (o sistema propõe e nomeia a
- * incerteza).
- *
- * ⚠ NÃO chame isto de dentro de `buildDpsXml`. O que vai à nota é o CST declarado.
- */
+/** Sugestão confirmada pelo vínculo da classificação na tabela SVRS. */
 export function cstSugeridoPeloClassTrib(cClassTrib) {
-  const t = texto(cClassTrib);
-  if (!t || !/^[0-9]{6}$/.test(t)) return null;
-  return Object.freeze({
-    cst: t.slice(0, 3),
-    verificadoNaFonte: false,
-    motivo:
-      "Os três primeiros dígitos do código de classificação tributária. Nenhuma fonte oficial " +
-      "versionada neste projeto afirma essa correspondência — confirme antes de emitir.",
-  });
+  const classe = classificacaoPorCodigo(texto(cClassTrib));
+  return classe ? Object.freeze({ cst: classe.Cst, verificadoNaFonte: true,
+    motivo: 'Correspondência publicada na tabela oficial de classificação tributária.', catalogo: CATALOGO_IBSCBS.versao }) : null;
 }
