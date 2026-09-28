@@ -18,7 +18,7 @@ Evidências locais: `test-evidence/piloto-api-final.json`, `piloto-web.json`, `p
 
 ## Estado da publicação
 
-**Preparado localmente, ainda não publicado nem ativado.** A revisão automática recusou o envio da branch por exigir autorização explícita para publicar código e documentação no repositório público. Nenhuma chave ou número real consta dos arquivos selecionados para publicação. A autorização solicitada abrange enviar a branch, abrir a revisão, conferir o CI e publicar/ativar somente o piloto delimitado acima. Se alguma verificação falhar, corrigir antes de ativar.
+**Publicação em produção autorizada pelo responsável em 28/09.** A autorização abrange publicar esta versão e ativar somente o piloto delimitado acima, após conferir o CI e a saúde dos serviços. Nenhuma chave ou número real consta dos arquivos selecionados para publicação. Se alguma verificação falhar, corrigir antes de ativar. A confirmação da implantação é registrada separadamente após o término.
 
 O prompt/modelo permanecem os da [avaliação real](avaliacao-dialogos-ia-leads-20260928.md). Não houve nova rodada paga para alterar as listas ou o orçamento.
 
