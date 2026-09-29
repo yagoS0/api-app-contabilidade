@@ -62,6 +62,16 @@ test('listagem identifica cada empresa pelo CNPJ dentro da carteira autorizada',
 
 const ocorrenciaEditavel = (id='oc', extra={}) => ({id,obrigacaoId:'serie-'+id,dataInicio:new Date('2026-09-10'),dataFim:new Date('2026-09-10'),status:'CONCLUIDA',dataVencimento:new Date('2026-09-21'),obrigacao:{tipo:'OBRIGACAO',nome:'EFD',descricao:'Da série',agendaConfig:{horaInicio:'09:00',horaFim:'10:00',prioridade:'BAIXA'}},agendaConfig:{titulo:'EFD '+id,descricao:'Da empresa '+id,prioridade:'ALTA'},...extra});
 
+test('mover data descarta datas calculadas; editar só horário preserva antecipações diárias',async()=>{
+ const agendaConfig={dataInicioOriginal:'2026-09-12',dataFimOriginal:'2026-09-13',diasAgendados:[{dataInicio:'2026-09-11',dataFim:'2026-09-11',dataInicioOriginal:'2026-09-12'}]};
+ prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([ocorrenciaEditavel('oc',{dataInicio:new Date('2026-09-11'),dataFim:new Date('2026-09-11'),agendaConfig})]);
+ expect((await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{horaInicio:'11:00',horaFim:'12:00'}})).status).toBe(200);
+ expect(prisma.ocorrenciaObrigacao.update.mock.calls[0][0].data.agendaConfig).toMatchObject(agendaConfig);
+ expect((await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{dataInicio:'2026-09-14',dataFim:'2026-09-14'}})).status).toBe(200);
+ const movida=prisma.ocorrenciaObrigacao.update.mock.calls[1][0].data.agendaConfig;
+ for(const campo of ['dataInicioOriginal','dataFimOriginal','diasAgendados']) expect(movida).not.toHaveProperty(campo);
+});
+
 test('gesto parcial preserva campos individuais e usa a leitura após adquirir os locks',async()=>{
   const antes=['a','b'].map(id=>ocorrenciaEditavel(id));
   const atuais=antes.map(oc=>({...oc,agendaConfig:{...oc.agendaConfig,descricao:'Atualizada '+oc.id,prioridade:'URGENTE',vencimentoFiscal:'2026-09-21'}}));
@@ -100,10 +110,18 @@ test('ocorrência cancelada durante a espera pelo lock não é editada',async()=
   expect(r.status).toBe(409);expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
 });
 
-test('tarefa vinculada à empresa conserva compatibilidade de vencimento e edição completa',async()=>{
+test('tarefa empresarial com agenda conserva âncora única e edita prazo operacional',async()=>{
   const oc=ocorrenciaEditavel();oc.obrigacao.tipo='TAREFA';prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([oc]);
   const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{titulo:'Novo título',descricao:'',dataInicio:'2026-09-12',dataFim:'2026-09-13',horaInicio:'14:00',horaFim:'15:00',prioridade:''}});
-  expect(r.status).toBe(200);expect(prisma.ocorrenciaObrigacao.update.mock.calls[0][0].data).toMatchObject({dataVencimento:new Date('2026-09-13'),agendaConfig:{titulo:'Novo título',descricao:'',prioridade:'',horaInicio:'14:00',horaFim:'15:00'}});
+  expect(r.status).toBe(200);const {data}=prisma.ocorrenciaObrigacao.update.mock.calls[0][0];
+  expect(data).toMatchObject({dataFim:new Date('2026-09-13'),agendaConfig:{titulo:'Novo título',descricao:'',prioridade:'',horaInicio:'14:00',horaFim:'15:00'}});
+  expect(data).not.toHaveProperty('dataVencimento');
+});
+
+test('listagem mostra prazo operacional e atraso da tarefa antecipada',async()=>{
+  prisma.obrigacao.findMany.mockResolvedValue([{id:'s',portalClientId:'permitida',nome:'Conferência',tipo:'TAREFA',agendaConfig:{ajusteDiaUtil:'ANTECIPAR'},ocorrencias:[{id:'oc',cicloChave:'2026-09-13',status:'PENDENTE',dataInicio:new Date('2026-09-11'),dataFim:new Date('2026-09-11'),dataVencimento:new Date('2026-09-13')}]}]);
+  const out=await listar({portalIds:['permitida']});
+  expect(out.obrigacoes[0].ocorrencias[0]).toMatchObject({dataVencimento:'2026-09-11',dataInicio:'2026-09-11',cicloChave:'2026-09-13'});
 });
 
 test('obrigação legada sem janela aceita só horários usando a data do vencimento',async()=>{

@@ -2,6 +2,15 @@ import { prisma } from '../../infrastructure/db/prisma.js';
 import { expandirAgenda, normalizarAgenda, dataAgenda, encontrarOcorrenciaDaTarefa, ocorrenciasDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { ObrigacaoError, normalizarEntrada, sincronizarOcorrencias } from '../obrigacoes/ObrigacoesService.js';
 import { criarRegra, empresasDoEscopo } from '../obrigacoes/RegrasObrigacaoService.js';
+import { criarConsultorDeFeriados } from '../obrigacoes/diaUtil.js';
+
+async function feriadosDasTarefas(db, tarefas) {
+  const ajusta = tarefas.some(t => [t.config, ...(t.config?.versoes || []).map(v => v.config)].some(c => c?.ajusteDiaUtil === 'ANTECIPAR'));
+  if (!ajusta) return undefined;
+  // Tarefa pessoal não tem município de empresa; não herda feriados municipais alheios.
+  const feriados = await db.feriado.findMany({ select: { data: true, abrangencia: true, municipio: true } });
+  return criarConsultorDeFeriados(feriados);
+}
 
 function validarConfigTarefa(dados) {
   const config = normalizarAgenda(dados);
@@ -15,15 +24,16 @@ export function entradaTarefa(dados) {
   try { return { titulo, descricao: String(dados.descricao || '').trim().slice(0, 10000) || null, config: validarConfigTarefa(dados.config) }; }
   catch (e) { throw new ObrigacaoError('agenda_invalida', e.message); }
 }
-export function itensDaTarefa(tarefa, inicio, fim) {
-  return ocorrenciasDaTarefa(tarefa, inicio, fim);
+export function itensDaTarefa(tarefa, inicio, fim, ehFeriado) {
+  return ocorrenciasDaTarefa(tarefa, inicio, fim, ehFeriado);
 }
 export async function listarTarefas({ userId, inicio, fim }, db = prisma) {
   try { dataAgenda(inicio); dataAgenda(fim); expandirAgenda({ dataInicio: inicio }, inicio, fim); }
   catch (e) { throw new ObrigacaoError('periodo_invalido', e.message); }
   const tarefas = await db.tarefaAgenda.findMany({ where: { userId, excluidaEm: null }, orderBy: { createdAt: 'desc' } });
   const ocultos = await db.agendaOcultacao.findMany({ where: { userId }, select: { chave: true } });
-  return { tarefas, itens: tarefas.flatMap(t => itensDaTarefa(t, inicio, fim)), ocultos: ocultos.map(o => o.chave) };
+  const ehFeriado = await feriadosDasTarefas(db, tarefas);
+  return { tarefas, itens: tarefas.flatMap(t => itensDaTarefa(t, inicio, fim, ehFeriado)), ocultos: ocultos.map(o => o.chave) };
 }
 export async function salvarTarefa({ userId, id, dados }, db = prisma) {
   const entrada = entradaTarefa(dados);
@@ -46,13 +56,14 @@ export async function alterarTarefa({ userId, id, cicloChave, acao, alteracoes }
     if (acao === 'EXCLUIR_SERIE') return tx.tarefaAgenda.update({ where: { id }, data: { excluidaEm: new Date() } });
     const anterior = t.estados?.[cicloChave] || {};
     if (anterior.canceladaEm) throw new ObrigacaoError('ocorrencia_cancelada', 'Esta ocorrência foi excluída.', 409);
+    const ehFeriado = await feriadosDasTarefas(tx, [t, { config: alteracoes }]);
     let oc;
-    try { oc = encontrarOcorrenciaDaTarefa(t, cicloChave); }
+    try { oc = encontrarOcorrenciaDaTarefa(t, cicloChave, ehFeriado); }
     catch { throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência inválida.'); }
     if (!oc) throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência não encontrada.', 404);
     if (acao === 'EDITAR_SERIE') {
       let dados;
-      try { validarConfigTarefa({ ...oc, ...alteracoes }); dados = prepararEdicaoSerieTarefa(t, cicloChave, alteracoes || {}); }
+      try { validarConfigTarefa({ ...oc, ...alteracoes }); dados = prepararEdicaoSerieTarefa(t, cicloChave, alteracoes || {}, ehFeriado); }
       catch (e) { throw new ObrigacaoError('agenda_invalida', e.message); }
       return tx.tarefaAgenda.update({ where: { id }, data: dados });
     }
@@ -73,16 +84,17 @@ export async function converterTarefaEmObrigacao({ userId, id, cicloChave, regra
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
     const tarefa = await tx.tarefaAgenda.findFirst({ where: { id, userId, excluidaEm: null } });
     if (!tarefa) throw new ObrigacaoError('tarefa_nao_encontrada', 'Tarefa não encontrada.', 404);
+    const ehFeriado = await feriadosDasTarefas(tx, [tarefa]);
     let selecionada;
-    try { selecionada = encontrarOcorrenciaDaTarefa(tarefa, cicloChave); }
+    try { selecionada = encontrarOcorrenciaDaTarefa(tarefa, cicloChave, ehFeriado); }
     catch { throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência inválida.'); }
     if (!selecionada) throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência não encontrada.', 404);
     if (!regra?.agendaConfig) throw new ObrigacaoError('agenda_invalida', 'Informe a configuração da obrigação.');
     let inicio;
-    try { inicio = prepararEdicaoSerieTarefa(tarefa, cicloChave, regra.agendaConfig).config.versoes.at(-1).aPartirDe; }
+    try { inicio = prepararEdicaoSerieTarefa(tarefa, cicloChave, regra.agendaConfig, ehFeriado).config.versoes.at(-1).aPartirDe; }
     catch (e) { throw new ObrigacaoError('agenda_invalida', e.message); }
     for (const [chave, estado] of Object.entries(tarefa.estados || {})) {
-      if (ocorrenciasDoEstadoDaTarefa(tarefa, chave).some(oc => oc.dataFim >= inicio) && (estado.concluidaEm || estado.canceladaEm || (estado.alteracoes && chave !== cicloChave))) throw new ObrigacaoError('historico_futuro', 'Há ocorrências concluídas, excluídas ou editadas neste período. Escolha uma ocorrência posterior a esse histórico para convertê-la em obrigação.', 409);
+      if (ocorrenciasDoEstadoDaTarefa(tarefa, chave, ehFeriado).some(oc => oc.dataFim >= inicio) && (estado.concluidaEm || estado.canceladaEm || (estado.alteracoes && chave !== cicloChave))) throw new ObrigacaoError('historico_futuro', 'Há ocorrências concluídas, excluídas ou editadas neste período. Escolha uma ocorrência posterior a esse histórico para convertê-la em obrigação.', 409);
     }
     const empresas = await empresasDoEscopo({ portalIds, escopo: regra.escopo, filtros: regra.filtros }, tx);
     if (!empresas.length) throw new ObrigacaoError('escopo_vazio', 'Nenhuma empresa da sua carteira corresponde à seleção.');

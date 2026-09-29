@@ -93,3 +93,41 @@ test('editor empresarial abre empresa sem concluir tarefa',()=>{
  const abrir=jest.fn(),concluir=jest.fn();render(<ModalAtividade inicial={{...inicial,companyId:'a',empresa:'Alfa'}} empresas={[]} api={{}} onOpenCompany={abrir} onAlterarConclusao={concluir} onFechar={()=>{}}/>);
  fireEvent.click(screen.getByRole('button',{name:'Abrir empresa'}));expect(abrir).toHaveBeenCalledWith('a');expect(concluir).not.toHaveBeenCalled();
 });
+
+test('nova tarefa mensal salva antecipação dos dias não úteis e conserva horário', async () => {
+  const { api } = montar({ tarefaId: undefined, recorrencia: 'MENSAL' }, { salvarTarefaAgenda: jest.fn(async () => ({ ok: true })) });
+  expect(screen.getByLabelText('Em dias não úteis')).toHaveValue('MANTER');
+  fireEvent.change(screen.getByLabelText('Em dias não úteis'), { target: { value: 'ANTECIPAR' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await waitFor(() => expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ ajusteDiaUtil: 'ANTECIPAR', recorrencia: 'MENSAL', horaInicio: '09:00', horaFim: '10:00' }) })));
+});
+
+test('alterar dias úteis de ocorrência antecipada conserva a data nominal nas próximas repetições', async () => {
+  const { api } = montar({ recorrencia: 'MENSAL', ajusteDiaUtil: 'ANTECIPAR', dataInicio: '2026-10-30', dataFim: '2026-10-30', dataInicioOriginal: '2026-11-01', dataFimOriginal: '2026-11-01', cicloChave: '2026-11' });
+  fireEvent.change(screen.getByLabelText('Em dias não úteis'), { target: { value: 'MANTER' } });
+  expect(screen.getByLabelText('Aplicar alterações')).toHaveValue('SERIE');
+  expect(screen.getByLabelText('De')).toHaveValue('2026-11-01');
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await waitFor(() => expect(api.acaoTarefaAgenda).toHaveBeenCalledWith('tarefa', expect.objectContaining({ acao: 'EDITAR_SERIE', cicloChave: '2026-11', alteracoes: expect.objectContaining({ ajusteDiaUtil: 'MANTER', dataInicio: '2026-11-01', dataFim: '2026-11-01' }) })));
+});
+
+test('voltar à edição individual restaura política e data antecipada sem alterar a série', async () => {
+  const { api } = montar({ recorrencia: 'MENSAL', ajusteDiaUtil: 'ANTECIPAR', dataInicio: '2026-10-30', dataFim: '2026-10-30', dataInicioOriginal: '2026-11-01', dataFimOriginal: '2026-11-01' });
+  fireEvent.change(screen.getByLabelText('Em dias não úteis'), { target: { value: 'MANTER' } });
+  fireEvent.change(screen.getByLabelText('Aplicar alterações'), { target: { value: 'ESTA' } });
+  expect(screen.getByLabelText('Em dias não úteis')).toHaveValue('ANTECIPAR');
+  expect(screen.getByLabelText('De')).toHaveValue('2026-10-30');
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await waitFor(() => expect(api.acaoTarefaAgenda).toHaveBeenCalledWith('tarefa', expect.objectContaining({ acao: 'EDITAR', alteracoes: expect.objectContaining({ ajusteDiaUtil: 'ANTECIPAR', dataInicio: '2026-10-30' }) })));
+});
+
+test('antecipação da atividade permanece independente do ajuste do vencimento fiscal', async () => {
+  const { api } = montar({ tarefaId: undefined, tipo: 'obrigacao', recorrencia: 'MENSAL', regraEdicao: { regraId: 'regra', tipo: 'OBRIGACAO', ajusteDiaUtil: 'POSTERGAR' } });
+  fireEvent.change(screen.getByLabelText('Em dias não úteis'), { target: { value: 'ANTECIPAR' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
+  expect(screen.getByLabelText('Dia não útil')).toHaveValue('POSTERGAR');
+  fireEvent.change(screen.getByLabelText('Dia do vencimento fiscal'), { target: { value: '20' } });
+  await screen.findByText('2 empresas');
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await waitFor(() => expect(api.updateRegraObrigacao).toHaveBeenCalledWith('regra', expect.objectContaining({ ajusteDiaUtil: 'POSTERGAR', agendaConfig: expect.objectContaining({ ajusteDiaUtil: 'ANTECIPAR' }) })));
+});

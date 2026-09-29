@@ -401,9 +401,13 @@ export async function remover({ portalIds, obrigacaoId }) {
  * VENCIDA é DERIVADA, nunca lida do banco. Status calculado a partir do relógio envelhece: a
  * ocorrência venceria à meia-noite e a tela seguiria dizendo "pendente" até alguém rodar um job.
  */
-export function situacaoDaOcorrencia(ocorrencia, hoje = hojeUTC()) {
+function prazoDaOcorrencia(ocorrencia, serie = ocorrencia.obrigacao) {
+  return serie?.tipo === 'TAREFA' && serie.agendaConfig && ocorrencia.dataFim ? ocorrencia.dataFim : ocorrencia.dataVencimento;
+}
+
+export function situacaoDaOcorrencia(ocorrencia, hoje = hojeUTC(), serie = ocorrencia.obrigacao) {
   if (ocorrencia.status === "CONCLUIDA") return "CONCLUIDA";
-  return ocorrencia.dataVencimento < hoje ? "VENCIDA" : "PENDENTE";
+  return prazoDaOcorrencia(ocorrencia, serie) < hoje ? "VENCIDA" : "PENDENTE";
 }
 
 export async function listar({ portalIds, companyId = null, incluirInativas = false }) {
@@ -436,11 +440,11 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
       ocorrenciaId: oc.id,
       ...(oc.agendaConfig ? { agendaConfig: oc.agendaConfig } : {}),
       cicloChave: cicloDaOcorrencia(oc, o),
-      dataVencimento: paraISO(oc.dataVencimento),
+      dataVencimento: paraISO(prazoDaOcorrencia(oc, o)),
       dataInicio: paraISO(oc.dataInicio || oc.dataVencimento),
       dataFim: paraISO(oc.dataFim || oc.dataVencimento),
       competenciaRef: oc.competenciaRef,
-      situacao: situacaoDaOcorrencia(oc, hoje),
+      situacao: situacaoDaOcorrencia(oc, hoje, o),
       concluidaEm: oc.concluidaEm ? oc.concluidaEm.toISOString() : null,
       fonteConclusao: oc.fonteConclusao,
     }));
@@ -525,8 +529,12 @@ export async function atualizarOcorrencia({ portalIds, ocorrenciaId, dados, user
   if (dados.dataVencimento !== undefined) throw new ObrigacaoError("vencimento_preservado", "Edite o cadastro para alterar o prazo; este ajuste altera somente a janela de trabalho.");
   const data = intervaloCivil(dados.dataInicio ?? oc.dataInicio ?? oc.dataVencimento, dados.dataFim ?? oc.dataFim ?? oc.dataVencimento);
   data.janelaPersonalizada = true;
+  if (oc.agendaConfig && (+data.dataInicio !== +new Date(oc.dataInicio || oc.dataVencimento) || +data.dataFim !== +new Date(oc.dataFim || oc.dataVencimento))) {
+    data.agendaConfig = { ...oc.agendaConfig };
+    for (const campo of ['dataInicioOriginal', 'dataFimOriginal', 'diasAgendados']) delete data.agendaConfig[campo];
+  }
   // Para tarefa, o fim é seu próprio prazo. Obrigação conserva o vencimento fiscal separado.
-  if (oc.obrigacao.tipo === "TAREFA") data.dataVencimento = data.dataFim;
+  if (oc.obrigacao.tipo === "TAREFA" && !oc.obrigacao.agendaConfig) data.dataVencimento = data.dataFim;
   const atualizada = await tx.ocorrenciaObrigacao.update({ where: { id: ocorrenciaId }, data });
   if (oc.obrigacao.periodicidade === "AVULSA") {
     // O cadastro avulso representa esta única ocorrência; reabrir seu formulário deve mostrar
@@ -692,7 +700,7 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
     include: {
       obrigacao: {
         select: {
-          id: true, nome: true, tipo: true, descricao: true, categoria: true, cor: true, verificador: true,
+          id: true, nome: true, tipo: true, agendaConfig: true, descricao: true, categoria: true, cor: true, verificador: true,
           regraId: true, portalClientId: true,
           // ⚠ Os dois abaixo são o que permite a tela sair de 3 estados (pendente/vencida/
           // concluída) para o CICLO de 4 (aguardando → aberta → urgente → transmitida).
@@ -725,8 +733,8 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
     companyId: oc.obrigacao.portalClientId,
     empresa: oc.obrigacao.portalClient?.razao || null,
     competencia: oc.competenciaRef,
-    data: paraISO(oc.dataVencimento),
-    dataVencimento: paraISO(oc.dataVencimento),
+    data: paraISO(prazoDaOcorrencia(oc)),
+    dataVencimento: paraISO(prazoDaOcorrencia(oc)),
     dataInicio: paraISO(oc.dataInicio || oc.dataVencimento),
     dataFim: paraISO(oc.dataFim || oc.dataVencimento),
     situacao: situacaoDaOcorrencia(oc, hoje),

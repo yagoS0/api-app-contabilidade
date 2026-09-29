@@ -17,7 +17,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   const precisaFiscal = obrigacao && (!edicao || edicaoSerie || conversao);
   const podeEditarSerie = Boolean(inicial.tarefaId || inicial.obrigacaoOriginal || regra);
   const empresaFixa = edicao && inicial.obrigacaoOriginal && !regra;
-  const [dados, setDados] = useState({ titulo: '', descricao: '', recorrencia: 'AVULSA', prioridade: '', horaInicio: '', horaFim: '', ...inicial });
+  const [dados, setDados] = useState({ titulo: '', descricao: '', recorrencia: 'AVULSA', ajusteDiaUtil: 'MANTER', prioridade: '', horaInicio: '', horaFim: '', ...inicial });
   const [horario, setHorario] = useState(inicial.horaInicio ? inicial.horaFim ? 'INTERVALO' : 'FIXO' : 'SEM');
   const [fiscal, setFiscal] = useState({ categoria: 'fiscal', diaVencimento: '', mesReferencia: Number(inicial.dataInicio.slice(5,7)), defasagemMeses: 1, ajusteDiaUtil: 'ANTECIPAR', antecedenciaLembreteDias: 5, verificador: '', escopo: inicial.companyId ? 'SELECAO_MANUAL' : 'TODAS', aplicarANovas: true, vencimentoFiscal: inicial.dataVencimento || inicial.vencimentoFiscal || inicial.dataFim, ...inicial.obrigacaoOriginal, ...regra, regimes: regra?.filtros?.regimes || [], empresasIds: regra?.filtros?.empresasIds || (inicial.companyId ? [inicial.companyId] : []), temFolha: regra?.filtros?.temFolha === true });
   const [previa, setPrevia] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
@@ -25,6 +25,19 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   const [buscaEmpresa, setBuscaEmpresa] = useState('');
   const [compartilhar, setCompartilhar] = useState(false);
   const set = (chave, valor) => setDados(d => editarJanela(d, chave, valor));
+  function mudarAlcance(proximo) {
+    if (proximo !== alcance) setDados(d => {
+      const deSerie = alcance === 'SERIE';
+      const atualInicio = deSerie ? inicial.dataInicioOriginal || inicial.dataInicio : inicial.dataInicio;
+      const atualFim = deSerie ? inicial.dataFimOriginal || inicial.dataFim : inicial.dataFim;
+      const datas = d.dataInicio === atualInicio && d.dataFim === atualFim ? {
+        dataInicio: proximo === 'SERIE' ? inicial.dataInicioOriginal || inicial.dataInicio : inicial.dataInicio,
+        dataFim: proximo === 'SERIE' ? inicial.dataFimOriginal || inicial.dataFim : inicial.dataFim,
+      } : {};
+      return { ...d, ...datas, ...(proximo === 'ESTA' ? { recorrencia: inicial.recorrencia || 'AVULSA', repetirAte: inicial.repetirAte || null, ajusteDiaUtil: inicial.ajusteDiaUtil || 'MANTER' } : {}) };
+    });
+    setAlcance(proximo);
+  }
   const setF = (chave, valor) => setFiscal(f => ({ ...f, [chave]: valor }));
   const filtros = fiscal.escopo === 'POR_FILTRO' ? { regimes: fiscal.regimes, temFolha: fiscal.temFolha || null } : fiscal.escopo === 'SELECAO_MANUAL' ? { empresasIds: fiscal.empresasIds } : null;
   const filtroChave = JSON.stringify(filtros);
@@ -108,9 +121,12 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
         <div className="agenda-form-row">{campo('De', 'dataInicio', 'date', { required: true })}{campo('Até', 'dataFim', 'date', { required: true, min: dados.dataInicio })}</div>
         <label className="agenda-field">Horário<select value={horario} onChange={e => setHorario(e.target.value)}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo</option><option value="INTERVALO">De uma hora até outra</option></select></label>
         {horario !== 'SEM' && <div className="agenda-form-row">{campo(horario === 'FIXO' ? 'Às' : 'Horário inicial', 'horaInicio', 'time', { required: true })}{horario === 'INTERVALO' && campo('Horário final', 'horaFim', 'time', { required: true })}</div>}
-        <div className="agenda-form-row"><label className="agenda-field">Tipo<select value={obrigacao ? 'OBRIGACAO' : 'TAREFA'} disabled={eraObrigacao} onChange={e => { setObrigacao(e.target.value === 'OBRIGACAO'); if (edicao) setAlcance('SERIE'); }}><option value="TAREFA">Tarefa</option><option value="OBRIGACAO">Obrigação</option></select></label><label className="agenda-field">Recorrência<select value={dados.recorrencia} disabled={edicao && !podeEditarSerie} onChange={e => { set('recorrencia', e.target.value); if (edicao) setAlcance('SERIE'); }}>{Object.entries(RECORRENCIAS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
-        {dados.recorrencia !== 'AVULSA' && <label className="agenda-field">Repetir até<input type="date" value={dados.repetirAte || ''} min={dados.dataInicio} disabled={edicao && !podeEditarSerie} onChange={e => { set('repetirAte',e.target.value); if (edicao) setAlcance('SERIE'); }}/></label>}
-        {edicao && !modoRegra && podeEditarSerie && <label className="agenda-field">Aplicar alterações<select value={alcance} disabled={conversao} onChange={e => { setAlcance(e.target.value); if (e.target.value === 'ESTA') setDados(d => ({...d,recorrencia:inicial.recorrencia || 'AVULSA',repetirAte:inicial.repetirAte || null})); }}><option value="ESTA">Somente esta ocorrência</option><option value="SERIE">{inicial.tarefaId ? 'Esta e próximas ocorrências' : 'Toda a série'}</option></select></label>}
+        <div className="agenda-form-row"><label className="agenda-field">Tipo<select value={obrigacao ? 'OBRIGACAO' : 'TAREFA'} disabled={eraObrigacao} onChange={e => { setObrigacao(e.target.value === 'OBRIGACAO'); if (edicao) mudarAlcance('SERIE'); }}><option value="TAREFA">Tarefa</option><option value="OBRIGACAO">Obrigação</option></select></label><label className="agenda-field">Recorrência<select value={dados.recorrencia} disabled={edicao && !podeEditarSerie} onChange={e => { set('recorrencia', e.target.value); if (edicao) mudarAlcance('SERIE'); }}>{Object.entries(RECORRENCIAS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
+        {dados.recorrencia !== 'AVULSA' && <>
+          <label className="agenda-field">Em dias não úteis<select value={dados.ajusteDiaUtil || 'MANTER'} disabled={edicao && !podeEditarSerie} onChange={e => { set('ajusteDiaUtil', e.target.value); if (edicao) mudarAlcance('SERIE'); }}><option value="MANTER">Manter a data</option><option value="ANTECIPAR">Antecipar para o dia útil anterior</option></select></label>
+          <label className="agenda-field">Repetir até<input type="date" value={dados.repetirAte || ''} min={dados.dataInicio} disabled={edicao && !podeEditarSerie} onChange={e => { set('repetirAte',e.target.value); if (edicao) mudarAlcance('SERIE'); }}/></label>
+        </>}
+        {edicao && !modoRegra && podeEditarSerie && <label className="agenda-field">Aplicar alterações<select value={alcance} disabled={conversao} onChange={e => mudarAlcance(e.target.value)}><option value="ESTA">Somente esta ocorrência</option><option value="SERIE">{inicial.tarefaId ? 'Esta e próximas ocorrências' : 'Toda a série'}</option></select></label>}
         <div className="agenda-form-row agenda-form-bottom">{!obrigacao && inicial.tipo !== 'obrigacao' && <fieldset className="agenda-priorities"><legend>Prioridade</legend>{Object.entries(CORES_PRIORIDADE).map(([v,c], index) => <button key={v} type="button" aria-label={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} aria-pressed={(dados.prioridade || '') === v} title={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} style={{ '--priority': c }} onClick={() => set('prioridade', v)} />)}</fieldset>}
         </div>
       </> : <>

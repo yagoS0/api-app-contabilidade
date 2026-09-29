@@ -1,4 +1,4 @@
-import { expandirAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { expandirAgenda, somarDiasAgenda, diasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { calcularVencimentos } from './gerarOcorrencias.js';
 import { criarConsultorDeFeriados } from './diaUtil.js';
 
@@ -14,26 +14,43 @@ export async function sincronizarAgendaConfigurada(db, serie, { hoje, incluirVen
   const inicio = incluirVencidoDoMes ? new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1)).toISOString().slice(0, 10) : hoje.toISOString().slice(0, 10);
   const fim = new Date(Date.UTC(hoje.getUTCFullYear() + 1, hoje.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
   const avulsa = serie.periodicidade === 'AVULSA';
-  const previstas = expandirAgenda(serie.agendaConfig, avulsa ? serie.agendaConfig.dataInicio : inicio, avulsa ? serie.agendaConfig.dataFim : fim);
+  // A data nominal pode cair após hoje, mas a janela ajustada já estar no passado.
+  // Reconciliar chaves existentes sem criar ciclos retroativos não solicitados.
+  const inicioConsulta = somarDiasAgenda(avulsa ? serie.agendaConfig.dataInicio : inicio, -15);
+  const previstas = expandirAgenda(serie.agendaConfig, inicioConsulta, avulsa ? serie.agendaConfig.dataFim || serie.agendaConfig.dataInicio : fim, ehFeriado)
+    .filter(p => avulsa || p.dataFim >= inicio || porChave.has(p.cicloChave));
   // Um clique numa data passada é uma criação explícita; não preencher outros ciclos passados.
   if (!existentes.length && !avulsa) {
-    const primeira = expandirAgenda(serie.agendaConfig, serie.agendaConfig.dataInicio, serie.agendaConfig.dataInicio)[0];
+    const primeira = expandirAgenda(serie.agendaConfig, somarDiasAgenda(serie.agendaConfig.dataInicio, -15), serie.agendaConfig.dataInicio, ehFeriado)[0];
     if (primeira && !previstas.some(p => p.cicloChave === primeira.cicloChave)) previstas.unshift(primeira);
   }
   const novas = [];
   for (const p of previstas) {
     if (serie.encerradaAPartirDe && p.cicloChave >= serie.encerradaAPartirDe) continue;
-    const [ano, mes] = p.dataInicio.split('-').map(Number);
+    const inicioNominal = p.dataInicioOriginal || p.dataInicio;
+    const [ano, mes] = inicioNominal.split('-').map(Number);
     const fiscal = serie.tipo !== 'TAREFA' && ['MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'].includes(serie.periodicidade)
       ? calcularVencimentos({ ...serie, periodicidade: 'MENSAL' }, { inicio: { ano, mes }, quantidadeMeses: 1 }, ehFeriado)[0] : null;
     const diariaOuSemanal = ['DIARIA','SEMANAL'].includes(serie.periodicidade);
     const deslocamento = serie.agendaConfig.vencimentoFiscal ? Math.round((+new Date(serie.agendaConfig.vencimentoFiscal)-+new Date(serie.agendaConfig.dataInicio))/86400000) : null;
-    const dataVencimento = fiscal?.data || new Date(diariaOuSemanal && deslocamento !== null ? somarDiasAgenda(p.dataInicio,deslocamento) : avulsa && serie.agendaConfig.vencimentoFiscal ? serie.agendaConfig.vencimentoFiscal : p.dataFim);
+    // A chave legada (obrigacaoId, dataVencimento) permanece nominal também nas
+    // tarefas: sexta, sábado e domingo podem compartilhar a janela ajustada.
+    const fimDoPrazo = p.dataFimOriginal || p.dataFim;
+    const dataVencimento = fiscal?.data || new Date(diariaOuSemanal && deslocamento !== null ? somarDiasAgenda(inicioNominal,deslocamento) : avulsa && serie.agendaConfig.vencimentoFiscal ? serie.agendaConfig.vencimentoFiscal : fimDoPrazo);
     const data = { cicloChave: p.cicloChave, dataInicio: new Date(p.dataInicio), dataFim: new Date(p.dataFim), dataVencimento, competenciaRef: fiscal?.competenciaRef || null, foraDaRecorrencia: false };
     const anterior = porChave.get(p.cicloChave);
+    if (p.ajusteDiaUtil === 'ANTECIPAR' || anterior?.agendaConfig?.dataInicioOriginal) {
+      const agendaConfig = { ...anterior?.agendaConfig };
+      for (const campo of ['dataInicioOriginal', 'dataFimOriginal', 'diasAgendados']) delete agendaConfig[campo];
+      if (p.ajusteDiaUtil === 'ANTECIPAR') Object.assign(agendaConfig, {
+        dataInicioOriginal: inicioNominal, dataFimOriginal: p.dataFimOriginal || p.dataFim,
+        ...(p.horaInicio ? { diasAgendados: diasDaTarefa(p, ehFeriado).map(d => ({ dataInicio: d.dataInicio, dataFim: d.dataFim, dataInicioOriginal: d.dataInicioOriginal || d.dataInicio })) } : {}),
+      });
+      data.agendaConfig = agendaConfig;
+    }
     if (!anterior) novas.push({ ...data, obrigacaoId: serie.id, status: 'PENDENTE' });
     else if (!anterior.canceladaEm && anterior.status === 'PENDENTE' && !anterior.janelaPersonalizada
-      && (anterior.cicloChave !== data.cicloChave || +anterior.dataInicio !== +data.dataInicio || +anterior.dataFim !== +data.dataFim || +anterior.dataVencimento !== +data.dataVencimento || anterior.competenciaRef !== data.competenciaRef || anterior.foraDaRecorrencia)) {
+      && (anterior.cicloChave !== data.cicloChave || +anterior.dataInicio !== +data.dataInicio || +anterior.dataFim !== +data.dataFim || +anterior.dataVencimento !== +data.dataVencimento || anterior.competenciaRef !== data.competenciaRef || anterior.foraDaRecorrencia || (data.agendaConfig && JSON.stringify(anterior.agendaConfig) !== JSON.stringify(data.agendaConfig)))) {
       await db.ocorrenciaObrigacao.update({ where: { id: anterior.id }, data });
     }
   }

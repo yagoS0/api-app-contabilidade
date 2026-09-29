@@ -306,6 +306,25 @@ try {
   assert.equal((await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } })).config.versoes.length, 2);
   ok('voltar à frequência diária não ressuscita tombstone nem duplica o dia já concluído');
 
+  const { sincronizarAgendaConfigurada } = await import('../src/application/obrigacoes/sincronizarAgendaConfigurada.js');
+  const util = await prisma.obrigacao.create({data:{portalClientId:companyId,nome:prefix+'-dias-uteis',tipo:'TAREFA',periodicidade:'DIARIA',diaVencimento:9,ajusteDiaUtil:'MANTER',agendaConfig:{dataInicio:'2026-10-09',dataFim:'2026-10-09',recorrencia:'DIARIA',repetirAte:'2026-10-11',horaInicio:'09:00',horaFim:'10:00',ajusteDiaUtil:'ANTECIPAR'}}});
+  const sincronizarUtil=()=>sincronizarAgendaConfigurada(prisma,util,{hoje:new Date('2026-10-01T00:00:00Z')});
+  await sincronizarUtil();
+  const antecipadas=await listar(util.id);
+  assert.equal(antecipadas.length,3);
+  assert.deepEqual(antecipadas.map(o=>iso(o.dataInicio)),['2026-10-09','2026-10-09','2026-10-09']);
+  assert.deepEqual(antecipadas.map(o=>iso(o.dataVencimento)),['2026-10-09','2026-10-10','2026-10-11']);
+  await concluir({portalIds:[companyId],ocorrenciaId:antecipadas[0].id});
+  await atualizarOcorrencia({portalIds:[companyId],ocorrenciaId:antecipadas[1].id,dados:{dataInicio:'2026-10-13',dataFim:'2026-10-13'}});
+  await sincronizarUtil();
+  const uteisDepois=await listar(util.id);
+  assert.deepEqual(uteisDepois.map(o=>o.id),antecipadas.map(o=>o.id));
+  assert.equal(uteisDepois[0].status,'CONCLUIDA');
+  assert.equal(iso(uteisDepois[1].dataFim),'2026-10-13');
+  assert.equal(iso(uteisDepois[1].dataVencimento),'2026-10-10');
+  assert.equal(uteisDepois[1].agendaConfig.dataInicioOriginal,undefined);
+  ok('dias úteis coincidentes persistem sem conflito, preservam conclusão e movimento após sincronizar');
+
   console.log(`PASS: ${checks} cenários sobre PostgreSQL real com migrations aplicadas.`);
 } finally {
   // Limpeza estritamente limitada ao UUID criado por esta execução; cascade remove só suas fixtures.

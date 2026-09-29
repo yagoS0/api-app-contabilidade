@@ -1,5 +1,17 @@
 # Calendário — janelas e exclusões recorrentes (08/09/2026)
 
+## Antecipação para dias úteis — 29/09/2026 (desenvolvimento)
+
+`agendaConfig.ajusteDiaUtil` / `TarefaAgenda.config.ajusteDiaUtil` aceita `MANTER` (padrão compatível) ou `ANTECIPAR`. O formulário recorrente oferece “Em dias não úteis”. A política da atividade é independente do ajuste de vencimento fiscal. Sábado/domingo e feriados cadastrados usam o helper compartilhado `diaUtil.js`; tarefas pessoais não herdam feriados municipais de empresas. Não inventar calendário de feriados.
+
+Datas antecipadas conservam chaves e âncora nominal, inclusive ao cruzar mês/ano. `dataInicioOriginal`/`dataFimOriginal` permitem editar a série sem deslocar seu dia-base. Cada dia de uma janela com horário mantém identidade e conclusão próprias, mesmo quando vários dias convergem na sexta-feira. Datas explicitamente movidas são preservadas.
+
+Ocorrências empresariais carregam `agendaConfig.diasAgendados` calculados no servidor. Agrupamento por regra considera esses dias para separar empresas com feriados municipais diferentes. Edição somente de horário/nome conserva metadados; mudança efetiva de datas os remove. Concluídas, canceladas e janelas personalizadas permanecem preservadas na sincronização.
+
+Para tarefas empresariais com agenda configurada, `dataVencimento` no banco conserva o prazo nominal (restrição única existente). O prazo mostrado e a situação usam `dataFim` operacional. Movimentar essas tarefas altera a janela sem substituir a âncora interna, evitando conflito de tarefas diárias antecipadas para o mesmo dia. Obrigações mantêm vencimento fiscal independente. Sem migração nesta alteração.
+
+Testes de motor, serviços, interface e mock; compilação e conferência no navegador com dados fictícios. Detalhes em `docs/calendario-dias-uteis-20260929.md`. Ainda não publicado.
+
 ## Edição de recorrência da tarefa pessoal (17/09/2026)
 
 - `acaoTarefaAgenda` aceita `EDITAR_SERIE` com `cicloChave` e `alteracoes` (dados do formulário). O alcance é esta e próximas; `EDITAR` continua individual. Versões ficam no JSON `TarefaAgenda.config.versoes`, com chave própria `vN|ciclo`. A configuração-base e o título-base ficam históricos; listas usam a última versão e o editor usa a configuração da ocorrência.

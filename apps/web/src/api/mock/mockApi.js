@@ -5,7 +5,7 @@ import { relatorioParcelasGuiasMock } from "./parcelasGuiasRelatorioMock";
 import { importarNotasMock } from "./importarNotasMock";
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
-import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { expandirAgenda, normalizarAgenda, somarDiasAgenda, diasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
 import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
 import { faker } from "@faker-js/faker";
@@ -701,17 +701,43 @@ const mockUnidentifiedGuides = [];
 // Gera a janela de 12 meses com as MESMAS regras do backend (clamp do dia 31, fim de semana,
 // defasagem da competência). Repetir a regra aqui é chato, mas um mock que devolvesse datas
 // bonitas esconderia justamente o que precisa ser visto na tela.
+function conciliarAgendaMock(anteriores, previstas) {
+  const porCiclo = new Map(anteriores.map(oc => [oc.cicloChave, oc]));
+  const resultado = previstas.map(oc => {
+    const anterior = porCiclo.get(oc.cicloChave);
+    porCiclo.delete(oc.cicloChave);
+    if (!anterior) return oc;
+    if (anterior.status === 'CONCLUIDA' || anterior.canceladaEm || anterior.janelaPersonalizada) return anterior;
+    return { ...oc, ocorrenciaId: anterior.ocorrenciaId };
+  });
+  for (const anterior of porCiclo.values()) resultado.push(anterior.status === 'CONCLUIDA' || anterior.canceladaEm || anterior.janelaPersonalizada ? anterior : { ...anterior, foraDaRecorrencia: true });
+  return resultado.sort((a,b) => a.dataInicio.localeCompare(b.dataInicio));
+}
+
 function mockCriarObrigacao(companyId, empresa, dados) {
   if (dados.agendaConfig) {
     const config = { ...normalizarAgenda(dados.agendaConfig), ...(dados.agendaConfig.vencimentoFiscal ? { vencimentoFiscal:dados.agendaConfig.vencimentoFiscal } : {}) };
     const hoje = new Date();
     const inicio = config.recorrencia === 'AVULSA' ? config.dataInicio : hoje.toISOString().slice(0,7)+'-01';
     const fim = config.recorrencia === 'AVULSA' ? config.dataFim : new Date(Date.UTC(hoje.getUTCFullYear()+1,hoje.getUTCMonth()+1,0)).toISOString().slice(0,10);
-    const ocorrencias = expandirAgenda(config,inicio,fim).map(p => {
-      const [a,m] = p.dataInicio.split('-').map(Number);
-      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
-      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
-      return { ...p, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
+    const ehFeriado = data => Boolean(MOCK_FERIADOS[data]);
+    const previstas = expandirAgenda(config,somarDiasAgenda(inicio,-15),fim,ehFeriado)
+      .filter(p => config.recorrencia === 'AVULSA' || p.dataFim >= inicio || dados.ocorrencias?.some(oc => oc.cicloChave === p.cicloChave));
+    if (config.recorrencia !== 'AVULSA' && !dados.ocorrencias?.length) {
+      const primeira = expandirAgenda(config,somarDiasAgenda(config.dataInicio,-15),config.dataInicio,ehFeriado)[0];
+      if (primeira && !previstas.some(p => p.cicloChave === primeira.cicloChave)) previstas.unshift(primeira);
+    }
+    const ocorrencias = previstas.map(p => {
+      const nominal = p.dataInicioOriginal || p.dataInicio;
+      const [a,m] = nominal.split('-').map(Number);
+      const fimDoPrazo = dados.tipo === 'TAREFA' ? p.dataFim : p.dataFimOriginal || p.dataFim;
+      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(nominal,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.recorrencia === 'AVULSA' && config.vencimentoFiscal ? config.vencimentoFiscal : fimDoPrazo);
+      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay()) || ehFeriado(venc.toISOString().slice(0,10))) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
+      const agendaConfig = config.ajusteDiaUtil === 'ANTECIPAR' ? {
+        dataInicioOriginal: p.dataInicioOriginal, dataFimOriginal: p.dataFimOriginal,
+        ...(p.horaInicio ? { diasAgendados: diasDaTarefa(p,ehFeriado).map(d => ({ dataInicio:d.dataInicio, dataFim:d.dataFim, dataInicioOriginal:d.dataInicioOriginal || d.dataInicio })) } : {}),
+      } : undefined;
+      return { ...p, agendaConfig, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
     });
     return { ...dados, agendaConfig:config, obrigacaoId:crypto.randomUUID(), companyId, empresa, ativa:true, ocorrencias, sobrescritaLocal:false };
   }
@@ -919,7 +945,7 @@ function mockPropagarRegra(regra) {
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
       nova.obrigacaoId = atual.obrigacaoId;
       const mudouJanela = ["diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"].some((campo) => String(nova[campo]) !== String(atual[campo]));
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento)).map((oc) => {
+      nova.ocorrencias = nova.agendaConfig ? conciliarAgendaMock(atual.ocorrencias, nova.ocorrencias) : [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento)).map((oc) => {
         const anterior = atual.ocorrencias.find((item) => item.dataVencimento === oc.dataVencimento);
         return anterior ? (mudouJanela ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : anterior) : oc;
       })]
@@ -3777,7 +3803,7 @@ export function createMockApi() {
     ...atendimentoMovel,
     ...acompanhamentoMock,
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
-    ...criarMockAgenda(mockObrigacoes, mockRegras),
+    ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
@@ -7468,7 +7494,7 @@ export function createMockApi() {
       const mudouJanela = camposJanela.some((campo) => patch[campo] !== undefined && String(nova[campo]) !== String(antes[campo]));
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
       const ciclosConcluidos = new Set(concluidas.map((oc) => oc.competenciaRef));
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento) && !ciclosConcluidos.has(oc.competenciaRef)).map((oc) => {
+      nova.ocorrencias = nova.agendaConfig ? conciliarAgendaMock(antes.ocorrencias, nova.ocorrencias) : [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento) && !ciclosConcluidos.has(oc.competenciaRef)).map((oc) => {
         const anterior = antes.periodicidade === "AVULSA" ? antes.ocorrencias[0] : antes.ocorrencias.find((x) => x.dataVencimento === oc.dataVencimento || (x.janelaPersonalizada && x.competenciaRef === oc.competenciaRef));
         if (anterior && !mudouJanela) return anterior;
         return anterior ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : oc;
@@ -7562,6 +7588,12 @@ export function createMockApi() {
         });
         if (!validas || patch.dataFim < patch.dataInicio) return { ok: false, error: "periodo_invalido", message: "Informe início e fim válidos, nesta ordem." };
         if (o.tipo === "TAREFA" && o.ocorrencias.some((outra) => outra.ocorrenciaId !== ocorrenciaId && outra.dataVencimento === patch.dataFim)) return { ok: false, status: 409, error: "prazo_em_uso", message: "Já existe outro ciclo desta tarefa com esse prazo. Escolha uma data diferente." };
+        if (patch.dataInicio !== oc.dataInicio || patch.dataFim !== oc.dataFim) {
+          for (const chave of ['diasAgendados', 'dataInicioOriginal', 'dataFimOriginal']) {
+            delete oc[chave];
+            if (oc.agendaConfig) delete oc.agendaConfig[chave];
+          }
+        }
         oc.dataInicio = patch.dataInicio;
         oc.dataFim = patch.dataFim;
         oc.janelaPersonalizada = true;
