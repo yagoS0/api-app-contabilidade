@@ -1,8 +1,8 @@
 import { normalizarAgenda, ocorrenciasDaTarefa, encontrarOcorrenciaDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa } from '../../../../../packages/shared/src/agenda.js';
-export function criarMockAgenda(obrigacoes, regras) {
+export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
   const tarefas = [], ocultos = [];
   return {
-    async getTarefasAgenda(inicio, fim) { return { ok:true, tarefas:tarefas.filter(t => !t.excluidaEm), itens:tarefas.filter(t => !t.excluidaEm).flatMap(t => ocorrenciasDaTarefa(t,inicio,fim)), ocultos }; },
+    async getTarefasAgenda(inicio, fim) { return { ok:true, tarefas:tarefas.filter(t => !t.excluidaEm), itens:tarefas.filter(t => !t.excluidaEm).flatMap(t => ocorrenciasDaTarefa(t,inicio,fim,ehFeriado)), ocultos }; },
     async vincularTarefasEmpresas(dados) {
       if (!dados.compartilhar) throw new Error('Confirme a visibilidade para a equipe.');
       const ids=[...new Set(dados.empresasIds || [])];
@@ -37,8 +37,8 @@ export function criarMockAgenda(obrigacoes, regras) {
       if (acao === 'EXCLUIR_SERIE') t.excluidaEm = new Date().toISOString();
       else {
         const anterior = t.estados[cicloChave] || {}; if (anterior.canceladaEm) throw new Error('Esta ocorrência foi excluída.');
-        const oc = encontrarOcorrenciaDaTarefa(t, cicloChave); if (!oc) throw new Error('Ocorrência não encontrada.');
-        if (acao === 'EDITAR_SERIE') { Object.assign(t, prepararEdicaoSerieTarefa(t, cicloChave, alteracoes || {})); return {ok:true,tarefa:t}; }
+        const oc = encontrarOcorrenciaDaTarefa(t, cicloChave, ehFeriado); if (!oc) throw new Error('Ocorrência não encontrada.');
+        if (acao === 'EDITAR_SERIE') { Object.assign(t, prepararEdicaoSerieTarefa(t, cicloChave, alteracoes || {}, ehFeriado)); return {ok:true,tarefa:t}; }
         if (!['CONCLUIR','REABRIR','EXCLUIR','EDITAR'].includes(acao)) throw new Error('Ação inválida.');
         t.estados[cicloChave] = { ...anterior, ...(acao === 'EDITAR' ? {alteracoes:{titulo:oc.titulo,descricao:oc.descricao,...alteracoes,...normalizarAgenda({...oc,...alteracoes,repetirAte:null})}} : acao === 'EXCLUIR' ? {canceladaEm:new Date().toISOString()} : {concluidaEm:acao === 'CONCLUIR' ? new Date().toISOString() : null}) };
       }
@@ -46,11 +46,11 @@ export function criarMockAgenda(obrigacoes, regras) {
     },
     async converterTarefaEmObrigacao(id, {cicloChave,regra}) {
       const t=tarefas.find(t=>t.id===id && !t.excluidaEm); if(!t) throw new Error('Tarefa não encontrada.');
-      const selecionada=encontrarOcorrenciaDaTarefa(t,cicloChave); if(!selecionada) throw new Error('Ocorrência não encontrada.');
+      const selecionada=encontrarOcorrenciaDaTarefa(t,cicloChave,ehFeriado); if(!selecionada) throw new Error('Ocorrência não encontrada.');
       if(!regra?.agendaConfig) throw new Error('Informe a configuração da obrigação.');
-      const inicio=prepararEdicaoSerieTarefa(t,cicloChave,regra.agendaConfig).config.versoes.at(-1).aPartirDe;
+      const inicio=prepararEdicaoSerieTarefa(t,cicloChave,regra.agendaConfig,ehFeriado).config.versoes.at(-1).aPartirDe;
       for(const [chave,estado] of Object.entries(t.estados||{})) {
-        if(ocorrenciasDoEstadoDaTarefa(t,chave).some(oc=>oc.dataFim>=inicio) && (estado.concluidaEm || estado.canceladaEm || (estado.alteracoes && chave!==cicloChave))) throw new Error('Há ocorrências concluídas, excluídas ou editadas neste período. Escolha uma ocorrência posterior a esse histórico para convertê-la em obrigação.');
+        if(ocorrenciasDoEstadoDaTarefa(t,chave,ehFeriado).some(oc=>(oc.dataFimOriginal || oc.dataFim)>=inicio) && (estado.concluidaEm || estado.canceladaEm || (estado.alteracoes && chave!==cicloChave))) throw new Error('Há ocorrências concluídas, excluídas ou editadas neste período. Escolha uma ocorrência posterior a esse histórico para convertê-la em obrigação.');
       }
       normalizarAgenda(regra.agendaConfig);
       const previa=await this.previewEscopoRegra(regra);
@@ -81,9 +81,12 @@ export function criarMockAgenda(obrigacoes, regras) {
         const titulo=String(Object.hasOwn(dados,'titulo')?dados.titulo??'':anterior.titulo??serie.nome??'').trim();
         if(!titulo || titulo.length>200) throw new Error('Informe um título de até 200 caracteres.');
         const descricao=String((Object.hasOwn(dados,'descricao')?dados.descricao:anterior.descricao??serie.descricao)??'').slice(0,10000);
-        return {oc,patch:{dataInicio:config.dataInicio,dataFim:config.dataFim,...(serie.tipo==='TAREFA'?{dataVencimento:config.dataFim}:{}),janelaPersonalizada:true,agendaConfig:{...oc.agendaConfig,horaInicio:config.horaInicio,horaFim:config.horaFim,prioridade:config.prioridade,titulo,descricao}}};
+        const agendaConfig={...oc.agendaConfig,horaInicio:config.horaInicio,horaFim:config.horaFim,prioridade:config.prioridade,titulo,descricao};
+        const mudouData = config.dataInicio !== oc.dataInicio || config.dataFim !== oc.dataFim;
+        if (mudouData) for (const chave of ['diasAgendados','dataInicioOriginal','dataFimOriginal']) delete agendaConfig[chave];
+        return {oc,mudouData,patch:{dataInicio:config.dataInicio,dataFim:config.dataFim,...(serie.tipo==='TAREFA'?{dataVencimento:config.dataFim}:{}),janelaPersonalizada:true,agendaConfig}};
       });
-      for(const {oc,patch} of alteracoes) Object.assign(oc,patch);
+      for(const {oc,patch,mudouData} of alteracoes) { Object.assign(oc,patch); if (mudouData) for (const chave of ['diasAgendados','dataInicioOriginal','dataFimOriginal']) delete oc[chave]; }
       return {ok:true};
     },
     async ocultarItemAgenda({tipo,id}) {const chave=`${tipo}|${id}`;if(!ocultos.includes(chave))ocultos.push(chave);return {ok:true};},

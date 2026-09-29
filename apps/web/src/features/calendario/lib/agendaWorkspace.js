@@ -30,8 +30,10 @@ export function itensDasObrigacoes(obrigacoes) {
 export function agruparAtividades(itens) {
   const grupos = new Map();
   for (const i of itens) {
+    // Feriados municipais podem mudar um dia intermediário sem mudar as pontas da janela.
+    const dias = i.diasAgendados ? `|${i.diasAgendados.map(d => `${d.dataInicioOriginal}:${d.dataInicio}:${d.dataFim}`).join(',')}` : '';
     const chave = i.tipo === 'obrigacao' && i.regraId
-      ? `${i.regraId}|${i.cicloChave}|${i.dataInicio}|${i.dataFim}|${i.horaInicio || ''}|${i.horaFim || ''}|${i.prioridade || ''}|${i.titulo}`
+      ? `${i.regraId}|${i.cicloChave}|${i.dataInicio}|${i.dataFim}|${i.horaInicio || ''}|${i.horaFim || ''}|${i.prioridade || ''}|${i.titulo}${dias}`
       : `${i.tipo}|${i.id}`;
     if (!grupos.has(chave)) grupos.set(chave, { ...i, id: chave, itens: [] });
     grupos.get(chave).itens.push(i);
@@ -41,6 +43,11 @@ export function agruparAtividades(itens) {
 /** Blocos diários representam a mesma ocorrência por empresa e preservam sua janela de edição. */
 export function blocosDiarios(atividades, inicio, fim) {
   return atividades.flatMap(item => {
+    if (item.horaInicio && Array.isArray(item.diasAgendados)) {
+      return item.diasAgendados.filter(dia => dia.dataInicio <= fim && dia.dataFim >= inicio).map(dia => ({
+        ...item, ...dia, id: `${item.id}@${dia.dataInicioOriginal || dia.dataInicio}`, atividadeOriginal: item,
+      }));
+    }
     if (!item.horaInicio || item.dataInicio === item.dataFim) return [item];
     const blocos = [];
     for (let dia = item.dataInicio < inicio ? inicio : item.dataInicio; dia <= item.dataFim && dia <= fim; dia = somarDiasAgenda(dia, 1)) {

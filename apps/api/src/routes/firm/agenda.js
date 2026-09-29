@@ -82,7 +82,10 @@ export function createAgendaRouter({ log } = {}) {
         if (!titulo || titulo.length > 200) throw new ObrigacaoError('titulo_invalido', 'Informe um título de até 200 caracteres.');
         const descricao = String((Object.hasOwn(dados,'descricao') ? dados.descricao : anterior.descricao ?? alvo.obrigacao.descricao) ?? '').slice(0,10000);
         const agendaConfig = { ...alvo.agendaConfig, horaInicio:config.horaInicio, horaFim:config.horaFim, prioridade:config.prioridade, titulo, descricao };
-        return { where:{id:alvo.id}, data:{ dataInicio:new Date(config.dataInicio), dataFim:new Date(config.dataFim), ...(alvo.obrigacao.tipo === 'TAREFA' ? {dataVencimento:new Date(config.dataFim)} : {}), janelaPersonalizada:true, agendaConfig } };
+        if (config.dataInicio !== (alvo.dataInicio || alvo.dataVencimento)?.toISOString().slice(0,10) || config.dataFim !== (alvo.dataFim || alvo.dataVencimento)?.toISOString().slice(0,10)) {
+          for (const campo of ['dataInicioOriginal', 'dataFimOriginal', 'diasAgendados']) delete agendaConfig[campo];
+        }
+        return { where:{id:alvo.id}, data:{ dataInicio:new Date(config.dataInicio), dataFim:new Date(config.dataFim), ...(alvo.obrigacao.tipo === 'TAREFA' && !alvo.obrigacao.agendaConfig ? {dataVencimento:new Date(config.dataFim)} : {}), janelaPersonalizada:true, agendaConfig } };
       });
       for (const alteracao of alteracoes) await tx.ocorrenciaObrigacao.update(alteracao);
       return { atualizadas:ids.length };

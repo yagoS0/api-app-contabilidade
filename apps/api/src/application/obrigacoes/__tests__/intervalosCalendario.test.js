@@ -39,6 +39,18 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
+test('tarefa com agenda deriva atraso da janela e movimenta sem colidir âncoras nominais',async()=>{
+  const oc=ocorrencia({dataInicio:date('2026-09-11'),dataFim:date('2026-09-11'),dataVencimento:date('2026-09-13')});
+  oc.obrigacao.agendaConfig={dataInicio:'2026-09-13',recorrencia:'DIARIA',ajusteDiaUtil:'ANTECIPAR'};
+  expect(situacaoDaOcorrencia(oc,date('2026-09-12'))).toBe('VENCIDA');
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([oc]);
+  expect((await ocorrenciasDoPeriodo({portalIds:['p1'],inicio:date('2026-09-01'),fim:date('2026-10-01')}))[0]).toMatchObject({dataVencimento:'2026-09-11',situacao:'VENCIDA'});
+  prisma.ocorrenciaObrigacao.findFirst.mockResolvedValue(oc);
+  await atualizarOcorrencia({portalIds:['p1'],ocorrenciaId:oc.id,dados:{dataInicio:'2026-09-14',dataFim:'2026-09-14'}});
+  expect(prisma.ocorrenciaObrigacao.update.mock.calls[0][0].data).toMatchObject({dataFim:date('2026-09-14')});
+  expect(prisma.ocorrenciaObrigacao.update.mock.calls[0][0].data).not.toHaveProperty('dataVencimento');
+});
+
 describe("datas civis e prazo fiscal", () => {
   test.each(["2026-02-29", "2026-09-31", "2026-13-01", "2026-09-10T00:00:00-03:00", "10/09/2026", ""])("recusa data inválida %s", (iso) => {
     expect(() => dataCivil(iso)).toThrow();
