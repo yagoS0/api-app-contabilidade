@@ -225,7 +225,7 @@ export async function lerEmitidasNaoConfirmadas({
   const selectEmissao = {
     id: true, chaveAcesso: true, numeroNfse: true, rpsSerie: true, rpsNumero: true,
     tomadorDoc: true, tomadorNome: true, valorServicos: true, competencia: true,
-    status: true, createdAt: true, updatedAt: true,
+    status: true, createdAt: true, updatedAt: true, ibscbs: true,
   };
   const selectProjecao = { id: true, chaveAcesso: true, numero: true, xmlRaw: true };
   const semPar = [];

@@ -76,6 +76,7 @@ function safeFilePart(value) {
 function serializeInvoice(inv) {
   return {
     invoiceId: inv.id,
+    ibscbs: inv.ibscbs ? { situacao: inv.ibscbs.situacao, declaracao: inv.ibscbs.declaracao, valores: inv.ibscbs.valores, avisos: inv.ibscbs.avisos } : null,
     type: inv.type,
     numero: inv.numero || null,
     competencia: formatCompetencia(inv.competencia),
@@ -167,6 +168,7 @@ function serializeInvoice(inv) {
 function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
   return {
     invoiceId: si.id,
+    ibscbs: si.ibscbs ? { situacao: si.ibscbs.situacao, declaracao: si.ibscbs.declaracao, valores: si.ibscbs.valores, avisos: si.ibscbs.avisos } : null,
     type: "NFSE",
     numero: si.numeroNfse || null,
     competencia: formatCompetencia(si.competencia),

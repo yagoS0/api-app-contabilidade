@@ -625,6 +625,29 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
               {!nota.competencia && <p style={{ color: PANEL.muted, fontSize: "0.82rem" }}>Competência não informada: confira o XML e o documento de origem. Se necessário, corrija a informação na origem e reimporte o XML. A data de emissão não será usada automaticamente como competência.</p>}
             </Secao>
 
+            <Secao titulo="IBS e CBS" aviso="Valores informados no documento fiscal. O destaque, por si só, não confirma direito a crédito.">
+              {!nota.ibscbs ? <p>Tributos ainda não extraídos desta nota.</p> : <>
+                {nota.ibscbs.situacao === 'GRUPO_AUSENTE' && <p>O XML desta nota não informa o grupo IBS/CBS.</p>}
+                {nota.ibscbs.situacao === 'SOMENTE_DECLARACAO' && <p>O XML contém a classificação declarada, mas não traz os valores de IBS/CBS.</p>}
+                {['XML_AUSENTE', 'XML_INVALIDO', 'DOCUMENTO_INCOMPATIVEL', 'EXTRACAO_FALHOU'].includes(nota.ibscbs.situacao) && <p>Não foi possível obter os tributos do XML. Confira o documento de origem.</p>}
+                {nota.ibscbs.declaracao && <div style={GRADE}>
+                  <Campo rotulo="CST IBS/CBS" valor={nota.ibscbs.declaracao.cst} />
+                  <Campo rotulo="Classificação tributária" valor={nota.ibscbs.declaracao.cClassTrib} />
+                  <Campo rotulo="Indicador da operação" valor={nota.ibscbs.declaracao.cIndOp} />
+                </div>}
+                {nota.ibscbs.valores && <div style={GRADE}>
+                  {[
+                    ['Base IBS/CBS', nota.ibscbs.valores.baseCalculo],
+                    ['IBS estadual', nota.ibscbs.valores.ibsUf?.valor],
+                    ['IBS municipal', nota.ibscbs.valores.ibsMunicipio?.valor],
+                    ['IBS total', nota.ibscbs.valores.ibsTotal],
+                    ['CBS', nota.ibscbs.valores.cbs?.valor],
+                  ].map(([rotulo, valor]) => <Campo key={rotulo} rotulo={rotulo} valor={valor == null ? 'Não informado' : fmtMoney(valor)} mono />)}
+                </div>}
+                {nota.ibscbs.avisos?.length > 0 && <p role="alert">Há campos tributários ilegíveis no XML. Confira os valores no documento de origem.</p>}
+              </>}
+            </Secao>
+
             <Secao
               titulo="Situação"
               aviso={

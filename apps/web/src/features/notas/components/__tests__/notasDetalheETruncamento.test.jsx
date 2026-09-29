@@ -30,6 +30,16 @@ function paginaDe(n, offset = 0) {
 
 const noop = () => {};
 
+test('detalhe distingue IBS/CBS ausente de zero informado no XML', () => {
+  render(<NotaDetailModal nota={{ ...paginaDe(1)[0], ibscbs: {
+    situacao:'VALORES_DOCUMENTO', declaracao:{cst:'000',cClassTrib:'000001'}, avisos:[],
+    valores:{baseCalculo:'980.00',ibsUf:{valor:'0.98'},ibsMunicipio:{valor:'0.00'},ibsTotal:'0.98',cbs:{valor:null}},
+  } }} onClose={noop} />);
+  expect(within(screen.getByText('IBS municipal').parentElement).getByText(/0,00/)).toBeInTheDocument();
+  expect(within(screen.getByText('CBS').parentElement).getByText('Não informado')).toBeInTheDocument();
+  expect(screen.getByText(/não confirma direito a crédito/)).toBeInTheDocument();
+});
+
 test.each(["2026-08-19", "2026-08-19T00:00:00.000Z", "2026-08-19T00:30:00-03:00"])("detalhe conserva a data civil da emissão %s", issueDate => {
   render(<NotaDetailModal nota={{ ...paginaDe(1)[0], issueDate }} onClose={noop} />);
   const campo = screen.getByText("Data de emissão").parentElement;

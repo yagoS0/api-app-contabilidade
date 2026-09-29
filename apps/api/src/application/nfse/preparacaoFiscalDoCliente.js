@@ -1,5 +1,6 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from "../../config.js";
+import { nbsDaDps, ibscbsDaDps } from './ibscbsDaDps.js';
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
@@ -54,7 +55,7 @@ async function serieDaReceita(client, portalClientId, competencia) {
 
 /** Só lê cadastro e histórico local. Não reserva numeração, não grava pendência e não emite. */
 export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId = null, competencia = null, servico = {}, pTotTribSN = null } = {}, {
-  client = prisma, resolverPerfil = resolverPerfilDeEmissao, perfisHabilitados = INTEGRACAO_PERFIL_EMISSAO_NFSE, agora = new Date(),
+  client = prisma, resolverPerfil = resolverPerfilDeEmissao, perfisHabilitados = INTEGRACAO_PERFIL_EMISSAO_NFSE, ibscbsHabilitado = INTEGRACAO_NFSE_IBSCBS, agora = new Date(),
 } = {}) {
   const pid = String(portalClientId || "").trim();
   if (!pid) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "Não encontrei o cadastro fiscal da empresa. O escritório precisa conferir.");
@@ -87,6 +88,11 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
     const escolhaCodigo = escolherCodigoServicoNacional({ escolhido: perfil?.codigoServicoNacional || servico.codigoServicoNacional, lista: company.codigosServicoNacional, singular: company.codigoServicoNacional });
     if (!escolhaCodigo.ok || !escolhaCodigo.codigo) return recusa(escolhaCodigo.ok ? "NFSE_CODIGO_SERVICO_AUSENTE" : escolhaCodigo.codigo, "O escritório precisa conferir o código de serviço cadastrado antes de montar a nota.", ["codigoServicoNacional"]);
     const aliquota = numero(informado(perfil?.pAliq) ? perfil.pAliq : servico.aliquota);
+    const nbs = nbsDaDps(perfil);
+    if (!nbs.ok) return recusa(nbs.codigo, nbs.message, ['codigoNbs']);
+    const ibscbs = ibscbsDaDps({ cTribNac: escolhaCodigo.codigo, perfil, ligado: ibscbsHabilitado, cNBS: nbs.cNBS,
+      dataReferencia: comp.valor.length === 7 ? `${comp.valor}-01` : comp.valor, opSimpNac: regime.opSimpNac });
+    if (!ibscbs.ok) return recusa(ibscbs.codigo, ibscbs.message, ['perfilId']);
     const retencao = resolverTpRetIssqn(servico.issRetido === true);
     const aliquotaDps = pAliqDaDps({ opSimpNac: regime.opSimpNac, regApTribSN: perfil?.regApTribSN || "1", tpRetISSQN: retencao.tpRetISSQN, aliquota });
     if (!aliquotaDps.ok) return recusa(aliquotaDps.codigo, "Há retenção de ISS nesta nota e o escritório precisa conferir a alíquota configurada antes de continuar.", ["aliquota"]);
@@ -128,7 +134,7 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
     }
     const localDoPerfil = informado(perfil?.cLocPrestacao) ? String(perfil.cLocPrestacao) : null;
     return {
-      ok: true, competencia: comp.valor, perfil, regime, pTotTribSN: percentualSimples, cargaTributaria, origens, avisos, aliquotaDps,
+      ok: true, competencia: comp.valor, perfil, regime, pTotTribSN: percentualSimples, cargaTributaria, origens, avisos, aliquotaDps, ibscbs,
       servico: { ...servico, codigoServicoNacional: escolhaCodigo.codigo, aliquota, issRetido: servico.issRetido === true, ...(localDoPerfil ? { cLocPrestacao: localDoPerfil } : {}) },
     };
   } catch {

@@ -17,6 +17,7 @@ import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDe
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
+import { CATALOGO_IBSCBS } from '../fiscal/ibscbs/catalogoOficial.js';
 import { pAliqDaDps } from "./pAliqDaDps.js";
 import { tributacaoMunicipalDoPerfil } from "./tributacaoMunicipalDoPerfil.js";
 import { xmlRetencoesComplementares } from "./retencoesComplementares.js";
@@ -967,6 +968,8 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     perfil,
     ligado: INTEGRACAO_NFSE_IBSCBS,
     cNBS: nbsDaNota.cNBS,
+    dataReferencia: competencia,
+    opSimpNac,
   });
   if (!ibsCbs.ok) {
     const err = new Error(ibsCbs.message);
@@ -1484,6 +1487,7 @@ export async function carregarPerfilDeEmissao(company, perfilId) {
       return null;
     }
     const r = await resolverPerfilDeEmissao({ portalClientId: portal.id, perfilId: perfilId || null, exigirDisponibilidade: true });
+    if (!r.temPerfil && r.perfisAtivos > 1) throw new Error('Há mais de um perfil ativo e nenhum padrão definido. Escolha o perfil desta operação antes de emitir.');
     if (perfilId && (!r.temPerfil || r.perfil?.id !== perfilId)) throw new Error("O perfil selecionado não está mais ativo nesta empresa. Escolha novamente.");
     return r.temPerfil ? r.perfil : null;
   } catch (err) {
@@ -2012,6 +2016,8 @@ export class NfseService {
         perfil: perfilDeEmissao,
         ligado: INTEGRACAO_NFSE_IBSCBS,
         cNBS: nbsPreVoo.cNBS,
+        dataReferencia: formatDateOnly(data.competencia),
+        opSimpNac: regTrib.opSimpNac,
       });
       if (!ibsCbsPreVoo.ok) {
         const err = new Error(ibsCbsPreVoo.message);
@@ -2073,9 +2079,12 @@ export class NfseService {
         err.code = "NFSE_RETRY_INVOICE_NOT_FOUND";
         throw err;
       }
-      if (anterior.falhaCamada === CAMADA.TRANSPORTE) {
+      if (anterior.falhaCamada === CAMADA.TRANSPORTE
+        || ![STATUS.REJECTED, STATUS.FALHA_ENVIO].includes(anterior.status)
+        || ![CAMADA.NOSSA, CAMADA.RECEITA].includes(anterior.falhaCamada)
+        || anterior.falhaCodigo === 'E0014') {
         const err = new Error(
-          "A tentativa anterior falhou no TRANSPORTE: não se sabe se a DPS foi processada. " +
+          "A tentativa anterior não permite reutilizar a numeração com segurança. " +
             "Consulte o Id da DPS no sistema nacional antes de reemitir com este número."
         );
         err.code = "NFSE_NUMERO_EM_ESTADO_INDETERMINADO";
@@ -2118,6 +2127,7 @@ export class NfseService {
     // ── 3. MONTAGEM, ASSINATURA E ENVIO ──────────────────────────────────────────────────
     let rawXml = null;
     let requestUrl = null;
+    let respostaRecebida = null;
     try {
       const client = buildAxiosClient(certificados.transporte);
       const construido = buildDpsPayload({
@@ -2136,6 +2146,18 @@ export class NfseService {
         perfil: perfilDeEmissao,
       });
       rawXml = construido.rawXml;
+      // A evidência do pedido é gravada antes do envio e não é substituída pelo
+      // XML de retorno. A classificação do perfil fica congelada por tentativa.
+      await NfseRepository.markIssued(record.id, {
+        pedidoXml: rawXml,
+        contextoFiscal: { versao: 1, catalogo: CATALOGO_IBSCBS, regime,
+          competencia: formatDateOnly(data.competencia), codigoServico: codigoServicoDaNota,
+          perfilId: perfilDeEmissao?.id ?? null,
+          codigoNbs: perfilDeEmissao?.codigoNbs ?? null,
+          cst: perfilDeEmissao?.ibscbsCst ?? null, cClassTrib: perfilDeEmissao?.ibscbsCClassTrib ?? null,
+          cIndOp: perfilDeEmissao?.ibscbsCIndOp ?? null,
+          categoriaOperacao: perfilDeEmissao?.ibscbsCategoriaOperacao ?? null },
+      });
 
       if (construido.localPrestacaoAssumido) {
         // Ver o bloco sobre a LC 116/2003, art. 3º em `buildDpsXml`. A suposição fica no log em
@@ -2150,6 +2172,7 @@ export class NfseService {
       const { data: response } = await client.post(NFSE_PATH, {
         dpsXmlGZipB64: construido.dpsXmlGZipB64,
       });
+      respostaRecebida = { chaveAcesso: response?.chaveAcesso ?? null };
 
       const issued = await NfseRepository.markIssued(record.id, {
         status: response.status || STATUS.ISSUED,
@@ -2210,6 +2233,17 @@ export class NfseService {
       };
     } catch (err) {
       // ── 4. DESFECHO EM CAMADAS ─────────────────────────────────────────────────────────
+      if (respostaRecebida) {
+        // O POST terminou. Uma falha local posterior nunca libera numeração,
+        // sobrescreve o retorno com a DPS ou é apresentada como rejeição fiscal.
+        log?.error?.({ companyId: company.id, invoiceId: record.id, idDps: record.idDps,
+          chaveAcesso: respostaRecebida.chaveAcesso ?? null }, 'NFS-e: resposta recebida; persistência pendente de conciliação');
+        return { status: STATUS.PENDING, codigo: 'NFSE_RETORNO_PENDENTE_CONCILIACAO',
+          message: 'O sistema nacional respondeu à emissão, mas houve falha ao salvar o retorno. Consulte e concilie esta DPS antes de qualquer nova tentativa.',
+          numeroReutilizavel: false, conciliacaoObrigatoria: true,
+          nfse: { id: record.id, idDps: record.idDps, rpsSerie: numeracao.rpsSerie,
+            rpsNumero: numeracao.rpsNumero, chaveAcesso: respostaRecebida.chaveAcesso ?? null } };
+      }
       //
       // ⚠ Timeout, DNS, 500 do provedor e recusa da Receita eram TODOS `status:"rejected"`, sem
       // coluna de motivo — e as validações NOSSAS, lançadas de dentro deste mesmo `try`, caíam no
