@@ -183,3 +183,8 @@ test("reconciliação só reabre lixeira anterior ao aceite, nunca exclusão pos
   expect(atual.excluidaEm).toBe(exclusaoPosterior);
   expect(c.mensagens.size).toBe(1);
 });
+
+test.each(["unsupported", "unknown"])("resumo %s explica indisponibilidade sem inventar conteúdo", tipo => {
+  expect(resumoMensagemHistorico({ tipo })).toBe("Mensagem indisponível no WhatsApp");
+  expect(resumoMensagemHistorico({ tipo, corpo: "Texto preservado" })).toBe("Texto preservado");
+});

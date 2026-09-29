@@ -175,7 +175,8 @@ const MIDIA = Object.freeze({
 
 export function descricaoDaMidia(m) {
   const tipo = String(m?.tipo || "").toLowerCase();
-  if (tipo === "text" || tipo === "template") return null;
+  if (tipo === "text" || tipo === "template" || (["interactive", "button"].includes(tipo) && m?.corpo)) return null;
+  if (["unsupported", "unknown"].includes(tipo)) return "O WhatsApp não disponibilizou o conteúdo desta mensagem.";
   const nome = MIDIA[tipo];
   if (!nome) return `mensagem de tipo "${tipo || "desconhecido"}" — não sei exibir`;
   if (m?.direcao === "out") return `📎 ${nome} do escritório`;

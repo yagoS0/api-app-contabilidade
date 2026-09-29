@@ -121,7 +121,7 @@ export function resumoMensagemHistorico(mensagem) {
   if (mensagem?.corpo) return mensagem.corpo;
   if (mensagem?.cartaoGuia) return `${resumoGuia(mensagem.cartaoGuia)}${mensagem.cartaoGuia.origem === RECUPERADO ? " (dados recuperados)" : ""}`;
   if (mensagem?.arquivo?.nomeArquivo) return mensagem.arquivo.nomeArquivo;
-  return ({ image: "Imagem", document: "Documento", audio: "Áudio", video: "Vídeo", template: "Mensagem de modelo" })[mensagem?.tipo] || "Mensagem";
+  return ({ unsupported: "Mensagem indisponível no WhatsApp", unknown: "Mensagem indisponível no WhatsApp", image: "Imagem", document: "Documento", audio: "Áudio", video: "Vídeo", template: "Mensagem de modelo" })[mensagem?.tipo] || "Mensagem";
 }
 
 /** Called only on messages already filtered by the inbox authorization rules. */

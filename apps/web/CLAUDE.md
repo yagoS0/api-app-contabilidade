@@ -777,3 +777,7 @@ Diagnóstico estruturado e contrato por modalidade/origem/PF-PJ usam metadados c
 ## Retomada integrada ao compositor — 28/09/2026
 
 Substitui o modal de retomada: o dono considerou o popup e os textos excessivos. Mostrar assunto → prévia → envio no compositor, mantendo histórico visível e pessoa/canal explícitos. Aprovação e configuração aparecem apenas quando bloqueiam a ação. Não reintroduzir instruções repetidas, popup ou status aprovado no caminho normal. Guardas, rascunhos, intenção e APIs permanecem.
+
+## Mensagem recebida indisponível — 29/09/2026
+
+unsupported/unknown sem conteúdo exibem explicação em português e Preparar pedido de reenvio. Esse botão só preenche o compositor; não envia, não substitui rascunho, não muda canal e não atravessa pessoa/segmento. Janela e operações pendentes continuam bloqueando. Respostas interactive/button com corpo legível não recebem rótulo de mídia desconhecida. Ver docs/whatsapp-conteudo-indisponivel-20260929.md.

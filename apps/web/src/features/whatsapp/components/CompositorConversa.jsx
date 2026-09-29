@@ -10,7 +10,7 @@ import { OrientacoesRapidas } from "./AtendimentoComercial";
 import { estadoDaResposta } from "../lib/conversasTela";
 import { canaisDaConversa, canalInicialDaConversa, chaveDoRascunho, canalComercialDaConversa } from "../lib/identidadeAtendimento";
 
-export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSelecionado = null, pedidoCanal = null, usuarioId = null }) {
+export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSelecionado = null, pedidoCanal = null, usuarioId = null, pedidoResposta = null, aoConsumirPedidoResposta = null }) {
   const mobile = useTelaPequena();
   const [acoesAbertas, setAcoesAbertas] = useState(false);
   const [acoesPendentes, setAcoesPendentes] = useState(false);
@@ -44,6 +44,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const incerto = Boolean(rascunho?.envioIncerto);
   const textoRef = useRef(null);
   const trava = useRef(false);
+  const ultimoPedidoResposta = useRef(null);
   const texto = typeof rascunho === "string" ? rascunho : rascunho.texto || "";
   useEffect(() => {
     const el = textoRef.current;
@@ -148,6 +149,19 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     finally { setOcupado(false); setConsultandoEnvio(false); }
   }
   const bloqueado = ocupado || hook.ocupado || destinoMudou || !resposta.pode || !remoto.pronto || incerto;
+  useEffect(() => {
+    if (!pedidoResposta || !remoto.pronto || ultimoPedidoResposta.current === pedidoResposta) return;
+    ultimoPedidoResposta.current = pedidoResposta;
+    aoConsumirPedidoResposta?.();
+    if (pedidoResposta.interlocutorId !== (conversa.interlocutorId || conversa.id)) return;
+    if (pedidoResposta.conversaId !== destino || pedidoResposta.canalId !== canalId) {
+      setErro("Selecione o canal desta mensagem e clique novamente em Preparar pedido de reenvio."); return;
+    }
+    if (bloqueado) { setErro(!resposta.pode ? "Retome a conversa antes de preparar o pedido de reenvio." : "Conclua a ação pendente antes de preparar o pedido de reenvio."); return; }
+    if (texto.trim() || orientacao) { setErro("Você já tem um rascunho. Envie ou descarte esse texto antes de preparar o pedido de reenvio."); return; }
+    setErro(""); salvarDraft(pedidoResposta.texto); setAcoesAbertas(false); textoRef.current?.focus();
+    // Pedido explícito de preparação, consumido uma vez. Polling nunca reinsere o texto.
+  }, [pedidoResposta, remoto.pronto]);
   const assumir = !conversa.atendidaPor && !conversa.atendidaDesde;
   const nomeEnviar = editada ? previa ? "Conferi: enviar adaptação" : "Conferir adaptação" : assumir ? "Assumir e responder" : "Responder";
   const seletorCanal = !comercialObrigatorio && canais.length > 1 && <label className="wa-compose-channel">Enviar pelo WhatsApp<select aria-label="Canal da mensagem" value={canalId || ""} disabled={ocupado || hook.ocupado} onChange={e => setCanalId(e.target.value)}>

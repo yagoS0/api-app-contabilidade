@@ -255,6 +255,7 @@ export function lerEventoWebhook(payload, agora = new Date()) {
           // ⚠ O `type` é COPIADO como veio, sem de-para para vocabulário nosso (migration
           // `20260814180000`): traduzir sem nunca ter visto um payload real seria inventar o mapa.
           tipo: typeof msg?.type === "string" ? msg.type : null,
+          codigosRecebimento: (Array.isArray(msg?.errors) ? msg.errors : []).map(e => e?.code).filter(Number.isInteger).slice(0, 10),
           corpo: extrairCorpo(msg),
           interacao: extrairInteracao(msg),
           midiaProvedorId: extrairMidiaProvedorId(msg),

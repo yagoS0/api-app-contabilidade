@@ -166,3 +166,10 @@ describe("⚠ frasePaginacao — três respostas, e a terceira é 'não sei'", (
     expect(frasePaginacao(undefined)).toMatch(/Não dá para afirmar/);
   });
 });
+
+test.each(["unsupported", "unknown"])("%s mostra explicação em português", tipo => {
+  expect(descricaoDaMidia({ tipo, direcao: "in" })).toBe("O WhatsApp não disponibilizou o conteúdo desta mensagem.");
+});
+test.each(["interactive", "button"])("%s com texto legível não aparece como mídia desconhecida", tipo => {
+  expect(descricaoDaMidia({ tipo, corpo: "Guias em aberto" })).toBeNull();
+});

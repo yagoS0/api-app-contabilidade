@@ -4885,3 +4885,7 @@ anteriores de bordas por campo e supressão do título ISSQN. Regras e validaç�
 ## Login do cliente por código — 24/09/2026
 
 Pedido do dono: acesso por código enviado ao e-mail já cadastrado e revisão das rotas de autenticação. Branch codex/cliente-login-email, ainda sem publicação. Ver docs/login-email-seguranca-20260924.md para regras, migration, cenários e limites. Código de 8 dígitos, 10 minutos, cinco tentativas, reenvio após 60s e cinco envios por endereço/hora, consumo serializável. Apenas User CLIENT ativo com vínculo ativo, sem criar conta nem conceder permissões FIRM. Não usar e-mail geral da empresa/contatos como prova de acesso. Tokens vinculados à versão da senha, refresh separado de access; sessōes novas CLIENT vinculadas ao acesso e revogadas no logout. Não usar fallback de autenticação real para mock. Nenhum e-mail real enviado nos testes.
+
+## Conteúdo indisponível no WhatsApp — 29/09/2026
+
+Entradas Meta unsupported/unknown ficam registradas, mas não entram em mídia, coleta, menu, contexto fiscal ou IA. O inbox conserva o evento original; diagnóstico usa códigos numéricos, sem logar detalhes/conteúdo. A lista indica Mensagem indisponível no WhatsApp. Não inventar corpo, arquivo ou causa específica (apagada, enquete etc.); solicitar reenvio é ação humana. Ver docs/whatsapp-conteudo-indisponivel-20260929.md.

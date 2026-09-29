@@ -349,3 +349,23 @@ it("decisão de IA distingue chat na lixeira, entrada antiga e nova entrada apó
  expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,automacaoInvalidadaEm:new Date("2026-09-07T12:01:00Z")}}}).motivo).toBe("AUTOMACAO_INVALIDADA");
  expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,excluidaEm:null,automacaoInvalidadaEm:new Date("2026-09-07T11:59:00Z")}}}).responde).toBe(true);
 });
+
+test.each(["unsupported", "unknown"])("%s fica no histórico sem acionar coleta, menu, contexto ou IA", async tipo => {
+  const responder = jest.fn(), responderMenu = jest.fn(), responderColeta = jest.fn(), atenderContexto = jest.fn();
+  const registro = { duplicada: false, vinculo: { situacao: "VINCULADO", empresas: [{ id: "pc-1" }] },
+    conversa: { id: "cv1", portalClientId: "pc-1", escopoVerificado: true, atendimentoId: "at-1" }, mensagem: { id: "m1", tipo } };
+  registrarMensagemRecebida.mockResolvedValue(registro);
+  const logger = logSpy();
+  const payload = evento({ messages: [{ from: MENSAGEM.from, id: MENSAGEM.id, timestamp: MENSAGEM.timestamp,
+    type: tipo, unsupported: { type: "unknown", raw_type: "unknown" }, errors: [{ code: 131051, title: "Message type unknown", error_data: { details: "detalhe privado não deve ir ao log" } }] }] });
+  for (const duplicada of [false, true]) {
+    registro.duplicada = duplicada;
+    const resumo = await processarEventoWhatsapp(payload, { agora: AGORA, logger, responder, responderMenu, responderColeta, atenderContexto,
+      ia: { flag: true, piloto: ["pc-1"] }, menu: { flag: true, piloto: ["pc-1"] } });
+    expect(resumo.erros).toEqual([]); expect(resumo.mensagens[duplicada ? "duplicadas" : "gravadas"]).toBe(1);
+  }
+  expect(registrarMensagemRecebida).toHaveBeenCalledWith(expect.objectContaining({ tipo, corpo: null, midiaProvedorId: null }));
+  for (const efeito of [responder, responderMenu, responderColeta, atenderContexto]) expect(efeito).not.toHaveBeenCalled();
+  expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ codigos: [131051] }), expect.any(String));
+  expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("detalhe privado");
+});

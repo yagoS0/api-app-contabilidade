@@ -1121,6 +1121,11 @@ const mockConversasWhatsapp = [
   },
 ];
 
+// Caso sintético: a Meta notificou a entrada, mas omitiu texto e mídia.
+mockConversasWhatsapp[3].mensagens.push({ id: "mock-indisponivel", conversaId: "mock-cv-4", canal: { id: "principal" },
+  direcao: "in", tipo: "unsupported", corpo: null, autor: null, providerMessageId: "wamid.mock-indisponivel",
+  ocorridaEmProvedor: haMs(40 * 60_000), registradaEm: haMs(40 * 60_000) });
+
 // Cartões reais do contrato: novo snapshot, legado sem original, histórico pendente e arquivo ausente.
 mockConversasWhatsapp[0].mensagens.unshift(
   { id: "mock-guia-original", direcao: "out", autor: "SISTEMA", tipo: "template", corpo: null, statusEnvio: "entregue", registradaEm: haMs(4 * 3600_000), cartaoGuia: { origem: "ORIGINAL_REGISTRADO", empresa: "Empresa de demonstração", cnpj: "11222333000181", tipo: "DAS", competencia: "2026-08", valor: 490.12, vencimento: "2026-09-21", tentativaId: "mock-tentativa-1", statusEnvio: "entregue", template: { nome: "guia_disponivel", idioma: "pt_BR", variaveis: ["Empresa de demonstração", "08/2026", "490,12"] }, arquivo: { nomeArquivo: "das-agosto.pdf", mimeType: "application/pdf", estado: "DISPONIVEL", podeAbrir: true, origem: "ORIGINAL_REGISTRADO" } } },
