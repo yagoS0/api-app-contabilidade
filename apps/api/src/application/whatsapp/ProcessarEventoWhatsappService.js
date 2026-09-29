@@ -217,7 +217,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   });
   // Apenas metadados validados do canal, sem token. Não confiar em finalidade enviada pelo lead.
   if (r) r.canal = canal;
-  if (r?.mensagem?.midiaProvedorId) {
+  const conteudoIndisponivel = ["unsupported", "unknown"].includes(item.tipo);
+  if (!conteudoIndisponivel && r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");
     await enqueueArquivoWhatsapp({ mensagem: r.mensagem, conversa: r.conversa, nomeArquivo: item.nomeArquivo, mimeType: item.mimeType });
   }
@@ -247,6 +248,14 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   if (r?.mensagem?.respondidaPelaIaEm) {
     // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
+  }
+  // A Meta notificou a entrada, mas não entregou o conteúdo. Preservar o histórico
+  // sem interpretar o aviso como resposta, documento, pagamento ou novo pedido.
+  if (conteudoIndisponivel) {
+    logger?.warn?.({ evento: "whatsapp.conteudo_indisponivel", providerMessageId: item.providerMessageId,
+      tipo: item.tipo, codigos: item.codigosRecebimento || [] }, "WhatsApp: conteúdo não disponibilizado pelo provedor");
+    return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao,
+      ia: { responde: false, motivo: "CONTEUDO_INDISPONIVEL" } };
   }
   if (item.tipo === "reaction") {
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "REACAO_SEM_ATENDIMENTO" } };

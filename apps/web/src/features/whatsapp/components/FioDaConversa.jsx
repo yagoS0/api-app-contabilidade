@@ -14,6 +14,8 @@ import { CartaoArquivoMensagem } from "./CartaoArquivoMensagem";
 import { BuscaMensagens } from "./BuscaMensagens";
 import { AcoesRapidas } from "./AcoesRapidas";
 import { CompositorConversa } from "./CompositorConversa";
+import { MensagemIndisponivel } from "./MensagemIndisponivel";
+import { mensagemIndisponivel, PEDIDO_REENVIO } from "../lib/mensagemIndisponivel";
 import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota } from "../lib/identidadeAtendimento";
 import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { NotaDaMensagem } from "./NotaDaMensagem";
@@ -94,6 +96,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
   const [novas, setNovas] = useState(false);
   const [acoesDaMensagem, setAcoesDaMensagem] = useState(null);
   const [fonteDaNota, setFonteDaNota] = useState(null);
+  const [pedidoResposta, setPedidoResposta] = useState(null);
   const historicoRef = useRef(null);
   const fioRef = useRef(null);
   const leituraRef = useRef(null);
@@ -109,7 +112,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
     && escoposDeNota(conversa).length > 0 && typeof hook.salvarNota === "function" && typeof hook.api?.criarNotaInternaWhatsapp === "function";
   const podeAnotacaoLegada = !somenteLeitura && !conversa.interlocutorId && typeof onVirarAnotacao === "function";
   const contextoDaNota = `${conversa.id}:${usuarioId || ""}`;
-  useEffect(() => { setAcoesDaMensagem(null); setFonteDaNota(null); }, [contextoDaNota]);
+  useEffect(() => { setAcoesDaMensagem(null); setFonteDaNota(null); setPedidoResposta(null); }, [contextoDaNota]);
 
   function criarNota(mensagem) {
     setAcoesDaMensagem(null);
@@ -240,7 +243,8 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
           const interna = m.tipo === "nota_interna";
           const entrada = m.direcao === "in";
           const podeAnotar = !interna && (podeNotaInterna || (podeAnotacaoLegada && Boolean(m.corpo?.trim())));
-          const midia = interna ? null : descricaoDaMidia(m);
+          const indisponivel = mensagemIndisponivel(m);
+          const midia = interna || indisponivel ? null : descricaoDaMidia(m);
           const estado = estadoDaMensagem(m);
           const dia = dataDaMensagem(m);
           const separador = dia && (index === 0 || dia !== dataDaMensagem(mensagens[index - 1]));
@@ -254,6 +258,10 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
                 <div className="wa-bubble-author"><strong>{interna ? m.autor?.nome || "Equipe" : rotuloDoAutor(m, { nomeDoCliente })}</strong><time dateTime={m.ocorridaEmProvedor || m.registradaEm}>{fmtDataHora(m.ocorridaEmProvedor || m.registradaEm)}</time>{interna ? <span>Nota interna · só a equipe</span> : m.canal && <span>{m.canal.nome || m.canal.chave || m.canal.finalidade}</span>}</div>
                 {!interna && conversa.atendimento && m.empresa && !m.escopoPessoa ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa.razao} · <CnpjDaConversa cnpj={m.empresa.cnpj} empresa={m.empresa.razao} /></div> : null}
                 {!m.cartaoGuia && !m.arquivo && midia ? <div data-testid="midia-do-balao" className="wa-media"><WhatsappIcon nome="documento" size={20} /><span>{midia.replace(/^📎\s*/, "")}</span></div> : null}
+                {indisponivel && <MensagemIndisponivel onPreparar={somenteLeitura ? null : () => setPedidoResposta({
+                  interlocutorId: conversa.interlocutorId || conversa.id, conversaId: m.conversaId || conversa.id,
+                  canalId: m.canal?.id || conversa.canalId || "principal", texto: PEDIDO_REENVIO,
+                })} />}
                 <CartaoArquivoMensagem mensagem={m} conversaId={m.conversaId || conversa.id} api={hook.api} />
                 {m.corpo ? <div className="wa-bubble-text">{m.corpo}</div> : m.tipo === "template" && !m.cartaoGuia ? <div className="wa-bubble-text">Modelo de mensagem do escritório</div> : null}
                 <div className="wa-bubble-footer">
@@ -273,7 +281,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
       {buscando && <BuscaMensagens api={hook.api} conversaId={conversa.id} onFechar={() => setBuscando(false)} onIr={async m => { await hook.abrirMensagem?.(m.id); setBuscando(false); requestAnimationFrame(() => document.querySelector(`[data-mensagem-id="${CSS.escape(m.id)}"]`)?.scrollIntoView({ block: "center" })); }} />}
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
       {podeNotaInterna && fonteDaNota?.contexto === contextoDaNota && <NotaDaMensagem key={`${contextoDaNota}:${fonteDaNota.mensagem.id}`} conversa={conversa} mensagem={fonteDaNota.mensagem} hook={hook} aoFechar={() => setFonteDaNota(null)} />}
-      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} slotAcoes={slotAcoes || (empresasDaAcao.length && hook.api?.getCompanyGuides ? acoesCompartilhadas : null)} onCanalSelecionado={onCanalSelecionado} pedidoCanal={pedidoCanal} usuarioId={usuarioId} /> : null}
+      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} pedidoResposta={pedidoResposta} aoConsumirPedidoResposta={() => setPedidoResposta(null)} slotAcoes={slotAcoes || (empresasDaAcao.length && hook.api?.getCompanyGuides ? acoesCompartilhadas : null)} onCanalSelecionado={onCanalSelecionado} pedidoCanal={pedidoCanal} usuarioId={usuarioId} /> : null}
       {escolherEmpresa && <Modal titulo="Abrir empresa deste contato" tamanho="sm" aoFechar={() => setEscolherEmpresa(false)}><p>O histórico continua sendo único para esta pessoa.</p>{conversa.empresas.map(e => <p key={e.id}><a href={hrefDaEmpresa(e.id)}>{e.razao}</a> · <CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</Modal>}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
         rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>
