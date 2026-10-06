@@ -231,3 +231,11 @@
 .agenda-view-nav { flex-wrap:wrap; justify-content:flex-end; }
 .dashboard-home-page--agenda .agenda-time-scroll { min-height:240px; }
 @media(max-width:700px) { .agenda-editor .modal-caixa[style*="--editor-x"] { max-height:calc(100dvh - 24px); } }
+
+.agenda-range-fields { margin-bottom:8px; }
+.agenda-range-fields .is-active { color:var(--accent-cyan); }
+.agenda-range-fields .is-active input { border-color:var(--accent-cyan); box-shadow:0 0 0 1px var(--accent-cyan); }
+.agenda-range-fields input::-webkit-calendar-picker-indicator { display:none; }
+.agenda-range-hint { font-size:12px; color:var(--text-muted); margin:0 0 12px; }
+.agenda-mini-days button.is-in-range { background:color-mix(in srgb,var(--accent-cyan) 18%,transparent); border-radius:0; }
+.agenda-mini-days button.is-range-start,.agenda-mini-days button.is-range-end { background:var(--accent-cyan); color:var(--bg-page); }

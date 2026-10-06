@@ -84,3 +84,8 @@ Novos lotes de tarefas empresariais recebem um grupoTarefaId gerado no servidor,
 
 ## Editor compacto — 06/10/2026
 Clique simples usa a hora inteira da célula (8h → 8h–9h); arraste continua selecionando quartos de hora. ModalAtividade usa o mesmo Modal acessível, com fundo transparente, posição limitada à janela, título/descrição e seções expansíveis para data, duração, empresas e repetição. MiniCalendarioAgenda muda a data civil via editarJanela; preserva duração e fim da janela. O rascunho aparece na grade antes de salvar. Carteira em agenda usa a largura disponível e mede a altura restante da janela; a visão de empresas conserva o layout anterior. Não altera API ou dados existentes.
+
+## Intervalo no calendário e rolagem — 06/10/2026
+MiniCalendarioAgenda seleciona início e fim em dois cliques no mesmo calendário, destaca o intervalo e permite atravessar meses, inverter a ordem ou escolher um único dia. De/Até indicam a extremidade ativa e continuam editáveis por teclado, sem abrir um segundo calendário nativo. A digitação do início preserva a duração via editarJanela; a seleção visual define um novo intervalo. O resumo mostra ambas as datas.
+
+useProtegerCamposDaRolagem, montado em App e Modal com contagem de usuários, retira o foco de inputs number/date/time/month/week/datetime-local antes do incremento nativo por wheel. Não cancela a rolagem do painel nem afeta campos de texto. Validação: 86 testes direcionados aprovados e build web concluído; seleção visual conferida em demonstração sem dados reais.
