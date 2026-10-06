@@ -1,3 +1,4 @@
+import { fluxoDaEmpresa, ETAPAS_CARTEIRA } from "@contabilidade/shared/fluxo-carteira";
 import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // A carteira em TABELA — a visão padrão no desktop.
 //
@@ -16,9 +17,8 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela, rotuloCanaisEnviados, resumoCanaisEnviados } from "./renderGuiaChip";
-import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
-import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
+import { GuiaChip } from "./renderGuiaChip";
+import { empresaSemObrigacoes } from "../lib/estadoDominante";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
 import { corRegime, descricaoDoRegime } from "../lib/abaRegime";
 import { estadoCertificado } from "../lib/certificado";
@@ -65,11 +65,6 @@ function severidadeGuias(company) {
  * A severidade da LINHA = a pior das três colunas. É ela que ordena por padrão.
  * 0 = danger · 1 = warning · 2 = neutro · 3 = fechada (sempre por último, fora do fluxo).
  */
-function severidadeDaLinha(company, trava) {
-  const ap = estadoApuracao(company, trava);
-  if (ap.chave === "fechada" && !temPendenciaParcelamento(company)) return 3;
-  return Math.min(ap.severidade, situacaoFiscalDaLinha(company).estado.severidade, severidadeGuias(company));
-}
 
 const CELULA = { padding: "8px 10px", borderTop: "1px solid var(--border)", verticalAlign: "middle" };
 const CABECALHO = {
@@ -78,7 +73,6 @@ const CABECALHO = {
   background: "var(--bg-subtle)", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap",
 };
 
-const fmtMoeda = (v) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ⚠ `BotaoCopiar` MUDOU DE ENDEREÇO (18/08/2026) — hoje é `components/ui/BotaoCopiar.jsx`.
 // Ele nasceu aqui, para o CNPJ, e subiu quando a linha digitável da guia passou a precisar do mesmo
@@ -139,72 +133,17 @@ function PopoverConfig({ company, onFechar }) {
  * chips: a informação continua a um clique, e o gesto é o que o contador já aprendeu no chip de
  * parcelamento.
  */
-function ChipGuiasFaltando({ tributos, empresa, competencia, acoes }) {
-  const [aberto, setAberto] = useState(false);
-  return (
-    <span style={{ position: "relative", display: "inline-block" }}>
-      <button
-        type="button"
-        onClick={() => setAberto((v) => !v)}
-        aria-expanded={aberto}
-        aria-label={`${tributos.length} guias por gerar: ${tributos.map((t) => t.label).join(", ")}`}
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
-          fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-          background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
-          color: "var(--state-danger)", cursor: "pointer", font: "inherit", lineHeight: 1.6,
-        }}
-      >
-        <span aria-hidden="true">⚠</span>{tributos.length} guias
-      </button>
 
-      {aberto && (
-        <Popover onFechar={() => setAberto(false)}>
-          <div style={{ fontWeight: 700, marginBottom: 2 }}>
-            {tributos.length} guias por gerar · {competencia}
-          </div>
-          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
-            Todas dependem da mesma coisa: apurar o mês.
-          </div>
-          <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none", display: "grid", gap: 3 }}>
-            {tributos.map((t) => (
-              <li key={t.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span aria-hidden="true" style={{ color: "var(--state-danger)" }}>⚠</span>
-                <span style={{ color: "var(--text)" }}>{t.label}</span>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={() => acoes.onAbrirEmpresa?.(empresa.companyId)}
-            style={{
-              padding: "5px 10px", borderRadius: 6, cursor: "pointer", background: "transparent",
-              border: "1px solid var(--border)", color: "var(--text)", font: "inherit",
-              fontSize: "0.76rem", fontWeight: 600,
-            }}
-          >
-            Abrir apuração
-          </button>
-        </Popover>
-      )}
-    </span>
-  );
-}
-
-function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao }) {
+function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
   const [config, setConfig] = useState(false);
   const [consultando, setConsultando] = useState(false);
-  const apuracao = estadoApuracao(company, trava);
-  const fechada = apuracao.chave === "fechada";
+  const fluxo = fluxoDaEmpresa(company);
+  const apuracao = fluxo.apuracao;
+  const fechada = fluxo.status.chave === "concluido";
   const tags = getComplianceTags(company.guideCompliance);
-  const concluidas = todasConcluidas(tags);
-  const canaisEnviados = resumoCanaisEnviados(tags);
-  const agregarGuias = todasPorGerar(tags);
-  const zerada = empresaSemObrigacoes(company);
   const fiscal = situacaoFiscalDaLinha(company);
   const cert = estadoCertificado(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
-  const notasTotal = Number(company?.notasEmitidas?.total || 0);
 
   // ⚠ A consulta SITFIS é PAGA, tem trava de 4h por empresa, e o limite do `/Apoiar` é por
   // CONTRATANTE — ou seja, por escritório inteiro. Numa lista de trinta linhas, cliques distraídos
@@ -320,6 +259,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
               por quê é a ausência de novo, um nível acima. A leitura é a mesma de `abaRegime.js`,
               que é quem decide a aba. */}
           <span style={{ color: corRegime(regime) }}>{descricaoDoRegime(company)}</span>
+          {company.empresaZerada && <small title="Sem movimento confirmado na competência">Zerada</small>}
           <span aria-hidden="true">·</span>
           {/* ⚠ COM MÁSCARA NA TELA, SEM MÁSCARA NA ÁREA DE TRANSFERÊNCIA. `00.000.000/0001-00` é a
               forma que o olho confere contra o contrato social; os 14 dígitos crus são a forma que
@@ -340,25 +280,28 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
       </td>
 
       {/* APURAÇÃO — o pipeline do mês. Um chip, quatro estados possíveis, nada empilhado. */}
+      <td data-label="Status" style={CELULA}>
+        <button type="button" onClick={() => onFluxo?.(company)} className="carteira-etapa" aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
+      </td>
       <td data-label="Apuração" style={CELULA}>
-        <span
-          title={detalheApuracao(apuracao, trava)}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
-            fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-            background: apuracao.fundo, border: `1px solid ${apuracao.cor}`, color: apuracao.cor,
-          }}
-        >
-          <span aria-hidden="true">{apuracao.icone}</span>{apuracao.rotulo}
+        <span style={{ color: apuracao.transmitida ? 'var(--state-ok)' : 'var(--text)', fontSize: '0.76rem' }}>{apuracao.rotulo}</span>
+      </td>
+      <td data-label="Guias" style={CELULA}>
+        <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {tags.map(tag => <GuiaChip key={tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
+          {!tags.length && <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{company.guideCompliance ? 'Sem guias previstas' : 'Não disponível'}</span>}
         </span>
       </td>
-
-      {/* SITUAÇÃO FISCAL — a relação com a Receita. Estado bom não ganha pill: não grita. */}
+      <td data-label="Contabilização" style={CELULA}>
+        <span style={{ fontSize: '0.76rem', color: fluxo.contabilizacao.chave === 'importado' ? 'var(--state-ok)' : 'var(--text)' }}>{fluxo.contabilizacao.rotulo}</span>
+        {fluxo.contabilizacao.importados > 0 && fluxo.contabilizacao.chave !== 'importado' && <small style={{display:'block'}}>ERP: {fluxo.contabilizacao.importados}/{fluxo.contabilizacao.total}</small>}
+      </td>
       <td data-label="Situação fiscal" style={CELULA}>
         {fiscal.precisaConsultar ? (
           <button
             type="button"
             onClick={consultarFiscal}
+            aria-label={`Consultar situação fiscal de ${nome}: ${fiscal.rotulo}`}
             disabled={consultando}
             title={`${fiscal.titulo} — clique para consultar no SERPRO (consulta paga)`}
             /* ⚠ ISTO É AÇÃO, NÃO ESTADO — e já era: o elemento sempre foi um `<button>`, com
@@ -392,68 +335,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
             <span aria-hidden="true">{fiscal.estado.icone}</span>{fiscal.rotulo}
           </span>
         )}
-      </td>
-
-      <td data-label="Envio de guias" style={{ ...CELULA }}>
-        <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {zerada && tags.filter(ehParcela).map(tag => <GuiaChip key={tag.key} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
-          {zerada ? (
-            /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada — coluna
-               vazia significaria "não sabemos", e aqui sabemos. Mas basta a TAG: a frase inteira
-               ocupava a coluna toda e desalinhava a leitura das outras linhas. A explicação fica no
-               title, que é onde ela é procurada. */
-            <span
-              title={TITULO_ZERADA}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
-                fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                background: "var(--state-neutral-surface)", border: "1px solid var(--state-neutral)",
-                color: "var(--state-neutral)",
-              }}
-            >
-              <span aria-hidden="true">◌</span>Zerada
-            </span>
-          ) : concluidas && canaisEnviados !== null && !temPendenciaParcelamento(company) ? (
-            <span
-              style={{ fontSize: "0.74rem", fontWeight: 500, color: "var(--text-muted)" }}
-              title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : rotuloCanaisEnviados(t) ? `enviada por ${rotuloCanaisEnviados(t)}` : "enviada"}`).join(" · ")}
-            >
-              {canaisEnviados ? <><span aria-hidden="true">✓ </span>{canaisEnviados}</> : "Sem envios pendentes"}
-            </span>
-          ) : agregarGuias ? (
-            /* ⚠ UM chip no lugar de quatro vermelhos. No Lucro Presumido são IRPJ + CSLL +
-               PIS/COFINS + ISS, e no começo do mês os quatro dizem a mesma coisa e pedem a mesma
-               ação. Quatro repetições da mesma informação em toda linha recriavam o muro vermelho
-               que este redesign existe para derrubar. Assim que os estados divergirem, os chips
-               voltam sozinhos — porque aí o detalhe passa a informar. */
-            <>
-              <ChipGuiasFaltando
-                tributos={tags.filter((t) => !ehParcela(t))}
-                empresa={company}
-                competencia={competencia}
-                acoes={acoesGuia || {}}
-              />
-              {/* A parcela nunca entra no agregado: ela não vem de apurar, vem de capturar o
-                  parcelamento. Somá-la ali mandaria o contador para a ação errada. */}
-              {tags.filter(ehParcela).map((tag) => (
-                <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
-              ))}
-            </>
-          ) : tags.length ? tags.map((tag) => (
-            <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
-          )) : (
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>—</span>
-          )}
-        </span>
-      </td>
-
-      {/* ⚠ `whiteSpace: nowrap` — era aqui que "KODA BEAR" e "SINTROPIA" quebravam em duas linhas.
-          Valor monetário partido no meio ("R$ 1.234." / "567,89") não é só feio: ele desalinha a
-          coluna inteira, e uma coluna de números desalinhada perde a única coisa que ela faz melhor
-          que o card, que é deixar comparar de relance. A largura da coluna subiu junto (ver
-          `<colgroup>` lógico nos `<th>` abaixo); o `nowrap` é a garantia, a largura é o conforto. */}
-      <td data-label="Notas emitidas" style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", color: notasTotal > 0 ? "var(--text)" : "var(--text-muted)" }}>
-        {fmtMoeda(notasTotal)}
+        {fiscal.parcelamento && <small style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: 3 }}>{fiscal.parcelamento}</small>}
       </td>
 
       <td className="company-row__action" data-coluna-acao style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap" }}>
@@ -486,12 +368,13 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
  * Daí a leitura "o filtro está errado".
  */
 const ROTULO_ORDEM = {
-  urgencia: "pendência — o mais urgente primeiro",
+  urgencia: "etapa do fluxo — apuração primeiro",
+  status: "etapa do fluxo",
+  contabilizacao: "contabilização",
   empresa: "nome da empresa",
   apuracao: "apuração",
   fiscal: "situação fiscal",
   guias: "guias",
-  notas: "notas emitidas",
 };
 
 export function CompaniesTable({
@@ -527,6 +410,7 @@ export function CompaniesTable({
   selecionados = null,
   onAlternarSelecao = null,
   onSelecionarTodos = null,
+  onFluxo = null,
 }) {
   const [ordem, setOrdem] = useState({ campo: "urgencia", asc: true });
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
@@ -540,19 +424,17 @@ export function CompaniesTable({
   const fechadasVisiveis = mostrarFechadas || Boolean(imprimindo);
 
   const { abertas, fechadas } = useMemo(() => {
-    const trava = (c) => travas?.get?.(c.companyId);
     const ordenar = (lista) => {
       const copia = [...lista];
       const dir = ordem.asc ? 1 : -1;
       copia.sort((a, b) => {
         if (ordem.campo === "empresa") return dir * String(a.razao || "").localeCompare(String(b.razao || ""));
-        if (ordem.campo === "notas") return dir * (Number(a.notasEmitidas?.total || 0) - Number(b.notasEmitidas?.total || 0));
         // Cada coluna de indicador ordena pela SUA severidade — e o segundo clique inverte, que é
         // como se pede a pergunta oposta: "quais guias faltam?" no primeiro, "quais já estão
         // completas?" no segundo. Desempate alfabético em todas, senão empresas de mesmo estado
         // trocam de lugar a cada recarga.
         if (ordem.campo === "apuracao") {
-          const p = estadoApuracao(a, trava(a)).severidade - estadoApuracao(b, trava(b)).severidade;
+          const p = ["a_apurar","apurado","transmitido"].indexOf(fluxoDaEmpresa(a).apuracao.chave) - ["a_apurar","apurado","transmitido"].indexOf(fluxoDaEmpresa(b).apuracao.chave);
           return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
         }
         if (ordem.campo === "fiscal") {
@@ -567,12 +449,12 @@ export function CompaniesTable({
         // empresa apurada e fechada no prazo, mas com pendência na Receita, precisa subir — ordenar
         // só pelo mês a esconderia no meio da lista. Desempate alfabético para a ordem não "dançar"
         // entre recargas.
-        const p = severidadeDaLinha(a, trava(a)) - severidadeDaLinha(b, trava(b));
-        return p !== 0 ? p : String(a.razao || "").localeCompare(String(b.razao || ""));
+        const p = ordem.campo === "contabilizacao" ? ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(a).contabilizacao.chave) - ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(b).contabilizacao.chave) : ETAPAS_CARTEIRA.indexOf(fluxoDaEmpresa(a).status.chave) - ETAPAS_CARTEIRA.indexOf(fluxoDaEmpresa(b).status.chave);
+        return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
       });
       return copia;
     };
-    const ehFechada = (c) => estadoApuracao(c, trava(c)).chave === "fechada" && !temPendenciaParcelamento(c);
+    const ehFechada = (c) => fluxoDaEmpresa(c).status.chave === "concluido" && situacaoFiscalDaLinha(c).estado.severidade !== 0 && !temPendenciaParcelamento(c);
     return {
       abertas: ordenar((companies || []).filter((c) => !ehFechada(c))),
       fechadas: ordenar((companies || []).filter(ehFechada)),
@@ -656,9 +538,9 @@ export function CompaniesTable({
   const marcadasNaLista = idsDaLista.filter((id) => marcadas.has(id)).length;
   const todasMarcadas = idsDaLista.length > 0 && marcadasNaLista === idsDaLista.length;
   const rotuloTodos = `Selecionar as ${idsDaLista.length} empresas desta lista`
-    + (!fechadasVisiveis && fechadas.length ? ` (${fechadas.length} no grupo Fechadas, recolhido)` : "");
+    + (!fechadasVisiveis && fechadas.length ? ` (${fechadas.length} no grupo Concluídas, recolhido)` : "");
 
-  const colunas = selecaoAtiva ? 7 : 6;
+  const colunas = selecaoAtiva ? 8 : 7;
   const visiveis = abertas.length + fechadas.length;
   const total = Number.isFinite(totalSemFiltro) ? totalSemFiltro : visiveis;
   const escondidasPorFiltro = Math.max(0, total - visiveis);
@@ -725,11 +607,12 @@ export function CompaniesTable({
               </th>
             )}
             <Cabecalho campo="empresa" largura="27%">Empresa <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({carregando ? "…" : escondidasPorFiltro > 0 ? `${visiveis}/${total}` : visiveis})</span></Cabecalho>
-            <Cabecalho campo="apuracao" largura="11%">Apuração</Cabecalho>
-            <Cabecalho campo="fiscal" largura="14%">Situação fiscal</Cabecalho>
-            <Cabecalho campo="guias" largura="25%">Guias</Cabecalho>
-            <Cabecalho campo="notas" alinhar="right" largura="13%">Notas</Cabecalho>
-            <th scope="col" data-coluna-acao style={{ ...CABECALHO, textAlign: "right", width: "10%" }}>Ação</th>
+            <Cabecalho campo="status">Status</Cabecalho>
+            <Cabecalho campo="apuracao">Apuração</Cabecalho>
+            <Cabecalho campo="guias" largura="24%">Guias</Cabecalho>
+            <Cabecalho campo="contabilizacao">Contabilização</Cabecalho>
+            <Cabecalho campo="fiscal">Situação fiscal</Cabecalho>
+            <th scope="col" data-coluna-acao style={CABECALHO}>Ações</th>
           </tr>
         </thead>
         <tbody ref={corpoRef}>
@@ -740,7 +623,7 @@ export function CompaniesTable({
               nada, e o `aria-busy` diz o mesmo a quem ouve a tela. */}
           {carregando && !abertas.length && !fechadas.length && [0, 1, 2, 3, 4].map((i) => (
             <tr key={`esqueleto-${i}`} aria-hidden="true">
-              {(selecaoAtiva ? [3, 27, 11, 14, 25, 13, 10] : [27, 11, 14, 25, 13, 10]).map((largura, col) => (
+              {(selecaoAtiva ? [3, 24, 12, 10, 20, 12, 12, 7] : [24, 12, 10, 20, 12, 12, 7]).map((largura, col) => (
                 <td key={col} style={{ ...CELULA }}>
                   <span style={{
                     display: "block", height: 12, borderRadius: 6,
@@ -757,7 +640,7 @@ export function CompaniesTable({
             <Linha
               key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
-              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao}
+              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />
           ))}
 
@@ -776,7 +659,7 @@ export function CompaniesTable({
                     fontWeight: 700, cursor: "pointer",
                   }}
                 >
-                  {fechadasVisiveis ? "▾" : "▸"} Fechadas ({fechadas.length})
+                  {fechadasVisiveis ? "▾" : "▸"} Concluídas ({fechadas.length})
                 </button>
               </td>
             </tr>
@@ -785,7 +668,7 @@ export function CompaniesTable({
             <Linha
               key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
-              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao}
+              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />
           ))}
 

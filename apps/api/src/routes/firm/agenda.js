@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { listarAgendaCarteira } from '../../application/company/FluxoCarteiraService.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { empresasVisiveis } from './empresasVisiveis.js';
 import { ObrigacaoError, excluirOcorrencia } from '../../application/obrigacoes/ObrigacoesService.js';
@@ -18,6 +19,12 @@ export function createAgendaRouter({ log } = {}) {
       return res.status(e.status || 500).json({ ok: false, message: e instanceof ObrigacaoError ? e.message : 'Não foi possível atualizar a agenda.' });
     }
   };
+  router.get('/agenda/carteira', rota(async req => {
+    const ids = await empresasVisiveis(req);
+    const alvo = req.query.companyId;
+    if (alvo && !ids.includes(alvo)) throw new ObrigacaoError('nao_encontrada', 'Empresa não encontrada.', 404);
+    return { itens: await listarAgendaCarteira(alvo ? [alvo] : ids, req.query.inicio, req.query.fim) };
+  }));
   router.post('/agenda/tarefas-empresas', rota(async (req, userId) => vincularTarefasEmpresas({userId, portalIds:await empresasVisiveis(req), dados:req.body || {}})));
   router.get('/agenda/tarefas', rota((req, userId) => listarTarefas({ userId, inicio: req.query.inicio, fim: req.query.fim })));
   router.post('/agenda/tarefas', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, dados: req.body || {} }) })));

@@ -421,6 +421,9 @@ export function createRealApi() {
 
   const background = createBackgroundTaskClient(request);
   return {
+    getAgendaCarteira: (inicio, fim, companyId) => request(`/firm/agenda/carteira?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}${companyId ? `&companyId=${encodeURIComponent(companyId)}` : ''}`),
+    getFluxoCarteira: (id, competencia) => request(`/firm/companies/${encodeURIComponent(id)}/fluxo-carteira?competencia=${encodeURIComponent(competencia)}`),
+    salvarFluxoTarefa: (id, chave, dados) => request(`/firm/companies/${encodeURIComponent(id)}/fluxo-carteira/${encodeURIComponent(chave)}`, { method: 'POST', body: JSON.stringify(dados) }),
     getBackgroundTask: (id) => request(`/firm/jobs/tarefas/${encodeURIComponent(id)}`),
     async sendGuidesTask(companyId, body, onProgress) {
       const out = await background.request(`/firm/companies/${encodeURIComponent(companyId)}/guides/send-task`,

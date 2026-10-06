@@ -43,8 +43,8 @@ export function resumoCanaisEnviados(tags) {
 }
 
 const ESTADO = {
-  missing:  { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "falta gerar" },
-  gerada:   { icone: "✈", cor: "var(--state-warn)",    fundo: "var(--state-warn-surface)",    rotulo: "gerada, falta enviar" },
+  missing:  { icone: "○", cor: "var(--state-neutral)", fundo: "transparent",  rotulo: "falta gerar" },
+  gerada:   { icone: "●", cor: "var(--state-ok)", fundo: "var(--state-ok-surface)",    rotulo: "gerada, falta enviar" },
   // ⚠ ESTE ESTADO EXISTIA NO BANCO E NÃO EXISTIA NA TELA. A guia cujo envio falhou tem
   // `emailStatus:"ERROR"` + `emailLastError` + `emailNextRetryAt` — e **nada drena esse retry**
   // (o laço automático saiu na Q55). Ela ficava âmbar "gerada, falta enviar", exatamente igual à
@@ -127,7 +127,9 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   const [resultado, setResultado] = useState(null);
   const [motivo, setMotivo] = useState("");
 
-  const meta = tag.key === "parcDas" && tag.itens?.length && tag.pendenciaOperacional ? { ...ESTADO.gerada, icone: "⚠", rotulo: "acompanhamento pendente" } : ESTADO[tag.state] || ESTADO.missing;
+  const meta = tag.key === "parcDas" && tag.itens?.length && tag.pendenciaOperacional
+    ? { ...(ESTADO[tag.state] || ESTADO.missing), cor: "var(--state-warn)", fundo: "var(--state-warn-surface)", icone: tag.state === "missing" ? "○" : "⚠", rotulo: "acompanhamento pendente" }
+    : ESTADO[tag.state] || ESTADO.missing;
   const canaisEnviados = rotuloCanaisEnviados(tag);
   const estadosParcela = tag.key === "parcDas" ? [...new Set((tag.itens || []).filter(i => i.estado !== "RESOLVIDA").map(i => i.estado))] : [];
   const rotuloParcela = { IDENTIFICAR: "identificar parcelamento", CONFERIR_PARCELA: "conferir parcelas", CONSULTAR_PAGAMENTO: "confirmar pagamento", CONTABILIZAR: "pagamento confirmado, falta contabilizar", OBTER_GUIA: "obter guia", ENVIAR: "enviar guia", DIVERGENCIA: "conferir divergência", CONFERIR_DOCUMENTO: "conferir documento", CONSULTA_FALHOU: "consulta não concluída" };

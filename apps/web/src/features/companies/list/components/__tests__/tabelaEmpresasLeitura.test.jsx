@@ -112,7 +112,7 @@ describe("a lista diz QUANTAS mostra e POR QUE está nesta ordem", () => {
     montar();
     // Aparece DUAS vezes de propósito: na barra visível e no `<caption>` (que é lido pelo leitor de
     // tela e não é pintado). As duas saem do mesmo `ROTULO_ORDEM`, então não podem divergir.
-    expect(screen.getAllByText(/pendência — o mais urgente primeiro/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/etapa do fluxo — apuração primeiro/).length).toBeGreaterThanOrEqual(1);
   });
 
   test("⚠ 'Exibindo X de N' aparece quando os filtros escondem alguém", () => {
@@ -129,7 +129,7 @@ describe("a lista diz QUANTAS mostra e POR QUE está nesta ordem", () => {
   test("os cabeçalhos declaram a ordenação em `aria-sort` — o ▲ é só pixel", () => {
     montar();
     // Nenhuma coluna está ativa por padrão: a ordem é "urgência", que não é coluna nenhuma.
-    for (const nome of ["Empresa", "Apuração", "Situação fiscal", "Guias", "Notas"]) {
+    for (const nome of ["Empresa", "Status", "Apuração", "Situação fiscal", "Guias", "Contabilização"]) {
       expect(screen.getByRole("columnheader", { name: new RegExp(nome) })).toHaveAttribute("aria-sort", "none");
     }
     fireEvent.click(screen.getByRole("button", { name: /Empresa/ }));
@@ -140,8 +140,8 @@ describe("a lista diz QUANTAS mostra e POR QUE está nesta ordem", () => {
 
   test("ordena pela coluna sem texto auxiliar acima da tabela", () => {
     montar();
-    fireEvent.click(screen.getByRole("button", { name: /Notas/ }));
-    expect(screen.getByRole("columnheader", { name: /Notas/ })).toHaveAttribute("aria-sort", "ascending");
+    fireEvent.click(screen.getByRole("button", { name: /Contabilização/ }));
+    expect(screen.getByRole("columnheader", { name: /Contabilização/ })).toHaveAttribute("aria-sort", "ascending");
     expect(screen.queryByText(/ordenadas por/)).not.toBeInTheDocument();
   });
 });
@@ -159,9 +159,9 @@ describe("⚠ TRÊS EIXOS INDEPENDENTES — o caso PHAOS", () => {
       })],
     });
     const linha = screen.getByRole("row", { name: /PHAOS CONSULTORIA/ });
-    expect(within(linha).getByText(/Falta apurar/)).toBeInTheDocument();
-    expect(within(linha).getByText(/Com pendência/)).toBeInTheDocument();
-    expect(within(linha).getByText(/Sem envios pendentes/)).toBeInTheDocument();
+    expect(within(linha).getByText('A apurar')).toBeInTheDocument();
+    expect(within(linha).getByText('Pendência')).toBeInTheDocument();
+    expect(within(linha).getByRole('button', {name: 'DAS: enviada ao cliente'})).toBeInTheDocument();
   });
 
   test("cada coluna diz QUAL pergunta responde — é o que separa os eixos na leitura", () => {

@@ -868,6 +868,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  carteiraTarefas CarteiraTarefa[]
   basesSociosGerenciais BaseSociosGerencial[]
   laboratorioCenarios LaboratorioCenario[]
   classificacaoGerencial ClassificacaoGerencial?
@@ -5752,4 +5753,23 @@ model PendenciaFiscalManual {
   portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   @@index([portalClientId, deletedAt])
   @@map("pendencias_fiscais_manuais")
+}
+
+model CarteiraTarefa {
+  id String @id @default(uuid())
+  portalClientId String
+  competencia String
+  chave String
+  dataInicio DateTime? @db.Date
+  dataFim DateTime? @db.Date
+  dados Json @default("{}")
+  historico Json @default("[]")
+  versao Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  @@unique([portalClientId, competencia, chave])
+  @@index([competencia])
+  @@index([dataInicio, dataFim])
+  @@map("carteira_tarefas")
 }

@@ -1,3 +1,4 @@
+import { withFluxoCarteiraMock } from "./fluxoCarteiraMock";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-mock';
 import { criarAtendimentoMovelMock } from "./atendimentoMovelMock";
@@ -3804,7 +3805,7 @@ export function createMockApi() {
   let accessToken = "";
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
-  return {
+  return withFluxoCarteiraMock({
     ...atendimentoMovel,
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
@@ -11304,5 +11305,5 @@ export function createMockApi() {
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
     ...mockRelatorios,
-  };
+  }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null }));
 }
