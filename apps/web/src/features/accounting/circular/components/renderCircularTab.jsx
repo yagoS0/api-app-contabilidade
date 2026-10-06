@@ -45,8 +45,9 @@ const SUBTIPO_ROWS_ALL = [
 ];
 
 function getSubtipoRowsForRegime(regime) {
-  const r = String(regime || "").trim().toUpperCase();
-  if (!r) return SUBTIPO_ROWS_ALL;  // sem regime conhecido → mostra tudo (fallback)
+  const texto = String(regime || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  const r = ({ PRESUMIDO: "LUCRO_PRESUMIDO", REAL: "LUCRO_REAL", SIMPLES_NACIONAL: "SIMPLES", MEI: "SIMPLES" })[texto] || texto;
+  if (!["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(r)) return SUBTIPO_ROWS_ALL;
   return SUBTIPO_ROWS_ALL.filter(
     (row) => row.regimes === "all" || row.regimes.includes(r),
   );
@@ -67,7 +68,7 @@ const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
  * caminho de volta (abrir o lançamento e responder qual é o subtipo).
  */
 const SEM_COLUNA_KEY = "__SEM_COLUNA__";
-const SEM_COLUNA_LABEL = "Sem subtipo / fora do regime";
+const SEM_COLUNA_LABEL = "Lançamentos a classificar";
 
 /** O valor da provisão, na MESMA leitura que o `cellNum` usa nas colunas de tributo. */
 function valorDaProvisao(p) {
@@ -650,7 +651,12 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
               “Recalculada” quando houver registro; data e valores do recálculo ficam no detalhe. */}
           <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
           <div style={{ borderTop: "1px solid #44475A", margin: "4px 0 2px" }} />
-          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
+          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar provisão</button>}
+          {onEdit && !isSynthetic && (entry.baixas || []).filter((b) => b.tipo === "BAIXA" && b.lines?.length).map((b, i) => (
+            <button key={b.id} onClick={() => { setOpen(false); onEdit(b); }} style={menuBtn}>
+              ✎ Editar baixa {i + 1} — {b.historico || b.tipoLinha || "Pagamento"}
+            </button>
+          ))}
           {/* INSS sintético aberto: edita valor/juros/multa (vai p/ acrescimos.INSS) no mesmo modal. */}
           {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
@@ -708,7 +714,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
  * desenha UMA guia e as ações dela — aqui o que se oferece é o caminho de volta: ver quais são e
  * abrir cada uma para responder qual é o subtipo.
  */
-function CelulaSemColuna({ itens = [], onEdit }) {
+function CelulaSemColuna({ itens = [], onEdit, onBaixa }) {
   const [open, setOpen] = useState(false);
   if (!itens.length) {
     return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
@@ -746,7 +752,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
           <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.35, marginBottom: 6 }}>
             Estas provisões entram no <strong style={{ color: "#F8F8F2" }}>Total em aberto</strong> do mês e não têm
             coluna própria: ou estão sem subtipo, ou o subtipo não é exibido no regime desta empresa.
-            Abra o lançamento para responder qual é o subtipo.
+            Confira a classificação. Para registrar um pagamento, use “Dar baixa”.
           </div>
           {itens.map((e) => (
             <div key={e.id} style={{ borderTop: "1px solid #44475A", paddingTop: 6, marginTop: 6 }}>
@@ -767,7 +773,12 @@ function CelulaSemColuna({ itens = [], onEdit }) {
                   onMouseEnter={(ev) => { ev.currentTarget.style.background = "#2b2d45"; }}
                   onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; }}
                 >
-                  ✎ Editar
+                  ✎ Editar provisão
+                </button>
+              )}
+              {onBaixa && !e.placeholder && ["ABERTO", "PARCIAL"].includes(e.statusPagamento) && (
+                <button onClick={() => { setOpen(false); onBaixa(e); }} style={menuBtn}>
+                  {e.statusPagamento === "PARCIAL" ? "Dar baixa (próxima quota)" : "Dar baixa"}
                 </button>
               )}
             </div>
@@ -1297,6 +1308,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         key={col.key}
                         itens={semColunaPorMes[comp] || []}
                         onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                        onBaixa={onCreateBaixa ? (entry) => setBaixaEntry(entry) : null}
                       />
                     ) : (
                       <PagamentoCell
@@ -1353,7 +1365,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   const triStyle = { ...subCellStyle, fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" };
                   rows.push(
                     <tr key={`q${qi}`} style={{ background: "#282A36" }}>
-                      <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre</td>
+                      <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre<small style={{ display: "block", fontWeight: 400 }}>Resumo — baixa na linha do mês</small></td>
                       {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                       {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                       {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "var(--danger)" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
