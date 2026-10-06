@@ -19,6 +19,7 @@
 // ⚠ TAMANHO INVÁLIDO CAI EM `md`, não em `lg`: diálogo maior que o necessário rouba a tela inteira
 // e some com o contexto de onde a pessoa clicou.
 import { useEffect, useRef } from "react";
+import { useProtegerCamposDaRolagem } from './useProtegerCamposDaRolagem';
 
 const LARGURAS = { sm: 460, md: 640, lg: 900 };
 
@@ -58,6 +59,7 @@ export function Modal({
   ancora = null,
   children,
 }) {
+  useProtegerCamposDaRolagem();
   const caixaRef = useRef(null);
   const gatilhoRef = useRef(null);
 

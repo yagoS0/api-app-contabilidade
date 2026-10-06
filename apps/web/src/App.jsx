@@ -1,3 +1,4 @@
+import { useProtegerCamposDaRolagem } from './components/ui/useProtegerCamposDaRolagem';
 import { modoAtendimento } from "./features/whatsapp/lib/atendimentoPwa";
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
 import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
@@ -47,6 +48,7 @@ const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
+  useProtegerCamposDaRolagem();
   const location = useLocation();
   return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><SessionBoundary api={api} tokenStorageKey={TOKEN_STORAGE_KEY}>{(session, feedback) => modoAtendimento(location) ? <AtendimentoMovel session={session} feedback={feedback} /> : <AppInterno session={session} feedback={feedback} />}</SessionBoundary></WorkspaceNavigationProvider>;
 }

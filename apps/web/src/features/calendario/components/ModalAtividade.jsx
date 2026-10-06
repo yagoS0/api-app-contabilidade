@@ -107,7 +107,8 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
     finally { setOcupado(false); }
   }
   const compacto = passo === 1 && !modoRegra;
-  const resumoData = dados.dataInicio ? new Date(`${dados.dataInicio}T12:00:00`).toLocaleDateString('pt-BR', { day:'numeric', month:'short' }) : 'Escolher prazo';
+  const formatarData = data => new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR', { day:'numeric', month:'short' });
+  const resumoData = dados.dataInicio ? `${formatarData(dados.dataInicio)}${dados.dataFim && dados.dataFim !== dados.dataInicio ? ` – ${formatarData(dados.dataFim)}` : ''}` : 'Escolher prazo';
   const campo = (rotulo, chave, tipo = 'text', extra = {}) => <label className="agenda-field">{rotulo}<input type={tipo} value={dados[chave] || ''} onChange={e => set(chave, e.target.value)} {...extra} /></label>;
   const fiscalInput = (rotulo, chave, extra = {}) => <label className="agenda-field">{rotulo}<input type="number" value={fiscal[chave]} onChange={e => setF(chave, e.target.value)} {...extra}/></label>;
   return <Modal titulo={modoRegra ? 'Configurar obrigação' : edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho={compacto ? 'sm' : 'md'} className={compacto ? 'agenda-editor' : ''} ancora={compacto ? inicial.ancora : null}>
@@ -127,8 +128,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
         </div>}
         <label className="agenda-field agenda-editor-description">Descrição<textarea placeholder="Descrição ou notas" rows={3} maxLength={10000} value={dados.descricao || ''} onChange={e => set('descricao', e.target.value)} /></label>
         <details className="agenda-editor-section agenda-editor-dates" open={inicial.modeloCarteira ? true : undefined}><summary>◷ <span>{resumoData}{horario !== 'SEM' ? ` · ${dados.horaInicio}${horario === 'INTERVALO' ? `–${dados.horaFim}` : ''}` : ' · Dia inteiro'}</span></summary><div className="agenda-editor-panel">
-        {dados.dataInicio && <MiniCalendarioAgenda data={dados.dataInicio} onChange={value => set('dataInicio',value)}/>}
-        <div className="agenda-form-row">{campo('De', 'dataInicio', 'date', { required: true })}{campo('Até', 'dataFim', 'date', { required: true, min: dados.dataInicio })}</div>
+        <MiniCalendarioAgenda dataInicio={dados.dataInicio} dataFim={dados.dataFim} onChange={datas => setDados(d => ({...d,...datas}))}/>
         <label className="agenda-field">Horário<select value={horario} onChange={e => setHorario(e.target.value)}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo</option><option value="INTERVALO">De uma hora até outra</option></select></label>
         {horario !== 'SEM' && <div className="agenda-form-row">{campo(horario === 'FIXO' ? 'Às' : 'Horário inicial', 'horaInicio', 'time', { required: true })}{horario === 'INTERVALO' && campo('Horário final', 'horaFim', 'time', { required: true })}</div>}
         <div className="agenda-duration-presets" aria-label="Duração">{[30,60,90,120].map(m => <button type="button" key={m} onClick={() => { const [h,min] = (dados.horaInicio || '08:00').split(':').map(Number); const fim = Math.min(1439,h*60+min+m); setHorario('INTERVALO'); set('horaInicio',dados.horaInicio || '08:00'); set('horaFim',`${String(Math.floor(fim/60)).padStart(2,'0')}:${String(fim%60).padStart(2,'0')}`); }}>{m < 60 ? `${m} min` : `${m/60} h`}</button>)}</div>
