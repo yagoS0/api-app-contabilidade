@@ -101,8 +101,14 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado 
   );
 }
 
-export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicados, message, error, usuarioId = null, mensagemBiblioteca = null, onMensagemBibliotecaAberta }) {
-  const hook = useConversasWhatsapp({ api, feedback: null });
+export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicados, message, error, usuarioId = null, mensagemBiblioteca = null, onMensagemBibliotecaAberta, area = null }) {
+  const apiDaArea = useMemo(() => !area ? api : ({ ...api,
+    listarConversasWhatsapp: (filtro, opcoes) => api.listarConversasWhatsapp(filtro, { ...opcoes, area }),
+    getMensagensWhatsapp: (id, opcoes) => api.getMensagensWhatsapp(id, { ...opcoes, area }),
+    ...(api.marcarConversaWhatsappLida ? { marcarConversaWhatsappLida: (id, mensagemId) => api.marcarConversaWhatsappLida(id, mensagemId, { area }) } : {}),
+    ...(api.buscarMensagensWhatsapp ? { buscarMensagensWhatsapp: (id, opcoes) => api.buscarMensagensWhatsapp(id, { ...opcoes, area }) } : {}),
+  }), [api, area]);
+  const hook = useConversasWhatsapp({ api: apiDaArea, feedback: null });
   const [pequena, setPequena] = useState(() => window.matchMedia?.("(max-width: 760px)").matches || false);
   const [notificacaoPendente, setNotificacaoPendente] = useState(null);
   const [aplicativo] = useState(() => modoAtendimento());
@@ -118,7 +124,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
     return () => { if (anterior) manifest?.setAttribute("href", anterior); media?.removeEventListener?.("change", medir); window.visualViewport?.removeEventListener("resize", viewport); window.removeEventListener("resize", viewport); document.documentElement.style.removeProperty("--atendimento-height"); };
   }, []);
   useEffect(() => {
-    const ler = () => { if (window.location.pathname !== "/whatsapp") return; const id = new URLSearchParams(window.location.search).get("conversa"); if (id && /^[a-zA-Z0-9_-]{1,120}$/.test(id)) { setVerChat(true); abrirRef.current(id); } else { setVerChat(false); setDetalhes(false); } };
+    const ler = () => { if (!["/whatsapp", "/suporte", "/comercial/conversas"].includes(window.location.pathname)) return; const id = new URLSearchParams(window.location.search).get("conversa"); if (id && /^[a-zA-Z0-9_-]{1,120}$/.test(id)) { setVerChat(true); abrirRef.current(id); } else { setVerChat(false); setDetalhes(false); } };
     const receber = e => {
       if (e.data?.tipo !== "ABRIR_CONVERSA") return;
       const url = new URL(e.data.url, window.location.origin);
@@ -129,7 +135,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
     ler(); window.addEventListener("popstate", ler); navigator.serviceWorker?.addEventListener("message", receber);
     return () => { window.removeEventListener("popstate", ler); navigator.serviceWorker?.removeEventListener("message", receber); };
   }, []);
-  const resumo = useResumoWhatsapp({ api });
+  const resumo = useResumoWhatsapp({ api, area: area || '' });
   const { registrarCanal, pedidoCanal, conversaComercial, canalDeEnvio, atualizacaoComercial } = useCanalAtendimento(hook, { mensagemBiblioteca, onMensagemBibliotecaAberta });
   const [busca, setBusca] = useState("");
   const [soNaoLidas, setSoNaoLidas] = useState(false);
@@ -170,17 +176,17 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const termo = normalizar(busca).trim();
   const visiveis = hook.buscaServidor ? lista : lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresas || []).flatMap(e => [e.razao, e.cnpj, ...(e.apelidosWhatsapp || [])]), c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
   const contatosVisiveis = visiveis.filter(c => !relacionamento || relacionamentoDaConversa(c).tipo === relacionamento);
-  const abrir = id => { setVerChat(true); hook.abrir(id); if (window.location.pathname !== "/whatsapp") return; const url = new URL(window.location.href); url.searchParams.set("conversa", id); window.history.pushState({}, "", url.pathname + url.search); };
+  const abrir = id => { setVerChat(true); hook.abrir(id); if (!["/whatsapp", "/suporte", "/comercial/conversas"].includes(window.location.pathname)) return; const url = new URL(window.location.href); url.searchParams.set("conversa", id); window.history.pushState({}, "", url.pathname + url.search); };
   const voltar = () => {
     setVerChat(false); setDetalhes(false); setListaOculta(false);
     const url = new URL(window.location.href); url.searchParams.delete("conversa"); window.history.replaceState({}, "", url.pathname + url.search);
     requestAnimationFrame(() => (listaRef.current?.querySelector('[aria-current="true"]') || listaRef.current?.querySelector("input"))?.focus());
   };
 
-  const painelComercial = hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraDoCaso(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
+  const painelComercial = area === "suporte" ? (hook.aberta && !hook.aberta.conversa.portalClientId ? <FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} onVincular={hook.vincular} ocupado={hook.ocupado} /> : null) : hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraDoCaso(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
 
   return <div className={`wa-page${aplicativo ? " wa-page--app" : ""}`}>
-    <PageShell title="Atendimento" subtitle={mensagemBiblioteca ? `Escolha uma conversa para usar “${mensagemBiblioteca.titulo}”.` : "Conversas pelo WhatsApp"} onBack={onBack}
+    <PageShell title={area === 'suporte' ? 'Suporte' : area === 'comercial' ? 'Comercial' : 'Atendimento'} subtitle={mensagemBiblioteca ? `Escolha uma conversa para usar “${mensagemBiblioteca.titulo}”.` : null} onBack={onBack}
       actions={<><Button ref={alternarListaRef} variant="secondary" aria-label={listaOculta ? "Mostrar contatos" : "Ocultar contatos"} aria-expanded={!listaOculta} aria-controls="wa-lista-contatos" aria-keyshortcuts="Control+B" title={`${listaOculta ? "Mostrar" : "Ocultar"} contatos (Ctrl+B)`} onClick={alternarLista}>Contatos</Button><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
         {notificacaoPendente && <p role="status" className="wa-notice">Há uma conversa aberta pela notificação. Salve ou confira seu rascunho antes de mudar. <Button variant="secondary" onClick={() => { if (haRascunhoPendente()) return; window.history.pushState({}, "", notificacaoPendente); window.dispatchEvent(new PopStateEvent("popstate")); setNotificacaoPendente(null); }}>Abrir conversa da notificação</Button><Button variant="secondary" onClick={() => setNotificacaoPendente(null)}>Continuar aqui</Button></p>}

@@ -24,11 +24,11 @@ test.each([
   ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas e agenda"],
   ["/guides/upload", "Operação", "Guias não identificadas"],
   ["/download-notas", "Operação", "Consultas"],
-  ["/onboardings/abc/editar", "Relacionamento", "Entrada de clientes"],
-  ["/whatsapp/comunicados", "Relacionamento", "Comunicados"],
-  ["/whatsapp/", "Relacionamento", "Atendimento"],
-  ["/guides/batch-email", "Relacionamento", "Pendências de e-mail"],
-  ["/guides/pending", "Relacionamento", "Pendências de e-mail"],
+  ["/onboardings/abc/editar", "Comercial", "Onboarding"],
+  ["/whatsapp/comunicados", "Suporte", "Comunicados"],
+  ["/whatsapp/", "Suporte", "Atendimento"],
+  ["/guides/batch-email", "Suporte", "Pendências de e-mail"],
+  ["/guides/pending", "Suporte", "Pendências de e-mail"],
   ["/firm-settings/guides", "Gestão", "Configurações"],
   ["/configuracoes/atendimento", "Gestão", "Configurações"],
 ])("reconhece %s sem destacar dois destinos", (route, area, destination) => {
@@ -43,10 +43,10 @@ test.each([
 test("destinos são links reais e a mudança de área mantém o histórico e a visão da carteira", () => {
   setup("/companies/123/notas?competencia=2026-09");
   fireEvent.click(screen.getByText("Escolher tabela"));
-  fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }));
-  expect(screen.getByLabelText("rota")).toHaveTextContent("/whatsapp");
+  fireEvent.click(screen.getByRole("link", { name: "Suporte" }));
+  expect(screen.getByLabelText("rota")).toHaveTextContent("/suporte");
   fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
-  expect(screen.getByRole("link", { name: "Entrada de clientes" })).toHaveAttribute("href", "/onboardings");
+  expect(screen.queryByRole("link", { name: "Onboarding" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Pendências de e-mail" })).toHaveAttribute("href", "/guides/pending");
   fireEvent.click(screen.getByText("Voltar no escritório"));
   expect(screen.getByLabelText("rota")).toHaveTextContent("/companies/123/notas?competencia=2026-09");
@@ -59,7 +59,7 @@ test("destinos são links reais e a mudança de área mantém o histórico e a v
 test.each(["/companies", "/whatsapp"])("mensagens não lidas continuam acessíveis em %s sem repetir o contador", (route) => {
   setup(route, { selo: 3, frase: "3 mensagens não lidas · 0 números sem empresa" });
   expect(screen.getAllByLabelText("3 mensagens não lidas no WhatsApp")).toHaveLength(1);
-  expect(screen.getByRole("link", { name: /3 mensagens não lidas no WhatsApp/ })).toHaveAttribute("href", "/whatsapp");
+  expect(screen.getByRole("link", { name: /3 mensagens não lidas no WhatsApp/ })).toHaveAttribute("href", route === '/whatsapp' ? '/whatsapp' : '/suporte');
 });
 
 test("a área atual preserva a empresa, competência e âncora", () => {
@@ -72,7 +72,7 @@ test("a área atual preserva a empresa, competência e âncora", () => {
 
 test("links modificados não são interceptados pela navegação interna", () => {
   setup();
-  fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }), { ctrlKey: true });
+  fireEvent.click(screen.getByRole("link", { name: "Suporte" }), { ctrlKey: true });
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
 });
 
@@ -100,7 +100,7 @@ test("menu fecha ao clicar ou mover foco para fora e ao navegar para outra área
   act(() => screen.getByRole("button", { name: "Escolher tabela" }).focus());
   expect(trigger).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(trigger);
-  fireEvent.click(screen.getByRole("link", { name: "Relacionamento" }));
+  fireEvent.click(screen.getByRole("link", { name: "Suporte" }));
   fireEvent.click(screen.getByRole("button", { name: "Voltar no escritório" }));
   expect(screen.getByRole("button", { name: "Navegar" })).toHaveAttribute("aria-expanded", "false");
 });

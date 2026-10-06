@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+const url = new URL(process.argv[2]);
+if (url.hostname !== '127.0.0.1' || url.username !== 'lead_test' || url.pathname !== '/suporte_comercial_check') throw Error('Somente banco descartável local de suporte/comercial.');
+process.env.DATABASE_URL = url.href;
+globalThis.fetch = async () => { throw Error('Rede externa proibida'); };
+const { prisma: db } = await import('../src/infrastructure/db/prisma.js');
+const { prepararContatoComercial, salvarRetornoComercial } = await import('../src/application/onboarding/ContatoComercialService.js');
+const { listarInboxWhatsapp, resumoInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade } = await import('../src/application/whatsapp/InboxWhatsappService.js');
+const { garantirConversa } = await import('../src/application/whatsapp/ConversaWhatsappService.js');
+const checks = [];
+try {
+  const user = await db.user.create({ data: { name: 'Teste local', email: 'suporte-comercial@example.invalid', passwordHash: 'inutilizavel', role: 'contador', accountType: 'FIRM', status: 'active' } });
+  const comercial = await db.canalWhatsapp.create({ data: { chave: 'comercial-teste', finalidade: 'COMERCIAL' } });
+  const suporte = await db.canalWhatsapp.create({ data: { chave: 'suporte-teste', finalidade: 'PRINCIPAL' } });
+  const ficha = await db.onboarding.create({ data: { origem: 'ABERTURA', criadoPorId: user.id } });
+  const args = { onboardingId: ficha.id, user, visiveis: [], db, body: { nome: 'Contato sintético', telefone: '5521999991234', canalId: comercial.id, autorizado: true, evidencia: 'Formulário sintético local' } };
+  await assert.rejects(prepararContatoComercial({ ...args, body: { ...args.body, autorizado: false } }));
+  checks.push('Recusa sem autorização');
+  const contato = await prepararContatoComercial(args);
+  assert.equal(await db.mensagemWhatsapp.count({ where: { conversaId: contato.conversaId } }), 0);
+  const conversa = await db.conversaWhatsapp.findUnique({ where: { id: contato.conversaId }, include: { vinculoNumero: true } });
+  assert.equal(conversa.vinculoNumero.origem, 'CONTATO_AUTORIZADO');
+  const primeira = await lerHistoricoIdentidade({ conversaId: conversa.id, visiveis: [], area: 'comercial', client: db });
+  assert.equal(primeira.conversa.janela.situacao, 'NUNCA_ABERTA');
+  checks.push('Primeiro contato sem entrada fabricada e janela fechada');
+  const repetida = await prepararContatoComercial(args);
+  assert.equal(repetida.conversaId, contato.conversaId);
+  assert.equal(await db.atendimentoLead.count({ where: { onboardingId: ficha.id } }), 1);
+  checks.push('Repetição não duplica conversa ou oportunidade');
+  const outro = await garantirConversa({ telefone: args.body.telefone, canalId: suporte.id, vinculoNumeroId: conversa.vinculoNumeroId, client: db });
+  const entrada = await db.mensagemWhatsapp.create({ data: { conversaId: conversa.id, providerMessageId: 'wamid.comercial.local', direcao: 'in', tipo: 'text', corpo: 'Mensagem comercial sintética', ocorridaEmProvedor: new Date() } });
+  await db.mensagemWhatsapp.create({ data: { conversaId: outro.id, providerMessageId: 'wamid.suporte.local', direcao: 'in', tipo: 'text', corpo: 'Mensagem suporte sintética', ocorridaEmProvedor: new Date() } });
+  for (const [area, id] of [['comercial', conversa.id], ['suporte', outro.id]]) {
+    const inbox = await listarInboxWhatsapp({ visiveis: [], operadorId: user.id, area, client: db });
+    assert.equal(inbox.conversas.length, 1);
+    assert.equal(inbox.conversas[0].id, id);
+    const historico = await lerHistoricoIdentidade({ conversaId: id, visiveis: [], area, client: db });
+    assert.equal(historico.mensagens.length, 1);
+    assert.equal(historico.mensagens[0].conversaId, id);
+  }
+  checks.push('Mesmo telefone em duas áreas: listas e históricos separados');
+  await registrarLeituraIdentidade({ conversaId: conversa.id, mensagemId: entrada.id, visiveis: [], area: 'comercial', client: db });
+  assert.equal((await resumoInboxWhatsapp([], { area: 'comercial', client: db })).mensagensNaoLidas, 0);
+  assert.equal((await resumoInboxWhatsapp([], { area: 'suporte', client: db })).mensagensNaoLidas, 1);
+  checks.push('Leitura comercial preserva não lidas de suporte');
+  await assert.rejects(lerHistoricoIdentidade({ conversaId: outro.id, visiveis: [], area: 'comercial', client: db }));
+  checks.push('Deep link da área errada é recusado');
+  await salvarRetornoComercial({ onboardingId: ficha.id, user, db, body: { acao: 'Revisar proposta', quando: '2026-10-10T12:00:00Z', versao: ficha.versao } });
+  await assert.rejects(salvarRetornoComercial({ onboardingId: ficha.id, user, db, body: { acao: 'Não sobrescrever', quando: '2026-10-10T12:00:00Z', versao: ficha.versao } }));
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: ficha.id, tipo: 'RETORNO_COMERCIAL' } }), 1);
+  checks.push('Agenda versionada sem sobrescrita concorrente');
+  assert.equal(await db.chamadaIa.count(), 0);
+  checks.push('Nenhuma chamada paga de IA');
+  process.stdout.write(JSON.stringify({ passed: true, checks }, null, 2));
+} finally { await db.$disconnect(); }

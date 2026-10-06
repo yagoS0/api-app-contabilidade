@@ -9,7 +9,7 @@ export function atendimentoMovelApi(request) {
     salvarRascunhoWhatsapp: (id, body) => request(`${base(id)}/rascunho`, json("PUT", { ...body, modo: validarModo(body.modo || "texto") })),
     excluirRascunhoWhatsapp: (id, versao, modo = "texto") => request(`${base(id)}/rascunho`, json("DELETE", { modo: validarModo(modo), versao })),
     getIntencaoWhatsapp: (id, key) => request(`${base(id)}/intencoes/${encodeURIComponent(key)}`),
-    buscarMensagensWhatsapp: (id, { q, cursor, limite = 20 } = {}) => request(`${base(id)}/buscar?${new URLSearchParams({ q: q || "", limite: String(limite), ...(cursor ? { cursor } : {}) })}`),
+    buscarMensagensWhatsapp: (id, { q, cursor, limite = 20, area = '' } = {}) => request(`${base(id)}/buscar?${new URLSearchParams({ q: q || "", limite: String(limite), ...(cursor ? { cursor } : {}), ...(area ? { area } : {}) })}`),
     getRetomadaWhatsapp: id => request(`${base(id)}/retomar`),
     prepararRetomadaWhatsapp: (id, body) => request(`${base(id)}/retomar/previa`, json("POST", body)),
     solicitarModeloRetomadaWhatsapp: id => request(`${base(id)}/retomar/modelo`, json("POST", {})),

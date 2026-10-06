@@ -76,7 +76,7 @@ export function RetomarConversa({ api, conversa, onEnviado }) {
     : previa?.statusMeta === "AUSENTE" ? "Este número precisa de um modelo aprovado para retomar."
       : previa?.statusMeta === "REJECTED" ? "Modelo rejeitado pela Meta. Revise no WhatsApp Manager."
         : previa?.message || previa?.mensagem || "Não foi possível preparar a retomada.";
-  if (!aberto) return <Button ref={gatilhoRef} variant="secondary" size="sm" disabled={!remoto.pronto} onClick={() => carregar()}>{incerto ? "Conferir retomada pendente" : "Retomar conversa"}</Button>;
+  if (!aberto) return <Button ref={gatilhoRef} variant="secondary" size="sm" disabled={!remoto.pronto} onClick={() => carregar()}>{incerto ? "Conferir retomada pendente" : conversa.janela?.situacao === 'NUNCA_ABERTA' ? 'Iniciar conversa' : "Retomar conversa"}</Button>;
   return <section className="wa-retomada" aria-label="Retomar conversa" aria-busy={ocupado} onKeyDown={e => {
     if (e.key === "Escape" && !ocupado) { e.stopPropagation(); setAberto(false); }
   }}>

@@ -43,9 +43,10 @@ describe("estadoDaResposta — a janela dita ANTES de digitar", () => {
     expect(estadoDaResposta({ janela: { situacao: "ABERTA" } }).pode).toBe(true);
     const e = estadoDaResposta({ janela: { situacao: "EXPIRADA" } });
     expect(e.pode).toBe(false);
-    expect(e.motivo).toMatch(/fechou/);
+    expect(e.motivo).toMatch(/24h encerrou/);
     const n = estadoDaResposta({ janela: { situacao: "NUNCA_ABERTA" } });
-    expect(n.motivo).toMatch(/nunca escreveu/);
+    expect(n.pode).toBe(false);
+    expect(n.motivo).toMatch(/modelo aprovado/);
     expect(estadoDaResposta({}).pode).toBe(false);
   });
 });

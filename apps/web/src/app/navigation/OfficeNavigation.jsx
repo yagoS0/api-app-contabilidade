@@ -16,12 +16,20 @@ const OFFICE_AREAS = [
     ],
   },
   {
-    id: "relacionamento", label: "Relacionamento", to: "/whatsapp",
+    id: "suporte", label: "Suporte", to: "/suporte",
     links: [
-      { label: "Atendimento", to: "/whatsapp", exact: true },
-      { label: "Entrada de clientes", to: "/onboardings" },
+      { label: "Atendimento", to: "/suporte", paths: ["/suporte", "/whatsapp"], exact: true },
       { label: "Comunicados", to: "/whatsapp/comunicados" },
       { label: "Pendências de e-mail", to: "/guides/pending", paths: ["/guides/pending", "/guides/batch-email"] },
+    ],
+  },
+  {
+    id: "comercial", label: "Comercial", to: "/comercial",
+    links: [
+      { label: "Hoje", to: "/comercial", exact: true },
+      { label: "Oportunidades", to: "/comercial/oportunidades" },
+      { label: "Conversas", to: "/comercial/conversas" },
+      { label: "Onboarding", to: "/onboardings" },
       { label: "Biblioteca", to: "/biblioteca" },
     ],
   },
@@ -41,7 +49,7 @@ function matchesLink(link, pathname) {
 }
 
 // Rendered by the authenticated shell; public forms and login keep their own layout.
-export function OfficeNavigation({ resumoWhatsapp = null }) {
+export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null }) {
   const location = useLocation();
   const [destinationsOpen, setDestinationsOpen] = useState(false);
   const destinationsId = useId();
@@ -107,8 +115,8 @@ export function OfficeNavigation({ resumoWhatsapp = null }) {
         to={area.id === activeArea.id ? currentDestination : area.to}
         className="office-navigation__area"
         aria-current={area.id === activeArea.id ? "location" : undefined}
-        title={area.id === "relacionamento" ? resumoWhatsapp?.frase : undefined}
-      >{area.label}{area.id === "relacionamento" ? unreadBadge : null}</Link>)}
+        title={area.id === "suporte" ? resumoWhatsapp?.frase : undefined}
+      >{area.label}{area.id === "suporte" ? unreadBadge : area.id === 'comercial' && resumoComercial?.selo ? <span className="office-navigation__badge" aria-label={`${resumoComercial.selo} mensagens comerciais não lidas`}>{resumoComercial.selo}</span> : null}</Link>)}
     </nav>
     <TaskCenterSlot />
     <div className="office-navigation__disclosure" ref={disclosureRef}>

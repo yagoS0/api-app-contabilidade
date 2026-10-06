@@ -8,9 +8,10 @@ import { useResumoWhatsapp } from "../../whatsapp/hooks/useResumoWhatsapp";
 import { TaskCenterPlacement } from "../../tasks/TaskCenterPlacement";
 
 function OfficeWorkspace({ api, children }) {
-  const resumoWhatsapp = useResumoWhatsapp({ api });
+  const resumoWhatsapp = useResumoWhatsapp({ api, area: 'suporte' });
+  const resumoComercial = useResumoWhatsapp({ api, area: 'comercial' });
   return <TaskCenterPlacement><div className="office-workspace">
-    <OfficeNavigation resumoWhatsapp={resumoWhatsapp} />
+    <OfficeNavigation resumoWhatsapp={resumoWhatsapp} resumoComercial={resumoComercial} />
     <div className="office-workspace__content">{children}</div>
   </div></TaskCenterPlacement>;
 }

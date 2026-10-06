@@ -1200,7 +1200,7 @@ function resumoMockDaConversa(c) {
     identidade: { estado: c.portalClientId ? "RECONHECIDA_NO_CADASTRO" : "NAO_VERIFICADA", origemNome: contatoDoMock(c) ? "CADASTRO" : "PERFIL", versao: 1 },
     relacionamento: { tipo: c.portalClientId ? "CLIENTE" : c.solicitacaoComercial ? "LEAD" : "A_IDENTIFICAR", motivo: c.portalClientId ? "CONTATO_ATIVO_CADASTRADO" : "CADASTRO_NAO_RECONHECIDO", fonte: "DEMONSTRACAO", versao: 1 },
     solicitacaoComercial: c.solicitacaoComercial || null,
-    canalId: "principal", canais: [{ id: "principal", chave: "Principal", finalidade: "PRINCIPAL", conversaId: c.id, janela: c.janela, podeResponder: c.janela?.situacao === "ABERTA" }],
+    canalId: c.canalId || "principal", canais: [{ id: c.canalId || "principal", chave: c.canalId === "comercial" ? "Comercial" : "Principal", finalidade: c.canalId === "comercial" ? "COMERCIAL" : "PRINCIPAL", conversaId: c.id, janela: c.janela, podeResponder: c.janela?.situacao === "ABERTA" }],
     capacidades: { notaInterna: true, escoposNotas: [{ id: "pessoa", escopo: "PESSOA", rotulo: "Este contato" }, ...(c.portalClientId ? [{ id: c.portalClientId, escopo: "EMPRESA", portalClientId: c.portalClientId, rotulo: c.empresa?.razao || "Empresa" }] : [])] },
     id: c.id, telefoneE164: c.telefoneE164, telefoneMascarado: `+${d.slice(0, 2)}…${d.slice(-4)}`, nomePerfilProvedor: c.nomePerfilProvedor,
     portalClientId: c.portalClientId, empresa: c.empresa, atendidaPor: c.atendidaPor, atendente: c.atendente, atendidaDesde: c.atendidaDesde,
@@ -3792,7 +3792,22 @@ let varreduraAutomaticaDoMock = {
   ultimoErro: null,
 };
 
+const prepararConversaComercialMock = (o, body) => {
+      const telefone = String(body.telefone).replace(/\D/g, '');
+      const anterior = mockConversasWhatsapp.find(c => c.telefoneE164 === telefone && c.canalId === 'comercial');
+      if (anterior && anterior.solicitacaoComercial?.onboardingId !== o.id) throw new Error('Este contato já tem uma oportunidade ativa.');
+      if (anterior) return anterior.id;
+      const id = `comercial-${o.id}`;
+      mockConversasWhatsapp.push({ id, canalId: 'comercial', telefoneE164: telefone, nomePerfilProvedor: body.nome, portalClientId: null, empresa: null,
+        atendidaPor: 'mock-user-1', atendidaDesde: new Date().toISOString(), updatedAt: new Date().toISOString(), mensagens: [],
+        solicitacaoComercial: { id: `caso-${o.id}`, onboardingId: o.id }, janela: { situacao: 'NUNCA_ABERTA', instante: null }, escopoVerificado: false });
+      return id;
+    };
+
 export function createMockApi() {
+  for (const o of mockOnboardings.values()) {
+    if (o.contatoComercialMock) prepararConversaComercialMock(o, o.contatoComercialMock);
+  }
   const perfisSalvos = new Map();
   const pendenciasConferidas = new Set();
   const fechamentosSalvos = new Map();
@@ -3810,7 +3825,7 @@ export function createMockApi() {
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
     ...createPendenciasManuaisMock(),
-    ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
+    ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock, prepararConversa: prepararConversaComercialMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
@@ -8046,12 +8061,12 @@ export function createMockApi() {
     async marcarArquivoWhatsappImportado() {
       const e = new Error("Arquivo não encontrado no ambiente de demonstração."); e.status = 404; throw e;
     },
-    async getResumoWhatsapp() {
+    async getResumoWhatsapp({ area = '' } = {}) {
       await delay(100);
       if ((typeof localStorage !== "undefined" && localStorage.getItem("mock:whatsapp:falhaResumo") === "1") || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockWhatsappResumo") === "falha")) {
         throw new Error("Não foi possível ler o resumo do WhatsApp.");
       }
-      const todos = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const todos = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c)).filter(c => !area || ((c.canais || []).some(canal => canal.finalidade === 'COMERCIAL' || canal.id === 'comercial') || c.canalId === 'comercial') === (area === 'comercial'));
       const itens = todos.filter(c => !c.excluidaEm && !c.legadoNaoVerificado);
       const historico = todos.filter(c => !c.excluidaEm && c.legadoNaoVerificado);
       const lixeira = todos.filter(c => c.excluidaEm);
@@ -8065,7 +8080,8 @@ export function createMockApi() {
       } };
     },
     whatsappContratoV2: true,
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50, q = "", relacionamento = "", naoLidas = false } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50, q = "", relacionamento = "", naoLidas = false, area = "" } = {}) {
+      if (!['', 'suporte', 'comercial'].includes(area)) throw new Error('Área de atendimento inválida.');
       await delay(120);
       // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem
       // empresa): o servidor recusa NOMEADO, e o mock recusa igual — mock permissivo esconde ramo.
@@ -8081,13 +8097,15 @@ export function createMockApi() {
       const normalizar = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       const termo = normalizar(q).trim();
       const lista = (empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro).filter(c =>
+        (!area || ((c.canais || []).some(canal => canal.finalidade === 'COMERCIAL' || canal.id === 'comercial') || c.canalId === 'comercial') === (area === 'comercial')) &&
         (!relacionamento || c.relacionamento.tipo === relacionamento) && (!naoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.telefoneE164, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresa?.apelidosWhatsapp || [])].filter(Boolean).join(" ")).includes(termo)));
       const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.ultimaMensagem?.registradaEm || "").localeCompare(String(a.ultimaMensagem?.registradaEm || "")) || String(b.id).localeCompare(String(a.id))), cursor, limite);
       return { ok: true, versaoContrato: 2, buscaConfigurada: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null, mensagemId = null } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null, mensagemId = null, area = '' } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (c && area && (c.canalId === 'comercial') !== (area === 'comercial')) throw new Error('Conversa não encontrada nesta área.');
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
       if (empresa && c.portalClientId !== empresa) { const e = new Error("Empresa não encontrada."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       // A leitura é explícita: GET e polling não marcam mensagens vistas.

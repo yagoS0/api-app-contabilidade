@@ -476,14 +476,14 @@ export async function listar({ origem = null, status = null, q = null, incluirRa
   const itens = await prisma.onboarding.findMany({
     where,
     orderBy: [{ updatedAt: "desc" }],
-    include: { etapas: { select: { id: true, concluidaEm: true } } },
+    include: { etapas: { select: { id: true, concluidaEm: true } }, eventos: { where: { tipo: 'RETORNO_COMERCIAL' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 } },
   });
 
   return itens.map((item) => {
     const total = item.etapas.length;
     const concluidas = item.etapas.filter((e) => e.concluidaEm).length;
-    const { etapas, ...resto } = item;
-    return { ...resto, progresso: { total, concluidas } };
+    const { etapas, eventos, ...resto } = item;
+    return { ...resto, retornoComercial: eventos?.[0] || null, progresso: { total, concluidas } };
   });
 }
 

@@ -53,7 +53,9 @@ test("token salvo só libera a área após validação; logout desmonta e bloque
   expect(screen.getByText("Calendário privado")).toBeVisible();
   expect(load).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("navigation", { name: "Áreas do escritório" })).toBeVisible();
-  expect(api.getResumoWhatsapp).toHaveBeenCalledTimes(1);
+  expect(api.getResumoWhatsapp).toHaveBeenCalledTimes(2);
+  expect(api.getResumoWhatsapp).toHaveBeenCalledWith({ area: 'suporte' });
+  expect(api.getResumoWhatsapp).toHaveBeenCalledWith({ area: 'comercial' });
   fireEvent.click(screen.getByRole("button", { name: "Sair" }));
   fireEvent.click(screen.getByRole("button", { name: "Link privado" }));
   expect(screen.queryByText("Calendário privado")).not.toBeInTheDocument();

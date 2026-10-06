@@ -5,7 +5,7 @@ import { classificarRelacionamento } from './ClassificacaoAtendimentoService.js'
 export const erroIdentidade = (code, message = 'A identificação mudou. Confira o cadastro antes de continuar.') => Object.assign(new Error(message), { code, status: 409 });
 
 /** Chamado por comandos/entradas, nunca pelo polling. Uma vigência encerrada nunca é reaberta. */
-export async function garantirIdentidadeWhatsapp({ telefone, canalId = null, client = prisma } = {}) {
+export async function garantirIdentidadeWhatsapp({ telefone, canalId = null, client = prisma, origem = 'MENSAGEM_RECEBIDA' } = {}) {
   const e164 = normalizarE164(telefone);
   if (!e164) throw erroIdentidade('TELEFONE_INVALIDO', 'Informe um telefone válido.');
   let vinculoNumero = await client.vinculoNumeroInterlocutor.findFirst({ where: { telefoneE164: e164, encerrouEm: null }, include: { interlocutor: true } });
@@ -21,7 +21,7 @@ export async function garantirIdentidadeWhatsapp({ telefone, canalId = null, cli
   if (!vinculoNumero) {
     const anterior = await client.vinculoNumeroInterlocutor.findFirst({ where: { telefoneE164: e164 }, orderBy: { geracao: 'desc' } });
     try {
-      vinculoNumero = await client.vinculoNumeroInterlocutor.create({ data: { telefoneE164: e164, geracao: (anterior?.geracao || 0) + 1,
+      vinculoNumero = await client.vinculoNumeroInterlocutor.create({ data: { telefoneE164: e164, geracao: (anterior?.geracao || 0) + 1, ...(origem !== 'MENSAGEM_RECEBIDA' ? { origem } : {}),
         interlocutor: { create: conflitoAlias ? { estado: 'EM_REVISAO' } : {} } }, include: { interlocutor: true } });
     } catch (err) {
       if (err?.code !== 'P2002') throw err;

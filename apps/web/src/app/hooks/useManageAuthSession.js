@@ -37,7 +37,8 @@ const PAGE_TO_PATH = {
   laboratorio: "/laboratorio",
   serproFuncoes: "/funcoes-serpro",
   // As conversas de WhatsApp do escritório (F5, 02/09/2026). As DUAS metades: aqui e em `pathToPageName`.
-  whatsapp: "/whatsapp",
+  whatsapp: "/suporte",
+  comercial: "/comercial",
 };
 
 // ⚠ EXPORTADA SÓ PARA TESTE. A última linha desta função é um fallback SILENCIOSO para
@@ -68,6 +69,8 @@ export function pathToPageName(pathname) {
   if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/whatsapp") return "whatsapp";
+  if (pathname === "/suporte" || pathname === "/suporte/") return "whatsapp";
+  if (pathname === "/comercial" || pathname.startsWith("/comercial/")) return "comercial";
   if (pathname === "/whatsapp/comunicados") return "comunicadosWhatsapp";
   // ⚠ Estes três ramos precisam existir ANTES do fallback da última linha. O `return "companies"`
   // lá embaixo é SILENCIOSO: faltando um ramo, a URL abre o dashboard sem nenhum erro — foi o

@@ -4,7 +4,7 @@ import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaC
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate, useLocation, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
@@ -19,6 +19,7 @@ import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploa
 import { SessionBoundary } from "./features/auth/login/SessionBoundary";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
+import { ComercialPage } from "./features/comercial/ComercialPage";
 import { ComunicadosWhatsappPage } from "./features/whatsapp/pages/ComunicadosWhatsappPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
@@ -55,12 +56,13 @@ function AtendimentoMovel({ session, feedback }) {
   return <WhatsappPage api={api} usuarioId={session.user?.id} onSair={session.clearSession} error={feedback.error} onBack={() => session.setPage("companies")} />;
 }
 function AppInterno({ session, feedback }) {
+  const navigate = useNavigate();
   // Só a escolha da mensagem acompanha a navegação. Destinatário e texto são
   // conferidos novamente na conversa, sem enviar ou transportar dados na URL.
   const [mensagemBiblioteca, setMensagemBiblioteca] = useState(null);
   const limparMensagemBiblioteca = useCallback(() => setMensagemBiblioteca(null), []);
   useEffect(() => {
-    if (!["bibliotecaComercial", "whatsapp"].includes(session.page)) limparMensagemBiblioteca();
+    if (!["bibliotecaComercial", "comercial"].includes(session.page)) limparMensagemBiblioteca();
   }, [session.page, limparMensagemBiblioteca]);
   const calendarioNavigation = useCalendarioNavigation();
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
@@ -214,7 +216,7 @@ function AppInterno({ session, feedback }) {
   }
 
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
-  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/whatsapp")} onUsarMensagem={mensagem => { setMensagemBiblioteca(mensagem); session.setPage("whatsapp"); }} />;
+  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/comercial")} onUsarMensagem={mensagem => { setMensagemBiblioteca(mensagem); navigate("/comercial/conversas"); }} />;
 
   if (session.page === "guideSettings") {
     return (
@@ -563,10 +565,12 @@ function AppInterno({ session, feedback }) {
     );
   }
 
+  if (session.page === "comercial") return <ComercialPage api={api} usuarioId={session.user?.id} companies={companiesWorkspace.companiesState.companies} mensagemBiblioteca={mensagemBiblioteca} onMensagemBibliotecaAberta={limparMensagemBiblioteca} />;
   if (session.page === "comunicadosWhatsapp") return <ComunicadosWhatsappPage api={api} companies={companiesWorkspace.companiesState.companies} onBack={() => session.setPage('whatsapp')} />;
   if (session.page === "whatsapp") {
     return (
       <WhatsappPage
+        area="suporte"
         mensagemBiblioteca={mensagemBiblioteca}
         onMensagemBibliotecaAberta={limparMensagemBiblioteca}
         usuarioId={session.user?.id}

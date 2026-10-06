@@ -3,6 +3,7 @@ import { normalizarDiagnosticoComercial, textoDaDevolutiva } from "../../../../.
 export function criarMockComercial({
   onboardings,
   persistir,
+  prepararConversa = null,
   atendimentosIniciais = []
 }) {
   const recursos = [],
@@ -63,6 +64,31 @@ export function criarMockComercial({
   });
   return {
     async comercial(path, body, method = "POST") {
+      if (path === '/canais-comerciais') return { canais: [{ id: 'comercial', chave: 'Comercial · demonstração' }] };
+      const acompanhamento = /^\/onboardings\/([^/]+)\/(acompanhamento|contato|retorno)$/.exec(path);
+      if (acompanhamento) {
+        const id = decodeURIComponent(acompanhamento[1]), o = onboardings.get(id);
+        if (!o) throw new Error('Oportunidade não encontrada.');
+        if (acompanhamento[2] === 'acompanhamento') {
+          if (o.contatoComercialMock && prepararConversa) prepararConversa(o, o.contatoComercialMock);
+          return { retorno: o.retornoComercial || null, conversaId: o.contatoComercialMock ? o.conversaComercialId : null, versao: o.versao || 0 };
+        }
+        if (['CONVERTIDO', 'DESISTIU', 'CONCLUIDO_AVULSO'].includes(o.status)) throw new Error('Esta oportunidade está encerrada.');
+        if (acompanhamento[2] === 'retorno') {
+          if (!body?.acao?.trim() || !Number.isFinite(Date.parse(body.quando))) throw new Error('Informe a próxima ação e a data.');
+          if (body.versao !== (o.versao || 0)) throw new Error('A ficha mudou. Atualize antes de salvar.');
+          o.versao = (o.versao || 0) + 1;
+          o.retornoComercial = { dados: { acao: body.acao.trim(), quando: body.quando, responsavelNome: 'Equipe de demonstração' } };
+          persistir(); return { retorno: o.retornoComercial, versao: o.versao };
+        }
+        if (!body?.autorizado || !body.evidencia?.trim() || !body.nome?.trim() || !/^\d{10,15}$/.test(String(body.telefone).replace(/\D/g, '')) || body.canalId !== 'comercial') throw new Error('Confira o contato, o canal e a autorização.');
+        if (!prepararConversa) throw new Error('Preparação de conversa indisponível nesta demonstração.');
+        const conversaId = prepararConversa(o, body);
+        o.conversaComercialId = conversaId;
+        o.contatoComercialMock = { ...body };
+        atendimentos.set(conversaId, { id: `caso-${o.id}`, conversaId, onboardingId: o.id, triagem: { contatoAutorizado: body } });
+        persistir(); return { conversaId };
+      }
       const excluir = /^\/recursos\/([^/]+)$/.exec(path);
       if (method === "DELETE" && excluir) {
         const indice = recursos.findIndex(r => r.id === decodeURIComponent(excluir[1]) && r.versao === body?.versao && !r.aprovadoEm);
