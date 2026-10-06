@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { descricoesGravadas, fundirDescricoes } from "../../../../lib/cnae/descricoesDeAtividades";
 import { estadoDoResponsavel } from "../../../../lib/portal/responsavelCompartilhado";
 import { useState } from "react";
@@ -22,7 +23,7 @@ const ERROR_TEXT_STYLE = {
 };
 
 async function fetchCnpjData(cnpj) {
-  const digits = cnpj.replace(/\D/g, "");
+  const digits = normalizarDocumento(cnpj);
   const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
   if (!res.ok) throw new Error("CNPJ não encontrado");
   return res.json();
@@ -447,8 +448,8 @@ export function CompanyForm({
   }
 
   async function handleCnpjBlur() {
-    const digits = form.cnpj.replace(/\D/g, "");
-    if (digits.length !== 14) return;
+    const digits = normalizarDocumento(form.cnpj);
+    if (!/^\d{14}$/.test(digits)) return;
     setCnpjLoading(true);
     setCnpjError(null);
     try {

@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 const texto = v => typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
@@ -11,8 +12,8 @@ export function tomadorDoModelo(xml, documento) {
     const doc = new XMLParser({ removeNSPrefix: true, ignoreAttributes: true, parseTagValue: false, processEntities: true }).parse(xml);
     const dps = doc.NFSe?.infNFSe?.DPS?.infDPS || doc.DPS?.infDPS;
     const toma = dps?.toma;
-    const cnpjCpf = digitos(toma?.CNPJ || toma?.CPF);
-    if (!cnpjCpf || cnpjCpf !== digitos(documento)) return null;
+    const cnpjCpf = normalizarDocumento(toma?.CNPJ || toma?.CPF);
+    if (!cnpjCpf || cnpjCpf !== normalizarDocumento(documento)) return null;
     const end = toma.end;
     // O formulário atual é de endereço nacional; não converter endereço exterior em brasileiro.
     const endereco = end?.endNac && !end.endExt ? {

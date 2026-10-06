@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // SUGESTÃO DE DESCRIÇÃO — as descrições que ESTE navegador já usou para emitir, e só elas.
 //
 // ⚠⚠ MEDIÇÃO QUE MUDA O QUE DÁ PARA FAZER AQUI. O pedido era sugerir a descrição "a partir do
@@ -54,7 +55,7 @@ function ler(companyId) {
 export function registrarDescricao(companyId, { descricao, tomadorDoc, tomadorNome } = {}) {
   const texto = String(descricao || "").trim();
   if (!companyId || !texto) return;
-  const doc = soDigitos(tomadorDoc);
+  const doc = normalizarDocumento(tomadorDoc);
   const item = {
     descricao: texto,
     doc,
@@ -106,7 +107,7 @@ export function esquecerTodasAsDescricoes() {
  */
 export function sugerirDescricoes(companyId, { tomadorDoc = "", jaDigitado = "" } = {}) {
   if (String(jaDigitado || "").trim()) return []; // ⚠ não interrompe quem já está escrevendo
-  const doc = soDigitos(tomadorDoc);
+  const doc = normalizarDocumento(tomadorDoc);
   const todas = ler(companyId);
   const mesmas = doc ? todas.filter((i) => i.doc === doc) : [];
   const outras = todas.filter((i) => !doc || i.doc !== doc);

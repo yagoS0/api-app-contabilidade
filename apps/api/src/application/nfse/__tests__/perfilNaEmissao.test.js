@@ -419,8 +419,8 @@ describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que
     expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 
-  it("⚠⚠ combinação que o ANEXO VIII não autoriza recusa — e DIZ quais valem", async () => {
-    const { resultado } = await emitirDetalhado({
+  it("recusa CST incompatível com a classificação oficial antes de reservar numeração", async () => {
+    const { resultado, prisma } = await emitirDetalhado({
       flagLigada: true,
       ibscbsLigada: true,
       perfil: comPerfil({
@@ -428,9 +428,16 @@ describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que
         ...ibscbsDoPerfil({ ibscbsCClassTrib: "000001" }),
       }),
     });
-    expect(resultado.codigo).toBe("NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA");
-    // Recusa sem saída manda o contador adivinhar.
-    expect(resultado.correcao).toMatch(/100301\/200052/);
+    expect(resultado.codigo).toBe("NFSE_IBSCBS_CST_INCOMPATIVEL");
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+
+  it("emite classificação válida fora das sugestões do Anexo VIII", async () => {
+    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: true,
+      perfil: comPerfil({ codigoNbs: NBS_TERMINAL,
+        ...ibscbsDoPerfil({ ibscbsCst: '000', ibscbsCClassTrib: '000001' }) }) });
+    expect(xml).toContain('<CST>000</CST>');
+    expect(xml).toContain('<cClassTrib>000001</cClassTrib>');
   });
 
   it("meio bloco recusa — os três são obrigatórios no XSD", async () => {

@@ -1,3 +1,4 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 // TOMADORES QUE JÁ APARECERAM — sugestão de digitação, e nada além disso.
 //
 // ⚠ ISTO NÃO É UM CADASTRO DE CLIENTES, E A TELA DIZ ISSO.
@@ -28,10 +29,10 @@ export function listarTomadoresRecentes(notas) {
   if (!Array.isArray(notas)) return [];
   const porDoc = new Map();
   for (const nota of notas) {
-    const doc = soDigitos(nota?.tomadorDoc);
+    const doc = normalizarDocumento(nota?.tomadorDoc);
     const nome = String(nota?.tomadorNome ?? "").trim();
     if (!nome) continue;
-    if (doc.length !== 11 && doc.length !== 14) continue;
+    if (!documentoTemFormato(doc)) continue;
     const existente = porDoc.get(doc);
     if (existente) {
       existente.notas += 1;
@@ -49,7 +50,7 @@ export function listarTomadoresRecentes(notas) {
 export function buscarTomadores(lista, termo, { limite = 8 } = {}) {
   const todos = Array.isArray(lista) ? lista : [];
   const t = String(termo ?? "").trim().toLowerCase();
-  const digitos = soDigitos(t);
+  const digitos = normalizarDocumento(t);
   const casam = !t
     ? todos
     : todos.filter(

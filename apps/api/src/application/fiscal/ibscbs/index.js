@@ -1,25 +1,5 @@
-// O ANEXO VIII — leitura, e nada além disso.
-//
-// ⚠⚠ **ELE OFERECE, NUNCA ELEGE.** É a regra que decide o módulo inteiro. A tabela responde
-// *"quais combinações de `cIndOp` e `cClassTrib` a norma autoriza para este serviço?"* — e para
-// **118 dos 208 itens ela devolve mais de uma**. Escolher entre "situações tributadas
-// integralmente" e "fornecimento à administração pública" depende de QUEM é o tomador daquela
-// nota, não do serviço prestado. Quem declara é o **contador**, no perfil de emissão; este módulo
-// existe para OFERECER a lista e para RECUSAR o que a fonte não autoriza.
-//
-// É a mesma disciplina de `codigoServicoDaNota.js` (*"encontra, nunca escolhe"*) e de
-// `escolherCodigoServicoNacional` (*"o cadastro é a autoridade, nunca o payload"*).
-//
-// ⚠⚠ **A COMBINAÇÃO É O PAR.** Não existe "a lista de cIndOp" e "a lista de cClassTrib" deste
-// módulo, de propósito: em 7 itens o produto cartesiano das duas contém combinações que a planilha
-// **não autoriza** (o `10.05` traz só `(020301,200046)` e `(100301,000001)`). Há teste travando isso.
-//
-// ⚠ **ESTE MÓDULO NÃO ESCREVE XML.** Ele não conhece a DPS, não monta tag nenhuma e não decide se
-// o bloco `IBSCBS` sai na nota. Montar aquele grupo muda documento fiscal em produção e está atrás
-// da flag `INTEGRACAO_NFSE_IBSCBS`.
-//
-// Fonte, hash e as armadilhas da extração: `apps/api/scripts/gerar-anexo-viii.mjs` e o cabeçalho
-// de `anexoViii.data.js`.
+// Correlações orientativas do Anexo VIII; ausência não autoriza bloquear emissão.
+// Fonte e extração: apps/api/scripts/gerar-anexo-viii.mjs.
 
 import { ANEXO_VIII } from "./anexoViii.data.js";
 
@@ -102,16 +82,7 @@ export function correlacaoDoItem(codigo) {
   };
 }
 
-/**
- * ⚠⚠ A GUARDA: este par `(cIndOp, cClassTrib)` é autorizado pela fonte para este item?
- *
- * É o que impede o perfil de emissão de guardar uma combinação que a planilha não traz — o
- * defeito que "duas listas soltas" produziria em 7 itens. Recusa **nomeando**, no espírito de
- * `NFSE_CODIGO_SERVICO_FORA_DA_LISTA`.
- *
- * ⚠ Item sem correlação (`99.01.01`) recusa TUDO, e isso é resposta, não buraco: a norma não
- * correlaciona nada para o "não classificado", então não há par a autorizar.
- */
+/** Consulta a correlação orientativa. Os nomes legados do retorno não significam autorização fiscal. */
 export function conferirCombinacao(codigo, { cIndOp, cClassTrib } = {}) {
   const r = correlacaoDoItem(codigo);
   if (r.resposta === RESPOSTA.SEM_ITEM) {

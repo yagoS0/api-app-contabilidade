@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // CANCELAR UMA NFS-e — a regra da tela. ⚠ ATO FISCAL IRREVERSÍVEL.
 //
 // > Decisão do dono (19/08/2026): *"esqueça substituir então, deixe apenas o cancelar."*
@@ -101,9 +102,9 @@ export function podeCancelar(nota, { cancelamentoEnviado = false, cnpjDaEmpresa 
   // ⚠⚠ A GARANTIA NÃO É ESTA FUNÇÃO — é o servidor. `POST /client/companies/:id/notas/:id/cancelar`
   // recusa `nota_recebida` mesmo que alguém chame a rota direto. Isto aqui é a conveniência de não
   // oferecer um botão cuja única saída é a recusa.
-  const docEmpresa = String(cnpjDaEmpresa ?? "").replace(/\D+/g, "");
-  const docTomador = String(nota.tomador?.cnpjCpf ?? "").replace(/\D+/g, "");
-  const docEmitente = String(nota.emitente?.cnpj ?? "").replace(/\D+/g, "");
+  const docEmpresa = normalizarDocumento(cnpjDaEmpresa);
+  const docTomador = normalizarDocumento(nota.tomador?.cnpjCpf);
+  const docEmitente = normalizarDocumento(nota.emitente?.cnpj);
   const recebida = String(nota.papel || "").toUpperCase() === "DEST"
     // ⚠ `docEmpresa` precisa existir: comparar "" com "" daria `true` e acusaria TODA nota.
     || (Boolean(docEmpresa) && docTomador === docEmpresa && docEmitente !== docEmpresa);

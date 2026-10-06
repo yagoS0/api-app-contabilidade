@@ -1,3 +1,5 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
+import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-mock';
 // Mock do portal do cliente — para desenvolver sem banco/API.
 //
 // ⚠ O mock GUARDA ESTADO. Trocar de empresa, paginar e filtrar competência têm
@@ -1526,8 +1528,10 @@ function pdfDoDanfse(texto) {
 }
 
 export function createMockApi() {
+  const recorrencias = criarRecorrenciasMock();
   const codes = new Map();
   return {
+    ...recorrencias,
     async solicitarCodigoAcesso(email) {
       const challengeId=crypto.randomUUID();
       codes.set(challengeId,{email:String(email).trim().toLowerCase(),expires:Date.now()+600000,attempts:0});
@@ -3212,7 +3216,7 @@ export function createMockApi() {
         rpsSerie: linha.rpsSerie,
         rpsNumero: linha.rpsNumero,
         tomadorNome: String(payload?.tomador?.nome || ""),
-        tomadorDoc: String(payload?.tomador?.cnpjCpf || "").replace(/\D+/g, ""),
+        tomadorDoc: normalizarDocumento(payload?.tomador?.cnpjCpf),
         valorServicos: Number(payload?.servico?.valorServicos),
         competencia: payload?.competencia || null,
       };
@@ -4254,8 +4258,8 @@ function validarPayloadNfseMock(body) {
   if (!body || typeof body !== "object") return "payload_invalido";
 
   const tomador = body.tomador || {};
-  const doc = String(tomador.cnpjCpf || "").replace(/\D+/g, "");
-  if (!doc || (doc.length !== 11 && doc.length !== 14)) return "tomador_documento_invalido";
+  const doc = normalizarDocumento(tomador.cnpjCpf);
+  if (!documentoTemFormato(doc)) return "tomador_documento_invalido";
   // ⚠ Código PRÓPRIO e distinto: "documento com tamanho errado" é campo não preenchido;
   // "DV inválido" é número digitado errado, e quem lê precisa saber que o problema está NO NÚMERO.
   if (doc.length === 11 && !cpfTemDvValidoMock(doc)) return "tomador_cpf_digito_invalido";

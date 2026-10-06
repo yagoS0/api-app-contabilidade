@@ -1,3 +1,4 @@
+import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
 import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
 import { getRoutineExecutionStatus } from "../../workers/scheduledRoutineService.js";
@@ -499,7 +500,7 @@ async function attachSerproStatusToCompaniesList(data) {
   );
 
   return data.map((item) => {
-    const cnpj = String(item.cnpj || "").replace(/\D+/g, "");
+    const cnpj = normalizarDocumento(item.cnpj);
     const email = String(item.guideNotificationEmail || item.email || item.ownerEmail || "").trim().toLowerCase();
     const procuration = procurationByPortalId.get(String(item.companyId)) || {};
     const procurationStatus = String(procuration.status || "DESCONHECIDA").trim().toUpperCase();
@@ -510,7 +511,7 @@ async function attachSerproStatusToCompaniesList(data) {
     if (!settings.consumerKey) reasons.push("consumer_key_ausente");
     if (!settings.consumerSecretConfigured) reasons.push("consumer_secret_ausente");
     if (!settings.certificate?.hasCertificate) reasons.push("certificado_ausente");
-    if (!cnpj || cnpj.length !== 14) reasons.push("cnpj_invalido");
+    if (!cnpjCompativel(cnpj)) reasons.push("cnpj_invalido");
     if (!email) reasons.push("email_guias_ausente");
     if (procurationStatus !== "ATIVA") reasons.push("procuracao_inativa_ou_nao_validada");
 
@@ -1231,7 +1232,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         });
         if (currentForCnpjCheck) {
           const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
-          if (normalizedCompany.cnpj && onlyDigits(normalizedCompany.cnpj) !== onlyDigits(currentForCnpjCheck.cnpj)) {
+          if (normalizedCompany.cnpj && normalizarDocumento(normalizedCompany.cnpj) !== normalizarDocumento(currentForCnpjCheck.cnpj)) {
             return res.status(400).json({
               ok: false,
               error: "cnpj_imutavel",
@@ -1912,7 +1913,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
 
         const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
-        if (onlyDigits(confirmCnpj) !== onlyDigits(portal.cnpj)) {
+        if (normalizarDocumento(confirmCnpj) !== normalizarDocumento(portal.cnpj)) {
           return res.status(400).json({
             ok: false,
             error: "cnpj_confirmation_mismatch",
@@ -2077,7 +2078,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           where: { id: portalCompanyId },
           select: { cnpj: true },
         });
-        const empresaCnpj = String(portalClient?.cnpj || company.cnpj || "").replace(/\D/g, "");
+        const empresaCnpj = normalizarDocumento(portalClient?.cnpj || company.cnpj);
         if (empresaCnpj && inspected.cnpj !== empresaCnpj) {
           return res.status(400).json({
             error: "cert_cnpj_mismatch",
@@ -5551,7 +5552,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     if (search) {
       companiesWhere.OR = [
         { razao: { contains: search, mode: "insensitive" } },
-        { cnpj: { contains: search.replace(/\D+/g, "") } },
+        { cnpj: { contains: normalizarDocumento(search) } },
       ];
     }
 

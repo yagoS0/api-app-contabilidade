@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Q12.A.3: resolve qual certificado usar para acessar um serviço externo
 // (NFS-e/ADN, DFe/SEFAZ, eSocial, Integra-SN).
 //
@@ -95,7 +96,7 @@ async function loadCompanyCert(portalClientId) {
   // bloqueado: ausência de dado não é prova de que o certificado é alheio, e recusar por falta de
   // informação derrubaria empresa legítima. Fica o aviso no log, e a guarda de ingestão do ADN
   // continua sendo o segundo cinto.
-  const portalCnpj = String(portal.cnpj || "").replace(/\D+/g, "");
+  const portalCnpj = normalizarDocumento(portal.cnpj);
   if (portalCnpj) {
     let certCnpj = null;
     try {

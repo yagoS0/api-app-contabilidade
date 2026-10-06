@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Formatação para o cliente final. Espelha `src/format.ts` do app mobile
 // (portal-cliente-mobile) — os dois lados precisam formatar igual.
 //
@@ -95,14 +96,14 @@ export function fmtDataHora(valor) {
 
 /** 00.000.000/0000-00 — só formata se tiver os 14 dígitos; senão devolve o que veio. */
 export function fmtCnpj(cnpj) {
-  const d = String(cnpj || "").replace(/\D+/g, "");
+  const d = normalizarDocumento(cnpj);
   if (d.length !== 14) return texto(cnpj);
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
 /** CNPJ (14) ou CPF (11); qualquer outro tamanho sai como veio. */
 export function fmtDoc(doc) {
-  const d = String(doc || "").replace(/\D+/g, "");
+  const d = normalizarDocumento(doc);
   if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   if (d.length === 14) return fmtCnpj(d);
   return texto(doc);

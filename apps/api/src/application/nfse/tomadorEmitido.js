@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // A MEMÓRIA DO TOMADOR — escrita DEPOIS do sucesso, e que nunca derruba uma emissão.
 //
 // > Pedido do dono (19/08/2026): *"ao emitir a nota para um tomador vamos salvar as informações; na
@@ -79,7 +80,7 @@ export const CAMPOS_DO_REGISTRO = Object.freeze(["nome", "email", ...CAMPOS_ENDE
  *   e um registro sem nome apareceria na tela do cliente como uma linha em branco clicável.
  */
 export function dadosDoTomadorEmitido(tomador) {
-  const documento = soDigitos(tomador?.doc ?? tomador?.documento ?? tomador?.cnpjCpf);
+  const documento = normalizarDocumento(tomador?.doc ?? tomador?.documento ?? tomador?.cnpjCpf);
   const nome = textoOuNulo(tomador?.nome);
   if (!documento || !nome) return null;
 

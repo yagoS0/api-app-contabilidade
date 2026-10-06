@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { onlyDigits, toNullableString, toBoolean } from "../../utils/normalizers.js";
 import { validateStrongPassword } from "./passwordPolicy.js";
 
@@ -97,8 +98,8 @@ function normalizeCpf(cpf) {
 }
 
 function normalizeCnpj(cnpj) {
-  const digits = onlyDigits(cnpj);
-  return digits ? digits.padStart(14, "0") : null;
+  const digits = normalizarDocumento(cnpj);
+  return digits ? (/^[0-9]+$/.test(digits) ? digits.padStart(14, "0") : digits) : null;
 }
 
 function normalizeAtividades(raw) {

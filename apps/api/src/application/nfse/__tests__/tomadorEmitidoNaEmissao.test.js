@@ -161,7 +161,7 @@ describe("emissão bem-sucedida alimenta a memória do tomador", () => {
     montarCenario();
     const ordem = [];
     prisma.serviceInvoice.update.mockImplementation(async ({ data }) => {
-      ordem.push(`invoice:${data.status}`);
+      ordem.push(data.xmlDps ? 'dps:preservada' : `invoice:${data.status}`);
       return { id: "inv-1", ...data };
     });
     prisma.tomadorEmitido.create.mockImplementation(async ({ data }) => {
@@ -171,7 +171,7 @@ describe("emissão bem-sucedida alimenta a memória do tomador", () => {
 
     await NfseService.issue({ data: PAYLOAD_BASE, log });
 
-    expect(ordem).toEqual(["invoice:issued", "tomador"]);
+    expect(ordem).toEqual(['dps:preservada', "invoice:issued", "tomador"]);
   });
 
   it("⚠ nota emitida SEM endereço completo grava a memória sem endereço — nada é completado", async () => {

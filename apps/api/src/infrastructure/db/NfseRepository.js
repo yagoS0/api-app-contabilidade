@@ -22,6 +22,8 @@ function serialize(invoice) {
     rpsSerie: invoice.rpsSerie,
     status: invoice.status,
     xml: invoice.xml,
+    contratoEmissao: invoice.contratoEmissao || null,
+    configuracaoFiscal: invoice.configuracaoFiscal || null,
     pdfUrl: invoice.pdfUrl,
     // ⚠ O DESFECHO PRECISA CHEGAR À TELA. Antes, o motivo da falha existia só no `log.error` de
     // `NfseService.js` — a lista mostrava "rejeitada" e ninguém sabia se corrigia a nota ou tentava

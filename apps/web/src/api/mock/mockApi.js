@@ -1,3 +1,5 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-mock';
 import { criarAtendimentoMovelMock } from "./atendimentoMovelMock";
 import { mockExecucoesRotinas, mockCarregarRotinas, mockSalvarRotinas } from "./rotinasMock";
 import { criarMockAcompanhamentoParcelamentos } from "./acompanhamentoParcelamentosMock";
@@ -2299,7 +2301,7 @@ function buildCompanyPayload(input) {
     myRole: "FIRM_ADMIN",
     scopes: ["*"],
     razao: String(input.razaoSocial || "").trim(),
-    cnpj: String(input.cnpj || "").replace(/\D+/g, ""),
+    cnpj: normalizarDocumento(input.cnpj),
     inscricaoMunicipal: null,
     uf: String(input.enderecoUf || "").trim().toUpperCase() || null,
     municipio: String(input.enderecoCidade || "").trim() || null,
@@ -3801,6 +3803,7 @@ export function createMockApi() {
 
   return {
     ...atendimentoMovel,
+    ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
@@ -6958,7 +6961,7 @@ export function createMockApi() {
         err.missing = faltando;
         throw err;
       }
-      const doc = String(payload?.tomador?.cnpjCpf || "").replace(/\D/g, "");
+      const doc = normalizarDocumento(payload?.tomador?.cnpjCpf);
       if (doc.length !== 11 && doc.length !== 14) throw new Error("tomador_documento_invalido");
       if (!String(payload?.tomador?.nome || "").trim()) throw new Error("tomador_nome_obrigatorio");
       if (!String(payload?.servico?.descricao || "").trim()) throw new Error("servico_descricao_obrigatoria");

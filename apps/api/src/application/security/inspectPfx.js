@@ -6,6 +6,16 @@
 // serialNumber/OID 2.5.4.5, depois CN (padrão ICP-Brasil "RAZAO SOCIAL:CNPJ"), depois OU.
 
 import forge from "node-forge";
+import { cnpjCompativel, formatarDocumento } from '@contabilidade/shared/documentos-fiscais';
+
+export function extrairCnpjDoSubject(candidatos) {
+  for (const candidato of candidatos) {
+    const matches = String(candidato || '').replace(/[a-z]/g, c => c.toUpperCase()).match(/(?<![A-Z0-9])[A-Z0-9]{12}[0-9]{2}(?![A-Z0-9])/g) || [];
+    const encontrados = matches.filter(cnpjCompativel);
+    if (encontrados.length) return encontrados[encontrados.length - 1];
+  }
+  return null;
+}
 
 export class PfxInspectError extends Error {
   constructor(code, message) {
@@ -58,18 +68,11 @@ export function inspectPfx(pfxBuffer, password) {
       .filter((item) => item?.name === "organizationalUnitName" || item?.shortName === "OU")
       .map((item) => item?.value),
   ];
-  let cnpj = null;
-  for (const candidate of candidates) {
-    const matches = String(candidate || "").match(/\d{14}/g);
-    const raw = matches?.[matches.length - 1] || "";
-    if (raw.length === 14) { cnpj = raw; break; }
-  }
+  const cnpj = extrairCnpjDoSubject(candidates);
 
   return { notAfter, cnpj };
 }
 
 export function formatCnpj(digits) {
-  const d = String(digits || "").replace(/\D/g, "");
-  if (d.length !== 14) return String(digits || "");
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  return formatarDocumento(digits);
 }

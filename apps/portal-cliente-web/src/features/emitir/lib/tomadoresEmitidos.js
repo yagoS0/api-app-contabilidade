@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU — a regra da tela.
 //
 // > Dono (20/08/2026): *"na aba de emissão deve haver um seletor para selecionarmos tomadores já
@@ -94,7 +95,7 @@ export function normalizarTomadores(resposta) {
   if (!Array.isArray(bruta)) return [];
   return bruta
     .map((t) => ({
-      documento: soDigitos(t?.documento),
+      documento: normalizarDocumento(t?.documento),
       nome: texto(t?.nome),
       email: texto(t?.email),
       cMun: soDigitos(t?.cMun),
@@ -110,7 +111,7 @@ export function normalizarTomadores(resposta) {
 
 /** `12345678000190` → `12.345.678/0001-90`; CPF idem. Fora dessas formas, devolve como veio. */
 export function formatarDocumento(documento) {
-  const d = soDigitos(documento);
+  const d = normalizarDocumento(documento);
   if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
   if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   return d;
@@ -131,7 +132,7 @@ export function formatarDocumento(documento) {
 export function buscarTomadores(lista, termo, { limite = 30 } = {}) {
   const todos = Array.isArray(lista) ? lista : [];
   const alvo = dobrar(termo);
-  const digitos = soDigitos(termo);
+  const digitos = normalizarDocumento(termo);
   const casam = !alvo
     ? todos
     : todos.filter(
@@ -156,7 +157,7 @@ export function detalheDoTomador(t) {
  * jeito que a gravação não completa (invariante 1 de `tomadorEmitido.js`).
  */
 export function camposDoTomador(registro) {
-  const campos = { tomadorDoc: soDigitos(registro?.documento) };
+  const campos = { tomadorDoc: normalizarDocumento(registro?.documento) };
   for (const [noForm, noRegistro] of CAMPOS_DO_TOMADOR) {
     campos[noForm] = texto(registro?.[noRegistro]);
   }

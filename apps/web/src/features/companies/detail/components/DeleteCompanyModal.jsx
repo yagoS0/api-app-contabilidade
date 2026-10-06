@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Q11.1: modal de confirmação de exclusão da empresa.
 // Exige contador digitar o CNPJ exato pra liberar o botão "Excluir definitivamente".
 // Operação é IRREVERSÍVEL — apaga via cascade Prisma: Guides, AccountingEntries,
@@ -15,7 +16,7 @@ const PANEL = {
 };
 
 function formatCnpj(cnpj) {
-  const d = String(cnpj || "").replace(/\D+/g, "");
+  const d = normalizarDocumento(cnpj);
   if (d.length !== 14) return cnpj;
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
 }
@@ -25,7 +26,7 @@ export function DeleteCompanyModal({ company, saving, onConfirm, onClose }) {
   const [err, setErr] = useState(null);
 
   const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
-  const isMatch = onlyDigits(confirmInput) === onlyDigits(company?.cnpj);
+  const isMatch = normalizarDocumento(confirmInput) === normalizarDocumento(company?.cnpj);
   const canDelete = isMatch && !saving;
 
   async function handleDelete() {

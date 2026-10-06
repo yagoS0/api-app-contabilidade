@@ -545,6 +545,10 @@ model ServiceInvoice {
   /// os separasse. Vocabulário e regra em `application/nfse/desfechoEmissao.js`.
   status            String    @default("pending")
   xml               String?
+  /// Contrato e declaração assinada preservados separadamente do XML autorizado.
+  contratoEmissao   String?
+  xmlDps            String?
+  configuracaoFiscal Json?
   pdfUrl            String?
   // ── Desfecho da tentativa de emissão ────────────────────────────────────────────────────────
   // Antes, o motivo da falha existia SÓ no `log.error` (`NfseService.js:1148-1165`), que envelhece
@@ -2050,6 +2054,40 @@ model AppSetting {
   value     Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Autorização mensal explícita. O modelo não guarda certificados nem numeração de DPS.
+model NfseRecorrencia {
+  id String @id @default(uuid())
+  companyId String
+  autorizadoPor String
+  ambiente String
+  dia Int
+  proximaData String
+  ativa Boolean @default(true)
+  versao Int @default(0)
+  modelo Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  execucoes NfseRecorrenciaExecucao[]
+  @@index([companyId])
+  @@index([ativa, proximaData])
+}
+
+/// Reserva durável anterior ao envio: nunca repetir automaticamente uma competência.
+model NfseRecorrenciaExecucao {
+  id String @id @default(uuid())
+  recorrenciaId String
+  recorrencia NfseRecorrencia @relation(fields: [recorrenciaId], references: [id], onDelete: Restrict)
+  competencia String
+  dataPrevista String
+  status String
+  invoiceId String?
+  erro String?
+  modelo Json
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+  @@unique([recorrenciaId, competencia])
 }
 
 /// Intenção humana persistida antes da chamada externa; timeout não autoriza nova tentativa.

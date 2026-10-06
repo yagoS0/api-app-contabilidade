@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // A ÚNICA PORTA DE ENTRADA DE NFS-e NO BANCO.
 //
 // Esta função morava dentro de `adn/AdnNotasService.js` e o import manual de XML
@@ -74,7 +75,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
 
   // Papel: EMIT se prestador é a empresa; senão DEST. NFS-e quase sempre EMIT
   // (a empresa só recebe DFe de NFS-e em casos específicos).
-  const cnpjEmpresa = String(companyCnpj || "").replace(/\D+/g, "");
+  const cnpjEmpresa = normalizarDocumento(companyCnpj);
   const cnpjPrestador = metadata.cnpjPrestador || "";
   const cnpjTomador = metadata.cnpjTomador || "";
   const papel = cnpjPrestador && cnpjPrestador === cnpjEmpresa ? "EMIT" : "DEST";

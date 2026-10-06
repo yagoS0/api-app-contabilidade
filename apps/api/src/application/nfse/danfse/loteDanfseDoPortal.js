@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // O LOTE DE DANFSe — vários PDFs num zip, nomeados pelo CNPJ da empresa + o número da nota.
 //
 // > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote, com o nome dos arquivos
@@ -112,7 +113,7 @@ export function safeFilePart(value) {
  * nome, e nunca dois arquivos ficam com o mesmo — ver `criarNomeadorDeLote`.
  */
 export function nomeNoLote({ cnpj, numero, chaveAcesso, id }) {
-  const doc = safeFilePart(String(cnpj || "").replace(/\D+/g, "")) || "sem-cnpj";
+  const doc = safeFilePart(normalizarDocumento(cnpj)) || "sem-cnpj";
   const sufixo =
     safeFilePart(numero)
     || safeFilePart(chaveAcesso)

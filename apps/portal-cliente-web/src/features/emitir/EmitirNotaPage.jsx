@@ -1,3 +1,5 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { ConfigurarRecorrencia, ListaRecorrencias } from '@contabilidade/shared/nfse-recorrencias';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { TRACO, brl, pct, texto } from "../../lib/format";
@@ -252,7 +254,7 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId =
   const { issRetidoNoFormulario } = camposDeImposto({ regime, issRetido: form.issRetido });
   const payload = {
     tomador: {
-      cnpjCpf: apenasDigitos(form.tomadorDoc),
+      cnpjCpf: normalizarDocumento(form.tomadorDoc),
       nome: form.tomadorNome.trim(),
       endereco: {
         cMun: apenasDigitos(form.cMun),
@@ -344,6 +346,7 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId =
 export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresas, modelo = null, aoDescartarModelo, aoMudarEnvio }) {
   const companyId = empresa.companyId;
   const [form, setForm] = useState(formVazio);
+  const [revisaoRecorrencias, setRevisaoRecorrencias] = useState(0);
   const [enviando, setEnviando] = useState(false);
   const envioAtivo = useRef(false);
   useEffect(() => {
@@ -1000,7 +1003,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     () => ({
       dadosDaOperacao: conferirDadosDaOperacao(form, valorServicos),
       tomadorNome: form.tomadorNome.trim(),
-      tomadorDoc: apenasDigitos(form.tomadorDoc),
+      tomadorDoc: normalizarDocumento(form.tomadorDoc),
       tomadorEmail: form.tomadorEmail.trim(),
       endereco: {
         cMun: apenasDigitos(form.cMun),
@@ -1222,7 +1225,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   }
 
   const digitosDoc = soDigitosDoc(form.tomadorDoc);
-  const ehCnpjCompleto = digitosDoc.length === 14;
+  const ehCnpjCompleto = /^\d{14}$/.test(digitosDoc);
   const nomeDivergeDaReceita =
     origemNome === ORIGEM.DIGITADO &&
     Boolean(consulta.nome) &&
@@ -1302,7 +1305,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           ) : null}
 
           <div className="page-split emissor-mobile">
-            <form className="pane pane-form" onSubmit={emitir}>
+            <form className="pane pane-form" onSubmit={emitir} id="formulario-emissao-nfse">
               <fieldset>
                 <legend>Para quem</legend>
 
@@ -1361,7 +1364,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   CNPJ ou CPF do tomador
                   <input
                     id="emitir-doc"
-                    inputMode="numeric"
+                    autoCapitalize="characters"
                     autoComplete="off"
                     required
                     value={form.tomadorDoc}
@@ -2077,6 +2080,14 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                 </p>
               ) : null}
 
+              <ConfigurarRecorrencia api={api} companyId={companyId}
+                disabled={enviando || !conferenciaPerfil.ok || !conferenciaCodigo.ok || !conferenciaAliquota.ok || !conferenciaPTotTribSN.ok || !conferenciaOperacao.ok || Boolean(retryInvoiceId)}
+                aoSalvar={() => setRevisaoRecorrencias(v => v + 1)}
+                obterModelo={() => {
+                  if (!document.getElementById('formulario-emissao-nfse')?.reportValidity()) return null;
+                  return montarPayload(form, { regime, codigoServicoEscolhido: codigoParaOPayload({ situacao: cadastroDeCodigos.situacao, escolhido: codigoEscolhido }), perfilId: perfilParaOPayload(leituraDePerfis, perfilEscolhido) });
+                }} />
+              <ListaRecorrencias api={api} companyId={companyId} revisao={revisaoRecorrencias} />
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary" disabled={enviando || !conferenciaPerfil.ok}>
                   {enviando ? "Emitindo…" : "Emitir nota"}

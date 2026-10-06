@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // CONSULTA DO TOMADOR NA RECEITA — a REGRA, sem tela e sem rede.
 //
 // ⚠ ORIGEM: `apps/web/src/features/notas/lib/consultaTomador.js` (25 testes), do portal do
@@ -32,7 +33,7 @@ export const ORIGEM = { AUSENTE: "ausente", DA_RECEITA: "da_receita", DIGITADO: 
 export const NAO_CONSULTA = { CPF: "cpf", FORA_DE_FORMA: "fora_de_forma", REPETIDA: "repetida" };
 
 export function soDigitosDoc(valor) {
-  return String(valor ?? "").replace(/\D+/g, "");
+  return normalizarDocumento(valor);
 }
 
 export function rotuloOrigem(origem) {
@@ -50,8 +51,8 @@ export function rotuloOrigem(origem) {
  */
 export function decidirConsulta(cnpjCpf, { ultimoConsultado = null } = {}) {
   const digitos = soDigitosDoc(cnpjCpf);
-  if (digitos.length === 11) return { consultar: false, motivo: NAO_CONSULTA.CPF, digitos };
-  if (digitos.length !== 14) return { consultar: false, motivo: NAO_CONSULTA.FORA_DE_FORMA, digitos };
+  if (/^\d{11}$/.test(digitos)) return { consultar: false, motivo: NAO_CONSULTA.CPF, digitos };
+  if (!/^\d{14}$/.test(digitos)) return { consultar: false, motivo: NAO_CONSULTA.FORA_DE_FORMA, digitos };
   if (soDigitosDoc(ultimoConsultado) === digitos) {
     return { consultar: false, motivo: NAO_CONSULTA.REPETIDA, digitos };
   }
@@ -122,7 +123,7 @@ export const CAMPOS_ENDERECO_EXIGIDOS = [
  * endereço inteiro deixa de ser oferecido. Nada é fabricado em nenhum caminho.
  */
 export function codigoMunicipioVerificado(bruto, municipios) {
-  const candidato = soDigitosDoc(bruto?.codigo_municipio_ibge ?? bruto?.codigo_municipio ?? "");
+  const candidato = String(bruto?.codigo_municipio_ibge ?? bruto?.codigo_municipio ?? "").replace(/\D+/g, "");
   if (candidato.length !== TAMANHO_CODIGO_IBGE) {
     return { codigo: null, motivo: "a consulta não trouxe o código IBGE do município" };
   }
@@ -162,7 +163,7 @@ export function enderecoDaReceita(bruto, { municipios = null } = {}) {
   const municipio = codigoMunicipioVerificado(bruto, municipios);
   const lido = {
     cMun: municipio.codigo || "",
-    CEP: soDigitosDoc(bruto?.cep),
+    CEP: String(bruto?.cep ?? "").replace(/\D+/g, ""),
     // ⚠ O LOGRADOURO É QUEM MANDA — o tipo sozinho NÃO é um logradouro. Enquanto isto era
     // `[tipo, logradouro].filter(Boolean).join(" ")`, uma resposta com
     // `descricao_tipo_de_logradouro: "RUA"` e `logradouro` vazio produzia a string **"RUA"** —

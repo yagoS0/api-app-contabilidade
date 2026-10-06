@@ -92,7 +92,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
                 <select id={`perfil-${id}`} value={String(form[id] ?? "")} onChange={(e) => mudar(id, e.target.value)}>
                   <option value="">Não configurado</option>
                   {c.valores.map((v) => <option key={v} value={v}>{OPCOES[id]?.[v] || textoDoValor(id, v)}</option>)}
-                </select> : <input id={`perfil-${id}`} required={c.obrigatorio} value={form[id] ?? ""} onChange={(e) => mudar(id, e.target.value)} />}
+                </select> : <input id={`perfil-${id}`} list={id === 'ibscbsCIndOp' ? 'rtc-operacoes' : id === 'ibscbsCClassTrib' ? 'rtc-classificacoes' : undefined} required={c.obrigatorio} value={form[id] ?? ""} onChange={(e) => mudar(id, e.target.value)} />}
               <small style={{ display: "block" }}>{id === "pAliq" ? "Percentual com até duas casas decimais." : c.valores ? "" : c.formaDescrita}</small>
               {id === "codigoServicoNacional" && servico?.descricao?.length > 70 && <small>{servico.descricao}</small>}
               {c.valores && textoDoValor(id, form[id]).length > 70 && <small>{textoDoValor(id, form[id])}</small>}
@@ -108,6 +108,10 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
             {!servico?.nbs?.length && <p>Não há sugestão disponível para este serviço. Confirme o código na tabela oficial.</p>}
           </div>}
           {titulo === "IBS e CBS" && <div className="full">
+            <datalist id="rtc-operacoes">{(dados.sugestoes?.tabelasRtc?.operacoes || []).map(o =>
+              <option key={o.codigo} value={o.codigo}>{o.local}</option>)}</datalist>
+            <datalist id="rtc-classificacoes">{(dados.sugestoes?.tabelasRtc?.classificacoes || []).map(c =>
+              <option key={c.codigo} value={c.codigo}>{c.descricao} — CST {c.cst}</option>)}</datalist>
             <label htmlFor="perfil-sugestao-ibs">Combinações de operação e classificação</label>
             <select id="perfil-sugestao-ibs" value={servico?.combinacoes?.some(c => c.cIndOp === form.ibscbsCIndOp && c.cClassTrib === form.ibscbsCClassTrib) ? `${form.ibscbsCIndOp}:${form.ibscbsCClassTrib}` : ""} onChange={(e) => {
               const opcao = servico?.combinacoes?.find((c) => `${c.cIndOp}:${c.cClassTrib}` === e.target.value);
@@ -118,7 +122,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
                 {c.cIndOp} / {c.cClassTrib} — {c.nomeClassTrib} · {c.localIncidencia}
               </option>)}
             </select>
-            <p>O CST deve ser confirmado pelo contador. A seleção acima preenche somente o indicador e a classificação.</p>
+            <p>O Anexo VIII é orientativo. Outras combinações das tabelas oficiais podem ser preenchidas nos campos acima. O CST e o enquadramento devem ser confirmados pelo contador.</p>
           </div>}
         </div></details>)}
         {dados.sugestoes && <p>Fonte das sugestões: <a href={dados.sugestoes.url} target="_blank" rel="noreferrer">{dados.sugestoes.fonte}</a>. Selecione apenas opções aplicáveis à empresa.</p>}

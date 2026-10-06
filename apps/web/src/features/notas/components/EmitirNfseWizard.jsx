@@ -1,3 +1,5 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
+import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
 // EMISSÃO DE NFS-e — o assistente.
 //
 // ⚠ NÃO EXISTE CAMINHO QUE PULE O PREVIEW.
@@ -281,6 +283,7 @@ export function EmitirNfseWizard({
   // que se diz ser outra.
   valoresIniciais = null,
   onEmitir,
+  onRecorrenciaSalva,
   onClose,
   onEmitida,
 }) {
@@ -400,8 +403,8 @@ export function EmitirNfseWizard({
     return () => { vivo = false; };
   }, [enderecoAberto, municipios]);
 
-  const docLimpo = soDigitos(tomador.cnpjCpf);
-  const docValido = docLimpo.length === 11 || docLimpo.length === 14;
+  const docLimpo = normalizarDocumento(tomador.cnpjCpf);
+  const docValido = documentoTemFormato(docLimpo);
   const emailValido = !tomador.email || tomador.email.includes("@");
   // ⚠ O NÚMERO SAI DO CAMPO POR UMA LEITURA SÓ (centavos inteiros), e o campo só consegue conter a
   // forma canônica `1.234,56`. `null` = campo vazio, e é o que mantém "ainda não preenchi"
@@ -594,7 +597,7 @@ export function EmitirNfseWizard({
       // nesta tela. Uma linha POR PERCENTUAL — "falta a carga tributária" mandaria conferir os três.
       ...faltasDaCarga.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true, cadastro: true })),
       !docValido && {
-        texto: "informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido",
+        texto: "informe um CNPJ (14 caracteres) ou CPF (11 dígitos) válido",
         campo: CAMPO.DOC,
         // Documento com dígitos a mais ou a menos é ERRO; campo intocado é só falta.
         grave: docLimpo.length > 0,
@@ -911,6 +914,7 @@ export function EmitirNfseWizard({
           </p>
         )}
 
+        {passo === PASSO_CONFERIR && <ConfigurarRecorrencia api={apiPerfis} companyId={companyId} obterModelo={montarPayload} disabled={enviando || !prontoParaEmitir || travadoPelaRejeicao} aoSalvar={onRecorrenciaSalva} />}
         {/* O formulário e o espelho lado a lado. Abaixo de 900px a grade vira uma coluna e o
             espelho fica embaixo — ver `.emitir-nfse-corpo` no `App.css`. */}
         <div className={passo === PASSO_CONFERIR ? "emitir-nfse-corpo emitir-nfse-corpo--conferir" : "emitir-nfse-corpo"}>

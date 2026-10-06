@@ -1,0 +1,45 @@
+[
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+    "file": "nt009-v1.01.pdf",
+    "sha256": "cc86c9402e317e84eb3a9f48bbd5e0b8e3dcd84f2645700190c84d45bf1ea58e"
+  },
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo-c-indop-ibscbs-snnfse-v1-01.xlsx",
+    "file": "anexo-c-v1.01.xlsx",
+    "sha256": "f59f066c5c3584ac26cc07d9b23f9fb6713e4bc9212b5e37fededf9244f29d15"
+  },
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/anexovii-indop_ibscbs_v1-03-00-nt009.xlsx",
+    "file": "anexo-vii-v1.03.00.xlsx",
+    "sha256": "95f30a44ee94adeea57fb92f3a0337b1e62fdc106f393e73894087889be9e5aa"
+  },
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/documentos-tecnicos/cnpj/manual-dv-cnpj.pdf",
+    "file": "manual-dv-cnpj.pdf",
+    "sha256": "7bb839f6c9beb968bd5bb67d31dd5db090d2333be55815759cfb293e639b4754"
+  },
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/anexovi-leiautesrn_rtc_ibscbs-v1-04-01-nt009.xlsx",
+    "file": "anexo-vi-v1.04.01.xlsx",
+    "sha256": "103a150dd6f56ec8edcaa3a453b59a1b0e096d7cd5025d7bd06a387f141ddf39"
+  },
+  {
+    "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
+    "consultadoEm": "2026-10-05",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita/esquemas-nfse-rtc-v1-01-20260727.zip",
+    "file": "xsd-20260727.zip"
+  },
+  {
+    "consultadoEm": "2026-10-05",
+    "url": "https://dfe-portal.svrs.rs.gov.br/DFE/TabelaClassificacaoTributaria",
+    "file": "svrs-classificacao.html.gz",
+    "sha256": "611e86ebd39c3da226f829b9f8f98bdd9f2b2073e6ca6bc8176d08892fbbc6f5",
+    "observacao": "Snapshot HTML UTF-8 compactado; extração JSON sem executar scripts da página."
+  }
+]

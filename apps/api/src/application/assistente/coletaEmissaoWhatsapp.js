@@ -1,3 +1,4 @@
+import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { cpfTemDvValido } from '../../utils/cpf.js';
 import { lerValorDaPlanilha } from '../nfse/lote/celulasLote.js';
 import { RE_CONFIRMACAO } from './confirmacaoPendente.js';
@@ -143,7 +144,7 @@ export function atualizarColeta({ estado: anterior, tomadorPreparado, camposPend
   if (perfis !== undefined) aplicarPerfis(estado, perfis);
   if (tomadorPreparado && typeof tomadorPreparado === 'object') {
     const t = tomadorPreparado.tomador;
-    if (t?.cnpjCpf && String(t.cnpjCpf).replace(/\D/g, '') !== estado.dados.tomadorDoc) {
+    if (t?.cnpjCpf && normalizarDocumento(t.cnpjCpf) !== estado.dados.tomadorDoc) {
       return retorno(estado, 'COLETAR', 'O cadastro retornado não corresponde ao cliente escolhido. Confira o CPF/CNPJ.');
     }
     if (t) {
@@ -173,9 +174,8 @@ function ehDuvida(texto) {
 
 function lerDocumento(texto) {
   const t = LIMPO(texto).replace(/^(?:[ée] (?:o )?|o (?:cnpj|cpf) [ée] )/i, '').trim();
-  if (!/^[\d./\- ]+$/.test(t)) return null;
-  const d = t.replace(/\D/g, '');
-  if (d.length === 14 || (d.length === 11 && cpfTemDvValido(d))) return d;
+  const d = normalizarDocumento(t);
+  if (cnpjCompativel(d) || (/^\d{11}$/.test(d) && cpfTemDvValido(d))) return d;
   return null;
 }
 

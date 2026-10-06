@@ -66,6 +66,9 @@ export const DESCRICOES = Object.freeze({
   // `TSRTCFinNFSe` — tiposSimples_v1.01.xsd. ⚠ A enumeração oficial tem UM valor só.
   finNFSe: Object.freeze({
     0: "NFS-e regular",
+    // NT 009 v1.01: leitura de documentos; não habilita geração de notas de ajuste.
+    1: "NFS-e de crédito",
+    2: "NFS-e de débito",
   }),
 
   // `TSOpSimpNac` — tiposSimples_v1.01.xsd

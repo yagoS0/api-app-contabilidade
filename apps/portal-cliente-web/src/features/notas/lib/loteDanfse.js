@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // O DANFSe EM LOTE NA TELA DO CLIENTE — o nome do arquivo e o que a recusa quer dizer.
 //
 // > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote (…) quero o download no
@@ -43,7 +44,7 @@ export const RECUSA_LOTE = {
  * uma divergência que é de relógio.
  */
 export function nomeDoArquivoLoteDanfse({ cnpj, competencia } = {}) {
-  const doc = String(cnpj || "").replace(/\D+/g, "") || "empresa";
+  const doc = normalizarDocumento(cnpj).replace(/[^A-Z0-9]/g, '') || "empresa";
   const comp = String(competencia || "todas").replace(/[^\w.-]+/g, "-") || "todas";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `danfse-${doc}-${comp}-${stamp}.zip`;

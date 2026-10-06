@@ -48,6 +48,13 @@ beforeEach(() => {
 });
 
 describe("certificado tem que ser da própria empresa", () => {
+  it('preserva letras na comparação com a identidade do certificado', async () => {
+    prisma.portalClient.findUnique.mockResolvedValue({ companyId: 'c1', cnpj: '12.ABC.345/01DE-35' });
+    inspectPfx.mockReturnValue({ cnpj: '12ABC34501DE35', notAfter: new Date('2027-01-01') });
+    expect((await resolveCertForCompany({ portalClientId: 'p1', servico: SERVICOS.NFSE })).source).toBe('company_a1');
+    inspectPfx.mockReturnValue({ cnpj: '12ABD34501DE35', notAfter: new Date('2027-01-01') });
+    await expect(resolveCertForCompany({ portalClientId: 'p1', servico: SERVICOS.NFSE })).rejects.toMatchObject({ code: 'CERT_CNPJ_MISMATCH' });
+  });
   it("certificado do CNPJ certo é aceito", async () => {
     inspectPfx.mockReturnValue({ cnpj: EMPRESA, notAfter: new Date("2027-01-01") });
     const r = await resolveCertForCompany({ portalClientId: "p1", servico: SERVICOS.NFSE });

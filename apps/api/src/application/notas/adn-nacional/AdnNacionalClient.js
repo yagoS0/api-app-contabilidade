@@ -1,3 +1,4 @@
+import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 // Q12.B+ rework: client REST do ADN Nacional NFS-e (Padrão Nacional / gov.br).
 //
 // Substitui o AdnSyncService legado (deprecated em Q8.B). URLs e paths
@@ -97,8 +98,8 @@ function buildHttpsAgent({ pfxBuffer, password }) {
  * @returns {Promise<{status, items, errors, raw}>}
  */
 export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "prod", timeoutMs = 20000, autoDiscover = false }) {
-  const cleanCnpj = String(cnpj || "").replace(/\D+/g, "");
-  if (cleanCnpj.length !== 14) {
+  const cleanCnpj = normalizarDocumento(cnpj);
+  if (!cnpjCompativel(cleanCnpj)) {
     throw new AdnNacionalClientError("INVALID_CNPJ", `CNPJ inválido: ${cnpj}`);
   }
   const baseUrl = ENDPOINTS[env];

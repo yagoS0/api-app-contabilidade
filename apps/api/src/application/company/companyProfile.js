@@ -1,3 +1,4 @@
+import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { emailValido } from "@contabilidade/shared/email";
 const REGIMES = new Set(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"]);
 const SIMPLES_ANEXOS = new Set(["I", "II", "III", "IV", "V"]);
@@ -520,7 +521,7 @@ function soCodigoDeCnae(valor) {
 
 export function validateAndNormalizeCompanyProfile(input) {
   const company = input && typeof input === "object" ? input : {};
-  const cnpj = onlyDigits(company.cnpj);
+  const cnpj = normalizarDocumento(company.cnpj);
   const razaoSocial = asString(company.razaoSocial || company.razao);
   const nomeFantasia = asString(company.nomeFantasia) || null;
   const regimeTributario = normalizeRegimeTributario(company.regimeTributario);
@@ -543,7 +544,7 @@ export function validateAndNormalizeCompanyProfile(input) {
       }).filter(Boolean))]
     : [];
 
-  if (!cnpj || cnpj.length !== 14) return { ok: false, error: "company_cnpj_invalid" };
+  if (!cnpjCompativel(cnpj)) return { ok: false, error: "company_cnpj_invalid" };
   if (!razaoSocial) return { ok: false, error: "company_razao_social_required" };
   if (!REGIMES.has(regimeTributario)) {
     return { ok: false, error: "company_regime_tributario_invalid" };

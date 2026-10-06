@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { prisma } from "../../infrastructure/db/prisma.js";
 
 export function getAuthUser(req) {
@@ -203,7 +204,7 @@ export async function ensureLegacyCompanyAccess(req, res, legacyCompanyId) {
 }
 
 export async function ensureLegacyCompanyCnpjAccess(req, res, cnpj) {
-  const normalizedCnpj = String(cnpj || "").replace(/\D+/g, "");
+  const normalizedCnpj = normalizarDocumento(cnpj);
   if (!normalizedCnpj) {
     res.status(400).json({ error: "cnpj_required" });
     return { ok: false };

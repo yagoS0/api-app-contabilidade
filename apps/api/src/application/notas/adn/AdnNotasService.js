@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Q12.B+ rework: captura de NFS-e via ADN Nacional do gov.br/nfse.
 //
 // Substitui o AdnSyncService legado (que dependia de ADN_BASE_URL/ADN_DFE_PATH —
@@ -232,7 +233,7 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
     return { ok: false, reason: err.code || "cert_error", message: err.message };
   }
 
-  const companyCnpj = String(portal.cnpj || "").replace(/\D+/g, "");
+  const companyCnpj = normalizarDocumento(portal.cnpj);
   let cursor = BigInt(state?.adnNsuCursor ?? 0);
   const byStatus = { upserted: 0, pendencia_criada: 0, skipped: 0 };
   let totalDocs = 0;

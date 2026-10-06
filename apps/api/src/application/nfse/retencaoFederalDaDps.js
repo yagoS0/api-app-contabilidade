@@ -1,3 +1,4 @@
+import { normalizarDocumento } from '@contabilidade/shared/documentos-fiscais';
 // A RETENÇÃO FEDERAL NA DPS (`trib/tribFed`) — regra PURA.
 //
 // ⚠⚠ TRÊS COISAS DECIDEM A RETENÇÃO, E SÓ UMA É DO PERFIL:
@@ -131,7 +132,7 @@ export function retencaoFederalDaDps({ regime, perfil, valorServicos, documentoT
   }
 
   // ── 3. O TOMADOR É PJ? ────────────────────────────────────────────────────────────────────
-  const doc = String(documentoTomador ?? "").replace(/\D+/g, "");
+  const doc = normalizarDocumento(documentoTomador);
   if (doc.length !== 14) {
     // ⚠ Inclui o documento ilegível: sem PROVA de que a fonte pagadora é PJ, não se retém. Falha
     // fechada na direção certa — reter de pessoa física é cobrar tributo de quem não deve.

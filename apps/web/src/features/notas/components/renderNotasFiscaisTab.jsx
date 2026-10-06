@@ -47,6 +47,7 @@ import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
+import { ListaRecorrencias } from '@contabilidade/shared/nfse-recorrencias';
 import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
@@ -178,6 +179,7 @@ export function NotasFiscaisTab({
        `CompanyTabLayout`. A tabela de notas tem número, chave, tomador, valor, data, status e
        ações — era a que mais truncava em 1400px. */
     <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
+      {janelaAtiva === 'NFSE' && <ListaRecorrencias api={nfseApi} companyId={companyId} revisao={Boolean(emissao)} />}
       {(erroCaptura || (erroCaptura === undefined && erroNotas === undefined && error)) && (
         <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
           {erroCaptura || error}
@@ -405,6 +407,7 @@ export function NotasFiscaisTab({
              nota nova é reservado pelo backend. `null` = emissão do zero, o caminho de sempre. */
           valoresIniciais={emissao.modelo}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
+          onRecorrenciaSalva={() => setEmissao(null)}
           onClose={() => setEmissao(null)}
           /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.
              A lista vem de `PortalInvoice` (captura do ADN); a nota emitida aqui é gravada em

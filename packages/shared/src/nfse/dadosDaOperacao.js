@@ -1,3 +1,4 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 // Valores desta nota, nunca inferidos do cadastro ou reaproveitados de outra emissão.
 export const OPERACAO_VAZIA = {
   vRetIRRF: "", vRetCP: "", obraTipo: "cObra", obraCodigo: "", obraInscricao: "",
@@ -38,10 +39,10 @@ export function conferirDadosDaOperacao(form, valorServicos) {
       erros.push("Obra: informe CNO/CEI com até 30 caracteres ou CIB com 8; inscrição imobiliária tem até 30 caracteres.");
     } else payload.obra = { [tipo]: codigo, ...(inscricao ? { inscImobFisc: inscricao } : {}) };
   }
-  const doc = texto("destinatarioDoc").replace(/[.\-/\s]/g, ""), nome = texto("destinatarioNome");
+  const doc = normalizarDocumento(texto("destinatarioDoc")), nome = texto("destinatarioNome");
   if (doc || nome) {
-    if (!/^(\d{11}|\d{14})$/.test(doc) || (doc.length === 11 && !cpfValido(doc)) || !nome || nome.length > 150) {
-      erros.push("Destinatário: informe CPF válido ou CNPJ com 14 dígitos e nome com até 150 caracteres.");
+    if (!documentoTemFormato(doc) || (doc.length === 11 && !cpfValido(doc)) || !nome || nome.length > 150) {
+      erros.push("Destinatário: informe CPF válido ou CNPJ válido com 14 caracteres e nome com até 150 caracteres.");
     } else payload.destinatario = { cnpjCpf: doc, nome };
   }
   if ([codigo, inscricao, nome].some((v) => /[\u0000-\u001f\u007f]/.test(v))) erros.push("Remova os caracteres de controle dos dados da operação.");

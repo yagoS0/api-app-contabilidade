@@ -1,3 +1,4 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { cpfTemDvValido } from "../../utils/cpf.js";
 
 const OBRIGAM_OBRA = new Set(["070201", "070202", "070401", "070501", "070502", "070601", "070602", "070701", "070801", "071701", "071901", "141403", "141404"]);
@@ -20,8 +21,8 @@ export function normalizarObra(v) {
 export function normalizarDestinatario(v) {
   if (v == null) return null;
   objeto(v, "Destinatário", ["cnpjCpf", "nome"]);
-  const doc = texto(v.cnpjCpf).replace(/[.\-/\s]/g, "");
-  if (!/^(\d{11}|\d{14})$/.test(doc) || (doc.length === 11 && !cpfTemDvValido(doc))) throw new Error("Destinatário: informe CPF válido ou CNPJ com 14 dígitos.");
+  const doc = normalizarDocumento(v.cnpjCpf);
+  if (!documentoTemFormato(doc) || (doc.length === 11 && !cpfTemDvValido(doc))) throw new Error("Destinatário: informe CPF válido ou CNPJ válido com 14 caracteres.");
   const nome = texto(v.nome);
   if (!nome || nome.length > 150) throw new Error("Destinatário: nome obrigatório, com até 150 caracteres.");
   return { cnpjCpf: doc, nome };

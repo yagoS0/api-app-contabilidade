@@ -24,6 +24,20 @@ const BASE = {
   competencia: "2026-01-23",
 };
 
+describe('documentos alfanuméricos na emissão', () => {
+  it('não converte pedido de nota de ajuste ou pagamento vinculado em nota regular', () => {
+    expect(validateNfsePayload({ ...BASE, finNFSe: '1' }).error).toBe('nfse_recurso_nao_suportado');
+    expect(validateNfsePayload({ ...BASE, gPgtoVinc: {} }).error).toBe('nfse_recurso_nao_suportado');
+    expect(validateNfsePayload({ ...BASE, finNFSe: '0' }).ok).toBe(true);
+  });
+  it('preserva o CNPJ do tomador e exige DV correto no novo formato', () => {
+    const r = validateNfsePayload({ ...BASE, tomador: { ...BASE.tomador, cnpjCpf: '12.abc.345/01de-35' } });
+    expect(r.ok).toBe(true);
+    expect(r.data.tomador.doc).toBe('12ABC34501DE35');
+    expect(validateNfsePayload({ ...BASE, tomador: { ...BASE.tomador, cnpjCpf: '12ABC34501DE34' } }).ok).toBe(false);
+  });
+});
+
 describe("pTotTribSN", () => {
   it("⚠ ZERO informado sobrevive à validação (o `||` o transformava em ausente)", () => {
     const r = validateNfsePayload({ ...BASE, totTrib: { pTotTribSN: 0 } });

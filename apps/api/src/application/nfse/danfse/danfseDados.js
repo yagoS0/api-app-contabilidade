@@ -1,3 +1,4 @@
+import { formatarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // LEITURA DO XML DA NFS-e PARA O DANFSe — POR CAMINHO, NUNCA POR "PRIMEIRO COM ESSE NOME".
 //
 // ⚠ ISTO NÃO PODE REUSAR `getTextByLocalNames` de `utils/xml.js`. Aquela função varre o documento
@@ -104,10 +105,7 @@ function formatarPercentual(valor) {
 }
 
 function formatarCnpjCpf(doc) {
-  const d = String(doc || "").replace(/\D+/g, "");
-  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
-  return doc ? String(doc) : null;
+  return doc ? formatarDocumento(doc) : null;
 }
 
 /**
@@ -312,7 +310,8 @@ export function lerNfse(xml, { municipios = null } = {}) {
 
   const prestDaDps = pessoa(`${DPS}/prest`);
   const toma = pessoa(`${DPS}/toma`);
-  const dest = pessoa(`${DPS}/IBSCBS/dest`);
+  // NT 009 reposiciona o destinatário. A leitura aceita o novo caminho e preserva o histórico.
+  const dest = pessoa(n(`${DPS}/dest`) ? `${DPS}/dest` : `${DPS}/IBSCBS/dest`);
   const interm = pessoa(`${DPS}/interm`);
 
   // ═══ O PRESTADOR CAI PARA `infNFSe/emit` — E SÓ QUANDO O CNPJ PROVA QUE É A MESMA PESSOA ═══
@@ -414,7 +413,7 @@ export function lerNfse(xml, { municipios = null } = {}) {
     dhEmi: formatarDataHora(t(`${DPS}/dhEmi`)),
     tpEmit: t(`${DPS}/tpEmit`),
     cStat: t("cStat"),
-    finNFSe: t(`${DPS}/IBSCBS/finNFSe`),
+    finNFSe: t(`${DPS}/finNFSe`) ?? t(`${DPS}/IBSCBS/finNFSe`),
 
     // ── PRESTADOR ──
     prestDoc: prest.doc,
@@ -518,8 +517,8 @@ export function lerNfse(xml, { municipios = null } = {}) {
 
     // ── IBS / CBS (grupos inexistentes no leiaute 1.01) ──
     cstCClassTrib: juntar([
-      t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/CST`),
-      t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/cClassTrib`),
+      t(`${DPS}/IBSCBS/valores/trib/CST`) ?? t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/CST`),
+      t(`${DPS}/IBSCBS/valores/trib/cClassTrib`) ?? t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/cClassTrib`),
     ], " / ", 2),
     indOpIncid: juntar([
       t(`${DPS}/IBSCBS/cIndOp`),
@@ -586,6 +585,7 @@ export function lerNfse(xml, { municipios = null } = {}) {
     avisos,
     meta: {
       chave,
+      versaoCalculadoraIBSCBS: t('verCalcIBSCBS'),
       // §2 — a expressão "NFS-e SEM VALIDADE JURÍDICA" depende SÓ disto.
       homologacao: String(valores.tpAmb || "").trim() === "2",
       cStat: valores.cStat,

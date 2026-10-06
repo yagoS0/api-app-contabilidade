@@ -1,3 +1,5 @@
+import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
+import { recursoAindaNaoSuportado } from '../nfse/contratoNacional.js';
 import { onlyDigits, toBoolean, toNullableString } from "../../utils/normalizers.js";
 import { parseDate } from "../../utils/date.js";
 import { cpfTemDvValido } from "../../utils/cpf.js";
@@ -15,6 +17,9 @@ export function validateNfsePayload(body) {
   if (!body || typeof body !== "object") {
     return { ok: false, error: "payload_invalido" };
   }
+  const recurso = recursoAindaNaoSuportado(body);
+  if (recurso) return { ok: false, error: 'nfse_recurso_nao_suportado',
+    message: `O campo ${recurso} exige um contrato de emissão ainda não habilitado neste sistema. O pedido não será convertido em nota regular.` };
 
   const companyId = toNullableString(body.companyId);
   if (!companyId) {
@@ -22,8 +27,8 @@ export function validateNfsePayload(body) {
   }
 
   const tomador = body.tomador || {};
-  const doc = onlyDigits(tomador.cnpjCpf || tomador.documento || tomador.doc);
-  if (!doc || (doc.length !== 11 && doc.length !== 14)) {
+  const doc = normalizarDocumento(tomador.cnpjCpf || tomador.documento || tomador.doc);
+  if (!documentoTemFormato(doc)) {
     return { ok: false, error: "tomador_documento_invalido" };
   }
   // ⚠ O DÍGITO VERIFICADOR DO CPF — pedido do dono, 18/08/2026. Até aqui, 11 dígitos quaisquer
@@ -37,7 +42,7 @@ export function validateNfsePayload(body) {
   //
   // ⚠ É VALIDAÇÃO **LOCAL**, e só. Nada é consultado: a BrasilAPI é base de CNPJ, consulta de CPF
   // é serviço pago e traz LGPD junto (o tomador é terceiro). Ver `utils/cpf.js`.
-  // O CNPJ segue exatamente como estava — sua validação de DV não foi pedida e não foi inventada.
+  // CNPJ alfanumérico tem DV conferido; formato numérico mantém compatibilidade com cadastros anteriores.
   if (doc.length === 11 && !cpfTemDvValido(doc)) {
     return { ok: false, error: "tomador_cpf_digito_invalido" };
   }

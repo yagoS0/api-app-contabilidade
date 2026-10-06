@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // REAPROVEITAR UMA NOTA JÁ EMITIDA — copiar o que descreve o TOMADOR, e NADA MAIS.
 //
 // > Pedido do dono (19/08/2026): *"não podemos usar uma nota já emitida para preencher os dados do
@@ -133,8 +134,8 @@ export function podeReaproveitar(nota, { cnpjDaEmpresa = "" } = {}) {
     };
   }
 
-  const docEmpresa = soDigitos(cnpjDaEmpresa);
-  const docTomador = soDigitos(nota.tomador?.cnpjCpf);
+  const docEmpresa = normalizarDocumento(cnpjDaEmpresa);
+  const docTomador = normalizarDocumento(nota.tomador?.cnpjCpf);
   const recebida =
     String(nota.papel || "").toUpperCase() === "DEST"
     || (docEmpresa.length === 14 && docTomador === docEmpresa);
@@ -241,7 +242,7 @@ export function camposDaNota(nota) {
   const { descricao } = descricaoDosItens(nota);
   const endereco = nota.tomador?.endereco || {};
   return {
-    tomadorDoc: soDigitos(nota.tomador?.cnpjCpf),
+    tomadorDoc: normalizarDocumento(nota.tomador?.cnpjCpf),
     tomadorNome: String(nota.tomador?.nome ?? "").trim(),
     // O detalhe lê o XML da própria nota; ausência de campo permanece vazia.
     tomadorEmail: String(nota.tomador?.email ?? "").trim(),

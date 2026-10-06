@@ -1,3 +1,4 @@
+import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 // AS CÉLULAS QUE O EXCEL ESTRAGA — documento, valor e competência.
 //
 // ⚠⚠ **NADA AQUI EMITE NOTA.** São leitores de célula: recebem o que veio da planilha e devolvem o
@@ -56,13 +57,15 @@ const MENOR_COMPRIMENTO_RECUPERAVEL = 9;
  */
 export function lerDocumentoDaPlanilha(celula) {
   const original = celula === null || celula === undefined ? "" : String(celula).trim();
-  const digitos = original.replace(/\D+/g, "");
+  const digitos = normalizarDocumento(original);
 
   if (!digitos) return { ok: false, motivo: RECUSA_DOCUMENTO.AUSENTE, texto: original };
 
-  if (digitos.length === 14) {
+  if (cnpjCompativel(digitos)) {
     return { ok: true, documento: digitos, tipo: "CNPJ", zeroRecuperado: false };
   }
+
+  if (!/^\d+$/.test(digitos)) return { ok: false, motivo: RECUSA_DOCUMENTO.FORA_DE_FORMA, texto: original };
 
   if (digitos.length === 11) {
     if (!cpfTemDvValido(digitos)) {

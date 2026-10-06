@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseXmlMetadata } from "../../application/nfse/AdnXmlMetadata.js";
@@ -108,13 +109,13 @@ function serializeDocument(doc) {
 
 export class AdnRepository {
   static async getState(cnpj) {
-    const normalized = String(cnpj || "").replace(/\D+/g, "");
+    const normalized = normalizarDocumento(cnpj);
     if (!normalized) return null;
     return prisma.adnSyncState.findUnique({ where: { cnpj: normalized } });
   }
 
   static async ensureState(cnpj) {
-    const normalized = String(cnpj || "").replace(/\D+/g, "");
+    const normalized = normalizarDocumento(cnpj);
     if (!normalized) {
       const err = new Error("adn_cnpj_required");
       err.code = "ADN_CNPJ_REQUIRED";
@@ -290,7 +291,7 @@ export class AdnRepository {
     includeCancelled = false,
     includeRejected = false,
   }) {
-    const normalizedCnpj = String(cnpj || "").replace(/\D+/g, "");
+    const normalizedCnpj = normalizarDocumento(cnpj);
     if (includeCancelled) {
       await this.backfillMissingMetadata({ limit: 500 });
     }
@@ -385,7 +386,7 @@ export class AdnRepository {
     cursor,
     limit = 50,
   }) {
-    const normalizedCnpj = String(cnpj || "").replace(/\D+/g, "");
+    const normalizedCnpj = normalizarDocumento(cnpj);
     if (!normalizedCnpj) {
       const err = new Error("cnpj_required");
       err.code = "CNPJ_REQUIRED";

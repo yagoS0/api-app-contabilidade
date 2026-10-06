@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { Router } from "express";
 import { createRelatoriosClienteRouter } from './relatorios.js';
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
@@ -657,7 +658,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           where: { id: portalCompanyId },
           select: { cnpj: true },
         });
-        const empresaCnpj = String(portalClient?.cnpj || company.cnpj || "").replace(/\D/g, "");
+        const empresaCnpj = normalizarDocumento(portalClient?.cnpj || company.cnpj);
         if (empresaCnpj && inspected.cnpj !== empresaCnpj) {
           return res.status(400).json({
             error: "cert_cnpj_mismatch",

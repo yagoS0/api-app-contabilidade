@@ -5,6 +5,9 @@
   "type": "module",
   "main": "src/index.js",
   "exports": {
+    "./nfse-recorrencias": "./src/nfse/Recorrencias.jsx",
+    "./nfse-recorrencias-mock": "./src/nfse/recorrenciasMock.js",
+    "./documentos-fiscais": "./src/documentosFiscais.js",
     ".": "./src/index.js",
     "./municipios-ibge": "./src/municipios/municipiosIbge.data.js",
     "./erros-cadastro-empresa": "./src/erros/errosDeCadastroDeEmpresa.js",

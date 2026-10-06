@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import https from "node:https";
 import fs from "node:fs";
 import axios from "axios";
@@ -163,7 +164,7 @@ export class AdnSyncService {
   }
 
   static async syncOnce({ lote = true, cnpjConsulta, companyId } = {}) {
-    const cnpj = (cnpjConsulta || ADN_CNPJ_CONSULTA || "").replace(/\D+/g, "");
+    const cnpj = normalizarDocumento(cnpjConsulta || ADN_CNPJ_CONSULTA);
     if (!cnpj) {
       const err = new Error("adn_cnpj_required");
       err.code = "ADN_CNPJ_REQUIRED";

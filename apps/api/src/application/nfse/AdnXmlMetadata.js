@@ -1,10 +1,11 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { DOMParser } from "@xmldom/xmldom";
 import { parseDate } from "../../utils/date.js";
 import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
 
 function normalizeDoc(value) {
   if (!value) return null;
-  const normalized = String(value).replace(/\D+/g, "");
+  const normalized = normalizarDocumento(value);
   return normalized || null;
 }
 

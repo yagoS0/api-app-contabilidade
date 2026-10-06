@@ -1,6 +1,7 @@
 import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 // src/server.js
 import express from "express";
+import { iniciarWorkerNfseRecorrencia } from './workers/nfseRecorrenciaWorker.js';
 import { iniciarWorkerWhatsappDuravel, pararWorkerWhatsappDuravel } from "./workers/whatsappDurableWorker.js";
 import { iniciarWorkerArquivosWhatsapp, pararWorkerArquivosWhatsapp } from "./workers/whatsappArquivosWorker.js";
 import { iniciarWorkerAtendimento, pararWorkerAtendimento } from "./workers/atendimentoManutencaoWorker.js";
@@ -188,6 +189,9 @@ iniciarWorkerWhatsappDuravel();
 iniciarWorkerArquivosWhatsapp();
 iniciarWorkerAtendimento();
 iniciarWorkerVarreduraNotasLocal();
+const pararRecorrencia = iniciarWorkerNfseRecorrencia(log);
+process.once('SIGTERM', pararRecorrencia);
+process.once('SIGINT', pararRecorrencia);
 let encerrando = false;
 async function encerrarWhatsapp() {
   if (encerrando) return;

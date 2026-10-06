@@ -1,3 +1,4 @@
+import { formatarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // A DECLARAÇÃO DA NOTA — as linhas que quem confirma LÊ antes de emitir. Pura, compartilhada.
 //
 // ⚠⚠ ESTA É A TERCEIRA CASA DA MESMA REGRA, e nasceu (02/09/2026) porque o assistente de WhatsApp
@@ -14,13 +15,9 @@
 // ⚠ Não resumir: "Emitir nota de R$ X para Fulano?" foi o defeito — o contador confirmava sem ver
 // alíquota, retenção, regime declarado nem percentual de tributos.
 
-const soDigitos = (v) => String(v || "").replace(/\D/g, "");
 
 export function formatarDoc(doc) {
-  const d = soDigitos(doc);
-  if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
-  return String(doc || "");
+  return formatarDocumento(doc);
 }
 
 export function fmtBRL(v) {

@@ -40,6 +40,9 @@ jest.mock("axios", () => ({ __esModule: true, default: { create: jest.fn() } }))
 
 jest.mock("xml-crypto", () => ({
   SignedXml: class {
+    constructor() {
+      if (mockAssinaturaReal) return new (jest.requireActual('xml-crypto').SignedXml)();
+    }
     addReference() {}
     computeSignature(xml) {
       this._xml = xml;
@@ -76,12 +79,18 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
 
 import fs from "node:fs";
 import path from "node:path";
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
+import forge from 'node-forge';
+import { inspectPfx } from '../../security/inspectPfx.js';
 import { gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
 import axios from "axios";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
 import { NfseService, DPS_VERSAO } from "../NfseService.js";
+import { CONTRATO_NACIONAL } from '../contratoNacional.js';
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // O XSD OFICIAL
@@ -111,14 +120,7 @@ import { NfseService, DPS_VERSAO } from "../NfseService.js";
 // declarada**, e um oráculo apontado para o esquema errado APROVARIA a ordem trocada. É a classe
 // exata do E1235 que recusou três notas reais em 21/08/2026 — com o agravante de que o único teste
 // escrito para impedir essa classe seria justamente o que diria que está tudo bem.
-const SUFIXO = path.join(
-  "docs",
-  "leiaute-nfse",
-  "documentacao-tecnica",
-  "esquemas-xsd",
-  "Schemas",
-  DPS_VERSAO
-);
+const SUFIXO = path.normalize(CONTRATO_NACIONAL.schemas);
 const ARQUIVO_TIPOS_COMPLEXOS = `tiposComplexos_v${DPS_VERSAO}.xsd`;
 const ARQUIVO_TIPOS_SIMPLES = `tiposSimples_v${DPS_VERSAO}.xsd`;
 const SCHEMAS = (() => {
@@ -200,7 +202,7 @@ function lerParticulas(lista) {
 function carregarEsquema(versao = DPS_VERSAO) {
   const complexos = new Map();
   const simples = new Map();
-  const dir = path.join(path.dirname(SCHEMAS), versao);
+  const dir = versao === DPS_VERSAO ? SCHEMAS : path.resolve(SCHEMAS, '../../esquemas-xsd/Schemas', versao);
 
   for (const arquivo of [`tiposComplexos_v${versao}.xsd`, `tiposSimples_v${versao}.xsd`]) {
     const raiz = conteudo(lerXsd(arquivo, dir).find((n) => conteudo(n, "schema")), "schema");
@@ -427,6 +429,7 @@ const PRESUMIDO = { regime: "LUCRO_PRESUMIDO" };
 const CARGA = { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 2.5 };
 
 let postMock;
+let mockAssinaturaReal = false;
 
 function montarCenario({ empresa = {}, cadastroFiscal = null } = {}) {
   prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE, ...empresa });
@@ -440,18 +443,98 @@ function montarCenario({ empresa = {}, cadastroFiscal = null } = {}) {
   });
 }
 
+const documentosGerados = new Set();
 function xmlEnviado() {
   const body = postMock.mock.calls[0][1];
-  return gunzipSync(Buffer.from(body.dpsXmlGZipB64, "base64")).toString("utf-8");
+  const xml = gunzipSync(Buffer.from(body.dpsXmlGZipB64, "base64")).toString("utf-8");
+  documentosGerados.add(xml);
+  return xml;
 }
+
+// Job complementar explícito: NFSE_XSD_PYTHON deve apontar para Python com lxml instalado.
+// A ausência da variável mantém a suíte estrutural; o comando de homologação local a exige.
+afterAll(() => {
+  if (!process.env.NFSE_XSD_PYTHON) return;
+  const pasta = fs.mkdtempSync(path.join(os.tmpdir(), 'nfse-xsd-'));
+  try {
+    const arquivos = [...documentosGerados].map((xml, i) => {
+      const arquivo = path.join(pasta, `${i}.xml`);
+      fs.writeFileSync(arquivo, xml);
+      return arquivo;
+    });
+    expect(arquivos.length).toBeGreaterThan(0);
+    const raiz = SCHEMAS.slice(0, -SUFIXO.length);
+    const r = spawnSync(process.env.NFSE_XSD_PYTHON, [path.join(raiz, 'scripts/validar-nfse-xsd.py'),
+      '--schema', path.join(SCHEMAS, `DPS_v${DPS_VERSAO}.xsd`), ...arquivos], { encoding: 'utf8' });
+    if (r.status !== 0) throw Error(r.error?.message || r.stdout + r.stderr);
+    process.stdout.write(`[XSD completo] ${r.stdout.trim()}\n`);
+    const invalido = path.join(pasta, 'id-invalido.xml');
+    fs.writeFileSync(invalido, [...documentosGerados][0].replace(/Id="[^"]*"/, 'Id="INVALIDO"'));
+    const contra = spawnSync(process.env.NFSE_XSD_PYTHON, [path.join(raiz, 'scripts/validar-nfse-xsd.py'),
+      '--schema', path.join(SCHEMAS, `DPS_v${DPS_VERSAO}.xsd`), invalido], { encoding: 'utf8' });
+    expect(contra.status).toBe(1);
+  } finally {
+    if (path.dirname(path.resolve(pasta)) !== path.resolve(os.tmpdir())) throw Error('Diretório temporário fora da raiz esperada');
+    fs.rmSync(pasta, { recursive: true, force: true });
+  }
+});
 
 const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
 beforeEach(() => {
+  mockAssinaturaReal = false;
   jest.clearAllMocks();
   resolverCertificadosDaEmpresa.mockResolvedValue(CERT_DA_EMPRESA);
   prisma.serviceInvoice.create.mockImplementation(async ({ data }) => ({ id: "inv-1", ...data }));
   prisma.serviceInvoice.update.mockImplementation(async ({ data }) => ({ id: "inv-1", ...data }));
+});
+
+it('preserva CNPJ alfanumérico no prestador, tomador e ID da DPS', async () => {
+  montarCenario({ empresa: { cnpj: '12.ABC.345/01DE-35' } });
+  await NfseService.issue({ data: { ...PAYLOAD_BASE,
+    tomador: { ...PAYLOAD_BASE.tomador, doc: '12.ABC.345/01DE-35' } }, log });
+  const xml = xmlEnviado();
+  expect(xml).toContain('<CNPJ>12ABC34501DE35</CNPJ>');
+  expect(xml).toContain('DPS3304557212ABC34501DE35');
+  expect(recusasDoXsd(xml)).toEqual([]);
+});
+
+it('assina a DPS alfanumérica e detecta alteração posterior do documento', async () => {
+  mockAssinaturaReal = true;
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  const certificado = forge.pki.createCertificate();
+  certificado.publicKey = forge.pki.publicKeyFromPem(publicKey);
+  certificado.serialNumber = '01';
+  certificado.validity.notBefore = new Date('2026-01-01');
+  certificado.validity.notAfter = new Date('2027-01-01');
+  certificado.setSubject([{ name: 'commonName', value: 'TESTE:12ABC34501DE35' }]);
+  certificado.setIssuer(certificado.subject.attributes);
+  const chave = forge.pki.privateKeyFromPem(privateKey);
+  certificado.sign(chave, forge.md.sha256.create());
+  const certPem = forge.pki.certificateToPem(certificado);
+  const pfx = forge.pkcs12.toPkcs12Asn1(chave, [certificado], 'local-teste');
+  expect(inspectPfx(Buffer.from(forge.asn1.toDer(pfx).getBytes(), 'binary'), 'local-teste').cnpj).toBe('12ABC34501DE35');
+  resolverCertificadosDaEmpresa.mockResolvedValue({ ...CERT_DA_EMPRESA,
+    assinatura: { ...CERT_DA_EMPRESA.assinatura, keyPem: privateKey, certPem,
+      certBase64: certPem.replace(/-----[^-]+-----|\s/g, '') } });
+  montarCenario({ empresa: { cnpj: '12ABC34501DE35' } });
+  await NfseService.issue({ data: PAYLOAD_BASE, log });
+  const xml = xmlEnviado();
+  const signature = xml.match(/<Signature\b[\s\S]*?<\/Signature>/)?.[0];
+  expect(signature).toBeTruthy();
+  const { SignedXml } = jest.requireActual('xml-crypto');
+  const conferir = entrada => {
+    const verificador = new SignedXml();
+    verificador.keyInfoProvider = { getKey: () => publicKey };
+    verificador.loadSignature(signature);
+    return verificador.checkSignature(entrada);
+  };
+  expect(conferir(xml)).toBe(true);
+  expect(conferir(xml.replace('12ABC34501DE35', '12ABC34501DE34'))).toBe(false);
+  const persistido = prisma.serviceInvoice.update.mock.calls.find(([p]) => p.data.xmlDps)?.[0];
+  expect(persistido.data.xmlDps).toBe(xml);
+  expect(persistido.data.contratoEmissao).toBe(CONTRATO_NACIONAL.id);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -461,7 +544,7 @@ describe("⚠⚠ o oráculo confere a versão que a gente EMITE — e nada mais"
     // A trava do falso-verde. Se alguém trocar `DPS_VERSAO` e não houver esquema daquela versão, o
     // `SCHEMAS` já lança na carga do módulo; aqui se prende o par para que ninguém volte a fixar a
     // versão neste arquivo.
-    expect(path.basename(SCHEMAS)).toBe(DPS_VERSAO);
+    expect(SCHEMAS.endsWith(SUFIXO)).toBe(true);
     expect(ARQUIVO_TIPOS_COMPLEXOS).toBe(`tiposComplexos_v${DPS_VERSAO}.xsd`);
     expect(ARQUIVO_TIPOS_SIMPLES).toBe(`tiposSimples_v${DPS_VERSAO}.xsd`);
     expect(fs.existsSync(path.join(SCHEMAS, ARQUIVO_TIPOS_COMPLEXOS))).toBe(true);
@@ -486,7 +569,7 @@ describe("⚠⚠ o oráculo confere a versão que a gente EMITE — e nada mais"
     // A frase "o projeto não tem o XSD versionado" vivia em `NfseService.js` e em `dpsCodigos.js`
     // como justificativa escrita para NÃO migrar. Ela é falsa desde 19/08/2026. Este caso a mantém
     // falsa: se alguém apagar um dos pacotes, ele cai e a afirmação volta a ser verificável.
-    const raizSchemas = path.dirname(SCHEMAS);
+    const raizSchemas = path.resolve(SCHEMAS, '../../esquemas-xsd/Schemas');
     for (const v of ["1.00", "1.01"]) {
       expect(fs.existsSync(path.join(raizSchemas, v, `tiposComplexos_v${v}.xsd`))).toBe(true);
     }
@@ -500,7 +583,7 @@ describe("⚠⚠ o oráculo confere a versão que a gente EMITE — e nada mais"
         parser
           .parse(
             fs.readFileSync(
-              path.join(path.dirname(SCHEMAS), v, `tiposComplexos_v${v}.xsd`),
+              path.resolve(SCHEMAS, '../../esquemas-xsd/Schemas', v, `tiposComplexos_v${v}.xsd`),
               "utf-8",
             ),
           )
@@ -796,37 +879,22 @@ describe("⚠⚠ o MESMO XML emitido cabe nas DUAS versões do esquema", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠⚠ DIVERGÊNCIAS AINDA ABERTAS — MEDIDAS AQUI, **NÃO CONSERTADAS**, PENDENTES DO DONO
-//
-// A varredura que procurou "mais elementos inventados" (21/08/2026) não achou outro nome
-// fabricado, mas achou DUAS formas de produzir o MESMO `E1235` — as duas alcançáveis hoje, pelo
-// cadastro e pela tela. Elas ficam TRAVADAS aqui, com o defeito à vista, porque consertá-las é
-// decisão de produto, não detalhe de implementação:
-//
-//   · `cTribMun` — mudar a forma exige decidir se o cadastro passa a EXIGIR 3 dígitos (e aí um
-//     código municipal legítimo mais longo/curto para de ser aceito). O `apps/api/CLAUDE.md` já
-//     registra que o comprimento "NÃO está provado" e é **pendente de confirmação do dono**.
-//   · `xDescServ` — o conserto é ou RECUSAR a nota, ou REESCREVER o texto que vai impresso no
-//     documento fiscal. Reescrever descrição de serviço por conta própria é mexer no que o
-//     contribuinte declarou.
-//
-// ⚠ Se um destes testes começar a FALHAR, é porque alguém consertou o defeito — ótimo. Apague o
-// teste e mova a linha para o histórico; não "conserte o teste".
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠ divergências abertas contra o XSD (medidas, não consertadas)", () => {
-  it("⚠ cTribMun com menos de 3 dígitos vira E1235 — o cadastro aceita, o schema não", async () => {
+// Regressões históricas agora recusadas no pré-voo, conforme o XSD oficial.
+describe("divergências do XSD recusadas antes de reservar numeração", () => {
+  it("recusa cTribMun com menos de três dígitos antes de transmitir", async () => {
     // `TCCodTribMun` é `[0-9]{3}` — EXATAMENTE três (tiposSimples_v1.01.xsd:568).
     // `companyProfile.validateAndNormalizeCompanyProfile` só tira a pontuação de
     // `codigoServicoMunicipal` e **não confere comprimento**; `buildDpsXml` faz `.slice(-3)`, que
     // encurta o longo mas não completa o curto. Uma empresa cadastrada com "12" emite
     // `<cTribMun>12</cTribMun>` e é recusada pelo sistema nacional.
     montarCenario({ empresa: { codigoServicoMunicipal: "12" } });
-    await NfseService.issue({ data: PAYLOAD_BASE, log });
-    const erros = recusasDoXsd(xmlEnviado());
-    expect(erros.join("\n")).toMatch(/cTribMun.*TCCodTribMun/s);
+    const resultado = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(resultado.codigo).toBe('NFSE_CAMPO_XML_INVALIDO');
+    expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 
-  it("⚠ endereço com traço longo/aspas curvas vira E1235 — é o que sai de um copiar-colar", async () => {
+  it("recusa caracteres incompatíveis no endereço, preservando acentos e descrição", async () => {
     // `xLgr`/`nro`/`xCpl`/`xBairro`/`email` são `TSString`, cujo pattern
     // (`[!-ÿ]{1}[ -ÿ]{0,}[!-ÿ]{1}|[!-ÿ]{1}`) para em `ÿ` (U+00FF): travessão (—), aspas curvas
     // (“ ”), bullet (•) e afins são RECUSADOS. Acento e cedilha passam. `escapeXml` não ajuda —
@@ -837,7 +905,7 @@ describe("⚠ divergências abertas contra o XSD (medidas, não consertadas)", (
     // QUALQUER caractere, então aquele tipo não restringe charset nenhum. Registrado aqui porque
     // os dois patterns são quase idênticos na tela e levam a conclusões opostas.
     montarCenario();
-    await NfseService.issue({
+    const resultado = await NfseService.issue({
       data: {
         ...PAYLOAD_BASE,
         tomador: {
@@ -847,7 +915,9 @@ describe("⚠ divergências abertas contra o XSD (medidas, não consertadas)", (
       },
       log,
     });
-    expect(recusasDoXsd(xmlEnviado()).join("\n")).toMatch(/xLgr/);
+    expect(resultado.codigo).toBe('NFSE_CAMPO_XML_INVALIDO');
+    expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
 
     // Contraprova 1: acento e cedilha NÃO são o problema — recusar por eles seria pior.
     montarCenario();

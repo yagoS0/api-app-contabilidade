@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
 //
 //   `apps/portal-cliente-web/src/features/emitir/lib/reaproveitarNota.js`
@@ -164,7 +165,7 @@ export function podeReaproveitar(nota) {
     };
   }
 
-  const temTomador = Boolean(String(nota.tomadorNome || "").trim() || soDigitos(nota.tomadorDoc));
+  const temTomador = Boolean(String(nota.tomadorNome || "").trim() || normalizarDocumento(nota.tomadorDoc));
   const temValor = Boolean(paraCampoDeValor(nota.total));
   if (!temTomador && !temValor) {
     return {
@@ -216,7 +217,7 @@ export function valoresIniciaisDaNota(nota) {
 
   return {
     tomador: {
-      cnpjCpf: soDigitos(nota.tomadorDoc),
+      cnpjCpf: normalizarDocumento(nota.tomadorDoc),
       nome: String(nota.tomadorNome ?? "").trim(),
       // ⚠ Vazio porque NÃO TEMOS, não porque escolhemos não mandar. A nota capturada não traz
       // e-mail do tomador em campo nenhum.

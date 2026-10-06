@@ -767,5 +767,14 @@ export function createRealApi() {
         body: corpo,
       });
     },
+    async criarRecorrenciaNfse(companyId, body) {
+      return pedir('/nfse/recorrencias', { method: 'POST', body: { ...body, companyId } });
+    },
+    async listarRecorrenciasNfse(companyId) {
+      return pedir(`/nfse/recorrencias?companyId=${encodeURIComponent(companyId)}`);
+    },
+    async alterarRecorrenciaNfse(companyId, id, acao, body = {}) {
+      return pedir(`/nfse/recorrencias/${encodeURIComponent(id)}/${acao}`, { method: 'POST', body: { ...body, companyId } });
+    },
   };
 }

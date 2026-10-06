@@ -1,3 +1,4 @@
+import { cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { emailValido } from "@contabilidade/shared/email";
 // Q8.A.4: schemas Zod para validação rigorosa de input em POST/PATCH /firm/companies.
 // Complementa `validateAndNormalizeCompanyProfile` (mantida) — Zod roda PRIMEIRO,
@@ -6,8 +7,7 @@ import { emailValido } from "@contabilidade/shared/email";
 import { z } from "zod";
 import { strongPasswordSchema } from "./passwordPolicy.js";
 
-const cnpjRegex = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/;
-const cnpjDigitsOnly = z.string().transform((s) => String(s || "").replace(/\D+/g, ""));
+
 
 // Q27.A: senha de acesso forte (8 + maiúscula + minúscula + número + especial) — política única.
 const senhaForte = strongPasswordSchema;
@@ -25,7 +25,7 @@ const enderecoSchema = z.object({
 const companyBaseFields = {
   razaoSocial: z.string().min(1, "razão social obrigatória").max(200),
   nomeFantasia: z.string().max(200).optional().nullable(),
-  cnpj: z.string().regex(cnpjRegex, "CNPJ em formato inválido"),
+  cnpj: z.string().refine(cnpjCompativel, "CNPJ em formato inválido ou DV alfanumérico incorreto"),
   // ⚠⚠ O `.or(z.literal(""))` E O "TERCEIRO CAMPO" que `companyEmailVazio.test.js:8-9` antecipa:
   //   *"o guideNotificationEmail ja tinha .or(z.literal("")) — o mesmo tropeço, remendado só
   //   naquele campo. Este teste trava a regra para os dois, e para quem for adicionar o terceiro."*

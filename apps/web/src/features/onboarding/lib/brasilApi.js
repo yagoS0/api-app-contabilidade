@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
 //
 //   `apps/portal-cliente-web/src/api/real/brasilApi.js`
@@ -29,7 +30,7 @@
 const BASE = "https://brasilapi.com.br/api/cnpj/v1";
 
 export function soDigitosCnpj(valor) {
-  return String(valor ?? "").replace(/\D+/g, "").slice(0, 14);
+  return normalizarDocumento(valor);
 }
 
 export function formatarCnpj(valor) {
@@ -66,6 +67,9 @@ function situacaoCadastral(data) {
  */
 export async function consultarCnpj(cnpj, { fetchImpl = null } = {}) {
   const digitos = soDigitosCnpj(cnpj);
+  if (/[A-Z]/.test(digitos)) {
+    return { ok: false, motivo: 'cnpj_alfanumerico_sem_consulta', mensagem: 'Preencha os dados manualmente. A consulta pública deste sistema ainda não foi homologada para CNPJ alfanumérico.' };
+  }
   if (digitos.length !== 14) {
     return { ok: false, motivo: "cnpj_incompleto", mensagem: "Informe os 14 dígitos do CNPJ." };
   }

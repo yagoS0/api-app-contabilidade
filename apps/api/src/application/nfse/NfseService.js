@@ -1,3 +1,7 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { CONTRATO_NACIONAL } from './contratoNacional.js';
+import { validarCamposXmlDaDps } from './camposXmlDaDps.js';
+import { snapshotFiscal } from './snapshotFiscal.js';
 import https from "node:https";
 import axios from "axios";
 import { SignedXml } from "xml-crypto";
@@ -94,7 +98,7 @@ import {
 //
 // ⚠ **A primeira emissão real em 1.01 precisa ser acompanhada.** Nenhum teste substitui isso: o
 // oráculo não confere as Regras de Negócio (`E####`) do Anexo I, e a expiração de versão é uma delas.
-export const DPS_VERSAO = "1.01";
+export const DPS_VERSAO = CONTRATO_NACIONAL.versaoDps;
 
 const REQUIRED_COMPANY_FIELDS = [
   "cnpj",
@@ -317,7 +321,7 @@ function buildEventoXml({
     <tpAmb>${tpAmb}</tpAmb>
     <verAplic>API</verAplic>
     <dhEvento>${dhEvento}</dhEvento>
-    <CNPJAutor>${escapeXml(normalizeDigits(cnpjAutor))}</CNPJAutor>
+    <CNPJAutor>${escapeXml(normalizarDocumento(cnpjAutor))}</CNPJAutor>
     <chNFSe>${escapeXml(chaveDigits)}</chNFSe>
     ${eventoXml}
   </infPedReg>
@@ -383,7 +387,7 @@ function resolverCLocEmi(company) {
 // chave de identidade fiscal é como elas divergem: o `Id` gravado na linha e o `Id` assinado no XML
 // poderiam deixar de ser o mesmo sem que nada reclamasse.
 function montarIdDps({ cLocEmi, company, serieVal, nDpsVal }) {
-  const cnpj = (company.cnpj || "").replace(/\D+/g, "");
+  const cnpj = normalizarDocumento(company.cnpj);
   const cpfCompany = (company.cpf || "").replace(/\D+/g, "");
   const isCnpj = cnpj.length === 14;
   const tpInsc = isCnpj ? "2" : "1"; // 2=CNPJ, 1=CPF
@@ -487,7 +491,7 @@ function parseConsultaPeriodoXml(xmlText) {
         valorServicosNumber !== null && !Number.isNaN(valorServicosNumber)
           ? valorServicosNumber
           : null,
-      tomadorDoc: tomadorDoc ? String(tomadorDoc).replace(/\D+/g, "") : null,
+      tomadorDoc: tomadorDoc ? normalizarDocumento(tomadorDoc) : null,
       tomadorNome: tomadorNome ? String(tomadorNome) : null,
       status: normalizeProviderStatus(situacao),
       xml,
@@ -620,13 +624,13 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     company.codigoServicoMunicipal || company.codigoServicoNacional || "";
 
   const cLocEmi = resolverCLocEmi(company);
-  const cnpj = (company.cnpj || "").replace(/\D+/g, "");
+  const cnpj = normalizarDocumento(company.cnpj);
   const serieVal = normalizarSerie(numeracao.rpsSerie); // 5 dígitos, faixa E0010 conferida
   const nDpsRaw = String(numeracao.rpsNumero).replace(/\D+/g, ""); // XML sem padding
   const infId = montarIdDps({ cLocEmi, company, serieVal, nDpsVal: nDpsRaw });
 
   // Dados tomador
-  const tomadorDoc = (data.tomador.doc || "").replace(/\D+/g, "");
+  const tomadorDoc = normalizarDocumento(data.tomador.doc);
   const docTag = tomadorDoc.length === 11 ? "CPF" : "CNPJ";
   const tomadorEmail = data.tomador.email;
 
@@ -963,7 +967,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     throw err;
   }
   const ibsCbs = ibscbsDaDps({
-    cTribNac,
+    competencia: data.competencia,
     perfil,
     ligado: INTEGRACAO_NFSE_IBSCBS,
     cNBS: nbsDaNota.cNBS,
@@ -1877,7 +1881,7 @@ export class NfseService {
    * tentativa anterior — e só é aceito quando a falha daquela linha LIBEROU o número (camadas
    * `NOSSA` e `RECEITA`). Falha de `TRANSPORTE` não libera: ali o desfecho é desconhecido.
    */
-  static async issue({ data, log, retryInvoiceId = null }) {
+  static async issue({ data, log, retryInvoiceId = null, antesDeEnviar = null }) {
     const company = await prisma.company.findUnique({
       where: { id: data.companyId },
     });
@@ -1961,6 +1965,7 @@ export class NfseService {
     // código não cadastrado chegue a virar `<cTribNac>`. Há teste sobre as duas coisas.
     let codigoServicoDaNota = null;
     try {
+      validarCamposXmlDaDps({ company, data, perfil: perfilDeEmissao });
       tributacaoMunicipalDoPerfil(perfilDeEmissao);
       resolverCLocEmi(company);
       normalizarSerie(company.rpsSerie);
@@ -2008,7 +2013,7 @@ export class NfseService {
       // ⚠⚠ E0322: declarar IBS/CBS OBRIGA o `cNBS`. É a regra que está no nosso disco, e recusá-la
       // aqui evita um round-trip ao sistema nacional para descobrir algo que já sabíamos.
       const ibsCbsPreVoo = ibscbsDaDps({
-        cTribNac: codigoServicoDaNota,
+        competencia: data.competencia,
         perfil: perfilDeEmissao,
         ligado: INTEGRACAO_NFSE_IBSCBS,
         cNBS: nbsPreVoo.cNBS,
@@ -2136,6 +2141,13 @@ export class NfseService {
         perfil: perfilDeEmissao,
       });
       rawXml = construido.rawXml;
+      // Persistir antes da rede: timeout não pode apagar o documento efetivamente enviado.
+      await prisma.serviceInvoice.update({ where: { id: record.id }, data: {
+        contratoEmissao: CONTRATO_NACIONAL.id,
+        xmlDps: rawXml,
+        configuracaoFiscal: snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
+          codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS }),
+      } });
 
       if (construido.localPrestacaoAssumido) {
         // Ver o bloco sobre a LC 116/2003, art. 3º em `buildDpsXml`. A suposição fica no log em
@@ -2147,6 +2159,8 @@ export class NfseService {
       }
 
       requestUrl = `${client.defaults.baseURL}${NFSE_PATH}`;
+      // Agendamentos persistem o vínculo com a tentativa ANTES de qualquer envio externo.
+      if (antesDeEnviar) await antesDeEnviar(record.id);
       const { data: response } = await client.post(NFSE_PATH, {
         dpsXmlGZipB64: construido.dpsXmlGZipB64,
       });

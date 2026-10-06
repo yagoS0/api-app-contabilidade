@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // AS FERRAMENTAS DO ASSISTENTE — 1:1 com as capacidades que o cliente JÁ tem nas rotas `/client`.
 //
 // Cada ferramenta = DEFINIÇÃO (o que o modelo vê: `name`, `description` em pt-BR, `input_schema`
@@ -72,7 +73,7 @@ function recusa(motivo, mensagem, extra = {}) {
 }
 
 function soDigitos(valor) {
-  return String(valor || "").replace(/\D/g, "");
+  return normalizarDocumento(valor);
 }
 
 function exigirPapel(ctx, minimo) {
@@ -158,7 +159,7 @@ export const DEFINICOES = Object.freeze([
   { name: "consultar_cnpj", description: "Consulta um CNPJ na Receita (BrasilAPI) para completar nome e endereço do tomador. Nunca CPF.", strict: true, input_schema: S({ cnpj: str("CNPJ com 14 dígitos (pontuação opcional)") }) },
   { name: "consultar_cep", description: "Completa rua, bairro e município pelo CEP. Não retorna número nem complemento do imóvel. Reaproveite os dados parciais retornados.", strict: true, input_schema: S({ cep: str("CEP com 8 dígitos, pontuação opcional") }) },
   { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório. Informe números como números, booleanos como booleanos; campos ausentes podem ser omitidos ou null. A entrada é validada no servidor.", strict: false, input_schema: S({
-    tomadorDoc: str("CNPJ ou CPF do tomador, só dígitos ou com pontuação"),
+    tomadorDoc: str("CNPJ numérico ou alfanumérico, ou CPF, com ou sem pontuação"),
     tomadorNome: strOuNulo("Nome/razão social do tomador"),
     perfilId: strOuNulo("Perfil de serviço escolhido pelo cliente entre as opções devolvidas por preparar_emissao; null para consultar as opções. Nunca invente um id."),
     tomadorEmail: strOuNulo("E-mail do tomador"),

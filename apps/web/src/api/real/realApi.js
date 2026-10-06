@@ -1776,6 +1776,15 @@ export function createRealApi() {
     async emitirNfse(payload) {
       return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
     },
+    async criarRecorrenciaNfse(companyId, body) {
+      return request('/nfse/recorrencias', { method: 'POST', body: JSON.stringify({ ...body, companyId }) });
+    },
+    async listarRecorrenciasNfse(companyId) {
+      return request(`/nfse/recorrencias?companyId=${encodeURIComponent(companyId)}`);
+    },
+    async alterarRecorrenciaNfse(companyId, id, acao, body = {}) {
+      return request(`/nfse/recorrencias/${encodeURIComponent(id)}/${acao}`, { method: 'POST', body: JSON.stringify({ ...body, companyId }) });
+    },
 
     // ── Onboarding (funil pré-cadastro) ───────────────────────────────────
     // ⚠ Estas rotas NÃO ficam sob `/firm/companies/:id` — a ficha existe justamente porque a

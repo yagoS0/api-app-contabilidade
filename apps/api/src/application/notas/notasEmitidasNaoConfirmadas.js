@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // A NOTA QUE NÓS EMITIMOS E QUE O ADN AINDA NÃO TROUXE DE VOLTA.
 //
 // ─── O PEDIDO DO DONO (19/08/2026) ───────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ export async function lerEmitidasNaoConfirmadas({
   const [ano, mes] = competencia ? competencia.split("-").map(Number) : [];
   const filtroCompetencia = competencia ? { competencia: { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) } } : {};
   const filtroCriacao = criadaDesde ? { createdAt: { gte: criadaDesde } } : {};
-  const docEmitente = String(cnpjEmitente || "").replace(/\D/g, "");
+  const docEmitente = normalizarDocumento(cnpjEmitente);
   const filtroDirecao = docEmitente.length === 14 ? { OR: [{ papel: "EMIT" }, { papel: null, emitenteDoc: docEmitente }] } : { papel: "EMIT" };
   const selectEmissao = {
     id: true, chaveAcesso: true, numeroNfse: true, rpsSerie: true, rpsNumero: true,

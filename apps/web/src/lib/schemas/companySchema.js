@@ -1,3 +1,4 @@
+import { cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { emailValido } from "@contabilidade/shared/email";
 // Q11.2: schema Zod do formulário de empresa.
 //
@@ -12,8 +13,7 @@ import { emailValido } from "@contabilidade/shared/email";
 import { z } from "zod";
 import { strongPasswordSchema } from "./passwordPolicy.js";
 
-const cnpjOnlyDigits = (v) => String(v || "").replace(/\D+/g, "");
-const isValidCnpj = (v) => cnpjOnlyDigits(v).length === 14;
+const isValidCnpj = cnpjCompativel;
 
 // Schema pra modo CRIAÇÃO (POST /firm/companies)
 export const companyCreateFormSchema = z.object({

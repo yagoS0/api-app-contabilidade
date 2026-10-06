@@ -1,3 +1,4 @@
+import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Robustez NFS-e/ADN — Camada 2: conferência de contagem por CHAVE contra o ADN, antes do fechamento.
 // Compara o CONJUNTO de chaves que temos (EMIT/autorizada da competência, mesma população do
 // faturamento) com o CONJUNTO autoritativo do ADN (scan read-only por NSU, sem mover cursor nem
@@ -72,7 +73,7 @@ export async function scanAdnAutoritativo({ portalClientId, env = "prod" }) {
   if (!cert?.pfxBuffer) return { disponivel: false, motivo: "NO_COMPANY_CERT" };
 
   const portal = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
-  const cnpj = String(portal?.cnpj || "").replace(/\D+/g, "");
+  const cnpj = normalizarDocumento(portal?.cnpj);
   if (cnpj.length !== 14) return { disponivel: false, motivo: "CNPJ_INVALIDO" };
 
   const porCompetencia = new Map(); // comp -> Set<chave>
@@ -115,7 +116,7 @@ export async function scanAdnAutoritativo({ portalClientId, env = "prod" }) {
 
         const sit = String(meta.situacao || "").toUpperCase();
         if (sit === "CANCELADA" || sit === "2") canceladas.add(chave);
-        if (meta.cnpjPrestador) chavePrestador.set(chave, String(meta.cnpjPrestador).replace(/\D+/g, ""));
+        if (meta.cnpjPrestador) chavePrestador.set(chave, normalizarDocumento(meta.cnpjPrestador));
         if (!porCompetencia.has(comp)) porCompetencia.set(comp, new Set());
         porCompetencia.get(comp).add(chave);
       }

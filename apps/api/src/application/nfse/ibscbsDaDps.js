@@ -1,48 +1,15 @@
-// O `cNBS` E O BLOCO `IBSCBS` DA DPS — regra PURA, e as recusas que acontecem ANTES de enviar.
-//
-// ⚠⚠ ESTE MÓDULO NÃO MONTA XML. Ele decide **o quê** sai e **recusa nomeando** o que a Receita
-// recusaria — o princípio que o portal do cliente já aplica ("a tela diz antes o que o servidor
-// recusaria, e não cobra caro por erro barato"). Aqui é mais caro ainda: a recusa acontece no
-// pré-voo de `issue`, ANTES de reservar numeração, e **não existe inutilização na NFS-e** — número
-// gasto à toa é buraco permanente.
-//
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-// AS REGRAS, LIDAS DO ANEXO_I VERSIONADO (aba `RN DPS_NFS-e`) — não de memória
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-//
-//   E0322 (linha 324) — "Se o bloco de informações de IBS/CBS (…/infDPS/IBSCBS) for informado na
-//                        DPS, então é obrigatório informar na DPS um item da NBS."
-//   E0318 (linha 322) — o `cNBS` também é obrigatório na EXPORTAÇÃO de serviço (país no exterior
-//                        do tomador/intermediário, ou `cPaisPrestacao` informado). ⚠ A exportação
-//                        NÃO é montada por este projeto ainda; quando for, esta guarda é o lugar.
-//   E0901 (linha 546) — "O código indicador da operação deve constar na tabela de códigos conforme
-//                        ANEXO C." ⚠⚠ O **ANEXO C NÃO ESTÁ VERSIONADO AQUI**. Conferimos contra o
-//                        ANEXO VIII, que correlaciona item→cIndOp e é SUBCONJUNTO daquela tabela:
-//                        mais estrito que a norma exige, portanto na direção segura. Um código
-//                        legítimo do ANEXO C fora do ANEXO VIII é recusado por nós — falha
-//                        FECHADA, e nomeada. Não afrouxe isto "porque o ADN aceitaria".
-//   E0910 (linha 554) — "O destinatário só deve ser identificado quando indDest for 1."
-//
-// ⚠⚠ **`indDest = "0"` NÃO É PALPITE — É FATO SOBRE O DOCUMENTO QUE NÓS EMITIMOS.** Pela E0910, o
-  // grupo `dest` só existe com `indDest = 1`. O padrão deste resolvedor é o tomador;
-  // desde 07/09/2026 `dadosEspeciaisDaNota` valida o destinatário informado na operação,
-  // e `buildDpsXml` substitui o indicador junto com a escrita do grupo `dest`.
-  // No cenário padrão, o
-// destinatário É o tomador identificado na nota. Se um dia o gerador passar a montar `dest`, esta
-// constante deixa de valer e as duas coisas mudam JUNTAS. Há teste varrendo o gerador atrás de
-// `<dest>` exatamente para que essa mudança não passe calada.
-//
-// ⚠ `finNFSe = "0"` é o ÚNICO valor de `TSRTCFinNFSe` no XSD 1.01 ("NFS-e regular"). Não é escolha.
+// Regras do bloco IBS/CBS da DPS 1.01, verificadas antes de reservar numeração.
+// Anexo VIII é orientativo; domínio e compatibilidade vêm das tabelas oficiais.
 
-import { conferirCombinacao, itemLc116DoCodigoNacional } from "../fiscal/ibscbs/index.js";
+import { validarCodigosRtc, classificacaoRtc } from "../fiscal/ibscbs/tabelasRtc.js";
 import { RECUSA_NBS, nbsParaDps } from "../fiscal/nbs/index.js";
 
 /** ⚠ Único valor de `TSRTCFinNFSe` no XSD 1.01. */
 export const FIN_NFSE_REGULAR = "0";
-/** ⚠ Derivado da E0910 + do fato de o gerador nunca montar `dest`. Ver o cabeçalho. */
+/** Padrão sem destinatário distinto; dadosEspeciaisDaNota trata o caso indDest=1. */
 export const IND_DEST_E_O_TOMADOR = "0";
 
-/** ⚠ `TSRTCCodSitTrib` é `[0-9]{3}` no XSD e **não tem enumeração** — só a forma é conferível. */
+/** Forma do XSD; existência e compatibilidade são conferidas na tabela SVRS abaixo. */
 const FORMA_CST = /^[0-9]{3}$/;
 
 const texto = (v) => {
@@ -92,13 +59,12 @@ export function nbsDaDps(perfil) {
  * O bloco `IBSCBS` da DPS — ou a recusa, ou "não informar".
  *
  * @param {object} p
- * @param {string} p.cTribNac  o código de tributação nacional QUE A NOTA VAI LEVAR (já decidido
- *                             pelo pré-voo, nunca o payload cru)
  * @param {object|null} p.perfil
  * @param {boolean} p.ligado   `INTEGRACAO_NFSE_IBSCBS`
  * @param {string|null} p.cNBS o `cNBS` já resolvido por `nbsDaDps` — a E0322 se confere aqui
+ * @param {string|Date} p.competencia data da prestação para conferir a vigência publicada
  */
-export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
+export function ibscbsDaDps({ perfil, ligado, cNBS, competencia }) {
   const cIndOp = texto(perfil?.ibscbsCIndOp);
   const cst = texto(perfil?.ibscbsCst);
   const cClassTrib = texto(perfil?.ibscbsCClassTrib);
@@ -153,24 +119,11 @@ export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
     };
   }
 
-  // ⚠ O par é conferido JUNTO contra o ANEXO VIII — duas listas soltas autorizariam, em 7 itens,
-  // combinações que a fonte não traz.
-  const item = itemLc116DoCodigoNacional(cTribNac);
-  const conferencia = conferirCombinacao(item, { cIndOp, cClassTrib });
-  if (!conferencia.ok) {
-    return {
-      ok: false,
-      codigo: "NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA",
-      message:
-        `O ANEXO VIII não correlaciona cIndOp ${cIndOp} com cClassTrib ${cClassTrib} para o ` +
-        `serviço ${cTribNac}${item ? ` (item ${item} da LC 116)` : ""}.`,
-      correcao: conferencia.autorizadas?.length
-        ? "Combinações autorizadas para este serviço: " +
-          conferencia.autorizadas.map((c) => `${c.cIndOp}/${c.cClassTrib}`).join(" · ")
-        : "Este serviço não tem correlação de IBS/CBS no ANEXO VIII — não declare o bloco para ele.",
-      motivo: conferencia.motivo,
-    };
-  }
+  const [erro] = validarCodigosRtc({ cIndOp, cst, cClassTrib, competencia });
+  if (erro) return {
+    ok: false, codigo: erro.codigo, message: erro.motivo,
+    correcao: "Confira os códigos nas tabelas oficiais de IBS/CBS e no Anexo C da NFS-e Nacional.",
+  };
 
   return {
     ok: true,
@@ -185,26 +138,10 @@ export function ibscbsDaDps({ cTribNac, perfil, ligado, cNBS }) {
   };
 }
 
-/**
- * ⚠ SUGESTÃO DE CST A PARTIR DO `cClassTrib` — e ela viaja MARCADA como não verificada.
- *
- * Medido nos 28 `cClassTrib` do ANEXO VIII: os prefixos de três dígitos são `000`, `011`, `200`,
- * `400` e `820`, que PARECEM códigos de situação tributária. **Nenhuma fonte versionada afirma
- * essa correspondência**: o XSD dá só `[0-9]{3}` e o ANEXO_I não enumera. Então isto SUGERE — o
- * contador confirma —, na mesma decisão já registrada para a categoria de presunção do Lucro
- * Presumido: *derivar* (o sistema decide e calcula) virou *sugerir* (o sistema propõe e nomeia a
- * incerteza).
- *
- * ⚠ NÃO chame isto de dentro de `buildDpsXml`. O que vai à nota é o CST declarado.
- */
+/** Relação explícita na tabela SVRS; nunca escolhe o enquadramento nem altera o XML. */
 export function cstSugeridoPeloClassTrib(cClassTrib) {
-  const t = texto(cClassTrib);
-  if (!t || !/^[0-9]{6}$/.test(t)) return null;
-  return Object.freeze({
-    cst: t.slice(0, 3),
-    verificadoNaFonte: false,
-    motivo:
-      "Os três primeiros dígitos do código de classificação tributária. Nenhuma fonte oficial " +
-      "versionada neste projeto afirma essa correspondência — confirme antes de emitir.",
-  });
+  const classe = classificacaoRtc(texto(cClassTrib));
+  if (!classe?.nfse) return null;
+  return Object.freeze({ cst: classe.cst, verificadoNaFonte: true,
+    motivo: "Relação CST/cClassTrib publicada na tabela oficial SVRS, consultada em 05/10/2026." });
 }

@@ -204,10 +204,9 @@ export const CAMPOS = Object.freeze([
     tag: "cIndOp",
     caminhoNoXml: "infDPS/IBSCBS/cIndOp",
     forma: /^[0-9]{6}$/,
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, do Anexo C da NFS-e Nacional",
     obrigatorio: false,
-    // ⚠⚠ A tabela OFICIAL é o ANEXO C (E0901), NÃO versionado aqui. Conferimos contra o ANEXO
-    // VIII, que é subconjunto — mais estrito que a norma, portanto falha FECHADA.
+    // Domínio do Anexo C versionado; Anexo VIII é apenas orientação.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
@@ -219,8 +218,7 @@ export const CAMPOS = Object.freeze([
     forma: /^[0-9]{3}$/,
     formaDescrita: "3 dígitos",
     obrigatorio: false,
-    // ⚠⚠ **NÃO EXISTE LISTA VERSIONADA DISTO.** O XSD dá `[0-9]{3}` sem enumeração e o ANEXO_I
-    // não enumera. Só a FORMA é conferiível; o conteúdo é declaração do contador.
+    // Existência e relação com cClassTrib conferidas na tabela SVRS versionada.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
@@ -230,10 +228,9 @@ export const CAMPOS = Object.freeze([
     tag: "cClassTrib",
     caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib",
     forma: /^[0-9]{6}$/,
-    formaDescrita: "6 dígitos, do ANEXO VIII",
+    formaDescrita: "6 dígitos, da tabela oficial de classificação IBS/CBS",
     obrigatorio: false,
-    // ⚠ Conferido em PAR com o `cIndOp`: em 7 itens o produto cartesiano das duas listas contém
-    // combinações que a fonte não autoriza.
+    // Classificação deve permitir NFS-e e corresponder ao CST declarado.
     hojeSaiDe: "não era escrito",
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),

@@ -33,9 +33,10 @@ function fetchFalso({ status = 200, corpo = RESPOSTA, lanca = false } = {}) {
 }
 
 describe("formatação", () => {
-  test("soDigitosCnpj limita a 14 e descarta máscara", () => {
+  test("normaliza máscara sem truncar ou perder letras do documento", () => {
     expect(soDigitosCnpj("11.222.333/0001-81")).toBe("11222333000181");
-    expect(soDigitosCnpj("112223330001819999")).toBe("11222333000181");
+    expect(soDigitosCnpj("112223330001819999")).toBe("112223330001819999");
+    expect(soDigitosCnpj("12.ABC.345/01DE-35")).toBe("12ABC34501DE35");
   });
   test("formatarCnpj devolve a entrada quando ainda está incompleta", () => {
     expect(formatarCnpj("11222333000181")).toBe("11.222.333/0001-81");
