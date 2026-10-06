@@ -2962,6 +2962,17 @@ model AccountingEntryLine {
   @@map("accounting_entry_lines")
 }
 
+// Snapshot anterior ao reparo de classificação da Circular. Sem FK: preserva auditoria.
+model CircularClassificacaoReparo {
+  entryId          String   @id
+  subtipoAnterior  String?
+  subtipoNovo      String
+  registroAnterior Json
+  corrigidoEm      DateTime @default(now())
+
+  @@map("circular_classificacao_reparos")
+}
+
 model AccountingHistorico {
   id                    String   @id @default(uuid())
   createdByUserId       String
