@@ -48,3 +48,19 @@ test("regra de pagamento continua preenchendo o par memorizado", async () => {
   await waitFor(() => expect(screen.getAllByPlaceholderText("Código da conta")[1]).toHaveValue("5"));
   expect(screen.getByRole("button", { name: "Confirmar Baixa" })).toBeEnabled();
 });
+
+test("ISS com juros adicionados exige papel e anuncia lançamentos individuais", async () => {
+  abrir({ entry: { ...entry, subtipo: "ISS" } });
+  await waitFor(() => expect(screen.getAllByDisplayValue("2000.00")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "+ Débito" }));
+  const contas = screen.getAllByPlaceholderText("Código da conta");
+  fireEvent.change(contas[1], { target: { value: "5" } });
+  fireEvent.change(contas[2], { target: { value: "501" } });
+  const valores = screen.getAllByRole("spinbutton");
+  fireEvent.change(valores[2], { target: { value: "20" } });
+  fireEvent.change(valores[1], { target: { value: "2020" } });
+  expect(screen.getByRole("button", { name: "Confirmar Baixa" })).toBeDisabled();
+  fireEvent.change(screen.getAllByTitle(/Principal amortiza o passivo/)[1], { target: { value: "JUROS" } });
+  expect(screen.getByRole("button", { name: "Confirmar Baixa" })).toBeEnabled();
+  expect(screen.getByText(/Serão gerados 2 lançamentos individuais/)).toBeInTheDocument();
+});
