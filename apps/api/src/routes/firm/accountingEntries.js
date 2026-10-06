@@ -10,6 +10,7 @@ import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompeten
 import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
+import { subtipoDaProvisao } from "../../application/accounting/subtipoDaProvisao.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { rederivarAnaliticaDoEscopo } from "../../application/accounting/chartOfAccountsAnalitica.js";
 // A TRAVA DA CONTA SINTÉTICA — regra pura; a ligação com o banco é `recusaContaSintetica`, abaixo.
@@ -224,7 +225,7 @@ const SUBTIPO_TO_ACRESCIMO_TRIB = {
 // 501/502 vinham escritos aqui, no script de remediação e como literal no modal do front. Três
 // cópias de um código de conta divergem sem ninguém notar — agora vêm de `contasAcrescimo.js`.
 async function acrescimoDoEntry(client, portalClientId, entry) {
-  const keys = SUBTIPO_TO_ACRESCIMO_TRIB[String(entry?.subtipo || "").toUpperCase()];
+  const keys = SUBTIPO_TO_ACRESCIMO_TRIB[String(subtipoDaProvisao(entry) || "").toUpperCase()];
   if (!keys || !entry?.competencia) return null;
   const circ = await client.companyMonthlyCircular.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia: entry.competencia } },
@@ -460,7 +461,7 @@ function entryToResponse(entry) {
     .reduce((s, l) => s + Number(l.valor), 0);
   // placeholder = PROVISAO sem linhas (agendado, aguardando valor)
   const placeholder = entry.tipo === "PROVISAO" && lines.length === 0;
-  const result = { ...entry, totalD, totalC, valor: totalD, placeholder };
+  const result = { ...entry, subtipo: subtipoDaProvisao(entry), totalD, totalC, valor: totalD, placeholder };
   // Baixa parcial por quota: expõe saldo/abatido/quotas quando as baixas vierem com linhas.
   if (entry.tipo === "PROVISAO" && Array.isArray(entry.baixas)) {
     const s = computeSaldoProvisao(entry);
@@ -3103,7 +3104,7 @@ export function createAccountingEntriesRouter({ log }) {
     const debitAccountCode = mem.debitAccountCode || rule?.debitAccountCode || "";
     const creditAccountCode = mem.creditAccountCode || rule?.creditAccountCode || "";
     if (!debitAccountCode && !creditAccountCode) {
-      // Sem memória nem regra → modal inverte as linhas da provisão (comportamento atual).
+      // Sem memória nem regra: o modal pede a conta de pagamento, sem inverter a despesa.
       return res.json({ ok: true, template: null, acrescimo, saldoInfo, quotaNumero, reason: "sem_memoria_nem_regra" });
     }
 
@@ -3118,7 +3119,7 @@ export function createAccountingEntriesRouter({ log }) {
           companyName: company?.razao || "",
           cnpj: company?.cnpj || "",
         })
-      : `PAGAMENTO ${entry.subtipo || "PROVISÃO"} - ${formatCompetenciaLabel(entry.competencia)}`;
+      : `PAGAMENTO ${subtipoDaProvisao(entry) || "PROVISÃO"} - ${formatCompetenciaLabel(entry.competencia)}`;
 
     const fromMemoria = Boolean(mem.debitAccountCode || mem.creditAccountCode);
     return res.json({
@@ -3224,6 +3225,7 @@ export function createAccountingEntriesRouter({ log }) {
               competencia,
               historico: `${historico}${SUFIXO_PAPEL[g.papel] || ""}`,
               tipo: "BAIXA",
+              subtipo: subtipoDaProvisao(openEntry),
               // Q61: papel no cabeçalho — obrigatório em toda baixa (CHECK `chk_baixa_tipo_linha`).
               // Aqui não há guia (`sourceGuideId` nulo), então estas linhas ficam fora do índice
               // único; o papel entra pelo mesmo motivo que o sufixo do histórico entra: é o que
