@@ -74,11 +74,8 @@ function LineEditor({ lines, onChange, accounts }) {
     onChange(lines.filter((_, i) => i !== idx));
   }
   function addLine(tipo) {
-    // Débito nasce como PRINCIPAL — mesmo default do backend para linha sem papel, então o que a
-    // tela mostra é o que vai acontecer. Antes a linha nascia SEM papel e não havia como marcá-la:
-    // o contador digitava juros como linha extra e o backend, por não ver papel, tratava tudo como
-    // principal e devolvia um lançamento em bloco.
-    onChange([...lines, { tipo, conta: "", valor: "", papel: tipo === "D" ? "PRINCIPAL" : undefined }]);
+    // A linha extra pode ser juros ou multa; o contador declara o papel antes de salvar.
+    onChange([...lines, { tipo, conta: "", valor: "", papel: "" }]);
   }
 
   const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -117,11 +114,12 @@ function LineEditor({ lines, onChange, accounts }) {
                     lançamento separado credita o SEU total. */}
                 {l.tipo === "D" ? (
                   <select
-                    value={l.papel || "PRINCIPAL"}
+                    value={l.papel || ""}
                     onChange={(e) => updateLine(i, "papel", e.target.value)}
                     title="Principal amortiza o passivo; juros e multa são despesa do mês do pagamento e viram lançamentos próprios."
                     style={{ ...INPUT, width: "100%" }}
                   >
+                    <option value="">Selecione</option>
                     <option value="PRINCIPAL">Principal</option>
                     <option value="JUROS">Juros</option>
                     <option value="MULTA">Multa</option>
@@ -324,9 +322,16 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   // ele. Sem `saldoInfo` isto devolve `null` e nada é afirmado.
   const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo);
   const contasPreenchidas = lines.every((l) => String(l.conta || "").trim());
-  const canSave = data && historico && balanced && contasPreenchidas && !excedeSaldo && !saving && !loadingTemplate;
+  const debitosBaixa = lines.filter((l) => l.tipo === "D");
+  const papeisPreenchidos = debitosBaixa.every((l) => ["PRINCIPAL", "JUROS", "MULTA"].includes(l.papel));
+  const creditoUnico = lines.filter((l) => l.tipo === "C").length === 1;
+  const canSave = data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !saving && !loadingTemplate;
   const motivoNaoSalva = loadingTemplate
     ? "Carregando contas e saldo da provisão."
+    : !papeisPreenchidos
+      ? "Identifique cada débito como principal, juros ou multa."
+    : !creditoUnico
+      ? "Informe uma única conta de caixa/banco para os lançamentos individuais."
     : !contasPreenchidas
       ? "Informe as contas do passivo e do caixa/banco para registrar o pagamento."
       : !data
@@ -457,6 +462,9 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           Partidas do pagamento — débito no passivo e crédito no caixa/banco
         </div>
         <LineEditor lines={lines} onChange={setLines} accounts={accounts} />
+        <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>
+          Serão gerados {debitosBaixa.length} lançamentos individuais, cada um com um débito e um crédito no caixa/banco. Principal, juros e multa não serão agrupados.
+        </p>
 
         <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
           {/* O botão desabilitado NOMEIA o motivo — nascer mudo é o que faz "não faz nada". */}
