@@ -182,7 +182,7 @@
 /* Compact task editor keeps the selected calendar interval in view. */
 .agenda-editor.modal-fundo { background:transparent; backdrop-filter:none; }
 .agenda-editor .modal-caixa { width:min(460px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); border:1px solid var(--border); border-radius:16px; box-shadow:0 18px 64px #0006; }
-.agenda-editor .modal-caixa[style*="--editor-x"] { position:fixed; left:clamp(12px,var(--editor-x),calc(100vw - 472px)); top:clamp(12px,var(--editor-y),max(12px,calc(100dvh - 550px))); }
+.agenda-editor .modal-caixa[style*="--editor-x"] { position:fixed; left:clamp(12px,var(--editor-x,12px),calc(100vw - 472px)); top:clamp(12px,var(--editor-y,12px),max(12px,calc(100dvh - 550px))); }
 .agenda-editor .modal-topo { padding:14px 20px; }
 .agenda-editor .modal-titulo { font-size:13px; color:var(--text-muted); font-weight:500; }
 .agenda-editor .modal-corpo { padding:16px 20px; }
@@ -227,7 +227,7 @@
   .dashboard-home-page--agenda .agenda-time-scroll { height:calc(100dvh - 290px); }
 }
 .agenda-selected-slot { position:absolute; left:2px; right:3px; z-index:4; box-sizing:border-box; border:1px solid var(--accent-cyan); border-radius:5px; background:color-mix(in srgb,var(--accent-cyan) 18%,var(--bg-page)); color:var(--text); font-size:12px; padding:8px; pointer-events:none; }
-.agenda-editor .modal-caixa[style*="--editor-x"] { max-height:calc(100dvh - clamp(12px,var(--editor-y),max(12px,calc(100dvh - 550px))) - 12px); }
+.agenda-editor .modal-caixa[style*="--editor-x"] { max-height:calc(100dvh - clamp(12px,var(--editor-y,12px),max(12px,calc(100dvh - 550px))) - 12px); }
 .agenda-view-nav { flex-wrap:wrap; justify-content:flex-end; }
 .dashboard-home-page--agenda .agenda-time-scroll { min-height:240px; }
 @media(max-width:700px) { .agenda-editor .modal-caixa[style*="--editor-x"] { max-height:calc(100dvh - 24px); } }
