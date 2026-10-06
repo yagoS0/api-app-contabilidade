@@ -7488,6 +7488,7 @@ export function createMockApi() {
       // Concluída é histórico: sobrevive à regeração, igual ao backend.
       const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA" || oc.canceladaEm || oc.foraDaRecorrencia || oc.janelaPersonalizada);
       const nova = mockCriarObrigacao(antes.companyId, antes.empresa, { ...antes, ...patch });
+      if (nova.tipo === 'TAREFA' && antes.agendaConfig?.grupoTarefaId && nova.agendaConfig) nova.agendaConfig.grupoTarefaId = antes.agendaConfig.grupoTarefaId;
       nova.obrigacaoId = antes.obrigacaoId;
       nova.sobrescritaLocal = antes.sobrescritaLocal || Boolean(antes.regraId);
       const camposJanela = ["dataInicio", "dataFim", "dataVencimento", "diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"];

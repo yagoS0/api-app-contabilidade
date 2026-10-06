@@ -42,11 +42,13 @@ export function createAgendaRouter({ log } = {}) {
     }, { timeout: 30000 });
   }));
   router.post('/agenda/series/excluir', rota(async (req, userId) => {
-    const { regraId, obrigacaoId } = req.body || {};
-    if (Boolean(regraId) === Boolean(obrigacaoId)) throw new ObrigacaoError('serie_invalida', 'Selecione uma série.');
+    const { regraId, obrigacaoId, grupoTarefaId } = req.body || {};
+    if ([regraId, obrigacaoId, grupoTarefaId].filter(Boolean).length !== 1) throw new ObrigacaoError('serie_invalida', 'Selecione uma série.');
     const portalIds = await empresasVisiveis(req);
     return prisma.$transaction(async tx => {
-      const where = regraId ? { regraId: String(regraId) } : { id: String(obrigacaoId) };
+      const where = grupoTarefaId
+        ? { tipo: 'TAREFA', portalClientId: { in: portalIds }, agendaConfig: { path: ['grupoTarefaId'], equals: String(grupoTarefaId) } }
+        : regraId ? { regraId: String(regraId) } : { id: String(obrigacaoId) };
       const series = await tx.obrigacao.findMany({ where, select: { id: true, portalClientId: true } });
       const regra = regraId ? await tx.regraObrigacao.findUnique({ where: { id: String(regraId) } }) : null;
       if ((!series.length && (!regra || regra.criadoPorId !== userId)) || series.some(s => !portalIds.includes(s.portalClientId))) throw new ObrigacaoError('serie_nao_encontrada', 'Série não encontrada na sua carteira.', 404);

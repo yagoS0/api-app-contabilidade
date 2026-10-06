@@ -356,6 +356,9 @@ export async function atualizar({ portalIds, obrigacaoId, dados }) {
   if (!atual) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
 
   const limpo = normalizarEntrada({ ...atual, ...dados });
+  if (limpo.tipo === 'TAREFA' && atual.agendaConfig?.grupoTarefaId && limpo.agendaConfig) {
+    limpo.agendaConfig.grupoTarefaId = atual.agendaConfig.grupoTarefaId;
+  }
   if ((atual.periodicidade === "AVULSA") !== (limpo.periodicidade === "AVULSA")) {
     throw new ObrigacaoError("recorrencia_incompativel", "Crie outro cadastro para trocar entre item sem repetição e recorrência.", 409);
   }

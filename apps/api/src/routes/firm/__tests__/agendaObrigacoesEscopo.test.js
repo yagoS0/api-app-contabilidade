@@ -132,3 +132,16 @@ test('obrigação legada sem janela aceita só horários usando a data do vencim
   expect(data).toMatchObject({dataInicio:new Date('2026-09-21'),dataFim:new Date('2026-09-21'),agendaConfig:{titulo:'EFD',descricao:'Da série',horaInicio:'09:00',horaFim:'10:00'}});
   expect(data).not.toHaveProperty('dataVencimento');
 });
+
+test('exclui grupo de tarefas somente dentro da carteira, preservando registros',async()=>{
+ prisma.obrigacao.findMany.mockResolvedValue([{id:'a',portalClientId:'permitida'},{id:'b',portalClientId:'permitida'}]);
+ const r=await request(app()).post('/agenda/series/excluir').send({grupoTarefaId:'grupo'});
+ expect(r.status).toBe(200);expect(r.body.seriesExcluidas).toBe(2);
+ expect(prisma.obrigacao.findMany).toHaveBeenCalledWith({where:{tipo:'TAREFA',portalClientId:{in:['permitida']},agendaConfig:{path:['grupoTarefaId'],equals:'grupo'}},select:{id:true,portalClientId:true}});
+ expect(prisma.regraObrigacao.update).not.toHaveBeenCalled();
+ expect(prisma.obrigacao.updateMany.mock.calls[0][0].where).toEqual({id:{in:['a','b']}});
+});
+test('recusa combinar grupo e série individual',async()=>{
+ expect((await request(app()).post('/agenda/series/excluir').send({grupoTarefaId:'g',obrigacaoId:'a'})).status).toBe(400);
+ expect(prisma.obrigacao.updateMany).not.toHaveBeenCalled();
+});

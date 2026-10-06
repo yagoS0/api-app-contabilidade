@@ -16,9 +16,11 @@ export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
       const previa=await this.previewEscopoRegra({escopo:'SELECAO_MANUAL',filtros:{empresasIds:ids}});
       if(previa.total !== ids.length) throw new Error('Uma empresa selecionada não está mais disponível.');
       const inicio=obrigacoes.length;
+      const grupoTarefaId=crypto.randomUUID();
       try {
         for(const id of ids) await this.createObrigacao(id,{nome:dados.titulo,descricao:dados.descricao,tipo:'TAREFA',periodicidade:config.recorrencia,agendaConfig:config,dataInicio:config.dataInicio,dataFim:config.dataFim,diaVencimento:Number(config.dataFim.slice(8)),mesReferencia:Number(config.dataInicio.slice(5,7)),ajusteDiaUtil:'MANTER',defasagemMeses:0});
       } catch(e) { obrigacoes.splice(inicio); throw e; }
+      for (const tarefa of obrigacoes.slice(inicio)) tarefa.agendaConfig.grupoTarefaId=grupoTarefaId;
       if(t) t.excluidaEm=new Date().toISOString();
       return {ok:true};
     },
@@ -65,8 +67,8 @@ export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
       for (const {serie,oc} of alvos) { serie.sobrescritaLocal=true; oc.canceladaEm=new Date().toISOString(); }
       return {ok:true,canceladas:alvos.length};
     },
-    async excluirSerieAgenda({regraId,obrigacaoId}) {
-      const series=obrigacoes.filter(o=>regraId ? o.regraId === regraId : o.obrigacaoId === obrigacaoId);
+    async excluirSerieAgenda({regraId,obrigacaoId,grupoTarefaId}) {
+      const series=obrigacoes.filter(o=>grupoTarefaId ? o.tipo === 'TAREFA' && o.agendaConfig?.grupoTarefaId === grupoTarefaId : regraId ? o.regraId === regraId : o.obrigacaoId === obrigacaoId);
       if (regraId) { const r=regras.find(r=>r.regraId === regraId); if (r) {r.ativa=false;r.aplicarANovas=false;} }
       for (const s of series) {s.ativa=false;s.sobrescritaLocal=true;s.encerradaAPartirDe='0000-01';for(const oc of s.ocorrencias) oc.canceladaEm=new Date().toISOString();}
       return {ok:true};

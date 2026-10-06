@@ -446,3 +446,29 @@ test('gesto com resposta lenta mantém destino e permite mover outra atividade; 
     expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveStyle({top:ALTURA_HORA * 10 + 'px'});
   } finally {liberar();restaurar();}
 });
+
+const tarefasAgrupadas = () => obrigacoes().map(o=>({...o,tipo:'TAREFA',regraId:null,nome:'Conferir empresas',agendaConfig:{...o.agendaConfig,grupoTarefaId:'grupo-tarefa'}}));
+test('tarefa agrupada abre empresas, conclui somente uma e edita o período do grupo',async()=>{
+ const obs=tarefasAgrupadas();
+ const concluir=jest.fn(async id=>{obs.find(o=>o.ocorrencias[0].ocorrenciaId===id).ocorrencias[0].situacao='CONCLUIDA';return {ok:true};});
+ const {api}=montar({obs,extras:{concluirOcorrencia:concluir}});
+ jest.spyOn(api,'editarOcorrenciasAgenda');
+ fireEvent.click(await screen.findByRole('button',{name:'Conferir empresas'}));
+ expect(screen.getByText('Clínica Alfa')).toBeInTheDocument();expect(screen.getByText('Consultoria Beta')).toBeInTheDocument();
+ fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
+ await screen.findByText('1 de 2 concluídas');expect(concluir).toHaveBeenCalledTimes(1);expect(concluir).toHaveBeenCalledWith('oc-a');
+ fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+ expect(screen.queryByRole('button',{name:'Concluir',exact:true})).not.toBeInTheDocument();
+ expect(screen.getByLabelText('Tipo')).toBeDisabled();expect(screen.getByLabelText('Recorrência')).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência revisada'}});
+ fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+ await waitFor(()=>expect(api.editarOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'],expect.objectContaining({titulo:'Conferência revisada'})));
+});
+test('lista reúne tarefa por grupo e exclui a série de todas as empresas',async()=>{
+ const {api}=montar({visao:'lista',obs:tarefasAgrupadas()});
+ expect(await screen.findByText('2 empresas',{exact:false})).toBeInTheDocument();
+ expect(screen.getAllByRole('button',{name:'Excluir série'})).toHaveLength(1);
+ fireEvent.click(screen.getByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+ await waitFor(()=>expect(api.excluirSerieAgenda).toHaveBeenCalledWith({grupoTarefaId:'grupo-tarefa'}));
+ await screen.findByText('Nenhuma atividade encontrada.');
+});

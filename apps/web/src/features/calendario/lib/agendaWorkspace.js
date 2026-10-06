@@ -32,8 +32,9 @@ export function agruparAtividades(itens) {
   for (const i of itens) {
     // Feriados municipais podem mudar um dia intermediário sem mudar as pontas da janela.
     const dias = i.diasAgendados ? `|${i.diasAgendados.map(d => `${d.dataInicioOriginal}:${d.dataInicio}:${d.dataFim}`).join(',')}` : '';
-    const chave = i.tipo === 'obrigacao' && i.regraId
-      ? `${i.regraId}|${i.cicloChave}|${i.dataInicio}|${i.dataFim}|${i.horaInicio || ''}|${i.horaFim || ''}|${i.prioridade || ''}|${i.titulo}${dias}`
+    const grupo = i.tipo === 'tarefa' ? i.grupoTarefaId : i.regraId;
+    const chave = grupo
+      ? `${i.tipo}|${grupo}|${i.cicloChave}|${i.dataInicio}|${i.dataFim}|${i.horaInicio || ''}|${i.horaFim || ''}|${i.prioridade || ''}|${i.titulo}${dias}`
       : `${i.tipo}|${i.id}`;
     if (!grupos.has(chave)) grupos.set(chave, { ...i, id: chave, itens: [] });
     grupos.get(chave).itens.push(i);

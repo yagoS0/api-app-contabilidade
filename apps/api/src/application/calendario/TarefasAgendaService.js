@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { expandirAgenda, normalizarAgenda, dataAgenda, encontrarOcorrenciaDaTarefa, ocorrenciasDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { ObrigacaoError, normalizarEntrada, sincronizarOcorrencias } from '../obrigacoes/ObrigacoesService.js';
@@ -122,6 +123,8 @@ export async function vincularTarefasEmpresas({ userId, portalIds, dados }, db =
     }
     const empresas = await tx.portalClient.findMany({where:{id:{in:ids}},select:{id:true}});
     if (empresas.length !== ids.length) throw new ObrigacaoError('empresas_invalidas','Uma empresa selecionada não está mais disponível.',404);
+    // Identidade do lote: nomes iguais em criações distintas não devem se misturar.
+    limpo.agendaConfig.grupoTarefaId = randomUUID();
     const tarefas = [];
     for (const portalClientId of ids) {
       const tarefa = await tx.obrigacao.create({data:{...limpo,portalClientId,criadoPorId:userId}});

@@ -158,6 +158,8 @@ test('tarefa em duas empresas conserva ambas ao concluir somente uma',async()=>{
  await api.vincularTarefasEmpresas({titulo:'Vínculo independente QA',empresasIds:empresas.map(e=>e.companyId),compartilhar:true,config:{dataInicio:'2026-09-23',dataFim:'2026-09-23',recorrencia:'AVULSA'}});
  const lista=()=>api.listObrigacoes().then(r=>r.obrigacoes.filter(o=>o.nome==='Vínculo independente QA'));
  const antes=await lista();expect(antes).toHaveLength(2);
+ expect(antes[0].agendaConfig.grupoTarefaId).toEqual(expect.any(String));
+ expect(antes[1].agendaConfig.grupoTarefaId).toBe(antes[0].agendaConfig.grupoTarefaId);
  await api.concluirOcorrencia(antes[0].ocorrencias[0].ocorrenciaId);
  const depois=await lista();expect(depois).toHaveLength(2);
  expect(depois[0].ocorrencias[0].situacao).toBe('CONCLUIDA');expect(depois[1].ocorrencias[0].situacao).not.toBe('CONCLUIDA');

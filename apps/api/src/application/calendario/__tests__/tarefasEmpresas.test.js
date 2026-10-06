@@ -23,3 +23,13 @@ test('avulsa antiga pode preservar o intervalo completo',async()=>{
  await vincularTarefasEmpresas({userId:'u',portalIds:['a','b'],dados:{...dados,tarefaId:'t',config:{dataInicio:'2026-01-10',dataFim:'2026-01-15',recorrencia:'AVULSA'}}},db);
  expect(db.obrigacao.create).toHaveBeenCalledWith({data:expect.objectContaining({agendaConfig:expect.objectContaining({dataInicio:'2026-01-10',dataFim:'2026-01-15',recorrencia:'AVULSA'})})});
 });
+
+test('cada criação recebe um grupo único compartilhado pelas empresas',async()=>{
+ const db=banco();
+ const primeiro=await vincularTarefasEmpresas({userId:'u',portalIds:['a','b'],dados},db);
+ const segundo=await vincularTarefasEmpresas({userId:'u',portalIds:['a','b'],dados},db);
+ const grupo=primeiro.tarefas[0].agendaConfig.grupoTarefaId;
+ expect(grupo).toEqual(expect.any(String));
+ expect(primeiro.tarefas.map(t=>t.agendaConfig.grupoTarefaId)).toEqual([grupo,grupo]);
+ expect(segundo.tarefas[0].agendaConfig.grupoTarefaId).not.toBe(grupo);
+});
