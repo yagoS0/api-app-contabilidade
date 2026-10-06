@@ -17,6 +17,8 @@
     "./pendencias-fiscais": "./src/fiscal/pendenciasSitfis.js",
     "./pendencias-manuais": "./src/fiscal/pendenciasManuais.js",
     "./pendencias-contabeis": "./src/fiscal/pendenciasContabeis.js",
-    "./fechamento-contabil": "./src/accounting/fechamentoBlockers.js"
+    "./fechamento-contabil": "./src/accounting/fechamentoBlockers.js",
+    "./fluxo-carteira": "./src/accounting/fluxoCarteira.js",
+    "./validar-tarefa-carteira": "./src/accounting/validarTarefaCarteira.js"
   }
 }

@@ -94,3 +94,23 @@
   .companies-table td[data-label] > span { justify-content: flex-start; }
   .dashboard-home .dashboard-home__user-name { max-width: 76px; }
 }
+
+/* Rotina mensal: mesmos tokens e linhas no desktop, celular e impressão. */
+.carteira-etapa { border: 1px solid var(--border); background: var(--bg-subtle); color: var(--text); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: .74rem; cursor: pointer; white-space: nowrap; }
+.carteira-task-list { list-style: none; padding: 0; display: grid; gap: 8px; margin: 16px 0; }
+.carteira-task-list > li { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.carteira-task-toggle { width: 100%; display: flex; justify-content: space-between; gap: 12px; text-align: left; border: 0; background: var(--bg-subtle); color: var(--text); padding: 10px; font: inherit; cursor: pointer; border-radius: 6px; }
+.carteira-task-toggle small, .carteira-task-list small { color: var(--text-muted); }
+.carteira-task-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 12px 0; }
+.carteira-task-fields label { flex: 1 1 160px; min-width: 0; }
+.carteira-task-editor { padding: 12px 2px; }
+.carteira-task-editor label, .carteira-task-fields label { display: grid; gap: 5px; }
+.carteira-task-editor input, .carteira-task-editor textarea, .carteira-task-fields input, .carteira-task-fields select { width: 100%; box-sizing: border-box; }
+.carteira-task-editor input:not([type="checkbox"]), .carteira-task-editor textarea, .carteira-task-fields input, .carteira-task-fields select { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text); padding: 8px; font: inherit; color-scheme: dark; }
+.carteira-task-editor textarea { min-height: 64px; margin-bottom: 8px; }
+.carteira-task-proof { margin-top: 16px; }
+.carteira-entry-list { max-height: 240px; overflow: auto; display: grid; gap: 8px; }
+.carteira-entry-list label { display: flex; align-items: start; }
+.carteira-entry-list input { width: auto; }
+@media screen and (max-width: 760px) { .carteira-task-toggle { flex-direction: column; gap: 4px; } }
+@media print { .carteira-etapa { border: 0; background: transparent; padding: 0; } }

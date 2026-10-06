@@ -1,5 +1,10 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Fluxo mensal da carteira — 06/10/2026
+
+A tabela agora separa Status, Apuração, Guias, Contabilização e Situação fiscal; Empresa e Ações permanecem. Status abre as tarefas e vem de `@contabilidade/shared/fluxo-carteira`. Não deduzir apuração pelo fechamento nem importação ERP pelo download de CSV. Parcelamento é informação secundária e não substitui a situação fiscal. Rotinas agrupadas por regime/etapa têm planejamento e histórico persistidos em CarteiraTarefa; tarefas com datas aparecem na agenda. Regras atuais e validação: `docs/fluxo-carteira-2026-10-06.md` na raiz. Essas regras substituem descrições históricas das colunas e do grupo Fechadas abaixo; agora só o fluxo concluído pode entrar no grupo Concluídas.
+
+
 ## Hierarquia da navegação — 18/09/2026
 
 A página inicial apresenta Agenda e Empresas; os valores internos continuam `calendario`/`tabela`, com Agenda como entrada e preservação da escolha durante a sessão. Competência, cadastro, impressão e o aviso de plano global incompleto pertencem à visão Empresas. A conta fica discreta no cabeçalho; configurações gerais seguem por Gestão → Configurações.

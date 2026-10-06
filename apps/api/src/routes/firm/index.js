@@ -1,3 +1,5 @@
+import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
+import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
 import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
 import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
@@ -448,7 +450,7 @@ async function attachNotasApuracaoToCompaniesList(data, competenciaArg) {
         where: {
           portalClientId: { in: portalIds },
           competencia,
-          estado: { in: ["transmitida", "confirmada"] },
+          estado: { in: ["calculada", "fechada", "revisada", "transmitida", "confirmada"] },
         },
         select: { portalClientId: true, estado: true, transmitidoEm: true },
       }),
@@ -469,7 +471,8 @@ async function attachNotasApuracaoToCompaniesList(data, competenciaArg) {
       notasEmitidas: { competencia, total: notas.total, quantidade: notas.quantidade },
       apuracao: {
         competencia,
-        apurada: Boolean(snap),
+        apurada: ["transmitida", "confirmada"].includes(snap?.estado),
+        calculada: Boolean(snap),
         estado: snap?.estado || null,
         transmitidoEm: snap?.transmitidoEm || null,
       },
@@ -960,7 +963,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
       const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
       const dataComParcelamento = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
-      const data = await anexarQuemLiberouEmissao(dataComParcelamento);
+      const data = await anexarFluxoCarteira(await anexarQuemLiberouEmissao(dataComParcelamento), competenciaRef);
       return res.json({ data, competencia: competenciaRef });
     }
 
@@ -1039,7 +1042,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
     const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
     const dataComParcelamento = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
-    const data = await anexarQuemLiberouEmissao(dataComParcelamento);
+    const data = await anexarFluxoCarteira(await anexarQuemLiberouEmissao(dataComParcelamento), competenciaRef);
     return res.json({ data, competencia: competenciaRef });
   });
 
@@ -5488,6 +5491,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Perfis de emissão de NFS-e — a configuração que o contador faz uma vez pelo cliente.
   // ⚠ Nasce com a integração DESLIGADA: o GET serve o painel; nada muda no XML.
   router.use("/companies/:companyId", createPerfisEmissaoRouter({ log }));
+  router.use("/companies/:companyId", createFluxoCarteiraRouter());
 
   // Planejamento tributário — SÓ LEITURA. Monta os campos da empresa (com a procedência de cada
   // um) que a tela de simulação de regime pré-preenche. Não grava nada.

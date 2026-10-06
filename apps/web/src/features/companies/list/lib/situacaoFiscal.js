@@ -35,60 +35,20 @@ function diasDesde(data) {
  * @returns {{estado, rotulo, titulo, dias, precisaConsultar}}
  */
 export function situacaoFiscalDaLinha(company) {
-  const situacao = String(company?.fiscalSituacao || "").toUpperCase();
+  const situacao = String(company?.fiscalSituacao || '').toUpperCase();
   const dias = diasDesde(company?.fiscalCheckedAt);
-  const nunca = dias == null;
-  const velha = !nunca && dias > DIAS_PARA_ENVELHECER;
-  const parc = company?.guideCompliance?.parcDas || null;
-  const temParcelamento = Boolean(company?.temParcelamento) || situacao === "EM_PARCELAMENTO" || parc?.required;
-
-  const comIdade = (txt) => (nunca ? `${txt} · nunca consultada` : `${txt} · consultada há ${dias} dia(s)`);
-
-  // ⚠ PENDÊNCIA E ATRASO NÃO ENVELHECEM. O frescor rebaixa só os estados BONS: uma dívida conhecida
-  // não some porque a consulta é antiga, e trocar "Com pendência" por "Consultar" esconderia um
-  // problema que já sabemos existir. Dado velho vira dúvida sobre o bom, nunca perdão do ruim.
-  if (parc?.atrasada) {
-    return { estado: FISCAL.parcelamentoAtraso, rotulo: FISCAL.parcelamentoAtraso.rotulo, titulo: comIdade("Parcela do parcelamento vencida e não paga"), dias, precisaConsultar: false };
-  }
-  if (situacao === "COM_PENDENCIA") {
-    return { estado: FISCAL.pendencia, rotulo: FISCAL.pendencia.rotulo, titulo: comIdade("Empresa COM PENDÊNCIA na Receita (SITFIS)"), dias, precisaConsultar: velha };
-  }
-  if (temPendenciaParcelamento(company)) {
-    return { estado: { ...FISCAL.parcelamento, cor: "var(--state-warn)", fundo: "var(--state-warn-surface)", severidade: 1 }, rotulo: "Parcelamento a conferir", titulo: comIdade("Há tarefas de parcelamento pendentes, incluindo identificação ou confirmação de pagamento"), dias, precisaConsultar: velha };
-  }
-
-  // Nunca consultada ou consulta velha: não afirmamos nada sobre o fisco.
-  if (nunca || velha) {
-    return {
-      estado: FISCAL.consultar,
-      rotulo: nunca ? "Consultar" : `Consultar (${dias}d)`,
-      titulo: nunca
-        ? "Situação fiscal nunca consultada para esta empresa"
-        : `Última consulta há ${dias} dias — mais de ${DIAS_PARA_ENVELHECER} dias não serve de garantia`,
-      dias,
-      precisaConsultar: true,
-    };
-  }
-
-  if (situacao === "PROCESSANDO") {
-    return { estado: FISCAL.consultar, rotulo: "Consultando…", titulo: "Consulta em andamento no SERPRO", dias, precisaConsultar: false };
-  }
-
-  if (situacao === "INCONCLUSIVO") {
-    return { estado: FISCAL.consultar, rotulo: "Conferir relatório", titulo: "A leitura do relatório não permite concluir a situação fiscal", dias, precisaConsultar: true };
-  }
-
-  if (temParcelamento) {
-    const n = parc?.numeroParcela;
-    const de = parc?.quantidadeParcelas;
-    return {
-      estado: FISCAL.parcelamento,
-      rotulo: n && de ? `Parcelamento ${n}/${de}` : "Parcelamento",
-      titulo: comIdade(`Débito parcelado${parc?.tipoParcelamento ? ` (${parc.tipoParcelamento})` : ""} — confira o acompanhamento das parcelas`),
-      dias,
-      precisaConsultar: false,
-    };
-  }
-
-  return { estado: FISCAL.emDia, rotulo: FISCAL.emDia.rotulo, titulo: comIdade("Sem pendência na Receita (SITFIS)"), dias, precisaConsultar: false };
+  const antiga = dias != null && dias > DIAS_PARA_ENVELHECER;
+  const parc = company?.guideCompliance?.parcDas;
+  const tem = company?.temParcelamento || situacao === 'EM_PARCELAMENTO' || parc?.required;
+  const parcelamento = tem ? parc?.atrasada ? 'Parcelamento · parcela atrasada' : temPendenciaParcelamento(company) ? 'Parcelamento · a conferir' : 'Parcelamento' : null;
+  const detalhe = dias == null ? 'Sem consulta registrada' : `Consulta há ${dias} dia(s)`;
+  const base = { dias, parcelamento, titulo: detalhe, precisaConsultar: false };
+  if (situacao === 'COM_PENDENCIA' || parc?.atrasada) return { ...base, estado: FISCAL.pendencia, rotulo: 'Pendência', titulo: `Pendência conhecida · ${detalhe}`, precisaConsultar: antiga };
+  if (situacao === 'PROCESSANDO') return { ...base, estado: FISCAL.consultar, rotulo: 'Consultando…' };
+  if (situacao === 'INCONCLUSIVO') return { ...base, estado: FISCAL.consultar, rotulo: 'Conferir relatório', precisaConsultar: true };
+  if (dias == null) return { ...base, estado: FISCAL.consultar, rotulo: 'Sem consulta', precisaConsultar: true };
+  if (antiga) return { ...base, estado: FISCAL.consultar, rotulo: 'Consulta antiga', precisaConsultar: true };
+  // Parcelamento é dimensão independente; sozinho não comprova ausência de outras pendências.
+  if (['REGULAR','SEM_PENDENCIA','EM_DIA'].includes(situacao)) return { ...base, estado: FISCAL.emDia, rotulo: 'Em dia' };
+  return { ...base, estado: FISCAL.consultar, rotulo: 'Conferir relatório', precisaConsultar: true };
 }

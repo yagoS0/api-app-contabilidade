@@ -1,3 +1,4 @@
+import { RotinasCarteira, FluxoCarteiraDetalhe } from "../../companies/list/components/RotinasCarteira";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -33,6 +34,7 @@ function Faixas({ itens, dias, abrir, criar, mes = false, gestos, onConcluir }) 
 }
 
 export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdFixo = null, initialContext, onContextChange }) {
+  const [itensCarteira,setItensCarteira]=useState([]), [empresaFluxo,setEmpresaFluxo]=useState(null), [erroCarteira,setErroCarteira]=useState('');
   const agora = useRelogioAgenda();
   const [referencia, setReferencia] = useState(initialContext?.referencia || dataLocal());
   const [visao, setVisao] = useState(['mes','semana','dia','lista'].includes(initialContext?.visao) ? initialContext.visao : initialContext?.visao === 'agenda' ? 'lista' : 'semana');
@@ -50,6 +52,12 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const dias = useMemo(() => diasDoPeriodo(referencia, visao), [referencia, visao]);
   const inicio = dias[0], fim = dias.at(-1);
   const recarregar = () => setRevisao(v => v + 1);
+  useEffect(()=>{
+    if(!api.getAgendaCarteira)return;
+    let ativo=true;setErroCarteira('');setItensCarteira([]);
+    api.getAgendaCarteira(inicio,fim,companyIdFixo).then(r=>{conferir(r);if(ativo)setItensCarteira(r.itens || []);}).catch(e=>{if(ativo)setErroCarteira(e.message);});
+    return()=>{ativo=false;};
+  },[api,inicio,fim,companyIdFixo,revisao]);
   useEffect(() => { onContextChange?.({ referencia, visao }); }, [referencia, visao, onContextChange]);
   useEffect(() => {
     let ativo = true; setCarregando(true); setErro('');
@@ -90,9 +98,9 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     const observer=new ResizeObserver(medir);observer.observe(el);return()=>observer.disconnect();
   },[visao]);
   const atividades = useMemo(() => agruparAtividades([
-    ...itensDasObrigacoes(dados.obrigacoes), ...dados.itens,
+    ...itensDasObrigacoes(dados.obrigacoes), ...dados.itens, ...itensCarteira,
     ...dados.fiscais.filter(i => !dados.ocultos.includes(`${i.tipo}|${i.id}`)),
-  ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim)).map(i => ({...i, salvando:edicoes.pendente(i)})), [dados, inicio, fim, edicoes.pendente]);
+  ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim)).map(i => ({...i, salvando:edicoes.pendente(i)})), [dados, itensCarteira, inicio, fim, edicoes.pendente]);
   const blocos = useMemo(() => blocosDiarios(atividades, inicio, fim), [atividades, inicio, fim]);
   const horarios = useMemo(() => Object.fromEntries(dias.map(d => [d,posicionarHorarios(blocos.filter(i => !faixa(i) && i.dataInicio === d))])), [blocos,dias]);
   useEffect(() => {
@@ -128,6 +136,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const criar = useCallback((data, hora) => { setErro(''); setCriacao({ dataInicio: data, dataFim: data, ...(hora != null ? { horaInicio: `${String(hora).padStart(2,'0')}:00`, horaFim: `${String(Math.min(23,hora+1)).padStart(2,'0')}:${hora === 23 ? '59' : '00'}` } : {}), companyId: companyIdFixo }); }, [companyIdFixo]);
   const criarPeriodo = useCallback(patch => { setErro(''); setCriacao({...patch,companyId:companyIdFixo}); }, [companyIdFixo]);
   function abrirAtividade(item) {
+    if(item.tipo==='fluxo'){setEmpresaFluxo(item);return;}
     if (edicoes.pendente(item)) return;
     item = item.atividadeOriginal || item;
     setErro('');
@@ -205,6 +214,9 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   return <section onPointerDownCapture={gestos.resetarClique} onClickCapture={gestos.clicar} className="agenda-workspace" aria-label="Calendário de atividades" style={{'--agenda-hour-height': ALTURA_HORA + 'px', '--agenda-visible-hours': HORAS_VISIVEIS, '--agenda-scrollbar':`${scrollbar}px`}}>
     <header className="agenda-toolbar"><div className="agenda-period-nav">{visao !== 'lista' && <><Button variant="secondary" size="sm" aria-label="Período anterior" onClick={() => navegar(-1)}>‹</Button><Button variant="secondary" size="sm" aria-label="Próximo período" onClick={() => navegar(1)}>›</Button></>}<h2>{visao === 'lista' ? 'Atividades' : periodo}</h2>{visao !== 'lista' && <Button variant="secondary" size="sm" onClick={() => setReferencia(dataLocal())}>Hoje</Button>}</div>
       <div className="agenda-view-nav">{visao !== 'lista' && <select aria-label="Visualização do calendário" value={visao} onChange={e => { if (visao === 'mes' && e.target.value === 'semana') setReferencia(dataLocal()); setVisao(e.target.value); }}><option value="semana">Semana</option><option value="dia">Dia</option><option value="mes">Mês</option></select>}<Button variant="secondary" size="sm" aria-pressed={visao === 'lista'} onClick={() => { if (visao === 'lista') setVisao(visaoCalendario); else { setVisaoCalendario(visao); setVisao('lista'); } }}>{visao === 'lista' ? 'Calendário' : 'Lista'}</Button></div></header>
+    <div className="carteira-task-fields"><RotinasCarteira competencia={referencia.slice(0,7)} api={api} companyIdFixo={companyIdFixo} onChanged={recarregar} onOpenCompany={onOpenCompany} /><small>Competência das rotinas: {referencia.slice(0,7)}</small></div>
+    {erroCarteira && <p role="alert">Rotinas: {erroCarteira} <button type="button" onClick={recarregar}>Atualizar</button></p>}
+    {empresaFluxo && <FluxoCarteiraDetalhe key={empresaFluxo.id} company={{companyId:empresaFluxo.companyId,razao:empresaFluxo.empresa}} competencia={empresaFluxo.competencia} api={api} onFechar={()=>setEmpresaFluxo(null)} onChanged={recarregar} onOpenCompany={onOpenCompany} />}
     {erro && !detalhe && !confirmacao && !edicaoLegada && <div className="agenda-error" role="alert">{erro} <button onClick={recarregar}>Tentar novamente</button></div>}
     {edicoes.quantidade > 0 && <div className="agenda-saving" role="status">Salvando horário…</div>}
     {carregando && <div className="agenda-loading" role="status">Atualizando agenda…</div>}

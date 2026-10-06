@@ -106,13 +106,14 @@ describe('⚠ "SELECIONAR TODOS" RESPEITA O FILTRO — e o rótulo diz o número
   });
 
   test("⚠ as FECHADAS entram no 'todos' mesmo colapsadas — e o rótulo avisa que estão lá", () => {
-    const fechada = empresa({ companyId: "z", razao: "FECHADA LTDA", fechamentoContabil: { fechado: true } });
+    // A rotina concluída substitui fechamento isolado como grupo recolhido (06/10/2026).
+    const fechada = empresa({ companyId: "z", razao: "FECHADA LTDA", fechamentoContabil: { fechado: true }, fluxoCarteira: { status: { chave: 'concluido', rotulo: 'Concluído' }, apuracao: { chave: 'transmitido', rotulo: 'Transmitido' }, contabilizacao: { chave: 'importado', rotulo: 'Importado' } } });
     const onSelecionarTodos = jest.fn();
     montarTabela({
       companies: [...quatro, fechada], selecionados: new Set(),
       onAlternarSelecao: jest.fn(), onSelecionarTodos,
     });
-    const todos = screen.getByRole("checkbox", { name: /Selecionar as 5 empresas desta lista \(1 no grupo Fechadas, recolhido\)/ });
+    const todos = screen.getByRole("checkbox", { name: /Selecionar as 5 empresas desta lista \(1 no grupo Concluídas, recolhido\)/ });
     fireEvent.click(todos);
     expect(onSelecionarTodos.mock.calls[0][0]).toContain("z");
   });
