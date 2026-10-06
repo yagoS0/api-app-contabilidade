@@ -516,3 +516,12 @@ test('pausa uma obrigação e permite retomá-la sem excluir a série',async()=>
   await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenLastCalledWith('r',{ativa:true}));
   expect(api.excluirSerieAgenda).not.toHaveBeenCalled();
 });
+
+
+test('cadastro manual com nome e abrangência do modelo substitui a sugestão sem mudar sua conclusão',async()=>{
+  const regra={regraId:'importar',nome:'Importar lançamentos no ERP',ativa:true,periodicidade:'MENSAL',verificador:null,escopo:'TODAS'};
+  const {api}=montar({visao:'lista',extras:{listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[regra]}))}});
+  await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  expect(screen.getAllByRole('button',{name:/Importar lançamentos no ERP/})).toHaveLength(1);
+  expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+});

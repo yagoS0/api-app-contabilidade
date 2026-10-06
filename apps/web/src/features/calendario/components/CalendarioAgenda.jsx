@@ -138,7 +138,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
       const key = r.regraId || r.id;
       if (!mapa.has(key)) mapa.set(key, { id: key, titulo: r.nome, tipo: 'obrigacao', regraId: key, recorrencia: r.periodicidade, prioridade: r.agendaConfig?.prioridade || '', empresas: [] });
     }
-    const modelos = MODELOS_OBRIGACOES_CARTEIRA.filter(m => !dados.regras.some(r => r.verificador === m.verificador && (r.escopo === 'TODAS' || r.escopo === m.escopo && m.filtros?.regimes?.every(regime => r.filtros?.regimes?.includes(regime)))) && !(companyIdFixo && dados.obrigacoes.some(o => o.companyId === companyIdFixo && o.verificador === m.verificador)));
+    const modelos = MODELOS_OBRIGACOES_CARTEIRA.filter(m => !dados.regras.some(r => (r.verificador === m.verificador || !r.verificador && r.nome === m.titulo) && (r.escopo === 'TODAS' || r.escopo === m.escopo && m.filtros?.regimes?.every(regime => r.filtros?.regimes?.includes(regime)))) && !(companyIdFixo && dados.obrigacoes.some(o => o.companyId === companyIdFixo && o.verificador === m.verificador)));
     return [...mapa.values(), ...modelos.map(m => ({...m,tipo:'obrigacao',modeloCarteira:m,recorrencia:'MENSAL',empresas:[]})), ...(!companyIdFixo ? dados.tarefas.map(t => {
       const versao = t.config.versoes?.at(-1), config = versao?.config || t.config;
       return { id:t.id, tarefaId:t.id, titulo:versao?.titulo || t.titulo, tipo:'tarefa', recorrencia:config.recorrencia, prioridade:config.prioridade, original:t, configAtual:config, empresas:[] };
