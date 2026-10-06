@@ -63,3 +63,19 @@ export function projetarFluxoCarteira(company, contexto = {}) {
 }
 
 export const fluxoDaEmpresa = company => company.fluxoCarteira || projetarFluxoCarteira(company);
+
+// As etapas usam o cadastro recorrente de obrigações; modelos não criam prazos.
+export const VERIFICADORES_CARTEIRA = Object.fromEntries(ROTINAS_CARTEIRA.map(t => [
+  'CARTEIRA_' + t.chave.toUpperCase(), t.titulo,
+]));
+export const chaveDaObrigacaoCarteira = verificador => Object.hasOwn(VERIFICADORES_CARTEIRA, verificador || '') ? verificador.slice(9).toLowerCase() : null;
+export const MODELOS_OBRIGACOES_CARTEIRA = ROTINAS_CARTEIRA.flatMap(t => {
+  const regimes = ['apurar', 'transmitir'].includes(t.chave) ? ['SIMPLES','LUCRO_PRESUMIDO'] : t.chave === 'obrigacoes' ? ['LUCRO_PRESUMIDO'] : [null];
+  return regimes.map(regime => ({
+    id: 'modelo-carteira:' + t.chave + ':' + (regime || 'TODAS'),
+    titulo: (t.chave === 'transmitir' && regime === 'LUCRO_PRESUMIDO' ? 'Transmitir declarações da apuração' : t.titulo) + (regime ? ' · ' + (regime === 'SIMPLES' ? 'Simples Nacional' : 'Lucro Presumido') : ''),
+    verificador: 'CARTEIRA_' + t.chave.toUpperCase(),
+    categoria: ['contabilizacao','importacao'].includes(t.etapa) ? 'contabil' : 'fiscal',
+    escopo: regime ? 'POR_FILTRO' : 'TODAS', filtros: regime ? {regimes:[regime]} : null,
+  }));
+});

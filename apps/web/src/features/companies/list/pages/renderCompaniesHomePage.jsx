@@ -1,5 +1,5 @@
-import { fluxoDaEmpresa, ETAPAS_CARTEIRA, ROTULOS_ETAPA } from "@contabilidade/shared/fluxo-carteira";
-import { RotinasCarteira, FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
+import { fluxoDaEmpresa } from "@contabilidade/shared/fluxo-carteira";
+import { FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
 import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
@@ -136,8 +136,6 @@ export function CompaniesHomePage({
 
     setImprimindo(true);
   }
-  const [etapaFilter,setEtapaFilter]=useState("all");
-  const [contabilFilter,setContabilFilter]=useState("all");
   const [empresaFluxo,setEmpresaFluxo] = useState(null);
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
@@ -298,8 +296,6 @@ export function CompaniesHomePage({
   // ⚠ Os filtros ativos vão IMPRESSOS no papel. Uma folha filtrada que não diz que está filtrada
   // mente por omissão — quem a receber vai contar as empresas e concluir que a carteira é aquela.
   const ROTULO_FILTRO = {
-    etapaFilter: {rotulo:"Status",valores:ROTULOS_ETAPA},
-    contabilFilter: {rotulo:"Contabilização",valores:{aberto:"Aberto",fechado:"Fechado",importado:"Importado"}},
     documentFilter: { rotulo: "Documentos", valores: { pending: null, all: "todos", withDocs: "com documento", withoutDocs: "sem documento" } },
     serproFilter: { rotulo: "SERPRO", valores: { aptas: "aptas", naoAptas: "não aptas" } },
     emailFilter: { rotulo: "E-mail do mês", valores: { sent: "enviado", notSent: "não enviado" } },
@@ -313,12 +309,10 @@ export function CompaniesHomePage({
   };
   const valoresFiltro = {
     documentFilter, serproFilter, emailFilter, apuracaoFilter,
-    certFilter, fiscalFilter, etapaFilter, contabilFilter,
+    certFilter, fiscalFilter,
   };
   // Cada filtro precisa saber se DESLIGAR sozinho — é isso que permite o chip removível.
   const RESET_FILTRO = {
-    etapaFilter:()=>setEtapaFilter("all"),
-    contabilFilter:()=>setContabilFilter("all"),
     documentFilter: () => setDocumentFilter("pending"),
     serproFilter: () => setSerproFilter("all"),
     emailFilter: () => setEmailFilter("all"),
@@ -350,7 +344,6 @@ export function CompaniesHomePage({
   const filtrosAtivos = chipsDeFiltro.length;
 
   function limparFiltros() {
-    setEtapaFilter("all");setContabilFilter("all");
     setDocumentFilter("pending");
     setSerproFilter("all");
     setEmailFilter("all");
@@ -374,8 +367,6 @@ export function CompaniesHomePage({
     //    Q16: filtro "Enviados/Só não enviados" também REMOVE quem não bate.
     //    Novos filtros (apuração / certificado) também REMOVEM quem não bate.
     const searched = companies.filter((company) => {
-      if(etapaFilter!=="all" && fluxoDaEmpresa(company).status.chave!==etapaFilter)return false;
-      if(contabilFilter!=="all" && fluxoDaEmpresa(company).contabilizacao.chave!==contabilFilter)return false;
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
       if (apuracaoFilter === "apurados" && !fluxoDaEmpresa(company).apuracao.apurada) return false;
@@ -423,7 +414,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, etapaFilter, contabilFilter]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter]);
 
   // ─── ABAS DE REGIME ───────────────────────────────────────────────────────────────────────────
   //
@@ -993,8 +984,6 @@ export function CompaniesHomePage({
               />
             </div>
           )}
-              <div className="carteira-task-fields" data-coluna-acao><label>Status<select value={etapaFilter} onChange={e=>setEtapaFilter(e.target.value)}><option value="all">Todos</option>{ETAPAS_CARTEIRA.map(k=><option key={k} value={k}>{ROTULOS_ETAPA[k]}</option>)}</select></label><label>Contabilização<select value={contabilFilter} onChange={e=>setContabilFilter(e.target.value)}><option value="all">Todas</option><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="importado">Importado</option></select></label></div>
-              <RotinasCarteira companies={companies} competencia={dashboardCompetencia} api={api} onChanged={onRefreshCompanies} onOpenCompany={onOpenCompany} />
               {empresaFluxo && <FluxoCarteiraDetalhe key={`${empresaFluxo.companyId}:${dashboardCompetencia}`} company={empresaFluxo} competencia={dashboardCompetencia} api={api} onFechar={() => setEmpresaFluxo(null)} onChanged={onRefreshCompanies} onOpenCompany={onOpenCompany} />}
               <CompaniesTable
                 onFluxo={setEmpresaFluxo}

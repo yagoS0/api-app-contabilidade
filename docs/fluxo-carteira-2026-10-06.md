@@ -13,7 +13,9 @@ Implementado em desenvolvimento em 06/10/2026. A tabela tem Empresa, Status, Apu
 
 ## Rotinas e agenda
 
-O botão Rotinas do mês agrupa empresas por regime e etapa. O Status de cada empresa abre suas tarefas. Cada tarefa permite responsável, início, prazo interno, observações e histórico. Tarefas específicas podem ser adicionadas por competência. As tarefas com datas aparecem na agenda, preservando a competência mesmo quando executadas em outro mês.
+Correção solicitada pelo dono: removidos o botão Rotinas do mês e os seletores adicionais de Status e Contabilização. As etapas são cadastradas como obrigações recorrentes na agenda existente, com regras, empresas vinculadas e conclusão individual. A lista oferece modelos de apuração/transmissão por Simples e Presumido, conferência de obrigações do Presumido, guias, fechamento e importação. O contador configura prazo interno e empresas antes de salvar; nenhum prazo fiscal é inferido. Tarefas específicas usam o cadastro normal da agenda.
+
+Os verificadores CARTEIRA_* observam a mesma projeção da tabela, inclusive reabertura quando a evidência muda. A ação Conferir etapa abre a evidência da empresa e competência corretas; exportação de CSV continua sem confirmar importação no ERP. Essas obrigações não entram na própria dependência fiscal. Registros antigos e seu histórico são preservados; agendamentos legados deixam de duplicar a etapa quando ela já possui ocorrência nativa na mesma competência.
 
 O Simples tem transmissão da apuração e só recebe a tarefa adicional de obrigações quando há obrigações específicas cadastradas. O Presumido mantém a conferência das obrigações do período. A lista de obrigações aplicáveis continua sendo configurada no cadastro/agenda existente; não se inferem declarações tributárias universais pelo regime.
 
@@ -21,7 +23,7 @@ Guias e fechamento são concluídos pela operação real. Confirmações externa
 
 ## Persistência e acesso
 
-Migração aditiva `20261006220000_fluxo_carteira`: tabela CarteiraTarefa, vinculada à empresa, competência e chave da tarefa, com versão e histórico. Aplicada somente no PostgreSQL local `contabilidade_dev`.
+Migração aditiva `20261006220000_fluxo_carteira`: tabela CarteiraTarefa, vinculada à empresa, competência e chave da tarefa, com versão e histórico. Publicada na PR #110. A integração das etapas às obrigações usa as tabelas existentes e não exige nova migração.
 
 GET/POST `/firm/companies/:companyId/fluxo-carteira[/:chave]` e GET `/firm/agenda/carteira` respeitam o escopo da empresa. Gravação exige ACCOUNTANT. Versão, conferência de evidências e transação serializável recusam gravações desatualizadas.
 

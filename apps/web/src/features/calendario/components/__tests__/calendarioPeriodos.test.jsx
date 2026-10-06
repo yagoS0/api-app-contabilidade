@@ -13,6 +13,35 @@ function montar({visao='semana',referencia='2026-09-10',obs=[],extras={}}={}) {
   jest.spyOn(api,'excluirOcorrenciasAgenda');jest.spyOn(api,'excluirSerieAgenda');jest.spyOn(api,'salvarTarefaAgenda');
   return {api,...render(<CalendarioGrid api={api} empresas={empresas} initialContext={{visao,referencia}}/>)};
 }
+
+test('etapa da carteira é configurada como obrigação recorrente, sem rotina separada',async()=>{
+  const {api}=montar({visao:'lista'});
+  fireEvent.click(await screen.findByRole('button',{name:/Apurar e conferir · Simples Nacional/}));
+  expect(screen.queryByRole('button',{name:'Rotinas do mês'})).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Tipo')).toHaveValue('OBRIGACAO');
+  expect(screen.getByLabelText('Recorrência')).toHaveValue('MENSAL');
+  expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('De'),{target:{value:'2026-10-01'}});
+  fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-10-15'}});
+  fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
+  expect(screen.getByLabelText('Conclusão')).toHaveValue('CARTEIRA_APURAR');
+  expect(screen.getByLabelText('Simples Nacional')).toBeChecked();
+  expect(screen.getByLabelText('Lucro Presumido')).not.toBeChecked();
+  fireEvent.change(screen.getByLabelText('Dia do prazo interno'),{target:{value:'15'}});
+  await screen.findByText('2 empresas');
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({tipo:'OBRIGACAO',periodicidade:'MENSAL',verificador:'CARTEIRA_APURAR',filtros:{regimes:['SIMPLES'],temFolha:null}})));
+});
+
+test('obrigação da carteira abre conferência com competência e empresa da ocorrência',async()=>{
+  const obs=obrigacoes().map(o=>({...o,verificador:'CARTEIRA_IMPORTAR',conclusaoAutomatica:true,ocorrencias:o.ocorrencias.map(oc=>({...oc,competenciaRef:'2026-08'}))}));
+  const getFluxoCarteira=jest.fn(async()=>({ok:true,fluxo:{regime:'Simples',status:{rotulo:'Importação'},tarefas:[]},lancamentos:[]}));
+  montar({obs,extras:{getFluxoCarteira}});
+  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  fireEvent.click(screen.getAllByRole('button',{name:'Conferir etapa'})[0]);
+  await waitFor(()=>expect(getFluxoCarteira).toHaveBeenCalledWith('a','2026-08'));
+  expect(screen.getByRole('dialog')).toHaveTextContent('Tarefas · Clínica Alfa · 2026-08');
+});
 test.each([['2026-01-31','fevereiro de 2026'],['2024-02-29','março de 2024'],['2026-12-31','janeiro de 2027']])('navega um mês civil de %s',async(referencia,destino)=>{
   montar({visao:'mes',referencia});fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));expect(await screen.findByText(destino)).toBeInTheDocument();
 });
@@ -466,6 +495,7 @@ test('tarefa agrupada abre empresas, conclui somente uma e edita o período do g
 });
 test('lista reúne tarefa por grupo e exclui a série de todas as empresas',async()=>{
  const {api}=montar({visao:'lista',obs:tarefasAgrupadas()});
+ fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'tarefa'}});
  expect(await screen.findByText('2 empresas',{exact:false})).toBeInTheDocument();
  expect(screen.getAllByRole('button',{name:'Excluir série'})).toHaveLength(1);
  fireEvent.click(screen.getByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));

@@ -1,3 +1,4 @@
+import { VERIFICADORES_CARTEIRA, chaveDaObrigacaoCarteira } from '../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 // Controle de Obrigações — o serviço que o escritório precisa fazer até uma data.
 //
 // NÃO é o vencimento da guia. Guia é o pagamento do CLIENTE e continua vindo de `Guide.vencimento`;
@@ -63,6 +64,7 @@ export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ES
  * baseada em algo que o sistema não olha de verdade.
  */
 export const VERIFICADORES = {
+  ...VERIFICADORES_CARTEIRA,
   APURACAO_TRANSMITIDA: "Quando a apuração da competência for transmitida",
   MES_FECHADO: "Quando o mês contábil da competência for fechado",
 };
@@ -618,9 +620,9 @@ export async function reabrir({ portalIds, ocorrenciaId }) {
  * ciclo — mas isso é coerente, porque a apuração continua transmitida.
  */
 export async function aplicarVerificadores({ portalIds = null } = {}) {
-  const pendentes = await prisma.ocorrenciaObrigacao.findMany({
+  let pendentes = await prisma.ocorrenciaObrigacao.findMany({
     where: {
-      status: "PENDENTE",
+      OR: [{ status: "PENDENTE" }, { obrigacao: { verificador: { startsWith: "CARTEIRA_" } } }],
       canceladaEm: null,
       foraDaRecorrencia: false,
       competenciaRef: { not: null },
@@ -632,7 +634,14 @@ export async function aplicarVerificadores({ portalIds = null } = {}) {
     },
     include: { obrigacao: { select: { portalClientId: true, verificador: true } } },
   });
-  if (!pendentes.length) return { concluidas: 0 };
+  let concluidasCarteira = 0;
+  const carteira = pendentes.filter(o => chaveDaObrigacaoCarteira(o.obrigacao.verificador));
+  if (carteira.length) {
+    const { reconciliarObrigacoesCarteira } = await import('../company/FluxoCarteiraService.js');
+    concluidasCarteira = await reconciliarObrigacoesCarteira(carteira);
+    pendentes = pendentes.filter(o => !chaveDaObrigacaoCarteira(o.obrigacao.verificador));
+  }
+  if (!pendentes.length) return { concluidas: concluidasCarteira };
 
   const porCompetencia = new Map();
   for (const oc of pendentes) {
@@ -675,13 +684,13 @@ export async function aplicarVerificadores({ portalIds = null } = {}) {
       if (feito) aConcluir.push(oc.id);
     }
   }
-  if (!aConcluir.length) return { concluidas: 0 };
+  if (!aConcluir.length) return { concluidas: concluidasCarteira };
 
   await prisma.ocorrenciaObrigacao.updateMany({
     where: { id: { in: aConcluir }, canceladaEm: null, foraDaRecorrencia: false },
     data: { status: "CONCLUIDA", concluidaEm: new Date(), fonteConclusao: "AUTOMATICA" },
   });
-  return { concluidas: aConcluir.length };
+  return { concluidas: aConcluir.length + concluidasCarteira };
 }
 
 /** Ocorrências do mês, no formato que o calendário consome (mesma forma dos outros itens do dia). */
