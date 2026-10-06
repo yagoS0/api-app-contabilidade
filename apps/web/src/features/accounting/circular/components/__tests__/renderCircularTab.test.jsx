@@ -14,7 +14,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
-  BaixaModal: () => null,
+  BaixaModal: ({ entry }) => <div data-testid="baixa-aberta">{entry.id}</div>,
 }));
 
 // ⚠⚠ AS ASSERÇÕES SÃO O TOKEN, NÃO O HEX — e elas eram o hex até 24/08/2026, com o comentário ao
@@ -46,6 +46,31 @@ function emDias(n) {
 const HOJE = new Date();
 const ANO = HOJE.getFullYear();
 const COMP = `${ANO}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`;
+
+test.each(["Lucro Presumido", "PRESUMIDO", "LUCRO_PRESUMIDO"])("regime %s mantém PIS e COFINS acessíveis no fechamento", (companyRegime) => {
+  renderTab([provisao({ id: "pis", subtipo: "PIS", valor: 150 }), provisao({ id: "cofins", subtipo: "COFINS", valor: 300 })], { companyRegime });
+  expect(screen.getByRole("columnheader", { name: "PIS" })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "COFINS" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /R\$ 150,00/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Dar baixa" }));
+  expect(screen.getByTestId("baixa-aberta")).toHaveTextContent("pis");
+});
+
+test("lançamento fora das colunas também permite baixar sem editar a provisão", () => {
+  renderTab([provisao({ id: "pis-legado", subtipo: "PIS_COFINS", valor: 150 })]);
+  fireEvent.click(screen.getByRole("button", { name: "R$ 150,00" }));
+  fireEvent.click(screen.getByRole("button", { name: "Dar baixa" }));
+  expect(screen.getByTestId("baixa-aberta")).toHaveTextContent("pis-legado");
+});
+
+test("editar baixa de IRPJ abre o pagamento e preserva a edição separada da provisão", () => {
+  renderTab([provisao({ id: "irpj", tipo: "PROVISAO", subtipo: "IRPJ", valor: 150, statusPagamento: "PAGO",
+    baixas: [{ id: "b-irpj", tipo: "BAIXA", historico: "PAGAMENTO IRPJ", lines: [{ tipo: "D", conta: "250", valor: 150 }, { tipo: "C", conta: "5", valor: 150 }] }] })], { companyRegime: "LUCRO_PRESUMIDO" });
+  fireEvent.click(screen.getByRole("button", { name: /R\$ 150,00/ }));
+  expect(screen.getByRole("button", { name: "✎ Editar provisão" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Editar baixa 1/ }));
+  expect(screen.getByLabelText("Tipo")).toHaveValue("BAIXA");
+});
 
 function guia(over = {}) {
   return { id: "g1", tipo: "DAS", envios: [], ...over };
@@ -515,7 +540,7 @@ describe("provisão fora do regime / sem subtipo — continua clicável em algum
     // O total continua sendo o mesmo — o defeito nunca foi o total, foi o que a matriz escondia.
     expect(screen.getByText("vencido").parentElement).toHaveTextContent("R$ 6.387,30");
     // E agora existe onde clicar nos R$ 5.900 que o regime não exibe.
-    expect(screen.getByRole("columnheader", { name: /Sem subtipo \/ fora do regime/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Lançamentos a classificar/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "R$ 5.900,00" })).toBeInTheDocument();
   });
 
@@ -543,7 +568,7 @@ describe("provisão fora do regime / sem subtipo — continua clicável em algum
 
   it("empresa sem nada fora do regime NÃO ganha a coluna", () => {
     renderTab([provisao({ subtipo: "DAS", valor: 900 })], { companyRegime: "SIMPLES" });
-    expect(screen.queryByRole("columnheader", { name: /Sem subtipo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /Lançamentos a classificar/ })).not.toBeInTheDocument();
   });
 
   it("⚠ o seletor de Subtipo não oferece tributo que o regime não exibe", () => {

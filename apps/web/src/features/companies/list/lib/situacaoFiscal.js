@@ -70,6 +70,10 @@ export function situacaoFiscalDaLinha(company) {
     return { estado: FISCAL.consultar, rotulo: "Consultando…", titulo: "Consulta em andamento no SERPRO", dias, precisaConsultar: false };
   }
 
+  if (situacao === "INCONCLUSIVO") {
+    return { estado: FISCAL.consultar, rotulo: "Conferir relatório", titulo: "A leitura do relatório não permite concluir a situação fiscal", dias, precisaConsultar: true };
+  }
+
   if (temParcelamento) {
     const n = parc?.numeroParcela;
     const de = parc?.quantidadeParcelas;

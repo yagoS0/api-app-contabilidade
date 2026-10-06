@@ -24,6 +24,7 @@ export const ESTADO_GUIA = Object.freeze({
   PAGA: "paga",
   PARCIAL: "parcial",
   VENCIDA: "vencida",
+  FECHAMENTO: "vencidaFechamento",
   A_VENCER: "aVencer",
   ABERTA: "aberta", // em aberto e SEM vencimento conhecido
 });
@@ -43,6 +44,7 @@ export function estadoDaGuia(entry, hoje = new Date()) {
   if (entry.placeholder || entry.origem === "TEMPLATE") return ESTADO_GUIA.PLACEHOLDER;
 
   const status = String(entry.statusPagamento || "").toUpperCase();
+  if (entry.pendenciaFechamento && ["ABERTO", "PARCIAL"].includes(status)) return ESTADO_GUIA.FECHAMENTO;
   if (status === "PARCIAL") return ESTADO_GUIA.PARCIAL;
   if (status !== "ABERTO") return ESTADO_GUIA.PAGA;
 
@@ -73,6 +75,8 @@ export function aparenciaDaGuia(entry, hoje = new Date()) {
       return { estado, cor: "var(--success)", fundo: "rgba(105,255,71,0.06)", rotulo: "Paga", titulo: "Paga." };
     case ESTADO_GUIA.PARCIAL:
       return { estado, cor: "#6EA8FF", fundo: "rgba(110,168,255,0.08)", rotulo: "Parcial", titulo: "Baixa parcial — ainda há saldo." };
+    case ESTADO_GUIA.FECHAMENTO:
+      return { estado, cor: "var(--danger)", fundo: "rgba(255,71,87,0.09)", rotulo: "Pagamento pendente", titulo: `Saldo contábil em aberto no mês de pagamento ${entry.competenciaPagamento}, já fechado.` };
     case ESTADO_GUIA.VENCIDA: {
       const dias = diasDeAtraso(entry, hoje);
       return {
@@ -109,6 +113,7 @@ export function totaisEmAberto(entries, hoje = new Date()) {
   for (const e of entries || []) {
     const valor = Number(e?.saldo ?? e?.valor ?? e?.totalD ?? 0) || 0;
     switch (estadoDaGuia(e, hoje)) {
+      case ESTADO_GUIA.FECHAMENTO:
       case ESTADO_GUIA.VENCIDA: out.vencido += valor; break;
       case ESTADO_GUIA.A_VENCER: out.aVencer += valor; break;
       // ⚠ SEM DATA NÃO ENTRA EM "a vencer". Somá-lo ali faria o rodapé afirmar um prazo que a

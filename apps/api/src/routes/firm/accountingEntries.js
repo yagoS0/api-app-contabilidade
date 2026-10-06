@@ -1,3 +1,4 @@
+import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
 import { Router } from "express";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -26,7 +27,7 @@ import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/se
 import { entriesToCsv, preflightExportacao } from "../../application/accounting/exportacao/exportacaoIndividual.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
-  CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes,
+  CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes, checklistDosLancamentos,
 } from "../../application/accounting/fechamentoBlockers.js";
 import { INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 // Mesma definição de faturamento que a apuração usa — importada de propósito, não copiada.
@@ -441,7 +442,7 @@ async function validateFechamentoContabil(prisma, { portalClientId, competencia 
   });
   // A regra em si mora em `application/accounting/fechamentoBlockers.js`: a visão de carteira
   // precisa da MESMA resposta para dezenas de empresas numa query só, e duas cópias divergiriam.
-  return computeFechamentoBlockers(entries, competencia);
+  return { ...computeFechamentoBlockers(entries, competencia), checklistAutomatico: checklistDosLancamentos(entries) };
 }
 
 function entryToResponse(entry) {
@@ -716,11 +717,13 @@ export function createAccountingEntriesRouter({ log }) {
   // ─── Lançamentos ─────────────────────────────────────────────────────────
 
   // GET /firm/companies/:companyId/entries/circular  (deve vir antes de /entries/:entryId)
-  router.get("/entries/circular", requireFirmCompanyAccess(), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const rawYear = parseInt(String(req.query.year || ""), 10);
-    const year = rawYear >= 2000 && rawYear <= 2100 ? rawYear : new Date().getUTCFullYear();
+  async function lerFechamentos(portalClientId) {
+    const rows = await prisma.companyMonthlyCircular.findMany({ where: { portalClientId, fechadoContabilEm: { not: null } }, select: { competencia: true, fechadoContabilEm: true } });
+    return Object.fromEntries(rows.filter(r => r.fechadoContabilEm).map(r => [r.competencia, { fechadoEm: r.fechadoContabilEm }]));
+  }
 
+  async function carregarCircular(portalClientId, year, fechamentos = null) {
+    fechamentos ??= await lerFechamentos(portalClientId);
     const meses = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
     // darfGuides removido (Q5): DARFs agora viram AccountingEntry real via GuideToProvisionService
@@ -1172,7 +1175,7 @@ export function createAccountingEntriesRouter({ log }) {
         };
       });
 
-    return res.json({
+    const resultado = {
       year,
       provisoes: [
         ...provisoes.map((p) => enrichDasProvisao(entryToResponse(p))),
@@ -1182,7 +1185,42 @@ export function createAccountingEntriesRouter({ log }) {
       receitas: receitasPorComp,
       acrescimos: acrescimosByMonth,
       extrato: extratoByMonth,
-    });
+    };
+    return { ...resultado, fechamentos, provisoes: resultado.provisoes.map(e => sinalizarPendenciaFechamento(e, fechamentos)) };
+  }
+
+  router.get("/entries/circular", requireFirmCompanyAccess(), async (req, res) => {
+    const rawYear = parseInt(String(req.query.year || ''), 10);
+    const year = rawYear >= 2000 && rawYear <= 2100 ? rawYear : new Date().getUTCFullYear();
+    return res.json(await carregarCircular(String(req.params.companyId), year));
+  });
+
+  async function carregarProvisoesDaEmpresa(portalClientId, fechamentos) {
+    const [entries, guides] = await Promise.all([
+      prisma.accountingEntry.findMany({ where: { portalClientId, tipo: 'PROVISAO', statusPagamento: { in: ['ABERTO', 'PARCIAL'] } }, select: { competencia: true }, distinct: ['competencia'] }),
+      prisma.guide.findMany({ where: { portalClientId, tipo: { in: ['INSS', 'SIMPLES'] } }, select: { competencia: true }, distinct: ['competencia'] }),
+    ]);
+    // Inclui também DAS do extrato, que pode ainda não ter guia ou provisão real.
+    const anos = new Set([...entries, ...guides, ...Object.keys(fechamentos).flatMap(competencia => [{ competencia }, { competencia: String(Number(competencia.slice(0,4))-1) + '-12' }])].map(e => Number(String(e.competencia).slice(0,4))).filter(y => y >= 2000 && y <= 2100));
+    const itens = [];
+    for (const year of [...anos].sort()) {
+      const circular = await carregarCircular(portalClientId, year, fechamentos);
+      itens.push(...circular.provisoes);
+    }
+    return itens;
+  }
+  router.get('/pagamentos-pendentes', requireFirmCompanyAccess(), async (req, res) => {
+    const competencia = String(req.query.competencia || '');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return res.status(400).json({ error: 'competencia_invalida' });
+    const portalClientId = String(req.params.companyId);
+    const itens = await carregarProvisoesDaEmpresa(portalClientId, await lerFechamentos(portalClientId));
+    return res.json({ itens: pagamentosDisponiveis(itens, competencia) });
+  });
+  router.get('/pendencias-contabeis', requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const fechamentos = await lerFechamentos(portalClientId);
+    const itens = Object.keys(fechamentos).length ? projetarPendenciasContabeis(await carregarProvisoesDaEmpresa(portalClientId, fechamentos)) : [];
+    return res.json({ itens, origem: 'CONTABILIDADE' });
   });
 
   // GET /firm/companies/:companyId/circular/:competencia/accounting-entries
@@ -1532,9 +1570,9 @@ export function createAccountingEntriesRouter({ log }) {
           .catch(() => null)
         : null;
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
-      const pendentes = checklistPendentes(circular);
+      const pendentes = checklistPendentes(circular, validation.checklistAutomatico);
       const checklist = Object.fromEntries(
-        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, circular?.[c.campo] === true]),
+        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, circular?.[c.campo] === true || validation.checklistAutomatico[chave]]),
       );
       return res.json({
         ok: true,
@@ -1546,6 +1584,7 @@ export function createAccountingEntriesRouter({ log }) {
         // Mantido no payload: a UI antiga (e o gate do fechamento) já liam este nome.
         folhaProlaboreOk: checklist.folhaProlabore,
         checklist,
+        checklistAutomatico: validation.checklistAutomatico,
         checklistPendentes: pendentes,
         podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,
@@ -1584,7 +1623,7 @@ export function createAccountingEntriesRouter({ log }) {
         where: { portalClientId_competencia: { portalClientId, competencia } },
         select: CHECKLIST_SELECT,
       });
-      const pendentes = checklistPendentes(flags);
+      const pendentes = checklistPendentes(flags, validation.checklistAutomatico);
       if (pendentes.length > 0) {
         return res.status(400).json({
           ok: false,
@@ -3028,7 +3067,7 @@ export function createAccountingEntriesRouter({ log }) {
     const debitAccountCode = mem.debitAccountCode || rule?.debitAccountCode || "";
     const creditAccountCode = mem.creditAccountCode || rule?.creditAccountCode || "";
     if (!debitAccountCode && !creditAccountCode) {
-      // Sem memória nem regra → modal inverte as linhas da provisão (comportamento atual).
+      // Sem memória nem regra: o modal pede a conta de pagamento, sem inverter a despesa.
       return res.json({ ok: true, template: null, acrescimo, saldoInfo, quotaNumero, reason: "sem_memoria_nem_regra" });
     }
 

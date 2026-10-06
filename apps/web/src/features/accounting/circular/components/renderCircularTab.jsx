@@ -1,3 +1,5 @@
+import './circularFechamento.css';
+import { CircularMonthTags } from './CircularMonthTags';
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
@@ -44,8 +46,9 @@ const SUBTIPO_ROWS_ALL = [
 ];
 
 function getSubtipoRowsForRegime(regime) {
-  const r = String(regime || "").trim().toUpperCase();
-  if (!r) return SUBTIPO_ROWS_ALL;  // sem regime conhecido → mostra tudo (fallback)
+  const texto = String(regime || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  const r = ({ PRESUMIDO: "LUCRO_PRESUMIDO", REAL: "LUCRO_REAL", SIMPLES_NACIONAL: "SIMPLES", MEI: "SIMPLES" })[texto] || texto;
+  if (!["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(r)) return SUBTIPO_ROWS_ALL;
   return SUBTIPO_ROWS_ALL.filter(
     (row) => row.regimes === "all" || row.regimes.includes(r),
   );
@@ -66,7 +69,7 @@ const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
  * caminho de volta (abrir o lançamento e responder qual é o subtipo).
  */
 const SEM_COLUNA_KEY = "__SEM_COLUNA__";
-const SEM_COLUNA_LABEL = "Sem subtipo / fora do regime";
+const SEM_COLUNA_LABEL = "Lançamentos a classificar";
 
 /** O valor da provisão, na MESMA leitura que o `cellNum` usa nas colunas de tributo. */
 function valorDaProvisao(p) {
@@ -498,7 +501,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
   // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia) agora tem o fluxo
   // completo igual ao DAS (Q52): "Dar baixa" (abre modal, gera a baixa contábil), "Editar baixa"
   // (edita o lançamento gerado) e "Cancelar baixa" (apaga a baixa e reabre a guia).
-  const canBaixaInss = isSynthetic && isAberto && Boolean(onBaixa);
+  const canBaixaInss = isSynthetic && String(entry.id).startsWith("synthetic-inss-") && isAberto && Boolean(onBaixa);
   // INSS aberto: pode editar valor/juros/multa (não há lançamento — vai p/ acrescimos.INSS).
   const canEditInss = isSynthetic && isAberto && Boolean(onEdit);
   // INSS pago: pode editar a baixa (entry.baixaEntry é o lançamento real) e cancelá-la.
@@ -551,6 +554,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
           • ✅ quitada
       */}
+      {entry.pendenciaFechamento && <div style={{ color: "var(--danger)", fontSize: "0.68rem" }}>Pagamento pendente</div>}
       {!placeholder && (temAcrescimo || entry.recalculatedAt) && isOpenLike && !pagamentoLocalizado && (
         <div style={{ fontSize: "0.7rem", lineHeight: 1.1, color: "#FFB347" }} title="Tem juros/multa — abra a célula para ver o valor atualizado.">⚠</div>
       )}
@@ -627,7 +631,12 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
               rótulo e cabem. Na célula fica o número e, no máximo, um ícone. */}
           <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
           <div style={{ borderTop: "1px solid #44475A", margin: "4px 0 2px" }} />
-          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
+          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar provisão</button>}
+          {onEdit && !isSynthetic && (entry.baixas || []).filter((b) => b.tipo === "BAIXA" && b.lines?.length).map((b, i) => (
+            <button key={b.id} onClick={() => { setOpen(false); onEdit(b); }} style={menuBtn}>
+              ✎ Editar baixa {i + 1} — {b.historico || b.tipoLinha || "Pagamento"}
+            </button>
+          ))}
           {/* INSS sintético aberto: edita valor/juros/multa (vai p/ acrescimos.INSS) no mesmo modal. */}
           {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
@@ -685,7 +694,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
  * desenha UMA guia e as ações dela — aqui o que se oferece é o caminho de volta: ver quais são e
  * abrir cada uma para responder qual é o subtipo.
  */
-function CelulaSemColuna({ itens = [], onEdit }) {
+function CelulaSemColuna({ itens = [], onEdit, onBaixa }) {
   const [open, setOpen] = useState(false);
   if (!itens.length) {
     return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
@@ -719,7 +728,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
           <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.35, marginBottom: 6 }}>
             Estas provisões entram no <strong style={{ color: "#F8F8F2" }}>Total em aberto</strong> do mês e não têm
             coluna própria: ou estão sem subtipo, ou o subtipo não é exibido no regime desta empresa.
-            Abra o lançamento para responder qual é o subtipo.
+            Confira a classificação. Para registrar um pagamento, use “Dar baixa”.
           </div>
           {itens.map((e) => (
             <div key={e.id} style={{ borderTop: "1px solid #44475A", paddingTop: 6, marginTop: 6 }}>
@@ -739,7 +748,12 @@ function CelulaSemColuna({ itens = [], onEdit }) {
                   onMouseEnter={(ev) => { ev.currentTarget.style.background = "#2b2d45"; }}
                   onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; }}
                 >
-                  ✎ Editar
+                  ✎ Editar provisão
+                </button>
+              )}
+              {onBaixa && !e.placeholder && !String(e.id).startsWith("synthetic-das-") && ["ABERTO", "PARCIAL"].includes(e.statusPagamento) && (
+                <button onClick={() => { setOpen(false); onBaixa(e); }} style={menuBtn}>
+                  {e.statusPagamento === "PARCIAL" ? "Dar baixa (próxima quota)" : "Dar baixa"}
                 </button>
               )}
             </div>
@@ -1228,6 +1242,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
               {companyName || ""}{companyName ? " · " : ""}Emitido em {new Date().toLocaleDateString("pt-BR")}
             </p>
           </div>
+          <CircularMonthTags>
           <div data-print-tabela style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
           <table style={{ width: (1 + visibleRows.length + 2 + (temExtratoNoAno ? 1 : 0)) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
@@ -1260,7 +1275,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 const fat = circularData.receitas?.[comp];
                 const aberto = abertoByMonth[comp];
                 const rows = [(
-                  <tr key={comp}>
+                  <tr key={comp} data-circular-month={comp} className={circularData.fechamentos?.[comp]?.fechadoEm ? "circular-month-closed" : "circular-month-open"}>
                     <td style={monthStickyStyle}>
                       {MONTH_LABELS[i]}/{yy}
                     </td>
@@ -1269,6 +1284,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         key={col.key}
                         itens={semColunaPorMes[comp] || []}
                         onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                        onBaixa={onCreateBaixa ? (entry) => setBaixaEntry(entry) : null}
                       />
                     ) : (
                       <PagamentoCell
@@ -1292,7 +1308,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       {aberto?.total ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
                           {aberto.vencido > 0 && (
-                            <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
+                            <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias vencidas ou com saldo contábil em aberto no mês de pagamento fechado.">
                               R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>vencido</span>
                             </span>
                           )}
@@ -1348,6 +1364,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             </tbody>
           </table>
           </div>
+          </CircularMonthTags>
         </div>
       )}
 

@@ -26,13 +26,15 @@ export const SITFIS_PARCELAMENTO_REGEX = /parcelamento\s+com\s+exigibilidade\s+s
 /**
  * Classifica o texto de um relatório SITFIS.
  * Ordem importa: débito em aberto vence parcelamento suspenso.
- * @returns {"COM_PENDENCIA"|"EM_PARCELAMENTO"|"REGULAR"}
+ * @returns {"COM_PENDENCIA"|"EM_PARCELAMENTO"|"REGULAR"|"INCONCLUSIVO"}
  */
 export function classificarTextoSitfis(texto) {
+  if (!String(texto || "").trim()) return "INCONCLUSIVO";
   const semNegacoes = String(texto || "").replace(SITFIS_NEGACAO_REGEX, " ");
   if (SITFIS_PENDENCIA_REGEX.test(semNegacoes)) return "COM_PENDENCIA";
   if (SITFIS_PARCELAMENTO_REGEX.test(semNegacoes)) return "EM_PARCELAMENTO";
-  return "REGULAR";
+  // Ausência de palavra-chave não comprova regularidade: exigir declaração explícita.
+  return new RegExp(SITFIS_NEGACAO_REGEX.source, "i").test(String(texto)) ? "REGULAR" : "INCONCLUSIVO";
 }
 
 /**

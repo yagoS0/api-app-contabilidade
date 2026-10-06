@@ -1,3 +1,6 @@
+import { checklistDosLancamentos } from '@contabilidade/shared/fechamento-contabil';
+import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
+import { createPendenciasManuaisMock } from './pendenciasManuaisMock';
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
 import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
@@ -3591,6 +3594,7 @@ export function createMockApi() {
   let accessToken = "";
 
   return {
+    ...createPendenciasManuaisMock(),
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras),
     setUnauthorizedHandler() {},
@@ -4199,6 +4203,8 @@ export function createMockApi() {
         folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false,
         ...(circular?.checklist || {}),
       };
+      const checklistAutomatico = checklistDosLancamentos((mockEntriesByCompany.get(companyId) || []).filter(e => e.competencia === competencia));
+      for (const [chave, valor] of Object.entries(checklistAutomatico)) if (valor) checklist[chave] = true;
       const ROTULOS_CHECKLIST = {
         folhaProlabore: "Folha/Pró-labore lançados", despesas: "Despesas lançadas",
         receitas: "Receitas lançadas", provisoes: "Provisões lançadas", pagamentos: "Pagamentos lançados",
@@ -4214,6 +4220,7 @@ export function createMockApi() {
         fechadoPorNome: fechadoEm ? "Usuário Mock" : null,
         folhaProlaboreOk: true,
         checklist,
+        checklistAutomatico,
         checklistPendentes,
         // Empresa já fechada não "pode fechar" — ela ESTÁ fechada (mesma regra do agregado real).
         podeFechar: !fechadoEm && checklistPendentes.length === 0,
@@ -5848,7 +5855,7 @@ export function createMockApi() {
       const list = mockEntriesByCompany.get(companyId) || [];
       const openIdx = list.findIndex((e) => e.id === entryId);
       if (openIdx < 0) throw new Error("lancamento_nao_encontrado");
-      if (list[openIdx].statusPagamento !== "ABERTO") throw new Error("lancamento_nao_esta_aberto");
+      if (!["ABERTO", "PARCIAL"].includes(list[openIdx].statusPagamento)) throw new Error("lancamento_nao_esta_aberto");
       const linesArr = Array.isArray(lines) ? lines : [];
       const totalD = linesArr.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
       const totalC = linesArr.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -5862,7 +5869,7 @@ export function createMockApi() {
       const principalDestaBaixa = Math.round(linesArr
         .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO_BAIXA.has(String(l.conta ?? "").trim()))
         .reduce((s, l) => s + Number(String(l.valor ?? "").replace(",", ".") || 0), 0) * 100) / 100;
-      const saldoProvisao = Math.round((list[openIdx].lines || [])
+      const saldoProvisao = list[openIdx].saldo ?? Math.round((list[openIdx].lines || [])
         .filter((l) => l.tipo === "D")
         .reduce((s, l) => s + Number(l.valor || 0), 0) * 100) / 100;
       if (principalDestaBaixa - saldoProvisao > 0.01) {
@@ -5898,7 +5905,7 @@ export function createMockApi() {
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
       list.push(baixa);
-      list[openIdx] = { ...list[openIdx], statusPagamento: "PAGO", updatedAt: new Date().toISOString() };
+      list[openIdx] = { ...list[openIdx], saldo: Math.max(0, Math.round((saldoProvisao - principalDestaBaixa) * 100) / 100), statusPagamento: saldoProvisao - principalDestaBaixa > 0.009 ? "PARCIAL" : "PAGO", updatedAt: new Date().toISOString() };
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, entry: baixa, openEntry: list[openIdx] };
     },
@@ -6124,13 +6131,21 @@ export function createMockApi() {
         email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: enviarPorEmail, enviadas: enviarPorEmail ? porEmail.length : 0, erros: 0 },
       };
     },
+    async getPagamentosPendentes(companyId, competencia) {
+      return { itens: pagamentosDisponiveis((mockEntriesByCompany.get(companyId) || []).filter(e => e.tipo === 'PROVISAO'), competencia) };
+    },
+    async listPendenciasContabeis(companyId) {
+      const fechamentos = Object.fromEntries([...mockMonthlyCirculars.values()].filter(c => c.portalClientId === companyId && c.fechadoContabilEm).map(c => [c.competencia, { fechadoEm: c.fechadoContabilEm }]));
+      const entries = (mockEntriesByCompany.get(companyId) || []).filter(e => e.tipo === 'PROVISAO');
+      return { itens: projetarPendenciasContabeis(entries.map(e => sinalizarPendenciaFechamento(e, fechamentos))) };
+    },
     async getCircular(companyId, { year } = {}) {
       await delay();
       const y = year || new Date().getFullYear();
       const meses = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
       const list = mockEntriesByCompany.get(companyId) || [];
       const provisoes = list.filter(
-        (e) => e.tipo === "PROVISAO" && ["ABERTO", "PAGO"].includes(e.statusPagamento) && meses.includes(e.competencia)
+        (e) => e.tipo === "PROVISAO" && ["ABERTO", "PARCIAL", "PAGO"].includes(e.statusPagamento) && meses.includes(e.competencia)
       );
       const receitas = {};
       for (const e of list.filter((e) => e.tipo === "RECEITA" && meses.includes(e.competencia))) {
@@ -6273,7 +6288,8 @@ export function createMockApi() {
         [meses[4]]: { temDeclaracao: true, temRecibo: false, semFaturamento: true },
         [meses[5]]: { temDeclaracao: true, temRecibo: true, semFaturamento: false },
       };
-      return { year: y, provisoes, receitas, extrato };
+      const fechamentos = Object.fromEntries([...mockMonthlyCirculars.values()].filter(c => c.portalClientId === companyId && c.fechadoContabilEm).map(c => [c.competencia, { fechadoEm: c.fechadoContabilEm }]));
+      return { year: y, fechamentos, provisoes: provisoes.map(entry => sinalizarPendenciaFechamento(entry, fechamentos)), receitas, extrato };
     },
     async getCircularAccountingEntries(companyId, competencia) {
       await delay();

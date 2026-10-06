@@ -788,6 +788,14 @@ export function createRealApi() {
     async getStoredSitfis(companyId) {
       return request(`/firm/companies/${companyId}/serpro/sitfis`);
     },
+    async getPagamentosPendentes(companyId, competencia) { return request(`/firm/companies/${companyId}/pagamentos-pendentes?competencia=${encodeURIComponent(competencia)}`); },
+    async listPendenciasContabeis(companyId) { return request(`/firm/companies/${companyId}/pendencias-contabeis`); },
+    async listPendenciasManuais(companyId) { return request(`/firm/companies/${companyId}/pendencias-manuais`); },
+    async savePendenciaManual(companyId, payload) {
+      const editar = payload.versao != null;
+      return request(`/firm/companies/${companyId}/pendencias-manuais${editar ? `/${payload.id}` : ''}`, { method: editar ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    },
+    async deletePendenciaManual(companyId, payload) { return request(`/firm/companies/${companyId}/pendencias-manuais/${payload.id}`, { method: 'DELETE', body: JSON.stringify({ versao: payload.versao }) }); },
     // Q41: lista de empresas com a última situação fiscal (página Pendências).
     async listFiscalPendencias() {
       return request(`/firm/pendencias/fiscal`);
