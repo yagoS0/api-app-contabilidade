@@ -59,6 +59,8 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     __tx: tx,
     prisma: {
       accountingEntry: { findFirst: jest.fn() },
+      portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa" })) },
+      accountingEntryRule: { findFirst: jest.fn(async () => null) },
       companyMonthlyCircular: { findUnique: jest.fn(async () => null) },
       accountingHistorico: {
         findFirst: jest.fn(async () => null),
@@ -142,6 +144,25 @@ beforeEach(() => {
 
 const darBaixa = (body = BAIXA_EM_AGOSTO) =>
   request(makeApp()).post("/firm/companies/p1/entries/prov1/baixa").send(body);
+
+test.each(["IRPJ", "CSLL", "PIS", "COFINS"])("pagamento de %s persiste como BAIXA com tributo e vínculo", async (tributo) => {
+  prisma.accountingEntry.findFirst.mockResolvedValue({ ...provisaoDeFevereiro, subtipo: tributo, eventType: `DARF_${tributo}` });
+  const res = await darBaixa();
+  expect(res.status).toBe(201);
+  expect(__tx.accountingEntry.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+    tipo: "BAIXA", subtipo: tributo, eventType: `BAIXA_DARF_${tributo}`, openEntryId: "prov1", competencia: "2026-08",
+  }) });
+});
+
+test.each(["PIS", "COFINS"])("template legado %s usa somente os encargos desse tributo", async (tributo) => {
+  prisma.accountingEntry.findFirst.mockResolvedValue({ ...provisaoDeFevereiro, subtipo: "PIS_COFINS", eventType: `DARF_${tributo}` });
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValueOnce({ acrescimos: {
+    PIS: { principal: 1000, juros: 10, multa: 5 }, COFINS: { principal: 2000, juros: 20, multa: 8 },
+  } });
+  const res = await request(makeApp()).get("/firm/companies/p1/entries/prov1/baixa-template");
+  expect(res.status).toBe(200);
+  expect(res.body.acrescimo).toMatchObject(tributo === "PIS" ? { juros: 10, multa: 5 } : { juros: 20, multa: 8 });
+});
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 describe("o defeito relatado: o contador via a palavra `internal_error`", () => {

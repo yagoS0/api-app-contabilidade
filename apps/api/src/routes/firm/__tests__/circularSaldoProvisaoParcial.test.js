@@ -156,6 +156,17 @@ async function provisaoDaListagem() {
 // inteiro. Juros (501) e multa (506) ficam de fora do abatido de propósito.
 const ESPERADO = computeSaldoProvisao({ lines: provisaoIrpj.lines, baixas: LOTE_DA_QUOTA });
 
+test("Circular separa PIS/COFINS legados sem mudar IDs nem regravar o banco", async () => {
+  prisma.accountingEntry.findMany.mockImplementation(async (args) => args?.where?.tipo === "PROVISAO"
+    ? ["PIS", "COFINS"].map((tributo) => ({ ...provisaoIrpj, id: tributo, subtipo: "PIS_COFINS", eventType: `DARF_${tributo}`, baixas: [] })) : []);
+  const res = await app().get("/firm/companies/p1/entries/circular?year=2026");
+  expect(res.status).toBe(200);
+  expect(res.body.provisoes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "PIS", subtipo: "PIS" }),
+    expect.objectContaining({ id: "COFINS", subtipo: "COFINS" }),
+  ]));
+});
+
 describe("o número que o contador lê no popover da célula", () => {
   it("saldo, abatido e quotas da provisão PARCIAL vêm da conta única (R$ 3.000 − R$ 1.000)", async () => {
     const p = await provisaoDaCircular();
