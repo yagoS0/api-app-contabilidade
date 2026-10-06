@@ -3,9 +3,10 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { normalizarAgenda } from '../../../../../../packages/shared/src/agenda.js';
 import { editarJanela } from '../lib/editarJanela';
+import { MiniCalendarioAgenda } from './MiniCalendarioAgenda';
 import { CORES_PRIORIDADE, RECORRENCIAS } from '../lib/agendaWorkspace';
 
-export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao, onOpenCompany }) {
+export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao, onOpenCompany, onRascunho }) {
   const regra = inicial.regraEdicao || inicial.regraOriginal;
   const modoRegra = Boolean(inicial.regraEdicao);
   const edicao = Boolean(inicial.tarefaId || inicial.ocorrenciaIds || modoRegra);
@@ -25,6 +26,9 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   const [empresasTarefa, setEmpresasTarefa] = useState([]);
   const [buscaEmpresa, setBuscaEmpresa] = useState('');
   const [compartilhar, setCompartilhar] = useState(false);
+  useEffect(() => {
+    if (!edicao) onRascunho?.({titulo:dados.titulo,dataInicio:dados.dataInicio,dataFim:dados.dataFim,horaInicio:horario === 'SEM' ? null : dados.horaInicio,horaFim:horario === 'INTERVALO' ? dados.horaFim : null});
+  }, [edicao,onRascunho,dados.titulo,dados.dataInicio,dados.dataFim,dados.horaInicio,dados.horaFim,horario]);
   const set = (chave, valor) => setDados(d => editarJanela(d, chave, valor));
   function mudarAlcance(proximo) {
     if (proximo !== alcance) setDados(d => {
@@ -101,33 +105,41 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
     catch (e) { setErro(e.message); }
     finally { setOcupado(false); }
   }
+  const compacto = passo === 1 && !modoRegra;
+  const resumoData = new Date(`${dados.dataInicio}T12:00:00`).toLocaleDateString('pt-BR', { day:'numeric', month:'short' });
   const campo = (rotulo, chave, tipo = 'text', extra = {}) => <label className="agenda-field">{rotulo}<input type={tipo} value={dados[chave] || ''} onChange={e => set(chave, e.target.value)} {...extra} /></label>;
   const fiscalInput = (rotulo, chave, extra = {}) => <label className="agenda-field">{rotulo}<input type="number" value={fiscal[chave]} onChange={e => setF(chave, e.target.value)} {...extra}/></label>;
-  return <Modal titulo={modoRegra ? 'Configurar obrigação' : edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho="md">
-    <form className="agenda-form" onSubmit={salvar}>
+  return <Modal titulo={modoRegra ? 'Configurar obrigação' : edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho={compacto ? 'sm' : 'md'} className={compacto ? 'agenda-editor' : ''} ancora={compacto ? inicial.ancora : null}>
+    <form className="agenda-form" onSubmit={salvar} onInvalid={e => { const details = e.target.closest('details'); if (details) details.open = true; }}>
       {passo === 1 ? <>
-        {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
+        {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'O que você gostaria de fazer?', autoFocus: true, 'data-modal-autofocus': true })}
         {onConfigurarObrigacao && <button type="button" className="agenda-text-action" onClick={onConfigurarObrigacao}>Configurar obrigação</button>}
         {!obrigacao && inicial.companyId && !grupoEmpresas && <div className="agenda-task-status"><span>{inicial.empresa || empresas.find(e => e.companyId === inicial.companyId)?.razao || 'Empresa atual'}</span>{onOpenCompany && <Button type="button" variant="secondary" onClick={() => onOpenCompany(inicial.companyId)}>Abrir empresa</Button>}</div>}
-        {!obrigacao && !inicial.companyId && !inicial.ocorrenciaIds && <fieldset className="agenda-scope"><legend>Empresas da tarefa (opcional)</legend>
+        {!obrigacao && !inicial.companyId && !inicial.ocorrenciaIds && <details className="agenda-editor-section agenda-editor-companies"><summary>Empresas <span>{empresasTarefa.length ? `${empresasTarefa.length} selecionadas` : 'Pessoal'}</span></summary><fieldset className="agenda-scope"><legend>Empresas da tarefa (opcional)</legend>
           <input className="agenda-company-search" aria-label="Buscar empresa da tarefa" placeholder="Razão social ou CNPJ" value={buscaEmpresa} onChange={e => setBuscaEmpresa(e.target.value)}/>
           <div className="agenda-company-choices">{empresas.filter(e => `${e.razao || e.nome} ${e.cnpj || ''}`.toLowerCase().includes(buscaEmpresa.toLowerCase())).map(e => <label key={e.companyId}><input type="checkbox" checked={empresasTarefa.includes(e.companyId)} onChange={ev => {setEmpresasTarefa(ids => ev.target.checked ? [...ids,e.companyId] : ids.filter(id => id !== e.companyId)); setCompartilhar(false);}}/>{e.razao || e.nome}{e.cnpj ? ` · ${e.cnpj}` : ''}</label>)}</div>
           {empresasTarefa.length ? <label><input type="checkbox" checked={compartilhar} onChange={e => setCompartilhar(e.target.checked)}/>Compartilhar com a equipe autorizada das empresas selecionadas. Cada empresa terá sua própria conclusão.{inicial.tarefaId ? ' A tarefa pessoal será substituída somente se não tiver histórico; o vínculo vale para toda a série.' : ''}</label> : <small>Sem seleção, esta tarefa continua pessoal.</small>}
-        </fieldset>}
+        </fieldset></details>}
         {onAlterarConclusao && !conversao && <div className="agenda-task-status">
           <span aria-live="polite">{inicial.resolvido ? 'Concluída' : 'Pendente'}</span>
           <Button type="button" variant="secondary" disabled={ocupado} onClick={alterarConclusao}>{inicial.resolvido ? 'Reabrir tarefa' : 'Concluir tarefa'}</Button>
         </div>}
-        <label className="agenda-field">Descrição<textarea rows={3} maxLength={10000} value={dados.descricao || ''} onChange={e => set('descricao', e.target.value)} /></label>
+        <label className="agenda-field agenda-editor-description">Descrição<textarea placeholder="Descrição ou notas" rows={3} maxLength={10000} value={dados.descricao || ''} onChange={e => set('descricao', e.target.value)} /></label>
+        <details className="agenda-editor-section agenda-editor-dates"><summary>◷ <span>{resumoData}{horario !== 'SEM' ? ` · ${dados.horaInicio}${horario === 'INTERVALO' ? `–${dados.horaFim}` : ''}` : ' · Dia inteiro'}</span></summary><div className="agenda-editor-panel">
+        <MiniCalendarioAgenda data={dados.dataInicio} onChange={value => set('dataInicio',value)}/>
         <div className="agenda-form-row">{campo('De', 'dataInicio', 'date', { required: true })}{campo('Até', 'dataFim', 'date', { required: true, min: dados.dataInicio })}</div>
         <label className="agenda-field">Horário<select value={horario} onChange={e => setHorario(e.target.value)}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo</option><option value="INTERVALO">De uma hora até outra</option></select></label>
         {horario !== 'SEM' && <div className="agenda-form-row">{campo(horario === 'FIXO' ? 'Às' : 'Horário inicial', 'horaInicio', 'time', { required: true })}{horario === 'INTERVALO' && campo('Horário final', 'horaFim', 'time', { required: true })}</div>}
+        <div className="agenda-duration-presets" aria-label="Duração">{[30,60,90,120].map(m => <button type="button" key={m} onClick={() => { const [h,min] = (dados.horaInicio || '08:00').split(':').map(Number); const fim = Math.min(1439,h*60+min+m); setHorario('INTERVALO'); set('horaInicio',dados.horaInicio || '08:00'); set('horaFim',`${String(Math.floor(fim/60)).padStart(2,'0')}:${String(fim%60).padStart(2,'0')}`); }}>{m < 60 ? `${m} min` : `${m/60} h`}</button>)}</div>
+        </div></details>
+        <details className="agenda-editor-section"><summary>Repetição e tipo <span>{RECORRENCIAS[dados.recorrencia]}</span></summary><div className="agenda-editor-panel">
         <div className="agenda-form-row"><label className="agenda-field">Tipo<select value={obrigacao ? 'OBRIGACAO' : 'TAREFA'} disabled={eraObrigacao || grupoEmpresas} onChange={e => { setObrigacao(e.target.value === 'OBRIGACAO'); if (edicao) mudarAlcance('SERIE'); }}><option value="TAREFA">Tarefa</option><option value="OBRIGACAO">Obrigação</option></select></label><label className="agenda-field">Recorrência<select value={dados.recorrencia} disabled={edicao && !podeEditarSerie} onChange={e => { set('recorrencia', e.target.value); if (edicao) mudarAlcance('SERIE'); }}>{Object.entries(RECORRENCIAS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
         {dados.recorrencia !== 'AVULSA' && <>
           <label className="agenda-field">Em dias não úteis<select value={dados.ajusteDiaUtil || 'MANTER'} disabled={edicao && !podeEditarSerie} onChange={e => { set('ajusteDiaUtil', e.target.value); if (edicao) mudarAlcance('SERIE'); }}><option value="MANTER">Manter a data</option><option value="ANTECIPAR">Antecipar para o dia útil anterior</option></select></label>
           <label className="agenda-field">Repetir até<input type="date" value={dados.repetirAte || ''} min={dados.dataInicio} disabled={edicao && !podeEditarSerie} onChange={e => { set('repetirAte',e.target.value); if (edicao) mudarAlcance('SERIE'); }}/></label>
         </>}
         {edicao && !modoRegra && podeEditarSerie && <label className="agenda-field">Aplicar alterações<select value={alcance} disabled={conversao} onChange={e => mudarAlcance(e.target.value)}><option value="ESTA">Somente esta ocorrência</option><option value="SERIE">{inicial.tarefaId ? 'Esta e próximas ocorrências' : 'Toda a série'}</option></select></label>}
+        </div></details>
         <div className="agenda-form-row agenda-form-bottom">{!obrigacao && inicial.tipo !== 'obrigacao' && <fieldset className="agenda-priorities"><legend>Prioridade</legend>{Object.entries(CORES_PRIORIDADE).map(([v,c], index) => <button key={v} type="button" aria-label={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} aria-pressed={(dados.prioridade || '') === v} title={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} style={{ '--priority': c }} onClick={() => set('prioridade', v)} />)}</fieldset>}
         </div>
       </> : <>

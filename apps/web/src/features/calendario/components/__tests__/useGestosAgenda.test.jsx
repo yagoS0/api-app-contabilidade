@@ -76,12 +76,12 @@ test.each([[135, 225], [225, 135]])('selection %s→%s creates one precise inter
   expect(clique.stopPropagation).toHaveBeenCalled();
 });
 
-test('simple click selects the quarter hour, keyboard uses the focused hour', () => {
+test('simple click selects the whole hour block, like keyboard activation', () => {
   const { result, evento, criar } = preparar();
   act(() => { result.current.iniciarCriacao(evento(90, 135), dias[0]); result.current.terminar(evento(90, 135)); });
   expect(criar).not.toHaveBeenCalled();
   act(() => result.current.clicarHorario(evento(90, 135, { detail: 1 }), dias[0], 9));
-  expect(criar).toHaveBeenLastCalledWith(expect.objectContaining({ horaInicio: '09:15', horaFim: '10:15' }));
+  expect(criar).toHaveBeenLastCalledWith(expect.objectContaining({ horaInicio: '09:00', horaFim: '10:00' }));
   act(() => result.current.clicarHorario(evento(0, 0, { detail: 0 }), dias[1], 11));
   expect(criar).toHaveBeenLastCalledWith(expect.objectContaining({ horaInicio: '11:00', horaFim: '12:00' }));
 });

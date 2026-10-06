@@ -568,7 +568,7 @@ export function CompaniesHomePage({
   }, [empresasSelecionadas, travas]);
 
   return (
-    <div className="dashboard-home-page">
+    <div className={`dashboard-home-page${modoVisao === "calendario" ? " dashboard-home-page--agenda" : ""}`}>
       <AppShell className="dashboard-home-shell">
         <section className="dashboard-home">
           <header className="dashboard-home__header">

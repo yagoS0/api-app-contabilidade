@@ -101,9 +101,8 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
   }
   function clicarHorario(e, data, horaFallback) {
     if (opcoes.current.bloqueado || ignorarClique.current) return;
-    const grade = medirGradeAgenda(horasRef.current, opcoes.current.dias);
-    const ponto = e.detail > 0 && grade ? pontoNaGrade(grade, e.clientX, e.clientY) : null;
-    opcoes.current.criar?.(janelaCriacaoAgenda(data, ponto?.minuto ?? horaFallback * 60));
+    // Clique seleciona a célula inteira; só o arraste escolhe frações de hora.
+    opcoes.current.criar?.(janelaCriacaoAgenda(data, horaFallback * 60));
   }
   function teclado(e, item) {
     if (!habilitada(item) || !e.altKey || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
