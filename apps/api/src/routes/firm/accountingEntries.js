@@ -265,12 +265,14 @@ function separarLinhasPorPapel(linhas) {
   const grupos = [];
   for (const papel of ["PRINCIPAL", "JUROS", "MULTA"]) {
     const doGrupo = debitos.filter((l) => {
-      const p = String(l.papel || "").toUpperCase();
+      const p = String(l.papel || "").trim().toUpperCase();
       return papel === "PRINCIPAL" ? (!p || p === "PRINCIPAL") : p === papel;
     });
-    const total = r2(doGrupo.reduce((acc, l) => acc + (parseFloat(String(l.valor).replace(",", ".")) || 0), 0));
-    if (!doGrupo.length || total <= 0) continue;
-    grupos.push({ papel, debitos: doGrupo, total, contaCaixa });
+    // Mesmo papel não autoriza consolidar partidas: cada débito é um lançamento 1D/1C.
+    for (const debito of doGrupo) {
+      const total = r2(parseFloat(String(debito.valor).replace(",", ".")) || 0);
+      if (total > 0) grupos.push({ papel, debitos: [debito], total, contaCaixa });
+    }
   }
   return grupos;
 }
@@ -3173,6 +3175,17 @@ export function createAccountingEntriesRouter({ log }) {
         totalC: validation.totalC,
         diferenca: validation.diferenca,
       });
+    }
+
+    const debitosBaixa = lines.filter((l) => String(l.tipo).toUpperCase() === "D");
+    if (lines.filter((l) => String(l.tipo).toUpperCase() === "C").length !== 1) {
+      return res.status(400).json({ error: "BAIXA_CONTRAPARTIDA_UNICA", message: "Informe uma única conta de caixa/banco. Cada débito gerará seu próprio lançamento contra essa conta." });
+    }
+    if (debitosBaixa.some((l) => {
+      const papel = String(l.papel || "").trim().toUpperCase();
+      return papel ? !["PRINCIPAL", "JUROS", "MULTA"].includes(papel) : debitosBaixa.length > 1;
+    })) {
+      return res.status(400).json({ error: "PAPEL_DE_BAIXA_INVALIDO", message: "Identifique cada débito como principal, juros ou multa. Os lançamentos serão individuais." });
     }
 
     // Baixa parcial por quota: quanto ESTA baixa amortiza do principal (exclui juros 501 / multa 506).
