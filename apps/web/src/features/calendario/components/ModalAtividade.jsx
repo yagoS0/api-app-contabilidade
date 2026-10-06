@@ -91,6 +91,12 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
           verificador: porData ? null : fiscal.verificador || null, escopo: fiscal.escopo, filtros,
           aplicarANovas: fiscal.escopo !== 'SELECAO_MANUAL' && fiscal.aplicarANovas,
         };
+        // Alterar nome/conclusão de uma regra antiga não cria uma janela baseada na data de hoje.
+        const baseJanela = {recorrencia:'AVULSA',ajusteDiaUtil:'MANTER',prioridade:'',...inicial};
+        const janelaInalterada = ['dataInicio','dataFim','horaInicio','horaFim','repetirAte','recorrencia','ajusteDiaUtil','prioridade'].every(k => (dados[k] || '') === (baseJanela[k] || ''));
+        if (regra && !regra.agendaConfig && janelaInalterada && horario === (inicial.horaFim ? 'INTERVALO' : inicial.horaInicio ? 'FIXO' : 'SEM')) {
+          delete payload.agendaConfig; delete payload.dataInicio; delete payload.dataFim; delete payload.dataVencimento;
+        }
         out = await (conversao && inicial.tarefaId ? api.converterTarefaEmObrigacao(inicial.tarefaId, { cicloChave: inicial.cicloChave, regra: payload })
           : regra ? api.updateRegraObrigacao(regra.regraId || regra.id, payload)
           : edicao && inicial.obrigacaoOriginal ? api.updateObrigacao(inicial.obrigacaoOriginal.obrigacaoId, payload)

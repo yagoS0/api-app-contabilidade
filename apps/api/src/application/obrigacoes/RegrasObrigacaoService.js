@@ -135,6 +135,11 @@ export async function propagar({ regraId, portalIds, atualizarJanelas = false },
   });
   if (!regra) throw new ObrigacaoError("regra_nao_encontrada", "Regra não encontrada.", 404);
 
+  // Pausar não equivale a tirar empresas do escopo: conservar IDs e ocorrências.
+  if (!regra.ativa) {
+    const r = await db.obrigacao.updateMany({ where: { regraId, portalClientId: { in: portalIds }, sobrescritaLocal: false }, data: { ativa: false } });
+    return { criadas: 0, atualizadas: r.count, puladas: 0, desvinculadas: 0, removidas: 0, empresasNoEscopo: 0 };
+  }
   const excecoesIds = regra.excecoes.map((e) => e.portalClientId);
   const alvo = regra.ativa
     ? await empresasDoEscopo({ portalIds, escopo: regra.escopo, filtros: regra.filtros, excecoesIds }, db)
