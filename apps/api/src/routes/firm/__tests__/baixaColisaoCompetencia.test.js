@@ -145,6 +145,46 @@ beforeEach(() => {
 const darBaixa = (body = BAIXA_EM_AGOSTO) =>
   request(makeApp()).post("/firm/companies/p1/entries/prov1/baixa").send(body);
 
+test("ISS composto: cada débito gera 1D/1C, inclusive dois juros com o mesmo papel", async () => {
+  prisma.accountingEntry.findFirst.mockResolvedValue({ ...provisaoDeFevereiro, subtipo: "ISS", eventType: "DARF_ISS" });
+  const res = await darBaixa({ ...BAIXA_EM_AGOSTO, historico: "Pagamento ISS", lines: [
+    { tipo: "D", conta: "220", valor: 1000, papel: "PRINCIPAL" },
+    { tipo: "D", conta: "501", valor: 20, papel: "JUROS" },
+    { tipo: "D", conta: "501", valor: 30, papel: "JUROS" },
+    { tipo: "D", conta: "506", valor: 10, papel: "MULTA" },
+    { tipo: "C", conta: "111", valor: 1060 },
+  ] });
+  expect(res.status).toBe(201);
+  expect(__tx.accountingEntry.create).toHaveBeenCalledTimes(4);
+  expect(__tx.accountingEntry.create.mock.calls.map(([arg]) => arg.data.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "JUROS", "MULTA"]);
+  const partidas = __tx.accountingEntryLine.createMany.mock.calls.map(([arg]) => arg.data);
+  expect(partidas.map((p) => p.length)).toEqual([2, 2, 2, 2]);
+  expect(partidas.map((p) => p[0].valor)).toEqual([1000, 20, 30, 10]);
+  for (const par of partidas) {
+    expect(par[0].tipo).toBe("D");
+    expect(par[1]).toMatchObject({ tipo: "C", conta: "111", valor: par[0].valor });
+  }
+});
+
+test("ISS composto sem papel não grava agrupamento nem presume juros como principal", async () => {
+  const res = await darBaixa({ ...BAIXA_EM_AGOSTO, lines: [
+    { tipo: "D", conta: "220", valor: 1000, papel: "PRINCIPAL" },
+    { tipo: "D", conta: "501", valor: 20 }, { tipo: "C", conta: "111", valor: 1020 },
+  ] });
+  expect(res.status).toBe(400);
+  expect(res.body.error).toBe("PAPEL_DE_BAIXA_INVALIDO");
+  expect(__tx.accountingEntry.create).not.toHaveBeenCalled();
+});
+
+test("não descarta segunda conta de crédito ao separar a baixa", async () => {
+  const res = await darBaixa({ ...BAIXA_EM_AGOSTO, lines: [
+    { tipo: "D", conta: "220", valor: 1000 }, { tipo: "C", conta: "111", valor: 600 }, { tipo: "C", conta: "112", valor: 400 },
+  ] });
+  expect(res.status).toBe(400);
+  expect(res.body.error).toBe("BAIXA_CONTRAPARTIDA_UNICA");
+  expect(__tx.accountingEntry.create).not.toHaveBeenCalled();
+});
+
 test.each(["IRPJ", "CSLL", "PIS", "COFINS"])("pagamento de %s persiste como BAIXA com tributo e vínculo", async (tributo) => {
   prisma.accountingEntry.findFirst.mockResolvedValue({ ...provisaoDeFevereiro, subtipo: tributo, eventType: `DARF_${tributo}` });
   const res = await darBaixa();
