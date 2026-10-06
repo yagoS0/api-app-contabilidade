@@ -1,5 +1,9 @@
 # CLAUDE.md — Contabilidade (apps/api/src/application/accounting)
 
+## Baixa de ISS composto — 06/10/2026
+
+Regra reiterada pelo usuário: cada débito de uma baixa é um lançamento individual 1D/1C. A rota de baixa não consolida débitos por papel, mesmo quando dois são juros. Principal, juros e multa preservam seu papel e o vínculo à provisão, na mesma transação. Vários débitos exigem papel explícito; vários créditos exigem separar os pagamentos em vez de descartar uma contrapartida. Não alterar a forma de lançamentos de folha ou provisões compostas por extensão desta regra de baixa.
+
 Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamento do mês.
 
 ## Valor efetivamente pago — 23/09/2026
