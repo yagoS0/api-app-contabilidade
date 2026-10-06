@@ -241,17 +241,17 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   })();
   const [data, setData] = useState(dataComprovante || today);
   const [historico, setHistorico] = useState(defaultHistorico);
-  const [lines, setLines] = useState(() => {
-    const entryLines = entry.lines || [];
-    if (entryLines.length === 0) {
-      return [{ tipo: "D", conta: "", valor: "" }, { tipo: "C", conta: "", valor: "" }];
-    }
-    return entryLines.map((l) => ({
-      tipo: l.tipo === "D" ? "C" : "D",
-      conta: l.conta,
-      valor: String(Number(l.valor).toFixed(2)),
-    }));
-  });
+  // Só reaproveita um passivo identificado. A despesa da provisão nunca é a
+  // contrapartida do pagamento; caixa/banco deve vir da regra ou do contador.
+  const creditos = (entry.lines || []).filter((l) => l.tipo === "C");
+  const contaPassivo = creditos.length === 1 && accounts?.some((a) =>
+    String(a.codigo) === String(creditos[0].conta) && a.tipo === "PASSIVO")
+    ? String(creditos[0].conta) : "";
+  const [lines, setLines] = useState(() => [
+    { tipo: "D", conta: contaPassivo, valor: Number(entry.saldo ?? valorBase).toFixed(2), papel: "PRINCIPAL" },
+    { tipo: "C", conta: "", valor: Number(entry.saldo ?? valorBase).toFixed(2), papel: "CAIXA" },
+  ]);
+  const [loadingTemplate, setLoadingTemplate] = useState(Boolean(onLoadBaixaTemplate && entry?.id));
   const [error, setError] = useState("");
   const [templateApplied, setTemplateApplied] = useState(null); // "COMPANY" | "GLOBAL" | null
   const [acrescimo, setAcrescimo] = useState(null); // { juros, multa, total, conta } — guia recalculada (item 2)
@@ -280,13 +280,12 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         // O que falta sem template é apenas a CONTA de débito; os valores continuam válidos. Então
         // o pré-preenchimento acontece de qualquer jeito, com a conta em branco para o contador
         // escolher — que é infinitamente melhor que perder a separação.
-        if (!tpl && !comprovante) return;
 
         // Baixa parcial: tpl.valor já vem como o SALDO restante (não o principal cheio).
         // Comprovante do SERPRO vence a estimativa da circular: são os valores efetivamente pagos.
         const principal = comprovante?.principal != null
           ? Number(comprovante.principal)
-          : (Number(tpl?.valor || valorBase) || 0);
+          : Number(res?.saldoInfo?.saldo ?? tpl?.valor ?? entry.saldo ?? valorBase);
         const juros = comprovante?.juros != null ? Number(comprovante.juros) : (Number(acr?.juros) || 0);
         const multa = comprovante?.multa != null ? Number(comprovante.multa) : (Number(acr?.multa) || 0);
         const acrescimoTotal = Math.round((juros + multa) * 100) / 100;
@@ -301,7 +300,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         // lançava `TypeError` — engolido pelo `.catch()` lá embaixo. `setLines` nunca rodava, o
         // modal ficava com as duas linhas padrão, e o contador não via erro nenhum: via um modal
         // "normal" que produzia um lançamento em bloco.
-        const newLines = [{ tipo: "D", conta: tpl?.debitAccountCode || "", valor: principal.toFixed(2), papel: "PRINCIPAL" }];
+        const newLines = [{ tipo: "D", conta: tpl?.debitAccountCode || contaPassivo, valor: principal.toFixed(2), papel: "PRINCIPAL" }];
         if (juros > 0) newLines.push({ tipo: "D", conta: acr?.contaJuros || CONTA_JUROS, valor: juros.toFixed(2), papel: "JUROS" });
         if (multa > 0) newLines.push({ tipo: "D", conta: acr?.contaMulta || CONTA_MULTA, valor: multa.toFixed(2), papel: "MULTA" });
         newLines.push({ tipo: "C", conta: tpl?.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2), papel: "CAIXA" });
@@ -309,7 +308,8 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         if (tpl?.historico) setHistorico(tpl.historico);
         if (tpl) setTemplateApplied(tpl.scope || "GLOBAL");
       })
-      .catch(() => { /* silencioso — fallback ao comportamento manual */ });
+      .catch(() => { if (!canceled) setError("Não foi possível carregar as contas e o saldo. Confira os valores e preencha as contas do pagamento."); })
+      .finally(() => { if (!canceled) setLoadingTemplate(false); });
     return () => { canceled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry?.id]);
@@ -323,8 +323,13 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   // A conferência é a MESMA do servidor, em `lib/principalDaBaixa.js`; quem recusa continua sendo
   // ele. Sem `saldoInfo` isto devolve `null` e nada é afirmado.
   const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo);
-  const canSave = data && historico && balanced && !excedeSaldo && !saving;
-  const motivoNaoSalva = !data
+  const contasPreenchidas = lines.every((l) => String(l.conta || "").trim());
+  const canSave = data && historico && balanced && contasPreenchidas && !excedeSaldo && !saving && !loadingTemplate;
+  const motivoNaoSalva = loadingTemplate
+    ? "Carregando contas e saldo da provisão."
+    : !contasPreenchidas
+      ? "Informe as contas do passivo e do caixa/banco para registrar o pagamento."
+      : !data
     ? "Informe a data do pagamento."
     : !historico
       ? "Informe o histórico."
@@ -449,7 +454,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         </div>
 
         <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: 4 }}>
-          Partidas (contrapartida da provisão)
+          Partidas do pagamento — débito no passivo e crédito no caixa/banco
         </div>
         <LineEditor lines={lines} onChange={setLines} accounts={accounts} />
 
