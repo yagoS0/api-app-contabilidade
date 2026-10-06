@@ -1,5 +1,9 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Baixa de ISS composto — 06/10/2026
+
+O usuário reiterou que baixas devem gerar lançamentos individuais. Cada débito do formulário gera um lançamento com um débito e um crédito no caixa/banco; nem débitos com o mesmo papel podem ser consolidados. Linhas extras exigem escolher principal, juros ou multa. O formulário informa a quantidade de lançamentos e a API aplica a separação na gravação. Não confundir a composição exibida para conferência com um lançamento contábil agrupado.
+
 ## Atualização e exportação selecionada — 23/09/2026
 
 Atualização do mesmo contexto mantém as linhas montadas e mostra indicador discreto. Erro de recarga preserva lista com aviso; uma gravação já concluída não é repetida por falha na leitura. Empresa/filtros identificam o contexto; respostas superadas são descartadas e dados de outra empresa não são expostos.
