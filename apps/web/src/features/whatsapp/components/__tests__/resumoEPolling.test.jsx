@@ -21,7 +21,7 @@ test("selo chega à navegação global e uma falha remove a contagem antiga", ()
   expect(screen.getByLabelText("3 mensagens não lidas no WhatsApp")).toBeInTheDocument();
   rerender(view(null));
   expect(screen.queryByLabelText("3 mensagens não lidas no WhatsApp")).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Relacionamento" })).toHaveAttribute("title", "não foi possível ler");
+  expect(screen.getByRole("link", { name: "Suporte" })).toHaveAttribute("title", "não foi possível ler");
 });
 
 test("resumo falho apaga selo antigo, pausa oculta e retoma ao voltar", async () => {

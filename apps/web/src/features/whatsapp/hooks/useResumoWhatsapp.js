@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { leituraDoResumo } from "../lib/resumoTela";
 
-export function useResumoWhatsapp({ api, enabled = true }) {
+export function useResumoWhatsapp({ api, enabled = true, area = '' }) {
   const [resumo, setResumo] = useState(null);
   const [carregando, setCarregando] = useState(true);
   useEffect(() => {
@@ -19,7 +19,7 @@ export function useResumoWhatsapp({ api, enabled = true }) {
       if (cancelado || pendente || document.visibilityState === "hidden") return;
       pendente = true;
       try {
-        const r = await api.getResumoWhatsapp();
+        const r = await api.getResumoWhatsapp(...(area ? [{ area }] : []));
         if (!cancelado) setResumo(r?.ok === true ? r.resumo : null);
       } catch {
         if (!cancelado) setResumo(null);
@@ -35,6 +35,6 @@ export function useResumoWhatsapp({ api, enabled = true }) {
     document.addEventListener("visibilitychange", visibilidade);
     ciclo();
     return () => { cancelado = true; clearTimeout(timer); document.removeEventListener("visibilitychange", visibilidade); };
-  }, [api, enabled]);
+  }, [api, enabled, area]);
   return { ...leituraDoResumo(resumo), carregando };
 }

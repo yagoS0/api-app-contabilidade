@@ -7,6 +7,15 @@ import { classificarRelacionamento } from './ClassificacaoAtendimentoService.js'
 import { mascararTelefone } from './WhatsappCloudClient.js';
 
 const erro = (code, status = 400) => Object.assign(new Error(code), { code, status });
+export function segmentosDaArea(segmentos, area = '') {
+  if (!['', 'suporte', 'comercial'].includes(area)) throw erro('area_invalida');
+  return !area ? segmentos : segmentos.filter(s => (s.canalWhatsapp?.finalidade === 'COMERCIAL') === (area === 'comercial'));
+}
+function restringirArea(grupo, area, conversaId) {
+  grupo.segmentos = segmentosDaArea(grupo.segmentos, area);
+  if (!grupo.segmentos.some(s => s.id === conversaId)) throw erro('conversa_nao_encontrada', 404);
+  return grupo;
+}
 const include = { portalClient: { select: { id: true, razao: true, cnpj: true, apelidosWhatsapp: true } }, atendente: { select: { id: true, name: true, email: true } },
   atendimento: true, canalWhatsapp: true, vinculoNumero: { include: { interlocutor: true } } };
 const chave = c => c.vinculoNumero?.interlocutorId || `legado:${c.atendimentoId || c.id}`;
@@ -20,7 +29,7 @@ export function lerCursorInbox(cursor, assinatura) {
 }
 
 // A listagem e os totais usam a mesma visibilidade, identidade e resolução de mensagens.
-function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null, q = '' }) {
+function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null, q = '', area = '' }) {
   // NOT IN (NULL) é desconhecido, não verdadeiro: com carteira vazia isso
   // deixaria recibos neutros de clientes restritos escaparem do NOT EXISTS.
   const empresasSql = ids.length ? Prisma.join(ids) : Prisma.sql`SELECT NULL::text WHERE false`;
@@ -34,6 +43,7 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
       FROM conversas_whatsapp c LEFT JOIN vinculos_numero_interlocutor v ON v.id=c."vinculoNumeroId"
       LEFT JOIN "PortalClient" p ON p.id=c."portalClientId"
       WHERE ${lixeira ? Prisma.sql`c."excluidaEm" IS NOT NULL` : Prisma.sql`c."excluidaEm" IS NULL`}
+        AND ${area === 'comercial' ? Prisma.sql`EXISTS (SELECT 1 FROM "canais_whatsapp" canal WHERE canal.id=c."canalId" AND canal.finalidade='COMERCIAL')` : area === 'suporte' ? Prisma.sql`NOT EXISTS (SELECT 1 FROM "canais_whatsapp" canal WHERE canal.id=c."canalId" AND canal.finalidade='COMERCIAL')` : Prisma.sql`true`}
         AND ${historico ? Prisma.sql`c."chaveEscopo" LIKE 'legado:%'` : Prisma.sql`c."chaveEscopo" NOT LIKE 'legado:%'`}
     ), vis AS (
       SELECT b.* FROM base b WHERE (
@@ -72,14 +82,15 @@ function consultaBaseInbox({ ids, operadorId, filtro = 'todas', empresaId = null
 }
 
 /** Agrupa no SQL ANTES do cursor/limite. Só segmentos visíveis alimentam busca, contagem e prévia. */
-export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'todas', empresaId = null, relacionamento = '', q = '', naoLidas = false, cursor = null, limite = 100, client = prisma }) {
+export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'todas', empresaId = null, relacionamento = '', q = '', naoLidas = false, cursor = null, limite = 100, client = prisma, area = '' }) {
+  if (!['', 'suporte', 'comercial'].includes(area)) throw erro('area_invalida');
   const ids = [...new Set(visiveis || [])].sort();
   const lim = Math.min(200, Math.max(1, Number(limite) || 100));
-  const assinatura = createHash('sha256').update(JSON.stringify({ ordem: 'ultima-mensagem', ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas })).digest('hex').slice(0, 20);
+  const assinatura = createHash('sha256').update(JSON.stringify({ ordem: 'ultima-mensagem', ids, operadorId, filtro, empresaId, relacionamento, q, naoLidas, area })).digest('hex').slice(0, 20);
   const c = lerCursorInbox(cursor, assinatura);
   if (empresaId && !ids.includes(empresaId)) return { conversas: [], temMais: false, proximoCursor: null, versaoContrato: 2, buscaConfigurada: true };
   if (empresaId && filtro === 'nao-vinculadas') throw erro('filtro_incompativel');
-  const linhas = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, operadorId, filtro, empresaId, q })}
+  const linhas = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, operadorId, filtro, empresaId, q, area })}
     SELECT * FROM classificados WHERE ${relacionamento ? Prisma.sql`relacionamento=${relacionamento}` : Prisma.sql`true`}
       AND ${filtro === 'nao-vinculadas' ? Prisma.sql`relacionamento<>'CLIENTE'` : Prisma.sql`true`}
       AND ${naoLidas ? Prisma.sql`"naoLidas">0` : Prisma.sql`true`}
@@ -96,10 +107,11 @@ export async function listarInboxWhatsapp({ visiveis, operadorId, filtro = 'toda
 }
 
 /** Totais globais da carteira, sem busca, filtro de relacionamento, cursor ou limite. */
-export async function resumoInboxWhatsapp(visiveis, { client = prisma } = {}) {
+export async function resumoInboxWhatsapp(visiveis, { client = prisma, area = '' } = {}) {
+  if (!['', 'suporte', 'comercial'].includes(area)) throw erro('area_invalida');
   const ids = [...new Set(visiveis || [])].sort();
   const [atual, historico, lixeira] = await Promise.all(['todas', 'historico', 'lixeira'].map(async filtro => {
-    const [totais] = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, filtro })}
+    const [totais] = await client.$queryRaw(Prisma.sql`${consultaBaseInbox({ ids, filtro, area })}
       SELECT COUNT(*)::int AS "conversas",
         COUNT(*) FILTER (WHERE relacionamento<>'CLIENTE')::int AS "naoVinculadas",
         COUNT(*) FILTER (WHERE "naoLidas">0)::int AS "conversasNaoLidas",
@@ -212,8 +224,8 @@ async function resumirGrupos(grupos, { visiveis, client }) {
   });
 }
 
-export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = null, mensagemId = null, limite = 100, client = prisma }) {
-  const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
+export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = null, mensagemId = null, limite = 100, client = prisma, area = '' }) {
+  const grupo = restringirArea(await carregarGrupoIdentidade({ conversaId, visiveis, client }), area, conversaId);
   let where = filtroMensagensIdentidade(grupo.segmentos);
   if(mensagemId) {
     const alvo = await client.mensagemWhatsapp.findFirst({where:{AND:[where,{id:String(mensagemId)}]},select:{id:true,registradaEm:true}});
@@ -235,8 +247,8 @@ export async function lerHistoricoIdentidade({ conversaId, visiveis, cursor = nu
     notasInternas: notas.reverse().map(n => ({ ...n, autor: { id: n.autorId, nome: n.autorNome } })) };
 }
 
-export async function registrarLeituraIdentidade({ conversaId, mensagemId, visiveis, client = prisma }) {
-  const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
+export async function registrarLeituraIdentidade({ conversaId, mensagemId, visiveis, client = prisma, area = '' }) {
+  const grupo = restringirArea(await carregarGrupoIdentidade({ conversaId, visiveis, client }), area, conversaId);
   const mensagem = await client.mensagemWhatsapp.findFirst({ where: { AND: [filtroMensagensIdentidade(grupo.segmentos), { id: String(mensagemId || ''), direcao: 'in' }] } });
   if (!mensagem) throw erro('mensagem_nao_encontrada', 404);
   await client.conversaWhatsapp.updateMany({ where: { id: { in: grupo.segmentos.map(s => s.id) }, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: mensagem.registradaEm } }] }, data: { lidaAteEm: mensagem.registradaEm } });
@@ -258,10 +270,10 @@ export async function salvarNotaInterna({ conversaId, visiveis, autor, texto, es
 
 
 /** Pesquisa apenas conteúdo persistido e já autorizado no mesmo grupo. Nunca consulta serviços fiscais. */
-export async function buscarMensagensIdentidade({ conversaId, visiveis, q, cursor = null, limite = 20, client = prisma }) {
+export async function buscarMensagensIdentidade({ conversaId, visiveis, q, cursor = null, limite = 20, client = prisma, area = '' }) {
   const texto = String(q || '').trim();
   if (texto.length < 2 || texto.length > 200) throw erro('busca_invalida');
-  const grupo = await carregarGrupoIdentidade({ conversaId, visiveis, client });
+  const grupo = restringirArea(await carregarGrupoIdentidade({ conversaId, visiveis, client }), area, conversaId);
   const autorizado = filtroMensagensIdentidade(grupo.segmentos);
   const where = { AND: [autorizado, { OR: [
     { corpo: { contains: texto, mode: 'insensitive' } },

@@ -86,7 +86,7 @@ describe("o fio", () => {
     const api = await montar();
     fireEvent.click(screen.getByTestId("conversa-cv2"));
     const fio = await screen.findByTestId("fio");
-    expect(within(fio).getByTestId("resposta-bloqueada")).toHaveTextContent(/fechou/);
+    expect(within(fio).getByTestId("resposta-bloqueada")).toHaveTextContent(/24h encerrou/);
     const campo = within(fio).getByLabelText("Responder ao cliente");
     expect(campo).toBeDisabled();
     expect(within(fio).getByRole("button", { name: /responder$/i })).toBeDisabled();

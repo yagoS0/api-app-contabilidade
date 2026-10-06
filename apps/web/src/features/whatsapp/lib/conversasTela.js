@@ -127,8 +127,8 @@ export function estadoDaResposta(conversa) {
   const j = conversa?.janela;
   if (!j) return { pode: false, motivo: "Ainda não sei se a janela de 24h está aberta.", situacao: null };
   if (j.situacao === "ABERTA") return { pode: true, motivo: null, situacao: j.situacao };
-  if (j.situacao === "NUNCA_ABERTA") return { pode: false, motivo: "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem dele. Iniciar exige um modelo aprovado.", situacao: j.situacao };
-  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h desde a última mensagem do cliente fechou: só modelo aprovado agora — confira a disponibilidade do modelo de reabertura.", situacao: j.situacao };
+  if (j.situacao === "NUNCA_ABERTA") return { pode: false, motivo: "Inicie com um modelo aprovado. Após a resposta, você poderá escrever livremente.", situacao: j.situacao };
+  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h encerrou. Envie um modelo para retomar.", situacao: j.situacao };
   return { pode: false, motivo: "A janela de 24h não pôde ser calculada — confira antes de responder.", situacao: j.situacao };
 }
 

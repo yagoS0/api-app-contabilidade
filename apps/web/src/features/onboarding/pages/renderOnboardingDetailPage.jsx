@@ -1,4 +1,5 @@
 import { PainelComercial } from "../components/PainelComercial";
+import { AcompanhamentoComercial } from '../../comercial/AcompanhamentoComercial';
 // As áreas compartilham a ficha, mas preservam seus rascunhos ao alternar a navegação.
 
 import { useCallback, useEffect, useState } from "react";
@@ -216,6 +217,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
+      {api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarFicha} />}
       <nav className="onboarding-sections" aria-label="Áreas do atendimento">
         {areas.map(([chave, rotulo]) => <button type="button" key={chave}
           aria-pressed={area === chave} aria-controls={`onboarding-area-${chave}`}

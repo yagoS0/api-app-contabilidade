@@ -1081,12 +1081,13 @@ export function createRealApi() {
     async marcarArquivoWhatsappImportado(companyId, arquivoId) {
       return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/importado`, { method: "POST" });
     },
-    async getResumoWhatsapp() {
-      return request("/firm/whatsapp/resumo");
+    async getResumoWhatsapp({ area = '' } = {}) {
+      return request(`/firm/whatsapp/resumo${area ? `?area=${encodeURIComponent(area)}` : ''}`);
     },
     whatsappContratoV2: true,
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null, q = "", relacionamento = "", naoLidas = false } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null, q = "", relacionamento = "", naoLidas = false, area = "" } = {}) {
       const qs = new URLSearchParams({ filtro: String(filtro), v2: "1" });
+      if (area) qs.set("area", area);
       if (q) qs.set("q", q);
       if (relacionamento) qs.set("relacionamento", relacionamento);
       if (naoLidas) qs.set("naoLidas", "1");
@@ -1095,8 +1096,9 @@ export function createRealApi() {
       if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null, mensagemId = null } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null, mensagemId = null, area = '' } = {}) {
       const qs = new URLSearchParams({ v2: "1" });
+      if (area) qs.set('area', area);
       if (empresa) qs.set("empresa", String(empresa));
       if (cursor) qs.set("cursor", String(cursor));
       if (limite) qs.set("limite", String(limite));
@@ -1114,8 +1116,8 @@ export function createRealApi() {
     async conferirIdentificacaoWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/identificacao`, { method: "POST", body: JSON.stringify(body) });
     },
-    async marcarConversaWhatsappLida(conversaId, mensagemId) {
-      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/lida`, { method: "POST", body: JSON.stringify({ mensagemId }) });
+    async marcarConversaWhatsappLida(conversaId, mensagemId, { area = '' } = {}) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/lida`, { method: "POST", body: JSON.stringify({ mensagemId, ...(area ? { area } : {}) }) });
     },
     async criarNotaInternaWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/notas-internas`, { method: "POST", body: JSON.stringify(body) });

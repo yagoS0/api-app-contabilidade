@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { prepararContatoComercial, salvarRetornoComercial } from '../../application/onboarding/ContatoComercialService.js';
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarRecursosComerciais, exigirGestor } from "../../application/onboarding/RecursosComerciaisService.js";
@@ -86,6 +87,15 @@ export function createFluxoComercialRouter({
   router.get("/recursos", wrap(async () => ({
     recursos: await recursos.listar()
   })));
+  router.get('/canais-comerciais', wrap(async () => ({ canais: await db.canalWhatsapp.findMany({ where: { ativo: true, finalidade: 'COMERCIAL' }, select: { id: true, chave: true } }) })));
+  router.get('/onboardings/:id/acompanhamento', wrap(async req => {
+    const ficha = await exigirEscopo(req.params.id, req.auth.user, db);
+    const retorno = await db.onboardingEvento.findFirst({ where: { onboardingId: ficha.id, tipo: 'RETORNO_COMERCIAL' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+    const atendimento = await db.atendimentoLead.findFirst({ where: { onboardingId: ficha.id, encerradoEm: null }, select: { conversaId: true } });
+    return { retorno, versao: ficha.versao, conversaId: atendimento?.conversaId || null };
+  }));
+  router.post('/onboardings/:id/contato', wrap(async req => prepararContatoComercial({ onboardingId: req.params.id, body: req.body, user: req.auth.user, visiveis: await escopo(req), db })));
+  router.post('/onboardings/:id/retorno', wrap(async req => salvarRetornoComercial({ onboardingId: req.params.id, body: req.body, user: req.auth.user, db })));
   router.post("/recursos/iniciar", wrap(async req => ({
     recursos: await recursos.iniciarBiblioteca(req.auth.user)
   })));

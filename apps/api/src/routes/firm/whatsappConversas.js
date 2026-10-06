@@ -154,7 +154,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.get("/whatsapp/resumo", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     try {
-      const resumo = await (chatV2 ? resumoInboxWhatsapp : resumoWhatsapp)(await empresasVisiveis(req), { client });
+      if (req.query.area && !chatV2) return res.status(409).json({ error: 'area_requer_chat_v2' });
+      const resumo = await (chatV2 ? resumoInboxWhatsapp : resumoWhatsapp)(await empresasVisiveis(req), { client, area: String(req.query.area || '') });
       return res.json({ ok: true, resumo });
     } catch (err) {
       return falhar(res, err, { operacao: "resumo" });
@@ -264,11 +265,13 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const visiveis = await empresasVisiveis(req);
       if (chatV2) {
         const resultado = await listarInboxWhatsapp({ visiveis, operadorId: req.auth.user.id, filtro, empresaId: empresa,
+          area: String(req.query.area || ''),
           relacionamento: String(req.query.relacionamento || ''), q: String(req.query.q || '').slice(0,200), naoLidas: req.query.naoLidas === '1',
           cursor: req.query.cursor || null, limite: req.query.limite, client });
         return res.json({ ok: true, filtro, empresa, ...resultado, consumoIa: await consumoIaDoMes() });
       }
 
+      if (req.query.area) return res.status(409).json({ error: 'area_requer_chat_v2', message: 'Ative a versão atual do atendimento para separar Suporte e Comercial.' });
       // ⚠⚠ `?empresa` é INTERSECTADO com a carteira, nunca somado (06/09/2026). Empresa fora do
       // escopo não devolve 403 nem lista vazia por acaso: ela simplesmente não está no `in`, e o
       // resultado é vazio pela MESMA regra que já protege o resto. Somar seria a forma de um
@@ -391,6 +394,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     const { conversaId } = req.params || {};
     try {
       if (chatV2) return res.json(await lerHistoricoIdentidade({ conversaId,
+        area: String(req.query.area || ''),
         visiveis: await empresasVisiveis(req), cursor: req.query.cursor || null, mensagemId: req.query.mensagemId || null, limite: req.query.limite, client }));
       let conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
@@ -454,7 +458,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   router.post('/whatsapp/conversas/:conversaId/lida', async (req,res) => {
     if (!somenteAdminOuContador(req,res)) return;
-    try { return res.json(await registrarLeituraIdentidade({ conversaId:req.params.conversaId,mensagemId:req.body?.mensagemId,visiveis:await empresasVisiveis(req),client })); }
+    try { return res.json(await registrarLeituraIdentidade({ conversaId:req.params.conversaId,mensagemId:req.body?.mensagemId,visiveis:await empresasVisiveis(req),client,area:String(req.body?.area || '') })); }
     catch(err) { return falhar(res,err,{operacao:'leitura-whatsapp'}); }
   });
   router.post('/whatsapp/conversas/:conversaId/notas-internas', async (req,res) => {
@@ -825,7 +829,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.get('/whatsapp/conversas/:conversaId/buscar', async(req,res) => {
     if (!somenteAdminOuContador(req,res)) return;
     try {
-      const resultado = await buscarMensagensIdentidade({conversaId:req.params.conversaId,visiveis:await empresasVisiveis(req),q:req.query.q,cursor:req.query.cursor,limite:req.query.limite,client});
+      const resultado = await buscarMensagensIdentidade({conversaId:req.params.conversaId,visiveis:await empresasVisiveis(req),q:req.query.q,cursor:req.query.cursor,limite:req.query.limite,client,area:String(req.query.area || '')});
       return res.json({...resultado,resultados:await enriquecerMensagensWhatsapp(resultado.resultados,{client,empresasPermitidas:await empresasVisiveis(req)})});
     } catch(e) { return falhar(res,e,{operacao:'busca-mensagem'}); }
   });

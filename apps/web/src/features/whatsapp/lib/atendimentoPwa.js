@@ -13,7 +13,7 @@ export function destinoInternoSeguro(raw, fallback = "/companies") {
   if (!raw || typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f]/.test(raw)) return fallback;
   try {
     const url = new URL(raw, "https://altan.invalid");
-    if (url.origin !== "https://altan.invalid" || !/^\/(whatsapp(?:\/comunicados)?|companies(?:\/[^/]+(?:\/[^/]+)?)?|onboardings(?:\/[^/]+(?:\/editar)?)?|biblioteca|configuracoes(?:\/atendimento)?|rotinas|obrigacoes|guides\/[^/]+|firm-settings\/[^/]+|apuracao|planejamento|funcoes-serpro|laboratorio)\/?$/.test(url.pathname)) return fallback;
+    if (url.origin !== "https://altan.invalid" || !/^\/(whatsapp(?:\/comunicados)?|suporte|comercial(?:\/(?:conversas|oportunidades))?|companies(?:\/[^/]+(?:\/[^/]+)?)?|onboardings(?:\/[^/]+(?:\/editar)?)?|biblioteca|configuracoes(?:\/atendimento)?|rotinas|obrigacoes|guides\/[^/]+|firm-settings\/[^/]+|apuracao|planejamento|funcoes-serpro|laboratorio)\/?$/.test(url.pathname)) return fallback;
     return url.pathname + url.search;
   } catch { return fallback; }
 }
