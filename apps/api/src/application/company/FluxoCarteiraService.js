@@ -2,7 +2,7 @@ import { validarEdicaoTarefa } from '../../../../../packages/shared/src/accounti
 export { validarEdicaoTarefa };
 import { createHash, randomUUID } from 'node:crypto';
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { projetarFluxoCarteira, ROTINAS_CARTEIRA, ETAPAS_CARTEIRA } from '../../../../../packages/shared/src/accounting/fluxoCarteira.js';
+import { projetarFluxoCarteira, ROTINAS_CARTEIRA, ETAPAS_CARTEIRA, chaveDaObrigacaoCarteira } from '../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 import { computeGuideComplianceMap } from '../guides/guideCompliance.js';
 import { dataCivil } from '../obrigacoes/ObrigacoesService.js';
 
@@ -28,7 +28,7 @@ export async function contextosCarteira(companies, competencia, db = prisma) {
     db.companyMonthlyCircular.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, fechadoContabilEm: true } }),
     db.accountingEntry.findMany({ where: { portalClientId: { in: ids }, competencia, tipo: { not: 'PARCELA' } }, include: { lines: true }, orderBy: { id: 'asc' } }),
     db.portalInvoice.findMany({ where: { clientId: { in: ids }, competencia: { gte: inicio, lt: fim }, papel: 'EMIT' }, select: { clientId: true, id: true, total: true, statusEfetivo: true, updatedAt: true }, orderBy: { id: 'asc' } }),
-    db.ocorrenciaObrigacao.findMany({ where: { competenciaRef: competencia, canceladaEm: null, foraDaRecorrencia: false, obrigacao: { portalClientId: { in: ids }, ativa: true, tipo: 'OBRIGACAO' } }, include: { obrigacao: { select: { portalClientId: true, nome: true, verificador: true } } }, orderBy: { id: 'asc' } }),
+    db.ocorrenciaObrigacao.findMany({ where: { competenciaRef: competencia, canceladaEm: null, foraDaRecorrencia: false, obrigacao: { portalClientId: { in: ids }, ativa: true, tipo: 'OBRIGACAO', OR: [{ verificador: null }, { NOT: { verificador: { startsWith: 'CARTEIRA_' } } }] } }, include: { obrigacao: { select: { portalClientId: true, nome: true, verificador: true } } }, orderBy: { id: 'asc' } }),
   ]);
   return new Map(companies.map(company => {
     const id = company.companyId;
@@ -70,7 +70,7 @@ export async function listarAgendaCarteira(portalIds, inicio, fim, db = prisma) 
     for (const r of tarefas) {
       const detalhe = mapa.get(r.portalClientId), t = detalhe.fluxo.tarefas.find(t => t.chave === r.chave);
       if (!t) continue;
-      itens.push({ id: `fluxo:${r.id}`, tipo: 'fluxo', companyId: r.portalClientId, empresa: detalhe.company.razao, competencia, titulo: `${t.titulo} · ${detalhe.fluxo.regime}`, dataInicio: r.dados.dataInicio, dataFim: r.dados.dataFim, resolvido: t.concluida, responsavel: r.dados.responsavel });
+      itens.push({ id: `fluxo:${r.id}`, tipo: 'fluxo', chave: r.chave, companyId: r.portalClientId, empresa: detalhe.company.razao, competencia, titulo: `${t.titulo} · ${detalhe.fluxo.regime}`, dataInicio: r.dados.dataInicio, dataFim: r.dados.dataFim, resolvido: t.concluida, responsavel: r.dados.responsavel });
     }
   }
   return itens;
@@ -111,4 +111,27 @@ export async function salvarFluxoTarefa(id, competencia, chave, corpo, userId, d
     else await tx.carteiraTarefa.create({ data: { ...data, portalClientId: id, competencia, chave } });
     return { salvo: true };
   }, { isolationLevel: 'Serializable', timeout: 30000 });
+}
+
+// Obrigações nativas observam a mesma evidência da carteira, inclusive sua invalidação.
+export async function reconciliarObrigacoesCarteira(ocorrencias, db = prisma) {
+  const ids = [...new Set(ocorrencias.map(o => o.obrigacao.portalClientId))];
+  const portals = await db.portalClient.findMany({where:{id:{in:ids}},select:{id:true,companyId:true,razao:true,hasProlabore:true}});
+  const legacies = await db.company.findMany({where:{id:{in:portals.map(p=>p.companyId).filter(Boolean)}}});
+  let concluidas = 0;
+  for (const competencia of [...new Set(ocorrencias.map(o=>o.competenciaRef))]) {
+    const grupo = ocorrencias.filter(o=>o.competenciaRef===competencia);
+    const companies = portals.filter(p=>grupo.some(o=>o.obrigacao.portalClientId===p.id)).map(p=>({companyId:p.id,razao:p.razao,hasProlabore:p.hasProlabore,legacyCompany:legacies.find(l=>l.id===p.companyId)}));
+    const guias = await computeGuideComplianceMap(companies.map(c=>({portalId:c.companyId,hasProlabore:c.hasProlabore,legacy:c.legacyCompany})),competencia);
+    for(const c of companies)c.guideCompliance=guias.get(c.companyId);
+    const mapa = await contextosCarteira(companies,competencia,db);
+    for(const oc of grupo){
+      const tarefa = mapa.get(oc.obrigacao.portalClientId)?.fluxo.tarefas.find(t=>t.chave===chaveDaObrigacaoCarteira(oc.obrigacao.verificador));
+      const feita = Boolean(tarefa?.concluida);
+      if(feita === (oc.status==='CONCLUIDA'))continue;
+      const out=await db.ocorrenciaObrigacao.updateMany({where:{id:oc.id,updatedAt:oc.updatedAt,canceladaEm:null,foraDaRecorrencia:false},data:{status:feita?'CONCLUIDA':'PENDENTE',concluidaEm:feita?new Date():null,fonteConclusao:feita?'AUTOMATICA':null}});
+      if(feita)concluidas+=out.count;
+    }
+  }
+  return concluidas;
 }

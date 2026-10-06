@@ -1,4 +1,4 @@
-import { projetarFluxoCarteira, ROTINAS_CARTEIRA } from '@contabilidade/shared/fluxo-carteira';
+import { projetarFluxoCarteira, ROTINAS_CARTEIRA, chaveDaObrigacaoCarteira } from '@contabilidade/shared/fluxo-carteira';
 import { validarEdicaoTarefa } from '@contabilidade/shared/validar-tarefa-carteira';
 
 export function withFluxoCarteiraMock(api, fonte = () => ({ entries: [], fechadoEm: null })) {
@@ -11,11 +11,27 @@ export function withFluxoCarteiraMock(api, fonte = () => ({ entries: [], fechado
     const lancamentos=entries.filter(e=>e.tipo!=='PARCELA').map(e=>({id:e.id,historico:e.historico,status:e.status,hash:fingerprint([fechadoEm,e.id,e.status,e.data,e.historico,e.lines]),importavel:Boolean(fechadoEm)&&e.status==='EXPORTADO'}));
     for(const e of lancamentos)e.importado=e.importavel&&importacoes[e.id]?.hash===e.hash;
     const base=fingerprint([id,competencia,company.apuracao,company.notasEmitidas]);
-    const obs=obrigacoes.filter(o=>o.companyId===id && o.tipo!=='TAREFA').flatMap(o=>(o.ocorrencias||[]).filter(oc=>oc.competenciaRef===competencia && !oc.canceladaEm && !oc.foraDaRecorrencia).map(oc=>({id:oc.ocorrenciaId,nome:o.nome,concluida:oc.situacao==='CONCLUIDA',verificador:o.verificador})));
+    const obs=obrigacoes.filter(o=>o.companyId===id && o.tipo!=='TAREFA' && !chaveDaObrigacaoCarteira(o.verificador)).flatMap(o=>(o.ocorrencias||[]).filter(oc=>oc.competenciaRef===competencia && !oc.canceladaEm && !oc.foraDaRecorrencia).map(oc=>({id:oc.ocorrenciaId,nome:o.nome,concluida:oc.situacao==='CONCLUIDA',verificador:o.verificador})));
     const contexto={competencia,registros:regs,obrigacoes:obs,hashes:{apurar:base,transmitir:base,obrigacoes:fingerprint([base,obs]),importar:fingerprint(lancamentos)},lancamentos:{total:lancamentos.length,importados:lancamentos.filter(e=>e.importado).length}};
     return {ok:true,empresa:company.razao,fluxo:projetarFluxoCarteira({...company,fechamentoContabil:{fechado:Boolean(fechadoEm)}},contexto),lancamentos};
   }
   const result={...api,
+    async listObrigacoes(options = {}) {
+      const out = await api.listObrigacoes(options);
+      const cache = new Map();
+      for (const o of out.obrigacoes || []) {
+        const chave = chaveDaObrigacaoCarteira(o.verificador);
+        if (!chave) continue;
+        o.ocorrencias = await Promise.all(o.ocorrencias.map(async oc => {
+          const key = o.companyId + '|' + oc.competenciaRef;
+          if (!cache.has(key)) cache.set(key, result.getFluxoCarteira(o.companyId, oc.competenciaRef));
+          const view = await cache.get(key);
+          const feita = view.fluxo.tarefas.find(t => t.chave === chave)?.concluida;
+          return {...oc, situacao: feita ? 'CONCLUIDA' : oc.dataVencimento < new Date().toISOString().slice(0,10) ? 'VENCIDA' : 'PENDENTE'};
+        }));
+      }
+      return out;
+    },
     async listCompanies(comp='2026-07') {
       const companies=await api.listCompanies(comp);
       const obs=await api.listObrigacoes({});
@@ -46,7 +62,7 @@ export function withFluxoCarteiraMock(api, fonte = () => ({ entries: [], fechado
       const itens=[];
       for(const r of registros.values())if(r.dados.dataInicio<=fim&&r.dados.dataFim>=inicio&&(!companyId||r.portalClientId===companyId)){
         const view=await result.getFluxoCarteira(r.portalClientId,r.competencia),t=view.fluxo.tarefas.find(t=>t.chave===r.chave);
-        itens.push({id:`fluxo:${r.portalClientId}:${r.competencia}:${r.chave}`,tipo:'fluxo',companyId:r.portalClientId,empresa:view.empresa,competencia:r.competencia,titulo:`${t.titulo} · ${view.fluxo.regime}`,dataInicio:r.dados.dataInicio,dataFim:r.dados.dataFim,resolvido:t.concluida});
+        itens.push({id:`fluxo:${r.portalClientId}:${r.competencia}:${r.chave}`,tipo:'fluxo',chave:r.chave,companyId:r.portalClientId,empresa:view.empresa,competencia:r.competencia,titulo:`${t.titulo} · ${view.fluxo.regime}`,dataInicio:r.dados.dataInicio,dataFim:r.dados.dataFim,resolvido:t.concluida});
       }
       return {ok:true,itens};
     },

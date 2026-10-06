@@ -24,7 +24,7 @@ export function itensDasObrigacoes(obrigacoes) {
     fonte: 'OBRIGACAO', tipo: o.tipo === 'TAREFA' ? 'tarefa' : 'obrigacao',
     obrigacaoId: o.obrigacaoId, regraId: o.regraId, titulo: o.nome, descricao: o.descricao,
     companyId: o.companyId, empresa: o.empresa, cnpj: o.cnpj, resolvido: oc.situacao === 'CONCLUIDA',
-    conclusaoAutomatica: o.conclusaoAutomatica, prioridade: o.agendaConfig?.prioridade || '', ...oc.agendaConfig,
+    verificador: o.verificador, conclusaoAutomatica: o.conclusaoAutomatica, prioridade: o.agendaConfig?.prioridade || '', ...oc.agendaConfig,
   })));
 }
 export function agruparAtividades(itens) {

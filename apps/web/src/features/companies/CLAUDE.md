@@ -2,7 +2,7 @@
 
 ## Fluxo mensal da carteira — 06/10/2026
 
-A tabela agora separa Status, Apuração, Guias, Contabilização e Situação fiscal; Empresa e Ações permanecem. Status abre as tarefas e vem de `@contabilidade/shared/fluxo-carteira`. Não deduzir apuração pelo fechamento nem importação ERP pelo download de CSV. Parcelamento é informação secundária e não substitui a situação fiscal. Rotinas agrupadas por regime/etapa têm planejamento e histórico persistidos em CarteiraTarefa; tarefas com datas aparecem na agenda. Regras atuais e validação: `docs/fluxo-carteira-2026-10-06.md` na raiz. Essas regras substituem descrições históricas das colunas e do grupo Fechadas abaixo; agora só o fluxo concluído pode entrar no grupo Concluídas.
+A tabela agora separa Status, Apuração, Guias, Contabilização e Situação fiscal; Empresa e Ações permanecem. Status abre as tarefas e vem de `@contabilidade/shared/fluxo-carteira`. Não deduzir apuração pelo fechamento nem importação ERP pelo download de CSV. Parcelamento é informação secundária e não substitui a situação fiscal. As etapas usam obrigações recorrentes na agenda existente, com modelos por regime e prazo definido pelo contador. Não reintroduzir botão separado de rotinas ou os seletores adicionais de Status e Contabilização. Evidências e histórico permanecem em CarteiraTarefa. Regras atuais e validação: `docs/fluxo-carteira-2026-10-06.md` na raiz. Essas regras substituem descrições históricas das colunas e do grupo Fechadas abaixo; agora só o fluxo concluído pode entrar no grupo Concluídas.
 
 
 ## Hierarquia da navegação — 18/09/2026
