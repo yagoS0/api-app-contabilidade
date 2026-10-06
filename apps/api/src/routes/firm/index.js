@@ -4,6 +4,7 @@ import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpr
 import { getRoutineExecutionStatus } from "../../workers/scheduledRoutineService.js";
 import { dataDoComprovante } from "../../application/guides/lib/comprovantePagamento.js";
 import { createLaboratorioRouter } from "./laboratorio.js";
+import { createPendenciasManuaisRouter } from './pendenciasManuais.js';
 import { Router } from "express";
 import { manualTasks, taskSummary, respondWithTask, captureTaskResponse, backgroundRoute, listTaskRecords } from "../../application/tasks/ManualTaskService.js";
 import { createExportacaoLoteRouter } from "./exportacaoLote.js";
@@ -66,7 +67,7 @@ import { normalizarEmail } from "@contabilidade/shared/email";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
 import {
-  computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
+  computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistDosLancamentos, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
 import { criarBatchJob, runApuracaoBatchOnce, runApuracaoBatchToCompletion } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
@@ -571,6 +572,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   }
   router.use(requireAuth(), requireAccountType("FIRM"));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
+  router.use(createPendenciasManuaisRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createExportacaoLoteRouter());
   router.use(createLaboratorioRouter());
   // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.
@@ -783,7 +785,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const linhas = empresas.map((e) => {
       const circular = circularPor.get(e.id) || null;
       const fechado = Boolean(circular?.fechadoContabilEm);
-      const pendentes = checklistPendentes(circular);
+      const pendentes = checklistPendentes(circular, checklistDosLancamentos(lancamentosPor.get(e.id) || []));
       const { blockers } = computeFechamentoBlockers(lancamentosPor.get(e.id) || [], competencia);
       return {
         companyId: e.id,

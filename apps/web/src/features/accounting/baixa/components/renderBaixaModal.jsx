@@ -219,7 +219,7 @@ function LineEditor({ lines, onChange, accounts }) {
 // mês diferente do atual (às vezes futuro), fora do mês que o contador está fechando.
 // O campo segue editável para corrigir um pagamento feito em outro dia.
 
-export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate }) {
+export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate, competenciaPagamento }) {
   const subtipoLabel = SUBTIPO_LABELS[entry.subtipo] || entry.subtipo || entry.tipo;
   const title = `Dar Baixa — ${subtipoLabel}`;
 
@@ -237,7 +237,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
     const m = String(comprovante?.dataArrecadacao || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
   })();
-  const [data, setData] = useState(dataComprovante || today);
+  const [data, setData] = useState(dataComprovante || (!competenciaPagamento || today.startsWith(competenciaPagamento) ? today : ""));
   const [historico, setHistorico] = useState(defaultHistorico);
   // Só reaproveita um passivo identificado. A despesa da provisão nunca é a
   // contrapartida do pagamento; caixa/banco deve vir da regra ou do contador.
@@ -322,11 +322,12 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   // ele. Sem `saldoInfo` isto devolve `null` e nada é afirmado.
   const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo);
   const contasPreenchidas = lines.every((l) => String(l.conta || "").trim());
+  const mesIncorreto = Boolean(competenciaPagamento && data && !data.startsWith(competenciaPagamento + "-"));
   const debitosBaixa = lines.filter((l) => l.tipo === "D");
   const papeisPreenchidos = debitosBaixa.every((l) => ["PRINCIPAL", "JUROS", "MULTA"].includes(l.papel));
   const creditoUnico = lines.filter((l) => l.tipo === "C").length === 1;
-  const canSave = data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !saving && !loadingTemplate;
-  const motivoNaoSalva = loadingTemplate
+  const canSave = !mesIncorreto && data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !saving && !loadingTemplate;
+  const motivoNaoSalva = mesIncorreto ? `Informe a data real do pagamento no mês ${competenciaPagamento}, ou abra esse mês em Lançamentos.` : loadingTemplate
     ? "Carregando contas e saldo da provisão."
     : !papeisPreenchidos
       ? "Identifique cada débito como principal, juros ou multa."

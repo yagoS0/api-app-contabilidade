@@ -1,0 +1,8 @@
+.circular-month-closed > td { background-color: #23342f !important; }
+.circular-with-month-tags { position: relative; padding-left: 28px; min-width: 0; }
+.circular-month-tags { position: absolute; left: 0; top: 0; bottom: 0; width: 20px; }
+.circular-month-tag { position: absolute; left: 0; transform: translateY(-50%) rotate(180deg); writing-mode: vertical-rl; box-sizing: border-box; width: 20px; height: 40px; align-items: center; display: inline-flex; justify-content: center; border-radius: 4px; padding: 3px 2px; font-size: 9px; font-weight: 600; color: #aeb6d3; background: rgba(174,182,211,.08); }
+.circular-month-tag.is-closed { color: var(--success); background: rgba(105,255,71,.09); }
+@media print { .circular-month-closed > td { background-color: #edf7ef !important; print-color-adjust: exact; } .circular-month-tag.is-closed { color: #246337; } }
+
+.circular-month-open > td:first-child, .circular-month-closed > td:first-child { height: 44px; box-sizing: border-box; }

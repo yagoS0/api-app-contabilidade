@@ -1,9 +1,13 @@
+import { usePendenciasContabeis } from './usePendenciasContabeis';
 // Q41: Situação Fiscal (SITFIS) — estado + handlers.
 // reload() lê o último status gravado (barato, sem SERPRO). consultar() chama o SERPRO (por clique).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePendenciasManuais } from './usePendenciasManuais';
 
 export function useSitfis({ api, companyId }) {
+  const contabeis = usePendenciasContabeis({ api, companyId });
+  const manuais = usePendenciasManuais({ api, companyId });
   const contexto = useRef({ api, companyId });
   if (contexto.current.api !== api || contexto.current.companyId !== companyId) contexto.current = { api, companyId };
   const leitura = useRef(0);
@@ -119,6 +123,8 @@ SERPRO: ${res.mensagemSerpro}` : base);
   const proximaConsultaEm = status?.proximaConsultaEm || null;
 
   return {
+    manuais,
+    contabeis,
     status, loading, consulting, error, notice, pdfUrl, pdfIndisponivel,
     podeConsultar, proximaConsultaEm, reload, consultar, recarregarPdf,
   };

@@ -381,9 +381,9 @@ function PerfilFiscalTabWrapper({ companyId, feedback, podeEditar }) {
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
 const sitfisApi = createApiClient();
-function SitfisTabWrapper({ companyId, guidesPanel, feedback }) {
+function SitfisTabWrapper({ companyId, guidesPanel, feedback, empresa }) {
   const panel = useSitfis({ api: sitfisApi, companyId });
-  return <SitfisTab companyId={companyId} sitfisPanel={panel} guidesPanel={guidesPanel} feedback={feedback} />;
+  return <SitfisTab companyId={companyId} sitfisPanel={panel} guidesPanel={guidesPanel} feedback={feedback} empresa={empresa} />;
 }
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
@@ -1183,7 +1183,7 @@ function CompanyDetailContent({
         largura="trabalho"
         suspense
       >
-        <SitfisTabWrapper key={companyId} companyId={companyId} guidesPanel={guidesPanel} feedback={feedback} />
+        <SitfisTabWrapper key={companyId} companyId={companyId} guidesPanel={guidesPanel} feedback={feedback} empresa={selectedCompany} />
       </CompanyTabLayout>
     );
   }

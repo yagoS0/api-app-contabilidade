@@ -13,6 +13,10 @@
     "./erros-cadastro-empresa": "./src/erros/errosDeCadastroDeEmpresa.js",
     "./email": "./src/email/emailValido.js",
     "./declaracao-nfse": "./src/nfse/declaracaoNfse.js",
-    "./onboarding": "./src/onboarding/onboardingSpec.js"
+    "./onboarding": "./src/onboarding/onboardingSpec.js",
+    "./pendencias-fiscais": "./src/fiscal/pendenciasSitfis.js",
+    "./pendencias-manuais": "./src/fiscal/pendenciasManuais.js",
+    "./pendencias-contabeis": "./src/fiscal/pendenciasContabeis.js",
+    "./fechamento-contabil": "./src/accounting/fechamentoBlockers.js"
   }
 }

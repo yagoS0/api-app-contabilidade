@@ -64,3 +64,14 @@ test("ISS com juros adicionados exige papel e anuncia lançamentos individuais",
   expect(screen.getByRole("button", { name: "Confirmar Baixa" })).toBeEnabled();
   expect(screen.getByText(/Serão gerados 2 lançamentos individuais/)).toBeInTheDocument();
 });
+
+test('pagamento pela aba Lançamentos exige data no mês selecionado', async () => {
+  const props = abrir({ competenciaPagamento: '2026-01', onLoadBaixaTemplate: jest.fn().mockResolvedValue({ template: { debitAccountCode: '250', creditAccountCode: '5', valor: 3000 } }) });
+  await waitFor(() => expect(screen.getAllByPlaceholderText('Código da conta')[1]).toHaveValue('5'));
+  const data = screen.getByLabelText('Data do pagamento');
+  fireEvent.change(data, { target: { value: '2026-02-20' } });
+  expect(screen.getByRole('button', { name: 'Confirmar Baixa' })).toBeDisabled();
+  fireEvent.change(data, { target: { value: '2026-01-20' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar Baixa' }));
+  await waitFor(() => expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ data: '2026-01-20' })));
+});

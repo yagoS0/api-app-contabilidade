@@ -871,6 +871,7 @@ model PortalClient {
   basesSociosGerenciais BaseSociosGerencial[]
   laboratorioCenarios LaboratorioCenario[]
   classificacaoGerencial ClassificacaoGerencial?
+  pendenciasManuais PendenciaFiscalManual[]
   apelidosWhatsapp String[] @default([])
   id                     String  @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
@@ -5736,4 +5737,19 @@ model AgendaOcultacao {
   createdAt DateTime @default(now())
   @@unique([userId, chave])
   @@map("agenda_ocultacoes")
+}
+
+model PendenciaFiscalManual {
+  id             String @id
+  portalClientId String
+  dados          Json
+  versao         Int @default(1)
+  createdBy      String
+  updatedBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+  portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  @@index([portalClientId, deletedAt])
+  @@map("pendencias_fiscais_manuais")
 }

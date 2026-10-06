@@ -1,3 +1,5 @@
+import { usePagamentosPendentes } from './usePagamentosPendentes';
+import { PagamentosProvisionadosModal } from './PagamentosProvisionadosModal';
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient } from "../../../../api/client";
@@ -223,6 +225,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
   const [busy, setBusy] = useState(false);
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
   const [checklist, setChecklist] = useState({});
+  const [automatico, setAutomatico] = useState({});
   const [checkBusy, setCheckBusy] = useState(null); // chave em gravação
   // "Mês sem faturamento" NÃO é um sexto item do checklist: o checklist confirma que algo FOI
   // lançado; isto afirma que algo NÃO EXISTIU. Por isso vive à parte, com estado próprio.
@@ -276,6 +279,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
         setFechadoEm(r?.fechadoEm || null);
         setFechadoPorNome(r?.fechadoPorNome || null);
         // `checklist` é o formato novo; o fallback cobre um backend ainda sem ele (só a folha).
+        setAutomatico(r?.checklistAutomatico || {});
         setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
         setSemFaturamento(r?.semFaturamento === true);
         setFaturamentoEmit(r?.faturamentoEmit ?? null);
@@ -291,7 +295,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
       .catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, competencia]);
+  }, [companyId, competencia, entries]);
 
   // ⚠ CHAMADA PRÓPRIA, e não um campo do fechamento: ela varre TODOS os lançamentos da competência
   // e o fechamento é outra pergunta. ⚠ E ela FALHA ABERTO — a aba não pode quebrar porque a
@@ -493,7 +497,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
             return (
               <label
                 key={item.chave}
-                title={item.title}
+                title={automatico[item.chave] ? "Marcado automaticamente pelos lançamentos desta competência." : item.title}
                 style={{
                   display: "flex", alignItems: "center", gap: 5, padding: "2px 0",
                   fontSize: "0.72rem", fontWeight: 600,
@@ -504,7 +508,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
                 <input
                   type="checkbox"
                   checked={marcado}
-                  disabled={Boolean(checkBusy)}
+                  disabled={Boolean(checkBusy) || automatico[item.chave] === true}
                   onChange={() => toggleItem(item.chave)}
                   /* 13px: o padrão do browser (~16px) somava 3px de largura por linha num painel
                      de 152px — e a caixa continua confortável de acertar com o mouse. */
@@ -794,6 +798,7 @@ export function AccountingEntriesTab({
   parcelamentos,        // { parcelamentos, loading, saving, create, ingest, rescindir } do hook useParcelamentos
 }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
+  const [showPagamentos, setShowPagamentos] = useState(false);
   const [showOFX, setShowOFX] = useState(false);
   const [verificacaoDasLinhas, setVerificacaoDasLinhas] = useState(null);
   const [showHistoricos, setShowHistoricos] = useState(false);
@@ -901,6 +906,7 @@ export function AccountingEntriesTab({
   const now = new Date();
   const defaultComp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const activeComp = filters.competencia || defaultComp;
+  const pagamentosPendentes = usePagamentosPendentes(fechamentoApi, companyId, activeComp, entries);
 
   /**
    * Busca no SERPRO, confirmando ANTES quando já foi buscado nesta competência.
@@ -1242,6 +1248,8 @@ export function AccountingEntriesTab({
         >
           + Adicionar lançamento
         </Button>
+        {onCreateBaixa && <Button variant="secondary" disabled={monthClosed || !activeComp} onClick={() => setShowPagamentos(true)} title={pagamentosPendentes.error || "Pagamentos de competências anteriores aguardando baixa"}>Pagamentos{pagamentosPendentes.loading ? " …" : pagamentosPendentes.error ? " !" : pagamentosPendentes.itens.length > 0 ? <span style={{marginLeft:8,padding:"1px 7px",borderRadius:12,background:"rgba(255,179,71,.15)",color:"#FFB347"}}>{pagamentosPendentes.itens.length}</span> : null}</Button>}
+        {showPagamentos && <PagamentosProvisionadosModal key={`${companyId}:${activeComp}`} pendentes={pagamentosPendentes} competencia={activeComp} accounts={accounts} onSave={onCreateBaixa} saving={savingBaixa} onLoadBaixaTemplate={onLoadBaixaTemplate} onClose={() => setShowPagamentos(false)} />}
       </div>
 
       {selectedCount > 0 && (

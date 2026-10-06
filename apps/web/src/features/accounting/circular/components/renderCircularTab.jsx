@@ -1,3 +1,5 @@
+import './circularFechamento.css';
+import { CircularMonthTags } from './CircularMonthTags';
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { informacaoRecalculo, DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
 import { useEffect, useState, useMemo } from "react";
@@ -518,7 +520,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
   // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia) agora tem o fluxo
   // completo igual ao DAS (Q52): "Dar baixa" (abre modal, gera a baixa contábil), "Editar baixa"
   // (edita o lançamento gerado) e "Cancelar baixa" (apaga a baixa e reabre a guia).
-  const canBaixaInss = isSynthetic && isAberto && Boolean(onBaixa);
+  const canBaixaInss = isSynthetic && String(entry.id).startsWith("synthetic-inss-") && isAberto && Boolean(onBaixa);
   // INSS aberto: pode editar valor/juros/multa (não há lançamento — vai p/ acrescimos.INSS).
   const canEditInss = isSynthetic && isAberto && Boolean(onEdit);
   // INSS pago: pode editar a baixa (entry.baixaEntry é o lançamento real) e cancelá-la.
@@ -571,6 +573,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
           • ✅ quitada
       */}
+      {entry.pendenciaFechamento && <div style={{ color: "var(--danger)", fontSize: "0.68rem" }}>Pagamento pendente</div>}
       {!placeholder && informacaoRecalculo(entry) && (
         <div style={{ fontSize: "0.7rem", lineHeight: 1.2, color: "var(--text-muted)" }} title={informacaoRecalculo(entry).titulo}>Recalculada</div>
       )}
@@ -776,7 +779,7 @@ function CelulaSemColuna({ itens = [], onEdit, onBaixa }) {
                   ✎ Editar provisão
                 </button>
               )}
-              {onBaixa && !e.placeholder && ["ABERTO", "PARCIAL"].includes(e.statusPagamento) && (
+              {onBaixa && !e.placeholder && !String(e.id).startsWith("synthetic-das-") && ["ABERTO", "PARCIAL"].includes(e.statusPagamento) && (
                 <button onClick={() => { setOpen(false); onBaixa(e); }} style={menuBtn}>
                   {e.statusPagamento === "PARCIAL" ? "Dar baixa (próxima quota)" : "Dar baixa"}
                 </button>
@@ -1267,6 +1270,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
               {companyName || ""}{companyName ? " · " : ""}Emitido em {new Date().toLocaleDateString("pt-BR")}
             </p>
           </div>
+          <CircularMonthTags>
           <div data-print-tabela style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
           <table style={{ width: (1 + visibleRows.length + 2 + (temExtratoNoAno ? 1 : 0)) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
@@ -1299,7 +1303,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 const fat = circularData.receitas?.[comp];
                 const aberto = abertoByMonth[comp];
                 const rows = [(
-                  <tr key={comp}>
+                  <tr key={comp} data-circular-month={comp} className={circularData.fechamentos?.[comp]?.fechadoEm ? "circular-month-closed" : "circular-month-open"}>
                     <td style={monthStickyStyle}>
                       {MONTH_LABELS[i]}/{yy}
                     </td>
@@ -1332,7 +1336,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       {aberto?.total ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
                           {aberto.vencido > 0 && (
-                            <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
+                            <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias vencidas ou com saldo contábil em aberto no mês de pagamento fechado.">
                               R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>vencido</span>
                             </span>
                           )}
@@ -1365,7 +1369,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   const triStyle = { ...subCellStyle, fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" };
                   rows.push(
                     <tr key={`q${qi}`} style={{ background: "#282A36" }}>
-                      <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre<small style={{ display: "block", fontWeight: 400 }}>Resumo — baixa na linha do mês</small></td>
+                      <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre</td>
                       {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                       {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                       {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "var(--danger)" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
@@ -1388,6 +1392,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             </tbody>
           </table>
           </div>
+          </CircularMonthTags>
         </div>
       )}
 

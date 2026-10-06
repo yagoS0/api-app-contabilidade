@@ -4,6 +4,8 @@
 import { useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { SitfisRelatorioTabela } from "./SitfisRelatorioTabela";
+import { PendenciasFiscaisTabelas } from "./PendenciasFiscaisTabelas";
+
 import { RecalcularGuiasSitfis } from "./RecalcularGuiasSitfis";
 
 
@@ -14,6 +16,7 @@ import { RecalcularGuiasSitfis } from "./RecalcularGuiasSitfis";
 // Resumo do relatório: campos rotulados + as tabelas de pendência.
 
 const SITUACAO_META = {
+  INCONCLUSIVO: { label: "Leitura inconclusiva", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
   COM_PENDENCIA: { label: "Com pendência", color: "var(--danger)", bg: "rgba(255,71,87,0.12)" },
   EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
   REGULAR: { label: "Regular", color: "var(--success)", bg: "rgba(105,255,71,0.10)" },
@@ -36,7 +39,8 @@ function SituacaoBadge({ situacao }) {
   );
 }
 
-export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
+export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empresa }) {
+
   // O PDF é o documento oficial, mas a leitura do dia a dia é a tabela. Por isso ele é opcional,
   // sob clique — e não mais o único jeito de ver o relatório.
   const [verPdf, setVerPdf] = useState(false);
@@ -105,12 +109,13 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
           <>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Situação</span>
+                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Situação no relatório federal</span>
                 <SituacaoBadge situacao={status.situacao} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Última consulta</span>
-                <strong style={{ color: "#F8F8F2" }}>{formatDateTime(status.checkedAt)}</strong>
+                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Último relatório obtido</span>
+                <strong style={{ color: "#F8F8F2" }}>{formatDateTime(status.ultimoRelatorioEm)}</strong>
+                <span>Última tentativa: {formatDateTime(status.checkedAt)}</span>
               </div>
             </div>
 
@@ -148,7 +153,9 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
                     monetário nenhum. A versão anterior extraía, e mostrou "R$ 100,00" numa empresa
                     sem débito — era o 100,00% de participação societária. */}
                 {status.relatorio ? (
-                  <SitfisRelatorioTabela relatorio={status.relatorio} />
+                  <>
+                    <details><summary>Conferir relatório original em tabelas</summary><SitfisRelatorioTabela relatorio={status.relatorio} /></details>
+                  </>
                 ) : (
                   <p style={{ color: "#A7B0C0", margin: "0 0 10px", fontSize: "0.82rem" }}>
                     Relatório antigo, gravado antes de guardarmos o texto — só o PDF está disponível.
@@ -177,6 +184,8 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId }) {
           </>
         )}
       </div>
+      <PendenciasFiscaisTabelas key={`${companyId || ""}:${status?.ultimoRelatorioEm || ""}:${JSON.stringify(status?.relatorio)}`} relatorio={status?.relatorio} manuais={sitfisPanel?.manuais} contabeis={sitfisPanel?.contabeis} empresa={empresa} />
+
       {guidesPanel && <div ref={areaRecalculo}><RecalcularGuiasSitfis guidesPanel={guidesPanel} feedback={feedback} /></div>}
     </div>
   );
