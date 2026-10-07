@@ -8,7 +8,7 @@ const OFFICE_AREAS = [
   {
     id: "operacao", label: "Operação", to: "/companies",
     links: [
-      { label: "Empresas e agenda", to: "/companies", paths: ["/companies", "/obrigacoes", "/"] },
+      { label: "Empresas", to: "/companies", paths: ["/companies", "/obrigacoes", "/"] },
       { label: "Apuração", to: "/apuracao" },
       { label: "Consultas", to: "/funcoes-serpro", paths: ["/funcoes-serpro", "/download-notas"] },
       { label: "Rotinas", to: "/rotinas" },

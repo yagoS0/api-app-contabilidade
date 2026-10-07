@@ -1,6 +1,5 @@
 import { fluxoDaEmpresa } from "@contabilidade/shared/fluxo-carteira";
 import { FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
-import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { situacaoFiscalDaLinha } from '../lib/situacaoFiscal';
@@ -16,7 +15,6 @@ import { Tabs } from "../../../../components/ui/Tabs";
 import { getComplianceTags } from "../components/renderCompanyCard";
 import { CompaniesTable } from "../components/renderCompaniesTable";
 import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
-import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
 
 import {
@@ -91,8 +89,6 @@ export function CompaniesHomePage({
   // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
   onOpenWhatsapp,
   onOpenObrigacoes,
-  calendarioContext,
-  onCalendarioContextChange,
   onOpenOnboardings,
   onOpenConfiguracoes,
   onLogout,
@@ -105,11 +101,7 @@ export function CompaniesHomePage({
   message,
   error,
 }) {
-  // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
-  const navigation = useWorkspaceNavigation();
-  const [visaoLocal, setVisaoLocal] = useState("calendario");
   const avisoPlanoGlobal = useRef(null);
-  const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
   // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
@@ -117,7 +109,6 @@ export function CompaniesHomePage({
   // no clique — o React ainda não renderizou. O clique só liga a flag; o efeito imprime depois do
   // render, que é o único momento em que o DOM já está do jeito que vai para o papel.
   const [imprimindo, setImprimindo] = useState(false);
-  const modoVisao = imprimindo ? "tabela" : (navigation?.modoVisao || visaoLocal);
   useEffect(() => {
     if (!imprimindo) return undefined;
     document.body.classList.add("imprimindo");
@@ -559,27 +550,13 @@ export function CompaniesHomePage({
   }, [empresasSelecionadas, travas]);
 
   return (
-    <div className={`dashboard-home-page${modoVisao === "calendario" ? " dashboard-home-page--agenda" : ""}`}>
+    <div className="dashboard-home-page">
       <AppShell className="dashboard-home-shell">
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <h1 className="dashboard-home__title dashboard-home__title--accessible">
-              {modoVisao === "tabela" ? "Empresas" : "Agenda"}
+              Empresas
             </h1>
-            <div className="dashboard-home__views">
-              <Tabs
-                mode="view"
-                ariaLabel="Visão da carteira"
-                pill={false}
-                size="lg"
-                items={[
-                  { key: "calendario", label: "Agenda" },
-                  { key: "tabela", label: "Empresas" },
-                ]}
-                active={modoVisao}
-                onChange={trocarVisao}
-              />
-            </div>
             <div className="dashboard-home__user">
               <span className="dashboard-home__user-name">{user?.name || "Conta do escritório"}</span>
               <Button variant="secondary" className="dashboard-home__logout" onClick={onLogout}>
@@ -588,7 +565,6 @@ export function CompaniesHomePage({
             </div>
           </header>
 
-          {modoVisao === "tabela" && (
           <div className="dashboard-home__toolbar">
             <div className="dashboard-home__brand">
               <div>
@@ -596,7 +572,7 @@ export function CompaniesHomePage({
 
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
-                  <span className="dashboard-home__competencia" hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
+                  <span className="dashboard-home__competencia" role="group" aria-label="Competência da carteira" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
@@ -664,9 +640,8 @@ export function CompaniesHomePage({
               </Button>
             </nav>
           </div>
-          )}
 
-          {modoVisao === "tabela" && globalChartStatus && !globalChartStatus.isConfigured && (
+          {globalChartStatus && !globalChartStatus.isConfigured && (
             <div
               ref={avisoPlanoGlobal}
               tabIndex={-1}
@@ -699,7 +674,6 @@ export function CompaniesHomePage({
           )}
 
           {/* Busca e filtros pertencem à lista de empresas; a agenda tem navegação própria. */}
-          {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"
             className="dashboard-home__filters"
@@ -863,9 +837,8 @@ export function CompaniesHomePage({
               )}
             </div>
           </section>
-          )}
 
-          {modoVisao === "tabela" && prontasSelecionadas.length > 0 && (
+          {prontasSelecionadas.length > 0 && (
             <div className="dashboard-home__selection-actions">
               <Button variant="secondary" onClick={fecharAsProntas} disabled={fechandoLote}>
                 {fechandoLote ? "Fechando…" : `Fechar as ${prontasSelecionadas.length} selecionadas aptas`}
@@ -894,12 +867,7 @@ export function CompaniesHomePage({
               categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
 
 
-          {/* ⚠⚠ O CALENDÁRIO É O PRIMEIRO RAMO **E** O FALLBACK. Antes a cadeia terminava em
-              `… : tabela ? <tabela> : <CARDS>` — ou seja, o Cards era o `else` de tudo que não
-              casasse. Hoje o `else` é o padrão declarado da tela, então valor inesperado em
-              `modoVisao` cai onde a tela abre, não numa visão que não existe mais. */}
-          {modoVisao === "tabela" ? (
-            <>
+          <>
             {/* ⚠ FORA do `data-print-area`: a barra é gesto de tela, e uma folha impressa com
                 "8 empresas selecionadas" descreveria um estado que o papel não tem. */}
             <BarraSelecaoEmpresas
@@ -961,8 +929,7 @@ export function CompaniesHomePage({
                   {search.trim() ? ` · Busca: "${search.trim()}"` : ""}
                 </p>
               </div>
-          {modoVisao === "tabela" && (
-            <div className="dashboard-home__regimes">
+          <div className="dashboard-home__regimes">
               <Tabs
                 mode="view"
                 pill={false}
@@ -983,7 +950,6 @@ export function CompaniesHomePage({
                 onChange={trocarAba}
               />
             </div>
-          )}
               {empresaFluxo && <FluxoCarteiraDetalhe key={`${empresaFluxo.companyId}:${dashboardCompetencia}`} company={empresaFluxo} competencia={dashboardCompetencia} api={api} onFechar={() => setEmpresaFluxo(null)} onChanged={onRefreshCompanies} onOpenCompany={onOpenCompany} />}
               <CompaniesTable
                 onFluxo={setEmpresaFluxo}
@@ -1015,21 +981,8 @@ export function CompaniesHomePage({
               />
             </div>
             </>
-          ) : (
-            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
-              onOpenObligations={onOpenObrigacoes}
-              initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
-          )}
 
-          {/* ⚠⚠ A FRASE "Nenhuma empresa encontrada para os filtros atuais" SAIU DAQUI, e ela já
-              MENTIA antes desta entrega. A condição era `modoVisao !== "tabela"` — então em Ano e
-              em Calendário, que não leem `empresasVisiveis` (o Ano busca no servidor; o Calendário
-              lista eventos, não empresas), a página imprimia essa frase EMBAIXO de uma grade cheia.
-              Passava despercebido porque nenhuma das duas era o padrão; abrindo no Calendário, ela
-              viraria o caso comum — todo dia, para todo mundo.
-              ⚠ Nada se perdeu: quem responde pelo vazio da lista é a própria `CompaniesTable`, na
-              linha dela, com o botão de limpar filtros ao lado. Uma segunda frase embaixo da
-              tabela era duplicação; embaixo do calendário era falsidade. */}
+
         </section>
 
         <Feedback message={message} error={error} />

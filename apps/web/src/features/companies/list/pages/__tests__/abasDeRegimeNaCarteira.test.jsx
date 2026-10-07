@@ -39,12 +39,9 @@ const CARTEIRA = [
   empresa("p1", "GAMA PRESUMIDO LTDA", "LUCRO_PRESUMIDO"),
 ];
 
-// ⚠⚠ A CARTEIRA ABRE NO CALENDÁRIO desde 01/09/2026, e as abas de REGIME só existem na visão de
-// Tabela — o Calendário é o outro eixo (o tempo) e nunca foi recortado por regime. Por isso o
-// helper troca de visão logo depois de montar. Sem isso, todo caso aqui mediria a ausência da barra
-// de regime numa tela que nunca a teve, e ficaria verde pelo motivo errado.
+// A lista de empresas está disponível ao abrir a página.
 function irParaTabela() {
-  fireEvent.click(screen.getByRole("button", { name: /^Empresas$/ }));
+  expect(screen.getByRole("heading", { name: "Empresas", level: 1 })).toBeInTheDocument();
 }
 
 function montar(props = {}) {
@@ -134,10 +131,7 @@ describe("são duas tabelas: trocar de aba troca as linhas", () => {
   // do produto a pedido do dono. Ele afirmava que o recorte por regime valia nas DUAS listas da
   // carteira; hoje há uma lista só, e é a Tabela, coberta pelos dois casos acima.
 
-  test("⚠ o Calendário NÃO ganha abas de regime — é o outro eixo, o tempo", () => {
-    // ⚠ Este caso media `Ano` até 01/09/2026. `Ano` não é mais uma visão da carteira: virou
-    // granularidade DENTRO do Calendário. A afirmação não mudou de conteúdo — mudou o caminho até
-    // ela, e agora basta NÃO ir para a Tabela, porque o Calendário é o padrão.
+  test("as abas de regime aparecem ao abrir Empresas", () => {
     render(
       <CompaniesHomePage
         user={{ name: "Contador" }}
@@ -152,7 +146,7 @@ describe("são duas tabelas: trocar de aba troca as linhas", () => {
         api={{}}
       />,
     );
-    expect(screen.queryByRole("group", { name: "Regime tributário" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Regime tributário" })).toBeInTheDocument();
   });
 
   // ⚠⚠ ESTE CASO SE CHAMAVA "a escolha PERSISTE, como o modo de visão", e a comparação FICOU FALSA

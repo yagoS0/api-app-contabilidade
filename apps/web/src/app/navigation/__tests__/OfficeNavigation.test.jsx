@@ -21,7 +21,7 @@ function setup(route = "/companies", resumoWhatsapp = null) {
 }
 
 test.each([
-  ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas e agenda"],
+  ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas"],
   ["/guides/upload", "Operação", "Guias não identificadas"],
   ["/download-notas", "Operação", "Consultas"],
   ["/onboardings/abc/editar", "Comercial", "Onboarding"],
@@ -51,7 +51,7 @@ test("destinos são links reais e a mudança de área mantém o histórico e a v
   fireEvent.click(screen.getByText("Voltar no escritório"));
   expect(screen.getByLabelText("rota")).toHaveTextContent("/companies/123/notas?competencia=2026-09");
   fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
-  fireEvent.click(screen.getByRole("link", { name: "Empresas e agenda" }));
+  fireEvent.click(screen.getByRole("link", { name: "Empresas" }));
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
   expect(screen.getByLabelText("visão")).toHaveTextContent("tabela");
 });
@@ -84,7 +84,7 @@ test("empresa recolhe destinos globais, abre pelo teclado e devolve o foco ao fe
   trigger.focus();
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
   expect(trigger).toHaveAttribute("aria-expanded", "true");
-  expect(screen.getByRole("link", { name: "Empresas e agenda" })).toHaveFocus();
+  expect(screen.getByRole("link", { name: "Empresas" })).toHaveFocus();
   fireEvent.keyDown(document.activeElement, { key: "Escape" });
   expect(trigger).toHaveAttribute("aria-expanded", "false");
   expect(trigger).toHaveFocus();
