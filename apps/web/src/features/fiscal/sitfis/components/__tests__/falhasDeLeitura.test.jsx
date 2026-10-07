@@ -16,6 +16,7 @@ it("falha do PDF não inventa remoção do arquivo e oferece leitura sem SERPRO"
   render(<SitfisTab sitfisPanel={{ status: { situacao: "ESTADO_NOVO", relatorioPdfFileId: "pdf1" }, pdfIndisponivel: true, recarregarPdf, consultar }} />);
   expect(screen.getByText(/Situação não reconhecida: ESTADO_NOVO/)).toBeInTheDocument();
   expect(screen.queryByText(/não está mais no servidor/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Ver PDF oficial" }));
   fireEvent.click(screen.getByRole("button", { name: /Tentar carregar PDF novamente/ }));
   expect(recarregarPdf).toHaveBeenCalledTimes(1);
   expect(consultar).not.toHaveBeenCalled();

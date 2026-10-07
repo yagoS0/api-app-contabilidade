@@ -49,3 +49,16 @@
 .pf-pdf-row > span:nth-child(2) { flex: 1; min-width: 0; }
 .pf-pdf-row small { display: block; color: var(--text-muted); }
 .pf-pdf-row > span:last-child { white-space: nowrap; }
+
+.sitfis-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.sitfis-heading h2 { margin: 0; font-size: 1.25rem; color: var(--text); }
+.sitfis-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sitfis-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); font-size: .8125rem; }
+.sitfis-summary:empty { display: none; }
+.sitfis-summary-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sitfis-summary-item > span:first-child, .sitfis-meta { color: var(--text-muted); font-size: .8125rem; }
+.sitfis-summary-item strong { font-weight: 500; }
+.sitfis-pdf-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; color: var(--state-warn); font-size: .8125rem; }
+.sitfis-pdf-error > span { flex-basis: 100%; }
+.pf-toolbar > input { flex: 0 1 440px; }
+@media (max-width: 560px) { .pf-toolbar > input { flex-basis: 100%; } }

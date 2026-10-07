@@ -3,7 +3,7 @@
 
 import { useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
-import { SitfisRelatorioTabela } from "./SitfisRelatorioTabela";
+
 import { PendenciasFiscaisTabelas } from "./PendenciasFiscaisTabelas";
 
 import { RecalcularGuiasSitfis } from "./RecalcularGuiasSitfis";
@@ -71,20 +71,16 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empre
     // com a das irmãs. ⚠ O padding também sai: o primitivo já o aplica, e somar os dois dava 24px
     // dentro de `var(--space-5)`.
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
-        {guidesPanel && <Button variant="secondary" onClick={abrirRecalculo}>Recalcular guia</Button>}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <Button variant="primary" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
-            {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
-          </Button>
-          {bloqueado && (
-            <span style={{ color: "#A7B0C0", fontSize: "0.75rem" }}>
-              Nova consulta em {formatDateTime(proximaConsultaEm)}
-            </span>
-          )}
+      <div className="sitfis-heading">
+        <h2>Situação Fiscal</h2>
+        <div className="sitfis-actions">
+          {guidesPanel && <Button size="sm" variant="secondary" onClick={abrirRecalculo}>Recalcular guia</Button>}
+          {status?.relatorioPdfFileId && <Button size="sm" variant="secondary" onClick={() => setVerPdf(v => !v)}>{verPdf ? "Ocultar PDF" : "Ver PDF oficial"}</Button>}
+          {pdfUrl && <a className="btn btn-secondary btn-sm" href={pdfUrl} download="situacao-fiscal.pdf">Baixar PDF oficial</a>}
+          <Button size="sm" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>{consulting ? "Consultando…" : "Consultar situação fiscal agora"}</Button>
         </div>
       </div>
+      {bloqueado && <p className="sitfis-meta">Nova consulta em {formatDateTime(proximaConsultaEm)}</p>}
 
       {error && (
         <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", fontSize: "0.9rem" }}>
@@ -98,92 +94,26 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empre
         </div>
       )}
 
-      <div style={{ marginTop: 20, padding: 20, borderRadius: 12, background: "#21222C", border: "1px solid #44475A" }}>
-        {loading ? (
-          <p style={{ color: "#A7B0C0", textAlign: "center", margin: 0 }}>Carregando…</p>
-        ) : !status && error ? null : !status ? (
-          <p style={{ color: "#A7B0C0", margin: 0 }}>
-            Nenhuma consulta de situação fiscal foi feita ainda. Clique em “Consultar situação fiscal agora”.
-          </p>
-        ) : (
-          <>
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Situação no relatório federal</span>
-                <SituacaoBadge situacao={status.situacao} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Último relatório obtido</span>
-                <strong style={{ color: "#F8F8F2" }}>{formatDateTime(status.ultimoRelatorioEm)}</strong>
-                <span>Última tentativa: {formatDateTime(status.checkedAt)}</span>
-              </div>
-            </div>
-
-            {(status.relatorio || status.relatorioPdfFileId) && (
-              <div style={{ marginTop: 18 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                  <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>
-                    Diagnóstico fiscal
-                    {status.relatorio?.emitidoEm ? ` · emitido em ${status.relatorio.emitidoEm}` : ""}
-                  </span>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {status.relatorioPdfFileId && status.relatorio && (
-                      <button
-                        type="button"
-                        onClick={() => setVerPdf((v) => !v)}
-                        style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
-                      >
-                        {verPdf ? "Ocultar PDF" : "Ver PDF oficial"}
-                      </button>
-                    )}
-                    {pdfUrl && (
-                      <a
-                        href={pdfUrl}
-                        download="situacao-fiscal.pdf"
-                        style={{ padding: "6px 12px", borderRadius: 6, background: "var(--accent-purple-surface)", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
-                      >
-                        ⬇ Baixar PDF
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* TABELA primeiro — é a leitura do dia a dia. O PDF é o documento oficial e fica
-                    opcional, sob clique. O parser ORGANIZA e não interpreta: não extrai valor
-                    monetário nenhum. A versão anterior extraía, e mostrou "R$ 100,00" numa empresa
-                    sem débito — era o 100,00% de participação societária. */}
-                {status.relatorio ? (
-                  <>
-                    <details><summary>Conferir relatório original em tabelas</summary><SitfisRelatorioTabela relatorio={status.relatorio} /></details>
-                  </>
-                ) : (
-                  <p style={{ color: "#A7B0C0", margin: "0 0 10px", fontSize: "0.82rem" }}>
-                    Relatório antigo, gravado antes de guardarmos o texto — só o PDF está disponível.
-                  </p>
-                )}
-
-                {(verPdf || !status.relatorio) && (
-                  pdfUrl ? (
-                    <iframe
-                      title="Relatório de situação fiscal (SITFIS)"
-                      src={pdfUrl}
-                      style={{ width: "100%", height: "70vh", minHeight: 300, border: "1px solid var(--border)", borderRadius: 8, background: "#fff", marginTop: 12 }}
-                    />
-                  ) : pdfIndisponivel ? (
-                    <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem", lineHeight: 1.5 }}>
-                      Não foi possível carregar o PDF salvo. Isso pode ser uma falha temporária; os dados exibidos acima continuam sendo os do relatório salvo.
-                      <Button variant="secondary" onClick={recarregarPdf}>Tentar carregar PDF novamente</Button>
-                      <p style={{ marginBottom: 0 }}>Esta tentativa lê o arquivo salvo e não faz uma nova consulta ao SERPRO.</p>
-                    </div>
-                  ) : (
-                    <p style={{ color: "#A7B0C0", marginTop: 12, fontSize: "0.85rem" }}>Carregando o PDF…</p>
-                  )
-                )}
-              </div>
-            )}
-          </>
-        )}
+      <div className="sitfis-summary">
+        {loading ? <span>Carregando…</span> : !status && error ? null : !status ? (
+          <span>Nenhuma consulta de situação fiscal foi feita ainda.</span>
+        ) : <>
+          <div className="sitfis-summary-item"><span>Situação no relatório federal</span><SituacaoBadge situacao={status.situacao} /></div>
+          <div className="sitfis-summary-item"><span>Último relatório obtido</span><strong>{formatDateTime(status.ultimoRelatorioEm)}</strong></div>
+          <span className="sitfis-meta">Última tentativa: {formatDateTime(status.checkedAt)}</span>
+          {status.relatorio?.emitidoEm && <span className="sitfis-meta">Emitido em {status.relatorio.emitidoEm}</span>}
+        </>}
       </div>
+      {status?.relatorioPdfFileId && !status.relatorio && <p className="sitfis-meta">Relatório antigo, gravado antes de guardarmos o texto — só o PDF está disponível.</p>}
+      {verPdf && (pdfUrl ? (
+        <iframe title="Relatório de situação fiscal (SITFIS)" src={pdfUrl} style={{ width: "100%", height: "70vh", minHeight: 300, border: "1px solid var(--border)", borderRadius: 8, background: "#fff", marginTop: 12 }} />
+      ) : pdfIndisponivel ? (
+        <div role="alert" className="sitfis-pdf-error">
+          Não foi possível carregar o PDF salvo.
+          <Button size="sm" variant="secondary" onClick={recarregarPdf}>Tentar carregar PDF novamente</Button>
+          <span>Esta tentativa lê o arquivo salvo e não faz uma nova consulta ao SERPRO.</span>
+        </div>
+      ) : <p className="sitfis-meta">Carregando o PDF…</p>)}
       <PendenciasFiscaisTabelas key={`${companyId || ""}:${status?.ultimoRelatorioEm || ""}:${JSON.stringify(status?.relatorio)}`} relatorio={status?.relatorio} manuais={sitfisPanel?.manuais} contabeis={sitfisPanel?.contabeis} empresa={empresa} />
 
       {guidesPanel && <div ref={areaRecalculo}><RecalcularGuiasSitfis guidesPanel={guidesPanel} feedback={feedback} /></div>}
