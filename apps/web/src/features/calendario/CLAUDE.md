@@ -102,3 +102,8 @@ No cadastro autorizado do escritório, a guia de ISS tem janela mensal de 1 a 5 
 ## Alcance da exclusão — 06/10/2026
 
 A confirmação oferece ESTA (padrão), ESTA_E_PROXIMAS e ESTA_E_ANTERIORES; ambos os intervalos incluem a ocorrência selecionada. O cliente envia o alcance ao servidor. Tarefas pessoais guardam cortes em config.exclusoes e conservam estados/conclusões. A âncora nominal (incluindo o dia @ da janela) determina a ordem mesmo com feriados ou movimentações. Obrigações usam encerradaAPartirDe e excluidaAteCiclo, respeitados pelos dois sincronizadores. Cancelamentos são lógicos. Em grupos, o alcance se aplica apenas às empresas selecionadas e autorizadas na mesma transação. Blocos empresariais de uma janela continuam representando uma única ocorrência, como na edição.
+
+## Correção da exclusão diária — 07/10/2026
+A exclusão de um cartão com horário passa a preservar o dia nominal clicado até a confirmação e a API, inclusive pelo editor ou ação individual de empresa. ESTA oculta somente esse dia em agendaConfig.diasExcluidos; os alcances anteriores/próximas conservam a parte oposta da janela e cortam os demais ciclos. A conclusão fiscal e a identidade da ocorrência mensal permanecem. Sem dia selecionado, a confirmação explicita o intervalo completo. Esta regra substitui a interpretação anterior de excluir sempre a janela mensal inteira.
+
+O filtro Ocorrências excluídas permite recuperar cancelamentos de séries empresariais ativas dentro do período exibido. A recuperação é transacional, revalida carteira e cortes sob lock, restaura os mesmos IDs e registra a exclusão anterior sem mudar conclusões. Não reativa séries nem remove cortes anteriores/próximas implicitamente. Sem migration.

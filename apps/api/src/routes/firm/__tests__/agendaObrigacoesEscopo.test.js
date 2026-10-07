@@ -9,6 +9,19 @@ import {createAgendaRouter} from '../agenda.js';
 function app(usuario='u') {const a=express();a.use(express.json());a.use((req,res,next)=>{req.auth={user:usuario?{id:usuario}:null};next();});a.use(createAgendaRouter());return a;}
 beforeEach(()=>{jest.clearAllMocks();prisma.$transaction.mockImplementation(fn=>fn(prisma));});
 test('agenda exige sessão',async()=>expect((await request(app(null)).get('/agenda/tarefas?inicio=2026-09-01&fim=2026-09-30')).status).toBe(401));
+
+test('recuperação exige sessão e recusa lote com empresa fora da carteira',async()=>{
+  expect((await request(app(null)).post('/agenda/ocorrencias/restaurar').send({ids:['a']})).status).toBe(401);
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([{id:'a',obrigacaoId:'s'}]);
+  expect((await request(app()).post('/agenda/ocorrencias/restaurar').send({ids:['a','fora']})).status).toBe(404);
+  expect(prisma.ocorrenciaObrigacao.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{id:{in:['a','fora']},obrigacao:{portalClientId:{in:['permitida']}}}}));
+  expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
+});
+
+test('consulta de exclusões não aceita empresa fora do escopo',async()=>{
+  expect((await request(app()).get('/agenda/ocorrencias/excluidas?inicio=2026-10-01&fim=2026-10-31&companyId=fora')).status).toBe(404);
+  expect(prisma.ocorrenciaObrigacao.findMany).not.toHaveBeenCalled();
+});
 test('lote misturando ocorrência fora da carteira não grava nenhuma',async()=>{
   prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([{id:'visivel',obrigacaoId:'s'}]);
   const r=await request(app()).post('/agenda/ocorrencias/excluir').send({ids:['visivel','invisivel']});expect(r.status).toBe(404);expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();expect(prisma.$queryRaw).not.toHaveBeenCalled();

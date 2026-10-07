@@ -31,7 +31,7 @@ export function agruparAtividades(itens) {
   const grupos = new Map();
   for (const i of itens) {
     // Feriados municipais podem mudar um dia intermediário sem mudar as pontas da janela.
-    const dias = i.diasAgendados ? `|${i.diasAgendados.map(d => `${d.dataInicioOriginal}:${d.dataInicio}:${d.dataFim}`).join(',')}` : '';
+    const dias = (i.diasAgendados ? `|${i.diasAgendados.map(d => `${d.dataInicioOriginal}:${d.dataInicio}:${d.dataFim}`).join(',')}` : '') + `|excluidos:${(i.diasExcluidos || []).join(',')}`;
     const grupo = i.tipo === 'tarefa' ? i.grupoTarefaId : i.regraId;
     const chave = grupo
       ? `${i.tipo}|${grupo}|${i.cicloChave}|${i.dataInicio}|${i.dataFim}|${i.horaInicio || ''}|${i.horaFim || ''}|${i.prioridade || ''}|${i.titulo}${dias}`
@@ -45,14 +45,14 @@ export function agruparAtividades(itens) {
 export function blocosDiarios(atividades, inicio, fim) {
   return atividades.flatMap(item => {
     if (item.horaInicio && Array.isArray(item.diasAgendados)) {
-      return item.diasAgendados.filter(dia => dia.dataInicio <= fim && dia.dataFim >= inicio).map(dia => ({
-        ...item, ...dia, id: `${item.id}@${dia.dataInicioOriginal || dia.dataInicio}`, atividadeOriginal: item,
+      return item.diasAgendados.filter(dia => dia.dataInicio <= fim && dia.dataFim >= inicio && !item.diasExcluidos?.includes(dia.dataInicioOriginal || dia.dataInicio)).map(dia => ({
+        ...item, ...dia, diaSelecionado: dia.dataInicioOriginal || dia.dataInicio, id: `${item.id}@${dia.dataInicioOriginal || dia.dataInicio}`, atividadeOriginal: item,
       }));
     }
-    if (!item.horaInicio || item.dataInicio === item.dataFim) return [item];
+    if (!item.horaInicio || item.dataInicio === item.dataFim) return item.diasExcluidos?.includes(item.dataInicioOriginal || item.dataInicio) ? [] : [item];
     const blocos = [];
     for (let dia = item.dataInicio < inicio ? inicio : item.dataInicio; dia <= item.dataFim && dia <= fim; dia = somarDiasAgenda(dia, 1)) {
-      blocos.push({ ...item, id: `${item.id}@${dia}`, dataInicio: dia, dataFim: dia, atividadeOriginal: item });
+      if (!item.diasExcluidos?.includes(dia)) blocos.push({ ...item, diaSelecionado: dia, id: `${item.id}@${dia}`, dataInicio: dia, dataFim: dia, atividadeOriginal: item });
     }
     return blocos;
   });
