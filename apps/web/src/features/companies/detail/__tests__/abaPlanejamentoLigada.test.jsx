@@ -40,8 +40,8 @@ describe("⚠⚠ peça 1 — a entrada em GROUPS, no grupo Fiscal e DEPOIS de Ap
     expect(fonte.indexOf('key: "cadastroFiscal"')).toBeLessThan(fonte.indexOf('key: "planejamento"'));
   });
 
-  it("⚠ e ANTES de Guias — a ordem do grupo Fiscal é o fluxo de trabalho", () => {
-    expect(fonte.indexOf('key: "planejamento"')).toBeLessThan(fonte.indexOf('key: "guides"'));
+  it("Planejamento vem por último, depois de Situação Fiscal", () => {
+    expect(fonte.indexOf('key: "sitfis"')).toBeLessThan(fonte.indexOf('key: "planejamento"'));
   });
 
   it("⚠⚠ ela fica FORA de `TABS_COM_COMPETENCIA`", () => {
