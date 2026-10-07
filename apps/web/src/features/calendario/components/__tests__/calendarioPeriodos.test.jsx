@@ -502,3 +502,26 @@ test('lista reúne tarefa por grupo e exclui a série de todas as empresas',asyn
  await waitFor(()=>expect(api.excluirSerieAgenda).toHaveBeenCalledWith({grupoTarefaId:'grupo-tarefa'}));
  await screen.findByText('Nenhuma atividade encontrada.');
 });
+
+
+test('pausa uma obrigação e permite retomá-la sem excluir a série',async()=>{
+  let regra={regraId:'r',nome:'Fechamento antigo',ativa:true,periodicidade:'MENSAL',verificador:'MES_FECHADO',escopo:'TODAS'};
+  const updateRegraObrigacao=jest.fn(async(id,patch)=>{regra={...regra,...patch};return {ok:true};});
+  const {api}=montar({visao:'lista',extras:{listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[regra]})),updateRegraObrigacao}});
+  fireEvent.click(await screen.findByRole('button',{name:'Pausar obrigação'}));
+  await waitFor(()=>expect(screen.queryByRole('button',{name:/Fechamento antigo/})).not.toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'PAUSADAS'}});
+  expect(await screen.findByText('Pausada · histórico preservado')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Retomar obrigação'}));
+  await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenLastCalledWith('r',{ativa:true}));
+  expect(api.excluirSerieAgenda).not.toHaveBeenCalled();
+});
+
+
+test('cadastro manual com nome e abrangência do modelo substitui a sugestão sem mudar sua conclusão',async()=>{
+  const regra={regraId:'importar',nome:'Importar lançamentos no ERP',ativa:true,periodicidade:'MENSAL',verificador:null,escopo:'TODAS'};
+  const {api}=montar({visao:'lista',extras:{listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[regra]}))}});
+  await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  expect(screen.getAllByRole('button',{name:/Importar lançamentos no ERP/})).toHaveLength(1);
+  expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+});

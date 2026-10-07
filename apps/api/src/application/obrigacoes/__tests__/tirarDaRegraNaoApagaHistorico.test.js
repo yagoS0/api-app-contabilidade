@@ -214,3 +214,14 @@ describe("o par de botões da tela", () => {
     );
   });
 });
+
+
+test('pausar regra conserva vínculos, ocorrências e exceções locais', async () => {
+  prisma.regraObrigacao.findUnique.mockResolvedValue({...REGRA,ativa:false});
+  prisma.obrigacao.updateMany.mockResolvedValue({count:2});
+  await propagar({regraId:'r1',portalIds:PORTAL_IDS});
+  expect(prisma.obrigacao.updateMany).toHaveBeenCalledWith({where:{regraId:'r1',portalClientId:{in:PORTAL_IDS},sobrescritaLocal:false},data:{ativa:false}});
+  expect(prisma.obrigacao.deleteMany).not.toHaveBeenCalled();
+  expect(prisma.ocorrenciaObrigacao.findMany).not.toHaveBeenCalled();
+  expect(prisma.obrigacao.update).not.toHaveBeenCalled();
+});

@@ -89,3 +89,7 @@ Clique simples usa a hora inteira da célula (8h → 8h–9h); arraste continua 
 MiniCalendarioAgenda seleciona início e fim em dois cliques no mesmo calendário, destaca o intervalo e permite atravessar meses, inverter a ordem ou escolher um único dia. De/Até indicam a extremidade ativa e continuam editáveis por teclado, sem abrir um segundo calendário nativo. A digitação do início preserva a duração via editarJanela; a seleção visual define um novo intervalo. O resumo mostra ambas as datas.
 
 useProtegerCamposDaRolagem, montado em App e Modal com contagem de usuários, retira o foco de inputs number/date/time/month/week/datetime-local antes do incremento nativo por wheel. Não cancela a rolagem do painel nem afeta campos de texto. Validação: 86 testes direcionados aprovados e build web concluído; seleção visual conferida em demonstração sem dados reais.
+
+
+## Organização de obrigações — 06/10/2026
+A lista permite pausar obrigações e consultar/retomar as pausadas pelo filtro existente. Pausar conserva IDs, vínculos e ocorrências; não cancela nem apaga conclusões. A propagação preserva sobrescritas locais. Modelos não reaparecem quando sua regra está pausada. Editar metadados de uma regra sem agendaConfig preserva o calendário fiscal legado quando nenhuma data, horário, repetição, prioridade ou ajuste da janela foi alterado.

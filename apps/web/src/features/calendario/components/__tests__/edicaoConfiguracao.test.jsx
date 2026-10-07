@@ -131,3 +131,17 @@ test('antecipação da atividade permanece independente do ajuste do vencimento 
   fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
   await waitFor(() => expect(api.updateRegraObrigacao).toHaveBeenCalledWith('regra', expect.objectContaining({ ajusteDiaUtil: 'POSTERGAR', agendaConfig: expect.objectContaining({ ajusteDiaUtil: 'ANTECIPAR' }) })));
 });
+
+
+test('renomear e vincular verificador de regra legada mantém calendário fiscal existente',async()=>{
+  const regra={regraId:'legada',nome:'Importação para ERP',periodicidade:'MENSAL',diaVencimento:30,defasagemMeses:1,ajusteDiaUtil:'ANTECIPAR',escopo:'TODAS',agendaConfig:null};
+  const {api}=montar({tarefaId:null,tipo:'obrigacao',regraEdicao:regra,recorrencia:'MENSAL',titulo:regra.nome});
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Importar lançamentos no ERP'}});
+  fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
+  fireEvent.change(screen.getByLabelText('Conclusão'),{target:{value:'CARTEIRA_IMPORTAR'}});
+  await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.updateRegraObrigacao).toHaveBeenCalled());
+  const [id,payload]=api.updateRegraObrigacao.mock.calls[0];
+  expect(id).toBe('legada');expect(payload).toMatchObject({nome:'Importar lançamentos no ERP',verificador:'CARTEIRA_IMPORTAR',diaVencimento:30,defasagemMeses:1});
+  for(const chave of ['agendaConfig','dataInicio','dataFim','dataVencimento']) expect(payload).not.toHaveProperty(chave);
+});
