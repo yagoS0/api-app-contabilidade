@@ -838,8 +838,8 @@ export function createRealApi() {
     async converterTarefaEmObrigacao(id, dados) {
       return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/converter-obrigacao`, { method: 'POST', body: JSON.stringify(dados) });
     },
-    async excluirOcorrenciasAgenda(ids) {
-      return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
+    async excluirOcorrenciasAgenda(ids, alcance = "ESTA") {
+      return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids, alcance }) });
     },
     async editarOcorrenciasAgenda(ids, dados) {
       return request('/firm/agenda/ocorrencias/editar', { method:'POST', body:JSON.stringify({ids,dados}) });

@@ -117,7 +117,7 @@ test('faixa agrupa empresas e mostra conclusão parcial e prazo fiscal',async()=
 });
 test('excluir faixa cancela só este ciclo inclusive concluída, preservando histórico',async()=>{
   const obs=obrigacoes();obs[0].ocorrencias[0].status='CONCLUIDA';const {api}=montar({obs});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
-  await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b']));expect(api.excluirSerieAgenda).not.toHaveBeenCalled();expect(obs[0].ocorrencias[0].status).toBe('CONCLUIDA');expect(obs[0].ocorrencias[0].canceladaEm).toBeTruthy();
+  await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'], 'ESTA'));expect(api.excluirSerieAgenda).not.toHaveBeenCalled();expect(obs[0].ocorrencias[0].status).toBe('CONCLUIDA');expect(obs[0].ocorrencias[0].canceladaEm).toBeTruthy();
 });
 test('lista filtra obrigações e permite excluir a série completa',async()=>{
   const {api}=montar({obs:obrigacoes()});await screen.findByRole('button',{name:/EFD-Contribuições/});fireEvent.click(screen.getByRole('button',{name:'Lista'}));fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'obrigacao'}});fireEvent.click(await screen.findByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
@@ -524,4 +524,20 @@ test('cadastro manual com nome e abrangência do modelo substitui a sugestão se
   await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
   expect(screen.getAllByRole('button',{name:/Importar lançamentos no ERP/})).toHaveLength(1);
   expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+});
+
+
+test.each([['Esta e todas as próximas','ESTA_E_PROXIMAS'],['Esta e todas as anteriores','ESTA_E_ANTERIORES']])('confirma alcance %s para empresas do grupo',async(rotulo,alcance)=>{
+ const {api}=montar({obs:obrigacoes()});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
+ fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));
+ expect(screen.getByLabelText('Somente esta ocorrência')).toBeChecked();
+ fireEvent.click(screen.getByLabelText(rotulo));expect(api.excluirOcorrenciasAgenda).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+ await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'],alcance));
+ expect(api.excluirSerieAgenda).not.toHaveBeenCalled();
+});
+test('cancelar escolha de alcance não remove ocorrências',async()=>{
+ const {api}=montar({obs:obrigacoes()});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
+ fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByLabelText('Esta e todas as anteriores'));
+ fireEvent.click(screen.getByRole('button',{name:'Cancelar',exact:true}));expect(api.excluirOcorrenciasAgenda).not.toHaveBeenCalled();
 });

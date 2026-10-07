@@ -27,6 +27,7 @@ export async function sincronizarAgendaConfigurada(db, serie, { hoje, incluirVen
   }
   const novas = [];
   for (const p of previstas) {
+    if (serie.excluidaAteCiclo && p.cicloChave <= serie.excluidaAteCiclo) continue;
     if (serie.encerradaAPartirDe && p.cicloChave >= serie.encerradaAPartirDe) continue;
     const inicioNominal = p.dataInicioOriginal || p.dataInicio;
     const [ano, mes] = inicioNominal.split('-').map(Number);

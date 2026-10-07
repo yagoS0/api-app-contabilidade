@@ -77,3 +77,9 @@ test('último snapshot aplicável vence mesmo havendo agendamento posterior anti
 test.each([{ periodicidade: 'AVULSA' }, { periodicidade: 'ANUAL', mesReferencia: 0 }, { diaVencimento: 32 }, { defasagemMeses: -1 }, { ajusteDiaUtil: 'QUALQUER' }])('recusa configuração futura inválida %j', patch => {
   expect(() => normalizarRegraRecorrente(patch, { periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER' })).toThrow();
 });
+
+
+test('cortes inclusivos deixam apenas ciclos intermediários permitidos',()=>{
+ const s={excluidaAteCiclo:'2026-10',encerradaAPartirDe:'2026-12'};
+ expect(['2026-09','2026-10','2026-11','2026-12','2027-01'].filter(c=>cicloPermitido(s,c))).toEqual(['2026-11']);
+});

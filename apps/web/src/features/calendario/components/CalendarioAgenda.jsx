@@ -183,15 +183,15 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
       ? api.acaoTarefaAgenda(tarefa.tarefaId, { cicloChave:tarefa.cicloChave, acao:tarefa.resolvido ? 'REABRIR' : 'CONCLUIR' })
       : tarefa.resolvido ? api.reabrirOcorrencia(tarefa.ocorrenciaId) : api.concluirOcorrencia(tarefa.ocorrenciaId), false);
   }
-  async function excluir(alvo, serie) {
+  async function excluir(alvo, serie, alcance = "ESTA") {
     if (serie) {
       if (alvo.tarefaId) return api.acaoTarefaAgenda(alvo.tarefaId, { acao: 'EXCLUIR_SERIE' });
       return api.excluirSerieAgenda(alvo.grupoTarefaId ? { grupoTarefaId: alvo.grupoTarefaId } : alvo.regraId ? { regraId: alvo.regraId } : { obrigacaoId: alvo.obrigacaoId });
     }
     const itens = alvo.itens || [alvo];
-    if (itens[0].fonte === 'OBRIGACAO') return api.excluirOcorrenciasAgenda(itens.map(i => i.ocorrenciaId));
+    if (alvo.ocorrenciaIds || itens[0].fonte === 'OBRIGACAO') return api.excluirOcorrenciasAgenda(alvo.ocorrenciaIds || itens.map(i => i.ocorrenciaId), alcance);
     for (const i of itens) {
-      conferir(await (i.tarefaId ? api.acaoTarefaAgenda(i.tarefaId, { acao: 'EXCLUIR', cicloChave: i.cicloChave }) : api.ocultarItemAgenda({ tipo: i.tipo, id: i.id, mes: i.dataInicio.slice(0,7) })));
+      conferir(await (i.tarefaId ? api.acaoTarefaAgenda(i.tarefaId, { acao: 'EXCLUIR', cicloChave: i.cicloChave, alcance }) : api.ocultarItemAgenda({ tipo: i.tipo, id: i.id, mes: i.dataInicio.slice(0,7) })));
     }
     return { ok: true };
   }
@@ -254,7 +254,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
       {erro && <p className="agenda-error" role="alert">{erro}</p>}
       </div>
     </Modal>}
-    {confirmacao && <Modal titulo={confirmacao.serie ? 'Excluir série completa?' : 'Excluir esta ocorrência?'} aoFechar={() => { setConfirmacao(null); setErro(''); }} ocupado={ocupado} tamanho="sm" rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setConfirmacao(null)}>Cancelar</Button><Button variant="danger" disabled={ocupado} onClick={() => agir(() => excluir(confirmacao.alvo,confirmacao.serie))}>{ocupado ? 'Excluindo…' : 'Excluir'}</Button></>}><p>{confirmacao.alvo.titulo}</p><p>{confirmacao.serie ? 'Todas as ocorrências desta série serão removidas do calendário.' : `${confirmacao.alvo.itens?.length > 1 ? `${confirmacao.alvo.itens.length} empresas neste período. ` : ''}As próximas ocorrências serão mantidas.`}</p>{erro && <p className="agenda-error" role="alert">{erro}</p>}</Modal>}
+    {confirmacao && <Modal titulo={confirmacao.serie ? 'Excluir série completa?' : 'Excluir esta ocorrência?'} aoFechar={() => { setConfirmacao(null); setErro(''); }} ocupado={ocupado} tamanho="sm" rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setConfirmacao(null)}>Cancelar</Button><Button variant="danger" disabled={ocupado} onClick={() => agir(() => excluir(confirmacao.alvo,confirmacao.serie,confirmacao.alcance || "ESTA"))}>{ocupado ? 'Excluindo…' : 'Excluir'}</Button></>}><p>{confirmacao.alvo.titulo}</p>{!confirmacao.serie && (confirmacao.alvo.tarefaId || confirmacao.alvo.ocorrenciaId || confirmacao.alvo.ocorrenciaIds || confirmacao.alvo.itens?.some(i => i.tarefaId || i.ocorrenciaId)) && <fieldset disabled={ocupado} style={{border:0,padding:0,display:'grid',gap:10}}><legend>Quais ocorrências deseja excluir?</legend>{[['ESTA','Somente esta ocorrência'],['ESTA_E_PROXIMAS','Esta e todas as próximas'],['ESTA_E_ANTERIORES','Esta e todas as anteriores']].map(([valor,rotulo]) => <label key={valor}><input type="radio" name="alcanceExclusao" value={valor} checked={(confirmacao.alcance || 'ESTA') === valor} onChange={() => setConfirmacao(c => ({...c,alcance:valor}))}/> {rotulo}</label>)}</fieldset>}<p>{confirmacao.serie ? 'Todas as ocorrências desta série serão removidas do calendário.' : `${confirmacao.alvo.itens?.length > 1 ? `${confirmacao.alvo.itens.length} empresas neste período. ` : ''}${confirmacao.alcance === 'ESTA_E_PROXIMAS' ? 'As anteriores serão mantidas.' : confirmacao.alcance === 'ESTA_E_ANTERIORES' ? 'As próximas serão mantidas.' : 'As anteriores e próximas serão mantidas.'}`}</p>{erro && <p className="agenda-error" role="alert">{erro}</p>}</Modal>}
     {edicaoLegada && <ModalObrigacao inicial={edicaoLegada} empresas={empresas} opcoes={dados.opcoes} onFechar={() => setEdicaoLegada(null)} salvando={ocupado} erro={erro} onSalvar={d => agir(() => api.updateObrigacao(edicaoLegada.obrigacaoId,d))}/ >}
   </section>;
 }

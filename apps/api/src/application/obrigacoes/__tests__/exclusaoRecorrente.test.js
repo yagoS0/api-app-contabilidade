@@ -40,3 +40,21 @@ test('agenda permite ocultar concluída conservando o registro da conclusão', a
   expect(rows[2].canceladaEm).toBeInstanceOf(Date);expect(rows[2].status).toBe('CONCLUIDA');expect(rows[2].concluidaEm).toEqual(new Date('2026-11-10'));
   expect(rows[0].canceladaEm).toBeUndefined();
 });
+
+
+test('esta e anteriores corta o passado e conserva o futuro e as conclusões', async()=>{
+ const {db,serie,rows}=banco();rows[0].status='CONCLUIDA';rows[0].concluidaEm=date('2026-09-22');
+ await excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o10',alcance:'ESTA_E_ANTERIORES',incluirConcluidas:true},db);
+ expect(serie.excluidaAteCiclo).toBe('2026-10');expect(rows.slice(0,2).every(o=>o.canceladaEm)).toBe(true);
+ expect(rows[2].canceladaEm).toBeUndefined();expect(rows[0].concluidaEm).toEqual(date('2026-09-22'));expect(rows[0].status).toBe('CONCLUIDA');
+});
+test('cortes anteriores e posteriores coexistem sem reabrir exclusões',async()=>{
+ const {db,serie}=banco();
+ await excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o10',alcance:'ESTA_E_ANTERIORES'},db);
+ await excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o09',alcance:'ESTA_E_ANTERIORES'},db);
+ await excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o11',alcance:'ESTA_E_PROXIMAS'},db);
+ expect(serie.excluidaAteCiclo).toBe('2026-10');expect(serie.encerradaAPartirDe).toBe('2026-11');
+});
+test('alcance inválido não escreve',async()=>{
+ const {db,serie}=banco();await expect(excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o10',alcance:'TODAS'},db)).rejects.toMatchObject({code:'alcance_invalido'});expect(serie.agendaVersoes).toEqual([]);
+});

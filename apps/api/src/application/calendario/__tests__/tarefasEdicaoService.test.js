@@ -71,3 +71,17 @@ test('ativar antecipação na série carrega feriados antes de expandir a nova v
  expect(db.feriado.findMany).toHaveBeenCalledTimes(1);
  expect(tarefa.config.versoes[0].config).toMatchObject({ajusteDiaUtil:'ANTECIPAR',dataInicio:'2026-11-01'});
 });
+
+
+test.each([['ESTA_E_ANTERIORES',['2026-11-10','2026-12-10']],['ESTA_E_PROXIMAS',['2026-09-10']]])('exclusão %s preserva outra direção e histórico',async(alcance,datas)=>{
+ const {db,tarefa}=montar({estados:{'2026-10':{concluidaEm:'2026-10-10'}}});
+ await alterarTarefa({userId:'u',id:'t',cicloChave:'2026-10',acao:'EXCLUIR',alcance},db);
+ expect(ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-12-31').map(i=>i.dataInicio)).toEqual(datas);
+ expect(tarefa.estados['2026-10'].concluidaEm).toBe('2026-10-10');
+ expect(db.tarefaAgenda.findFirst).toHaveBeenCalledWith({where:{id:'t',userId:'u',excluidaEm:null}});
+ await expect(alterarTarefa({userId:'u',id:'t',cicloChave:'2026-10',acao:'REABRIR'},db)).rejects.toMatchObject({status:404});
+});
+test('exclusão em lote de tarefa alheia não escreve',async()=>{
+ const {db}=montar();db.tarefaAgenda.findFirst.mockResolvedValue(null);
+ await expect(alterarTarefa({userId:'outro',id:'t',cicloChave:'2026-10',acao:'EXCLUIR',alcance:'ESTA_E_ANTERIORES'},db)).rejects.toMatchObject({status:404});expect(db.tarefaAgenda.update).not.toHaveBeenCalled();
+});

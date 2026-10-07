@@ -159,3 +159,10 @@ test('tarefas diárias antecipadas compartilham janela sem colidir na chave úni
   expect(criadas.every(o => o.dataInicio.toISOString().startsWith('2026-10-09'))).toBe(true);
   expect(criadas.map(o => o.dataVencimento.toISOString().slice(0, 10))).toEqual(['2026-10-09', '2026-10-10', '2026-10-11']);
 });
+
+
+test('geração posterior respeita corte anterior e posterior, inclusive primeira ocorrência',async()=>{
+ const db={ocorrenciaObrigacao:{findMany:async()=>[],createMany:jest.fn(async({data})=>({count:data.length})),update:jest.fn()},portalClient:{findUnique:async()=>null},feriado:{findMany:async()=>[]}};
+ await sincronizarAgendaConfigurada(db,{id:'s',tipo:'TAREFA',periodicidade:'MENSAL',agendaConfig:config,excluidaAteCiclo:'2026-10',encerradaAPartirDe:'2027-01'},{hoje:new Date('2026-09-01'),incluirVencidoDoMes:true});
+ expect(db.ocorrenciaObrigacao.createMany.mock.calls[0][0].data.map(o=>o.cicloChave)).toEqual(['2026-11','2026-12']);
+});

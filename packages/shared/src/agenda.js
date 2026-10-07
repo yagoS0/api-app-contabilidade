@@ -102,7 +102,7 @@ function itensDoCiclo(tarefa, oc, ehFeriado) {
   while (pendentes.length) {
     const original = pendentes.pop(), estado = tarefa.estados?.[original.cicloChave] || {};
     if (estado.canceladaEm) continue;
-    const item = { ...original, ...estado.alteracoes, _dataExplicita: original._dataExplicita || Boolean(estado.alteracoes?.dataInicio || estado.alteracoes?.dataFim), concluidaEm: Object.hasOwn(estado, 'concluidaEm') ? estado.concluidaEm : original.concluidaEm };
+    const item = { ...original, dataCicloExclusao: original.dataCicloExclusao || original.dataInicioOriginal || original.dataInicio, ...estado.alteracoes, _dataExplicita: original._dataExplicita || Boolean(estado.alteracoes?.dataInicio || estado.alteracoes?.dataFim), concluidaEm: Object.hasOwn(estado, 'concluidaEm') ? estado.concluidaEm : original.concluidaEm };
     const dias = diasNominaisDaTarefa(item);
     if (dias.length > 1) { pendentes.push(...dias.reverse()); continue; }
     if (original._versaoAgenda !== undefined) {
@@ -113,6 +113,7 @@ function itensDoCiclo(tarefa, oc, ehFeriado) {
     delete item._versaoAgenda;
     const ajustado = item._dataExplicita ? item : ajustarItemAgenda(item, ehFeriado);
     delete ajustado._dataExplicita;
+    if (tarefaOcorrenciaExcluida(tarefa, ajustado)) continue;
     itens.push({ ...ajustado, id: `${tarefa.id}:${item.cicloChave}`, tarefaId: tarefa.id, fonte: 'TAREFA', tipo: 'tarefa', resolvido: Boolean(item.concluidaEm) });
   }
   return itens;
@@ -120,7 +121,7 @@ function itensDoCiclo(tarefa, oc, ehFeriado) {
 
 export function encontrarOcorrenciaDaTarefa(tarefa, chave, ehFeriado) {
   const congelada = tarefa.estados?.[chave]?.ocorrencia;
-  if (congelada) return tarefa.estados[chave].canceladaEm ? null : { ...congelada, ...tarefa.estados[chave].alteracoes, concluidaEm: tarefa.estados[chave].concluidaEm || null, resolvido: Boolean(tarefa.estados[chave].concluidaEm) };
+  if (congelada) return tarefa.estados[chave].canceladaEm || tarefaOcorrenciaExcluida(tarefa, { ...congelada, ...tarefa.estados[chave].alteracoes }) ? null : { ...congelada, ...tarefa.estados[chave].alteracoes, concluidaEm: tarefa.estados[chave].concluidaEm || null, resolvido: Boolean(tarefa.estados[chave].concluidaEm) };
   const raiz = String(chave || '').split('|').pop().split('@')[0];
   const referencia = dataAgenda(raiz.length === 7 ? `${raiz}-01` : raiz);
   return ciclosVersionados(tarefa, referencia, somarDiasAgenda(referencia, 31)).flatMap(oc => itensDoCiclo(tarefa, oc, ehFeriado)).find(o => o.cicloChave === chave);
@@ -184,5 +185,21 @@ export function ocorrenciasDaTarefa(tarefa, inicio, fim, ehFeriado) {
   const datasPreservadas = new Set(congeladas.flatMap(([, e]) => [e.ocorrencia.dataInicioOriginal || e.ocorrencia.dataInicio, e.alteracoes?.dataInicio || e.ocorrencia.dataInicioOriginal || e.ocorrencia.dataInicio]));
   const atuais = [...mapa.values()].flatMap(oc => itensDoCiclo(tarefa, oc, ehFeriado)).filter(item => !datasPreservadas.has(item.dataInicioOriginal || item.dataInicio));
   const historico = congeladas.filter(([, e]) => !e.canceladaEm).map(([chave]) => encontrarOcorrenciaDaTarefa(tarefa, chave, ehFeriado));
-  return [...atuais, ...historico].filter(item => item.dataFim >= inicio && item.dataInicio <= fim);
+  return [...atuais, ...historico].filter(item => item && !tarefaOcorrenciaExcluida(tarefa, item)).filter(item => item.dataFim >= inicio && item.dataInicio <= fim);
+}
+
+/** Cortes persistentes da série; estados/conclusões permanecem armazenados. */
+export function tarefaOcorrenciaExcluida(tarefa, item) {
+  const dia = dataDoCorte(item);
+  return (tarefa.config.exclusoes || []).some(c => c.alcance === 'ESTA_E_PROXIMAS' ? dia >= c.data : c.alcance === 'ESTA_E_ANTERIORES' && dia <= c.data);
+}
+export function prepararExclusaoTarefa(tarefa, cicloChave, alcance, ehFeriado) {
+  if (!['ESTA_E_PROXIMAS','ESTA_E_ANTERIORES'].includes(alcance)) throw new Error('Alcance inválido.');
+  const item = encontrarOcorrenciaDaTarefa(tarefa, cicloChave, ehFeriado);
+  if (!item) throw new Error('Ocorrência não encontrada.');
+  return { ...tarefa.config, exclusoes: [...(tarefa.config.exclusoes || []), { alcance, data: dataDoCorte(item), cicloChave, excluidaEm: new Date().toISOString() }] };
+}
+
+function dataDoCorte(item) {
+  return item.cicloChave?.split('@')[1] || item.dataCicloExclusao || item.dataInicioOriginal || item.dataInicio;
 }

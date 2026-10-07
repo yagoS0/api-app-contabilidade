@@ -34,7 +34,7 @@ export function cicloDaOcorrencia(oc, serie) {
   }
   return new Date(oc.dataVencimento).toISOString().slice(0, 7);
 }
-export function cicloPermitido(serie, ciclo) { return !serie.encerradaAPartirDe || ciclo < serie.encerradaAPartirDe; }
+export function cicloPermitido(serie, ciclo) { return (!serie.encerradaAPartirDe || ciclo < serie.encerradaAPartirDe) && (!serie.excluidaAteCiclo || ciclo > serie.excluidaAteCiclo); }
 
 // Snapshots completos da regra permitem editar o futuro sem reescrever o cadastro-base.
 export function regraDoCiclo(serie, ciclo) {

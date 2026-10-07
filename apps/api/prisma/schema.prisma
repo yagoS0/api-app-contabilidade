@@ -4451,6 +4451,7 @@ model Obrigacao {
   /// Versões da janela por ciclo, com autor e data.
   agendaVersoes Json @default("[]")
   encerradaAPartirDe String?
+  excluidaAteCiclo String?
   /// Campo LIVRE (fiscal, trabalhista, própria da empresa…). A UI sugere o que o escritório já
   /// usou; não é vocabulário fechado que precise ser mantido por nós. Só alimenta cor e filtro.
   categoria      String?

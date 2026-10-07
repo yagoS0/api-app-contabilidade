@@ -29,7 +29,7 @@ export function createAgendaRouter({ log } = {}) {
   router.get('/agenda/tarefas', rota((req, userId) => listarTarefas({ userId, inicio: req.query.inicio, fim: req.query.fim })));
   router.post('/agenda/tarefas', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, dados: req.body || {} }) })));
   router.patch('/agenda/tarefas/:id', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, id: req.params.id, dados: req.body || {} }) })));
-  router.post('/agenda/tarefas/:id/acao', rota(async (req, userId) => ({ tarefa: await alterarTarefa({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, acao: req.body?.acao, alteracoes: req.body?.alteracoes }) })));
+  router.post('/agenda/tarefas/:id/acao', rota(async (req, userId) => ({ tarefa: await alterarTarefa({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, acao: req.body?.acao, alcance: req.body?.alcance, alteracoes: req.body?.alteracoes }) })));
   router.post('/agenda/tarefas/:id/converter-obrigacao', rota(async (req, userId) => converterTarefaEmObrigacao({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, regra: req.body?.regra, portalIds: await empresasVisiveis(req) })));
   router.post('/agenda/ocorrencias/excluir', rota(async (req, userId) => {
     const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])];
@@ -42,7 +42,7 @@ export function createAgendaRouter({ log } = {}) {
       for (const id of [...new Set(alvos.map(o => o.obrigacaoId))].sort()) await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
       let canceladas = 0;
       for (const id of ids) {
-        const out = await excluirOcorrencia({ portalIds, ocorrenciaId: id, userId, incluirConcluidas: true }, { $transaction: fn => fn(tx) });
+        const out = await excluirOcorrencia({ portalIds, ocorrenciaId: id, userId, alcance: req.body?.alcance || "ESTA", incluirConcluidas: true }, { $transaction: fn => fn(tx) });
         canceladas += out.canceladas;
       }
       return { canceladas };

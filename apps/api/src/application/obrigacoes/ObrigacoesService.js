@@ -30,7 +30,7 @@ async function bloquearSerie(db, id) {
 }
 
 export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", userId = null, incluirConcluidas = false }, db = prisma) {
-  if (!["ESTA", "ESTA_E_PROXIMAS"].includes(alcance)) throw new ObrigacaoError("alcance_invalido", "Escolha somente esta ocorrência ou esta e as próximas.");
+  if (!["ESTA", "ESTA_E_PROXIMAS", "ESTA_E_ANTERIORES"].includes(alcance)) throw new ObrigacaoError("alcance_invalido", "Escolha somente esta ocorrência, esta e as próximas ou esta e as anteriores.");
   return db.$transaction(async tx => {
     let alvo = await tx.ocorrenciaObrigacao.findFirst({ where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao: true } });
     if (!alvo) throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
@@ -39,16 +39,19 @@ export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ES
     const serie = await tx.obrigacao.findUnique({ where: { id: alvo.obrigacaoId } });
     const ciclo = cicloDaOcorrencia(alvo, serie);
     const futuras = alcance === "ESTA_E_PROXIMAS";
+    const anteriores = alcance === "ESTA_E_ANTERIORES";
     // Tombstones nunca são apagados; ativar uma regra de escritório não reintroduz o ciclo.
     await tx.obrigacao.update({ where: { id: serie.id }, data: {
       sobrescritaLocal: true,
       agendaVersoes: serie.agendaVersoes?.length ? serie.agendaVersoes : [{ aPartirDe: "0000-01", janela: serie.janelaTrabalho || null }],
+      ...(anteriores ? { excluidaAteCiclo: serie.excluidaAteCiclo && serie.excluidaAteCiclo > ciclo ? serie.excluidaAteCiclo : ciclo } : {}),
       ...(futuras ? { encerradaAPartirDe: serie.encerradaAPartirDe && serie.encerradaAPartirDe < ciclo ? serie.encerradaAPartirDe : ciclo } : {}),
     } });
-    const ocorrencias = futuras ? await tx.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: serie.id } }) : [alvo];
+    const ocorrencias = futuras || anteriores ? await tx.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: serie.id } }) : [alvo];
     let canceladas = 0, concluidasPreservadas = 0;
     for (const oc of ocorrencias) {
       if (futuras && cicloDaOcorrencia(oc, serie) < ciclo) continue;
+      if (anteriores && cicloDaOcorrencia(oc, serie) > ciclo) continue;
       if (oc.status === "CONCLUIDA" && !incluirConcluidas) { concluidasPreservadas++; continue; }
       if (oc.canceladaEm) continue;
       await tx.ocorrenciaObrigacao.update({ where: { id: oc.id }, data: { canceladaEm: new Date(), canceladaPorId: userId } });

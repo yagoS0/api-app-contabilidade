@@ -53,3 +53,24 @@ test('exceção preservada ainda pode mudar de data sem duplicar e sobrevive nov
  editar(t,'v1|2026-10-10',{recorrencia:'MENSAL'});
  expect(listar(t).find(i=>i.cicloChave==='2026-11')).toMatchObject({dataInicio:'2026-11-11',resolvido:true});
 });
+
+
+// Cortes devem sobreviver à geração de períodos ainda não visitados.
+import { prepararExclusaoTarefa } from '../../../../../../packages/shared/src/agenda.js';
+test.each([['ESTA_E_ANTERIORES',['2026-09-13','2026-09-14','2026-09-15']],['ESTA_E_PROXIMAS',['2026-09-10','2026-09-11']]])('janela de vários dias: %s inclui dia escolhido', (alcance,esperado)=>{
+ const t=nova({recorrencia:'AVULSA',dataFim:'2026-09-15'});
+ t.config=prepararExclusaoTarefa(t,'2026-09-10@2026-09-12',alcance);
+ expect(listar(t).map(i=>i.dataInicio)).toEqual(esperado);
+});
+test('movida para outro mês ainda usa posição original da série',()=>{
+ const t=nova();t.estados['2026-11']={alteracoes:{dataInicio:'2026-08-01',dataFim:'2026-08-01'}};
+ t.config=prepararExclusaoTarefa(t,'2026-10','ESTA_E_PROXIMAS');
+ expect(ocorrenciasDaTarefa(t,'2026-08-01','2028-07-31').map(i=>i.cicloChave)).toEqual(['2026-09']);
+});
+test('antecipação de feriado não mistura dias nominais e corte sobrevive nova versão',()=>{
+ const t=nova({dataInicio:'2026-10-02',dataFim:'2026-10-04',ajusteDiaUtil:'ANTECIPAR'});
+ t.config=prepararExclusaoTarefa(t,'2026-10@2026-10-03','ESTA_E_ANTERIORES');
+ expect(listar(t).filter(i=>i.cicloChave.startsWith('2026-10')).map(i=>i.cicloChave)).toEqual(['2026-10@2026-10-04']);
+ editar(t,'2026-11@2026-11-02',{recorrencia:'SEMANAL'});
+ expect(listar(t).some(i=>['2026-10@2026-10-02','2026-10@2026-10-03'].includes(i.cicloChave))).toBe(false);
+});

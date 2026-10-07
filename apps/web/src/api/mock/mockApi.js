@@ -733,7 +733,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       const primeira = expandirAgenda(config,somarDiasAgenda(config.dataInicio,-15),config.dataInicio,ehFeriado)[0];
       if (primeira && !previstas.some(p => p.cicloChave === primeira.cicloChave)) previstas.unshift(primeira);
     }
-    const ocorrencias = previstas.map(p => {
+    const ocorrencias = previstas.filter(p => (!dados.excluidaAteCiclo || p.cicloChave > dados.excluidaAteCiclo) && (!dados.encerradaAPartirDe || p.cicloChave < dados.encerradaAPartirDe)).map(p => {
       const nominal = p.dataInicioOriginal || p.dataInicio;
       const [a,m] = nominal.split('-').map(Number);
       const fimDoPrazo = dados.tipo === 'TAREFA' ? p.dataFim : p.dataFimOriginal || p.dataFim;
@@ -801,6 +801,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       const passo = ajuste === "ANTECIPAR" ? -1 : 1;
       while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
     }
+    if (dados.excluidaAteCiclo && cicloChave <= dados.excluidaAteCiclo) continue;
     if (dados.encerradaAPartirDe && cicloChave >= dados.encerradaAPartirDe) continue;
     const janela = versoes.length ? versoes[versoes.length - 1].janela : dados.janelaTrabalho;
     const periodo = janelaRecorrente(cicloChave, janela);
