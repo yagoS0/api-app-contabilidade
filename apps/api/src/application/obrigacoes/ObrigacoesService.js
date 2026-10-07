@@ -11,6 +11,7 @@ import { VERIFICADORES_CARTEIRA, chaveDaObrigacaoCarteira } from '../../../../..
 
 import { normalizarJanela, cicloDaOcorrencia, aplicarJanela, regraDoCiclo, normalizarRegraRecorrente, janelaDoCiclo } from './agendaSerie.js';
 import { normalizarAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { excluirDiaDaOcorrencia } from '../../../../../packages/shared/src/agendaDiasOcorrencia.js';
 import { sincronizarAgendaConfigurada } from './sincronizarAgendaConfigurada.js';
 import { sincronizarAgenda } from './sincronizarAgenda.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -29,7 +30,7 @@ async function bloquearSerie(db, id) {
   if (db.$queryRaw) await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
 }
 
-export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", userId = null, incluirConcluidas = false }, db = prisma) {
+export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", dia = null, userId = null, incluirConcluidas = false }, db = prisma) {
   if (!["ESTA", "ESTA_E_PROXIMAS", "ESTA_E_ANTERIORES"].includes(alcance)) throw new ObrigacaoError("alcance_invalido", "Escolha somente esta ocorrência, esta e as próximas ou esta e as anteriores.");
   return db.$transaction(async tx => {
     let alvo = await tx.ocorrenciaObrigacao.findFirst({ where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao: true } });
@@ -40,6 +41,11 @@ export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ES
     const ciclo = cicloDaOcorrencia(alvo, serie);
     const futuras = alcance === "ESTA_E_PROXIMAS";
     const anteriores = alcance === "ESTA_E_ANTERIORES";
+    let diasExcluidos;
+    if (dia !== null) {
+      try { diasExcluidos = excluirDiaDaOcorrencia(alvo, serie, dia, alcance); }
+      catch(e) { throw new ObrigacaoError('dia_invalido', e.message); }
+    }
     // Tombstones nunca são apagados; ativar uma regra de escritório não reintroduz o ciclo.
     await tx.obrigacao.update({ where: { id: serie.id }, data: {
       sobrescritaLocal: true,
@@ -54,6 +60,11 @@ export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ES
       if (anteriores && cicloDaOcorrencia(oc, serie) > ciclo) continue;
       if (oc.status === "CONCLUIDA" && !incluirConcluidas) { concluidasPreservadas++; continue; }
       if (oc.canceladaEm) continue;
+      if (oc.id === alvo.id && diasExcluidos) {
+        await tx.ocorrenciaObrigacao.update({ where: { id: oc.id }, data: { agendaConfig: { ...oc.agendaConfig, diasExcluidos }, janelaPersonalizada: true } });
+        canceladas++;
+        continue;
+      }
       await tx.ocorrenciaObrigacao.update({ where: { id: oc.id }, data: { canceladaEm: new Date(), canceladaPorId: userId } });
       canceladas++;
     }

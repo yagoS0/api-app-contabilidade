@@ -14,6 +14,24 @@ function montar({visao='semana',referencia='2026-09-10',obs=[],extras={}}={}) {
   return {api,...render(<CalendarioGrid api={api} empresas={empresas} initialContext={{visao,referencia}}/>)};
 }
 
+test('excluir cartão de um dia conserva os demais dias e empresas do ciclo',async()=>{
+  const obs=obrigacoes().map(o=>({...o,agendaConfig:{...config,horaInicio:'09:00',horaFim:'10:00'}}));
+  const {api,container}=montar({obs,visao:'mes'});
+  await screen.findAllByRole('button',{name:'EFD-Contribuições'});
+  const cartao=[...container.querySelectorAll('.agenda-event-open')].find(e=>e.title.includes('12/09/2026'));
+  fireEvent.click(cartao);
+  fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência',exact:true}).at(-1));
+  expect(within(screen.getByRole('dialog',{name:'Excluir esta ocorrência?'})).getByText('12/09/2026')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+  await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'],'ESTA','2026-09-12'));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(()=>expect([...container.querySelectorAll('.agenda-event-open')].some(e=>e.title.includes('12/09/2026'))).toBe(false));
+  const titulos=[...container.querySelectorAll('.agenda-event-open')].map(e=>e.title);
+  expect(titulos.some(t=>t.includes('12/09/2026'))).toBe(false);
+  expect(titulos.some(t=>t.includes('11/09/2026'))).toBe(true);expect(titulos.some(t=>t.includes('13/09/2026'))).toBe(true);
+  expect(obs.every(o=>!o.ocorrencias[0].canceladaEm)).toBe(true);
+});
+
 test('etapa da carteira é configurada como obrigação recorrente, sem rotina separada',async()=>{
   const {api}=montar({visao:'lista'});
   fireEvent.click(await screen.findByRole('button',{name:/Apurar e conferir · Simples Nacional/}));

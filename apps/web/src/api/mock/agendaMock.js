@@ -1,4 +1,5 @@
 import { normalizarAgenda, ocorrenciasDaTarefa, encontrarOcorrenciaDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa, prepararExclusaoTarefa } from '../../../../../packages/shared/src/agenda.js';
+import { excluirDiaDaOcorrencia } from '../../../../../packages/shared/src/agendaDiasOcorrencia.js';
 export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
   const tarefas = [], ocultos = [];
   return {
@@ -63,7 +64,7 @@ export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
       t.config={...t.config,encerradaAPartirDe:inicio};
       return resultado;
     },
-    async excluirOcorrenciasAgenda(ids, alcance="ESTA") {
+    async excluirOcorrenciasAgenda(ids, alcance="ESTA", dia=null) {
       if (!['ESTA','ESTA_E_PROXIMAS','ESTA_E_ANTERIORES'].includes(alcance)) throw new Error('Alcance inválido.');
       const alvos = ids.map(id => { const serie=obrigacoes.find(o => o.ocorrencias.some(oc=>oc.ocorrenciaId === id)); return {serie,oc:serie?.ocorrencias.find(oc=>oc.ocorrenciaId === id)}; });
       if (alvos.some(a=>!a.oc)) throw new Error('Ocorrência não encontrada.');
@@ -72,7 +73,10 @@ export function criarMockAgenda(obrigacoes, regras, ehFeriado) {
         const ciclo=o=>o.cicloChave || o.dataVencimento.slice(0,7), corte=ciclo(oc);
         if(alcance==='ESTA_E_PROXIMAS') serie.encerradaAPartirDe=[serie.encerradaAPartirDe,corte].filter(Boolean).sort()[0];
         if(alcance==='ESTA_E_ANTERIORES') serie.excluidaAteCiclo=[serie.excluidaAteCiclo,corte].filter(Boolean).sort().at(-1);
-        for(const item of serie.ocorrencias) if(alcance==='ESTA' ? item===oc : alcance==='ESTA_E_PROXIMAS' ? ciclo(item)>=corte : ciclo(item)<=corte) item.canceladaEm ||= new Date().toISOString();
+        for(const item of serie.ocorrencias) if(alcance==='ESTA' ? item===oc : alcance==='ESTA_E_PROXIMAS' ? ciclo(item)>=corte : ciclo(item)<=corte) {
+          if(item===oc && dia) { item.agendaConfig={...item.agendaConfig,diasExcluidos:excluirDiaDaOcorrencia(item,serie,dia,alcance)};item.janelaPersonalizada=true; }
+          else item.canceladaEm ||= new Date().toISOString();
+        }
       }
       return {ok:true,canceladas:alvos.length};
     },

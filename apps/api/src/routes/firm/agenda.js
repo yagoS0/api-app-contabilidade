@@ -6,6 +6,7 @@ import { ObrigacaoError, excluirOcorrencia } from '../../application/obrigacoes/
 import { vincularTarefasEmpresas, listarTarefas, salvarTarefa, alterarTarefa, converterTarefaEmObrigacao } from '../../application/calendario/TarefasAgendaService.js';
 import { montarCalendarioDoMes, limitesDoMes } from '../../application/calendario/CalendarioFiscalService.js';
 import { normalizarAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { listarExcluidas, restaurarOcorrencias } from '../../application/obrigacoes/recuperarOcorrencias.js';
 
 export function createAgendaRouter({ log } = {}) {
   const router = Router();
@@ -26,6 +27,12 @@ export function createAgendaRouter({ log } = {}) {
     return { itens: await listarAgendaCarteira(alvo ? [alvo] : ids, req.query.inicio, req.query.fim) };
   }));
   router.post('/agenda/tarefas-empresas', rota(async (req, userId) => vincularTarefasEmpresas({userId, portalIds:await empresasVisiveis(req), dados:req.body || {}})));
+  router.get('/agenda/ocorrencias/excluidas', rota(async req => {
+    const ids=await empresasVisiveis(req), alvo=req.query.companyId;
+    if(alvo && !ids.includes(alvo)) throw new ObrigacaoError('nao_encontrada','Empresa não encontrada.',404);
+    return {itens:await listarExcluidas({portalIds:alvo?[alvo]:ids,inicio:req.query.inicio,fim:req.query.fim})};
+  }));
+  router.post('/agenda/ocorrencias/restaurar', rota(async(req,userId)=>restaurarOcorrencias({portalIds:await empresasVisiveis(req),ids:req.body?.ids,userId})));
   router.get('/agenda/tarefas', rota((req, userId) => listarTarefas({ userId, inicio: req.query.inicio, fim: req.query.fim })));
   router.post('/agenda/tarefas', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, dados: req.body || {} }) })));
   router.patch('/agenda/tarefas/:id', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, id: req.params.id, dados: req.body || {} }) })));
@@ -42,7 +49,7 @@ export function createAgendaRouter({ log } = {}) {
       for (const id of [...new Set(alvos.map(o => o.obrigacaoId))].sort()) await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
       let canceladas = 0;
       for (const id of ids) {
-        const out = await excluirOcorrencia({ portalIds, ocorrenciaId: id, userId, alcance: req.body?.alcance || "ESTA", incluirConcluidas: true }, { $transaction: fn => fn(tx) });
+        const out = await excluirOcorrencia({ portalIds, ocorrenciaId: id, userId, alcance: req.body?.alcance || "ESTA", dia: req.body?.dia ?? null, incluirConcluidas: true }, { $transaction: fn => fn(tx) });
         canceladas += out.canceladas;
       }
       return { canceladas };
