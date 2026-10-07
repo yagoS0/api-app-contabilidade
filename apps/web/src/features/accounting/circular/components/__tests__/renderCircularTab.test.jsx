@@ -12,6 +12,7 @@
 // popover e o rodapé saem da mesma leitura, e que a tela não contradiz a regra.
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
+import { MemoryRouter } from "react-router-dom";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: ({ entry }) => <div data-testid="baixa-aberta">{entry.id}</div>,
@@ -114,8 +115,19 @@ function renderTab(provisoes, { acrescimos = {}, ...over } = {}) {
     onEstornarBaixa: jest.fn().mockResolvedValue({ ok: true, modo: "DELECAO", lancamentosDesfeitos: [] }),
     ...over,
   };
-  return { props, ...render(<CircularTab {...props} />) };
+  return { props, ...render(<MemoryRouter><CircularTab {...props} /></MemoryRouter>) };
 }
+
+test("origem parcelada não indica pagamento e leva à composição do acordo", () => {
+  renderTab([provisao({ parcelamentoOrigem: { parcelamentoId: "acordo-1", statusContrato: "ATIVO" } })]);
+  const valor = screen.getByRole("button", { name: "R$ 1.234,56" });
+  expect(valor.closest("td")).toHaveTextContent("Parcelado");
+  expect(valor.closest("td")).not.toHaveTextContent("✓");
+  fireEvent.click(valor);
+  expect(screen.getByRole("link", { name: "Ver parcelamento" })).toHaveAttribute("href", "/companies/c1/parcelamento?composicao=acordo-1");
+  expect(screen.queryByRole("button", { name: "Dar baixa" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "✎ Editar provisão" })).not.toBeInTheDocument();
+});
 
 test("INSS pago mostra baixa corrigida e separa a guia consultada dos encargos pagos", () => {
   renderTab([provisao({ subtipo: "INSS", valor: 1000, statusPagamento: "PAGO", synthetic: true,

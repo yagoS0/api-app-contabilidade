@@ -371,3 +371,12 @@ describe("AtoRecusado", () => {
     expect(err.competencia).toBe("2026-08");
   });
 });
+
+
+test('provisão original vinculada pela Circular impede exclusão sem apagar nem estornar a origem', async()=>{
+ montarBase({lancamentos:[lancamento(),lancamento({id:'pis-original',subtipo:'PIS',loteImportacao:null})]});
+ const previa=await previewExclusaoParcelamento({portalClientId:CLIENTE,parcelamentoId:PARC_ID,agora:AGORA});
+ expect(previa.bloqueios).toEqual(expect.arrayContaining([expect.objectContaining({code:'ORIGENS_LEGADAS_PENDENTES',entryIds:['pis-original']})]));
+ await expect(excluirParcelamento({portalClientId:CLIENTE,parcelamentoId:PARC_ID,motivo:MOTIVO,agora:AGORA})).rejects.toMatchObject({code:'ORIGENS_LEGADAS_PENDENTES'});
+ expect(tx.accountingEntry.deleteMany).not.toHaveBeenCalled();expect(tx.accountingEntry.create).not.toHaveBeenCalled();
+});

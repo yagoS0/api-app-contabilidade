@@ -37,6 +37,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const criados = [];
   const tx = {
     accountingEntry: {
+      findMany: jest.fn(async () => []),
       create: jest.fn(async ({ data }) => {
         const entry = { id: `e${criados.length + 1}`, ...data };
         criados.push(entry);
@@ -91,7 +92,7 @@ const PARCELAMENTO = {
 const PROVISAO = [
   {
     id: "prov1",
-    tipo: "PROVISAO",
+    tipo: "PROVISAO", subtipo: "PARC_OUTRO",
     lines: [
       { conta: "231", tipo: "C", valor: 6000, tipoLinha: "PARC", codigoTributo: null },
       { conta: "232", tipo: "D", valor: 5000, tipoLinha: "PRINCIPAL", codigoTributo: null },
@@ -111,6 +112,7 @@ beforeEach(() => {
   fecharApenas();
   prisma.parcelamento.findFirst.mockResolvedValue({ ...PARCELAMENTO });
   prisma.accountingEntry.findMany.mockResolvedValue(PROVISAO);
+  __tx.accountingEntry.findMany.mockResolvedValue(PROVISAO);
 });
 
 const rescindir = (over = {}) => rescindirParcelamento({

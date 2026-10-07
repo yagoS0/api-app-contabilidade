@@ -90,6 +90,7 @@ export function buildDTOsFromManual({ guide, header = {}, tributos }) {
     formaPagamento: header.formaPagamento,
     diaPagamento: header.diaPagamento,
     saldoConsolidado: header.saldoConsolidado,
+    cronogramaParcelas: header.cronogramaParcelas,
   });
 
   return { parcelamentoDTO, parcelaDTO };

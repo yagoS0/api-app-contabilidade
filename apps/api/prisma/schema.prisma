@@ -1910,6 +1910,7 @@ model ChamadaIa {
 }
 
 model Guide {
+  composicoesParcelamento ParcelamentoDebitoOrigem[]
   id                        String    @id @default(uuid())
   portalClientId            String?
   legacyCompanyId           String?
@@ -2603,6 +2604,7 @@ model ChartOfAccount {
 }
 
 model AccountingEntry {
+  composicoesParcelamento ParcelamentoDebitoOrigem[]
   id                    String    @id @default(uuid())
   portalClientId        String
   circularId            String?
@@ -3093,6 +3095,7 @@ model AccountingFunctionLine {
 // + 1 entry opcional de RESCISÃO (quando rescindido).
 // Guides são linkadas opcionalmente quando contador sobe DARF mensal do parcelamento.
 model Parcelamento {
+  debitosOrigem ParcelamentoDebitoOrigem[]
   id             String @id @default(uuid())
   portalClientId String
   label          String // ex: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024..."
@@ -3135,6 +3138,7 @@ model Parcelamento {
 
   // Estrutura financeira
   numEntradas         Int      @default(0) // quantas das primeiras parcelas são "entrada"
+  cronogramaParcelas Json? // valores e vencimentos explícitos; não sobrescreve prestações já materializadas
   numParcelas         Int? // desconhecido enquanto só há confirmação fiscal
   principalPerParcela Decimal? @db.Decimal(18, 2)
   principalTotal      Decimal? @db.Decimal(18, 2)
@@ -5773,4 +5777,25 @@ model CarteiraTarefa {
   @@index([competencia])
   @@index([dataInicio, dataFim])
   @@map("carteira_tarefas")
+}
+
+// Composição do acordo; separada da propriedade dos lançamentos de abertura/prestações.
+model ParcelamentoDebitoOrigem {
+  id String @id @default(uuid())
+  portalClientId String
+  parcelamentoId String
+  origemChave String @unique
+  entryId String?
+  guideId String?
+  tributo String
+  competencia String
+  principalIncluido Decimal @db.Decimal(18,2)
+  snapshot Json
+  criadoPorId String?
+  createdAt DateTime @default(now())
+  parcelamento Parcelamento @relation(fields:[parcelamentoId],references:[id],onDelete:Restrict)
+  entry AccountingEntry? @relation(fields:[entryId],references:[id],onDelete:Restrict)
+  guide Guide? @relation(fields:[guideId],references:[id],onDelete:Restrict)
+  @@index([portalClientId, parcelamentoId], map: "parcelamento_debitos_origem_empresa_acordo_idx")
+  @@map("parcelamento_debitos_origem")
 }

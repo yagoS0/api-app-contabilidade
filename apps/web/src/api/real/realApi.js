@@ -1383,6 +1383,8 @@ export function createRealApi() {
       });
     },
     // Q21/Q23: sobe guia manual como 1ª parcela → cria/anexa + provisão (≥3 linhas). Sem pagamento.
+    async listDebitosCircularParcelamento(companyId,tipo,parcelamentoId){return request(`/firm/companies/${encodeURIComponent(companyId)}/parcelamentos/debitos-circular?tipo=${encodeURIComponent(tipo)}${parcelamentoId?'&parcelamentoId='+encodeURIComponent(parcelamentoId):''}`);},
+    async salvarComposicaoParcelamento(companyId,id,origens){return request(`/firm/companies/${encodeURIComponent(companyId)}/parcelamentos/${encodeURIComponent(id)}/debitos-circular`,{method:'POST',body:JSON.stringify({origens})});},
     async ingestParcelamento(companyId, body) {
       return request(`/firm/companies/${companyId}/parcelamentos/ingestao`, {
         method: "POST",

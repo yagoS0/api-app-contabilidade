@@ -63,6 +63,8 @@ export function useParcelamentos({ api, companyId, status = null }) {
     } finally { setSaving(false); }
   }
 
+  const listarDebitosCircular=useCallback((tipo,id)=>api.listDebitosCircularParcelamento(companyId,tipo,id),[api,companyId]);
+  const salvarComposicao=async(id,origens)=>{const r=await api.salvarComposicaoParcelamento(companyId,id,origens);await load();return r;};
   // Q28 Fase 1: consulta um parcelamento no SERPRO por código (pré-preenche o modal de entrada).
   async function consultarSerpro({ tipo, numeroParcelamento }) {
     const res = await api.consultarParcelamentoSerpro(companyId, { tipo, numeroParcelamento });
@@ -220,7 +222,7 @@ export function useParcelamentos({ api, companyId, status = null }) {
   // apareceu na aba Parcelamento. Rotas e mock sempre estiveram de pé; era só o repasse.
   return {
     parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro, lerRecibo,
-    getConfig, saveConfig, rescindir, vincularEntry,
+    salvarComposicao, listarDebitosCircular, getConfig, saveConfig, rescindir, vincularEntry,
     listConferencia, aprovarConferencia,
     // Os atos do contrato. ⚠ Repassados AQUI — foi esquecer este retorno que deixou a fila de
     // conferência quebrada por uma fase inteira (`listConferencia is not a function`), com rota e

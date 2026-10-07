@@ -8,6 +8,8 @@
 // ParcelamentoDTO : { tipo, numeroParcelamento, valorTotal, valorPrincipal, valorMulta, valorJuros,
 //                     quantidadeParcelas, parcelaInicial?, dataAdesao?, origem }
 
+import { validarCronogramaParcelamento } from '../../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
+
 export const TIPOS_PARCELAMENTO = [
   "PARCSN", "PARCSN_ESPECIAL", "PERT_SN", "RELP_SN",
   "PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI",
@@ -263,6 +265,7 @@ export function normalizeParcelamentoDTO(raw = {}) {
     // ⚠ INFORMATIVO. Não vira lançamento em lugar nenhum — ver o comentário do campo no schema.
     // Quem vira lançamento na adesão é principal/juros/multa (`ParcelamentoV2Service.linhasProvisao`).
     saldoConsolidado: raw.saldoConsolidado != null ? round2(raw.saldoConsolidado) : null,
+    cronogramaParcelas: validarCronogramaParcelamento(raw.cronogramaParcelas, raw.quantidadeParcelas),
   };
 }
 

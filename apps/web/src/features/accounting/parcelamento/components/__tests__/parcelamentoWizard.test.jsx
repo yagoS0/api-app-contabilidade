@@ -17,6 +17,7 @@ function montar(over = {}) {
       onClose={onClose}
       getContasProvisao={getContasProvisao}
       onConsultSerpro={over.onConsultSerpro}
+      listarDebitosCircular={over.listarDebitosCircular}
       accounts={[]}
       onSearchHistoricos={jest.fn().mockResolvedValue([])}
       onGetHistoricosByCode={jest.fn().mockResolvedValue([])}
@@ -27,6 +28,22 @@ function montar(over = {}) {
 
 const digitar = (label, valor) => fireEvent.change(screen.getByLabelText(label), { target: { value: valor } });
 const clicar = (nome) => fireEvent.click(screen.getByRole("button", { name: nome }));
+
+it('leva a seleção da Circular e a reclassificação conferida até a ingestão', async () => {
+  const origem={chave:'entry:das',tributo:'DAS',competencia:'2026-01',saldo:45600,elegivel:true,contaPassivo:'265',versao:'v1'};
+  const {onIngest}=montar({listarDebitosCircular:async()=>({habilitado:true,debitos:[origem]})});
+  await preencherPasso1();
+  await preencherPasso2();
+  fireEvent.click(await screen.findByLabelText('Selecionar DAS 2026-01'));
+  clicar('Sugerir lançamentos');
+  await act(async()=>clicar(/Continuar/));
+  await act(async()=>clicar(/Criar parcelamento/));
+  expect(onIngest).toHaveBeenCalledTimes(1);
+  const body=onIngest.mock.calls[0][0];
+  expect(body.origensCircular).toEqual([origem]);
+  expect(body.header.descricao).toBe('DAS — 01/2026');
+  expect(body.provisaoLines).toEqual(expect.arrayContaining([expect.objectContaining({tipo:'D',tipoLinha:'PRINCIPAL',conta:'265',valor:45600,historico:'PARCELAMENTO Nº 1234567 — DAS — 01/2026'})]));
+});
 
 async function preencherPasso1() {
   digitar(/Nº do parcelamento/, "1234567");

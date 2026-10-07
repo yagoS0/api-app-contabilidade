@@ -1,3 +1,4 @@
+import { gerarCronogramaComEntrada, validarCronogramaParcelamento } from '../../../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
 // F2.3 (front) — AS REGRAS DO WIZARD "NOVO PARCELAMENTO", fora do componente.
 //
 // O parcelamento é um CONTRATO de dívida de até 60 meses; a guia é evidência MENSAL e OPCIONAL —
@@ -194,6 +195,16 @@ export function vencimentoDaCompetencia(competencia, dia) {
   return `${String(d).padStart(2, "0")}/${String(mm).padStart(2, "0")}/${yyyy}`;
 }
 
+export function cronogramaDoWizard(dados) {
+  if (!dados?.temEntrada) return null;
+  return gerarCronogramaComEntrada({ numEntradas: inteiro(dados.numEntradas), valorEntrada: numero(dados.valorEntrada), competenciaEntrada: dados.competenciaPrimeiraParcela, diaEntrada: inteiro(dados.diaEntrada), totalParcelas: inteiro(dados.totalParcelas), valorParcela: numero(dados.valorParcela), competenciaRegular: dados.competenciaRegular, diaRegular: inteiro(dados.diaVencimento) });
+}
+
+export function totalPrevistoRestante(dados) {
+  const cronograma = cronogramaDoWizard(dados);
+  return cronograma ? Math.round(cronograma.filter(p => p.numeroParcela >= proximaParcela(dados)).reduce((s, p) => s + p.valorPrevisto, 0) * 100) / 100 : Math.round(numero(dados?.valorParcela) * parcelasRestantes(dados) * 100) / 100;
+}
+
 export const estadoInicial = () => ({
   // passo 1
   tipo: "PARCSN",
@@ -204,6 +215,11 @@ export const estadoInicial = () => ({
   // passo 2
   saldoConsolidado: "",
   valorParcela: "",
+  temEntrada: false,
+  numEntradas: "1",
+  valorEntrada: "",
+  diaEntrada: "",
+  competenciaRegular: "",
   totalParcelas: "",
   parcelasJaPagas: "",
   competenciaPrimeiraParcela: "",
@@ -234,6 +250,7 @@ export function proximaParcela(dados) {
 
 /** Competência da próxima prestação, derivada da 1ª + quantas já foram pagas. */
 export function competenciaProximaParcela(dados) {
+  if (dados?.temEntrada) return cronogramaDoWizard(dados)?.find(p => p.numeroParcela === proximaParcela(dados))?.competencia || '';
   return somarMeses(dados?.competenciaPrimeiraParcela, proximaParcela(dados) - 1);
 }
 
@@ -267,6 +284,13 @@ export function validarPasso2(dados) {
   if (parcela <= 0) erros.valorParcela = "Informe o valor da parcela (maior que zero).";
 
   const total = inteiro(dados?.totalParcelas);
+  if (dados?.temEntrada) {
+    if (!Number.isInteger(Number(dados.numEntradas)) || inteiro(dados.numEntradas) < 1 || inteiro(dados.numEntradas) >= total) erros.numEntradas = 'Informe quantas prestações são de entrada, deixando ao menos uma parcela regular.';
+    if (numero(dados.valorEntrada) <= 0) erros.valorEntrada = 'Informe o valor de cada prestação da entrada.';
+    if (!Number.isInteger(Number(dados.diaEntrada)) || inteiro(dados.diaEntrada) < 1 || inteiro(dados.diaEntrada) > 31) erros.diaEntrada = 'Informe o vencimento da entrada (1 a 31).';
+    try { validarCronogramaParcelamento(cronogramaDoWizard(dados), total); }
+    catch { erros.competenciaRegular = 'Confira os períodos: as parcelas regulares não podem vencer antes da última entrada.'; }
+  }
   if (total < 1) erros.totalParcelas = "Informe o total de parcelas do acordo.";
   else if (total > 60) alertas.push(`${total} parcelas é acima do teto usual de 60 meses — confira o contrato.`);
 
@@ -289,12 +313,12 @@ export function validarPasso2(dados) {
 
   const restantes = parcelasRestantes(dados);
   if (parcela > 0 && restantes > 0 && saldo > 0) {
-    const projetado = Math.round(parcela * restantes * 100) / 100;
+    const projetado = totalPrevistoRestante(dados);
     const diferenca = Math.round((projetado - saldo) * 100) / 100;
     // 1% de folga: arredondamento de centavos não é divergência.
     if (Math.abs(diferenca) > Math.max(1, saldo * 0.01)) {
       alertas.push(
-        `Valor da parcela × ${restantes} restantes = R$ ${formatarMoeda(projetado)}, `
+        `Total previsto das ${restantes} prestações restantes = R$ ${formatarMoeda(projetado)}, `
         + `e o saldo declarado é R$ ${formatarMoeda(saldo)} `
         + `(${diferenca > 0 ? "+" : "−"} R$ ${formatarMoeda(Math.abs(diferenca))}). `
         + "Juros embutidos nas prestações explicam a diferença — confira, mas não impede continuar.",
@@ -607,6 +631,7 @@ export function montarPayloadIngestao(dados) {
       // ⚠ ELE É O VALOR CHEIO DA PRESTAÇÃO, não o principal — o principal do contrato continua
       // saindo do papel `PRINCIPAL` das linhas da provisão (`valorPrincipal`, acima).
       valorParcela: numero(dados?.valorParcela) || null,
+      ...(dados?.temEntrada ? { cronogramaParcelas: cronogramaDoWizard(dados) } : {}),
       // ⚠ A COMPETÊNCIA DA 1ª PARCELA, não a da atual — ver o cabeçalho deste arquivo.
       anoMesParcela: String(dados?.competenciaPrimeiraParcela || "").replace("-", "") || null,
       descricao: String(dados?.descricao || "").trim() || null,

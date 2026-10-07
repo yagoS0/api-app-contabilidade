@@ -1,3 +1,5 @@
+import {bloquearComposicaoEmpresa,composicaoHabilitada} from './parcelamento/ComposicaoParcelamentoService.js';
+import { exigirOrigensLegadasSeparadas } from './parcelamento/protegerOrigensLegadas.js';
 // Q9: serviço de Parcelamentos (Simples Nacional, INSS, DARF, OUTRO).
 //
 // Operações:
@@ -355,6 +357,8 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
   });
   if (!parc) throw new Error("parcelamento_not_found");
   if (parc.status !== "ATIVO") throw new Error("parcelamento_not_active");
+  const origensParaConferir = await prisma.accountingEntry.findMany({where:{portalClientId,parcelamentoId},select:{id:true,tipo:true,subtipo:true,loteImportacao:true}});
+  exigirOrigensLegadasSeparadas(origensParaConferir,parc);
 
   let historico;
   let lines;
@@ -473,6 +477,9 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
   }
 
   return prisma.$transaction(async (tx) => {
+    if(composicaoHabilitada())await bloquearComposicaoEmpresa(tx,portalClientId);
+    const atuais = await tx.accountingEntry.findMany({where:{portalClientId,parcelamentoId},select:{id:true,tipo:true,subtipo:true,loteImportacao:true}});
+    exigirOrigensLegadasSeparadas(atuais,parc);
     let rescisaoEntry = null;
     if (lines && lines.length && isV2) {
       // Q24: estorno v2 = um lançamento individual por linha (1 perna). Balanço fecha no conjunto.
@@ -592,6 +599,8 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
  * ele não se sabe quanto do acordo é principal, e zero afirmaria que nada é.
  */
 export function principalPorParcelaDoContrato(parc) {
+  // Prestações diferentes não permitem inferir amortização pelo número de pagamentos.
+  if (parc?.cronogramaParcelas?.length) return null;
   const principalTotal = parc?.principalTotal != null ? Number(parc.principalTotal) : null;
   const n = Number(parc?.numParcelas);
   if (principalTotal == null || !Number.isFinite(principalTotal) || principalTotal <= 0) return null;
