@@ -128,3 +128,31 @@
 @media (pointer: coarse) {
   .company-header__identity .btn-back { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }
+
+/* Identificação e ações acompanham as duas linhas de abas. */
+.company-section-header:has(.company-header__identity) { padding-block: 8px; row-gap: 4px; }
+.company-header__identity .company-topbar__brand { gap: 2px; }
+.company-header__identity .company-topbar__name { font-size: .9375rem; line-height: 1.25; }
+.company-header__identity .company-topbar__cnpj { line-height: 1.25; }
+.company-section-header > .company-topbar__nav { margin-top: 0; }
+.company-section-header > .company-topbar__nav .app-tab,
+.company-section-header__subtabs .app-tab { min-height: 32px; padding: 5px 10px; font-size: .875rem; }
+.company-section-header > .company-section-header__subtabs { margin-top: 0; }
+.company-section-header .config-gear { width: 34px; height: 34px; border-radius: 8px; }
+.company-section-header .company-topbar__competencia { height: 34px; }
+.company-section-header .company-topbar__competencia-nav { height: 32px; width: 32px; }
+@media (min-width: 1200px) {
+  .company-section-header:has(.company-header__identity) {
+    grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) auto;
+    grid-template-areas: "identity navigation actions" "identity sections actions";
+    column-gap: 16px;
+  }
+  .company-header__identity { grid-area: identity; }
+  .company-section-header > .company-topbar__nav { grid-area: navigation; justify-content: center; }
+  .company-section-header > .company-section-header__subtabs { grid-area: sections; justify-content: center; }
+  .company-section-header > .config-topbar-actions { grid-area: actions; justify-self: end; }
+}
+@media (max-width: 800px) {
+  .company-section-header > .company-topbar__nav .app-tab,
+  .company-section-header__subtabs .app-tab { min-height: 36px; }
+}
