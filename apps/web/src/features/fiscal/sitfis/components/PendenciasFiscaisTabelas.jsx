@@ -80,6 +80,8 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
     {selecionadas.length > 0 && <div className="pf-selection" role="status"><strong>{selecionadas.length} selecionado(s)</strong>{resumo(selecionadas)}<Button size="sm" variant="secondary" onClick={() => setSelecao(new Set())}>Limpar seleção</Button></div>}
     {fontes.map(fonte => {
       const filtradas = fonte.linhas.filter(l => (!tipo || l.tipo === tipo) && JSON.stringify([l.evidencia.registro, l.tributo, l.competencia, l.inscricao, l.titulo, l.situacao]).toLocaleLowerCase('pt-BR').includes(busca.trim().toLocaleLowerCase('pt-BR')));
+      const marcadas = filtradas.filter(l => selecao.has(l.id)).length;
+      const todasMarcadas = filtradas.length > 0 && marcadas === filtradas.length;
       return <section key={fonte.id} className="pf-source" aria-label={fonte.nome}>
         <header className="pf-source-header"><div><h3>{fonte.nome}</h3><span className="pf-count">{filtradas.length}</span>
           {COBERTURA[fonte.cobertura] && <span className="pf-muted">{COBERTURA[fonte.cobertura]}</span>}</div>
@@ -87,7 +89,10 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
         </header>
         {!!fonte.avisos.length && <details className="pf-reading"><summary>Conferir leitura ({fonte.avisos.length})</summary>{fonte.avisos.map((a,i) => <p key={i}>{a}</p>)}</details>}
         {filtradas.length ? <><div className="pf-scroll" role="region" aria-label={`Tabela ${fonte.nome}`} tabIndex={0}>
-          <table aria-label={`Pendências — ${fonte.nome}`}><thead><tr><th scope="col" className="th-narrow"><span className="pf-sr">Selecionar</span></th><th scope="col">Tributo / descrição</th><th scope="col">Competência</th><th scope="col">Vencimento</th><th scope="col" className="pf-money">Total informado</th><th scope="col">Situação</th><th scope="col"><span className="pf-sr">Ações</span></th></tr></thead>
+          <table aria-label={`Pendências — ${fonte.nome}`}><thead><tr><th scope="col" className="th-narrow"><input type="checkbox" aria-label={`Selecionar todos de ${fonte.nome}`} checked={todasMarcadas} ref={elemento => { if (elemento) elemento.indeterminate = marcadas > 0 && !todasMarcadas; }} onChange={e => {
+            const marcado = e.target.checked;
+            setSelecao(atual => { const nova = new Set(atual); filtradas.forEach(l => marcado ? nova.add(l.id) : nova.delete(l.id)); return nova; });
+          }} /></th><th scope="col">Tributo / descrição</th><th scope="col">Competência</th><th scope="col">Vencimento</th><th scope="col" className="pf-money">Total informado</th><th scope="col">Situação</th><th scope="col"><span className="pf-sr">Ações</span></th></tr></thead>
           <tbody>{filtradas.map(l => <tr key={l.id} className={selecao.has(l.id) ? 'pf-selected' : ''}>
             <td><input type="checkbox" aria-label={`Selecionar ${l.tributo || l.titulo} ${l.competencia || l.inscricao || l.id}`} checked={selecao.has(l.id)} onChange={() => selecionar(l.id)} /></td>
             <td><strong>{l.tributo || l.evidencia.registro.Declaração || l.titulo}</strong><small>{l.origem === 'CONTABILIDADE' ? 'Contabilidade' : l.manual ? 'Manual' : TIPOS_PENDENCIA[l.tipo]}{l.inscricao ? ` · ${l.inscricao}` : ''}</small></td>

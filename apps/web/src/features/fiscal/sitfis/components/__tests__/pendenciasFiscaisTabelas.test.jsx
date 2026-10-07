@@ -39,7 +39,7 @@ test("tabelas, filtros, seleção e evidência trabalham só com relatório salv
   const rfb = screen.getByRole("region", { name: "Receita Federal" });
   expect(within(rfb).getByRole("table")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Municipal — ISS e taxas" })).toHaveTextContent("Não consultado");
-  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(5);
   fireEvent.click(screen.getByRole("checkbox", { name: /Selecionar IRPJ/ }));
   expect(screen.getByRole("status")).toHaveTextContent("120,10");
   fireEvent.change(screen.getByLabelText("Buscar nas pendências"), { target: { value: "DCTFWeb" } });
@@ -57,4 +57,34 @@ test("trocar empresa ou relatório limpa seleção, sem confundir tentativa com 
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByText("Último relatório obtido")).toBeInTheDocument();
   expect(screen.getByText(/Última tentativa:/)).toBeInTheDocument();
+});
+
+
+test("cabeçalho seleciona somente os registros visíveis da fonte e indica seleção parcial", () => {
+  render(<PendenciasFiscaisTabelas relatorio={relatorio()} />);
+  const todos = screen.getByRole('checkbox', { name: 'Selecionar todos de Receita Federal' });
+  fireEvent.click(screen.getByRole('checkbox', { name: /Selecionar IRPJ/ }));
+  expect(todos.indeterminate).toBe(true);
+  fireEvent.click(todos);
+  expect(todos).toBeChecked();
+  expect(todos.indeterminate).toBe(false);
+  expect(screen.getByRole('status')).toHaveTextContent('4 selecionado(s)');
+  fireEvent.change(screen.getByLabelText('Buscar nas pendências'), { target: { value: 'IRPJ' } });
+  fireEvent.click(todos);
+  expect(screen.getByRole('status')).toHaveTextContent('3 selecionado(s)');
+  expect(screen.getByRole('checkbox', { name: /Selecionar IRPJ/ })).not.toBeChecked();
+  fireEvent.change(screen.getByLabelText('Buscar nas pendências'), { target: { value: '' } });
+  expect(todos.indeterminate).toBe(true);
+});
+
+test("selecionar uma tabela preserva a seleção de outra origem", () => {
+  const item = {id:'contabil:iss',tipo:'DEBITO',tributo:'ISS',total:10000,evidencia:{registro:{}},origem:'CONTABILIDADE'};
+  render(<PendenciasFiscaisTabelas relatorio={relatorio()} contabeis={{disponivel:true,itens:[item]}} />);
+  fireEvent.click(screen.getByRole('checkbox', {name:'Selecionar todos de Contabilidade'}));
+  const todos = screen.getByRole('checkbox', {name:'Selecionar todos de Receita Federal'});
+  fireEvent.click(todos);
+  expect(screen.getByRole('status')).toHaveTextContent('5 selecionado(s)');
+  fireEvent.click(todos);
+  expect(screen.getByRole('status')).toHaveTextContent('1 selecionado(s)');
+  expect(screen.getByRole('checkbox', {name:'Selecionar todos de Contabilidade'})).toBeChecked();
 });
