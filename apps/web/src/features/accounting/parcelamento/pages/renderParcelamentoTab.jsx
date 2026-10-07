@@ -1,3 +1,4 @@
+import {ComposicaoParcelamentoModal} from '../components/ComposicaoParcelamentoModal';
 // Aba "Parcelamento" (grupo Contabilidade) — e, desde a F2.3, a PORTA DE ENTRADA do parcelamento.
 //
 // ⚠ A CRIAÇÃO INVERTEU. Antes o parcelamento nascia como efeito colateral de subir uma guia; hoje
@@ -145,10 +146,11 @@ function composicaoDeclaravel(motivo) {
  * Os três estados são distintos agora: carregando · falhou (com o motivo e "Tentar de novo") ·
  * vazio de verdade (dito, não escondido).
  */
-function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido, onBaixaLancada, contratos = [] }) {
+function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido, onBaixaLancada, contratos = [], onCarregamento }) {
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const [parcelas, setParcelas] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  useEffect(() => { onCarregamento?.(carregando); }, [carregando, onCarregamento]);
   const [erro, setErro] = useState(null);
   const [lancando, setLancando] = useState(null);
   const [desfechos, setDesfechos] = useState({}); // guideId → { tom, texto }
@@ -515,7 +517,9 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   // ⚠⚠ A `<section>` PERMANECE NO DOM, VAZIA, E NÃO É DESCUIDO: o botão `Dar baixa` do card acima
   // ROLA até `secaoRef`. Devolver `null` aqui mataria o alvo da rolagem, e o botão passaria a não
   // fazer nada visível — defeito silencioso, do tipo que ninguém liga à remoção de um texto.
-  const compacto = !carregando && !erro && !parcelas.length && !foco && !desfechoLote;
+  // Na primeira consulta, o indicador compartilhado da aba substitui as molduras vazias.
+  // Dados já carregados, erros e resultados de ações continuam aparecendo durante a recarga.
+  const compacto = !erro && !parcelas.length && !foco && !desfechoLote;
   if (compacto) {
     return <section ref={secaoRef} style={{ scrollMarginTop: 16 }} />;
   }
@@ -626,7 +630,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
  * o rótulo por linha (`Vencida` / `Vence hoje`) é que carrega o estado, e ele vem do servidor.
  */
 function ParcelasSemGuiaPendentes({
-  companyId, refreshKey = 0, foco = null, onBaixaLancada,
+  companyId, refreshKey = 0, foco = null, onBaixaLancada, onCarregamento,
   // ⚠ O AVISO DOS RESCINDIDOS SUBIU. Ele era DUAS vezes a mesma informação: este painel imprimia o
   // parágrafo inteiro com a lista de contratos e o "Desfazer rescisão…", e a seção "Contratos
   // rescindidos" do rodapé imprimia de novo o contrato, a explicação e o mesmo botão. Agora quem
@@ -636,6 +640,7 @@ function ParcelasSemGuiaPendentes({
 }) {
   const [parcelas, setParcelas] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  useEffect(() => { onCarregamento?.(carregando); }, [carregando, onCarregamento]);
   const [erro, setErro] = useState(null);
   const [alvo, setAlvo] = useState(null);       // a prestação cujo modal está aberto
   const [grupoEmLote, setGrupoEmLote] = useState(null); // o grupo "sem valor" com o modal aberto
@@ -898,7 +903,7 @@ function ParcelasSemGuiaPendentes({
   // contrato, não a ausência de itens numa fila. É justamente com a fila vazia que ele importa —
   // sem ele, "nada aqui" se leria como "nada a fazer", que é conclusão falsa.
   const conclusao = desfechos.__conclusao && <div role="status" style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6, color: "var(--state-ok)", background: "var(--state-ok-surface)", fontSize: "0.8125rem" }}>{desfechos.__conclusao.texto}</div>;
-  const compacto = !carregando && !erro && !parcelas.length;
+  const compacto = !erro && !parcelas.length;
   if (compacto) {
     return <section>{conclusao}{linhaRescindidos}</section>;
   }
@@ -1204,6 +1209,16 @@ function ParcelamentoTabContent({
   // Recarga da fila de baixa pendente depois de um pagamento localizado na linha da parcela.
   const [baixaRefreshKey, setBaixaRefreshKey] = useState(0);
   const [wizardAberto, setWizardAberto] = useState(false);
+  const [composicaoAberta,setComposicaoAberta]=useState(null);
+  const [composicaoSolicitada] = useState(() => new URLSearchParams(window.location.search).get('composicao'));
+  const [composicaoAtendida, setComposicaoAtendida] = useState(false);
+  useEffect(() => {
+    if (!composicaoSolicitada || composicaoAtendida) return;
+    const acordo = (parcelamentos.parcelamentos || []).find(p => p.id === composicaoSolicitada);
+    if (acordo) { setComposicaoAberta(acordo); setComposicaoAtendida(true); }
+  }, [composicaoSolicitada, composicaoAtendida, parcelamentos.parcelamentos]);
+  const [carregandoGuias, setCarregandoGuias] = useState(true);
+  const [carregandoSemGuia, setCarregandoSemGuia] = useState(true);
 
   useEffect(() => {
     if (!abrirWizardAoMontar) return;
@@ -1311,7 +1326,13 @@ function ParcelamentoTabContent({
         </div>
       )}
 
+      {(carregandoGuias || carregandoSemGuia) && (
+        <div role="status" style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>
+          Carregando pendências das parcelas…
+        </div>
+      )}
       <ParcelasPendentesBaixa
+        onCarregamento={setCarregandoGuias}
         companyId={companyId}
         contratos={contratos}
         refreshKey={baixaRefreshKey}
@@ -1324,6 +1345,7 @@ function ParcelamentoTabContent({
           DEPOIS porque a de cima tem prova (o comprovante do SERPRO) e esta tem declaração; a ordem
           na tela ensina qual é o caminho preferível quando os dois existem. */}
       <ParcelasSemGuiaPendentes
+        onCarregamento={setCarregandoSemGuia}
         companyId={companyId}
         refreshKey={baixaRefreshKey}
         foco={focoContrato}
@@ -1338,7 +1360,8 @@ function ParcelamentoTabContent({
         aprovarConferencia={parcelamentos.aprovarConferencia}
       />
 
-      <ParcelamentosList
+      {composicaoAberta && <ComposicaoParcelamentoModal acordo={composicaoAberta} listar={parcelamentos.listarDebitosCircular} salvar={parcelamentos.salvarComposicao} onClose={()=>setComposicaoAberta(null)}/>}
+      <ParcelamentosList onComposicao={setComposicaoAberta}
         emptyMessage="Nenhum contrato contabilizado."
         parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO" && (p.aberturaEntryId || !p.fiscalSituacao))}
         loading={parcelamentos.loading}
@@ -1402,6 +1425,7 @@ function ParcelamentoTabContent({
 
       {wizardAberto && (
         <ParcelamentoWizard
+          listarDebitosCircular={parcelamentos.listarDebitosCircular}
           onIngest={(body) => parcelamentos.ingest(body)}
           onConsultSerpro={parcelamentos.consultarSerpro}
           getContasProvisao={parcelamentos.getContasProvisao}

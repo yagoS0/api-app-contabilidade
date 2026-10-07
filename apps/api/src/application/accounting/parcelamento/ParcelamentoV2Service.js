@@ -1,3 +1,4 @@
+import { bloquearComposicaoEmpresa, incluirComposicaoTx, composicaoHabilitada, ComposicaoError } from './ComposicaoParcelamentoService.js';
 // Q21 (spec v2) — Núcleo do parcelamento: ingestão de uma guia de parcela →
 // provisão (1ª vez) + pagamento (por composição, juros LIDO) → circular.
 //
@@ -538,9 +539,13 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
  * ser criado aqui — é gerado depois, ao marcar a guia como paga (gerarPagamentoParcelaFromGuide).
  * Q28: guarda a CONFIG de provisão e de pagamento por parcelamento (papel/lado/conta), pra reusar.
  */
-export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoId = null, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, parcelasJaPagas, userId }) {
+export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoId = null, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, parcelasJaPagas, userId, origensCircular }) {
+  if(origensCircular!==undefined&&!Array.isArray(origensCircular))throw new ComposicaoError('ORIGENS_INVALIDAS','Informe uma lista de dívidas.',400);
   const dto = normalizeParcelamentoDTO(parcelamentoDTO);
   const parc = normalizeParcelaDTO(parcelaDTO);
+  const cronograma = dto.cronogramaParcelas;
+  const referenciaRegular = cronograma?.find(p => p.tipo === 'PARCELA')?.valorPrevisto ?? parc.valorTotal;
+  const estruturaCronograma = cronograma ? { cronogramaParcelas: cronograma, numEntradas: cronograma.filter(p => p.tipo === 'ENTRADA').length } : {};
 
   // Q23: a ingestão cria a PROVISÃO (objetivo principal) e guarda a composição da parcela pra a
   // baixa futura. A composição NÃO bloqueia mais a provisão — se vier inconsistente, persiste como
@@ -554,6 +559,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
   const cfgPagamento = configFromLines(pagamentoLines);
 
   return prisma.$transaction(async (tx) => {
+    if(origensCircular?.length)await bloquearComposicaoEmpresa(tx,portalClientId);
     const company = await tx.portalClient.findUnique({ where: { id: portalClientId }, select: { razao: true, cnpj: true } });
     const compLabel = parc.anoMesParcela ? `${parc.anoMesParcela.slice(0, 4)}-${parc.anoMesParcela.slice(4, 6)}` : null;
 
@@ -564,6 +570,9 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
     if (parcelamentoId && (!parcelamento || parcelamento.status === "EXCLUIDO" || parcelamento.tipo !== dto.tipo)) throw Object.assign(new Error("Selecione um parcelamento desta empresa e modalidade."), { code: "PARCELAMENTO_DIVERGENTE" });
     if (parcelamentoId && parcelamento.numeroParcelamento && parcelamento.numeroParcelamento !== dto.numeroParcelamento) throw Object.assign(new Error("O número informado diverge do parcelamento selecionado."), { code: "PARCELAMENTO_DIVERGENTE" });
     let criouParcelamento = false;
+    if (cronograma && parcelamento && !(parcelamento.fiscalSituacao && !parcelamento.aberturaEntryId) && !(Array.isArray(parcelamento.cronogramaParcelas) && parcelamento.cronogramaParcelas.length === cronograma.length && cronograma.every((p, i) => Object.keys(p).every(k => parcelamento.cronogramaParcelas[i]?.[k] === p[k])))) {
+      throw Object.assign(new Error('Este acordo já foi contabilizado. O cadastro não pode substituir seu cronograma ou pagamentos existentes.'), { code: 'CRONOGRAMA_IMUTAVEL' });
+    }
 
     // A descoberta fiscal não informa consolidado/calendário. Só o cadastro contábil explícito
     // e completo pode transformar esse acompanhamento em provisão.
@@ -576,8 +585,9 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
         numParcelas: dto.quantidadeParcelas, principalTotal: dto.valorPrincipal, totalValue: dto.valorTotal,
         jurosTotal: dto.valorJuros, valorMulta: dto.valorMulta,
         competenciaInicial: compLabel, dataAdesao: new Date(dto.dataAdesao),
-        principalPerParcela: parc.valorTotal > 0 ? parc.valorTotal : null,
-        valorParcelaReferencia: parc.valorTotal > 0 ? parc.valorTotal : null,
+        principalPerParcela: referenciaRegular > 0 ? referenciaRegular : null,
+        valorParcelaReferencia: referenciaRegular > 0 ? referenciaRegular : null,
+        ...estruturaCronograma,
         ...(dto.diaPagamento != null ? { diaPagamento: dto.diaPagamento } : {}),
       } });
     }
@@ -610,12 +620,13 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           grupo: grupoDoParcelamento(dto.tipo),
           numParcelas: dto.quantidadeParcelas || parc.quantidadeParcelas || 1,
           parcelaInicial: parc.numeroParcela || 1,
-          principalPerParcela: round2(parc.valorTotal), // referência (campo legado obrigatório)
+          principalPerParcela: round2(referenciaRegular), // referência regular; entrada tem valor próprio
+          ...estruturaCronograma,
           principalTotal: dto.valorPrincipal,
           jurosTotal: dto.valorJuros,
           valorMulta: dto.valorMulta,
           totalValue: round2(dto.valorTotal || parc.valorTotal),
-          valorParcelaReferencia: round2(parc.valorTotal),
+          valorParcelaReferencia: round2(referenciaRegular),
           competenciaInicial: compLabel || "1970-01",
           // ⚠ F2.3 — `diaPagamento` FINALMENTE VEM DO MODAL. A coluna sempre existiu (default 1) e
           // sempre alimentou o cronograma (`parcelaSync.calendarioDaParcela`), que é a data que
@@ -698,6 +709,15 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
       }
     }
 
+    if(origensCircular?.length){
+      if(!composicaoHabilitada())throw new ComposicaoError('COMPOSICAO_INDISPONIVEL','A composição pela Circular ainda não foi habilitada neste ambiente.',503);
+      if(!parcelamento.aberturaEntryId){
+        const competencia=compLabel || parcelamento.competenciaInicial;
+        const fechado=await tx.companyMonthlyCircular.findUnique({where:{portalClientId_competencia:{portalClientId,competencia}},select:{fechadoContabilEm:true}});
+        if(fechado?.fechadoContabilEm)throw new ComposicaoError('MES_FECHADO','A competência da abertura está fechada. Escolha uma competência permitida para a reclassificação.');
+      }
+      await incluirComposicaoTx(tx,{portalClientId,parcelamento,origens:origensCircular,userId,provisaoLines});
+    }
     const tipoParcelamento = dto.tipo;
     let provisaoId = null;
 

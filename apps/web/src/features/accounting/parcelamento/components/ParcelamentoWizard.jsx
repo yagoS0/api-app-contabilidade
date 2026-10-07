@@ -1,3 +1,5 @@
+import {DividasCircular} from './DividasCircular';
+import {resumoOrigensParcelamento,historicoOrigensParcelamento} from '../../../../../../../packages/shared/src/accounting/composicaoParcelamento.js';
 // R2 — "NOVO PARCELAMENTO": o contrato antes do documento.
 //
 // ⚠ ESTE MODAL CRIA O PARCELAMENTO SEM NENHUMA GUIA. É a inversão que a fase inteira existe para
@@ -17,7 +19,7 @@ import {
   PAPEIS_PROVISAO, linhaComPapel, papelDivergeDoLado,
   estadoInicial, validarPasso, montarPayloadIngestao, oQueSePerdeAoFechar, camposDoRecibo,
   textoDoRodapePasso2, somasProvisao, competenciaProximaParcela, proximaParcela,
-  parcelasRestantes, vencimentoDaCompetencia, formatarMoeda, numero, inteiro, rotuloModalidade,
+  parcelasRestantes, vencimentoDaCompetencia, formatarMoeda, numero, inteiro, rotuloModalidade, cronogramaDoWizard, totalPrevistoRestante,
 } from "../lib/wizardParcelamento";
 
 const PANEL = {
@@ -80,7 +82,7 @@ function Progresso({ passo }) {
 }
 
 export function ParcelamentoWizard({
-  onIngest, onClose, onConsultSerpro, getContasProvisao, onLerRecibo,
+  onIngest, onClose, onConsultSerpro, getContasProvisao, onLerRecibo, listarDebitosCircular,
   accounts = [], onSearchHistoricos, onGetHistoricosByCode,
   saving = false, contratoInicial = null,
 }) {
@@ -142,12 +144,18 @@ export function ParcelamentoWizard({
   }, [modelo]);
 
   // A modalidade escolhida no passo 1 é o modelo default — mas o contador pode apontar para outra.
-  useEffect(() => { setDados((d) => ({ ...d, modeloContas: d.tipo })); }, [dados.tipo]);
+  useEffect(() => { setDados((d) => ({ ...d, modeloContas: d.tipo, origensCircular: [], origensAplicadas: false })); }, [dados.tipo]);
 
   // ─── passo 2: o principal a provisionar alimenta as linhas ────────────────────────────────────
   const restantes = parcelasRestantes(dados);
-  const projetado = Math.round(numero(dados.valorParcela) * restantes * 100) / 100;
+  const projetado = totalPrevistoRestante(dados);
 
+  function aplicarOrigens(origens){
+    const resumo=resumoOrigensParcelamento(origens),grupos=new Map();
+    for(const o of origens){const chave=(o.contaPassivo || '')+'|'+(o.codigoTributo || '')+'|'+o.tributo;const g=grupos.get(chave)||{tipo:'D',tipoLinha:'PRINCIPAL',conta:o.contaPassivo || '',codigoTributo:o.codigoTributo,valor:0,label:historicoOrigensParcelamento(origens.filter(x=>x.tributo===o.tributo),dados.numeroParcelamento)};g.valor=Math.round((g.valor+o.saldo)*100)/100;grupos.set(chave,g);}
+    setDados(d=>{const outras=d.provisaoLines.filter(l=>l.tipoLinha!=='PRINCIPAL'&&l.tipoLinha!=='PARC');const credito=d.provisaoLines.find(l=>l.tipoLinha==='PARC') || {tipo:'C',tipoLinha:'PARC',conta:''};const total=[...grupos.values(),...outras.filter(l=>l.tipo==='D')].reduce((s,l)=>s+numero(l.valor),0);return {...d,origensCircular:origens,origensAplicadas:true,descricao:resumo,provisaoLines:[...grupos.values(),...outras,{...credito,valor:Math.round(total*100)/100}]};});
+    setEditando(true);
+  }
   function setLinhaProvisao(i, chave, valor) {
     setDados((d) => {
       // ⚠ ESCOLHER O PAPEL LEVA O LADO JUNTO — é metade do conserto de "D↔C e papel divergem".
@@ -311,7 +319,8 @@ export function ParcelamentoWizard({
     if (!validacao.ok) return;
     setBusy(true);
     try {
-      const body = montarPayloadIngestao(dados);
+      if(dados.origensCircular?.length && !dados.origensAplicadas)throw new Error('Confira as dívidas e use Sugerir lançamentos antes de finalizar.');
+      const body = {...montarPayloadIngestao(dados),origensCircular:dados.origensCircular};
       const res = await onIngest(body);
       if (res?.ok === false) {
         setErroServidor(res?.message || res?.error || "O servidor recusou o parcelamento.");
@@ -486,19 +495,27 @@ export function ParcelamentoWizard({
         {/* ─── PASSO 2 — Valores e parcelas ──────────────────────────────────────────────────── */}
         {passo === 2 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {listarDebitosCircular && <DividasCircular listar={listarDebitosCircular} tipo={dados.tipo} selecionadas={dados.origensCircular} onSelecionar={origensCircular=>set({origensCircular,origensAplicadas:false})} onAplicar={aplicarOrigens}/>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
               <Campo label="Saldo consolidado atual (R$) *" erro={erros.saldoConsolidado}
                 hint="Informativo: fica gravado e é exibido para conferência. Não vira lançamento.">
                 <input value={dados.saldoConsolidado} onChange={(e) => set({ saldoConsolidado: e.target.value })} placeholder="0,00" inputMode="decimal" style={{ ...FIELD, textAlign: "right" }} />
               </Campo>
-              <Campo label="Valor da parcela (R$) *" erro={erros.valorParcela}>
+              <Campo label={dados.temEntrada ? "Valor da parcela regular (R$) *" : "Valor da parcela (R$) *"} erro={erros.valorParcela}>
                 <input value={dados.valorParcela} onChange={(e) => set({ valorParcela: e.target.value })} placeholder="0,00" inputMode="decimal" style={{ ...FIELD, textAlign: "right" }} />
               </Campo>
-              <Campo label="Total de parcelas *" erro={erros.totalParcelas}>
+              <Campo label="Total de parcelas *" erro={erros.totalParcelas} hint={dados.temEntrada ? "Inclua as prestações da entrada neste total." : undefined}>
                 <input type="number" min="1" max="120" value={dados.totalParcelas} onChange={(e) => set({ totalParcelas: e.target.value })} style={FIELD} />
               </Campo>
             </div>
 
+            <label style={{ fontSize: '0.8rem' }}><input type="checkbox" checked={!!dados.temEntrada} onChange={e => set({ temEntrada: e.target.checked })} /> Entrada com valor diferente das parcelas</label>
+            {dados.temEntrada && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <Campo label="Prestações da entrada" erro={erros.numEntradas}><input type="number" min="1" value={dados.numEntradas} onChange={e => set({ numEntradas: e.target.value })} style={FIELD} /></Campo>
+              <Campo label="Valor de cada entrada (R$)" erro={erros.valorEntrada}><input inputMode="decimal" value={dados.valorEntrada} onChange={e => set({ valorEntrada: e.target.value })} style={FIELD} /></Campo>
+              <Campo label="Vencimento da entrada (dia)" erro={erros.diaEntrada}><input type="number" min="1" max="31" value={dados.diaEntrada} onChange={e => set({ diaEntrada: e.target.value })} style={FIELD} /></Campo>
+              <Campo label="Competência da 1ª parcela regular" erro={erros.competenciaRegular}><input type="month" value={dados.competenciaRegular} onChange={e => set({ competenciaRegular: e.target.value })} style={FIELD} /></Campo>
+            </div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
               {dados.situacao === "EM_ANDAMENTO" ? (
                 <Campo label="Parcelas já pagas *" erro={erros.parcelasJaPagas}
@@ -506,7 +523,7 @@ export function ParcelamentoWizard({
                   <input type="number" min="1" value={dados.parcelasJaPagas} onChange={(e) => set({ parcelasJaPagas: e.target.value })} style={FIELD} />
                 </Campo>
               ) : <div />}
-              <Campo label="Competência da 1ª parcela *" erro={erros.competenciaPrimeiraParcela}
+              <Campo label={dados.temEntrada ? "Competência da 1ª entrada *" : "Competência da 1ª parcela *"} erro={erros.competenciaPrimeiraParcela}
                 hint="É dela que sai o cronograma inteiro — não é a competência da próxima.">
                 <input type="month" value={dados.competenciaPrimeiraParcela} onChange={(e) => set({ competenciaPrimeiraParcela: e.target.value })} style={{ ...FIELD, colorScheme: "dark" }} />
               </Campo>
@@ -543,13 +560,14 @@ export function ParcelamentoWizard({
                 Próxima prestação: <strong style={{ color: PANEL.text }}>{proximaParcela(dados)}</strong>
                 {inteiro(dados.totalParcelas) ? ` de ${inteiro(dados.totalParcelas)}` : ""}
                 {compProxima ? ` · competência ${compProxima}` : ""}
-                {compProxima && inteiro(dados.diaVencimento) ? ` · vence ${vencimentoDaCompetencia(compProxima, dados.diaVencimento)}` : ""}
+                {compProxima && inteiro(dados.diaVencimento) ? ` · vence ${dados.temEntrada ? cronogramaDoWizard(dados)?.find(p => p.numeroParcela === proximaParcela(dados))?.vencimento || '—' : vencimentoDaCompetencia(compProxima, dados.diaVencimento)}` : ""}
                 {restantes > 0 && numero(dados.valorParcela) > 0
-                  ? ` · parcela × restantes = R$ ${formatarMoeda(projetado)}`
+                  ? ` · total previsto restante = R$ ${formatarMoeda(projetado)}`
                   : ""}
               </div>
             </div>
 
+            {dados.temEntrada && <div style={{ maxHeight: 180, overflow: 'auto' }}><table style={{ width: '100%', fontSize: '0.75rem' }}><thead><tr><th>Prestação</th><th>Vencimento</th><th>Valor previsto</th></tr></thead><tbody>{(cronogramaDoWizard(dados) || []).map(p => <tr key={p.numeroParcela}><td>{p.tipo === 'ENTRADA' ? 'Entrada' : 'Parcela'} {p.numeroParcela}</td><td>{p.vencimento.split('-').reverse().join('/')}</td><td style={{ textAlign: 'right' }}>R$ {formatarMoeda(p.valorPrevisto)}</td></tr>)}</tbody></table></div>}
             {validacao.alertas.map((a) => (
               <Aviso key={a.slice(0, 40)} tom="warn" titulo="Confira">{a}</Aviso>
             ))}

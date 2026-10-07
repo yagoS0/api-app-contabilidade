@@ -1,3 +1,5 @@
+import {bloquearComposicaoEmpresa,composicaoHabilitada} from './ComposicaoParcelamentoService.js';
+import { origensLegadasDoContrato, exigirOrigensLegadasSeparadas } from './protegerOrigensLegadas.js';
 // OS ATOS ADMINISTRATIVOS DO CONTRATO — excluir o parcelamento e desfazer a rescisão.
 //
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -226,6 +228,12 @@ export async function previewExclusaoParcelamento({ portalClientId, parcelamento
   });
 
   const bloqueios = [];
+  if(composicaoHabilitada()){
+    const origens=await prisma.parcelamentoDebitoOrigem.findMany({where:{portalClientId,parcelamentoId}});
+    if(origens.length)bloqueios.push({code:'COMPOSICAO_REQUER_CONCILIACAO',message:'Este acordo tem dívidas da Circular. Confira a liberação das origens e os pagamentos antes de excluir o contrato.'});
+  }
+  const origensLegadas = origensLegadasDoContrato(lancamentos, parc);
+  if (origensLegadas.length) bloqueios.push({code:'ORIGENS_LEGADAS_PENDENTES', message:'Este acordo contém provisões originais da Circular. Separe a composição antes de excluir para preservar esses lançamentos.', entryIds:origensLegadas.map(e=>e.id)});
   // ⚠ EXPORTADO BLOQUEIA, e a resposta é a MESMA do estorno (`LOTE_JA_EXPORTADO`) de propósito.
   // Lançamento exportado já saiu daqui para o sistema contábil do escritório; apagá-lo (ou espelhá-lo
   // sem que o outro lado saiba) faria as duas bases contarem histórias diferentes sobre o mesmo mês.
@@ -285,6 +293,7 @@ export async function previewExclusaoParcelamento({ portalClientId, parcelamento
       numParcelas: parc.numParcelas,
       totalValue: parc.totalValue != null ? Number(parc.totalValue) : null,
       temProvisaoDeAbertura: Boolean(parc.aberturaEntryId),
+      aberturaEntryId: parc.aberturaEntryId,
     },
     modo,
     competenciaContraLancamento: modo === MODO.CONTRA_LANCAMENTO ? competenciaHoje : null,
@@ -382,11 +391,17 @@ export async function excluirParcelamento({
   const idsApagados = preview.lancamentos.lista.filter((l) => !l.mesFechado).map((l) => l.id);
 
   return prisma.$transaction(async (tx) => {
+    if(composicaoHabilitada()){
+      await bloquearComposicaoEmpresa(tx,portalClientId);
+      const origens=await tx.parcelamentoDebitoOrigem.findMany({where:{portalClientId,parcelamentoId}});
+      if(origens.length)throw new AtoRecusado('COMPOSICAO_REQUER_CONCILIACAO','O acordo tem dívidas da Circular. Confira a composição e os pagamentos antes de excluir.');
+    }
     // ── 1. Reler o que será desfeito, DENTRO da transação ────────────────────────────────────
     const atuais = await tx.accountingEntry.findMany({
       where: { portalClientId, parcelamentoId },
       select: SELECT_LANCAMENTO,
     });
+    exigirOrigensLegadasSeparadas(atuais, preview.parcelamento);
     const contabeis = atuais.filter((e) => !ehLinhaLeve(e));
     if (contabeis.length !== preview.lancamentos.total) {
       throw new AtoRecusado(

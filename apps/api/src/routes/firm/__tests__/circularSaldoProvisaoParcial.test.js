@@ -128,6 +128,7 @@ const provisaoIrpj = {
 };
 
 beforeEach(() => {
+  prisma.parcelamentoDebitoOrigem = { findMany: jest.fn(async () => []) };
   jest.clearAllMocks();
   prisma.accountingEntry.findMany.mockImplementation(async (args) => {
     if (args?.where?.tipo !== "PROVISAO") return []; // RECEITA e BAIXA

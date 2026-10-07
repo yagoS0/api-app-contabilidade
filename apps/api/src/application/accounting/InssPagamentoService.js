@@ -1,3 +1,4 @@
+import { exigirBaixaForaDaComposicao, composicaoHabilitada } from './parcelamento/ComposicaoParcelamentoService.js';
 // Q34 — Pagamento do INSS: ao confirmar a guia INSS como paga, gera a BAIXA contábil.
 // Ciclo do INSS: provisão = lançamento de folha/pró-labore (C INSS a Recolher); pagamento = esta baixa
 // (D INSS a Recolher / C Caixa). A conta "INSS a Recolher" vem da folha do mês (decisão do dono).
@@ -218,6 +219,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   const SUFIXO_HISTORICO = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
 
   return prisma.$transaction(async (tx) => {
+    if(composicaoHabilitada())await exigirBaixaForaDaComposicao(tx,portalClientId,null,String(guideId));
     // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
     //
     // As duas verificações lá em cima (`guide.lancamentoId || guide.baixada` e `baixaExistente`)

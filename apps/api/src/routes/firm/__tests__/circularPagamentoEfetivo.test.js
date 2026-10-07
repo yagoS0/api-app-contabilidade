@@ -15,6 +15,7 @@ const entry = (id, tipoLinha, valor, extra = {}) => ({ id, tipo: 'BAIXA', tipoLi
   portalClientId: 'empresa', sourceGuideId: 'guia', data: '2026-06-20', status: 'CONFIRMADO',
   competencia: '2026-06', lines: [{ tipo: 'D', valor }, { tipo: 'C', valor }], ...extra });
 beforeEach(() => {
+  prisma.parcelamentoDebitoOrigem = { findMany: jest.fn(async () => []) };
   provisoes = [];
   guia = { id: 'guia', competencia: '2026-06', tipo: 'INSS', valor: 1100, valorOriginal: 1100,
     paymentStatus: 'PAID', source: 'SERPRO', extracted: { comprovante: { total: 1000, principal: 1000,

@@ -47,6 +47,8 @@ function competenciaBase(parcelamento) {
 
 /** O calendário CONTRATADO da n-ésima prestação, ou datas nulas quando não há base confiável. */
 export function calendarioDaParcela(parcelamento, numeroParcela) {
+  const explicita = parcelamento?.cronogramaParcelas?.find(p => p.numeroParcela === Number(numeroParcela));
+  if (explicita) return { competencia: explicita.competencia, anoMesParcela: explicita.competencia.replace('-', ''), vencimento: new Date(explicita.vencimento + 'T12:00:00.000Z') };
   const base = competenciaBase(parcelamento);
   const n = Number(numeroParcela);
   if (!base || !Number.isFinite(n) || n < 1) {
@@ -63,6 +65,7 @@ export function calendarioDaParcela(parcelamento, numeroParcela) {
 const SELECT_PARCELAMENTO = {
   id: true, portalClientId: true, numParcelas: true, competenciaInicial: true,
   diaPagamento: true, valorParcelaReferencia: true, principalPerParcela: true,
+  cronogramaParcelas: true,
 };
 
 /**
@@ -120,7 +123,7 @@ export async function sincronizarParcelas(client, { portalClientId, parcelamento
         competencia: cal.competencia,
         anoMesParcela: cal.anoMesParcela,
         vencimento: cal.vencimento,
-        valorPrevisto,
+        valorPrevisto: parc.cronogramaParcelas?.find(p => p.numeroParcela === n)?.valorPrevisto ?? valorPrevisto,
         origem: "CONTRATO",
       },
       select: { id: true, numeroParcela: true, guiaId: true },

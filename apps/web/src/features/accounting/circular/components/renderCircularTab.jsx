@@ -1,4 +1,5 @@
 import './circularFechamento.css';
+import { Link } from 'react-router-dom';
 import { CircularMonthTags } from './CircularMonthTags';
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { informacaoRecalculo, DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
@@ -470,7 +471,7 @@ function fmtCompetenciaLonga(comp) {
 
 // Célula centrada no número e no estado do pagamento, com aviso discreto “Recalculada” quando
 // há registro. Clicar abre detalhes e ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
+function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosAtivos = [], composicaoHabilitada = false, onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
   const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
@@ -491,7 +492,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
   const placeholder = entry.placeholder || entry.origem === "TEMPLATE";
   const isAberto = entry.statusPagamento === "ABERTO";
   const isParcial = entry.statusPagamento === "PARCIAL"; // baixa parcial por quota — ainda tem saldo
-  const isOpenLike = isAberto || isParcial; // pode receber (nova) baixa
+  const isOpenLike = !entry.parcelamentoOrigem && (isAberto || isParcial); // pode receber (nova) baixa
   const isVinculado = Boolean(entry.parcelamentoId);
   const isSynthetic = entry.synthetic === true;
   const valor = entry.valor || entry.totalD;
@@ -520,7 +521,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
   // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia) agora tem o fluxo
   // completo igual ao DAS (Q52): "Dar baixa" (abre modal, gera a baixa contábil), "Editar baixa"
   // (edita o lançamento gerado) e "Cancelar baixa" (apaga a baixa e reabre a guia).
-  const canBaixaInss = isSynthetic && String(entry.id).startsWith("synthetic-inss-") && isAberto && Boolean(onBaixa);
+  const canBaixaInss = !entry.parcelamentoOrigem && isSynthetic && String(entry.id).startsWith("synthetic-inss-") && isAberto && Boolean(onBaixa);
   // INSS aberto: pode editar valor/juros/multa (não há lançamento — vai p/ acrescimos.INSS).
   const canEditInss = isSynthetic && isAberto && Boolean(onEdit);
   // INSS pago: pode editar a baixa (entry.baixaEntry é o lançamento real) e cancelá-la.
@@ -573,6 +574,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
           • ✅ quitada
       */}
+      {entry.parcelamentoOrigem && <div style={{color:aparencia.cor,fontSize:'0.72rem'}}>{aparencia.rotulo}</div>}
       {entry.pendenciaFechamento && <div style={{ color: "var(--danger)", fontSize: "0.68rem" }}>Pagamento pendente</div>}
       {!placeholder && informacaoRecalculo(entry) && (
         <div style={{ fontSize: "0.7rem", lineHeight: 1.2, color: "var(--text-muted)" }} title={informacaoRecalculo(entry).titulo}>Recalculada</div>
@@ -622,7 +624,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           Trocar a fonte tiraria o ✓ de toda linha quitada cuja guia não tivesse `paymentStatus`.
           ⚠ O que MUDOU é o complemento: quando a guia diz de onde veio a confirmação, isso sai em
           TEXTO ao lado do ✓ — antes as três origens imprimiam o mesmo símbolo. */}
-      {!placeholder && !isOpenLike && (() => {
+      {!entry.parcelamentoOrigem && !placeholder && !isOpenLike && (() => {
         const pg = leituraDoPagamento(entry.sourceGuide);
         return (
           <div
@@ -653,17 +655,20 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
               rótulo e cabem. Na célula ficam o número, o ícone de pagamento e o aviso discreto
               “Recalculada” quando houver registro; data e valores do recálculo ficam no detalhe. */}
           <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
+          {entry.parcelamentoOrigem && companyId && (
+            <Link style={menuBtn} to={`/companies/${encodeURIComponent(companyId)}/parcelamento?composicao=${encodeURIComponent(entry.parcelamentoOrigem.parcelamentoId)}`}>Ver parcelamento</Link>
+          )}
           <div style={{ borderTop: "1px solid #44475A", margin: "4px 0 2px" }} />
-          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar provisão</button>}
-          {onEdit && !isSynthetic && (entry.baixas || []).filter((b) => b.tipo === "BAIXA" && b.lines?.length).map((b, i) => (
+          {!entry.parcelamentoOrigem && onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar provisão</button>}
+          {!entry.parcelamentoOrigem && onEdit && !isSynthetic && (entry.baixas || []).filter((b) => b.tipo === "BAIXA" && b.lines?.length).map((b, i) => (
             <button key={b.id} onClick={() => { setOpen(false); onEdit(b); }} style={menuBtn}>
               ✎ Editar baixa {i + 1} — {b.historico || b.tipoLinha || "Pagamento"}
             </button>
           ))}
           {/* INSS sintético aberto: edita valor/juros/multa (vai p/ acrescimos.INSS) no mesmo modal. */}
-          {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
+          {!entry.parcelamentoOrigem && canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
-          {onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
+          {!entry.parcelamentoOrigem && onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
           {/* Busca o comprovante no SERPRO: marca "paga" e guarda data/valores, SEM lançar.
               O lançamento continua sendo o "Dar baixa" abaixo, já pré-preenchido. */}
           {isOpenLike && onBuscarPagamento && entry.sourceGuide?.id && (
@@ -689,8 +694,9 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
               antes o que vai ser desfeito, com valores. O backend recusa o verbo antigo com
               `409 USE_ESTORNO` — sem essa recusa a exigência do motivo seria contornável por ele, e
               nascia morta. */}
-          {baixaId && onDesfazerBaixa && <button onClick={() => { setOpen(false); onDesfazerBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "↩ Desfazer última quota" : (baixaIds.length > 1 ? `↩ Desfazer baixa (${baixaIds.length} lançamentos)` : "↩ Desfazer baixa")}</button>}
-          {onVincular && !isSynthetic && (
+          {!entry.parcelamentoOrigem && baixaId && onDesfazerBaixa && <button onClick={() => { setOpen(false); onDesfazerBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "↩ Desfazer última quota" : (baixaIds.length > 1 ? `↩ Desfazer baixa (${baixaIds.length} lançamentos)` : "↩ Desfazer baixa")}</button>}
+          {!entry.parcelamentoOrigem && composicaoHabilitada && companyId && <Link style={menuBtn} to={`/companies/${encodeURIComponent(companyId)}/parcelamento`}>Selecionar no parcelamento</Link>}
+          {!entry.parcelamentoOrigem && !composicaoHabilitada && onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
             ) : (
@@ -1317,12 +1323,14 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                     ) : (
                       <PagamentoCell
                         key={col.key}
+                        companyId={companyId}
                         entry={matrix[`${col.key}__${comp}`]}
                         onBaixa={(entry) => setBaixaEntry(entry)}
                         onBuscarPagamento={handleBuscarPagamento}
                         onEdit={(onUpdateEntry || onSaveCircular) ? (entry) => setEditEntry(entry) : null}
                         onDesfazerBaixa={(onEstornarBaixa && onPreviewEstorno) ? handleAbrirEstorno : null}
                         parcelamentosAtivos={parcelamentosAtivos}
+                        composicaoHabilitada={(parcelamentos?.parcelamentos || []).some(p => p.composicaoHabilitada)}
                         onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
                         onDesvincular={handleDesvincular}
                         acrescimo={acrescimoFor(col.key, comp)}

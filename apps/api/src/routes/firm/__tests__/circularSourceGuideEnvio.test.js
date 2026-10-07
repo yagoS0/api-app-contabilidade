@@ -125,6 +125,7 @@ const guiaSimplesSemProvisao = guiaEnviadaPorEmail({
 });
 
 beforeEach(() => {
+  prisma.parcelamentoDebitoOrigem = { findMany: jest.fn(async () => []) };
   jest.clearAllMocks();
   prisma.accountingEntry.findMany.mockImplementation(async (args) => {
     const tipo = args?.where?.tipo;

@@ -202,6 +202,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
                 return (
                   <tr key={linha.key} style={{ borderTop: `1px solid ${PANEL.border}` }}>
                     <td style={{ ...td, fontFamily: "monospace" }}>
+                      {parcelamento.cronogramaParcelas?.find(p => p.numeroParcela === linha.numeroParcela)?.tipo === 'ENTRADA' ? 'Entrada ' : ''}
                       {linha.numeroParcela ?? "?"}
                       {linha.totalParcelas ? `/${linha.totalParcelas}` : ""}
                     </td>

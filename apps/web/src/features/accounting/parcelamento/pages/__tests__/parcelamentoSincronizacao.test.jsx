@@ -57,3 +57,20 @@ it("trocar empresa com confirmação aberta cancela o pedido sem lançar na ante
   expect(mockBaixa).not.toHaveBeenCalled();
   expect(screen.queryByText("Acordo Simples 123")).not.toBeInTheDocument();
 });
+it("carregamento inicial não desenha caixas que depois desaparecem; erros seguem visíveis", async () => {
+  let resolverGuias, rejeitarSemGuia;
+  mockListPendentes.mockReturnValue(new Promise((resolve) => { resolverGuias = resolve; }));
+  mockListSemGuia.mockReturnValue(new Promise((_, reject) => { rejeitarSemGuia = reject; }));
+  render(<ParcelamentoTab companyId="A" parcelamentos={hook()} />);
+  expect(screen.getByText("Carregando pendências das parcelas…")).toBeInTheDocument();
+  expect(screen.queryByText("Parcelas pagas aguardando lançamento")).not.toBeInTheDocument();
+  expect(screen.queryByText("Prestações vencidas sem guia")).not.toBeInTheDocument();
+
+  await act(async () => resolverGuias({ parcelas: [] }));
+  expect(screen.getByText("Carregando pendências das parcelas…")).toBeInTheDocument();
+  await act(async () => rejeitarSemGuia(new Error("Falha de rede")));
+  expect(screen.queryByText("Carregando pendências das parcelas…")).not.toBeInTheDocument();
+  expect(screen.getByText("Prestações vencidas sem guia")).toBeInTheDocument();
+  expect(screen.getByText(/Falha de rede/)).toBeInTheDocument();
+  expect(screen.queryByText("Parcelas pagas aguardando lançamento")).not.toBeInTheDocument();
+});

@@ -1,3 +1,5 @@
+import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
+import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
 import { withFluxoCarteiraMock } from "./fluxoCarteiraMock";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-mock';
@@ -3821,7 +3823,7 @@ export function createMockApi() {
   let accessToken = "";
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
-  return withFluxoCarteiraMock({
+  return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
     ...atendimentoMovel,
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
@@ -10778,6 +10780,7 @@ export function createMockApi() {
       const jaPagas = Math.max(0, Math.min(total - 1, Number(body.parcelasJaPagas) || 0));
       const compInicial = String(header.anoMesParcela || "").replace(/^(\d{4})(\d{2})$/, "$1-$2");
       const diaVenc = Math.min(31, Math.max(1, Number(header.diaPagamento) || 1));
+      const cronogramaParcelas = validarCronogramaParcelamento(header.cronogramaParcelas, total);
       const linhas = [];
       for (let n = 1; n <= total; n += 1) {
         const m = compInicial.match(/^(\d{4})-(\d{2})$/);
@@ -10794,7 +10797,8 @@ export function createMockApi() {
           // alimenta `parcelasContratadas`) não a traz. Um mock que a mandasse esconderia o campo
           // Competência do modal de anexo nascendo vazio em produção — foi assim que o defeito
           // apareceu. Quem precisa dela a deriva do vencimento (`competenciaDaParcela`).
-          vencimento,
+          vencimento: cronogramaParcelas?.[n - 1]?.vencimento ? cronogramaParcelas[n - 1].vencimento + 'T12:00:00.000Z' : vencimento,
+          valorPrevisto: cronogramaParcelas?.[n - 1]?.valorPrevisto ?? Number(header.valorParcela),
           // ⚠ `HISTORICO` é VOCABULÁRIO de `origemBaixa`, não coluna nova: as N primeiras contam
           // como quitadas e NÃO geram lançamento nenhum.
           origemBaixa: n <= jaPagas ? "HISTORICO" : null,
@@ -10811,7 +10815,7 @@ export function createMockApi() {
       // ⚠ O PRINCIPAL POR PRESTAÇÃO É OUTRA COISA — sai de `principalTotal / numParcelas`, e é
       // `null` quando não se sabe (`principalPorParcelaDoContrato`, no backend).
       const principalTotalMock = Number(header.valorPrincipal) || 0;
-      const principalPorParcela = principalTotalMock > 0 && total >= 1
+      const principalPorParcela = !cronogramaParcelas && principalTotalMock > 0 && total >= 1
         ? Math.round((principalTotalMock / total) * 100) / 100
         : null;
       const principalPagoMock = principalPorParcela != null
@@ -10830,6 +10834,8 @@ export function createMockApi() {
         totalValue: Number(header.valorTotal) || Number(header.valorPrincipal) || 0,
         principalPerParcela: valorParcela,
         valorParcelaReferencia: valorParcela,
+        cronogramaParcelas,
+        numEntradas: cronogramaParcelas?.filter(p => p.tipo === 'ENTRADA').length || 0,
         formaPagamento: header.formaPagamento || null,
         diaPagamento: diaVenc,
         saldoConsolidado: header.saldoConsolidado ?? null,
@@ -11324,5 +11330,5 @@ export function createMockApi() {
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
     ...mockRelatorios,
-  }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null }));
+  }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null })),id=>mockEntriesByCompany.get(id) || []);
 }

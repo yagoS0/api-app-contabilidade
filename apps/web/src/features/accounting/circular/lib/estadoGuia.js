@@ -18,8 +18,12 @@
 //
 // A comparação passou a ser dia civil × dia civil — string `"YYYY-MM-DD"`, que ordena sozinha.
 import { diaCivil, diaCivilDeHoje, diasEntreDiasCivis, diaMesCivil } from "../../../../lib/dataCivil.js";
+import { tratamentoOrigemParcelamento } from '../../../../../../../packages/shared/src/accounting/composicaoParcelamento.js';
 
 export const ESTADO_GUIA = Object.freeze({
+  PARCELADA: "parcelada",
+  QUITADA_NO_ACORDO: "quitadaNoAcordo",
+  A_CONCILIAR: "aConciliar",
   PLACEHOLDER: "placeholder",
   PAGA: "paga",
   PARCIAL: "parcial",
@@ -43,6 +47,7 @@ export function estadoDaGuia(entry, hoje = new Date()) {
   if (!entry) return null;
   if (entry.placeholder || entry.origem === "TEMPLATE") return ESTADO_GUIA.PLACEHOLDER;
 
+  if (entry.parcelamentoOrigem) return ({ PARCELADO: ESTADO_GUIA.PARCELADA, QUITADO_NO_ACORDO: ESTADO_GUIA.QUITADA_NO_ACORDO })[tratamentoOrigemParcelamento(entry.parcelamentoOrigem)] || ESTADO_GUIA.A_CONCILIAR;
   const status = String(entry.statusPagamento || "").toUpperCase();
   if (entry.pendenciaFechamento && ["ABERTO", "PARCIAL"].includes(status)) return ESTADO_GUIA.FECHAMENTO;
   if (status === "PARCIAL") return ESTADO_GUIA.PARCIAL;
@@ -69,6 +74,12 @@ export function diasDeAtraso(entry, hoje = new Date()) {
 export function aparenciaDaGuia(entry, hoje = new Date()) {
   const estado = estadoDaGuia(entry, hoje);
   switch (estado) {
+    case ESTADO_GUIA.PARCELADA:
+      return {estado,cor:'var(--accent-purple)',fundo:'var(--accent-purple-surface)',rotulo:'Parcelado',titulo:'Dívida incluída no acordo '+(entry.parcelamentoOrigem.numero || '')+'.'};
+    case ESTADO_GUIA.QUITADA_NO_ACORDO:
+      return { estado, cor: 'var(--state-ok)', fundo: 'var(--state-ok-surface)', rotulo: 'Quitado no acordo', titulo: 'Quitação registrada no parcelamento; a provisão original está preservada.' };
+    case ESTADO_GUIA.A_CONCILIAR:
+      return {estado,cor:'var(--state-warn)',fundo:'var(--state-warn-surface)',rotulo:'A conciliar',titulo:'Acordo rescindido ou excluído. Confira a composição e os pagamentos antes de restabelecer o saldo.'};
     case ESTADO_GUIA.PLACEHOLDER:
       return { estado, cor: "#6272A4", fundo: "transparent", rotulo: "Prevista", titulo: "Provisão prevista — ainda não há guia." };
     case ESTADO_GUIA.PAGA:

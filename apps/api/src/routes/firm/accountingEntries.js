@@ -1,3 +1,4 @@
+import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, exigirBaixaForaDaComposicao, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
 import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
 import { Router } from "express";
 import { sinalizarRecalculosNosLancamentos } from "../../application/guides/RegistroRecalculoGuia.js";
@@ -1218,13 +1219,15 @@ export function createAccountingEntriesRouter({ log }) {
       acrescimos: acrescimosByMonth,
       extrato: extratoByMonth,
     };
-    return { ...resultado, fechamentos, provisoes: resultado.provisoes.map(e => sinalizarPendenciaFechamento(e, fechamentos)) };
+    const comOrigens=await enriquecerOrigens(prisma,portalClientId,resultado.provisoes);
+    return { ...resultado, fechamentos, provisoes: comOrigens.map(e => sinalizarPendenciaFechamento(e, fechamentos)) };
   }
 
   router.get("/entries/circular", requireFirmCompanyAccess(), async (req, res) => {
     const rawYear = parseInt(String(req.query.year || ''), 10);
     const year = rawYear >= 2000 && rawYear <= 2100 ? rawYear : new Date().getUTCFullYear();
-    return res.json(await carregarCircular(String(req.params.companyId), year));
+    try { return res.json(await carregarCircular(String(req.params.companyId), year)); }
+    catch (err) { log.error({err}, 'Falha ao carregar Circular'); return res.status(500).json({error:'circular_indisponivel',message:'Não foi possível carregar a Circular. Tente novamente.'}); }
   });
 
   async function carregarProvisoesDaEmpresa(portalClientId, fechamentos) {
@@ -1242,17 +1245,21 @@ export function createAccountingEntriesRouter({ log }) {
     return itens;
   }
   router.get('/pagamentos-pendentes', requireFirmCompanyAccess(), async (req, res) => {
+    try {
     const competencia = String(req.query.competencia || '');
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return res.status(400).json({ error: 'competencia_invalida' });
     const portalClientId = String(req.params.companyId);
     const itens = await carregarProvisoesDaEmpresa(portalClientId, await lerFechamentos(portalClientId));
     return res.json({ itens: pagamentosDisponiveis(itens, competencia) });
+    } catch (err) { log.error({err}, 'Falha ao carregar pagamentos'); return res.status(500).json({error:'pagamentos_indisponiveis',message:'Não foi possível carregar os pagamentos pendentes.'}); }
   });
   router.get('/pendencias-contabeis', requireFirmCompanyAccess(), async (req, res) => {
+    try {
     const portalClientId = String(req.params.companyId);
     const fechamentos = await lerFechamentos(portalClientId);
-    const itens = Object.keys(fechamentos).length ? projetarPendenciasContabeis(await carregarProvisoesDaEmpresa(portalClientId, fechamentos)) : [];
+    const itens = projetarPendenciasContabeis(await carregarProvisoesDaEmpresa(portalClientId, fechamentos));
     return res.json({ itens, origem: 'CONTABILIDADE' });
+    } catch (err) { log.error({err}, 'Falha ao carregar pendências contábeis'); return res.status(500).json({error:'pendencias_indisponiveis',message:'Não foi possível carregar as pendências da contabilidade.'}); }
   });
 
   // GET /firm/companies/:companyId/circular/:competencia/accounting-entries
@@ -2926,6 +2933,7 @@ export function createAccountingEntriesRouter({ log }) {
       return res.json({ ok: true, entry: entryToResponse(updated) });
     } catch (err) {
       log.error({ err }, "Erro ao atualizar lançamento");
+      if(responderOrigemProtegida(res,err))return;
       return res.status(500).json({ error: "internal_error" });
     }
   });
@@ -3020,7 +3028,8 @@ export function createAccountingEntriesRouter({ log }) {
     // de desfazer baixa (reabrir a guia, devolver o passivo, mover o estado da parcela) saiu deste
     // arquivo e virou `EstornoBaixaService`, com motivo e auditoria — ver a recusa `USE_ESTORNO`
     // acima.
-    await prisma.accountingEntry.delete({ where: { id: entryId } });
+    try { await prisma.accountingEntry.delete({ where: { id: entryId } }); }
+    catch (err) { if(responderOrigemProtegida(res,err))return; log.error({err},'Falha ao excluir lançamento'); return res.status(500).json({error:'internal_error'}); }
     return res.json({ ok: true });
   });
 
@@ -3056,7 +3065,13 @@ export function createAccountingEntriesRouter({ log }) {
     PARCELA_MUDOU: 409,
     ANCORA_SEM_REVERSOR: 409,
   };
+  function responderOrigemProtegida(res,err){
+    if(err?.code!=='DIVIDA_PARCELADA'&&!String(err?.message || '').includes('DIVIDA_PARCELADA'))return false;
+    res.status(409).json({error:'DIVIDA_PARCELADA',message:'Esta obrigação integra um parcelamento. Confira as dívidas incluídas no acordo antes de alterar ou baixar a origem.'});
+    return true;
+  }
   function responderRecusa(res, err) {
+    if(responderOrigemProtegida(res,err))return;
     if (!(err instanceof EstornoRecusado)) throw err;
     // Os campos extras do erro (competência, mínimo do motivo, totais divergentes) sobem junto: a
     // recusa tem de dar ao contador o que ele precisa para agir, não só um código.
@@ -3263,6 +3278,7 @@ export function createAccountingEntriesRouter({ log }) {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        if(composicaoHabilitada())await exigirBaixaForaDaComposicao(tx,portalClientId,entryId,openEntry.sourceGuideId);
         // PRINCIPAL, JUROS e MULTA viram lançamentos INDEPENDENTES (regra do projeto), cada um
         // balanceado contra o caixa. Um lançamento único misturando os três (3D/1C) some no
         // dropdown e esconde que juros/multa são DESPESA do mês, não amortização do passivo.
@@ -3395,6 +3411,8 @@ export function createAccountingEntriesRouter({ log }) {
         openEntry: entryToResponse(result.openEntry),
       });
     } catch (err) {
+      if(responderOrigemProtegida(res,err))return;
+      if(err instanceof ComposicaoError)return res.status(err.status).json({ok:false,error:err.code,message:err.message});
       // ⚠ P2002 AQUI É RECUSA DE NEGÓCIO, NÃO FALHA DO SERVIDOR — e devolver 500 `internal_error`
       // é a família de defeito que este projeto já conhece pelo nome ("o botão não faz nada").
       //
@@ -3549,6 +3567,7 @@ export function createAccountingEntriesRouter({ log }) {
         return res.status(409).json({ error: "MES_FECHADO" });
       }
       log.error({ err }, "Erro ao criar baixa do INSS");
+      if(responderOrigemProtegida(res,err))return;
       return res.status(500).json({ error: "internal_error" });
     }
   });
@@ -3950,13 +3969,27 @@ export function createAccountingEntriesRouter({ log }) {
 
   // ─── Q9: Parcelamentos ──────────────────────────────────────────────────
 
+  router.get('/parcelamentos/debitos-circular',requireFirmCompanyAccess(),async(req,res)=>{
+    if(!composicaoHabilitada())return res.json({ok:true,habilitado:false,debitos:[]});
+    try{return res.json({ok:true,habilitado:true,debitos:await candidatosComposicao({portalClientId:String(req.params.companyId),tipo:String(req.query.tipo || ''),parcelamentoId:req.query.parcelamentoId?String(req.query.parcelamentoId):null})});}
+    catch(err){return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message});}
+  });
+  router.post('/parcelamentos/:parcId/debitos-circular',requireFirmCompanyAccess({minRole:'ACCOUNTANT'}),async(req,res)=>{
+    if(!composicaoHabilitada())return res.status(503).json({ok:false,message:'Composição não habilitada neste ambiente.'});
+    try{return res.json({ok:true,data:await salvarComposicaoExistente({portalClientId:String(req.params.companyId),parcelamentoId:String(req.params.parcId),origens:req.body?.origens,userId:req.auth?.user?.id})});}
+    catch(err){return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message});}
+  });
   // GET /firm/companies/:companyId/parcelamentos[?status=ATIVO|QUITADO|RESCINDIDO]
   router.get("/parcelamentos", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const status = req.query?.status ? String(req.query.status).toUpperCase() : null;
     try {
       const { listParcelamentos } = await import("../../application/accounting/ParcelamentoService.js");
-      const data = await listParcelamentos({ portalClientId, status });
+      let data = await listParcelamentos({ portalClientId, status });
+      {
+        const origens=await prisma.parcelamentoDebitoOrigem.findMany({where:{portalClientId}});
+        data=data.map(p=>({...p,composicaoHabilitada:composicaoHabilitada(),debitosOrigem:origens.filter(o=>o.parcelamentoId===p.id)}));
+      }
       return res.json({ ok: true, data });
     } catch (err) {
       log.error({ err }, "Falha ao listar parcelamentos");
@@ -4369,7 +4402,7 @@ export function createAccountingEntriesRouter({ log }) {
       const data = await ingestParcelamentoFromGuide({
         portalClientId, guideId: guide?.id || null, parcelamentoDTO, parcelaDTO,
         parcelamentoId: header?.parcelamentoId || req.body?.parcelamentoId || null,
-        provisaoLines, pagamentoLines, descricao: header?.descricao,
+        provisaoLines, pagamentoLines, descricao: header?.descricao, origensCircular:req.body?.origensCircular,
         // F2.3: N prestações quitadas ANTES do sistema → `origemBaixa: "HISTORICO"`, sem lançamento.
         parcelasJaPagas,
         userId,
@@ -4377,10 +4410,12 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(201).json({ ok: true, data });
     } catch (err) {
       const code = err?.code || "internal_error";
+      if(err instanceof ComposicaoError)return res.status(err.status).json({ok:false,error:err.code,message:err.message});
       // ⚠ `PAPEL_DE_LINHA_AUSENTE` é RECUSA DE ENTRADA, não erro do servidor: a linha de provisão
       // chegou sem `tipoLinha`, e supô-lo faria o contrato nascer com o principal errado (o defeito
       // da SINTROPIA). A mensagem do serviço já traz motivo E saída — ela sobe inteira para a tela.
-      if (code === "COMPOSICAO_INVALIDA" || code === "PAPEL_DE_LINHA_AUSENTE") {
+      if (code === "CRONOGRAMA_IMUTAVEL") return res.status(409).json({ ok: false, error: code, message: err.message });
+      if (code === "CRONOGRAMA_INVALIDO" || code === "COMPOSICAO_INVALIDA" || code === "PAPEL_DE_LINHA_AUSENTE") {
         return res.status(400).json({ ok: false, error: code, message: err.message });
       }
       log.error({ err }, "Falha na ingestão de parcelamento (v2)");
@@ -4639,6 +4674,7 @@ export function createAccountingEntriesRouter({ log }) {
       });
       return res.json(data);
     } catch (err) {
+      if(err.code==='ORIGENS_LEGADAS_PENDENTES')return res.status(409).json({ok:false,error:err.code,message:err.message,entryIds:err.entryIds});
       // ⚠ A rescisão GRAVA LANÇAMENTO CONTÁBIL, então ela tem a mesma trava de mês fechado das
       // baixas — e a recusa chega com `err.code`, não pelo `message` (a mensagem é a frase que o
       // contador lê). Sem esta tradução ela viraria um 500 genérico, que na tela é
@@ -4781,6 +4817,7 @@ export function createAccountingEntriesRouter({ log }) {
     const entryId = String(req.params.entryId);
     const parcelamentoId = req.body?.parcelamentoId ? String(req.body.parcelamentoId) : null;
     try {
+      if(composicaoHabilitada())return res.status(409).json({ok:false,error:'COMPOSICAO_EXIGE_CONFERENCIA',message:'Abra o parcelamento e confira as dívidas incluídas. O vínculo direto foi substituído pela composição auditável.'});
       if (parcelamentoId) {
         const parc = await prisma.parcelamento.findFirst({ where: { id: parcelamentoId, portalClientId }, select: { id: true } });
         if (!parc) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });

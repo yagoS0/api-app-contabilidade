@@ -925,7 +925,7 @@ export function ParcelamentosList({
   onDarBaixa, onBaixaEmLote, onSubirGuia,
   // ⚠ EXCLUIR O CONTRATO — pedido do dono. Opcional pelo mesmo motivo dos outros; quem o passa é a
   // aba Parcelamentos, que tem o modal de confirmação com os números reais.
-  onExcluir, emptyMessage = "Nenhum parcelamento ativo.",
+  onComposicao, onExcluir, emptyMessage = "Nenhum parcelamento ativo.",
 }) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
@@ -1032,7 +1032,7 @@ export function ParcelamentosList({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                <ParcMetric label="Valor da parcela" value={`R$ ${fmtMoney(p.principalPerParcela)}`} />
+                <ParcMetric label={p.cronogramaParcelas?.length ? "Parcela regular" : "Valor da parcela"} value={`R$ ${fmtMoney(p.principalPerParcela)}`} />
                 <ParcMetric label="Consolidado" value={`R$ ${fmtMoney(p.totalValue)}`} accent="var(--accent-cyan)" />
                 {/* ⚠ INFORMATIVO — o saldo declarado NÃO é lançamento, e o rótulo diz isso. */}
                 <ParcMetric
@@ -1106,6 +1106,7 @@ export function ParcelamentosList({
                       label: historicoAberto ? "▾ Fechar histórico das parcelas" : "▸ Histórico das parcelas",
                       onClick: () => alternarHistorico(p.id),
                     },
+                    (p.composicaoHabilitada || p.debitosOrigem?.length) && onComposicao && {label:'Dívidas incluídas…',onClick:()=>onComposicao(p)},
                     p.status === "ATIVO" && onRescindir && {
                       label: "Rescindir…",
                       onClick: () => setRescParc(p),

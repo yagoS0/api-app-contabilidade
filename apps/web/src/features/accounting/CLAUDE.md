@@ -1,5 +1,9 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Parcelamento — carregamento inicial, 06/10/2026
+
+As filas de parcelas pagas e de prestações sem guia não desenham painéis vazios durante a primeira consulta. A aba usa um indicador compartilhado enquanto qualquer consulta estiver pendente. Preservar erros com retentativa, dados já obtidos durante recarga, resultados de baixa e a âncora de rolagem do botão Dar baixa. As duas filas mantêm seus significados distintos. O teste de sincronização cobre consultas com tempos diferentes e falha na segunda fila.
+
 ## Baixa de ISS composto — 06/10/2026
 
 O usuário reiterou que baixas devem gerar lançamentos individuais. Cada débito do formulário gera um lançamento com um débito e um crédito no caixa/banco; nem débitos com o mesmo papel podem ser consolidados. Linhas extras exigem escolher principal, juros ou multa. O formulário informa a quantidade de lançamentos e a API aplica a separação na gravação. Não confundir a composição exibida para conferência com um lançamento contábil agrupado.

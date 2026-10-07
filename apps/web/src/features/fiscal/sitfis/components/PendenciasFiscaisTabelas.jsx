@@ -97,7 +97,7 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
             <td><input type="checkbox" aria-label={`Selecionar ${l.tributo || l.titulo} ${l.competencia || l.inscricao || l.id}`} checked={selecao.has(l.id)} onChange={() => selecionar(l.id)} /></td>
             <td><strong>{l.tributo || l.evidencia.registro.Declaração || l.titulo}</strong><small>{l.origem === 'CONTABILIDADE' ? 'Contabilidade' : l.manual ? 'Manual' : TIPOS_PENDENCIA[l.tipo]}{l.inscricao ? ` · ${l.inscricao}` : ''}</small></td>
             <td>{l.competencia || '—'}</td><td>{l.vencimento || '—'}</td><td className="pf-money">{dinheiro(l.total)}</td>
-            <td className="pf-situation" style={l.origem === "CONTABILIDADE" ? { color: "var(--danger)" } : undefined}>{l.situacao}</td><td className="pf-actions"><Button size="sm" variant="secondary" onClick={() => setDetalhe(l)}>Detalhes</Button></td>
+            <td className="pf-situation" style={l.origem === "CONTABILIDADE" ? { color: l.estado === "VENCIDO" ? "var(--danger)" : l.estado === "A_CONCILIAR" ? "var(--state-warn)" : "var(--text-muted)" } : undefined}>{l.situacao}</td><td className="pf-actions"><Button size="sm" variant="secondary" onClick={() => setDetalhe(l)}>Detalhes</Button></td>
           </tr>)}</tbody></table>
         </div><footer className="pf-subtotal">{resumo(filtradas)}</footer></> : <p className="pf-empty">{busca || tipo ? 'Nenhum registro para estes filtros.' : fonte.id === 'CONTABILIDADE' ? (contabeis?.error ? 'Consulta indisponível.' : contabeis?.loading ? 'Carregando…' : 'Nenhum saldo contábil em aberto em mês de pagamento fechado.') : 'Nenhum lançamento cadastrado.'}</p>}
       </section>;
