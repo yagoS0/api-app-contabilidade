@@ -78,6 +78,15 @@ const bancoAgenda = ({ existentes = [], municipio = 'São Paulo', feriados = [] 
   feriado: { findMany: jest.fn(async () => feriados) },
 });
 const novasDoBanco = db => db.ocorrenciaObrigacao.createMany.mock.calls.flatMap(([{ data }]) => data);
+
+test('adotar janela mensal em ISS legado não oculta ciclos que acabou de reconciliar',async()=>{
+  const existente={id:'iss-nov',cicloChave:null,dataInicio:date('2026-11-05'),dataFim:date('2026-11-05'),dataVencimento:date('2026-11-05'),status:'PENDENTE'};
+  const db=bancoAgenda({existentes:[existente]});
+  await sincronizarAgendaConfigurada(db,{id:'iss',tipo:'OBRIGACAO',periodicidade:'MENSAL',diaVencimento:5,ajusteDiaUtil:'MANTER',defasagemMeses:1,agendaConfig:{dataInicio:'2026-10-01',dataFim:'2026-10-05',recorrencia:'MENSAL'}},{hoje:date('2026-10-06')});
+  const alteracoes=db.ocorrenciaObrigacao.update.mock.calls.map(([x])=>x);
+  expect(alteracoes.filter(x=>x.where.id==='iss-nov')).toEqual([expect.objectContaining({data:expect.objectContaining({cicloChave:'2026-11',dataInicio:date('2026-11-01'),dataFim:date('2026-11-05'),foraDaRecorrencia:false})})]);
+  expect(novasDoBanco(db).some(o=>o.cicloChave==='2026-11')).toBe(false);
+});
 const serieUtil = (agenda = {}, extra = {}) => ({
   id: 's', portalClientId: 'p', tipo: 'OBRIGACAO', periodicidade: 'MENSAL', diaVencimento: 20,
   ajusteDiaUtil: 'MANTER', defasagemMeses: 1,

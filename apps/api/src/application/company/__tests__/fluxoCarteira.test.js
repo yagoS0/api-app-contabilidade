@@ -1,4 +1,4 @@
-import { projetarFluxoCarteira } from '../../../../../../packages/shared/src/accounting/fluxoCarteira.js';
+import { projetarFluxoCarteira, MODELOS_OBRIGACOES_CARTEIRA } from '../../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 import { validarEdicaoTarefa } from '../../../../../../packages/shared/src/accounting/validarTarefaCarteira.js';
 
 const empresa = (patch={}) => ({ companyId:'a', legacyCompany:{regimeTributario:'SIMPLES_NACIONAL'}, guideCompliance:{das:{required:true,state:'missing'}}, ...patch });
@@ -28,9 +28,10 @@ test('sem movimento não dispensa transmitir o Simples',()=>{
   const f=projetarFluxoCarteira(empresa({empresaZerada:true,apuracao:{estado:'calculada'},guideCompliance:{das:{required:true,state:'vazio'}}}),contexto());
   expect(f.status.chave).toBe('obrigacoes');
 });
-test('presumido requer conferência das obrigações quando não configuradas',()=>{
+test('presumido tem uma única tarefa para enviar EFD e MIT',()=>{
   const f=projetarFluxoCarteira(empresa({legacyCompany:{regimeTributario:'LUCRO_PRESUMIDO'},apuracao:{estado:'calculada'}}),contexto());
-  expect(f.tarefas.find(t=>t.chave==='transmitir').titulo).toContain('declarações');expect(f.status.chave).toBe('obrigacoes');
+  expect(f.tarefas.find(t=>t.chave==='transmitir').titulo).toBe('Enviar EFD e MIT');expect(f.status.chave).toBe('obrigacoes');
+  expect(f.tarefas.some(t=>['obrigacoes','obter_guias'].includes(t.chave))).toBe(false);
 });
 test('evidência antiga não conclui cálculo alterado',()=>{
   const f=projetarFluxoCarteira(empresa(),contexto({hashes:{apurar:'novo'},registros:[{chave:'apurar',dados:{conclusao:{em:'ontem',hash:'antigo'}}}]}));
@@ -50,7 +51,20 @@ test('falha de leitura não é ausência de guias',()=>{
 });
 test('tarefas específicas participam da etapa e não apagam automáticas',()=>{
   const f=projetarFluxoCarteira(empresa({apuracao:{estado:'transmitida'}}),contexto({registros:[{chave:'extra:1',dados:{titulo:'Conferir notas',etapa:'apuracao'}}]}));
-  expect(f.status.chave).toBe('apuracao');expect(f.tarefas).toHaveLength(7);
+  expect(f.status.chave).toBe('apuracao');expect(f.tarefas).toHaveLength(6);
+});
+
+test('transmissão do presumido avança sem segunda confirmação mas ISS pendente continua bloqueando',()=>{
+  const c=empresa({legacyCompany:{regimeTributario:'LUCRO_PRESUMIDO'}});
+  const ctx=contexto({hashes:{transmitir:'atual'},registros:[{chave:'transmitir',dados:{conclusao:{em:'hoje',hash:'atual'}}}]});
+  expect(projetarFluxoCarteira(c,ctx).status.chave).toBe('guias');
+  expect(projetarFluxoCarteira(c,{...ctx,obrigacoes:[{nome:'GUIA DE ISS',concluida:false}]}).status.chave).toBe('obrigacoes');
+  expect(projetarFluxoCarteira(c,{...ctx,hashes:{transmitir:'mudou'}}).apuracao.transmitida).toBe(false);
+});
+
+test('modelos não oferecem captura geral nem transmissão duplicada',()=>{
+  expect(MODELOS_OBRIGACOES_CARTEIRA.some(m=>['CARTEIRA_OBTER_GUIAS','CARTEIRA_OBRIGACOES'].includes(m.verificador))).toBe(false);
+  expect(MODELOS_OBRIGACOES_CARTEIRA.filter(m=>m.verificador==='CARTEIRA_TRANSMITIR').map(m=>m.titulo)).toEqual(['Transmitir apuração · Simples Nacional','Enviar EFD e MIT · Lucro Presumido']);
 });
 
 test('transmissão externa comprovada atualiza a coluna e a obrigação verificável',()=>{
