@@ -93,3 +93,8 @@ useProtegerCamposDaRolagem, montado em App e Modal com contagem de usuários, re
 
 ## Organização de obrigações — 06/10/2026
 A lista permite pausar obrigações e consultar/retomar as pausadas pelo filtro existente. Pausar conserva IDs, vínculos e ocorrências; não cancela nem apaga conclusões. A propagação preserva sobrescritas locais. Modelos não reaparecem quando sua regra está pausada. Editar metadados de uma regra sem agendaConfig preserva o calendário fiscal legado quando nenhuma data, horário, repetição, prioridade ou ajuste da janela foi alterado.
+
+## EFD/MIT e guia de ISS — 06/10/2026
+EFD e MIT são executados juntos no Lucro Presumido: uma tarefa Enviar EFD e MIT usa a evidência de transmissão existente. Não oferecer uma segunda tarefa Concluir obrigações do período para esse regime, nem captura geral de guias. Obrigações fiscais específicas pendentes continuam participando do status; envio de guias continua acompanhando os documentos e recibos. Chaves/verificadores legados permanecem reconhecidos para preservar histórico. Modelos novos seguem a mesma organização, sem criar ISS ou prazos automaticamente.
+
+No cadastro autorizado do escritório, a guia de ISS tem janela mensal de 1 a 5 e vencimento no dia 5. Alteração explícita de janela exige conferir ocorrências concluídas, que o sincronizador preserva. Ao adotar agendaConfig em séries legadas sem cicloChave, a reconciliação usa a mesma identidade mensal para atualizar e retirar ciclos, evitando ocultar uma ocorrência recém-atualizada.

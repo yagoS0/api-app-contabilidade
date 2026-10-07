@@ -5,7 +5,8 @@ import { criarConsultorDeFeriados } from './diaUtil.js';
 // O chamador já segura o lock da série. Nunca recriar uma chave cancelada/concluída.
 export async function sincronizarAgendaConfigurada(db, serie, { hoje, incluirVencidoDoMes = false }) {
   const existentes = await db.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: serie.id } });
-  const porChave = new Map(existentes.map(o => [o.cicloChave || (serie.periodicidade === 'AVULSA' ? serie.agendaConfig.dataInicio : new Date(o.dataVencimento).toISOString().slice(0, 7)), o]));
+  const chaveDoCiclo = o => o.cicloChave || (serie.periodicidade === 'AVULSA' ? serie.agendaConfig.dataInicio : new Date(o.dataVencimento).toISOString().slice(0, 7));
+  const porChave = new Map(existentes.map(o => [chaveDoCiclo(o), o]));
   const [empresa, feriados] = await Promise.all([
     db.portalClient.findUnique({ where: { id: serie.portalClientId }, select: { municipio: true } }),
     db.feriado.findMany({ select: { data: true, abrangencia: true, municipio: true } }),
@@ -56,7 +57,7 @@ export async function sincronizarAgendaConfigurada(db, serie, { hoje, incluirVen
   }
   const chaves = new Set(previstas.map(p => p.cicloChave));
   for (const o of existentes) {
-    if (!o.canceladaEm && o.status === 'PENDENTE' && !o.janelaPersonalizada && new Date(o.dataInicio || o.dataVencimento) >= hoje && !chaves.has(o.cicloChave)) {
+    if (!o.canceladaEm && o.status === 'PENDENTE' && !o.janelaPersonalizada && new Date(o.dataInicio || o.dataVencimento) >= hoje && !chaves.has(chaveDoCiclo(o))) {
       await db.ocorrenciaObrigacao.update({ where: { id: o.id }, data: { foraDaRecorrencia: true } });
     }
   }
