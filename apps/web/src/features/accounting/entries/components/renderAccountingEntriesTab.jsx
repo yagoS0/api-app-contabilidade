@@ -1039,6 +1039,7 @@ export function AccountingEntriesTab({
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {onCreateBaixa && <Button variant="secondary" disabled={monthClosed || !activeComp} onClick={() => setShowPagamentos(true)} title={pagamentosPendentes.error || "Pagamentos de competências anteriores aguardando baixa"}>Pagamentos{pagamentosPendentes.loading ? " …" : pagamentosPendentes.error ? " !" : pagamentosPendentes.itens.length > 0 ? <span style={{marginLeft:8,padding:"1px 7px",borderRadius:12,background:"rgba(255,179,71,.15)",color:"#FFB347"}}>{pagamentosPendentes.itens.length}</span> : null}</Button>}
           <BotaoDaConferencia pendencias={pendencias} onOpenConferencia={onOpenConferencia} />
           <ActionMenu
             label="Configurações"
@@ -1232,25 +1233,7 @@ export function AccountingEntriesTab({
       {message && message !== "Lançamento adicionado." && <p style={{ color: "var(--success)", margin: "0 0 8px", fontSize: "0.875rem" }}>{message}</p>}
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
 
-      {/* Q18: toolbar junto da tabela — só o primário. O painel de fechamento desceu para o lado
-          da TABELA (ver abaixo): ele fala do mês inteiro, e aqui em cima empurrava a tabela ~300px
-          para baixo, à custa de três ou quatro lançamentos a menos visíveis de primeira. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
-        {/* ⚠ ERA VERDE (var(--success)). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
-            botão verde de "faça isto" ensina o contrário exatamente na tela onde o verde do
-            rodapé ("✓ ok", D=C) precisa ser lido como "está fechado". Ação primária é o accent.
-            O estilo à mão (altura 34, raio 8) também saiu: é o `Button` do app. */}
-        <Button
-          type="button"
-          onClick={() => setAdding(true)}
-          disabled={adding || monthClosed}
-          title={monthClosed ? "Mês fechado — reabra a empresa para lançar." : undefined}
-        >
-          + Adicionar lançamento
-        </Button>
-        {onCreateBaixa && <Button variant="secondary" disabled={monthClosed || !activeComp} onClick={() => setShowPagamentos(true)} title={pagamentosPendentes.error || "Pagamentos de competências anteriores aguardando baixa"}>Pagamentos{pagamentosPendentes.loading ? " …" : pagamentosPendentes.error ? " !" : pagamentosPendentes.itens.length > 0 ? <span style={{marginLeft:8,padding:"1px 7px",borderRadius:12,background:"rgba(255,179,71,.15)",color:"#FFB347"}}>{pagamentosPendentes.itens.length}</span> : null}</Button>}
-        {showPagamentos && <PagamentosProvisionadosModal key={`${companyId}:${activeComp}`} pendentes={pagamentosPendentes} competencia={activeComp} accounts={accounts} onSave={onCreateBaixa} saving={savingBaixa} onLoadBaixaTemplate={onLoadBaixaTemplate} onClose={() => setShowPagamentos(false)} />}
-      </div>
+      {showPagamentos && <PagamentosProvisionadosModal key={`${companyId}:${activeComp}`} pendentes={pagamentosPendentes} onBuscarPagamento={guideId => fechamentoApi.buscarPagamentoGuia(guideId)} competencia={activeComp} accounts={accounts} onSave={onCreateBaixa} saving={savingBaixa} onLoadBaixaTemplate={onLoadBaixaTemplate} onClose={() => setShowPagamentos(false)} />}
 
       {selectedCount > 0 && (
         <div style={{
@@ -1305,15 +1288,24 @@ export function AccountingEntriesTab({
       {/* ⚠ `minWidth: 0` é o que permite ESTA coluna encolher. Sem ele o flex usa a largura
           intrínseca da tabela como piso, e a linha estoura para fora da página em vez de a tabela
           rolar dentro do próprio contêiner. */}
-      <div style={{ flex: "1 1 620px", minWidth: 0, overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface, padding: 20, boxSizing: "border-box" }}>
+      <div style={{ flex: "1 1 620px", minWidth: 0, overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface, padding: 12, boxSizing: "border-box" }}>
         {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026).
             ⚠ As setas ◀ ▶ que ficavam aqui SAÍRAM: quem navega a competência é o seletor do header,
             um só para a empresa inteira. O título FICA — ele não é controle, é o rótulo do que a
             tabela está mostrando, e some no papel se sair daqui (a impressão não leva o header). */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 14 }}>
-          <div style={{ minWidth: 200, textAlign: "center", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+          <div style={{ minWidth: 0, textAlign: "left", fontSize: "1rem", fontWeight: 600, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text }}>
             {formatCompetenciaTitulo(activeComp)}
           </div>
+        <Button
+          type="button"
+          aria-label="Adicionar lançamento"
+          onClick={() => setAdding(true)}
+          disabled={adding || monthClosed}
+          title={monthClosed ? "Mês fechado — reabra a empresa para lançar." : undefined}
+        >
+          +
+        </Button>
         </div>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>

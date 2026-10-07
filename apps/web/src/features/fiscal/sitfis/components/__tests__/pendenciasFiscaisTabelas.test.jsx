@@ -39,11 +39,11 @@ test("tabelas, filtros, seleção e evidência trabalham só com relatório salv
   const rfb = screen.getByRole("region", { name: "Receita Federal" });
   expect(within(rfb).getByRole("table")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Municipal — ISS e taxas" })).toHaveTextContent("Não consultado");
-  expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
   fireEvent.click(screen.getByRole("checkbox", { name: /Selecionar IRPJ/ }));
   expect(screen.getByRole("status")).toHaveTextContent("120,10");
   fireEvent.change(screen.getByLabelText("Buscar nas pendências"), { target: { value: "DCTFWeb" } });
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: /Selecionar Omissão/ })).not.toBeChecked();
   expect(screen.getByRole("status")).toHaveTextContent("1 selecionado(s)");
   fireEvent.click(screen.getByRole("button", { name: "Limpar seleção" }));
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
