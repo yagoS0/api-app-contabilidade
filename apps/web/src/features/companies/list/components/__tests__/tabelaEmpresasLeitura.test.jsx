@@ -160,7 +160,7 @@ describe("⚠ TRÊS EIXOS INDEPENDENTES — o caso PHAOS", () => {
     });
     const linha = screen.getByRole("row", { name: /PHAOS CONSULTORIA/ });
     expect(within(linha).getByText('A apurar')).toBeInTheDocument();
-    expect(within(linha).getByText('Pendência')).toBeInTheDocument();
+    expect(within(linha).getByText('Pendente')).toBeInTheDocument();
     expect(within(linha).getByRole('button', {name: 'DAS: enviada ao cliente'})).toBeInTheDocument();
   });
 
@@ -256,4 +256,24 @@ describe("acessibilidade da linha", () => {
     expect(botao.tagName).toBe("BUTTON");
     expect(botao).toHaveAttribute("title", expect.stringMatching(/consulta paga/i));
   });
+});
+
+test('presumido resume tributos, preserva detalhes e separa parcelamentos', () => {
+  montar({ companies: [empresa({ legacyCompany: { regimeTributario: 'LUCRO_PRESUMIDO' },
+    guideCompliance: { irpj: { required: true, state: 'missing' }, csll: { required: true, state: 'gerada' },
+      parcDas: { required: true, state: 'missing', quantidade: 2, atrasada: true,
+        itens: [{ id: 'p1', tipo: 'PARCSN', numeroParcela: 3 }, { id: 'p2', tipo: 'PERT', numeroParcela: 8 }] } } })] });
+  const resumo = screen.getByRole('button', { name: '2 guias: IRPJ, CSLL' });
+  expect(resumo).toHaveTextContent('2 guias');
+  expect(resumo.title).toContain('IRPJ: falta gerar');
+  expect(resumo.title).toContain('CSLL: gerada, falta enviar');
+  const parc = screen.getByRole('button', { name: /Parcelamento:/ });
+  expect(parc).toHaveTextContent('PARC 2');
+  expect(parc.title).toContain('PARCSN · parcela 3');
+  expect(parc.title).toContain('PERT · parcela 8');
+  expect(screen.getByText('Pendente')).toBeVisible();
+  expect(screen.queryByText(/parcela atrasada/i)).not.toBeInTheDocument();
+  fireEvent.click(resumo);
+  fireEvent.click(screen.getByRole('button', { name: /IRPJ: falta gerar/ }));
+  expect(screen.getByRole('button', { name: 'Abrir apuração' })).toBeVisible();
 });

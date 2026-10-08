@@ -61,6 +61,11 @@ const ESTADO = {
   conflito: { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "marcada sem movimento, mas há faturamento" },
 };
 
+export function resumoDaGuia(tag) {
+  const estado = rotuloCanaisEnviados(tag) ? `enviada por ${rotuloCanaisEnviados(tag)}` : (ESTADO[tag.state] || ESTADO.missing).rotulo;
+  return `${tag.label}: ${estado}`;
+}
+
 const fmtData = (iso) => {
   if (!iso) return null;
   const d = new Date(iso);
@@ -120,7 +125,7 @@ function BotaoAcao({ children, onClick, tom = "neutro", disabled }) {
  * @param {string} competencia
  * @param {object} acoes     { onEnviar, onMarcarVazio, onDesfazerVazio, onAbrirEmpresa }
  */
-export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
+export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = false }) {
   const [aberto, setAberto] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState(null);
@@ -142,6 +147,20 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   // — ou o acordo tem parcela no mês, ou não tem. Marcar vazio ali seria afirmar algo que o
   // parcelamento já responde sozinho.
   const ehParcela = tag.key === "parcDas";
+  const quantidade = tag.quantidade || tag.itens?.length || 1;
+  const detalhes = [
+    `${tag.label} — ${rotuloEstado}`,
+    ...(tag.itens || []).map(item => [
+      item.tipo || item.tipoParcelamento || 'Parcelamento',
+      item.numeroParcelamento ? `acordo ${item.numeroParcelamento}` : '',
+      item.numeroParcela ? `parcela ${item.numeroParcela}` : '',
+      item.referencia, item.label,
+    ].filter(Boolean).join(' · ')),
+    ehParcela && !tag.itens?.length ? [tag.tipoParcelamento, tag.numeroParcelamento, tag.numeroParcela ? `parcela ${tag.numeroParcela}${tag.quantidadeParcelas ? `/${tag.quantidadeParcelas}` : ''}` : ''].filter(Boolean).join(' · ') : '',
+  ].filter(Boolean).join('\n');
+  const tom = ['falhou', 'conflito'].includes(tag.state) ? 'perigo'
+    : tag.pendenciaOperacional || tag.state === 'missing' ? 'pendente'
+      : tag.state === 'vazio' ? 'neutro' : 'ok';
 
   async function executar(fn) {
     if (ocupado) return;
@@ -168,19 +187,22 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         aria-label={`${tag.label}: ${rotuloEstado}`}
-        title={`${tag.label} — ${rotuloEstado}`}
-        style={{
+        title={detalhes}
+        className={compacto ? `carteira-tag carteira-tag--${tom}` : undefined}
+        style={compacto ? undefined : {
           display: "inline-flex", alignItems: "center", gap: 4,
           fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
           background: meta.fundo, border: `1px solid ${meta.cor}`, color: meta.cor,
           cursor: "pointer", font: "inherit", lineHeight: 1.6,
         }}
       >
-        <span aria-hidden="true">{meta.icone}</span>
-        {tag.label}{tag.key === "parcDas" && tag.pendencias > 0 ? ` · ${tag.pendencias} pendente(s)` : ""}
-        {tag.state === "enviada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
-        {tag.state === "gerada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>enviar</span>}
-        {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
+        {compacto && ehParcela ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>PARC {quantidade}</> : <>
+          <span aria-hidden="true">{meta.icone}</span>
+          {tag.label}{tag.key === "parcDas" && tag.pendencias > 0 ? ` · ${tag.pendencias} pendente(s)` : ""}
+          {tag.state === "enviada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
+          {tag.state === "gerada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>enviar</span>}
+          {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
+        </>}
       </button>
 
       {aberto && (

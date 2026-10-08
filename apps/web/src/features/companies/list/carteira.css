@@ -168,3 +168,15 @@
 .carteira-apuracao-tag--transmitido { --apuracao-color: #8dbafa; }
 .carteira-apuracao-tag__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 @media print { .carteira-apuracao-tag { color: inherit; background: none; border-color: currentColor; } }
+
+/* Tags da carteira compartilham dimensões e cores de estado. */
+.carteira-tag { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; box-sizing: border-box; padding: 3px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--tag-color) 24%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); color: var(--tag-color); font: 500 .74rem/1.4 var(--font-sans, system-ui, sans-serif); white-space: nowrap; }
+.carteira-tag--pendente { --tag-color: #efc36b; }
+.carteira-tag--ok { --tag-color: #83d5aa; }
+.carteira-tag--info { --tag-color: #8dbafa; }
+.carteira-tag--perigo { --tag-color: #f49a9f; }
+.carteira-tag--neutro { --tag-color: var(--text-muted); }
+button.carteira-tag { cursor: pointer; }
+button.carteira-tag:hover { background: color-mix(in srgb, var(--tag-color) 18%, transparent); }
+button.carteira-tag:focus-visible { outline: 2px solid var(--tag-color); outline-offset: 2px; }
+@media print { .carteira-tag { color: inherit; background: none; border-color: currentColor; } }

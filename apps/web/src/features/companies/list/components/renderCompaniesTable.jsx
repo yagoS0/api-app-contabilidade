@@ -17,10 +17,10 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip } from "./renderGuiaChip";
+import { GuiaChip, Popover, resumoDaGuia } from "./renderGuiaChip";
 import { empresaSemObrigacoes } from "../lib/estadoDominante";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
-import { corRegime, descricaoDoRegime } from "../lib/abaRegime";
+import { corRegime, descricaoDoRegime, regimeDe } from "../lib/abaRegime";
 import { estadoCertificado } from "../lib/certificado";
 import { lerFalhaDeCarga } from "../../../../lib/falhaDeCarga";
 // ⚠ REUSO, NÃO CÓPIA. Já existiam DOIS formatadores de CNPJ no projeto
@@ -132,6 +132,28 @@ function PopoverConfig({ company, onFechar }) {
  * parcelamento.
  */
 
+function GuiasResumidas({ tags, company, competencia, acoes }) {
+  const [aberto, setAberto] = useState(false);
+  const tom = tags.some(t => ['falhou', 'conflito'].includes(t.state)) ? 'perigo'
+    : tags.some(t => t.state === 'missing') ? 'pendente'
+      : tags.every(t => ['enviada', 'vazio'].includes(t.state)) ? 'ok' : 'info';
+  const rotulo = `${tags.length} ${tags.length === 1 ? 'guia' : 'guias'}`;
+  return <span style={{ position: 'relative', display: 'inline-block' }}>
+    <button type="button" className={`carteira-tag carteira-tag--${tom}`} aria-expanded={aberto}
+      aria-label={`${rotulo}: ${tags.map(t => t.label).join(', ')}`}
+      title={tags.map(resumoDaGuia).join('\n')}
+      onClick={() => setAberto(v => !v)}>
+      <span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{rotulo}
+    </button>
+    {aberto && <Popover onFechar={() => setAberto(false)}>
+      <strong>Guias · {competencia}</strong>
+      {tags.map(tag => <div key={tag.key || tag.label} style={{ marginTop: 10 }}>
+        <GuiaChip tag={tag} empresa={company} competencia={competencia} acoes={acoes}/>
+      </div>)}
+    </Popover>}
+  </span>;
+}
+
 function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
   const [config, setConfig] = useState(false);
   const [consultando, setConsultando] = useState(false);
@@ -140,6 +162,9 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
   const fechada = fluxo.status.chave === "concluido";
   const tags = getComplianceTags(company.guideCompliance);
   const fiscal = situacaoFiscalDaLinha(company);
+  const rotuloFiscal = fiscal.estado.chave === 'pendencia' ? 'Pendente' : fiscal.rotulo;
+  const resumirGuias = regimeDe(company) === 'LUCRO_PRESUMIDO';
+  const tributos = tags.filter(tag => tag.key !== 'parcDas');
   const cert = estadoCertificado(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
 
@@ -279,27 +304,30 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
 
       {/* APURAÇÃO — o pipeline do mês. Um chip, quatro estados possíveis, nada empilhado. */}
       <td data-label="Status" style={CELULA}>
-        <button type="button" onClick={() => onFluxo?.(company)} className="carteira-etapa" aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
+        <button type="button" onClick={() => onFluxo?.(company)} className={`carteira-tag carteira-tag--${fechada ? 'ok' : 'neutro'}`} aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
       </td>
       <td data-label="Apuração" style={CELULA}>
         <span className={`carteira-apuracao-tag carteira-apuracao-tag--${apuracao.chave}`}><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{apuracao.rotulo}</span>
       </td>
       <td data-label="Guias" style={CELULA}>
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {tags.map(tag => <GuiaChip key={tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
+          {resumirGuias && tributos.length > 0 && <GuiasResumidas tags={tributos} company={company} competencia={competencia} acoes={acoesGuia || {}}/>}
+          {(resumirGuias ? tags.filter(tag => tag.key === 'parcDas') : tags).map(tag => <GuiaChip compacto key={tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
           {!tags.length && <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{company.guideCompliance ? 'Sem guias previstas' : 'Não disponível'}</span>}
         </span>
       </td>
       <td data-label="Contabilização" style={CELULA}>
-        <span style={{ fontSize: '0.76rem', color: fluxo.contabilizacao.chave === 'importado' ? 'var(--state-ok)' : 'var(--text)' }}>{fluxo.contabilizacao.rotulo}</span>
-        {fluxo.contabilizacao.importados > 0 && fluxo.contabilizacao.chave !== 'importado' && <small style={{display:'block'}}>ERP: {fluxo.contabilizacao.importados}/{fluxo.contabilizacao.total}</small>}
+        <span className={`carteira-tag carteira-tag--${fluxo.contabilizacao.chave === 'aberto' ? 'pendente' : 'ok'}`}
+          title={`ERP: ${fluxo.contabilizacao.importados}/${fluxo.contabilizacao.total}`}>
+          <span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{fluxo.contabilizacao.rotulo}
+        </span>
       </td>
       <td data-label="Situação fiscal" style={CELULA}>
         {fiscal.precisaConsultar ? (
           <button
             type="button"
             onClick={consultarFiscal}
-            aria-label={`Consultar situação fiscal de ${nome}: ${fiscal.rotulo}`}
+            aria-label={`Consultar situação fiscal de ${nome}: ${rotuloFiscal}`}
             disabled={consultando}
             title={`${fiscal.titulo} — clique para consultar no SERPRO (consulta paga)`}
             /* ⚠ ISTO É AÇÃO, NÃO ESTADO — e já era: o elemento sempre foi um `<button>`, com
@@ -317,23 +345,16 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
               cursor: consultando ? "wait" : "pointer", font: "inherit",
             }}
           >
-            {consultando ? "consultando…" : <><span aria-hidden="true">{fiscal.estado.icone}</span>{fiscal.rotulo}</>}
+            {consultando ? "consultando…" : <><span aria-hidden="true">{fiscal.estado.icone}</span>{rotuloFiscal}</>}
           </button>
         ) : (
           <span
             title={fiscal.titulo}
-            style={fiscal.estado.pill
-              ? {
-                display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
-                fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                background: fiscal.estado.fundo, border: `1px solid ${fiscal.estado.cor}`, color: fiscal.estado.cor,
-              }
-              : { display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontSize: "0.72rem", color: fiscal.estado.cor }}
+            className={`carteira-tag carteira-tag--${fiscal.estado.chave === 'pendencia' ? 'perigo' : fiscal.estado.chave === 'emDia' ? 'ok' : 'neutro'}`}
           >
-            <span aria-hidden="true">{fiscal.estado.icone}</span>{fiscal.rotulo}
+            <span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{rotuloFiscal}
           </span>
         )}
-        {fiscal.parcelamento && <small style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: 3 }}>{fiscal.parcelamento}</small>}
       </td>
 
       <td className="company-row__action" data-coluna-acao style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap" }}>
