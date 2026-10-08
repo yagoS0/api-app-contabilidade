@@ -145,10 +145,11 @@ describe("o clique NORMAL continua sendo SPA; o com modificador é do navegador"
     }
   );
 
-  test("Documentos destaca a aba direta, sem subabas de configuração ou competência", () => {
+  test("Documentos oferece senhas externas, sem competência", () => {
     montarHeader("documentos", { competencia: "2026-08", onCompetenciaChange: jest.fn() });
-    expect(screen.getByRole("link", { name: "Documentos" })).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByRole("navigation", { name: /Seções de/ })).toBeNull();
+    for (const link of screen.getAllByRole("link", { name: "Documentos" })) expect(link).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "Seções de Documentos" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Senhas externas" })).toHaveAttribute("href", "/companies/empresa-1/credenciais");
     expect(screen.queryByRole("group", { name: "Competência" })).toBeNull();
     expect(SEGMENT_TO_TAB.documentos).toBe("documentos");
   });
