@@ -159,7 +159,7 @@ describe("Wizard — a origem manda no formulário", () => {
     expect(screen.getByLabelText(/^Razão social/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^CNPJ/)).toBeInTheDocument();
     // e oferece a consulta à Receita naquele campo
-    expect(screen.getByRole("button", { name: "consultar Receita" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Consultar novamente" })).toBeInTheDocument();
   });
 
   test("a trilha marca o passo atual com aria-current='step'", async () => {

@@ -1,5 +1,7 @@
+import { normalizarCadastroCnpj } from "./cadastroCnpj.js";
 // Questionário canônico: formulário e atendimento conversacional.
 export const ONBOARDING_ORIGENS = Object.freeze([
+  Object.freeze({ chave: "PESSOA_FISICA", titulo: "Pessoa física", subtitulo: "Serviço pessoal, como IRRF ou declaração de renda, sem CNPJ.", acento: "--accent-cyan" }),
   Object.freeze({
     chave: "ABERTURA",
     titulo: "Vai abrir a empresa",
@@ -69,6 +71,8 @@ const semSocios = (dados) => !["MEI", "EI"].includes(String(dados?.tipoEmpresa |
  * - `sensivel: true` = dado DECLARADO, ainda não conferido. Ganha o selo na ficha do escritório.
  */
 export const ONBOARDING_CAMPOS = Object.freeze([
+  { passo: "identificacao", campo: "servicoSolicitado", tipo: "texto", origens: ["PESSOA_FISICA"], rotulo: "O que precisa resolver?", obrigatorio: () => true },
+  { passo: "responsavel", campo: "responsavelCpf", tipo: "cpf", origens: ["PESSOA_FISICA"], rotulo: "CPF (opcional neste momento)" },
   { passo: "situacao", campo: "modalidadeServico", tipo: "escolha", rotulo: "Serviço desejado", opcoes: [{ valor: "AVULSO", rotulo: "Somente serviço avulso" }, { valor: "RECORRENTE", rotulo: "Serviço e contabilidade mensal" }, { valor: "COMPARAR", rotulo: "Quero comparar as opções" }] },
   { passo: "situacao", campo: "notasRecebidasMes", tipo: "inteiro", rotulo: "Notas recebidas e despesas por mês", ajuda: "Não inclui notas emitidas." },
   { passo: "situacao", campo: "consultoriaMensal", tipo: "booleano", rotulo: "Deseja consultoria mensal?" },
@@ -146,7 +150,7 @@ export const ONBOARDING_CAMPOS = Object.freeze([
   {
     passo: "responsavel", campo: "responsavelEmail", tipo: "email",
     rotulo: "E-mail do responsável",
-    ajuda: "Vira o login do cliente no portal quando a empresa for criada.",
+    ajuda: "Usado para contato e acesso aos serviços contratados.",
     obrigatorio: () => true,
   },
   {
@@ -256,7 +260,7 @@ export const ONBOARDING_CAMPOS = Object.freeze([
 // seletor no componente é uma segunda definição de "este campo aparece?".
 
 function valeParaOrigem(descritor, origem) {
-  if (!Array.isArray(descritor.origens)) return true;
+  if (!Array.isArray(descritor.origens)) return origem !== "PESSOA_FISICA" || ["responsavelNome", "responsavelEmail", "responsavelTelefone", "observacoes"].includes(descritor.campo);
   return descritor.origens.includes(origem);
 }
 
@@ -274,7 +278,7 @@ export function ehObrigatorio(descritor, dados) {
 export function camposDoPasso(origem, passo, dados) {
   return ONBOARDING_CAMPOS.filter(
     (d) => d.passo === passo && valeParaOrigem(d, origem) && estaVisivel(d, dados)
-  );
+  ).sort((a, b) => Number(Boolean(b.consultaReceita)) - Number(Boolean(a.consultaReceita)));
 }
 
 /** Todos os descritores da origem, visíveis ou não — usado pela poda e pelo `rascunhoVazio`. */
@@ -292,7 +296,7 @@ export function passosVisiveis(origem) {
     // Sem origem escolhida existe UM passo: escolher a origem.
     return ONBOARDING_PASSOS.filter((p) => p.chave === "origem");
   }
-  return ONBOARDING_PASSOS;
+  return origem === "PESSOA_FISICA" ? ONBOARDING_PASSOS.filter(p => p.chave !== "situacao") : ONBOARDING_PASSOS;
 }
 
 const VAZIO_POR_TIPO = {
@@ -327,6 +331,10 @@ export function podarInvisiveis(origem, dados) {
   const out = {};
   for (const [chave, valor] of Object.entries(entrada)) {
     if (permitidos.has(chave)) out[chave] = valor;
+  }
+  if (origem !== "PESSOA_FISICA") {
+    const cadastro = normalizarCadastroCnpj(entrada.cadastroCnpj, out.cnpj);
+    if (cadastro) out.cadastroCnpj = cadastro;
   }
   return out;
 }

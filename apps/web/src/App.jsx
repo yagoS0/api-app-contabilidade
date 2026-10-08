@@ -27,7 +27,7 @@ import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhat
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
 import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
-import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardingWizardPage";
+
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
 import { WorkspaceNavigationProvider } from "./app/navigation/WorkspaceNavigation";
 import { useCalendarioNavigation } from "./app/hooks/useCalendarioNavigation";
@@ -370,11 +370,13 @@ function AppInterno({ session, feedback }) {
   if (session.page === "onboardingWizard") {
     const onboardingId = decodeURIComponent(location.pathname.split("/")[2] || "");
     return (
-      <OnboardingWizardPage
+      <OnboardingDetailPage
+        preenchimentoInicial
         api={api}
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
-        onAbrirDetalhe={(id) => session.setPage("onboardingDetail", { onboardingId: id })}
+        onAbrirAtendimento={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
+        onAbrirEmpresa={(portalClientId, aba = "cadastro") => companiesWorkspace.openCompanyTab(portalClientId, aba)}
       />
     );
   }
@@ -386,7 +388,7 @@ function AppInterno({ session, feedback }) {
         api={api}
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
-        onEditar={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
+        onAbrirAtendimento={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
         onAbrirEmpresa={(portalClientId, aba = "cadastro") => companiesWorkspace.openCompanyTab(portalClientId, aba)}
       />
     );

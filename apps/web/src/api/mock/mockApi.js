@@ -11083,6 +11083,24 @@ export function createMockApi() {
     async revogarLinkOnboarding(id,linkId){const l=[...mockLinksComerciais.values()].find(l=>l.id===linkId&&l.onboardingId===id);if(!l)throw new Error("Link não encontrado.");l.revokedAt=new Date().toISOString();return {ok:true};},
     async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
     async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=patch.dados;o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async criarDemandaOnboarding(id, { origem, versao, chaveSolicitacao }) {
+      const anterior = mockOnboardings.get(id);
+      if (!anterior) throw new Error("Atendimento não encontrado.");
+      if (versao != null && versao !== (anterior.versao || 0)) throw new Error("A ficha foi atualizada. Reabra antes de continuar.");
+      const repetida = [...mockOnboardings.values()].find(o => chaveSolicitacao && o.demandaOrigemId === id && o.chaveSolicitacao === chaveSolicitacao);
+      if (repetida) return { ok: true, onboarding: { ...repetida, etapas: mockEtapasDe(repetida.id) } };
+      const dados = Object.fromEntries(["responsavelNome", "responsavelEmail", "responsavelTelefone"].map(k => [k, anterior.dados?.[k] || anterior[k] || ""]));
+      const registro = { id: `mock-onb-${++mockOnboardingSeq}`, origem, status: "RASCUNHO", dados, ...dados,
+        versao: 0, origemPreenchimento: "ESCRITORIO", cnpj: null, razaoSocial: null, portalClientId: null,
+        ultimoPasso: "identificacao", demandaOrigemId: id, chaveSolicitacao,
+        demandasRelacionadas: [{ id, origem: anterior.origem, anterior: true }],
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      anterior.demandasRelacionadas = [...(anterior.demandasRelacionadas || []), { id: registro.id, origem, anterior: false }];
+      mockOnboardings.set(registro.id, registro);
+      mockOnboardingEtapas.set(registro.id, []);
+      persistirOnboardingsMock();
+      return { ok: true, onboarding: { ...registro, etapas: [] } };
+    },
     async criarOnboarding(origem) {
       await delay(180);
       const registro = {

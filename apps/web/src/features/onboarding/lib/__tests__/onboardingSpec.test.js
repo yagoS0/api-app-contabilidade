@@ -16,8 +16,8 @@ import {
 const ORIGENS = ONBOARDING_ORIGENS.map((o) => o.chave);
 
 describe("integridade da spec", () => {
-  test("as três origens têm acento de CATEGORIA, nunca token de estado", () => {
-    expect(ORIGENS).toEqual(["ABERTURA", "TRANSFERENCIA", "INATIVA"]);
+  test("as quatro origens têm acento de CATEGORIA, nunca token de estado", () => {
+    expect(ORIGENS).toEqual(["PESSOA_FISICA", "ABERTURA", "TRANSFERENCIA", "INATIVA"]);
     for (const origem of ONBOARDING_ORIGENS) {
       expect(origem.acento).toMatch(/^--accent-/);
       expect(origem.acento).not.toMatch(/state/);
@@ -98,7 +98,7 @@ describe("camposDoPasso — a origem manda", () => {
   });
 
   test("as três origens fazem as MESMAS perguntas de responsável", () => {
-    const porOrigem = ORIGENS.map((o) =>
+    const porOrigem = ORIGENS.filter(o => o !== "PESSOA_FISICA").map((o) =>
       camposDoPasso(o, "responsavel", rascunhoVazio(o)).map((c) => c.campo).join(",")
     );
     expect(new Set(porOrigem).size).toBe(1);
@@ -229,4 +229,13 @@ describe("ehObrigatorio", () => {
   test("com `obrigatorio`, decide a partir do rascunho inteiro", () => {
     expect(ehObrigatorio(descritorDe("TRANSFERENCIA", "cnpj"), {})).toBe(true);
   });
+});
+
+
+test("pessoa física coleta contato e serviço, sem campos empresariais", () => {
+  const d = { responsavelNome: "Alex", responsavelEmail: "alex@example.test", responsavelTelefone: "11999990000", servicoSolicitado: "Resolver IRRF" };
+  expect(problemasDoRascunho("PESSOA_FISICA", d)).toEqual([]);
+  expect(passosVisiveis("PESSOA_FISICA").map(p => p.chave)).not.toContain("situacao");
+  expect(camposDaOrigem("PESSOA_FISICA").map(c => c.campo)).not.toEqual(expect.arrayContaining(["cnpj", "tipoEmpresa", "qtdFuncionarios", "regimeAtual"]));
+  expect(podarInvisiveis("PESSOA_FISICA", { ...d, cnpj: "11222333000181", regimeAtual: "SIMPLES" })).toEqual(d);
 });

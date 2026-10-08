@@ -9,4 +9,4 @@ export function etapaDaOportunidade(item) {
   return ETAPAS.some(([id]) => id === item.faseComercial) ? item.faseComercial : 'LEAD';
 }
 export const nomeDaOportunidade = item => item.razaoSocial || item.responsavelNome || 'Novo contato';
-export const servicoDaOportunidade = item => ({ ABERTURA: 'Abertura de empresa', TRANSFERENCIA: 'Troca de contador', INATIVA: 'Regularização' }[item.origem] || item.origem || 'A definir');
+export const servicoDaOportunidade = item => item.origem === 'PESSOA_FISICA' ? item.dados?.servicoSolicitado || 'Pessoa física' : ({ ABERTURA: 'Abertura de empresa', TRANSFERENCIA: 'Troca de contador', INATIVA: 'Regularização' }[item.origem] || item.origem || 'A definir');

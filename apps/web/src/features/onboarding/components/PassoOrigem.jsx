@@ -23,10 +23,14 @@ export function PassoOrigem({ origem, onEscolher }) {
           <button
             key={op.chave}
             type="button"
+            className="onboarding-origin-option"
             onClick={() => onEscolher(op.chave)}
             aria-pressed={selecionada}
             style={{
               textAlign: "left",
+              minWidth: 0,
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
               padding: "var(--space-4)",
               paddingLeft: "calc(var(--space-4) + 3px)",
               borderRadius: "var(--radius)",

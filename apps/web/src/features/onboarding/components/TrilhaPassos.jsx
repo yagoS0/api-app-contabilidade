@@ -13,6 +13,7 @@ export function TrilhaPassos({ passos, passoAtual, pendenciasPorPasso = {}, onIr
   return (
     <nav
       aria-label="Etapas do cadastro"
+      className="onboarding-steps"
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -30,9 +31,10 @@ export function TrilhaPassos({ passos, passoAtual, pendenciasPorPasso = {}, onIr
         const podeIr = typeof onIr === "function" && (vencido || atual);
 
         return (
-          <div key={passo.chave} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <div key={passo.chave} className="onboarding-steps__item" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <button
               type="button"
+              className="onboarding-steps__button"
               onClick={podeIr ? () => onIr(passo.chave) : undefined}
               disabled={!podeIr}
               aria-current={atual ? "step" : undefined}
@@ -41,7 +43,11 @@ export function TrilhaPassos({ passos, passoAtual, pendenciasPorPasso = {}, onIr
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                padding: "4px 10px",
+                padding: "8px 12px",
+                minHeight: 44,
+                minWidth: 0,
+                whiteSpace: "normal",
+                textAlign: "left",
                 borderRadius: 999,
                 border: `1px solid ${cor}`,
                 background: atual ? "var(--bg-subtle)" : "transparent",
@@ -70,7 +76,7 @@ export function TrilhaPassos({ passos, passoAtual, pendenciasPorPasso = {}, onIr
               )}
             </button>
             {indice < passos.length - 1 && (
-              <span aria-hidden="true" style={{ color: "var(--text-faint)" }}>›</span>
+              <span className="onboarding-steps__separator" aria-hidden="true" style={{ color: "var(--text-faint)" }}>›</span>
             )}
           </div>
         );

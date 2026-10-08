@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CampoOnboarding } from "../components/CampoOnboarding";
 import { FichaDeclarada } from "../components/PassoRevisao";
 import { camposDoPasso, passosVisiveis, podarInvisiveis } from "../lib/onboardingSpec";
+import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
+import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";
 import { Button } from "../../../components/ui/Button";
 
 const AJUDAS_CLIENTE = {
@@ -20,6 +22,10 @@ export function FormularioPublico({ api }) {
   const [erro, setErro] = useState(""), [aviso, setAviso] = useState(""), [ocupado, setOcupado] = useState(false), [concluido, setConcluido] = useState(false);
   const [confirmado, setConfirmado] = useState(false);
   const [dadosSalvos, setDadosSalvos] = useState("");
+  const tituloEtapa = useRef(null);
+  const etapaAnterior = useRef(null);
+  function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor })); setAviso("Alterações ainda não salvas."); setConfirmado(false); }
+  const cnpj = useConsultaCnpjOnboarding({ contexto: token, origem: registro?.origem, dados, alterarCampo, habilitado: Boolean(registro && !concluido) });
   const dadosAtuais = registro ? JSON.stringify(podarInvisiveis(registro.origem, dados)) : "";
   const alterado = Boolean(registro && !concluido && dadosAtuais !== dadosSalvos);
   useEffect(() => {
@@ -39,6 +45,13 @@ export function FormularioPublico({ api }) {
   const passos = registro ? passosVisiveis(registro.origem).filter((p) => p.chave !== "origem") : [];
   const indice = Math.max(0, passos.findIndex((p) => p.chave === passo));
   const atual = passos[indice]?.chave;
+  useEffect(() => {
+    if (etapaAnterior.current && atual && etapaAnterior.current !== atual) {
+      tituloEtapa.current?.focus({ preventScroll: true });
+      tituloEtapa.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+    }
+    etapaAnterior.current = atual;
+  }, [atual]);
   async function salvar(destino = atual, finalizar = false) {
     if (ocupado || !registro || (finalizar && !confirmado)) return;
     setOcupado(true); setErro(""); setAviso("");
@@ -56,9 +69,11 @@ export function FormularioPublico({ api }) {
     {registro?.origem === "ABERTURA" && <p>Você ainda não precisa ter CNPJ. Conte sobre a empresa que pretende abrir.</p>}</header>
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {concluido ? <h2>Cadastro enviado. O escritório dará continuidade ao atendimento.</h2> : !registro ? <p>{erro ? "Seu preenchimento não foi alterado." : "Carregando formulário…"}</p> : <>
-      <div className="onboarding-public__progress"><p>Etapa {indice + 1} de {passos.length}: <strong>{passos[indice]?.titulo}</strong></p><progress aria-label="Progresso do formulário" value={indice + 1} max={passos.length} /></div>
+      <div className="onboarding-public__progress"><h2 ref={tituloEtapa} tabIndex={-1} style={{ scrollMarginTop: 24 }}>Etapa {indice + 1} de {passos.length}: {passos[indice]?.titulo}</h2><progress aria-label="Progresso do formulário" value={indice + 1} max={passos.length} /></div>
       <fieldset disabled={ocupado} className="onboarding-public__fields">
-        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} />Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</label></> : camposDoPasso(registro.origem, atual, dados).map((descritor) => <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} onChange={(v) => { setDados((d) => ({ ...d, [descritor.campo]: v })); setAviso("Alterações ainda não salvas."); setConfirmado(false); }} origemPreenchimento="CLIENTE" />)}
+        <legend style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap" }}>{passos[indice]?.titulo}</legend>
+        {atual === "identificacao" && <ConsultaCnpjOnboarding consulta={cnpj.consulta} carregando={cnpj.carregando} cadastro={dados.cadastroCnpj} />}
+        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label className="onboarding-public__consent"><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} /><span>Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</span></label></> : camposDoPasso(registro.origem, atual, dados).map((descritor) => <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} onChange={(v) => cnpj.editar(descritor.campo, v)} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />)}
         <div className="onboarding-public__actions">
           {indice > 0 && <Button variant="secondary" onClick={() => salvar(passos[indice - 1].chave)}>Salvar e voltar</Button>}
           <Button variant="secondary" onClick={() => salvar()}>Salvar para continuar depois</Button>

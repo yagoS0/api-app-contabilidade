@@ -9,6 +9,9 @@ import { SeloDeclarado } from "./SeloDeclarado";
 
 const INPUT_STYLE = {
   width: "100%",
+  minWidth: 0,
+  minHeight: 44,
+  boxSizing: "border-box",
   padding: "8px 10px",
   borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)",
@@ -64,25 +67,28 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
           className="onboarding-field-row"
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${colunas.length}, minmax(0, 1fr)) auto`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
             gap: "var(--space-2)",
-            alignItems: "center",
+            alignItems: "end",
           }}
         >
           {colunas.map((coluna) => (
-            <input
-              key={coluna.campo}
-              style={INPUT_STYLE}
-              placeholder={coluna.rotulo}
-              aria-label={`${descritor.rotulo} — ${coluna.rotulo} (linha ${indice + 1})`}
-              value={linha?.[coluna.campo] ?? ""}
-              onChange={(e) => alterar(indice, coluna.campo, e.target.value)}
-            />
+            <label key={coluna.campo} className="onboarding-field-row__column" style={{ minWidth: 0, display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{coluna.rotulo}</span>
+              <input
+                style={INPUT_STYLE}
+                placeholder={coluna.rotulo}
+                aria-label={`${descritor.rotulo} — ${coluna.rotulo} (linha ${indice + 1})`}
+                value={linha?.[coluna.campo] ?? ""}
+                onChange={(e) => alterar(indice, coluna.campo, e.target.value)}
+              />
+            </label>
           ))}
           <button
             type="button"
             onClick={() => onChange(linhas.filter((_, i) => i !== indice))}
             aria-label={`Remover linha ${indice + 1}`}
+            className="onboarding-field-row__remove"
             style={{
               border: "1px solid var(--border)", background: "transparent",
               color: "var(--text-muted)", borderRadius: "var(--radius-sm)",
@@ -96,6 +102,7 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
       <button
         type="button"
         onClick={() => onChange([...linhas, {}])}
+        className="onboarding-field-row__add"
         style={{
           justifySelf: "start", border: "1px solid var(--border)", background: "transparent",
           color: "var(--text)", borderRadius: "var(--radius-sm)", padding: "6px 12px", cursor: "pointer",
@@ -119,7 +126,11 @@ export function CampoOnboarding({
   idPrefix = "onb",
 }) {
   const id = `${idPrefix}-${descritor.campo}`;
-  const comum = { id, style: INPUT_STYLE, "aria-invalid": erro ? "true" : undefined };
+  const comum = {
+    id, style: INPUT_STYLE,
+    "aria-invalid": erro ? "true" : undefined,
+    "aria-describedby": [descritor.ajuda && `${id}-ajuda`, erro && `${id}-erro`].filter(Boolean).join(" ") || undefined,
+  };
 
   let controle;
   switch (descritor.tipo) {
@@ -174,7 +185,7 @@ export function CampoOnboarding({
   }
 
   return (
-    <div style={{ marginBottom: "var(--space-4)" }}>
+    <div className="onboarding-field" style={{ marginBottom: "var(--space-4)", minWidth: 0 }}>
       <Rotulo
         descritor={descritor}
         dados={dados}
@@ -182,16 +193,16 @@ export function CampoOnboarding({
         mostrarSelo={mostrarSelo}
         origemPreenchimento={origemPreenchimento}
       />
-      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>{controle}</div>
-        {acaoExtra}
+      <div className="onboarding-field__control" style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", alignItems: "flex-start" }}>
+        <div className="onboarding-field__input" style={{ flex: "1 1 16rem", minWidth: 0 }}>{controle}</div>
+        {acaoExtra && <div className="onboarding-field__action">{acaoExtra}</div>}
       </div>
       {descritor.ajuda && (
-        <span style={{ display: "block", marginTop: 4, fontSize: 12, color: "var(--text-faint)", lineHeight: 1.5 }}>
+        <span id={`${id}-ajuda`} style={{ display: "block", marginTop: 4, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
           {descritor.ajuda}
         </span>
       )}
-      {erro && <span style={ERRO_STYLE}>{erro}</span>}
+      {erro && <span id={`${id}-erro`} style={ERRO_STYLE}>{erro}</span>}
     </div>
   );
 }

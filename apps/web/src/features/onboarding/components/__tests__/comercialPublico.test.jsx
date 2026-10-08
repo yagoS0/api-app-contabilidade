@@ -21,6 +21,10 @@ test("formulário público salva progressivamente e consome somente no envio con
  const api={consultarFormularioOnboarding:jest.fn().mockResolvedValue({onboarding}),salvarFormularioOnboarding:jest.fn().mockImplementation(async(_t,p)=>({onboarding:{...onboarding,...p,versao:p.versao+1}}))};
  render(<FormularioPublico api={api}/>);await screen.findByText("Salvar e continuar");
  fireEvent.click(screen.getByText("Salvar e continuar"));await waitFor(()=>expect(api.salvarFormularioOnboarding).toHaveBeenCalledWith("abc",expect.objectContaining({finalizar:false,versao:0,ultimoPasso:"responsavel"})));
+ await waitFor(()=>expect(screen.getByRole("heading",{level:2,name:/Etapa 2 de/})).toHaveFocus());
+ const salvarDepois=screen.getByText("Salvar para continuar depois");salvarDepois.focus();fireEvent.click(salvarDepois);
+ await waitFor(()=>expect(api.salvarFormularioOnboarding).toHaveBeenCalledTimes(2));
+ await waitFor(()=>expect(salvarDepois).toBeEnabled());expect(salvarDepois).toHaveFocus();
  expect(window.location.hash).toBe("#token=abc");
 });
 test("link ausente não consulta o servidor",async()=>{

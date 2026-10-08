@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 
-export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
+export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 
 export const onboardingCreateSchema = z.object({
   origem: z.enum(ORIGENS),

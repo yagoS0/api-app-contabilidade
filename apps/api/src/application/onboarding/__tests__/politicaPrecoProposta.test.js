@@ -141,3 +141,14 @@ test("PDF de comparação esclarece cobrança única e condição antes da mensa
   expect(lido.text).toContain("além dos honorários acima");
   expect(lido.text).toContain("condicionado à conclusão da regularização");
 });
+
+
+test("serviço pessoal tem só orçamento avulso explícito, sem mensalidade ou regularização inventada", () => {
+  const r = calc({ origem: "PESSOA_FISICA", dados: { modalidadeServico: "COMPARAR" }, diagnostico: null,
+    ajustes: { servicoCentavos: 12345, escopoAvulso: "Análise de IRRF solicitada por Alex.", justificativa: "Honorários sintéticos conferidos pelo contador." } });
+  expect(r.opcoes).toHaveLength(1);
+  expect(r.opcoes[0]).toMatchObject({ chave: "AVULSO", recorrente: false, unicoCentavos: 12345, mensalCentavos: 0 });
+  expect(r.regularizacaoCentavos).toBeNull();
+  expect(r.pendencias).toEqual([]); expect(pendenciasPoliticaComercial(r)).toEqual([]);
+  expect(calc({ origem: "PESSOA_FISICA", diagnostico: null }).pendencias).toContain("Definir honorários do serviço avulso.");
+});

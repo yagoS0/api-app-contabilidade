@@ -78,7 +78,7 @@ export function sugerirVariaveisContrato({ onboarding = {}, proposta = {}, model
   const opcao = s.opcoes?.find(o => o.chave === proposta.opcaoAceita);
   const preenchidos = (v, aceitarVazio = false) => Object.fromEntries(Object.entries(v || {}).filter(([k, valor]) => CAMPOS_CONTRATO.some(c => c.chave === k) && ['string', 'number'].includes(typeof valor) && (aceitarVazio || String(valor).trim() !== '')));
   const cadastro = preenchidos({
-    contratante: onboarding.razaoSocial || d.razaoSocial, cnpj: onboarding.cnpj,
+    contratante: onboarding.origem === "PESSOA_FISICA" ? onboarding.responsavelNome || d.responsavelNome : onboarding.razaoSocial || d.razaoSocial, cnpj: onboarding.cnpj,
     nome: onboarding.responsavelNome || d.responsavelNome, email: onboarding.responsavelEmail || d.responsavelEmail,
     cpf: d.responsavelCpf, cargo: d.responsavelCargo, whatsapp: onboarding.responsavelTelefone || d.responsavelTelefone,
     enderecoRepresentante: enderecoContrato(d.responsavelEndereco),

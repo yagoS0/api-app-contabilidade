@@ -78,7 +78,7 @@
 .lead-stage-action > [hidden] { display: none !important; }
 .lead-stage-action > [role=tabpanel] > :first-child { margin-top: 0; }
 .lead-support > h4 { margin: 12px 0; font-size: 1rem; }
-.lead-support > dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
+.lead-support > dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 4px 16px; }
 .lead-analysis-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0 16px; }
 .lead-analysis-check summary { display: flex; justify-content: space-between; gap: 12px; }
 .lead-analysis-check summary span { font-weight: 400; flex-shrink: 0; color: var(--text-muted); }
@@ -86,11 +86,50 @@
   .lead-steps button { flex-direction: column; gap: 5px; padding: 9px; font-size: .8125rem; }
   .lead-step-number { flex-basis: auto; width: 22px; min-height: 22px; }
   .lead-stage-action { padding: 12px; }
-  .lead-actions .btn { margin-inline: 0; width: 100%; }
+  .lead-actions > .btn, .lead-stage-action > [role=tabpanel] > .btn { margin-inline: 0; width: 100%; }
   .lead-step-fields { padding: 12px; }
 }
 @media (max-width: 600px) {
   .lead-journey-heading { flex-wrap: wrap; }
   .lead-step-fields { padding: 14px; }
   .lead-step-total { display: block; margin: 4px 0 0 18px; }
+}
+
+/* The journey also lives in narrow side panels, independently of viewport width. */
+.lead-journey :is(fieldset, article, details, section, label, dl > div) { min-width: 0; }
+.lead-journey :is(p, li, legend, summary, strong, pre) { overflow-wrap: anywhere; }
+.lead-journey pre { max-width: 100%; }
+.lead-actions { margin-inline: 0; }
+.lead-action-tabs { flex-wrap: wrap; }
+.lead-action-tabs button { flex-basis: 140px; }
+.lead-analysis-check summary { flex-wrap: wrap; }
+.lead-journey :is(input, textarea, select):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.lead-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.lead-actions .lead-form-actions > .btn { margin: 0; }
+@container (max-width: 420px) {
+  .lead-journey-heading { flex-wrap: wrap; }
+  .lead-form-actions > .btn { flex: 1 1 100%; }
+}
+.onboarding-conversion { min-width: 0; container-type: inline-size; }
+.onboarding-conversion fieldset { min-width: 0; margin-inline: 0; border-radius: var(--radius-sm); }
+.onboarding-conversion legend { max-width: 100%; font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
+.onboarding-conversion :is(label, p) { overflow-wrap: anywhere; line-height: 1.5; }
+.onboarding-conversion input[type="checkbox"] { flex: 0 0 auto; align-self: flex-start; margin-top: 3px; }
+.onboarding-conversion :is(input, select):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.onboarding-conversion .btn, .onboarding-conversion-actions .btn { min-height: 44px; max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.onboarding-conversion-lookup { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.onboarding-conversion-lookup > input { flex: 1 1 220px; }
+.onboarding-conversion-lookup > .btn { flex: 0 1 auto; }
+.onboarding-conversion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+.onboarding-conversion-grid > label { min-width: 0; display: block; }
+.onboarding-conversion-grid > label input { display: block; margin-top: 6px; }
+.onboarding-conversion-partner { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.onboarding-conversion-partner > label { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.onboarding-conversion-partner > .btn { flex: 0 1 auto; }
+.onboarding-conversion-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; width: 100%; }
+@container (max-width: 420px) {
+  .onboarding-conversion-lookup > .btn, .onboarding-conversion-partner > .btn { flex: 1 1 100%; width: 100%; }
+}
+@media (max-width: 480px) {
+  .onboarding-conversion-actions > .btn { flex: 1 1 100%; }
 }

@@ -125,3 +125,14 @@ it("duas gerações concorrentes terminam com apenas o último link ativo", asyn
   const r = await Promise.all([t.servico.emitirLink("lead", user), t.servico.emitirLink("lead", user)]);
   expect(r).toHaveLength(2); expect(links.filter((l) => !l.revokedAt)).toHaveLength(1);
 });
+
+
+it("link público salva cadastro CNPJ completo como declarado sem criar prova de consulta", async () => {
+  const t = setup(); const cadastroCnpj = { cnpj: t.ficha.cnpj, fonte: "BRASIL_API", consultadoEm: now.toISOString(), empresa: { razaoSocial: "Empresa sintética", cnaePrincipal: "6201501", endereco: { rua: "Rua Exemplo", numero: "123", cidade: "São Paulo", uf: "SP", cep: "01001000" } }, situacao: { texto: "ATIVA", ativa: true } };
+  await t.servico.publico("a".repeat(43), { versao: 1, dados: { cnpj: t.ficha.cnpj, cadastroCnpj, responsavelNome: "Alex" } });
+  const data = t.db.onboarding.updateMany.mock.calls[0][0].data;
+  expect(data.dados.cadastroCnpj.empresa.endereco).toMatchObject(cadastroCnpj.empresa.endereco);
+  expect(data.dados.cadastroCnpj.empresa.cnaePrincipal).toBe("6201501");
+  expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled();
+  expect(t.consultaPublica).not.toHaveBeenCalled();
+});

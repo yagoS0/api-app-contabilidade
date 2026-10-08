@@ -399,3 +399,21 @@ describe("criar", () => {
     expect(prisma.onboarding.create).not.toHaveBeenCalled();
   });
 });
+
+
+test("descarte lê vínculos depois do lock e preserva demanda que acabou de ser criada", async () => {
+  prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+  prisma.atendimentoLead.findFirst.mockResolvedValueOnce(null);
+  prisma.onboardingEvento.findFirst.mockResolvedValueOnce({ id: "vinculo-concorrente", tipo: "DEMANDA_RELACIONADA_CRIADA" });
+  await expect(descartar("onb-1")).rejects.toMatchObject({ code: "atendimento_tem_historico" });
+  expect(prisma.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "onb-1", versao: 0, status: "RASCUNHO" } }));
+  expect(prisma.onboarding.updateMany.mock.invocationCallOrder[0]).toBeLessThan(prisma.onboardingEvento.findFirst.mock.invocationCallOrder[0]);
+  expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+});
+test("descarte recusa versão alterada antes de apagar ou consultar vínculos", async () => {
+  prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+  prisma.onboarding.updateMany.mockResolvedValueOnce({ count: 0 });
+  await expect(descartar("onb-1")).rejects.toMatchObject({ code: "formulario_alterado" });
+  expect(prisma.onboardingEvento.findFirst).not.toHaveBeenCalled();
+  expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+});

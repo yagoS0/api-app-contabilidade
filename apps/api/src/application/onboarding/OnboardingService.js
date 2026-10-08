@@ -21,7 +21,7 @@ import {
   provisionarEmpresa,
 } from "../companies/CompanyProvisioningService.js";
 
-export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
+export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 export const STATUS = ["RASCUNHO", "RECEBIDO", "EM_TRILHA", "CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
 
 export class OnboardingError extends Error {
@@ -57,7 +57,7 @@ export function extrairColunas(origem, dados) {
   const cnpjDigitos = soDigitos(d.cnpj);
   return {
     cnpj: cnpjDigitos.length === 14 ? cnpjDigitos : null,
-    razaoSocial: texto(d.razaoSocial),
+    razaoSocial: texto(origem === "PESSOA_FISICA" ? d.responsavelNome : d.razaoSocial),
     responsavelNome: texto(d.responsavelNome),
     responsavelEmail: texto(d.responsavelEmail)?.toLowerCase() || null,
     responsavelTelefone: texto(d.responsavelTelefone),
@@ -277,6 +277,7 @@ export async function concluirEtapa(id, etapaId, { concluida, observacao, atorId
  */
 export async function converter(id, payload = {}, { atorId = null, portalIds = [], log = null } = {}) {
   const registro = await carregar(id);
+  if (registro.origem === "PESSOA_FISICA") throw new OnboardingError("pessoa_fisica_sem_empresa", "Conclua o serviço pessoal ou adicione uma demanda empresarial vinculada.", 409);
   if (registro.status === "CONVERTIDO") {
     throw new OnboardingError(
       "onboarding_convertido",
@@ -488,7 +489,9 @@ export async function listar({ origem = null, status = null, q = null, incluirRa
 }
 
 export async function obter(id) {
-  return carregar(id, { comEtapas: true });
+  const registro = await carregar(id, { comEtapas: true });
+  const vinculos = await prisma.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: ["DEMANDA_ORIGEM", "DEMANDA_RELACIONADA_CRIADA"] } }, orderBy: { createdAt: "asc" } });
+  return { ...registro, demandasRelacionadas: (vinculos || []).map(e => ({ id: e.dados.onboardingId, origem: e.dados.origem || null, anterior: e.tipo === "DEMANDA_ORIGEM" })) };
 }
 
 /** Só RASCUNHO pode ser descartado — o resto é rastro, e rastro não se apaga. */
@@ -501,8 +504,14 @@ export async function descartar(id) {
       409
     );
   }
-  if (await prisma.atendimentoLead.findFirst({ where: { onboardingId: id } })) throw new OnboardingError("atendimento_tem_historico", "Este atendimento possui conversa vinculada. Use desistência para preservar o histórico.", 409);
-  await prisma.onboarding.delete({ where: { id: registro.id } });
+  await prisma.$transaction(async tx => {
+    // Serializa descarte e criação de demanda na mesma ficha antes de ler os vínculos.
+    const trava = await tx.onboarding.updateMany({ where: { id: registro.id, versao: registro.versao, status: "RASCUNHO" }, data: { updatedAt: new Date() } });
+    if (trava.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou. Atualize antes de descartar.", 409);
+    if (await tx.atendimentoLead.findFirst({ where: { onboardingId: id } })) throw new OnboardingError("atendimento_tem_historico", "Este atendimento possui conversa vinculada. Use desistência para preservar o histórico.", 409);
+    if (await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: { in: ["DEMANDA_ORIGEM", "DEMANDA_RELACIONADA_CRIADA"] } } })) throw new OnboardingError("atendimento_tem_historico", "Há demandas vinculadas. Use desistência para preservar o histórico.", 409);
+    await tx.onboarding.delete({ where: { id: registro.id } });
+  });
   return { ok: true };
 }
 

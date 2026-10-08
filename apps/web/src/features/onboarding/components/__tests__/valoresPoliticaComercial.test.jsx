@@ -55,3 +55,15 @@ test("encerramento avulso envia baixa e regularização separadas, sem mensalida
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
   expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "BAIXA", servicoCentavos: 1213, regularizacaoCentavos: 5327, justificativa: "Baixa e regularização discriminadas no escopo.", escopoAvulso: "" });
 });
+
+
+test("PF gera orçamento do serviço pessoal sem mensalidade, regularização ou seletor empresarial", () => {
+  const onGerar = jest.fn(); render(<ValoresDaProposta onboarding={{ origem: "PESSOA_FISICA", dados: { servicoSolicitado: "Resolver IRRF" } }} escopo="Análise do IRRF de Alex." onGerar={onGerar} />);
+  expect(screen.queryByLabelText("Mensalidade personalizada (R$)")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Tipo de serviço avulso")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Falta conferir no diagnóstico/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Serviço avulso (R$)"), { target: { value: "123,45" } });
+  fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Honorários do serviço pessoal conferidos." } });
+  fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
+  expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "OUTRO", servicoCentavos: 12345, justificativa: "Honorários do serviço pessoal conferidos.", escopoAvulso: "Análise do IRRF de Alex." });
+});

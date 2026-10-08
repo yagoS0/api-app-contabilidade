@@ -27,7 +27,8 @@ function conferenciaPublica(analises, conferencias, ficha) {
   return { id: evento.id, modo: evento.tipo === "JORNADA_PUBLICA_MANUAL_CONFERIDA" ? "MANUAL" : "CONSULTA", conferidaEm: evento.createdAt ? new Date(evento.createdAt).toISOString() : null, ...evento.dados };
 }
 export function dadosIniciaisPendentes(ficha) {
-  if (ficha.origem !== "ABERTURA") return ficha.cnpj ? [] : ["CNPJ"];
+  if (ficha.origem === "PESSOA_FISICA") return [[ficha.responsavelNome || ficha.dados?.responsavelNome, "Nome"], [ficha.dados?.servicoSolicitado, "Serviço solicitado"]].filter(([v]) => !String(v || "").trim()).map(([, n]) => n);
+  if (!["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem)) return ficha.cnpj ? [] : ["CNPJ"];
   const d = ficha.dados || {};
   return [[ficha.responsavelNome || d.responsavelNome, "Nome do responsável"], [d.atividadePretendida, "Atividade pretendida"],
     [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]]
@@ -41,6 +42,7 @@ function contextoDoDiagnostico(ficha, analiseId, conferencia = null, roteiroVers
   const d = ficha.dados || {};
   const partes = [ficha.origem, ficha.cnpj || null, analiseId,
     d.atividadePretendida || null, d.municipioAtendimento || d.municipioPretendido || null, d.enderecoPretendido || null];
+  if (ficha.origem === "PESSOA_FISICA") partes.push(d.servicoSolicitado || null, d.responsavelCpf || null, ficha.responsavelNome || d.responsavelNome || null);
   // Preserva os hashes anteriores de conferências por consulta oficial.
   if (conferencia?.modo === "MANUAL") partes.push("CADASTRO_MANUAL", conferencia.id);
   if (roteiroVersao) {
@@ -66,11 +68,11 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     ]);
     const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
     const publicaConferencia = conferenciaPublica(analises, conferencias, ficha);
-    const referencia = contextoDoDiagnostico(ficha, ficha.origem === "ABERTURA" || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia, registros[0]?.dados?.roteiro?.versao, registros[0]?.dados?.perfilConferido);
+    const referencia = contextoDoDiagnostico(ficha, ["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem) || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia, registros[0]?.dados?.roteiro?.versao, registros[0]?.dados?.perfilConferido);
     const diagnostico = registros[0]?.dados?.contexto === referencia ? registros[0] : null;
     const saidas = diagnostico ? await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
       orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } }) : [];
-    const partes = (ficha.origem === "ABERTURA" || diagnostico?.dados?.dispensaConsultaPrivada ? ["TEXTO"] : ["RELATORIO", "TEXTO"]).map(parte => {
+    const partes = (["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem) || diagnostico?.dados?.dispensaConsultaPrivada ? ["TEXTO"] : ["RELATORIO", "TEXTO"]).map(parte => {
       const saida = saidas.find(s => s.referenciaComercial?.parte === parte);
       return { parte, mensagemId: saida?.id || null, status: saida?.statusEnvio || "nao_enviado", erro: saida?.erroEnvioMensagem || null };
     });
@@ -99,13 +101,13 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       let conferenciaCadastro = null;
       const dispensaConsultaPrivada = typeof body.dispensaConsultaPrivada === "string" ? body.dispensaConsultaPrivada.trim() : null;
       if (dispensaConsultaPrivada && (dispensaConsultaPrivada.length < 20 || dispensaConsultaPrivada.length > 1200)) throw erro("escopo_limitado_invalido", "Descreva a limitação do serviço sem consulta privada (20 a 1.200 caracteres).");
-      if (ficha.origem !== "ABERTURA") {
+      if (!["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem)) {
         const publica = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "PUBLICA", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
         const conferencias = await tx.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: tiposConferencia } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 });
         conferenciaCadastro = conferenciaPublica(publica ? [publica] : [], conferencias, ficha);
         if (!conferenciaCadastro) throw erro("analise_pendente", "Confira os dados cadastrais pela consulta ou registre a fonte e a evidência da conferência manual.");
       }
-      if (ficha.origem !== "ABERTURA" && !dispensaConsultaPrivada) {
+      if (!["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem) && !dispensaConsultaPrivada) {
         const fiscal = await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: ficha.cnpj, tipo: "SITFIS", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } });
         if (!fiscal?.resultado?.relatorioDisponivel || fiscal.id !== body.analiseId) throw erro("analise_pendente", "Conclua e confira o relatório fiscal atual antes do diagnóstico.");
         if (!await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_SITFIS_CONFERIDA", dados: { path: ["analiseId"], equals: fiscal.id } } })) throw erro("analise_pendente", "Registre a conferência do relatório antes do diagnóstico.");
@@ -119,7 +121,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       if (anterior?.dados?.contexto === contexto && anterior.dados.achados === achados && anterior.dados.servicos === servicos && (anterior.dados.dispensaConsultaPrivada || null) === dispensaConsultaPrivada
         && conteudoCanonico(anterior.dados.roteiro) === conteudoCanonico(estruturado.roteiro) && conteudoCanonico(anterior.dados.regularizacao) === conteudoCanonico(estruturado.regularizacao)) return anterior;
       if (Object.hasOwn(body, "diagnosticoBaseId") && body.diagnosticoBaseId !== (anterior?.id || null)) throw erro("diagnostico_alterado", "Outro atendente atualizou o diagnóstico. Confira a versão atual antes de salvar.");
-      const texto = textoDaDevolutiva({ ...estruturado, servicos, dispensaConsultaPrivada }, { cnpj: ficha.cnpj, manual: conferenciaCadastro?.modo === "MANUAL" });
+      const texto = textoDaDevolutiva({ ...estruturado, servicos, dispensaConsultaPrivada }, { cnpj: ficha.cnpj, pessoaFisica: ficha.origem === "PESSOA_FISICA", manual: conferenciaCadastro?.modo === "MANUAL" });
       if (texto.length > 3800) throw erro("diagnostico_incompleto", "Resuma a devolutiva e o escopo para até 3.800 caracteres no total, incluindo as limitações e pendências.");
       return tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO", atorId: user.id,
         dados: { contexto, cnpj: ficha.cnpj, origem: ficha.origem, fichaVersao: ficha.versao, perfilConferido, analiseId, achados, servicos, dispensaConsultaPrivada, conferenciaCadastro, ...estruturado, texto } } });

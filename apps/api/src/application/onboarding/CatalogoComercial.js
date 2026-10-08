@@ -18,7 +18,8 @@ export function calcularOpcoes({
     code: "catalogo_invalido",
     status: 409
   });
-  const d = ficha.dados || {},
+  const pessoaFisica = ficha.origem === "PESSOA_FISICA";
+  const d = pessoaFisica ? { ...ficha.dados, modalidadeServico: "AVULSO" } : ficha.dados || {},
     pendencias = [],
     opcoes = [];
   const regime = d.regimeAtual || d.regimePretendido;
@@ -44,15 +45,15 @@ export function calcularOpcoes({
       if (centavosValidos(mensalMinimoCentavos) && mensal < mensalMinimoCentavos) pendencias.push(funcionarios > limiteFuncionarios ? "Mensalidade abaixo do piso personalizado." : "Mensalidade abaixo do mínimo do catálogo para a faixa e os adicionais contratados.");
     }
   }
-  const decisaoRegularizacao = normalizarDecisaoRegularizacao(diagnostico?.regularizacao);
-  if (ficha.origem !== "ABERTURA" && !decisaoRegularizacao) pendencias.push("Confira no diagnóstico se há regularização necessária e registre a justificativa antes de propor valores.");
+  const decisaoRegularizacao = pessoaFisica ? null : normalizarDecisaoRegularizacao(diagnostico?.regularizacao);
+  if (!pessoaFisica && ficha.origem !== "ABERTURA" && !decisaoRegularizacao) pendencias.push("Confira no diagnóstico se há regularização necessária e registre a justificativa antes de propor valores.");
   const temAvulso = ficha.origem === "ABERTURA" || ["AVULSO", "COMPARAR"].includes(d.modalidadeServico);
-  const tipoServicoAvulso = ficha.origem === "ABERTURA" ? "ABERTURA" : temAvulso ? ajustes.tipoServicoAvulso : null;
+  const tipoServicoAvulso = ficha.origem === "ABERTURA" ? "ABERTURA" : temAvulso ? pessoaFisica ? "OUTRO" : ajustes.tipoServicoAvulso : null;
   const encerramentoEmpresa = ficha.origem === "INATIVA" && d.pretendeReativar === "BAIXAR";
   if (encerramentoEmpresa && (d.modalidadeServico !== "AVULSO" || tipoServicoAvulso !== "BAIXA")) pendencias.push("O cliente escolheu encerrar a empresa. Confira a modalidade avulsa e o serviço de encerramento antes de gerar a proposta.");
   if (temAvulso && ficha.origem !== "ABERTURA" && !["REGULARIZACAO", "BAIXA", "OUTRO"].includes(tipoServicoAvulso)) pendencias.push("Identifique o serviço avulso: regularização, baixa ou outro serviço.");
   const regularizacaoNoAvulso = tipoServicoAvulso === "REGULARIZACAO";
-  const regularizacaoCentavos = regularizacaoNoAvulso ? ajustes.regularizacaoCentavos ?? ajustes.servicoCentavos ?? null : ajustes.regularizacaoCentavos ?? null;
+  const regularizacaoCentavos = pessoaFisica ? null : regularizacaoNoAvulso ? ajustes.regularizacaoCentavos ?? ajustes.servicoCentavos ?? null : ajustes.regularizacaoCentavos ?? null;
   if (regularizacaoNoAvulso && ajustes.regularizacaoCentavos != null && ajustes.servicoCentavos != null && ajustes.regularizacaoCentavos !== ajustes.servicoCentavos) pendencias.push("O valor do serviço de regularização deve ser o mesmo do orçamento de regularização, sem cobrança duplicada.");
   if (regularizacaoNoAvulso && decisaoRegularizacao?.necessaria === false) pendencias.push("O diagnóstico informa que não há regularização necessária. Confira o tipo do serviço ou revise o diagnóstico.");
   if (decisaoRegularizacao?.necessaria && !centavosValidos(regularizacaoCentavos)) pendencias.push("Defina o orçamento da regularização necessária antes da mensalidade.");
@@ -114,12 +115,13 @@ export function normalizarDecisaoRegularizacao(r) {
 // catálogo mais recente a uma negociação anterior nem libera legado sem prova.
 export function pendenciasPoliticaComercial(s) {
   const p = s?.politicaComercial;
-  if (p?.versao !== 1 || !["ABERTURA", "TRANSFERENCIA", "INATIVA"].includes(p.origem)
+  if (p?.versao !== 1 || !["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"].includes(p.origem)
     || typeof p.encerramentoEmpresa !== "boolean" || !centavosValidos(p.regularizacaoMinimaCentavos) || !Array.isArray(s.opcoes) || !s.opcoes.length) return ["Gere uma nova versão para conferir a política comercial desta proposta."];
   const pendencias = [...(s.pendencias || [])];
-  if (p.origem !== "ABERTURA" && !normalizarDecisaoRegularizacao(p.decisaoRegularizacao)) pendencias.push("Confira a decisão de regularização no diagnóstico e gere outra versão.");
+  if (!["ABERTURA", "PESSOA_FISICA"].includes(p.origem) && !normalizarDecisaoRegularizacao(p.decisaoRegularizacao)) pendencias.push("Confira a decisão de regularização no diagnóstico e gere outra versão.");
   if (JSON.stringify(s.decisaoRegularizacao) !== JSON.stringify(p.decisaoRegularizacao) || s.tipoServicoAvulso !== p.tipoServicoAvulso) pendencias.push("O escopo financeiro mudou. Gere uma nova versão da proposta.");
   const recorrentes = s.opcoes.filter(o => o.recorrente);
+  if (p.origem === "PESSOA_FISICA" && (recorrentes.length || p.modalidadeServico !== "AVULSO" || p.tipoServicoAvulso !== "OUTRO")) pendencias.push("Serviço pessoal deve ser avulso, sem contabilidade mensal.");
   if (p.encerramentoEmpresa && (p.origem !== "INATIVA" || p.modalidadeServico !== "AVULSO" || p.tipoServicoAvulso !== "BAIXA" || recorrentes.length)) pendencias.push("Encerramento exige somente serviço avulso de baixa, sem contabilidade mensal.");
   if (recorrentes.some(o => !centavosValidos(p.mensalMinimoCentavos) || !centavosValidos(o.mensalCentavos) || o.mensalCentavos < p.mensalMinimoCentavos)) pendencias.push("Mensalidade abaixo do mínimo da faixa e dos adicionais conferidos.");
   if (s.opcoes.some(o => !centavosValidos(o.unicoCentavos) || !centavosValidos(o.mensalCentavos))) pendencias.push("Confira os valores das opções da proposta.");

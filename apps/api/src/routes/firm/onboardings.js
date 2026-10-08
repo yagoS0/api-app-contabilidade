@@ -10,6 +10,7 @@
 // `router.use(requireAuth(), requireAccountType("FIRM"))` do router pai; o que exige mais usa o
 // helper local `somenteAdminOuContador`, no molde do `PATCH /companies`.
 
+import { criarDemandaRelacionada } from "../../application/onboarding/DemandasRelacionadasService.js";
 import { createFluxoComercialRouter } from "./fluxoComercial.js";
 import { Router } from "express";
 import { criarServicoComercial, exigirEscopo, escopoComercial } from "../../application/onboarding/ComercialService.js";
@@ -146,6 +147,11 @@ export function createOnboardingsRouter({ log } = {}) {
     } catch (err) {
       return falhar(res, err, { rota: "criar" });
     }
+  });
+
+  router.post("/onboardings/:id/demandas", async (req, res) => {
+    try { return res.status(201).json({ ok: true, onboarding: await criarDemandaRelacionada(req.params.id, req.body, req.auth.user) }); }
+    catch (err) { return falhar(res, err, { rota: "demanda_relacionada" }); }
   });
 
   // ── Preencher / finalizar ────────────────────────────────────────────────────

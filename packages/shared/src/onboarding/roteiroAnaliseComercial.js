@@ -27,13 +27,13 @@ export const BLOCOS_DEVOLUTIVA = [
   { chave: 'atencao', rotulo: 'Pontos de atenção e o que falta conferir' },
   { chave: 'corrigir', rotulo: 'O que podemos corrigir ou fazer a seguir' },
 ];
-export const conferenciasDaOrigem = origem => CONFERENCIAS_ANALISE.filter(c => c.todas || Boolean(c.abertura) === (origem === 'ABERTURA'));
+export const conferenciasDaOrigem = origem => origem === "PESSOA_FISICA" ? [] : CONFERENCIAS_ANALISE.filter(c => c.todas || Boolean(c.abertura) === (origem === 'ABERTURA'));
 const texto = v => typeof v === 'string' ? v.trim() : '';
 const falhar = mensagem => { throw Object.assign(new Error(mensagem), { code: 'diagnostico_incompleto', status: 409 }); };
 export function normalizarRoteiroAnalise(entrada = {}, origem) {
   if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) falhar('Confira o roteiro da análise.');
   const dados = {}, conferencias = {};
-  for (const c of DADOS_ANALISE) {
+  for (const c of (origem === "PESSOA_FISICA" ? [] : DADOS_ANALISE)) {
     const v = entrada.dados?.[c.chave];
     if (v == null || v === '') continue;
     if (c.tipo === 'texto') {
@@ -53,11 +53,17 @@ export function normalizarRoteiroAnalise(entrada = {}, origem) {
 }
 export function pendenciasRoteiroAnalise(roteiro, origem) {
   return [
-    ...DADOS_ANALISE.filter(c => roteiro?.dados?.[c.chave] == null || roteiro.dados[c.chave] === '').map(c => c.rotulo),
+    ...(origem === "PESSOA_FISICA" ? [] : DADOS_ANALISE).filter(c => roteiro?.dados?.[c.chave] == null || roteiro.dados[c.chave] === '').map(c => c.rotulo),
     ...conferenciasDaOrigem(origem).filter(c => !roteiro?.conferencias?.[c.chave] || roteiro.conferencias[c.chave].estado === 'PENDENTE').map(c => c.rotulo),
   ];
 }
 export function normalizarDiagnosticoComercial(body, origem) {
+  if (origem === "PESSOA_FISICA") {
+    if (texto(body.servicos).length < 10 || texto(body.servicos).length > 1200) falhar("Descreva o serviço pessoal e seu escopo (10 a 1.200 caracteres).");
+    const atencao = texto(body.devolutiva?.atencao);
+    if (atencao.length > 1200) falhar("Resuma as condições e pendências em até 1.200 caracteres.");
+    return { devolutiva: { certo: "", atencao, corrigir: "" }, regularizacao: null, roteiro: normalizarRoteiroAnalise({}, origem), roteiroPendencias: [] };
+  }
   const devolutiva = {};
   for (const c of BLOCOS_DEVOLUTIVA) {
     const v = texto(body.devolutiva?.[c.chave]);
@@ -65,7 +71,7 @@ export function normalizarDiagnosticoComercial(body, origem) {
     devolutiva[c.chave] = v;
   }
   let regularizacao = null;
-  if (origem !== 'ABERTURA') {
+  if (!['ABERTURA', 'PESSOA_FISICA'].includes(origem)) {
     const r = body.regularizacao;
     if (typeof r?.necessaria !== 'boolean' || texto(r.justificativa).length < 10 || texto(r.justificativa).length > 1200) falhar('Confira se há regularização necessária e registre o motivo.');
     const condicaoInicioMensal = r.necessaria ? 'APOS_REGULARIZACAO' : 'SEM_REGULARIZACAO';
@@ -77,13 +83,14 @@ export function normalizarDiagnosticoComercial(body, origem) {
 }
 export function pendenciasDiagnosticoComercial(dados, origem) {
   if (!dados) return ['Diagnóstico atual conferido'];
+  if (origem === 'PESSOA_FISICA') return texto(dados.servicos).length >= 10 ? [] : ['Serviço pessoal e escopo'];
   const pendencias = BLOCOS_DEVOLUTIVA.filter(c => texto(dados.devolutiva?.[c.chave]).length < 10).map(c => c.rotulo);
-  if (origem !== 'ABERTURA' && (typeof dados.regularizacao?.necessaria !== 'boolean' || texto(dados.regularizacao?.justificativa).length < 10)) pendencias.push('Decisão sobre regularização e condição de início');
+  if (!['ABERTURA', 'PESSOA_FISICA'].includes(origem) && (typeof dados.regularizacao?.necessaria !== 'boolean' || texto(dados.regularizacao?.justificativa).length < 10)) pendencias.push('Decisão sobre regularização e condição de início');
   return pendencias;
 }
-export function textoDaDevolutiva(dados, { cnpj, manual = false } = {}) {
-  const partes = [cnpj ? `Análise do atendimento · CNPJ ${cnpj}` : 'Análise da abertura'];
-  for (const bloco of BLOCOS_DEVOLUTIVA) partes.push(`${bloco.rotulo}:\n${dados.devolutiva[bloco.chave]}`);
+export function textoDaDevolutiva(dados, { cnpj, manual = false, pessoaFisica = false } = {}) {
+  const partes = [cnpj ? `Análise do atendimento · CNPJ ${cnpj}` : pessoaFisica ? 'Análise do atendimento pessoal' : 'Análise da abertura'];
+  for (const bloco of BLOCOS_DEVOLUTIVA.filter(b => texto(dados.devolutiva[b.chave]))) partes.push(`${bloco.rotulo}:\n${dados.devolutiva[bloco.chave]}`);
   partes.push(`Serviços propostos:\n${dados.servicos}`);
   if (dados.regularizacao?.necessaria) partes.push('A regularização será orçada separadamente e deverá ocorrer antes do início da contabilidade mensal.');
   if (manual) partes.push('Dados cadastrais conferidos manualmente; consulta automática não utilizada. A conferência cadastral não comprova regularidade fiscal.');
