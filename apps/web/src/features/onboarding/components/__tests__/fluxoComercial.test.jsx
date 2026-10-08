@@ -117,7 +117,7 @@ test("correção do contador envia campo com a versão carregada", async () => {
   const estado = { onboarding: { id: "o1", origem: "ABERTURA", status: "RASCUNHO", dados: { responsavelNome: "Ana" }, versao: 7 }, propostas: [], contratos: [], documentos: [], trabalhos: [] };
   const api = { comercial: jest.fn(async path => path === "/recursos" ? { recursos: [] } : estado) };
   render(<FluxoComercial api={api} onboardingId="o1" />);
-  expect(await screen.findByRole("region", { name: "Dados capturados" })).toBeVisible();
+  fireEvent.click(await screen.findByText("Dados do atendimento e correções"));
   fireEvent.change(screen.getByLabelText("Corrigir campo"), { target: { value: "qtdFuncionarios" } });
   fireEvent.change(screen.getByLabelText("Quantidade de funcionários"), { target: { value: "4" } }); fireEvent.click(screen.getByText("Conferir e salvar campo"));
   await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o1/campos", { versao: 7, operacoes: [{ campo: "qtdFuncionarios", acao: "set", valor: 4 }] }));

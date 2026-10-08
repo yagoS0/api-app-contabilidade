@@ -3,19 +3,20 @@ const digitos = v => String(v || "").replace(/\D/g, "");
 
 export function prepararConversao(onboarding) {
   const d = onboarding?.dados || {};
+  const cadastro = d.cadastroCnpj?.cnpj === digitos(onboarding?.cnpj || d.cnpj) ? d.cadastroCnpj.empresa || {} : {};
   return {
     cnpj: digitos(onboarding?.cnpj), razaoSocial: onboarding?.razaoSocial || "", nomeFantasia: d.nomeFantasia || "",
     // Intenção tributária não vira regime efetivo. O contador confirma o registro concluído.
-    regimeTributario: "", cnaePrincipal: "", cnaesSecundarios: "", telefone: d.responsavelTelefone || "",
+    regimeTributario: "", cnaePrincipal: cadastro.cnaePrincipal || "", cnaesSecundarios: (cadastro.cnaesSecundarios || []).join(", "), telefone: cadastro.telefone || d.responsavelTelefone || "",
     ownerEmail: onboarding?.responsavelEmail || "", ownerName: onboarding?.responsavelNome || "", ownerPassword: "",
     telefoneResponsavel: d.responsavelTelefone || "", guideNotificationEmail: onboarding?.responsavelEmail || "",
     whatsappAutorizado: false, cadastroConferido: false,
     hasProlabore: d.temProLabore === true, temFolha: Number(d.qtdFuncionarios || 0) > 0,
-    capitalSocial: textoDecimal(d.capitalSocialPretendido ?? d.capitalSocial),
+    capitalSocial: textoDecimal(cadastro.capitalSocial ?? d.capitalSocialPretendido ?? d.capitalSocial),
     socios: (d.socios || []).map(s => ({ ...s, nome: s.nome || s.name || "", cpf: s.cpf || s.documento || "", participacao: textoDecimal(s.participacao) })),
-    naturezaJuridica: d.naturezaJuridica || "", porte: d.porte || "", dataAbertura: d.dataAbertura || "",
+    naturezaJuridica: cadastro.naturezaJuridica || d.naturezaJuridica || "", porte: cadastro.porte || d.porte || "", dataAbertura: cadastro.dataAbertura || d.dataAbertura || "",
     inscricaoMunicipal: "", inscricaoEstadual: "",
-    endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "" },
+    endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", ...cadastro.endereco },
   };
 }
 
@@ -45,4 +46,16 @@ export function payloadConversao(form, { senhaExigida = true } = {}) {
       inscricaoMunicipal: form.inscricaoMunicipal || null, inscricaoEstadual: form.inscricaoEstadual || null,
     },
   };
+}
+
+// Reconsulta explícita atualiza somente campos não editados desde o início da requisição.
+export function aplicarConsultaNaConversaoPreservandoEdicoes(atual, consulta, inicio) {
+  const preenchido = aplicarConsultaNaConversao(atual, consulta);
+  for (const campo of Object.keys(preenchido)) {
+    if (campo !== "endereco" && campo !== "cadastroConferido" && atual[campo] !== inicio[campo]) preenchido[campo] = atual[campo];
+  }
+  for (const campo of Object.keys(preenchido.endereco || {})) {
+    if (atual.endereco?.[campo] !== inicio.endereco?.[campo]) preenchido.endereco[campo] = atual.endereco?.[campo];
+  }
+  return preenchido;
 }

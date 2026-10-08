@@ -25,7 +25,7 @@ export function NovoAtendimentoModal({ onCriar, onFechar }) {
     <Button disabled={ocupado || incerto} onClick={criar}>{ocupado ? "Criando ficha…" : modo === "cliente" ? "Criar ficha para o cliente" : "Iniciar preenchimento interno"}</Button>
   </>}>
     <div className="onboarding-workspace onboarding-new">
-      <p>Escolha o serviço e quem preencherá os dados iniciais. A empresa só entra na carteira após a conferência do escritório.</p>
+      <p>Escolha o que precisa resolver e quem preencherá os dados. Você pode atender uma pessoa física e adicionar uma empresa depois, preservando o histórico.</p>
       <fieldset disabled={ocupado || incerto}><legend>Qual é o serviço?</legend>
         {ONBOARDING_ORIGENS.map(o => <label className="onboarding-option" key={o.chave}><input type="radio" name="origem-atendimento" value={o.chave} checked={origem === o.chave} onChange={() => setOrigem(o.chave)} /><strong>{o.titulo}</strong></label>)}
       </fieldset>

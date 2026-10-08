@@ -3,7 +3,7 @@ import { OnboardingError, extrairColunas } from "./OnboardingService.js";
 import { emTransacaoComercial, identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./ContextoComercialService.js";
 import { descritorDe, podarInvisiveis } from "@contabilidade/shared/onboarding";
 const erro = (code, message, status = 409) => new OnboardingError(code, message, status);
-export const ORIGENS_LEAD = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
+export const ORIGENS_LEAD = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 export const encerrado = r => ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(r?.status);
 
 // A mesma linha da conversa serializa criação humana, IA e retentativas de webhook.

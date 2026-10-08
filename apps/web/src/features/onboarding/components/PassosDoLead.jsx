@@ -27,12 +27,12 @@ export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado, sempreAbe
     setRascunho(atual => ({ ...atual, [d.campo]: v }));
   }} />)}
     {versaoEdicao.current !== null && versaoEdicao.current !== onboarding.versao && <p role="alert">A ficha foi atualizada enquanto você preenchia. Seus campos estão preservados; confira a versão atual antes de salvar.</p>}
-    <Button disabled={!Object.keys(rascunho).length} onClick={async () => {
+    <div className="lead-form-actions"><Button disabled={!Object.keys(rascunho).length} onClick={async () => {
       const operacoes = Object.entries(rascunho).map(([campo, valor]) => { const d = descritores.find(x => x.campo === campo); return { campo, acao: valor === "" || valor == null ? "unset" : "set", valor: ["inteiro", "moeda"].includes(d.tipo) && valor !== "" ? Number(String(valor).replace(",", ".")) : valor }; });
       if (await onSalvar({ versao: versaoEdicao.current, operacoes })) { setRascunho({}); versaoEdicao.current = null; setAberto(sempreAberto); onEdicaoPendente?.(false); }
     }}>Salvar dados deste passo</Button>
     {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher dados</Button>}
-    {versaoEdicao.current !== null && versaoEdicao.current !== onboarding.versao && <Button variant="secondary" onClick={() => { setRascunho({}); versaoEdicao.current = null; onEdicaoPendente?.(false); }}>Descartar rascunho e carregar dados atuais</Button>}
+    {versaoEdicao.current !== null && versaoEdicao.current !== onboarding.versao && <Button variant="secondary" onClick={() => { setRascunho({}); versaoEdicao.current = null; onEdicaoPendente?.(false); }}>Descartar rascunho e carregar dados atuais</Button>}</div>
   </fieldset>}</>;
 }
 
@@ -60,31 +60,32 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
   const mudou = temTexto && base !== contexto;
   let validacao = "", preparado;
   try {
-    preparado = normalizarDiagnosticoComercial({ devolutiva, roteiro, regularizacao }, onboarding.origem);
+    preparado = normalizarDiagnosticoComercial({ devolutiva, roteiro, regularizacao, servicos }, onboarding.origem);
     if (servicos.trim().length < 10) validacao = "Descreva os serviços necessários (pelo menos 10 caracteres).";
     else if (limitado && dispensaConsultaPrivada.trim().length < 20) validacao = "Explique a limitação sem consulta privada (pelo menos 20 caracteres).";
-    else if (textoDaDevolutiva({ ...preparado, servicos, dispensaConsultaPrivada: limitado ? dispensaConsultaPrivada : null }, { cnpj: onboarding.cnpj, manual: jornada?.publicaConferencia?.modo === "MANUAL" }).length > 3800) validacao = "Resuma os textos: a devolutiva completa deve ter até 3.800 caracteres.";
+    else if (textoDaDevolutiva({ ...preparado, servicos, dispensaConsultaPrivada: limitado ? dispensaConsultaPrivada : null }, { cnpj: onboarding.cnpj, pessoaFisica: onboarding.origem === "PESSOA_FISICA", manual: jornada?.publicaConferencia?.modo === "MANUAL" }).length > 3800) validacao = "Resuma os textos: a devolutiva completa deve ter até 3.800 caracteres.";
   } catch (e) { validacao = e.message; }
   const pendencias = pendenciasRoteiroAnalise(roteiro, onboarding.origem);
   return <>
     {!aberto && <Button disabled={ocupado} aria-expanded={false} onClick={() => { setIniciado(true); setAberto(true); }}>Preparar diagnóstico e escopo</Button>}
     {iniciado && <fieldset hidden={!aberto} disabled={ocupado} className="lead-step-fields"><legend>Conferência do contador</legend>
-    {anterior && !anterior.devolutiva && <p role="status">Diagnóstico anterior preservado nos pontos de atenção. Confira os três blocos antes de preparar uma nova proposta.</p>}
+    {anterior && !anterior.devolutiva && <p role="status">Diagnóstico anterior preservado nos pontos de atenção. Confira o escopo antes de preparar uma nova proposta.</p>}
     <AcoesDaEtapa tituloPrincipal="Devolutiva">
-    {BLOCOS_DEVOLUTIVA.map(c => <label key={c.chave}>{c.rotulo}<textarea maxLength={1200} rows={3} value={devolutiva[c.chave]} onChange={e => setDevolutiva(v => ({ ...v, [c.chave]: e.target.value }))} /></label>)}
-    <label>Serviços necessários e escopo<textarea maxLength={1200} rows={4} value={servicos} onChange={e => setServicos(e.target.value)} placeholder="Descreva os serviços avulsos e o acompanhamento mensal, quando houver." /></label>
-    {onboarding.origem !== "ABERTURA" && <><label>Regularização antes da contabilidade mensal<select value={regularizacao.necessaria == null ? "" : String(regularizacao.necessaria)} onChange={e => setRegularizacao(v => ({ ...v, necessaria: e.target.value === "" ? null : e.target.value === "true" }))}><option value="">Conferir necessidade</option><option value="true">Necessária, com orçamento separado</option><option value="false">Não identificada no escopo conferido</option></select></label><label>Motivo da decisão sobre regularização<textarea rows={2} maxLength={1200} value={regularizacao.justificativa} onChange={e => setRegularizacao(v => ({ ...v, justificativa: e.target.value }))} /></label>{regularizacao.necessaria === true && <p>A contabilidade mensal começa após a regularização. Na proposta, os valores serão separados.</p>}</>}
+    {(onboarding.origem === "PESSOA_FISICA" ? [{ chave: "atencao", rotulo: "Condições ou pendências (opcional)" }] : BLOCOS_DEVOLUTIVA).map(c => <label key={c.chave}>{c.rotulo}<textarea maxLength={1200} rows={3} value={devolutiva[c.chave]} onChange={e => setDevolutiva(v => ({ ...v, [c.chave]: e.target.value }))} /></label>)}
+    <label>Serviços necessários e escopo<textarea maxLength={1200} rows={4} value={servicos} onChange={e => setServicos(e.target.value)} placeholder={onboarding.origem === "PESSOA_FISICA" ? "Descreva o serviço solicitado e o que será entregue." : "Descreva os serviços avulsos e o acompanhamento mensal, quando houver."} /></label>
+    {!["ABERTURA", "PESSOA_FISICA"].includes(onboarding.origem) && <><label>Regularização antes da contabilidade mensal<select value={regularizacao.necessaria == null ? "" : String(regularizacao.necessaria)} onChange={e => setRegularizacao(v => ({ ...v, necessaria: e.target.value === "" ? null : e.target.value === "true" }))}><option value="">Conferir necessidade</option><option value="true">Necessária, com orçamento separado</option><option value="false">Não identificada no escopo conferido</option></select></label><label>Motivo da decisão sobre regularização<textarea rows={2} maxLength={1200} value={regularizacao.justificativa} onChange={e => setRegularizacao(v => ({ ...v, justificativa: e.target.value }))} /></label>{regularizacao.necessaria === true && <p>A contabilidade mensal começa após a regularização. Na proposta, os valores serão separados.</p>}</>}
     {limitado && <label>Limitação do serviço e motivo para dispensar a consulta privada<textarea rows={3} maxLength={1200} value={dispensaConsultaPrivada} onChange={e => setDispensaConsultaPrivada(e.target.value)} /><small>A limitação aparecerá na proposta. Esta opção não registra procuração nem consulta fiscal realizada.</small></label>}
     <p>Esses textos serão apresentados ao lead na próxima etapa. Registre apenas o que foi conferido e deixe claras as condições pendentes.</p>
-    <details><summary>Dados da análise</summary>{onSalvarDados && <><p>Regime, funcionários, documentos e consultoria usam a mesma ficha do orçamento. Salve estes dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
+    {onboarding.origem !== "PESSOA_FISICA" && <><details><summary>Dados da análise</summary>{onSalvarDados && <><p>Regime, funcionários, documentos e consultoria usam a mesma ficha do orçamento. Salve estes dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
     <details><summary>Conferências</summary><ConferenciasDaAnalise roteiro={roteiro} origem={onboarding.origem} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
+    </>}
     </AcoesDaEtapa>
     {pendencias.length > 0 && <p role="status">{pendencias.length} informações ou conferências ainda pendentes no roteiro. Elas serão informadas na devolutiva; uma API indisponível não impede continuar com o escopo delimitado.</p>}
     {mudou && <><p role="alert">{anteriorDesatualizado ? "O diagnóstico anterior foi recuperado como rascunho. Confira os dados atuais antes de confirmar." : "A ficha ou o relatório mudou. O texto foi preservado; confira os dados atuais antes de confirmar."}</p><Button variant="secondary" onClick={() => setBase(contexto)}>Conferi os dados atualizados: manter meu texto</Button></>}
     {validacao && <p>{validacao}</p>}
     {dadosFichaPendentes && <p role="status">Salve os dados da ficha editados na guia Dados da análise antes de confirmar.</p>}
-    <Button disabled={mudou || dadosFichaPendentes || Boolean(validacao)} onClick={() => onSalvar({ versao: onboarding.versao, diagnosticoBaseId, analiseId: limitado ? null : fiscal?.id || null, ...preparado, servicos, ...(limitado ? { dispensaConsultaPrivada } : {}) })}>Confirmar diagnóstico e continuar</Button>
-    {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher diagnóstico</Button>}
+    <div className="lead-form-actions"><Button disabled={mudou || dadosFichaPendentes || Boolean(validacao)} onClick={() => onSalvar({ versao: onboarding.versao, diagnosticoBaseId, analiseId: limitado ? null : fiscal?.id || null, ...preparado, servicos, ...(limitado ? { dispensaConsultaPrivada } : {}) })}>Confirmar diagnóstico e continuar</Button>
+    {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher diagnóstico</Button>}</div>
   </fieldset>}</>;
 }
 

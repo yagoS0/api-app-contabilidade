@@ -5,12 +5,12 @@ const emReais = valor => Number.isSafeInteger(valor) && valor >= 0 ? (valor / 10
 
 export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao, onGerar, correcao = false }) {
   const snapshot = anterior?.snapshot;
-  const abertura = onboarding.origem === "ABERTURA";
+  const abertura = onboarding.origem === "ABERTURA", pessoaFisica = onboarding.origem === "PESSOA_FISICA";
   const encerramento = onboarding.origem === "INATIVA" && onboarding.dados?.pretendeReativar === "BAIXAR";
-  const mensal = !encerramento && onboarding.dados?.modalidadeServico !== "AVULSO";
-  const avulso = encerramento || abertura || ["AVULSO", "COMPARAR"].includes(onboarding.dados?.modalidadeServico);
-  const decisao = regularizacao || snapshot?.decisaoRegularizacao;
-  const [tipoServicoAvulso, setTipoServicoAvulso] = useState(snapshot?.tipoServicoAvulso || "");
+  const mensal = !pessoaFisica && !encerramento && onboarding.dados?.modalidadeServico !== "AVULSO";
+  const avulso = pessoaFisica || encerramento || abertura || ["AVULSO", "COMPARAR"].includes(onboarding.dados?.modalidadeServico);
+  const decisao = pessoaFisica ? null : regularizacao || snapshot?.decisaoRegularizacao;
+  const [tipoServicoAvulso, setTipoServicoAvulso] = useState(pessoaFisica ? "OUTRO" : snapshot?.tipoServicoAvulso || "");
   const propriaRegularizacao = !abertura && avulso && tipoServicoAvulso === "REGULARIZACAO";
   const campos = [
     ...(avulso && !propriaRegularizacao ? [[abertura ? "aberturaCentavos" : "servicoCentavos", abertura ? "Abertura" : tipoServicoAvulso === "BAIXA" ? "Encerramento da empresa" : "Serviço avulso"]] : []),
@@ -30,7 +30,7 @@ export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao,
     setErro("");
     if (encerramento && onboarding.dados?.modalidadeServico !== "AVULSO") { setErro("O cliente escolheu encerrar a empresa. Em Dados para o orçamento, altere a modalidade para serviço avulso e confira o serviço de encerramento."); return; }
     if (encerramento && tipoServicoAvulso !== "BAIXA") { setErro("Selecione Encerramento da empresa para o serviço avulso deste atendimento."); return; }
-    if (!abertura && !decisao) { setErro("Volte ao diagnóstico e confira se há regularização necessária antes de gerar valores."); return; }
+    if (!abertura && !pessoaFisica && !decisao) { setErro("Volte ao diagnóstico e confira se há regularização necessária antes de gerar valores."); return; }
     if (!abertura && avulso && !tipoServicoAvulso) { setErro("Escolha o tipo de serviço avulso."); return; }
     if (propriaRegularizacao && decisao?.necessaria === false) { setErro("O diagnóstico dispensa regularização. Confira o serviço escolhido ou revise o diagnóstico."); return; }
     const valores = {};
@@ -51,10 +51,10 @@ export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao,
   }
   return <section aria-label={correcao ? "Corrigir proposta pendente" : "Valores da proposta"}>
     {correcao && <h4>Corrigir e gerar uma nova versão</h4>}
-    <p>{anterior ? `Valores recuperados da proposta ${anterior.versao}. Confira os campos e registre a justificativa; a versão anterior será preservada.` : encerramento ? "Confira os honorários do encerramento e as taxas públicas conforme o escopo analisado." : "A mensalidade vem do catálogo aprovado. Personalizações respeitam o mínimo da faixa e dos adicionais contratados."}</p>
-    {!abertura && <p>{decisao ? decisao.necessaria ? encerramento ? "Diagnóstico: há regularização a orçar antes do encerramento da empresa." : "Diagnóstico: há regularização a orçar antes do início da contabilidade mensal." : "Diagnóstico: não há regularização anterior necessária." : "Falta conferir no diagnóstico se há regularização necessária."}</p>}
+    <p>{anterior ? `Valores recuperados da proposta ${anterior.versao}. Confira os campos e registre a justificativa; a versão anterior será preservada.` : pessoaFisica ? "Confira os honorários e o escopo do serviço pessoal." : encerramento ? "Confira os honorários do encerramento e as taxas públicas conforme o escopo analisado." : "A mensalidade vem do catálogo aprovado. Personalizações respeitam o mínimo da faixa e dos adicionais contratados."}</p>
+    {!abertura && !pessoaFisica && <p>{decisao ? decisao.necessaria ? encerramento ? "Diagnóstico: há regularização a orçar antes do encerramento da empresa." : "Diagnóstico: há regularização a orçar antes do início da contabilidade mensal." : "Diagnóstico: não há regularização anterior necessária." : "Falta conferir no diagnóstico se há regularização necessária."}</p>}
     {encerramento && <p>O pedido é encerrar esta empresa. A proposta deve ser avulsa, com o serviço de encerramento e a regularização necessária discriminados.</p>}
-    {!abertura && avulso && <label>Tipo de serviço avulso<select value={tipoServicoAvulso} onChange={e => { setTipoServicoAvulso(e.target.value); setErro(""); }}><option value="">Selecione o serviço conferido</option>{!encerramento && <option value="REGULARIZACAO">Regularização de pendências</option>}<option value="BAIXA">Encerramento da empresa</option>{!encerramento && <option value="OUTRO">Outro serviço pontual</option>}</select></label>}
+    {!abertura && !pessoaFisica && avulso && <label>Tipo de serviço avulso<select value={tipoServicoAvulso} onChange={e => { setTipoServicoAvulso(e.target.value); setErro(""); }}><option value="">Selecione o serviço conferido</option>{!encerramento && <option value="REGULARIZACAO">Regularização de pendências</option>}<option value="BAIXA">Encerramento da empresa</option>{!encerramento && <option value="OUTRO">Outro serviço pontual</option>}</select></label>}
     {propriaRegularizacao && <p>A regularização será cobrada uma única vez na opção avulsa. Na opção mensal, aparece separada dos honorários recorrentes.</p>}
     {campos.map(([k, nome]) => <label key={k}>{nome} (R$)<input inputMode="decimal" value={ajustes[k] || ""} onChange={e => { setAjustes({ ...ajustes, [k]: e.target.value }); setErro(""); }} /></label>)}
     <label>Fonte, escopo e justificativa dos ajustes<textarea ref={justificativaRef} aria-required={temAjustes} aria-invalid={Boolean(erro && !justificativa.trim())} aria-describedby={erro ? erroId : undefined} rows={3} value={justificativa} onChange={e => { setJustificativa(e.target.value); setErro(""); }} /></label>

@@ -34,3 +34,16 @@ test.each(['enderecoPretendido', 'municipioAtendimento', 'atividadePretendida', 
   expect(nova.diagnostico.id).not.toBe(diagnostico.id);
   expect((await api.comercial(base)).jornada.devolutiva.concluida).toBe(false);
 });
+
+
+test('mock PF permite escopo simples sem CNPJ e invalida ao mudar o serviço solicitado', async () => {
+  const o = { id: 'alex-pf', origem: 'PESSOA_FISICA', versao: 1, responsavelNome: 'Alex', dados: { servicoSolicitado: 'Resolver IRRF' } };
+  const api = criarMockComercial({ onboardings: new Map([[o.id, o]]), persistir: jest.fn() }), base = '/onboardings/alex-pf';
+  const { diagnostico } = await api.comercial(base + '/jornada/diagnostico', { versao: 1, servicos: 'Análise pessoal do IRRF solicitado por Alex.' });
+  expect(diagnostico.dados.roteiroPendencias).toEqual([]);
+  expect(diagnostico.dados.regularizacao).toBeNull();
+  await api.comercial(base + '/jornada/apresentacao', { versao: 1, diagnosticoId: diagnostico.id, meio: 'Reunião', evidencia: 'Serviços pessoais apresentados a Alex.' });
+  expect((await api.comercial(base)).jornada.devolutiva.concluida).toBe(true);
+  await api.comercial(base + '/campos', { versao: 1, operacoes: [{ campo: 'servicoSolicitado', acao: 'set', valor: 'Outro serviço pessoal' }] });
+  expect((await api.comercial(base)).jornada.diagnostico).toBeNull();
+});

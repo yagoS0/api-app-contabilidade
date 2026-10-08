@@ -242,3 +242,41 @@ test("conferência por consulta preserva origem, exige análise exata e não dis
   expect(j.publicaConferencia).toMatchObject({ modo: "CONSULTA", analiseId: "publica-sintetica" }); expect(t.ficha.versao).toBe(1);
   await expect(t.jornada.diagnosticar(t.ficha.id, user, { versao: 1, achados: "Conferência cadastral sintética.", servicos: "Serviços solicitados pelo cliente." })).rejects.toMatchObject({ code: "analise_pendente" });
 });
+
+
+test("pessoa física percorre diagnóstico, apresentação e proposta sem CNPJ ou roteiro empresarial", async () => {
+  const t = setup("PESSOA_FISICA");
+  t.ficha.cnpj = null; t.ficha.responsavelNome = "Alex Exemplo";
+  t.ficha.dados = { servicoSolicitado: "Resolver IRRF", responsavelCpf: "52998224725" };
+  const diagnostico = await t.diagnosticar({ regularizacao: undefined, dispensaConsultaPrivada: undefined });
+  expect(diagnostico.dados.roteiroPendencias).toEqual([]);
+  expect(diagnostico.dados.roteiro.conferencias).toEqual({});
+  expect(diagnostico.dados.texto).toContain("atendimento pessoal");
+  await t.jornada.registrarApresentacao(t.ficha.id, user, { versao: t.ficha.versao, diagnosticoId: diagnostico.id, meio: "Reunião", evidencia: "Serviço pessoal explicado e conferido com Alex." });
+  const jornada = await t.jornada.carregar(t.ficha.id, user);
+  expect(jornada.dadosPendentes).toEqual([]);
+  expect(jornada.devolutiva.partes.map(p => p.parte)).toEqual(["TEXTO"]);
+  const politica = montarJornadaComercial({ onboarding: t.ficha, jornada });
+  expect(politica.passos.map(p => p.id)).not.toEqual(expect.arrayContaining(["publica", "autorizacao", "fiscal"]));
+  expect(politica.comandosPermitidos.aprovarProposta).toBe(true);
+  expect(t.db.onboardingAnalise.findFirst).not.toHaveBeenCalled();
+  expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled();
+  const servico = criarPropostasComerciais({ db: t.db });
+  const proposta = await servico.gerar(t.ficha.id, user, { versao: t.ficha.versao, ajustes: { servicoCentavos: 23456, escopoAvulso: "Serviço pessoal de IRRF solicitado por Alex.", justificativa: "Honorários sintéticos conferidos." } });
+  await servico.aprovar(t.ficha.id, proposta.id, user);
+  const aceita = t.propostas.find(p => p.id === proposta.id); aceita.status = "ACEITA"; aceita.opcaoAceita = "AVULSO";
+  t.db.recursoComercial.findUnique.mockResolvedValue({ id: "contrato-pf", tipo: "CONTRATO", aprovadoEm: new Date(), versao: 1, dados: { recorrente: false, identificacaoContratante: "PESSOA_FISICA", origens: ["PESSOA_FISICA"] }, texto: "{{nome}} {{cpf}}: {{servico}} {{honorarios}}" });
+  const contrato = await servico.contrato(t.ficha.id, proposta.id, user, { modeloId: "contrato-pf" });
+  expect(contrato.texto).toContain("Alex Exemplo"); expect(contrato.texto).toContain("234,56");
+  expect(contrato.dados.opcao.recorrente).toBe(false);
+  t.db.contratoComercial.findFirst = jest.fn(async () => ({ ...contrato, status: "ASSINADO_CONFERIDO", proposta: aceita }));
+  t.db.atendimentoLead = { updateMany: jest.fn(async () => ({ count: 0 })) };
+  await expect(servico.concluirAvulso(t.ficha.id, user, "Entrega do serviço pessoal conferida com Alex.")).rejects.toMatchObject({ code: "pagamento_pendente" });
+  t.eventos.push({ id: "pagamento-pf", onboardingId: t.ficha.id, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: contrato.id } });
+  await servico.concluirAvulso(t.ficha.id, user, "Entrega do serviço pessoal conferida com Alex.");
+  expect(t.db.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "CONCLUIDO_AVULSO" }) }));
+  expect(t.eventos.some(e => e.tipo === "SERVICO_AVULSO_CONCLUIDO")).toBe(true);
+  t.ficha.dados.servicoSolicitado = "Outro serviço pessoal";
+  expect((await t.jornada.carregar(t.ficha.id, user)).diagnostico).toBeNull();
+  expect(t.eventos.find(e => e.id === diagnostico.id).dados.servicos).toBe(diagnostico.dados.servicos);
+});

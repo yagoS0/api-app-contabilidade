@@ -17,9 +17,10 @@
 
 export const ACOES = ["SITFIS", "CERTIFICADO_A1", "DOCUMENTOS", "CONVERSAO"];
 
-export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
+export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 
 export const ETAPAS_POR_ORIGEM = Object.freeze({
+  PESSOA_FISICA: Object.freeze([{ chave: "servico_entregue", titulo: "Serviço pessoal entregue", descricao: "Registre a entrega do serviço contratado.", obrigatoria: true, acao: null }]),
   // Empresa que ainda vai existir: não há CNPJ, não há endereço, não há CNAE. Quase tudo que a
   // conversão exige só aparece quando o registro sai — por isso "CNPJ definitivo" é etapa própria
   // e vem ANTES da conversão.

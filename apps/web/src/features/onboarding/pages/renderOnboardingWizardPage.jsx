@@ -10,12 +10,13 @@ import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { useConfirmacao } from "../../../components/ui/useConfirmacao";
 import { CampoOnboarding } from "../components/CampoOnboarding";
-import { CartaoEmpresaBrasilApi } from "../components/CartaoEmpresaBrasilApi";
+import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
+import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";
 import { PassoOrigem } from "../components/PassoOrigem";
 import { PassoRevisao } from "../components/PassoRevisao";
 import { TrilhaPassos } from "../components/TrilhaPassos";
 import { useOnboardingRascunho } from "../hooks/useOnboardingRascunho";
-import { consultarCnpj, soDigitosCnpj } from "../lib/brasilApi";
+
 import {
   ONBOARDING_ORIGENS,
   camposDoPasso,
@@ -31,7 +32,7 @@ const ROTULO_SALVAMENTO = {
   erro: "falha ao salvar",
 };
 
-export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetalhe }) {
+export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetalhe, embedded = false, onRegistrarSaida }) {
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const rascunho = useOnboardingRascunho({ api, onboardingId });
   const { onboarding, dados, estadoSalvamento } = rascunho;
@@ -39,10 +40,13 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
 
   const [passo, setPasso] = useState("origem");
   const [errosDoPasso, setErrosDoPasso] = useState({});
-  const [consultaCnpj, setConsultaCnpj] = useState(null);
-  const [consultandoCnpj, setConsultandoCnpj] = useState(false);
+  const cnpj = useConsultaCnpjOnboarding({ contexto: onboardingId, origem, dados, alterarCampo: rascunho.alterarCampo, habilitado: !rascunho.carregando });
   const [finalizando, setFinalizando] = useState(false);
   const [navegando, setNavegando] = useState(false);
+  useEffect(() => {
+    onRegistrarSaida?.(() => rascunho.salvarAgora({ ultimoPasso: passo }));
+    return () => onRegistrarSaida?.(null);
+  }, [onRegistrarSaida, rascunho.salvarAgora, passo]);
 
   // Reabre onde o preenchimento parou — é para isso que `ultimoPasso` existe.
   useEffect(() => {
@@ -120,30 +124,15 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
       if (!ok) return;
     }
     await rascunho.trocarOrigem(nova);
-    setConsultaCnpj(null);
+
     await irPara("identificacao");
-  }
-
-  async function consultarReceita() {
-    setConsultandoCnpj(true);
-    const r = await consultarCnpj(dados.cnpj);
-    setConsultandoCnpj(false);
-    setConsultaCnpj(r);
-  }
-
-  function aplicarConsulta() {
-    const e = consultaCnpj?.empresa;
-    if (!e) return;
-    if (e.razaoSocial) rascunho.alterarCampo("razaoSocial", e.razaoSocial);
-    if (e.nomeFantasia) rascunho.alterarCampo("nomeFantasia", e.nomeFantasia);
-    setConsultaCnpj(null);
   }
 
   async function finalizar() {
     setFinalizando(true);
     try {
       const registro = await rascunho.finalizar();
-      onAbrirDetalhe?.(registro?.id || onboardingId);
+      await onAbrirDetalhe?.(registro?.id || onboardingId);
     } catch {
       // o estado de erro já aparece no selo de salvamento
     } finally {
@@ -171,8 +160,9 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     ? camposDoPasso(origem, passo, dados)
     : [];
 
+  const Shell = embedded ? EmbeddedShell : PageShell;
   return (
-    <PageShell
+    <Shell
       title="Novo onboarding"
       subtitle={onboarding?.razaoSocial || "Ficha de pré-cadastro"}
       onBack={salvarEVoltar}
@@ -182,10 +172,10 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
           {ROTULO_SALVAMENTO[estadoSalvamento]}
         </span>
       }
+      contentClassName="onboarding-workspace onboarding-wizard"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
       {estadoSalvamento === "erro" && <p role="alert" style={{ color: "var(--state-warn)" }}>Não foi possível salvar. Seus campos continuam nesta tela. Tente novamente antes de sair. {rascunho.erro?.message}</p>}
-      <Button variant="secondary" onClick={async () => { try { await rascunho.salvarAgora(); onAbrirDetalhe?.(onboardingId); } catch { /* o rascunho mostra a falha de salvamento */ } }}>Abrir atendimento comercial</Button>
       <TrilhaPassos
         passos={passos}
         passoAtual={passo}
@@ -206,14 +196,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
 
       {campos.length > 0 && (
         <div>
-          {passo === "identificacao" && (consultaCnpj || consultandoCnpj) && (
-            <CartaoEmpresaBrasilApi
-              consulta={consultaCnpj}
-              carregando={consultandoCnpj}
-              onConfirmar={aplicarConsulta}
-              onRecusar={() => setConsultaCnpj(null)}
-            />
-          )}
+          {passo === "identificacao" && <ConsultaCnpjOnboarding consulta={cnpj.consulta} carregando={cnpj.carregando} cadastro={dados.cadastroCnpj} />}
 
           {campos.map((descritor) => (
             <CampoOnboarding
@@ -223,17 +206,17 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
               valor={dados[descritor.campo]}
               erro={errosDoPasso[descritor.campo]}
               origemPreenchimento={onboarding?.origemPreenchimento}
-              onChange={(valor) => rascunho.alterarCampo(descritor.campo, valor)}
+              onChange={(valor) => cnpj.editar(descritor.campo, valor)}
               acaoExtra={
                 descritor.consultaReceita ? (
                   <Button
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={consultarReceita}
-                    disabled={consultandoCnpj || soDigitosCnpj(dados[descritor.campo]).length !== 14}
+                    onClick={cnpj.consultar}
+                    disabled={cnpj.carregando || !cnpj.permitido}
                   >
-                    consultar Receita
+                    Consultar novamente
                   </Button>
                 ) : null
               }
@@ -243,8 +226,9 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
       )}
 
       <div
+        className="onboarding-wizard__actions"
         style={{
-          display: "flex", gap: "var(--space-2)", justifyContent: "space-between",
+          display: "flex", flexWrap: "wrap", gap: "var(--space-2)", justifyContent: "space-between",
           marginTop: "var(--space-6)", paddingTop: "var(--space-4)", borderTop: "1px solid var(--border)",
         }}
       >
@@ -259,7 +243,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
 
         {ehUltimo ? (
           <Button type="button" onClick={finalizar} disabled={finalizando || navegando || !origem}>
-            {finalizando ? "finalizando…" : "Finalizar e abrir a trilha"}
+            {finalizando ? "finalizando…" : "Salvar e continuar atendimento"}
           </Button>
         ) : (
           <Button type="button" onClick={avancar} disabled={!origem || navegando || finalizando}>
@@ -268,8 +252,10 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
         )}
       </div>
       {confirmacao}
-    </PageShell>
+    </Shell>
   );
 }
+
+function EmbeddedShell({ children }) { return <div className="onboarding-wizard">{children}</div>; }
 
 export default OnboardingWizardPage;

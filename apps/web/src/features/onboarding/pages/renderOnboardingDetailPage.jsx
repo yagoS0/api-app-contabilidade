@@ -1,8 +1,10 @@
 import { PainelComercial } from "../components/PainelComercial";
+import { OnboardingWizardPage } from "./renderOnboardingWizardPage";
+import { NovaDemanda } from "../components/NovaDemanda";
 import { AcompanhamentoComercial } from '../../comercial/AcompanhamentoComercial';
 // As áreas compartilham a ficha, mas preservam seus rascunhos ao alternar a navegação.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { ChecklistEtapas } from "../components/ChecklistEtapas";
@@ -16,7 +18,7 @@ function tituloDaOrigem(origem) {
   return ONBOARDING_ORIGENS.find((o) => o.chave === origem)?.titulo || origem || "—";
 }
 
-export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpresa, onEditar }) {
+export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, preenchimentoInicial = false }) {
   const [onboarding, setOnboarding] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -27,6 +29,34 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const [aviso, setAviso] = useState(null);
   const [revisaoComercial, setRevisaoComercial] = useState(0);
   const [areaEscolhida, setAreaEscolhida] = useState(null);
+  const [editando, setEditando] = useState(preenchimentoInicial);
+  const [continuacao, setContinuacao] = useState(0);
+  const salvarAntesDeSair = useRef(null);
+  const registrarSaida = useCallback(fn => { salvarAntesDeSair.current = fn; }, []);
+  const saidaEmCurso = useRef(false);
+  async function voltar() {
+    if (saidaEmCurso.current) return;
+    saidaEmCurso.current = true;
+    try {
+      if (editando) await salvarAntesDeSair.current?.();
+      onVoltar?.();
+    } catch (e) { setAviso(`Não foi possível salvar. Seus dados continuam nesta tela. ${e.message}`); }
+    finally { saidaEmCurso.current = false; }
+  }
+
+  useEffect(() => { setEditando(preenchimentoInicial); setAreaEscolhida(null); }, [onboardingId, preenchimentoInicial]);
+
+  async function continuarAtendimento() {
+    try {
+      const r = await api.getOnboarding(onboardingId);
+      setOnboarding(r?.onboarding || r);
+      setRevisaoComercial(v => v + 1);
+      setEditando(false);
+      setContinuacao(v => v + 1);
+      setAreaEscolhida({ id: onboardingId, area: typeof api.getOnboardingComercial === "function" ? "comercial" : "dados" });
+      setAviso(null);
+    } catch (e) { setAviso(`Os dados foram salvos, mas não foi possível atualizar o atendimento. ${e.message}`); }
+  }
 
   async function atualizarFicha() {
     if (ocupada) return;
@@ -176,7 +206,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const temComercial = typeof api.getOnboardingComercial === "function";
   const area = areaEscolhida?.id === onboarding.id ? areaEscolhida.area :
     convertido ? "implantacao" : temComercial ? "comercial" : "dados";
-  const areas = [...(temComercial ? [["comercial", "Atendimento comercial"]] : []), ["dados", "Dados do cliente"], ["implantacao", "Implantação"]];
+  const areas = [...(temComercial ? [["comercial", "Atendimento comercial"]] : []), ["dados", "Dados do cliente"], ["implantacao", onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"]];
   const pendentes = (onboarding.etapas || []).filter(etapa => !etapa.concluidaEm);
   const proximaEtapa = pendentes.find(etapa => etapa.obrigatoria) || pendentes[0];
 
@@ -184,29 +214,30 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
     <PageShell
       title={onboarding.razaoSocial || onboarding.responsavelNome || `Atendimento ${String(onboarding.id).slice(-6)}`}
       subtitle={`${tituloDaOrigem(onboarding.origem)}${onboarding.cnpj ? ` · ${formatarCnpj(onboarding.cnpj)}` : ""}`}
-      onBack={onVoltar}
+      onBack={voltar}
       backLabel="Entrada de clientes"
       actions={
         <div className="onboarding-actions">
-          <Button variant="secondary" size="sm" disabled={ocupada} onClick={atualizarFicha}>Atualizar ficha</Button>
+          <Button variant="secondary" size="sm" disabled={ocupada || editando} onClick={atualizarFicha}>Atualizar ficha</Button>
           <span
-            style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, border: "1px solid", fontSize: 12, fontWeight: 600 }}
+            style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, borderWidth: 1, borderStyle: "solid", fontSize: 12, fontWeight: 600 }}
           >
             <span aria-hidden="true">{status.icone}</span> {status.rotulo}
           </span>
-          {!encerrado && (
+          {!encerrado && !editando && (
             <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => onEditar?.(onboarding.id)}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setEditando(true); setAreaEscolhida({ id: onboarding.id, area: "dados" }); }}>
                 Editar ficha
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={marcarDesistencia}>
                 Desistiu
               </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
+              {onboarding.origem !== "PESSOA_FISICA" && <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
                 Adicionar à carteira
-              </Button>
+              </Button>}
             </>
           )}
+          {!editando && <NovaDemanda api={api} onboarding={onboarding} onAbrir={onAbrirAtendimento} />}
           {convertido && onboarding.portalClientId && (
             <Button type="button" size="sm" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId)}>
               Abrir a empresa
@@ -217,7 +248,11 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
-      {api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarFicha} />}
+      {aviso && editando && <p role="alert">{aviso}</p>}
+      {(onboarding.demandasRelacionadas || []).length > 0 && <details className="onboarding-panel"><summary>Outros serviços deste contato</summary>{onboarding.demandasRelacionadas.map(d => <p key={d.id}><a href={`/onboardings/${encodeURIComponent(d.id)}`}>{d.anterior ? "Atendimento anterior" : "Serviço relacionado"} · {tituloDaOrigem(d.origem)}</a></p>)}</details>}
+      <div hidden={editando}>{api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarFicha} />}</div>
+      {editando && <OnboardingWizardPage key={onboarding.id} embedded api={api} onboardingId={onboarding.id} onRegistrarSaida={registrarSaida} onVoltar={continuarAtendimento} onAbrirDetalhe={continuarAtendimento} />}
+      <div hidden={editando}>
       <nav className="onboarding-sections" aria-label="Áreas do atendimento">
         {areas.map(([chave, rotulo]) => <button type="button" key={chave}
           aria-pressed={area === chave} aria-controls={`onboarding-area-${chave}`}
@@ -236,7 +271,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       )}
 
       <div id="onboarding-area-comercial" className="onboarding-area" hidden={area !== "comercial"}>
-        {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} />}
+        {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} continuar={continuacao} />}
       </div>
       <section id="onboarding-area-dados" className="onboarding-area" hidden={area !== "dados"} aria-label="Dados do cliente">
           <h2>Dados declarados</h2>
@@ -248,8 +283,8 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
           {onboarding.portalClientId && <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos")}>Documentos da empresa</Button>}
       </section>
 
-      <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label="Implantação">
-          <h2>Preparação e implantação</h2>
+      <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label={onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}>
+          <h2>{onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Preparação e implantação"}</h2>
           <p className="onboarding-help">Checklist do escritório para este serviço. Contratação, assinatura e pagamento são conferidos no atendimento comercial.</p>
           {proximaEtapa && !encerrado && <div className="onboarding-next-step"><small>Próxima pendência da checklist</small><strong>{proximaEtapa.titulo}</strong><span>{pendentes.length} {pendentes.length === 1 ? "etapa pendente" : "etapas pendentes"}</span></div>}
           {!onboarding.etapas?.length && <p className="onboarding-help">As etapas serão criadas quando a ficha for enviada. Enquanto isso, prepare o link e acompanhe o preenchimento.</p>}
@@ -268,6 +303,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
           </div>}
       </section>
 
+      </div>
       {modalAberto && (
         <ConversaoModal
           onboarding={onboarding}

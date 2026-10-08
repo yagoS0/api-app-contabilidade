@@ -1,5 +1,13 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Atendimento contínuo e pessoa física — 08/10/2026
+
+O formulário interno abre integrado ao detalhe e continua no mesmo atendimento após salvar. A saída pelo cabeçalho aguarda o salvamento do wizard; falha conserva a edição. Pessoa física usa origem `PESSOA_FISICA`, serviço solicitado e contato, sem perguntas empresariais. Uma demanda empresarial posterior copia contato e mantém vínculos de histórico; não converte nem apaga o serviço pessoal. Criação relacionada usa chave de solicitação estável para repetição segura.
+
+CNPJ válido dispara consulta cadastral após pausa na digitação, no escritório e no link público. `dados.cadastroCnpj` guarda somente campos normalizados do documento atual; a conversão reaproveita endereço/CNAEs. Troca de CNPJ invalida o resultado anterior. Resposta atrasada não sobrescreve correções. Consulta do formulário não comprova conferência humana ou situação fiscal: a jornada permite revisar o cadastro recebido sem repetir a chamada e registra a conferência explícita do escritório.
+
+Validação usa provedores sintéticos. Testes de fluxo estão em `atendimentoUnificado.test.jsx` e `consultaCnpjAutomatica.test.jsx`; a conferência visual em desktop e celular usa prévia local com dados fictícios, mantida fora da publicação. Nenhuma publicação em produção é implícita nessas verificações.
+
 ## Diagnóstico, preços e contratos — 23/09/2026
 
 Diagnóstico mantém três abas: Devolutiva, Dados da análise e Conferências. Regime/CLT/documentos/gestão reutilizam a ficha. As três partes da devolutiva e, fora da abertura, decisão justificada de regularização são necessárias; consultas pendentes não bloqueiam um escopo delimitado. Preservar o componente pelo onboardingId: invalidar diagnóstico ao corrigir um dado não pode apagar texto ou roteiro em edição. Confirmar a versão atual antes de salvar. O primeiro preenchimento de informação antes ausente não invalida a análise no servidor.

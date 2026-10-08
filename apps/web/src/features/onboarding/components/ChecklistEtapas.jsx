@@ -70,7 +70,7 @@ export function CardEtapa({
         background: "var(--bg-surface)",
       }}
     >
-      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}>
+      <div className="onboarding-checklist-row">
         <input
           type="checkbox"
           id={`etapa-${etapa.id}`}
@@ -140,7 +140,7 @@ export function CardEtapa({
                   color: "var(--text)", fontSize: 13, fontFamily: "inherit",
                 }}
               />
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <div className="onboarding-actions">
                 <Button
                   size="sm"
                   type="button"

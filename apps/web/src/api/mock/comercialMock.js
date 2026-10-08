@@ -30,6 +30,7 @@ export function criarMockComercial({
     o.dados?.atividadePretendida || null,
     o.dados?.municipioAtendimento || o.dados?.municipioPretendido || null,
     o.dados?.enderecoPretendido || null,
+    ...(o.origem === "PESSOA_FISICA" ? [o.dados?.servicoSolicitado || null, o.dados?.responsavelCpf || null, o.responsavelNome || o.dados?.responsavelNome || null] : []),
     ...(perfil ? [Object.keys(perfil).sort().map(k => [k, perfilDaAnalise(o)[k] ?? null])] : [])
   ]);
   const diagnosticoAtual = o => o.diagnosticoDemonstracao?.dados?.contexto === contextoDiagnostico(o)
@@ -39,16 +40,16 @@ export function criarMockComercial({
     destinatario: o.responsavelNome || "Interessado de demonstração",
     condicoes: "DEMONSTRAÇÃO: valores e condições fictícios. Nenhum serviço é contratado neste ambiente.",
     pendencias: [],
-    opcoes: o.dados?.modalidadeServico === "AVULSO" ? [{
+    opcoes: o.origem === "PESSOA_FISICA" || o.dados?.modalidadeServico === "AVULSO" ? [{
       chave: "AVULSO",
-      titulo: "Somente abertura (demonstração)",
+      titulo: o.origem === "PESSOA_FISICA" ? "Serviço pessoal (demonstração)" : "Somente abertura (demonstração)",
       unicoCentavos: 100000,
       mensalCentavos: 0,
       recorrente: false,
       escopo: "Serviço avulso demonstrativo"
     }] : [{
       chave: "AVULSO",
-      titulo: "Somente abertura (demonstração)",
+      titulo: o.origem === "PESSOA_FISICA" ? "Serviço pessoal (demonstração)" : "Somente abertura (demonstração)",
       unicoCentavos: 100000,
       mensalCentavos: 0,
       recorrente: false,
@@ -237,13 +238,13 @@ export function criarMockComercial({
       }
       if (suffix === "/jornada/diagnostico") {
         if (body.versao !== o.versao) throw Error("Ficha alterada. Atualize antes de salvar.");
-        if (o.origem !== "ABERTURA") throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
+        if (!["ABERTURA", "PESSOA_FISICA"].includes(o.origem)) throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
         if (typeof body.servicos !== "string" || body.servicos.trim().length < 10) throw Error("Preencha o diagnóstico e o escopo.");
         const estruturado = normalizarDiagnosticoComercial({ ...body, roteiro: { ...body.roteiro, dados: { ...body.roteiro?.dados, funcionariosClt: o.dados?.qtdFuncionarios, documentosEntradaMes: o.dados?.notasRecebidasMes } } }, o.origem);
         if (Object.hasOwn(body, "diagnosticoBaseId") && body.diagnosticoBaseId !== (o.diagnosticoDemonstracao?.id || null)) throw Error("Outro atendente alterou o diagnóstico. Recarregue antes de salvar.");
         const perfilConferido = perfilDaAnalise(o);
         const dados = { ...estruturado, perfilConferido, contexto: contextoDiagnostico(o, perfilConferido), fichaVersao: o.versao, achados: Object.values(estruturado.devolutiva).join("\n\n"), servicos: body.servicos };
-        const texto = textoDaDevolutiva(dados);
+        const texto = textoDaDevolutiva(dados, { pessoaFisica: o.origem === "PESSOA_FISICA" });
         if (texto.length > 3800) throw Error("Resuma a devolutiva para até 3.800 caracteres.");
         o.diagnosticoDemonstracao = { id: uid(), dados: { ...dados, texto: `DEMONSTRAÇÃO — ${texto}` } };
         persistir(); return { diagnostico: o.diagnosticoDemonstracao };

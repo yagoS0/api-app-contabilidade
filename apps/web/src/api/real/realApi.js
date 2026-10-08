@@ -1863,6 +1863,9 @@ export function createRealApi() {
     async revogarLinkOnboarding(id, linkId) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/links/" + encodeURIComponent(linkId), { method: "DELETE" }); },
     async consultarFormularioOnboarding(token) { return formularioPublicoRequest(token); },
     async salvarFormularioOnboarding(token, patch) { return formularioPublicoRequest(token, patch); },
+    async criarDemandaOnboarding(id, payload) {
+      return request(`/firm/onboardings/${encodeURIComponent(id)}/demandas`, { method: "POST", body: JSON.stringify(payload) });
+    },
     async criarOnboarding(origem) {
       return request("/firm/onboardings", { method: "POST", body: JSON.stringify({ origem }) });
     },

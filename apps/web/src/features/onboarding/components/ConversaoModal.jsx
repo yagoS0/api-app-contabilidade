@@ -14,11 +14,12 @@
 //  3. **Senha do dono**, com o `passwordChecklist` da política única do projeto (reusado, não
 //     reescrito — duas políticas de senha divergiriam na primeira mudança de regra).
 
-import { useMemo, useState } from "react";
+import { cloneElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import { passwordChecklist } from "../../../lib/schemas/passwordPolicy";
 import { consultarCnpj, mapearParaFormularioEmpresa, soDigitosCnpj } from "../lib/brasilApi";
-import { prepararConversao, aplicarConsultaNaConversao, payloadConversao } from "../lib/conversaoEmpresa";
+import { prepararConversao, aplicarConsultaNaConversaoPreservandoEdicoes, payloadConversao } from "../lib/conversaoEmpresa";
 
 // ⚠ OS TRÊS, e só eles. Ver o comentário do cabeçalho.
 const REGIMES_ACEITOS = [
@@ -28,18 +29,22 @@ const REGIMES_ACEITOS = [
 ];
 
 const INPUT = {
-  width: "100%", padding: "8px 10px", borderRadius: "var(--radius-sm)",
+  width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, padding: "8px 10px", borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)", background: "var(--bg-page)", color: "var(--text)", fontSize: 14,
 };
 
-function Campo({ rotulo, obrigatorio, children, ajuda }) {
+function Campo({ rotulo, obrigatorio, children, ajuda, campoId }) {
+  const generatedId = useId();
+  const id = campoId || generatedId;
+  const control = Array.isArray(children) ? children[0] : children;
+  const directControl = ["input", "select", "textarea"].includes(control?.type);
   return (
     <div style={{ marginBottom: "var(--space-3)" }}>
-      <label style={{ display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600 }}>
+      <label htmlFor={directControl || campoId ? id : undefined} style={{ display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600 }}>
         {rotulo}
         {obrigatorio && <span aria-hidden="true" style={{ color: "var(--state-warn)" }}> *</span>}
       </label>
-      {children}
+      {directControl ? <>{cloneElement(control, { id })}{Array.isArray(children) ? children.slice(1) : null}</> : children}
       {ajuda && (
         <span style={{ display: "block", marginTop: 4, fontSize: 12, color: "var(--text-faint)" }}>{ajuda}</span>
       )}
@@ -49,6 +54,10 @@ function Campo({ rotulo, obrigatorio, children, ajuda }) {
 
 export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, erro }) {
   const [form, setForm] = useState(() => prepararConversao(onboarding));
+  const atualRef = useRef({ form, id: onboarding?.id });
+  atualRef.current = { form, id: onboarding?.id };
+  const consultaRef = useRef(0);
+  useEffect(() => () => { ++consultaRef.current; }, []);
   const [consultando, setConsultando] = useState(false);
   const [avisoConsulta, setAvisoConsulta] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -73,6 +82,16 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
     (!senhaExigida || senhaOk) && form.cadastroConferido;
 
   function set(campo, valor) {
+    if (campo === "cnpj" && soDigitosCnpj(valor) !== soDigitosCnpj(form.cnpj)) {
+      ++consultaRef.current;
+      setConsultando(false); setAvisoConsulta(null);
+      if (soDigitosCnpj(form.cnpj).length !== 14) {
+        setForm(atual => ({ ...atual, cnpj: valor, cadastroConferido: false }));
+        return;
+      }
+      setForm(atual => ({ ...atual, cnpj: valor, cadastroConferido: false, regimeTributario: "", socios: [], inscricaoMunicipal: "", inscricaoEstadual: "", razaoSocial: "", nomeFantasia: "", cnaePrincipal: "", cnaesSecundarios: "", capitalSocial: "", naturezaJuridica: "", porte: "", dataAbertura: "", telefone: "", endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "" } }));
+      return;
+    }
     setForm((atual) => ({ ...atual, cadastroConferido: false, [campo]: valor }));
   }
   function setEndereco(campo, valor) {
@@ -80,16 +99,19 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   }
 
   async function consultarReceita() {
+    const sequencia = ++consultaRef.current;
+    const inicio = { form, id: onboarding?.id };
     setConsultando(true);
     setAvisoConsulta(null);
     const r = await consultarCnpj(form.cnpj);
+    if (sequencia !== consultaRef.current || inicio.id !== atualRef.current.id || soDigitosCnpj(inicio.form.cnpj) !== soDigitosCnpj(atualRef.current.form.cnpj)) return;
     setConsultando(false);
     if (!r.ok) {
       setAvisoConsulta(r.mensagem);
       return;
     }
     const mapeado = mapearParaFormularioEmpresa(r.bruto);
-    setForm((atual) => aplicarConsultaNaConversao(atual, mapeado));
+    setForm((atual) => aplicarConsultaNaConversaoPreservandoEdicoes(atual, mapeado, inicio.form));
     if (r.situacao?.texto && !r.situacao.ativa) {
       setAvisoConsulta(`Situação cadastral na Receita: ${r.situacao.texto}.`);
     }
@@ -115,25 +137,18 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   const conflito = erro?.code === "cnpj_ja_na_carteira" ? erro : null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Criar a empresa a partir do onboarding"
-      style={{
-        position: "fixed", inset: 0, zIndex: 50,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex", alignItems: "flex-start", justifyContent: "center",
-        padding: "var(--space-5)", overflowY: "auto",
-      }}
+    <Modal
+      titulo="Criar a empresa a partir do onboarding"
+      aoFechar={onFechar}
+      ocupado={enviando}
+      fecharAoClicarFundo={false}
+      tamanho="lg"
+      rodape={<div className="onboarding-conversion-actions">
+        <Button variant="secondary" type="button" onClick={onFechar} disabled={enviando}>Cancelar</Button>
+        <Button type="button" onClick={confirmar} disabled={!podeConverter || enviando}>{enviando ? "criando…" : "Criar empresa"}</Button>
+      </div>}
     >
-      <div
-        style={{
-          width: "100%", maxWidth: 720, background: "var(--bg-surface)",
-          border: "1px solid var(--border)", borderRadius: "var(--radius)",
-          padding: "var(--space-5)",
-        }}
-      >
-        <h2 style={{ margin: "0 0 var(--space-2)", fontSize: 18 }}>Criar a empresa</h2>
+      <div className="onboarding-conversion">
         <p style={{ margin: "0 0 var(--space-4)", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 }}>
           Confira os dados definitivos do registro. Sócios e capital vêm da ficha para sua revisão;
           a consulta pública completa os dados cadastrais. Os PDFs recebidos, a proposta aceita e
@@ -166,9 +181,9 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         )}
 
         {/* ── 1) CNPJ definitivo ───────────────────────────────────────── */}
-        <Campo rotulo="CNPJ definitivo" obrigatorio>
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <input aria-label="CNPJ definitivo" style={INPUT} value={form.cnpj} onChange={(e) => set("cnpj", soDigitosCnpj(e.target.value))} />
+        <Campo rotulo="CNPJ definitivo" obrigatorio campoId="onboarding-conversion-cnpj">
+          <div className="onboarding-conversion-lookup">
+            <input id="onboarding-conversion-cnpj" aria-label="CNPJ definitivo" style={INPUT} value={form.cnpj} onChange={(e) => set("cnpj", soDigitosCnpj(e.target.value))} />
             <Button
               type="button"
               variant="secondary"
@@ -216,13 +231,13 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         </Campo>
         <fieldset style={{ border: "1px solid var(--border)", padding: "var(--space-3)", marginBottom: "var(--space-3)" }}>
           <legend>Dados do registro</legend>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-2)" }}>
+          <div className="onboarding-conversion-grid">
             {[["capitalSocial", "Capital social (R$)"], ["naturezaJuridica", "Natureza jurídica"], ["porte", "Porte"], ["dataAbertura", "Data de abertura"], ["inscricaoMunicipal", "Inscrição municipal"], ["inscricaoEstadual", "Inscrição estadual"]].map(([campo, rotulo]) => (
               <label key={campo} style={{ fontSize: 13 }}>{rotulo}<input style={INPUT} type={campo === "dataAbertura" ? "date" : "text"} value={form[campo]} onChange={e => set(campo, e.target.value)} /></label>
             ))}
           </div>
           <p style={{ fontSize: 12 }}>Sócios: confira a composição registrada e as participações.</p>
-          {form.socios.map((socio, i) => <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+          {form.socios.map((socio, i) => <div key={i} className="onboarding-conversion-partner">
             {[["nome", "Nome"], ["cpf", "CPF"], ["participacao", "Participação (%)"]].map(([campo, rotulo]) => <label key={campo} style={{ flex: "1 1 120px", fontSize: 12 }}>{rotulo}<input aria-label={`${rotulo} do sócio ${i + 1}`} style={INPUT} value={socio[campo]} onChange={e => set("socios", form.socios.map((s, j) => j === i ? { ...s, [campo]: e.target.value } : s))} /></label>)}
             <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", form.socios.filter((_, j) => j !== i))}>Remover sócio {i + 1}</Button>
           </div>)}
@@ -233,7 +248,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           <legend style={{ fontSize: 12, color: "var(--text-muted)", padding: "0 6px" }}>
             Endereço (todos os campos são exigidos pelo cadastro)
           </legend>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "var(--space-2)" }}>
+          <div className="onboarding-conversion-grid">
             {[
               ["rua", "Rua"], ["numero", "Número"], ["complemento", "Complemento"],
               ["bairro", "Bairro"], ["cidade", "Cidade"], ["uf", "UF"], ["cep", "CEP"],
@@ -299,16 +314,8 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         </label>
 
         <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>
-        <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
-          <Button variant="secondary" type="button" onClick={onFechar} disabled={enviando}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={confirmar} disabled={!podeConverter || enviando}>
-            {enviando ? "criando…" : "Criar empresa"}
-          </Button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

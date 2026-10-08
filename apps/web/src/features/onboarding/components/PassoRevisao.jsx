@@ -51,9 +51,9 @@ export function FichaDeclarada({ origem, dados, origemPreenchimento, compacta = 
                 return (
                   <div
                     key={`${descritor.passo}-${descritor.campo}`}
+                    className={`onboarding-review-row${compacta ? " onboarding-review-row--compact" : ""}`}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: compacta ? "1fr" : "minmax(0, 240px) minmax(0, 1fr)",
                       gap: "var(--space-2)",
                       alignItems: "baseline",
                       padding: "4px 0",
@@ -68,7 +68,7 @@ export function FichaDeclarada({ origem, dados, origemPreenchimento, compacta = 
                     </span>
                     {/* ⚠ Campo em branco NÃO some: some da tela quem não respondeu e ninguém sabe
                         se foi resposta vazia ou pergunta que nunca foi feita. */}
-                    <span style={{ fontSize: 13, color: texto ? "var(--text)" : "var(--text-faint)" }}>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 13, color: texto ? "var(--text)" : "var(--text-faint)" }}>
                       {texto || "— não informado —"}
                     </span>
                   </div>

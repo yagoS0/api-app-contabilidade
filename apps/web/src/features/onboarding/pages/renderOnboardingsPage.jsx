@@ -40,7 +40,7 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
   const progresso = item.progresso || { total: 0, concluidas: 0 };
 
   return (
-    <article
+    <article className="onboarding-card"
       style={{
         display: "grid", gap: "var(--space-2)",
         padding: "var(--space-3)",
@@ -158,7 +158,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
             {rotulo} <span>{itens.filter(i => valor === "todos" || encerrados.includes(i.status) === (valor === "encerrados")).length}</span>
           </button>)}
       </nav>
-      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+      <div className="onboarding-list-filters" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <input
           aria-label="Buscar atendimento"
           placeholder="Buscar por nome, CNPJ ou responsável"
@@ -200,7 +200,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
           {rascunhos.length === 0 ? (
             <p style={{ fontSize: 13, color: "var(--text-faint)" }}>Nenhuma ficha em preenchimento.</p>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--space-2)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))", gap: "var(--space-2)" }}>
               {rascunhos.map((item) => (
                 <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} onDescartar={confirmarDescarte} />
               ))}
@@ -212,7 +212,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
           gap: "var(--space-3)",
           alignItems: "start",
         }}

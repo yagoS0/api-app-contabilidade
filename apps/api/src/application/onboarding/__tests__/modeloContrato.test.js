@@ -35,3 +35,12 @@ test.each(['APOS_REGULARIZACAO', 'SEM_REGULARIZACAO'])('condição mensal %s apa
   expect(dados.condicaoInicioMensal).not.toContain('_');
   expect(dados.condicaoInicioMensal).toMatch(condicaoInicioMensal === 'APOS_REGULARIZACAO' ? /Após a execução e conferência/ : /não há regularização prévia/);
 });
+
+
+test("serviço pessoal aceita modelo PF próprio sem CNPJ e recusa modelo empresarial", () => {
+  const onboarding = { origem: "PESSOA_FISICA", responsavelNome: "Alex Exemplo", dados: { responsavelCpf: "52998224725" } };
+  const modelo = { ...pf, dados: { recorrente: false, identificacaoContratante: "PESSOA_FISICA", origens: ["PESSOA_FISICA"] } };
+  expect(configuracaoModeloContratoValida(modelo.dados)).toBe(true);
+  expect(motivoIncompatibilidadeContrato({ modelo, onboarding, opcao: { recorrente: false } })).toBeNull();
+  expect(motivoIncompatibilidadeContrato({ modelo: { ...modelo, dados: { recorrente: false } }, onboarding, opcao: { recorrente: false } })).toMatch(/pessoa física/);
+});
