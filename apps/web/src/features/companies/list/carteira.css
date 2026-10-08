@@ -114,3 +114,57 @@
 .carteira-entry-list input { width: auto; }
 @media screen and (max-width: 760px) { .carteira-task-toggle { flex-direction: column; gap: 4px; } }
 @media print { .carteira-etapa { border: 0; background: transparent; padding: 0; } }
+
+/* Cabeçalho da carteira: mesma tipografia, área de clique e hierarquia em todas as colunas. */
+.companies-table thead th {
+  height: 48px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: .78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+.companies-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 5px 7px;
+  margin-left: -7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.companies-table__heading { display: inline-flex; align-items: center; gap: 7px; }
+.companies-table__count { padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); font-size: .68rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.companies-table__sort-icon { flex-shrink: 0; color: var(--text-muted); }
+.companies-table__sort-icon path { opacity: .4; }
+.companies-table__sort-icon path.is-active { color: var(--accent-cyan); opacity: 1; stroke-width: 2; }
+.companies-table__sort:hover { color: var(--text); background: color-mix(in srgb, var(--text-muted) 10%, transparent); }
+.companies-table__sort:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+.companies-table th[aria-sort="ascending"] .companies-table__heading,
+.companies-table th[aria-sort="descending"] .companies-table__heading { color: var(--text); }
+.companies-table thead input[type="checkbox"] { accent-color: var(--accent-cyan); vertical-align: middle; margin: 0; }
+@media screen and (max-width: 760px) {
+  .companies-table thead th { height: auto; box-shadow: none; }
+  .companies-table__sort { margin-left: 0; padding: 6px 9px; background: var(--bg-subtle); border: 1px solid var(--border); }
+}
+@media print { .companies-table__sort-icon { display: none; } .companies-table__count { background: none; } }
+.carteira-apuracao-tag { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; box-sizing: border-box; padding: 3px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--apuracao-color) 24%, transparent); background: color-mix(in srgb, var(--apuracao-color) 10%, transparent); color: var(--apuracao-color); font: 500 .74rem/1.4 var(--font-sans, system-ui, sans-serif); white-space: nowrap; }
+.carteira-apuracao-tag--a_apurar { --apuracao-color: #efc36b; }
+.carteira-apuracao-tag--apurado { --apuracao-color: #83d5aa; }
+.carteira-apuracao-tag--transmitido { --apuracao-color: #8dbafa; }
+.carteira-apuracao-tag__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+@media print { .carteira-apuracao-tag { color: inherit; background: none; border-color: currentColor; } }

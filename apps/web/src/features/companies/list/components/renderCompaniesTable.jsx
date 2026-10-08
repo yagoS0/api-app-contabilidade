@@ -68,9 +68,7 @@ function severidadeGuias(company) {
 
 const CELULA = { padding: "8px 10px", borderTop: "1px solid var(--border)", verticalAlign: "middle" };
 const CABECALHO = {
-  padding: "8px 10px", textAlign: "left", fontSize: "0.68rem", fontWeight: 700,
-  textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-muted)",
-  background: "var(--bg-subtle)", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap",
+  textAlign: "left", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap",
 };
 
 
@@ -284,7 +282,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
         <button type="button" onClick={() => onFluxo?.(company)} className="carteira-etapa" aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
       </td>
       <td data-label="Apuração" style={CELULA}>
-        <span style={{ color: apuracao.transmitida ? 'var(--state-ok)' : 'var(--text)', fontSize: '0.76rem' }}>{apuracao.rotulo}</span>
+        <span className={`carteira-apuracao-tag carteira-apuracao-tag--${apuracao.chave}`}><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{apuracao.rotulo}</span>
       </td>
       <td data-label="Guias" style={CELULA}>
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -478,14 +476,8 @@ export function CompaniesTable({
   }
 
   /**
-   * ⚠ O ▲▼ JÁ EXISTIA e continua sendo o mesmo. O que faltava eram duas coisas:
-   *
-   * 1. `aria-sort` no `<th>`. O triângulo é PIXEL — leitor de tela não lê glifo decorativo dentro
-   *    de um botão como "ordenado por esta coluna". Sem o atributo, quem navega por áudio não tem
-   *    como saber que a lista está ordenada, nem por quê.
-   * 2. Um sinal de que a coluna É ORDENÁVEL antes do primeiro clique. As cinco colunas eram
-   *    botões e nenhuma parecia botão; o ⇅ apagado diz "dá para clicar aqui" sem competir com o
-   *    ▲▼ da coluna que está de fato ordenando.
+   * `aria-sort` comunica a ordem aos leitores de tela. As setas decorativas indicam
+   * as colunas ordenáveis e destacam a direção ativa sem alterar o nome do botão.
    */
   const Cabecalho = ({ campo, children, alinhar, largura, pergunta }) => {
     const ativo = ordem.campo === campo;
@@ -500,12 +492,13 @@ export function CompaniesTable({
             type="button"
             onClick={() => alternarOrdem(campo)}
             title={ativo ? "Inverter a ordem desta coluna" : "Ordenar por esta coluna"}
-            style={{ background: "none", border: "none", color: "inherit", font: "inherit", cursor: "pointer", padding: 0, textTransform: "inherit", letterSpacing: "inherit" }}
+            className="companies-table__sort"
           >
-            {children}
-            <span aria-hidden="true" style={ativo ? undefined : { color: "var(--text-faint)", fontWeight: 400 }}>
-              {ativo ? (ordem.asc ? " ▲" : " ▼") : " ⇅"}
-            </span>
+            <span className="companies-table__heading">{children}</span>
+            <svg className="companies-table__sort-icon" aria-hidden="true" width="14" height="16" viewBox="0 0 14 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m4 6 3-3 3 3" className={ativo && ordem.asc ? 'is-active' : ''}/>
+              <path d="m4 10 3 3 3-3" className={ativo && !ordem.asc ? 'is-active' : ''}/>
+            </svg>
           </button>
         ) : children}
         {/* A pergunta que a coluna responde. Minúscula, sem caixa alta, para ficar claro que é
@@ -606,7 +599,7 @@ export function CompaniesTable({
                 />
               </th>
             )}
-            <Cabecalho campo="empresa" largura="27%">Empresa <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({carregando ? "…" : escondidasPorFiltro > 0 ? `${visiveis}/${total}` : visiveis})</span></Cabecalho>
+            <Cabecalho campo="empresa" largura="27%">Empresa <span className="companies-table__count">({carregando ? "…" : escondidasPorFiltro > 0 ? `${visiveis}/${total}` : visiveis})</span></Cabecalho>
             <Cabecalho campo="status">Status</Cabecalho>
             <Cabecalho campo="apuracao">Apuração</Cabecalho>
             <Cabecalho campo="guias" largura="24%">Guias</Cabecalho>
