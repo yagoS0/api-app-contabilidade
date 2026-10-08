@@ -17,7 +17,7 @@ it('deep links gerais e da empresa são reconhecidos pela sessão',()=>{
  for(const item of CONFIG_GERAIS)expect(pathToPageName(item.href)).not.toBe('companies');
  for(const item of CONFIG_EMPRESA)expect(pathToPageName(companyTabPath('empresa-a',item.tab))).toBe('companyDetail');
 });
-it('acesso ao portal fica em contatos e credenciais externas no cofre',()=>{
+it('acesso ao portal fica em contatos e o cofre sai das configurações',()=>{
  expect(buscarConfiguracoes(CONFIG_EMPRESA,'portal').map(i=>i.id)).toEqual(['comunicacao']);
- expect(buscarConfiguracoes(CONFIG_EMPRESA,'cofre').map(i=>i.id)).toEqual(['credenciais']);
+ expect(buscarConfiguracoes(CONFIG_EMPRESA,'cofre')).toEqual([]);
 });

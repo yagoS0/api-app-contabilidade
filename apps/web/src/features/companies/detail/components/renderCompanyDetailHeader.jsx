@@ -148,7 +148,10 @@ const GROUPS = [
     // subabas sumiam. Documentos precisa continuar acessível em qualquer seção.
     key: "documentos",
     label: "Documentos",
-    tabs: [{ key: "documentos", label: "Documentos" }],
+    tabs: [
+      { key: "documentos", label: "Documentos" },
+      { key: "credenciais", label: "Senhas externas" },
+    ],
   },
 ];
 

@@ -3,7 +3,6 @@ export const CONFIG_EMPRESA = [
   { id: 'perfilFiscal', grupo: 'Fiscal', titulo: 'Atividades e tributação', descricao: 'Atividades permitidas, anexos e parâmetros de ISS.', tab: 'perfilFiscal', termos: 'cnae fator r simples' },
   { id: 'emissaoNfse', grupo: 'Fiscal', titulo: 'Emissão de notas', descricao: 'Perfis por serviço, NBS, códigos tributários e liberação de emissão.', tab: 'emissaoNfse', termos: 'nfse ibs cbs aliquota ctrib' },
   { id: 'comunicacao', grupo: 'Atendimento', titulo: 'Contatos, acessos e envios', descricao: 'Contatos, acesso ao portal do cliente, guias, e-mail, WhatsApp e permissões do assistente.', tab: 'comunicacao', termos: 'email telefone ia guias destinatarios usuarios membros acesso portal cliente' },
-  { id: 'credenciais', grupo: 'Acessos', titulo: 'Senhas e acessos externos', descricao: 'Cofre de credenciais dos sistemas usados pela empresa.', tab: 'credenciais', termos: 'senhas usuarios cofre credenciais sistemas serpro procuracao' },
   { id: 'certificado', grupo: 'Acessos', titulo: 'Certificado A1', descricao: 'Certificado digital da própria empresa e sua validade.', tab: 'certificado', termos: 'certificado digital a1 pfx' },
   { id: 'planoContas', grupo: 'Contabilidade', titulo: 'Plano de contas', descricao: 'Contas contábeis usadas nesta empresa.', tab: 'planoContas', termos: 'debito credito contabil' },
 ];
