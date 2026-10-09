@@ -7,7 +7,7 @@ import { editarJanela } from '../lib/editarJanela';
 import { MiniCalendarioAgenda } from './MiniCalendarioAgenda';
 import { CORES_PRIORIDADE, RECORRENCIAS } from '../lib/agendaWorkspace';
 
-export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao, onOpenCompany, onRascunho }) {
+export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onEditarOcorrencia, onAlterarConclusao, onExcluir, onConfigurarObrigacao, onOpenCompany, onRascunho }) {
   const regra = inicial.regraEdicao || inicial.regraOriginal;
   const modoRegra = Boolean(inicial.regraEdicao);
   const edicao = Boolean(inicial.tarefaId || inicial.ocorrenciaIds || modoRegra);
@@ -68,6 +68,10 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
       if (config.horaFim && config.horaFim <= config.horaInicio) throw new Error('O horário final deve ser posterior ao inicial.');
       if (!dados.titulo.trim()) throw new Error('Informe o título.');
       if (precisaFiscal && passo === 1) { setPasso(2); return; }
+      if (onEditarOcorrencia && !precisaFiscal && !edicaoSerie && !empresasTarefa.length && (inicial.tarefaId || inicial.ocorrenciaIds)) {
+        onEditarOcorrencia(inicial, { ...config, titulo:dados.titulo.trim(), descricao:dados.descricao });
+        return;
+      }
       setOcupado(true);
       let out;
       if (!obrigacao && empresasTarefa.length) {

@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { janelaDoGesto } from '../lib/editarJanela';
+import { janelaDoGesto, diferencaDias } from '../lib/editarJanela';
+import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
 import { arredondarMinutosAgenda, janelaCriacaoAgenda, medirGradeAgenda, pontoNaGrade, velocidadeRolagemAgenda } from '../lib/geometriaAgenda';
 
 const campos = ['dataInicio', 'dataFim', 'horaInicio', 'horaFim'];
 const rascunho = { id: 'nova-atividade', tipo: 'tarefa', titulo: 'Nova atividade' };
 
-export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
+export function useGestosAgenda({ dias, horasRef, mesRef, mensal = false, salvar, criar, bloqueado }) {
   const [previa, setPrevia] = useState(null);
   const atual = useRef(null), ignorarClique = useRef(false), quadro = useRef(null), previaRef = useRef(null);
-  const opcoes = useRef(); opcoes.current = { dias, salvar, criar, bloqueado };
+  const opcoes = useRef(); opcoes.current = { dias, salvar, criar, bloqueado, mensal };
   const habilitada = item => !bloqueado && ['tarefa', 'obrigacao'].includes(item.tipo) && Boolean(item.tarefaId || item.ocorrenciaId);
 
   function mostrar(valor) {
     const antes = previaRef.current;
-    if (antes === valor || (antes && valor && antes.item.id === valor.item.id && campos.every(k => antes[k] === valor[k]) && antes.left === valor.left && antes.width === valor.width)) return;
+    if (antes === valor || (antes && valor && antes.item.id === valor.item.id && campos.every(k => antes[k] === valor[k]) && ['left','top','width','height'].every(k => antes[k] === valor[k]))) return;
     previaRef.current = valor; setPrevia(valor);
   }
   function cancelar() {
@@ -26,6 +27,25 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
     return () => { window.removeEventListener('keydown', tecla); if (quadro.current != null) cancelAnimationFrame(quadro.current); };
   }, []);
   useEffect(() => { cancelar(); }, [dias.join('|')]);
+
+  function diaNoMes(x, y) {
+    for (const semana of mesRef?.current?.querySelectorAll('[data-agenda-month-week]') || []) {
+      const rect = semana.getBoundingClientRect();
+      if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) continue;
+      const coluna = Math.floor((x - rect.left) / (rect.width / 7));
+      return { data:somarDiasAgenda(semana.dataset.agendaMonthWeek, coluna), left:rect.left + coluna * rect.width / 7, top:rect.top, width:rect.width / 7, height:rect.height };
+    }
+    return null;
+  }
+  function atualizarMes() {
+    const g = atual.current;
+    if (!g || (!g.ativo && Math.hypot(g.x - g.xInicial, g.y - g.yInicial) < 5)) return;
+    g.ativo = true; ignorarClique.current = true;
+    const destino = diaNoMes(g.x, g.y);
+    const delta = destino ? diferencaDias(destino.data, g.diaInicial) : 0;
+    g.patch = destino ? {dataInicio:somarDiasAgenda(g.item.dataInicio,delta), dataFim:somarDiasAgenda(g.item.dataFim,delta), horaInicio:g.item.horaInicio || null,horaFim:g.item.horaFim || null} : null;
+    mostrar(g.patch ? {item:g.item,...destino,...g.patch,mensal:true} : null);
+  }
 
   function atualizar(grade) {
     const g = atual.current, scroll = horasRef.current;
@@ -51,6 +71,7 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
   function agendar() { if (quadro.current == null) quadro.current = requestAnimationFrame(processarQuadro); }
   function processarQuadro(tempo) {
     quadro.current = null;
+    if (opcoes.current.mensal) { atualizarMes(); return; }
     const g = atual.current, scroll = horasRef.current;
     if (!g || !scroll) return;
     let grade = medirGradeAgenda(scroll, opcoes.current.dias);
@@ -68,8 +89,9 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
   function comecar(e, valores) {
     if (atual.current || opcoes.current.bloqueado || (e.button != null && e.button !== 0) || e.isPrimary === false) return;
     const scroll = horasRef.current;
-    if (!scroll) return;
-    atual.current = { ...valores, xInicial: e.clientX, yInicial: e.clientY, x: e.clientX, y: e.clientY, scrollInicial: scroll.scrollTop, ativo: false, pointerId: e.pointerId };
+    const dia = opcoes.current.mensal ? diaNoMes(e.clientX,e.clientY) : null;
+    if (opcoes.current.mensal ? !dia : !scroll) return;
+    atual.current = { ...valores, diaInicial:dia?.data, xInicial: e.clientX, yInicial: e.clientY, x: e.clientX, y: e.clientY, scrollInicial: scroll?.scrollTop || 0, ativo: false, pointerId: e.pointerId };
     // Capturar no contêiner redireciona o click para fora do botão que abre a atividade.
     // O botão de origem mantém sua ativação nativa e continua propagando os gestos.
     const botao = e.target.closest?.('button');
@@ -92,7 +114,8 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
     const g = atual.current;
     if (!g || g.pointerId !== e.pointerId) return;
     g.x = e.clientX; g.y = e.clientY;
-    atualizar(medirGradeAgenda(horasRef.current, opcoes.current.dias));
+    if (opcoes.current.mensal) atualizarMes();
+    else atualizar(medirGradeAgenda(horasRef.current, opcoes.current.dias));
     const patch = g.patch;
     cancelar();
     if (!patch) return;
@@ -108,11 +131,16 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
     if (!habilitada(item) || !e.altKey || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
     e.preventDefault(); e.stopPropagation();
     const direcao = ['ArrowUp','ArrowLeft'].includes(e.key) ? -1 : 1;
+    if (mensal) {
+      const delta = direcao * (['ArrowUp','ArrowDown'].includes(e.key) ? 7 : 1);
+      salvar(item, {dataInicio:somarDiasAgenda(item.dataInicio,delta),dataFim:somarDiasAgenda(item.dataFim,delta),horaInicio:item.horaInicio || null,horaFim:item.horaFim || null});
+      return;
+    }
     const coluna = dias.indexOf(item.dataInicio) + (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? direcao : 0);
     if (!dias[coluna]) return;
     salvar(item, janelaDoGesto(item, e.shiftKey ? 'fim' : 'mover', dias[coluna], e.key === 'ArrowUp' || e.key === 'ArrowDown' ? direcao * 15 : 0));
   }
-  return { previa, habilitada, iniciar, iniciarCriacao, clicarHorario, teclado,
+  return { previa, habilitada, iniciar, iniciarCriacao, clicarHorario, teclado, permiteRedimensionar:!mensal,
     resetarClique: () => { ignorarClique.current = false; },
     clicar: e => { if (ignorarClique.current) { e.preventDefault(); e.stopPropagation(); ignorarClique.current = false; } },
     mover: e => { const g = atual.current; if (g?.pointerId === e.pointerId) { g.x = e.clientX; g.y = e.clientY; agendar(); } },

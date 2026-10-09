@@ -70,3 +70,13 @@ test('grupos sobrepostos aguardam, preservam conclusão por empresa e movem jane
   expect(api.editarOcorrenciasAgenda).toHaveBeenCalledTimes(2);
   await act(async()=>{segunda.resolve({ok:true});await b;});
 });
+
+test('edição do formulário troca janela e título imediatamente e reverte falha sem alterar vencimento ou conclusão',async()=>{
+  const p=pendencia(),{result}=montar({editarOcorrenciasAgenda:()=>p.promise});
+  const oc={ocorrenciaId:'a',dataInicio:'2026-09-16',dataFim:'2026-09-18',dataVencimento:'2026-09-21',situacao:'CONCLUIDA',agendaConfig:{titulo:'Antes',diasAgendados:[{dataInicio:'2026-09-16'}]}};
+  const dados={itens:[],obrigacoes:[{ocorrencias:[oc]}]}; let salvo;
+  await act(async()=>{salvo=result.current.editar({...oc,ocorrenciaIds:['a']},{dataInicio:'2026-10-10',dataFim:'2026-10-10',titulo:'Depois',descricao:'Nova',horaInicio:null,horaFim:null});});
+  expect(result.current.aplicar(dados).obrigacoes[0].ocorrencias[0]).toMatchObject({dataInicio:'2026-10-10',dataFim:'2026-10-10',dataVencimento:'2026-09-21',situacao:'CONCLUIDA',agendaConfig:{titulo:'Depois',diasAgendados:undefined}});
+  await act(async()=>{p.reject(new Error('Sem conexão'));await salvo;});
+  expect(result.current.aplicar(dados).obrigacoes[0].ocorrencias[0]).toEqual(oc);
+});

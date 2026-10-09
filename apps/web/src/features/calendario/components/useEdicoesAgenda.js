@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { diferencaDias } from '../lib/editarJanela';
-import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
+import { somarDiasAgenda, ocorrenciasDoEstadoDaTarefa } from '../../../../../../packages/shared/src/agenda.js';
 
 const originalDe = item => item.atividadeOriginal || item;
-const idsDe = item => (item.itens || [item]).map(i => i.ocorrenciaId).filter(Boolean);
+const idsDe = item => item.ocorrenciaIds || (item.itens || [item]).map(i => i.ocorrenciaId).filter(Boolean);
 
 /** Mantém somente mudanças de agenda sobre os dados confirmados, nunca cópias de conclusões. */
 export function useEdicoesAgenda({ api, onErro }) {
@@ -17,14 +17,8 @@ export function useEdicoesAgenda({ api, onErro }) {
     if (montado.current) setOperacoes(atuais.current);
   }, []);
 
-  const salvar = useCallback((item, patch) => {
+  const editar = useCallback((item, dados) => {
     const original = originalDe(item);
-    const delta = diferencaDias(patch.dataInicio, item.dataInicio);
-    const dados = {
-      dataInicio: somarDiasAgenda(original.dataInicio, delta),
-      dataFim: somarDiasAgenda(original.dataFim, delta),
-      horaInicio: patch.horaInicio, horaFim: patch.horaFim,
-    };
     const op = { id: ++contador.current, tarefaId: original.tarefaId, cicloChave: original.cicloChave,
       ids: idsDe(original), seed: original.itens?.[0] || original, dados, pendente: true };
     const chaves = op.tarefaId ? [`tarefa:${op.tarefaId}`] : op.ids.map(id => `ocorrencia:${id}`);
@@ -40,7 +34,11 @@ export function useEdicoesAgenda({ api, onErro }) {
           ? await api.acaoTarefaAgenda(op.tarefaId, { acao: 'EDITAR', cicloChave: op.cicloChave, alteracoes: dados })
           : await api.editarOcorrenciasAgenda(op.ids, dados);
         if (out?.ok === false) throw new Error(out.message || 'Não foi possível atualizar o horário.');
-        atualizar(lista => lista.map(o => o.id === op.id ? { ...o, pendente: false } : o));
+        // Uma janela pessoal ampliada pode gerar chaves diárias novas. Usar a resposta
+        // confirmada antes de liberar nova edição evita excluir o ciclo inteiro pelo dia.
+        const itensConfirmados = op.tarefaId && out?.tarefa
+          ? ocorrenciasDoEstadoDaTarefa(out.tarefa, op.cicloChave) : null;
+        atualizar(lista => lista.map(o => o.id === op.id ? { ...o, pendente: false, itensConfirmados } : o));
         return true;
       } catch (e) {
         // Retira só esta alteração: movimentos posteriores e conclusões continuam intactos.
@@ -56,6 +54,16 @@ export function useEdicoesAgenda({ api, onErro }) {
     return gravacao;
   }, [api, atualizar]);
 
+  const salvar = useCallback((item, patch) => {
+    const original = originalDe(item);
+    const delta = diferencaDias(patch.dataInicio, item.dataInicio);
+    return editar(item, {
+      dataInicio: somarDiasAgenda(original.dataInicio, delta),
+      dataFim: somarDiasAgenda(original.dataFim, delta),
+      horaInicio: patch.horaInicio, horaFim: patch.horaFim,
+    });
+  }, [editar]);
+
   const capturarLeitura = useCallback(() => ({ versao: versao.current, pendente: atuais.current.some(o => o.pendente) }), []);
   const confirmarLeitura = useCallback(leitura => {
     // Uma consulta iniciada antes/durante uma edição não pode apagar a prévia confirmada.
@@ -70,12 +78,17 @@ export function useEdicoesAgenda({ api, onErro }) {
     for (const op of operacoes) {
       if (op.tarefaId && incluirTarefas) {
         const mesmo = i => i.tarefaId === op.tarefaId && i.cicloChave === op.cicloChave;
-        itens = itens.some(mesmo) ? itens.map(i => mesmo(i) ? { ...i, ...op.dados } : i) : [...itens, { ...op.seed, ...op.dados }];
+        if (op.itensConfirmados) {
+          const doCiclo = i => i.tarefaId === op.tarefaId && (i.cicloChave === op.cicloChave || i.cicloChave.startsWith(`${op.cicloChave}@`));
+          const atuais = new Map(itens.filter(doCiclo).map(i => [i.cicloChave,i]));
+          itens = [...itens.filter(i => !doCiclo(i)), ...op.itensConfirmados.map(i => ({...i,...(atuais.has(i.cicloChave) ? {resolvido:atuais.get(i.cicloChave).resolvido,concluidaEm:atuais.get(i.cicloChave).concluidaEm} : {})}))];
+        } else itens = itens.some(mesmo) ? itens.map(i => mesmo(i) ? { ...i, ...op.dados } : i) : [...itens, { ...op.seed, ...op.dados }];
       } else if (!op.tarefaId) {
         const ids = new Set(op.ids);
         obrigacoes = obrigacoes.map(o => ({ ...o, ocorrencias: o.ocorrencias.map(oc => ids.has(oc.ocorrenciaId)
           ? { ...oc, dataInicio: op.dados.dataInicio, dataFim: op.dados.dataFim,
-            agendaConfig: { ...oc.agendaConfig, horaInicio: op.dados.horaInicio, horaFim: op.dados.horaFim } }
+            agendaConfig: { ...oc.agendaConfig, ...Object.fromEntries(['horaInicio','horaFim','titulo','descricao','prioridade'].filter(k => Object.hasOwn(op.dados,k)).map(k => [k,op.dados[k]])),
+              ...((oc.dataInicio !== op.dados.dataInicio || oc.dataFim !== op.dados.dataFim) ? {dataInicioOriginal:undefined,dataFimOriginal:undefined,diasAgendados:undefined} : {}) } }
           : oc) }));
       }
     }
@@ -85,7 +98,7 @@ export function useEdicoesAgenda({ api, onErro }) {
   const pendentes = useMemo(() => operacoes.filter(o => o.pendente), [operacoes]);
   const pendente = useCallback(item => {
     const original = originalDe(item), ids = idsDe(original);
-    return pendentes.some(o => original.tarefaId ? o.tarefaId === original.tarefaId && o.cicloChave === original.cicloChave : o.ids.some(id => ids.includes(id)));
+    return pendentes.some(o => original.tarefaId ? o.tarefaId === original.tarefaId && (o.cicloChave === original.cicloChave || original.cicloChave?.startsWith(`${o.cicloChave}@`)) : o.ids.some(id => ids.includes(id)));
   }, [pendentes]);
   const pendenteSerie = useCallback(serie => {
     const ids = new Set((serie.empresas || []).flatMap(o => o.ocorrencias.map(oc => oc.ocorrenciaId)));
@@ -94,5 +107,5 @@ export function useEdicoesAgenda({ api, onErro }) {
       || (serie.obrigacaoId && o.seed.obrigacaoId === serie.obrigacaoId)
       || o.ids.some(id => ids.has(id)));
   }, [pendentes]);
-  return { salvar, aplicar, pendente, pendenteSerie, capturarLeitura, confirmarLeitura, quantidade: pendentes.length, temAlteracoes: operacoes.length > 0 };
+  return { salvar, editar, aplicar, pendente, pendenteSerie, capturarLeitura, confirmarLeitura, quantidade: pendentes.length, temAlteracoes: operacoes.length > 0 };
 }
