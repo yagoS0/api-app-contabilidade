@@ -12,6 +12,7 @@ import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   ObrigacaoError,
+  dataCivil,
   VERIFICADORES,
   aplicarVerificadores,
   atualizar,
@@ -55,13 +56,17 @@ export function createObrigacoesRouter({ log } = {}) {
     try {
       const portalIds = await empresasVisiveis(req);
       const companyId = String(req.query?.companyId || "").trim() || null;
+      const inicio = req.query?.inicio, fim = req.query?.fim;
+      if (inicio || fim) {
+        if (dataCivil(fim, 'fim') < dataCivil(inicio, 'inicio')) throw new ObrigacaoError('periodo_invalido', 'O fim deve ser posterior ao início.');
+      }
 
       // Conclui na hora o que o sistema já consegue observar, antes de montar a lista. Roda uma
       // escrita num GET de propósito: a alternativa é a tela pedir clique em algo que o banco já
       // sabe que foi feito — exatamente o que faz uma agenda envelhecer e perder a confiança.
       // São duas queries agregadas para todo o conjunto, não uma por ocorrência.
       try {
-        await aplicarVerificadores({ portalIds });
+        await aplicarVerificadores({ portalIds:companyId ? portalIds.filter(id => id === companyId) : portalIds, inicio, fim });
       } catch (err) {
         // Falhar aqui não pode derrubar a listagem: sem os verificadores a tela fica desatualizada,
         // sem a lista ela fica vazia.

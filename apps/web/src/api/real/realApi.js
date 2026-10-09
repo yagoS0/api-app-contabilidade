@@ -872,10 +872,12 @@ export function createRealApi() {
       return request(`/firm/marcos-fiscais/${marcoId}`, { method: "DELETE" });
     },
     // ── Obrigações (do escritório; companyId é filtro opcional, como o calendário) ──────────
-    async listObrigacoes({ companyId, incluirInativas } = {}) {
+    async listObrigacoes({ companyId, incluirInativas, inicio, fim } = {}) {
       const q = new URLSearchParams();
       if (companyId) q.set("companyId", companyId);
       if (incluirInativas) q.set("incluirInativas", "1");
+      if (inicio) q.set('inicio', inicio);
+      if (fim) q.set('fim', fim);
       const qs = q.toString();
       return request(`/firm/obrigacoes${qs ? `?${qs}` : ""}`);
     },

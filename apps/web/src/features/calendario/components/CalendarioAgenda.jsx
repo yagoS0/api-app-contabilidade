@@ -87,7 +87,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     let ativo = true; setCarregando(true); setErro('');
     const consulta = ++leiturasRef.current;
     const leitura = edicoes.capturarLeitura();
-    Promise.resolve().then(() => Promise.all([leituras.ler('obrigacoes', () => api.listObrigacoes({ companyId: companyIdFixo })), leituras.ler(`tarefas:${inicio}:${fim}`, () => api.getTarefasAgenda(inicio, fim))]))
+    Promise.resolve().then(() => Promise.all([leituras.ler(`obrigacoes:${inicio}:${fim}`, () => api.listObrigacoes({ companyId: companyIdFixo, inicio, fim })), leituras.ler(`tarefas:${inicio}:${fim}`, () => api.getTarefasAgenda(inicio, fim))]))
       .then(resultados => {
         resultados.forEach(conferir);
         if (!ativo || consulta !== leiturasRef.current) return;
@@ -114,7 +114,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     const timer = setTimeout(async () => {
       const consulta = ++leiturasRef.current, leitura = edicoes.capturarLeitura();
       try {
-        const [obs,tasks] = await Promise.all([api.listObrigacoes({companyId:companyIdFixo}),api.getTarefasAgenda(inicio,fim)]);
+        const [obs,tasks] = await Promise.all([api.listObrigacoes({companyId:companyIdFixo,inicio,fim}),api.getTarefasAgenda(inicio,fim)]);
         conferir(obs); conferir(tasks);
         if (!ativo || consulta !== leiturasRef.current || !edicoes.confirmarLeitura(leitura)) return;
         setDados(d => ({...d,obrigacoes:obs.obrigacoes || [],tarefas:tasks.tarefas || [],itens:companyIdFixo ? [] : tasks.itens || [],ocultos:tasks.ocultos || []}));

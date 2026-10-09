@@ -37,3 +37,13 @@ test('reabrir mês invalida conclusão automática da obrigação sem marcar imp
   await reconciliarObrigacoesCarteira([oc('contabilizar','CONCLUIDA')],db);
   expect(db.ocorrenciaObrigacao.updateMany).toHaveBeenCalledWith(expect.objectContaining({data:{status:'PENDENTE',concluidaEm:null,fonteConclusao:null}}));
 });
+
+test('mede consultas da reconciliação para treze competências versus uma competência visível',async()=>{
+ const ciclos=Array.from({length:13},(_,i)=>({...oc('importar'),competenciaRef:new Date(Date.UTC(2026,i,1)).toISOString().slice(0,7)}));
+ const todos=banco(), periodo=banco();
+ await reconciliarObrigacoesCarteira(ciclos,todos);
+ await reconciliarObrigacoesCarteira(ciclos.slice(0,1),periodo);
+ const leituras=db=>Object.values(db).reduce((n,t)=>n+(t.findMany?.mock.calls.length || 0),0);
+ expect(leituras(todos)).toBe(80);
+ expect(leituras(periodo)).toBe(8);
+});
