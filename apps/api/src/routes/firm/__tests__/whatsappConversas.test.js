@@ -339,7 +339,687 @@ describe("responsável com várias empresas", () => {
     expect(r.status).toBe(404); expect(selecionarEmpresaDoEscritorio).not.toHaveBeenCalled();
   });
   it("escolha válida retorna o segmento ativado e versão sem transferir histórico", async () => {
-    const r = await request(mont…11695 tokens truncated…e(true);
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/selecionar-empresa").send({ portalClientId: "pc-1" });
+    expect(r.status).toBe(200);
+    expect(r.body.conversa).toMatchObject({ id: "cv1", atendimento: { versao: 3, contextoSelecionado: true } });
+    expect(prisma.mensagemWhatsapp.create).not.toHaveBeenCalled();
+  });
+  it("assumir e devolver usam o responsável inteiro", async () => {
+    const app = montarApp();
+    expect((await request(app).post("/firm/whatsapp/conversas/cv1/assumir")).status).toBe(200);
+    expect(alterarAtendimentoHumano).toHaveBeenLastCalledWith(expect.objectContaining({ conversa: expect.objectContaining({ atendimentoId: "at-1" }), atendidaPor: "u-contador" }));
+    expect(mockConversas.get("cv2").atendidaPor).toBe("u-contador");
+    expect((await request(app).post("/firm/whatsapp/conversas/cv1/devolver")).status).toBe(200);
+    expect(mockConversas.get("cv2").atendidaPor).toBeNull();
+  });
+  it.each(["enviar-documento"])("aba de empresa anterior recusa %s antes de consultar/enviar", async (acao) => {
+    Object.assign(mockAtendimento, { conversaId: "cv2", portalClientId: "pc-9", versao: 3 });
+    const r = await request(montarApp()).post(`/firm/whatsapp/conversas/cv1/${acao}`).send({ texto: "oi", documentId: "doc-1" });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("CONTEXTO_ALTERADO");
+    expect(cloud.enviarTexto).not.toHaveBeenCalled(); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("troca e retorno durante download invalidam a mensagem antiga mesmo na mesma empresa", async () => {
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockAtendimento.versao += 2;
+      return { doc: { id: "doc-1", nome: "Contrato.pdf" }, buffer: Buffer.from("%PDF fake") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("CONTEXTO_ALTERADO"); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("contato revogado durante download bloqueia a entrega antes da Meta", async () => {
+    baixarBuffer.mockImplementationOnce(async () => {
+      resolverVinculoPorTelefone.mockResolvedValue({ situacao: "DESCONHECIDO", empresas: [] });
+      return { doc: { id: "doc-1", nome: "Contrato.pdf" }, buffer: Buffer.from("%PDF fake") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("ACESSO_REVOGADO"); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("janela expirada durante download recusa antes da Meta e informa modelo de reabertura", async () => {
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockCenario.janela = { situacao: "EXPIRADA", avisos: [] };
+      return { doc: { id: "doc-1", nome: "Contrato.pdf" }, buffer: Buffer.from("%PDF fake") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("FORA_DA_JANELA");
+    expect(r.body.reabrirConversa.chave).toBe("reabrir_conversa"); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("recusa amigável do lease não vira erro interno nem repete envio", async () => {
+    const { comLeaseDoAtendimento } = await import("../../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
+    comLeaseDoAtendimento.mockRejectedValueOnce(Object.assign(new Error("Atendimento concluindo uma resposta."), { codigo: "FIO_OCUPADO" }));
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Olá" });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("FIO_OCUPADO"); expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("expiração da seleção não impede responder à pessoa", async () => {
+    mockAtendimento.expiraEm = new Date(0);
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Olá" });
+    expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: FIO_DA_CARTEIRA.telefoneE164, texto: "*Contador Teste*\n\nOlá" });
+  });
+  it("filtrar histórico não oferece empresa fora da carteira", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens?empresa=pc-9");
+    expect(r.status).toBe(404);
+    expect(selecionarEmpresaDoEscritorio).not.toHaveBeenCalled();
+  });
+  it("nomes curtos são cadastrados na empresa indicada com espaços tratados", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/empresas/pc-1/apelidos").send({ apelidos: [" Clínica Azul ", "AZUL"] });
+    expect(r.status).toBe(200); expect(r.body.empresa).toEqual({ id: "pc-1", apelidosWhatsapp: ["Clínica Azul", "AZUL"] });
+    expect(prisma.portalClient.update).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "pc-1" }, data: { apelidosWhatsapp: ["Clínica Azul", "AZUL"] } }));
+  });
+  it.each([["x"], [null], ["nome\ncomando"], Array(6).fill("Nome"), ["x".repeat(61)]])("recusa apelidos inválidos sem gravar: %j", async (...apelidos) => {
+    prisma.portalClient.update.mockClear();
+    const r = await request(montarApp()).post("/firm/whatsapp/empresas/pc-1/apelidos").send({ apelidos });
+    expect(r.status).toBe(400); expect(prisma.portalClient.update).not.toHaveBeenCalled();
+  });
+  it("apelidos de empresa fora da carteira não podem ser lidos ou alterados", async () => {
+    prisma.portalClient.update.mockClear();
+    const r = await request(montarApp()).post("/firm/whatsapp/empresas/pc-9/apelidos").send({ apelidos: ["Fora"] });
+    expect(r.status).toBe(404); expect(prisma.portalClient.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("papel", () => {
+  it("quem não é admin|contador é 403 em todas", async () => {
+    const app = montarApp({ id: "u", role: "staff" });
+    for (const [m, p] of [["get", "/firm/whatsapp/conversas"], ["get", "/firm/whatsapp/conversas/cv1/mensagens"], ["post", "/firm/whatsapp/conversas/cv1/assumir"], ["post", "/firm/whatsapp/conversas/cv1/responder"]]) {
+      const r = await request(app)[m](p).send({ texto: "x" });
+      expect(r.status).toBe(403);
+    }
+  });
+});
+
+describe("a lista e o fio", () => {
+  it("lista: os da carteira + a fila, com a janela e o motivo da não vinculada", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.status).toBe(200);
+    const ids = r.body.conversas.map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(["cv1", "cv3"]));
+    const fila = r.body.conversas.find((c) => c.id === "cv3");
+    expect(fila.vinculo.motivo).toBe("DESCONHECIDO");
+    expect(fila.telefoneMascarado).toBe("+55…8888");
+    expect(r.body.conversas.find((c) => c.id === "cv1").janela.situacao).toBe("ABERTA");
+  });
+  it("⚠ fio de empresa FORA da carteira: 404 (a existência não é informação)", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv2/mensagens");
+    expect(r.status).toBe(404);
+  });
+  it("o GET volta com histórico e não marca leitura", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(r.status).toBe(200);
+    expect(r.body.mensagens[0]).toMatchObject({ id: "m1", direcao: "in", corpo: "oi" });
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
+  });
+});
+
+describe("marca de leitura", () => {
+  afterEach(() => jest.useRealTimers());
+
+  it("uma leitura lenta não recua a marca de outra leitura que terminou antes", async () => {
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "clearTimeout", "hrtime", "performance"] });
+    const inicioAntigo = new Date("2026-09-06T12:00:00Z");
+    const inicioNovo = new Date("2026-09-06T12:00:10Z");
+    jest.setSystemTime(inicioAntigo);
+    let avisarInicio;
+    let liberarAntiga;
+    const iniciou = new Promise((resolve) => { avisarInicio = resolve; });
+    const bloqueio = new Promise((resolve) => { liberarAntiga = resolve; });
+    listarMensagens.mockImplementationOnce(async () => { avisarInicio(); return bloqueio; });
+    const app = montarApp();
+    const antiga = request(app).get("/firm/whatsapp/conversas/cv1/mensagens").then((r) => r);
+    await iniciou;
+    jest.setSystemTime(inicioNovo);
+    const nova = await request(app).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(nova.status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
+    liberarAntiga([]);
+    expect((await antiga).status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
+  });
+
+  it("mantém não lida a entrada que chega durante a consulta sem gravação", async () => {
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "clearTimeout", "hrtime", "performance"] });
+    const inicio = new Date("2026-09-06T12:00:00Z");
+    const chegada = new Date("2026-09-06T12:00:10Z");
+    prisma.conversaWhatsapp.updateMany.mockClear();
+    jest.setSystemTime(inicio);
+    listarMensagens.mockImplementationOnce(async () => {
+      jest.setSystemTime(chegada);
+      return [];
+    });
+    const app = montarApp();
+    expect((await request(app).get("/firm/whatsapp/conversas/cv1/mensagens")).status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toBeNull();
+    expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("assumir e devolver — o que pausa a IA", () => {
+  it("assumir grava atendidaPor (quem) e atendidaDesde (quando); devolver limpa os dois", async () => {
+    const app = montarApp();
+    const a = await request(app).post("/firm/whatsapp/conversas/cv1/assumir");
+    expect(a.status).toBe(200);
+    expect(mockConversas.get("cv1").atendidaPor).toBe("u-contador");
+    expect(mockConversas.get("cv1").atendidaDesde).toBeInstanceOf(Date);
+    const d = await request(app).post("/firm/whatsapp/conversas/cv1/devolver");
+    expect(d.status).toBe(200);
+    expect(mockConversas.get("cv1").atendidaPor).toBeNull();
+    expect(mockConversas.get("cv1").atendidaDesde).toBeNull();
+  });
+});
+
+describe("responder — só dentro da janela", () => {
+  it('registra instrução no caso explícito validado, sem procurar o caso pelo canal de envio', async () => {
+    const conversa = mockConversas.get('cv3'); const anterior = { ...conversa };
+    const caso = { id: 'caso-lead', conversaId: 'cv3', interlocutorId: null, encerradoEm: null, autorizacao: {}, onboarding: { cnpj: '11222333000181' } };
+    Object.assign(conversa, { canalId: 'comercial' });
+    prisma.canalWhatsapp = { findUnique: jest.fn(async () => ({ id: 'comercial', ativo: true, finalidade: 'COMERCIAL' })) };
+    prisma.atendimentoLead.findFirst.mockImplementation(async ({ where }) => where.id === caso.id ? caso : null);
+    prisma.atendimentoLead.updateMany = jest.fn(async () => ({ count: 1 }));
+    prisma.recursoComercial.findUnique.mockResolvedValueOnce({ id: 'orientacao-teste', chave: 'autorizacao', tipo: 'ORIENTACAO', versao: 2, aprovadoEm: new Date(), texto: 'Confira o acesso cadastrado.' });
+    try {
+      const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv3/responder').send({ orientacaoId: 'orientacao-teste', orientacaoVersao: 2, atendimentoLeadId: caso.id });
+      expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+      expect(prisma.atendimentoLead.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: caso.id }), data: { autorizacao: expect.objectContaining({ estado: 'INSTRUCAO_ENVIADA', cnpj: caso.onboarding.cnpj }) } }));
+    } finally { mockConversas.set('cv3', anterior); }
+  });
+  it('orientação de lead recusa canal principal antes de enviar', async () => {
+    prisma.atendimentoLead.findFirst.mockResolvedValue({ id: 'caso-lead', conversaId: 'cv3', interlocutorId: null, encerradoEm: null });
+    prisma.canalWhatsapp = { findUnique: jest.fn(async () => ({ id: 'principal', ativo: true, finalidade: 'PRINCIPAL' })) };
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv3/responder').send({ orientacaoId: 'orientacao-teste', orientacaoVersao: 2, atendimentoLeadId: 'caso-lead' });
+    expect(r.status).toBe(409); expect(r.body.error).toBe('canal_comercial_necessario');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it('exige nova prévia quando a orientação original mudou de versão', async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ orientacaoId:'orientacao-teste',orientacaoVersao:1 });
+    expect(r.status).toBe(409); expect(r.body.error).toBe('orientacao_alterada');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it('não envia orientação vinculada a um caso que já não pertence à conversa', async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ orientacaoId:'orientacao-teste',orientacaoVersao:2,atendimentoLeadId:'caso-inacessivel' });
+    expect(r.status).toBe(404); expect(r.body.error).toBe('caso_nao_encontrado');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("não oferece o template do canal principal para retomar conversa de outro canal", async () => {
+    mockConversas.get('cv1').canalId = 'comercial';
+    mockCenario.janela = { situacao: 'EXPIRADA', permite: 'SOMENTE_TEMPLATE', avisos: [] };
+    prisma.templateWhatsapp.findUnique.mockClear();
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ texto: 'Olá' });
+    expect(r.status).toBe(409);
+    expect(r.body.reabrirConversa).toMatchObject({ disponivel: false, motivo: 'MODELO_NAO_CONFIGURADO_PARA_CANAL' });
+    expect(prisma.templateWhatsapp.findUnique).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    delete mockConversas.get('cv1').canalId;
+  });
+  it("⚠ janela EXPIRADA: 409 com o motivo, o estado do template reabrir_conversa, e a Meta NÃO é chamada", async () => {
+    mockCenario.janela = { situacao: "EXPIRADA", permite: "SOMENTE_TEMPLATE", expiraEm: new Date(0), avisos: ["x"] };
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "olá" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("FORA_DA_JANELA");
+    expect(r.body.reabrirConversa).toMatchObject({ chave: "reabrir_conversa", statusAprovacao: "DECLARADO", disponivel: false });
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("NUNCA_ABERTA diz que o cliente nunca escreveu", async () => {
+    mockCenario.janela = { situacao: "NUNCA_ABERTA", permite: "SOMENTE_TEMPLATE", avisos: [] };
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "olá" });
+    expect(r.status).toBe(409);
+    expect(r.body.message).toMatch(/nunca escreveu/);
+  });
+  it("dentro da janela: assume, pausa automação e registra HUMANO", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Bom dia, já vi aqui." });
+    expect(r.status).toBe(200);
+    expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "*Contador Teste*\n\nBom dia, já vi aqui." });
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ autor: "HUMANO", corpo: "*Contador Teste*\n\nBom dia, já vi aqui.", })});
+    expect(mockConversas.get("cv1").atendidaPor).toBe("u-contador");
+  });
+  it("texto vazio: 400, sem chamada", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "  " });
+    expect(r.status).toBe(400);
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+});
+
+describe("vincular — a fila esvazia por aqui", () => {
+  it("não usa conversa de fora da carteira para cadastrar contato em empresa visível", async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv2/vincular').send({ portalClientId: 'pc-1', contato: { nome: 'Contato' } });
+    expect(r.status).toBe(404);
+    expect(salvarContato).not.toHaveBeenCalled();
+  });
+  it("⚠ o telefone do contato é o do FIO (o corpo não escolhe o número) e a empresa tem de ser da carteira", async () => {
+    const fora = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/vincular").send({ portalClientId: "pc-9", contato: { nome: "X" } });
+    expect(fora.status).toBe(404);
+    expect(salvarContato).not.toHaveBeenCalled();
+
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/vincular").send({ portalClientId: "pc-1", contato: { nome: "Maria", optIn: true, optInOrigem: "verbal", telefone: "+5599999999999" } });
+    expect(r.status).toBe(200);
+    expect(salvarContato).toHaveBeenCalledWith(expect.objectContaining({ portalClientId: "pc-1", telefone: "+5521999998888", nome: "Maria", optIn: true }));
+    expect(r.body.vinculo.situacao).toBe("VINCULADO");
+  });
+});
+
+// ── ⚠⚠ QUEM está falando E de QUAL empresa (06/09/2026) ────────────────────────────────────────
+//
+// A linha da lista fazia `empresa?.razao || nomePerfilProvedor || telefone` — um `||` decidindo
+// entre coisas que não se substituem. Numa conversa de cliente o contador via a EMPRESA e nunca
+// sabia QUEM estava falando. O nome do cadastro nem chegava no payload.
+
+describe("o contato do cadastro viaja no payload", () => {
+  it("conversa de empresa traz `contato` com o nome cadastrado", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValueOnce([
+      { id: "ctt1", nome: "Maria Silva", papel: "sócia", portalClientId: "pc-1", telefoneE164: "5521999998888" },
+    ]);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    const cv1 = r.body.conversas.find((c) => c.id === "cv1");
+    expect(cv1.contato).toMatchObject({ nome: "Maria Silva", papel: "sócia" });
+    // ⚠ E a empresa continua vindo ao lado — as duas, nunca uma OU outra.
+    expect(cv1.empresa).toMatchObject({ razao: "ACME" });
+  });
+
+  it("⚠ fio da fila não tem contato — e isso é `null`, não um nome inventado", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    const cv3 = r.body.conversas.find((c) => c.id === "cv3");
+    expect(cv3.contato).toBeNull();
+    expect(cv3.empresa).toBeNull();
+  });
+
+  it("⚠ o casamento é (empresa, telefone) — contato de OUTRA empresa não cola no fio", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValueOnce([
+      { id: "ctt9", nome: "Alguém de outra empresa", papel: null, portalClientId: "pc-9", telefoneE164: "5521999998888" },
+    ]);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.conversas.find((c) => c.id === "cv1").contato).toBeNull();
+  });
+});
+
+describe("⚠ filtro por empresa", () => {
+  it("traz só os fios daquela empresa — e a fila NÃO entra", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?empresa=pc-1");
+    expect(r.status).toBe(200);
+    expect(r.body.conversas.map((c) => c.id)).toEqual(["cv1"]);
+  });
+
+  it("⚠⚠ empresa FORA da carteira não vaza — resultado vazio, pela mesma regra que já protege", async () => {
+    // `pc-9` existe e não está em `empresasVisiveis` deste usuário.
+    const r = await request(montarApp({ id: "u-staff-ish", role: "contador", accountType: "FIRM" }))
+      .get("/firm/whatsapp/conversas?empresa=pc-9");
+    expect(r.status).toBe(200);
+    expect(r.body.conversas).toEqual([]);
+  });
+
+  it("⚠ empresa + fila é contradição, e a recusa é NOMEADA", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?empresa=pc-1&filtro=nao-vinculadas");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("filtro_incompativel");
+  });
+});
+
+describe("⚠⚠ o limite para de truncar em silêncio", () => {
+  it("com mais conversas do que o limite, `temMais` é true e a lista fica no limite", async () => {
+    const muitas = Array.from({ length: 201 }, (_, i) => ({ ...FIO_DA_CARTEIRA, id: `x${i}` }));
+    prisma.conversaWhatsapp.findMany.mockResolvedValueOnce(muitas);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.temMais).toBe(true);
+    expect(r.body.conversas).toHaveLength(200);
+  });
+
+  it("cabendo tudo, `temMais` é false — a tela não avisa o que não existe", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.temMais).toBe(false);
+  });
+
+  it("⚠ o fio também: 201 mensagens ⇒ `temMais` e 200 na tela", async () => {
+    const muitas = Array.from({ length: 201 }, (_, i) => ({
+      id: `m${i}`, direcao: "in", tipo: "text", corpo: "oi", autor: null, registradaEm: new Date(),
+    }));
+    listarMensagens.mockResolvedValueOnce(muitas);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(r.body.temMais).toBe(true);
+    expect(r.body.mensagens).toHaveLength(200);
+  });
+});
+
+
+// ── ⚠⚠ ENVIAR UM DOCUMENTO PELO FIO (F3, 06/09/2026) ───────────────────────────────────────────
+//
+// A ação rápida do chat. É MENSAGEM DE SERVIÇO — a Meta recusa fora das 24h —, e o documento é
+// buscado com o `portalClientId` do FIO, o que torna o vazamento entre empresas impossível por
+// construção, não por um `if` que alguém pode apagar.
+
+describe("⚠⚠ enviar documento pelo fio", () => {
+  beforeEach(() => {
+    mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
+    cloud.enviarDocumento.mockClear();
+    baixarBuffer.mockClear();
+    registrarMensagemEnviada.mockClear();
+  });
+
+  it("dentro da janela: sobe o arquivo e grava o balão com o NOME do documento", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(200);
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({
+      telefone: "5521999998888", nomeArquivo: "Contrato social.pdf",
+    }));
+    // ⚠ O histórico diz O QUE saiu: sem o nome, o contador não sabe qual documento foi mandado.
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({
+      tipo: "document", corpo: "*Contador Teste*\n\nContrato social.pdf", autor: "HUMANO", })});
+  });
+
+  it("a legenda, quando escrita, vira o corpo do balão", async () => {
+    await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1", legenda: "segue o contrato atualizado" });
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ corpo: "*Contador Teste*\n\nsegue o contrato atualizado" })});
+  });
+
+  it("⚠⚠ documento de OUTRA empresa não sai por este fio — e a Meta nem é chamada", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe("documento_nao_encontrado");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    // A busca foi feita com a empresa DO FIO, nunca com uma empresa vinda do corpo.
+    expect(baixarBuffer).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "doc-9" });
+  });
+
+  it("⚠⚠ FORA da janela: 409 com a MESMA recusa do responder, e nada é enviado", async () => {
+    mockCenario.janela = { situacao: "EXPIRADA", permite: "SOMENTE_TEMPLATE", expiraEm: null, avisos: [] };
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("FORA_DA_JANELA");
+    expect(r.body.message).toMatch(/janela de 24h/);
+    expect(r.body.reabrirConversa).toMatchObject({ chave: "reabrir_conversa", disponivel: false });
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(registrarMensagemEnviada).not.toHaveBeenCalled();
+  });
+
+  it("⚠ fio da FILA não tem empresa, logo não tem documento dela — recusa NOMEADA", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv3/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("FIO_SEM_EMPRESA");
+    expect(r.body.message).toMatch(/Vincule o fio/);
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+
+  it("⚠ fio de FORA da carteira é 404 — a mesma regra das outras rotas", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv2/enviar-documento")
+      .send({ documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe("conversa_nao_encontrada");
+    expect(baixarBuffer).not.toHaveBeenCalled();
+  });
+
+  it("sem documento escolhido, recusa antes de qualquer consulta", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("documento_obrigatorio");
+  });
+});
+
+// ⚠⚠ ACHADO DE EXPERIMENTO (06/09/2026). Fazendo a rota ler a empresa do CORPO — o defeito clássico
+// desta base, "corpo sobrescrevendo o path", que a F1 do WhatsApp já pagou duas vezes — a suíte
+// ficava INTEIRA VERDE: nenhum teste mandava empresa no corpo, então a guarda não tinha prova.
+describe("⚠⚠ a empresa do documento vem do FIO, e o corpo não a escolhe", () => {
+  beforeEach(() => {
+    mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
+    cloud.enviarDocumento.mockClear();
+    baixarBuffer.mockClear();
+  });
+
+  it("corpo pedindo OUTRA empresa não muda a consulta — e o documento dela continua fora de alcance", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-9", companyId: "pc-9", portalClientId: "pc-9" });
+    expect(baixarBuffer).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
+
+describe("resumo do WhatsApp", () => {
+  it("V2 entrega totais globais por relacionamento sem herdar busca, página ou filtro", async () => {
+    const atual = { conversas: 503, naoVinculadas: 101, conversasNaoLidas: 203, mensagensNaoLidas: 517, leads: 109, clientes: 407, aIdentificar: 1 };
+    const outro = { conversas: 2, conversasNaoLidas: 1, mensagensNaoLidas: 3 };
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([atual]).mockResolvedValueOnce([outro]).mockResolvedValueOnce([outro]);
+    const r = await request(montarApp(undefined, { chatV2: true })).get("/firm/whatsapp/resumo?q=ausente&relacionamento=LEAD&cursor=segunda&empresa=pc-9");
+    expect(r.status).toBe(200);
+    expect(r.body.resumo).toMatchObject({ conversas: 503, mensagensNaoLidas: 517, contagensNaoLidas: { TODOS: 517, LEAD: 109, CLIENTE: 407, A_IDENTIFICAR: 1 }, historicoMensagensNaoLidas: 3, lixeiraMensagensNaoLidas: 3 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    for (const [consulta] of prisma.$queryRaw.mock.calls) {
+      expect(consulta.values).toContain("pc-1");
+      for (const valor of ["pc-9", "ausente", "segunda"]) expect(consulta.values).not.toContain(valor);
+    }
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("V2 conserva a restrição de perfil e não transforma indisponibilidade em zero", async () => {
+    prisma.$queryRaw = jest.fn().mockRejectedValue(new Error("offline"));
+    const negado = await request(montarApp({ id: "s", role: "staff" }, { chatV2: true })).get("/firm/whatsapp/resumo");
+    expect(negado.status).toBe(403); expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    const falha = await request(montarApp(undefined, { chatV2: true })).get("/firm/whatsapp/resumo");
+    expect(falha.status).toBe(500); expect(falha.body.resumo).toBeUndefined();
+  });
+  it("recusa staff antes de agregar", async () => {
+    const r = await request(montarApp({ id: "s", role: "staff" })).get("/firm/whatsapp/resumo");
+    expect(r.status).toBe(403);
+  });
+  it("devolve contagem do banco e falha nunca vira zero", async () => {
+    const resumo = { conversas: 301, naoVinculadas: 2, conversasNaoLidas: 4, mensagensNaoLidas: 8 };
+    prisma.$queryRaw = jest.fn().mockResolvedValue([resumo]);
+    const r = await request(montarApp()).get("/firm/whatsapp/resumo");
+    expect(r.body).toEqual({ ok: true, resumo });
+    expect(prisma.$queryRaw.mock.calls[0][0].values).toEqual(["pc-1"]);
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("offline"));
+    const falha = await request(montarApp()).get("/firm/whatsapp/resumo");
+    expect(falha.status).toBe(500); expect(falha.body.resumo).toBeUndefined();
+  });
+});
+
+describe("segmentos históricos e exclusão reversível", () => {
+  let anteriores;
+  beforeEach(() => {
+    anteriores = new Map([...mockConversas].map(([id, c]) => [id, { ...c }]));
+    const legados = [
+      { ...FIO_DA_CARTEIRA, id: "legado1", chaveEscopo: "legado:pc-1:old", escopoVerificado: false, atendidaPor: "u-contador" },
+      { ...FIO_DE_FORA, id: "legado9", chaveEscopo: "legado:pc-9:old", escopoVerificado: false },
+      { ...FIO_NA_FILA, id: "legadoFila", chaveEscopo: "legado:sem-empresa:old", escopoVerificado: false },
+      { ...FIO_NA_FILA, id: "empresaApagada", chaveEscopo: "legado:pc-apagada:old", escopoVerificado: false },
+    ];
+    mockConversas.clear();
+    // Legado primeiro simula página que antes consumia o limite antes dos fios atuais.
+    for (const c of [...legados, ...anteriores.values()]) mockConversas.set(c.id, { ...c });
+    mockConversas.get("cv1").atendidaPor = "u-contador";
+    prisma.conversaWhatsapp.update.mockClear();
+    prisma.conversaWhatsapp.updateMany.mockClear();
+    prisma.turnoIaWhatsapp.updateMany.mockClear();
+    prisma.acaoPendenteWhatsapp.updateMany.mockClear();
+    cloud.enviarDocumento.mockClear();
+  });
+  afterEach(() => {
+    mockConversas.clear();
+    for (const [id, c] of anteriores) mockConversas.set(id, c);
+  });
+
+  it.each(["", "?filtro=todas", "?empresa=pc-1", "?filtro=atendidas-por-mim"])("lista operacional exclui legado de empresa: %s", async (query) => {
+    const r = await request(montarApp()).get(`/firm/whatsapp/conversas${query}`);
+    expect(r.status).toBe(200);
+    const ids = r.body.conversas.map(c => c.id);
+    expect(ids).toContain("cv1");
+    expect(ids).not.toContain("legado1");
+    expect(ids).not.toContain("legado9");
+    expect(ids).not.toContain("empresaApagada");
+  });
+  it("histórico expõe somente legado da carteira, sem apagar mensagens", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legado1"]);
+    expect(r.body.conversas[0].legadoNaoVerificado).toBe(true);
+    const fio = await request(montarApp()).get("/firm/whatsapp/conversas/legado1/mensagens");
+    expect(fio.status).toBe(200);
+    expect(fio.body.mensagens[0].id).toBe("m1");
+  });
+  it("histórico de empresa de fora é vazio mesmo pedido expressamente", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico&empresa=pc-9");
+    expect(r.body.conversas).toEqual([]);
+  });
+  it("fila preserva legado sem empresa e não absorve empresa apagada", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=nao-vinculadas");
+    expect(r.body.conversas.map(c => c.id).sort()).toEqual(["cv3", "legadoFila"]);
+  });
+  it("segmentação acontece antes de take e cursor", async () => {
+    const app = montarApp();
+    const r = await request(app).get("/firm/whatsapp/conversas?limite=1");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legadoFila"]);
+    expect(r.body.temMais).toBe(true);
+    const segunda = await request(app).get(`/firm/whatsapp/conversas?limite=1&cursor=${r.body.proximoCursor}`);
+    expect(segunda.body.conversas.map(c => c.id)).toEqual(["cv1"]);
+    expect(segunda.body.temMais).toBe(true);
+  });
+  it("excluir/restaurar é idempotente e preserva atribuição, leitura e conteúdo", async () => {
+    const app = montarApp();
+    const antes = { ...mockConversas.get("cv1"), atendidaDesde: new Date("2026-09-06T12:00:00Z"), lidaAteEm: new Date("2026-09-06T13:00:00Z") };
+    mockConversas.set("cv1", antes);
+    const excluida = await request(app).post("/firm/whatsapp/conversas/cv1/excluir");
+    expect(excluida.status).toBe(200);
+    expect(excluida.body.conversa.excluidaEm).toBeTruthy();
+    const corte = mockConversas.get("cv1").automacaoInvalidadaEm;
+    await request(app).post("/firm/whatsapp/conversas/cv1/excluir");
+    expect(prisma.turnoIaWhatsapp.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.acaoPendenteWhatsapp.updateMany).toHaveBeenCalledWith({ where: { conversaId: "cv1", status: "pendente" }, data: { status: "cancelada" } });
+    expect((await request(app).get("/firm/whatsapp/conversas?empresa=pc-1")).body.conversas).toEqual([]);
+    const lixo = await request(app).get("/firm/whatsapp/conversas?filtro=lixeira");
+    expect(lixo.body.conversas.map(c => c.id)).toEqual(["cv1"]);
+    const restaurada = await request(app).post("/firm/whatsapp/conversas/cv1/restaurar");
+    expect(restaurada.status).toBe(200);
+    expect(restaurada.body.conversa.excluidaEm).toBeNull();
+    await request(app).post("/firm/whatsapp/conversas/cv1/restaurar");
+    expect(mockConversas.get("cv1")).toMatchObject({ atendidaPor: "u-contador", atendidaDesde: antes.atendidaDesde, lidaAteEm: antes.lidaAteEm, automacaoInvalidadaEm: corte });
+    expect(prisma.mensagemWhatsapp.create).not.toHaveBeenCalled();
+  });
+  it.each(["assumir", "devolver", "responder", "enviar-documento", "vincular"])("chat excluído recusa ação stale %s", async (acao) => {
+    mockConversas.get("cv1").excluidaEm = new Date();
+    const r = await request(montarApp()).post(`/firm/whatsapp/conversas/cv1/${acao}`).send({ texto: "oi", documentId: "doc-1", portalClientId: "pc-1", contato: { nome: "teste" } });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(salvarContato).not.toHaveBeenCalled();
+    expect(prisma.conversaWhatsapp.update).not.toHaveBeenCalled();
+  });
+  it("não permite excluir/restaurar fora da carteira, empresa apagada ou por staff", async () => {
+    for (const acao of ["excluir", "restaurar"]) {
+      for (const id of ["cv2", "empresaApagada"]) expect((await request(montarApp()).post(`/firm/whatsapp/conversas/${id}/${acao}`)).status).toBe(404);
+      expect((await request(montarApp({ id: "u", role: "staff" })).post(`/firm/whatsapp/conversas/cv1/${acao}`)).status).toBe(403);
+    }
+    expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+  });
+  it("lixeira aplica carteira e empresa e não aparece no histórico", async () => {
+    for (const c of mockConversas.values()) c.excluidaEm = new Date();
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=lixeira&empresa=pc-1");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legado1", "cv1"]);
+    expect((await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico")).body.conversas).toEqual([]);
+    expect((await request(montarApp()).get("/firm/whatsapp/conversas?filtro=lixeira&empresa=pc-9")).body.conversas).toEqual([]);
+  });
+  it.each(["assumir", "devolver", "responder", "enviar-documento"])("histórico é somente leitura para %s", async (acao) => {
+    const r = await request(montarApp()).post(`/firm/whatsapp/conversas/legado1/${acao}`).send({ texto: "oi", documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("HISTORICO_LEGADO");
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("exclusão seguida de restauração durante download não autoriza envio antigo", async () => {
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockConversas.get("cv1").automacaoInvalidadaEm = new Date();
+      return { doc: { id: "doc-1", nome: "Contrato.pdf", mimeType: "application/pdf" }, buffer: Buffer.from("%PDF") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("dois cortes no mesmo segundo preservam precisão de milissegundos", async () => {
+    mockConversas.get("cv1").automacaoInvalidadaEm = new Date("2026-09-07T12:00:00.100Z");
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockConversas.get("cv1").automacaoInvalidadaEm = new Date("2026-09-07T12:00:00.900Z");
+      return { doc: { id: "doc-1", nome: "Contrato.pdf", mimeType: "application/pdf" }, buffer: Buffer.from("%PDF") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('operação PWA: recuperação, leitura e retomada',()=>{
+  it('resposta humana com intenção recupera o mesmo resultado sem Meta duplicada',async()=>{
+    const app=montarApp();const body={texto:'Tudo certo',clientRequestId:'request-test-001'};
+    const a=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);
+    const b=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);
+    expect(a.status).toBe(200);expect(b.status).toBe(200);expect(a.body.mensagem.id).toBe(b.body.mensagem.id);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    const status=await request(app).get('/firm/whatsapp/conversas/cv1/intencoes/request-test-001');expect(status.body.intencao.status).toBe('ACEITA');
+    mockCenario.janela={situacao:'EXPIRADA',avisos:[]}; const tardio=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send(body);expect(tardio.status).toBe(200);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    const outro=await request(app).get('/firm/whatsapp/conversas/cv3/intencoes/request-test-001');expect(outro.status).toBe(404);
+    const conflito=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({...body,texto:'Conteúdo diferente'});expect(conflito.status).toBe(409);expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+  });
+  it('outro atendente não é substituído por texto, orientação ou anexo',async()=>{
+    const app=montarApp();mockConversas.get('cv1').atendidaPor='colega';
+    const r=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({texto:'Oi'});expect(r.status).toBe(409);expect(r.body.error).toBe('ATENDIMENTO_OCUPADO');expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    const a=await request(app).post('/firm/whatsapp/conversas/cv1/enviar-anexo').attach('arquivo',Buffer.from('%PDF-1.4\nconteudo'),{filename:'teste.pdf',contentType:'application/pdf'});expect(a.status).toBe(409);expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    mockConversas.get('cv1').atendidaPor=null;
+  });
+  it('leitura exige POST com entrada autorizada, inclusive consumidor legado',async()=>{
+    const app=montarApp(); const t=new Date('2026-09-25T10:00Z');
+    prisma.mensagemWhatsapp.findFirst.mockResolvedValueOnce({id:'entrada-visivel',direcao:'in',registradaEm:t});
+    const r=await request(app).post('/firm/whatsapp/conversas/cv1/lida').send({mensagemId:'entrada-visivel'});expect(r.status).toBe(200);
+    expect(prisma.mensagemWhatsapp.findFirst.mock.calls.at(-1)[0].where.AND.at(-1)).toEqual({id:'entrada-visivel',direcao:'in'});
+    const fora=await request(app).post('/firm/whatsapp/conversas/cv2/lida').send({mensagemId:'entrada-visivel'});expect(fora.status).toBe(404);
+  });
+  it('retomada aprovada é idempotente e não libera texto fora da janela',async()=>{
+    const modelo={id:'meta-retomada',name:'retomar',status:'APPROVED',language:'pt_BR',category:'UTILITY',components:[{type:'BODY',text:'Podemos retomar seu atendimento?'}]};
+    prisma.templateWhatsapp.findUnique.mockResolvedValue({nomeMeta:'retomar',statusAprovacao:'APROVADO',idioma:'pt_BR'});
+    const app=montarApp(undefined,{consultarModelo:async()=>modelo});mockCenario.janela={situacao:'EXPIRADA',avisos:[]};
+    const previa=await request(app).get('/firm/whatsapp/conversas/cv1/retomar');expect(previa.body.disponivel).toBe(true);
+    const body={clientRequestId:'request-retomar-01',previaHash:previa.body.previaHash,telefone:'5521999990000'};
+    const enviado=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body);expect(enviado.status).toBe(200);expect(enviado.body.aguardandoRespostaCliente).toBe(true);
+    const repetido=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body);expect(repetido.status).toBe(200);expect(cloud.enviarTemplate).toHaveBeenCalledTimes(1);expect(cloud.enviarTemplate).toHaveBeenCalledWith({telefone:FIO_DA_CARTEIRA.telefoneE164,template:'retomar',idioma:'pt_BR',variaveis:[]});
+    const texto=await request(app).post('/firm/whatsapp/conversas/cv1/responder').send({texto:'Não pode sair'});expect(texto.status).toBe(409);expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    prisma.templateWhatsapp.findUnique.mockResolvedValue({chave:'reabrir_conversa',statusAprovacao:'DECLARADO',nomeMeta:null});
+  });
+});
+
+
+describe('contrato HTTP dos rascunhos por modo compartilhado',()=>{
+  it('o contrato inclui a retomada e o anexo utilizados pelo aplicativo',()=>{
+    expect(MODOS_RASCUNHO_ATENDIMENTO).toEqual(['texto','orientacao','anexo','documento','retomar']);
+  });
+  it.each(MODOS_RASCUNHO_ATENDIMENTO)('GET/PUT/DELETE de %s preserva intenção, revisão e isolamento',async modo=>{
+    const app=montarApp(),url='/firm/whatsapp/conversas/cv1/rascunho';
+    const inicial=await request(app).get(url).query({modo});expect(inicial.status).toBe(200);expect(inicial.body.rascunho).toBeNull();
+    const conteudo={texto:'Prévia sintética',clientRequestId:`request-${modo}-001`,intencaoTexto:'hash-da-previa',envioIncerto:true};
+    const salvo=await request(app).put(url).send({modo,versao:0,conteudo});expect(salvo.status).toBe(200);expect(salvo.body.rascunho).toMatchObject({versao:1,conteudo});
+    const lido=await request(app).get(url).query({modo});expect(lido.body.rascunho).toMatchObject({versao:1,conteudo});
+    const outroModo=modo==='texto'?'retomar':'texto';const isolado=await request(app).get(url).query({modo:outroModo});expect(isolado.body.rascunho).toBeNull();
+    const descarte=await request(app).delete(url).send({modo,versao:1});expect(descarte.status).toBe(200);expect(descarte.body).toMatchObject({excluido:true,versao:2});
+    const tombstone=await request(app).get(url).query({modo});expect(tombstone.body.rascunho).toMatchObject({versao:2,conteudo:{texto:''}});
+    const atrasado=await request(app).put(url).send({modo,versao:1,conteudo});expect(atrasado.status).toBe(409);expect(atrasado.body.error).toBe('RASCUNHO_CONFLITO');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();expect(cloud.enviarTemplate).not.toHaveBeenCalled();
+  });
+  it('modo desconhecido é recusado e carteira externa permanece inacessível',async()=>{
+    const app=montarApp();expect((await request(app).get('/firm/whatsapp/conversas/cv1/rascunho?modo=inventado')).status).toBe(400);
+    expect((await request(app).get('/firm/whatsapp/conversas/cv2/rascunho?modo=retomar')).status).toBe(404);
+  });
+});
+
+describe('retomada com assunto e gestão no canal autorizado',()=>{
+ const modelo={id:'meta-retomar',name:'reabrir_conversa',status:'APPROVED',language:'pt_BR',category:'MARKETING',components:[{type:'BODY',text:'Retomando sobre {{1}}.'},{type:'BUTTONS',buttons:[{type:'QUICK_REPLY',text:'Falar com a equipe'}]}]};
+ beforeEach(()=>prisma.templateWhatsapp.findUnique.mockResolvedValue({nomeMeta:null,statusAprovacao:'EM_ANALISE',idioma:'pt_BR'}));
+ it('nome ausente no cache não bloqueia descoberta; envio respeita assunto, hash e botão',async()=>{
+  const app=montarApp(undefined,{consultarModelo:async()=>modelo});mockCenario.janela={situacao:'EXPIRADA',avisos:[]};
+  const inicial=await request(app).get('/firm/whatsapp/conversas/cv1/retomar');expect(inicial.body).toMatchObject({disponivel:false,requerAssunto:true,statusMeta:'APPROVED'});
+  const previa=await request(app).post('/firm/whatsapp/conversas/cv1/retomar/previa').send({assunto:'as guias'});expect(previa.body.disponivel).toBe(true);
   const alterado=await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send({assunto:'outro assunto',previaHash:previa.body.previaHash,clientRequestId:'retomar-tampered-1'});expect(alterado.status).toBe(409);expect(cloud.enviarTemplate).not.toHaveBeenCalled();
   const body={assunto:'as guias',previaHash:previa.body.previaHash,clientRequestId:'retomar-correto-01'};
   expect((await request(app).post('/firm/whatsapp/conversas/cv1/retomar').send(body)).status).toBe(200);
