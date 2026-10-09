@@ -127,13 +127,13 @@ describe("ferramentas acompanham o contexto da tela inicial", () => {
     const onRefreshCompanies = jest.fn();
     montar({ onChangeCompetencia, onRefreshCompanies });
     expect(screen.getByRole("heading", { level: 1, name: "Agenda" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Nova empresa" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Adicionar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Imprimir" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Competência da carteira" })).not.toBeInTheDocument();
 
     fireEvent.click(within(barraDeVisoes()).getByRole("button", { name: "Empresas" }));
     expect(screen.getByRole("heading", { level: 1, name: "Empresas" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Nova empresa" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Adicionar" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Imprimir" })).toBeInTheDocument();
     const competencia = screen.getByRole("group", { name: "Competência da carteira" });
     fireEvent.click(within(competencia).getByRole("button", { name: "Próximo mês" }));
@@ -147,7 +147,7 @@ describe("ferramentas acompanham o contexto da tela inicial", () => {
     montar({ onCreateCompany, globalChartStatus: { isConfigured: false, tiposFaltantes: ["ATIVO"] } });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(within(barraDeVisoes()).getByRole("button", { name: "Empresas" }));
-    fireEvent.click(screen.getByRole("button", { name: /Nova empresa/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar/ }));
     expect(onCreateCompany).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveFocus();
   });

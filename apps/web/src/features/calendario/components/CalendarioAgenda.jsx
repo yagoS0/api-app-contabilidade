@@ -12,6 +12,7 @@ import { LinhaHorarioAtual, useRelogioAgenda } from './LinhaHorarioAtual';
 import { useGestosAgenda } from './useGestosAgenda';
 import { ALTURA_HORA, HORAS_VISIVEIS, HORA_INICIAL } from '../lib/escalaAgenda';
 import { criarLeiturasAgenda } from '../lib/leiturasAgenda';
+import { lerMarcosAgenda } from '../lib/lerMarcosAgenda';
 import { useEdicoesAgenda } from './useEdicoesAgenda';
 import { ModalObrigacao } from '../../obrigacoes/components/ModalObrigacao';
 import { somarDiasAgenda, ocorrenciasDaTarefa } from '../../../../../../packages/shared/src/agenda.js';
@@ -86,18 +87,26 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     let ativo = true; setCarregando(true); setErro('');
     const consulta = ++leiturasRef.current;
     const leitura = edicoes.capturarLeitura();
-    const meses = [...new Set(dias.map(d => d.slice(0,7)))];
-    Promise.resolve().then(() => Promise.all([leituras.ler('obrigacoes', () => api.listObrigacoes({ companyId: companyIdFixo })), Promise.resolve().then(() => api.getTarefasAgenda(inicio, fim)), leituras.ler('regras', () => api.listRegrasObrigacao()), ...meses.map(m => leituras.ler(`fiscal:${m}`, () => api.getCalendario(m, companyIdFixo)))]))
+    Promise.resolve().then(() => Promise.all([leituras.ler('obrigacoes', () => api.listObrigacoes({ companyId: companyIdFixo })), leituras.ler(`tarefas:${inicio}:${fim}`, () => api.getTarefasAgenda(inicio, fim))]))
       .then(resultados => {
         resultados.forEach(conferir);
         if (!ativo || consulta !== leiturasRef.current) return;
-        const [obs, tasks, rules, ...calendarios] = resultados;
-        const fiscais = [...new Map(calendarios.flatMap(c => (c.dias || []).flatMap(d => d.itens.filter(i => i.tipo === 'marco').map(i => ({ ...i, dataInicio: i.dataInicio || d.data, dataFim: i.dataFim || d.data, data: d.data })))).map(i => [`${i.tipo}|${i.id}`,i])).values()];
-        setDados({ obrigacoes: obs.obrigacoes || [], regras: rules.regras || [], tarefas: tasks.tarefas || [], itens: companyIdFixo ? [] : tasks.itens || [], ocultos: tasks.ocultos || [], fiscais, opcoes: obs.opcoes });
+        const [obs, tasks] = resultados;
+        setDados(d => ({ ...d, obrigacoes: obs.obrigacoes || [], tarefas: tasks.tarefas || [], itens: companyIdFixo ? [] : tasks.itens || [], ocultos: tasks.ocultos || [], opcoes: obs.opcoes }));
         edicoes.confirmarLeitura(leitura);
       }).catch(e => { if (ativo) setErro(e.message); }).finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
   }, [api, inicio, fim, companyIdFixo, revisao]);
+  useEffect(() => {
+    let ativo = true;
+    leituras.ler('regras', () => api.listRegrasObrigacao())
+      .then(out => { if (ativo) setDados(d => ({...d, regras:out.regras || []})); })
+      .catch(e => { if (ativo) setErro(e.message); });
+    lerMarcosAgenda(api, leituras, dias, companyIdFixo)
+      .then(fiscais => { if (ativo) setDados(d => ({...d, fiscais})); })
+      .catch(e => { if (ativo) setErro(e.message); });
+    return () => { ativo = false; };
+  }, [api, leituras, inicio, fim, companyIdFixo, revisao]);
   useEffect(() => {
     if (carregando || ocupado || edicoes.quantidade || !edicoes.temAlteracoes) return;
     let ativo = true;

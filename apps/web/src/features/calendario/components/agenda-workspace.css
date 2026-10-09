@@ -214,16 +214,13 @@
 .agenda-mini-calendar button:hover,.agenda-duration-presets button:hover { border-color:var(--accent-cyan); }
 .agenda-duration-presets { display:flex; gap:8px; }
 .agenda-duration-presets button { flex:1; border-color:var(--border); }
-.dashboard-home-page--agenda .layout.dashboard-home-shell { padding:8px 12px 12px; min-height:0; }
 .dashboard-home-page--agenda .dashboard-home { gap:0; }
-.dashboard-home-page--agenda .dashboard-home__header { margin:0; padding:0; }
 .dashboard-home-page--agenda .agenda-toolbar { padding:10px 0; }
 .dashboard-home-page--agenda .agenda-time-scroll { height:calc(100dvh - 260px); min-height:320px; }
 .dashboard-home-page--agenda .agenda-day-headings button { padding:6px 4px; gap:0; }
 .dashboard-home-page--agenda .agenda-time-view { border-radius:6px; }
 @media(max-width:700px) {
   .agenda-editor .modal-caixa[style*="--editor-x"] { left:12px; top:12px; }
-  .dashboard-home-page--agenda .layout.dashboard-home-shell { padding:6px; }
   .dashboard-home-page--agenda .agenda-time-scroll { height:calc(100dvh - 290px); }
 }
 .agenda-selected-slot { position:absolute; left:2px; right:3px; z-index:4; box-sizing:border-box; border:1px solid var(--accent-cyan); border-radius:5px; background:color-mix(in srgb,var(--accent-cyan) 18%,var(--bg-page)); color:var(--text); font-size:12px; padding:8px; pointer-events:none; }

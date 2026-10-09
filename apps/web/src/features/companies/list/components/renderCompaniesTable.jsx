@@ -735,7 +735,7 @@ export function CompaniesTable({
                   </div>
                 ) : (
                   <div style={{ color: "var(--text-muted)" }}>
-                    Nenhuma empresa nesta carteira ainda. Use <strong>Nova empresa</strong> para cadastrar a primeira.
+                    Nenhuma empresa nesta carteira ainda. Use <strong>+ Adicionar</strong> para cadastrar a primeira.
                   </div>
                 )}
               </td>
