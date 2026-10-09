@@ -75,7 +75,18 @@ const SEM_COLUNA_LABEL = "Lançamentos a classificar";
 
 /** O valor da provisão, na MESMA leitura que o `cellNum` usa nas colunas de tributo. */
 function valorDaProvisao(p) {
-  return Number(p?.totalD || p?.valor || 0);
+  return Number(p?.valorProvisionado ?? p?.valorObrigacao ?? p?.totalD ?? p?.valor ?? 0);
+}
+
+function ValorRecalculado({ entry, acrescimo }) {
+  const info = informacaoRecalculo(entry);
+  const temAcrescimo = Number(acrescimo?.acrescimo) > 0;
+  if (!info && !temAcrescimo) return null;
+  // O DARF pode reunir vários tributos: seu total nunca substitui o valor da provisão.
+  const valor = info?.atual || (temAcrescimo ? `R$ ${fmtValor(Number(acrescimo.principal) + Number(acrescimo.acrescimo))}` : null);
+  return <div style={{ fontSize: "0.7rem", lineHeight: 1.3, color: "var(--text-muted)" }} title={info?.titulo}>
+    {info?.totalGuia ? "Guia recalculada" : "Recalculado"}{valor ? `: ${valor}` : ""}
+  </div>;
 }
 
 /**
@@ -390,7 +401,7 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
   const guia = entry?.sourceGuide || null;
   const pagamento = entry?.pagamentoEfetivo;
   const valorPagamento = (v) => v == null ? "—" : `R$ ${fmtValor(v) || "0,00"}`;
-  const principal = Number(acrescimo?.principal ?? entry?.valor ?? entry?.totalD ?? 0) || 0;
+  const principal = valorDaProvisao(entry);
   const juros = Number(acrescimo?.acrescimo || 0) || 0;
   const atualizado = entry?.recalculatedToValor != null ? Number(entry.recalculatedToValor) : (principal + juros);
 
@@ -474,19 +485,10 @@ function fmtCompetenciaLonga(comp) {
 function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosAtivos = [], composicaoHabilitada = false, onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
-  const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
-
-  // Célula sem provisão: mostra "—" (ou o split, se houver — ex.: LP sem lançamento ainda).
+  // Acréscimos são detalhes da guia, não uma provisão. O cache pode sobreviver à
+  // exclusão do lançamento: sem entry, a célula e os totais devem continuar vazios.
   if (!entry) {
-    if (!acrescimo) {
-      return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
-    }
-    return (
-      <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
-        <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtValor(acrescimo.principal) || "0,00"}</div>
-        {temAcrescimo && <div title={`Juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtValor(acrescimo.acrescimo)} j/m</div>}
-      </td>
-    );
+    return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
   }
 
   const placeholder = entry.placeholder || entry.origem === "TEMPLATE";
@@ -495,7 +497,7 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
   const isOpenLike = !entry.parcelamentoOrigem && (isAberto || isParcial); // pode receber (nova) baixa
   const isVinculado = Boolean(entry.parcelamentoId);
   const isSynthetic = entry.synthetic === true;
-  const valor = entry.valor || entry.totalD;
+  const valor = valorDaProvisao(entry);
   // baixas existem quando parcial ou pago; usado tanto p/ cancelar a última quota quanto p/ INSS.
   // ⚠ UMA GUIA PODE TER TRÊS BAIXAS (principal, juros, multa). `baixas[0]` é o principal — serve
   // para saber SE existe baixa e para editar. Cancelar, não: cancelar um de três deixa dois
@@ -564,24 +566,10 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
           {numText}
         </span>
       )}
-      {/* ⚠ NA CÉLULA, NO MÁXIMO UM ÍCONE.
-          Aqui empilhavam-se até QUATRO linhas de 6px numa coluna de ~90px — "↻ R$ …", "+R$ … j/m",
-          "paga dd/mm", "saldo R$ …" — cada uma com a informação de verdade escondida num `title`,
-          que só aparece para quem para o mouse em cima. Todas essas linhas migraram para o
-          `ResumoDaGuia`, onde têm rótulo e espaço. O que sobra na célula é um sinal por vez:
-
-          • ⚠  juros/multa correndo (o valor está no popover)
-          • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
-          • ✅ quitada
-      */}
+      {/* Provisão em destaque; recálculo abaixo. Pagamentos mantêm seus detalhes próprios. */}
       {entry.parcelamentoOrigem && <div style={{color:aparencia.cor,fontSize:'0.72rem'}}>{aparencia.rotulo}</div>}
       {entry.pendenciaFechamento && <div style={{ color: "var(--danger)", fontSize: "0.68rem" }}>Pagamento pendente</div>}
-      {!placeholder && informacaoRecalculo(entry) && (
-        <div style={{ fontSize: "0.7rem", lineHeight: 1.2, color: "var(--text-muted)" }} title={informacaoRecalculo(entry).titulo}>Recalculada</div>
-      )}
-      {!placeholder && temAcrescimo && !informacaoRecalculo(entry) && isOpenLike && !pagamentoLocalizado && (
-        <div style={{ fontSize: "0.7rem", lineHeight: 1.1, color: "#FFB347" }} title="Tem juros/multa — abra a célula para ver o valor atualizado.">⚠</div>
-      )}
+      {!placeholder && <ValorRecalculado entry={entry} acrescimo={acrescimo} />}
       {/* ⚠⚠ É AQUI QUE A CONFIRMAÇÃO DO CLIENTE CAI, e é aqui que faltava QUEM.
           O estado "pagamento localizado, falta lançar a baixa" já existia — o que ele não dizia era
           de ONDE veio a afirmação. Até 27/08/2026 só havia duas origens internas (o SERPRO achou o

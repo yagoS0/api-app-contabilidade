@@ -915,23 +915,15 @@ export function createAccountingEntriesRouter({ log }) {
       receitasPorComp[e.competencia] = (receitasPorComp[e.competencia] || 0) + total;
     }
 
-    // Mapas por competência para resolver o valor ORIGINAL do DAS_SIMPLES.
-    // Prioridade do "valor original": circular.dasTotal (extrato PGDAS-D) > guide.valorOriginal > guide.valor.
-    // Necessário porque entries antigos podem ter lines com valor recalculado (criados antes do fix).
-    const circularByComp = new Map(circulars.map((c) => [c.competencia, c]));
+    // dasTotal também recebe o total da guia de cobrança. Não é fonte do valor provisionado.
     const simplesGuideByComp = new Map(simplesGuides.map((g) => [g.competencia, g]));
 
     function enrichDasProvisao(entry) {
       if (entry.eventType !== "DAS_SIMPLES") return entry;
-      const circ = circularByComp.get(entry.competencia);
       const guide = simplesGuideByComp.get(entry.competencia);
-      // Valor do extrato (truth). Se não existir, mantém o totalD (lines).
-      const extratoValor = circ?.dasTotal != null ? Number(circ.dasTotal) : null;
       // Valor atual da guia (pode estar recalculado pelo SERPRO).
       const guideValorAtual = guide?.valor != null ? Number(guide.valor) : null;
-      const valorOriginal = extratoValor != null
-        ? extratoValor
-        : (guide?.valorOriginal != null ? Number(guide.valorOriginal) : Number(entry.valor || entry.totalD || 0));
+      const valorOriginal = Number(entry.totalD ?? entry.valor ?? 0);
       const recalculado =
         guideValorAtual != null && Math.abs(guideValorAtual - valorOriginal) > 0.01;
       // Pagamento LOCALIZADO no SERPRO ≠ baixa LANÇADA. São dois estados distintos:
@@ -1047,6 +1039,7 @@ export function createAccountingEntriesRouter({ log }) {
         : null;
       return {
         id: `synthetic-inss-${g.id}`,
+        valorProvisionado: valorObrigacao,
         valorObrigacao,
         pagamentoEfetivo,
         portalClientId,
@@ -1142,6 +1135,7 @@ export function createAccountingEntriesRouter({ log }) {
         const baixa = inssBaixaByGuide.get(g.id) || null;
         return {
           id: `synthetic-das-${g.id}`,
+          valorProvisionado: valorObrigacao,
           valorObrigacao,
           pagamentoEfetivo,
           portalClientId,
@@ -1208,7 +1202,7 @@ export function createAccountingEntriesRouter({ log }) {
             baixas: [...(p.baixas || []).map(b => ({ ...b, openEntry: { sourceGuideId: guide.id } })), ...movimentosGuias],
           }) : resumirBaixas(p.baixas || []);
           const valorObrigacao = response.valor;
-          return { ...response, valorObrigacao, pagamentoEfetivo,
+          return { ...response, valorProvisionado: response.totalD, valorObrigacao, pagamentoEfetivo,
             ...(response.statusPagamento === "PAGO" && !response.parcial && pagamentoEfetivo?.fonte === "BAIXA_CONTABIL" && pagamentoEfetivo.total != null
               ? { valor: pagamentoEfetivo.total, totalD: pagamentoEfetivo.total, totalC: pagamentoEfetivo.total } : {}) };
         }),

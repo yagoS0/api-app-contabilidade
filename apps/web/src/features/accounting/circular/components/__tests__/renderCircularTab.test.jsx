@@ -210,12 +210,42 @@ function abrirCelula(texto) {
   return botao;
 }
 
+test.each(['DAS', 'PIS', 'COFINS', 'INSS'])('provisão de %s permanece principal mesmo com recálculo e baixa maior', (subtipo) => {
+  renderTab([provisao({ subtipo, valor: 1120, totalD: 1120, valorProvisionado: 1000,
+    statusPagamento: 'PAGO', recalculatedAt: '2026-09-18T12:00:00Z', recalculatedToValor: 1150,
+    pagamentoEfetivo: { total: 1120, fonte: 'BAIXA_CONTABIL' },
+  })], { companyRegime: subtipo === 'DAS' ? 'SIMPLES' : 'LUCRO_PRESUMIDO' });
+  expect(screen.getByRole('button', { name: 'R$ 1.000,00' })).toBeInTheDocument();
+  expect(screen.getByText('Recalculado: R$ 1.150,00')).toBeInTheDocument();
+  abrirCelula('R$ 1.000,00');
+  expect(screen.getByText('Valor baixado')).toBeInTheDocument();
+  expect(screen.getByText('R$ 1.120,00')).toBeInTheDocument();
+});
+
+test('março sem lançamentos não exibe valores antigos da consulta nem os imprime', () => {
+  const tributos = ['IRPJ', 'CSLL', 'PIS', 'COFINS'];
+  renderTab(tributos.map((subtipo, i) => provisao({ id: subtipo, subtipo,
+    competencia: `${ANO}-04`, valor: 100 + i })), {
+    companyRegime: 'LUCRO_PRESUMIDO', acrescimos: { [`${ANO}-03`]: {
+      IRPJ: { principal: 83623.68 }, CSLL: { principal: 32264.53 },
+      PIS: { principal: 2512.76, juros: 582.70 }, COFINS: { principal: 11597.36, multa: 2689.42 },
+    } },
+  });
+  const marco = screen.getByRole('row', { name: /^Mar\// });
+  expect(within(marco).queryByText(/R\$/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/83\.623,68|32\.264,53|2\.512,76|11\.597,36/)).not.toBeInTheDocument();
+  // Os valores provisionados em abril continuam visíveis.
+  expect(screen.getByRole('button', { name: 'R$ 100,00' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Imprimir/ }));
+  expect(within(screen.getByRole('row', { name: /^Mar\// })).queryByText(/R\$/)).not.toBeInTheDocument();
+});
+
 test("recálculo confirmado aparece sem acréscimo e preserva valor e pagamento da circular", () => {
   renderTab([provisao({ recalculoGuia: {
     guiaId: "g1", recalculadoEm: "2026-09-18T12:00:00Z", valorAnterior: 1234.56,
     valorAtual: 1234.56, escopoValor: "TOTAL_GUIA",
   } })]);
-  expect(screen.getByText("Recalculada")).toBeInTheDocument();
+  expect(screen.getByText(/Guia recalculada: R\$\s*1.234,56/)).toBeInTheDocument();
   abrirCelula("R$ 1.234,56");
   expect(screen.getByText(/Total da guia recalculada: R\$\s*1.234,56/)).toBeInTheDocument();
   expect(screen.getByText(/não confirma pagamento/)).toBeInTheDocument();
@@ -313,14 +343,13 @@ describe("o popover — onde mora o que estava escondido em `title`", () => {
     expect(screen.queryByText("Valor original")).not.toBeInTheDocument();
   });
 
-  it("na célula só o ⚠; juros/multa e valor atualizado ficam no popover, com rótulo", () => {
+  it("mostra o atualizado abaixo sem substituir o provisionado", () => {
     renderTab(
       [provisao({ valor: 1000, sourceGuide: guia({ vencimento: emDias(-30) }) })],
       { acrescimos: { [COMP]: { DAS: { principal: 1000, juros: 30, multa: 20 } } } },
     );
 
-    // O sinal na célula é UM ícone — o valor não cabe ali.
-    expect(screen.getByTitle(/Tem juros\/multa/)).toHaveTextContent("⚠");
+    expect(screen.getByText("Recalculado: R$ 1.050,00")).toBeInTheDocument();
 
     abrirCelula("R$ 1.000,00");
     expect(screen.getByText("Juros/multa")).toBeInTheDocument();

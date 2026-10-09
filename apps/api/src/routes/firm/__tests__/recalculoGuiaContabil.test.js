@@ -21,8 +21,25 @@ function app() {
 }
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.parcelamentoDebitoOrigem = { findMany: jest.fn(async () => []) };
+  prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);
   prisma.accountingEntry.findMany.mockImplementation(async ({ where }) => where.tipo === 'RECEITA' || where.tipo === 'BAIXA' ? [] : [entry]);
   prisma.guide.findMany.mockImplementation(async ({ where }) => where.OR ? [g] : []);
+});
+
+it.each([1120, 1250])('DAS de cobrança de %s não substitui provisão nem saldo por total da guia', async (atual) => {
+  const das = { ...g, tipo: 'SIMPLES', valor: atual, valorOriginal: 900,
+    extracted: { recalculoGuia: { ...marker, valorAtual: atual } } };
+  const provisao = { ...entry, eventType: 'DAS_SIMPLES', subtipo: 'DAS',
+    lines: [{ tipo: 'D', valor: 1000 }, { tipo: 'C', valor: 1000 }] };
+  prisma.accountingEntry.findMany.mockImplementation(async ({ where }) => where.tipo === 'PROVISAO' ? [provisao] : []);
+  prisma.companyMonthlyCircular.findMany.mockResolvedValue([{ competencia: '2026-07', dasTotal: atual }]);
+  prisma.guide.findMany.mockImplementation(async ({ where }) => where.OR || where.tipo === 'SIMPLES' ? [das] : []);
+  const r = await request(app()).get('/firm/companies/p1/entries/circular?year=2026');
+  expect(r.status).toBe(200);
+  expect(r.body.provisoes[0]).toMatchObject({ valor: 1000, totalD: 1000, valorProvisionado: 1000,
+    recalculatedToValor: atual, recalculoGuia: { valorAtual: atual } });
+  expect(r.body.provisoes[0].lines).toEqual(provisao.lines);
 });
 it.each(['/entries', '/entries/provisoes', '/entries/circular?year=2026'])('expõe registro na rota %s sem mudar o lançamento exportado', async (path) => {
   const r = await request(app()).get('/firm/companies/p1' + path);
