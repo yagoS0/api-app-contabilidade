@@ -615,3 +615,8 @@ test('mês permite arrastar obrigação entre semanas sem navegar nem alterar pr
   expect(obs.every(o=>o.ocorrencias[0].dataVencimento==='2026-09-21')).toBe(true);
  } finally {window.PointerEvent=anterior;}
 });
+
+test('falhas síncronas simultâneas no carregamento são tratadas sem rejeições órfãs',async()=>{
+ montar({extras:{listObrigacoes:()=>{throw new Error('Obrigações indisponíveis');},getTarefasAgenda:()=>{throw new Error('Tarefas indisponíveis');}}});
+ expect(await screen.findByRole('alert')).toBeInTheDocument();
+});

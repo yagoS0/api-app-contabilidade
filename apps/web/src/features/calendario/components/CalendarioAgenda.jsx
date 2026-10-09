@@ -87,7 +87,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     const consulta = ++leiturasRef.current;
     const leitura = edicoes.capturarLeitura();
     const meses = [...new Set(dias.map(d => d.slice(0,7)))];
-    Promise.resolve().then(() => Promise.all([leituras.ler('obrigacoes', () => api.listObrigacoes({ companyId: companyIdFixo })), api.getTarefasAgenda(inicio, fim), leituras.ler('regras', () => api.listRegrasObrigacao()), ...meses.map(m => leituras.ler(`fiscal:${m}`, () => api.getCalendario(m, companyIdFixo)))]))
+    Promise.resolve().then(() => Promise.all([leituras.ler('obrigacoes', () => api.listObrigacoes({ companyId: companyIdFixo })), Promise.resolve().then(() => api.getTarefasAgenda(inicio, fim)), leituras.ler('regras', () => api.listRegrasObrigacao()), ...meses.map(m => leituras.ler(`fiscal:${m}`, () => api.getCalendario(m, companyIdFixo)))]))
       .then(resultados => {
         resultados.forEach(conferir);
         if (!ativo || consulta !== leiturasRef.current) return;
