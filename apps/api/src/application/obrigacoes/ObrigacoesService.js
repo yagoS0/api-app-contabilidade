@@ -633,9 +633,15 @@ export async function reabrir({ portalIds, ocorrenciaId }) {
  * Só olha PENDENTE: reabrir à mão uma que o verificador já concluiu voltaria a fechar no próximo
  * ciclo — mas isso é coerente, porque a apuração continua transmitida.
  */
-export async function aplicarVerificadores({ portalIds = null } = {}) {
+export async function aplicarVerificadores({ portalIds = null, inicio = null, fim = null } = {}) {
+  const periodo = inicio || fim ? { inicio:dataCivil(inicio, 'inicio'), fim:dataCivil(fim, 'fim') } : null;
+  if (periodo && periodo.fim < periodo.inicio) throw new ObrigacaoError('periodo_invalido', 'O fim deve ser posterior ao início.');
   let pendentes = await prisma.ocorrenciaObrigacao.findMany({
     where: {
+      ...(periodo ? { AND: [{ OR: [
+        { dataInicio:{lte:periodo.fim}, dataFim:{gte:periodo.inicio} },
+        { dataInicio:null, dataVencimento:{gte:periodo.inicio,lte:periodo.fim} },
+      ] }] } : {}),
       OR: [{ status: "PENDENTE" }, { obrigacao: { verificador: { startsWith: "CARTEIRA_" } } }],
       canceladaEm: null,
       foraDaRecorrencia: false,

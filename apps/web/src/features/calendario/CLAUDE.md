@@ -115,3 +115,6 @@ O mês permite arrastar entre dias/semanas e mover com Alt+setas, preservando du
 
 ## Carregamento essencial independente — 09/10/2026
 A agenda lê marcos pela rota leve /firm/marcos-fiscais, filtra período/empresa e preserva marcos globais. Não montar o calendário fiscal completo apenas para extrair marcos. Regras e marcos carregam separadamente das tarefas/obrigações e não bloqueiam a grade. Leituras de tarefas por período usam o mesmo cache curto invalidado pelas mutações. Agenda e Empresas compartilham margens do shell e do cabeçalho, inclusive no mobile.
+
+## Verificadores limitados ao período visível — 09/10/2026
+A agenda envia inicio/fim em GET /firm/obrigacoes, inclusive na reconciliação após editar. O servidor valida o intervalo e aplica verificadores somente às ocorrências sobrepostas, com fallback pelo vencimento das legadas; companyId restringe também a verificação ao escopo autorizado. A chave do cache inclui o período para não reaproveitar estados de outra semana. Listagens e jobs sem intervalo mantêm a reconciliação completa. Ensaio com 13 competências versus uma: 80 versus 8 leituras dos contextos da carteira (serviço de guias mockado); não representa latência medida em produção.

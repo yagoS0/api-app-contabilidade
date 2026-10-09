@@ -582,13 +582,14 @@ test('formulário move para outro mês sem navegar nem esperar a gravação, e f
   expect(screen.getByRole('heading',{level:2}).textContent).toBe(periodo);
 });
 
-test('navegar semanas próximas reutiliza obrigações e regras já carregadas',async()=>{
+test('navegar semanas consulta obrigações do período e reutiliza regras',async()=>{
   const {api}=montar({obs:obrigacoes()});
   await screen.findByRole('button',{name:'EFD-Contribuições'});
   await waitFor(()=>expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));
   await waitFor(()=>expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument());
-  expect(api.listObrigacoes).toHaveBeenCalledTimes(1);
+  expect(api.listObrigacoes).toHaveBeenCalledTimes(2);
+  expect(api.listObrigacoes).toHaveBeenLastCalledWith({companyId:null,inicio:'2026-09-14',fim:'2026-09-20'});
   expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
   expect(api.getCalendario).toHaveBeenCalledTimes(1);
 });
