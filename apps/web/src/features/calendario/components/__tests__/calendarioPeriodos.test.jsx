@@ -620,3 +620,10 @@ test('falhas síncronas simultâneas no carregamento são tratadas sem rejeiçõ
  montar({extras:{listObrigacoes:()=>{throw new Error('Obrigações indisponíveis');},getTarefasAgenda:()=>{throw new Error('Tarefas indisponíveis');}}});
  expect(await screen.findByRole('alert')).toBeInTheDocument();
 });
+
+test('tarefas ficam utilizáveis antes de marcos e regras lentos terminarem',async()=>{
+ montar({obs:obrigacoes(),extras:{getCalendario:()=>new Promise(()=>{}),listRegrasObrigacao:()=>new Promise(()=>{})}});
+ fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+ expect(screen.getByRole('dialog')).toBeInTheDocument();
+ expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument();
+});

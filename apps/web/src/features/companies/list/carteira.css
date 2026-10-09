@@ -1,13 +1,13 @@
 /* Agenda and companies share one workspace header. Tools follow the active view. */
-.layout.dashboard-home-shell { width: 100%; padding: 20px clamp(16px, 3vw, 48px) 32px; }
+.layout.dashboard-home-shell { width: 100%; padding: 8px 12px 12px; min-height: 0; }
 .dashboard-home-shell .dashboard-home { padding: 0; gap: 12px; box-shadow: none; border-radius: 0; }
-.dashboard-home .dashboard-home__header { gap: 12px; padding-bottom: 4px; border-bottom: 0; }
+.dashboard-home .dashboard-home__header { gap: 12px; margin: 0; padding: 0; border-bottom: 0; }
 .dashboard-home .dashboard-home__brand { gap: 20px; min-width: 0; }
 .dashboard-home .dashboard-home__title--accessible { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .dashboard-home__brand > .workspace-home { flex-shrink: 0; }
 .dashboard-home__brand > div { min-width: 0; }
 .dashboard-home__context-label, .calendar-workspace__period small { display: block; color: var(--text-muted); font-size: .7rem; font-weight: 500; line-height: 1.3; }
-.dashboard-home .dashboard-home__user-name { font-size: .8rem; font-weight: 400; color: var(--text-muted); overflow-wrap: anywhere; }
+.dashboard-home .dashboard-home__user-name { font-size: .8rem; font-weight: 700; color: var(--text-muted); overflow-wrap: anywhere; }
 .dashboard-home .dashboard-home__logout { min-height: 32px; padding: 4px 10px; background: transparent; border-color: transparent; font-size: .8rem; }
 .dashboard-home .dashboard-home__logout:hover { background: var(--bg-surface); border-color: var(--border); }
 .dashboard-home__toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -16,9 +16,12 @@
 .dashboard-home__views .app-tab { padding: 10px 0; }
 .dashboard-home .dashboard-home__actions { gap: 6px; align-items: center; margin-left: auto; }
 .dashboard-home .dashboard-home__action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 6px 10px; border-radius: 8px; font-size: .8rem; }
-.dashboard-home__filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.dashboard-home__filters { display: flex; flex: 1 1 300px; min-width: 0; gap: 10px; flex-wrap: wrap; align-items: center; }
+.dashboard-home__filter-chips { flex-basis: 100%; order: 1; }
 .dashboard-home__filters input[type=search] { min-height: 40px; box-sizing: border-box; }
-.dashboard-home__regimes { min-width: 0; }
+.dashboard-home__regimes { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.dashboard-home__regimes > .app-tabs { flex: 1; min-width: 0; }
+.dashboard-home__regimes > .dashboard-home__print { flex-shrink: 0; }
 .dashboard-home__regimes .app-tabs { width: 100%; max-width: 100%; justify-content: flex-start; gap: 4px; padding: 0; border-bottom: 1px solid var(--border); box-sizing: border-box; }
 .dashboard-home__regimes .app-tab { border: 1px solid transparent; border-radius: 8px 8px 0 0; padding: 12px 16px; margin-bottom: -1px; }
 .dashboard-home__regimes .app-tab.is-active { border-color: var(--border); border-bottom-color: var(--bg-surface); background: var(--bg-surface); }
@@ -35,7 +38,7 @@
 .calendar-workspace button:focus-visible, .calendar-workspace summary:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 3px; }
 
 @media screen and (max-width: 760px) {
-  .layout.dashboard-home-shell { padding: 12px 14px 24px; }
+  .layout.dashboard-home-shell { padding: 6px; }
   .dashboard-home-shell .dashboard-home { gap: 10px; }
   .dashboard-home .dashboard-home__header { display: flex; align-items: center; gap: 8px; }
   .dashboard-home__competencia { gap: 3px !important; }
@@ -53,7 +56,7 @@
   .dashboard-home__summary > span:first-child { font-size: .65rem !important; flex: 0 0 66px; }
   .dashboard-home__summary button { padding: 7px 9px !important; flex-shrink: 0; white-space: nowrap; }
   .dashboard-home__filters > label { min-width: 0 !important; flex: 1 1 160px !important; }
-  .dashboard-home__regimes .app-tabs { width: 100%; flex-wrap: nowrap; }
+  .dashboard-home__regimes .app-tabs { width: 100%; flex-wrap: nowrap; overflow-x: auto; }
   .dashboard-home__regimes .app-tab { padding-inline: 10px; font-size: .75rem; }
   .calendar-workspace__actions { gap: 6px; }
   .calendar-workspace__actions button { flex: 1 1 auto; padding: 8px !important; font-size: .75rem !important; }
@@ -180,3 +183,5 @@ button.carteira-tag { cursor: pointer; }
 button.carteira-tag:hover { background: color-mix(in srgb, var(--tag-color) 18%, transparent); }
 button.carteira-tag:focus-visible { outline: 2px solid var(--tag-color); outline-offset: 2px; }
 @media print { .carteira-tag { color: inherit; background: none; border-color: currentColor; } }
+
+@media print { .dashboard-home__regimes { display: none !important; } }

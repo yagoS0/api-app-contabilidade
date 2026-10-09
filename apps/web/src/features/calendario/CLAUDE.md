@@ -112,3 +112,6 @@ O filtro Ocorrências excluídas permite recuperar cancelamentos de séries empr
 Edições individuais pelo formulário usam a fila otimista dos gestos: fecham o editor imediatamente, preservam o período exibido e revertem a alteração se a gravação falhar. A resposta confirmada de tarefas pessoais mantém as chaves dos blocos diários antes de permitir novas ações. Leituras de obrigações, regras e calendário fiscal são reutilizadas por até 30 segundos dentro da instância e invalidadas ao editar/recarregar.
 
 O mês permite arrastar entre dias/semanas e mover com Alt+setas, preservando duração, horários, identidade e vencimento fiscal. A grade destaca o destino; Escape ou soltar fora cancela. Cabeçalhos e mês foram compactados sem ocultar cartões. Tarefas usam cores sólidas com texto branco em vez de fundos pastéis.
+
+## Carregamento essencial independente — 09/10/2026
+A agenda lê marcos pela rota leve /firm/marcos-fiscais, filtra período/empresa e preserva marcos globais. Não montar o calendário fiscal completo apenas para extrair marcos. Regras e marcos carregam separadamente das tarefas/obrigações e não bloqueiam a grade. Leituras de tarefas por período usam o mesmo cache curto invalidado pelas mutações. Agenda e Empresas compartilham margens do shell e do cabeçalho, inclusive no mobile.

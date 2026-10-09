@@ -631,73 +631,6 @@ export function CompaniesHomePage({
               </div>
             </div>
 
-            <nav className="dashboard-home__actions" aria-label="Ações das empresas">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={imprimirListagem}
-                disabled={imprimindo}
-                title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
-                className="dashboard-home__print"
-              >
-                {imprimindo ? "Preparando…" : "Imprimir"}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  if (globalChartStatus && !globalChartStatus.isConfigured) {
-                    avisoPlanoGlobal.current?.focus();
-                    avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
-                    return;
-                  }
-                  onCreateCompany();
-                }}
-                title={globalChartStatus && !globalChartStatus.isConfigured
-                  ? "Plano de contas global incompleto — configure antes de criar empresas"
-                  : undefined}
-              >
-                Nova empresa
-                {globalChartStatus && !globalChartStatus.isConfigured && (
-                  <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
-                )}
-              </Button>
-            </nav>
-          </div>
-          )}
-
-          {modoVisao === "tabela" && globalChartStatus && !globalChartStatus.isConfigured && (
-            <div
-              ref={avisoPlanoGlobal}
-              tabIndex={-1}
-              role="alert"
-              style={{
-                margin: "12px 0",
-                padding: "10px 14px",
-                borderRadius: 8,
-                background: "rgba(255,179,71,0.15)",
-                border: "1px solid var(--state-warn)",
-                color: "var(--state-warn)",
-                fontSize: "0.875rem",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span>
-                ⚠ <strong>Plano de contas global incompleto</strong>. Antes de criar novas empresas,
-                cadastre contas dos tipos:{" "}
-                <strong>{(globalChartStatus.tiposFaltantes || []).join(", ") || "—"}</strong>.
-              </span>
-              {onOpenChartGlobal && (
-                <Button variant="secondary" onClick={onOpenChartGlobal}>
-                  Abrir Plano de Contas Global
-                </Button>
-              )}
-            </div>
-          )}
-
           {/* Busca e filtros pertencem à lista de empresas; a agenda tem navegação própria. */}
           {modoVisao === "tabela" && (
           <section
@@ -705,9 +638,9 @@ export function CompaniesHomePage({
             className="dashboard-home__filters"
           >
             <label style={{ ...FILTER_LABEL, flex: "1 1 220px", minWidth: 180 }}>
-              Buscar empresa ou CNPJ
+
               <input
-                type="search"
+                type="search" aria-label="Buscar empresa ou CNPJ"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 /* "Clinica" sem acento era erro de digitação, não escolha: a busca já normaliza
@@ -718,14 +651,10 @@ export function CompaniesHomePage({
               />
             </label>
 
-            {/* ⚠ O SELETOR DE COMPETÊNCIA QUE FICAVA AQUI FOI REMOVIDO. Havia dois na mesma tela —
-                este e o do título — controlando o mesmo estado. Dois controles para uma coisa só
-                fazem o usuário duvidar de qual vale, e um deles sempre parece não funcionar. Ficou
-                o do título ("Empresas · ‹ Julho de 2026 ›"), que é onde o contexto da tela mora. */}
 
             {/* Chips do que está ATIVO — o rastro que o painel fechado não pode esconder. */}
             {chipsDeFiltro.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <div className="dashboard-home__filter-chips" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {chipsDeFiltro.map((c) => (
                   <button
                     key={c.chave}
@@ -865,6 +794,63 @@ export function CompaniesHomePage({
           </section>
           )}
 
+            <nav className="dashboard-home__actions" aria-label="Ações das empresas">
+
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (globalChartStatus && !globalChartStatus.isConfigured) {
+                    avisoPlanoGlobal.current?.focus();
+                    avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
+                    return;
+                  }
+                  onCreateCompany();
+                }}
+                title={globalChartStatus && !globalChartStatus.isConfigured
+                  ? "Plano de contas global incompleto — configure antes de criar empresas"
+                  : undefined}
+              >
+                + Adicionar
+                {globalChartStatus && !globalChartStatus.isConfigured && (
+                  <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
+                )}
+              </Button>
+            </nav>
+          </div>
+          )}
+
+          {modoVisao === "tabela" && globalChartStatus && !globalChartStatus.isConfigured && (
+            <div
+              ref={avisoPlanoGlobal}
+              tabIndex={-1}
+              role="alert"
+              style={{
+                margin: "12px 0",
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(255,179,71,0.15)",
+                border: "1px solid var(--state-warn)",
+                color: "var(--state-warn)",
+                fontSize: "0.875rem",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span>
+                ⚠ <strong>Plano de contas global incompleto</strong>. Antes de criar novas empresas,
+                cadastre contas dos tipos:{" "}
+                <strong>{(globalChartStatus.tiposFaltantes || []).join(", ") || "—"}</strong>.
+              </span>
+              {onOpenChartGlobal && (
+                <Button variant="secondary" onClick={onOpenChartGlobal}>
+                  Abrir Plano de Contas Global
+                </Button>
+              )}
+            </div>
+          )}
+
           {modoVisao === "tabela" && prontasSelecionadas.length > 0 && (
             <div className="dashboard-home__selection-actions">
               <Button variant="secondary" onClick={fecharAsProntas} disabled={fechandoLote}>
@@ -982,6 +968,17 @@ export function CompaniesHomePage({
                 active={abaAtiva}
                 onChange={trocarAba}
               />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={imprimirListagem}
+                disabled={imprimindo}
+                title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
+                className="dashboard-home__print"
+              >
+                {imprimindo ? "Preparando…" : "Imprimir"}
+              </Button>
             </div>
           )}
               {empresaFluxo && <FluxoCarteiraDetalhe key={`${empresaFluxo.companyId}:${dashboardCompetencia}`} company={empresaFluxo} competencia={dashboardCompetencia} api={api} onFechar={() => setEmpresaFluxo(null)} onChanged={onRefreshCompanies} onOpenCompany={onOpenCompany} />}

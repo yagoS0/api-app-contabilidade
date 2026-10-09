@@ -292,7 +292,7 @@ describe("ações locais da carteira", () => {
     const onCreateCompany = jest.fn();
     montar({ onCreateCompany, onOpenOnboardings: jest.fn(), onOpenWhatsapp: jest.fn() });
     const barra = screen.getByRole("navigation", { name: "Ações das empresas" });
-    fireEvent.click(within(barra).getByRole("button", { name: "Nova empresa" }));
+    fireEvent.click(within(barra).getByRole("button", { name: "+ Adicionar" }));
     expect(onCreateCompany).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Entrada de clientes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Abrir o menu de ferramentas/ })).not.toBeInTheDocument();
