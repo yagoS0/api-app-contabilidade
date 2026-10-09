@@ -73,7 +73,14 @@ async function conversaNoEscopo(req, conversaId, { client = prisma } = {}) {
   });
   if (!conversa) return null;
   if (conversa.vinculoNumeroId) {
-    try { await carregarGrupoIdentidade({ conversaId: conversa.id, visiveis: await empresasVisiveis(req), client }); return conversa; }
+    try {
+      const grupo = await carregarGrupoIdentidade({ conversaId: conversa.id, visiveis: await empresasVisiveis(req), client });
+      const pessoa = grupo.origem.vinculoNumero?.interlocutor;
+      return { ...conversa, grupoHumanoCompleto: grupo.completo,
+        ...(pessoa ? { atendimentoHumanoVersao: pessoa.versao,
+          atendidaPor: pessoa.atendidaPor || conversa.atendidaPor || null,
+          atendidaDesde: pessoa.atendidaDesde || conversa.atendidaDesde || null } : {}) };
+    }
     catch (err) { if (err.status === 404) return null; throw err; }
   }
   // A fila de leads é pública ao escritório; recibos neutros de responsáveis conhecidos não são.
@@ -169,7 +176,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     if (codigo === "FORA_DA_JANELA" && err.janela) return recusarForaDaJanela(res, err.janela);
     if (["FIO_OCUPADO", "LEASE_PERDIDA", "CONTEXTO_INVALIDO", "CONTEXTO_CONCORRENTE", "EMPRESA_NAO_E_CANDIDATA", "ACESSO_REVOGADO", "AUTOMACAO_INVALIDADA", "CONTEXTO_ALTERADO"].includes(codigo)) return res.status(409).json({ ok: false, error: codigo, message: err.message });
     if (err?.code === "CHAT_EXCLUIDO") return res.status(409).json({ ok: false, error: err.code, message: err.message });
-    if (["CONTEXTO_ALTERADO", "EMPRESA_NAO_AUTORIZADA", "VINCULO_AMBIGUO", "ATENDIMENTO_OCUPADO"].includes(err?.code)) return res.status(409).json({ ok: false, error: err.code, message: err.message });
+    if (["CONTEXTO_ALTERADO", "EMPRESA_NAO_AUTORIZADA", "VINCULO_AMBIGUO", "ATENDIMENTO_OCUPADO", "ATENDIMENTO_FORA_DA_CARTEIRA"].includes(codigo)) return res.status(409).json({ ok: false, error: codigo, message: err.message });
     if (err instanceof ConversaWhatsappError || err instanceof ContatoWhatsappError) {
       return res.status(400).json({ ok: false, error: err.code, message: err.message });
     }
@@ -210,9 +217,10 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   }
 
   async function alterarHumano(conversa, atendidaPor, atendidaDesde, {preservarContextoOperacional=false}={}) {
+    if (conversa.vinculoNumeroId && conversa.grupoHumanoCompleto !== true) throw erroAtendimento('ATENDIMENTO_FORA_DA_CARTEIRA', 'Este atendimento envolve empresas fora da sua carteira. Um responsável com acesso completo deve assumir ou devolver o contato.');
     if (atendidaPor && conversa.atendidaPor && conversa.atendidaPor !== atendidaPor) throw erroAtendimento('ATENDIMENTO_OCUPADO', 'Outro atendente assumiu esta conversa. Combine a transferência antes de responder.');
     if (atendidaPor && conversa.atendidaPor === atendidaPor) return null;
-    if (conversa.atendimentoId) {
+    if (conversa.atendimentoId || conversa.vinculoNumeroId) {
       const { alterarAtendimentoHumano } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
       return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client });
     }

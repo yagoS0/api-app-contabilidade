@@ -30,5 +30,32 @@ function humano() {
  return {conversa,client,atendimento};
 }
 it('CAS não substitui atendente concorrente da identidade',async()=>{const b=humano();b.client.interlocutorComunicacao.updateMany.mockResolvedValue({count:0});await expect(alterarAtendimentoHumano({...b,atendidaPor:'u1',preservarResponsavel:true})).rejects.toMatchObject({codigo:'ATENDIMENTO_OCUPADO'});expect(b.client.conversaWhatsapp.updateMany).not.toHaveBeenCalled();});
+it('devolução recusa versão antiga mesmo quando o atendente continua sendo o mesmo', async () => {
+ const b=humano();b.conversa.atendidaPor='u1';b.conversa.atendimentoHumanoVersao=7;
+ b.client.interlocutorComunicacao.updateMany.mockImplementation(async({where})=>({count:where.versao===8?1:0}));
+ await expect(alterarAtendimentoHumano({...b,preservarResponsavel:true})).rejects.toMatchObject({codigo:'ATENDIMENTO_OCUPADO'});
+ expect(b.client.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+ expect(b.client.acaoPendenteWhatsapp.updateMany).not.toHaveBeenCalled();
+});
+it('devolve identidade e segmentos quando a conversa comercial ainda não tem atendimento', async () => {
+ const b=humano();b.conversa.atendimentoId=null;b.conversa.canalId='comercial';b.conversa.atendidaPor='u1';b.conversa.atendimentoHumanoVersao=7;
+ const pessoa={id:'p1',versao:7,atendidaPor:'u1',atendidaDesde:new Date()};
+ const segmentos=[{id:'c1',atendidaPor:null,atendidaDesde:null},{id:'suporte',atendidaPor:'u1',atendidaDesde:pessoa.atendidaDesde}];
+ b.client.conversaWhatsapp.findFirst=jest.fn(async()=>segmentos[1]);
+ b.client.conversaWhatsapp.findMany.mockImplementation(async()=>segmentos);
+ b.client.atendimentoResponsavelWhatsapp.upsert=jest.fn(async()=>b.atendimento);
+ b.client.interlocutorComunicacao.updateMany.mockImplementation(async({where,data})=>{
+   if(where.versao!==pessoa.versao||where.atendidaPor!==pessoa.atendidaPor)return{count:0};
+   Object.assign(pessoa,{atendidaPor:data.atendidaPor,atendidaDesde:data.atendidaDesde,versao:pessoa.versao+1});return{count:1};
+ });
+ b.client.conversaWhatsapp.updateMany.mockImplementation(async({data})=>{
+   if(Object.hasOwn(data,'atendidaPor'))for(const c of segmentos)Object.assign(c,data);
+   return{count:segmentos.length};
+ });
+ await alterarAtendimentoHumano({...b,preservarResponsavel:true});
+ expect(pessoa).toMatchObject({atendidaPor:null,atendidaDesde:null,versao:8});
+ expect(segmentos.every(c=>!c.atendidaPor&&!c.atendidaDesde&&c.automacaoInvalidadaEm)).toBe(true);
+ expect(b.client.turnoIaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({conversaId:{in:['c1','suporte']}})}));
+});
 it('assumir documento preserva só contexto previamente validado e invalida automação',async()=>{const b=humano();await alterarAtendimentoHumano({...b,atendidaPor:'u1',preservarResponsavel:true,preservarContextoOperacional:true});expect(b.client.atendimentoResponsavelWhatsapp.updateMany.mock.calls[0][0].where).toMatchObject({id:'a1',versao:5,aguardandoSelecao:false,conversaId:'c1',portalClientId:'e1'});expect(b.client.atendimentoResponsavelWhatsapp.update).toHaveBeenCalledWith({where:{id:'a1'},data:{aguardandoSelecao:false,conversaId:'c1',portalClientId:'e1',expiraEm:b.atendimento.expiraEm}});expect(b.client.turnoIaWhatsapp.updateMany).toHaveBeenCalled();});
 it('contexto alterado concorrentemente impede assumir e enviar documento',async()=>{const b=humano();b.client.atendimentoResponsavelWhatsapp.updateMany.mockResolvedValueOnce({count:0});await expect(alterarAtendimentoHumano({...b,atendidaPor:'u1',preservarResponsavel:true,preservarContextoOperacional:true})).rejects.toMatchObject({codigo:'CONTEXTO_ALTERADO'});expect(b.client.interlocutorComunicacao.updateMany).not.toHaveBeenCalled();});
