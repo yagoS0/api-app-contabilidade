@@ -107,3 +107,8 @@ A confirmação oferece ESTA (padrão), ESTA_E_PROXIMAS e ESTA_E_ANTERIORES; amb
 A exclusão de um cartão com horário passa a preservar o dia nominal clicado até a confirmação e a API, inclusive pelo editor ou ação individual de empresa. ESTA oculta somente esse dia em agendaConfig.diasExcluidos; os alcances anteriores/próximas conservam a parte oposta da janela e cortam os demais ciclos. A conclusão fiscal e a identidade da ocorrência mensal permanecem. Sem dia selecionado, a confirmação explicita o intervalo completo. Esta regra substitui a interpretação anterior de excluir sempre a janela mensal inteira.
 
 O filtro Ocorrências excluídas permite recuperar cancelamentos de séries empresariais ativas dentro do período exibido. A recuperação é transacional, revalida carteira e cortes sob lock, restaura os mesmos IDs e registra a exclusão anterior sem mudar conclusões. Não reativa séries nem remove cortes anteriores/próximas implicitamente. Sem migration.
+
+## Agilidade e apresentação do calendário — 09/10/2026
+Edições individuais pelo formulário usam a fila otimista dos gestos: fecham o editor imediatamente, preservam o período exibido e revertem a alteração se a gravação falhar. A resposta confirmada de tarefas pessoais mantém as chaves dos blocos diários antes de permitir novas ações. Leituras de obrigações, regras e calendário fiscal são reutilizadas por até 30 segundos dentro da instância e invalidadas ao editar/recarregar.
+
+O mês permite arrastar entre dias/semanas e mover com Alt+setas, preservando duração, horários, identidade e vencimento fiscal. A grade destaca o destino; Escape ou soltar fora cancela. Cabeçalhos e mês foram compactados sem ocultar cartões. Tarefas usam cores sólidas com texto branco em vez de fundos pastéis.

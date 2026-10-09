@@ -1,6 +1,6 @@
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
 import { ALTURA_HORA } from './escalaAgenda';
-export const CORES_PRIORIDADE = { '': 'var(--text-muted)', BAIXA: '#e9bb42', MEDIA: '#ef934c', ALTA: '#b58aef', URGENTE: '#ee737f' };
+export const CORES_PRIORIDADE = { '': '#475569', BAIXA: '#856000', MEDIA: '#a83b08', ALTA: '#7133bd', URGENTE: '#b91c3c' };
 export const COR_OBRIGACAO = '#1351b4';
 export const corAtividade = item => item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || ''];
 export const RECORRENCIAS = { AVULSA: 'Não repetir', DIARIA: 'Todos os dias', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', TRIMESTRAL: 'A cada 3 meses', SEMESTRAL: 'A cada 6 meses', ANUAL: 'Todo ano' };

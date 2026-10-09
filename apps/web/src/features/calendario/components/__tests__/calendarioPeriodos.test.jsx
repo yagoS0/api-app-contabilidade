@@ -559,3 +559,59 @@ test('cancelar escolha de alcance não remove ocorrências',async()=>{
  fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByLabelText('Esta e todas as anteriores'));
  fireEvent.click(screen.getByRole('button',{name:'Cancelar',exact:true}));expect(api.excluirOcorrenciasAgenda).not.toHaveBeenCalled();
 });
+
+test('formulário move para outro mês sem navegar nem esperar a gravação, e falha restaura a tarefa',async()=>{
+  let rejeitar;
+  const editarOcorrenciasAgenda=jest.fn(()=>new Promise((_,r)=>{rejeitar=r;}));
+  const obs=obrigacoes().slice(0,1).map(o=>({...o,tipo:'TAREFA',regraId:null}));
+  const {api,container}=montar({obs,extras:{editarOcorrenciasAgenda}});
+  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  const periodo=screen.getByRole('heading',{level:2}).textContent;
+  fireEvent.change(screen.getByLabelText('De'),{target:{value:'2026-10-10'}});
+  fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-10-10'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar',exact:true}));
+  await waitFor(()=>expect(editarOcorrenciasAgenda).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading',{level:2}).textContent).toBe(periodo);
+  expect(container.querySelector('.agenda-event-open')).toBeNull();
+  expect(api.listObrigacoes).toHaveBeenCalledTimes(1);
+  expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
+  rejeitar(new Error('Sem conexão'));
+  await screen.findByRole('alert');
+  expect(await screen.findByRole('button',{name:'EFD-Contribuições'})).toBeInTheDocument();
+  expect(screen.getByRole('heading',{level:2}).textContent).toBe(periodo);
+});
+
+test('navegar semanas próximas reutiliza obrigações e regras já carregadas',async()=>{
+  const {api}=montar({obs:obrigacoes()});
+  await screen.findByRole('button',{name:'EFD-Contribuições'});
+  await waitFor(()=>expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));
+  await waitFor(()=>expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument());
+  expect(api.listObrigacoes).toHaveBeenCalledTimes(1);
+  expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
+  expect(api.getCalendario).toHaveBeenCalledTimes(1);
+});
+
+test('mês permite arrastar obrigação entre semanas sem navegar nem alterar prazo fiscal', async()=>{
+ const obs=obrigacoes().map(o=>({...o,agendaConfig:{...config,dataFim:config.dataInicio},ocorrencias:o.ocorrencias.map(oc=>({...oc,dataFim:oc.dataInicio}))}));
+ const {api,container}=montar({visao:'mes',obs});
+ jest.spyOn(api,'editarOcorrenciasAgenda');
+ const cartao=await screen.findByRole('button',{name:'EFD-Contribuições'});
+ const anterior=window.PointerEvent;
+ window.PointerEvent=class extends MouseEvent{constructor(t,p){super(t,p);this.pointerId=p.pointerId;}};
+ try {
+  [...container.querySelectorAll('[data-agenda-month-week]')].forEach((el,i)=>{
+   el.getBoundingClientRect=()=>({left:0,right:700,top:i*100,bottom:(i+1)*100,width:700,height:100});
+  });
+  fireEvent.pointerDown(cartao,{pointerId:1,button:0,clientX:350,clientY:150});
+  fireEvent.pointerMove(cartao,{pointerId:1,clientX:150,clientY:250});
+  fireEvent.pointerUp(cartao,{pointerId:1,clientX:150,clientY:250});
+  fireEvent.click(cartao);
+  await waitFor(()=>expect(api.editarOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'],{dataInicio:'2026-09-15',dataFim:'2026-09-15',horaInicio:null,horaFim:null}));
+  expect(screen.getByLabelText('Visualização do calendário')).toHaveValue('mes');
+  expect(screen.getByRole('heading',{level:2})).toHaveTextContent('setembro de 2026');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(obs.every(o=>o.ocorrencias[0].dataVencimento==='2026-09-21')).toBe(true);
+ } finally {window.PointerEvent=anterior;}
+});

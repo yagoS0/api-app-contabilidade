@@ -44,7 +44,7 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
       {!temHorario && itens.length > 1 && <small className="agenda-event-progress" aria-label={progresso}>{concluidas}/{itens.length}</small>}
       {temHorario && <span className="agenda-event-meta"><small className="agenda-event-time">{horarioAtividade(item)}</small>{itens.length > 1 && <small className="agenda-event-progress" aria-label={progresso}>{concluidas}/{itens.length}</small>}</span>}
     </button>
-    {editavel && item.horaInicio && <><span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/><span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/></>}
+    {editavel && gestos.permiteRedimensionar !== false && item.horaInicio && <><span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/><span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/></>}
     {editavel && <span className="agenda-move-handle" data-agenda-move-handle="" aria-hidden="true"/>}
   </div>;
 }
