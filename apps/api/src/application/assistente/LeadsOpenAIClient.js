@@ -1,5 +1,6 @@
 import { MODELO_LEADS, ESFORCO_LEADS, PROMPT_LEADS, SCHEMA_LEADS, validarInterpretacaoLead } from './interpretacaoLeadIa.js';
 import { custoEstimadoCentavos } from './precosIa.js';
+import { ORDEM_QUALIFICACAO } from '../onboarding/qualificacaoComercial.js';
 
 export const MAX_BYTES_PEDIDO_LEADS = 24000;
 export const MAX_TOKENS_SAIDA_LEADS = 1400;
@@ -26,12 +27,15 @@ export function normalizarUsageOpenAI(usage) {
 
 export function prepararPedidoLead({ texto, intencao = null, campoEsperado = null, resumo = null }) {
   if (typeof texto !== 'string' || !texto.trim() || texto.length > 4000) throw erro('ENTRADA_LEAD_INVALIDA');
-  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade']
+  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato']
     .filter(k => typeof resumo[k] === 'string' && resumo[k].trim()).map(k => [k, resumo[k].slice(0, k === 'nome' ? 120 : 700)])) : null;
   const body = {
     model: MODELO_LEADS, store: false, reasoning: { effort: ESFORCO_LEADS }, max_output_tokens: MAX_TOKENS_SAIDA_LEADS,
     instructions: PROMPT_LEADS,
-    input: [{ role: 'user', content: JSON.stringify({ mensagemAtual: texto, contexto: { intencao, campoEsperado, ...(dadosColetados ? { dadosColetados } : {}) } }) }],
+    input: [{ role: 'user', content: JSON.stringify({ mensagemAtual: texto, contexto: { intencao, campoEsperado, ...(dadosColetados ? { dadosColetados } : {}),
+      ordemQualificacao: ORDEM_QUALIFICACAO[intencao] || ORDEM_QUALIFICACAO,
+      dispensados: Array.isArray(resumo?.dispensados) ? resumo.dispensados.filter(k => Object.values(ORDEM_QUALIFICACAO).flat().includes(k)) : [],
+      ultimaResposta: typeof resumo?.ultimaResposta === 'string' ? resumo.ultimaResposta.slice(0, 600) : null } }) }],
     text: { format: { type: 'json_schema', name: 'preatendimento_lead', strict: true, schema: SCHEMA_LEADS } },
   };
   const serializado = JSON.stringify(body);

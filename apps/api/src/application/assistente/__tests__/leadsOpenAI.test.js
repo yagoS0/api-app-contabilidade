@@ -66,7 +66,8 @@ test('Responses usa schema estrito, sem armazenamento, ferramentas ou histórico
   expect(url).toBe('https://api.openai.com/v1/responses');
   expect(body).toMatchObject({ model: MODELO_LEADS, store: false, reasoning: { effort: 'low' }, max_output_tokens: MAX_TOKENS_SAIDA_LEADS, text: { format: { strict: true } } });
   expect(body.tools).toBeUndefined(); expect(body.input).toHaveLength(1);
-  expect(JSON.parse(body.input[0].content)).toEqual({ mensagemAtual: texto, contexto: { intencao: 'ABERTURA', campoEsperado: 'nome' } });
+  expect(JSON.parse(body.input[0].content)).toEqual({ mensagemAtual: texto, contexto: { intencao: 'ABERTURA', campoEsperado: 'nome',
+    ordemQualificacao: ['nome','atividade','cidade','estrutura','urgencia','faturamento'], dispensados: [], ultimaResposta: null } });
   expect(r.usage).toEqual({ input_tokens: 80, output_tokens: 40, cache_read_input_tokens: 20, cache_creation_input_tokens: 0 });
 });
 

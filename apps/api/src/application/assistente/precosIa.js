@@ -40,6 +40,12 @@ export function precoDoModelo(modelo) {
  * @param {object} usage  o `usage` da resposta: `{ input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens }`
  */
 export function custoEstimadoCentavos(usage, modelo) {
+  const total = custoPorTokensCentavos(usage, modelo);
+  return total > 0 ? Math.max(1, Math.ceil(total)) : 0;
+}
+
+/** Consumo em centavos fracionários. Arredondamento inteiro só na reserva preventiva. */
+export function custoPorTokensCentavos(usage, modelo) {
   const p = precoDoModelo(modelo);
   const u = usage || {};
   const n = (v) => Math.max(0, Number(v) || 0);
@@ -48,8 +54,7 @@ export function custoEstimadoCentavos(usage, modelo) {
       + n(u.output_tokens) * p.saida
       + n(u.cache_read_input_tokens) * p.cacheLeitura
       + n(u.cache_creation_input_tokens) * p.cacheEscrita) / 1_000_000;
-  if (total <= 0) return 0;
-  return Math.max(1, Math.ceil(total));
+  return Number(total.toFixed(8));
 }
 
 /** Soma os `usage` de várias iterações de um turno num só. */

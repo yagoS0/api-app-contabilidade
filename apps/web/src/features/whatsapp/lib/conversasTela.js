@@ -144,6 +144,12 @@ export function fraseDoConsumo(consumo) {
   const e = consumo.escritorio;
   const usd = (c) => `US$ ${(Number(c || 0) / 100).toFixed(2)}`;
   const estado = e.estourado ? " · TETO ATINGIDO — o assistente está recusando" : e.alerta ? " · perto do teto" : "";
+  if (e.consumoCentavos != null) {
+    const valor = Number(e.consumoCentavos) / 100;
+    const gasto = valor > 0 && valor < 0.000001 ? 'menos de US$ 0.000001' : `US$ ${valor.toFixed(8)}`;
+    const reserva = Number(e.reservaCentavos || 0) > 0 ? ` + ${usd(e.reservaCentavos)} reservados, ainda sem consumo confirmado` : '';
+    return `IA neste mês: ${gasto}${reserva}. Limite: ${usd(e.teto)}. Estimativa por tokens, ${e.chamadas} chamada${e.chamadas === 1 ? '' : 's'}${estado}.`;
+  }
   return `Assistente (IA) neste mês: ${usd(e.centavos)} de ${usd(e.teto)} (estimativa, ${e.chamadas} chamada${e.chamadas === 1 ? "" : "s"})${estado}.`;
 }
 

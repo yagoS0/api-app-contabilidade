@@ -71,7 +71,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const ia = !anterior && tipo === "text" && !idInteracao && !escolhaModalidade && origem !== "MULTIPLOS"
     ? await interpretarMensagemLead({ texto: textoEntrada, intencao: existente?.triagem?.preatendimento?.intencao || existente?.onboarding?.origem || origem,
       campoEsperado: existente?.triagem?.preatendimento?.campoEsperado || null, conversaId: conversa.id, mensagemId: mensagem.id,
-      resumo: existente?.triagem?.preatendimento || null,
+      resumo: { nome: pessoa?.nome || inicial.nomePerfilProvedor || null, ...existente?.triagem?.preatendimento },
       telefone: conversa.telefoneE164, canalId: inicial.canalId, client: db, deps: deps.ia || {} }) : null;
   origem ||= ia?.interpretacao?.intencao || null;
   if (!existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
@@ -126,7 +126,8 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const texto = escolhaAntiga || menuAntigo ? "Essa opção é de um atendimento anterior. Seus dados foram preservados. Conte o que precisa agora ou escreva menu para ver as opções."
       : encaminhar ? [preparo.resposta, valor, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
-          : [leitura.retomada ? "Podemos continuar de onde paramos." : preparo.resposta, valor, preparo.pergunta].filter(Boolean).join("\n\n");
+          : preparo.respostaNatural || [leitura.retomada ? "Podemos continuar de onde paramos." : preparo.resposta, valor, preparo.pergunta].filter(Boolean).join("\n\n");
+    const valorEnviado = !preparo.respostaNatural || encaminhar ? valor : null;
     const handoffEm = encaminhar ? agora : null;
     if (encaminhar) {
       await tx.conversaWhatsapp.update({ where: { id: atual.id }, data: { atendidaDesde: agora } });
@@ -134,7 +135,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     }
     const salva = await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 },
       ...(!menuAntigo && !escolhaAntiga ? { triagem: { ...triagem,
-        preatendimento: { ...pre, valorApresentado: Boolean(pre.valorApresentado || valor), valorTexto: valor || pre.valorTexto || null, estado: encaminhar ? "ENCAMINHADO" : "EM_CONVERSA",
+        preatendimento: { ...pre, ultimaResposta: texto.slice(0, 600), valorApresentado: Boolean(pre.valorApresentado || valorEnviado), valorTexto: valorEnviado || pre.valorTexto || null, estado: encaminhar ? "ENCAMINHADO" : "EM_CONVERSA",
           ...(ia || pre.ultimaInterpretacaoIa ? { ultimaInterpretacaoIa: { estado: ia?.estado || "NAO_UTILIZADA", modelo: ia?.modelo || null, motivo: ia?.motivo || null, mensagemId: mensagem.id } } : {}),
           ...(handoffEm ? { encaminhadoEm: handoffEm.toISOString() } : {}) },
         campoEsperado: null,

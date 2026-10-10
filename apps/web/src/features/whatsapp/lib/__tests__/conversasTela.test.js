@@ -52,6 +52,10 @@ describe("estadoDaResposta — a janela dita ANTES de digitar", () => {
 });
 
 describe("fraseDoConsumo e ordenação", () => {
+  it('mostra frações de centavo e separa reservas', () => {
+    const frase=fraseDoConsumo({escritorio:{consumoCentavos:0.40995,reservaCentavos:3,teto:300,chamadas:3}});
+    expect(frase).toContain('US$ 0.00409950');expect(frase).toContain('US$ 0.03 reservados');expect(frase).toContain('Estimativa por tokens');
+  });
   it("consumo é ESTIMATIVA e diz o teto; estourado grita", () => {
     expect(fraseDoConsumo({ escritorio: { centavos: 123, teto: 6000, chamadas: 4 } })).toBe("Assistente (IA) neste mês: US$ 1.23 de US$ 60.00 (estimativa, 4 chamadas).");
     expect(fraseDoConsumo({ escritorio: { centavos: 6000, teto: 6000, chamadas: 9, estourado: true } })).toMatch(/TETO ATINGIDO/);
