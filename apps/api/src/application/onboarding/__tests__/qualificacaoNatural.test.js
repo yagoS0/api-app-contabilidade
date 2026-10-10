@@ -71,3 +71,9 @@ test.each(['Rio de Janeiro','Recife','Olinda','Niterói','São Paulo','Salvador'
 test.each(['estrutura','faturamento','urgencia'])('dado %s inventado é recusado', campo => {
   expect(validarInterpretacaoLead(interpretar([[campo,'inventado']]),'Não informei isso')).toBeNull();
 });
+
+test('pergunta de prazo aceita tempo e faturamento exige referência mensal', () => {
+  expect(respostaNaturalPermitida({campo:'urgencia',texto:'Em quanto tempo você quer começar?'},'urgencia')).toBeTruthy();
+  expect(respostaNaturalPermitida({campo:'faturamento',texto:'Qual faturamento você prevê?'},'faturamento')).toBeNull();
+  expect(respostaNaturalPermitida({campo:'faturamento',texto:'Qual faturamento mensal você prevê?'},'faturamento')).toBeTruthy();
+});
