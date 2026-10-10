@@ -1,6 +1,6 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { suporteNoPiloto } from '../assistente/pilotoSuporte.js';
-import { fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
+import { fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
 import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
 import { entradaComercialPublica } from "./entradaComercialWhatsapp.js";
@@ -268,7 +268,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
       ia: { responde: false, motivo: 'PREVIA_SEM_ACAO' } };
   }
   const fluxoPagamento = r?.conversa ? await fluxoPagamentoAtual(prisma, r.conversa, agora) : null;
-  if (!fluxoPagamento && !/^altan\.payment\.(confirm|recalculate)\./.test(String(item.interacao?.id||'')) && WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
+  if (!fluxoPagamento && !ehInteracaoPagamento(item.interacao?.id) && WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
     const coletar = responderColeta || (await import("./RespostaColetaComercialWhatsappService.js")).responderColetaComercial;
     const coleta = await coletar({ registro: r, item, agora });
     if (coleta.tratado) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: coleta.motivo }, coleta };
@@ -285,7 +285,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   }
   const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });
-  const pagamentoDireto = /^altan\.payment\.(confirm|recalculate)\./.test(String(item.interacao?.id || '')) || Boolean(fluxoPagamento);
+  const pagamentoDireto = ehInteracaoPagamento(item.interacao?.id) || Boolean(fluxoPagamento);
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}), ...(pagamentoDireto ? { flag: true, piloto: [r.conversa?.portalClientId] } : {}) });
   const decisao = entradaComercialPublica(r) ? { responde: false, motivo: "CANAL_COMERCIAL_SEM_IA" }
     : decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });

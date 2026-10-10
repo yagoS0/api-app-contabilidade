@@ -64,11 +64,34 @@ try {
   const confirmar = (m, id) => confirmarPagamentoWhatsapp({ id, conversa, mensagem: m, client: db, conferirAcesso, agora: depois });
   const pergunta = await confirmar(clique, novoBotao); assert.match(pergunta.texto, /Em que data/);
   assert.equal((await db.guide.findUnique({ where: { id: guia.id } })).paymentStatus, 'OPEN');
-  const data = await db.mensagemWhatsapp.create({ data: { conversaId: conversa.id, direcao: 'in', tipo: 'text', corpo: '19/10/2026', providerMessageId: `${prefix}:date` } });
-  const confirmacoes = await Promise.all([confirmar(data), confirmar(data)]); assert.deepEqual(confirmacoes[0], confirmacoes[1]);
+  assert.deepEqual(pergunta.botoes.map(b=>b.titulo), ['Hoje','Data de vencimento','Digitar uma data']);
+  const data = await db.mensagemWhatsapp.create({ data: { conversaId: conversa.id, direcao: 'in', tipo: 'interactive', corpo: 'Hoje', providerMessageId: `${prefix}:date` } });
+  const confirmacoes = await Promise.all([confirmar(data,pergunta.botoes[0].id), confirmar(data,pergunta.botoes[0].id)]); assert.deepEqual(confirmacoes[0], confirmacoes[1]);
   const paga = await db.guide.findUnique({ where: { id: guia.id } }); assert.equal(paga.paymentStatus, 'PAID'); assert.equal(paga.paymentStatusSource, 'CLIENTE'); assert.equal(paga.baixada, false); assert.equal(paga.paymentConfirmedAt.toISOString().slice(0, 10), '2026-10-19');
   ok('botão novo solicita a data; resposta concorrente registra declaração do cliente sem baixa contábil');
   const total = enviados.length; assert.equal((await aviso(new Date('2026-10-21T12:00:00Z'))).motivo, 'PAGAMENTO_JA_CONFIRMADO'); assert.equal(enviados.length, total);
   ok('pagamento confirmado cancela novo aviso antes do transporte');
+  const semAnexo = await db.mensagemWhatsapp.create({data:{conversaId:conversa.id,direcao:'in',tipo:'interactive',corpo:'Sem comprovante',providerMessageId:`${prefix}:no-proof`}});
+  assert.match((await confirmar(semAnexo,confirmacoes[0].botoes[0].id)).texto,/Pagamento registrado/);
+  ok('botão Sem comprovante conclui a confirmação persistida');
+  const provisao = await db.accountingEntry.create({data:{portalClientId:empresa.id,sourceGuideId:guia.id,tipo:'PROVISAO',subtipo:'DAS',eventType:'DAS_SIMPLES',competencia:'2026-09',data:new Date('2026-09-30'),historico:'TESTE DEV — provisão da guia',status:'RASCUNHO',statusPagamento:'ABERTO',lines:{create:[{tipo:'D',conta:'499',valor:11,ordem:0},{tipo:'C',conta:'250',valor:11,ordem:1}]}}});
+  const contador = await db.user.create({data:{email:`${prefix}@example.invalid`,passwordHash:'SEM_LOGIN_TESTE_LOCAL',accountType:'FIRM',status:'active'}});
+  await db.companyFirmAccess.create({data:{companyId:empresa.id,userId:contador.id,role:'ACCOUNTANT',status:'ACTIVE'}});
+  const {default:express}=await import('express');const {default:request}=await import('supertest');
+  const {createAccountingEntriesRouter}=await import('../src/routes/firm/accountingEntries.js');
+  const app=express();
+  // Sessão autenticada do teste é injetada; o middleware real confere o vínculo do contador no banco.
+  app.use((req,res,next)=>{if(req.headers['x-test-session']==='contador')req.auth={user:contador};next()});
+  app.use('/companies/:companyId',createAccountingEntriesRouter({log:{error:console.error,warn:()=>{},info:()=>{}}}));
+  const rota=`/companies/${empresa.id}/entries/circular?year=2026`;
+  assert.equal((await request(app).get(rota)).status,401);
+  const circular=await request(app).get(rota).set('x-test-session','contador');assert.equal(circular.status,200,JSON.stringify(circular.body));
+  const linha=circular.body.provisoes.find(e=>e.id===provisao.id);assert.ok(linha,'Provisão deve aparecer na circular');
+  assert.equal(linha.pagamentoLocalizado,true);assert.equal(linha.statusPagamento,'ABERTO');
+  assert.equal(linha.sourceGuide.paymentStatusSource,'CLIENTE');assert.equal(linha.sourceGuide.paymentConfirmedAt.slice(0,10),'2026-10-19');
+  const pendentes=await request(app).get(`/companies/${empresa.id}/pagamentos-pendentes?competencia=2026-10`).set('x-test-session','contador');
+  assert.equal(pendentes.status,200);assert.ok(pendentes.body.itens.some(e=>e.id===provisao.id));
+  assert.equal(await db.accountingEntry.count({where:{portalClientId:empresa.id,tipo:'BAIXA'}}),0);
+  ok('rota HTTP da circular e pagamentos pendentes mostram confirmação e data, preservam acesso e não criam baixa automática');
   console.log(JSON.stringify({ passed: true, checks, banco: banco.nome, transporte: 'SIMULADO', serpro: 'SIMULADO', envioRealWhatsapp: false, mensagensPersistidas: await db.mensagemWhatsapp.count({ where: { conversaId: conversa.id, direcao: 'out' } }) }));
 } finally { await db.$disconnect(); }

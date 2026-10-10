@@ -61,6 +61,13 @@ it('comprovante chega à tela e não torna pagamento localizado uma baixa lança
   expect(await ler()).toMatchObject({ statusPagamento: 'ABERTO', pagamentoLocalizado: true,
     comprovante: { total: 1000 }, pagamentoEfetivo: { fonte: 'COMPROVANTE', total: 1000 } });
 });
+
+it('declaração do WhatsApp chega à circular com data e sem baixa automática', async () => {
+  movimentos = [];
+  Object.assign(guia, { extracted: {}, paymentStatusSource: 'CLIENTE', paymentConfirmedAt: new Date('2026-06-19T00:00:00Z') });
+  expect(await ler()).toMatchObject({ statusPagamento: 'ABERTO', pagamentoLocalizado: true, baixas: [],
+    sourceGuide: { paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE', paymentConfirmedAt: '2026-06-19T00:00:00.000Z' } });
+});
 it('encargos legítimos integram total uma vez e estorno não mantém baixa ativa', async () => {
   movimentos.push(entry('juros', 'JUROS', 30), entry('multa', 'MULTA', 20));
   expect(await ler()).toMatchObject({ valor: 1050, pagamentoEfetivo: { principal: 1000, juros: 30, multa: 20 } });

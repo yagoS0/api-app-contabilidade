@@ -16,3 +16,54 @@ test('cancelamento não marca como paga',async()=>{const f=preparar();await f.ru
 test('revogação antes da gravação impede a declaração',async()=>{const f=preparar();await f.run();f.args.conferirAcesso.mockRejectedValueOnce(Error('revogado'));await expect(f.responder('20/09/2026')).rejects.toThrow('revogado');expect(f.tx.guide.updateMany).not.toHaveBeenCalled();});
 
 test('arquivo sem empresa só é atribuído com origem no mesmo telefone e canal',async()=>{const f=preparar();await f.run();await f.responder('20/09/2026');f.tx.arquivoWhatsapp.findUnique.mockResolvedValue({id:'ar',portalClientId:null,mensagem:{conversa:{telefoneE164:f.args.conversa.telefoneE164,canalId:'principal'}}});await f.responder('',{tipo:'image',midiaProvedorId:'123'});expect(f.tx.arquivoWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({portalClientId:null}),data:expect.objectContaining({portalClientId:'c',comprovanteGuiaId:'g'})}));});
+
+async function apertar(f, botao) {
+ f.args.id=botao.id;
+ f.args.mensagem={...f.args.mensagem,id:f.args.mensagem.id+'-clique',tipo:'interactive',corpo:botao.titulo};
+ return f.run();
+}
+test('oferece três datas e conclui Hoje e Sem comprovante por botões',async()=>{
+ const f=preparar(),r=await f.run();
+ expect(r.botoes.map(b=>b.titulo)).toEqual(['Hoje','Data de vencimento','Digitar uma data']);
+ const proxima=await apertar(f,r.botoes[0]);
+ expect(f.guia.paymentConfirmedAt).toEqual(new Date('2026-09-25'));
+ expect(proxima.botoes.map(b=>b.titulo)).toEqual(['Sem comprovante']);
+ await apertar(f,proxima.botoes[0]);
+ expect(f.rows.get(chaveFluxoPagamento(f.args.conversa)).etapa).toBeNull();
+ expect(f.guia.baixada).toBe(false);
+});
+test('vencimento de sábado usa sexta e ignora o título do botão',async()=>{
+ const f=preparar();f.guia.vencimento=new Date('2026-09-26');
+ f.tx.portalClient={findUnique:jest.fn(async()=>({municipio:null}))};f.tx.feriado={findMany:jest.fn(async()=>[])};
+ const r=await f.run();await apertar(f,{...r.botoes[1],titulo:'01/01/2000'});
+ expect(f.guia.paymentConfirmedAt).toEqual(new Date('2026-09-25'));
+});
+test('vencimento futuro recusa confirmação e conserva botões',async()=>{
+ const f=preparar();f.guia.vencimento=new Date('2026-09-28');
+ f.tx.portalClient={findUnique:jest.fn(async()=>({municipio:null}))};f.tx.feriado={findMany:jest.fn(async()=>[])};
+ const r=await f.run(),resposta=await apertar(f,r.botoes[1]);
+ expect(resposta.botoes).toHaveLength(3);expect(f.tx.guide.updateMany).not.toHaveBeenCalled();
+});
+test('digitar data não confirma até receber a data válida',async()=>{
+ const f=preparar(),r=await f.run();
+ expect((await apertar(f,r.botoes[2])).texto).toMatch(/DD\/MM\/AAAA/);
+ expect(f.tx.guide.updateMany).not.toHaveBeenCalled();
+ expect((await f.responder('20/09/2026')).botoes[0].titulo).toBe('Sem comprovante');
+});
+test('botão de etapa anterior não altera a data já registrada',async()=>{
+ const f=preparar(),r=await f.run();await apertar(f,r.botoes[0]);
+ expect((await apertar(f,r.botoes[1])).texto).toMatch(/etapa anterior/);
+ expect(f.tx.guide.updateMany).toHaveBeenCalledTimes(1);
+});
+test('botão de confirmação reiniciada não pode usar o fluxo atual',async()=>{
+ const f=preparar(),r=await f.run();f.args.id=id;f.args.mensagem.id='reinicio';await f.run();
+ expect((await apertar(f,r.botoes[0])).texto).toMatch(/etapa anterior/);
+ expect(f.tx.guide.updateMany).not.toHaveBeenCalled();
+});
+test('Sem comprovante não pode anteceder a data nem iniciar confirmação sem fluxo',async()=>{
+ const f=preparar(),r=await f.run();const falso={...r.botoes[0],id:r.botoes[0].id.replace('.today.','.no_proof.')};
+ expect((await apertar(f,falso)).texto).toMatch(/etapa anterior/);
+ f.rows.delete(chaveFluxoPagamento(f.args.conversa));
+ expect((await apertar(f,r.botoes[0])).texto).toMatch(/Não foi possível/);
+ expect(f.tx.guide.updateMany).not.toHaveBeenCalled();
+});

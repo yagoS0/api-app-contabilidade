@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CONTA_JUROS, CONTA_MULTA, conferirPrincipalContraSaldo } from "../lib/principalDaBaixa";
+import { diaCivil } from '../../../../lib/dataCivil';
 
 // ⚠ `CONTA_JUROS`/`CONTA_MULTA` vêm de `lib/principalDaBaixa.js`, que também é quem espelha a regra
 // do servidor. Eram literais "501"/"506" soltos aqui — quarta cópia de um código de conta que já
@@ -237,7 +238,9 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
     const m = String(comprovante?.dataArrecadacao || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
   })();
-  const [data, setData] = useState(dataComprovante || (!competenciaPagamento || today.startsWith(competenciaPagamento) ? today : ""));
+  const dataInformada = entry.sourceGuide?.paymentStatus === 'PAID' && entry.sourceGuide?.paymentStatusSource === 'CLIENTE'
+    ? diaCivil(entry.sourceGuide.paymentConfirmedAt) : null;
+  const [data, setData] = useState(dataComprovante || dataInformada || (!competenciaPagamento || today.startsWith(competenciaPagamento) ? today : ""));
   const [historico, setHistorico] = useState(defaultHistorico);
   // Só reaproveita um passivo identificado. A despesa da provisão nunca é a
   // contrapartida do pagamento; caixa/banco deve vir da regra ou do contador.

@@ -12,6 +12,21 @@ function abrir(over = {}) {
   return props;
 }
 
+test('data declarada pelo cliente preenche a baixa sem lançá-la e continua editável', () => {
+  const props = abrir({ onLoadBaixaTemplate: undefined, entry: { ...entry, sourceGuide: { paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE', paymentConfirmedAt: '2026-10-09T00:00:00.000Z' } } });
+  const campo = screen.getByLabelText('Data do pagamento');
+  expect(campo).toHaveValue('2026-10-09');
+  expect(props.onSave).not.toHaveBeenCalled();
+  fireEvent.change(campo, { target: { value: '2026-10-08' } });
+  expect(campo).toHaveValue('2026-10-08');
+});
+
+test('comprovante confiável prevalece sobre declaração e mês diferente continua bloqueado', () => {
+  abrir({ onLoadBaixaTemplate: undefined, competenciaPagamento: '2026-09', entry: { ...entry, comprovante: { confiavel: true, dataArrecadacao: '08/10/2026' }, sourceGuide: { paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE', paymentConfirmedAt: '2026-10-09T00:00:00.000Z' } } });
+  expect(screen.getByLabelText('Data do pagamento')).toHaveValue('2026-10-08');
+  expect(screen.getByRole('button', { name: 'Confirmar Baixa' })).toBeDisabled();
+});
+
 test.each(["IRPJ", "CSLL", "PIS", "COFINS"])("%s sem memória baixa o saldo sem inverter a despesa", async (subtipo) => {
   const props = abrir({ entry: { ...entry, subtipo } });
   await waitFor(() => expect(screen.getAllByDisplayValue("2000.00")).toHaveLength(2));
