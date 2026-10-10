@@ -8,6 +8,7 @@ import { iniciarWorkerAtendimento, pararWorkerAtendimento } from "./workers/aten
 import cors from "cors";
 import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, CONFERENCIA_ADN_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
+import { runGuideWhatsappReminderLoop } from './workers/guideWhatsappReminderWorker.js';
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -225,6 +226,7 @@ if (SERPRO_DCTFWEB_WORKER_ENABLED) {
 // Q40: worker do cron próprio de confirmação de pagamento (PAGTOWEB). Opt-in via env;
 // dentro do loop ainda respeita paymentConfirmationEnabled + o cron configurado nas settings.
 if (SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED) {
+  runGuideWhatsappReminderLoop().catch(err => log.error({ error: err.message }, 'Rotina de avisos WhatsApp interrompida'));
   runSerproPaymentConfirmationWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "serproPaymentConfirmationWorker loop fatal");
   });

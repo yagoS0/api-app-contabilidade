@@ -233,12 +233,21 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const coletaAtiva = Boolean(pendencia || (rascunho && dataMs(rascunho.expiraEm) > agora.getTime() && ["COLETANDO", "PRONTO", "REVISAO"].includes(rascunho.estado?.status)));
   let empresaCitadaId = await empresaDaReferencia({ mensagem, atendimento: atual, empresas: acesso.empresas, client });
   const pagamentoPendente = await fluxoPagamentoAtual(client, registro.conversa, agora);
-  const tokenPagamento = String(interacao?.id || '').startsWith('altan.payment.confirm.') ? interacao.id : pagamentoPendente?.token;
+  const tokenPagamento = /^altan\.payment\.(confirm|recalculate)\./.test(String(interacao?.id || '')) ? interacao.id : pagamentoPendente?.token;
   let empresaPagamentoId = null;
   if (tokenPagamento) {
     const aviso = await client.appSetting.findUnique({ where: { key: tokenPagamento } });
     const v = aviso?.value;
     if (v?.telefone === registro.conversa.telefoneE164 && Date.parse(v.expiraEm) > agora.getTime() && acesso.empresas.some(e => e.portalClientId === v.companyId)) empresaPagamentoId = v.companyId;
+  }
+  // Um botão de guia inválido não vira um pedido genérico de escolher empresa.
+  // Preserve o contexto anterior e responda sem oferecer outras empresas.
+  if (tokenPagamento && !empresaPagamentoId && !acesso.bloqueado && acesso.empresas.length && (!atual.userId || atual.userId === acesso.userId)) {
+    const recibo = await client.resolucaoContextoWhatsapp.create({ data: {
+      mensagemId: mensagem.id, atendimentoId: atual.id, versao: atual.versao, estado: 'RECUSADA',
+      resultado: { texto: 'Esta opção da guia não está mais disponível. Solicite ao escritório uma nova mensagem para confirmar ou recalcular esta guia.', opcoes: [], motivo: 'BOTAO_GUIA_INVALIDO' },
+    } });
+    return { registro, recibo };
   }
   const decisao = pedeEquipe(texto, interacao) ? { acao: "EQUIPE" }
     : acesso.bloqueado || !acesso.empresas.length || (atual.userId && atual.userId !== acesso.userId)
@@ -302,7 +311,8 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
   resolverVinculo = resolverVinculoPorTelefone, conferirJanela = janelaDaConversa, log = console }) {
   // O webhook já preservou a reação. Ela não é pedido e não altera versões, seleção ou coleta.
   if (item?.tipo === "reaction") return { tratadoContexto: true, motivo: "REACAO_SEM_ATENDIMENTO" };
-  const pagamentoDireto = String(item?.interacao?.id || '').startsWith('altan.payment.confirm.') || Boolean(await fluxoPagamentoAtual(client, registro.conversa, agora));
+  if (String(item?.interacao?.id || '').startsWith('altan.dev.preview.')) return { tratadoContexto: true, motivo: 'PREVIA_SEM_ACAO' };
+  const pagamentoDireto = /^altan\.payment\.(confirm|recalculate)\./.test(String(item?.interacao?.id || '')) || Boolean(await fluxoPagamentoAtual(client, registro.conversa, agora));
   if (!flag && !pagamentoDireto) return processar(registro, item, {});
   const conhecido = registro.conversa.atendimentoId ? await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: registro.conversa.atendimentoId } }) : null;
   if (!registro.vinculo?.empresas?.length && !conhecido?.userId) return processar(registro, item, {});
@@ -347,7 +357,7 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
             : whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: r.texto }) });
       }
       await client.mensagemWhatsapp.updateMany({ where: { id: registro.mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
-      return { tratadoContexto: true, motivo: "SELECAO_EMPRESA" };
+      return { tratadoContexto: true, motivo: recibo.estado === 'RECUSADA' ? r.motivo : "SELECAO_EMPRESA" };
     }
     await conferirContextoResponsavel({ conversa: resolvida.registro.conversa, mensagem: resolvida.registro.mensagem, contexto: recibo, client, resolverVinculo });
     if (!pagamentoDireto && !telefonesPiloto.includes(conversa.telefoneE164) && !piloto.includes(recibo.portalClientId)) {

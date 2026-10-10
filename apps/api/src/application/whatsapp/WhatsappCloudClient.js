@@ -47,6 +47,7 @@ import {
   log,
 } from "../../config.js";
 import { normalizarE164 } from "./telefone.js";
+import { parametrosPagamentoGuia } from './GuiaPagamentoWhatsapp.js';
 import {
   CODIGOS_LOCAIS,
   RETENTATIVA,
@@ -620,6 +621,27 @@ export class WhatsappCloudClient {
     return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 
+  async enviarGuiaComPagamento({ telefone, conteudoPdf, nomeArquivo, texto, referencia, linhaDigitavel, valor, descricao,
+    template = null, idioma = this.idioma, variaveis = [], antesDeEnviar = async () => {} }) {
+    const para = this.destino(telefone);
+    const pagamento = parametrosPagamentoGuia({ referencia, linhaDigitavel, valor, descricao });
+    await antesDeEnviar();
+    const mediaId = await this.uploadDocumento({ conteudo: conteudoPdf, nomeArquivo, mimeType: 'application/pdf' });
+    await antesDeEnviar();
+    const corpo = template
+      ? montarPayloadTemplate({ para, template, idioma, componentes: [montarHeaderDocumento({ mediaId, nomeArquivo }),
+        montarCorpoTemplate(variaveis), { type: 'button', sub_type: 'order_details', index: '0',
+          parameters: [{ type: 'action', action: { order_details: pagamento } }] }] })
+      : { messaging_product: 'whatsapp', to: para, type: 'interactive', interactive: {
+        type: 'order_details', header: { type: 'document', document: { id: mediaId, filename: nomeArquivo } },
+        body: { text: textoObrigatorio(texto, 'A mensagem da guia', 1024) },
+        action: { name: 'review_and_pay', parameters: pagamento },
+      } };
+    const json = await this.chamar({ recurso: 'messages', corpo });
+    const contato = WhatsappCloudClient.contatoDaResposta(json);
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), waId: contato.waId, resposta: json };
+  }
+
   async enviarBotoes({ telefone, texto, botoes, rodape = null }) {
     const para = this.destino(telefone);
     const json = await this.chamar({ recurso: "messages", corpo: montarPayloadBotoes({ para, texto, botoes, rodape }) });
@@ -694,7 +716,9 @@ export class WhatsappCloudClient {
     template = this.templateGuia,
     idioma = this.idioma,
     antesDoTemplate = null,
+    pagamento = null,
   }) {
+    if (pagamento) return this.enviarGuiaComPagamento({ telefone, conteudoPdf, nomeArquivo, variaveis, ...pagamento });
     // Recusa o destino ANTES de gastar o upload: telefone torto não melhora depois de subir 200 KB.
     const para = this.destino(telefone);
     // O template também precisa estar preenchido antes de subir o PDF.

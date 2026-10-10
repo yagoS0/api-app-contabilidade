@@ -367,3 +367,13 @@ describe('continuidade entre seleção e serviços', () => {
     expect(decidir({ texto: 'Emitir NFS-e', interacao: menu(), contexto: contexto({ expiraEm: new Date('2026-09-10T14:00:00Z') }) })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'MENU_DESATUALIZADO', pedido: null, descartarInteracao: true });
   });
 });
+
+test.each([null, '2026-09-09T00:00:00Z'])('empresa única dispensa seletor pendente com validade %s', expiraEm => {
+  const r = decidirSelecaoEmpresa({ empresas: [empresas[0]], contexto: { aguardandoSelecao: true, expiraEm, pedidoPendente: 'pedido anterior' }, texto: 'mande a guia', agora });
+  expect(r).toMatchObject({ acao: 'SELECIONAR', portalClientId: empresas[0].portalClientId, pedido: 'mande a guia', descartarInteracao: true });
+});
+
+test('empresa única seleciona sem reexecutar confirmação expirada', () => {
+  const r = decidirSelecaoEmpresa({ empresas: [empresas[0]], contexto: { portalClientId: empresas[0].portalClientId, expiraEm: '2026-09-09T00:00:00Z' }, texto: 'CONFIRMAR A7XY', agora });
+  expect(r).toMatchObject({ acao: 'SELECIONAR', portalClientId: empresas[0].portalClientId, pedido: null, menuDesatualizado: true, descartarInteracao: true });
+});

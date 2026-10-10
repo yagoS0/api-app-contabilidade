@@ -12,6 +12,7 @@
 //   5. ⚠ tocar a guia por WhatsApp **materializa o legado do e-mail** antes de a primeira linha de
 //      `envios_guia` desligar a tolerância do `guideCompliance`.
 
+jest.mock('../PrepararGuiaPagamentoWhatsapp.js', () => ({ TEMPLATE_GUIA_PAGAMENTO: 'guia_documento_pagamento_v1', prepararGuiaPagamentoWhatsapp: jest.fn(async ({ guide, referencia }) => ({ valor: guide.valor, referencia, descricao: guide.tipo, template: 'guia_documento_pagamento_v1', idioma: 'pt_BR', linhaDigitavel: '8' + '0'.repeat(47) })) }));
 jest.mock("../../../config.js", () => ({
   ...jest.requireActual("../../../config.js"),
   INTEGRACAO_WHATSAPP: true,
@@ -182,7 +183,7 @@ describe("resultados parciais e persistência depois do aceite", () => {
     cenarioLimpo();
     const cliente = clienteFalso();
     await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: { nomeMeta: "modelo", idioma: "es" }, cliente, carregarPdf: pdf });
-    expect(cliente.enviarGuia).toHaveBeenCalledWith(expect.objectContaining({ template: "modelo", idioma: "es" }));
+    expect(cliente.enviarGuia).toHaveBeenCalledWith(expect.objectContaining({ template: 'guia_documento_pagamento_v1', idioma: 'pt_BR' }));
   });
 });
 
@@ -299,7 +300,7 @@ describe("o envio de uma guia", () => {
     expect(r).toMatchObject({ ok: true, enviada: true, providerMessageId: "wamid.ABC" });
     expect(cliente.enviarGuia).toHaveBeenCalledWith(expect.objectContaining({
       telefone: "5521999998888",
-      template: "guia_disponivel",
+      template: 'guia_documento_pagamento_v1',
       // Primeiro nome · tipo · competência por extenso · valor · vencimento — a ORDEM do esqueleto.
       variaveis: ["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "20/08/2026"],
     }));
@@ -660,7 +661,7 @@ describe("o registro do que saiu", () => {
       evento: "whatsapp.envio.aceito",
       guideId: "g1",
       wamid: "wamid.OK",
-      template: "guia_disponivel",
+      template: 'guia_documento_pagamento_v1',
       canal: "WHATSAPP",
       competencia: "2026-07",
     });

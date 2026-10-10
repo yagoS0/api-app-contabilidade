@@ -3,8 +3,8 @@ beforeEach(() => jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:0
 afterEach(() => jest.useRealTimers());
 function setup() {
   const records = new Map();
-  const guide = { id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-20" };
-  const db = { guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
+  const guide = { id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23" };
+  const db = { feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error("duplicado"), { code: "P2002" }); records.set(data.key, data); return data; }),
       findUnique: jest.fn(async ({ where }) => records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
   const transporte = { canais: jest.fn(async () => ({ escolha: "EMAIL" })), destinatarios: jest.fn(async () => ({ emails: ["fixture@example.invalid"], telefones: [{ id: "contato", telefoneE164: "5511000000000" }] })),
@@ -57,12 +57,13 @@ test("falha de banco não é tratada como aviso ignorado", async () => {
   const f = setup(); f.db.guide.findUnique.mockRejectedValue(Error("banco indisponível"));
   await expect(f.run()).rejects.toThrow("banco indisponível"); expect(f.transporte.whatsapp).not.toHaveBeenCalled();
 });
-test("guia não liberada fica pendente; guia DAS oferece botão de confirmação e link de recálculo", async () => {
+test("guia não liberada fica pendente; guia DAS oferece dois botões sem URL", async () => {
   const f = setup(); f.guide.liberadaCliente = false;
   expect(await f.run()).toMatchObject({ status: "PENDENTE", motivo: "GUIA_NAO_LIBERADA" });
   Object.assign(f.guide, { liberadaCliente: true, source: "SERPRO", tipo: "SIMPLES" }); await f.run();
   const { acoes } = f.transporte.whatsapp.mock.calls[0][0]; expect(acoes).toHaveLength(1);
-  expect(acoes.find(a => a.acao === "recalcular").url).toBe("https://portal.example.invalid/?empresa=c&guia=g&competencia=2026-09&acao=recalcular#/guias");
+  expect(acoes[0]).toMatchObject({ id: expect.stringMatching(/^altan\.payment\.recalculate\./), label: 'Recalcular guia' });
+  expect(acoes[0].url).toBeUndefined();
 });
 test("vínculo posterior da mesma guia não duplica aviso", async () => {
   const f = setup(); await f.run();
@@ -72,3 +73,21 @@ test("vínculo posterior da mesma guia não duplica aviso", async () => {
 });
 
 test('preferência EMAIL não envia e-mail e confirmação não contém link de portal',async()=>{const f=setup();await f.run();expect(f.transporte.email).not.toHaveBeenCalled();const envio=f.transporte.whatsapp.mock.calls[0][0];expect(envio.botaoId).toMatch(/^altan\.payment\.confirm\./);expect(envio.acoes.some(a=>a.acao==='confirmar')).toBe(false);});
+
+test('um aviso em cada fase, sem duplicar na mesma fase e sem recálculo antecipado', async () => {
+  const f = setup(); f.guide.vencimento = '2026-09-25'; f.guide.source = 'SERPRO'; f.guide.tipo = 'SIMPLES';
+  await f.run(); await f.run();
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+  expect(f.transporte.whatsapp.mock.calls[0][0]).toMatchObject({ fase: 'ANTES', acoes: [] });
+  jest.setSystemTime(new Date('2026-09-28T15:00:00Z'));
+  await f.run(); await f.run();
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(2);
+  expect(f.transporte.whatsapp.mock.calls[1][0]).toMatchObject({ fase: 'DEPOIS', acoes: [{ acao: 'recalcular' }] });
+});
+
+test('nenhum aviso no vencimento ou fora dos dois dias definidos', async () => {
+  const f = setup(); f.guide.vencimento = '2026-09-24';
+  expect(await f.run()).toMatchObject({ status: 'IGNORADO', motivo: 'FORA_DO_DIA_DO_AVISO' });
+  f.guide.vencimento = '2026-08-01'; await f.run();
+  expect(f.transporte.whatsapp).not.toHaveBeenCalled();
+});

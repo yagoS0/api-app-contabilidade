@@ -164,7 +164,15 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   const guardar = (v) => codigoDeAto(v) ? null : limpar(v) || null;
   const pendente = guardar(contexto.pedidoPendente);
   const pedidoAtual = guardar(entrada);
-  const pedir = (motivo, pedido = pedidoAtual || pendente) => ({ acao: 'PERGUNTAR', motivo, pedido });
+  const pedir = (motivo, pedido = pedidoAtual || pendente) => {
+    // Empresa única não precisa de seletor, nem depois de expirar um menu.
+    // Atos e menus antigos são descartados: selecionar a empresa não os autoriza.
+    if (empresas.length === 1 && ['MENU_DESATUALIZADO', 'SELECAO_EXPIRADA', 'CONFIRMACAO_EXIGE_CONTEXTO', 'CONTEXTO_EXPIRADO', 'TROCA_SOLICITADA', 'OPCAO_INVALIDA'].includes(motivo)) {
+      return { acao: 'SELECIONAR', portalClientId: empresas[0].portalClientId, motivo: 'EMPRESA_UNICA',
+        pedido: null, textoOperacao: 'menu', menuDesatualizado: true, descartarInteracao: true };
+    }
+    return { acao: 'PERGUNTAR', motivo, pedido };
+  };
   if (!empresas.length) return { acao: 'NAO_TRATADO', motivo: 'SEM_EMPRESAS_AUTORIZADAS' };
   const atual = empresas.find((e) => e.portalClientId === contexto.portalClientId);
   const validade = new Date(contexto.expiraEm ?? NaN).getTime();
@@ -228,7 +236,9 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
 
   // Na criação do atendimento ainda não houve pergunta nem prazo de seleção.
   // Uma única empresa não precisa de um seletor; atos por código já foram barrados acima.
-  if (empresas.length === 1 && !contexto.portalClientId && !Number.isFinite(validade)) return selecionar(empresas[0], 'EMPRESA_UNICA', pedidoAtual || pendente);
+  if (empresas.length === 1) return vigente && !contexto.aguardandoSelecao ? continuar()
+    : selecionar(empresas[0], 'EMPRESA_UNICA', pedidoAtual || pendente,
+      contexto.aguardandoSelecao ? { descartarInteracao: true } : {});
 
   if (contexto.aguardandoSelecao) {
     // Clique vencido não é reaproveitado; uma nova escolha textual expressa a

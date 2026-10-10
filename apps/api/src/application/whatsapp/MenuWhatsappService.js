@@ -1,4 +1,5 @@
 import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
+import { recalcularGuiaWhatsapp } from '../guides/RecalcularGuiaWhatsappService.js';
 // Menus determinísticos do WhatsApp. Cliques nunca passam pelo modelo: o id estável decide a ação,
 // e toda leitura refaz empresa, contato, pessoa, papel e permissão antes de responder.
 
@@ -359,6 +360,13 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     conversa, tipo, corpo, autor: "SISTEMA", turnoIaId: idTurno, client, contextoConsulta,
     antesDeEnviar: () => antesDeEnviar(ferramenta, assinatura), enviar: chamada,
   });
+
+  if (!comercialPublico && idRecebido.startsWith('altan.payment.recalculate.')) {
+    const resultado = await recalcularGuiaWhatsapp({ id: idRecebido, conversa, mensagem, client, cloud: whatsapp, enviar,
+      agora, conferirAcesso: () => antesDeEnviar(null, assinatura) });
+    await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
+    return resultado;
+  }
 
   // Declaração vinculada ao destinatário da guia: não concede acesso geral ao portal.
   if (!comercialPublico && (idRecebido.startsWith('altan.payment.confirm.') || await fluxoPagamentoAtual(client, conversa, agora))) {
