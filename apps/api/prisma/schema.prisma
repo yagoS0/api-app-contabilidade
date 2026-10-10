@@ -289,6 +289,9 @@ model Partner {
 /// `Company.regimeTributario` (o regime atual). Não criar períodos retroativos automaticamente.
 /// O histórico não define sozinho sublimite, alíquotas ou enquadramento municipal.
 model RegimeHistorico {
+  /// Opção declarada para este período: NO_DAS | REGULAR. Nulo = não informado.
+  apuracaoIbsCbs String?
+  comprovanteOpcaoIbsCbs String?
   id             String    @id @default(uuid())
   companyId      String
   /// SIMPLES | LUCRO_PRESUMIDO | LUCRO_REAL | MEI

@@ -3,6 +3,7 @@ import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
 import { usePreviaFiscal } from '../hooks/usePreviaFiscal';
 import { PreviaFiscal, linhasDaPreviaFiscal } from './PreviaFiscal';
 import { MunicipioDoPerfil } from '../../companies/detail/components/MunicipioDoPerfil';
+import { buscarCatalogo } from '../../../lib/nfse/buscaCatalogo';
 // EMISSÃO DE NFS-e — o assistente.
 //
 // ⚠ NÃO EXISTE CAMINHO QUE PULE O PREVIEW.
@@ -302,6 +303,7 @@ export function EmitirNfseWizard({
   const [resultado, setResultado] = useState(null);
   const [perfisDaEmpresa, setPerfisDaEmpresa] = useState([]);
   const [perfilId, setPerfilId] = useState("");
+  const [buscaPerfil, setBuscaPerfil] = useState(null);
   const [retencoesComplementares, setRetencoesComplementares] = useState({ vRetIRRF: "", vRetCP: "" });
   const [obra, setObra] = useState({ tipo: "cObra", codigo: "", inscImobFisc: "" });
   const [destinatario, setDestinatario] = useState({ cnpjCpf: "", nome: "" });
@@ -309,7 +311,7 @@ export function EmitirNfseWizard({
   useEffect(() => {
     if (!apiPerfis) return undefined;
     let cancelado = false;
-    setPerfisDaEmpresa([]); setPerfilId("");
+    setPerfisDaEmpresa([]); setPerfilId(""); setBuscaPerfil(null);
     setProblemaPerfil("Carregando os perfis de emissão…");
     apiPerfis.getPerfisEmissao(companyId).then((r) => {
       if (cancelado) return;
@@ -602,7 +604,7 @@ export function EmitirNfseWizard({
       buscaLocalPrestacao.trim() && !servico.cLocPrestacao && { texto: 'Selecione o município da prestação ou limpe a busca.', campo: CAMPO.COMPETENCIA, grave: true },
       previaFiscal.bloqueada && { texto: previaFiscal.carregando ? 'Aguarde a prévia fiscal por competência.' : 'Resolva as pendências da prévia fiscal por competência.', campo: CAMPO.COMPETENCIA, grave: true },
       ...conferenciaOperacao.erros.map((texto) => ({ texto, campo: "nfse-operacao", grave: true })),
-      perfisDaEmpresa.length > 1 && !perfilEscolhido && { texto: "Escolha o perfil de serviço desta nota.", campo: null, grave: false },
+      (buscaPerfil !== null || (perfisDaEmpresa.length > 1 && !perfilEscolhido)) && { texto: "Escolha o perfil de serviço desta nota.", campo: 'nfse-perfil', grave: false },
       municipio.bloqueia && { texto: municipio.motivoCurto, campo: null, grave: true, cadastro: true },
       // Os campos de `buildMissingFields`, na mesma posição e pelo mesmo motivo do município: são
       // impedimentos da EMPRESA, que não se resolvem nesta tela.
@@ -643,7 +645,7 @@ export function EmitirNfseWizard({
     ].filter(Boolean);
   }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
     servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
-    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, retencoesComplementares, obra, destinatario, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao]);
+    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, buscaPerfil, retencoesComplementares, obra, destinatario, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao]);
 
   const prontoParaEmitir = problemasDaNota.length === 0;
   const camposDoTomador = new Set([CAMPO.DOC, CAMPO.NOME, CAMPO.EMAIL, ...CAMPOS_DO_ENDERECO]);
@@ -844,11 +846,12 @@ export function EmitirNfseWizard({
       `}</style>
 
         {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
-          <label htmlFor="nfse-perfil">Perfil de serviço desta nota</label>
-          <select id="nfse-perfil" disabled={passo === PASSO_CONFERIR || enviando} value={perfilEscolhido?.id || ""} onChange={(e) => setPerfilId(e.target.value)}>
-            <option value="">Escolha o perfil configurado pelo contador</option>
-            {perfisDaEmpresa.map((p) => <option key={p.id} value={p.id}>{p.nome} — {p.codigoServicoNacional}</option>)}
-          </select>
+          <CampoComBusca id="nfse-perfil" rotulo="Perfil de serviço desta nota" disabled={passo === PASSO_CONFERIR || enviando}
+            valor={buscaPerfil ?? (perfilEscolhido ? `${perfilEscolhido.codigoServicoNacional} — ${perfilEscolhido.nome}` : '')}
+            onChangeTexto={setBuscaPerfil} placeholder="Buscar serviço ou nome do perfil"
+            buscar={termo => buscarCatalogo(perfisDaEmpresa.map(p => ({ ...p, codigo: p.codigoServicoNacional, descricao: p.nome })), buscaPerfil === null ? '' : termo)}
+            chaveDoItem={p => p.id} rotuloDoItem={p => `${p.codigo} — ${p.nome}`} detalheDoItem={() => ''}
+            onEscolher={p => { setPerfilId(p.id); setBuscaPerfil(null); }} />
         </div>}
 
         {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não

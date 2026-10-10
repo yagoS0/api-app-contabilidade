@@ -283,6 +283,8 @@ function buildCompanyPayload(input) {
             regimeHistorico: input.regimeHistorico
               .map((r) => ({
                 regime: String(r?.regime || "").trim(),
+                apuracaoIbsCbs: r?.apuracaoIbsCbs || null,
+                comprovanteOpcaoIbsCbs: String(r?.comprovanteOpcaoIbsCbs || "").trim() || null,
                 vigenciaInicio: String(r?.vigenciaInicio || "").trim(),
                 vigenciaFim: String(r?.vigenciaFim || "").trim() || null,
                 // O form guarda "ISS/PIS/COFINS" (como a ficha escreve); a API quer array.

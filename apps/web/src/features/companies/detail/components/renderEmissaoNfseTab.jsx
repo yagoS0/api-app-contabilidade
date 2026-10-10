@@ -1,3 +1,4 @@
+import { GuiaEmissaoLink } from './GuiaEmissaoLink';
 // A ABA PRÓPRIA DA CONFIGURAÇÃO DE EMISSÃO DE NFS-e — decisão do dono, 19/08/2026:
 //
 // > *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela em uma
@@ -161,6 +162,7 @@ export function EmissaoNfseTab({
 
   return (
     <section className="company-form-page__panel nfse-settings">
+      <GuiaEmissaoLink />
       <div className="company-form-page__intro">
         <h1 className="company-form-page__title">Emissão de NFS-e</h1>
         <p className="company-form-page__description">
@@ -176,7 +178,7 @@ export function EmissaoNfseTab({
         salvando={salvandoPerfil}
         onSalvar={salvarPerfil}
       />
-      <ParametrosMunicipais key={`municipais-${portalClientId}`} companyId={portalClientId} api={api} podeConsultar={podeEditar} />
+      <details className="nfse-section nfse-municipal-disclosure"><summary>Consultar parâmetros municipais de ISS</summary><ParametrosMunicipais key={`municipais-${portalClientId}`} companyId={portalClientId} api={api} podeConsultar={podeEditar} /></details>
 
       <details className="nfse-section nfse-diagnostics"><summary>Conferir os dados da próxima nota</summary>
         <PainelProximaDps dados={empresaDosPerfis === portalClientId ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />

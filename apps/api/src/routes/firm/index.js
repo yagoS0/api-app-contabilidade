@@ -679,7 +679,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     },
     regimeHistorico: {
       select: {
-        id: true, regime: true, vigenciaInicio: true, vigenciaFim: true,
+        id: true, regime: true, vigenciaInicio: true, vigenciaFim: true, apuracaoIbsCbs: true, comprovanteOpcaoIbsCbs: true,
         impostos: true, desoneracao: true, observacao: true,
       },
       orderBy: { vigenciaInicio: "asc" },

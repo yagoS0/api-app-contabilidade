@@ -1,5 +1,14 @@
 import { sugestoesDoPerfil, validarCatalogoPerfil } from "../catalogoPerfil.js";
 
+it('oferece tabela NBS completa terminal e CST oficial para busca sem ampliar serviços habilitados', () => {
+  const r = sugestoesDoPerfil({ codigoServicoNacional: '170601' });
+  expect(r.nbs.length).toBeGreaterThan(900);
+  expect(r.nbs.every(n => n.codigo.replace(/\D/g, '').length === 9)).toBe(true);
+  expect(r.nbs.some(n => /gestão de/i.test(n.descricao))).toBe(true);
+  expect(r.tabelasRtc.csts).toContainEqual(expect.objectContaining({ codigo: '000', descricao: 'Tributação integral' }));
+  expect(r.porServico.map(s => s.codigo)).toEqual(['170601']);
+});
+
 it("preserva sugestões e permite combinações oficiais fora da correlação orientativa", () => {
   const sugestoes = sugestoesDoPerfil({ codigoServicoNacional: "100501" });
   const combos = sugestoes.porServico[0].combinacoes;

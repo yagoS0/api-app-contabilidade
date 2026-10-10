@@ -19,6 +19,8 @@ export function regimeDaCompetencia({ historico, competencia }) {
   if (encontrados.length > 1) return falha('NFSE_REGIME_HISTORICO_AMBIGUO', 'Há mais de um período de regime na competência. Confira as vigências ou informe o dia da prestação.');
   const r = encontrados[0];
   if (!r || r.inicio > inicio || r.fim < fim) return falha('NFSE_REGIME_SEM_VIGENCIA', 'Não há regime confirmado para toda a competência informada. O regime atual não comprova o regime desse período.');
-  return { ok: true, regime: r.regime, fonte: 'REGIME_HISTORICO', periodoId: r.id || null,
+  const apuracaoIbsCbs = r.apuracaoIbsCbs || null;
+  if (apuracaoIbsCbs && (!['NO_DAS', 'REGULAR'].includes(apuracaoIbsCbs) || r.regime !== 'SIMPLES' || r.inicio < '2027-01-01' || (apuracaoIbsCbs === 'REGULAR' && !String(r.comprovanteOpcaoIbsCbs || '').trim()))) return falha('NFSE_IBSCBS_OPCAO_INVALIDA', 'Confira a opção de IBS/CBS, a vigência e a referência do comprovante no histórico.');
+  return { ok: true, apuracaoIbsCbs, regime: r.regime, fonte: 'REGIME_HISTORICO', periodoId: r.id || null,
     vigenciaInicio: r.inicio, vigenciaFim: r.vigenciaFim == null ? null : r.fim, competenciaInicio: inicio, competenciaFim: fim };
 }

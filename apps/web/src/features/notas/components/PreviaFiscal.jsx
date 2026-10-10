@@ -8,6 +8,7 @@ export function linhasDaPreviaFiscal(dados) {
     `Ambiente: ${dados.demonstracao ? 'demonstração local' : dados.ambiente === 'homolog' ? 'homologação' : dados.ambiente === 'producao' ? 'produção' : 'não informado'}`,
     `Competência: ${dados.competencia}`,
     ...(r ? [`Regime: ${r.regime} — histórico de ${r.vigenciaInicio} até ${r.vigenciaFim || 'sem término informado'}`] : []),
+    ...(dados.opcaoIbsCbs && r?.regime === 'SIMPLES' ? [`Apuração de IBS/CBS: ${dados.opcaoIbsCbs.hibrido ? 'Simples híbrido — regime regular, fora do DAS' : dados.opcaoIbsCbs.apuracao === 'NO_DAS' ? 'Simples — dentro do DAS' : 'não informada para o Simples'} · vigência: ${dados.opcaoIbsCbs.vigenciaInicio} até ${dados.opcaoIbsCbs.vigenciaFim || 'sem término informado'}`] : []),
     `Serviço: ${dados.codigoServico || 'pendente'} · Perfil: ${dados.perfil?.nome || 'cadastro da empresa'}`,
     `NBS: ${dados.perfil?.codigoNbs || 'não configurado'}`,
     ...(c?.local ? [`Local da prestação: ${c.local.codigo} · origem: ${c.local.fonte}`] : []),

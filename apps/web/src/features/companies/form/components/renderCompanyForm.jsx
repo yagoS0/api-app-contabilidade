@@ -218,10 +218,10 @@ function SociosEditor({ socios, onChange }) {
 }
 
 // Histórico de regime. INFORMATIVO: a apuração continua usando o regime atual da empresa.
-function RegimeHistoricoEditor({ historico, onChange }) {
+export function RegimeHistoricoEditor({ historico, onChange }) {
   const linhas = Array.isArray(historico) ? historico : [];
   function setLinha(i, campo, valor) {
-    onChange(linhas.map((r, idx) => (idx === i ? { ...r, [campo]: valor } : r)));
+    onChange(linhas.map((r, idx) => (idx === i ? { ...r, [campo]: valor, ...(campo === "regime" && valor !== "SIMPLES" ? { apuracaoIbsCbs: "", comprovanteOpcaoIbsCbs: "" } : {}), ...(campo === "apuracaoIbsCbs" && !valor ? { comprovanteOpcaoIbsCbs: "" } : {}) } : r)));
   }
   function add() {
     onChange([...linhas, { regime: "SIMPLES", vigenciaInicio: "", vigenciaFim: "", impostos: "", desoneracao: false }]);
@@ -235,7 +235,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
       <div style={{ marginBottom: 8 }}>
         <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>Histórico de regime</strong>
         <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 8 }}>
-          A emissão de NFS-e usa o regime vigente na competência. Cadastre períodos sem sobreposição. A apuração continua usando o regime atual selecionado acima.
+          A emissão de NFS-e usa o regime vigente na competência. Cadastre períodos sem sobreposição. A apuração continua usando o regime atual selecionado acima. Para mudar a opção de IBS/CBS, encerre o período anterior e crie outro com a vigência comprovada; o cadastro não formaliza a opção na Receita.
         </span>
       </div>
       {linhas.length > 0 && (
@@ -246,6 +246,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
                 <th style={{ ...MINI_TH, width: 150 }}>Regime</th>
                 <th style={{ ...MINI_TH, width: 120 }}>De</th>
                 <th style={{ ...MINI_TH, width: 120 }}>Até</th>
+                <th style={{ ...MINI_TH, minWidth: 230 }}>IBS/CBS no Simples</th>
                 <th style={MINI_TH}>Impostos</th>
                 <th style={{ ...MINI_TH, width: 70 }}>Desone</th>
                 <th style={{ width: 26 }} />
@@ -264,6 +265,14 @@ function RegimeHistoricoEditor({ historico, onChange }) {
                   </td>
                   <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaInicio} onChange={(e) => setLinha(i, "vigenciaInicio", e.target.value)} /></td>
                   <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaFim} onChange={(e) => setLinha(i, "vigenciaFim", e.target.value)} placeholder="vigente" /></td>
+                  <td style={{ padding: 3 }}>
+                    {r.regime === 'SIMPLES' ? <>
+                      <select aria-label={`Apuração de IBS/CBS do período ${i + 1}`} style={MINI_INPUT} value={r.apuracaoIbsCbs || ''} onChange={e => setLinha(i, 'apuracaoIbsCbs', e.target.value)}>
+                        <option value="">Não informado</option><option value="NO_DAS">Dentro do DAS</option><option value="REGULAR">Regime regular — Simples híbrido</option>
+                      </select>
+                      {r.apuracaoIbsCbs && <input aria-label={`Referência do comprovante de IBS/CBS do período ${i + 1}`} style={{ ...MINI_INPUT, marginTop: 6 }} maxLength={300} required={r.apuracaoIbsCbs === 'REGULAR'} value={r.comprovanteOpcaoIbsCbs || ''} onChange={e => setLinha(i, 'comprovanteOpcaoIbsCbs', e.target.value)} placeholder="Protocolo ou referência do comprovante" />}
+                    </> : <span>Não se aplica</span>}
+                  </td>
                   <td style={{ padding: 3 }}><input style={MINI_INPUT} value={r.impostos} onChange={(e) => setLinha(i, "impostos", e.target.value)} placeholder="ISS/PIS/COFINS/CSLL/IRPJ" /></td>
                   <td style={{ padding: 3, textAlign: "center" }}>
                     <input type="checkbox" checked={Boolean(r.desoneracao)} onChange={(e) => setLinha(i, "desoneracao", e.target.checked)} />

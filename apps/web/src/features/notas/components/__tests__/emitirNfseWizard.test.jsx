@@ -232,7 +232,9 @@ describe("o campo que faltava — pTotTribSN", () => {
     fireEvent.change(screen.getByLabelText('Informar período por', { exact: false }), { target: { value: 'month' } });
     ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "p2" } });
+    fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "consultoria" } });
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('option', { name: /170101 — Consultoria/ }));
     await waitFor(() => expect(screen.getByRole('button', { name: /Continuar/ })).toBeEnabled());
     expect(screen.getByText('Regime no histórico da competência')).toBeInTheDocument();
     continuar();

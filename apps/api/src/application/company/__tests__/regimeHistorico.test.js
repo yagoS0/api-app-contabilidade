@@ -18,3 +18,20 @@ test('fim inclusivo impede sobreposição e períodos abertos concorrentes', () 
   expect(normalizeRegimeHistorico([{ ...periodo, vigenciaFim: null }, { ...periodo, vigenciaInicio: '2026-02-01', vigenciaFim: null }]).ok).toBe(false);
   expect(normalizeRegimeHistorico([periodo, { ...periodo, vigenciaInicio: '2026-02-01', vigenciaFim: null }]).ok).toBe(true);
 });
+
+const hibrido = { regime: 'SIMPLES', vigenciaInicio: '2027-01-01', vigenciaFim: null, apuracaoIbsCbs: 'REGULAR', comprovanteOpcaoIbsCbs: 'Protocolo teste' };
+test('normaliza opção e comprovante; legado continua sem opção presumida', () => {
+  expect(normalizeRegimeHistorico([hibrido]).data[0]).toMatchObject({ apuracaoIbsCbs: 'REGULAR', comprovanteOpcaoIbsCbs: 'Protocolo teste' });
+  expect(normalizeRegimeHistorico([periodo]).data[0].apuracaoIbsCbs).toBeNull();
+});
+test.each([
+  { regime: 'MEI' }, { regime: 'LUCRO_PRESUMIDO' }, { apuracaoIbsCbs: 'INVALIDO' },
+  { vigenciaInicio: '2026-12-31' }, { comprovanteOpcaoIbsCbs: '' },
+])('rejeita opção incompatível ou sem prova: %j', alteracao => {
+  expect(normalizeRegimeHistorico([{ ...hibrido, ...alteracao }]).ok).toBe(false);
+});
+test('mudança de opção exige períodos distintos sem sobreposição', () => {
+  const primeiro = { ...hibrido, apuracaoIbsCbs: 'NO_DAS', vigenciaFim: '2027-06-30' };
+  expect(normalizeRegimeHistorico([primeiro, { ...hibrido, vigenciaInicio: '2027-07-01' }]).ok).toBe(true);
+  expect(normalizeRegimeHistorico([primeiro, { ...hibrido, vigenciaInicio: '2027-06-30' }]).ok).toBe(false);
+});

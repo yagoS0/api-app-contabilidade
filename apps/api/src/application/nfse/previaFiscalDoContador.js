@@ -27,6 +27,9 @@ export async function previaFiscalDoContador({ portalClientId, competencia, perf
   const historico = regimeDaCompetencia({ historico: company.regimeHistorico, competencia });
   if (!historico.ok) return recusar(historico.codigo, historico.message, historico.correcao);
   previa.regimeVigente = historico;
+  previa.opcaoIbsCbs = { apuracao: historico.apuracaoIbsCbs, fonte: historico.fonte,
+    vigenciaInicio: historico.vigenciaInicio, vigenciaFim: historico.vigenciaFim,
+    hibrido: historico.apuracaoIbsCbs === 'REGULAR' && historico.regime === 'SIMPLES' };
   const regimeDps = resolverOpSimpNac(historico.regime);
   if (regimeDps.resolucao !== RESOLUCAO.RESOLVIDO) return recusar('NFSE_REGIME_INDEFINIDO', 'O regime do período não tem correspondência confirmada para emissão de NFS-e.');
   let perfil = null;
@@ -51,7 +54,9 @@ export async function previaFiscalDoContador({ portalClientId, competencia, perf
   previa.contextoFiscal = contexto;
   previa.configuracaoFiscal = snapshotFiscal({ company, perfil, regime: historico.regime, codigoServico: escolha.codigo,
     ibscbsLigado, contextoFiscal: contexto, regimeVigente: historico });
-  if (!contexto.ok) return recusar(contexto.codigo, contexto.message, contexto.correcao);
+  if (!contexto.ok) {
+    return recusar(contexto.codigo, contexto.message, contexto.correcao);
+  }
   const aliquota = perfil?.pAliq ?? servico.aliquota;
   previa.iss = { retido: servico.issRetido === true, fonteAliquota: perfil?.pAliq != null ? 'PERFIL' : 'OPERACAO',
     ...pAliqDaDps({ opSimpNac: regimeDps.opSimpNac, regApTribSN: perfil?.regApTribSN || '1',
