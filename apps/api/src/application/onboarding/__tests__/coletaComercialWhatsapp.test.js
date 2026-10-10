@@ -43,6 +43,7 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
     atendimentoLead: { findFirst: jest.fn(async () => caso), findUnique: jest.fn(async () => caso), update: jest.fn(async ({ data }) => { Object.assign(caso, data, { versao: caso.versao + (data.versao?.increment || 0) }); return caso; }), updateMany: jest.fn(async () => ({ count: 1 })) },
     onboarding: { findUnique: jest.fn(async () => ({ ...ficha })), updateMany: jest.fn(async ({ where, data }) => { if (where.versao !== ficha.versao) return { count: 0 }; Object.assign(ficha, data, { versao: ficha.versao + (data.versao?.increment || 0) }); return { count: 1 }; }) },
     onboardingEvento: { create: jest.fn(async () => ({})) },
+    onboardingAnalise: { create: jest.fn(async () => ({})) },
     mensagemWhatsapp: { findFirst: jest.fn(async ({ where }) => mensagens.get(where.id)) },
     coletaComercialWhatsapp: { findUnique: jest.fn(async ({ where }) => recibos.get(where.mensagemId)), create: jest.fn(async ({ data }) => { recibos.set(data.mensagemId, structuredClone(data)); return structuredClone(data); }), update: jest.fn(async ({ where, data }) => { const r = { ...recibos.get(where.mensagemId), ...data }; recibos.set(where.mensagemId, r); return r; }) },
   };
@@ -232,4 +233,55 @@ test('pedido de ativação em ficha de abertura preserva ficha e não anuncia ab
   expect(r.resultado.texto).not.toMatch(/abertura|abrir|primeiros passos/i);
   expect(t.caso.triagem.proximaSolicitacao).toMatchObject({intencao:'INATIVA',relato:'Quero ativar minha empresa'});
   expect(t.ficha.origem).toBe('ABERTURA');
+});
+
+const cadastroTeste = () => ({ ok: true, fonte: 'BRASILAPI', bruto: { cnpj: '11222333000181', razao_social: 'Empresa Teste', municipio: 'Niterói', uf: 'RJ', cnae_fiscal_descricao: 'Serviços médicos', descricao_situacao_cadastral: 'ATIVA' } });
+const iaCompleta = () => iaTeste({ ...interpretacaoTeste([]), resposta: null });
+
+test('ativação pede CNPJ, consulta uma vez e aproveita o cadastro na qualificação', async () => {
+  const t = banco(); t.ficha.origem = 'INATIVA'; const consultaPublica = jest.fn(async () => cadastroTeste());
+  const inicio = await t.chamar('Quero ativar minha empresa', { ia: iaCompleta(), consultaPublica });
+  expect(inicio.resultado.texto).toContain('CNPJ'); expect(consultaPublica).not.toHaveBeenCalled();
+  const resposta = await t.chamar('11.222.333/0001-81', { id: 'cnpj', ia: iaCompleta(), consultaPublica });
+  expect(consultaPublica).toHaveBeenCalledWith('11222333000181');
+  expect(resposta.resultado.texto).toContain('Empresa Teste'); expect(resposta.resultado.texto).toContain('ATIVA');
+  expect(t.ficha.dados.razaoSocial).toBe('Empresa Teste'); expect(t.ficha.fontesDados.razaoSocial.fonte).toBe('CONSULTA_PUBLICA');
+  expect(t.caso.triagem.preatendimento).toMatchObject({ cnpj: '11222333000181', atividade: 'Serviços médicos', cidade: 'Niterói', campoEsperado: 'necessidade' });
+  expect(t.db.onboardingAnalise.create).toHaveBeenCalledTimes(1);
+  await t.chamar('11.222.333/0001-81', { id: 'cnpj', ia: iaCompleta(), consultaPublica });
+  await t.chamar('Quero voltar a operar', { ia: iaCompleta(), consultaPublica });
+  expect(consultaPublica).toHaveBeenCalledTimes(1); expect(t.db.onboardingAnalise.create).toHaveBeenCalledTimes(1);
+});
+
+test('CNPJ inválido não consulta e após duas tentativas chama equipe', async () => {
+  const t = banco(); t.ficha.origem = 'INATIVA'; const consultaPublica = jest.fn();
+  await t.chamar('Quero ativar minha empresa', { ia: iaCompleta(), consultaPublica });
+  const r = await t.chamar('11222333000100', { ia: iaCompleta(), consultaPublica });
+  expect(r.resultado.texto).toContain('não passou na validação');
+  expect((await t.chamar('11222333000100', { ia: iaCompleta(), consultaPublica })).motivo).toBe('ENCAMINHADA');
+  expect(consultaPublica).not.toHaveBeenCalled(); expect(t.ficha.cnpj).toBeNull();
+});
+
+test('consulta indisponível é registrada sem travar ou repetir chamadas', async () => {
+  const t = banco(); t.ficha.origem = 'INATIVA'; const consultaPublica = jest.fn(async () => { throw new Error('offline'); });
+  const r = await t.chamar('CNPJ 11222333000181', { ia: iaCompleta(), consultaPublica });
+  expect(r.resultado.texto).toContain('Não consegui consultar');
+  expect(t.caso.triagem.preatendimento.consultaPublica.estado).toBe('INDISPONIVEL');
+  await t.chamar('Quero voltar a operar', { ia: iaCompleta(), consultaPublica });
+  expect(consultaPublica).toHaveBeenCalledTimes(1);
+});
+
+test.each(['humano','versao'])('mudança de %s durante consulta não grava nem envia resposta', async tipo => {
+  const t = banco(); t.ficha.origem = 'INATIVA'; const enviar = jest.fn();
+  const consultaPublica = jest.fn(async () => { if (tipo === 'humano') t.conversa.atendidaPor = 'contador'; else t.caso.versao++; return cadastroTeste(); });
+  await expect(t.chamar('CNPJ 11222333000181', { ia: iaCompleta(), consultaPublica, enviar })).rejects.toMatchObject({ code: 'atendimento_alterado' });
+  expect(enviar).not.toHaveBeenCalled(); expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled(); expect(t.ficha.cnpj).toBeNull();
+});
+
+test('atendimento neutro cria ficha quando cliente informa intenção de ativação', async () => {
+  const t = banco(); t.caso.onboarding = null; t.caso.onboardingId = null;
+  iniciarAtendimento.mockImplementation(async ({ origem }) => { t.ficha.origem = origem; t.caso.onboarding = t.ficha; t.caso.onboardingId = t.ficha.id; return t.caso; });
+  await t.chamar('Quero ativar minha empresa', { ia: iaCompleta() });
+  expect(iniciarAtendimento).toHaveBeenLastCalledWith(expect.objectContaining({ origem: 'INATIVA' }));
+  expect(t.caso.triagem.preatendimento.campoEsperado).toBe('cnpj');
 });

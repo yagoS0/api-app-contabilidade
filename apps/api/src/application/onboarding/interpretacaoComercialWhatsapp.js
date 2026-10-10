@@ -122,7 +122,7 @@ export function responderDuvidaComercial(texto, { origem = null, pretendeReativa
   return null;
 }
 
-function cnpjValido(cnpj) {
+export function cnpjValido(cnpj) {
   if (!/^\d{14}$/.test(cnpj) || /^(\d)\1+$/.test(cnpj)) return false;
   const digito = base => { let soma = 0, peso = base.length - 7; for (const d of base) { soma += Number(d) * peso--; if (peso < 2) peso = 9; } const resto = soma % 11; return resto < 2 ? 0 : 11 - resto; };
   return digito(cnpj.slice(0, 12)) === Number(cnpj[12]) && digito(cnpj.slice(0, 13)) === Number(cnpj[13]);

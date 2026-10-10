@@ -1,3 +1,4 @@
+import { consultarCadastroInicial, resumoDaConsulta } from './ConsultaCadastralInicial.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { WHATSAPP_COLETA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
 import { iniciarAtendimento, registrarCampos, encerrado } from "./LeadService.js";
@@ -75,11 +76,22 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       telefone: conversa.telefoneE164, canalId: inicial.canalId, client: db, deps: deps.ia || {} }) : null;
   origem ||= ia?.interpretacao?.intencao || null;
   if (!existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
+  const intencaoDaColeta = existente?.triagem?.preatendimento?.intencao || existente?.onboarding?.origem || origem;
+  const preflight = prepararPreatendimento({ texto: textoEntrada, intencao: intencaoDaColeta,
+    anterior: existente?.triagem?.preatendimento, dadosFicha: existente?.onboarding?.dados,
+    nomeConhecido: pessoa?.nome || inicial.nomePerfilProvedor, interpretacaoIa: ia?.interpretacao, falhaIa: ia?.estado === 'FALLBACK' });
+  const consultaAnterior = existente?.triagem?.preatendimento?.consultaPublica;
+  const podeConsultar = !anterior && tipo === 'text' && intencaoDaColeta === 'INATIVA' && (!origem || origem === intencaoDaColeta)
+    && preflight.pre.qualificacaoVersao === 2 && !preflight.cnpjInvalido
+    && !preflight.leitura.humano && !preflight.leitura.aguardar && !preflight.leitura.reinicio;
+  const consultaPublica = podeConsultar ? await consultarCadastroInicial({ cnpj: preflight.pre.cnpj, anterior: consultaAnterior,
+    mensagemId: mensagem.id, agora, consultar: deps.consultaPublica }) : null;
+  const consultaNova = consultaPublica && consultaPublica !== consultaAnterior;
   const persistido = await db.$transaction(async tx => {
     let atual = await tx.conversaWhatsapp.findUnique({ where: { id: inicial.id } });
     if (bloqueada(proprioHandoff(atual) ? { ...atual, atendidaDesde: null } : atual) || atual.vinculoNumeroId !== inicial.vinculoNumeroId || atual.canalId !== inicial.canalId) throw new OnboardingError("atendimento_alterado", "A conversa mudou durante a coleta.", 409);
     await identidadeDoCaso(atual, tx, { travar: true });
-    if (ia) {
+    if (ia || consultaPublica) {
       // Mesma ordem de locks do LeadService: pessoa, depois conversa. A conferência
       // da versão precisa acontecer depois do lock, inclusive nos segmentos antigos.
       await tx.conversaWhatsapp.updateMany({ where: { id: inicial.id }, data: { updatedAt: new Date() } });
@@ -89,13 +101,13 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     }
     const recibo = await tx.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
     if (recibo) return recibo;
-    if (ia) {
+    if (ia || consultaPublica) {
       const recente = await tx.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
       if ((recente?.id || null) !== versaoAntesIa.id || recente?.versao !== versaoAntesIa.caso || recente?.onboarding?.versao !== versaoAntesIa.ficha)
         throw new OnboardingError("atendimento_alterado", "O atendimento mudou durante a interpretação. Nenhuma resposta foi enviada.", 409);
     }
     if (interlocutorId) { const p = await tx.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }); if (p.versao !== identidadeVersao || p.estado !== "ATIVO" || p.atendidaPor || p.atendidaDesde && !proprioHandoff(p)) throw new OnboardingError("identidade_alterada", "A identificação mudou durante a coleta.", 409); }
-    let caso = await iniciarAtendimento({ conversaId: atual.id, origem: existente ? null : origemDaIntencao(origem), client: tx });
+    let caso = await iniciarAtendimento({ conversaId: atual.id, origem: existente?.onboarding ? null : origemDaIntencao(origem), client: tx });
     await exigirConversaDoCaso(caso, atual, tx);
     if (encerrado(caso.onboarding)) throw new OnboardingError("atendimento_encerrado", "A solicitação não está em coleta.", 409);
     const triagem = caso.triagem || {};
@@ -110,23 +122,37 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     const preparo = prepararPreatendimento({ texto: anexo || mudouOrigem || escolhaModalidade ? "" : textoEntrada,
       intencao, anterior: triagem.preatendimento, dadosFicha: caso.onboarding?.dados,
       nomeConhecido: pessoa?.nome || inicial.nomePerfilProvedor, campoAnterior: triagem.campoEsperado, mensagemId: mensagem.id,
-      falhaIa: ia?.estado === 'FALLBACK', interpretacaoIa: !mudouOrigem && !menuAntigo && !escolhaAntiga ? ia?.interpretacao : null });
+      consultaPublica, falhaIa: ia?.estado === 'FALLBACK', interpretacaoIa: !mudouOrigem && !menuAntigo && !escolhaAntiga ? ia?.interpretacao : null });
     const { leitura, pre } = preparo;
     const manterColeta = leitura.aguardar || (leitura.retomada && !preparo.encaminhar) || menuAntigo || escolhaAntiga;
     const encaminhar = !manterColeta && (anexo || mudouOrigem || escolhaModalidade || preparo.encaminhar);
     if (!mudouOrigem && !menuAntigo && !escolhaAntiga && caso.onboardingId && preparo.operacoes.length) {
+      if (preparo.operacoes.some(o => o.campo === 'cnpj' && o.acao === 'set' && o.valor !== caso.onboarding.cnpj)
+        && caso.onboarding.fontesDados?.razaoSocial?.fonte === 'CONSULTA_PUBLICA') {
+        preparo.operacoes.push({ campo: 'razaoSocial', acao: 'unset' });
+      }
       caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao,
         operacoes: preparo.operacoes, mensagemId: mensagem.id, client: tx });
+    }
+    if (consultaNova && !mudouOrigem && caso.onboardingId && caso.onboarding?.cnpj === consultaPublica.cnpj) {
+      await tx.onboardingAnalise.create({ data: { onboardingId: caso.onboardingId, cnpj: consultaPublica.cnpj,
+        tipo: 'PUBLICA', status: consultaPublica.estado === 'CONCLUIDA' ? 'CONCLUIDA' : 'ERRO',
+        resultado: consultaPublica.dados || { mensagem: 'Consulta pública indisponível.', consultadoEm: consultaPublica.consultadoEm }, criadoPorId: 'SISTEMA_COMERCIAL' } });
+      if (consultaPublica.dados?.razaoSocial && !caso.onboarding.dados?.razaoSocial) {
+        caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao,
+          operacoes: [{campo:'razaoSocial',acao:'set',valor:consultaPublica.dados.razaoSocial}], mensagemId: mensagem.id, fonte: 'CONSULTA_PUBLICA', client: tx });
+      }
     }
     const motivoEquipe = anexo ? "Vou chamar a equipe para conferir o anexo e continuar seu atendimento."
       : mudouOrigem ? "Vou chamar a equipe para organizar esse novo pedido junto com as informações que você já enviou."
         : "Vou encaminhar seu atendimento ao contador junto com o que você já contou. Você não precisa repetir tudo.";
     const beneficio = mensagemDeValor(pre);
-    const valor = (!pre.valorApresentado || pre.valorTexto && pre.valorTexto !== beneficio) && !anexo && !mudouOrigem && !menuAntigo && !escolhaAntiga && !leitura.aguardar ? beneficio : null;
-    const texto = escolhaAntiga || menuAntigo ? "Essa opção é de um atendimento anterior. Seus dados foram preservados. Conte o que precisa agora ou escreva menu para ver as opções."
+    const valor = (!pre.valorApresentado || pre.valorTexto && pre.valorTexto !== beneficio) && !(pre.intencao === 'INATIVA' && pre.qualificacaoVersao === 2) && !anexo && !mudouOrigem && !menuAntigo && !escolhaAntiga && !leitura.aguardar ? beneficio : null;
+    const respostaBase = escolhaAntiga || menuAntigo ? "Essa opção é de um atendimento anterior. Seus dados foram preservados. Conte o que precisa agora ou escreva menu para ver as opções."
       : encaminhar ? [preparo.resposta, valor, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
           : preparo.respostaNatural || [leitura.retomada ? "Podemos continuar de onde paramos." : preparo.resposta, valor, preparo.pergunta].filter(Boolean).join("\n\n");
+    const texto = [consultaNova ? resumoDaConsulta(consultaPublica) : null, respostaBase].filter(Boolean).join("\n\n");
     const valorEnviado = !preparo.respostaNatural || encaminhar ? valor : null;
     const handoffEm = encaminhar ? agora : null;
     if (encaminhar) {

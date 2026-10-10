@@ -1,4 +1,5 @@
-import { identificarOrigemComercial, interpretarColetaComercial, responderDuvidaComercial } from './interpretacaoComercialWhatsapp.js';
+import { enriquecerResumoCadastral } from './ConsultaCadastralInicial.js';
+import { identificarOrigemComercial, interpretarColetaComercial, responderDuvidaComercial, cnpjValido } from './interpretacaoComercialWhatsapp.js';
 import { validarInterpretacaoLead } from '../assistente/interpretacaoLeadIa.js';
 import { ORDEM_QUALIFICACAO, perguntasQualificacao, respostaNaturalPermitida } from './qualificacaoComercial.js';
 
@@ -35,12 +36,12 @@ export function mensagemDeValor(pre) {
 }
 
 /** Pré-atendimento termina na equipe. Campos da ficha e contratação não são requisitos. */
-export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFicha = {}, nomeConhecido = null, campoAnterior = null, mensagemId, interpretacaoIa = null, falhaIa = false }) {
+export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFicha = {}, nomeConhecido = null, campoAnterior = null, mensagemId, interpretacaoIa = null, falhaIa = false, consultaPublica = null }) {
   const raw = String(texto || '').trim(), t = normalizar(raw);
   const origem = origemDaIntencao(intencao);
-  const pre = { ...anterior, versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) }, ...(anterior.evidenciasIa ? { evidenciasIa: { ...anterior.evidenciasIa } } : {}), ...(anterior.evidenciasDeclaradas ? { evidenciasDeclaradas: { ...anterior.evidenciasDeclaradas } } : {}) };
+  const pre = { ...enriquecerResumoCadastral(anterior, consultaPublica), versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) }, ...(anterior.evidenciasIa ? { evidenciasIa: { ...anterior.evidenciasIa } } : {}), ...(anterior.evidenciasDeclaradas ? { evidenciasDeclaradas: { ...anterior.evidenciasDeclaradas } } : {}) };
   const campo = anterior.campoEsperado || ({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })[campoAnterior];
-  const campoFicha = ({ nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: intencao === 'TRANSFERENCIA' ? 'motivoTroca' : null })[campo];
+  const campoFicha = ({ cnpj: 'cnpj', nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: intencao === 'TRANSFERENCIA' ? 'motivoTroca' : null })[campo];
   const palavraDeEntrada = palavras[raw.toUpperCase()] === intencao;
   const leitura = interpretarColetaComercial({ texto: palavraDeEntrada ? '' : raw, origem: origem || 'ABERTURA', campoEsperado: campoFicha, dadosAtuais: dadosFicha });
   const revisaoIdentidade = /\b(?:mude|mudar|troque|trocar|altere|alterar|vincule|vincular|acesse|acessar|mostre|mostrar|revele|revelar|envie|enviar|mande|mandar|use|usar)\b/.test(t)
@@ -72,6 +73,13 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     if (cnpj) capturados.cnpj = cnpj.valor;
   }
   Object.assign(pre.dadosInformados, capturados);
+  const documento = capturados.cnpj || dadosFicha.cnpj || pre.dadosInformados.cnpj;
+  pre.cnpj = cnpjValido(documento) ? documento : null;
+  if (pre.consultaPublica && pre.consultaPublica.cnpj !== pre.cnpj) {
+    for (const [chave, fonte] of Object.entries(pre.fontesPublicas || {})) if (pre[chave] === fonte.valor) delete pre[chave];
+    pre.fontesPublicas = {};
+    delete pre.consultaPublica;
+  }
   if (pre.evidenciasIa?.nome?.valor !== null) pre.nome ||= dadosFicha.responsavelNome || nomeConhecido || null;
   if (pre.evidenciasIa?.atividade?.valor !== null) pre.atividade ||= dadosFicha.atividadePretendida || null;
   if (pre.evidenciasIa?.cidade?.valor !== null) pre.cidade ||= dadosFicha.municipioAtendimento || null;
@@ -106,6 +114,7 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     // Valores da IA pertencem à triagem, nunca confirmam dados fiscais/contratuais.
     const evidencias = { ...(pre.evidenciasIa || {}) };
     for (const d of ia.dados) {
+      if (d.campo === 'cnpj') continue; // documento só entra após validação determinística
       if (['nome', 'atividade', 'cidade'].includes(d.campo) && /^(?:(?:eu |ainda )?nao (?:sei|lembro|tenho certeza|tenho ideia)|a definir)\b/.test(normalizar(d.valor))) continue;
       // Uma intenção genérica ainda precisa da pergunta curta sobre o problema.
       if (d.campo === 'necessidade' && /^(?:(?:eu )?(?:quero|preciso|gostaria de|pretendo) )?(?:regularizar (?:a |minha |uma )?empresa|trocar (?:de )?contador)[.!]*$/.test(normalizar(d.valor))) continue;
@@ -115,6 +124,7 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     }
     pre.evidenciasIa = evidencias;
   }
+  for (const [campo, fonte] of Object.entries(pre.fontesPublicas || {})) if (pre[campo] !== fonte.valor) delete pre.fontesPublicas[campo];
   // Preservar o relato inteiro solicitado na triagem, sem atribuir à IA um trecho
   // que ela omitiu e sem transformar esse relato em dado fiscal confirmado.
   const queixaLiteral = /\b(?:demora|atrasos?|atrasado|sem (?:resposta|retorno)|nao.{0,15}respond|nao.{0,15}explica)\b/.test(t);
@@ -155,17 +165,19 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     pre.falhasCompreensao = ia?.comportamento === 'DESCONHECIDO' && !desconhecido && !pre.dispensados.includes(campo)
       ? (anterior.falhasCompreensao || 0) + 1 : 0;
   }
-  const conhecido = ordem.every(k => pre[k] || pre.dispensados?.includes(k));
-  const campoSeguinte = ordem.find(k => !pre[k] && !pre.dispensados?.includes(k)) || null;
+  const cnpjInvalido = qualificacaoCompleta && intencao === 'INATIVA' && (campo === 'cnpj' || /\bcnpj\b/i.test(raw)) && !capturados.cnpj && raw.replace(/\D/g, '').length >= 6 && !social && !desconhecido;
+  pre.tentativasCnpj = cnpjInvalido ? (anterior.tentativasCnpj || 0) + 1 : 0;
+  const conhecido = !cnpjInvalido && ordem.every(k => pre[k] || pre.dispensados?.includes(k));
+  const campoSeguinte = cnpjInvalido ? 'cnpj' : ordem.find(k => !pre[k] && !pre.dispensados?.includes(k)) || null;
   // Três perguntas no máximo, sem penalizar pausas. Dúvida complexa ou desconhecimento segue ao humano.
   const encaminhar = Boolean(leitura.humano || leitura.reinicio || desconhecido && !qualificacaoCompleta || pre.preferenciaContato || conhecido
     || ia?.comportamento === 'DUVIDA' && !duvida
-    || anterior.perguntasFeitas >= (qualificacaoCompleta ? 8 : 3) || pre.falhasCompreensao >= 2
+    || anterior.perguntasFeitas >= (qualificacaoCompleta ? 8 : 3) || pre.falhasCompreensao >= 2 || pre.tentativasCnpj >= 2
     || !qualificacaoCompleta && pre.necessidade && (intencao === 'TRANSFERENCIA' || intencao === 'INATIVA'));
   pre.campoEsperado = encaminhar ? null : campoSeguinte;
   pre.perguntasFeitas = (anterior.perguntasFeitas || 0) + (!encaminhar && !social && campoSeguinte ? 1 : 0);
   const operacoes = origem ? leitura.operacoes : [];
-  const respostaNatural = qualificacaoCompleta && !encaminhar && !social && !duvida ? respostaNaturalPermitida(ia?.resposta, campoSeguinte) : null;
-  return { pre, operacoes, leitura, encaminhar, respostaNatural, pergunta: (qualificacaoCompleta ? perguntasQualificacao(pre) : perguntas)[campoSeguinte] || null,
-    resposta: duvida && !/CNPJ parece/.test(duvida) ? duvida : duvida ? 'Deixei o número informado no histórico para o contador conferir; isso não impede o atendimento.' : null };
+  const respostaNatural = qualificacaoCompleta && !cnpjInvalido && !encaminhar && !social && !duvida ? respostaNaturalPermitida(ia?.resposta, campoSeguinte) : null;
+  return { pre, operacoes, leitura, encaminhar, respostaNatural, cnpjInvalido, pergunta: cnpjInvalido ? 'Esse CNPJ não passou na validação. Pode conferir e enviar os 14 dígitos?' : (qualificacaoCompleta ? perguntasQualificacao(pre) : perguntas)[campoSeguinte] || null,
+    resposta: cnpjInvalido ? null : duvida && !/CNPJ parece/.test(duvida) ? duvida : duvida ? 'Deixei o número informado no histórico para o contador conferir; isso não impede o atendimento.' : null };
 }
