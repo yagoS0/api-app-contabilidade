@@ -72,3 +72,10 @@ test('CNPJ informado aparece em dígitos e usa a cópia padrão do projeto', asy
   fireEvent.click(botao); expect(copiar).toHaveBeenCalledWith('11222333000181');
   expect(await screen.findByText('✓')).toBeVisible();
 });
+
+test('cadastro consultado mantém origem e dados completos disponíveis sem poluir o resumo', () => {
+  render(<ResumoPreatendimento atendimento={{onboardingId:'o',triagem:{preatendimento:{...pre,intencao:'INATIVA',consultaPublica:{estado:'CONCLUIDA',dados:{razaoSocial:'Empresa Teste',fonte:'BrasilAPI',consultadoEm:'2026-10-10T12:00:00Z',opcaoMei:false,socios:[{nome:'Ana Sócia',qualificacao:'Administradora'}]}}}}}} />);
+  expect(screen.getByText('Cadastro consultado').closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByText('Empresa Teste')).toBeInTheDocument(); expect(screen.getByText(/sem diagnóstico fiscal/)).toBeInTheDocument();
+  expect(screen.getByText('Não')).toBeInTheDocument(); expect(screen.getByText(/Ana Sócia/)).toBeInTheDocument();
+});

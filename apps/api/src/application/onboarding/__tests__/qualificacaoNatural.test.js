@@ -83,7 +83,7 @@ test('evidência de ativação sustenta intenção de empresa existente', () => 
   const ia=validarInterpretacaoLead({intencao:'INATIVA',evidenciaIntencao:texto,comportamento:'DADOS',dados:[],resposta:null},texto);
   expect(ia.intencao).toBe('INATIVA');
   const r=prepararPreatendimento({texto,intencao:ia.intencao,nomeConhecido:'Ana',interpretacaoIa:ia});
-  expect(r.encaminhar).toBe(false);expect(r.pre.campoEsperado).toBe('necessidade');
+  expect(r.encaminhar).toBe(false);expect(r.pre.campoEsperado).toBe('cnpj');
   expect(r.pergunta).not.toMatch(/abrir|abertura/i);
 });
 

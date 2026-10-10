@@ -27,8 +27,8 @@ export function normalizarUsageOpenAI(usage) {
 
 export function prepararPedidoLead({ texto, intencao = null, campoEsperado = null, resumo = null }) {
   if (typeof texto !== 'string' || !texto.trim() || texto.length > 4000) throw erro('ENTRADA_LEAD_INVALIDA');
-  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato']
-    .filter(k => typeof resumo[k] === 'string' && resumo[k].trim()).map(k => [k, resumo[k].slice(0, k === 'nome' ? 120 : 700)])) : null;
+  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato', 'cnpj']
+    .filter(k => typeof resumo[k] === 'string' && resumo[k].trim() && (k !== 'cnpj' || /^\d{14}$/.test(resumo[k]))).map(k => [k, resumo[k].slice(0, k === 'nome' ? 120 : 700)])) : null;
   const body = {
     model: MODELO_LEADS, store: false, reasoning: { effort: ESFORCO_LEADS }, max_output_tokens: MAX_TOKENS_SAIDA_LEADS,
     instructions: PROMPT_LEADS,

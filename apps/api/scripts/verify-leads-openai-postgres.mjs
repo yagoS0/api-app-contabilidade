@@ -16,11 +16,11 @@ const checks = []; let n = 0;
 const ok = texto => { checks.push(texto); console.log(`OK ${texto}`); };
 const criar = async () => db.conversaWhatsapp.create({ data: { canalId: 'teste-openai', telefoneE164: `551188800${String(++n).padStart(4, '0')}`, chaveEscopo: `teste-openai-${Date.now()}-${n}` } });
 const interpretar = dados => ({ intencao: null, evidenciaIntencao: null, comportamento: 'DADOS', dados });
-async function chamar(conversa, texto, interpretacao, { antes, mensagem: existente, timeout = false } = {}) {
+async function chamar(conversa, texto, interpretacao, { antes, consultaPublica, mensagem: existente, timeout = false } = {}) {
   const mensagem = existente || await db.mensagemWhatsapp.create({ data: { conversaId: conversa.id, direcao: 'in', tipo: 'text', corpo: texto, providerMessageId: `fixture-openai-${Date.now()}-${Math.random()}` } });
   let chamadas = 0, envios = 0;
   const resultado = await coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, tipo: 'text' }, deps: {
-    client: db, flag: true, piloto: [conversa.telefoneE164], enviar: async ({ antesDeEnviar }) => { await antesDeEnviar(); envios++; },
+    client: db, consultaPublica, flag: true, piloto: [conversa.telefoneE164], enviar: async ({ antesDeEnviar }) => { await antesDeEnviar(); envios++; },
     ia: { flag: true, piloto: [conversa.telefoneE164], canais: [conversa.canalId], tetoTotalCentavos: 100000, chave: 'chave-ficticia-sem-rede', assistente: { interpretar: async () => {
       chamadas++; await antes?.(); if (timeout) throw Object.assign(Error('timeout'), { codigo: 'OPENAI_TIMEOUT' });
       return { interpretacao, usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } };
@@ -87,6 +87,26 @@ try {
   assert.equal(final7.triagem.preatendimento.necessidade, null);
   assert.equal(final7.onboarding.dados.responsavelNome, undefined);
   ok('Pedido de vínculo de terceiro encaminha sem preencher dados apesar da IA errar');
+  const ativacao = await criar();
+  await db.atendimentoLead.create({ data: { conversaId: ativacao.id } });
+  const completa = { ...interpretar([]), resposta: null };
+  await chamar(ativacao, 'Quero ativar minha empresa', completa);
+  const neutro = await db.atendimentoLead.findFirst({ where: { conversaId: ativacao.id }, include: { onboarding: true } });
+  assert.equal(neutro.onboarding.origem, 'INATIVA'); assert.equal(neutro.triagem.preatendimento.campoEsperado, 'cnpj');
+  let consultas = 0;
+  const consultaPublica = async cnpj => { consultas++; return { ok: true, fonte: 'BRASILAPI', bruto: { cnpj, razao_social: cnpj === '11222333000181' ? 'Empresa A' : 'Empresa B', municipio: 'Recife', cnae_fiscal_descricao: 'Comércio' } }; };
+  const documento = await chamar(ativacao, '11222333000181', completa, { consultaPublica });
+  await chamar(ativacao, '11222333000181', completa, { consultaPublica, mensagem: documento.mensagem });
+  const cadastrado = await db.atendimentoLead.findUnique({ where: { id: neutro.id }, include: { onboarding: true } });
+  assert.equal(cadastrado.onboarding.dados.razaoSocial, 'Empresa A'); assert.equal(cadastrado.onboarding.fontesDados.razaoSocial.fonte, 'CONSULTA_PUBLICA');
+  assert.equal(cadastrado.triagem.preatendimento.cidade, 'Recife'); assert.equal(consultas, 1);
+  assert.equal(await db.onboardingAnalise.count({ where: { onboardingId: neutro.onboardingId } }), 1);
+  ok('Atendimento neutro cria ficha; CNPJ persiste cadastro com fonte e replay sem consulta duplicada');
+  await chamar(ativacao, 'Corrigindo, CNPJ 04252011000110', completa, { consultaPublica });
+  const corrigido = await db.onboarding.findUnique({ where: { id: neutro.onboardingId } });
+  assert.equal(corrigido.cnpj, '04252011000110'); assert.equal(corrigido.dados.razaoSocial, 'Empresa B');
+  assert.equal(consultas, 2); assert.equal(await db.onboardingAnalise.count({ where: { onboardingId: neutro.onboardingId } }), 2);
+  ok('Correção do documento substitui dados públicos e preserva histórico por CNPJ');
   const consumo = await db.chamadaIa.aggregate({ where: { modelo: 'gpt-5.4-mini', finalidade: 'comercial_whatsapp', status: { in: ['ok', 'erro', 'reservada'] } }, _sum: { custoEstimadoCentavos: true, reservaCentavos: true } });
   const total = Number(consumo._sum.custoEstimadoCentavos || 0) + Number(consumo._sum.reservaCentavos || 0);
   await db.chamadaIa.create({ data: { modelo: 'gpt-5.4-mini', finalidade: 'comercial_whatsapp', status: 'ok', custoEstimadoCentavos: 297 - total, createdAt: new Date('2020-01-01') } });
