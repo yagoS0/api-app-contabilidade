@@ -27,7 +27,7 @@ export function perguntasQualificacao(pre) {
     necessidade: pre.intencao === 'TRANSFERENCIA' ? 'O que você gostaria de melhorar em relação ao contador atual?' : pre.intencao === 'INATIVA' ? 'A empresa está funcionando hoje ou está parada?' : 'O que você gostaria de resolver primeiro?',
     estrutura: medico ? 'Você vai atender em consultório próprio ou prestar serviços para clínicas e hospitais?' : 'Como vai funcionar a operação: você trabalha sozinho ou terá sócios e equipe?',
     urgencia: 'Você tem algum prazo em mente para começar ou resolver isso?',
-    faturamento: pre.intencao === 'INATIVA' && !pre.situacaoOperacional ? 'Quanto você estima faturar por mês na retomada? Se ainda não souber, seguimos sem essa informação.' : 'Já tem uma estimativa de faturamento mensal? Pode ser uma faixa; se ainda não souber, seguimos sem ela.',
+    faturamento: 'Já tem uma estimativa de faturamento mensal? Pode ser uma faixa; se ainda não souber, seguimos sem ela.',
   };
 }
 

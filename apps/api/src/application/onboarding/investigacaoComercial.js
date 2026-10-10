@@ -6,6 +6,11 @@ export function periodoImpreciso(valor) {
   return /^(?:(?:ja )?faz (?:muito |bastante |algum )?tempo|ha (?:muito |bastante |algum )?tempo|ha (?:anos|meses)|(?:muitos|varios|alguns) (?:anos|meses))$/.test(t);
 }
 
+export function tipoPendenciasGenerico(valor) {
+  const t = normalizar(valor).trim().replace(/[.!]+$/g, '');
+  return /^(?:(?:eu )?nao (?:pago|paguei|pagamos|pagava)(?: mais)?(?: nada| tudo)?|tudo|nada|tudo atrasado|(?:todos os |os )?pagamentos|(?:todas as |as )?pendencias)$/.test(t);
+}
+
 // Apenas relato comercial, nunca confirmação de dívida ou diagnóstico fiscal.
 export function atualizarInvestigacao(pre, { texto, mensagemId, ia, revisaoIdentidade, falhaIa, anterior = {} }) {
   if (texto && mensagemId) {
@@ -14,6 +19,17 @@ export function atualizarInvestigacao(pre, { texto, mensagemId, ia, revisaoIdent
   }
   if (pre.intencao !== 'INATIVA' || revisaoIdentidade || falhaIa || ia?.comportamento !== 'DADOS') return;
   const t = normalizar(texto);
+  // "Não pago nada" descreve o problema, mas não identifica quais obrigações.
+  if (tipoPendenciasGenerico(pre.tipoPendencias)) {
+    if (anterior.tipoPendencias && !tipoPendenciasGenerico(anterior.tipoPendencias)) {
+      pre.tipoPendencias = anterior.tipoPendencias;
+      if (anterior.evidenciasIa?.tipoPendencias) pre.evidenciasIa.tipoPendencias = anterior.evidenciasIa.tipoPendencias;
+      else if (pre.evidenciasIa) delete pre.evidenciasIa.tipoPendencias;
+    } else {
+      delete pre.tipoPendencias;
+      if (pre.evidenciasIa) delete pre.evidenciasIa.tipoPendencias;
+    }
+  }
   // Um comentário vago não substitui um período concreto previamente declarado.
   if (periodoImpreciso(pre.periodoPendencias) && anterior.periodoPendencias && !periodoImpreciso(anterior.periodoPendencias)
     && !/\b(?:corrigindo|correcao|errei|engano|desconsidere|na verdade)\b/.test(t)) {

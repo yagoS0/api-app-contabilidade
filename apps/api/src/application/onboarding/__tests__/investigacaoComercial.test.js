@@ -173,3 +173,30 @@ test('desconhecimento não perde turno por intenção herdada de mensagem anteri
   expect(r.pre.dispensados).toContain('periodoPendencias');
   expect(r.pre.campoEsperado).toBe('tipoPendencias');
 });
+
+test.each(['não pago nada','tudo','nada','tudo atrasado'])('tipo genérico não substitui pergunta de obrigações: %s',tipo=>{
+  const texto=`Não pago nada, ${tipo}`;
+  let r=passo(texto,base,[['necessidade',texto],['tipoPendencias',tipo]]);
+  expect(r.pre.tipoPendencias).toBeUndefined();
+  expect(r.pre.evidenciasIa.tipoPendencias).toBeUndefined();
+  expect(r.pre.relatosCliente[0].texto).toBe(texto);
+  r=passo('Não lembro',r.pre,[],'DESCONHECIDO','m2');
+  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  r=passo('Não sei quais',r.pre,[],'DESCONHECIDO','m3');
+  expect(r.pre.dispensados).toContain('tipoPendencias');
+  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+});
+
+test('todos os impostos identifica tipo sem inventar impostos específicos',()=>{
+  const r=passo('Não pago todos os impostos',base,[['tipoPendencias','todos os impostos']]);
+  expect(r.pre.tipoPendencias).toBe('todos os impostos');
+});
+
+test('comentário genérico preserva tipo específico já declarado',()=>{
+  const r=passo('Não pago nada',{...base,tipoPendencias:'guias mensais'},[['tipoPendencias','Não pago nada']]);
+  expect(r.pre.tipoPendencias).toBe('guias mensais');
+});
+
+test('faturamento não presume retomada quando operação é desconhecida ou dispensada',()=>{
+  expect(perguntasQualificacao({...base,dispensados:['situacaoOperacional']}).faturamento).not.toMatch(/retomada|voltar|parada/i);
+});
