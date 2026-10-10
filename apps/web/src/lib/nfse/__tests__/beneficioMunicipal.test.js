@@ -147,10 +147,10 @@ describe("problemasDoBeneficioMunicipal — espelho das recusas do servidor", ()
 
 describe("os textos que a tela precisa dizer", () => {
   it("⚠ o aviso de que o cadastro NÃO chega à nota existe e nomeia o desfecho", () => {
-    // Se esta frase sumir, o contador configura a redução e a nota sai com o imposto cheio sem
-    // ninguém avisar. É a razão de o cadastro poder existir antes do envio.
-    expect(BENEFICIO_NAO_VAI_NO_XML).toMatch(/ISS cheio/);
-    expect(BENEFICIO_NAO_VAI_NO_XML).toMatch(/BM/);
+    // O benefício ainda não é transmitido; a orientação deve impedir a emissão incorreta.
+    expect(BENEFICIO_NAO_VAI_NO_XML).toMatch(/emissão fica bloqueada/);
+    expect(BENEFICIO_NAO_VAI_NO_XML).toMatch(/Emissor Nacional/);
+    expect(BENEFICIO_NAO_VAI_NO_XML).toMatch(/Não apague o benefício/);
   });
 
   it("os três tipos existem, e `SEM_REDUCAO` é um deles", () => {
