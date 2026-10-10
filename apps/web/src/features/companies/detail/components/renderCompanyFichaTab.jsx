@@ -1,6 +1,7 @@
 import { Button } from "../../../../components/ui/Button";
 import { Painel } from "../../../../components/ui/Painel";
 import { faltasParaEmitir } from "../../../../lib/nfse/cadastroEmissaoNfse";
+import { dataCivilBR } from "../../../../lib/dataCivil.js";
 
 // Ficha de cadastro — READ-ONLY, no formato da ficha que o escritório já usa em planilha.
 // É a tela de consulta do dia a dia: antes, a única forma de ver o cadastro era abrir o
@@ -31,9 +32,7 @@ const REGIME_LABEL = {
 };
 
 function fmtDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("pt-BR");
+  return dataCivilBR(value) || null;
 }
 
 function fmtMoney(value) {
