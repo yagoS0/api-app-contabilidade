@@ -12,10 +12,39 @@ test('relato direto não é apresentado como extração feita pela IA', () => {
   expect(screen.getByText(/relato registrado diretamente da mensagem/)).toBeInTheDocument();
   expect(screen.queryByText('Trechos usados pela IA')).not.toBeInTheDocument();
 });
-test('resumo distingue IA aplicada e mostra evidência sem executar HTML', () => {
+test('resumo mostra evidência sem executar HTML nem acrescentar avisos rotineiros', () => {
   render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, ultimaInterpretacaoIa: { estado: 'APLICADA' }, evidenciasIa: { atividade: { valor: 'Comércio', trecho: '<script>alert(1)</script>' } } } } }} />);
-  expect(screen.getByText(/Última mensagem interpretada com IA/)).toBeVisible();
+  expect(screen.queryByText(/Última mensagem interpretada com IA/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('Trechos que sustentam o resumo')); expect(screen.getByText('<script>alert(1)</script>')).toBeInTheDocument(); expect(document.querySelector('script')).toBeNull();
+});
+
+test('investigação e complementos ficam disponíveis para o contador, separados do cadastro público', () => {
+  const primeiro = 'Tenho guias atrasadas desde 2023';
+  const complemento = 'Também deixei de enviar declarações em 2024';
+  render(<ResumoPreatendimento atendimento={{ onboardingId:'o', triagem:{preatendimento:{...pre,intencao:'INATIVA',
+    periodoPendencias:'desde 2023',tipoPendencias:'guias e declarações',situacaoOperacional:'Parada',
+    atividade:'Serviços médicos',fontesPublicas:{atividade:{valor:'Serviços médicos'}},
+    relatosCliente:[{mensagemId:'m1',texto:primeiro},{mensagemId:'m2',texto:complemento}],ultimoRelato:complemento}}}} />);
+  expect(screen.getByText('Período das pendências')).toBeVisible();expect(screen.getByText('desde 2023')).toBeVisible();
+  expect(screen.getByText('guias e declarações')).toBeVisible();expect(screen.getByText('Parada')).toBeVisible();
+  expect(screen.getByText('Atividade · cadastro público')).toBeVisible();
+  const relatos=screen.getByText('Relatos do cliente (2)');expect(relatos.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(relatos);expect(screen.getByText(primeiro)).toBeVisible();expect(screen.getByText(complemento)).toBeVisible();
+  expect(screen.queryByText('Último relato recebido')).not.toBeInTheDocument();
+});
+
+test('CNPJ antigo não reaparece como confirmado após ser negado pelo cliente', () => {
+  render(<ResumoPreatendimento atendimento={{triagem:{preatendimento:{...pre,cnpj:null,aguardandoConfirmacaoCnpj:true,dadosInformados:{cnpj:'11222333000181'}}}}} />);
+  expect(screen.getByText('CNPJ não confirmado.')).toBeVisible();
+  expect(screen.queryByText('CNPJ informado')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:/Copiar o CNPJ/})).not.toBeInTheDocument();
+});
+
+test('relatos completos permanecem texto, inclusive complementos longos', () => {
+  const texto='Complemento: '+ 'pormenor '.repeat(220) + '<script>alert(1)</script>';
+  render(<ResumoPreatendimento atendimento={{triagem:{preatendimento:{...pre,relatosCliente:[{mensagemId:'m1',texto}]}}}} />);
+  fireEvent.click(screen.getByText('Relatos do cliente (1)'));
+  expect(screen.getByText(texto)).toBeVisible();expect(document.querySelector('script')).toBeNull();
 });
 test('fallback é visível para o contador e não exibe erro técnico', () => {
   render(<ResumoPreatendimento atendimento={{ triagem: { preatendimento: { ...pre, ultimaInterpretacaoIa: { estado: 'FALLBACK', motivo: 'OPENAI_TIMEOUT' } } } }} />);
