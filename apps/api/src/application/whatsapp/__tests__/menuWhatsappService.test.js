@@ -464,5 +464,5 @@ it('botão de pagamento executa diretamente, sem portal nem modelo',async()=>{
  client.guide={findFirst:jest.fn(async()=>({id:'g1',paymentStatus:'OPEN',baixada:false,updatedAt:AGORA})),updateMany:jest.fn(async()=>({count:1}))};
  client.$transaction=fn=>fn(client);
  const r=await responderMenuWhatsapp({registro:entrada,interacao:{id},agora:AGORA,client,cloud,executar,coleta,resolverVinculo:resolverCliente,conferirJanela:janelaAberta,logger:log});
- expect(r).toMatchObject({tratado:true,acao:'CONFIRMAR_PAGAMENTO'});expect(client.guide.updateMany).not.toHaveBeenCalled();expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Em que data')}));expect(executar).not.toHaveBeenCalled();expect(coleta).not.toHaveBeenCalled();
+ expect(r).toMatchObject({tratado:true,acao:'CONFIRMAR_PAGAMENTO'});expect(client.guide.updateMany).not.toHaveBeenCalled();expect(cloud.enviarBotoes).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Em que data'),botoes:expect.arrayContaining([expect.objectContaining({titulo:'Hoje'}),expect.objectContaining({titulo:'Data de vencimento'}),expect.objectContaining({titulo:'Digitar uma data'})])}));expect(executar).not.toHaveBeenCalled();expect(coleta).not.toHaveBeenCalled();
 });

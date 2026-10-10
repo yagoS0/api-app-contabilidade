@@ -1,4 +1,4 @@
-import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
+import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { recalcularGuiaWhatsapp } from '../guides/RecalcularGuiaWhatsappService.js';
 // Menus determinísticos do WhatsApp. Cliques nunca passam pelo modelo: o id estável decide a ação,
 // e toda leitura refaz empresa, contato, pessoa, papel e permissão antes de responder.
@@ -369,10 +369,13 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   }
 
   // Declaração vinculada ao destinatário da guia: não concede acesso geral ao portal.
-  if (!comercialPublico && (idRecebido.startsWith('altan.payment.confirm.') || await fluxoPagamentoAtual(client, conversa, agora))) {
+  if (!comercialPublico && (ehInteracaoPagamento(idRecebido) || await fluxoPagamentoAtual(client, conversa, agora))) {
     const confirmacao = await confirmarPagamentoWhatsapp({ id: idRecebido, conversa, mensagem, client, agora, conferirAcesso: () => antesDeEnviar(null, assinatura) });
     if (confirmacao) {
-    await enviar({ corpo: confirmacao.texto, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: confirmacao.texto }) });
+    await enviar({ tipo: confirmacao.botoes?.length ? 'interactive' : 'text', corpo: confirmacao.texto,
+      chamada: () => confirmacao.botoes?.length
+        ? whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: confirmacao.texto, botoes: confirmacao.botoes })
+        : whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: confirmacao.texto }) });
     await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     return { tratado: true, acao: 'CONFIRMAR_PAGAMENTO' };
     }

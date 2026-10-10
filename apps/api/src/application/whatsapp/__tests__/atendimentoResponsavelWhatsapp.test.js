@@ -668,6 +668,14 @@ test('cliques nas prévias não iniciam seleção nem operação', async () => {
   expect(r.motivo).toBe('PREVIA_SEM_ACAO'); expect(f.processar).not.toHaveBeenCalled(); expect(f.cloud.enviarLista).not.toHaveBeenCalled();
 });
 
+test('botão de data mantém a empresa da guia mesmo com várias empresas', async () => {
+ const f=await fixture();habilitarPagamentoTeste(f);
+ const id=ID_PAGAMENTO_TESTE.replace('confirm','answer')+'.today.22222222-2222-4222-8222-222222222222';
+ expect(await f.rodar(await f.novo('Hoje',{tipo:'interactive',interacao:{id}}),{flag:false,piloto:[]})).toMatchObject({processado:true,empresa:'lente'});
+ expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+ expect(f.processar.mock.calls[0][1].interacao.id).toBe(id);
+});
+
 test('empresa única segue automaticamente após seleção antiga pendente', async () => {
   const f = await fixture(); await f.rodar(await f.novo('Olá')); f.setEmpresas([EMPRESAS[0]]);
   jest.setSystemTime(new Date(Date.now() + 1000)); f.cloud.enviarLista.mockClear();

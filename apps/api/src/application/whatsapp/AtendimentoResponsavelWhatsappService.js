@@ -1,4 +1,4 @@
-import { fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
+import { fluxoPagamentoAtual, ehInteracaoPagamento, tokenDaInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { Prisma } from "@prisma/client";
 import { INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO, WHATSAPP_MENU_TELEFONES_PILOTO } from "../../config.js";
@@ -233,7 +233,7 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const coletaAtiva = Boolean(pendencia || (rascunho && dataMs(rascunho.expiraEm) > agora.getTime() && ["COLETANDO", "PRONTO", "REVISAO"].includes(rascunho.estado?.status)));
   let empresaCitadaId = await empresaDaReferencia({ mensagem, atendimento: atual, empresas: acesso.empresas, client });
   const pagamentoPendente = await fluxoPagamentoAtual(client, registro.conversa, agora);
-  const tokenPagamento = /^altan\.payment\.(confirm|recalculate)\./.test(String(interacao?.id || '')) ? interacao.id : pagamentoPendente?.token;
+  const tokenPagamento = tokenDaInteracaoPagamento(interacao?.id) || pagamentoPendente?.token;
   let empresaPagamentoId = null;
   if (tokenPagamento) {
     const aviso = await client.appSetting.findUnique({ where: { key: tokenPagamento } });
@@ -312,7 +312,7 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
   // O webhook já preservou a reação. Ela não é pedido e não altera versões, seleção ou coleta.
   if (item?.tipo === "reaction") return { tratadoContexto: true, motivo: "REACAO_SEM_ATENDIMENTO" };
   if (String(item?.interacao?.id || '').startsWith('altan.dev.preview.')) return { tratadoContexto: true, motivo: 'PREVIA_SEM_ACAO' };
-  const pagamentoDireto = /^altan\.payment\.(confirm|recalculate)\./.test(String(item?.interacao?.id || '')) || Boolean(await fluxoPagamentoAtual(client, registro.conversa, agora));
+  const pagamentoDireto = ehInteracaoPagamento(item?.interacao?.id) || Boolean(await fluxoPagamentoAtual(client, registro.conversa, agora));
   if (!flag && !pagamentoDireto) return processar(registro, item, {});
   const conhecido = registro.conversa.atendimentoId ? await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: registro.conversa.atendimentoId } }) : null;
   if (!registro.vinculo?.empresas?.length && !conhecido?.userId) return processar(registro, item, {});
