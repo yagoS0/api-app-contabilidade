@@ -54,5 +54,6 @@ export function resumoDaConsulta(consulta) {
   if (consulta.estado !== 'CONCLUIDA') return 'Não consegui consultar o cadastro agora. Podemos continuar com as informações que você tiver.';
   const d = consulta.dados;
   return [`Encontrei ${d.razaoSocial || 'o cadastro desse CNPJ'}${d.municipio ? ` em ${d.municipio}${d.uf ? `/${d.uf}` : ''}` : ''}.`,
-    d.situacaoCadastral ? `Na consulta pública, a situação cadastral consta como ${d.situacaoCadastral}.` : null].filter(Boolean).join(' ');
+    d.situacaoCadastral ? `Na consulta pública, a situação cadastral consta como ${d.situacaoCadastral}.` : null,
+    'Essa consulta é cadastral: ainda não verificamos débitos nem declarações pendentes.'].filter(Boolean).join(' ');
 }

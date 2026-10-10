@@ -77,3 +77,9 @@ test('pedido novo explícito continua exigindo sua própria evidência', () => {
   expect(validarInterpretacaoLead({ ...interpretar('cidade', 'Olinda'), intencao: 'ABERTURA', evidenciaIntencao: null },
     'Quero abrir uma empresa em Olinda')).toBeNull();
 });
+
+test('desconhecimento ignora intenção sem domínio atual, mas nunca aceita dados inventados', () => {
+  const resposta={intencao:'INATIVA',evidenciaIntencao:'Quero regularizar minha empresa, não pago nada',comportamento:'DESCONHECIDO',dados:[],resposta:null};
+  expect(validarInterpretacaoLead(resposta,'Não lembro')).toMatchObject({intencao:null,evidenciaIntencao:null,comportamento:'DESCONHECIDO',dados:[]});
+  expect(validarInterpretacaoLead({...resposta,dados:[{campo:'periodoPendencias',valor:'Não lembro',evidencia:'Não lembro'}]},'Não lembro')).toBeNull();
+});

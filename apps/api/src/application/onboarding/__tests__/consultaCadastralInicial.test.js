@@ -1,6 +1,11 @@
-import { consultarCadastroInicial, enriquecerResumoCadastral, normalizarConsultaCadastral } from '../ConsultaCadastralInicial.js';
+import { consultarCadastroInicial, enriquecerResumoCadastral, normalizarConsultaCadastral, resumoDaConsulta } from '../ConsultaCadastralInicial.js';
 const cnpj = '11222333000181', agora = new Date('2026-10-10T12:00:00Z');
 const retorno = { ok: true, fonte: 'BRASILAPI', bruto: { cnpj, razao_social: 'Teste', municipio: 'Recife', cnae_fiscal_descricao: 'Comércio', opcao_pelo_mei: false, qsa: [{ nome_socio: 'Ana', cpf: 'não armazenar' }] } };
+test('cadastro ativo não sugere ausência de pendências fiscais', () => {
+  const resposta = resumoDaConsulta({ estado: 'CONCLUIDA', dados: { razaoSocial: 'Teste', situacaoCadastral: 'ATIVA' } });
+  expect(resposta).toContain('ATIVA');
+  expect(resposta).toContain('ainda não verificamos débitos nem declarações pendentes');
+});
 test('normaliza somente cadastro da empresa consultada, sem campos pessoais extras', () => {
   const r = normalizarConsultaCadastral(retorno, cnpj, agora);
   expect(r).toMatchObject({razaoSocial:'Teste',opcaoMei:false}); expect(r.socios[0]).not.toHaveProperty('cpf');

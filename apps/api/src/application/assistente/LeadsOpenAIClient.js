@@ -1,6 +1,6 @@
 import { MODELO_LEADS, ESFORCO_LEADS, PROMPT_LEADS, SCHEMA_LEADS, validarInterpretacaoLead } from './interpretacaoLeadIa.js';
 import { custoEstimadoCentavos } from './precosIa.js';
-import { ORDEM_QUALIFICACAO } from '../onboarding/qualificacaoComercial.js';
+import { ORDEM_QUALIFICACAO, ordemQualificacao } from '../onboarding/qualificacaoComercial.js';
 
 export const MAX_BYTES_PEDIDO_LEADS = 24000;
 export const MAX_TOKENS_SAIDA_LEADS = 1400;
@@ -27,19 +27,37 @@ export function normalizarUsageOpenAI(usage) {
 
 export function prepararPedidoLead({ texto, intencao = null, campoEsperado = null, resumo = null }) {
   if (typeof texto !== 'string' || !texto.trim() || texto.length > 4000) throw erro('ENTRADA_LEAD_INVALIDA');
-  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato', 'cnpj']
+  const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato', 'cnpj', 'periodoPendencias', 'tipoPendencias', 'situacaoOperacional']
     .filter(k => typeof resumo[k] === 'string' && resumo[k].trim() && (k !== 'cnpj' || /^\d{14}$/.test(resumo[k]))).map(k => [k, resumo[k].slice(0, k === 'nome' ? 120 : 700)])) : null;
+  const ordem = intencao ? ordemQualificacao({ ...resumo, intencao }) : ORDEM_QUALIFICACAO;
+  const conteudo = { mensagemAtual: texto, contexto: { intencao, campoEsperado, ...(dadosColetados ? { dadosColetados } : {}),
+    ordemQualificacao: ordem,
+    ...(resumo?.investigacaoPendencias === true ? { investigacaoPendencias: true } : {}),
+    dispensados: Array.isArray(resumo?.dispensados) ? resumo.dispensados.filter(k => [...Object.values(ORDEM_QUALIFICACAO).flat(), 'periodoPendencias', 'tipoPendencias', 'situacaoOperacional'].includes(k)) : [],
+    ultimaResposta: typeof resumo?.ultimaResposta === 'string' ? resumo.ultimaResposta.slice(0, 600) : null } };
   const body = {
     model: MODELO_LEADS, store: false, reasoning: { effort: ESFORCO_LEADS }, max_output_tokens: MAX_TOKENS_SAIDA_LEADS,
     instructions: PROMPT_LEADS,
-    input: [{ role: 'user', content: JSON.stringify({ mensagemAtual: texto, contexto: { intencao, campoEsperado, ...(dadosColetados ? { dadosColetados } : {}),
-      ordemQualificacao: ORDEM_QUALIFICACAO[intencao] || ORDEM_QUALIFICACAO,
-      dispensados: Array.isArray(resumo?.dispensados) ? resumo.dispensados.filter(k => Object.values(ORDEM_QUALIFICACAO).flat().includes(k)) : [],
-      ultimaResposta: typeof resumo?.ultimaResposta === 'string' ? resumo.ultimaResposta.slice(0, 600) : null } }) }],
+    input: [{ role: 'user', content: JSON.stringify(conteudo) }],
     text: { format: { type: 'json_schema', name: 'preatendimento_lead', strict: true, schema: SCHEMA_LEADS } },
   };
-  const serializado = JSON.stringify(body);
+  let serializado = JSON.stringify(body);
   if (Buffer.byteLength(serializado, 'utf8') > MAX_BYTES_PEDIDO_LEADS) throw erro('CONTEXTO_LEAD_EXCEDIDO');
+  // O relato integral fica no atendimento. A janela recente respeita o teto do
+  // pedido e nunca torna uma conversa válida grande demais para a próxima etapa.
+  const relatos = Array.isArray(resumo?.relatosCliente) ? resumo.relatosCliente.filter(r => typeof r?.texto === 'string' && r.texto.trim()).slice(-40) : [];
+  const incluidos = [];
+  for (const relato of relatos.reverse()) {
+    const candidato = { ...(typeof relato.mensagemId === 'string' ? { mensagemId: relato.mensagemId.slice(0, 128) } : {}), texto: relato.texto.slice(0, 1000) };
+    const propostos = [candidato, ...incluidos];
+    if (Buffer.byteLength(JSON.stringify(propostos), 'utf8') > 6000) break;
+    conteudo.contexto.relatosCliente = propostos;
+    body.input[0].content = JSON.stringify(conteudo);
+    const pedido = JSON.stringify(body);
+    if (Buffer.byteLength(pedido, 'utf8') > MAX_BYTES_PEDIDO_LEADS) break;
+    incluidos.unshift(candidato);
+    serializado = pedido;
+  }
   return serializado;
 }
 

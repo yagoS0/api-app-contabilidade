@@ -67,6 +67,14 @@ export function identificarOrigemDeclarada(texto) {
 
 export function pedidoOperacionalComercial(texto, { intencao = null, campoEsperado = null } = {}) {
   const t = normalizar(texto);
+  // Uma resposta nominal sobre os tipos em atraso não pede emissão/consulta.
+  // Lista fechada e frase inteira: comandos, destinatários e terceiros continuam
+  // no roteamento operacional, mesmo quando anexados a uma resposta legítima.
+  if (intencao === 'INATIVA' && campoEsperado === 'tipoPendencias' && t.length <= 300) {
+    const item = '(?:(?:a|as|o|os) )?(?:guias?|boletos?|impostos?|tributos?|declaracoes?|obrigacoes?|das|darf|inss|fgts)(?: (?:mensais|mensal|atrasadas?|atrasados?|em aberto|do das|do inss|do fgts|federais|estaduais|municipais))*';
+    const declaracao = new RegExp(`^(?:(?:sao|foram|ficaram|nao paguei|nao pagamos) |nao (?:sei|lembro) quais (?:sao )?)?${item}(?:\\s*(?:,|e)\\s*${item})*[.!]*$`);
+    if (declaracao.test(t)) return false;
+  }
   const queixaDeAtendimento = /\b(?:meu contador|contabilidade atual)\b.{0,40}\b(?:so|apenas)\b.{0,30}\bguias?\b/.test(t)
     || intencao === 'TRANSFERENCIA' && campoEsperado === 'necessidade'
       && /\b(?:o meu|ele|eles|a minha)\b.{0,30}\b(?:so|apenas)\b.{0,30}\bguias?\b/.test(t);
