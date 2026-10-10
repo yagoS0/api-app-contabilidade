@@ -20,6 +20,8 @@ import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseServic
 import { processarEmissaoGuiada } from "./EmissaoGuiadaWhatsappService.js";
 import { ehPedidoDeEmissao } from "../assistente/coletaEmissaoWhatsapp.js";
 import { chaveLeaseResponsavel, conferirContextoResponsavel, encaminharResponsavelParaEquipe } from "./AtendimentoResponsavelWhatsappService.js";
+import { registrarEncaminhamentoSuporte } from './EncaminhamentoSuporteService.js';
+import { IA_SUPORTE_OPENAI } from '../../config.js';
 import { vincularOpcoesAoContexto } from "./contextoMenuWhatsapp.js";
 import { resolverConsultaCliente, atenderConsultaCliente } from "./ConsultasClienteWhatsappService.js";
 import { pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
@@ -342,8 +344,14 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const encaminhar = async () => {
     await antesDeEnviar(null, assinatura);
     const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
-      ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora })
-      : await marcarHandoff(conversa, agora, client);
+      ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora,
+        aoEncaminhar: tx => IA_SUPORTE_OPENAI && !comercialPublico && conversa.portalClientId
+          ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo: 'Cliente solicitou atendimento da equipe', client: tx, agora }) : Promise.resolve() })
+      : await client.$transaction(async tx => {
+        const mudou = await marcarHandoff(conversa, agora, tx);
+        if (mudou.count && IA_SUPORTE_OPENAI && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo: 'Cliente solicitou atendimento da equipe', client: tx, agora });
+        return mudou;
+      });
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
     encaminhamentoDoMenu = true;
   };

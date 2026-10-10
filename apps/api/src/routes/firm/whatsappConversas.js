@@ -41,6 +41,8 @@ import { WhatsappCloudClient, WhatsappError, mascararTelefone } from "../../appl
 import { baixarBuffer, CompanyDocumentError } from "../../application/companies/CompanyDocumentsService.js";
 import { pendenciaAberta } from "../../application/assistente/AcoesPendentesService.js";
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
+import { listarEncaminhamentosSuporte, atualizarEncaminhamentosSuporte } from '../../application/whatsapp/EncaminhamentoSuporteService.js';
+import { detalharConsumoIa } from '../../application/assistente/ConsumoIaService.js';
 import { resumoWhatsapp } from "../../application/whatsapp/resumoWhatsapp.js";
 import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsappService.js";
 import { assinarMensagemHumana } from "../../application/whatsapp/assinaturaAtendente.js";
@@ -158,6 +160,33 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     } catch (err) { return falhar(res, err, { operacao: "apelidos-whatsapp" }); }
   });
 
+  router.get('/whatsapp/suporte/pendencias', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try { return res.json({ ok: true, ...await listarEncaminhamentosSuporte({ visiveis: await empresasVisiveis(req), client }) }); }
+    catch (err) { return falhar(res, err, { operacao: 'pendencias-suporte' }); }
+  });
+
+  router.get('/whatsapp/consumo-ia', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try { return res.json({ ok: true, consumo: await detalharConsumoIa({ visiveis: await empresasVisiveis(req), client }) }); }
+    catch (err) { return falhar(res, err, { operacao: 'consumo-ia' }); }
+  });
+
+  router.post('/whatsapp/conversas/:conversaId/resolver-suporte', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
+      if (!conversa || conversa.excluidaEm) return res.status(404).json({ ok: false, error: 'conversa_nao_encontrada' });
+      if (conversa.atendidaPor !== String(req.auth.user.id)) return res.status(409).json({ ok: false, error: 'ASSUMA_O_ATENDIMENTO', message: 'Assuma o atendimento antes de resolver.' });
+      await client.$transaction(async tx => {
+        const travada = await tx.conversaWhatsapp.updateMany({ where: { id: conversa.id, atendidaPor: String(req.auth.user.id), excluidaEm: null }, data: { updatedAt: new Date() } });
+        if (!travada.count) throw erroAtendimento('ATENDIMENTO_OCUPADO', 'O atendimento mudou. Atualize a conversa.');
+        await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: 'RESOLVIDO', responsavelId: String(req.auth.user.id), client: tx });
+      });
+      return res.json({ ok: true });
+    } catch (err) { return falhar(res, err, { operacao: 'resolver-suporte' }); }
+  });
+
   router.get("/whatsapp/resumo", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     try {
@@ -222,16 +251,22 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     if (atendidaPor && conversa.atendidaPor === atendidaPor) return null;
     if (conversa.atendimentoId || conversa.vinculoNumeroId) {
       const { alterarAtendimentoHumano } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
-      return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client });
+      return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client,
+        aoAlterar: async (tx, ids) => {
+          for (const conversaId of ids) await atualizarEncaminhamentosSuporte({ conversaId, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+        } });
     }
-    const mudou = await client.conversaWhatsapp.updateMany({
+    return client.$transaction(async tx => {
+    const mudou = await tx.conversaWhatsapp.updateMany({
       where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null, atendidaPor: conversa.atendidaPor || null },
       data: { atendidaPor, atendidaDesde, automacaoInvalidadaEm: new Date() },
     });
     if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
-    await client.turnoIaWhatsapp.updateMany({where:{conversaId:conversa.id,status:{in:['pendente','falhou','processando']}},data:{status:'ignorado',motivo:'ASSUMIDA_POR_HUMANO',reservaToken:null,leaseAte:null,concluidoEm:new Date()}});
-    await client.acaoPendenteWhatsapp.updateMany({where:{conversaId:conversa.id,status:'pendente'},data:{status:'cancelada'}});
+    await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+    await tx.turnoIaWhatsapp.updateMany({where:{conversaId:conversa.id,status:{in:['pendente','falhou','processando']}},data:{status:'ignorado',motivo:'ASSUMIDA_POR_HUMANO',reservaToken:null,leaseAte:null,concluidoEm:new Date()}});
+    await tx.acaoPendenteWhatsapp.updateMany({where:{conversaId:conversa.id,status:'pendente'},data:{status:'cancelada'}});
     return null;
+    });
   }
 
   async function assumirParaEnvio(req, conversa, opcoes={}) {

@@ -10,6 +10,13 @@
 // é o MAIS CARO — superestimar protege o teto; subestimar o fura.
 
 export const VIGENCIA_DA_TABELA = "2026-09-02";
+export const VIGENCIA_PRECO_OPENAI = '2026-10-09';
+export function custoEstimadoMicrousd(usage, modelo) {
+  const p = precoDoModelo(modelo), u = usage || {};
+  const n = v => Math.max(0, Number(v) || 0);
+  return Math.ceil((n(u.input_tokens) * p.entrada + n(u.output_tokens) * p.saida
+    + n(u.cache_read_input_tokens) * p.cacheLeitura + n(u.cache_creation_input_tokens) * p.cacheEscrita) / 100);
+}
 
 /** US$ por MILHÃO de tokens, em centavos de dólar (500 = US$ 5,00). */
 export const PRECOS_POR_MILHAO_CENTAVOS = Object.freeze({

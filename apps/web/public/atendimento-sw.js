@@ -31,16 +31,16 @@ self.addEventListener("message", event => {
 function destinoSeguro(raw) {
   try {
     const url = new URL(raw || "/whatsapp?app=atendimento", self.location.origin);
-    if (url.origin !== self.location.origin || url.pathname !== "/whatsapp") return "/whatsapp?app=atendimento";
+    if (url.origin !== self.location.origin || !['/whatsapp', '/suporte'].includes(url.pathname)) return "/whatsapp?app=atendimento";
     const id = url.searchParams.get("conversa");
-    return `/whatsapp?app=atendimento${id && /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? `&conversa=${encodeURIComponent(id)}` : ""}`;
+    return `${url.pathname}?app=atendimento${id && /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? `&conversa=${encodeURIComponent(id)}` : ""}`;
   } catch { return "/whatsapp?app=atendimento"; }
 }
 self.addEventListener("push", event => event.waitUntil((async () => {
   let payload; try { payload = event.data?.json(); } catch { return; }
   const atual = await vinculo("ler");
   if (!atual?.vinculo || atual.vinculo !== payload?.vinculo) return;
-  await self.registration.showNotification("Nova mensagem no atendimento", {
+  await self.registration.showNotification(payload.tipo === 'SUPORTE' ? 'Atendimento precisa da equipe' : "Nova mensagem no atendimento", {
     body: "Abra o Altan Atendimento para responder.", icon: "/icon-192.png", badge: "/icon-192.png",
     tag: `altan-atendimento-${new URL(destinoSeguro(payload.url), self.location.origin).searchParams.get("conversa") || "fila"}`, data: { url: destinoSeguro(payload.url), vinculo: atual.vinculo },
   });
@@ -52,7 +52,7 @@ self.addEventListener("notificationclick", event => {
     if (!atual?.vinculo || atual.vinculo !== event.notification.data?.vinculo) return;
     const url = destinoSeguro(event.notification.data.url);
     const janelas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const janela = janelas.find(c => new URL(c.url).origin === self.location.origin && new URL(c.url).pathname === "/whatsapp");
+    const janela = janelas.find(c => new URL(c.url).origin === self.location.origin && new URL(c.url).pathname === new URL(url, self.location.origin).pathname);
     if (janela) { janela.postMessage({ tipo: "ABRIR_CONVERSA", url }); await janela.focus(); } else await self.clients.openWindow(url);
   })());
 });

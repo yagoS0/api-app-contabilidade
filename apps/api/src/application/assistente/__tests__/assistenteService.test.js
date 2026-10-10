@@ -31,6 +31,8 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1", per
   const conversa = { id: "cv1", escopoVerificado: true, telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, portalClient: { id: "pc-1", razao: "ACME LTDA", cnpj: "11222333000181" } };
   const acoes = new Map(pendente ? [[pendente.id, { ...pendente }]] : []);
   const db = {
+    encaminhamentoSuporte: { findFirst: jest.fn(async () => null), findUnique: jest.fn(async () => null), create: jest.fn(async ({ data }) => data) },
+    eventoPushAtendimento: { create: jest.fn(async ({ data }) => data) },
     _mensagens: mensagens, _acoes: acoes, _conversa: conversa, _contato: contato, _chamadas: chamadas,
     mensagemWhatsapp: {
       updateMany: jest.fn(async ({ where, data }) => {
@@ -95,6 +97,31 @@ function modeloFalso(texto = "Você não tem guia liberada em aberto.") {
 const deps = (over = {}) => ({ flag: true, piloto: ["pc-1"], log: silencio, agora: new Date("2026-09-02T12:00:00Z"), tryLock: async () => true, releaseLock: async () => {}, chaveIa: "chave-de-teste", ...over });
 
 beforeEach(() => { registrarMensagemEnviada.mockClear(); });
+
+describe('GPT no suporte com registro por rodada e encaminhamento persistente', () => {
+  test('cliente padrão usa Responses e registra modelo e precisão corretos', async () => {
+    const client = bancoEmMemoria();
+    const fetchOpenAI = jest.fn(async () => ({ ok: true, json: async () => ({ status: 'completed', usage: { input_tokens: 3000, output_tokens: 500 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'Como posso ajudar?' }] }] }) }));
+    const r = await responderMensagem({ conversaId: 'cv1', mensagemId: 'm1', deps: deps({ client, cloud: cloudFalso(), usarOpenAI: true, tetoSuporte: 100, fetchOpenAI }) });
+    expect(r.feito).toBe(true); expect(fetchOpenAI).toHaveBeenCalledTimes(1);
+    expect(client._chamadas[0]).toMatchObject({ modelo: 'gpt-5.4-mini', finalidade: 'assistente_whatsapp', custoEstimadoMicrousd: 4500, reservaCentavos: 0 });
+  });
+  test('timeout pausa atendimento, conserva reserva e cria aviso antes da mensagem ao cliente', async () => {
+    const client = bancoEmMemoria();
+    const fetchOpenAI = jest.fn(async () => { throw Error('network'); });
+    const r = await responderMensagem({ conversaId: 'cv1', mensagemId: 'm1', deps: deps({ client, cloud: cloudFalso(), usarOpenAI: true, tetoSuporte: 100, fetchOpenAI }) });
+    expect(r.feito).toBe(true); expect(r.motivo).toBe('OPENAI_REDE'); expect(fetchOpenAI).toHaveBeenCalledTimes(1);
+    expect(client._conversa.atendidaDesde).toBeTruthy(); expect(client._chamadas[0].reservaCentavos).toBeGreaterThan(0);
+    expect(client.eventoPushAtendimento.create).toHaveBeenCalledTimes(1);
+  });
+  test('orçamento inválido encaminha sem chamar provedor', async () => {
+    const client = bancoEmMemoria(), fetchOpenAI = jest.fn();
+    const r = await responderMensagem({ conversaId: 'cv1', mensagemId: 'm1', deps: deps({ client, cloud: cloudFalso(), usarOpenAI: true, tetoSuporte: 0, fetchOpenAI }) });
+    expect(r.motivo).toBe('TETO_PILOTO_INVALIDO'); expect(fetchOpenAI).not.toHaveBeenCalled();
+    expect(client.encaminhamentoSuporte.create).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("a escolha do perfil de emissão exige uma nova mensagem do cliente", () => {
   const dados = { tomadorDoc: "12345678000190", tomadorNome: "Tomador sintético", descricao: "Consultoria", valor: 100, competencia: "2026-09" };

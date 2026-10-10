@@ -25,9 +25,10 @@ import {
   IA_TETO_MENSAL_ESCRITORIO_CENTAVOS,
   IA_ALERTA_FRACAO,
   IA_RESERVA_CHAMADA_CENTAVOS,
+  IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS,
   log as logPadrao,
 } from "../../config.js";
-import { custoPorTokensCentavos } from "./precosIa.js";
+import { custoPorTokensCentavos, custoEstimadoMicrousd, VIGENCIA_DA_TABELA, VIGENCIA_PRECO_OPENAI } from "./precosIa.js";
 
 export const STATUS_CHAMADA = Object.freeze({
   OK: "ok",
@@ -154,6 +155,11 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
     return { ok: false, motivo: MOTIVOS_RECUSA.SEM_CHAVE, mensagem: FRASE_CONFIG };
   }
 
+  if (modelo === 'gpt-5.4-mini' && (!Number.isSafeInteger(IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS) || IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS < 0)) {
+    await registrar({ ...base, status: STATUS_CHAMADA.RECUSADA_CONFIG, erroCodigo: 'TETO_COMPARTILHADO_INVALIDO' }, client, log);
+    return { ok: false, motivo: 'TETO_COMPARTILHADO_INVALIDO', mensagem: FRASE_CONFIG };
+  }
+
   // Leitura e reserva no MESMO commit serializável: dois fios não gastam o mesmo saldo.
   // Reserva órfã continua contando; não liberar automaticamente um consumo desconhecido.
   try {
@@ -167,7 +173,10 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
           const diario = lead ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: new Date(agora.getTime() - 86400000) } }, tx) : null;
           // Não reinicia na virada do mês nem ao criar outra conversa; reservas incertas contam.
           const acumulado = tetoAcumuladoCentavos !== null ? await somaDoMes({ modelo: base.modelo, finalidade: base.finalidade }, tx) : null;
-          const motivo = acumulado && acumulado.centavos + reservaCentavos > tetoAcumuladoCentavos ? "TETO_PILOTO"
+          const compartilhado = base.modelo === 'gpt-5.4-mini' && IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS > 0
+            ? await somaDoMes({ modelo: base.modelo, finalidade: { in: ['assistente_whatsapp', 'comercial_whatsapp'] } }, tx) : null;
+          const motivo = compartilhado && compartilhado.centavos + reservaCentavos > IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS ? 'TETO_OPENAI_COMPARTILHADO'
+            : acumulado && acumulado.centavos + reservaCentavos > tetoAcumuladoCentavos ? "TETO_PILOTO"
             : lead && (lead.centavos + reservaCentavos > IA_COMERCIAL_TETO_CONVERSA_CENTAVOS || diario.chamadas >= IA_COMERCIAL_MAX_CHAMADAS_DIA) ? "TETO_LEAD"
             : IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos + reservaCentavos > IA_TETO_MENSAL_EMPRESA_CENTAVOS ? MOTIVOS_RECUSA.TETO_EMPRESA
             : IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 && escritorio.centavos + reservaCentavos > IA_TETO_MENSAL_ESCRITORIO_CENTAVOS ? MOTIVOS_RECUSA.TETO_ESCRITORIO : null;
@@ -207,6 +216,8 @@ export async function concluirChamadaIa(contexto, { usage = null, iteracoes = 0,
     cacheReadTokens: Number(u.cache_read_input_tokens || 0),
     cacheCreationTokens: Number(u.cache_creation_input_tokens || 0),
     custoEstimadoCentavos: custoPorTokensCentavos(u, base.modelo),
+    custoEstimadoMicrousd: custoEstimadoMicrousd(u, base.modelo),
+    tabelaPreco: base.modelo === 'gpt-5.4-mini' ? VIGENCIA_PRECO_OPENAI : VIGENCIA_DA_TABELA,
     duracaoMs: inicio ? Date.now() - inicio : null,
     iteracoes: Number(iteracoes || 0),
     ferramentas: Array.isArray(ferramentas) ? ferramentas : [],

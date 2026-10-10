@@ -17,3 +17,11 @@ test('painel distingue custo por tokens e reserva pendente',async()=>{
   const r=await consumoIaDoMes({client});
   expect(r.escritorio).toMatchObject({consumoCentavos:0.40995,reservaCentavos:3,centavos:3.40995});
 });
+
+test('relatório por área usa a mesma precisão do painel, não o histórico inteiro em microusd',async()=>{
+  const { detalharConsumoIa } = await import('../ConsumoIaService.js');
+  const client={chamadaIa:{groupBy:jest.fn(async()=>[{finalidade:'comercial_whatsapp',modelo:'gpt-5.4-mini',status:'ok',_count:{_all:3},_sum:{custoEstimadoCentavos:'0.40995',reservaCentavos:0}}])}};
+  const r=await detalharConsumoIa({visiveis:[],client});
+  expect(r.custoUsd).toBeCloseTo(0.0040995,10);expect(r.itens[0].area).toBe('Comercial');
+  expect(client.chamadaIa.groupBy.mock.calls[0][0]._sum.custoEstimadoCentavos).toBe(true);
+});

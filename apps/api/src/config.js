@@ -678,6 +678,11 @@ export const IA_LEADS_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_LEA
 export const IA_LEADS_CANAIS_PILOTO = Object.freeze(String(process.env.IA_LEADS_CANAIS_PILOTO || "").split(",").map(v => v.trim()).filter(Boolean));
 export const IA_LEADS_TETO_TOTAL_CENTAVOS = Number(process.env.IA_LEADS_TETO_TOTAL_CENTAVOS || 0);
 export const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || "").trim();
+export const IA_SUPORTE_OPENAI = process.env.IA_SUPORTE_OPENAI === "1";
+export const IA_SUPORTE_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_SUPORTE_TELEFONES_PILOTO || "").split(",").map(v => v.replace(/\D/g, "")).filter(Boolean));
+export const IA_SUPORTE_CANAIS_PILOTO = Object.freeze(String(process.env.IA_SUPORTE_CANAIS_PILOTO || "").split(",").map(v => v.trim()).filter(Boolean));
+export const IA_SUPORTE_TETO_TOTAL_CENTAVOS = Number(process.env.IA_SUPORTE_TETO_TOTAL_CENTAVOS || 0);
+export const IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS = Number(process.env.IA_OPENAI_TETO_COMPARTILHADO_CENTAVOS || 0);
 export const INTEGRACAO_FISCAL_LEADS = process.env.INTEGRACAO_FISCAL_LEADS === "1";
 export const IA_COMERCIAL_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_COMERCIAL_TELEFONES_PILOTO || "").split(",").map(v => v.replace(/\D/g, "")).filter(Boolean));
 export const IA_COMERCIAL_TETO_CONVERSA_CENTAVOS = Math.max(1, Number(process.env.IA_COMERCIAL_TETO_CONVERSA_CENTAVOS) || 500);

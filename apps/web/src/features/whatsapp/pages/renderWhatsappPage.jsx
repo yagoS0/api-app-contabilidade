@@ -14,6 +14,7 @@
 // e o vínculo não existe (`portalClientId` nunca é nulo ali).
 
 import "../mobileInbox.css";
+import { PendenciasSuporte, ConsumoIaDetalhado } from '../components/PendenciasSuporte';
 import { AtendimentoAplicativo } from "../components/AtendimentoAplicativo";
 import { haRascunhoPendente } from "../hooks/useRascunhoServidor";
 import { modoAtendimento } from "../lib/atendimentoPwa";
@@ -192,6 +193,8 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
         {notificacaoPendente && <p role="status" className="wa-notice">Há uma conversa aberta pela notificação. Salve ou confira seu rascunho antes de mudar. <Button variant="secondary" onClick={() => { if (haRascunhoPendente()) return; window.history.pushState({}, "", notificacaoPendente); window.dispatchEvent(new PopStateEvent("popstate")); setNotificacaoPendente(null); }}>Abrir conversa da notificação</Button><Button variant="secondary" onClick={() => setNotificacaoPendente(null)}>Continuar aqui</Button></p>}
         <div style={{ "--wa-list-width": `${larguraLista}px` }} className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${listaOculta ? " wa-workspace--list-hidden" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
           <aside id="wa-lista-contatos" className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef} hidden={listaOculta}>
+            {area !== 'comercial' && <PendenciasSuporte api={api} onAbrir={abrir} />}
+            <ConsumoIaDetalhado api={api} />
             <div className="wa-sidebar-top">
               <div className="wa-section-heading wa-inbox-heading"><h2>Conversas</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span><div className="wa-mobile-inbox-actions"><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando} aria-label="Atualizar conversas"><WhatsappIcon nome="atualizar" size={20} /></Button>{onBack && <Button variant="secondary" onClick={onBack} aria-label="Voltar ao escritório"><WhatsappIcon nome="empresa" size={20} /></Button>}</div></div>
               <label className="wa-search"><WhatsappIcon nome="busca" size={17} /><input aria-label={api?.whatsappContratoV2 ? "Buscar pessoa ou empresa" : "Buscar nas conversas carregadas"} placeholder="Buscar contato ou empresa" value={busca} onChange={e => setBusca(e.target.value)} /></label>

@@ -6,6 +6,7 @@ export function leituraDoResumo(resumo) {
   if (![historico, lixeira].every(n => Number.isSafeInteger(n) && n >= 0)) return { selo: null, frase: "não foi possível ler" };
   const avisoHistorico = historico > 0 ? `${historico} ${historico === 1 ? "mensagem não lida no histórico anterior" : "mensagens não lidas no histórico anterior"}` : null;
   return {
+    pendenciasSuporte: Number.isSafeInteger(resumo.pendenciasSuporte) ? resumo.pendenciasSuporte : null,
     selo: resumo.mensagensNaoLidas + historico || null,
     contagensNaoLidas: resumo.contagensNaoLidas && ['TODOS', 'LEAD', 'CLIENTE'].every(k => Number.isSafeInteger(resumo.contagensNaoLidas[k]) && resumo.contagensNaoLidas[k] >= 0) ? resumo.contagensNaoLidas : null,
     avisoHistorico,

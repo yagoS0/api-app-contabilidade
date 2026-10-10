@@ -10,3 +10,10 @@ SET "custoEstimadoCentavos" = (
 WHERE "modelo" IN ('gpt-5.4-mini','claude-opus-5','claude-sonnet-5','claude-haiku-4-5-20251001')
   AND status IN ('ok','erro')
   AND "inputTokens" + "outputTokens" + "cacheReadTokens" + "cacheCreationTokens" > 0;
+
+-- Mantém também a coluna de compatibilidade do relatório de suporte coerente.
+UPDATE "chamadas_ia"
+SET "custoEstimadoMicrousd" = CEIL("custoEstimadoCentavos" * 10000)
+WHERE "modelo" IN ('gpt-5.4-mini','claude-opus-5','claude-sonnet-5','claude-haiku-4-5-20251001')
+  AND status IN ('ok','erro')
+  AND "inputTokens" + "outputTokens" + "cacheReadTokens" + "cacheCreationTokens" > 0;

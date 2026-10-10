@@ -7,7 +7,7 @@ export function precisaConferirIntencao(erro) {
   return !erro?.status || erro.status >= 500 || erro.payload?.podeTentarDeNovo === false;
 }
 export function modoAtendimento(location = window.location) {
-  return location.pathname === "/whatsapp" && (new URLSearchParams(location.search).get("app") === "atendimento" || window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
+  return ['/whatsapp', '/suporte'].includes(location.pathname) && (new URLSearchParams(location.search).get("app") === "atendimento" || window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
 }
 export function destinoInternoSeguro(raw, fallback = "/companies") {
   if (!raw || typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f]/.test(raw)) return fallback;

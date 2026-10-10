@@ -90,6 +90,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
   if (!activeArea) return null;
   const currentDestination = `${location.pathname}${location.search}${location.hash}`;
   const unread = resumoWhatsapp?.selo;
+  const suportePendente = resumoWhatsapp?.pendenciasSuporte > 0 ? <span className="office-navigation__badge" aria-label={`${resumoWhatsapp.pendenciasSuporte} atendimentos precisam da equipe`}>{Math.min(99, resumoWhatsapp.pendenciasSuporte)}{resumoWhatsapp.pendenciasSuporte > 99 ? '+' : ''}</span> : null;
   const unreadBadge = unread ? <span className="office-navigation__badge" aria-label={`${unread} mensagens não lidas no WhatsApp`}>{unread}</span> : null;
 
   const destinations = <nav
@@ -103,7 +104,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
       className="office-navigation__destination"
       aria-current={matchesLink(link, pathname) ? "page" : undefined}
       title={link.to === "/whatsapp" ? resumoWhatsapp?.frase : undefined}
-    >{link.label}</Link>)}
+      >{link.label}{link.to === '/suporte' ? suportePendente : null}</Link>)}
   </nav>;
 
   return <div className={`office-navigation${inCompany ? " office-navigation--company" : ""}`}>
@@ -116,7 +117,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
         className="office-navigation__area"
         aria-current={area.id === activeArea.id ? "location" : undefined}
         title={area.id === "suporte" ? resumoWhatsapp?.frase : undefined}
-      >{area.label}{area.id === "suporte" ? unreadBadge : area.id === 'comercial' && resumoComercial?.selo ? <span className="office-navigation__badge" aria-label={`${resumoComercial.selo} mensagens comerciais não lidas`}>{resumoComercial.selo}</span> : null}</Link>)}
+      >{area.label}{area.id === "suporte" ? <>{unreadBadge}{suportePendente}</> : area.id === 'comercial' && resumoComercial?.selo ? <span className="office-navigation__badge" aria-label={`${resumoComercial.selo} mensagens comerciais não lidas`}>{resumoComercial.selo}</span> : null}</Link>)}
     </nav>
     <TaskCenterSlot />
     <div className="office-navigation__disclosure" ref={disclosureRef}>
