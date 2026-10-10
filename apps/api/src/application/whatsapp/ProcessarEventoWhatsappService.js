@@ -1,4 +1,5 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { suporteNoPiloto } from '../assistente/pilotoSuporte.js';
 import { fluxoPagamentoAtual } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
 import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
@@ -158,7 +159,7 @@ async function processarStatus(item, { logger }) {
  * Duplicata já respondida não dispara; as demais podem reparar a criação idempotente do job.
  * Mídia passa primeiro pela fila de arquivos; o turno somente explica que não lê conteúdo.
  */
-export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO } = {}) {
+export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO, pilotoSuporte } = {}) {
   if (!flag) return { responde: false, motivo: "FLAG_OFF" };
   if (r?.duplicada) return { responde: false, motivo: "DUPLICADA" };
   if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
@@ -170,6 +171,7 @@ export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto =
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || !r?.conversa?.portalClientId) return { responde: false, motivo: "NAO_VINCULADA" };
   if (r.conversa.escopoVerificado !== true) return { responde: false, motivo: "SEM_ESCOPO_VERIFICADO" };
   if (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId))) return { responde: false, motivo: "FORA_DO_PILOTO" };
+  if (!suporteNoPiloto(r.conversa, pilotoSuporte)) return { responde: false, motivo: 'FORA_DO_PILOTO_SUPORTE' };
   return { responde: true, motivo: null };
 }
 

@@ -25,7 +25,8 @@ try {
   fs.writeFileSync(path.join(run, "migrations.sql"), files.map(f => fs.readFileSync(f, "utf8")).join("\n"));
   const url = `postgresql://lead_test@127.0.0.1:${port}/suporte_comercial_check`;
   cmd(process.execPath, ["node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"], "migrations", { env: { ...process.env, DATABASE_URL: url } });
-  const result = cmd(process.execPath, ["apps/api/scripts/verify-suporte-comercial-postgres.mjs", url], "checks", { timeout: 60000, env: { ...process.env, DATABASE_URL: url, NODE_ENV: "test", INTEGRACAO_IA_COMERCIAL: "0", INTEGRACAO_FISCAL_LEADS: "0", INTEGRACAO_WHATSAPP: "0" } });
+  const verificador = process.argv.includes('--gpt') ? 'apps/api/scripts/verify-suporte-gpt-postgres.mjs' : 'apps/api/scripts/verify-suporte-comercial-postgres.mjs';
+  const result = cmd(process.execPath, [verificador, url], "checks", { timeout: 60000, env: { ...process.env, DATABASE_URL: url, NODE_ENV: "test", INTEGRACAO_IA_COMERCIAL: "0", INTEGRACAO_FISCAL_LEADS: "0", INTEGRACAO_WHATSAPP: "0" } });
   fs.writeFileSync(path.join(run, "summary.json"), JSON.stringify({ passed: true, migrations: files.length, checks: result, run }, null, 2));
   process.stdout.write(result + "\nEvidência: " + run + "\n");
 } finally {

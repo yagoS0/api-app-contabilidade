@@ -27,3 +27,14 @@
   .wa-page .wa-sidebar-footer :is(summary, a, button) { font-size: 12px; min-height: 44px; }
   .wa-page .wa-app-tools { min-width: 0; }
 }
+.wa-support-queue { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.wa-support-queue summary { cursor: pointer; font-weight: 600; }
+.wa-support-queue article { padding: 10px 0; border-top: 1px solid var(--border); }
+.wa-support-queue p { margin: 6px 0; overflow-wrap: anywhere; }
+.wa-support-queue article > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.wa-support-queue[open], .wa-cost-breakdown[open] { max-height: 38vh; overflow-y: auto; flex-shrink: 0; }
+.wa-support-queue button { cursor: pointer; border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; color: var(--text); background: var(--surface); font: inherit; font-size: 12px; }
+.wa-support-queue button:disabled { opacity: .6; cursor: wait; }
+.wa-support-queue button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wa-cost-breakdown { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.wa-cost-breakdown summary { cursor: pointer; }

@@ -7,6 +7,11 @@ import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { registrarMensagemEnviada, janelaDaConversa, DIRECAO } from "../whatsapp/ConversaWhatsappService.js";
 import { SITUACOES_JANELA } from "../whatsapp/janela24h.js";
 import { AssistenteClient } from "./AssistenteClient.js";
+import { SuporteOpenAIClient } from './SuporteOpenAIClient.js';
+import { suporteNoPiloto } from './pilotoSuporte.js';
+import { correcaoExplicita } from './correcaoDoPedido.js';
+import { registrarEncaminhamentoSuporte } from '../whatsapp/EncaminhamentoSuporteService.js';
+import { IA_SUPORTE_OPENAI, IA_SUPORTE_TETO_TOTAL_CENTAVOS, OPENAI_API_KEY } from '../../config.js';
 import { respostaComMarcador } from "./validacaoResposta.js";
 import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
@@ -98,6 +103,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   let timer = null;
   let leaseValido = true;
   let houveSaida = false;
+  let chamadaOpenAIReservada = false;
   let arquivosEnviados = 0;
   let encaminhamentoDoTurno = null;
   let mensagensRespondidas = [mensagemId];
@@ -139,7 +145,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         : corte != null && (!Number.isFinite(recebidaEm) || recebidaEm <= corte) ? "AUTOMACAO_INVALIDADA"
         : !atual?.escopoVerificado || atual.portalClientId !== conversa.portalClientId ? "SEM_ESCOPO_VERIFICADO"
         : atual.atendidaPor || (atual.atendidaDesde && (!encaminhamentoDoTurno || new Date(atual.atendidaDesde).getTime() !== encaminhamentoDoTurno.getTime())) ? "ASSUMIDA_POR_HUMANO"
-          : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) ? "FORA_DO_PILOTO" : null;
+          : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) || !suporteNoPiloto(conversa, deps.pilotoSuporte) ? "FORA_DO_PILOTO" : null;
       if (codigo) throw Object.assign(new Error("O assistente foi suspenso nesta conversa."), { codigo });
       if ((atual.atendimentoId || null) !== (conversa.atendimentoId || null)) throw Object.assign(new Error("O atendimento deste segmento mudou."), { codigo: "CONTEXTO_ALTERADO" });
       await conferirContextoResponsavel({ conversa: atual, mensagem, contexto, client, permitirHandoffEm: encaminhamentoDoTurno });
@@ -173,10 +179,6 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac });
     };
     const sessao = await carregarSessaoAtual();
-    if (!sessao.ok) {
-      await dizer(fraseSemSessao(sessao.motivo), { autor: AUTOR.SISTEMA });
-      return { feito: true, motivo: sessao.motivo };
-    }
     const assinaturaDaSessao = (s) => JSON.stringify({
       ok: Boolean(s?.ok),
       userId: s?.userId || null,
@@ -191,29 +193,44 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       }
       return atual;
     };
-    const encaminharParaEquipe = async () => {
+    const encaminharParaEquipe = async (motivo = 'Atendimento precisa da equipe') => {
       await conferirPortao();
       const quando = new Date();
-      if (conversa.atendimentoId) {
-        await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client, quando });
+      const registrar = (tx) => (deps.usarOpenAI ?? IA_SUPORTE_OPENAI)
+        ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora: quando }) : Promise.resolve();
+      if (conversa.atendimentoId || conversa.vinculoNumeroId) {
+        await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client, quando, aoEncaminhar: registrar });
         encaminhamentoDoTurno = quando;
         return;
       }
-      const r = await client.conversaWhatsapp.updateMany({ where: {
+      const r = await client.$transaction(async tx => {
+      const mudou = await tx.conversaWhatsapp.updateMany({ where: {
         id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
         excluidaEm: null, atendidaPor: null, atendidaDesde: null,
         OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: mensagem.registradaEm } }],
       }, data: { atendidaDesde: quando } });
+      if (mudou.count) {
+        await tx.acaoPendenteWhatsapp.updateMany({ where: { conversaId: conversa.id, status: 'pendente' }, data: { status: 'cancelada' } });
+        await registrar(tx);
+      }
+      return mudou;
+      });
       if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
       encaminhamentoDoTurno = quando;
     };
-    const encaminharFalha = async () => {
-      await encaminharParaEquipe();
+    const encaminharFalha = async (motivo = 'Falha ao concluir o atendimento automático') => {
+      await encaminharParaEquipe(motivo);
       // O encaminhamento fica persistido mesmo se o aviso pela Meta falhar.
       await dizer(arquivosEnviados
         ? "O envio do arquivo já foi concluído. Não consegui finalizar o restante da resposta e encaminhei a conversa para a equipe continuar por aqui."
         : MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
     };
+
+    if (!sessao.ok) {
+      if (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) await encaminharParaEquipe('Revisar vínculo e acesso do contato');
+      await dizer(fraseSemSessao(sessao.motivo), { autor: AUTOR.SISTEMA });
+      return { feito: true, motivo: sessao.motivo };
+    }
 
     // Bolhas já recebidas pertencem ao mesmo pedido até a primeira resposta ou interação.
     // O limite impede que uma conversa contínua adie o atendimento indefinidamente.
@@ -238,6 +255,10 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     // 4. A pendência — lida pela regex, ANTES do modelo.
     let pendente = await pendenciaAberta(conversa.id, { client });
+    if (pendente && (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) && correcaoExplicita(pedidoAtual.corpo)) {
+      await cancelarPendencia(pendente.id, { client });
+      pendente = null;
+    }
     const ehTexto = mensagem.tipo === "text";
     if (confirmacaoComComplemento) {
       // Uma confirmação seguida de correção já recebida não autoriza executar o resumo antigo.
@@ -302,13 +323,24 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     // 5. Mídia ⇒ frase fixa. Texto ⇒ modelo.
     if (!ehTexto) {
+      if (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) await encaminharParaEquipe('Conteúdo recebido precisa de análise da equipe');
       await dizer(MENSAGENS_FIXAS.SO_TEXTO, { autor: AUTOR.SISTEMA });
       return concluir({ feito: true, motivo: "SO_TEXTO" });
     }
 
-    const guarda = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id, finalidade: "assistente_whatsapp", agora, client, log, ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}) });
+    const usarOpenAI = deps.usarOpenAI ?? IA_SUPORTE_OPENAI;
+    const autorizar = async (opcoes = {}) => {
+      await conferirSessaoNaoAlterada();
+      const autorizacao = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id,
+        finalidade: 'assistente_whatsapp', agora, client, log,
+        ...(usarOpenAI ? { chave: OPENAI_API_KEY, tetoAcumuladoCentavos: deps.tetoSuporte ?? IA_SUPORTE_TETO_TOTAL_CENTAVOS } : {}),
+        ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}), ...opcoes });
+      if (usarOpenAI && autorizacao.ok) chamadaOpenAIReservada = true;
+      return autorizacao;
+    };
+    const guarda = usarOpenAI ? { ok: true, contexto: null } : await autorizar();
     if (!guarda.ok) {
-      await encaminharFalha();
+      await encaminharFalha(guarda.motivo);
       return concluir({ feito: true, motivo: guarda.motivo });
     }
 
@@ -376,7 +408,9 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       registrarChamadaAoEscritorio: (p) => { chamouEscritorio = p; },
     };
 
-    const assistente = deps.assistente || new AssistenteClient({ log });
+    const assistente = deps.assistente || (usarOpenAI ? new SuporteOpenAIClient({ chave: deps.chaveIa ?? OPENAI_API_KEY,
+      ...(deps.fetchOpenAI ? { fetchImpl: deps.fetchOpenAI } : {}),
+      autorizar, concluir: (contexto, desfecho) => concluirChamadaIa(contexto, desfecho, { client, log }) }) : new AssistenteClient({ log }));
     let resposta;
     let iniciouModelo = false;
     let escolhaDePerfilDoTurno = null;
@@ -395,6 +429,9 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           return escolhaDePerfilDoTurno;
         }
         const resultado = await executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
+        if (resultado?.encaminharEscritorio === true || resultado?.motivo === 'FERRAMENTA_FALHOU') {
+          chamouEscritorio = { motivo: resultado.mensagem || 'A operação precisa de análise da equipe' };
+        }
         if (nome === "preparar_emissao" && resultado?.motivo === "ESCOLHER_PERFIL_EMISSAO") escolhaDePerfilDoTurno = resultado;
         return resultado;
       } });
@@ -402,7 +439,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       await concluirChamadaIa(guarda.contexto, { usage: iniciouModelo ? err?.usage : { input_tokens: 0, output_tokens: 0 }, usageCompleto: !iniciouModelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
       if (!iniciouModelo) throw err;
       log?.error?.({ conversaId: conversa.id, mensagemId: mensagem.id, codigo: err?.codigo, err: err?.message, diagnostico: err?.diagnostico, modelo: assistente.modelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas }, "assistente: o modelo não respondeu");
-      await encaminharFalha();
+      await encaminharFalha(err?.codigo || 'IA_ERRO');
       return concluir({ feito: true, motivo: err?.codigo || "IA_ERRO" });
     }
     await concluirChamadaIa(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client, log });
@@ -413,7 +450,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
-    if (chamouEscritorio) await encaminharParaEquipe();
+    if (chamouEscritorio) await encaminharParaEquipe(chamouEscritorio.motivo);
     const texto = (resposta.texto || "").trim();
     if (texto) {
       // A ferramenta pode ter lido dados e a autorização ser retirada enquanto o modelo redige a
@@ -438,7 +475,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     return concluir({ feito: true, motivo: "RESPONDIDA", texto });
   } catch (err) {
     log?.error?.({ conversaId, mensagemId, err: err?.message }, "assistente: TURNO FALHOU");
-    return { feito: false, motivo: err?.codigo || "ERRO", erro: err?.message, indeterminado: Boolean(err?.indeterminado || houveSaida) };
+    return { feito: false, motivo: err?.codigo || "ERRO", erro: err?.message, indeterminado: Boolean(err?.indeterminado || houveSaida || chamadaOpenAIReservada) };
   } finally {
     clearInterval(timer);
     if (lock) {

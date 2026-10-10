@@ -1092,6 +1092,9 @@ export function createRealApi() {
     async getResumoWhatsapp({ area = '' } = {}) {
       return request(`/firm/whatsapp/resumo${area ? `?area=${encodeURIComponent(area)}` : ''}`);
     },
+    async getPendenciasSuporte() { return request('/firm/whatsapp/suporte/pendencias'); },
+    async getConsumoIaDetalhado() { return request('/firm/whatsapp/consumo-ia'); },
+    async resolverSuporte(conversaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/resolver-suporte`, { method: 'POST' }); },
     whatsappContratoV2: true,
     async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null, q = "", relacionamento = "", naoLidas = false, area = "" } = {}) {
       const qs = new URLSearchParams({ filtro: String(filtro), v2: "1" });
