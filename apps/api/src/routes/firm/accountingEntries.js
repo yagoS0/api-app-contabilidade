@@ -1203,6 +1203,7 @@ export function createAccountingEntriesRouter({ log }) {
           }) : resumirBaixas(p.baixas || []);
           const valorObrigacao = response.valor;
           return { ...response, valorProvisionado: response.totalD, valorObrigacao, pagamentoEfetivo,
+            pagamentoLocalizado: guide?.paymentStatus === "PAID" && ["ABERTO", "PARCIAL"].includes(response.statusPagamento),
             ...(response.statusPagamento === "PAGO" && !response.parcial && pagamentoEfetivo?.fonte === "BAIXA_CONTABIL" && pagamentoEfetivo.total != null
               ? { valor: pagamentoEfetivo.total, totalD: pagamentoEfetivo.total, totalC: pagamentoEfetivo.total } : {}) };
         }),
@@ -3250,6 +3251,16 @@ export function createAccountingEntriesRouter({ log }) {
         saldo: saldoAtual.saldo,
         principalDestaBaixa,
         message: `A baixa (principal R$ ${principalDestaBaixa.toFixed(2)}) excede o saldo da provisão (R$ ${saldoAtual.saldo.toFixed(2)}).`,
+      });
+    }
+    // Somente IRPJ/CSLL admitem pagamento por quotas. Encargos não amortizam o principal.
+    const permiteQuotas = ["IRPJ", "CSLL"].includes(String(openEntry.subtipo || "").trim().toUpperCase());
+    if (!permiteQuotas && r2(saldoAtual.saldo - principalDestaBaixa) > 0.01) {
+      return res.status(400).json({
+        error: "baixa_principal_incompleto",
+        saldo: saldoAtual.saldo,
+        principalDestaBaixa,
+        message: "Quite todo o principal pendente da provisão. Lance juros e multa separadamente; quotas são permitidas somente para IRPJ e CSLL.",
       });
     }
     // Quita a provisão quando o abatido acumulado alcança o principal; senão fica PARCIAL.

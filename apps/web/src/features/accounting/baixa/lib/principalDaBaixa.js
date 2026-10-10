@@ -67,11 +67,19 @@ export function principalDaBaixa(lines) {
  * @param {{principal?: number, abatido?: number, saldo?: number}|null|undefined} saldoInfo
  * @returns {{codigo: string, principal: number, saldo: number, excedente: number, motivo: string, saida: string}|null}
  */
-export function conferirPrincipalContraSaldo(lines, saldoInfo) {
+export function conferirPrincipalContraSaldo(lines, saldoInfo, subtipo) {
   if (!saldoInfo || !Number.isFinite(Number(saldoInfo.saldo))) return null;
   const principal = principalDaBaixa(lines);
   const saldo = r2(saldoInfo.saldo);
   const excedente = r2(principal - saldo);
+  const permiteQuotas = ["IRPJ", "CSLL"].includes(String(subtipo || "").trim().toUpperCase());
+  if (!permiteQuotas && excedente < -0.01) {
+    return {
+      codigo: "baixa_principal_incompleto", principal, saldo, excedente,
+      motivo: "Quite todo o principal pendente da provisão.",
+      saida: "Lance juros e multa separadamente; quotas são permitidas somente para IRPJ e CSLL.",
+    };
+  }
   if (excedente <= 0.01) return null;
 
   const brl = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

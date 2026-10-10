@@ -323,7 +323,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   // não quebrado) monta `D X / C X` — balanceado — e o servidor recusa com `baixa_excede_saldo`.
   // A conferência é a MESMA do servidor, em `lib/principalDaBaixa.js`; quem recusa continua sendo
   // ele. Sem `saldoInfo` isto devolve `null` e nada é afirmado.
-  const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo);
+  const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo, entry.subtipo);
   const contasPreenchidas = lines.every((l) => String(l.conta || "").trim());
   const mesIncorreto = Boolean(competenciaPagamento && data && !data.startsWith(competenciaPagamento + "-"));
   const debitosBaixa = lines.filter((l) => l.tipo === "D");
@@ -395,7 +395,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         </div>
 
         {/* Baixa parcial por quota: mostra saldo restante quando a provisão já teve quotas pagas */}
-        {saldoInfo && saldoInfo.abatido > 0.009 && saldoInfo.saldo > 0.009 && (
+        {["IRPJ", "CSLL"].includes(String(entry.subtipo || "").trim().toUpperCase()) && saldoInfo && saldoInfo.abatido > 0.009 && saldoInfo.saldo > 0.009 && (
           <div style={{ background: "rgba(120,170,255,0.12)", border: "1px solid #6EA8FF", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem" }}>
             💠 Pagamento por quota — <strong>quota {quotaNumero}</strong>. Provisão R$ {saldoInfo.principal.toFixed(2)} ·
             já pago R$ {saldoInfo.abatido.toFixed(2)} · <strong>saldo R$ {saldoInfo.saldo.toFixed(2)}</strong>.

@@ -6,6 +6,14 @@ import { confirmarPagamento } from "../SerproPagtoWebService.js";
 const post = jest.fn();
 const run = () => confirmarPagamento({ contribuinteCnpj: "22222222000191", numeroDocumento: "123" });
 beforeEach(() => { jest.clearAllMocks(); SerproHttpClient.mockImplementation(() => ({ post })); });
+
+test.each([[401, 'Credencial recusada', 'SERPRO_PAGTOWEB_AUTENTICACAO'],
+  [403, 'Sem procuração', 'SERPRO_PAGTOWEB_SEM_AUTORIZACAO'],
+  [400, 'EntradaIncorreta-PAGTOWEB-00001: parâmetro inválido', 'SERPRO_PAGTOWEB_DOCUMENTO_INVALIDO'],
+  [200, '', 'SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA']])('diagnóstico diferencia HTTP %s / %s', async (status, texto, code) => {
+  post.mockResolvedValue({ status, data: { mensagens: [{ texto }] } });
+  await expect(run()).rejects.toMatchObject({ code, details: { httpStatus: status } });
+});
 test.each([[401, "Não autorizado"], [403, "Sem procuração"], [400, "Certificado inexistente"], [400, "Nenhum serviço encontrado"], [200, ""], [500, "Comprovante não localizado"]])("retorno técnico %s %s nunca é negativa de pagamento", async (status, texto) => {
   post.mockResolvedValue({ status, data: { mensagens: [{ texto }] } });
   await expect(run()).rejects.toHaveProperty("code"); expect(post).toHaveBeenCalledTimes(1);

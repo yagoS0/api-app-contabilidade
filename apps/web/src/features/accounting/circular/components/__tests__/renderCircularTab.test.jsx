@@ -13,6 +13,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 import { MemoryRouter } from "react-router-dom";
+import { informacaoRecalculo } from "../../../components/RecalculoGuiaAviso";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: ({ entry }) => <div data-testid="baixa-aberta">{entry.id}</div>,
@@ -48,6 +49,22 @@ const HOJE = new Date();
 const ANO = HOJE.getFullYear();
 const COMP = `${ANO}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`;
 
+test.each(['ABERTO', 'PARCIAL', 'PAGO'])('SERPRO e baixa são estados separados para PIS %s sem flag legada', (statusPagamento) => {
+  renderTab([provisao({ subtipo: 'PIS', statusPagamento,
+    sourceGuide: guia({ paymentStatus: 'PAID', paymentStatusSource: 'SERPRO' }),
+  })], { companyRegime: 'LUCRO_PRESUMIDO' });
+  expect(screen.getByText('SERPRO')).toBeInTheDocument();
+  expect(screen.getByText(statusPagamento === 'PAGO' ? 'Baixada' : statusPagamento === 'PARCIAL' ? 'Conferir baixa' : 'Baixa pendente')).toBeInTheDocument();
+});
+
+test.each([['100', 100], [100.001, 100], [0, 0]])('não mostra recálculo com valores iguais em centavos %s/%s', (antes, depois) => {
+  expect(informacaoRecalculo({ recalculatedAt: '2026-10-01', recalculatedFromValor: antes, recalculatedToValor: depois })).toBeNull();
+});
+
+test('recálculo real permanece nos detalhes, inclusive quando reduz o valor', () => {
+  expect(informacaoRecalculo({ recalculatedAt: '2026-10-01', recalculatedFromValor: 200, recalculatedToValor: 100 })).toMatchObject({ atual: expect.stringContaining('100,00') });
+});
+
 test.each(["Lucro Presumido", "PRESUMIDO", "LUCRO_PRESUMIDO"])("regime %s mantém PIS e COFINS acessíveis no fechamento", (companyRegime) => {
   renderTab([provisao({ id: "pis", subtipo: "PIS", valor: 150 }), provisao({ id: "cofins", subtipo: "COFINS", valor: 300 })], { companyRegime });
   expect(screen.getByRole("columnheader", { name: "PIS" })).toBeInTheDocument();
@@ -80,7 +97,7 @@ function guia(over = {}) {
 test('confirmação do WhatsApp aparece com data e mantém a baixa como ação do contador', () => {
   const onCreateBaixa = jest.fn();
   renderTab([provisao({ pagamentoLocalizado: true, sourceGuide: guia({ paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE', paymentConfirmedAt: '2026-10-09T00:00:00.000Z' }) })], { onCreateBaixa });
-  expect(screen.getByText('⏳ cliente')).toBeInTheDocument();
+  expect(screen.getByText('Cliente')).toBeInTheDocument();
   abrirCelula('R$ 1.234,56');
   expect(screen.getByText('Pagamento informado pelo cliente')).toBeInTheDocument();
   expect(screen.getByText('09/10/2026')).toBeInTheDocument();
@@ -228,7 +245,7 @@ test.each(['DAS', 'PIS', 'COFINS', 'INSS'])('provisão de %s permanece principal
     pagamentoEfetivo: { total: 1120, fonte: 'BAIXA_CONTABIL' },
   })], { companyRegime: subtipo === 'DAS' ? 'SIMPLES' : 'LUCRO_PRESUMIDO' });
   expect(screen.getByRole('button', { name: 'R$ 1.000,00' })).toBeInTheDocument();
-  expect(screen.getByText('Recalculado: R$ 1.150,00')).toBeInTheDocument();
+  expect(screen.getByText('Valor pago: R$ 1.120,00')).toBeInTheDocument();
   abrirCelula('R$ 1.000,00');
   expect(screen.getByText('Valor baixado')).toBeInTheDocument();
   expect(screen.getByText('R$ 1.120,00')).toBeInTheDocument();
@@ -252,15 +269,15 @@ test('março sem lançamentos não exibe valores antigos da consulta nem os impr
   expect(within(screen.getByRole('row', { name: /^Mar\// })).queryByText(/R\$/)).not.toBeInTheDocument();
 });
 
-test("recálculo confirmado aparece sem acréscimo e preserva valor e pagamento da circular", () => {
+test("valores iguais não exibem recálculo e preservam o estado da circular", () => {
   renderTab([provisao({ recalculoGuia: {
     guiaId: "g1", recalculadoEm: "2026-09-18T12:00:00Z", valorAnterior: 1234.56,
     valorAtual: 1234.56, escopoValor: "TOTAL_GUIA",
   } })]);
-  expect(screen.getByText(/Guia recalculada: R\$\s*1.234,56/)).toBeInTheDocument();
+  expect(screen.queryByText(/Valor pago:/)).not.toBeInTheDocument();
   abrirCelula("R$ 1.234,56");
-  expect(screen.getByText(/Total da guia recalculada: R\$\s*1.234,56/)).toBeInTheDocument();
-  expect(screen.getByText(/não confirma pagamento/)).toBeInTheDocument();
+  expect(screen.queryByText(/Total da guia recalculada|Recálculo em/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/não confirma pagamento/)).not.toBeInTheDocument();
   expect(screen.getByText("Vencida · 12 dias")).toBeInTheDocument();
 });
 
@@ -301,7 +318,7 @@ describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
 
     const celula = abrirCelula("R$ 300,00");
     expect(celula).toHaveStyle({ color: VERDE });
-    expect(screen.getByText("✓")).toBeInTheDocument();
+    expect(screen.getByText("Baixada")).toBeInTheDocument();
     expect(screen.getByText("Paga")).toBeInTheDocument();
   });
 
@@ -315,7 +332,7 @@ describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
       baixas: [{ id: "b1" }],
       sourceGuide: guia({ vencimento: emDias(-40) }), // ⚠ sem `paymentStatus`
     })]);
-    expect(screen.getByText("✓")).toBeInTheDocument();
+    expect(screen.getByText("Baixada")).toBeInTheDocument();
   });
 
   it("⚠⚠ e quando a guia DIZ de onde veio a confirmação, isso sai em TEXTO ao lado do ✓", () => {
@@ -327,7 +344,7 @@ describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
       baixas: [{ id: "b1" }],
       sourceGuide: guia({ vencimento: emDias(-40), paymentStatus: "PAID", paymentStatusSource: "CLIENTE" }),
     })]);
-    expect(screen.getByText("✓ cliente")).toBeInTheDocument();
+    expect(screen.getByText("Cliente")).toBeInTheDocument();
   });
 
   it("provisão prevista não é dívida: sem ✓ e sem alarme", () => {
@@ -335,7 +352,7 @@ describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
 
     abrirCelula("R$ 700,00");
     expect(screen.getByText("Prevista")).toBeInTheDocument();
-    expect(screen.queryByText("✓")).not.toBeInTheDocument();
+    expect(screen.queryByText("Baixada")).not.toBeInTheDocument();
   });
 });
 
@@ -355,13 +372,13 @@ describe("o popover — onde mora o que estava escondido em `title`", () => {
     expect(screen.queryByText("Valor original")).not.toBeInTheDocument();
   });
 
-  it("mostra o atualizado abaixo sem substituir o provisionado", () => {
+  it("mantém o recálculo nos detalhes sem apresentá-lo como pagamento", () => {
     renderTab(
       [provisao({ valor: 1000, sourceGuide: guia({ vencimento: emDias(-30) }) })],
       { acrescimos: { [COMP]: { DAS: { principal: 1000, juros: 30, multa: 20 } } } },
     );
 
-    expect(screen.getByText("Recalculado: R$ 1.050,00")).toBeInTheDocument();
+    expect(screen.queryByText(/Valor pago:|Recalculado:/)).not.toBeInTheDocument();
 
     abrirCelula("R$ 1.000,00");
     expect(screen.getByText("Juros/multa")).toBeInTheDocument();
@@ -731,4 +748,25 @@ describe("estados de carga", () => {
     renderTab([], { circularData: null });
     expect(screen.getByText(/Nenhum dado disponível/)).toBeInTheDocument();
   });
+});
+
+test('pagamento parcial mostra o total efetivamente baixado também na impressão', () => {
+  renderTab([provisao({ valor: 1000, valorProvisionado: 1000, statusPagamento: 'PARCIAL', saldo: 600,
+    pagamentoEfetivo: { fonte: 'BAIXA_CONTABIL', total: 430, principal: 400, juros: 20, multa: 10 },
+  })]);
+  expect(screen.getByText('Valor pago: R$ 430,00')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'R$ 1.000,00' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Imprimir/ }));
+  expect(screen.getByText('Valor pago: R$ 430,00')).toBeInTheDocument();
+});
+
+test.each([null, { fonte: 'COMPROVANTE', total: 1150 }])('não confunde consulta ou recálculo com baixa contábil: %j', (pagamentoEfetivo) => {
+  renderTab([provisao({ pagamentoEfetivo, recalculatedToValor: 1150 })]);
+  expect(screen.queryByText(/Valor pago:/)).not.toBeInTheDocument();
+});
+
+test('baixa sem valor confiável não inventa valor pago', () => {
+  renderTab([provisao({ pagamentoEfetivo: { fonte: 'BAIXA_CONTABIL', total: null } })]);
+  expect(screen.getByText('Baixa a conferir')).toBeInTheDocument();
+  expect(screen.queryByText(/Valor pago:/)).not.toBeInTheDocument();
 });

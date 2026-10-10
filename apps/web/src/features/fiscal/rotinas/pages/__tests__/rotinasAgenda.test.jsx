@@ -2,6 +2,20 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RotinasPage } from "../renderRotinasPage.jsx";
 
+test('histórico mostra empresa, competência e diagnóstico sem confundir erro com não pagamento', async () => {
+  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: 'pagamento', label: 'Pagamento' }], agenda: {}, empresas: [],
+    executions: [{ routine: 'pagamento', enabled: true, alive: true, lastRun: { status: 'FAILED', result: { results: [
+      { razao: 'Empresa de teste', competencia: '2026-09', tipo: 'INSS', error: 'SERPRO_PAGTOWEB_SEM_AUTORIZACAO', diagnostico: { mensagem: 'Confira a procuração.', httpStatus: 403 } },
+      { guideId: 'guia-antiga', error: 'SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA' },
+    ] } } }] })) };
+  render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  fireEvent.click(await screen.findByText('Resultado'));
+  expect(screen.getByText(/Empresa de teste:/)).toBeVisible();
+  expect(screen.getByText('INSS · 2026-09')).toBeVisible();
+  expect(screen.getByText('Confira a procuração. (HTTP 403)')).toBeVisible();
+  expect(screen.getByText(/registro antigo não guardou o motivo/)).toBeVisible();
+});
+
 test("horário meia-noite e frequência diária são conservados ao salvar", async () => {
   const api = {
     getRotinas: jest.fn(async () => ({

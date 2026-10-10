@@ -1,7 +1,7 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: { guide: { findUnique: jest.fn(), findMany: jest.fn() }, appSetting: { findUnique: jest.fn(), upsert: jest.fn() } } }));
 jest.mock("../SerproPagtoWebService.js", () => ({ confirmarPagamento: jest.fn() }));
 jest.mock("../SerproPgdasDeclaracaoService.js", () => ({ consultarDasIndexPorCompetencia: jest.fn() }));
-jest.mock("../../../guides/GuideStorageService.js", () => ({ GuideStorageService: {} }));
+jest.mock("../../../guides/GuideStorageService.js", () => ({ GuideStorageService: { create: jest.fn() } }));
 jest.mock("../../../guides/GuidePaymentStatusService.js", () => ({ isGuidePaid: g => g.paymentStatus === "PAID", markGuideOpenBySerpro: jest.fn(), markGuidePaidByComprovante: jest.fn(), CHECK_RESULT_NAO_LOCALIZADO: "NAO_LOCALIZADO" }));
 jest.mock("../../../guides/AvisoPagamentoService.js", () => ({ avisarPagamentoNaoConfirmado: jest.fn(async () => ({ status: "ENVIADO" })) }));
 jest.mock("../../../accounting/InssPagamentoService.js", () => ({ gerarPagamentoInssFromGuide: jest.fn() }));
@@ -13,6 +13,11 @@ import { confirmarPagamento } from "../SerproPagtoWebService.js";
 import { consultarDasIndexPorCompetencia } from "../SerproPgdasDeclaracaoService.js";
 import { avisarPagamentoNaoConfirmado } from "../../../guides/AvisoPagamentoService.js";
 import { confirmarPagamentoGuia, runPaymentConfirmationOnce } from "../SerproPaymentConfirmationService.js";
+import { buscarPagamentoDaGuia } from "../buscarPagamentoDaGuia.js";
+import { GuideStorageService } from "../../../guides/GuideStorageService.js";
+import { markGuidePaidByComprovante } from "../../../guides/GuidePaymentStatusService.js";
+import { gerarPagamentoInssFromGuide } from "../../../accounting/InssPagamentoService.js";
+import { confirmarPagamentoParcela } from "../SerproParcelaPagamentoService.js";
 const scheduledAt = "2026-09-24T11:00:00Z";
 beforeEach(() => {
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
@@ -25,6 +30,48 @@ beforeEach(() => {
   avisarPagamentoNaoConfirmado.mockResolvedValue({ status: "ENVIADO" });
 });
 afterEach(() => jest.useRealTimers());
+
+test('busca da Circular usa índice do DAS mesmo sem número do documento', async () => {
+  consultarDasIndexPorCompetencia.mockResolvedValue({ dasPago: true });
+  expect(await buscarPagamentoDaGuia({ guideId: 'g' })).toMatchObject({ encontrado: true });
+  expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(1);
+  expect(markGuidePaidByComprovante).toHaveBeenCalled();
+  expect(gerarPagamentoInssFromGuide).not.toHaveBeenCalled();
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
+});
+
+test('busca de parcela usa o contrato e nunca o índice do DAS mensal', async () => {
+  const g = await prisma.guide.findUnique();
+  prisma.guide.findUnique.mockResolvedValue({ ...g, parcelamentoId: 'contrato' });
+  prisma.parcela = { findFirst: jest.fn(async () => ({ id: 'parcela' })) };
+  confirmarPagamentoParcela.mockResolvedValue({ ok: true, pago: true, origem: 'SERPRO', comprovante: { total: 100, dataArrecadacao: '2026-09-20' } });
+  expect(await buscarPagamentoDaGuia({ guideId: 'g' })).toMatchObject({ encontrado: true, comprovante: { total: 100 } });
+  expect(confirmarPagamentoParcela).toHaveBeenCalledWith(expect.objectContaining({ parcelaId: 'parcela', portalClientId: 'c' }));
+  expect(consultarDasIndexPorCompetencia).not.toHaveBeenCalled();
+  expect(confirmarPagamento).not.toHaveBeenCalled();
+});
+
+test.each([null, scheduledAt])('INSS salva PDF e confirma sem criar baixa no fluxo %s', async agenda => {
+  const g = await prisma.guide.findUnique();
+  prisma.guide.findUnique.mockResolvedValue({ ...g, tipo: 'INSS', extracted: { numeroDoc: '123' } });
+  const upload = jest.fn(async () => ({ key: 'comprovante.pdf' }));
+  GuideStorageService.create.mockReturnValue({ upload });
+  confirmarPagamento.mockResolvedValue({ pago: true, comprovantePdfBuffer: Buffer.from('%PDF-test'),
+    comprovante: { total: 110, principal: 100, juros: 10, multa: 0, confiavel: true, dataArrecadacaoBR: '20/09/2026' } });
+  const r = agenda ? await confirmarPagamentoGuia({ guideId: 'g', scheduledAt: agenda }) : await buscarPagamentoDaGuia({ guideId: 'g' });
+  expect(r.comprovantePdfFileId).toBe('comprovante.pdf');
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(markGuidePaidByComprovante).toHaveBeenCalledWith(expect.objectContaining({ comprovantePdfFileId: 'comprovante.pdf' }));
+  expect(gerarPagamentoInssFromGuide).not.toHaveBeenCalled();
+});
+
+test('diagnóstico do lote preserva empresa, competência e HTTP sem copiar resposta sensível', async () => {
+  prisma.guide.findMany.mockResolvedValue([{ id: 'g', tipo: 'SIMPLES', competencia: '2026-09', portalClientId: 'c', portalClient: { razao: 'Empresa teste' } }]);
+  consultarDasIndexPorCompetencia.mockRejectedValue(Object.assign(Error('conteúdo privado'), { code: 'SERPRO_PAGTOWEB_SEM_AUTORIZACAO', details: { httpStatus: 403 } }));
+  const r = await runPaymentConfirmationOnce({ portalClientId: 'c' });
+  expect(r.results[0]).toMatchObject({ razao: 'Empresa teste', competencia: '2026-09', diagnostico: { httpStatus: 403, mensagem: expect.stringContaining('procuração') } });
+  expect(JSON.stringify(r)).not.toContain('conteúdo privado');
+});
 test.each(["2026-09-24", "2026-09-25", null])("automático não consulta hoje/futuro/data desconhecida %s", async vencimento => {
   const g = await prisma.guide.findUnique(); prisma.guide.findUnique.mockResolvedValue({ ...g, vencimento });
   const r = await confirmarPagamentoGuia({ guideId: "g", scheduledAt });

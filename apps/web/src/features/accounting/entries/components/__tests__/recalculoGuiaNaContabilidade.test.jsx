@@ -16,11 +16,11 @@ test("DARF consolidado informa total da guia sem substituir o valor contábil da
   expect(onUpdate).not.toHaveBeenCalled();
 });
 
-test("marca explícita sem variação continua visível e valor ausente não vira zero", () => {
+test("valores iguais não mostram recálculo e valor ausente não vira zero", () => {
   const { rerender } = render(<RecalculoGuiaAviso entry={{ recalculoGuia: {
     recalculadoEm: "2026-09-18T12:00:00Z", valorAnterior: 100, valorAtual: 100, escopoValor: "TOTAL_GUIA",
   } }} />);
-  expect(screen.getByText("Guia recalculada")).toBeInTheDocument();
+  expect(screen.queryByText("Guia recalculada")).not.toBeInTheDocument();
   rerender(<RecalculoGuiaAviso entry={{ recalculatedAt: "2026-09-18T12:00:00Z" }} />);
   fireEvent.click(screen.getByText("Guia recalculada"));
   expect(screen.queryByText(/R\$/)).toBeNull();

@@ -74,7 +74,7 @@ describe("conferirPrincipalContraSaldo", () => {
 
   it("PASSA na baixa parcial por quota — principal menor que o saldo", () => {
     const lines = [{ tipo: "D", conta: "265", valor: "500.00" }, { tipo: "C", conta: "111", valor: "500.00" }];
-    expect(conferirPrincipalContraSaldo(lines, { principal: 1500, abatido: 0, saldo: 1500 })).toBeNull();
+    expect(conferirPrincipalContraSaldo(lines, { principal: 1500, abatido: 0, saldo: 1500 }, "IRPJ")).toBeNull();
   });
 
   it("tolera o centavo, igual ao servidor", () => {
@@ -105,3 +105,11 @@ describe("conferirPrincipalContraSaldo", () => {
     expect(r.principal).toBe(1100);
   });
 });
+
+ test.each(["DAS", "PIS", "COFINS", "ISS", "INSS"])("%s exige principal integral mesmo com encargos", (subtipo) => {
+   const lines = [{tipo:"D",conta:"265",valor:500}, {tipo:"D",conta:CONTA_JUROS,valor:500}];
+   expect(conferirPrincipalContraSaldo(lines,{saldo:1000},subtipo)?.codigo).toBe("baixa_principal_incompleto");
+ });
+ test.each(["IRPJ", "CSLL"])("%s preserva quotas", (subtipo) => {
+   expect(conferirPrincipalContraSaldo([{tipo:"D",conta:"265",valor:500}],{saldo:1000},subtipo)).toBeNull();
+ });

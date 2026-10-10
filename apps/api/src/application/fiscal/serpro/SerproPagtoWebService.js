@@ -227,8 +227,15 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
   const negativa = extractNotFoundMessage(data);
   if (![200, 400, 404].includes(httpStatus) || !negativa
       || /autoriza|autentica|certificado|cadastro|servi[cç]o.*(?:inexist|encontrad)|procura[cç][aã]o|credencial|par[aâ]metro|entrada.*incorreta/i.test(mensagem)) {
+    const codigoSerpro = mensagem.match(/\b[A-Za-z]+-PAGTOWEB-\d+\b/)?.[0] || null;
+    const code = httpStatus === 401 || /autentica|credencial|certificado/i.test(mensagem)
+      ? "SERPRO_PAGTOWEB_AUTENTICACAO"
+      : httpStatus === 403 || /procura[cç][aã]o|n[aã]o autorizad|sem autoriza/i.test(mensagem)
+        ? "SERPRO_PAGTOWEB_SEM_AUTORIZACAO"
+        : /par[aâ]metro|entrada.*incorreta|documento.*inv[aá]lid/i.test(mensagem)
+          ? "SERPRO_PAGTOWEB_DOCUMENTO_INVALIDO" : "SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA";
     throw Object.assign(new Error(mensagem || "Retorno de pagamento não reconhecido."), {
-      code: "SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA", details: { httpStatus },
+      code, details: { httpStatus, codigoSerpro },
     });
   }
   // Uma resposta negativa explícita significa apenas que o comprovante não foi localizado.

@@ -1,16 +1,13 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
-import { dataDoComprovante } from "../../guides/lib/comprovantePagamento.js";
 import {
   isGuidePaid,
   markGuidePaidByComprovante,
   markGuideOpenBySerpro,
   CHECK_RESULT_NAO_LOCALIZADO,
 } from "../../guides/GuidePaymentStatusService.js";
-import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoService.js";
-import { gerarPagamentoParcelaFromGuide, recalcularEstadosParcelasEmAberto } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
+import { recalcularEstadosParcelasEmAberto } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
 import { confirmarPagamento } from "./SerproPagtoWebService.js";
-import { classificarDocumentoArrecadado } from "./classificarDocumentoArrecadado.js";
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
 import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
@@ -18,6 +15,7 @@ import { INTEGRACAO_SERPRO_PAGTOWEB, INTEGRACAO_SERPRO_PARCELAMENTO } from "../.
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "./SerproParcelaPagamentoService.js";
 import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
 import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
+import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
 // O número do documento (DAS/DARF/INSS) fica em guide.extracted.numeroDocumento (não é coluna).
@@ -40,7 +38,7 @@ function maskCnpj(cnpj) {
 
 /**
  * Confirma o pagamento de uma guia consultando o comprovante no SERPRO (PAGTOWEB).
- * - pago → marca PAID + grava o comprovante (PDF) + dispara a baixa contábil (best-effort, idempotente).
+ * - pago → marca PAID + grava o comprovante (PDF); baixa fica a cargo do contador.
  * - não pago → marca OPEN (mantém em aberto).
  * Idempotente: guia já PAID → skip. Guia sem numeroDocumento → skip.
  */
@@ -52,7 +50,11 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
   });
   if (!guide) return { ok: false, skipped: "guide_not_found" };
   const conferirDeclaracaoCliente = !scheduledAt && guide.paymentStatusSource === "CLIENTE" && !guide.baixada;
-  if (!conferirDeclaracaoCliente && (isGuidePaid(guide) || guide.clienteConfirmouEm || guide.baixada)) return { ok: true, skipped: "already_paid", guideId: guide.id };
+  if (!conferirDeclaracaoCliente && (isGuidePaid(guide) || guide.clienteConfirmouEm || guide.baixada)) return {
+    ok: true, skipped: "already_paid", guideId: guide.id, pago: isGuidePaid(guide),
+    origem: guide.paymentStatusSource || null, comprovante: guide.extracted?.comprovante || null,
+    comprovantePdfFileId: guide.comprovantePdfFileId || null,
+  };
   const vencimentoRecusa = scheduledAt ? elegibilidadeVencimentoAutomatico(guide.vencimento) : null;
   if (vencimentoRecusa) return { ok: true, skipped: vencimentoRecusa, guideId: guide.id };
   if (await consultaAutomaticaEncerrada({ guideId: guide.id, scheduledAt })) return { ok: true, skipped: "conferencia_manual", negativaConfirmada: true, guideId: guide.id };
@@ -102,8 +104,9 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
   await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante: result?.comprovante });
-  const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, composicao: result?.composicao, userId, logger });
-  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, baixa };
+  // Consulta confirma a guia. A baixa exige revisão e lançamento pelo contador.
+  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, comprovante: result?.comprovante || null,
+    origem: "SERPRO", baixa: null };
 }
 
 /**
@@ -152,7 +155,7 @@ async function confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger, 
   }
   await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId, comprovante });
   // DAS não gera baixa contábil automática (o contador dá baixa se quiser); a Circular reflete o pago (Q45).
-  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId };
+  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, comprovante, origem: "SERPRO", baixa: null };
 }
 
 /** Salva o comprovante (PDF) do PAGTOWEB no storage e devolve o fileId (ou null). Best-effort. */
@@ -169,88 +172,6 @@ async function salvarComprovante({ guide, result, logger }) {
   }
 }
 
-/**
- * Baixa contábil (best-effort, idempotente): INSS e parcelas geram lançamento de pagamento.
- *
- * ⚠ O RATEIO DO COMPROVANTE ATRAVESSA. Antes esta função chamava a baixa do INSS SEM linhas, e o
- * serviço caía no caminho de lançamento único pelo `guide.valor` — que numa guia em atraso já inclui
- * juros e multa. Isso debitava "INSS a Recolher" pelo total, amortizando o passivo por mais do que
- * foi provisionado e enterrando despesa do mês do pagamento dentro do principal. Não era um
- * problema de apresentação: o saldo da conta ficava errado.
- *
- * O comprovante já traz a quebra validada (`parseComprovanteArrecadacao` só devolve os três
- * componentes quando `principal + juros + multa` fecha com o total). Passando o rateio, a separação
- * que já existe faz o resto.
- *
- * Quando a quebra NÃO é confiável, o serviço se recusa a lançar (`sem_rateio_do_acrescimo`) e a
- * guia fica paga sem lançamento, para o contador dar a baixa pelo modal — que separa. É a regra 5:
- * nunca gravar ato contábil por suposição.
- */
-async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, logger }) {
-  const tipoUpper = String(guide.tipo || "").toUpperCase();
-  try {
-    if (guide.parcelamentoId) {
-      // ⚠ A COMPOSIÇÃO POR CÓDIGO É O QUE PERMITE BAIXAR CERTO. Numa parcela, os códigos-tributo
-      // são dívida consolidada sendo amortizada (debitam o passivo) e os códigos TJLP são encargo
-      // corrente (despesa do mês). Sem ela o pagamento cai no caminho antigo, que debita o passivo
-      // só pelo principal e reconhece multa e juros como despesa nova.
-      const classificacaoComprovante = composicao ? classificarDocumentoArrecadado(composicao) : null;
-      const r = await gerarPagamentoParcelaFromGuide({
-        portalClientId: guide.portalClientId, guideId: guide.id, userId,
-        // ⚠ A data é a da ARRECADAÇÃO, não "hoje". Sem ela a baixa caía na competência em que o
-        // worker rodou, que pode ser outro mês — e o mês do pagamento é o da despesa do TJLP.
-        dataPagamento: comprovante?.dataArrecadacao || undefined,
-        classificacaoComprovante,
-      });
-      // Recusa consciente, e precisa aparecer: guia paga sem lançamento é indistinguível de
-      // "esqueci de lançar". Mesmo tratamento do `sem_rateio_do_acrescimo` do INSS.
-      if (r?.reason === "comprovante_nao_e_parcela") {
-        logger?.warn?.(
-          { guideId: guide.id, competencia: guide.competencia, tipoDocumento: r.tipoDocumento },
-          "PAGTOWEB: guia vinculada a parcelamento, mas o documento arrecadado NÃO é parcela — nada lançado",
-        );
-      }
-      if (classificacaoComprovante?.alertas?.length) {
-        logger?.warn?.(
-          { guideId: guide.id, alertas: classificacaoComprovante.alertas },
-          "PAGTOWEB: divergência entre código de receita e texto na composição — conferir",
-        );
-      }
-      return r;
-    }
-    if (tipoUpper === "INSS") {
-      const rateio = comprovante?.confiavel
-        ? { principal: comprovante.principal, juros: comprovante.juros, multa: comprovante.multa, total: comprovante.total }
-        : null;
-      const r = await gerarPagamentoInssFromGuide({
-        portalClientId: guide.portalClientId, guideId: guide.id, userId,
-        dataPagamento: dataDoComprovante(comprovante),
-        rateio,
-      });
-      if (r?.reason === "sem_rateio_do_acrescimo") {
-        // Não é falha: é recusa consciente. Precisa aparecer, senão o contador não sabe que sobrou
-        // trabalho — e "guia paga sem lançamento" é indistinguível de "esqueci de lançar".
-        logger?.warn?.(
-          { guideId: guide.id, competencia: guide.competencia, confiavel: comprovante?.confiavel ?? null },
-          "PAGTOWEB: baixa do INSS NÃO lançada — guia em atraso sem rateio confiável de juros/multa",
-        );
-      }
-      return r;
-    }
-    return { skipped: true, reason: "tipo_sem_baixa_automatica" };
-  } catch (err) {
-    logger?.warn?.({ err: err?.message, guideId: guide.id }, "PAGTOWEB: baixa contábil não gerada (segue)");
-    return { skipped: true, reason: "erro", message: err?.message };
-  }
-}
-
-/**
- * Lista as guias SERPRO ainda em aberto (com numeroDocumento) e confirma o pagamento de cada uma.
- * Usado pelo worker (cron próprio) e pelo disparo manual (run-now / botão por empresa).
- * @param {object} opts
- * @param {string} [opts.portalClientId] limita a uma empresa (botão por empresa)
- * @param {string} [opts.competencia] limita a uma competência
- */
 export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null, assertActive = () => {}, scheduledAt = null } = {}) {
   // Rotina `pagamento`: quando roda em lote (cron ou "confirmar agora"), só as empresas
   // marcadas na página Rotinas. Com `portalClientId` explícito o filtro NÃO se aplica —
@@ -301,7 +222,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   while (true) {
     await assertActive();
     const page = await prisma.guide.findMany({ where: { ...where, ...(cursor ? { id: { gt: cursor } } : {}) },
-      select: { id: true, tipo: true, competencia: true, extracted: true, portalClientId: true },
+      select: { id: true, tipo: true, competencia: true, extracted: true, portalClientId: true, portalClient: { select: { razao: true } } },
       orderBy: { id: "asc" }, take: 500 });
     guides.push(...page);
     if (page.length < 500) break;
@@ -312,22 +233,23 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   let firstError = null; // Q43: 1º código de erro — para o chamador sinalizar falha (não reportar OK falso)
   for (const g of guides) {
     await assertActive();
+    const contexto = { companyId: g.portalClientId, razao: g.portalClient?.razao || null, competencia: g.competencia, tipo: g.tipo };
     // Q46: o DAS (SIMPLES) confirma pelo `dasPago` (índice PGDAS-D) — não depende do numeroDocumento
     // da guia. Só pré-filtramos as NÃO-Simples sem número (INSS precisa do nº do DARF pro PAGTOWEB).
     const tipoUpper = String(g.tipo || "").toUpperCase();
     if (tipoUpper !== "SIMPLES" && !getGuideNumeroDocumento(g)) {
-      results.push({ guideId: g.id, status: "sem_numero_documento" });
+      results.push({ ...contexto, guideId: g.id, status: "sem_numero_documento" });
       continue;
     }
     try {
       // eslint-disable-next-line no-await-in-loop
       const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
       const aviso = scheduledAt && r.negativaConfirmada ? await avisarPagamentoNaoConfirmado({ guideId: g.id, scheduledAt, assertActive }) : null;
-      results.push({ guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
+      results.push({ ...contexto, guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
     } catch (err) {
-      const code = err?.code || err?.message || "ERRO";
+      const code = err?.code || "CONSULTA_FALHOU";
       if (!firstError) firstError = code;
-      results.push({ guideId: g.id, status: "error", error: code });
+      results.push({ ...contexto, guideId: g.id, status: "error", error: code, diagnostico: diagnosticoConsultaPagamento(err) });
     }
   }
 
@@ -352,7 +274,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   // Q45: resultado auto-descritivo — em vez de "ok" genérico, diz o que aconteceu.
   let mensagem;
   if (pagtowebDisabled) {
-    mensagem = "Confirmação de pagamento (PAGTOWEB) desabilitada — nenhuma guia foi consultada no SERPRO. Ligue INTEGRACAO_SERPRO_PAGTOWEB após validar no trial.";
+    mensagem = `PAGTOWEB desabilitado. Resultado do lote: ${paid} pagamento(s) confirmado(s), ${errors} erro(s). Consultas do DAS e de parcelas usam serviços próprios; confira os resultados por guia.`;
   } else if (total === 0) {
     mensagem = `Nenhuma guia SERPRO em aberto para confirmar${competencia ? ` (competência ${competencia})` : ""}.`;
   } else {
