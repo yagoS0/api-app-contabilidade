@@ -128,6 +128,31 @@ export function cnpjValido(cnpj) {
   return digito(cnpj.slice(0, 12)) === Number(cnpj[12]) && digito(cnpj.slice(0, 13)) === Number(cnpj[13]);
 }
 
+// Escolher a empresa é diferente de validar seus dígitos. Nunca usar a primeira
+// ocorrência quando o cliente a negou ou informou mais de uma empresa.
+export function extrairCnpjComercial(texto) {
+  const raw = String(texto || '');
+  const encontrados = [...raw.matchAll(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g)];
+  if (!encontrados.length) return { cnpj: null, invalido: false, ambiguo: false };
+  const candidatos = encontrados.map((match, i) => {
+    const inicio = i ? encontrados[i - 1].index + encontrados[i - 1][0].length : 0;
+    const fim = i + 1 < encontrados.length ? encontrados[i + 1].index : raw.length;
+    const antes = normalizar(raw.slice(inicio, match.index).split(/[;,\n.!?]/).at(-1));
+    const depois = normalizar(raw.slice(match.index + match[0].length, fim).split(/[;,\n.!?]/)[0]);
+    const negado = /\b(?:nao (?:e|era|use|usar|consulte|consultar|utilize|quero (?:usar|consultar))|nem|desconsidere|ignore)\b[^\d]{0,35}$/.test(antes)
+      || /\b(?:errad[oa]|incorret[oa])\b[^\d]{0,15}$/.test(antes)
+      || /^(?:(?:esta|e|estava) )?(?:errado|incorreto|nao e (?:o meu|meu|nosso)|e de outra empresa|e do fornecedor)\b/.test(depois);
+    const correcao = /\b(?:(?:o )?correto (?:e|seria)|corrigindo|correcao|na verdade|use (?:este|esse)|considere (?:este|esse))\s*(?:o )?(?:cnpj\s*)?[:=-]?\s*$/.test(antes);
+    return { cnpj: match[0].replace(/\D/g, ''), negado, correcao, alternativa: /^ou\b/.test(antes) };
+  }).filter(c => !c.negado);
+  const corrigidos = candidatos.filter(c => c.correcao);
+  if (candidatos.some(c => c.alternativa) && new Set(candidatos.map(c => c.cnpj)).size > 1) return { cnpj: null, invalido: false, ambiguo: true };
+  const documentos = [...new Set((corrigidos.length ? corrigidos : candidatos).map(c => c.cnpj))];
+  if (documentos.length !== 1) return { cnpj: null, invalido: false, ambiguo: true };
+  const cnpj = documentos[0];
+  return cnpjValido(cnpj) ? { cnpj, invalido: false, ambiguo: false } : { cnpj: null, invalido: true, ambiguo: false };
+}
+
 const NUMEROS = { zero: 0, nenhum: 0, nenhuma: 0, um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, vinte: 20, trinta: 30 };
 const MESES = { janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
 const PROFISSAO = "m[ée]dic[oa]|dentista|advogad[oa]|engenheir[oa]|psic[óo]log[oa]|arquiteto|arquiteta|veterin[áa]ri[oa]|fisioterapeuta|nutricionista|programador[a]?|desenvolvedor[a]?|designer|consultor[a]?|comerciante|professor[a]?|eletricista|pedreiro|esteticista|cabeleireir[oa]";
@@ -200,10 +225,11 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   const modalidade = modalidadeDeclarada(raw, campoEsperado === "modalidadeServico");
   if (modalidade) set("modalidadeServico", modalidade);
 
-  const cnpj = raw.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/)?.[0]?.replace(/\D/g, "");
-  if (cnpj && origem !== "ABERTURA") {
-    if (cnpjValido(cnpj)) set("cnpj", cnpj);
-    else { resposta = "Esse CNPJ parece ter algum dígito incorreto. Pode conferir e enviar novamente?"; respostaSubstituiPergunta = true; }
+  const documento = extrairCnpjComercial(raw);
+  if (origem !== "ABERTURA") {
+    if (documento.cnpj) set("cnpj", documento.cnpj);
+    else if (documento.ambiguo) { resposta = "Qual é o CNPJ correto da empresa que vamos atender? Envie apenas esse número."; respostaSubstituiPergunta = true; }
+    else if (documento.invalido) { resposta = "Esse CNPJ parece ter algum dígito incorreto. Pode conferir e enviar novamente?"; respostaSubstituiPergunta = true; }
   }
   const rotulos = { atividade: "atividadePretendida", cidade: "municipioAtendimento", municipio: "municipioAtendimento", endereço: "enderecoPretendido", endereco: "enderecoPretendido" };
   for (const [rotulo, campo] of Object.entries(rotulos)) {

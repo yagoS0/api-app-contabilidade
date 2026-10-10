@@ -82,7 +82,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     nomeConhecido: pessoa?.nome || inicial.nomePerfilProvedor, interpretacaoIa: ia?.interpretacao, falhaIa: ia?.estado === 'FALLBACK' });
   const consultaAnterior = existente?.triagem?.preatendimento?.consultaPublica;
   const podeConsultar = !anterior && tipo === 'text' && intencaoDaColeta === 'INATIVA' && (!origem || origem === intencaoDaColeta)
-    && preflight.pre.qualificacaoVersao === 2 && !preflight.cnpjInvalido
+    && preflight.pre.qualificacaoVersao === 2 && !preflight.cnpjInvalido && !preflight.cnpjAmbiguo
     && !preflight.leitura.humano && !preflight.leitura.aguardar && !preflight.leitura.reinicio;
   const consultaPublica = podeConsultar ? await consultarCadastroInicial({ cnpj: preflight.pre.cnpj, anterior: consultaAnterior,
     mensagemId: mensagem.id, agora, consultar: deps.consultaPublica }) : null;
@@ -136,7 +136,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     }
     if (consultaNova && !mudouOrigem && caso.onboardingId && caso.onboarding?.cnpj === consultaPublica.cnpj) {
       await tx.onboardingAnalise.create({ data: { onboardingId: caso.onboardingId, cnpj: consultaPublica.cnpj,
-        tipo: 'PUBLICA', status: consultaPublica.estado === 'CONCLUIDA' ? 'CONCLUIDA' : 'ERRO',
+        tipo: 'PUBLICA', status: consultaPublica.estado === 'CONCLUIDA' ? 'CONCLUIDA' : 'FALHOU',
         resultado: consultaPublica.dados || { mensagem: 'Consulta pública indisponível.', consultadoEm: consultaPublica.consultadoEm }, criadoPorId: 'SISTEMA_COMERCIAL' } });
       if (consultaPublica.dados?.razaoSocial && !caso.onboarding.dados?.razaoSocial) {
         caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao,
