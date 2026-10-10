@@ -1814,6 +1814,12 @@ export function createRealApi() {
     // ── Onboarding (funil pré-cadastro) ───────────────────────────────────
     // ⚠ Estas rotas NÃO ficam sob `/firm/companies/:id` — a ficha existe justamente porque a
     // empresa ainda não existe.
+    async baixarTabelaFiscalLead(id, analiseId, conteudoHash) {
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(getApiBaseUrl() + "/firm/comercial/onboardings/" + encodeURIComponent(id) + "/fiscal/" + encodeURIComponent(analiseId) + "/tabela.pdf?conteudoHash=" + encodeURIComponent(conteudoHash || ''), { headers: { Authorization: "Bearer " + tok }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir a tabela fiscal. Atualize o atendimento e confira a autorização.");
+      return res.blob();
+    },
     async baixarAnaliseOnboarding(id, analiseId) {
       const baseUrl = getApiBaseUrl();
       const tok = accessToken || readStoredToken();

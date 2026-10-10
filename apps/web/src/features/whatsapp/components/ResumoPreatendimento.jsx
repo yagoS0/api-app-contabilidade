@@ -20,6 +20,8 @@ export function ResumoPreatendimento({ atendimento, atendimentoHumano = false })
   ].filter(([, valor]) => valor);
   return <section className="wa-pre-summary" aria-label="Resumo do pré-atendimento">
     <header><h3>{INTENCOES[pre.intencao]}</h3><span>{atendimento.encerradoEm ? "Solicitação anterior" : atendimentoHumano || pre.estado === "ENCAMINHADO" ? "Com a equipe" : "Conversa inicial"}</span></header>
+    {pre.autorizacaoFiscal?.estado === 'AGUARDANDO_AUTORIZACAO' && <p role="status">Autorização solicitada. O contador acompanha o aceite na Receita e a consulta fiscal.</p>}
+    {pre.autorizacaoFiscal?.estado === 'REVISAO_NECESSARIA' && <p role="status">A equipe precisa conferir a orientação de autorização.</p>}
     {pre.ultimaInterpretacaoIa?.estado === 'FALLBACK' && <p>A IA não conseguiu interpretar a última mensagem. O atendimento foi encaminhado à equipe; confira o relato recebido.</p>}
     {Object.keys(evidencias).length > 0 && <details><summary>Trechos que sustentam o resumo</summary><ul>{Object.entries(evidencias).filter(([campo]) => CAMPOS_IA[campo]).map(([campo, evidencia]) => <li key={campo}><strong>{CAMPOS_IA[campo]}: </strong><q>{evidencia.trecho}</q>{pre.evidenciasDeclaradas?.[campo] ? ' — relato registrado diretamente da mensagem' : ''}{evidencia.valor === null ? ' — informação removida do resumo' : ''}</li>)}</ul></details>}
     {dados.length > 0 && <dl>{dados.map(([titulo, valor, campo]) => <div key={titulo}><dt>{titulo}{campo && pre.fontesPublicas?.[campo]?.valor === valor ? ' · cadastro público' : ''}</dt><dd>{titulo === "CNPJ informado" ? <CnpjDaConversa cnpj={valor} empresa="empresa informada" /> : String(valor)}</dd></div>)}</dl>}

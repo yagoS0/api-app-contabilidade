@@ -168,6 +168,37 @@ try {
     await jornada.conferirAnalise(r.id, user, { versao: r.versao, analiseId: analise.id, tipo });
   }
   const analiseFiscal = await db.onboardingAnalise.findFirst({ where: { onboardingId: r.id, tipo: "SITFIS" }, orderBy: { createdAt: "desc" } });
+  // Relatório fiscal: PostgreSQL real, transporte sintético e rede externa bloqueada.
+  const { criarRelatorioFiscalLead } = await import('../src/application/onboarding/RelatorioFiscalLeadService.js');
+  await db.onboardingAnalise.update({ where: { id: analiseFiscal.id }, data: { documentoCifrado: 'sintetico-cifrado', resultado: { relatorioDisponivel: true, leitura: { relatorio: { contribuinte: { cnpj: r.cnpj, nome: 'EMPRESA SINTÉTICA' }, diagnosticos: [] } } } } });
+  let documentosFiscais = 0;
+  const fiscalTabela = criarRelatorioFiscalLead({ db, procuradorAtual: async () => '12345678000199',
+    gerarPdf: async () => Buffer.from('%PDF-sintetico'), janela: async () => ({ situacao: 'ABERTA' }),
+    transportePara: async () => ({ enviarDocumento: async () => { documentosFiscais++; return { wamid: 'wamid.FISCAL_TABELA_1' }; } }),
+  });
+  let painelFiscal = await fiscalTabela.carregar(r.id, user);
+  assert.equal(painelFiscal.relatorios.length, 1);
+  const revisaoFiscalBody = { versao: r.versao, conteudoHash: painelFiscal.relatorios[0].conteudoHash };
+  await assert.rejects(fiscalTabela.enviar(r.id, analiseFiscal.id, user), e => e.code === 'relatorio_nao_revisado');
+  assert.equal((await fiscalTabela.tabela(r.id, analiseFiscal.id, user, revisaoFiscalBody.conteudoHash)).subarray(0,4).toString(), '%PDF');
+  await fiscalTabela.revisar(r.id, analiseFiscal.id, user, revisaoFiscalBody);
+  await fiscalTabela.revisar(r.id, analiseFiscal.id, user, revisaoFiscalBody);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: r.id, tipo: 'FISCAL_TABELA_REVISADA' } }), 1);
+  assert.equal((await fiscalTabela.enviar(r.id, analiseFiscal.id, user)).envio.estado, 'ENVIADO');
+  assert.equal((await fiscalTabela.enviar(r.id, analiseFiscal.id, user)).jaEnviado, true);
+  assert.equal(documentosFiscais, 1);
+  painelFiscal = await fiscalTabela.carregar(r.id, user);
+  assert.equal(painelFiscal.relatorios[0].envio.estado, 'ENVIADO');
+  ok('Tabela fiscal com transação real, revisão JSON e ledger de envio idempotente sem provedor');
+  const autorizacaoFiscal = (await db.atendimentoLead.findUnique({ where: { id: nova.id } })).autorizacao;
+  await db.atendimentoLead.update({ where: { id: nova.id }, data: { autorizacao: { ...autorizacaoFiscal, estado: 'REVOGADA' } } });
+  await assert.rejects(fiscalTabela.enviar(r.id, analiseFiscal.id, user), e => e.code === 'procuracao_nao_verificada');
+  await db.atendimentoLead.update({ where: { id: nova.id }, data: { autorizacao: autorizacaoFiscal } });
+  await db.onboardingAnalise.update({ where: { id: analiseFiscal.id }, data: { documentoCifrado: 'sintetico-alterado' } });
+  await assert.rejects(fiscalTabela.revisar(r.id, analiseFiscal.id, user, revisaoFiscalBody), e => e.code === 'relatorio_alterado');
+  await assert.rejects(fiscalTabela.enviar(r.id, analiseFiscal.id, user), e => e.code === 'relatorio_nao_revisado');
+  assert.equal(documentosFiscais, 1);
+  ok('Revogação e alteração do documento real invalidam revisão e bloqueiam envio');
   const diagnosticoFiscal = await jornada.diagnosticar(r.id, user, { versao: r.versao, analiseId: analiseFiscal.id, ...diagnosticoSintetico("SIMULAÇÃO: pendências conferidas no relatório.", true), servicos: "Regularização e contabilidade conforme proposta." });
   await jornada.registrarApresentacao(r.id, user, { versao: r.versao, diagnosticoId: diagnosticoFiscal.id, meio: "Reunião simulada", evidencia: "Relatório e escopo apresentados ao interessado." });
   const p2 = await propostas.gerar(r.id, user, { versao: r.versao, ajustes: { regularizacaoCentavos: CATALOGO_SINTETICO.regularizacaoMinimaCentavos, justificativa: "Regularização sintética dimensionada antes da mensalidade." } }); await propostas.aprovar(r.id, p2.id, user);

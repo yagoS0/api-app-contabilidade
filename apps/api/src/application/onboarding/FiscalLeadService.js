@@ -235,6 +235,7 @@ export function criarFiscalLead({
         if (j.tipo === "PROCURACAO") {
           const p = await comContextoSerpro({
             origem: "lead_procuracao",
+            acaoId: j.onboardingId,
             userId: user.id
           }, () => procura(j.cnpj));
           const prova = {

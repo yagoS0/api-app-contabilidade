@@ -139,6 +139,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     const transporte = await whatsappPorCanal(c, { cloud, client: db });
     const lease = await adquirirLease(`jornada:${id}`, { client: db });
     if (!lease) throw erro("envio_em_andamento", "Já existe um envio em andamento neste atendimento.");
+    let fiscalConferido = null;
     try {
       const conferir = async () => {
         if (!await renovarLease(lease, { client: db })) throw erro("envio_em_andamento", "A reserva do envio expirou. Confira o histórico.");
@@ -152,6 +153,11 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
         await exigirConversaDoCaso(vinculo, atual, db);
         await resolverConversaEnvioComercial({ caso: vinculo, conversaId: c.id, db });
         await conferirIdentidadeComercial(atual, identidade, db);
+        if (jornada.diagnostico?.dados?.analiseId && !jornada.diagnostico.dados.dispensaConsultaPrivada) {
+          const prova = await comercial.conferirEnvioFiscal(id, jornada.diagnostico.dados.analiseId, user);
+          if (fiscalConferido && prova !== fiscalConferido) throw erro('relatorio_alterado', 'O relatório ou a autorização mudou. Revise a devolutiva.');
+          fiscalConferido = prova;
+        }
         return jornada;
       };
       const jornada = await conferir();

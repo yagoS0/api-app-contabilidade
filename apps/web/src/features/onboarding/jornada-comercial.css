@@ -133,3 +133,12 @@
 @media (max-width: 480px) {
   .onboarding-conversion-actions > .btn { flex: 1 1 100%; }
 }
+
+.lead-report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.lead-report-actions > .btn { margin: 0; }
+.lead-fiscal-report > details { margin-top: 16px; }
+.lead-authorization .lead-receita-acceptance { display: flex; align-items: flex-start; gap: 8px; margin-block: 12px; }
+.lead-receita-acceptance input[type="checkbox"] { flex: 0 0 auto; width: auto; margin-top: 4px; }
+@media (max-width: 480px) {
+  .lead-report-actions > .btn { flex: 1 1 100%; }
+}

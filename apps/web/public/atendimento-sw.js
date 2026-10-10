@@ -31,7 +31,7 @@ self.addEventListener("message", event => {
 function destinoSeguro(raw) {
   try {
     const url = new URL(raw || "/whatsapp?app=atendimento", self.location.origin);
-    if (url.origin !== self.location.origin || !['/whatsapp', '/suporte'].includes(url.pathname)) return "/whatsapp?app=atendimento";
+    if (url.origin !== self.location.origin || !['/whatsapp', '/suporte', '/comercial/conversas'].includes(url.pathname)) return "/whatsapp?app=atendimento";
     const id = url.searchParams.get("conversa");
     return `${url.pathname}?app=atendimento${id && /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? `&conversa=${encodeURIComponent(id)}` : ""}`;
   } catch { return "/whatsapp?app=atendimento"; }
@@ -40,7 +40,7 @@ self.addEventListener("push", event => event.waitUntil((async () => {
   let payload; try { payload = event.data?.json(); } catch { return; }
   const atual = await vinculo("ler");
   if (!atual?.vinculo || atual.vinculo !== payload?.vinculo) return;
-  await self.registration.showNotification(payload.tipo === 'SUPORTE' ? 'Atendimento precisa da equipe' : "Nova mensagem no atendimento", {
+  await self.registration.showNotification(payload.tipo === 'SUPORTE' ? 'Atendimento precisa da equipe' : payload.tipo === 'COMERCIAL' ? 'Atendimento comercial precisa da equipe' : "Nova mensagem no atendimento", {
     body: "Abra o Altan Atendimento para responder.", icon: "/icon-192.png", badge: "/icon-192.png",
     tag: `altan-atendimento-${new URL(destinoSeguro(payload.url), self.location.origin).searchParams.get("conversa") || "fila"}`, data: { url: destinoSeguro(payload.url), vinculo: atual.vinculo },
   });

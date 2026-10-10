@@ -1,5 +1,11 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Autorização e relatório fiscal do lead — 10/10/2026
+
+A qualificação fiscal concluída prepara a orientação aprovada com o CNPJ institucional e passa o atendimento ao contador. Aceite da autorização acontece manualmente no portal da Receita. A interface não consulta automaticamente: o contador confere o representante, confirma o aceite e solicita a verificação da procuração e depois SITFIS.
+
+`RelatorioFiscalDoLead` usa a análise salva e as rotas fiscais próprias para abrir a tabela PDF, confirmar revisão e enviar. A revisão é vinculada ao hash do conteúdo exibido e também registra a conferência da jornada, sem segundo clique redundante. Mudanças de relatório, CNPJ, representação ou destinatário invalidam o envio. Envio incerto bloqueia repetição. O consumo apresenta GPT fracionário separado das reservas e chamadas SERPRO sem tratar contagem como valor faturado. Não enviar a tabela pela rota genérica de anexos nem criar cliente da carteira para gerar o PDF.
+
 ## Atendimento contínuo e pessoa física — 08/10/2026
 
 O formulário interno abre integrado ao detalhe e continua no mesmo atendimento após salvar. A saída pelo cabeçalho aguarda o salvamento do wizard; falha conserva a edição. Pessoa física usa origem `PESSOA_FISICA`, serviço solicitado e contato, sem perguntas empresariais. Uma demanda empresarial posterior copia contato e mantém vínculos de histórico; não converte nem apaga o serviço pessoal. Criação relacionada usa chave de solicitação estável para repetição segura.

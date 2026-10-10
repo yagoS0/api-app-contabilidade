@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 
 // Presentation of the saved parser output, never a new fiscal query or a new total.
-export function gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relatorioDe }) {
+export function gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relatorioDe, escritorio = null }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 32 });
     const chunks = [];
@@ -12,8 +12,12 @@ export function gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relator
     let page = 0;
     function header() {
       page += 1;
+      if (escritorio) {
+        doc.rect(0, 0, doc.page.width, 8).fill("#173954");
+        doc.font("Helvetica-Bold").fontSize(12).fillColor("#173954").text(String(escritorio), left, 25, { width });
+      }
       doc.font("Helvetica-Bold").fontSize(14).fillColor("#202b40")
-        .text("Situação fiscal — última consulta", left, 28, { width });
+        .text(escritorio ? "Relatório de pendências fiscais" : "Situação fiscal — última consulta", left, escritorio ? doc.y + 7 : 28, { width });
       doc.font("Helvetica").fontSize(9).fillColor("#333333")
         .text(`${empresa?.razao || relatorio.contribuinte?.nome || "Empresa"} · CNPJ ${empresa?.cnpj || relatorio.contribuinte?.cnpj || "não informado"}`, { width })
         .text(`Consulta: ${consultadaEm || "não informada"} · Relatório: ${relatorioDe || relatorio.emitidoEm || "não informado"} · Página ${page}`, { width })
@@ -47,12 +51,14 @@ export function gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relator
     function table(columns, records) {
       const cellWidth = width / columns.length;
       const lineHeight = 11;
+      let rowNumber = 0;
       function drawRow(cells, height, heading = false) {
         const y = doc.y;
+        const background = escritorio ? heading ? "#173954" : rowNumber % 2 ? "#f3f6f9" : "#ffffff" : heading ? "#e8edf5" : "#ffffff";
         cells.forEach((cell, index) => {
           const x = left + index * cellWidth;
-          doc.rect(x, y, cellWidth, height).fillAndStroke(heading ? "#e8edf5" : "#ffffff", "#c5ccd5");
-          cell.forEach((line, lineIndex) => doc.fillColor("#202b40").text(line, x + 4, y + 4 + lineIndex * lineHeight,
+          doc.rect(x, y, cellWidth, height).fillAndStroke(background, "#c5ccd5");
+          cell.forEach((line, lineIndex) => doc.fillColor(escritorio && heading ? "#ffffff" : "#202b40").text(line, x + 4, y + 4 + lineIndex * lineHeight,
             { width: cellWidth - 8, lineBreak: false }));
         });
         doc.y = y + height;
@@ -66,6 +72,7 @@ export function gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relator
       if (doc.y > bottom - 75) doc.addPage();
       tableHeader();
       for (const record of records) {
+        rowNumber += 1;
         const cells = columns.map(c => lines(record[c], cellWidth - 8));
         let offset = 0;
         const count = Math.max(...cells.map(c => c.length));

@@ -289,7 +289,8 @@ test("onboarding direto não envia à conversa antiga e permite avançar pela co
   fireEvent.click(screen.getByText("Registrar conferência do representante"));
   fireEvent.change(screen.getByLabelText("Como a representação foi conferida"), { target: { value: "Representante conferido com documentação." } });
   fireEvent.click(screen.getByText("OK: registrar e continuar"));
-  fireEvent.click(await screen.findByText("Verificar procuração e avançar"));
+  fireEvent.click(await screen.findByLabelText("Aceite conferido no portal da Receita"));
+  fireEvent.click(screen.getByText("Verificar procuração e avançar"));
   await screen.findByText("Solicitar situação fiscal");
   expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
   expect(screen.queryByLabelText("Como a representação foi conferida")).not.toBeInTheDocument();

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CnpjDaConversa } from "../../whatsapp/components/ConversaVisual";
 import { SitfisRelatorioTabela } from "../../fiscal/sitfis/components/SitfisRelatorioTabela";
+import { RelatorioFiscalDoLead } from "./RelatorioFiscalDoLead";
 
 export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId, tipo = null }) {
   const [cnpj, setCnpj] = useState(onboarding.cnpj || ""), [analises, setAnalises] = useState([]), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false);
@@ -47,12 +48,9 @@ export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId, tipo =
       {a.resultado?.leitura?.aviso && <p role="status">{a.resultado.leitura.aviso}</p>}
       {a.resultado?.relatorioDisponivel && <><Button disabled={ocupado} variant="secondary" onClick={() => executar(async () => {
         const url = URL.createObjectURL(await api.baixarAnaliseOnboarding(id, a.id)); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60000);
-      })}>Abrir relatório fiscal PDF</Button>{conversaId && api.enviarAnexoWhatsapp && <Button disabled={ocupado} onClick={() => executar(async () => {
-        const blob = await api.baixarAnaliseOnboarding(id, a.id);
-        await api.enviarAnexoWhatsapp(conversaId, new File([blob], "situacao-fiscal.pdf", { type: "application/pdf" }), `Situação fiscal · CNPJ ${a.cnpj}`);
-        await onAtualizar?.();
-      })}>Enviar relatório conferido no WhatsApp</Button>}</>}
+      })}>Abrir relatório fiscal PDF</Button></>}
     </article>)}
+    {tipo !== 'PUBLICA' && api.comercial && <RelatorioFiscalDoLead api={api} onboarding={onboarding} conversaId={conversaId} onAtualizar={onAtualizar} />}
     {!tipo && <p>Próxima etapa: enviar a orientação de autorização em Mensagens rápidas, conferir a representação e verificar a procuração antes da consulta fiscal.</p>}
   </section>;
 }

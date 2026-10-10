@@ -64,6 +64,7 @@ export function criarMockComercial({
     }]
   });
   return {
+    async baixarTabelaFiscalLead() { throw Error("Demonstração: não há relatório fiscal real para baixar."); },
     async comercial(path, body, method = "POST") {
       if (path === '/canais-comerciais') return { canais: [{ id: 'comercial', chave: 'Comercial · demonstração' }] };
       const acompanhamento = /^\/onboardings\/([^/]+)\/(acompanhamento|contato|retorno)$/.exec(path);
@@ -210,6 +211,8 @@ export function criarMockComercial({
       const o = ficha(m[1]),
         suffix = m[2],
         a = [...atendimentos.values()].find(a => a.onboardingId === o.id);
+      if (suffix === "/fiscal") return { relatorios: [], consumo: { gpt: { disponivel: false }, serpro: { concluidas: 0, pendentes: 0, erros: 0, custoConfirmado: null } }, bloqueio: { mensagem: "Demonstração: nenhuma consulta fiscal real foi realizada." } };
+      if (suffix.startsWith("/fiscal/")) throw Error("Demonstração: não há relatório fiscal real para revisar ou enviar.");
       if (!suffix) return {
         ok: true,
         onboarding: {
