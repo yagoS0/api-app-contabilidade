@@ -12,6 +12,7 @@
 // para QUAL MUNICÍPIO o ISSQN é devido.
 
 import { validateNfsePayload } from "../nfsePayload.js";
+import { regimeDaCompetencia } from '../../nfse/regimeDaCompetencia.js';
 
 const BASE = {
   companyId: "portal-1",
@@ -23,6 +24,26 @@ const BASE = {
   servico: { descricao: "serviços contabeis", valorServicos: 100, aliquota: 5 },
   competencia: "2026-01-23",
 };
+
+describe('competência preservada até o histórico', () => {
+  it.each(['2026-02-30', '2026-02-30T00:00:00Z', '2026-13', 'amanhã', ''])('recusa data inválida %s antes de convertê-la', competencia => {
+    expect(validateNfsePayload({ ...BASE, competencia })).toMatchObject({ ok: false, error: 'competencia_invalida' });
+  });
+  it('mês não vira dia 1 e não mascara uma mudança dentro do mês', () => {
+    const r = validateNfsePayload({ ...BASE, competencia: '2026-01' });
+    expect(r.data.competencia).toBe('2026-01');
+    expect(regimeDaCompetencia({ competencia: r.data.competencia, historico: [
+      { regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2026-01-15' },
+      { regime: 'LUCRO_REAL', vigenciaInicio: '2026-01-16', vigenciaFim: null },
+    ] }).codigo).toBe('NFSE_REGIME_HISTORICO_AMBIGUO');
+  });
+  it('aceita data válida e timestamp ISO usado pelas integrações', () => {
+    expect(validateNfsePayload({ ...BASE, competencia: '2026-01-23T00:00:00Z' }).data.competencia).toEqual(new Date('2026-01-23T00:00:00Z'));
+  });
+  it('preserva o dia civil da competência quando o fuso atravessa o mês em UTC', () => {
+    expect(validateNfsePayload({ ...BASE, competencia: '2026-01-31T23:00:00-03:00' }).data.competencia).toEqual(new Date('2026-01-31T00:00:00Z'));
+  });
+});
 
 describe('documentos alfanuméricos na emissão', () => {
   it('não converte pedido de nota de ajuste ou pagamento vinculado em nota regular', () => {

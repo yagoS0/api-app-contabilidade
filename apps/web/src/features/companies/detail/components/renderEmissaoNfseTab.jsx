@@ -23,6 +23,7 @@ import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 import { PainelProximaDps } from "./PainelProximaDps";
 import { EditorPerfilEmissao } from "./EditorPerfilEmissao";
+import { ParametrosMunicipais } from './ParametrosMunicipais';
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
 import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
@@ -175,6 +176,7 @@ export function EmissaoNfseTab({
         salvando={salvandoPerfil}
         onSalvar={salvarPerfil}
       />
+      <ParametrosMunicipais key={`municipais-${portalClientId}`} companyId={portalClientId} api={api} podeConsultar={podeEditar} />
 
       <details className="nfse-section nfse-diagnostics"><summary>Conferir os dados da próxima nota</summary>
         <PainelProximaDps dados={empresaDosPerfis === portalClientId ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />

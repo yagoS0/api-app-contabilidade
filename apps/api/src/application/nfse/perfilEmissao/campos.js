@@ -244,6 +244,8 @@ export const CAMPOS_DE_IDENTIDADE = Object.freeze([
 /** Colunas do Prisma que não são campo de perfil (chave, auditoria, relação). */
 export const COLUNAS_TECNICAS = Object.freeze([
   "id", "portalClientId", "createdByUserId", "criadoEm", "atualizadoEm", "portalClient",
+  // Contexto lido por obrigacaoIbscbs; não corresponde a campo da DPS.
+  "categoriaObrigacaoIbscbs",
 ]);
 
 /**

@@ -643,6 +643,35 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
 
             <BlocoCiclo nota={nota} ciclo={ciclo} onAbrirNota={onAbrirNota} />
 
+            {nota.contextoEmissao && <Secao titulo="Contexto fiscal registrado na emissão" aviso="Configuração preservada no envio. Alterações posteriores no cadastro não modificam este registro. O XML autorizado continua sendo a fonte dos valores da nota.">
+              {nota.contextoEmissao.estado === 'REGISTRADO_NA_EMISSAO' ? <div style={GRADE}>
+                <Campo rotulo="Regime na competência" valor={nota.contextoEmissao.configuracao.regimeVigente?.regime || nota.contextoEmissao.configuracao.regime} />
+                <Campo rotulo="Início da vigência" valor={nota.contextoEmissao.configuracao.regimeVigente?.vigenciaInicio} />
+                <Campo rotulo="Fim da vigência" valor={nota.contextoEmissao.configuracao.regimeVigente?.vigenciaFim || 'Sem término informado'} />
+                <Campo rotulo="Serviço nacional" valor={nota.contextoEmissao.configuracao.codigoServico} />
+                <Campo rotulo="NBS declarado no perfil" valor={nota.contextoEmissao.configuracao.perfil?.codigoNbs} />
+                <Campo rotulo="Local da prestação" valor={nota.contextoEmissao.configuracao.localPrestacao?.codigo} />
+                <Campo rotulo="Condição de IBS/CBS" valor={nota.contextoEmissao.configuracao.obrigacaoIbscbs?.estado} />
+                <Campo rotulo="Versão da regra de IBS/CBS" valor={nota.contextoEmissao.configuracao.obrigacaoIbscbs?.versao} />
+              </div> : <p>{nota.contextoEmissao.estado === 'SEM_REGISTRO' ? 'Sem configuração de emissão preservada neste sistema. Confira o XML; o cadastro atual não reconstrói o passado.' : 'Não foi possível identificar com segurança o contexto de emissão desta nota.'}</p>}
+            </Secao>}
+
+            {nota.destaqueIbscbs && <Secao titulo="Destaque de IBS e CBS" aviso="Valores lidos do XML autorizado. Ausência de destaque não comprova dispensa. O total da nota é o informado pela origem.">
+              <p>{({ XML_AUTORIZADO_INDISPONIVEL: 'XML autorizado indisponível para conferência.', NAO_INFORMADO: 'IBS/CBS não informado neste XML.', DECLARADO_SEM_VALORES_RETORNADOS: 'IBS/CBS declarado na DPS, mas sem valores apurados no XML recebido.', VALORES_PARCIAIS: 'O XML contém valores parciais de IBS/CBS. Confira o documento na origem.', VALORES_PRESENTES: 'Valores de IBS e CBS presentes no XML.' })[nota.destaqueIbscbs.estado]}</p>
+              <div style={GRADE}>
+                <Campo rotulo="CST / classificação tributária" valor={nota.destaqueIbscbs.classificacao} />
+                <Campo rotulo="Base de cálculo (R$)" valor={nota.destaqueIbscbs.baseCalculo} />
+                <Campo rotulo="Alíquotas IBS estadual / municipal" valor={nota.destaqueIbscbs.aliquotasIbs} />
+                <Campo rotulo="Alíquota CBS" valor={nota.destaqueIbscbs.aliquotaCbs} />
+                <Campo rotulo="Alíquota efetiva CBS" valor={nota.destaqueIbscbs.aliquotaEfetivaCbs} />
+                <Campo rotulo="IBS estadual (R$)" valor={nota.destaqueIbscbs.ibsEstadual} />
+                <Campo rotulo="IBS municipal (R$)" valor={nota.destaqueIbscbs.ibsMunicipal} />
+                <Campo rotulo="IBS total (R$)" valor={nota.destaqueIbscbs.ibsTotal} />
+                <Campo rotulo="CBS (R$)" valor={nota.destaqueIbscbs.cbs} />
+                <Campo rotulo="Total IBS/CBS (R$)" valor={nota.destaqueIbscbs.total} />
+                <Campo rotulo="Total da nota na origem (R$)" valor={nota.destaqueIbscbs.valorTotalNota} />
+              </div>
+            </Secao>}
             <BlocoItens itens={nota.itens} nota={nota} />
             <BlocoXml xml={nota.xml} nota={nota} />
 

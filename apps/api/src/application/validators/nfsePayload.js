@@ -2,6 +2,7 @@ import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/
 import { recursoAindaNaoSuportado } from '../nfse/contratoNacional.js';
 import { onlyDigits, toBoolean, toNullableString } from "../../utils/normalizers.js";
 import { parseDate } from "../../utils/date.js";
+import { diaFiscal } from '../nfse/regimeDaCompetencia.js';
 import { cpfTemDvValido } from "../../utils/cpf.js";
 import { normalizarCodigoServicoNacional } from "../nfse/codigoServicoDaNota.js";
 import { normalizarRetencoesComplementares } from "../nfse/retencoesComplementares.js";
@@ -83,7 +84,16 @@ export function validateNfsePayload(body) {
   let retencoesComplementares;
   try { retencoesComplementares = normalizarRetencoesComplementares(body.retencoesComplementares, valorServicos); }
   catch (err) { return { ok: false, error: "retencoes_complementares_invalidas", message: err.message }; }
-  const competencia = parseDate(body.competencia || servico.competencia || servico.dCompet);
+  const competenciaBruta = body.competencia ?? servico.competencia ?? servico.dCompet;
+  const mes = typeof competenciaBruta === 'string' && /^\d{4}-\d{2}$/.test(competenciaBruta);
+  const dia = mes ? `${competenciaBruta}-01` : typeof competenciaBruta === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(competenciaBruta) ? competenciaBruta.slice(0, 10) : competenciaBruta;
+  if (competenciaBruta != null && (!diaFiscal(dia) || !parseDate(competenciaBruta))) {
+    return { ok: false, error: 'competencia_invalida', message: 'Informe uma competência válida, sem datas impossíveis.' };
+  }
+  // Preserva a precisão mensal para conferir cobertura de toda a competência no histórico.
+  const dataInterpretada = parseDate(competenciaBruta);
+  const competencia = mes ? competenciaBruta : typeof dia === 'string' && dataInterpretada?.toISOString().slice(0, 10) !== dia
+    ? parseDate(`${dia}T00:00:00Z`) : dataInterpretada;
 
   // ── O CÓDIGO DE SERVIÇO DESTA NOTA (`cTribNac`) ────────────────────────────────────────────
   //

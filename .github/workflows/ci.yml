@@ -63,6 +63,9 @@ jobs:
       - name: Calendar rules and exceptions
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='obrigacoes|dre|fluxo|Fluxo|tarefasSerie|tarefasEdicaoService|emailLogin|emailCodeRoutes|tokenSecurity|recuperacaoSenha|trocaDeSenhaRegistrada|senhaDoPortalPeloEscritorio|loginCarrega|emailAuthenticationTransport'
+      - name: NFS-e fiscal preview and municipal rules
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/nfse|regimeHistorico|nfsePayload|perfisEmissaoRota|parametrosMunicipaisRota|notaDetalhe|fiscal/nbs'
       - name: Fiscal schedules, persisted authorization and payment notices
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='routineSchedule|scheduledRoutineService|runRoutineLoop|pagamentoWhatsappAgenda|application/fiscal/serpro/|CompanyRotinasService|rotinasAgendaValidacao|avisoPagamento|confirmarPagamentoWhatsapp|solicitarPagamentosWhatsapp|leituraComprovanteCliente|guiaDoAvisoCliente|pagamentoAutomatico|ConsultaPagamentoAutomatica|pagamentosPaginacao|parcelaPagamento|pagtoweb|companyProvisioning|varreduraNotasLocalWorker|dfeNotasWorkerIntervaloAdn'

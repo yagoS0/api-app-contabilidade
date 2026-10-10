@@ -73,6 +73,8 @@ const TEXTOS = Object.freeze({
     "Data de opção pelo Simples inválida. Use o formato AAAA-MM-DD.",
   company_simples_not_allowed_for_regime:
     "Só empresa do Simples Nacional pode ter anexo do Simples. Ajuste o regime antes.",
+  company_regime_historico_sobreposto:
+    "Há períodos sobrepostos no histórico de regimes. A data final é inclusiva; o próximo período deve começar no dia seguinte ou depois.",
   company_regime_historico_invalid:
     "O histórico de regimes está com formato inválido.",
   company_regime_historico_vigencia_inicio_required:

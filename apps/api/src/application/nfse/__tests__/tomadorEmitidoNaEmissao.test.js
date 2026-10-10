@@ -116,7 +116,7 @@ const PAYLOAD_BASE = {
 };
 
 function montarCenario({ respostaProvedor } = {}) {
-  prisma.company.findUnique.mockResolvedValue(EMPRESA_BASE);
+  prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE, regimeHistorico: [{ regime: EMPRESA_BASE.regimeTributario, vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }] });
   prisma.cadastroFiscal.findUnique.mockResolvedValue(null);
   axios.create.mockReturnValue({
     defaults: { baseURL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional" },

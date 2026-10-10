@@ -70,9 +70,9 @@ export function camposDoPerfil(leitura) {
     // O seletor só existe com MAIS DE UM. Com um só, não há o que escolher — mesmo desenho do
     // ramo `UNICO` do código de serviço.
     mostrarSeletor: leitura?.situacao === SITUACAO.VARIOS,
-    // ⚠ Estes dois SOMEM porque o perfil os responde: `cTribNac` e `cLocPrestacao`.
+    // O código fiscal vem do perfil; o local efetivo pode variar em cada operação.
     codigoServicoNoFormulario: leitura?.situacao === SITUACAO.SEM_PERFIL,
-    municipioDaPrestacaoNoFormulario: leitura?.situacao === SITUACAO.SEM_PERFIL,
+    municipioDaPrestacaoNoFormulario: [SITUACAO.SEM_PERFIL, SITUACAO.UNICO, SITUACAO.VARIOS].includes(leitura?.situacao),
   };
 }
 

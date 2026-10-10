@@ -1,5 +1,7 @@
+import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from "../../config.js";
+import { resolverContextoFiscalDaNota } from './resolverContextoFiscalDaNota.js';
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
@@ -54,7 +56,7 @@ async function serieDaReceita(client, portalClientId, competencia) {
 
 /** Só lê cadastro e histórico local. Não reserva numeração, não grava pendência e não emite. */
 export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId = null, competencia = null, servico = {}, pTotTribSN = null } = {}, {
-  client = prisma, resolverPerfil = resolverPerfilDeEmissao, perfisHabilitados = INTEGRACAO_PERFIL_EMISSAO_NFSE, agora = new Date(),
+  client = prisma, resolverPerfil = resolverPerfilDeEmissao, perfisHabilitados = INTEGRACAO_PERFIL_EMISSAO_NFSE, ibscbsLigado = INTEGRACAO_NFSE_IBSCBS, agora = new Date(),
 } = {}) {
   const pid = String(portalClientId || "").trim();
   if (!pid) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "Não encontrei o cadastro fiscal da empresa. O escritório precisa conferir.");
@@ -63,12 +65,11 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
   try {
     const portal = await client.portalClient.findUnique({ where: { id: pid }, select: { id: true, companyId: true } });
     if (!portal?.companyId) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "O escritório precisa conferir o cadastro fiscal desta empresa.");
-    const [company, cadastro] = await Promise.all([
-      client.company.findUnique({ where: { id: portal.companyId }, select: { id: true, regimeTributario: true, codigoServicoNacional: true, codigosServicoNacional: true, codigoMunicipioIbge: true, pTotTribFed: true, pTotTribEst: true, pTotTribMun: true } }),
-      client.cadastroFiscal.findUnique({ where: { portalClientId: pid }, select: { regime: true } }),
-    ]);
+    const company = await client.company.findUnique({ where: { id: portal.companyId }, select: { id: true, regimeTributario: true, regimeHistorico: true, codigoServicoNacional: true, codigosServicoNacional: true, codigoMunicipioIbge: true, beneficioMunicipalNumero: true, pTotTribFed: true, pTotTribEst: true, pTotTribMun: true } });
     if (!company) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "O escritório precisa conferir o cadastro fiscal desta empresa.");
-    const regimeBruto = cadastro?.regime || company.regimeTributario || null;
+    const regimeVigente = regimeDaCompetencia({ historico: company.regimeHistorico, competencia: comp.valor });
+    if (!regimeVigente.ok) return recusa(regimeVigente.codigo, regimeVigente.message, ['regimeHistorico'], { correcao: regimeVigente.correcao });
+    const regimeBruto = regimeVigente.regime;
     const resolucao = resolverOpSimpNac(regimeBruto);
     if (resolucao.resolucao !== RESOLUCAO.RESOLVIDO) return recusa("NFSE_REGIME_INDEFINIDO", "O escritório precisa confirmar o regime tributário da empresa antes de montar a nota.", ["regime"]);
     const regime = { ...resolucao, rotuloDeclarado: String(regimeBruto), exigePTotTribSN: resolucao.opSimpNac === "3" };
@@ -86,13 +87,16 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
     }
     const escolhaCodigo = escolherCodigoServicoNacional({ escolhido: perfil?.codigoServicoNacional || servico.codigoServicoNacional, lista: company.codigosServicoNacional, singular: company.codigoServicoNacional });
     if (!escolhaCodigo.ok || !escolhaCodigo.codigo) return recusa(escolhaCodigo.ok ? "NFSE_CODIGO_SERVICO_AUSENTE" : escolhaCodigo.codigo, "O escritório precisa conferir o código de serviço cadastrado antes de montar a nota.", ["codigoServicoNacional"]);
+    const contextoFiscal = resolverContextoFiscalDaNota({ company, perfil, regime: regimeBruto, competencia: comp.valor,
+      codigoServico: escolhaCodigo.codigo, servico, ibscbsLigado });
+    if (!contextoFiscal.ok) return recusa(contextoFiscal.codigo, contextoFiscal.message, [], { correcao: contextoFiscal.correcao });
     const aliquota = numero(informado(perfil?.pAliq) ? perfil.pAliq : servico.aliquota);
     const retencao = resolverTpRetIssqn(servico.issRetido === true);
     const aliquotaDps = pAliqDaDps({ opSimpNac: regime.opSimpNac, regApTribSN: perfil?.regApTribSN || "1", tpRetISSQN: retencao.tpRetISSQN, aliquota });
     if (!aliquotaDps.ok) return recusa(aliquotaDps.codigo, "Há retenção de ISS nesta nota e o escritório precisa conferir a alíquota configurada antes de continuar.", ["aliquota"]);
     if (retencao.exigeAliquota && !(aliquota > 0)) return recusa("NFSE_ISS_RETIDO_SEM_ALIQUOTA", "Há retenção de ISS nesta nota e o escritório precisa conferir a alíquota configurada antes de continuar.", ["aliquota"]);
     const origens = {
-      regime: { fonte: cadastro?.regime ? "CADASTRO_FISCAL" : "COMPANY" },
+      regime: { fonte: regimeVigente.fonte, periodoId: regimeVigente.periodoId, vigenciaInicio: regimeVigente.vigenciaInicio, vigenciaFim: regimeVigente.vigenciaFim },
       perfil: { fonte: perfil ? "PERFIL" : "COMPANY", id: perfil?.id || null },
       aliquota: { fonte: informado(perfil?.pAliq) ? "PERFIL" : informado(servico.aliquota) ? "PEDIDO" : "AUSENTE", perfilId: informado(perfil?.pAliq) ? perfil.id : null },
       codigoServicoNacional: { fonte: perfil?.codigoServicoNacional ? "PERFIL" : servico.codigoServicoNacional ? "PEDIDO" : "COMPANY" },
@@ -126,10 +130,10 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
       }
       origens.pTotTribSN = { fonte: "NAO_APLICAVEL" };
     }
-    const localDoPerfil = informado(perfil?.cLocPrestacao) ? String(perfil.cLocPrestacao) : null;
     return {
-      ok: true, competencia: comp.valor, perfil, regime, pTotTribSN: percentualSimples, cargaTributaria, origens, avisos, aliquotaDps,
-      servico: { ...servico, codigoServicoNacional: escolhaCodigo.codigo, aliquota, issRetido: servico.issRetido === true, ...(localDoPerfil ? { cLocPrestacao: localDoPerfil } : {}) },
+      ok: true, competencia: comp.valor, perfil, regime, pTotTribSN: percentualSimples, cargaTributaria, origens, avisos, aliquotaDps, contextoFiscal, regimeVigente,
+      servico: { ...servico, codigoServicoNacional: escolhaCodigo.codigo, aliquota, issRetido: servico.issRetido === true,
+        ...(!contextoFiscal.local.assumido ? { cLocPrestacao: contextoFiscal.local.codigo } : {}) },
     };
   } catch {
     return recusa("DADOS_FISCAIS_INDISPONIVEIS", "Não consegui conferir a configuração fiscal da empresa agora. O escritório precisa verificar antes de montar a nota.");

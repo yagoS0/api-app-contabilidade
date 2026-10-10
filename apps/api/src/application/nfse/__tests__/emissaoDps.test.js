@@ -121,7 +121,9 @@ const PAYLOAD_BASE = {
 let postMock;
 
 function montarCenario({ empresa = {}, cadastroFiscal = null, respostaProvedor } = {}) {
-  prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE, ...empresa });
+  // O cenário declara uma vigência explícita; cadastro atual sozinho não autoriza emissão.
+  prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,
+    regimeHistorico: [{ id: 'rh-teste', regime: cadastroFiscal?.regime || ('regimeTributario' in empresa ? empresa.regimeTributario : EMPRESA_BASE.regimeTributario), vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], ...empresa });
   prisma.cadastroFiscal.findUnique.mockResolvedValue(cadastroFiscal);
   postMock = jest.fn(async () =>
     respostaProvedor === undefined
@@ -173,6 +175,17 @@ describe("certificado — sem o A1 da empresa NADA é enviado", () => {
     expect(axios.create).toHaveBeenCalledWith(
       expect.objectContaining({ httpsAgent: expect.anything() })
     );
+    expect(axios.create.mock.calls[0][0].httpsAgent.options.rejectUnauthorized).toBe(true);
+  });
+
+  it("usa o PEM extraído do A1 no transporte sem reabrir PFX legado", async () => {
+    montarCenario();
+    resolverCertificadosDaEmpresa.mockResolvedValue({ ...CERT_DA_EMPRESA,
+      transporte: { ...CERT_DA_EMPRESA.transporte, certPem: 'CERT', keyPem: 'KEY' } });
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+    const options = axios.create.mock.calls[0][0].httpsAgent.options;
+    expect(options).toMatchObject({ cert: 'CERT', key: 'KEY', rejectUnauthorized: true });
+    expect(options).not.toHaveProperty('pfx');
   });
 });
 
@@ -206,6 +219,30 @@ describe("município emissor (cLocEmi)", () => {
 });
 
 describe("regime tributário — opSimpNac vem do dado", () => {
+  it.each([[], [
+    { regime: 'SIMPLES', vigenciaInicio: '2026-01-01', vigenciaFim: null },
+    { regime: 'LUCRO_REAL', vigenciaInicio: '2026-01-01', vigenciaFim: null },
+  ]].map(h => [h]))('recusa ausência ou ambiguidade histórica antes de reservar número', async regimeHistorico => {
+    montarCenario({ empresa: { regimeHistorico } });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.camada).toBe('NOSSA');
+    expect(r.codigo).toBe(regimeHistorico.length ? 'NFSE_REGIME_HISTORICO_AMBIGUO' : 'NFSE_REGIME_SEM_VIGENCIA');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('emissão retroativa usa Simples histórico apesar do cadastro atual no Presumido', async () => {
+    montarCenario({ cadastroFiscal: { regime: 'LUCRO_PRESUMIDO' }, empresa: {
+      regimeTributario: 'LUCRO_PRESUMIDO', regimeHistorico: [
+        { id: 'antigo', regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2026-01-31' },
+        { id: 'novo', regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2026-02-01', vigenciaFim: null },
+      ],
+    } });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe('issued');
+    expect(xmlEnviado()).toContain('<opSimpNac>3</opSimpNac>');
+    expect(prisma.serviceInvoice.update.mock.calls.some(([arg]) => arg.data.configuracaoFiscal?.regimeVigente?.periodoId === 'antigo')).toBe(true);
+  });
   it("Simples: opSimpNac=3, com regApTribSN e pTotTribSN", async () => {
     montarCenario({ cadastroFiscal: { regime: "SIMPLES_NACIONAL" } });
     await NfseService.issue({ data: PAYLOAD_BASE, log });
@@ -233,7 +270,7 @@ describe("regime tributário — opSimpNac vem do dado", () => {
     expect(xml).not.toContain("vTotTribFed");
   });
 
-  it("⚠ o CadastroFiscal é a autoridade — vence Company.regimeTributario", async () => {
+  it("o período confirmado é a autoridade — vence o regime atual", async () => {
     montarCenario({
       // ⚠ A CARGA COMPLETA ENTROU NESTA FIXTURE, e é o conserto de 18/08/2026 aparecendo: antes o
       // payload trazia SÓ `pTotTribFed` e a emissão passava, porque o portão usava `.some()`. Um

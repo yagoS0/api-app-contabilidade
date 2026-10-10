@@ -14,6 +14,7 @@
 // divergem — e o precedente está medido: `perfilAtividades` tem 3 campos sem leitor.
 
 import { Router } from "express";
+import { previaFiscalDoContador } from '../../application/nfse/previaFiscalDoContador.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import {
@@ -25,15 +26,30 @@ import {
   resolverPerfilDeEmissao,
   perfilDerivadoDoCadastro,
 } from "../../application/nfse/perfilEmissao/resolverPerfilDeEmissao.js";
-import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from "../../config.js";
+import { CATEGORIAS_IBSCBS } from '../../application/nfse/obrigacaoIbscbs.js';
 import { sugestoesDoPerfil, validarCatalogoPerfil } from "../../application/nfse/perfilEmissao/catalogoPerfil.js";
 
 /** O que a rota aceita — os seis campos fiscais mais os de identidade/forma. */
 const CAMPOS_DE_IDENTIDADE = ["nome", "ativo", "padrao", "habilitaObra", "habilitaExportacao"];
-const CAMPOS_ACEITOS = [...IDS, ...CAMPOS_DE_IDENTIDADE];
+const CAMPOS_ACEITOS = [...IDS, ...CAMPOS_DE_IDENTIDADE, 'categoriaObrigacaoIbscbs'];
 
 export function createPerfisEmissaoRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+
+  router.post('/previa-emissao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    const { competencia, perfilId, servico } = req.body || {};
+    if (typeof competencia !== 'string' || !/^\d{4}-\d{2}(?:-\d{2})?$/.test(competencia)
+      || (perfilId != null && typeof perfilId !== 'string')
+      || (servico != null && (typeof servico !== 'object' || Array.isArray(servico)))) {
+      return res.status(400).json({ error: 'previa_invalida', message: 'Informe competência, perfil e serviço válidos.' });
+    }
+    try {
+      return res.json(await previaFiscalDoContador({ portalClientId: String(req.params.companyId), competencia, perfilId, servico }));
+    } catch {
+      return res.status(503).json({ error: 'previa_indisponivel', message: 'Não foi possível conferir a prévia fiscal. Tente novamente antes de emitir.' });
+    }
+  });
 
   const bad = (res, status, error, message, extra = {}) =>
     res.status(status).json({ ok: false, error, message, ...extra });
@@ -63,6 +79,12 @@ export function createPerfisEmissaoRouter({ log } = {}) {
   function normalizar(body) {
     const data = {};
     const erros = [];
+    if (Object.prototype.hasOwnProperty.call(body, 'categoriaObrigacaoIbscbs')) {
+      const categoria = body.categoriaObrigacaoIbscbs;
+      if (categoria === null || categoria === '') data.categoriaObrigacaoIbscbs = null;
+      else if (CATEGORIAS_IBSCBS.includes(categoria)) data.categoriaObrigacaoIbscbs = categoria;
+      else erros.push({ campo: 'categoriaObrigacaoIbscbs', motivo: 'Escolha uma categoria de operação de IBS/CBS válida.' });
+    }
 
     for (const id of IDS) {
       if (!Object.prototype.hasOwnProperty.call(body, id)) continue;
@@ -188,6 +210,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
           // ⚠⚠ A FLAG VIAJA, e é ela que a tela usa para NÃO prometer efeito que não existe. Com
           // ela desligada o painel é informativo: diz o que MUDARIA, não o que muda.
           integracaoLigada: INTEGRACAO_PERFIL_EMISSAO_NFSE,
+          ibscbsLigado: INTEGRACAO_NFSE_IBSCBS,
           perfis,
           sugestoes: sugestoesDoPerfil(ctx.company),
           // O ponto de partida que a tela oferece — calculado, nunca gravado.

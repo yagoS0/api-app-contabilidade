@@ -64,11 +64,21 @@ export function nbsDaDps(perfil) {
  * @param {string|null} p.cNBS o `cNBS` já resolvido por `nbsDaDps` — a E0322 se confere aqui
  * @param {string|Date} p.competencia data da prestação para conferir a vigência publicada
  */
-export function ibscbsDaDps({ perfil, ligado, cNBS, competencia }) {
+export function ibscbsDaDps({ perfil, ligado, cNBS, competencia, obrigacao }) {
   const cIndOp = texto(perfil?.ibscbsCIndOp);
   const cst = texto(perfil?.ibscbsCst);
   const cClassTrib = texto(perfil?.ibscbsCClassTrib);
   const declarados = [cIndOp, cst, cClassTrib].filter(Boolean).length;
+
+  if (obrigacao?.estado === 'INDETERMINADO') return {
+    ok: false, codigo: 'NFSE_IBSCBS_ENQUADRAMENTO_PENDENTE', message: obrigacao.motivo,
+    correcao: 'O escritório precisa conferir o enquadramento e a competência antes de emitir.',
+  };
+  if (obrigacao?.estado === 'OBRIGATORIO' && (!ligado || declarados === 0)) return {
+    ok: false, codigo: !ligado ? 'NFSE_IBSCBS_OBRIGATORIO_DESLIGADO' : 'NFSE_IBSCBS_OBRIGATORIO_AUSENTE',
+    message: 'IBS/CBS é obrigatório para esta operação e competência, mas não seria informado na nota.',
+    correcao: !ligado ? 'Habilite e valide a integração de IBS/CBS antes de emitir esta operação.' : 'Complete NBS, indicador da operação, CST e classificação tributária no perfil de emissão.',
+  };
 
   // ⚠⚠ A FLAG DESLIGADA NÃO É "IGNORE EM SILÊNCIO" QUANDO HÁ DADO. Perfil sem nada declarado é o
   // caso de 100% das linhas hoje, e ali não há o que dizer. Mas um perfil COM os três campos
@@ -91,7 +101,7 @@ export function ibscbsDaDps({ perfil, ligado, cNBS, competencia }) {
       ok: false,
       codigo: "NFSE_IBSCBS_INCOMPLETO",
       message: `O bloco de IBS/CBS do perfil de emissão está incompleto: falta ${faltando.join(" e ")}.`,
-      correcao: "Complete os três campos de IBS/CBS no perfil, ou deixe os três em branco.",
+      correcao: "Complete os três campos de IBS/CBS no perfil. A omissão só é admitida quando não houver obrigação para a operação.",
       faltando,
     };
   }
@@ -115,7 +125,7 @@ export function ibscbsDaDps({ perfil, ligado, cNBS, competencia }) {
         "Declarar IBS/CBS na nota obriga a informar um item da NBS (regra E0322 do Padrão Nacional), " +
         "e o perfil de emissão não tem código NBS.",
       correcao:
-        "Informe o código NBS no perfil de emissão, ou apague os campos de IBS/CBS dele.",
+        "Informe o código NBS no perfil de emissão. Não apague IBS/CBS para contornar uma obrigação fiscal.",
     };
   }
 

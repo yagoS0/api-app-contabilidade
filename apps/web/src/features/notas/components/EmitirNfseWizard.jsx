@@ -1,5 +1,8 @@
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
+import { usePreviaFiscal } from '../hooks/usePreviaFiscal';
+import { PreviaFiscal, linhasDaPreviaFiscal } from './PreviaFiscal';
+import { MunicipioDoPerfil } from '../../companies/detail/components/MunicipioDoPerfil';
 // EMISSÃO DE NFS-e — o assistente.
 //
 // ⚠ NÃO EXISTE CAMINHO QUE PULE O PREVIEW.
@@ -358,7 +361,11 @@ export function EmitirNfseWizard({
   // ⚠ A COMPETÊNCIA DA NOTA MODELO **NÃO** ENTRA — a nota nova é de agora, não do mês da antiga.
   // `valoresIniciais.competencia` chega vazio de propósito (ver `reaproveitarNota.js`); a leitura
   // está aqui, e não um valor cravado, para que este campo continue igual nos dois caminhos.
-  const [competencia, setCompetencia] = useState(valoresIniciais?.competencia || "");
+  const [competencia, setCompetencia] = useState(valoresIniciais?.competencia || (apiPerfis ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) : ''));
+  const [precisaoCompetencia, setPrecisaoCompetencia] = useState(valoresIniciais?.competencia?.length === 7 || !apiPerfis ? 'month' : 'date');
+  const [avisoPrevia, setAvisoPrevia] = useState('');
+  const [buscaLocalPrestacao, setBuscaLocalPrestacao] = useState('');
+  const conferindoEmissao = useRef(false);
   const [referencia, setReferencia] = useState(valoresIniciais?.referencia || "");
   // A recusa da última colagem no campo de valor. `null` = nada a dizer. ⚠ Ela existe porque a
   // colagem ambígua NÃO é convertida: o campo fica como estava e a tela precisa explicar o porquê,
@@ -531,7 +538,12 @@ export function EmitirNfseWizard({
 
   // O regime que o SERVIDOR vai declarar, confrontado com o do cadastro. Não é escolha da tela:
   // é o espelho do `opSimpNac` que o backend crava, exposto para o contador ver antes de emitir.
-  const regime = useMemo(() => regimeDeclaradoNaNota(regimeCadastrado), [regimeCadastrado]);
+  const previaFiscal = usePreviaFiscal(apiPerfis, companyId, { competencia, perfilId: perfilEscolhido?.id || null,
+    servico: { ...servico, aliquota: servico.aliquota === '' ? null : Number(String(servico.aliquota).replace(',', '.')) },
+    tomador: { ...tomador, endereco }, destinatario });
+  const regimeEfetivo = previaFiscal.habilitada ? previaFiscal.dados?.regimeVigente?.regime : regimeCadastrado;
+  const regime = useMemo(() => regimeDeclaradoNaNota(regimeEfetivo), [regimeEfetivo]);
+  const aliquotaParaRetencao = previaFiscal.dados?.iss?.pAliq ?? servico.aliquota;
   // O município emissor (`cLocEmi`) é da EMPRESA, não da nota: ou está no cadastro, ou nada sai.
   const municipio = useMemo(() => impedimentoDeEmissao(codigoMunicipioIbge), [codigoMunicipioIbge]);
   // O resto da configuração da EMPRESA — o mesmo conjunto que `buildMissingFields` confere, na
@@ -583,10 +595,12 @@ export function EmitirNfseWizard({
   // Os dois desabilitam o Continuar igualmente: a cor fala do que fazer, não do que vale.
   const conferenciaOperacao = conferirDadosDaOperacao({ ...retencoesComplementares, obraTipo: obra.tipo, obraCodigo: obra.codigo, obraInscricao: obra.inscImobFisc, destinatarioDoc: destinatario.cnpjCpf, destinatarioNome: destinatario.nome }, valor);
   const problemasDaNota = useMemo(() => {
-    const problemaAliquota = problemaAliquotaComRetencao({ issRetido: servico.issRetido, aliquota: servico.aliquota });
+    const problemaAliquota = problemaAliquotaComRetencao({ issRetido: servico.issRetido, aliquota: aliquotaParaRetencao });
     const valorEmBranco = !String(servico.valorServicos).trim();
     return [
       problemaPerfil && { texto: problemaPerfil, campo: null, grave: true },
+      buscaLocalPrestacao.trim() && !servico.cLocPrestacao && { texto: 'Selecione o município da prestação ou limpe a busca.', campo: CAMPO.COMPETENCIA, grave: true },
+      previaFiscal.bloqueada && { texto: previaFiscal.carregando ? 'Aguarde a prévia fiscal por competência.' : 'Resolva as pendências da prévia fiscal por competência.', campo: CAMPO.COMPETENCIA, grave: true },
       ...conferenciaOperacao.erros.map((texto) => ({ texto, campo: "nfse-operacao", grave: true })),
       perfisDaEmpresa.length > 1 && !perfilEscolhido && { texto: "Escolha o perfil de serviço desta nota.", campo: null, grave: false },
       municipio.bloqueia && { texto: municipio.motivoCurto, campo: null, grave: true, cadastro: true },
@@ -629,7 +643,7 @@ export function EmitirNfseWizard({
     ].filter(Boolean);
   }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
     servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
-    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, retencoesComplementares, obra, destinatario]);
+    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, retencoesComplementares, obra, destinatario, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao]);
 
   const prontoParaEmitir = problemasDaNota.length === 0;
   const camposDoTomador = new Set([CAMPO.DOC, CAMPO.NOME, CAMPO.EMAIL, ...CAMPOS_DO_ENDERECO]);
@@ -666,14 +680,16 @@ export function EmitirNfseWizard({
     servico: {
       descricao: String(servico.descricao).trim(),
       valor,
-      aliquota: servico.aliquota === "" ? null : Number(String(servico.aliquota).replace(",", ".")),
+      aliquota: previaFiscal.habilitada ? (previaFiscal.dados?.iss?.informar ? Number(previaFiscal.dados.iss.pAliq) : null)
+        : servico.aliquota === "" ? null : Number(String(servico.aliquota).replace(",", ".")),
+      aliquotaDeclaradaTexto: previaFiscal.habilitada ? (previaFiscal.dados?.iss?.ok ? (previaFiscal.dados.iss.informar ? `${previaFiscal.dados.iss.pAliq}%` : 'não enviada na DPS; confira a prévia fiscal') : 'aguardando conferência fiscal') : null,
       issRetido: Boolean(servico.issRetido),
     },
     competencia,
     referencia: String(referencia).trim(),
     pTotTribSN: leituraPTot.valor,
     regime,
-  }), [tomador, docLimpo, endereco, enderecoCompleto, servico, valor, competencia, referencia, leituraPTot.valor, regime]);
+  }), [tomador, docLimpo, endereco, enderecoCompleto, servico, valor, competencia, referencia, leituraPTot.valor, regime, previaFiscal.habilitada, previaFiscal.dados]);
 
   function montarPayload() {
     return {
@@ -690,6 +706,7 @@ export function EmitirNfseWizard({
       servico: {
         descricao: String(servico.descricao).trim(),
         valorServicos: valor,
+        ...(servico.cLocPrestacao ? { cLocPrestacao: servico.cLocPrestacao } : {}),
         aliquota: servico.aliquota === "" ? undefined : Number(String(servico.aliquota).replace(",", ".")),
         // ⚠ SEMPRE booleano explícito, nunca `undefined`: "não marcou" e "marcou não" precisam
         // chegar iguais ao servidor. É este campo que decide quem recolhe o ISS.
@@ -704,11 +721,21 @@ export function EmitirNfseWizard({
   }
 
   async function emitir() {
+    if (!prontoParaEmitir || enviando || conferindoEmissao.current || travadoPelaRejeicao) return;
+    if (previaFiscal.habilitada) {
+      conferindoEmissao.current = true;
+      setEnviando(true);
+      setAvisoPrevia('');
+      const conferida = await previaFiscal.reconferir();
+      conferindoEmissao.current = false;
+      setEnviando(false);
+      if (!conferida) { setAvisoPrevia('A prévia mudou ou não pôde ser confirmada. Confira o contexto atualizado antes de emitir.'); return; }
+    }
     setRejeicao(null);
     const perfilNaConfirmacao = perfilEscolhido ? `Perfil de serviço: ${perfilEscolhido.nome} (${perfilEscolhido.codigoServicoNacional})\n\n` : "";
     const retencoesNaConfirmacao = Object.entries(retencoesComplementares).filter(([, v]) => v !== "").map(([k, v]) => `${k === "vRetIRRF" ? "IRRF retido" : "Previdência retida"}: R$ ${Number(v).toFixed(2).replace(".", ",")}`).join("\n");
     const especiaisNaConfirmacao = [obra.codigo ? `Obra (${obra.tipo === "cCIB" ? "CIB" : "CNO/CEI"}): ${obra.codigo}${obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}` : "", destinatario.cnpjCpf ? `Destinatário IBS/CBS: ${destinatario.nome} — ${destinatario.cnpjCpf}` : ""].filter(Boolean).join("\n");
-    if (!window.confirm(perfilNaConfirmacao + textoDeConfirmacao(dadosDaDeclaracao) + (retencoesNaConfirmacao ? `\n\n${retencoesNaConfirmacao}` : "") + (especiaisNaConfirmacao ? `\n\n${especiaisNaConfirmacao}` : ""))) return;
+    if (!window.confirm(linhasDaPreviaFiscal(previaFiscal.dados).join('\n') + '\n\n' + perfilNaConfirmacao + textoDeConfirmacao(dadosDaDeclaracao) + (retencoesNaConfirmacao ? `\n\n${retencoesNaConfirmacao}` : "") + (especiaisNaConfirmacao ? `\n\n${especiaisNaConfirmacao}` : ""))) return;
     setEnviando(true);
     try {
       const r = await onEmitir(montarPayload());
@@ -917,6 +944,8 @@ export function EmitirNfseWizard({
         {passo === PASSO_CONFERIR && <ConfigurarRecorrencia api={apiPerfis} companyId={companyId} obterModelo={montarPayload} disabled={enviando || !prontoParaEmitir || travadoPelaRejeicao} aoSalvar={onRecorrenciaSalva} />}
         {/* O formulário e o espelho lado a lado. Abaixo de 900px a grade vira uma coluna e o
             espelho fica embaixo — ver `.emitir-nfse-corpo` no `App.css`. */}
+        <PreviaFiscal previa={previaFiscal} companyId={companyId} destaque={passo === PASSO_CONFERIR} />
+        {avisoPrevia && <p role="alert">{avisoPrevia}</p>}
         <div className={passo === PASSO_CONFERIR ? "emitir-nfse-corpo emitir-nfse-corpo--conferir" : "emitir-nfse-corpo"}>
           {passo < PASSO_CONFERIR && (
             <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
@@ -1164,9 +1193,15 @@ export function EmitirNfseWizard({
                     </div>
                   )}
                   <div className="emissor-campos">
-                    <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência (opcional)
-                      <input id={CAMPO.COMPETENCIA} type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
+                    <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência{apiPerfis ? '' : ' (opcional)'}
+                      <input id={CAMPO.COMPETENCIA} type={precisaoCompetencia} value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
                     </label>
+                    <label style={rotulo}>Informar período por<select value={precisaoCompetencia} onChange={e => { setPrecisaoCompetencia(e.target.value); setCompetencia(e.target.value === 'month' ? competencia.slice(0, 7) : ''); }} style={campo}>
+                      <option value="month">Mês completo</option><option value="date">Dia da prestação</option>
+                    </select><small>Se houver mudança de regime no mês, informe o dia da prestação.</small></label>
+                    <MunicipioDoPerfil codigo={servico.cLocPrestacao} busca={buscaLocalPrestacao}
+                      onBuscar={texto => { setBuscaLocalPrestacao(texto); setServico(s => ({ ...s, cLocPrestacao: null })); }}
+                      onEscolher={codigo => { setBuscaLocalPrestacao(''); setServico(s => ({ ...s, cLocPrestacao: codigo })); }} />
                     <label htmlFor={CAMPO.REFERENCIA} style={rotulo}>Referência interna (opcional)
                       <input id={CAMPO.REFERENCIA} value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex.: contrato, pedido" style={campo} />
                     </label>
@@ -1208,7 +1243,7 @@ export function EmitirNfseWizard({
                       />
                     </label>
                     <label htmlFor={CAMPO.ALIQUOTA} style={rotulo}>Alíquota de ISS (%) — opcional
-                      <input id={CAMPO.ALIQUOTA} value={servico.aliquota} onChange={(e) => setServico({ ...servico, aliquota: e.target.value })} placeholder="Vazio = a da prefeitura" inputMode="decimal" style={campo} />
+                      <input id={CAMPO.ALIQUOTA} value={servico.aliquota} onChange={(e) => setServico({ ...servico, aliquota: e.target.value })} placeholder="Confira a exigência na prévia fiscal" inputMode="decimal" style={campo} />
                     </label>
                   </div>
 
@@ -1258,7 +1293,7 @@ export function EmitirNfseWizard({
                       </strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
-                      <span style={{ color: PANEL.muted }}>Regime no cadastro da empresa</span>
+                      <span style={{ color: PANEL.muted }}>{previaFiscal.habilitada ? 'Regime no histórico da competência' : 'Regime no cadastro da empresa'}</span>
                       <strong>{regime.rotuloCadastrado || "não cadastrado"}</strong>
                     </div>
                     {regime.aviso && (

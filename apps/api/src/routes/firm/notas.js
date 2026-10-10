@@ -1,3 +1,5 @@
+import { destaqueIbscbs } from '../../application/nfse/destaqueIbscbs.js';
+import { contextoEmissaoRegistrado } from '../../application/nfse/contextoEmissaoRegistrado.js';
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 // Q12.A.3: endpoints do módulo Notas Fiscais.
 //
@@ -737,6 +739,8 @@ export function createNotasRouter({ log }) {
           flagExportacao: i.flagExportacao,
           classificadoEm: i.classificadoEm,
         })),
+        destaqueIbscbs: nota.type === "NFSE" ? destaqueIbscbs(xmlCabe ? nota.xmlRaw : null) : null,
+        contextoEmissao: await contextoEmissaoRegistrado(nota, portalClientId),
         xml: {
           disponivel: Boolean(nota.xmlRaw),
           bytes: xmlBytes,

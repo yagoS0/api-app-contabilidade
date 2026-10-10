@@ -237,7 +237,8 @@ function desenharCabecalho(doc, dados, fontes, opcoes, conformidade) {
     doc.font(fontes.tituloBold)
       .fontSize(TIPOGRAFIA.semValidadeJuridicaPt)
       .fillColor(TIPOGRAFIA.semValidadeJuridicaCor);
-    doc.text(TEXTOS.semValidadeJuridica, quadroCaixa.x, quadroCaixa.y + 26, {
+    // Folga para a altura real de Arial Bold: a linha não deve tocar a divisória.
+    doc.text(TEXTOS.semValidadeJuridica, quadroCaixa.x, quadroCaixa.y + 24, {
       width: quadroCaixa.w, align: "center", lineBreak: false,
     });
     doc.fillColor(TIPOGRAFIA.cor);

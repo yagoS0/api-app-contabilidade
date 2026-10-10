@@ -515,7 +515,7 @@ export function lerNfse(xml, { municipios = null } = {}) {
     vCofins: pisCofinsRetido ? formatarValor(0) : formatarValor(vCofinsBruto),
     tpRetPisCofins,
 
-    // ── IBS / CBS (grupos inexistentes no leiaute 1.01) ──
+    // IBS/CBS: valores apurados vêm do grupo da NFS-e autorizada, não da DPS.
     cstCClassTrib: juntar([
       t(`${DPS}/IBSCBS/valores/trib/CST`) ?? t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/CST`),
       t(`${DPS}/IBSCBS/valores/trib/cClassTrib`) ?? t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/cClassTrib`),
@@ -567,8 +567,11 @@ export function lerNfse(xml, { municipios = null } = {}) {
     totalIbsCbs: (() => {
       const a = t("IBSCBS/totCIBS/gIBS/vIBSTot");
       const b = t("IBSCBS/totCIBS/gCBS/vCBS");
-      if (a == null && b == null) return null;
-      return formatarValor((Number(a || 0) || 0) + (Number(b || 0) || 0));
+      // Um tributo ausente não significa zero. Não completar retorno parcial.
+      if (a == null || b == null || !/^\d+(?:\.\d{1,2})?$/.test(a) || !/^\d+(?:\.\d{1,2})?$/.test(b)) return null;
+      const centavos = v => { const [i, d = ''] = v.split('.'); return BigInt(i) * 100n + BigInt(d.padEnd(2, '0')); };
+      const total = (centavos(a) + centavos(b)).toString().padStart(3, '0');
+      return `${total.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${total.slice(-2)}`;
     })(),
     vTotNF: formatarValor(t("IBSCBS/totCIBS/vTotNF")),
 
@@ -586,6 +589,8 @@ export function lerNfse(xml, { municipios = null } = {}) {
     meta: {
       chave,
       versaoCalculadoraIBSCBS: t('verCalcIBSCBS'),
+      ibscbsDeclaradoNaDps: Boolean(n(`${DPS}/IBSCBS`)),
+      ibscbsRetornadoNaNfse: Boolean(n('IBSCBS')),
       // §2 — a expressão "NFS-e SEM VALIDADE JURÍDICA" depende SÓ disto.
       homologacao: String(valores.tpAmb || "").trim() === "2",
       cStat: valores.cStat,

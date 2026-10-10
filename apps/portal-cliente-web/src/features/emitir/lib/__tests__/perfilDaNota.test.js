@@ -53,10 +53,10 @@ describe("⚠⚠ o que SOME da tela — e só o que o perfil de fato responde", 
     });
   });
 
-  it("com perfil, o código de serviço e o município da prestação somem", () => {
+  it("com perfil, o código vem do cadastro e o local continua editável", () => {
     const c = camposDoPerfil(lerPerfis({ data: [P("a", "Consultoria")] }));
     expect(c.codigoServicoNoFormulario).toBe(false);
-    expect(c.municipioDaPrestacaoNoFormulario).toBe(false);
+    expect(c.municipioDaPrestacaoNoFormulario).toBe(true);
   });
 
   it("⚠ o SELETOR só existe com mais de um — com um só não há o que escolher", () => {

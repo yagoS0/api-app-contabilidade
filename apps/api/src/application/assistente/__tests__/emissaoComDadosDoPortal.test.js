@@ -7,10 +7,10 @@ const ENDERECO = { cMun: "3304557", CEP: "20040020", xLgr: "Rua de exemplo", nro
 const BASICOS = { tomadorDoc: DOC, descricao: "Serviços de exemplo", valor: 1000, competencia: "2026-09" };
 const MUNICIPIOS = [["3304557", "Rio de Janeiro", "RJ"]];
 
-function contexto({ salvo = null, das = 600, perfis = [] } = {}) {
+function contexto({ salvo = null, das = 600, perfis = [], historico = [{ id: 'rh', regime: 'SIMPLES', vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }] } = {}) {
   const client = {
     portalClient: { findUnique: jest.fn(async () => ({ id: "pc", companyId: "legacy" })) },
-    company: { findUnique: jest.fn(async () => ({ id: "legacy", regimeTributario: "SIMPLES", codigoServicoNacional: "170601", codigosServicoNacional: ["170601"], codigoMunicipioIbge: "3304557" })) },
+    company: { findUnique: jest.fn(async () => ({ id: "legacy", regimeTributario: "SIMPLES", regimeHistorico: historico, codigoServicoNacional: "170601", codigosServicoNacional: ["170601"], codigoMunicipioIbge: "3304557" })) },
     cadastroFiscal: { findUnique: jest.fn(async () => null) },
     companyMonthlyCircular: { findMany: jest.fn(async () => das == null ? [] : [{ competencia: "2026-08", dasTotal: das }]) },
     portalInvoice: { aggregate: jest.fn(async () => ({ _sum: { total: 10000 } })) },
@@ -49,6 +49,15 @@ test("quatro campos chegam ao resumo com CNPJ consultado e Simples resolvido no 
   expect(pedido.corpo).not.toContain("Regime declarado: não informado");
   expect(ctx.servicos.consultarCnpj).toHaveBeenCalledTimes(1);
   expect(ctx.servicos.consultarCep).not.toHaveBeenCalled();
+});
+
+test("sem vigência confirmada não consulta tomador nem cria confirmação de emissão", async () => {
+  const ctx = contexto({ historico: [] });
+  const r = await executarFerramenta("preparar_emissao", BASICOS, ctx);
+  expect(r).toMatchObject({ ok: false, encaminharEscritorio: true, motivo: "NFSE_REGIME_SEM_VIGENCIA" });
+  expect(ctx.servicos.consultarCnpj).not.toHaveBeenCalled();
+  expect(ctx.servicos.consultarCep).not.toHaveBeenCalled();
+  expect(ctx.servicos.criarPendencia).not.toHaveBeenCalled();
 });
 
 test("tomador salvo dispensa ambas consultas e respeita escopo da empresa", async () => {

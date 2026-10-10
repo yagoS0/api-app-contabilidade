@@ -93,9 +93,38 @@ beforeEach(() => {
   prismaMock.perfilEmissaoNfse.updateMany.mockResolvedValue({ count: 0 });
 });
 
+describe('prévia fiscal do contador', () => {
+  const previaUrl = `/firm/companies/${PORTAL_ID}/previa-emissao`;
+  it('expõe pendência histórica sem gravar perfil ou nota', async () => {
+    const r = await request(app).post(previaUrl).send({ competencia: '2026-10-10', companyId: 'intruso' });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: false, pendencias: [{ codigo: 'NFSE_REGIME_SEM_VIGENCIA' }] });
+    expect(prismaMock.portalClient.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: PORTAL_ID } }));
+    expect(prismaMock.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+  });
+  it('recusa competência malformada e usuário sem papel de contador', async () => {
+    expect((await request(app).post(previaUrl).send({ competencia: [] })).status).toBe(400);
+    prismaMock.companyFirmAccess.findUnique.mockResolvedValue({ role: 'STAFF', status: 'ACTIVE', scopes: [] });
+    const outro = montarApp({ ...CONTADOR, role: 'user' });
+    const r = await request(outro).post(previaUrl).send({ competencia: '2026-10-10' });
+    expect(r.status).toBe(403);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 describe("GET — o painel do que a próxima DPS vai levar", () => {
+  it('persiste categoria fiscal explícita e recusa categoria inventada', async () => {
+    const corpo = { nome: 'Prazo fiscal', codigoServicoNacional: '171901', categoriaObrigacaoIbscbs: 'SERVICO_ISS' };
+    const r = await request(app).post(URL).send(corpo);
+    expect(r.status).toBe(201);
+    expect(prismaMock.perfilEmissaoNfse.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ categoriaObrigacaoIbscbs: 'SERVICO_ISS' }) }));
+    prismaMock.perfilEmissaoNfse.create.mockClear();
+    const invalido = await request(app).post(URL).send({ ...corpo, categoriaObrigacaoIbscbs: 'DISPENSADO' });
+    expect(invalido.status).toBe(400);
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+  });
   it("oferece NBS e combinações sem eleger uma classificação", async () => {
     const r = await request(app).get(URL);
     expect(r.body.sugestoes.porServico[0]).toMatchObject({ codigo: "171901" });

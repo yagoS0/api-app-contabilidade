@@ -444,9 +444,9 @@ export const PORQUE_BENEFICIO_DIGITADO =
 // ⚠⚠ A FRASE QUE IMPEDE A CRENÇA FALSA. Sem ela, configurar o benefício e ver a nota sair com o
 // imposto cheio é uma descoberta que só acontece depois da emissão.
 export const BENEFICIO_NAO_VAI_NO_XML =
-  "⚠ Este cadastro ainda NÃO chega à nota: o XML da DPS que este sistema monta não leva o grupo "
-  + "“BM”, então a nota continua saindo com o ISS cheio, sem a redução. O que você preencher aqui "
-  + "fica guardado para quando o envio existir.";
+  "Este cadastro ainda não chega ao XML. A emissão fica bloqueada para conferência enquanto houver "
+  + "benefício municipal cadastrado. Se a concessão for aplicável à operação, utilize o Emissor Nacional "
+  + "até a integração estar disponível. Não apague o benefício apenas para prosseguir.";
 
 export const PROBLEMA_NBM =
   `o número do benefício municipal tem exatamente ${TAMANHO_NBM} dígitos (7 do município + 2 do `

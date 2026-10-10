@@ -23,6 +23,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NotasFiscaisTab } from "../renderNotasFiscaisTab";
 import { ONDE_CARGA_TRIBUTARIA } from "../../../../lib/nfse/cadastroEmissaoNfse";
+import { createApiClient } from '../../../../api/client';
+
+jest.mock('../../../../api/client', () => {
+  const api = jest.requireActual('../../../../api/client').createApiClient();
+  return { createApiClient: () => api };
+});
 
 const CADASTRO_SEM_CARGA = {
   cnpj: "39254243000191",
@@ -75,6 +81,10 @@ function painelDeNotas() {
 }
 
 function abrirAba({ regime, cadastroEmissao }) {
+  const api = createApiClient();
+  api.getPerfisEmissao = jest.fn(async () => ({ perfis: [], integracaoLigada: true }));
+  api.previaEmissaoNfse = jest.fn(async (_id, entrada) => ({ ok: true, pendencias: [], ambiente: 'homolog',
+    competencia: entrada.competencia, regimeVigente: { regime, vigenciaInicio: '2020-01-01', vigenciaFim: null } }));
   render(
     <NotasFiscaisTab
       notasPanel={painelDeNotas()}
@@ -86,14 +96,15 @@ function abrirAba({ regime, cadastroEmissao }) {
   );
 }
 
-function clicarEmEmitir() {
+async function clicarEmEmitir() {
   fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
+  await screen.findByText(/Ver contexto fiscal/);
 }
 
 describe("a empresa do Lucro Presumido CHEGA ao assistente pela aba Notas Fiscais", () => {
-  it("o botão existe e abre o assistente — a trava do não optante não vive mais aqui", () => {
+  it("o botão existe e abre o assistente — a trava do não optante não vive mais aqui", async () => {
     abrirAba({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: { ...CADASTRO_SEM_CARGA, ...CARGA_CONFIGURADA } });
-    clicarEmEmitir();
+    await clicarEmEmitir();
     expect(screen.getByText("Emitir nota de serviço")).toBeInTheDocument();
     // O regime que a nota vai declarar, lido pela aba e repassado ao assistente.
     expect(screen.getAllByText(/Não optante pelo Simples Nacional \(opSimpNac 1\)/).length).toBeGreaterThan(0);
@@ -101,9 +112,9 @@ describe("a empresa do Lucro Presumido CHEGA ao assistente pela aba Notas Fiscai
     expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
   });
 
-  it("⚠ sem a carga configurada, a pendência aparece NO PASSO 1 — não na recusa do servidor", () => {
+  it("⚠ sem a carga configurada, a pendência aparece NO PASSO 1 — não na recusa do servidor", async () => {
     abrirAba({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: CADASTRO_SEM_CARGA });
-    clicarEmEmitir();
+    await clicarEmEmitir();
 
     const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
     expect(bloco).toHaveTextContent("Carga tributária aproximada");
@@ -121,9 +132,9 @@ describe("a empresa do Lucro Presumido CHEGA ao assistente pela aba Notas Fiscai
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 
-  it("a empresa do Simples abre o mesmo assistente e não vê nada sobre carga aproximada", () => {
+  it("a empresa do Simples abre o mesmo assistente e não vê nada sobre carga aproximada", async () => {
     abrirAba({ regime: "SIMPLES", cadastroEmissao: CADASTRO_SEM_CARGA });
-    clicarEmEmitir();
+    await clicarEmEmitir();
     expect(screen.getByText("Emitir nota de serviço")).toBeInTheDocument();
     expect(screen.queryByText(/Carga tributária aproximada/)).not.toBeInTheDocument();
     // Ela declara o OUTRO grupo — e esse campo continua onde estava.

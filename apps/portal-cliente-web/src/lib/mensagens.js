@@ -88,6 +88,7 @@ const MENSAGENS = {
   tomador_email_invalido: "O e-mail do tomador não parece válido.",
   servico_descricao_obrigatoria: "Descreva o serviço prestado.",
   servico_valor_invalido: "Informe o valor do serviço — precisa ser maior que zero.",
+  competencia_invalida: "Informe uma competência válida, sem datas impossíveis.",
   servico_local_prestacao_invalido:
     "O código do município de prestação precisa ter 7 dígitos (código IBGE).",
   servico_codigo_nacional_invalido: "O código de serviço informado não tem os 6 dígitos exigidos.",
