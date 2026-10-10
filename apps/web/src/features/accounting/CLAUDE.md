@@ -1,5 +1,13 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Baixa integral e quotas — 10/10/2026
+
+Por decisão do usuário, somente IRPJ/CSLL mantêm baixa por quotas. Os demais tributos exigem todo o principal pendente, com juros e multa separados, na validação do modal e na API. Saldo residual antigo não implica quitação; registros históricos não são alterados.
+
+## Circular: confirmação e baixa — 10/10/2026
+
+Mostrar "SERPRO" ou "Cliente" separado de "Baixa pendente", "Conferir baixa" (saldo residual) ou "Baixada", inclusive no Presumido sem a flag legada pagamentoLocalizado. Valor principal é o provisionado; "Valor pago" vem somente de pagamentoEfetivo com fonte BAIXA_CONTABIL, nunca do total de um DARF consolidado ou recálculo. Valores anterior/atual iguais em centavos não exibem aviso de recálculo. Consulta e baixa permanecem atos separados. Alteração local, publicação em produção ainda pendente.
+
 ## Parcelamento — carregamento inicial, 06/10/2026
 
 As filas de parcelas pagas e de prestações sem guia não desenham painéis vazios durante a primeira consulta. A aba usa um indicador compartilhado enquanto qualquer consulta estiver pendente. Preservar erros com retentativa, dados já obtidos durante recarga, resultados de baixa e a âncora de rolagem do botão Dar baixa. As duas filas mantêm seus significados distintos. O teste de sincronização cobre consultas com tempos diferentes e falha na segunda fila.

@@ -3932,47 +3932,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
       if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
 
-      const numeroDoc = String(scoped.guide.extracted?.numeroDocumento || "").trim();
-      if (!numeroDoc) {
-        return res.json({
-          ok: true, encontrado: false,
-          motivo: "Guia sem número de documento — o comprovante é localizado por ele.",
-        });
-      }
-
       try {
-        const { confirmarPagamento } = await import(
-          "../../application/fiscal/serpro/SerproPagtoWebService.js"
-        );
-        const r = await confirmarPagamento({
-          contribuinteCnpj: scoped.guide.cnpj,
-          numeroDocumento: numeroDoc,
-          logger: log,
-        });
-        if (!r?.pago) {
-          return res.json({
-            ok: true, encontrado: false,
-            motivo: r?.mensagem || "Pagamento ainda não localizado no SERPRO.",
-          });
-        }
-
-        const c = r.comprovante || null;
-        await markGuidePaidByComprovante({ guideId: scoped.guide.id, comprovante: c });
-
-        return res.json({
-          ok: true,
-          encontrado: true,
-          comprovante: c
-            ? {
-                dataArrecadacao: c.dataArrecadacaoBR, principal: c.principal,
-                juros: c.juros, multa: c.multa, total: c.total,
-                meioPagamento: c.meioPagamento, confiavel: c.confiavel,
-              }
-            : null,
-        });
+        const { buscarPagamentoDaGuia } = await import("../../application/fiscal/serpro/buscarPagamentoDaGuia.js");
+        const resultado = await buscarPagamentoDaGuia({ guideId: scoped.guide.id, userId: req.auth.user.id, logger: log });
+        return res.json(resultado);
       } catch (err) {
         log.error({ err: err?.message, guideId: scoped.guide.id }, "Falha ao buscar pagamento (PAGTOWEB)");
-        return res.status(502).json({ ok: false, error: err?.code || "PAGTOWEB_FALHOU", reason: err?.message });
+        const { diagnosticoConsultaPagamento } = await import("../../application/fiscal/serpro/diagnosticoConsultaPagamento.js");
+        const diagnostico = diagnosticoConsultaPagamento(err);
+        return res.status(502).json({ ok: false, error: err?.code || "PAGTOWEB_FALHOU", reason: diagnostico.mensagem, diagnostico });
       }
     }, "Consultar pagamento da guia")
   );

@@ -4,6 +4,16 @@ import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 
+const ESTADOS_CONSULTA_PAGAMENTO = {
+  paid: "Pagamento confirmado via SERPRO", open: "Pagamento não localizado",
+  NAO_LOCALIZADO: "Pagamento não localizado", DIVERGENTE: "Pagamento divergente — conferir",
+  already_paid: "Confirmação já registrada — sem nova consulta",
+  sem_numero_documento: "Sem número do documento — consulta não realizada",
+  sem_vencimento_confirmado: "Sem vencimento confirmado — consulta não realizada",
+  ainda_nao_vencida: "Ainda não vencida — consulta não realizada",
+  conferencia_manual: "Aguardando conferência manual",
+};
+
 // Página "Rotinas" — QUEM faz o quê (tabela empresa × rotina) e QUANDO (agenda por rotina).
 //
 // Antes, quem capturava o quê era implícito: o worker derivava do regime (Simples→DAS+extrato,
@@ -411,7 +421,10 @@ export function RotinasPage({
                         {row.lastRun.result?.avisosPendentes > 0 && <p>{row.lastRun.result.avisosPendentes} aviso(s) aguardam ação do contador. Confira o canal e o destinatário.</p>}
                         <p>Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
                         {[...(row.lastRun.result?.results || []), ...(row.lastRun.result?.extratoResults || []), ...(row.lastRun.result?.parcelaResults || [])].map((item, i) => <div key={`${item.companyId || "item"}-${i}`}>
-                          <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || item.status}</p>
+                          <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || (row.routine === "pagamento" && ESTADOS_CONSULTA_PAGAMENTO[item.status]) || item.status}</p>
+                          {(item.competencia || item.tipo) && <p>{[item.tipo, item.competencia].filter(Boolean).join(" · ")}</p>}
+                          {item.diagnostico && <p>{item.diagnostico.mensagem}{item.diagnostico.httpStatus ? ` (HTTP ${item.diagnostico.httpStatus})` : ""}{item.diagnostico.codigoSerpro ? ` · ${item.diagnostico.codigoSerpro}` : ""}</p>}
+                          {!item.diagnostico && item.error === "SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA" && <p>Consulta sem conclusão. Este registro antigo não guardou o motivo detalhado; não significa que a guia não foi paga.</p>}
                           {item.aviso && <p>{item.aviso.status === "ENVIADO" ? "Aviso enviado ao cliente." : item.aviso.status === "JA_ENVIADO" ? "Cliente já avisado; sem novo envio." : item.aviso.status === "IGNORADO" ? "Aviso não enviado: pagamento ou confirmação precisa ser conferido." : "Aviso pendente para o contador; nenhuma nova consulta à Receita será feita automaticamente."}</p>}
                           {item.aviso?.mensagem && <p>{item.aviso.mensagem}</p>}
                           {(item.aviso?.resultados || []).filter(resultado => resultado.mensagem && !["ENVIADO", "JA_ENVIADO"].includes(resultado.status)).map((resultado, j) => <p key={`aviso-${j}`}>{resultado.mensagem}</p>)}

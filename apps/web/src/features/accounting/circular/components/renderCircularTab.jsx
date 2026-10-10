@@ -78,17 +78,16 @@ function valorDaProvisao(p) {
   return Number(p?.valorProvisionado ?? p?.valorObrigacao ?? p?.totalD ?? p?.valor ?? 0);
 }
 
-function ValorRecalculado({ entry, acrescimo }) {
-  const info = informacaoRecalculo(entry);
-  const temAcrescimo = Number(acrescimo?.acrescimo) > 0;
-  if (!info && !temAcrescimo) return null;
-  // O DARF pode reunir vários tributos: seu total nunca substitui o valor da provisão.
-  const valor = info?.atual || (temAcrescimo ? `R$ ${fmtValor(Number(acrescimo.principal) + Number(acrescimo.acrescimo))}` : null);
-  return <div style={{ fontSize: "0.7rem", lineHeight: 1.3, color: "var(--text-muted)" }} title={info?.titulo}>
-    {info?.totalGuia ? "Guia recalculada" : "Recalculado"}{valor ? `: ${valor}` : ""}
+function ValorPago({ entry }) {
+  const pagamento = entry?.pagamentoEfetivo;
+  // Somente a baixa contábil prova quanto foi pago desta provisão.
+  if (pagamento?.fonte !== "BAIXA_CONTABIL") return null;
+  const total = pagamento.total;
+  const confiavel = total != null && total !== "" && Number.isFinite(Number(total)) && Number(total) > 0;
+  return <div style={{ fontSize: "0.7rem", lineHeight: 1.3, color: "var(--text-muted)" }}>
+    {confiavel ? `Valor pago: R$ ${fmtValor(Number(total))}` : "Baixa a conferir"}
   </div>;
 }
-
 /**
  * Os subtipos que o seletor do modal pode OFERECER — os do regime, mais o que já está gravado.
  *
@@ -521,7 +520,7 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
   if (isVinculado && isAberto) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; }
   // Pagamento LOCALIZADO no SERPRO mas ainda SEM lançamento: continua "em aberto" na cor (há
   // trabalho a fazer), mas ganha a tag "paga" — o dinheiro saiu, falta o contador lançar.
-  const pagamentoLocalizado = Boolean(entry.pagamentoLocalizado) && isOpenLike;
+  const pagamentoLocalizado = Boolean(entry.pagamentoLocalizado || leituraDoPagamento(entry.sourceGuide)) && isOpenLike;
 
   const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "none", color: "#F8F8F2", fontSize: "0.78rem", cursor: "pointer", borderRadius: 4 };
 
@@ -571,10 +570,10 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
           {numText}
         </span>
       )}
-      {/* Provisão em destaque; recálculo abaixo. Pagamentos mantêm seus detalhes próprios. */}
+      {/* Provisão em destaque e valor efetivamente baixado abaixo. */}
       {entry.parcelamentoOrigem && <div style={{color:aparencia.cor,fontSize:'0.72rem'}}>{aparencia.rotulo}</div>}
       {entry.pendenciaFechamento && <div style={{ color: "var(--danger)", fontSize: "0.68rem" }}>Pagamento pendente</div>}
-      {!placeholder && <ValorRecalculado entry={entry} acrescimo={acrescimo} />}
+      {!placeholder && <ValorPago entry={entry} />}
       {/* ⚠⚠ É AQUI QUE A CONFIRMAÇÃO DO CLIENTE CAI, e é aqui que faltava QUEM.
           O estado "pagamento localizado, falta lançar a baixa" já existia — o que ele não dizia era
           de ONDE veio a afirmação. Até 27/08/2026 só havia duas origens internas (o SERPRO achou o
@@ -594,7 +593,8 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
               entry.comprovante?.dataArrecadacao ? `Arrecadação em ${entry.comprovante.dataArrecadacao}.` : null,
             ].filter(Boolean).join(" ")}
           >
-            {pg?.procedencia ? `⏳ ${pg.marca.replace("✓ ", "")}` : "⏳"}
+            <div>{pg?.procedencia === "SERPRO" ? "SERPRO" : pg?.procedencia === "CLIENTE" ? "Cliente" : pg?.rotulo || "Pagamento localizado"}</div>
+            <div>{isParcial ? (["IRPJ", "CSLL"].includes(String(entry.subtipo || "").toUpperCase()) ? "Quotas pendentes" : "Conferir baixa") : "Baixa pendente"}</div>
           </div>
         );
       })()}
@@ -632,7 +632,8 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
               dataFormatada: entry.sourceGuide?.paymentConfirmedAt ? fmtDate(entry.sourceGuide.paymentConfirmedAt) : null,
             }) || "Baixa lançada."}
           >
-            {pg?.procedencia ? pg.marca : "✓"}
+            {["SERPRO", "CLIENTE"].includes(pg?.procedencia) && <div>{pg.procedencia === "SERPRO" ? "SERPRO" : "Cliente"}</div>}
+            <div>Baixada</div>
           </div>
         );
       })()}
@@ -767,6 +768,7 @@ function CelulaSemColuna({ itens = [], onEdit, onBaixa }) {
                   ? `Subtipo ${e.subtipo} — fora do regime desta empresa`
                   : "Sem subtipo"}
               </div>
+              <ValorPago entry={e} />
               <RecalculoGuiaAviso entry={e} />
               {onEdit && (
                 <button

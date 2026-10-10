@@ -383,3 +383,24 @@ describe("⚠ NENHUM CÓDIGO USA A CHAVE COMPOSTA GERADA PELO PRISMA", () => {
     expect(varrer(path.join(RAIZ_API, "src"))).toEqual([]);
   });
 });
+
+ test.each(["DAS", "PIS", "COFINS", "ISS", "INSS"])("%s recusa principal incompleto antes de gravar", async (subtipo) => {
+   prisma.accountingEntry.findFirst.mockResolvedValue({...provisaoDeFevereiro,subtipo});
+   const res=await darBaixa({...BAIXA_EM_AGOSTO,lines:[
+     {tipo:"D",conta:"220",valor:500,papel:"PRINCIPAL"},
+     {tipo:"D",conta:"501",valor:500,papel:"JUROS"},
+     {tipo:"C",conta:"111",valor:1000}
+   ]});
+   expect(res.status).toBe(400);
+   expect(res.body.error).toBe("baixa_principal_incompleto");
+   expect(__tx.accountingEntry.create).not.toHaveBeenCalled();
+ });
+ test.each(["IRPJ", "CSLL"])("%s permite quota mantendo saldo aberto", async (subtipo) => {
+   prisma.accountingEntry.findFirst.mockResolvedValue({...provisaoDeFevereiro,subtipo});
+   const res=await darBaixa({...BAIXA_EM_AGOSTO,lines:[
+     {tipo:"D",conta:"220",valor:500,papel:"PRINCIPAL"},
+     {tipo:"C",conta:"111",valor:500}
+   ]});
+   expect(res.status).toBe(201);
+   expect(__tx.accountingEntry.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({statusPagamento:"PARCIAL"})}));
+ });

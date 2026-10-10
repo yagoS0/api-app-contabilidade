@@ -62,6 +62,17 @@ it('comprovante chega à tela e não torna pagamento localizado uma baixa lança
     comprovante: { total: 1000 }, pagamentoEfetivo: { fonte: 'COMPROVANTE', total: 1000 } });
 });
 
+it('PIS e COFINS confirmados no DARF aparecem como localizados sem baixar nem repetir o total da guia', async () => {
+  movimentos = [];
+  provisoes = ['PIS', 'COFINS'].map(subtipo => ({ id: subtipo, tipo: 'PROVISAO', subtipo,
+    competencia: '2026-06', statusPagamento: 'ABERTO', lines: [{ tipo: 'D', valor: 100 }], baixas: [],
+    sourceGuide: { id: 'darf', tipo: 'OUTRA', paymentStatus: 'PAID', paymentStatusSource: 'SERPRO',
+      extracted: { comprovante: { total: 200 } } },
+  }));
+  const result = (await ler(true)).filter(p => ['PIS', 'COFINS'].includes(p.id));
+  expect(result).toHaveLength(2);
+  for (const p of result) expect(p).toMatchObject({ pagamentoLocalizado: true, statusPagamento: 'ABERTO', valorProvisionado: 100, pagamentoEfetivo: null });
+});
 it('declaração do WhatsApp chega à circular com data e sem baixa automática', async () => {
   movimentos = [];
   Object.assign(guia, { extracted: {}, paymentStatusSource: 'CLIENTE', paymentConfirmedAt: new Date('2026-06-19T00:00:00Z') });

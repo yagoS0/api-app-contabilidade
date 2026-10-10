@@ -1,5 +1,9 @@
 # Guarda SERPRO — 2026-09-08
 
+## Confirmação de pagamentos — 10/10/2026
+
+A busca da Circular usa confirmarPagamentoGuia via buscarPagamentoDaGuia: índice PGDAS-D para DAS, consulta contratual para parcelas suportadas e PAGTOWEB para DARF. Guarda o PDF retornado quando disponível. Nem consulta manual nem automática geram baixa contábil; o contador revisa e lança. Preservar agenda, guarda de chamadas e distinção entre erro técnico e negativa explícita. Diagnóstico do lote inclui empresa, competência, HTTP e categoria segura, sem copiar conteúdo livre da resposta. Os 21 erros genéricos no histórico de produção de 25/09 não permitem recuperar a causa individual; não declarar que foram sanados sem evidência nova. Alteração local, sem migração ou consultas pagas de teste, ainda não publicada.
+
 ## Agenda e retorno negativo — 24/09/2026
 
 Consultas automáticas somente conforme rotina e empresa explicitamente habilitadas na configuração salva. Não herdar habilitação por regime, data padrão, startup, retry ou catchup. Após retorno válido sem confirmação, avisar cliente com opções de recálculo e confirmação, sem anexar guia vencida. Não reconsultar automaticamente a mesma obrigação; contador decide nova consulta. Falha técnica não é retorno negativo. Preservar declaração de pagamento do cliente e baixa manual; nada disso cria baixa contábil automática. Veja `docs/agenda-fiscal-explicita-2026-09-24.md` na raiz; esta orientação substitui descrições antigas de agendamento.

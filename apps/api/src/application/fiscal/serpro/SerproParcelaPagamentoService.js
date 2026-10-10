@@ -8,6 +8,7 @@ import { comprovanteParaRegistro } from "../../guides/lib/comprovantePagamento.j
 import { lerComposicaoDoDocumento } from "../../accounting/parcelamento/composicaoDocumentoParcela.js";
 import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
 import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
+import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
 export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
@@ -66,7 +67,8 @@ export async function confirmarPagamentoParcela({ portalClientId, parcelaId, for
       });
     });
     if (r.status === "NAO_LOCALIZADO") await registrarNegativaAutomatica({ parcelaId: p.id, guideId: p.guiaId, scheduledAt });
-    return { ok: true, pago: r.status === "CONFIRMADO", status: r.status, motivo: r.motivo || null, parcelaId: p.id };
+    return { ok: true, pago: r.status === "CONFIRMADO", status: r.status, motivo: r.motivo || null, parcelaId: p.id,
+      comprovante: r.comprovante || null, origem: r.status === "CONFIRMADO" ? "SERPRO" : null };
   } catch (err) {
     await prisma.parcela.updateMany({ where: { id: p.id, portalClientId, pagamentoConsultadoEm: agora }, data: { pagamentoErro: err.code || "CONSULTA_FALHOU" } });
     throw err;
@@ -89,7 +91,7 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logge
       AND: [{ OR: [{ pagamentoStatus: null }, { pagamentoStatus: { not: "CONFIRMADO" } }] },
         { OR: [{ pagamentoConsultadoEm: null }, { pagamentoConsultadoEm: { lte: new Date(Date.now() - 86_400_000) } }] }],
       ...(vistos.length ? { id: { notIn: vistos } } : {}) }, orderBy: [{ pagamentoConsultadoEm: { sort: "asc", nulls: "first" } }, { id: "asc" }], take: 100,
-      select: { id: true, portalClientId: true } });
+      select: { id: true, portalClientId: true, anoMesParcela: true, parcelamento: { select: { portalClient: { select: { razao: true } } } } } });
     if (!rows.length) break;
     for (const p of rows) {
       if (consultas >= limite) break;
@@ -99,9 +101,11 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logge
         if (!r.skipped) consultas++;
         const aviso = scheduledAt && r.status === "NAO_LOCALIZADO" && (!r.skipped || r.skipped === "conferencia_manual")
           ? await avisarPagamentoNaoConfirmado({ parcelaId: p.id, scheduledAt, assertActive }) : null;
-        results.push({ parcelaId: p.id, status: r.skipped || (r.pago ? "paid" : r.status || "open"), ...(aviso ? { aviso } : {}) });
+        results.push({ companyId: p.portalClientId, razao: p.parcelamento?.portalClient?.razao || null, competencia: p.anoMesParcela,
+          parcelaId: p.id, status: r.skipped || (r.pago ? "paid" : r.status || "open"), ...(aviso ? { aviso } : {}) });
       }
-      catch (err) { consultas++; results.push({ parcelaId: p.id, status: "error", error: err.code || "CONSULTA_FALHOU" }); }
+      catch (err) { consultas++; results.push({ companyId: p.portalClientId, razao: p.parcelamento?.portalClient?.razao || null, competencia: p.anoMesParcela,
+        parcelaId: p.id, status: "error", error: err.code || "CONSULTA_FALHOU", diagnostico: diagnosticoConsultaPagamento(err) }); }
     }
     vistos.push(...rows.map(p => p.id));
   }
