@@ -40,6 +40,13 @@ test("logout limpa nonce e avisos antes de rejeitar evento antigo", async () => 
   const a = ambiente(); await a.vincular(); await a.disparar("message", { data: { tipo: "LIMPAR_VINCULO" } });
   expect(a.fechar).toHaveBeenCalled(); await a.disparar("push", { data: { json: () => ({ vinculo: "nonce-atual" }) } }); expect(a.mostrar).not.toHaveBeenCalled();
 });
+
+test('encaminhamento humano abre suporte sem divulgar dados na notificação', async () => {
+  const a = ambiente(); await a.vincular();
+  await a.disparar('push', { data: { json: () => ({ tipo: 'SUPORTE', vinculo: 'nonce-atual', body: 'dado privado', url: '/suporte?conversa=abc' }) } });
+  expect(a.mostrar).toHaveBeenCalledWith('Atendimento precisa da equipe', expect.objectContaining({ data: { url: '/suporte?app=atendimento&conversa=abc', vinculo: 'nonce-atual' } }));
+  expect(JSON.stringify(a.mostrar.mock.calls)).not.toContain('dado privado');
+});
 test("clicar aviso preserva documento aberto e só solicita navegação interna ao aplicativo", async () => {
   const a = ambiente(); await a.vincular();
   await a.disparar("notificationclick", { notification: { close: jest.fn(), data: { vinculo: "nonce-atual", url: "https://evil.test/roubar" } } });

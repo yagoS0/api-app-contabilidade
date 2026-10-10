@@ -82,7 +82,9 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
   if (!papelPermitido(user)) return false;
   let conversa = await client.conversaWhatsapp.findUnique({ where: { id: evento.conversaId } });
   if (!conversa || conversa.excluidaEm || String(conversa.chaveEscopo).startsWith("legado:")) return false;
-  const mensagem = await client.mensagemWhatsapp.findUnique({ where: { id: evento.id }, include: { contexto: true } });
+  const encaminhamento = evento.tipo === 'SUPORTE' ? await client.encaminhamentoSuporte.findUnique({ where: { id: evento.id.replace(/^suporte:/, '') } }) : null;
+  if (evento.tipo === 'SUPORTE' && (!encaminhamento || encaminhamento.estado === 'RESOLVIDO' || encaminhamento.conversaId !== conversa.id)) return false;
+  const mensagem = encaminhamento ? { direcao: 'in', conversaId: conversa.id } : await client.mensagemWhatsapp.findUnique({ where: { id: evento.id }, include: { contexto: true } });
   if (!mensagem || mensagem.direcao !== "in" || mensagem.conversaId !== conversa.id) return false;
   if (mensagem.contexto?.conversaId && mensagem.contexto.conversaId !== conversa.id) {
     // Um recibo neutro pode ganhar contexto em outra empresa da mesma pessoa.
@@ -97,7 +99,7 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
       || efetiva.atendimentoId !== mensagem.contexto.atendimentoId) return false;
     conversa = efetiva;
   }
-  if (conversa.lidaAteEm && conversa.lidaAteEm >= mensagem.registradaEm) return false;
+  if (!encaminhamento && conversa.lidaAteEm && conversa.lidaAteEm >= mensagem.registradaEm) return false;
   const visiveis = (await client.portalClient.findMany({ select: { id: true } })).map(p => p.id);
   let atendidaPor = conversa.atendidaPor;
   if (conversa.vinculoNumeroId) {
@@ -114,8 +116,9 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
 }
 
 export function payloadPush({ evento, inscricao }) {
-  return { title: "Altan Atendimento", body: "Nova mensagem. Abra o atendimento para responder.",
-    url: `/whatsapp?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
+  return { title: "Altan Atendimento", body: evento.tipo === 'SUPORTE' ? 'Um atendimento precisa da equipe. Abra o suporte para continuar.' : "Nova mensagem. Abra o atendimento para responder.",
+    ...(evento.tipo === 'SUPORTE' ? { tipo: 'SUPORTE' } : {}),
+    url: `${evento.tipo === 'SUPORTE' ? '/suporte' : '/whatsapp'}?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
     tag: `atendimento:${hash(evento.conversaId).slice(0, 24)}`, vinculo: inscricao.vinculo };
 }
 

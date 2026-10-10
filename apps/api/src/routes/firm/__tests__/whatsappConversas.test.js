@@ -22,6 +22,7 @@ let mockAtendimento = null;
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const prisma = {
+    encaminhamentoSuporte: { updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
     rascunhoAtendimento: {
       create:jest.fn(async({data})=>{if(mockRascunhos.some(r=>r.userId===data.userId && r.chaveEscopo===data.chaveEscopo)) throw Object.assign(new Error('unique'),{code:'P2002'});const r={id:`d${mockRascunhos.length}`,...data};mockRascunhos.push(r);return{...r};}),
       findUnique:jest.fn(async({where:{userId_chaveEscopo:k}})=>{const r=mockRascunhos.find(r=>r.userId===k.userId && r.chaveEscopo===k.chaveEscopo);return r?{...r}:null;}),
@@ -194,6 +195,24 @@ beforeEach(() => {
   salvarContato.mockClear();
   mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
   Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null, lidaAteEm: null });
+});
+
+describe('pendências humanas do suporte', () => {
+  test('lista aplica carteira e exige usuário do escritório', async () => {
+    const r = await request(montarApp()).get('/firm/whatsapp/suporte/pendencias');
+    expect(r.status).toBe(200); expect(r.body).toMatchObject({ ok: true, total: 0 });
+    expect(prisma.encaminhamentoSuporte.count).toHaveBeenCalledWith({ where: expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: { in: ['pc-1'] } }) }) });
+    expect((await request(montarApp({ id: 'u', role: 'staff' })).get('/firm/whatsapp/suporte/pendencias')).status).toBe(403);
+  });
+  test('resolver exige carteira e posse; mantém IA pausada até devolução explícita', async () => {
+    const app = montarApp();
+    expect((await request(app).post('/firm/whatsapp/conversas/cv2/resolver-suporte')).status).toBe(404);
+    expect((await request(app).post('/firm/whatsapp/conversas/cv1/resolver-suporte')).status).toBe(409);
+    await request(app).post('/firm/whatsapp/conversas/cv1/assumir');
+    expect((await request(app).post('/firm/whatsapp/conversas/cv1/resolver-suporte')).status).toBe(200);
+    expect(mockConversas.get('cv1').atendidaPor).toBe('u-contador');
+    expect(prisma.encaminhamentoSuporte.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ estado: 'RESOLVIDO', responsavelId: 'u-contador' }) }));
+  });
 });
 
 describe("devolução do comercial com identidade e sem atendimento operacional", () => {

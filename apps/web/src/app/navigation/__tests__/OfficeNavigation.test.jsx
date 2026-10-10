@@ -20,6 +20,12 @@ function setup(route = "/companies", resumoWhatsapp = null) {
   </MemoryRouter>);
 }
 
+test('suporte mantém aviso humano mesmo sem mensagens não lidas', () => {
+  setup('/suporte', { selo: null, pendenciasSuporte: 2 });
+  expect(screen.getAllByLabelText('2 atendimentos precisam da equipe').length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText(/mensagens não lidas no WhatsApp/)).toBeNull();
+});
+
 test.each([
   ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas"],
   ["/guides/upload", "Operação", "Guias não identificadas"],

@@ -21,6 +21,12 @@ export function useResumoWhatsapp({ api, enabled = true, area = '' }) {
       try {
         const r = await api.getResumoWhatsapp(...(area ? [{ area }] : []));
         if (!cancelado) setResumo(r?.ok === true ? r.resumo : null);
+        if (area !== 'comercial' && api.getPendenciasSuporte && r?.ok) {
+          try {
+            const fila = await api.getPendenciasSuporte();
+            if (!cancelado && fila?.ok) setResumo({ ...r.resumo, pendenciasSuporte: fila.total });
+          } catch { /* A falha da fila não elimina a leitura dos não lidos. */ }
+        }
       } catch {
         if (!cancelado) setResumo(null);
       } finally {

@@ -1413,6 +1413,7 @@ model EnvioGuia {
 /// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
 /// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
 model ConversaWhatsapp {
+  encaminhamentosSuporte EncaminhamentoSuporte[]
   canalId String?
   canalWhatsapp CanalWhatsapp? @relation(fields: [canalId], references: [id], onDelete: Restrict)
   vinculoNumeroId String?
@@ -1873,7 +1874,25 @@ model EtapaEmissaoWhatsapp {
 /// ⚠ FALHA FECHADO (ao contrário da guarda do SERPRO): a IA é conveniência, um laço fora de
 /// controle gasta dinheiro em silêncio, e o cliente tem outro caminho (o portal). Sem conseguir
 /// contar, não se chama. Custo em CENTAVOS DE DÓLAR, ESTIMADO pela tabela de `precosIa.js`.
+model EncaminhamentoSuporte {
+  id String @id @default(uuid())
+  conversaId String
+  mensagemId String @unique
+  estado String @default("AGUARDANDO")
+  motivo String
+  resumo String
+  responsavelId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  resolvidoEm DateTime?
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  @@index([estado, createdAt], map: "encaminhamento_estado_data")
+  @@map("encaminhamentos_suporte")
+}
+
 model ChamadaIa {
+  custoEstimadoMicrousd Int?
+  tabelaPreco String?
   id                   String   @id @default(cuid())
   conversaId           String?
   portalClientId       String?
@@ -2146,6 +2165,7 @@ model InscricaoPushAtendimento {
 
 /// Outbox gravada na mesma transação da entrada, nunca a partir de histórico antigo.
 model EventoPushAtendimento {
+  tipo String @default("MENSAGEM")
   id String @id
   conversaId String
   createdAt DateTime @default(now())

@@ -28,6 +28,7 @@ const resolverCliente = jest.fn(async () => ({ situacao: "VINCULADO", empresas: 
 function banco({ cliente = false, permissoes = [], menuRecente = false, semPessoa = false, inativo = false } = {}) {
   const conversa = registro({ cliente }).conversa;
   return {
+    $transaction: jest.fn(async function(fn) { return fn(this); }),
     appSetting: { findUnique: jest.fn(async()=>null) },
     acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
     mensagemWhatsapp: {
