@@ -165,6 +165,7 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 
 import { baixarBuffer } from "../../../application/companies/CompanyDocumentsService.js";
 import { alterarAtendimentoHumano, selecionarEmpresaDoEscritorio } from "../../../application/whatsapp/AtendimentoResponsavelWhatsappService.js";
+import * as inboxIdentidade from "../../../application/whatsapp/InboxWhatsappService.js";
 
 const cloud = {
   enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })),
@@ -193,6 +194,55 @@ beforeEach(() => {
   salvarContato.mockClear();
   mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
   Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null, lidaAteEm: null });
+});
+
+describe("devolução do comercial com identidade e sem atendimento operacional", () => {
+  let carregar, pessoa;
+  beforeEach(() => {
+    pessoa = { id: 'p-teste', versao: 7, atendidaPor: 'u-contador', atendidaDesde: new Date() };
+    Object.assign(mockConversas.get('cv1'), { vinculoNumeroId: 'v-teste', atendimentoId: null });
+    carregar = jest.spyOn(inboxIdentidade, 'carregarGrupoIdentidade').mockImplementation(async () => ({
+      completo: true, origem: { ...mockConversas.get('cv1'), vinculoNumero: { interlocutor: pessoa } },
+    }));
+    alterarAtendimentoHumano.mockClear();
+  });
+  afterEach(() => {
+    carregar.mockRestore();
+    delete mockConversas.get('cv1').vinculoNumeroId;
+    delete mockConversas.get('cv1').atendimentoId;
+  });
+  it('limpa o responsável da pessoa em vez de apenas devolver o segmento comercial', async () => {
+    alterarAtendimentoHumano.mockImplementationOnce(async ({ atendidaPor, atendidaDesde }) => {
+      Object.assign(pessoa, { atendidaPor, atendidaDesde });
+    });
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
+    expect(r.status).toBe(200);
+    expect(alterarAtendimentoHumano).toHaveBeenCalledWith(expect.objectContaining({
+      conversa: expect.objectContaining({ vinculoNumeroId: 'v-teste', atendimentoId: null, atendidaPor: 'u-contador', atendimentoHumanoVersao: 7 }),
+      atendidaPor: null, atendidaDesde: null, preservarResponsavel: true,
+    }));
+    expect(r.body.conversa).toMatchObject({ atendidaPor: null, atendidaDesde: null });
+  });
+  it('não assume por cima de outro atendente oculto no segmento', async () => {
+    pessoa.atendidaPor = 'outro-atendente';
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/assumir');
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('ATENDIMENTO_OCUPADO');
+    expect(alterarAtendimentoHumano).not.toHaveBeenCalled();
+  });
+  it('não libera o contato inteiro com carteira parcial', async () => {
+    carregar.mockResolvedValue({ completo: false, origem: { vinculoNumero: { interlocutor: pessoa } } });
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('ATENDIMENTO_FORA_DA_CARTEIRA');
+    expect(alterarAtendimentoHumano).not.toHaveBeenCalled();
+  });
+  it('conflito durante a devolução informa que o atendimento mudou', async () => {
+    alterarAtendimentoHumano.mockRejectedValueOnce(Object.assign(new Error('Outro atendente assumiu.'), { codigo: 'ATENDIMENTO_OCUPADO' }));
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('ATENDIMENTO_OCUPADO');
+  });
 });
 
 describe("identificação de quem envia", () => {

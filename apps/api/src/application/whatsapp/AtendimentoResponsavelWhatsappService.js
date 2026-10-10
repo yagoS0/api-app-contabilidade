@@ -117,7 +117,8 @@ export async function alterarAtendimentoHumano({ conversa, atendidaPor = null, a
       if (!vinculo || vinculo.encerrouEm) throw falha("IDENTIDADE_ALTERADA");
       const escopoPessoa = { vinculoNumero: { interlocutorId: vinculo.interlocutorId, encerrouEm: null } };
       if (preservarResponsavel) {
-        const reserva = await tx.interlocutorComunicacao.updateMany({where:{id:vinculo.interlocutorId,atendidaPor:conversa.atendidaPor || null},data:{atendidaPor,atendidaDesde,versao:{increment:1}}});
+        const reserva = await tx.interlocutorComunicacao.updateMany({where:{id:vinculo.interlocutorId,atendidaPor:conversa.atendidaPor || null,
+          ...(Number.isInteger(conversa.atendimentoHumanoVersao) ? { versao: conversa.atendimentoHumanoVersao } : {})},data:{atendidaPor,atendidaDesde,versao:{increment:1}}});
         if(reserva.count !== 1) throw falha('ATENDIMENTO_OCUPADO','Outro atendente assumiu esta conversa. Atualize o atendimento.');
       } else await tx.interlocutorComunicacao.update({ where: { id: vinculo.interlocutorId }, data: { atendidaPor, atendidaDesde, versao: { increment: 1 } } });
       await tx.atendimentoResponsavelWhatsapp.updateMany({ where: escopoPessoa, data: {
