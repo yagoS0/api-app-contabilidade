@@ -262,8 +262,13 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   if (item.tipo === "reaction") {
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "REACAO_SEM_ATENDIMENTO" } };
   }
+  // Prévias visuais não representam uma guia e nunca iniciam seleção, coleta ou IA.
+  if (String(item.interacao?.id || '').startsWith('altan.dev.preview.')) {
+    return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao,
+      ia: { responde: false, motivo: 'PREVIA_SEM_ACAO' } };
+  }
   const fluxoPagamento = r?.conversa ? await fluxoPagamentoAtual(prisma, r.conversa, agora) : null;
-  if (!fluxoPagamento && !String(item.interacao?.id||'').startsWith('altan.payment.confirm.') && WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
+  if (!fluxoPagamento && !/^altan\.payment\.(confirm|recalculate)\./.test(String(item.interacao?.id||'')) && WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
     const coletar = responderColeta || (await import("./RespostaColetaComercialWhatsappService.js")).responderColetaComercial;
     const coleta = await coletar({ registro: r, item, agora });
     if (coleta.tratado) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: coleta.motivo }, coleta };
@@ -280,7 +285,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   }
   const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });
-  const pagamentoDireto = String(item.interacao?.id || '').startsWith('altan.payment.confirm.') || Boolean(fluxoPagamento);
+  const pagamentoDireto = /^altan\.payment\.(confirm|recalculate)\./.test(String(item.interacao?.id || '')) || Boolean(fluxoPagamento);
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}), ...(pagamentoDireto ? { flag: true, piloto: [r.conversa?.portalClientId] } : {}) });
   const decisao = entradaComercialPublica(r) ? { responde: false, motivo: "CANAL_COMERCIAL_SEM_IA" }
     : decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });

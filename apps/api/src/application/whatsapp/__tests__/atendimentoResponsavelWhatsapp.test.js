@@ -640,3 +640,37 @@ test('pagamento não reutiliza interação de seleção ou coleta pendente', asy
   expect(await f.rodar(entrada, { piloto: [] })).toMatchObject({ processado: true, empresa: 'lente', texto: 'Confirmar pagamento' });
   expect(f.processar.mock.calls.at(-1)[1].interacao.id).toBe(ID_PAGAMENTO_TESTE);
 });
+
+test.each(['confirm', 'recalculate'])('botão real %s vai direto à empresa da guia, sem seletor', async acao => {
+  const f = await fixture();
+  const id = ID_PAGAMENTO_TESTE.replace('confirm', acao);
+  f.client.appSetting.findUnique.mockImplementation(async ({ where }) => where.key === id ? { value: { telefone: TELEFONE, companyId: 'lente', expiraEm: '2026-10-01T00:00:00Z' } } : null);
+  expect(await f.rodar(await f.novo('Ação da guia', { tipo: 'interactive', interacao: { id } }), { flag: false, piloto: [] })).toMatchObject({ processado: true, empresa: 'lente' });
+  expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+  expect(f.processar.mock.calls[0][1].interacao.id).toBe(id);
+});
+
+test.each(['ausente', 'expirado', 'outro_numero', 'outra_empresa'])('botão inválido %s recebe recusa sem selecionar empresa', async caso => {
+  const f = await fixture();
+  const value = { telefone: TELEFONE, companyId: 'lente', expiraEm: '2026-10-01T00:00:00Z' };
+  if (caso === 'expirado') value.expiraEm = '2026-01-01T00:00:00Z';
+  if (caso === 'outro_numero') value.telefone = '5511999999999';
+  if (caso === 'outra_empresa') value.companyId = 'sem-acesso';
+  f.client.appSetting.findUnique.mockImplementation(async ({ where }) => where.key === ID_PAGAMENTO_TESTE && caso !== 'ausente' ? { value } : null);
+  expect(await f.rodar(await f.novo('Confirmar pagamento', { tipo: 'interactive', interacao: { id: ID_PAGAMENTO_TESTE } }))).toMatchObject({ motivo: 'BOTAO_GUIA_INVALIDO' });
+  expect(f.cloud.enviarLista).not.toHaveBeenCalled(); expect(f.processar).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/não está mais disponível/);
+});
+
+test('cliques nas prévias não iniciam seleção nem operação', async () => {
+  const f = await fixture();
+  const r = await f.rodar(await f.novo('Recalcular guia', { tipo: 'interactive', interacao: { id: 'altan.dev.preview.guia_pagamento_depois_recalculo_v1.1' } }));
+  expect(r.motivo).toBe('PREVIA_SEM_ACAO'); expect(f.processar).not.toHaveBeenCalled(); expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+});
+
+test('empresa única segue automaticamente após seleção antiga pendente', async () => {
+  const f = await fixture(); await f.rodar(await f.novo('Olá')); f.setEmpresas([EMPRESAS[0]]);
+  jest.setSystemTime(new Date(Date.now() + 1000)); f.cloud.enviarLista.mockClear();
+  expect(await f.rodar(await f.novo('mande a guia'))).toMatchObject({ processado: true, empresa: EMPRESAS[0].portalClientId, texto: 'mande a guia' });
+  expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+});

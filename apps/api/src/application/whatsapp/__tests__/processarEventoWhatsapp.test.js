@@ -369,3 +369,12 @@ test.each(["unsupported", "unknown"])("%s fica no histórico sem acionar coleta,
   expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ codigos: [131051] }), expect.any(String));
   expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("detalhe privado");
 });
+
+test('preview de guia não chega ao seletor, coleta ou menu pelo webhook', async () => {
+  registrarMensagemRecebida.mockResolvedValue({ duplicada: false, mensagem: { id: 'm-preview' }, conversa: { id: 'cv', telefoneE164: MENSAGEM.from }, vinculo: { situacao: 'VINCULADO' } });
+  const atenderContexto = jest.fn(), responderMenu = jest.fn(), responderColeta = jest.fn(), responder = jest.fn();
+  const entrada = { ...MENSAGEM, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'altan.dev.preview.guia_pagamento_depois_recalculo_v1.1', title: 'Recalcular guia' } } };
+  const r = await processarEventoWhatsapp(evento({ messages: [entrada] }), { agora: AGORA, logger: logSpy(), atenderContexto, responderMenu, responderColeta, responder });
+  expect(r.erros).toEqual([]);
+  for (const fn of [atenderContexto, responderMenu, responderColeta, responder]) expect(fn).not.toHaveBeenCalled();
+});

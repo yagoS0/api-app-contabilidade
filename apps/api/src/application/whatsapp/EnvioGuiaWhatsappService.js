@@ -1,4 +1,5 @@
 import { conferirParcelasParaEnvio, SELECT_PARCELA_ENVIO } from "../guides/GuiaParcelaEnvioGuard.js";
+import { prepararGuiaPagamentoWhatsapp, TEMPLATE_GUIA_PAGAMENTO as WHATSAPP_TEMPLATE_GUIA } from './PrepararGuiaPagamentoWhatsapp.js';
 // O ENVIO DA GUIA PELO WHATSAPP — individual e em LOTE. É o MVP da Entrega 1 (plano, P0).
 //
 // ⚠ ESTE É O PRIMEIRO ESCRITOR DE PRODUÇÃO DE `envios_guia`. Até aqui as funções de escrita de
@@ -30,7 +31,6 @@ import { conferirParcelasParaEnvio, SELECT_PARCELA_ENVIO } from "../guides/GuiaP
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   INTEGRACAO_WHATSAPP,
-  WHATSAPP_TEMPLATE_GUIA,
   WHATSAPP_TEMPLATE_IDIOMA,
   WHATSAPP_ENVIO_DELAY_MS,
   log as logPadrao,
@@ -109,6 +109,9 @@ export const SELECT_GUIA_PARA_ENVIO = Object.freeze({
   tipo: true,
   competencia: true,
   valor: true,
+  linhaDigitavel: true,
+  linhaDigitavelLidaEm: true,
+  linhaDigitavelMotivo: true,
   vencimento: true,
   status: true,
   sourcePath: true,
@@ -369,8 +372,10 @@ export async function enviarGuiaPorWhatsapp({
     reenviar,
   });
   if (jaEnviado) {
-    return { ok: true, estado: "ja_enviada", enviada: false, jaEnviada: true, guideId: guide.id, envioId: envio.id, destino: contato.telefoneE164, legadoMaterializado: materializou };
+    return { ok: true, estado: 'ja_enviada', enviada: false, jaEnviada: true,
+      guideId: guide.id, envioId: envio.id, destino: contato.telefoneE164, legadoMaterializado: materializou };
   }
+
   if (emAndamento) return {
     ok: false, estado: envio.status === "indeterminado" ? "indeterminado" : "em_andamento",
     guideId: guide.id, envioId: envio.id, destino: contato.telefoneE164,
@@ -464,6 +469,9 @@ export async function enviarGuiaPorWhatsapp({
     });
     conversaReservada ||= await garantirConversa({ telefone: contato.telefoneE164,
       portalClientId: guide.portalClientId, canalId: CANAL_PRINCIPAL, vinculoNumeroId: vinculoReservado });
+    const pagamento = await prepararGuiaPagamentoWhatsapp({ guide, conteudoPdf, conversa: conversaReservada,
+      referencia: tentativaId, conferir: conferirDestinatario, templateOnly: true });
+    canal = { ...canal, nomeMeta: pagamento.template, idioma: pagamento.idioma };
     const idiomaDoEnvio = canal.idioma || cliente.idioma || WHATSAPP_TEMPLATE_IDIOMA;
     await prepararHistoricoGuia({ tentativaId, envioGuiaId: envio.id, guide, conversa: conversaReservada,
       contato, canal: { ...canal, idioma: idiomaDoEnvio }, variaveis, nomeArquivo, conteudoPdf, tipoLabel });
@@ -476,6 +484,7 @@ export async function enviarGuiaPorWhatsapp({
       template: canal.nomeMeta,
       idioma: idiomaDoEnvio,
       antesDoTemplate: conferirDestinatario,
+      pagamento,
       variaveis,
     });
 
@@ -531,8 +540,10 @@ export async function enviarGuiaPorWhatsapp({
       log?.warn?.({ tentativaId, guideId: guide.id }, "guia aceita; histórico aguardando reconciliação local");
     }
 
+    const codigo = { status: 'ENVIADO', formato: 'PDF_E_CODIGO_NA_MESMA_MENSAGEM' };
     return {
-      ok: true, estado: "aceito", enviada: true, jaEnviada: false, guideId: guide.id, envioId: envio.id, tentativaId,
+      ok: true, estado: 'aceito', parcial: false, codigo,
+      enviada: true, jaEnviada: false, guideId: guide.id, envioId: envio.id, tentativaId,
       providerMessageId: wamid, destino: contato.telefoneE164, legadoMaterializado: materializou, historicoPendente,
     };
   } catch (err) {
@@ -548,18 +559,20 @@ export async function enviarGuiaPorWhatsapp({
         providerMessageId: aceitoWamid, destino: contato.telefoneE164, motivo: "ENVIO_INDETERMINADO", mensagem, message: mensagem, podeTentarDeNovo: false };
     }
     const traduzido = err instanceof WhatsappError;
+    const recusaGuia = ['LINHA_DIGITAVEL_INDISPONIVEL', 'GUIA_PAGAMENTO_INVALIDA', 'WHATSAPP_TEMPLATE_PENDENTE', 'WHATSAPP_JANELA_FECHADA'].includes(err?.code);
+    const codigoFalha = traduzido ? err.codigo : recusaGuia ? err.code : MOTIVOS_SERVICO.FALHA_INESPERADA;
     const mensagem = traduzido
       ? err.mensagemUsuario
-      : "Não foi possível enviar a guia por WhatsApp agora — houve uma falha inesperada no servidor, "
+      : recusaGuia ? err.message : "Não foi possível enviar a guia por WhatsApp agora — houve uma falha inesperada no servidor, "
         + "e ela ficou registrada no log. Não é recusa da Meta.";
     // ⚠ TRÊS RESPOSTAS, NÃO DUAS. `podeTentarDeNovo` vem de `errosMeta` e vale `true`/`false`/`null`
     // — e `null` NÃO é `false` disfarçado: significa que a documentação da Meta descreve o erro sem
     // dizer se reenviar resolve. Ele sobe para a tela como está, para o contador decidir.
-    const podeTentarDeNovo = traduzido ? err.podeTentarDeNovo : null;
+    const podeTentarDeNovo = traduzido ? err.podeTentarDeNovo : recusaGuia ? false : null;
     await marcarFalhou({
       envioId: envio.id,
       tentativaId,
-      codigo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
+      codigo: codigoFalha,
       mensagemUsuario: mensagem,
       // ⚠ `proximaTentativaEm` FICA NULO, DE PROPÓSITO — inclusive quando a fonte diz que dá para
       // reenviar. NADA drena esse campo hoje (é o defeito já documentado de `emailNextRetryAt`:
@@ -595,7 +608,7 @@ export async function enviarGuiaPorWhatsapp({
     );
     return {
       ok: false, estado: "falhou", guideId: guide.id, envioId: envio.id, tentativaId, destino: contato.telefoneE164,
-      motivo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
+      motivo: codigoFalha,
       mensagem, podeTentarDeNovo, legadoMaterializado: materializou,
     };
   }
@@ -678,9 +691,9 @@ export async function enviarParaTodosOsDestinatarios({
 }
 
 export function resumirDestinatarios(resultados) {
-  const enviadas = resultados.filter((r) => r.ok && r.enviada === true).length;
+  const enviadas = resultados.filter((r) => r.enviada === true).length;
   const falhou = resultados.find((r) => !r.ok) || null;
-  const algumOk = resultados.some((r) => r.ok);
+  const algumOk = resultados.some((r) => r.ok || r.enviada || r.jaEnviada);
   // O corpo base é o do primeiro resultado (contrato antigo), MAS o motivo e a mensagem vêm de quem
   // falhou, quando alguém falhou — é o que impede a falha de sumir atrás de um sucesso.
   const base = resultados[0] || {};
