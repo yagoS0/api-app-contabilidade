@@ -36,7 +36,7 @@ try {
   const caso = await db.atendimentoLead.findFirst({ where: { conversaId: c.id } });
   assert.equal(caso.triagem.preatendimento.atividade, 'cerâmica'); assert.equal(caso.triagem.preatendimento.evidenciasIa.atividade.mensagemId, a.mensagem.id);
   const chamada = await db.chamadaIa.findFirst({ where: { mensagemId: a.mensagem.id } });
-  assert.equal(chamada.modelo, 'gpt-5.4-mini'); assert.equal(chamada.reservaCentavos, 0); assert.equal(chamada.custoEstimadoCentavos, 1);
+  assert.equal(chamada.modelo, 'gpt-5.4-mini'); assert.equal(chamada.reservaCentavos, 0); assert.equal(Number(chamada.custoEstimadoCentavos), 0.03);
   ok('Persistência real da triagem, evidência e custo do modelo correto');
   const replay = await chamar(c, a.mensagem.corpo, interpretar([]), { mensagem: a.mensagem });
   assert.equal(replay.chamadas, 0); assert.equal(await db.chamadaIa.count({ where: { mensagemId: a.mensagem.id } }), 1);
@@ -105,6 +105,21 @@ try {
     assert.equal(invalida.motivo, 'TETO_PILOTO_INVALIDO');
   }
   ok('Teto inválido falha fechado antes de reservar');
+  // Reproduz históricos antigos arredondados e verifica o recálculo da migração.
+  const { readFileSync } = await import('node:fs');
+  const historico = [];
+  for (const [inputTokens, outputTokens] of [[1208,66],[1217,139],[1223,98]]) {
+    historico.push(await db.chamadaIa.create({ data: { modelo: 'gpt-5.4-mini', status: 'ok', inputTokens, outputTokens, custoEstimadoCentavos: 1 } }));
+  }
+  const incerta = await db.chamadaIa.create({ data: { modelo: 'gpt-5.4-mini', status: 'reservada', reservaCentavos: 3 } });
+  const desconhecida = await db.chamadaIa.create({ data: { modelo: 'modelo-desconhecido', status: 'ok', inputTokens: 100, custoEstimadoCentavos: 2 } });
+  const migration = readFileSync(new URL('../prisma/migrations/20261010140000_ia_custo_fracionario/migration.sql', import.meta.url), 'utf8');
+  for (const sql of migration.split(';').filter(s => s.trim())) await db.$executeRawUnsafe(sql);
+  const recalculado = await db.chamadaIa.aggregate({ where: { id: { in: historico.map(c => c.id) } }, _sum: { custoEstimadoCentavos: true } });
+  assert.equal(Number(recalculado._sum.custoEstimadoCentavos), 0.40995);
+  assert.equal((await db.chamadaIa.findUnique({ where: { id: incerta.id } })).reservaCentavos, 3);
+  assert.equal(Number((await db.chamadaIa.findUnique({ where: { id: desconhecida.id } })).custoEstimadoCentavos), 2);
+  ok('Migração recalcula histórico por tokens sem liberar reservas nem alterar modelo desconhecido');
   assert.equal(tentativasRede, 0); ok('Nenhuma tentativa de contato com OpenAI, Meta ou provedor fiscal');
   console.log(JSON.stringify({ passou: true, verificacoes: checks.length, checks }));
 } finally { await db.$disconnect(); }

@@ -27,7 +27,7 @@ import {
   IA_RESERVA_CHAMADA_CENTAVOS,
   log as logPadrao,
 } from "../../config.js";
-import { custoEstimadoCentavos } from "./precosIa.js";
+import { custoPorTokensCentavos } from "./precosIa.js";
 
 export const STATUS_CHAMADA = Object.freeze({
   OK: "ok",
@@ -61,7 +61,9 @@ async function somaDoMes(where, client) {
     _count: { _all: true },
     where: { ...where, status: { in: [STATUS_CHAMADA.OK, STATUS_CHAMADA.ERRO, "reservada"] } },
   });
-  return { centavos: Number(r?._sum?.custoEstimadoCentavos || 0) + Number(r?._sum?.reservaCentavos || 0), chamadas: Number(r?._count?._all || 0) };
+  const consumoCentavos = Number(r?._sum?.custoEstimadoCentavos || 0);
+  const reservaCentavos = Number(r?._sum?.reservaCentavos || 0);
+  return { centavos: consumoCentavos + reservaCentavos, consumoCentavos, reservaCentavos, chamadas: Number(r?._count?._all || 0) };
 }
 
 /**
@@ -80,6 +82,8 @@ export async function consumoIaDoMes({ portalClientId = null, agora = new Date()
       estimativa: true,
       escritorio: {
         centavos: escritorio.centavos,
+        consumoCentavos: escritorio.consumoCentavos,
+        reservaCentavos: escritorio.reservaCentavos,
         chamadas: escritorio.chamadas,
         teto: IA_TETO_MENSAL_ESCRITORIO_CENTAVOS,
         restantes: Math.max(0, IA_TETO_MENSAL_ESCRITORIO_CENTAVOS - escritorio.centavos),
@@ -91,6 +95,8 @@ export async function consumoIaDoMes({ portalClientId = null, agora = new Date()
         ? {
           portalClientId: String(portalClientId),
           centavos: empresa.centavos,
+          consumoCentavos: empresa.consumoCentavos,
+          reservaCentavos: empresa.reservaCentavos,
           chamadas: empresa.chamadas,
           teto: IA_TETO_MENSAL_EMPRESA_CENTAVOS,
           estourado: IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos >= IA_TETO_MENSAL_EMPRESA_CENTAVOS,
@@ -200,7 +206,7 @@ export async function concluirChamadaIa(contexto, { usage = null, iteracoes = 0,
     outputTokens: Number(u.output_tokens || 0),
     cacheReadTokens: Number(u.cache_read_input_tokens || 0),
     cacheCreationTokens: Number(u.cache_creation_input_tokens || 0),
-    custoEstimadoCentavos: custoEstimadoCentavos(u, base.modelo),
+    custoEstimadoCentavos: custoPorTokensCentavos(u, base.modelo),
     duracaoMs: inicio ? Date.now() - inicio : null,
     iteracoes: Number(iteracoes || 0),
     ferramentas: Array.isArray(ferramentas) ? ferramentas : [],

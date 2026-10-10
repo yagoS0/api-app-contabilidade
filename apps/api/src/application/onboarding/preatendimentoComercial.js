@@ -1,5 +1,6 @@
 import { identificarOrigemComercial, interpretarColetaComercial, responderDuvidaComercial } from './interpretacaoComercialWhatsapp.js';
 import { validarInterpretacaoLead } from '../assistente/interpretacaoLeadIa.js';
+import { ORDEM_QUALIFICACAO, perguntasQualificacao, respostaNaturalPermitida } from './qualificacaoComercial.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 export const INTENCOES_PREATENDIMENTO = ['ABERTURA', 'TRANSFERENCIA', 'INATIVA', 'PLANEJAMENTO', 'GESTAO'];
@@ -47,9 +48,10 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
   // Identidade/acesso de terceiros exige equipe, mesmo com classificação incorreta.
   if (revisaoIdentidade || falhaIa) Object.assign(leitura, { humano: true, aguardar: false, retomada: false, revisaoIdentidade, operacoes: [] });
   const ia = revisaoIdentidade || falhaIa ? null : validarInterpretacaoLead(interpretacaoIa, raw);
+  const qualificacaoCompleta = anterior.qualificacaoVersao === 2 || Boolean(ia && Object.hasOwn(ia, 'resposta'));
   // Pedidos explícitos de humano e navegação determinística têm precedência.
   if (ia && !leitura.humano && !leitura.reinicio && !leitura.aguardar && !leitura.retomada) {
-    if (ia.comportamento === 'HUMANO' || ia.comportamento === 'DESCONHECIDO') leitura.humano = true;
+    if (ia.comportamento === 'HUMANO' || ia.comportamento === 'DESCONHECIDO' && !qualificacaoCompleta) leitura.humano = true;
     if (ia.comportamento === 'PAUSAR') leitura.aguardar = true;
     if (ia.comportamento === 'RETOMAR') leitura.retomada = true;
   }
@@ -143,17 +145,27 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     cidade: 'Em qual cidade a empresa vai funcionar? Se ainda não definiu, tudo bem.',
     necessidade: intencao === 'TRANSFERENCIA' ? 'O que você gostaria de melhorar em relação ao contador atual?' : 'O que aconteceu com a empresa e o que você gostaria de resolver?',
   };
-  const ordem = intencao === 'ABERTURA' ? ['nome', 'atividade', 'cidade']
+  const ordem = qualificacaoCompleta ? ORDEM_QUALIFICACAO[intencao] || ['necessidade', 'atividade'] : intencao === 'ABERTURA' ? ['nome', 'atividade', 'cidade']
     : ['TRANSFERENCIA', 'INATIVA'].includes(intencao) ? ['necessidade', 'nome'] : ['atividade', 'nome'];
-  const conhecido = ordem.every(k => pre[k]);
-  const campoSeguinte = ordem.find(k => !pre[k]) || null;
+  if (qualificacaoCompleta) {
+    pre.qualificacaoVersao = 2;
+    pre.dispensados = [...new Set([...(anterior.dispensados || []), ...(campo && (desconhecido || /prefiro n[aã]o|n[aã]o (?:quero|posso) informar|ainda n[aã]o (?:sei|defini|tenho)/i.test(raw)) ? [campo] : [])])];
+    // Correções novas tornam o dado conhecido novamente, sem apagar sua evidência.
+    pre.dispensados = pre.dispensados.filter(k => !pre[k]);
+    pre.falhasCompreensao = ia?.comportamento === 'DESCONHECIDO' && !desconhecido && !pre.dispensados.includes(campo)
+      ? (anterior.falhasCompreensao || 0) + 1 : 0;
+  }
+  const conhecido = ordem.every(k => pre[k] || pre.dispensados?.includes(k));
+  const campoSeguinte = ordem.find(k => !pre[k] && !pre.dispensados?.includes(k)) || null;
   // Três perguntas no máximo, sem penalizar pausas. Dúvida complexa ou desconhecimento segue ao humano.
-  const encaminhar = Boolean(leitura.humano || leitura.reinicio || desconhecido || pre.preferenciaContato || conhecido
+  const encaminhar = Boolean(leitura.humano || leitura.reinicio || desconhecido && !qualificacaoCompleta || pre.preferenciaContato || conhecido
     || ia?.comportamento === 'DUVIDA' && !duvida
-    || anterior.perguntasFeitas >= 3 || pre.necessidade && (intencao === 'TRANSFERENCIA' || intencao === 'INATIVA'));
+    || anterior.perguntasFeitas >= (qualificacaoCompleta ? 8 : 3) || pre.falhasCompreensao >= 2
+    || !qualificacaoCompleta && pre.necessidade && (intencao === 'TRANSFERENCIA' || intencao === 'INATIVA'));
   pre.campoEsperado = encaminhar ? null : campoSeguinte;
   pre.perguntasFeitas = (anterior.perguntasFeitas || 0) + (!encaminhar && !social && campoSeguinte ? 1 : 0);
   const operacoes = origem ? leitura.operacoes : [];
-  return { pre, operacoes, leitura, encaminhar, pergunta: perguntas[campoSeguinte] || null,
+  const respostaNatural = qualificacaoCompleta && !encaminhar && !social && !duvida ? respostaNaturalPermitida(ia?.resposta, campoSeguinte) : null;
+  return { pre, operacoes, leitura, encaminhar, respostaNatural, pergunta: (qualificacaoCompleta ? perguntasQualificacao(pre) : perguntas)[campoSeguinte] || null,
     resposta: duvida && !/CNPJ parece/.test(duvida) ? duvida : duvida ? 'Deixei o número informado no histórico para o contador conferir; isso não impede o atendimento.' : null };
 }
