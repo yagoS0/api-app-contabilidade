@@ -122,7 +122,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       : mudouOrigem ? "Vou chamar a equipe para organizar esse novo pedido junto com as informações que você já enviou."
         : "Vou encaminhar seu atendimento ao contador junto com o que você já contou. Você não precisa repetir tudo.";
     const beneficio = mensagemDeValor(pre);
-    const valor = (!pre.valorApresentado || pre.valorTexto && pre.valorTexto !== beneficio) && !anexo && !menuAntigo && !escolhaAntiga && !leitura.aguardar ? beneficio : null;
+    const valor = (!pre.valorApresentado || pre.valorTexto && pre.valorTexto !== beneficio) && !anexo && !mudouOrigem && !menuAntigo && !escolhaAntiga && !leitura.aguardar ? beneficio : null;
     const texto = escolhaAntiga || menuAntigo ? "Essa opção é de um atendimento anterior. Seus dados foram preservados. Conte o que precisa agora ou escreva menu para ver as opções."
       : encaminhar ? [preparo.resposta, valor, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
