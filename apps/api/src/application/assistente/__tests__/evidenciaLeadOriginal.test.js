@@ -59,3 +59,21 @@ test('correção explícita conserva a grafia da negação', () => {
   const r = validarInterpretacaoLead(interpretar('cidade', null, 'desconsidere recife'), 'DESCONSIDERE Recife');
   expect(r.dados).toEqual([{ campo: 'cidade', valor: null, evidencia: 'DESCONSIDERE Recife' }]);
 });
+
+test.each([
+  ['Trabalho com dois funcionários', 'TRANSFERENCIA', 'Meu contador demora dias para responder', 'estrutura', 'dois funcionários'],
+  ['Corrigindo, vou trabalhar em Olinda', 'ABERTURA', null, 'cidade', 'Olinda'],
+])('ignora intenção antiga da qualificação e mantém dado novo: %s', (texto, intencao, evidenciaIntencao, campo, valor) => {
+  const r = validarInterpretacaoLead({ ...interpretar(campo, valor, texto), intencao, evidenciaIntencao }, texto);
+  expect(r).toMatchObject({ intencao: null, evidenciaIntencao: null, dados: [{ campo, valor, evidencia: texto }] });
+});
+
+test('descartar intenção antiga não autoriza dado inventado', () => {
+  expect(validarInterpretacaoLead({ ...interpretar('estrutura', 'três funcionários', 'Trabalho com dois funcionários'),
+    intencao: 'TRANSFERENCIA', evidenciaIntencao: 'Meu contador demora' }, 'Trabalho com dois funcionários')).toBeNull();
+});
+
+test('pedido novo explícito continua exigindo sua própria evidência', () => {
+  expect(validarInterpretacaoLead({ ...interpretar('cidade', 'Olinda'), intencao: 'ABERTURA', evidenciaIntencao: null },
+    'Quero abrir uma empresa em Olinda')).toBeNull();
+});
