@@ -77,6 +77,18 @@ function guia(over = {}) {
   return { id: "g1", tipo: "DAS", envios: [], ...over };
 }
 
+test('confirmação do WhatsApp aparece com data e mantém a baixa como ação do contador', () => {
+  const onCreateBaixa = jest.fn();
+  renderTab([provisao({ pagamentoLocalizado: true, sourceGuide: guia({ paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE', paymentConfirmedAt: '2026-10-09T00:00:00.000Z' }) })], { onCreateBaixa });
+  expect(screen.getByText('⏳ cliente')).toBeInTheDocument();
+  abrirCelula('R$ 1.234,56');
+  expect(screen.getByText('Pagamento informado pelo cliente')).toBeInTheDocument();
+  expect(screen.getByText('09/10/2026')).toBeInTheDocument();
+  expect(screen.getByText('Falta lançar a baixa')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Dar baixa' })).toBeInTheDocument();
+  expect(onCreateBaixa).not.toHaveBeenCalled();
+});
+
 function provisao(over = {}) {
   return {
     id: "e1",

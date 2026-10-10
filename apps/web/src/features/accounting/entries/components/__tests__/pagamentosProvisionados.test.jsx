@@ -16,8 +16,9 @@ test('abre provisão de dezembro, usa baixa existente e conclui só após sucess
 
 test('mostra a procedência e consulta a guia sem lançar baixa automaticamente', async () => {
   const buscar=jest.fn().mockResolvedValue({encontrado:true}), salvar=jest.fn(), reload=jest.fn();
-  render(<PagamentosProvisionadosModal pendentes={{itens:[{id:'p',competencia:'2026-09',subtipo:'PIS',saldo:500,sourceGuide:{id:'g',paymentStatus:'PAID',paymentStatusSource:'CLIENTE'},comprovante:{dataArrecadacao:'2026-10-02',total:500}}],reload}} competencia="2026-10" onBuscarPagamento={buscar} onSave={salvar} onClose={()=>{}} />);
+  render(<PagamentosProvisionadosModal pendentes={{itens:[{id:'p',competencia:'2026-09',subtipo:'PIS',saldo:500,sourceGuide:{id:'g',paymentStatus:'PAID',paymentStatusSource:'CLIENTE',paymentConfirmedAt:'2026-10-02T00:00:00.000Z'},comprovante:{dataArrecadacao:'2026-10-02',total:500}}],reload}} competencia="2026-10" onBuscarPagamento={buscar} onSave={salvar} onClose={()=>{}} />);
   expect(screen.getByText('o cliente confirmou')).toBeInTheDocument();
+  expect(screen.getByText('Data informada pelo cliente: 02/10/2026')).toBeInTheDocument();
   expect(screen.getByText(/Afirmação do cliente, não comprovante/)).toBeInTheDocument();
   fireEvent.click(screen.getByText('Buscar pagamento'));
   await waitFor(()=>expect(reload).toHaveBeenCalledTimes(1));

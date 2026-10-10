@@ -4,6 +4,7 @@ import { Modal } from '../../../../components/ui/Modal';
 import { Button } from '../../../../components/ui/Button';
 import { BaixaModal } from '../../baixa/components/renderBaixaModal';
 import { PANEL_FIELD_STYLE } from '../lib/accountingEntriesShared';
+import { fmtDataCivil } from '../../../../lib/format';
 const formatar = comp => { const [ano, mes] = comp.split('-'); return new Date(Number(ano), Number(mes)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); };
 export function PagamentosProvisionadosModal({ pendentes, competencia, accounts, onSave, saving, onLoadBaixaTemplate, onClose, onBuscarPagamento }) {
   const [origem, setOrigem] = useState('');
@@ -39,6 +40,7 @@ export function PagamentosProvisionadosModal({ pendentes, competencia, accounts,
       return <tr key={e.id}><td>{e.subtipo || e.historico}</td><td>{e.competencia.split('-').reverse().join('/')}</td><td>{Number(e.saldo ?? e.valor ?? e.totalD).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
         <td><span>{pagamento?.rotulo || (e.pagamentoLocalizado ? 'Pagamento localizado' : e.sourceGuide?.id ? 'Sem pagamento confirmado' : 'Sem guia vinculada')}</span>
           {pagamento?.detalhe && <small style={{display:'block'}}>{pagamento.detalhe}</small>}
+          {pagamento?.procedencia === 'CLIENTE' && e.sourceGuide?.paymentConfirmedAt && <small style={{display:'block'}}>Data informada pelo cliente: {fmtDataCivil(e.sourceGuide.paymentConfirmedAt)}</small>}
           {e.comprovante?.dataArrecadacao && <small style={{display:'block'}}>Arrecadação: {e.comprovante.dataArrecadacao}</small>}
           {e.comprovante?.total != null && <small style={{display:'block'}}>Total: {Number(e.comprovante.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</small>}
           {e.sourceGuide?.id && onBuscarPagamento && <Button size="sm" variant="secondary" disabled={!!buscando || pendentes.loading} onClick={() => consultar(e)}>{buscando === e.id ? 'Buscando…' : 'Buscar pagamento'}</Button>}

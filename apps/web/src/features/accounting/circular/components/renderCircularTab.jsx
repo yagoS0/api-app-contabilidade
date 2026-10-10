@@ -425,6 +425,11 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
       </div>
 
       {pagamento?.pendencia && <div role="status" style={{ padding: 4, fontSize: "0.8125rem", color: "var(--state-warn)" }}>Baixa sem valor confiável. Confira os lançamentos antes de considerar este pagamento correto.</div>}
+      {guia?.paymentStatus === "PAID" && guia?.paymentStatusSource === "CLIENTE" && <>
+        <LinhaResumo rotulo="Confirmação" valor="Pagamento informado pelo cliente" />
+        <LinhaResumo rotulo="Data informada pelo cliente" valor={guia.paymentConfirmedAt ? fmtDataCivil(guia.paymentConfirmedAt) : "Não informada"} />
+        {entry.pagamentoLocalizado && <LinhaResumo rotulo="Contabilidade" valor="Falta lançar a baixa" cor="var(--state-warn)" />}
+      </>}
       {pagamento?.total != null ? <>
         <LinhaResumo rotulo={pagamento.fonte === "BAIXA_CONTABIL" ? "Valor baixado" : "Pagamento localizado"} valor={valorPagamento(pagamento.total)} forte />
         {pagamento.composicaoConhecida && <>
