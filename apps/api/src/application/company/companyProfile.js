@@ -176,7 +176,14 @@ export function normalizeRegimeHistorico(raw) {
     if (vigenciaFim && vigenciaFim < vigenciaInicio) {
       return { ok: false, error: "company_regime_historico_vigencia_invertida" };
     }
+    const apuracaoIbsCbs = asString(linha.apuracaoIbsCbs) || null;
+    const comprovanteOpcaoIbsCbs = asString(linha.comprovanteOpcaoIbsCbs) || null;
+    if (apuracaoIbsCbs && !['NO_DAS', 'REGULAR'].includes(apuracaoIbsCbs)) return { ok: false, error: 'company_ibscbs_opcao_invalid' };
+    if (apuracaoIbsCbs && (regime !== 'SIMPLES' || vigenciaInicio < new Date('2027-01-01T00:00:00Z'))) return { ok: false, error: 'company_ibscbs_opcao_vigencia_invalid' };
+    if (apuracaoIbsCbs === 'REGULAR' && !comprovanteOpcaoIbsCbs) return { ok: false, error: 'company_ibscbs_comprovante_required' };
+    if (comprovanteOpcaoIbsCbs && (!apuracaoIbsCbs || comprovanteOpcaoIbsCbs.length > 300)) return { ok: false, error: 'company_ibscbs_comprovante_invalid' };
     out.push({
+      apuracaoIbsCbs, comprovanteOpcaoIbsCbs,
       regime,
       vigenciaInicio,
       vigenciaFim,

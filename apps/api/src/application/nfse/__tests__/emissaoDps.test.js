@@ -967,3 +967,13 @@ describe("PIS/COFINS (tribFed/piscofins) — o grupo não afirma o que ninguém 
     expect(ok.status).toBe("issued");
   });
 });
+
+describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
+ it.each(['REGULAR', 'NO_DAS'])('recusa contrato de 2027 antes da reserva: %s', apuracaoIbsCbs => {
+  montarCenario({ empresa: { regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: new Date('2027-01-01'), vigenciaFim: null, apuracaoIbsCbs, comprovanteOpcaoIbsCbs: 'teste' }] } });
+  return NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2027-01-01' }, log }).then(r => {
+    expect(r.codigo).toBe('NFSE_CONTRATO_SIMPLES_2027_PENDENTE');
+    expect(prisma.$transaction).not.toHaveBeenCalled(); expect(postMock).not.toHaveBeenCalled();
+  });
+ });
+});

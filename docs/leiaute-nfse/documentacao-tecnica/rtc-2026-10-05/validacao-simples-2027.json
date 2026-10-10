@@ -1,0 +1,27 @@
+{
+  "verificadoEm": "2026-10-10",
+  "nt": "NT009 v1.01",
+  "campo": "regApIBSCBSSN",
+  "mapeamento": {
+    "NO_DAS": "1",
+    "REGULAR": "3"
+  },
+  "fonte": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+  "homologacao": {
+    "documentacaoHttp": 200,
+    "origem": "https://sefin.producaorestrita.nfse.gov.br/SefinNacional/swagger/docs/v1",
+    "autenticacao": "certificado da própria empresa",
+    "postExecutado": false
+  },
+  "xsd": {
+    "pacote": "esquemas-nfse-rtc-v1-01-20260727.zip",
+    "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
+    "origemSnapshot": "2026-10-05",
+    "paginaOficialConferidaEm": "2026-10-10",
+    "revalidacaoDownload": "403; utilizado snapshot com hash conferido",
+    "xmlAnteriorValido": true,
+    "regApIBSCBSSNAceito": false
+  },
+  "decisao": "Não habilitar transmissão de 2027 até validar pacote compatível. Mesmo resolvedor usado na prévia e emissão; opção vem do histórico, nunca do payload.",
+  "municipais": "Consulta de apoio ao ISS, recolhida na configuração; não substitui opção de IBS/CBS."
+}

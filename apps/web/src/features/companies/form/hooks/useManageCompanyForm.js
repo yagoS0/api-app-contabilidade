@@ -222,6 +222,8 @@ export function mapCompanyToEditForm(company) {
     regimeHistorico: Array.isArray(legacy?.regimeHistorico)
       ? legacy.regimeHistorico.map((r) => ({
           regime: String(r.regime || "SIMPLES"),
+          apuracaoIbsCbs: r.apuracaoIbsCbs || "",
+          comprovanteOpcaoIbsCbs: r.comprovanteOpcaoIbsCbs || "",
           vigenciaInicio: toDateInput(r.vigenciaInicio),
           vigenciaFim: toDateInput(r.vigenciaFim),
           impostos: Array.isArray(r.impostos) ? r.impostos.join("/") : "",

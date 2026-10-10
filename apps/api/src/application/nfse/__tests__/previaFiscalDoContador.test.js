@@ -50,3 +50,34 @@ test('prazo obrigatório não vira destaque facultativo com integração desliga
   expect(r.ok).toBe(false);
   expect(r.contextoFiscal.obrigacao.estado).toBe('OBRIGATORIO');
 });
+
+const periodosOpcao = [
+ { regime: 'SIMPLES', vigenciaInicio: '2026-01-01', vigenciaFim: '2026-12-31' },
+ { regime: 'SIMPLES', vigenciaInicio: '2027-01-01', vigenciaFim: '2027-06-30', apuracaoIbsCbs: 'REGULAR', comprovanteOpcaoIbsCbs: 'teste' },
+ { regime: 'SIMPLES', vigenciaInicio: '2027-07-01', vigenciaFim: null, apuracaoIbsCbs: 'NO_DAS' },
+];
+test('resolve híbrido e retorno ao DAS por vigência sem liberar transmissão', async () => {
+ const { executar } = preparar({ regimeHistorico: periodosOpcao });
+ const antes = await executar({ competencia: '2026-12' });
+ expect(antes.opcaoIbsCbs).toMatchObject({ apuracao: null, hibrido: false });
+ const durante = await executar({ competencia: '2027-01' });
+ expect(durante.opcaoIbsCbs).toMatchObject({ apuracao: 'REGULAR', hibrido: true, vigenciaInicio: '2027-01-01' });
+ expect(durante.regimeVigente.regime).toBe('SIMPLES');
+ expect(durante.ok).toBe(false);
+ expect(durante.pendencias[0].codigo).toBe('NFSE_CONTRATO_SIMPLES_2027_PENDENTE');
+ expect(durante.contextoFiscal.apuracaoIbsCbs.regApIBSCBSSN).toBe('3');
+ expect(durante.configuracaoFiscal.regimeVigente.apuracaoIbsCbs).toBe('REGULAR');
+ expect((await executar({ competencia: '2027-07' })).opcaoIbsCbs).toMatchObject({ apuracao: 'NO_DAS', hibrido: false });
+});
+test('2027 sem escolha exige cadastro, sem assumir opção pelo DAS', async () => {
+ const r = await preparar({ regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: '2020-01-01' }] }).executar({ competencia: '2027-01' });
+ expect(r.pendencias[0].codigo).toBe('NFSE_IBSCBS_OPCAO_PENDENTE');
+});
+test('não usa opção futura e recusa ambiguidade dentro do mês', async () => {
+ const { executar } = preparar({ regimeHistorico: [
+ { ...periodosOpcao[1], vigenciaFim: '2027-01-15' }, { ...periodosOpcao[2], vigenciaInicio: '2027-01-16' },
+ ] });
+ expect((await executar({ competencia: '2027-01' })).pendencias[0].codigo).toBe('NFSE_REGIME_HISTORICO_AMBIGUO');
+ expect((await executar({ competencia: '2027-01-15' })).opcaoIbsCbs.hibrido).toBe(true);
+ expect((await executar({ competencia: '2027-01-16' })).opcaoIbsCbs.hibrido).toBe(false);
+});

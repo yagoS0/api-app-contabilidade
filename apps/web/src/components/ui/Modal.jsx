@@ -92,6 +92,9 @@ export function Modal({
     if (suspenso) return undefined;
     function aoTeclar(e) {
       if (e.key === "Escape" && !ocupado) {
+        // A primeira tecla fecha as sugestões do campo; a próxima pode fechar
+        // o diálogo. O listener captura antes do onKeyDown do combobox.
+        if (caixaRef.current?.contains(e.target) && e.target?.matches?.('[role="combobox"][aria-expanded="true"]')) return;
         e.stopPropagation();
         aoFechar?.();
         return;

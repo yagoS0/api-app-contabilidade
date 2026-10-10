@@ -1,6 +1,6 @@
 import { correlacaoDoItem, itemLc116DoCodigoNacional } from "../../fiscal/ibscbs/index.js";
 import { validarCodigosRtc, TABELAS_RTC } from "../../fiscal/ibscbs/tabelasRtc.js";
-import { nbsPorCodigo, nbsParaDps } from "../../fiscal/nbs/index.js";
+import { NBS, nbsPorCodigo, nbsParaDps } from "../../fiscal/nbs/index.js";
 import { validarTributacaoMunicipal } from "../tributacaoMunicipalDoPerfil.js";
 
 export function sugestoesDoPerfil(company) {
@@ -10,7 +10,9 @@ export function sugestoesDoPerfil(company) {
     fonte: "NFS-e Nacional — Anexo VIII v1.01.00 e tabela NBS versionados no sistema",
     url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica",
     orientacao: "O Anexo VIII é orientativo. Outras combinações das tabelas oficiais podem ser declaradas conforme a operação.",
+    nbs: NBS.filter(n => nbsParaDps(n.codigo).ok).map(({ codigo, descricao }) => ({ codigo, descricao })),
     tabelasRtc: {
+      csts: TABELAS_RTC.csts,
       consultadoEm: TABELAS_RTC.consultadoEm,
       classificacoes: TABELAS_RTC.classificacoes.filter(c => c.nfse),
       operacoes: TABELAS_RTC.operacoes,

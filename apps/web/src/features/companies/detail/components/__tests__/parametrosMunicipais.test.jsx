@@ -7,6 +7,20 @@ function montar(extra = {}) {
   const api = { getParametrosMunicipais: jest.fn(async () => dados), consultarParametrosMunicipais: jest.fn(async () => retorno), ...extra };
   render(<ParametrosMunicipais companyId="portal" api={api} podeConsultar />); return api;
 }
+
+test('busca município e serviço por texto sem acentos e envia somente códigos escolhidos', async () => {
+  const api = montar();
+  const botao = await screen.findByRole('button', { name: 'Consultar fonte oficial' });
+  fireEvent.change(screen.getByLabelText('Município da consulta (IBGE)'), { target: { value: 'sao paulo sp' } });
+  expect(botao).toBeDisabled();
+  fireEvent.click(await screen.findByRole('option', { name: /São Paulo.*3550308/ }));
+  fireEvent.change(screen.getByLabelText('Consultar'), { target: { value: 'servico' } });
+  fireEvent.change(screen.getByLabelText('Serviço nacional'), { target: { value: 'contabilidade' } });
+  fireEvent.click(await screen.findByRole('option', { name: /171901.*Contabilidade/ }));
+  fireEvent.change(screen.getByLabelText('Complemento municipal (3 dígitos)'), { target: { value: '001' } });
+  fireEvent.click(botao);
+  await waitFor(() => expect(api.consultarParametrosMunicipais).toHaveBeenCalledWith('portal', expect.objectContaining({ municipio: '3550308', codigoServico: '171901', codigoServicoMunicipal: '001' })));
+});
 test('abrir a tela só lê; consulta oficial exige o clique e exibe limite de vigência', async () => {
   const api = montar();
   const b = await screen.findByRole('button', { name: 'Consultar fonte oficial' });

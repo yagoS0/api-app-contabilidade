@@ -16,7 +16,7 @@
 // que é onde elas foram desenhadas: sem o `preventDefault` o campo perde o foco no `blur` e a lista
 // fecha antes de o clique chegar.
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { PANEL } from "./notasStyles";
 
 const campoBase = {
@@ -39,12 +39,18 @@ export function CampoComBusca({
   textoVazio = "Nada encontrado com esse texto.",
   aoLadoDoRotulo = null,
   inputMode,
+  required = false,
+  disabled = false,
   style = null,
 }) {
   const [aberto, setAberto] = useState(false);
   const [ativo, setAtivo] = useState(-1);
   const idLista = `${useId()}-lista`;
   const fecharPorBlur = useRef(true);
+  const listaRef = useRef(null);
+  useEffect(() => {
+    listaRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
+  }, [ativo]);
 
   const resultado = useMemo(
     () => (aberto ? buscar(valor) : { itens: [], total: 0 }),
@@ -65,7 +71,11 @@ export function CampoComBusca({
   }
 
   function aoTeclar(evento) {
+    // Enter em uma busca não pode submeter o formulário de perfil nem emitir nota.
+    if (evento.key === "Enter") evento.preventDefault();
+    if (evento.key === "Escape" && aberto) { evento.stopPropagation(); fechar(); return; }
     if (!aberto && (evento.key === "ArrowDown" || evento.key === "ArrowUp")) {
+      evento.preventDefault();
       setAberto(true);
       return;
     }
@@ -104,6 +114,8 @@ export function CampoComBusca({
         placeholder={placeholder}
         autoComplete="off"
         inputMode={inputMode}
+        required={required}
+        disabled={disabled}
         role="combobox"
         aria-expanded={aberto}
         aria-controls={idLista}
@@ -113,8 +125,9 @@ export function CampoComBusca({
       />
       {ajuda && <div style={{ fontSize: "0.72rem", color: PANEL.muted }}>{ajuda}</div>}
 
-      {aberto && (
+      {aberto && !disabled && (
         <div
+          ref={listaRef}
           id={idLista}
           role="listbox"
           // ⚠ NÃO repetir o rótulo do campo aqui. Com `aria-label={rotulo}`, a lista passa a
@@ -141,7 +154,7 @@ export function CampoComBusca({
                 onMouseEnter={() => setAtivo(i)}
                 onClick={() => escolher(i)}
                 style={{
-                  display: "flex", justifyContent: "space-between", gap: 12, width: "100%",
+                  display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12, width: "100%", overflowWrap: "anywhere",
                   background: i === ativo ? "var(--state-neutral-surface)" : "none",
                   border: "none", borderBottom: `1px solid ${PANEL.border}`,
                   color: PANEL.text, padding: "7px 10px", cursor: "pointer",

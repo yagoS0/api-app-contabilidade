@@ -5,11 +5,46 @@ import { CAMPOS_PERFIL_EMISSAO } from "../../../../../lib/nfse/perfilEmissao";
 const dados = {
   campos: CAMPOS_PERFIL_EMISSAO,
   perfis: [{ id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901", ativo: true, retencaoFederalArt30: true }],
-  sugestoes: { fonte: "Tabela oficial", url: "https://www.gov.br/nfse", porServico: [
+  sugestoes: { fonte: "Tabela oficial", url: "https://www.gov.br/nfse", tabelasRtc: {
+    operacoes: [{ codigo: '100301', local: 'Domicílio do adquirente' }],
+    csts: [{ codigo: '000', descricao: 'Tributação integral' }],
+    classificacoes: [{ codigo: '000001', descricao: 'Tributação integral', cst: '000' }],
+  }, porServico: [
     { codigo: "171901", descricao: "Contabilidade", nbs: [{ codigo: "1.1302.21.00", descricao: "Serviços de contabilidade" }],
       combinacoes: [{ cIndOp: "100301", cClassTrib: "000001", nomeClassTrib: "Tributação integral" }] },
   ] },
 };
+
+it('busca todos os catálogos por descrição, seleciona código e nunca salva o texto da pesquisa', async () => {
+  const onSalvar = jest.fn(async () => {});
+  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  for (const [rotulo, termo, codigo] of [
+    ['Item da NBS', 'contabilidade', '1.1302.21.00'],
+    ['Código indicador da operação (IBS/CBS)', 'domicilio', '100301'],
+    ['Situação tributária do IBS/CBS (CST)', 'tributacao', '000'],
+    ['Classificação tributária do IBS/CBS', 'integral', '000001'],
+    ['CST do PIS/COFINS', 'aliquota basica', '01'],
+  ]) {
+    const campo = screen.getByLabelText(rotulo);
+    campo.closest('details').open = true;
+    fireEvent.change(campo, { target: { value: termo } });
+    expect(fireEvent.keyDown(campo, { key: 'Enter' })).toBe(false);
+    expect(onSalvar).not.toHaveBeenCalled();
+    fireEvent.keyDown(campo, { key: 'ArrowDown' });
+    fireEvent.keyDown(campo, { key: 'Enter' });
+    expect(campo).toHaveValue(codigo);
+  }
+  fireEvent.change(screen.getByLabelText('Item da NBS'), { target: { value: 'inexistente' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  expect(onSalvar).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert')).toHaveTextContent('Selecione uma sugestão para Item da NBS');
+  fireEvent.change(screen.getByLabelText('Item da NBS'), { target: { value: '113022100' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith('p1', expect.objectContaining({
+    codigoNbs: '1.1302.21.00', ibscbsCIndOp: '100301', ibscbsCst: '000', ibscbsCClassTrib: '000001', cstPisCofins: '01',
+  })));
+});
 
 it('alterar serviço preserva os códigos mas exige revisão explícita antes de salvar', async () => {
   const onSalvar = jest.fn(async () => {});
