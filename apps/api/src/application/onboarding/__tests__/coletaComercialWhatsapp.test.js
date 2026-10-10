@@ -39,6 +39,7 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   const caso = { id: "a", conversaId: "c", onboardingId: "o", onboarding: ficha, triagem: {}, versao: 1 };
   const recibos = new Map(), mensagens = new Map();
   const db = {
+    eventoPushAtendimento: { upsert: jest.fn(async ({create}) => create) },
     conversaWhatsapp: { findUnique: jest.fn(async () => ({ ...conversa })), update: jest.fn(async ({ data }) => Object.assign(conversa, data)), updateMany: jest.fn(async () => ({ count: 1 })) },
     atendimentoLead: { findFirst: jest.fn(async () => caso), findUnique: jest.fn(async () => caso), update: jest.fn(async ({ data }) => { Object.assign(caso, data, { versao: caso.versao + (data.versao?.increment || 0) }); return caso; }), updateMany: jest.fn(async () => ({ count: 1 })) },
     onboarding: { findUnique: jest.fn(async () => ({ ...ficha })), updateMany: jest.fn(async ({ where, data }) => { if (where.versao !== ficha.versao) return { count: 0 }; Object.assign(ficha, data, { versao: ficha.versao + (data.versao?.increment || 0) }); return { count: 1 }; }) },
@@ -284,4 +285,36 @@ test('atendimento neutro cria ficha quando cliente informa intenção de ativaç
   await t.chamar('Quero ativar minha empresa', { ia: iaCompleta() });
   expect(iniciarAtendimento).toHaveBeenLastCalledWith(expect.objectContaining({ origem: 'INATIVA' }));
   expect(t.caso.triagem.preatendimento.campoEsperado).toBe('cnpj');
+});
+
+test.each([true,false])('qualificação fiscal entrega humano e usa somente guia aprovado disponível=%s',async aprovado=>{
+  const t=banco({dados:{cnpj:'11222333000181'}});
+  t.ficha.origem='INATIVA';t.ficha.cnpj='11222333000181';
+  t.caso.autorizacao={estado:'NAO_SOLICITADA'};
+  t.caso.triagem.preatendimento={qualificacaoVersao:2,intencao:'INATIVA',cnpj:t.ficha.cnpj,dadosInformados:{cnpj:t.ficha.cnpj},
+    necessidade:'Quero reativar minha empresa',atividade:'médico',cidade:'Recife',estrutura:'sozinho',urgencia:'novembro',campoEsperado:'faturamento',
+    consultaPublica:{cnpj:t.ficha.cnpj,estado:'CONCLUIDA',dados:{}}};
+  const guia={id:'guia',versao:4,tipo:'ORIENTACAO',chave:'autorizacao-acesso',aprovadoEm:new Date(),texto:'Autorize {{escritorio}}, CNPJ {{procuradorCnpj}}, para analisar {{cnpj}}.'};
+  const institucional={id:'inst',versao:2,tipo:'INSTITUCIONAL',chave:'escritorio',aprovadoEm:new Date(),dados:{escritorio:'Teste',procuradorCnpj:'04252011000110',linkAutorizacao:'https://www.gov.br/exemplo'}};
+  t.db.recursoComercial={findFirst:jest.fn(async({where})=>!aprovado?null:where.tipo==='ORIENTACAO'?guia:institucional)};
+  const enviar=jest.fn();const consultaPublica=jest.fn();
+  const ia=iaTeste({intencao:null,evidenciaIntencao:null,comportamento:'DADOS',resposta:null,dados:[{campo:'faturamento',valor:'20 mil por mês',evidencia:'20 mil por mês'}]});
+  const r=await t.chamar('20 mil por mês',{id:'fim-autorizacao',ia,enviar,consultaPublica});
+  expect(r.motivo).toBe('ENCAMINHADA');
+  expect(t.conversa.atendidaDesde).toBeTruthy();
+  expect(t.caso.autorizacao).toEqual({estado:'NAO_SOLICITADA'});
+  expect(t.caso.triagem.preatendimento.autorizacaoFiscal.estado).toBe(aprovado?'AGUARDANDO_AUTORIZACAO':'REVISAO_NECESSARIA');
+  expect(t.db.eventoPushAtendimento.upsert).toHaveBeenCalledWith(expect.objectContaining({create:expect.objectContaining({tipo:'COMERCIAL',id:'comercial:a:fim-autorizacao',conversaId:'c'})}));
+  expect(t.caso.triagem.preatendimento.faturamento).toBe('20 mil por mês');
+  expect(enviar).toHaveBeenCalledTimes(1);
+  if(aprovado){expect(r.resultado.texto).toContain('04.252.011/0001-10');expect(r.resultado.texto).toContain('gratuita');}
+  else expect(r.resultado.texto).not.toContain('CNPJ do escritório');
+  expect(consultaPublica).not.toHaveBeenCalled();
+  const leituras=t.db.recursoComercial.findFirst.mock.calls.length;
+  await t.chamar('20 mil por mês',{id:'fim-autorizacao',ia,enviar,consultaPublica});
+  expect(t.db.recursoComercial.findFirst).toHaveBeenCalledTimes(leituras);
+  expect(t.db.coletaComercialWhatsapp.create).toHaveBeenCalledTimes(1);
+  expect(t.db.eventoPushAtendimento.upsert).toHaveBeenCalledTimes(1);
+  expect((await t.chamar('Já autorizei',{ia,enviar,consultaPublica})).motivo).toBe('AUTOMACAO_INVALIDADA');
+  expect(t.caso.autorizacao.estado).toBe('NAO_SOLICITADA');
 });

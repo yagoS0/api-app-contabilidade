@@ -1,4 +1,6 @@
 import { consultarCadastroInicial, resumoDaConsulta } from './ConsultaCadastralInicial.js';
+import { prepararSolicitacaoAutorizacao } from './SolicitacaoAutorizacaoComercial.js';
+import { registrarEncaminhamentoComercialPush } from '../whatsapp/AtendimentoPushService.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { WHATSAPP_COLETA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
 import { iniciarAtendimento, registrarCampos, encerrado } from "./LeadService.js";
@@ -143,13 +145,17 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
           operacoes: [{campo:'razaoSocial',acao:'set',valor:consultaPublica.dados.razaoSocial}], mensagemId: mensagem.id, fonte: 'CONSULTA_PUBLICA', client: tx });
       }
     }
+    const orientacaoAutorizacao = encaminhar && preparo.solicitarAutorizacaoFiscal && !anexo && !mudouOrigem && !menuAntigo && !escolhaAntiga
+      ? await prepararSolicitacaoAutorizacao({ pre, db: tx, agora, mensagemId: mensagem.id, autorizacaoAtual: caso.autorizacao }) : null;
+    if (orientacaoAutorizacao) pre.autorizacaoFiscal = orientacaoAutorizacao.solicitacao;
     const motivoEquipe = anexo ? "Vou chamar a equipe para conferir o anexo e continuar seu atendimento."
       : mudouOrigem ? "Vou chamar a equipe para organizar esse novo pedido junto com as informações que você já enviou."
         : "Vou encaminhar seu atendimento ao contador junto com o que você já contou. Você não precisa repetir tudo.";
     const beneficio = mensagemDeValor(pre);
     const valor = (!pre.valorApresentado || pre.valorTexto && pre.valorTexto !== beneficio) && !(pre.intencao === 'INATIVA' && pre.qualificacaoVersao === 2) && !anexo && !mudouOrigem && !menuAntigo && !escolhaAntiga && !leitura.aguardar ? beneficio : null;
     const respostaBase = escolhaAntiga || menuAntigo ? "Essa opção é de um atendimento anterior. Seus dados foram preservados. Conte o que precisa agora ou escreva menu para ver as opções."
-      : encaminhar ? [preparo.resposta, valor, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
+      : encaminhar ? orientacaoAutorizacao?.texto ? `${orientacaoAutorizacao.texto}\n\n${avisoAtendimentoComercial(agora)}`
+        : [preparo.resposta, valor, `${motivoEquipe} ${avisoAtendimentoComercial(agora)}`].filter(Boolean).join("\n\n")
         : leitura.aguardar ? "Tudo bem. Quando quiser continuar, é só escrever por aqui."
           : preparo.respostaNatural || [leitura.retomada ? "Podemos continuar de onde paramos." : preparo.resposta, valor, preparo.pergunta].filter(Boolean).join("\n\n");
     const texto = [consultaNova ? resumoDaConsulta(consultaPublica) : null, respostaBase].filter(Boolean).join("\n\n");
@@ -170,6 +176,8 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
         ...(mensagem.ocorridaEmProvedor ? { ultimaMensagemProvedorEm: new Date(mensagem.ocorridaEmProvedor).toISOString() } : {}),
         ...(mudouOrigem ? { proximaSolicitacao: { intencao: origem, mensagemId: mensagem.id, relato: String(textoEntrada || "").slice(0, 1000) } } : {}),
       } } : {}) } });
+    if (encaminhar && orientacaoAutorizacao) await registrarEncaminhamentoComercialPush({ atendimentoId: caso.id,
+      mensagemId: mensagem.id, conversaId: atual.id, client: tx, agora });
     return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao,
       resultado: { texto, onboardingId: caso.onboardingId || null, atendimentoId: caso.id, casoVersao: salva.versao,
         fichaVersao: caso.onboarding?.versao ?? null, encaminhar: Boolean(encaminhar), handoffEm: handoffEm?.toISOString() || null,

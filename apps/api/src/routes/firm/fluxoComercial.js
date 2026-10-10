@@ -5,6 +5,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarRecursosComerciais, exigirGestor } from "../../application/onboarding/RecursosComerciaisService.js";
 import { criarPropostasComerciais } from "../../application/onboarding/PropostasComerciaisService.js";
 import { criarFiscalLead } from "../../application/onboarding/FiscalLeadService.js";
+import { criarRelatorioFiscalLead } from "../../application/onboarding/RelatorioFiscalLeadService.js";
 import { iniciarAtendimento, registrarCampos, proximaPergunta } from "../../application/onboarding/LeadService.js";
 import { exigirEscopo } from "../../application/onboarding/ComercialService.js";
 import { OnboardingError } from "../../application/onboarding/OnboardingService.js";
@@ -32,6 +33,7 @@ export function createFluxoComercialRouter({
       db
     });
   const jornada = criarJornadaLead({ db });
+  const relatorioFiscal = criarRelatorioFiscalLead({ db });
   const fichasAvulsas = criarFichaEmpresaAvulsa({ db });
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -88,6 +90,14 @@ export function createFluxoComercialRouter({
     recursos: await recursos.listar()
   })));
   router.get('/canais-comerciais', wrap(async () => ({ canais: await db.canalWhatsapp.findMany({ where: { ativo: true, finalidade: 'COMERCIAL' }, select: { id: true, chave: true } }) })));
+  router.get('/onboardings/:id/fiscal', wrap(req => relatorioFiscal.carregar(req.params.id, req.auth.user)));
+  router.get('/onboardings/:id/fiscal/:analiseId/tabela.pdf', wrap(async (req, res) => {
+    const pdf = await relatorioFiscal.tabela(req.params.id, req.params.analiseId, req.auth.user, req.query.conteudoHash);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="situacao-fiscal-tabela.pdf"' });
+    res.send(pdf);
+  }));
+  router.post('/onboardings/:id/fiscal/:analiseId/revisao', wrap(req => relatorioFiscal.revisar(req.params.id, req.params.analiseId, req.auth.user, req.body)));
+  router.post('/onboardings/:id/fiscal/:analiseId/enviar', wrap(req => relatorioFiscal.enviar(req.params.id, req.params.analiseId, req.auth.user, req.body)));
   router.get('/onboardings/:id/acompanhamento', wrap(async req => {
     const ficha = await exigirEscopo(req.params.id, req.auth.user, db);
     const retorno = await db.onboardingEvento.findFirst({ where: { onboardingId: ficha.id, tipo: 'RETORNO_COMERCIAL' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });

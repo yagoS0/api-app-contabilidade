@@ -24,7 +24,7 @@ function ambiente() {
   vm.runInNewContext(codigo, { self, indexedDB, URL, Promise });
   async function disparar(tipo, payload) { let pending; listeners.get(tipo)({ ...payload, waitUntil: p => { pending = p; } }); await pending; }
   const vincular = () => disparar("message", { data: { tipo: "SALVAR_VINCULO", id: "device", vinculo: "nonce-atual" } });
-  return { self, listeners, mostrar, navegar, fechar, mensagens, disparar, vincular };
+  return { self, cliente, listeners, mostrar, navegar, fechar, mensagens, disparar, vincular };
 }
 test("worker não intercepta rede nem guarda histórico; push sem vínculo é descartado", async () => {
   const a = ambiente(); expect(a.listeners.has("fetch")).toBe(false);
@@ -51,4 +51,24 @@ test("clicar aviso preserva documento aberto e só solicita navegação interna 
   const a = ambiente(); await a.vincular();
   await a.disparar("notificationclick", { notification: { close: jest.fn(), data: { vinculo: "nonce-atual", url: "https://evil.test/roubar" } } });
   expect(a.navegar).not.toHaveBeenCalled(); expect(a.mensagens).toEqual([{ tipo: "ABRIR_CONVERSA", url: "/whatsapp?app=atendimento" }]);
+});
+
+
+test('aviso comercial usa título genérico e abre a conversa comercial correta', async () => {
+  const a = ambiente(); await a.vincular();
+  await a.disparar('push', { data: { json: () => ({ tipo: 'COMERCIAL', vinculo: 'nonce-atual', body: 'pendências privadas', url: '/comercial/conversas?app=atendimento&conversa=comercial_123&segredo=privado' }) } });
+  expect(a.mostrar).toHaveBeenCalledWith('Atendimento comercial precisa da equipe', expect.objectContaining({ body: 'Abra o Altan Atendimento para responder.', data: { url: '/comercial/conversas?app=atendimento&conversa=comercial_123', vinculo: 'nonce-atual' } }));
+  expect(JSON.stringify(a.mostrar.mock.calls)).not.toMatch(/privad/);
+  const close = jest.fn();
+  await a.disparar('notificationclick', { notification: { close, data: a.mostrar.mock.calls[0][1].data } });
+  expect(close).toHaveBeenCalled();
+  expect(a.self.clients.openWindow).toHaveBeenCalledWith('/comercial/conversas?app=atendimento&conversa=comercial_123');
+  expect(a.mensagens).toEqual([]);
+});
+
+test('aviso comercial reaproveita janela comercial sem perder documento aberto', async () => {
+  const a = ambiente(); await a.vincular(); a.cliente.url = 'https://app.test/comercial/conversas';
+  await a.disparar('notificationclick', { notification: { close: jest.fn(), data: { vinculo: 'nonce-atual', url: '/comercial/conversas?conversa=lead-abc' } } });
+  expect(a.mensagens).toEqual([{ tipo: 'ABRIR_CONVERSA', url: '/comercial/conversas?app=atendimento&conversa=lead-abc' }]);
+  expect(a.cliente.focus).toHaveBeenCalled(); expect(a.navegar).not.toHaveBeenCalled(); expect(a.self.clients.openWindow).not.toHaveBeenCalled();
 });

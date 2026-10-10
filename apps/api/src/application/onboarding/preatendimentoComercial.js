@@ -4,6 +4,7 @@ import { camposDispensadosNaResposta, esclarecimentoCadastralSimples } from './r
 import { validarInterpretacaoLead } from '../assistente/interpretacaoLeadIa.js';
 import { ordemQualificacao, perguntasQualificacao, respostaNaturalPermitida } from './qualificacaoComercial.js';
 import { atualizarInvestigacao, dispensasInvestigacao, periodoImpreciso } from './investigacaoComercial.js';
+import { necessitaAutorizacaoFiscal } from './SolicitacaoAutorizacaoComercial.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 export const INTENCOES_PREATENDIMENTO = ['ABERTURA', 'TRANSFERENCIA', 'INATIVA', 'PLANEJAMENTO', 'GESTAO'];
@@ -203,6 +204,8 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
   pre.perguntasFeitas = (anterior.perguntasFeitas || 0) + (!encaminhar && !social && campoSeguinte ? 1 : 0);
   const operacoes = origem ? leitura.operacoes : [];
   const respostaNatural = qualificacaoCompleta && !cnpjInvalido && !encaminhar && !social && !duvida ? respostaNaturalPermitida(ia?.resposta, campoSeguinte) : null;
-  return { pre, operacoes, leitura, encaminhar, respostaNatural: cnpjAmbiguo ? null : respostaNatural, cnpjInvalido, cnpjAmbiguo, pergunta: cnpjAmbiguo ? 'Qual é o CNPJ correto que devemos consultar?' : cnpjInvalido ? 'Esse CNPJ não passou na validação. Pode conferir e enviar os 14 dígitos?' : (qualificacaoCompleta ? perguntasQualificacao(pre) : perguntas)[campoSeguinte] || null,
+  const solicitarAutorizacaoFiscal = qualificacaoCompleta && conhecido && !social && !falhaIa && !revisaoIdentidade
+    && ia?.comportamento !== 'DUVIDA' && necessitaAutorizacaoFiscal(pre);
+  return { pre, operacoes, leitura, encaminhar, solicitarAutorizacaoFiscal, respostaNatural: cnpjAmbiguo ? null : respostaNatural, cnpjInvalido, cnpjAmbiguo, pergunta: cnpjAmbiguo ? 'Qual é o CNPJ correto que devemos consultar?' : cnpjInvalido ? 'Esse CNPJ não passou na validação. Pode conferir e enviar os 14 dígitos?' : (qualificacaoCompleta ? perguntasQualificacao(pre) : perguntas)[campoSeguinte] || null,
     resposta: cnpjInvalido ? null : duvida && !/CNPJ parece/.test(duvida) ? duvida : duvida ? 'Deixei o número informado no histórico para o contador conferir; isso não impede o atendimento.' : null };
 }

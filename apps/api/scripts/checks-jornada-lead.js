@@ -1,5 +1,6 @@
 import { diagnosticoSintetico } from "../src/application/onboarding/__tests__/fixtures/diagnosticoSintetico.js";
 import assert from "node:assert/strict";
+import { criarServicoComercial } from "../src/application/onboarding/ComercialService.js";
 import { criarJornadaLead } from "../src/application/onboarding/JornadaLeadService.js";
 import { iniciarAtendimento, registrarCampos } from "../src/application/onboarding/LeadService.js";
 
@@ -11,7 +12,7 @@ export async function verificarJornada({ db, user, ok }) {
     enviarDocumento: async args => { chamadas.push(["PDF", args]); await durantePdf?.(); return { wamid: `wamid.JORNADA.${++n}` }; },
     enviarTexto: async args => { chamadas.push(["TEXTO", args]); if (falhaTexto) throw falhaTexto; return { wamid: `wamid.JORNADA.${++n}` }; },
   };
-  const j = criarJornadaLead({ db, cloud, janela: async () => ({ situacao: janelaAberta ? "ABERTA" : "FECHADA" }), comercial: { documento: async () => Buffer.from("%PDF-1.4\nSINTETICO\n%%EOF") } });
+  const j = criarJornadaLead({ db, cloud, janela: async () => ({ situacao: janelaAberta ? "ABERTA" : "FECHADA" }), comercial: { ...criarServicoComercial({ db, procuradorAtual: async () => "12345678000199" }), documento: async () => Buffer.from("%PDF-1.4\nSINTETICO\n%%EOF") } });
   const criar = async origem => {
     const c = await db.conversaWhatsapp.create({ data: { telefoneE164: `551190001${String(++n).padStart(4, "0")}`, chaveEscopo: `jornada:${n}`, canalId: canal.id } });
     await db.mensagemWhatsapp.create({ data: { conversaId: c.id, providerMessageId: `wamid.JORNADA.IN.${n}`, direcao: "in", tipo: "text", corpo: "Contato sintético para testar o atendimento." } });
@@ -46,7 +47,8 @@ export async function verificarJornada({ db, user, ok }) {
   for (const origem of ["TRANSFERENCIA", "INATIVA"]) {
     const caso = await criar(origem);
     const f = await registrarCampos({ onboardingId: caso.o.id, versao: 0, atorId: user.id, client: db, operacoes: [{ campo: "cnpj", acao: "set", valor: "11222333000181" }] });
-    const salvarAnalise = tipo => db.onboardingAnalise.create({ data: { onboardingId: f.id, cnpj: f.cnpj, tipo, status: "CONCLUIDA", resultado: tipo === "SITFIS" ? { relatorioDisponivel: true } : { razaoSocial: "EMPRESA SINTÉTICA" }, criadoPorId: user.id } });
+    await db.atendimentoLead.update({ where: { id: caso.a.id }, data: { representanteVerificadoEm: new Date(), representanteVerificadoPor: user.id, autorizacao: { cnpj: f.cnpj, estado: 'ATIVA', prova: { status: 'ATIVA', validUntil: '2099-01-01', systems: ['SITFIS'], procuradorCnpj: '12345678000199' } } } });
+    const salvarAnalise = tipo => db.onboardingAnalise.create({ data: { onboardingId: f.id, cnpj: f.cnpj, tipo, status: "CONCLUIDA", documentoCifrado: tipo === "SITFIS" ? "sintetico-cifrado" : null, resultado: tipo === "SITFIS" ? { relatorioDisponivel: true } : { razaoSocial: "EMPRESA SINTÉTICA" }, criadoPorId: user.id } });
     const publica = await salvarAnalise("PUBLICA");
     assert.equal((await j.carregar(f.id, user)).publicaConferida, false);
     await assert.rejects(j.conferirAnalise(f.id, user, { versao: 0, analiseId: publica.id, tipo: "PUBLICA" }), e => e.code === "formulario_alterado");

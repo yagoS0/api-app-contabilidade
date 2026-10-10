@@ -131,7 +131,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
         resultado = { ...resultado, mensagem: "Dados públicos consultados. Não equivalem a regularidade fiscal.", razaoSocial: b.razao_social || out.tomador?.nome || null, situacaoCadastral: b.descricao_situacao_cadastral || null, cnaePrincipal: b.cnae_fiscal || null, municipio: b.municipio || null, uf: b.uf || null };
         Object.assign(resultado, { nomeFantasia: b.nome_fantasia || null, atividadePrincipal: b.cnae_fiscal_descricao || null, endereco: [b.logradouro, b.numero, b.complemento, b.bairro, b.cep].filter(Boolean).join(", ") || null });
       } else {
-        await comContextoSerpro({ origem: "onboarding_analise", userId: user.id }, async () => {
+        await comContextoSerpro({ origem: "onboarding_analise", userId: user.id, acaoId: id }, async () => {
           const caso = await conferirCasoFiscal(r);
           const p = await procuracaoDaConsulta(r, ultima, caso);
           resultado.procuracao = { status: p.status, validUntil: p.validUntil, systems: p.systems, checkedAt: p.checkedAt, procuradorCnpj: p.procuradorCnpj };
@@ -180,6 +180,18 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     const plain = await decifrar(a.documentoCifrado);
     if (!plain) throw erro("relatorio_indisponivel", "Não foi possível abrir o relatório.", 503);
     return Buffer.from(plain, "base64");
+  }
+  async function conferirEnvioFiscal(id, analiseId, user) {
+    const r = await exigirEscopo(id, user, db);
+    if (fechado(r)) throw erro('atendimento_encerrado', 'A ficha está encerrada.', 409);
+    const caso = await conferirCasoFiscal(r);
+    if (!caso) throw erro('representante_nao_verificado', 'Confira a representação deste atendimento antes do envio.', 409);
+    const procurador = somenteDigitos(await procuradorAtual());
+    if (!/^\d{14}$/.test(procurador) || procurador !== somenteDigitos(caso.autorizacao.prova.procuradorCnpj)) throw erro('procurador_alterado', 'Verifique novamente a procuração do escritório.', 409);
+    const a = await db.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: r.cnpj, tipo: 'SITFIS', status: 'CONCLUIDA' }, orderBy: { createdAt: 'desc' } });
+    const revisao = a && await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: 'JORNADA_SITFIS_CONFERIDA', dados: { path: ['analiseId'], equals: a.id } } });
+    if (a?.id !== analiseId || !documentoUtil(a) || !revisao) throw erro('relatorio_nao_revisado', 'Confira o relatório fiscal atual antes do envio.', 409);
+    return hash(JSON.stringify({ analiseId: a.id, documento: a.documentoCifrado, resultado: a.resultado, autorizacao: caso.autorizacao, representante: caso.representanteVerificadoEm }));
   }
   async function emitirLink(id, user, diasValidade = 7) {
     const r = await exigirEscopo(id, user, db);
@@ -230,5 +242,5 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     }
     return { onboarding: { origem: r.origem, dados: r.dados, ultimoPasso: r.ultimoPasso, status: r.status, versao: r.versao } };
   }
-  return { painel, comercial, analisar, documento, emitirLink, revogar, publico };
+  return { painel, comercial, analisar, documento, conferirEnvioFiscal, emitirLink, revogar, publico };
 }

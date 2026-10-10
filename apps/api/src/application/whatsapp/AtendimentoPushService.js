@@ -76,6 +76,13 @@ export async function registrarEventoPush({ mensagem, conversa, client, config =
     createdAt: agora, expiraEm: new Date(agora.getTime() + VIDA_EVENTO_MS) } });
 }
 
+/** Aviso próprio do handoff fiscal: ler a conversa não resolve o trabalho do contador. */
+export async function registrarEncaminhamentoComercialPush({ atendimentoId, mensagemId, conversaId, client, agora = new Date() }) {
+  const id = `comercial:${atendimentoId}:${mensagemId}`;
+  return client.eventoPushAtendimento.upsert({ where: { id }, update: {},
+    create: { id, conversaId, tipo: 'COMERCIAL', createdAt: agora, expiraEm: new Date(agora.getTime() + VIDA_EVENTO_MS) } });
+}
+
 export async function podeNotificarInscricao({ inscricao, evento }, { client = prisma } = {}) {
   if (!inscricao?.ativa || !evento || evento.expiraEm <= new Date()) return false;
   const user = await client.user.findUnique({ where: { id: inscricao.userId } });
@@ -84,7 +91,17 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
   if (!conversa || conversa.excluidaEm || String(conversa.chaveEscopo).startsWith("legado:")) return false;
   const encaminhamento = evento.tipo === 'SUPORTE' ? await client.encaminhamentoSuporte.findUnique({ where: { id: evento.id.replace(/^suporte:/, '') } }) : null;
   if (evento.tipo === 'SUPORTE' && (!encaminhamento || encaminhamento.estado === 'RESOLVIDO' || encaminhamento.conversaId !== conversa.id)) return false;
-  const mensagem = encaminhamento ? { direcao: 'in', conversaId: conversa.id } : await client.mensagemWhatsapp.findUnique({ where: { id: evento.id }, include: { contexto: true } });
+  let comercial = null;
+  if (evento.tipo === 'COMERCIAL') {
+    const [prefixo, atendimentoId, mensagemId, extra] = evento.id.split(':');
+    if (prefixo !== 'comercial' || !atendimentoId || !mensagemId || extra) return false;
+    comercial = await client.atendimentoLead.findUnique({ where: { id: atendimentoId }, include: { onboarding: true } });
+    const pre = comercial?.triagem?.preatendimento, pedido = pre?.autorizacaoFiscal;
+    if (!comercial || comercial.encerradoEm || comercial.conversaId !== conversa.id || !conversa.atendidaDesde || pre?.estado !== 'ENCAMINHADO'
+      || !['AGUARDANDO_AUTORIZACAO', 'REVISAO_NECESSARIA'].includes(pedido?.estado) || pedido.mensagemOrigemId !== mensagemId
+      || pedido.cnpj !== (comercial.onboarding?.cnpj || pre.cnpj)) return false;
+  }
+  const mensagem = encaminhamento || comercial ? { direcao: 'in', conversaId: conversa.id } : await client.mensagemWhatsapp.findUnique({ where: { id: evento.id }, include: { contexto: true } });
   if (!mensagem || mensagem.direcao !== "in" || mensagem.conversaId !== conversa.id) return false;
   if (mensagem.contexto?.conversaId && mensagem.contexto.conversaId !== conversa.id) {
     // Um recibo neutro pode ganhar contexto em outra empresa da mesma pessoa.
@@ -99,13 +116,14 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
       || efetiva.atendimentoId !== mensagem.contexto.atendimentoId) return false;
     conversa = efetiva;
   }
-  if (!encaminhamento && conversa.lidaAteEm && conversa.lidaAteEm >= mensagem.registradaEm) return false;
+  if (!encaminhamento && !comercial && conversa.lidaAteEm && conversa.lidaAteEm >= mensagem.registradaEm) return false;
   const visiveis = (await client.portalClient.findMany({ select: { id: true } })).map(p => p.id);
   let atendidaPor = conversa.atendidaPor;
   if (conversa.vinculoNumeroId) {
     try {
       const grupo = await carregarGrupoIdentidade({ conversaId: conversa.id, visiveis, client });
       if (grupo.origem.vinculoNumero?.encerrouEm || grupo.origem.canalWhatsapp?.ativo === false) return false;
+      if (comercial?.interlocutorId && comercial.interlocutorId !== grupo.origem.vinculoNumero?.interlocutor?.id) return false;
       atendidaPor = grupo.origem.vinculoNumero?.interlocutor?.atendidaPor || null;
     }
     catch (e) { if (e.status === 404) return false; throw e; }
@@ -116,9 +134,9 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
 }
 
 export function payloadPush({ evento, inscricao }) {
-  return { title: "Altan Atendimento", body: evento.tipo === 'SUPORTE' ? 'Um atendimento precisa da equipe. Abra o suporte para continuar.' : "Nova mensagem. Abra o atendimento para responder.",
-    ...(evento.tipo === 'SUPORTE' ? { tipo: 'SUPORTE' } : {}),
-    url: `${evento.tipo === 'SUPORTE' ? '/suporte' : '/whatsapp'}?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
+  return { title: "Altan Atendimento", body: evento.tipo === 'SUPORTE' ? 'Um atendimento precisa da equipe. Abra o suporte para continuar.' : evento.tipo === 'COMERCIAL' ? 'Um atendimento comercial precisa do contador. Abra o comercial para continuar.' : "Nova mensagem. Abra o atendimento para responder.",
+    ...(['SUPORTE','COMERCIAL'].includes(evento.tipo) ? { tipo: evento.tipo } : {}),
+    url: `${evento.tipo === 'SUPORTE' ? '/suporte' : evento.tipo === 'COMERCIAL' ? '/comercial/conversas' : '/whatsapp'}?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
     tag: `atendimento:${hash(evento.conversaId).slice(0, 24)}`, vinculo: inscricao.vinculo };
 }
 
