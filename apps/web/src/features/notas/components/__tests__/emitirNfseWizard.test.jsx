@@ -84,6 +84,7 @@ function abrir({
 // lia "1.500" como 1,5. A mudança de dígitos aqui é a mudança de comportamento, não um ajuste
 // cosmético do teste.
 function digitar(rotulo, valor) {
+  if (rotulo === 'Competência') { fireEvent.change(document.getElementById('nfse-competencia'), { target: { value: valor } }); return; }
   fireEvent.change(screen.getByLabelText(rotulo, { exact: false }), { target: { value: valor } });
 }
 
@@ -223,14 +224,17 @@ describe("o campo que faltava — pTotTribSN", () => {
   it("com vários perfis exige seleção e inclui o id na emissão e nome na confirmação", async () => {
     const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
     jest.spyOn(window, "confirm").mockReturnValue(true);
-    abrir({ onEmitir, apiPerfis: { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: true, perfis: [
+    abrir({ onEmitir, regime: 'LUCRO_PRESUMIDO', apiPerfis: { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: true, perfis: [
       { id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901", ativo: true },
       { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101", ativo: true },
-    ] })) } });
+    ] })), previaEmissaoNfse: jest.fn(async (_id, entrada) => ({ ok: true, pendencias: [], competencia: entrada.competencia, ambiente: 'homolog', regimeVigente: { regime: 'SIMPLES', vigenciaInicio: '2025-01-01' } })) } });
     await screen.findByLabelText("Perfil de serviço desta nota");
+    fireEvent.change(screen.getByLabelText('Informar período por', { exact: false }), { target: { value: 'month' } });
     ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "p2" } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Continuar/ })).toBeEnabled());
+    expect(screen.getByText('Regime no histórico da competência')).toBeInTheDocument();
     continuar();
     fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
     await screen.findByText(/Nota autorizada|Nota registrada/);

@@ -281,19 +281,18 @@ function buildCompanyPayload(input) {
       ...(Array.isArray(input.regimeHistorico)
         ? {
             regimeHistorico: input.regimeHistorico
-              .filter((r) => String(r?.regime || "").trim() && String(r?.vigenciaInicio || "").trim())
               .map((r) => ({
-                regime: String(r.regime).trim(),
-                vigenciaInicio: String(r.vigenciaInicio).trim(),
-                vigenciaFim: String(r.vigenciaFim || "").trim() || null,
+                regime: String(r?.regime || "").trim(),
+                vigenciaInicio: String(r?.vigenciaInicio || "").trim(),
+                vigenciaFim: String(r?.vigenciaFim || "").trim() || null,
                 // O form guarda "ISS/PIS/COFINS" (como a ficha escreve); a API quer array.
-                impostos: Array.isArray(r.impostos)
+                impostos: Array.isArray(r?.impostos)
                   ? r.impostos
-                  : String(r.impostos || "")
+                  : String(r?.impostos || "")
                       .split(/[/,]/)
                       .map((x) => x.trim().toUpperCase())
                       .filter(Boolean),
-                desoneracao: Boolean(r.desoneracao),
+                desoneracao: Boolean(r?.desoneracao),
               })),
           }
         : {}),
@@ -2531,6 +2530,15 @@ export function createRealApi() {
     // ── Perfis de emissão de NFS-e (fase 1: o painel; a integração nasce DESLIGADA) ──────────
     async getPerfisEmissao(companyId) {
       return request(`/firm/companies/${companyId}/perfis-emissao`);
+    },
+    async previaEmissaoNfse(companyId, payload) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/previa-emissao`, { method: 'POST', body: JSON.stringify(payload) });
+    },
+    async getParametrosMunicipais(companyId) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/parametros-municipais`);
+    },
+    async consultarParametrosMunicipais(companyId, payload) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/parametros-municipais/consultas`, { method: 'POST', body: JSON.stringify(payload) });
     },
     async criarPerfilEmissao(companyId, corpo) {
       return request(`/firm/companies/${companyId}/perfis-emissao`, {

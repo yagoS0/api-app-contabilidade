@@ -235,7 +235,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
       <div style={{ marginBottom: 8 }}>
         <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>Histórico de regime</strong>
         <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 8 }}>
-          Registro para consulta. A apuração usa o regime atual selecionado acima.
+          A emissão de NFS-e usa o regime vigente na competência. Cadastre períodos sem sobreposição. A apuração continua usando o regime atual selecionado acima.
         </span>
       </div>
       {linhas.length > 0 && (

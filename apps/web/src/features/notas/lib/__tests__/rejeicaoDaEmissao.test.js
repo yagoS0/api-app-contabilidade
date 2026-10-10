@@ -6,6 +6,11 @@
 import { CAMPO, lerRejeicao } from "../rejeicaoDaEmissao";
 
 describe("os dois formatos de erro — real e mock", () => {
+  it("direciona uma data impossível ao campo de competência", () => {
+    const r = lerRejeicao(new Error("competencia_invalida"));
+    expect(r.campo).toBe(CAMPO.COMPETENCIA);
+    expect(r.oQueFazer).toMatch(/competência válida/);
+  });
   it("no REAL o código vem carimbado e o corpo inteiro viaja em `payload`", () => {
     const erro = Object.assign(new Error("mensagem humana"), {
       code: "servico_valor_invalido",

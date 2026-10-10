@@ -145,22 +145,31 @@ function normalizeSocios(raw) {
 }
 
 /**
- * Histórico de regime com vigência. INFORMATIVO: nada aqui alimenta apuração/captura —
+ * Histórico de regime com vigência, usado na emissão NFS-e. Apuração/captura —
  * elas seguem usando Company.regimeTributario (o regime atual).
  */
-function normalizeRegimeHistorico(raw) {
-  if (!Array.isArray(raw)) return { ok: true, data: null }; // ausente = não mexer
+export function normalizeRegimeHistorico(raw) {
+  if (raw == null) return { ok: true, data: null }; // ausente = não mexer
+  if (!Array.isArray(raw)) return { ok: false, error: "company_regime_historico_invalid" };
+  const dataCivil = valor => {
+    const bruto = valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor.toISOString().slice(0, 10) : String(valor || '');
+    // Aceita a serialização de datas do banco sem permitir ajuste de dia pelo fuso.
+    const s = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/.test(bruto) ? bruto.slice(0, 10) : bruto;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const d = parseIsoDateOrNull(s);
+    return d?.toISOString().slice(0, 10) === s ? d : null;
+  };
   const out = [];
   for (const item of raw) {
     const linha = item && typeof item === "object" ? item : {};
     const regime = normalizeRegimeTributario(linha.regime);
-    if (!regime) continue;
+    if (!regime) return { ok: false, error: "company_regime_historico_invalid" };
     if (!REGIMES_HISTORICO.has(regime)) {
       return { ok: false, error: "company_regime_historico_invalid" };
     }
-    const vigenciaInicio = parseIsoDateOrNull(linha.vigenciaInicio);
+    const vigenciaInicio = dataCivil(linha.vigenciaInicio);
     if (!vigenciaInicio) return { ok: false, error: "company_regime_historico_vigencia_inicio_required" };
-    const vigenciaFim = parseIsoDateOrNull(linha.vigenciaFim);
+    const vigenciaFim = dataCivil(linha.vigenciaFim);
     if (linha.vigenciaFim && !vigenciaFim) {
       return { ok: false, error: "company_regime_historico_vigencia_fim_invalid" };
     }
@@ -179,6 +188,9 @@ function normalizeRegimeHistorico(raw) {
     });
   }
   out.sort((a, b) => a.vigenciaInicio - b.vigenciaInicio);
+  for (let i = 1; i < out.length; i++) {
+    if (!out[i - 1].vigenciaFim || out[i].vigenciaInicio <= out[i - 1].vigenciaFim) return { ok: false, error: "company_regime_historico_sobreposto" };
+  }
   return { ok: true, data: out };
 }
 

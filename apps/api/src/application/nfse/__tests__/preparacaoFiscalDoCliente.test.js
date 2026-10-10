@@ -5,8 +5,14 @@ import { prepararDadosFiscaisDoCliente, escolherAliquotaEfetivaDaSerie } from ".
 import { escolherAliquotaEfetiva as escolherNoPortal } from "../../../../../portal-cliente-web/src/features/emitir/lib/aliquotaEfetiva.js";
 
 const pedido = { portalClientId: "portal-teste", competencia: "2026-09", servico: { descricao: "Consultoria", valorServicos: 1000, issRetido: false } };
+
+test('preparação também bloqueia obrigação vigente antes de pedir dados ao cliente', async () => {
+  const deps = { ...contexto({ perfil: { id: 'p1', codigoServicoNacional: '170601', categoriaObrigacaoIbscbs: 'SERVICO_ISS' } }), perfisHabilitados: true, ibscbsLigado: false };
+  const r = await prepararDadosFiscaisDoCliente({ ...pedido, competencia: '2026-10' }, deps);
+  expect(r).toMatchObject({ ok: false, motivo: 'NFSE_IBSCBS_OBRIGATORIO_DESLIGADO', encaminharEscritorio: true });
+});
 function contexto({ regime = "LUCRO_PRESUMIDO", regimeCadastro = null, company: extras = {}, perfil = null, perfisAtivos = perfil ? 1 : 0, serie = [] } = {}) {
-  const company = { id: "company-teste", regimeTributario: regime, codigoServicoNacional: "170601", codigosServicoNacional: ["170601", "170101"], codigoMunicipioIbge: "3304557", pTotTribFed: 11.33, pTotTribEst: null, pTotTribMun: 5, ...extras };
+  const company = { regimeHistorico: [{ regime: regimeCadastro || regime, vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], id: "company-teste", regimeTributario: regime, codigoServicoNacional: "170601", codigosServicoNacional: ["170601", "170101"], codigoMunicipioIbge: "3304557", pTotTribFed: 11.33, pTotTribEst: null, pTotTribMun: 5, ...extras };
   const client = {
     portalClient: { findUnique: jest.fn(async () => ({ id: "portal-teste", companyId: "company-teste" })) },
     company: { findUnique: jest.fn(async () => company) },
@@ -27,11 +33,11 @@ test("não Simples reutiliza carga do cadastro e não pergunta taxa nem consulta
   expect(deps.resolverPerfil).not.toHaveBeenCalled();
 });
 
-test("perfil único usa alíquota e local configurados, vencendo o pedido", async () => {
+test("perfil fornece a alíquota, mas preserva o local informado na operação", async () => {
   const perfil = { id: "p1", nome: "Serviço configurado", codigoServicoNacional: "170101", pAliq: { toString: () => "4.5" }, cLocPrestacao: "3550308" };
   const deps = { ...contexto({ regime: "SIMPLES", perfil }), perfisHabilitados: true };
   const r = await prepararDadosFiscaisDoCliente({ ...pedido, pTotTribSN: 6, servico: { ...pedido.servico, aliquota: 2, issRetido: true, cLocPrestacao: "3304557" } }, deps);
-  expect(r).toMatchObject({ ok: true, perfil: { id: "p1" }, servico: { codigoServicoNacional: "170101", aliquota: 4.5, cLocPrestacao: "3550308" }, aliquotaDps: { informar: true, pAliq: "4.50" } });
+  expect(r).toMatchObject({ ok: true, perfil: { id: "p1" }, servico: { codigoServicoNacional: "170101", aliquota: 4.5, cLocPrestacao: "3304557" }, aliquotaDps: { informar: true, pAliq: "4.50" } });
   expect(deps.resolverPerfil).toHaveBeenCalledWith({ portalClientId: "portal-teste", perfilId: null, exigirDisponibilidade: true });
   expect(r.origens.aliquota.fonte).toBe("PERFIL");
 });
@@ -62,7 +68,7 @@ test("falha de leitura dos perfis não vira ausência de configuração", async 
 test("regime fiscal prevalece sobre Company e preenche a taxa da mesma competência", async () => {
   const deps = contexto({ regime: "LUCRO_PRESUMIDO", regimeCadastro: "SIMPLES_NACIONAL", serie: [{ competencia: "2026-08", dasExtrato: 500, faturamento: 10000 }, { competencia: "2026-09", dasExtrato: 680, faturamento: 10000 }] });
   const r = await prepararDadosFiscaisDoCliente(pedido, deps);
-  expect(r).toMatchObject({ ok: true, pTotTribSN: 6.8, regime: { rotuloDeclarado: "SIMPLES_NACIONAL", opSimpNac: "3", exigePTotTribSN: true }, origens: { regime: { fonte: "CADASTRO_FISCAL" }, pTotTribSN: { fonte: "EXTRATO_PGDASD", competencia: "2026-09", exata: true, dasExtrato: 680, faturamento: 10000 } } });
+  expect(r).toMatchObject({ ok: true, pTotTribSN: 6.8, regime: { rotuloDeclarado: "SIMPLES_NACIONAL", opSimpNac: "3", exigePTotTribSN: true }, origens: { regime: { fonte: "REGIME_HISTORICO" }, pTotTribSN: { fonte: "EXTRATO_PGDASD", competencia: "2026-09", exata: true, dasExtrato: 680, faturamento: 10000 } } });
   expect(deps.client.companyMonthlyCircular.findMany.mock.calls[0][0].where).toEqual({ portalClientId: "portal-teste", competencia: { in: ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"] } });
   expect(deps.client.portalInvoice.aggregate).toHaveBeenCalledTimes(6);
   for (const [consulta] of deps.client.portalInvoice.aggregate.mock.calls) expect(consulta.where).toMatchObject({ clientId: "portal-teste", papel: "EMIT", statusEfetivo: "autorizada" });
@@ -124,9 +130,14 @@ test.each(["regime", "pTotTribFed", "pTotTribMun"])("cadastro incompleto %s recu
   expect(await prepararDadosFiscaisDoCliente(pedido, deps)).toMatchObject({ ok: false, encaminharEscritorio: true });
 });
 
-test("falha ao ler CadastroFiscal não cai silenciosamente no regime de Company", async () => {
-  const deps = contexto(); deps.client.cadastroFiscal.findUnique.mockRejectedValue(new Error("indisponível"));
+test("falha ao ler empresa e histórico não usa regime alternativo", async () => {
+  const deps = contexto(); deps.client.company.findUnique.mockRejectedValue(new Error("indisponível"));
   expect(await prepararDadosFiscaisDoCliente(pedido, deps)).toMatchObject({ ok: false, motivo: "DADOS_FISCAIS_INDISPONIVEIS" });
+});
+
+test('preparação sem vigência não usa CadastroFiscal nem regime atual', async () => {
+  const deps = contexto({ regimeCadastro: 'SIMPLES', company: { regimeHistorico: [] } });
+  expect(await prepararDadosFiscaisDoCliente(pedido, deps)).toMatchObject({ ok: false, motivo: 'NFSE_REGIME_SEM_VIGENCIA' });
 });
 
 test.each([

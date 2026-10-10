@@ -47,7 +47,32 @@ model Client {
   serviceInvoices ServiceInvoice[]
 }
 
+// Cada tentativa é preservada. Data de consulta não é vigência legal do retorno.
+model NfseConsultaMunicipal {
+  id String @id @default(uuid())
+  companyId String
+  autorId String
+  ambiente String
+  requestKey String
+  municipio String
+  recurso String
+  codigoServico String?
+  origem String
+  caminho String
+  status String
+  resposta Json?
+  httpStatus Int?
+  erroCodigo String?
+  createdAt DateTime @default(now())
+  concluidaEm DateTime?
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@unique([companyId, ambiente, requestKey])
+  @@index([companyId, ambiente, createdAt])
+  @@map("nfse_consultas_municipais")
+}
+
 model Company {
+  consultasMunicipais NfseConsultaMunicipal[]
   id                            String            @id @default(uuid())
   clientId                      String
   razaoSocial                   String
@@ -260,9 +285,9 @@ model Partner {
 /// Histórico de regime tributário com vigência — o bloco "TIPO:" da ficha
 /// (ex.: SIMPLES 20/08/2018→31/12/2019, LUCRO PRESUMIDO 01/01/2020→31/12/2020).
 ///
-/// ⚠ INFORMATIVO por ora, por decisão do dono: a apuração e a captura continuam usando
-/// `Company.regimeTributario` (o regime atual). Nada aqui alimenta cálculo fiscal. Fazer o
-/// regime ser resolvido por competência é um bloco de trabalho à parte.
+/// A emissão NFS-e resolve o regime pela vigência deste histórico. Apuração e captura usam
+/// `Company.regimeTributario` (o regime atual). Não criar períodos retroativos automaticamente.
+/// O histórico não define sozinho sublimite, alíquotas ou enquadramento municipal.
 model RegimeHistorico {
   id             String    @id @default(uuid())
   companyId      String
@@ -3760,6 +3785,10 @@ model PerfilEmissaoNfse {
   /// DERIVADO_DO_CADASTRO (materializado das colunas da Company) | MANUAL (o contador criou/editou).
   /// ⚠ É o que permite distinguir "o sistema montou a partir do que já existia" de "alguém afirmou".
   origem String @default("DERIVADO_DO_CADASTRO")
+
+  /// Contexto do prazo de IBS/CBS, confirmado pelo contador; não é tag do XML.
+  /// Nulo = não classificado. Não inferir hipótese de plataforma pelo CNAE.
+  categoriaObrigacaoIbscbs String?
 
   // ── serviço ────────────────────────────────────────────────────────────────────────────────
   /// `cTribNac` — 6 dígitos. Tem de estar em `Company.codigosServicoNacional` quando ela não é vazia.

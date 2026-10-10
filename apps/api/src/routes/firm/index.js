@@ -44,6 +44,7 @@ import { createRecorrenciaRouter } from "./recorrencia.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createPerfisEmissaoRouter } from "./perfisEmissao.js";
+import { createParametrosMunicipaisRouter } from './parametrosMunicipais.js';
 import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
@@ -5492,6 +5493,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // ⚠ Nasce com a integração DESLIGADA: o GET serve o painel; nada muda no XML.
   router.use("/companies/:companyId", createPerfisEmissaoRouter({ log }));
   router.use("/companies/:companyId", createFluxoCarteiraRouter());
+  router.use('/companies/:companyId', createParametrosMunicipaisRouter({ log }));
 
   // Planejamento tributário — SÓ LEITURA. Monta os campos da empresa (com a procedência de cada
   // um) que a tela de simulação de regime pré-preenche. Não grava nada.

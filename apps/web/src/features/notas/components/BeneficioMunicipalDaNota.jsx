@@ -3,17 +3,12 @@
 // ⚠⚠ ESTE COMPONENTE EXISTE PARA IMPEDIR UMA CRENÇA FALSA, não para configurar nada. O contador
 // cadastrou um benefício de ISSQN na empresa (dono, 20/08/2026: *"o seletor de benefício, caso o
 // cliente tenha algum benefício fiscal"*) e, a partir daí, é natural supor que a nota sai com a
-// redução. **Ela não sai.** `buildDpsXml` (`api/application/nfse/NfseService.js`) monta
-// `<tribMun>` com DOIS filhos — `tribISSQN` (cravado em `1`) e `tpRetISSQN` — dos SETE que o
-// `TCTribMunicipal` admite no XSD oficial 1.01; o grupo `BM` não é escrito. A nota sai com o ISS
-// CHEIO.
+// redução. O grupo `BM` ainda não é escrito; o backend bloqueia para conferência da operação.
 //
 // ⚠ Descobrir isso depois é caro de um jeito específico: nota emitida não se desfaz, e o erro é
 // para MENOS imposto do que o contador acreditava ter declarado — ou seja, ele não vai conferir.
 //
-// ⚠ ELE NÃO BLOQUEIA NADA, e não deve. O benefício não está em `buildMissingFields`; a empresa
-// emite normalmente, só sem a redução. Quem responde "esta empresa pode emitir?" continua sendo
-// `faltasParaEmitir`, no passo 1.
+// O aviso apresenta a pendência; a recusa é aplicada no núcleo fiscal antes da numeração.
 //
 // ⚠ SÓ APARECE PARA QUEM TEM BENEFÍCIO CADASTRADO. Falar de benefício na tela de quem não tem
 // nenhum (33 de 33 empresas da carteira, hoje) seria ruído — e ruído numa caixa âmbar treina o
@@ -22,6 +17,7 @@
 import { PANEL } from "./notasStyles";
 import {
   ONDE_CONFIGURA_EMISSAO,
+  BENEFICIO_NAO_VAI_NO_XML,
   TIPOS_REDUCAO_BM,
   lerNumeroBeneficioMunicipal,
   lerPercentualReducaoBM,
@@ -58,9 +54,7 @@ export function BeneficioMunicipalDaNota({ cadastroEmissao }) {
         .
       </div>
       <div>
-        O XML da DPS que este sistema monta ainda não leva o grupo “BM”, então a nota sai com o
-        <strong> ISS cheio</strong>, sem a redução. Se a redução for indispensável nesta nota, emita
-        pelo portal do município. O cadastro fica em <strong>{ONDE_CONFIGURA_EMISSAO}</strong>.
+        {BENEFICIO_NAO_VAI_NO_XML} O cadastro fica em <strong>{ONDE_CONFIGURA_EMISSAO}</strong>.
       </div>
     </div>
   );

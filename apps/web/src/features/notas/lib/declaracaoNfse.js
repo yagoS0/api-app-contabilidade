@@ -289,7 +289,7 @@ export function linhasDoEspelho(dados = {}) {
   });
   linhas.push({
     rotulo: "Alíquota de ISS",
-    valor: servico.aliquota == null || servico.aliquota === "" ? "a da prefeitura" : fmtPercent(servico.aliquota),
+    valor: servico.aliquotaDeclaradaTexto || (servico.aliquota == null || servico.aliquota === "" ? "a da prefeitura" : fmtPercent(servico.aliquota)),
   });
   linhas.push({ rotulo: "ISS retido", valor: textoIssRetido(Boolean(servico.issRetido)) });
 

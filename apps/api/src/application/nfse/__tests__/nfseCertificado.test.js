@@ -49,6 +49,7 @@ jest.mock("node-forge", () => ({
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolveCertForCompany } from "../../notas/CertResolver.js";
 import { resolverCertificadosDaEmpresa, NfseCertError } from "../nfseCertificado.js";
+import forge from 'node-forge';
 
 const PFX_DA_EMPRESA = Buffer.from("pfx-da-empresa");
 
@@ -58,6 +59,21 @@ beforeEach(() => {
 });
 
 describe("certificado da emissão de NFS-e", () => {
+  it('preserva a cadeia no transporte, sem incluir a autoridade na assinatura XML', async () => {
+    forge.pkcs12.pkcs12FromAsn1.mockImplementationOnce(() => ({
+      getBags: ({ bagType }) => bagType === 'certBagOid'
+        ? { certBagOid: [{ cert: { folha: true } }, { cert: { autoridade: true } }] }
+        : { keyBagOid: [{ key: {} }] },
+    }));
+    forge.pki.certificateToPem.mockReturnValueOnce('FOLHA').mockReturnValueOnce('AUTORIDADE');
+    resolveCertForCompany.mockResolvedValue({ source: 'company_a1', pfxBuffer: PFX_DA_EMPRESA });
+    const r = await resolverCertificadosDaEmpresa('company-1');
+    expect(r.transporte.certPem).toBe('FOLHA\nAUTORIDADE');
+    expect(r.assinatura.certPem).toBe('FOLHA');
+    expect(r.assinatura.certBase64).toBe('FOLHA');
+    expect(r.transporte.keyPem).toBe(r.assinatura.keyPem);
+  });
+
   it("usa o A1 da empresa e devolve ASSINATURA e TRANSPORTE como campos separados", async () => {
     resolveCertForCompany.mockResolvedValue({
       source: "company_a1",
@@ -71,6 +87,8 @@ describe("certificado da emissão de NFS-e", () => {
     // ⚠ Dois papéis, dois campos — mesmo apontando hoje para o mesmo arquivo.
     expect(cert.assinatura.pfxBuffer).toBe(PFX_DA_EMPRESA);
     expect(cert.transporte.pfxBuffer).toBe(PFX_DA_EMPRESA);
+    expect(cert.transporte.certPem).toBe(cert.assinatura.certPem);
+    expect(cert.transporte.keyPem).toBe(cert.assinatura.keyPem);
     expect(cert.assinatura).toHaveProperty("keyPem");
     expect(cert.assinatura).toHaveProperty("certBase64");
     expect(cert.origem).toBe("company_a1");

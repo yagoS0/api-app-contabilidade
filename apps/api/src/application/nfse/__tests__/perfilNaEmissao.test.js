@@ -87,7 +87,7 @@ function montarMocks({ flagLigada, perfil, ibscbsLigada = false, regimeDoCadastr
   const tx = { serviceInvoice, $queryRaw: jest.fn(async () => [{ rpsNumero: "41" }]) };
   jest.doMock("../../../infrastructure/db/prisma.js", () => ({
     prisma: {
-      company: { findUnique: jest.fn(async () => COMPANY) },
+      company: { findUnique: jest.fn(async () => ({ ...COMPANY, regimeHistorico: [{ regime: regimeDoCadastro, vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }] })) },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
       portalInvoice: { findMany: jest.fn(async () => []) },
         // ⚠ A retenção federal é VEDADA no Simples, então o cenário dela exige outro regime.
@@ -151,10 +151,10 @@ async function emitirCom({ flagLigada, perfil, ibscbsLigada = false }) {
  * `serviceInvoice.create` **não ter sido chamado** é o que prova que ela aconteceu ANTES de
  * reservar numeração — e não existe inutilização na NFS-e.
  */
-async function emitirDetalhado({ flagLigada, perfil, ibscbsLigada = false, perfilId = null, dadosExtras = {} }) {
+async function emitirDetalhado({ flagLigada, perfil, ibscbsLigada = false, perfilId = null, dadosExtras = {}, regimeDoCadastro = 'SIMPLES_NACIONAL' }) {
   XML_ENVIADO.length = 0;
   jest.resetModules();
-  montarMocks({ flagLigada, perfil, ibscbsLigada });
+  montarMocks({ flagLigada, perfil, ibscbsLigada, regimeDoCadastro });
   const { NfseService } = await import("../NfseService.js");
   const { prisma } = await import("../../../infrastructure/db/prisma.js");
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -172,6 +172,24 @@ const comPerfil = (extra) => ({ ...PERFIL_DERIVADO, ...extra });
 const DO_ANEXO_VIII = { cIndOp: "100301", cClassTrib: "200052" };
 /** Um NBS TERMINAL de verdade (9 dígitos depois de tirar os pontos). */
 const NBS_TERMINAL = "1.1502.10.00";
+
+describe('correções prioritárias na emissão real do serviço', () => {
+  it.each([false, true])('IBS/CBS obrigatório não é omitido com a flag %s', async ibscbsLigada => {
+    const r = await emitirDetalhado({ flagLigada: true, ibscbsLigada, regimeDoCadastro: 'LUCRO_PRESUMIDO',
+      perfil: comPerfil({ categoriaObrigacaoIbscbs: 'SERVICO_ISS' }), dadosExtras: { competencia: '2026-10-01' } });
+    expect(r.resultado).toMatchObject({ camada: 'NOSSA', codigo: ibscbsLigada ? 'NFSE_IBSCBS_OBRIGATORIO_AUSENTE' : 'NFSE_IBSCBS_OBRIGATORIO_DESLIGADO' });
+    expect(r.prisma.$transaction).not.toHaveBeenCalled();
+    expect(r.xml).toBe('');
+  });
+  it('local informado vence perfil também no XML transmitido e snapshot', async () => {
+    const r = await emitirDetalhado({ flagLigada: true, perfil: comPerfil({ cLocPrestacao: '3550308' }),
+      dadosExtras: { servico: { ...PAYLOAD.servico, cLocPrestacao: '3304557' } } });
+    expect(r.xml).toContain('<cLocPrestacao>3304557</cLocPrestacao>');
+    expect(r.prisma.serviceInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      configuracaoFiscal: expect.objectContaining({ localPrestacao: { codigo: '3304557', fonte: 'OPERACAO', assumido: false } }),
+    }) }));
+  });
+});
 
 /** O XML sem o que muda a cada emissão por natureza (data/hora e assinatura). */
 function semOVolatil(xml) {

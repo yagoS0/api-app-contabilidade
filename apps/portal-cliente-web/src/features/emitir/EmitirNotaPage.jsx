@@ -2047,12 +2047,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     de ISS não é renderizado, e o ramo do regime DESCONHECIDO continua avisando —
                     aquele não é legenda fixa, é a resposta a um dado que não recebemos. */}
 
-                {/* ⚠ TAMBÉM ERAM SETE DÍGITOS À MÃO. É o campo que decide para QUAL MUNICÍPIO o
-                    ISSQN é devido — errar aqui é recolher para a prefeitura errada. */}
-                {/* ⚠⚠ ELE SOME QUANDO HÁ PERFIL — o `cLocPrestacao` passa a vir de lá. E some do
-                    CORPO junto: `montarPayload` só o inclui se o campo tiver valor, e sem o campo
-                    ele não tem. "Campo escondido que continua viajando é o defeito pior."
-                    ⚠ Sem perfil, nada muda: é o estado de toda empresa até o contador configurar. */}
+                {/* Local efetivo da operação. Não determina sozinho onde o ISS é devido. */}
                 {municipioDaPrestacaoNoFormulario ? (
                   <SeletorMunicipio
                     id="emitir-loc-prestacao"
@@ -2061,7 +2056,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     onChange={(codigo) => setForm((a) => ({ ...a, cLocPrestacao: codigo }))}
                     // ⚠ A CITAÇÃO DA LC 116 SAIU (é conversa de contador); a DECISÃO ficou inteira —
                     // deixar em branco tem consequência, e a frase diz qual é e quando não deixar.
-                    ajuda="Em branco, o ISS é devido no município da sua empresa. Só preencha se este serviço for uma exceção."
+                    ajuda="Informe onde o serviço foi prestado se for diferente do local configurado pelo contador. Em branco, será usado o local configurado ou, se ausente, o município da empresa."
                   />
                 ) : null}
               </fieldset>

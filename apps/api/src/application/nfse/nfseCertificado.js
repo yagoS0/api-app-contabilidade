@@ -69,7 +69,8 @@ export function extrairPemDoPfx(pfxBuffer, password) {
   const p12Asn1 = forge.asn1.fromDer(Buffer.from(pfxBuffer).toString("binary"));
   const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password || "");
 
-  const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })?.[forge.pki.oids.certBag]?.[0];
+  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })?.[forge.pki.oids.certBag] || [];
+  const certBag = certBags[0];
   const keyBag =
     p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })?.[
       forge.pki.oids.pkcs8ShroudedKeyBag
@@ -82,16 +83,17 @@ export function extrairPemDoPfx(pfxBuffer, password) {
     );
   }
 
-  const certPem = forge.pki.certificateToPem(certBag.cert);
+  const certsPem = certBags.filter(b => b.cert).map(b => forge.pki.certificateToPem(b.cert));
+  const certPem = certsPem[0];
   const keyPem = forge.pki.privateKeyToPem(keyBag.key);
   const certBase64 = certPem.replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").replace(/\s+/g, "");
-  return { certPem, keyPem, certBase64 };
+  return { certPem, cadeiaCertPem: [...new Set(certsPem)].join('\n'), keyPem, certBase64 };
 }
 
 /**
  * Resolve os DOIS certificados da emissão para uma Company legada.
  *
- * @returns {Promise<{assinatura: {pfxBuffer: Buffer, password: string|null, certPem: string, keyPem: string, certBase64: string}, transporte: {pfxBuffer: Buffer, password: string|null}, origem: string}>}
+ * @returns {Promise<{assinatura: {pfxBuffer: Buffer, password: string|null, certPem: string, keyPem: string, certBase64: string}, transporte: {pfxBuffer: Buffer, password: string|null, certPem: string, keyPem: string}, origem: string}>}
  * @throws {NfseCertError} `NO_COMPANY_CERT` quando não há A1 da própria empresa.
  */
 export async function resolverCertificadosDaEmpresa(companyId) {
@@ -148,6 +150,11 @@ export async function resolverCertificadosDaEmpresa(companyId) {
     transporte: {
       pfxBuffer: r.pfxBuffer,
       password: r.password ?? null,
+      // O ADN exige a cadeia do A1 no mTLS; enviar só o certificado folha
+      // falhou no handshake de homologação. A assinatura XML mantém só a folha.
+      // PEM também evita reabrir a cifra legada do PFX no OpenSSL 3.
+      certPem: pem.cadeiaCertPem,
+      keyPem: pem.keyPem,
     },
     origem: "company_a1",
     certExpiresAt: r.certExpiresAt ?? null,

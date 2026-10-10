@@ -432,7 +432,9 @@ let postMock;
 let mockAssinaturaReal = false;
 
 function montarCenario({ empresa = {}, cadastroFiscal = null } = {}) {
-  prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE, ...empresa });
+  // O cenário declara uma vigência explícita; cadastro atual sozinho não autoriza emissão.
+  prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,
+    regimeHistorico: [{ id: 'rh-teste', regime: cadastroFiscal?.regime || ('regimeTributario' in empresa ? empresa.regimeTributario : EMPRESA_BASE.regimeTributario), vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], ...empresa });
   prisma.cadastroFiscal.findUnique.mockResolvedValue(cadastroFiscal);
   postMock = jest.fn(async () => ({
     data: { status: "issued", chaveAcesso: "3".repeat(50), numeroNfse: "18" },

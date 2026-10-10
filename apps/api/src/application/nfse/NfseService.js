@@ -1,3 +1,4 @@
+import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { CONTRATO_NACIONAL } from './contratoNacional.js';
 import { validarCamposXmlDaDps } from './camposXmlDaDps.js';
@@ -20,7 +21,8 @@ import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDe
 
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
-import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
+import { resolverContextoFiscalDaNota } from './resolverContextoFiscalDaNota.js';
+import { localDaPrestacao } from './localDaPrestacao.js';
 import { pAliqDaDps } from "./pAliqDaDps.js";
 import { tributacaoMunicipalDoPerfil } from "./tributacaoMunicipalDoPerfil.js";
 import { xmlRetencoesComplementares } from "./retencoesComplementares.js";
@@ -192,9 +194,10 @@ function buildAxiosClient(certificadoTransporte) {
     throw err;
   }
   const agent = new https.Agent({
-    pfx: certificadoTransporte.pfxBuffer,
-    passphrase: certificadoTransporte.password || undefined,
-    rejectUnauthorized: NFSE_ENV !== "homolog",
+    ...(certificadoTransporte.certPem && certificadoTransporte.keyPem
+      ? { cert: certificadoTransporte.certPem, key: certificadoTransporte.keyPem }
+      : { pfx: certificadoTransporte.pfxBuffer, passphrase: certificadoTransporte.password || undefined }),
+    rejectUnauthorized: true,
   });
 
   const client = axios.create({
@@ -669,11 +672,8 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   // município do prestador"*. O "por enquanto" não tinha data e não tinha alternativa: **não havia
   // como informar um local diferente**, nem sinal de que ele havia sido assumido.
   //
-  // O QUE ACONTECE QUANDO SÃO DIFERENTES: `cLocPrestacao` é o que determina o **município
-  // competente para o ISSQN**. Diferente do emissor, o imposto é devido no local da prestação — o
-  // que muda a alíquota aplicável e pode tornar a retenção obrigatória para o tomador. Uma DPS que
-  // declara o município errado recolhe imposto para a cidade errada; é erro fiscal com dinheiro
-  // envolvido, não um campo cosmético.
+  // Local efetivo da prestação não se confunde com município de incidência do ISS.
+  // A incidência depende do serviço e das hipóteses da LC 116, art. 3º.
   //
   // ⚠ E O VALOR CERTO **NÃO SE DEDUZ DO ENDEREÇO DO TOMADOR**. A regra é a LC 116/2003, art. 3º: o
   // serviço considera-se prestado no estabelecimento do prestador (o `caput`), **salvo** numa lista
@@ -681,17 +681,12 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   // Implementar essa lista exige o de-para item-da-lista → regra, que este projeto não tem;
   // adivinhar por "onde mora o tomador" produziria o município errado com aparência de acerto.
   //
-  // Por isso: o local da prestação é **informado**, e a ausência dele cai no emissor (o `caput` da
-  // lei, que é a regra geral) — mas de forma EXPLÍCITA, com a suposição registrada no retorno em
-  // vez de escondida numa atribuição.
-  // ⚠ O perfil entra como fonte do LOCAL, antes da queda para o emissor. Ele não desfaz a regra
-  // geral do `caput`: ausente no perfil E no payload, a queda e o `localPrestacaoAssumido`
-  // continuam exatamente como eram.
-  const cLocPrestacaoInformado = String(
-    doPerfil("cLocPrestacao") || data.servico?.cLocPrestacao || ""
-  ).replace(/\D+/g, "");
-  const cLocPrestacao = cLocPrestacaoInformado.length === 7 ? cLocPrestacaoInformado : cLocEmi;
-  const localPrestacaoAssumido = cLocPrestacao === cLocEmi && cLocPrestacaoInformado.length !== 7;
+  // O fato da operação prevalece sobre o padrão. Mantemos o fallback legado no emissor
+  // como suposição registrada; ele não é prova da incidência nem substitui a conferência
+  // das exceções por serviço, prevista na próxima etapa do plano.
+  const localPrestacao = localDaPrestacao({ servico: data.servico, perfil, municipioEmissor: cLocEmi });
+  const cLocPrestacao = localPrestacao.codigo;
+  const localPrestacaoAssumido = localPrestacao.assumido;
 
   // ── REGIME TRIBUTÁRIO ────────────────────────────────────────────────────────────────────
   //
@@ -959,25 +954,11 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     throw err;
   }
 
-  const nbsDaNota = nbsDaDps(perfil);
-  if (!nbsDaNota.ok) {
-    const err = new Error(nbsDaNota.message);
-    err.code = nbsDaNota.codigo;
-    err.correcao = nbsDaNota.correcao;
-    throw err;
-  }
-  const ibsCbs = ibscbsDaDps({
-    competencia: data.competencia,
-    perfil,
-    ligado: INTEGRACAO_NFSE_IBSCBS,
-    cNBS: nbsDaNota.cNBS,
-  });
-  if (!ibsCbs.ok) {
-    const err = new Error(ibsCbs.message);
-    err.code = ibsCbs.codigo;
-    err.correcao = ibsCbs.correcao;
-    throw err;
-  }
+  const contextoFiscal = resolverContextoFiscalDaNota({ company, perfil, regime,
+    competencia: data.competencia, codigoServico: cTribNac, servico: data.servico, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS });
+  if (!contextoFiscal.ok) throw Object.assign(new Error(contextoFiscal.message), { code: contextoFiscal.codigo, correcao: contextoFiscal.correcao });
+  const nbsDaNota = contextoFiscal.nbs;
+  const ibsCbs = contextoFiscal.ibscbs;
   // ⚠ A ORDEM DOS FILHOS É A DO `xs:sequence` de `TCRTCInfoIBSCBS` e de `TCRTCInfoTributosSitClas`
   // (XSD 1.01). O oráculo `dpsContraXsd.test.js` confere isso contra o arquivo — e confere contra a
   // versão que a constante `DPS_VERSAO` declara, que é o conserto de 01/09/2026.
@@ -1402,7 +1383,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   </infDPS>
 </DPS>`;
 
-  return { xml, infId, localPrestacaoAssumido, cLocEmi, cLocPrestacao, opSimpNac, tpRetISSQN };
+  return { xml, infId, localPrestacaoAssumido, cLocEmi, cLocPrestacao, opSimpNac, tpRetISSQN, contextoFiscal };
 }
 
 function buildDpsPayload({ company, data, numeracao, regime, certificadoAssinatura, perfil = null }) {
@@ -1429,32 +1410,7 @@ function buildEventoPayload({ tipoEvento, justificativa, chaveSubstituta, numero
   };
 }
 
-/**
- * Regime tributário real da empresa, para o `opSimpNac` da DPS.
- *
- * ⚠ A AUTORIDADE É O `CadastroFiscal`, não a `Company`. É a mesma hierarquia que a apuração usa
- * ("o cadastro é AUTORIDADE"), e é ela que o contador mantém na aba Fiscal → Cadastro.
- * `Company.regimeTributario` entra como segunda leitura porque é o que existe nas empresas
- * anteriores ao módulo fiscal.
- *
- * ⚠ **Não há default.** Devolver `null` é a resposta certa quando nenhuma das duas fontes sabe —
- * `resolverOpSimpNac(null)` recusa a emissão. Um default aqui seria o defeito de novo, só que
- * escondido uma camada mais fundo.
- */
-async function carregarRegimeDaEmpresa(company) {
-  const portal = await prisma.portalClient.findUnique({
-    where: { companyId: company.id },
-    select: { id: true },
-  });
-  if (portal?.id) {
-    const cadastro = await prisma.cadastroFiscal.findUnique({
-      where: { portalClientId: portal.id },
-      select: { regime: true },
-    });
-    if (cadastro?.regime) return cadastro.regime;
-  }
-  return company.regimeTributario || null;
-}
+
 
 /**
  * O perfil de emissão que manda nesta nota — ou `null`.
@@ -1884,6 +1840,7 @@ export class NfseService {
   static async issue({ data, log, retryInvoiceId = null, antesDeEnviar = null }) {
     const company = await prisma.company.findUnique({
       where: { id: data.companyId },
+      include: { regimeHistorico: true },
     });
     if (!company) {
       const err = new Error("company_not_found");
@@ -1938,10 +1895,10 @@ export class NfseService {
       return recusaAntesDeEscrever(err, "certificado da própria empresa");
     }
 
-    // O regime é REGRA FISCAL declarada na DPS: a autoridade é o `CadastroFiscal` (a mesma fonte
-    // que a apuração usa), com `Company.regimeTributario` como segunda leitura. Nenhuma das duas
-    // tem default.
-    const regime = await carregarRegimeDaEmpresa(company);
+    // O histórico confirmado resolve o regime da competência, sem usar o cadastro atual como passado.
+    const regimeVigente = regimeDaCompetencia({ historico: company.regimeHistorico, competencia: data.competencia });
+    if (!regimeVigente.ok) return recusaAntesDeEscrever(Object.assign(new Error(regimeVigente.message), { code: regimeVigente.codigo, correcao: regimeVigente.correcao }), 'histórico de regime');
+    const regime = regimeVigente.regime;
 
     // ⚠⚠ O PERFIL DE EMISSÃO — `null` com a flag desligada, que é o caminho de hoje. Carregado
     // ANTES da trava do código de serviço porque é ele quem pode fornecer o `cTribNac`, e essa
@@ -2003,27 +1960,9 @@ export class NfseService {
       // ⚠ As MESMAS funções puras são chamadas de novo dentro de `buildDpsXml`, com as mesmas
       // entradas — e é por isso que o resultado não pode divergir. Não passe a decisão por
       // parâmetro: seriam duas fontes para a mesma resposta.
-      const nbsPreVoo = nbsDaDps(perfilDeEmissao);
-      if (!nbsPreVoo.ok) {
-        const err = new Error(nbsPreVoo.message);
-        err.code = nbsPreVoo.codigo;
-        err.correcao = nbsPreVoo.correcao;
-        throw err;
-      }
-      // ⚠⚠ E0322: declarar IBS/CBS OBRIGA o `cNBS`. É a regra que está no nosso disco, e recusá-la
-      // aqui evita um round-trip ao sistema nacional para descobrir algo que já sabíamos.
-      const ibsCbsPreVoo = ibscbsDaDps({
-        competencia: data.competencia,
-        perfil: perfilDeEmissao,
-        ligado: INTEGRACAO_NFSE_IBSCBS,
-        cNBS: nbsPreVoo.cNBS,
-      });
-      if (!ibsCbsPreVoo.ok) {
-        const err = new Error(ibsCbsPreVoo.message);
-        err.code = ibsCbsPreVoo.codigo;
-        err.correcao = ibsCbsPreVoo.correcao;
-        throw err;
-      }
+      const contextoFiscal = resolverContextoFiscalDaNota({ company, perfil: perfilDeEmissao, regime,
+        competencia: data.competencia, codigoServico: codigoServicoDaNota, servico: data.servico, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS });
+      if (!contextoFiscal.ok) throw Object.assign(new Error(contextoFiscal.message), { code: contextoFiscal.codigo, correcao: contextoFiscal.correcao });
 
       // ⚠⚠ A ALÍQUOTA DO ISSQN, pelo mesmo motivo: recusar aqui custa zero; recusar depois queima
       // um número da série, e não existe inutilização na NFS-e.
@@ -2146,7 +2085,7 @@ export class NfseService {
         contratoEmissao: CONTRATO_NACIONAL.id,
         xmlDps: rawXml,
         configuracaoFiscal: snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
-          codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS }),
+          codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS, contextoFiscal: construido.contextoFiscal, regimeVigente }),
       } });
 
       if (construido.localPrestacaoAssumido) {

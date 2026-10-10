@@ -146,7 +146,7 @@ describe("⚠ SEM PERFIL — a tela fica exatamente como era", () => {
   });
 });
 
-describe("⚠ UM PERFIL — não vira pergunta, e os dois campos somem", () => {
+describe("⚠ UM PERFIL — código configurado e local da operação editável", () => {
   test("a tela DIZ qual é, e de quem veio", async () => {
     comPerfis([P("pf-1", "Serviços contábeis", true)]);
     await renderizar();
@@ -155,10 +155,10 @@ describe("⚠ UM PERFIL — não vira pergunta, e os dois campos somem", () => {
     expect(screen.getByText(/seu contador/)).toBeInTheDocument();
   });
 
-  test("⚠⚠ o município da prestação SOME da tela — e do CORPO", async () => {
+  test("local fica editável; em branco preserva a resolução pelo servidor", async () => {
     comPerfis([P("pf-1", "Serviços contábeis", true)]);
     await renderizar();
-    expect(seletorMunicipio()).not.toBeInTheDocument();
+    expect(seletorMunicipio()).toBeInTheDocument();
 
     await preencherOMinimo();
     await submeter();
@@ -173,6 +173,19 @@ describe("⚠ UM PERFIL — não vira pergunta, e os dois campos somem", () => {
     await renderizar();
     expect(seletorCodigo()).not.toBeInTheDocument();
     expect(screen.queryByText(/Código de serviço desta nota/i)).toBeNull();
+  });
+
+  test("local informado na operação chega ao servidor mesmo com perfil", async () => {
+    comPerfis([P("pf-1", "Serviços contábeis", true)]);
+    await renderizar();
+    await preencherOMinimo();
+    fireEvent.change(seletorMunicipio(), { target: { value: "3550308" } });
+    await screen.findByRole("option", { name: /São Paulo/ });
+    fireEvent.keyDown(seletorMunicipio(), { key: "ArrowDown" });
+    fireEvent.keyDown(seletorMunicipio(), { key: "Enter" });
+    await submeter();
+    expect(payloadsEnviados).toHaveLength(1);
+    expect(payloadsEnviados[0].servico.cLocPrestacao).toBe("3550308");
   });
 
   test("⚠⚠ com UM perfil o `perfilId` NÃO viaja — o servidor resolve sozinho", async () => {

@@ -64,6 +64,10 @@ export const ROTULO_DO_CAMPO = {
 // ⚠ Nenhuma entrada aqui inventa procedimento: ou é o campo que o próprio validador do backend
 // nomeia, ou é o cadastro que `buildMissingFields` exige, ou é o aviso de desfecho desconhecido.
 const CONHECIDAS = {
+  competencia_invalida: {
+    oQueFazer: "Informe uma competência válida, sem datas impossíveis.",
+    campo: CAMPO.COMPETENCIA,
+  },
   // ── Validador (`application/validators/nfsePayload.js`) ──────────────────
   tomador_documento_invalido: {
     oQueFazer: "O documento do tomador precisa ter 11 dígitos (CPF) ou 14 (CNPJ).",

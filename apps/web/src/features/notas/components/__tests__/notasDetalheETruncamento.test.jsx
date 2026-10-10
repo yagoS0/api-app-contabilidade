@@ -30,6 +30,14 @@ function paginaDe(n, offset = 0) {
 
 const noop = () => {};
 
+test('detalhe exibe contexto preservado sem inferir pelo cadastro atual', () => {
+  render(<NotaDetailModal nota={{ ...paginaDe(1)[0], contextoEmissao: { estado: 'REGISTRADO_NA_EMISSAO', configuracao: {
+    regimeVigente: { regime: 'SIMPLES', vigenciaInicio: '2025-01-01' }, perfil: { codigoNbs: '1.1406.11.00' }, codigoServico: '170601',
+  } } }} onClose={noop} />);
+  expect(screen.getByText('Contexto fiscal registrado na emissão')).toBeInTheDocument();
+  expect(screen.getByText('1.1406.11.00')).toBeInTheDocument();
+});
+
 test.each(["2026-08-19", "2026-08-19T00:00:00.000Z", "2026-08-19T00:30:00-03:00"])("detalhe conserva a data civil da emissão %s", issueDate => {
   render(<NotaDetailModal nota={{ ...paginaDe(1)[0], issueDate }} onClose={noop} />);
   const campo = screen.getByText("Data de emissão").parentElement;
@@ -244,6 +252,13 @@ const NFE_MAGRA = {
 };
 
 describe("detalhe da nota — ausência nunca é resposta", () => {
+  it('mostra destaque do XML e sinaliza retorno parcial sem total inventado', () => {
+    render(<NotaDetailModal nota={{ ...NFSE_COMPLETA, destaqueIbscbs: { estado: 'VALORES_PARCIAIS', ibsTotal: '1,23', cbs: null, total: null, baseCalculo: '1.230,00' } }} loading={false} error={null} onClose={noop} />);
+    expect(screen.getByText('Destaque de IBS e CBS')).toBeInTheDocument();
+    expect(screen.getByText(/valores parciais de IBS\/CBS/)).toBeInTheDocument();
+    expect(screen.getByText('1,23')).toBeInTheDocument();
+    expect(screen.getByText('Total IBS/CBS (R$)')).toBeInTheDocument();
+  });
   it("mostra a íntegra: itens com descrição e código, e o XML bruto atrás de um botão", () => {
     render(<NotaDetailModal nota={NFSE_COMPLETA} loading={false} error={null} onClose={noop} />);
 

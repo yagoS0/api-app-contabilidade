@@ -90,6 +90,9 @@ describe("⚠⚠ A TABELA DEIXOU DE SER INERTE EM 02/09/2026 — e a porta É UM
     // "este código pode ir à DPS?" — e elas divergem na primeira correção.
     const fonte = fs.readFileSync(path.resolve(__dirname, "../../../nfse/NfseService.js"), "utf-8");
     expect(fonte).not.toMatch(IMPORTA_NBS);
-    expect(fonte).toMatch(/ibscbsDaDps/);
+    expect(fonte).toMatch(/resolverContextoFiscalDaNota/);
+    const contexto = fs.readFileSync(path.resolve(__dirname, '../../../nfse/resolverContextoFiscalDaNota.js'), 'utf-8');
+    expect(contexto).toMatch(/ibscbsDaDps/);
+    expect(contexto).not.toMatch(IMPORTA_NBS);
   });
 });

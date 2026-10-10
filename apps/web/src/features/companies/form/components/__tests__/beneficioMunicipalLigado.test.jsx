@@ -108,12 +108,12 @@ describe("⚠ A ABA PASSA AS PROPS — o bloco não renderiza vazio para sempre"
     // Esta é a asserção que impede a crença falsa: sem ela o contador configura a redução e a nota
     // sai com o ISS cheio, descoberto só depois da emissão.
     abrirAba({ beneficioMunicipalNumero: "33045570200123" });
-    expect(screen.getByText(/ISS cheio/)).toBeInTheDocument();
+    expect(screen.getByText(/emissão fica bloqueada para conferência/)).toBeInTheDocument();
   });
 
   it("empresa SEM benefício não vê o aviso — avisar quem não tem nada é ruído", () => {
     abrirAba({});
-    expect(screen.queryByText(/ISS cheio/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/emissão fica bloqueada para conferência/)).not.toBeInTheDocument();
   });
 
   it("digitar e salvar manda os três campos, com o nome da coluna", async () => {
@@ -156,7 +156,7 @@ describe("⚠⚠ O ASSISTENTE DE EMISSÃO DIZ QUE O BENEFÍCIO NÃO ENTRA NA NOT
     }} />);
     expect(screen.getByText(/NÃO entra nesta nota/)).toBeInTheDocument();
     expect(screen.getByText(/33045570200123/)).toBeInTheDocument();
-    expect(screen.getByText(/ISS cheio/)).toBeInTheDocument();
+    expect(screen.getByText(/emissão fica bloqueada para conferência/)).toBeInTheDocument();
   });
 
   it("empresa sem benefício: o bloco não renderiza", () => {

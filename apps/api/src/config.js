@@ -66,6 +66,8 @@ export const NFSE_CERT_PFX_PATH = (process.env.NFSE_CERT_PFX_PATH || "").trim();
 export const NFSE_CERT_PFX_PASSWORD = (process.env.NFSE_CERT_PFX_PASSWORD || "").trim();
 // Q8.B: removido suporte a NFSE_RJ_BASE_URL/NFSE_RJ_ENV legados (Padrão Nacional).
 export const NFSE_BASE_URL = (process.env.NFSE_BASE_URL || "").trim();
+// Consulta manual; ligar somente após migration e validação em produção restrita.
+export const INTEGRACAO_PARAMETROS_MUNICIPAIS = process.env.INTEGRACAO_PARAMETROS_MUNICIPAIS === '1';
 const nfseEnvRaw = (process.env.NFSE_ENV || "producao")
   .toString()
   .trim()

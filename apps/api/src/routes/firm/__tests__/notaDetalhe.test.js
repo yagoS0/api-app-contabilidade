@@ -124,6 +124,13 @@ describe("busca e ajuste local de notas", () => {
 });
 
 describe("GET /notas/:notaId — a íntegra da nota", () => {
+  it('devolve destaque IBS/CBS do XML da nota autorizada no escopo da empresa', async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue({ ...notaCompleta(), xmlRaw: '<NFSe><infNFSe><IBSCBS><totCIBS><gIBS><vIBSTot>1.00</vIBSTot></gIBS><gCBS><vCBS>9.00</vCBS></gCBS></totCIBS></IBSCBS></infNFSe></NFSe>' });
+    const res = await request(makeApp()).get('/firm/companies/emp-1/notas/nota-1');
+    expect(res.status).toBe(200);
+    expect(res.body.nota.destaqueIbscbs).toMatchObject({ estado: 'VALORES_PRESENTES', ibsTotal: '1,00', cbs: '9,00', total: '10,00' });
+    expect(prisma.portalInvoice.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'nota-1', clientId: 'emp-1' } }));
+  });
   it("devolve itens, XML e identificadores que a LISTA não devolve", async () => {
     prisma.portalInvoice.findFirst.mockResolvedValue(notaCompleta());
 

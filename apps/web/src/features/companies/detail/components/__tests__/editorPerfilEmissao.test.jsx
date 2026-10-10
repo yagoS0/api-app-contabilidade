@@ -11,6 +11,20 @@ const dados = {
   ] },
 };
 
+it('alterar serviço preserva os códigos mas exige revisão explícita antes de salvar', async () => {
+  const onSalvar = jest.fn(async () => {});
+  render(<EditorPerfilEmissao dados={{ ...dados, sugestoes: { ...dados.sugestoes, porServico: [...dados.sugestoes.porServico, { codigo: '170601', descricao: 'Publicidade' }] } }} podeEditar onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  fireEvent.change(document.getElementById('perfil-codigoServicoNacional'), { target: { value: '170601' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  expect(onSalvar).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert')).toHaveTextContent('Revise o complemento');
+  fireEvent.click(screen.getByRole('checkbox', { name: /Revisei complemento/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith('p1', expect.objectContaining({ codigoServicoNacional: '170601' })));
+  expect(onSalvar.mock.calls[0][1]).not.toHaveProperty('_revisarServico');
+});
+
 it("busca município por nome e UF e salva o código IBGE da escolha", async () => {
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
@@ -35,6 +49,17 @@ it("mostra a cidade do código salvo e exige seleção ao trocar o nome", async 
   fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
   await waitFor(() => expect(onSalvar).toHaveBeenCalledWith("p1", expect.objectContaining({ cLocPrestacao: null })));
+});
+
+it('salva a categoria do prazo sem inferir pelo serviço e informa integrações desligadas', async () => {
+  const onSalvar = jest.fn(async () => {});
+  render(<EditorPerfilEmissao dados={{ ...dados, integracaoLigada: false, ibscbsLigado: false }} podeEditar onSalvar={onSalvar} />);
+  expect(screen.getByText(/O envio de IBS\/CBS está desativado/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  expect(screen.getByLabelText('Categoria da operação para o prazo de IBS/CBS')).toHaveValue('');
+  fireEvent.change(screen.getByLabelText('Categoria da operação para o prazo de IBS/CBS'), { target: { value: 'SERVICO_ISS' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith('p1', expect.objectContaining({ categoriaObrigacaoIbscbs: 'SERVICO_ISS' })));
 });
 
 it("sugestão só preenche após escolha; CST permanece decisão do contador", async () => {

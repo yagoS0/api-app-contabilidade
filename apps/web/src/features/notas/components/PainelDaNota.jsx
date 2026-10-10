@@ -79,7 +79,7 @@ export function PainelDaNota({ dados, pTotTribSN, destaque = false }) {
           valor={tributos.iss == null ? "—" : dinheiroOuTraco(tributos.iss)}
         />
         {tributos.motivoIss && (
-          <div style={{ fontSize: "0.72rem", color: PANEL.muted, marginTop: -2 }}>{tributos.motivoIss}</div>
+          <div style={{ fontSize: "0.72rem", color: PANEL.muted, marginTop: -2 }}>{dados?.servico?.aliquotaDeclaradaTexto && dados?.servico?.aliquota == null ? 'ISS não estimado nesta tela; confira a prévia fiscal e o XML autorizado.' : tributos.motivoIss}</div>
         )}
 
         <div

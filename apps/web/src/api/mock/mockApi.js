@@ -2,6 +2,7 @@ import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
 import { withFluxoCarteiraMock } from "./fluxoCarteiraMock";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { parametrosMunicipaisMock } from './parametrosMunicipaisMock';
 import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-mock';
 import { criarAtendimentoMovelMock } from "./atendimentoMovelMock";
 import { mockExecucoesRotinas, mockCarregarRotinas, mockSalvarRotinas } from "./rotinasMock";
@@ -9702,6 +9703,14 @@ export function createMockApi() {
     //   • empresa SEM perfil  → o painel mostra o comportamento de hoje, com os dois CRAVADOS;
     //   • empresa COM perfil  → um campo que MUDARIA (`tribISSQN` 1 → 3, a exportação).
     _perfisEmissao: {},
+    ...parametrosMunicipaisMock(),
+
+    async previaEmissaoNfse(companyId, entrada) {
+      await delay();
+      // Sem histórico fiscal comprovado no mock, não simular aprovação de uma emissão real.
+      return { ok: false, demonstracao: true, ambiente: 'homolog', competencia: entrada.competencia,
+        validacaoIntegral: false, pendencias: [{ codigo: 'PREVIA_DEMONSTRACAO', mensagem: 'Prévia fiscal em demonstração: a conferência do histórico e das regras exige a API conectada.' }] };
+    },
 
     async getPerfisEmissao(companyId) {
       await delay();
@@ -9734,6 +9743,7 @@ export function createMockApi() {
       return {
         ok: true,
         integracaoLigada: false,
+        ibscbsLigado: false,
         sugestoes: { fonte: "Modo de demonstração — consulte o catálogo no ambiente real", url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica", porServico: [{ codigo: "171901", descricao: "Contabilidade", nbs: [], combinacoes: [] }] },
         perfis,
         derivadoDoCadastro: {

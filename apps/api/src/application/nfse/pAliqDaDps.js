@@ -41,7 +41,7 @@
 //   • `1.8` **não casa com o pattern** — tem de ser `1.80`. Uma alíquota formatada "certa" para
 //     olho humano é recusada por schema.
 //   • **alíquota de 10% ou mais é INEXPRIMÍVEL** neste campo. Não é limitação nossa: é o leiaute.
-//     O ISS tem teto de 5% (LC 116, art. 8º-A), então na prática não morde — mas se um dia morder,
+//     O ISS tem teto de 5% (LC 116, art. 8º, II), então na prática não morde — mas se um dia morder,
 //     é melhor recusar aqui, nomeando, do que emitir um número truncado.
 
 /** O que a norma decide para este cenário. */

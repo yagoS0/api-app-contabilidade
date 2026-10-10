@@ -3,6 +3,7 @@ import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO, textoDoValor } from "../../../../lib/nfse/perfilEmissao";
 import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
 import { MunicipioDoPerfil } from "./MunicipioDoPerfil";
+import { completudePerfilEmissao } from './completudePerfilEmissao';
 
 const GRUPOS = [
   ["Serviço e local", ["codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao", "codigoNbs"]],
@@ -13,12 +14,13 @@ const GRUPOS = [
 const OPCOES = {
   exigSuspTipo: { 1: "Decisão judicial", 2: "Processo administrativo" },
   regApTribSN: { 1: "Tributos federais e municipal pelo Simples", 2: "Federais pelo Simples; ISSQN fora", 3: "Federais e municipal fora do Simples" },
-  tribISSQN: { 1: "Operação tributável", 2: "Imunidade", 3: "Exportação", 4: "Não incidência" },
+  tribISSQN: { 1: "Operação tributável", 2: "Imunidade", 3: "Exportação — emissão ainda não suportada", 4: "Não incidência" },
   retencaoFederalArt30: { true: "Sim", false: "Não" },
 };
 
 export function corpoDoPerfil(form, campos) {
   const corpo = { nome: form.nome?.trim(), ativo: form.ativo !== false, padrao: form.ativo !== false && form.padrao === true };
+  if (Object.prototype.hasOwnProperty.call(form, 'categoriaObrigacaoIbscbs')) corpo.categoriaObrigacaoIbscbs = form.categoriaObrigacaoIbscbs || null;
   for (const { id } of campos) {
     const valor = form[id];
     corpo[id] = valor == null || valor === "" ? null
@@ -36,10 +38,15 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
   useEdicaoPendente(Boolean(form && (form._buscaMunicipio?.trim() || JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos)))));
   const servico = dados?.sugestoes?.porServico?.find((s) => s.codigo === form?.codigoServicoNacional);
-  const mudar = (id, valor) => setForm((anterior) => ({ ...anterior, [id]: valor }));
+  const mudar = (id, valor) => setForm((anterior) => ({ ...anterior, [id]: valor,
+    ...(id === 'codigoServicoNacional' && valor !== anterior.codigoServicoNacional ? { _revisarServico: true } : {}) }));
   async function salvar(e) {
     e.preventDefault();
     setErro(""); setSucesso("");
+    if (form._revisarServico) {
+      setErro('Revise o complemento municipal, NBS, tributação e IBS/CBS após alterar o serviço e confirme a revisão.');
+      return;
+    }
     if (form._buscaMunicipio?.trim() && !form.cLocPrestacao) {
       setErro("Selecione o município da prestação na lista ou limpe a busca para deixar sem configuração.");
       return;
@@ -55,18 +62,24 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   if (!dados || !podeEditar) return null;
   return <section className="nfse-profile-editor nfse-settings" aria-label="Editar perfis de emissão">
     <h2>Perfis de emissão</h2>
+    {dados.integracaoLigada === false && <p role="status">Os perfis estão desativados neste ambiente. Salvar um perfil não altera a nota até a integração ser habilitada.</p>}
+    {dados.ibscbsLigado === false && <p role="status">O envio de IBS/CBS está desativado. Operações que já exigem essas informações serão bloqueadas antes da emissão.</p>}
     <p>Cadastre a tributação recorrente de cada serviço. Valores da nota, tomador e retenção do ISS são conferidos em cada emissão. A alíquota efetiva do Simples continua vinculada à competência.</p>
     {sucesso && <p role="status">{sucesso}</p>}
     {!form ? <>
       <Button type="button" onClick={() => { setErro(""); setSucesso(""); setForm({ ...dados.derivadoDoCadastro, nome: "", ativo: true, padrao: false }); }}>Novo perfil</Button>
       {!dados.perfis?.length && <p className="nfse-empty">Nenhum perfil cadastrado. Crie um perfil para organizar os parâmetros de cada serviço.</p>}
       <ul className="nfse-profile-list">{(dados.perfis || []).map((p) => <li key={p.id}>
-        <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span></div>
+        <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span>
+          <small>{dados.sugestoes?.porServico?.find(s => s.codigo === p.codigoServicoNacional)?.descricao}</small><p>{completudePerfilEmissao(p)}</p></div>
         <Button type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setSucesso(""); setForm({ ...p }); }}>Editar</Button>
       </li>)}</ul>
     </> : <form onSubmit={salvar} className="nfse-profile-form" onInvalidCapture={e => { const secao = e.target.closest("details"); if (secao) secao.open = true; }}>
       <fieldset disabled={salvando} style={{ border: 0, padding: 0 }}>
         <legend>{form.id ? "Editar perfil" : "Novo perfil de emissão"}</legend>
+        <p>{completudePerfilEmissao(form)} A obrigatoriedade depende da competência e da operação.</p>
+        {form._revisarServico && <label><input type="checkbox" checked={false} onChange={() => mudar('_revisarServico', false)} />Revisei complemento municipal, NBS, tributação e IBS/CBS para o novo serviço. Os valores anteriores foram preservados para conferência.</label>}
+        {String(form.tribISSQN) === '3' && <p role="status">Este perfil está marcado como exportação. A emissão dessa operação ainda deve ser feita no Emissor Nacional; o sistema bloqueará a transmissão.</p>}
         <p className="text-muted">Confira os valores trazidos do cadastro. Nenhum dado é salvo até você escolher Salvar perfil.</p><label className="nfse-profile-name">Nome do perfil<input autoFocus required maxLength={60} value={form.nome || ""} onChange={(e) => mudar("nome", e.target.value)} /></label>
         <div className="nfse-profile-flags"><label><input type="checkbox" checked={form.ativo !== false} onChange={(e) => mudar("ativo", e.target.checked)} />Perfil ativo</label>
         <label><input type="checkbox" disabled={form.ativo === false} checked={form.padrao === true && form.ativo !== false} onChange={(e) => mudar("padrao", e.target.checked)} />Usar como padrão</label></div>
@@ -97,6 +110,9 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
               {id === "codigoServicoNacional" && servico?.descricao?.length > 70 && <small>{servico.descricao}</small>}
               {c.valores && textoDoValor(id, form[id]).length > 70 && <small>{textoDoValor(id, form[id])}</small>}
               {id === "codigoServicoMunicipal" && <small>Confirme o complemento na tabela do município; ele não é inferido do código nacional.</small>}
+              {id === 'codigoNbs' && <small>{servico?.nbs?.find(n => n.codigo === form.codigoNbs)?.descricao || 'Confira a descrição na tabela oficial para o código informado.'}</small>}
+              {id === 'ibscbsCIndOp' && <small>{dados.sugestoes?.tabelasRtc?.operacoes?.find(o => o.codigo === form[id])?.local}</small>}
+              {id === 'ibscbsCClassTrib' && <small>{dados.sugestoes?.tabelasRtc?.classificacoes?.find(c => c.codigo === form[id])?.descricao}</small>}
             </div>;
           })}
           {titulo === "Serviço e local" && <div className="full">
@@ -108,6 +124,13 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
             {!servico?.nbs?.length && <p>Não há sugestão disponível para este serviço. Confirme o código na tabela oficial.</p>}
           </div>}
           {titulo === "IBS e CBS" && <div className="full">
+            <label htmlFor="perfil-categoria-ibs">Categoria da operação para o prazo de IBS/CBS</label>
+            <select id="perfil-categoria-ibs" value={form.categoriaObrigacaoIbscbs || ''} onChange={e => mudar('categoriaObrigacaoIbscbs', e.target.value)}>
+              <option value="">Não classificada</option>
+              <option value="SERVICO_ISS">Serviço sujeito ao ISS, fora da hipótese de plataforma digital</option>
+              <option value="PLATAFORMA_DIGITAL">Hipótese de plataforma digital do art. 1º, III, a, do Ato 4/2026</option>
+            </select>
+            <p>Confirme o enquadramento legal. Usar internet para prestar um serviço não caracteriza, por si só, a hipótese de plataforma digital. A competência e o regime também determinam o prazo.</p>
             <datalist id="rtc-operacoes">{(dados.sugestoes?.tabelasRtc?.operacoes || []).map(o =>
               <option key={o.codigo} value={o.codigo}>{o.local}</option>)}</datalist>
             <datalist id="rtc-classificacoes">{(dados.sugestoes?.tabelasRtc?.classificacoes || []).map(c =>
