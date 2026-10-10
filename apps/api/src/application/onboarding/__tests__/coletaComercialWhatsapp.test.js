@@ -224,3 +224,12 @@ test("FAQ responde antes do handoff sem prometer viabilidade", async () => {
   const t = banco(); const fim = await t.chamar("Sou médica; quero abrir uma empresa; me chamo Ana; cidade: Rio/RJ; posso usar o endereço de casa?");
   expect(fim.motivo).toBe("ENCAMINHADA"); expect(fim.resultado.texto).toContain("depende da atividade"); expect(fim.resultado.texto).toContain("contador");
 });
+
+test('pedido de ativação em ficha de abertura preserva ficha e não anuncia abertura', async () => {
+  const t = banco();
+  const r = await t.chamar('Quero ativar minha empresa');
+  expect(r.motivo).toBe('ENCAMINHADA');
+  expect(r.resultado.texto).not.toMatch(/abertura|abrir|primeiros passos/i);
+  expect(t.caso.triagem.proximaSolicitacao).toMatchObject({intencao:'INATIVA',relato:'Quero ativar minha empresa'});
+  expect(t.ficha.origem).toBe('ABERTURA');
+});

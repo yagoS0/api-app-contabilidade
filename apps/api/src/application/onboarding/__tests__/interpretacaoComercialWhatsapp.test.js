@@ -255,3 +255,12 @@ test("preço de baixa não oferece plano mensal para empresa encerrada", () => {
   expect(responderDuvidaComercial("Quanto custa dar baixa?", { origem: "INATIVA" })).toContain("orçamento avulso");
   expect(responderDuvidaComercial("Não quero dar baixa. Qual o preço da contabilidade mensal?", { origem: "INATIVA" })).not.toContain("orçamento avulso");
 });
+
+test.each([
+  ['Quero ativar minha empresa', 'INATIVA'], ['Preciso ativar meu CNPJ', 'INATIVA'],
+  ['Quero ativar a minha empresa', 'INATIVA'], ['Quero reativar minha empresa', 'INATIVA'],
+  ['Não quero ativar minha empresa', null], ['Quero ativar meu acesso à empresa', null],
+  ['Quero ativar as notificações da empresa', null], ['Quero abrir uma empresa', 'ABERTURA'],
+])('ativação de empresa não é abertura nem ativação de acesso: %s', (texto, origem) => {
+  expect(identificarOrigemComercial(texto)).toBe(origem);
+});

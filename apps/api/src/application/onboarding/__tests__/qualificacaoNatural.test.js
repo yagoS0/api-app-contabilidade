@@ -77,3 +77,17 @@ test('pergunta de prazo aceita tempo e faturamento exige referência mensal', ()
   expect(respostaNaturalPermitida({campo:'faturamento',texto:'Qual faturamento você prevê?'},'faturamento')).toBeNull();
   expect(respostaNaturalPermitida({campo:'faturamento',texto:'Qual faturamento mensal você prevê?'},'faturamento')).toBeTruthy();
 });
+
+test('evidência de ativação sustenta intenção de empresa existente', () => {
+  const texto='Quero ativar minha empresa';
+  const ia=validarInterpretacaoLead({intencao:'INATIVA',evidenciaIntencao:texto,comportamento:'DADOS',dados:[],resposta:null},texto);
+  expect(ia.intencao).toBe('INATIVA');
+  const r=prepararPreatendimento({texto,intencao:ia.intencao,nomeConhecido:'Ana',interpretacaoIa:ia});
+  expect(r.encaminhar).toBe(false);expect(r.pre.campoEsperado).toBe('necessidade');
+  expect(r.pergunta).not.toMatch(/abrir|abertura/i);
+});
+
+test('qualificação da ativação pode perguntar a situação sem afirmar inatividade', () => {
+  const texto='Ela está funcionando normalmente hoje ou está parada?';
+  expect(respostaNaturalPermitida({campo:'necessidade',texto},'necessidade')).toBe(texto);
+});

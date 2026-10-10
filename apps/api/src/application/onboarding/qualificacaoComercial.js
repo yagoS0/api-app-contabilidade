@@ -27,7 +27,7 @@ export function respostaNaturalPermitida(resposta, campo) {
   if (/https?:|www\.|@|R\$|US\$|%|\b(?:pix|senha|token|api.key|garanti\w*|isen\w*|economi\w*|al[ií]quota|agendad\w*|agendei|contratad\w*|aprovad\w*|protocolei|emitida|consultei|encaminhei|encaminhar|vou chamar|chamei|MEI|simples nacional|lucro presumido)\b/i.test(texto)) return null;
   if (campo === 'faturamento' && !/mensal|por m[eê]s/i.test(texto)) return null;
   const tema = { nome: /chama|nome/i, atividade: /atividade|trabalh|servi[cç]|atua/i, cidade: /cidade|munic[ií]pio|local/i,
-    necessidade: /resolver|melhorar|precisa|necessidade|dificuldade|problema|busca/i, estrutura: /opera[cç]|s[oó]ci|equipe|sozinh|consult[oó]ri|cl[ií]nic|hospita|estrutura|atend/i,
+    necessidade: /resolver|melhorar|precisa|necessidade|dificuldade|problema|busca|situa[cç]|parad|funciona/i, estrutura: /opera[cç]|s[oó]ci|equipe|sozinh|consult[oó]ri|cl[ií]nic|hospita|estrutura|atend/i,
     urgencia: /prazo|quando|tempo|come[cç]|urg[eê]ncia/i, faturamento: /faturamento|receita|mensal/i }[campo];
   return tema?.test(texto) ? texto : null;
 }
