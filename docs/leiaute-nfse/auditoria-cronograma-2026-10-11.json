@@ -1,0 +1,66 @@
+{
+  "data": "2026-10-11",
+  "conclusao": "Adequação parcial. A autorização da nota atual não comprova conformidade com o contrato de novembro nem com 2027.",
+  "fontes": {
+    "nfse": "https://www.gov.br/nfse/pt-br/noticias/publicado-o-ato-tecnico-conjunto-rfb-cgibs-no-7-aprovando-a-versao-1-01-da-nota-tecnica-009-nfs-e-e-a-nota-tecnica-010-da-nfs-e-via",
+    "nt009": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+    "anexos": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/rtc",
+    "nfeAvisoConfirmado": "https://dfe-portal.svrs.rs.gov.br/Nfe/Avisos",
+    "notaFonteNfe": "O link do Portal NF-e fornecido retornou redirecionamento circular; o mesmo aviso de 05/10 foi confirmado na SVRS oficial."
+  },
+  "cronogramaOficial": [
+    { "documento": "NF-e/NFC-e NT2025.002 v1.52, NT2026.007 v1.10, NT2026.008 v1.00", "homologacao": "2026-10-26", "producao": "2026-11-16" },
+    { "documento": "NFS-e NT009 v1.01 pacote 1", "homologacao": "2026-10-01", "producao": "2026-11-03" },
+    { "documento": "NFS-e NT009 v1.01 pacote 2", "homologacao": "2026-10-15", "producao": "2026-11-03" },
+    { "documento": "NFS-e Via NT010", "homologacao": "2026-10-05", "producao": "2026-10-19" }
+  ],
+  "achados": [
+    {
+      "prioridade": "P0", "area": "NFS-e: contrato de novembro", "estado": "PENDENTE",
+      "evidencia": ["apps/api/src/application/nfse/contratoNacional.js", "apps/api/src/application/nfse/NfseService.js", "apps/api/src/application/nfse/laboratorio/dpsSimples2027.js"],
+      "diagnostico": "Emissor ativo fixado no pacote 20260727. CST/cClassTrib ainda dentro de gIBSCBS e destinatário dentro de IBSCBS. O laboratório já reposiciona campos, mas aceita apenas 2027, tpAmb=2 e CST000/classe000001. Não atende a virada de novembro de 2026.",
+      "acao": "Criar contrato operacional por ambiente/data de implantação, separado da opção tributária de 2027; integrar mudanças de posição e ocorrência dos grupos, inclusive ind_gIBSCBS, e validar contra pacote oficial correspondente antes da ativação. Preservar leitura dos documentos antigos."
+    },
+    {
+      "prioridade": "P0", "area": "Catálogos e bases", "estado": "PARCIAL",
+      "evidencia": ["apps/api/src/application/fiscal/ibscbs/tabelasRtc.data.js", "apps/api/src/application/nfse/contratoNacional.js"],
+      "diagnostico": "Catálogo operacional declara Anexo C v1.01. Há Anexo VI v1.04.01 no laboratório, mas isso não comprova atualização da busca e validação operacional para Anexo VII v1.03.00. vAjusteBC é recusado pelo contrato atual.",
+      "acao": "Comparar e regenerar catálogos com procedência; preparar ajustes de base e novos fatos geradores. Testar ausência e presença dos grupos, sem calcular valores definitivos no cliente."
+    },
+    {
+      "prioridade": "P1", "area": "Endereços, exterior, eventos e condomínios", "estado": "PENDENTE",
+      "evidencia": ["apps/api/src/application/nfse/incidenciaMunicipal.js", "apps/api/src/application/nfse/dadosEspeciaisDaNota.js", "apps/api/src/application/nfse/perfilEmissao/campos.js"],
+      "diagnostico": "Subitem 17.05 ainda exige revisão manual. Destinatário não tem montagem completa de endereço. Comércio exterior não está implementado no perfil. Não foram encontrados geradores operacionais completos para eventos e condomínios.",
+      "acao": "Confrontar município de tomador/destinatário com cadastro; revisar 17.05, comExt, vAjusteBCIBSCBSComExt, município do evento e grupo de condomínios. Manter operações sem suporte recusadas."
+    },
+    {
+      "prioridade": "P1", "area": "Leitura e DANFSe", "estado": "PARCIAL",
+      "evidencia": ["apps/api/src/application/nfse/danfse/danfseDados.js", "apps/api/src/application/nfse/destaqueIbscbs.js"],
+      "diagnostico": "Leitor já aceita CST/cClassTrib nos dois caminhos e lê verCalcIBSCBS. Falta evidência de regressão completa com retornos dos pacotes 1 e 2 e operações especiais.",
+      "acao": "Adicionar fixtures por versão para importação, persistência, consulta, totais e apresentação; testar rejeições e retornos com grupos opcionais."
+    },
+    {
+      "prioridade": "P1", "area": "Serviços novos do pacote 2", "estado": "NAO_COMPROVADO",
+      "diagnostico": "Consultas atuais de parâmetros municipais não comprovam suporte aos novos serviços, procurações, nota do tomador ou revisão de retenções.",
+      "acao": "Confrontar Swagger e regras do pacote 2 a partir de 15/10; delimitar operações efetivamente atendidas pelo produto e testar autorização por empresa."
+    },
+    {
+      "prioridade": "P1", "area": "NF-e/NFC-e", "estado": "IMPORTACAO_A_VALIDAR",
+      "evidencia": ["apps/api/src/utils/nfeParser.js", "apps/api/src/application/notas/dfe/DfeParser.js", "apps/api/src/application/notas/ingestaoNfe.js"],
+      "diagnostico": "Foram localizados importação/distribuição e eventos; não foi localizado emissor próprio de autorização NF-e/NFC-e. Não foram encontrados testes identificados pelas três versões citadas.",
+      "acao": "Validar leitores, importação, armazenamento integral e eventos com XMLs das novas versões; identificar fornecedores dos emissores dos clientes. Não considerar automaticamente homologado por manter o XML bruto."
+    },
+    {
+      "prioridade": "P2", "area": "NFS-e Via", "estado": "FORA_DO_EMISSOR_LOCAL_IDENTIFICADO",
+      "diagnostico": "Não foi localizado módulo específico de emissão ou manifestação de NFS-e Via.",
+      "acao": "Confirmar demanda da carteira para recebimento desse documento antes de adicionar manifestação do adquirente e modalidade sem cobrança. Eventos de NF-e e NFS-e comum não substituem a NT010."
+    }
+  ],
+  "sequenciaRecomendada": [
+    "Agora: separar contrato novembro/2026 da preparação Simples/2027 e validar pacote 1 offline e em homologação quando autorizado.",
+    "A partir de 15/10: validar pacote 2, retorno, importação e rejeições; registrar evidências de cada cenário.",
+    "Antes de 03/11: liberar somente contrato NFS-e homologado; manter 2027 bloqueado.",
+    "A partir de 26/10 e antes de 16/11: validar importação NF-e/NFC-e e alinhar os emissores externos."
+  ],
+  "limites": "Auditoria por leitura do código, documentação oficial e cronograma ilustrado. Não é homologação nem certificação integral de conformidade. Nenhuma nota foi transmitida nesta implementação; cronograma registrado não cria automação de acompanhamento."
+}

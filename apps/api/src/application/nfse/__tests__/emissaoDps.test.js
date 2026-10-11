@@ -120,6 +120,24 @@ const PAYLOAD_BASE = {
 
 let postMock;
 
+test('número autorizado vem do XML gzip quando o JSON não informa numeroNfse', async () => {
+  const { gzipSync } = require('node:zlib');
+  const chave = '3'.repeat(50);
+  montarCenario({ respostaProvedor: () => ({ data: { chaveAcesso: chave,
+    nfseXmlGZipB64: gzipSync(`<NFSe><infNFSe Id="NFS${chave}"><nNFSe>11</nNFSe><DPS><nDPS>5</nDPS></DPS></infNFSe></NFSe>`).toString('base64') } }) });
+  const result = await NfseService.issue({ data: PAYLOAD_BASE, log });
+  expect(result.nfse.numeroNfse).toBe('11');
+  expect(prisma.serviceInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({numeroNfse:'11'}) }));
+});
+
+test('percentual ausente é recusado antes da reserva e da rede', async () => {
+  montarCenario();
+  const result = await NfseService.issue({data:{...PAYLOAD_BASE,totTrib:{}},log});
+  expect(result.codigo).toBe('MISSING_P_TOT_TRIB_SN');
+  expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  expect(postMock).not.toHaveBeenCalled();
+});
+
 function montarCenario({ empresa = {}, cadastroFiscal = null, respostaProvedor } = {}) {
   // O cenário declara uma vigência explícita; cadastro atual sozinho não autoriza emissão.
   prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,

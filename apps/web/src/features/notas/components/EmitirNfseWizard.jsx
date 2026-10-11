@@ -359,7 +359,7 @@ export function EmitirNfseWizard({
   const [servico, setServico] = useState(() => ({
     descricao: "", valorServicos: "", aliquota: "", issRetido: false, ...(valoresIniciais?.servico || {}),
   }));
-  const [pTotTribSN, setPTotTribSN] = useState("");
+  const [percentualManual, setPercentualManual] = useState(null);
   // ⚠ A COMPETÊNCIA DA NOTA MODELO **NÃO** ENTRA — a nota nova é de agora, não do mês da antiga.
   // `valoresIniciais.competencia` chega vazio de propósito (ver `reaproveitarNota.js`); a leitura
   // está aqui, e não um valor cravado, para que este campo continue igual nos dois caminhos.
@@ -545,6 +545,11 @@ export function EmitirNfseWizard({
     tomador: { ...tomador, endereco }, destinatario });
   const regimeEfetivo = previaFiscal.habilitada ? previaFiscal.dados?.regimeVigente?.regime : regimeCadastrado;
   const regime = useMemo(() => regimeDeclaradoNaNota(regimeEfetivo), [regimeEfetivo]);
+  const sugestaoPercentual = previaFiscal.dados?.percentualSimples;
+  const contextoPercentual = JSON.stringify([companyId, competencia, perfilEscolhido?.id, servico.codigoServicoNacional, regimeEfetivo, sugestaoPercentual]);
+  const pTotTribSN = percentualManual?.contexto === contextoPercentual ? percentualManual.valor
+    : sugestaoPercentual?.estado === 'AUTOMATICO' ? String(sugestaoPercentual.valor) : '';
+  const setPTotTribSN = valor => setPercentualManual({ contexto: contextoPercentual, valor });
   const aliquotaParaRetencao = previaFiscal.dados?.iss?.pAliq ?? servico.aliquota;
   // O município emissor (`cLocEmi`) é da EMPRESA, não da nota: ou está no cadastro, ou nada sai.
   const municipio = useMemo(() => impedimentoDeEmissao(codigoMunicipioIbge), [codigoMunicipioIbge]);
@@ -1322,6 +1327,19 @@ export function EmitirNfseWizard({
                           }}
                         />
                       </label>
+                      {sugestaoPercentual && (
+                        <div role="status" style={{ fontSize: '0.8rem', color: PANEL.muted }}>
+                          {sugestaoPercentual.valor != null && <strong>
+                            {sugestaoPercentual.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}% · {sugestaoPercentual.fonte === 'PGDAS_D' ? 'PGDAS-D' : 'Apuração local'} · {sugestaoPercentual.competencia}
+                          </strong>}
+                          <div>{sugestaoPercentual.mensagem}</div>
+                          {sugestaoPercentual.estado === 'REFERENCIA' && (
+                            <button type="button" style={{ background: 'var(--bg-page)', color: PANEL.text, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: '8px 12px', cursor: 'pointer', marginTop: 6 }} onClick={() => setPTotTribSN(String(sugestaoPercentual.valor))}>
+                              Confirmar percentual sugerido
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div style={{ fontSize: "0.75rem", color: PANEL.muted, marginTop: -4 }}>
                         {MOTIVO_P_TOT_TRIB_SN}
                         <div style={{ marginTop: 6 }}>{FONTE_P_TOT_TRIB_SN}</div>
