@@ -896,6 +896,9 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  reformaRevisoes ReformaFiscalRevisao[]
+  reformaVerificacoes ReformaNfseVerificacao[]
+  apuracaoConsumoEstabelecimento ApuracaoConsumoEstabelecimento?
   carteiraTarefas CarteiraTarefa[]
   basesSociosGerenciais BaseSociosGerencial[]
   laboratorioCenarios LaboratorioCenario[]
@@ -5852,4 +5855,93 @@ model ParcelamentoDebitoOrigem {
   guide Guide? @relation(fields:[guideId],references:[id],onDelete:Restrict)
   @@index([portalClientId, parcelamentoId], map: "parcelamento_debitos_origem_empresa_acordo_idx")
   @@map("parcelamento_debitos_origem")
+}
+
+
+model ReformaFiscalRevisao {
+  id String @id
+  portalClientId String
+  versao Int
+  dados Json
+  createdBy String
+  createdByName String
+  createdAt DateTime @default(now())
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  @@unique([portalClientId, versao])
+}
+
+model ReformaNfseVerificacao {
+  id String @id @default(uuid())
+  portalClientId String
+  competencia String
+  cadastroVersao Int
+  versaoRegras String
+  origem Json
+  resumo Json
+  itens Json
+  createdBy String
+  createdAt DateTime @default(now())
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  @@index([portalClientId, competencia, createdAt])
+}
+
+model ApuracaoConsumoContribuinte {
+  id String @id @default(uuid())
+  cnpjBase String @unique
+  criadoPorId String
+  createdAt DateTime @default(now())
+  estabelecimentos ApuracaoConsumoEstabelecimento[]
+  configuracoes ApuracaoConsumoConfiguracao[]
+  revisoes ApuracaoConsumoRevisao[]
+}
+
+model ApuracaoConsumoEstabelecimento {
+  id String @id @default(uuid())
+  contribuinteId String
+  portalClientId String @unique
+  criadoPorId String
+  createdAt DateTime @default(now())
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  @@index([contribuinteId])
+}
+
+model ApuracaoConsumoConfiguracao {
+  id String @id @default(uuid())
+  contribuinteId String
+  tributo String
+  ambiente String
+  versao Int
+  habilitado Boolean @default(false)
+  dados Json
+  requestKey String
+  requestHash String
+  criadoPorId String
+  createdAt DateTime @default(now())
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  revisoes ApuracaoConsumoRevisao[]
+  @@unique([contribuinteId, tributo, ambiente, versao], map: "consumo_config_versao_key")
+  @@unique([contribuinteId, requestKey], map: "consumo_config_intencao_key")
+  @@unique([id, contribuinteId, tributo, ambiente], map: "consumo_config_escopo_key")
+}
+
+model ApuracaoConsumoRevisao {
+  id String @id @default(uuid())
+  contribuinteId String
+  tributo String
+  ambiente String
+  competencia String
+  versao Int
+  estado String @default("PREPARACAO")
+  configuracaoId String
+  cadastroSnapshot Json
+  dados Json
+  requestKey String
+  requestHash String
+  criadoPorId String
+  createdAt DateTime @default(now())
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  configuracao ApuracaoConsumoConfiguracao @relation(fields: [configuracaoId, contribuinteId, tributo, ambiente], references: [id, contribuinteId, tributo, ambiente], onDelete: Restrict)
+  @@unique([contribuinteId, tributo, ambiente, competencia, versao], map: "consumo_revisao_versao_key")
+  @@unique([contribuinteId, requestKey], map: "consumo_revisao_intencao_key")
 }

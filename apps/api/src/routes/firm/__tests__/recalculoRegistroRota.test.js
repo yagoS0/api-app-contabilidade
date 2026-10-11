@@ -46,6 +46,15 @@ it.each(['DAS', 'DARF'])('falha de geração %s não registra recálculo', async
   expect(registrarRecalculoGuia).not.toHaveBeenCalled();
   expect(runGuideEmailWorkerSelected).not.toHaveBeenCalled();
 });
+it('recusa guia legada do Lucro Real com estado explícito e sem registrar ou enviar recálculo', async () => {
+  prisma.guide.findUnique.mockResolvedValue({ ...guide, tipo: 'OUTRA', sourceFileId: 'serpro:dctfweb:lp:123:2026-07' });
+  reemitirDarfLp.mockRejectedValueOnce(Object.assign(new Error('A apuração do Lucro Real não é suportada neste módulo.'), { code: 'REGIME_INVALIDO_LP', apuracao: 'NAO_SUPORTADO' }));
+  const r = await request(app()).post('/firm/guides/g1/recalculate').send({});
+  expect(r.status).toBe(409);
+  expect(r.body).toMatchObject({ error: 'REGIME_INVALIDO_LP', apuracao: 'NAO_SUPORTADO' });
+  expect(registrarRecalculoGuia).not.toHaveBeenCalled();
+  expect(runGuideEmailWorkerSelected).not.toHaveBeenCalled();
+});
 it('sucesso fiscal registra antes do email e falha posterior no envio não desfaz a evidência', async () => {
   runGuideEmailWorkerSelected.mockRejectedValueOnce(new Error('email indisponível'));
   await request(app()).post('/firm/guides/g1/recalculate').send({});

@@ -29,8 +29,9 @@ describe("⚠ OS DOIS VOCABULÁRIOS — a `Company` e o `CadastroFiscal` escreve
     }
   });
 
-  it("LUCRO REAL cai na mesma tela do Presumido — os dois apuram por trimestre", () => {
-    expect(apuracaoDoRegime("LUCRO_REAL")).toBe(APURACAO.PRESUMIDO);
+  it("LUCRO REAL exige motor próprio", () => {
+    expect(apuracaoDoRegime("LUCRO_REAL")).toBe(APURACAO.NAO_SUPORTADO);
+    expect(podeApurarPresumido('LUCRO_REAL')).toMatchObject({ pode: false, apuracao: APURACAO.NAO_SUPORTADO });
   });
 
   it("⚠ MEI é lido ANTES de SIMPLES — o MEI É optante, e um texto com as duas palavras é MEI", () => {
@@ -57,8 +58,8 @@ describe("⚠⚠ O TERCEIRO ESTADO — e ele NUNCA colapsa nos outros dois", () 
 });
 
 describe("⚠⚠ A PORTA — o que passa, o que recusa, e o que a recusa diz", () => {
-  it("Presumido e Real passam, sem aviso", () => {
-    for (const v of ["LUCRO_PRESUMIDO", "LUCRO_REAL"]) {
+  it("Presumido passa, sem aviso", () => {
+    for (const v of ["LUCRO_PRESUMIDO"]) {
       const r = podeApurarPresumido(v);
       expect(r.pode).toBe(true);
       expect(r.aviso).toBeNull();

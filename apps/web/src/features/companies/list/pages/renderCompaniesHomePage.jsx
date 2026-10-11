@@ -1,4 +1,5 @@
 import { fluxoDaEmpresa } from "@contabilidade/shared/fluxo-carteira";
+import { PainelCarteiraReforma } from '../../../reforma/PainelCarteiraReforma';
 import { FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
 import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -632,6 +633,7 @@ export function CompaniesHomePage({
             </div>
 
           {/* Busca e filtros pertencem à lista de empresas; a agenda tem navegação própria. */}
+          {modoVisao === "tabela" && api?.getCarteiraReforma && <PainelCarteiraReforma api={api} competencia={dashboardCompetencia} />}
           {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"

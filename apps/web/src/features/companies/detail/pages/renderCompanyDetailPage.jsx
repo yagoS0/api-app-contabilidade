@@ -943,8 +943,19 @@ function CompanyDetailContent({
   // Presumido — só não havia botão que levasse até ela. Ao ligar o botão, esse ramo passa a ser
   // percorrido de verdade, e sem o despacho a empresa do Presumido abriria a tela do Simples.
   //
-  // ⚠ `telaDeApuracao` só tem dois desfechos, e é isso que garante que uma das duas SEMPRE renderiza
-  // — regime desconhecido cai no Simples, que é o comportamento de sempre.
+  // Lucro Real tem estado próprio, sem montar os componentes que consultam SN/LP.
+  // Regime desconhecido conserva a apresentação legada do Simples.
+  if (companyDetailTab === "cadastroFiscal" && telaDeApuracao(selectedCompany) === APURACAO.NAO_SUPORTADO) {
+    return (
+      <CompanyTabLayout company={selectedCompany} activeTab="cadastroFiscal" onBack={onBack}
+        onTabChange={switchTab} canEditCompany={canEditCompany} largura="trabalho" feedback={feedback}>
+        <section role="status" style={{ padding: 24 }}>
+          <h2>Apuração do Lucro Real não disponível</h2>
+          <p>Este módulo ainda não apura o Lucro Real. Utilize o procedimento fiscal próprio deste regime.</p>
+        </section>
+      </CompanyTabLayout>
+    );
+  }
   if (companyDetailTab === "cadastroFiscal" && telaDeApuracao(selectedCompany) === APURACAO.PRESUMIDO) {
     return (
       <CompanyTabLayout

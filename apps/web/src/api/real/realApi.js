@@ -3,6 +3,8 @@ import { importarNotasEmLotes } from "./importarNotasEmLotes";
 import { createBackgroundTaskClient } from "./backgroundTasks";
 import { atendimentoMovelApi } from "./atendimentoMovelApi";
 import { acompanhamentoParcelamentosApi } from "./acompanhamentoParcelamentosApi";
+import { reformaFiscalApi } from './reformaFiscalApi';
+import { apuracaoConsumoApi } from './apuracaoConsumoApi';
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
@@ -432,6 +434,8 @@ export function createRealApi() {
       return out.resultados;
     },
     ...acompanhamentoParcelamentosApi(request),
+    ...reformaFiscalApi(request),
+    ...apuracaoConsumoApi(request),
     ...atendimentoMovelApi(request),
     setUnauthorizedHandler(handler) {
       unauthorizedHandler = typeof handler === "function" ? handler : null;

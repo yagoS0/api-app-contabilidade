@@ -366,6 +366,7 @@ export function createApuracaoV2Router({ log } = {}) {
         });
       } catch (err) {
         log?.warn({ err: err?.message, portalClientId, competencia }, "Falha na apuração do Lucro Presumido");
+        if (err?.code === 'REGIME_INVALIDO_LP') return bad(res, 409, 'regime_nao_apura_presumido', err.message, { apuracao: err.apuracao });
         return bad(res, 500, "apuracao_lp_failed", err?.message || "Erro");
       }
     }

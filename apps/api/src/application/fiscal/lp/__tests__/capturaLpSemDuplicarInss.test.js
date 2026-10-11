@@ -22,6 +22,22 @@ const { prisma } = require("../../../../infrastructure/db/prisma.js");
 const { generateProvisionsFromGuide } = require("../../../accounting/GuideToProvisionService.js");
 const { consultarDeclaracaoCompletaLp, emitirDarfDctfweb } = require("../../serpro/SerproDctfwebService.js");
 const { capturarLpDaCompetencia, provisionarLpDaDeclaracao } = require("../LucroPresumidoProvisaoService.js");
+const { reemitirDarfLp } = require('../LucroPresumidoProvisaoService.js');
+
+it.each([
+  ['captura', capturarLpDaCompetencia],
+  ['reemissão', reemitirDarfLp],
+  ['provisão', provisionarLpDaDeclaracao],
+])('Lucro Real não executa %s pelo serviço LP', async (_, executar) => {
+  prisma.company.findUnique.mockResolvedValueOnce({ regimeTributario: 'LUCRO_REAL' });
+  await expect(executar({ portalClientId: 'real', competencia: '2026-09', guideId: 'legada', debitos: [{ codigoReceita: '2089', debitoApurado: 500 }] }))
+    .rejects.toMatchObject({ code: 'REGIME_INVALIDO_LP', apuracao: 'NAO_SUPORTADO', status: 409 });
+  expect(consultarDeclaracaoCompletaLp).not.toHaveBeenCalled();
+  expect(emitirDarfDctfweb).not.toHaveBeenCalled();
+  expect(prisma.guide.upsert).not.toHaveBeenCalled();
+  expect(prisma.guide.update).not.toHaveBeenCalled();
+  expect(generateProvisionsFromGuide).not.toHaveBeenCalled();
+});
 
 const opts = { portalClientId: "albatroz", competencia: "2026-07", cnpj: "12345678000199" };
 const cpSegurados = { codigoReceita: "1099-01", descricao: "CP SEGURADOS", debitoApurado: 178.31 };

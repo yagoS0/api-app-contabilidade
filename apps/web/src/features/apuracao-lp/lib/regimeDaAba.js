@@ -10,9 +10,10 @@
 // escolhe QUAL DAS DUAS telas renderiza — e errar passa a mostrar a apuração de OUTRO REGIME, com
 // números que não descrevem a empresa que está na frente do contador.
 
-/** As três respostas. Lista FECHADA — é o mesmo vocabulário do backend. */
+/** Lista de estados compartilhada com o backend, incluindo regime ainda sem motor. */
 export const APURACAO = Object.freeze({
   PRESUMIDO: "PRESUMIDO",
+  NAO_SUPORTADO: "NAO_SUPORTADO",
   SIMPLES: "SIMPLES",
   DESCONHECIDO: "DESCONHECIDO",
 });
@@ -44,7 +45,7 @@ export function apuracaoDoRegime(regime) {
   if (!t) return APURACAO.DESCONHECIDO;
   if (/MEI\b/.test(t)) return APURACAO.SIMPLES;
   if (/PRESUMID/.test(t)) return APURACAO.PRESUMIDO;
-  if (/REAL/.test(t)) return APURACAO.PRESUMIDO;
+  if (/REAL/.test(t)) return APURACAO.NAO_SUPORTADO;
   if (/SIMPLES/.test(t)) return APURACAO.SIMPLES;
   // ⚠ Texto que existe e não se reconhece NÃO vira Simples por descarte — vira "não sei".
   return APURACAO.DESCONHECIDO;
@@ -66,11 +67,12 @@ export function apuracaoDaEmpresa(company) {
  */
 export function telaDeApuracao(company) {
   const apuracao = apuracaoDaEmpresa(company);
+  if (apuracao === APURACAO.NAO_SUPORTADO) return APURACAO.NAO_SUPORTADO;
   return apuracao === APURACAO.PRESUMIDO ? APURACAO.PRESUMIDO : APURACAO.SIMPLES;
 }
 
 /** A aba `cadastroFiscal` (a do PGDAS-D) aparece? — o que `soApuraSimples` pergunta hoje. */
 export const mostraApuracaoDoSimples = (company) => telaDeApuracao(company) === APURACAO.SIMPLES;
 
-/** A aba do Presumido aparece? É o complemento exato — nunca as duas, nunca nenhuma. */
+/** A aba do Presumido aparece? Lucro Real tem apresentação própria sem cálculo. */
 export const mostraApuracaoDoPresumido = (company) => telaDeApuracao(company) === APURACAO.PRESUMIDO;

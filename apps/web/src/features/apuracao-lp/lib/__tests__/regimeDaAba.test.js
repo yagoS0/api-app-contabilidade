@@ -32,8 +32,11 @@ describe("⚠⚠ A LEITURA É POR PADRÃO, NUNCA POR IGUALDADE", () => {
     }
   });
 
-  it("LUCRO REAL cai na tela do Presumido — os dois apuram por trimestre", () => {
-    expect(apuracaoDoRegime("LUCRO_REAL")).toBe(APURACAO.PRESUMIDO);
+  it("LUCRO REAL tem estado não suportado", () => {
+    expect(apuracaoDoRegime("LUCRO_REAL")).toBe(APURACAO.NAO_SUPORTADO);
+    expect(telaDeApuracao({ regimeTributario: 'LUCRO_REAL' })).toBe(APURACAO.NAO_SUPORTADO);
+    expect(mostraApuracaoDoSimples({ regimeTributario: 'LUCRO_REAL' })).toBe(false);
+    expect(mostraApuracaoDoPresumido({ regimeTributario: 'LUCRO_REAL' })).toBe(false);
   });
 
   it("⚠ MEI antes de SIMPLES — o MEI É optante, e um texto com as duas palavras é MEI", () => {
@@ -66,8 +69,8 @@ describe("⚠ DE ONDE SAI O REGIME — a cadeia de quatro campos foi PRESERVADA"
 });
 
 describe("⚠⚠ QUAL TELA — e `DESCONHECIDO` continua no Simples, DE PROPÓSITO", () => {
-  it("Presumido e Real vão para a tela do Presumido", () => {
-    for (const v of ["LUCRO_PRESUMIDO", "LUCRO_REAL"]) {
+  it("Presumido vai para a tela do Presumido", () => {
+    for (const v of ["LUCRO_PRESUMIDO"]) {
       expect(telaDeApuracao({ regimeTributario: v })).toBe(APURACAO.PRESUMIDO);
     }
   });
@@ -81,7 +84,7 @@ describe("⚠⚠ QUAL TELA — e `DESCONHECIDO` continua no Simples, DE PROPÓSI
   });
 
   it("⚠ as duas perguntas são COMPLEMENTARES — nunca as duas abas, nunca nenhuma", () => {
-    for (const v of ["SIMPLES", "LUCRO_PRESUMIDO", "MEI", "", "xyz", "LUCRO_REAL"]) {
+    for (const v of ["SIMPLES", "LUCRO_PRESUMIDO", "MEI", "", "xyz"]) {
       const c = { regimeTributario: v };
       expect(mostraApuracaoDoSimples(c)).toBe(!mostraApuracaoDoPresumido(c));
     }
@@ -89,6 +92,16 @@ describe("⚠⚠ QUAL TELA — e `DESCONHECIDO` continua no Simples, DE PROPÓSI
 });
 
 describe("⚠⚠ O ESPELHO DO BACKEND ESTÁ AMARRADO", () => {
+  it('o dispatcher apresenta Lucro Real antes de montar telas que consultam SN ou LP', () => {
+    const fonte = fs.readFileSync(path.resolve(__dirname, '../../../companies/detail/pages/renderCompanyDetailPage.jsx'), 'utf8');
+    const inicio = fonte.indexOf('telaDeApuracao(selectedCompany) === APURACAO.NAO_SUPORTADO');
+    const fim = fonte.indexOf('telaDeApuracao(selectedCompany) === APURACAO.PRESUMIDO');
+    expect(inicio).toBeGreaterThan(-1);
+    expect(inicio).toBeLessThan(fim);
+    const ramo = fonte.slice(inicio, fim);
+    expect(ramo).toContain('Apuração do Lucro Real não disponível');
+    expect(ramo).not.toMatch(/<ApuracaoLpTab|<ApuracaoPage/);
+  });
   // `regimeDoPresumido.js` mora no `apps/api` e não é importável daqui (os dois apps não
   // compartilham código). A amarração é TEXTUAL, no molde de `duasTabelasDeAnexo.test.js`. Sem ela,
   // a tela ofereceria uma aba que a rota recusa — ou esconderia uma que ela aceita.
@@ -108,7 +121,7 @@ describe("⚠⚠ O ESPELHO DO BACKEND ESTÁ AMARRADO", () => {
     const bloco = texto.slice(texto.indexOf("export function apuracaoDoRegime"));
     const padroes = [...bloco.matchAll(/if \(\/([^/]+)\/\.test\(t\)\) return APURACAO\.(\w+);/g)]
       .map((m) => `${m[1]}=>${m[2]}`);
-    expect(padroes).toEqual(["MEI\\b=>SIMPLES", "PRESUMID=>PRESUMIDO", "REAL=>PRESUMIDO", "SIMPLES=>SIMPLES"]);
+    expect(padroes).toEqual(["MEI\\b=>SIMPLES", "PRESUMID=>PRESUMIDO", "REAL=>NAO_SUPORTADO", "SIMPLES=>SIMPLES"]);
   });
 
   it("⚠ as três respostas têm o mesmo nome nos dois apps", () => {

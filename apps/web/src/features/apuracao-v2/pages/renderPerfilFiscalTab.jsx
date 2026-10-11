@@ -10,6 +10,7 @@
 // mesma empresa — é o defeito que este projeto já pagou com `legacyCompanySelect`.
 
 import { PANEL } from "../../notas/components/notasStyles";
+import { CadastroReforma } from '../../reforma/CadastroReforma';
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { ServicosTributacao } from "../components/ServicosTributacao";
 import { estadoDoRegime, ESTADO_DO_REGIME } from "../lib/perfilFiscalTela";
@@ -62,6 +63,7 @@ export function PerfilFiscalTab({ panel, companyId, podeEditar = false }) {
       {panel.loading ? <p role="status">Carregando cadastro fiscal…</p> : panel.loadError ? <p role="alert">{panel.loadError}</p> : <RegimeDaEmpresa regime={panel?.cadastro?.regime} prefill={panel?.cadastroPrefill} />}
       <AbaFiscalPanel panel={panel} />
       <ServicosTributacao companyId={companyId} podeEditar={podeEditar} />
+      <CadastroReforma companyId={companyId} />
     </div>
   );
 }

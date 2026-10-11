@@ -1,5 +1,7 @@
 import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
 import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
+import { createReformaFiscalRouter } from "./reformaFiscal.js";
+import { createApuracaoConsumoRouter } from "./apuracaoConsumo.js";
 import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
 import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
@@ -575,6 +577,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) { next(err); }
   }
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(createReformaFiscalRouter({ prisma, requireFirmCompanyAccess }));
+  router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createPendenciasManuaisRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createExportacaoLoteRouter());
@@ -3608,7 +3612,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const outros = [];
     for (const row of byKey.values()) {
       if (row.regimeTributario === "SIMPLES") simples.push(row);
-      else if (row.regimeTributario === "LUCRO_PRESUMIDO" || row.regimeTributario === "LUCRO_REAL") presumidos.push(row);
+      else if (row.regimeTributario === "LUCRO_PRESUMIDO") presumidos.push(row);
       else outros.push(row);
     }
     // Ordena cada grupo por competência desc, depois razão asc
@@ -4145,6 +4149,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       } catch (err) {
         const code = err?.code || "SERPRO_PGDASD_RECALCULATE_FAILED";
         const message = err?.message || "Falha ao recalcular guia PGDAS-D no SERPRO.";
+        if (code === 'REGIME_INVALIDO_LP') return res.status(409).json({ ok: false, error: code, message, apuracao: err.apuracao });
 
         if (
           [
@@ -4661,7 +4666,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (code === "SERPRO_DCTFWEB_LP_NAO_TRANSMITIDA") {
           return res.status(200).json({ ok: false, error: code, message: "DCTFWeb ainda não transmitida para esta competência.", mensagens: err?.mensagens || null });
         }
-        // Empresa do Simples (ou regime não Presumido/Real): a consulta do LP não se aplica.
+        // Somente Lucro Presumido: Real exige o próprio motor.
         if (code === "REGIME_INVALIDO_LP") {
           return res.status(409).json({ ok: false, error: code, message: err?.message || "Consulta do Lucro Presumido não se aplica a este regime." });
         }

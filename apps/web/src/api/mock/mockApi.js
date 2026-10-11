@@ -7,6 +7,8 @@ import { criarRecorrenciasMock } from '@contabilidade/shared/nfse-recorrencias-m
 import { criarAtendimentoMovelMock } from "./atendimentoMovelMock";
 import { mockExecucoesRotinas, mockCarregarRotinas, mockSalvarRotinas } from "./rotinasMock";
 import { criarMockAcompanhamentoParcelamentos } from "./acompanhamentoParcelamentosMock";
+import { criarReformaFiscalMock } from './reformaFiscalMock';
+import { criarApuracaoConsumoMock } from './apuracaoConsumoMock';
 import { relatorioParcelasGuiasMock } from "./parcelasGuiasRelatorioMock";
 import { importarNotasMock } from "./importarNotasMock";
 import { checklistDosLancamentos } from '@contabilidade/shared/fechamento-contabil';
@@ -683,6 +685,7 @@ function makeGuidesByCompany(companies) {
 }
 
 const mockCompanies = makeCompanies();
+const reformaMock = criarReformaFiscalMock(mockCompanies);
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
 const acompanhamentoMock = criarMockAcompanhamentoParcelamentos({ empresas: mockCompanies, guias: mockGuidesByCompany });
 const mockRecalculosGuias = new Map();
@@ -3828,6 +3831,8 @@ export function createMockApi() {
     ...atendimentoMovel,
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
+    ...reformaMock,
+    ...criarApuracaoConsumoMock(),
     ...createPendenciasManuaisMock(),
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock, prepararConversa: prepararConversaComercialMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
