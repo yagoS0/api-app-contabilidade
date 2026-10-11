@@ -34,14 +34,16 @@ function dados({ temPerfil = false, integracaoLigada = false, perfis = [], campo
   };
 }
 
-describe("as treze linhas, com a TAG do XML à vista", () => {
+describe("os campos do perfil, com a TAG do XML à vista", () => {
   it("desenha um campo por linha, com a tag embaixo do rótulo", () => {
     render(<PainelProximaDps dados={dados()} />);
     const linha = document.querySelector('[data-campo="tribISSQN"]');
     expect(within(linha).getByText("tribISSQN")).toBeInTheDocument();
     expect(within(linha).getByText(/Tributação do ISSQN/)).toBeInTheDocument();
-    // ⚠ Eram SEIS linhas até 02/09/2026; os quatro campos de NBS/IBS-CBS acrescentaram as outras.
-    expect(document.querySelectorAll("[data-campo]")).toHaveLength(16);
+    expect(document.querySelectorAll("[data-campo]")).toHaveLength(17);
+    const atividade = document.querySelector('[data-campo="cAtvSN"]');
+    expect(within(atividade).getByText('Atividade do Simples Nacional')).toBeInTheDocument();
+    expect(within(atividade).getByText('cAtvSN')).toBeInTheDocument();
 
     // ⚠⚠ OS QUATRO NOVOS DIZEM "não configurado", NUNCA "fixo no sistema". A distinção é o
     // produto: `CRAVADO` afirma que o gerador escolhe um valor por conta própria (é o caso de
@@ -50,7 +52,7 @@ describe("as treze linhas, com a TAG do XML à vista", () => {
     // decisão do sistema que não existe.
     for (const campo of [
       "pAliq", "retencaoFederalArt30", "cstPisCofins",
-      "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
+      "codigoNbs", "cAtvSN", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
     ]) {
       const tr = document.querySelector(`[data-campo="${campo}"]`);
       expect(tr).toBeTruthy();
