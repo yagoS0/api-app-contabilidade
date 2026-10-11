@@ -14,6 +14,21 @@ function apiLocal() {
 }
 function respostaPendente() { let resolver; const promessa = new Promise(resolve => { resolver = resolve; }); return { promessa, resolver }; }
 
+test("selecionar outro atendimento fecha os detalhes e permite continuar digitando", async () => {
+  render(<WhatsappPage api={apiLocal()} area="comercial" />);
+  fireEvent.click(await screen.findByTestId("conversa-a"));
+  fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Rascunho A" } });
+  fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
+  expect(screen.getByRole("complementary", { name: "Detalhes da conversa" })).toBeVisible();
+  fireEvent.click(screen.getByTestId("conversa-b"));
+  await waitFor(() => expect(screen.getByTestId("conversa-b")).toHaveAttribute("aria-current", "true"));
+  expect(screen.queryByRole("complementary", { name: "Detalhes da conversa" })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Rascunho B" } });
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Rascunho B");
+  fireEvent.click(screen.getByTestId("conversa-a"));
+  await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Rascunho A"));
+});
+
 test("orientação enviada em A termina depois da troca para B sem reabrir A nem apagar o rascunho B", async () => {
   const api = apiLocal(), envio = respostaPendente(); api.enviarOrientacaoWhatsapp.mockReturnValue(envio.promessa);
   render(<WhatsappPage api={api} />);

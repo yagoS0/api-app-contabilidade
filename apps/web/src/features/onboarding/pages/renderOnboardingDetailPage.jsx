@@ -18,7 +18,7 @@ function tituloDaOrigem(origem) {
   return ONBOARDING_ORIGENS.find((o) => o.chave === origem)?.titulo || origem || "—";
 }
 
-export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, preenchimentoInicial = false }) {
+export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, onAbrirConversa, preenchimentoInicial = false }) {
   const [onboarding, setOnboarding] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -31,18 +31,33 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const [areaEscolhida, setAreaEscolhida] = useState(null);
   const [editando, setEditando] = useState(preenchimentoInicial);
   const [continuacao, setContinuacao] = useState(0);
+  const [conversaVinculada, setConversaVinculada] = useState(null);
+  useEffect(() => {
+    let atual = true;
+    setConversaVinculada(null);
+    if (api.comercial) api.comercial(`/onboardings/${encodeURIComponent(onboardingId)}/acompanhamento`)
+      .then(r => { if (atual) setConversaVinculada({ onboardingId, id: r?.conversaId }); })
+      .catch(() => { /* O acompanhamento mantém sua própria mensagem de erro e recarga. */ });
+    return () => { atual = false; };
+  }, [api, onboardingId, revisaoComercial]);
   const salvarAntesDeSair = useRef(null);
   const registrarSaida = useCallback(fn => { salvarAntesDeSair.current = fn; }, []);
   const saidaEmCurso = useRef(false);
-  async function voltar() {
+  async function sair(destino) {
     if (saidaEmCurso.current) return;
     saidaEmCurso.current = true;
     try {
       if (editando) await salvarAntesDeSair.current?.();
-      onVoltar?.();
+      destino?.();
     } catch (e) { setAviso(`Não foi possível salvar. Seus dados continuam nesta tela. ${e.message}`); }
     finally { saidaEmCurso.current = false; }
   }
+  const voltar = () => sair(onVoltar);
+  const voltarAoChat = () => sair(() => {
+    if (conversaVinculada?.onboardingId !== onboardingId || !conversaVinculada.id) return;
+    if (onAbrirConversa) onAbrirConversa(conversaVinculada.id);
+    else window.location.assign(`/comercial/conversas?conversa=${encodeURIComponent(conversaVinculada.id)}`);
+  });
 
   useEffect(() => { setEditando(preenchimentoInicial); setAreaEscolhida(null); }, [onboardingId, preenchimentoInicial]);
 
@@ -218,6 +233,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       backLabel="Entrada de clientes"
       actions={
         <div className="onboarding-actions">
+          {conversaVinculada?.onboardingId === onboardingId && conversaVinculada.id && <Button variant="secondary" size="sm" onClick={voltarAoChat}>Voltar ao chat</Button>}
           <Button variant="secondary" size="sm" disabled={ocupada || editando} onClick={atualizarFicha}>Atualizar ficha</Button>
           <span
             style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, borderWidth: 1, borderStyle: "solid", fontSize: 12, fontWeight: 600 }}

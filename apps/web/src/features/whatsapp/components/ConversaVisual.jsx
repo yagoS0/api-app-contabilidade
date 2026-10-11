@@ -61,7 +61,7 @@ export function DetalhesConversa({ conversa, onFechar, atendimento = null, api, 
   const i = identidadeDaConversa(conversa);
   const resposta = estadoDaResposta(conversa);
   return <aside hidden={!aberto} className={`wa-details${comercialDisponivel ? " wa-details--commercial" : ""}`} aria-label="Detalhes da conversa" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onFechar(); } }}>
-    <div className="wa-section-heading"><h2>{comercialDisponivel ? "Atendimento do cliente" : "Detalhes do contato"}</h2><Button ref={fecharRef} variant="secondary" size="sm" onClick={onFechar} aria-label="Fechar detalhes"><WhatsappIcon nome="fechar" size={16} /></Button></div>
+    <div className="wa-section-heading"><h2>{comercialDisponivel ? "Atendimento do cliente" : "Detalhes do contato"}</h2><Button ref={fecharRef} variant="secondary" size="sm" onClick={onFechar} aria-label="Fechar detalhes" title="Voltar à conversa">Voltar ao chat</Button></div>
     <div>{comercialPreparado && atendimento}</div><details className="wa-contact-data" open={!comercialDisponivel}><summary>Dados do contato</summary>
     <section className="wa-detail-section"><h3>Relacionamento</h3><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><p>{relacionamento.motivo}</p><ConferirIdentificacao conversa={conversa} api={api} onConferido={onConferido} /></section>
     <div className="wa-contact-profile"><AvatarConversa nome={i.pessoa} /><strong>{i.pessoa}</strong><span>{i.papel || "Contato"}</span>{i.avisoDoNome && <span>{i.avisoDoNome}</span>}<span>{conversa.telefoneMascarado}</span></div>

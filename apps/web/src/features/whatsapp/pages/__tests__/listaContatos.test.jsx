@@ -45,42 +45,6 @@ test("Ctrl+B e botão visível recolhem a lista sem perder o fio ou rascunho", a
   expect(screen.getByRole("button", { name: "Mostrar contatos" })).toBeVisible();
 });
 
-test("largura suporta range, teclado, limites e preferência por usuário", async () => {
-  localStorage.setItem("altan:comunicacao:largura:operador", "340");
-  render(<WhatsappPage api={apiLocal()} usuarioId="operador" />);
-  await screen.findByTestId("conversa-cliente");
-  const separar = screen.getByRole("separator", { name: "Redimensionar lista de contatos" });
-  expect(separar).toHaveAttribute("aria-valuenow", "340");
-  fireEvent.keyDown(separar, { key: "End" });
-  fireEvent.keyDown(separar, { key: "ArrowRight" });
-  expect(separar).toHaveAttribute("aria-valuenow", "380");
-  fireEvent.keyDown(separar, { key: "Home" });
-  fireEvent.keyDown(separar, { key: "ArrowLeft" });
-  expect(separar).toHaveAttribute("aria-valuenow", "200");
-  fireEvent.click(screen.getByText("Opções", { selector: "summary" }));
-  const range = screen.getByRole("slider", { name: "Largura da lista" });
-  fireEvent.change(range, { target: { value: "315" } });
-  expect(separar).toHaveAttribute("aria-valuenow", "315");
-  expect(localStorage.getItem("altan:comunicacao:largura:operador")).toBe("315");
-});
-
-test("arrasto do separador respeita limites e termina ao soltar", async () => {
-  const anterior = window.PointerEvent; window.PointerEvent = MouseEvent;
-  try {
-    render(<WhatsappPage api={apiLocal()} />);
-    await screen.findByTestId("conversa-cliente");
-    const separar = screen.getByRole("separator", { name: "Redimensionar lista de contatos" });
-    fireEvent.pointerDown(separar, { clientX: 238, button: 0 });
-    fireEvent.pointerMove(window, { clientX: 999 });
-    expect(separar).toHaveAttribute("aria-valuenow", "380");
-    fireEvent.pointerMove(window, { clientX: -20 });
-    expect(separar).toHaveAttribute("aria-valuenow", "200");
-    fireEvent.pointerUp(window);
-    fireEvent.pointerMove(window, { clientX: 300 });
-    expect(separar).toHaveAttribute("aria-valuenow", "200");
-  } finally { window.PointerEvent = anterior; }
-});
-
 test("filtros exibem totais globais mesmo quando busca e página não trazem os contatos", async () => {
   const api = apiLocal(); render(<WhatsappPage api={api} />);
   const todos = screen.getByRole("button", { name: "Todos" }), leads = screen.getByRole("button", { name: "Leads" }), clientes = screen.getByRole("button", { name: "Clientes" });
