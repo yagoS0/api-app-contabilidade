@@ -373,6 +373,7 @@ function AppInterno({ session, feedback }) {
       <OnboardingDetailPage
         preenchimentoInicial
         api={api}
+        onAbrirConversa={id => navigate(`/comercial/conversas?conversa=${encodeURIComponent(id)}`)}
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
         onAbrirAtendimento={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
@@ -386,6 +387,7 @@ function AppInterno({ session, feedback }) {
     return (
       <OnboardingDetailPage
         api={api}
+        onAbrirConversa={id => navigate(`/comercial/conversas?conversa=${encodeURIComponent(id)}`)}
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
         onAbrirAtendimento={(id) => session.setPage("onboardingWizard", { onboardingId: id })}

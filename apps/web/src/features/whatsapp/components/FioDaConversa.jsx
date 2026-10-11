@@ -212,7 +212,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
           <div className="wa-thread-subtitle"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span><SituacaoConversa conversa={conversa} /></div>
         </div>
         <div className="wa-thread-actions">
-          {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" title="Atendimento e dados do contato" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={20} /></Button> : null}
+          {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" title="Atendimento e dados do contato" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={20} /><span className="wa-details-label">Atendimento</span></Button> : null}
           <details className="wa-more-actions" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label="Mais ações da conversa">⋯</summary><div className="wa-more-menu">
             <div className="wa-more-identity"><LinhaDaEmpresa identidade={identidade} /><SituacaoIdentificacao conversa={conversa} /></div>
               {hook.api?.buscarMensagensWhatsapp && <Button variant="secondary" aria-label="Buscar mensagens nesta conversa" onClick={e => { e.currentTarget.closest("details").open = false; setBuscando(true); }}><WhatsappIcon nome="busca" size={18} /> Buscar mensagens</Button>}

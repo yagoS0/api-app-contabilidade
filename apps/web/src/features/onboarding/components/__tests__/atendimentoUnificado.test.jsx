@@ -1,5 +1,24 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OnboardingDetailPage } from "../../pages/renderOnboardingDetailPage";
+import { MemoryRouter } from "react-router-dom";
+
+test("voltar ao chat salva a edição e só navega para a conversa vinculada após confirmação", async () => {
+  const ficha = { id: "alex", origem: "PESSOA_FISICA", versao: 0, status: "RASCUNHO", ultimoPasso: "identificacao", dados: { servicoSolicitado: "Resolver IRRF" }, etapas: [] };
+  const api = {
+    getOnboarding: jest.fn(async () => ({ onboarding: ficha })),
+    comercial: jest.fn(async () => ({ conversaId: "conversa-alex" })),
+    salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: ficha }),
+  };
+  const abrir = jest.fn();
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="alex" preenchimentoInicial onAbrirConversa={abrir} /></MemoryRouter>);
+  await screen.findByLabelText(/O que precisa resolver/);
+  fireEvent.click(await screen.findByRole("button", { name: "Voltar ao chat" }));
+  await waitFor(() => expect(api.salvarOnboarding).toHaveBeenCalledTimes(1));
+  expect(abrir).not.toHaveBeenCalled();
+  expect(await screen.findAllByRole("alert")).not.toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Voltar ao chat" }));
+  await waitFor(() => expect(abrir).toHaveBeenCalledWith("conversa-alex"));
+});
 import { NovaDemanda } from "../NovaDemanda";
 import { ConferirCadastroSalvo } from "../ConferirCadastroSalvo";
 

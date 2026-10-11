@@ -51,8 +51,8 @@ export function ComercialPage({ api, usuarioId, companies = [], mensagemBibliote
     setNovo(false);
     navigate(`/onboardings/${encodeURIComponent(r.onboarding.id)}${modo === 'escritorio' ? '/editar' : ''}`);
   }
-  return <main className="commercial-workspace">
-    <header className="commercial-heading"><div><span className="commercial-eyebrow">ALTAN · COMERCIAL</span><h1>{visao === 'hoje' ? 'Comercial' : visao === 'conversas' ? 'Conversas' : 'Oportunidades'}</h1></div><Button onClick={() => setNovo(true)}>+ Nova oportunidade</Button></header>
+  return <main className={`commercial-workspace${visao === 'conversas' ? ' commercial-workspace--chat' : ''}`}>
+    <header className="commercial-heading"><div><span className="commercial-eyebrow">ALTAN · COMERCIAL</span><h1>{visao === 'hoje' ? 'Comercial' : visao === 'conversas' ? 'Conversas' : 'Oportunidades'}</h1></div><Button variant="secondary" onClick={() => setNovo(true)}>+ Nova oportunidade</Button></header>
     <nav className="commercial-tabs" aria-label="Comercial">
       {[['hoje', '/comercial', 'Hoje'], ['oportunidades', '/comercial/oportunidades', 'Oportunidades'], ['conversas', '/comercial/conversas', 'Conversas']].map(([id, href, label]) => <Link key={id} to={href} aria-current={visao === id ? 'page' : undefined}>{label}{indicador(id)}</Link>)}
       <Link to="/onboardings">Onboarding{indicador('onboarding')}</Link><Link to="/biblioteca">Biblioteca</Link>
