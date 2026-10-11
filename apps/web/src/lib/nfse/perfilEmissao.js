@@ -14,6 +14,8 @@
 // constante em código é invisível até a nota sair, e o contador nunca teve como ver isso antes.
 
 /** As quatro procedências. ⚠ `INDEFINIDO` NÃO é "vazio": é "ninguém respondeu". */
+import { ATIVIDADES_SIMPLES } from '@contabilidade/shared/atividades-simples';
+
 export const FONTE = Object.freeze({
   PERFIL: "PERFIL",
   COMPANY: "COMPANY",
@@ -156,6 +158,16 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     cravadoHoje: false,
   }),
   Object.freeze({
+    id: "cAtvSN",
+    rotulo: "Atividade do Simples Nacional",
+    tag: "cAtvSN",
+    caminhoNoXml: "infDPS/serv/cServ/cAtvSN",
+    valores: Object.freeze(['07', '08', '09', '10', '11', '12', '13', '14', '90']),
+    formaDescrita: "Preparação de 2027 ainda bloqueada para emissão",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
+  Object.freeze({
     id: "ibscbsCIndOp",
     rotulo: "Código indicador da operação (IBS/CBS)",
     tag: "cIndOp",
@@ -186,6 +198,7 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
 
 /** As descrições dos valores — para a tela não mostrar um "3" cru sobre tributação. */
 export const DESCRICAO_DO_VALOR = Object.freeze({
+  cAtvSN: Object.fromEntries(ATIVIDADES_SIMPLES.map(a => [a.codigo, a.descricao])),
   tpImunidade: { "0": "Tipo não informado na origem", "1": "Entes públicos (CF, art. 150, VI, a)", "2": "Templos (CF, art. 150, VI, b)", "3": "Entidades do art. 150, VI, c", "4": "Livros e periódicos (CF, art. 150, VI, d)", "5": "Fonogramas (CF, art. 150, VI, e)" },
   exigSuspTipo: { "1": "Decisão judicial", "2": "Processo administrativo" },
   // ⚠ Sim/não do contador — o painel não mostra "true" cru sobre uma decisão fiscal.

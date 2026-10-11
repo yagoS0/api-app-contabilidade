@@ -1,0 +1,26 @@
+{
+  "data": "2026-10-11",
+  "campo": "PerfilEmissaoNfse.cAtvSN",
+  "origem": "NT009 v1.01 e Anexo VI v1.04.01 versionado",
+  "interface": "Tributação municipal e Simples: busca por código e descrição sem acentos; sugestões com código e descrição; nenhum valor automático",
+  "persistencia": "Coluna opcional com restrição de domínio; criação, leitura, edição parcial e limpeza seguem a rota autorizada de perfis existente",
+  "validacao": "Domínio e vínculo com o serviço compartilhados entre cadastro e laboratório; PATCH valida também campos preservados",
+  "xml": "Preparação offline lê perfil.cAtvSN, exige perfil ativo do mesmo serviço, registra perfilId e fonte PERFIL. Parâmetro cAtvSN avulso não substitui o cadastro.",
+  "migracao": "20261010220000_perfil_atividade_simples",
+  "testes": {
+    "apiAprovados": 207,
+    "interfaceAprovados": 30,
+    "xmlAtualXsd": "9 de 9 aprovados",
+    "buildInterface": "Aprovado",
+    "migracaoPostgresIsolado": "Aplicada com sucesso",
+    "persistenciaPostgresIsolado": "Concluída em 11/10/2026: 09 preservado após reconexão e edição parcial; limpeza preservada após nova reconexão; código 99 recusado especificamente pela restrição CHECK (SQLSTATE 23514).",
+    "bloqueio2027NoBancoIsolado": "Confirmado com perfis habilitados para REGULAR e NO_DAS, em modos homolog e producao; nenhuma chamada à produção real.",
+    "evidencia": "test-evidence/nfse-hibrido-postgres-1791732175337/summary.json",
+    "encerramentoPostgres": "Normal, confirmado após concluir as verificações"
+  },
+  "producaoAlterada": false,
+  "notasEmitidas": 0,
+  "diagnosticoLocal": "O erro anterior de CreateProcess não voltou a ocorrer em dois ensaios completos. Não foi necessário trocar binários nem alterar configurações de segurança. A causa raiz do erro transitório do Windows não foi confirmada.",
+  "melhoriaDoEnsaio": "Verifica pg_ctl antes de iniciar, registra código de saída e sinal, preserva erros do ensaio e do encerramento separadamente e só registra sucesso após encerrar o banco.",
+  "bloqueio2027": "Mantido e coberto pelos testes do emissor; preparar ou salvar a atividade não libera transmissão"
+}

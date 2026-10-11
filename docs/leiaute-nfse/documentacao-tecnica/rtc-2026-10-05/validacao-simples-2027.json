@@ -18,7 +18,7 @@
     "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
     "origemSnapshot": "2026-10-05",
     "paginaOficialConferidaEm": "2026-10-10",
-    "revalidacaoDownload": "403; utilizado snapshot com hash conferido",
+    "revalidacaoDownload": "Nova consulta em 10/10/2026: HTTP 200; SHA-256 idêntico ao snapshot versionado",
     "xmlAnteriorValido": true,
     "regApIBSCBSSNAceito": false
   },

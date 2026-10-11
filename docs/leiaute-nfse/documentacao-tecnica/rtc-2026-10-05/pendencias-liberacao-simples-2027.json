@@ -1,0 +1,65 @@
+{
+  "verificadoEm": "2026-10-10",
+  "status": "BLOQUEADO_PARA_EMISSAO",
+  "escopo": "Continuação da homologação técnica, sem transmissão de DPS, sem alteração de opção tributária real e sem deploy",
+  "fontes": {
+    "homologacao": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita",
+    "rtc": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc",
+    "implantacoes": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/atualizacoes-e-implantacoes",
+    "notaTecnica": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf"
+  },
+  "evidencias": {
+    "downloadXsdHttp": 200,
+    "pacote": "esquemas-nfse-rtc-v1-01-20260727.zip",
+    "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
+    "swaggerHomologacaoMtlsHttp": 200,
+    "swaggerHomologacaoTipo": "application/json",
+    "endpointSomenteValidacao": "Não anunciado no Swagger consultado. POST /nfse é emissão e não foi chamado.",
+    "auditoriaEstrutural": "auditoria-xsd-simples-2027.json",
+    "testesApi": {"suites": 5, "aprovados": 139},
+    "postgresIsolado": {"aprovado": true, "periodosConferidos": 3, "persistenciaAposReconexao": true, "restricaoBanco": true, "notasCriadas": 0},
+    "previaProducao": {"competencia2026": "ok", "competencia2027": "NFSE_IBSCBS_OPCAO_PENDENTE"},
+    "limites": "HTTP 200 no Swagger prova conectividade, não aceitação da DPS. XSD não valida assinatura criptográfica nem regras de negócio. Nenhuma NFS-e autorizada de 2027 foi obtida neste ensaio."
+  },
+  "prontoNoProjeto": [
+    "Cadastro da opção NO_DAS ou REGULAR por vigência, com referência de comprovante para REGULAR.",
+    "Resolução por competência no mesmo fluxo da prévia e do emissor, sem seletor de cenário na nota.",
+    "Bloqueio de ambas as opções do Simples em 2027 antes de reservar numeração ou chamar o provedor.",
+    "Perfis com NBS, indicador da operação, CST e classificação, com busca por código e descrição.",
+    "Leitura do DANFSe já contempla alguns caminhos antigos e novos; aproveitar essa compatibilidade nos testes de retorno."
+  ],
+  "pendencias": [
+    {
+      "id": "CONTRATO_OFICIAL",
+      "responsavel": "Publicação e implantação oficial + integração ALTAN",
+      "falta": "Obter XSD e regras de negócio compatíveis com a NT009 e confirmar sua implantação no autorizador de homologação. Não foi localizado cronograma que comprove essa implantação nas páginas consultadas.",
+      "aceite": "Pacote oficial identificado por hash e versão, campos admitidos no XSD completo e compatibilidade confirmada no ambiente restrito."
+    },
+    {
+      "id": "GERADOR_DPS",
+      "responsavel": "ALTAN",
+      "falta": "Integrar regApIBSCBSSN ao XML; tratar cAtvSN conforme aplicabilidade; adaptar posições de finNFSe, indDest/dest e CST/cClassTrib e regras de ocorrência dos grupos. O gerador atual permanece no contrato de julho; não basta retirar a trava.",
+      "aceite": "Gerador seleciona contrato homologado por ambiente e competência, preserva 2026 e valida XML completo com assinatura. Apuração do ISS (regApTribSN) permanece distinta da apuração IBS/CBS."
+    },
+    {
+      "id": "ENQUADRAMENTO_DA_EMPRESA",
+      "responsavel": "Contador + ALTAN",
+      "falta": "Confirmar a opção efetivamente formalizada e sua vigência; classificar a atividade aplicável. O cadastro real consultado não tem opção IBS/CBS de 2027. Não presumir híbrido pelo NBS ou pelo Simples atual. O domínio oficial 2 requer tratamento próprio caso passe a ser atendido.",
+      "aceite": "Histórico comprovado sem sobreposição; casos fora do suporte recusados explicitamente."
+    },
+    {
+      "id": "RETORNO_E_CONFERENCIA",
+      "responsavel": "ALTAN",
+      "falta": "Conferir a leitura dos valores autorizados de IBS/CBS, bases, totais e grupos do Simples aplicáveis; exibição coerente no contador, portal e DANFSe.",
+      "aceite": "Fixtures oficiais/sintéticas cobrem os caminhos novos; valores da resposta autorizada são preservados, sem inventar alíquotas futuras."
+    },
+    {
+      "id": "HOMOLOGACAO_PONTA_A_PONTA",
+      "responsavel": "ALTAN + autorizador de produção restrita",
+      "falta": "Após resolver o contrato, executar o ciclo completo exclusivamente em homologação e validar resposta, consulta e DANFSe. Não executado agora porque o esquema publicado rejeita os campos novos.",
+      "aceite": "Evidência de autorização somente em ambiente 2; testes de troca de vigência, ausência de opção, retenção e classificação; bloqueio de produção só revisado após aceite técnico e fiscal."
+    }
+  ],
+  "parametrosMunicipais": "Apoiam a conferência do ISS; não definem a opção IBS/CBS e não resolvem a incompatibilidade do XSD. Consulta continua auxiliar, sem etapa manual obrigatória no fluxo.",
+  "decisao": "Manter o bloqueio em produção. Não tratar download de XSD, conexão ou teste local como homologação completa."
+}

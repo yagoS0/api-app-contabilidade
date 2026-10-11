@@ -59,7 +59,7 @@ describe("⚠⚠ três estados, e o terceiro é sobre a RESPOSTA", () => {
       "codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao",
       "regEspTrib", "regApTribSN", "tribISSQN", "pAliq",
       "retencaoFederalArt30", "cstPisCofins",
-      "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
+      "codigoNbs", "cAtvSN", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
     ]);
     // ⚠⚠ Os quatro novos saem `INDEFINIDO`, nunca `CRAVADO`: o gerador não escolhia um valor para
     // eles — ele não escrevia a tag. São coisas diferentes, e a tela diz qual é.

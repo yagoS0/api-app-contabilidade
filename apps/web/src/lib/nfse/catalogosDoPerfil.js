@@ -1,4 +1,5 @@
 import { DESCRICAO_DO_VALOR } from './perfilEmissao';
+import { ATIVIDADES_SIMPLES } from '@contabilidade/shared/atividades-simples';
 
 export function catalogosDoPerfil(dados, campos) {
   const sugestoes = dados?.sugestoes || {};
@@ -12,6 +13,7 @@ export function catalogosDoPerfil(dados, campos) {
       c.valores.map(codigo => ({ codigo: String(codigo), descricao: DESCRICAO_DO_VALOR[c.id]?.[codigo] || 'Sem descrição na fonte' }))])),
     codigoServicoNacional: (sugestoes.porServico || []).map(s => ({ codigo: s.codigo, descricao: s.descricao })),
     codigoNbs: sugestoes.nbs || [...new Map((sugestoes.porServico || []).flatMap(s => s.nbs || []).map(n => [n.codigo, n])).values()],
+    cAtvSN: sugestoes.atividadesSimples || ATIVIDADES_SIMPLES,
     ibscbsCIndOp: (rtc.operacoes || []).map(o => ({ codigo: o.codigo, descricao: o.local })),
     ibscbsCst: rtc.csts || [],
     ibscbsCClassTrib: (rtc.classificacoes || []).map(c => ({ codigo: c.codigo, descricao: c.descricao, detalhe: `CST ${c.cst}` })),

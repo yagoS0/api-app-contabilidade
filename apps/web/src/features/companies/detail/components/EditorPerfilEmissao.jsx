@@ -11,7 +11,7 @@ import { itemDoCatalogo } from '../../../../lib/nfse/buscaCatalogo';
 const GRUPOS = [
   ["Serviço e local", ["codigoServicoNacional", "codigoNbs", "codigoServicoMunicipal", "cLocPrestacao"]],
   ["IBS e CBS", ["ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib"]],
-  ["Tributação municipal e Simples", ["regEspTrib", "regApTribSN", "tribISSQN", "tpImunidade", "exigSuspTipo", "exigSuspProcesso", "pAliq"]],
+  ["Tributação municipal e Simples", ["cAtvSN", "regEspTrib", "regApTribSN", "tribISSQN", "tpImunidade", "exigSuspTipo", "exigSuspProcesso", "pAliq"]],
   ["Tributação federal", ["retencaoFederalArt30", "cstPisCofins"]],
 ];
 
@@ -107,6 +107,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
             if (catalogos[id]) return <div key={id} className={id === 'ibscbsCClassTrib' ? 'full' : undefined}>
               <CampoCatalogo compacto id={`perfil-${id}`} rotulo={c.rotulo} valor={form[id]}
                 itens={catalogos[id]} required={c.obrigatorio} onChange={valor => mudar(id, valor)} />
+              {id === 'cAtvSN' && <small>Usado na preparação de 2027. A emissão permanece bloqueada até a homologação.</small>}
             </div>;
             return <div key={id} className={id === "codigoServicoNacional" || id === "codigoNbs" ? "full" : undefined}>
               <label htmlFor={`perfil-${id}`}>{c.rotulo}</label>

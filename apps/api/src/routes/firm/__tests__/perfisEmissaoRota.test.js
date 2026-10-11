@@ -81,6 +81,31 @@ function montarApp(user = CONTADOR) {
 
 const URL = `/firm/companies/${PORTAL_ID}/perfis-emissao`;
 
+describe('atividade do Simples no perfil do contador', () => {
+  it('oferece catálogo, grava código com zero inicial e devolve na leitura', async () => {
+    const r = await request(app).post(URL).send({ nome: 'Atividade', codigoServicoNacional: '171901', cAtvSN: '07' });
+    expect(r.status).toBe(201);
+    expect(r.body.perfil.cAtvSN).toBe('07');
+    prismaMock.perfilEmissaoNfse.findMany.mockResolvedValue([r.body.perfil]);
+    const consulta = await request(app).get(URL);
+    expect(consulta.body.perfis[0].cAtvSN).toBe('07');
+    expect(consulta.body.sugestoes.atividadesSimples).toEqual(expect.arrayContaining([expect.objectContaining({ codigo: '09', descricao: expect.stringContaining('fator R') })]));
+  });
+  it.each(['9', '99', '10', 'serviços'])('recusa atividade inválida/incompatível %s', async cAtvSN => {
+    const r = await request(app).post(URL).send({ nome: 'Atividade', codigoServicoNacional: '171901', cAtvSN });
+    expect(r.status).toBe(400);
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+  });
+  it('PATCH preserva ausência e permite limpar explicitamente', async () => {
+    prismaMock.perfilEmissaoNfse.findFirst.mockResolvedValue({ id: 'pf-1', portalClientId: PORTAL_ID, nome: 'Atividade', codigoServicoNacional: '171901', cAtvSN: '09' });
+    expect((await request(app).patch(`${URL}/pf-1`).send({ nome: 'Outro nome' })).status).toBe(200);
+    expect(prismaMock.perfilEmissaoNfse.update.mock.calls[0][0].data).not.toHaveProperty('cAtvSN');
+    const r = await request(app).patch(`${URL}/pf-1`).send({ cAtvSN: null });
+    expect(r.status).toBe(200);
+    expect(r.body.perfil.cAtvSN).toBeNull();
+  });
+});
+
 let app;
 beforeEach(() => {
   jest.clearAllMocks();
