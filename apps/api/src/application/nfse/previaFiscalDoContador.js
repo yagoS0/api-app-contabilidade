@@ -7,6 +7,7 @@ import { resolverContextoFiscalDaNota } from './resolverContextoFiscalDaNota.js'
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from './dpsCodigos.js';
 import { pAliqDaDps } from './pAliqDaDps.js';
 import { snapshotFiscal } from './snapshotFiscal.js';
+import { percentualSimplesDaPrevia } from './percentualSimplesDaPrevia.js';
 
 // Somente leitura. Usa os resolvedores da emissão, sem reservar DPS, assinar ou consultar o ADN.
 // A validação integral do payload e a revalidação fiscal continuam obrigatórias na emissão.
@@ -62,5 +63,9 @@ export async function previaFiscalDoContador({ portalClientId, competencia, perf
     ...pAliqDaDps({ opSimpNac: regimeDps.opSimpNac, regApTribSN: perfil?.regApTribSN || '1',
       tpRetISSQN: resolverTpRetIssqn(servico.issRetido === true).tpRetISSQN, aliquota }) };
   if (!previa.iss.ok) return recusar(previa.iss.codigo, previa.iss.message || 'Confira a alíquota do ISS retido.');
+  previa.percentualSimples = regimeDps.opSimpNac === '3'
+    ? await percentualSimplesDaPrevia({ db, portalClientId, competencia,
+      servicoUnico: new Set([...(company.codigosServicoNacional || []), company.codigoServicoNacional].filter(Boolean)).size === 1 })
+    : { estado: 'NAO_APLICAVEL', valor: null };
   return { ...previa, ok: true };
 }

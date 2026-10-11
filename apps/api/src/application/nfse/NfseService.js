@@ -1,3 +1,4 @@
+import { validarPercentualSimples } from './validarPercentualSimples.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { CONTRATO_NACIONAL } from './contratoNacional.js';
@@ -707,21 +708,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   const isSimples = regTrib.exigeRegApTribSN;
 
   const shouldSendIM = company.inscricaoMunicipal && cLocEmi !== "3304557"; // RJ exige não enviar IM se não há CNC
-  const pTotTribSNRaw = data.totTrib?.pTotTribSN;
-  const pTotTribSN =
-    pTotTribSNRaw !== undefined && pTotTribSNRaw !== null && pTotTribSNRaw !== ""
-      ? Number(pTotTribSNRaw)
-      : null;
-  if (isSimples && (pTotTribSN === null || Number.isNaN(pTotTribSN) || pTotTribSN < 0)) {
-    const err = new Error(
-      "A alíquota efetiva do Simples Nacional (pTotTribSN) é exigida quando opSimpNac=3 e não foi informada."
-    );
-    err.code = "MISSING_P_TOT_TRIB_SN";
-    err.correcao =
-      "Informe o percentual total de tributos do Simples (pTotTribSN) no assistente de emissão. " +
-      "Ele é a alíquota efetiva da empresa na competência — sai do extrato do PGDAS-D.";
-    throw err;
-  }
+  const pTotTribSN = validarPercentualSimples(data.totTrib?.pTotTribSN, isSimples);
 
   // ⚠ QUEM NÃO É DO SIMPLES TAMBÉM PRECISA DECLARAR A CARGA TRIBUTÁRIA, E ESTE CAMINHO NUNCA FOI
   // EXERCIDO. Enquanto `opSimpNac` era cravado em 3, o ramo do `else` abaixo era inalcançável — e
@@ -1963,6 +1950,7 @@ export class NfseService {
       const contextoFiscal = resolverContextoFiscalDaNota({ company, perfil: perfilDeEmissao, regime,
         competencia: data.competencia, codigoServico: codigoServicoDaNota, servico: data.servico, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS });
       if (!contextoFiscal.ok) throw Object.assign(new Error(contextoFiscal.message), { code: contextoFiscal.codigo, correcao: contextoFiscal.correcao });
+      validarPercentualSimples(data.totTrib?.pTotTribSN, regTrib.opSimpNac === "3");
 
       // ⚠⚠ A ALÍQUOTA DO ISSQN, pelo mesmo motivo: recusar aqui custa zero; recusar depois queima
       // um número da série, e não existe inutilização na NFS-e.

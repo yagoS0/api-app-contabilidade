@@ -201,6 +201,28 @@ it("mantém todas as saídas do diálogo indisponíveis durante a emissão", asy
 });
 
 describe("o campo que faltava — pTotTribSN", () => {
+  it('preenche apuração automaticamente, preserva edição e descarta percentual ao mudar competência', async () => {
+    const apiPerfis = { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: false, perfis: [] })),
+      previaEmissaoNfse: jest.fn(async (_id, entrada) => ({ ok: true, pendencias: [], regimeVigente: { regime: 'SIMPLES' },
+        percentualSimples: { estado: 'AUTOMATICO', valor: entrada.competencia === '2026-09-01' ? 8 : 6, fonte: 'APURACAO_LOCAL', competencia: entrada.competencia.slice(0,7) } })) };
+    abrir({apiPerfis});
+    await waitFor(() => expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('6'));
+    digitar('Total de tributos do Simples Nacional','7');
+    expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('7');
+    fireEvent.change(screen.getByLabelText(/^Competência/),{target:{value:'2026-09-01'}});
+    await waitFor(() => expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('8'));
+  });
+  it('referência do PGDAS-D só entra no payload após confirmação', async () => {
+    const apiPerfis = { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: false, perfis: [] })),
+      previaEmissaoNfse: jest.fn(async () => ({ok:true,pendencias:[],regimeVigente:{regime:'SIMPLES'},percentualSimples:{estado:'REFERENCIA',valor:6,fonte:'PGDAS_D',competencia:'2026-08',mensagem:'Referência histórica'}})) };
+    abrir({apiPerfis});
+    await screen.findByText('Referência histórica');
+    ateOsValores();
+    await waitFor(() => expect(screen.getByRole('button',{name:'Confirmar percentual sugerido'})).toBeVisible());
+    expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('');
+    fireEvent.click(screen.getByRole('button',{name:'Confirmar percentual sugerido'}));
+    expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('6');
+  });
   it("retencoes, obra e destinatário seguem no payload e na confirmação", async () => {
     const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
     jest.spyOn(window, "confirm").mockReturnValue(true);
@@ -235,6 +257,8 @@ describe("o campo que faltava — pTotTribSN", () => {
     fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "consultoria" } });
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('option', { name: /170101 — Consultoria/ }));
+    await waitFor(() => expect(screen.queryByText('Aguarde a prévia fiscal por competência.')).not.toBeInTheDocument());
+    digitar('Total de tributos do Simples Nacional', '6,84');
     await waitFor(() => expect(screen.getByRole('button', { name: /Continuar/ })).toBeEnabled());
     expect(screen.getByText('Regime no histórico da competência')).toBeInTheDocument();
     continuar();

@@ -1,6 +1,7 @@
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseDate } from "../../utils/date.js";
+import { numeroDaNfse } from '../../application/nfse/numeroDaNfse.js';
 
 function serialize(invoice) {
   if (!invoice) return null;
@@ -16,7 +17,7 @@ function serialize(invoice) {
     competencia: dateToIso(invoice.competencia),
     idDps: invoice.idDps,
     chaveAcesso: invoice.chaveAcesso,
-    numeroNfse: invoice.numeroNfse,
+    numeroNfse: invoice.numeroNfse || numeroDaNfse(invoice.xml, invoice.chaveAcesso),
     codigoVerificacao: invoice.codigoVerificacao,
     rpsNumero: invoice.rpsNumero,
     rpsSerie: invoice.rpsSerie,
@@ -58,7 +59,7 @@ function buildUpdateData(data) {
     competencia: data.competencia ? parseDate(data.competencia) : undefined,
     idDps: data.idDps ?? undefined,
     chaveAcesso: data.chaveAcesso ?? undefined,
-    numeroNfse: data.numeroNfse ?? undefined,
+    numeroNfse: data.numeroNfse || numeroDaNfse(data.xml, data.chaveAcesso) || undefined,
     codigoVerificacao: data.codigoVerificacao ?? undefined,
     rpsNumero: data.rpsNumero ?? undefined,
     rpsSerie: data.rpsSerie ?? undefined,
@@ -80,9 +81,10 @@ export class NfseRepository {
   }
 
   static async markIssued(id, data) {
+    const numero = data.numeroNfse || numeroDaNfse(data.xml, data.chaveAcesso);
     const updated = await prisma.serviceInvoice.update({
       where: { id },
-      data,
+      data: numero ? { ...data, numeroNfse: numero } : data,
     });
     return serialize(updated);
   }
@@ -161,7 +163,7 @@ export class NfseRepository {
         competencia: data.competencia ? parseDate(data.competencia) : null,
         idDps: data.idDps || null,
         chaveAcesso: data.chaveAcesso || null,
-        numeroNfse: data.numeroNfse || null,
+        numeroNfse: data.numeroNfse || numeroDaNfse(data.xml, data.chaveAcesso) || null,
         codigoVerificacao: data.codigoVerificacao || null,
         rpsNumero: data.rpsNumero || null,
         rpsSerie: data.rpsSerie || null,
