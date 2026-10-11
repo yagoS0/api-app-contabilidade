@@ -1,0 +1,40 @@
+{
+  "escopo": "XSD local: não valida assinatura criptográfica nem regras de negócio do autorizador",
+  "transmitido": false,
+  "camposDeclarados": {
+    "regApIBSCBSSN": false,
+    "cAtvSN": false,
+    "gTribSN": false,
+    "vReceitaBrutaSN": false
+  },
+  "casos": {
+    "modeloBase": {
+      "aceitoPeloXsd": true,
+      "erros": []
+    },
+    "competencia2027SemCamposNovos": {
+      "aceitoPeloXsd": true,
+      "erros": []
+    },
+    "regApIBSCBSSN_1": {
+      "aceitoPeloXsd": false,
+      "erros": [
+        "Element '{http://www.sped.fazenda.gov.br/nfse}regApIBSCBSSN': This element is not expected. Expected is ( {http://www.sped.fazenda.gov.br/nfse}regEspTrib )."
+      ]
+    },
+    "regApIBSCBSSN_3": {
+      "aceitoPeloXsd": false,
+      "erros": [
+        "Element '{http://www.sped.fazenda.gov.br/nfse}regApIBSCBSSN': This element is not expected. Expected is ( {http://www.sped.fazenda.gov.br/nfse}regEspTrib )."
+      ]
+    },
+    "cAtvSN_isolado": {
+      "aceitoPeloXsd": false,
+      "erros": [
+        "Element '{http://www.sped.fazenda.gov.br/nfse}cAtvSN': This element is not expected. Expected is ( {http://www.sped.fazenda.gov.br/nfse}cIntContrib )."
+      ]
+    }
+  },
+  "liberacaoProducao": false,
+  "nota": "A aprovação isolada do XSD nunca libera emissão; faltam contrato integrado e homologação ponta a ponta."
+}

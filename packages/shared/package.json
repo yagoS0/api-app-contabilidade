@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "exports": {
+    "./atividades-simples": "./src/nfse/atividadesSimples.js",
     "./nfse-recorrencias": "./src/nfse/Recorrencias.jsx",
     "./nfse-recorrencias-mock": "./src/nfse/recorrenciasMock.js",
     "./documentos-fiscais": "./src/documentosFiscais.js",

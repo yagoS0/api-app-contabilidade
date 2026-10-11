@@ -969,6 +969,21 @@ describe("PIS/COFINS (tribFed/piscofins) — o grupo não afirma o que ninguém 
 });
 
 describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
+ it.each(['REGULAR', 'NO_DAS'])('mantém bloqueio também em produção sem criar nota: %s', async apuracaoIbsCbs => {
+  const config = jest.requireMock('../../../config.js');
+  const ambienteAnterior = config.NFSE_ENV;
+  config.NFSE_ENV = 'producao';
+  try {
+    montarCenario({ empresa: { regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: new Date('2027-01-01'), vigenciaFim: null, apuracaoIbsCbs, comprovanteOpcaoIbsCbs: 'teste' }] } });
+    const r = await NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2027-01-01' }, log });
+    expect(r.codigo).toBe('NFSE_CONTRATO_SIMPLES_2027_PENDENTE');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  } finally {
+    config.NFSE_ENV = ambienteAnterior;
+  }
+ });
  it.each(['REGULAR', 'NO_DAS'])('recusa contrato de 2027 antes da reserva: %s', apuracaoIbsCbs => {
   montarCenario({ empresa: { regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: new Date('2027-01-01'), vigenciaFim: null, apuracaoIbsCbs, comprovanteOpcaoIbsCbs: 'teste' }] } });
   return NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2027-01-01' }, log }).then(r => {

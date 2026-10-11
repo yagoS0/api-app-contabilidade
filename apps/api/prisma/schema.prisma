@@ -3854,6 +3854,8 @@ model PerfilEmissaoNfse {
   /// preencher, nenhuma nota ganha `<cNBS>`. ⚠⚠ É obrigatório na EXPORTAÇÃO (**E0318**) e sempre
   /// que o bloco IBS/CBS for informado (**E0322**).
   codigoNbs String?
+  /// Atividade declarada pelo contador. Preparação offline de 2027; não libera emissão.
+  cAtvSN String?
 
   /// `IBSCBS/cIndOp` — 6 dígitos. Sai das combinações que o ANEXO VIII autoriza para o item da
   /// LC 116 embutido no `cTribNac`. ⚠⚠ A tabela OFICIAL de códigos é o **ANEXO C** (E0901), que

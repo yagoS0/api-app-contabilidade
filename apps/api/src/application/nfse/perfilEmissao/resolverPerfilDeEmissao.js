@@ -76,6 +76,7 @@ function doCadastro(company) {
     retencaoFederalArt30: { valor: null, fonte: FONTE.INDEFINIDO },
     cstPisCofins: { valor: null, fonte: FONTE.INDEFINIDO },
     codigoNbs: { valor: null, fonte: FONTE.INDEFINIDO },
+    cAtvSN: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCIndOp: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCst: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCClassTrib: { valor: null, fonte: FONTE.INDEFINIDO },
@@ -144,6 +145,7 @@ export async function resolverPerfilDeEmissao({ portalClientId, perfilId = null,
 
   const base = doCadastro(company);
   const avisos = [];
+  if (escolhido?.cAtvSN) avisos.push('A atividade do Simples está cadastrada para a preparação offline de 2027. Não é enviada pelo emissor atual; 2027 permanece bloqueado até a homologação.');
 
   // ⚠⚠ O PERFIL ESCOLHIDO NÃO ENTRA QUANDO HÁ AMBIGUIDADE. Com 2+ perfis ativos e nenhum `perfilId`,
   // cair no `padrao` faria o padrão virar a resposta de quem não respondeu — e o efeito é fiscal.
@@ -171,7 +173,7 @@ export async function resolverPerfilDeEmissao({ portalClientId, perfilId = null,
       fonte: usaPerfil ? FONTE.PERFIL : daBase.valor === null ? FONTE.INDEFINIDO : daBase.fonte,
       // ⚠ O que o painel existe para mostrar: este campo SAIRIA DIFERENTE se a flag estivesse
       // ligada? É a única maneira de o contador ver o efeito antes de a nota existir.
-      mudariaComPerfil: usaPerfil && doPerfil !== daBase.valor,
+      mudariaComPerfil: def.id !== 'cAtvSN' && usaPerfil && doPerfil !== daBase.valor,
       valorHoje: daBase.valor,
     };
   }

@@ -18,11 +18,14 @@ function cmd(exe, args, label, options = {}) {
   try { out = spawnSync(exe, args, { windowsHide: true, cwd: repo, timeout: 60000, ...options, stdio: ['ignore', fd, fd] }); }
   finally { fs.closeSync(fd); }
   const result = fs.readFileSync(logfile, 'utf8');
-  if (out.status !== 0) throw Error(`${label} falhou: ${result} ${out.error?.message || ''}`);
+  if (out.status !== 0) throw Error(`${label} falhou (exit=${out.status}, signal=${out.signal || '-'}): ${result} ${out.error?.message || ''}`);
   return result;
 }
 let started = false;
+let failure = null;
+let result = null;
 try {
+  cmd(path.join(pgBin, 'pg_ctl.exe'), ['--version'], 'preflight');
   cmd(path.join(pgBin, 'initdb.exe'), ['-D', data, '-U', 'nfse_municipal_test', '-A', 'trust', '--encoding=UTF8', '--no-locale'], 'initdb');
   cmd(path.join(pgBin, 'pg_ctl.exe'), ['-D', data, '-l', path.join(run, 'postgres.log'), '-o', `-h 127.0.0.1 -p ${port}`, '-w', 'start'], 'start'); started = true;
   cmd(path.join(pgBin, 'createdb.exe'), ['-h', '127.0.0.1', '-p', String(port), '-U', 'nfse_municipal_test', 'nfse_municipal_check'], 'createdb');
@@ -33,7 +36,18 @@ try {
   const schema = fs.readFileSync(path.join(repo, 'apps/api/prisma/schema.prisma'), 'utf8').replace('provider = "prisma-client-js"', 'provider = "prisma-client-js"\n  output = "./client"');
   fs.writeFileSync(path.join(run, 'schema.prisma'), schema);
   cmd(process.execPath, ['node_modules/prisma/build/index.js', 'generate', '--schema', path.join(run, 'schema.prisma')], 'generate', { env });
-  const result = cmd(process.execPath, ['apps/api/scripts/verify-nfse-hibrido-postgres.mjs', url, path.join(run, 'client')], 'checks', { env });
-  fs.writeFileSync(path.join(run, 'summary.json'), JSON.stringify({ passed: true, result }, null, 2));
-  console.log(result + '\nEvidência: ' + run);
-} finally { if (started) cmd(path.join(pgBin, 'pg_ctl.exe'), ['-D', data, '-m', 'fast', '-w', 'stop'], 'stop'); }
+  result = cmd(process.execPath, ['apps/api/scripts/verify-nfse-hibrido-postgres.mjs', url, path.join(run, 'client')], 'checks', { env });
+} catch (err) {
+  failure = err;
+} finally {
+  if (started) {
+    try { cmd(path.join(pgBin, 'pg_ctl.exe'), ['-D', data, '-m', 'fast', '-w', 'stop'], 'stop'); }
+    catch (err) { failure = failure ? new AggregateError([failure, err], 'O ensaio e o encerramento falharam; consulte os dois erros.') : err; }
+  }
+  fs.writeFileSync(path.join(run, 'summary.json'), JSON.stringify({
+    passed: !failure, result, encerramentoConfirmado: started && !failure,
+    erros: failure ? (failure.errors || [failure]).map(e => e.message) : [],
+  }, null, 2));
+}
+if (failure) throw failure;
+console.log(result + '\nEvidência: ' + run);

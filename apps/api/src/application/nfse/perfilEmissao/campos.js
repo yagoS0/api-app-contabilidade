@@ -199,6 +199,17 @@ export const CAMPOS = Object.freeze([
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
   Object.freeze({
+    id: "cAtvSN",
+    rotulo: "Atividade do Simples Nacional",
+    tag: "cAtvSN",
+    caminhoNoXml: "infDPS/serv/cServ/cAtvSN",
+    valores: Object.freeze(['07', '08', '09', '10', '11', '12', '13', '14', '90']),
+    formaDescrita: "Atividade declarada pelo contador; preparação de 2027 ainda bloqueada para emissão",
+    obrigatorio: false,
+    hojeSaiDe: "somente preparação offline de 2027",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+  Object.freeze({
     id: "ibscbsCIndOp",
     rotulo: "Código indicador da operação (IBS/CBS)",
     tag: "cIndOp",

@@ -1,0 +1,55 @@
+{
+  "data": "2026-10-10",
+  "status": "PREPARACAO_OFFLINE_SEM_LIBERACAO",
+  "fontes": [
+    "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+    "docs/leiaute-nfse/documentacao-tecnica/rtc-2026-10-05/anexo-vi-v1.04.01.xlsx"
+  ],
+  "implementacao": "apps/api/src/application/nfse/laboratorio/dpsSimples2027.js",
+  "uso": {
+    "comando": "node apps/api/scripts/preparar-dps-simples-2027-offline.mjs entrada.json resultado.json",
+    "entrada": {
+      "xmlBase": "DPS nacional 1.01 não assinada, tpAmb=2, competência válida de 2027, na estrutura de julho de 2026",
+      "company": "Objeto com CNPJ do prestador e regimeHistorico confirmado, incluindo comprovanteOpcaoIbsCbs para REGULAR",
+      "perfil": "Perfil ativo com id, codigoServicoNacional e cAtvSN; atividade lida exclusivamente do perfil e não inferida pelo serviço ou NBS",
+      "indFinal": "Opcional; 0 ou 1, declarado explicitamente"
+    },
+    "saida": "JSON com XML proposto e metadados de bloqueio. Recusa sobrescrever arquivo existente.",
+    "exemploSintetico": "apps/api/src/application/nfse/__tests__/dpsSimples2027Offline.test.js"
+  },
+  "escopo": "Notas regulares ME/EPP de 2027, CST 000 / cClassTrib 000001, opção NO_DAS ou REGULAR por vigência. Operações especiais e ajustes são recusados.",
+  "adaptacoes": [
+    "regApIBSCBSSN resolvido pelo histórico: 1 para NO_DAS, 3 para REGULAR; preserva regApTribSN do ISS",
+    "cAtvSN em serv/cServ com validação de domínio e vínculos bidirecionais publicados para 16.01, 99.04.01, 7.02 e 7.05",
+    "finNFSe, indDest e dest reposicionados em infDPS",
+    "CST e cClassTrib reposicionados em IBSCBS/valores/trib; remove gIBSCBS vazio neste cenário",
+    "cNBS e xDescServ reordenados conforme Anexo VI; preserva descrição, valores e dados do destinatário",
+    "indFinal opcional, sem valor presumido"
+  ],
+  "isolamento": {
+    "integradoAoEmissor": false,
+    "rotaHttpNova": false,
+    "bancoOuCredenciais": false,
+    "assinatura": false,
+    "transmissao": false,
+    "deploy": false,
+    "liberadoParaEmissao": false
+  },
+  "validacao": {
+    "suites": 6,
+    "testesAprovados": 177,
+    "novosTestesOffline": 36,
+    "novosTestesBloqueioProducao": 2,
+    "ordemDosCampos": "Conferida por leitura independente da planilha oficial versionada",
+    "regressaoXsdAtual": "9 XMLs do fluxo atual aprovados pelo validador XSD completo",
+    "xsd2027": "Não validado: o pacote compatível continua pendente",
+    "autorizador": "Não chamado; nenhum aceite fiscal demonstrado"
+  },
+  "pendencias": [
+    "Obter e conferir XSD e regras de negócio efetivamente implantados antes de integrar este preparo ao gerador operacional",
+    "Expandir as adaptações para outras classificações e operações somente com regras e exemplos correspondentes",
+    "Publicar a migração 20261010220000_perfil_atividade_simples e o cadastro implementado; o laboratório já usa exclusivamente perfil.cAtvSN",
+    "Manter opção e comprovante de vigência confirmados; não foi alterado o cadastro da Klaus",
+    "Validar retorno, cálculos e DANFSe no novo contrato e obter aceite em homologação antes de liberar produção"
+  ]
+}

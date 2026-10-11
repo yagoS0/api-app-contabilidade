@@ -25,6 +25,7 @@ it('busca todos os catálogos por descrição, seleciona código e nunca salva o
     ['Situação tributária do IBS/CBS (CST)', 'tributacao', '000'],
     ['Classificação tributária do IBS/CBS', 'integral', '000001'],
     ['CST do PIS/COFINS', 'aliquota basica', '01'],
+    ['Atividade do Simples Nacional', 'prestacao de servicos sujeitos', '09'],
   ]) {
     const campo = screen.getByLabelText(rotulo);
     campo.closest('details').open = true;
@@ -42,7 +43,7 @@ it('busca todos os catálogos por descrição, seleciona código e nunca salva o
   fireEvent.change(screen.getByLabelText('Item da NBS'), { target: { value: '113022100' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
   await waitFor(() => expect(onSalvar).toHaveBeenCalledWith('p1', expect.objectContaining({
-    codigoNbs: '1.1302.21.00', ibscbsCIndOp: '100301', ibscbsCst: '000', ibscbsCClassTrib: '000001', cstPisCofins: '01',
+    codigoNbs: '1.1302.21.00', ibscbsCIndOp: '100301', ibscbsCst: '000', ibscbsCClassTrib: '000001', cstPisCofins: '01', cAtvSN: '09',
   })));
 });
 

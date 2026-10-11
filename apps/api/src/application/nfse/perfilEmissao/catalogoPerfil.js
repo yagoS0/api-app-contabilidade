@@ -2,11 +2,13 @@ import { correlacaoDoItem, itemLc116DoCodigoNacional } from "../../fiscal/ibscbs
 import { validarCodigosRtc, TABELAS_RTC } from "../../fiscal/ibscbs/tabelasRtc.js";
 import { NBS, nbsPorCodigo, nbsParaDps } from "../../fiscal/nbs/index.js";
 import { validarTributacaoMunicipal } from "../tributacaoMunicipalDoPerfil.js";
+import { ATIVIDADES_SIMPLES, erroAtividadeSimples } from '@contabilidade/shared/atividades-simples';
 
 export function sugestoesDoPerfil(company) {
   const codigos = company?.codigosServicoNacional?.length
     ? company.codigosServicoNacional : [company?.codigoServicoNacional].filter(Boolean);
   return {
+    atividadesSimples: ATIVIDADES_SIMPLES,
     fonte: "NFS-e Nacional — Anexo VIII v1.01.00 e tabela NBS versionados no sistema",
     url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica",
     orientacao: "O Anexo VIII é orientativo. Outras combinações das tabelas oficiais podem ser declaradas conforme a operação.",
@@ -28,6 +30,10 @@ export function sugestoesDoPerfil(company) {
 // Valida o estado final, incluindo valores preservados por PATCH parcial.
 export function validarCatalogoPerfil(perfil) {
   const erros = validarTributacaoMunicipal(perfil);
+  if (perfil.cAtvSN != null && perfil.cAtvSN !== '') {
+    const motivo = erroAtividadeSimples(perfil.cAtvSN, perfil.codigoServicoNacional);
+    if (motivo) erros.push({ campo: 'cAtvSN', motivo });
+  }
   if (perfil.codigoNbs && !nbsParaDps(perfil.codigoNbs).ok) {
     erros.push({ campo: "codigoNbs", motivo: "Selecione um código NBS terminal existente na tabela oficial." });
   }
