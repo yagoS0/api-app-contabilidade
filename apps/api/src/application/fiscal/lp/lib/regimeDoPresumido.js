@@ -21,8 +21,9 @@
 // PADRÃO, no mesmo critério do `mapRegime` da rota v2 — mas SEM o default dele.
 
 export const APURACAO = Object.freeze({
-  /** Presumido e Real apuram por presunção/trimestre — esta é a tela deles. */
+  /** Somente o Lucro Presumido usa este motor. */
   PRESUMIDO: "PRESUMIDO",
+  NAO_SUPORTADO: "NAO_SUPORTADO",
   /** Simples e MEI têm a própria apuração (PGDAS-D). */
   SIMPLES: "SIMPLES",
   /** ⚠ Terceiro estado: não se sabe. Nunca colapsar num dos outros dois. */
@@ -47,7 +48,7 @@ export function apuracaoDoRegime(regime) {
   // ("SIMPLES NACIONAL - MEI") é MEI. A ordem é a mesma do `mapRegime`.
   if (/MEI\b/.test(t)) return APURACAO.SIMPLES;
   if (/PRESUMID/.test(t)) return APURACAO.PRESUMIDO;
-  if (/REAL/.test(t)) return APURACAO.PRESUMIDO;
+  if (/REAL/.test(t)) return APURACAO.NAO_SUPORTADO;
   if (/SIMPLES/.test(t)) return APURACAO.SIMPLES;
   // ⚠ Texto que existe e não se reconhece NÃO vira Simples por descarte — vira "não sei".
   return APURACAO.DESCONHECIDO;
@@ -64,6 +65,9 @@ export function apuracaoDoRegime(regime) {
  */
 export function podeApurarPresumido(regime) {
   const apuracao = apuracaoDoRegime(regime);
+  if (apuracao === APURACAO.NAO_SUPORTADO) {
+    return { pode: false, apuracao, motivo: "A apuração do Lucro Real não é suportada neste módulo. Utilize o procedimento fiscal próprio do Lucro Real; os percentuais do Lucro Presumido não se aplicam a esta empresa." };
+  }
   if (apuracao === APURACAO.SIMPLES) {
     return {
       pode: false,

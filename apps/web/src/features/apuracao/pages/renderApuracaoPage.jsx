@@ -41,7 +41,7 @@ const td = { padding: 8 };
 
 export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onOpenCompanyNotas }) {
   const {
-    competencia, setCompetencia, search, setSearch, items, loading, error,
+    competencia, setCompetencia, search, setSearch, items, loading, error, listaPronta, submitting,
     selected, toggleSelect, selectAllFechadas, batchJobId, setBatchJobId, apurarEmLote, reload,
   } = apuracaoPanel;
 
@@ -73,15 +73,15 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
 
         {/* Barra de ações em lote */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, padding: 10, background: PANEL.field, borderRadius: 8 }}>
-          <button onClick={selectAllFechadas} disabled={fechadasCount === 0}
+          <button onClick={selectAllFechadas} disabled={!listaPronta || submitting || fechadasCount === 0}
             style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
             {selected.size === fechadasCount && fechadasCount > 0 ? "Desmarcar todas" : "Selecionar fechadas"}
           </button>
           <span style={{ color: PANEL.muted, fontSize: "0.82rem" }}>
             {selected.size} selecionada(s) · {fechadasCount} fechada(s)
           </span>
-          <Button onClick={apurarEmLote} disabled={selected.size === 0} style={{ marginLeft: "auto" }}>
-            📤 Apurar em lote ({selected.size})
+          <Button onClick={apurarEmLote} disabled={!listaPronta || submitting || selected.size === 0} style={{ marginLeft: "auto" }}>
+            {submitting ? "Iniciando lote…" : `📤 Apurar em lote (${selected.size})`}
           </Button>
         </div>
 
@@ -113,7 +113,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     checked={allFechadasSelected}
                     ref={(el) => { if (el) el.indeterminate = someFechadasSelected; }}
                     onChange={selectAllFechadas}
-                    disabled={fechadasCount === 0}
+                    disabled={!listaPronta || submitting || fechadasCount === 0}
                     title={fechadasCount === 0 ? "Nenhuma empresa fechada para selecionar" : "Selecionar todas as empresas fechadas"}
                     style={{ cursor: fechadasCount === 0 ? "not-allowed" : "pointer" }}
                   />
@@ -133,7 +133,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                 return (
                   <tr key={it.portalClientId} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
                     <td style={td}>
-                      <input type="checkbox" disabled={!isFechada}
+                      <input type="checkbox" disabled={!listaPronta || submitting || !isFechada}
                         checked={selected.has(it.portalClientId)}
                         onChange={() => toggleSelect(it.portalClientId)}
                         title={isFechada ? "" : "Só empresas fechadas entram no lote"} />
@@ -165,7 +165,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                   </tr>
                 );
               })}
-              {items.length === 0 && !loading && (
+              {items.length === 0 && listaPronta && (
                 <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>Nenhuma empresa encontrada.</td></tr>
               )}
             </tbody>

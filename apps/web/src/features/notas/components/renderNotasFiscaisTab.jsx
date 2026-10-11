@@ -41,6 +41,7 @@
 //      trocando o papel para quem emitir NF-e um dia.
 
 import { useEffect, useState } from "react";
+import { VerificadorNfse } from '../../reforma/VerificadorNfse';
 import { PANEL } from "./notasStyles";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
@@ -180,6 +181,7 @@ export function NotasFiscaisTab({
        ações — era a que mais truncava em 1400px. */
     <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
       {janelaAtiva === 'NFSE' && <ListaRecorrencias api={nfseApi} companyId={companyId} revisao={Boolean(emissao)} />}
+      {janelaAtiva === 'NFSE' && <VerificadorNfse api={nfseApi} companyId={companyId} competencia={notasFilters.competencia} onAbrirNota={abrirNota} />}
       {(erroCaptura || (erroCaptura === undefined && erroNotas === undefined && error)) && (
         <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
           {erroCaptura || error}

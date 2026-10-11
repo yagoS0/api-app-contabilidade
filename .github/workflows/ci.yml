@@ -69,6 +69,9 @@ jobs:
       - name: Fiscal schedules, persisted authorization and payment notices
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='routineSchedule|scheduledRoutineService|runRoutineLoop|pagamentoWhatsappAgenda|application/fiscal/serpro/|CompanyRotinasService|rotinasAgendaValidacao|avisoPagamento|confirmarPagamentoWhatsapp|solicitarPagamentosWhatsapp|leituraComprovanteCliente|guiaDoAvisoCliente|pagamentoAutomatico|ConsultaPagamentoAutomatica|pagamentosPaginacao|parcelaPagamento|pagtoweb|companyProvisioning|varreduraNotasLocalWorker|dfeNotasWorkerIntervaloAdn'
+      - name: Apuracao guards and CBS IBS preparation without external calls
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='apuracaoConsumo|reformaCadastro|verificarNfse|reformaFiscal|regimeDoPresumido|calculoLpLigacao|apuracaoPresumido|capturaLpSemDuplicarInss|exigirRegimeLp|apuracaoLpRota|recalculoRegistroRota|procedenciaDas|apuracaoBatchVinculo'
       - name: Accountant frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent

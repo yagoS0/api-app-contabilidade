@@ -10,6 +10,7 @@
 // histórico (PENDENTE até o contador preencher). Idempotente por sourceFileId + (guia,evento).
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { exigirRegimeLp } from './exigirRegimeLp.js';
 import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionService.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { consultarDeclaracaoCompletaLp, emitirDarfDctfweb } from "../serpro/SerproDctfwebService.js";
@@ -46,6 +47,7 @@ export async function provisionarLpDaDeclaracao({
 }) {
   if (!portalClientId) throw new Error("portalClientId obrigatório");
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) throw new Error("competência YYYY-MM obrigatória");
+  await exigirRegimeLp(prisma, portalClientId);
 
   const composicao = (Array.isArray(debitos) ? debitos : [])
     .filter((d) => Number(d?.debitoApurado) > 0)
@@ -189,7 +191,7 @@ async function aplicarDarfNaGuia({ portalClientId, competencia, guideId, darf })
  * "sem acréscimos".
  */
 export async function reemitirDarfLp({ portalClientId, competencia, guideId }) {
-  const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
+  const pc = await exigirRegimeLp(prisma, portalClientId);
   if (!pc?.cnpj) {
     const e = new Error("portal_company_not_found");
     e.code = "PORTAL_COMPANY_NOT_FOUND";
@@ -208,23 +210,7 @@ export async function reemitirDarfLp({ portalClientId, competencia, guideId }) {
 }
 
 export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
-  const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true, companyId: true } });
-  if (!pc) {
-    const e = new Error("portal_company_not_found");
-    e.code = "PORTAL_COMPANY_NOT_FOUND";
-    throw e;
-  }
-  // Trava central de regime: Presumido/Real só. NUNCA rodar em empresa do Simples (traria a guia
-  // INSS/DCTFWeb como "OUTRA"). Tampa o endpoint manual e qualquer caller futuro num único ponto.
-  const legacy = pc.companyId
-    ? await prisma.company.findUnique({ where: { id: pc.companyId }, select: { regimeTributario: true, tipoTributario: true } }).catch(() => null)
-    : null;
-  const regime = String(legacy?.regimeTributario || legacy?.tipoTributario || "").trim().toUpperCase();
-  if (regime !== "LUCRO_PRESUMIDO" && regime !== "LUCRO_REAL") {
-    const e = new Error(`Consulta do Lucro Presumido não se aplica a este regime (${regime || "indefinido"}).`);
-    e.code = "REGIME_INVALIDO_LP";
-    throw e;
-  }
+  const pc = await exigirRegimeLp(prisma, portalClientId);
   const decl = await consultarDeclaracaoCompletaLp({ contribuinteCnpj: pc.cnpj, competencia });
   const provisao = await provisionarLpDaDeclaracao({
     portalClientId,

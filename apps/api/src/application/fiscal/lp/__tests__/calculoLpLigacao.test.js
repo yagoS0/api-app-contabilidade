@@ -9,6 +9,8 @@ const proibido = (nome) => jest.fn(async () => { throw new Error(`ESCRITA PROIBI
 
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    portalClient: { findUnique: jest.fn(async () => ({ companyId: 'empresa' })) },
+    company: { findUnique: jest.fn(async () => ({ regimeTributario: 'LUCRO_PRESUMIDO' })) },
     portalInvoice: {
       findMany: jest.fn(async (args) => {
         chamadas.portalInvoice.push(args);
@@ -31,6 +33,14 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => ({
 }));
 
 const { calcularLp } = require("../LucroPresumidoCalculoService.js");
+const { prisma } = require('../../../../infrastructure/db/prisma.js');
+
+it.each(['LUCRO_REAL', 'Lucro Real', 'SIMPLES'])('recusa cálculo direto do regime %s antes de ler notas e guias', async regime => {
+  prisma.company.findUnique.mockResolvedValueOnce({ regimeTributario: regime });
+  await expect(calcularLp({ portalClientId: 'empresa', competencia: '2026-09' })).rejects.toMatchObject({ code: 'REGIME_INVALIDO_LP' });
+  expect(chamadas.portalInvoice).toHaveLength(0);
+  expect(chamadas.guide).toHaveLength(0);
+});
 
 beforeEach(() => {
   chamadas.portalInvoice = [];

@@ -15,6 +15,7 @@
 // banco. Quem gasta chamada paga é a captura ("Buscar tributos do Presumido"), não este cálculo.
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { exigirRegimeLp } from './exigirRegimeLp.js';
 import {
   PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS,
   apurarPresumido, isFimDeTrimestre, mesesDoTrimestre, debitosPorTributo,
@@ -90,6 +91,7 @@ async function darfDoPresumido(portalClientId, competencia) {
  */
 export async function calcularLp({ portalClientId, competencia, servicos16 = null }) {
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) throw new Error("competência YYYY-MM obrigatória");
+  await exigirRegimeLp(prisma, portalClientId, { permitirDesconhecido: true });
 
   const receita = await receitaDoMes(portalClientId, competencia);
 
