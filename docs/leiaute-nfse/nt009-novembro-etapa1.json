@@ -1,18 +1,46 @@
 {
   "data": "2026-10-11",
-  "estado": "PREPARACAO_OFFLINE_PARCIAL",
+  "estado": "REGRAS_LOCAIS_IMPLEMENTADAS_VALIDACAO_OFICIAL_BLOQUEADA",
   "fonte": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
   "anexo": "VI v1.04.01",
   "entrada": "DPS 1.01 não assinada, tpAmb=2, competência 2026, contrato NT009_V1_01_NOVEMBRO_2026 explícito",
-  "escopo": "Nota regular, CST 000 / classe 000001, sem operações especiais. Preserva dados fiscais; reposiciona finNFSe, indDest, dest, CST/cClassTrib e cNBS. Compartilha utilitários estruturais com o preparador de 2027.",
-  "validacao": "Teste de ordem e caminhos comparado diretamente com a planilha oficial versionada; não substitui XSD nem regras do autorizador.",
+  "escopo": "Nota regular do prestador, nacional, tpAmb=2, competência 2026. Catálogo com 73 classificações NFSe e 28 operações do Anexo VII. Ocorrência de cIndOp/gIBSCBS, tributação regular e diferimento; ajustes de base por valor, percentual e documentos; eventos e incidência do serviço 170501. Não altera enquadramento nem calcula tributos definitivos.",
+  "validacao": "Ordem/caminhos comparados ao Anexo VI. Validação XSD executada e reprovada: pacote oficial publicado é julho, não contempla finNFSe na raiz da infDPS nem vAjusteBC/nDUIMP/nDUE/verCalcIBSCBS. Diagnóstico completo em nt009-validacao-xsd-2026-10-11.json.",
   "ativacao": "Nenhuma. Emissor e contrato operacional permanecem inalterados; não há ativação automática em 03/11.",
   "pendencias": [
-    "Integrar seleção do contrato por ambiente e implantação, antes da assinatura, após homologação.",
-    "Completar ocorrência de gIBSCBS e cIndOp por ind_gIBSCBS e catálogo oficial; o XML estrutural desta etapa não comprova atendimento dessa regra.",
-    "Implementar vAjusteBC e validar bases, sem converter deduções por simples renomeação.",
-    "Validar endereços, 17.05, comércio exterior, eventos e demais operações atendidas pelo produto.",
-    "Validar XSD correspondente, importação, retornos, rejeições e homologação por pacote."
+    "XSD oficial compatível e validação positiva; homologação ponta a ponta dos dois pacotes.",
+    "Consulta da calculadora por classificação e competência; snapshot offline não comprova indicador vigente no autorizador.",
+    "Cadastros RFB e correspondência CEP/município por competência; exceções cadastrais de 17.05.",
+    "Admissão municipal dos ajustes, repercussão por tipo, somatórios e bases finais (incluindo benefícios municipais e carga mínima).",
+    "Comércio exterior/BCB, nota do tomador, condomínios, imóveis e notas de ajuste continuam recusados pelo preparador. Créditos presumidos exigem catálogo próprio.",
+    "Integração com contrato operacional antes da assinatura e testes de retorno/importação. Não ativar em produção com base apenas nos testes locais."
   ],
-  "restricoes": "2027 permanece bloqueado. Nenhuma assinatura, consulta ao autorizador, reserva de numeração ou emissão."
+  "restricoes": "2027 permanece bloqueado. Nenhuma assinatura, consulta ao autorizador, reserva de numeração ou emissão.",
+  "regrasLocais": [
+    "E0859/E0860",
+    "E0960/E0961",
+    "E0964/E0965",
+    "E0971/E0972",
+    "E0453",
+    "E0427 (ajuste direto e desconto)",
+    "E0462/E0463/E0464/E0465",
+    "E0467/E0469/E0472/E0474",
+    "E0460/E0470/E0476/E0479",
+    "E0390/E0392/E0393/E0394/E0395",
+    "E0235/E0919 (ocorrência do endereço)",
+    "E0920 (IBGE)",
+    "E1321 (seleção do município 170501)"
+  ],
+  "correcaoEtapaAnterior": "Preservar gIBSCBS para CST000, inclusive no preparador de 2027. A ocorrência obrigatória não depende de campos opcionais; a remoção anterior estava incorreta.",
+  "xsdPublicado": {
+    "consulta": "2026-10-11",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita/esquemas-nfse-rtc-v1-01-20260727.zip",
+    "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
+    "observacao": "Download repetido confirmou o mesmo pacote versionado. Não foi criado XSD próprio para simular conformidade."
+  },
+  "comandos": [
+    "node apps/api/scripts/gerar-tabelas-nt009.mjs",
+    "node apps/api/scripts/preparar-dps-nt009-offline.mjs entrada.json resultado.json",
+    "python apps/api/scripts/validar-dps-nt009-xsd.py --xsd DPS_v1.01.xsd --preparacao resultado.json"
+  ]
 }

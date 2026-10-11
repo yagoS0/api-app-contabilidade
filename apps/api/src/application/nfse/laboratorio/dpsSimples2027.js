@@ -93,7 +93,7 @@ export function prepararDpsSimples2027Offline({ xmlBase, company, perfil, indFin
   if (dest) inf.appendChild(dest);
   trib.appendChild(cst);
   trib.appendChild(classe);
-  trib.removeChild(grupo); // Não emitir grupo vazio: CST/classificação agora pertencem a trib.
+  ordenar(trib, ['CST', 'cClassTrib', 'gIBSCBS']); // CST000 exige gIBSCBS (E0960), mesmo sem opcionais.
   if (indFinal != null) {
     if (!['0', '1'].includes(indFinal)) falhar('IND_FINAL_INVALIDO', 'indFinal deve ser 0 ou 1, declarado explicitamente.');
     adicionar(ibs, 'indFinal', indFinal);
