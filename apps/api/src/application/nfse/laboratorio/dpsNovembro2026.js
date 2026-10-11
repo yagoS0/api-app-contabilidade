@@ -1,6 +1,7 @@
 import { conferirImoveisCondominios } from './imoveisNovembro2026.js';
 import { conferirAjustesMunicipais } from './municipaisNovembro2026.js';
 import { conferirComercioExterior } from './comercioExteriorNovembro2026.js';
+import { conferirCadastrosNovembro } from './cadastrosNovembro2026.js';
 // Preparação OFFLINE do contrato de novembro/2026. Não importar no emissor.
 // Não assina, reserva numeração, consulta banco ou transmite. O XSD futuro ainda é pendente.
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
@@ -14,7 +15,7 @@ import { NS, falhar, unico, somente, ordenar } from './xmlEstruturaOffline.js';
  * Restrito a 2026 e nota regular; regras locais não comprovam homologação.
  * Contrato explícito: não depende da competência para ativar a produção.
  */
-export function prepararDpsNovembro2026Offline({ xmlBase, contrato, indFinal, contextoMunicipal, referenciaMoedas }) {
+export function prepararDpsNovembro2026Offline({ xmlBase, contrato, indFinal, contextoMunicipal, referenciaMoedas, evidenciasCadastrais }) {
   if (contrato !== 'NT009_V1_01_NOVEMBRO_2026') falhar('CONTRATO_INVALIDO', 'Selecione explicitamente o contrato de novembro de 2026.');
   if (typeof xmlBase !== 'string' || xmlBase.length > 1_000_000 || /<!DOCTYPE|<!ENTITY/i.test(xmlBase) || XMLValidator.validate(xmlBase) !== true) {
     falhar('XML_BASE_INVALIDO', 'Informe XML bem formado, sem DTD ou entidades externas.');
@@ -89,13 +90,14 @@ export function prepararDpsNovembro2026Offline({ xmlBase, contrato, indFinal, co
   const municipal = conferirAjustesMunicipais({ inf, competencia, classificacao, contextoMunicipal, municipioIss1705 });
   const comercioExterior = conferirComercioExterior({ inf, competencia, referenciaMoedas });
   const imoveis = conferirImoveisCondominios(inf);
+  const cadastros = conferirCadastrosNovembro({ inf, competencia, evidencias: evidenciasCadastrais });
   return {
-    municipal, comercioExterior, imoveis,
+    municipal, comercioExterior, imoveis, cadastros,
     municipioIss1705,
     xml: new XMLSerializer().serializeToString(doc),
     contrato, anexo: 'VI v1.04.01', producaoPrevista: '2026-11-03',
     somenteOffline: true, liberadoParaEmissao: false, validadoContraXsdFuturo: false,
     competencia,
-    pendencias: [...new Set([...municipal.pendencias, ...comercioExterior.pendencias, ...imoveis.pendencias, 'XSD_OFICIAL_COMPATIVEL', 'CADASTROS_RFB_CEP_POR_COMPETENCIA', 'PARAMETROS_MUNICIPAIS_E_BASES', 'CALCULADORA_POR_COMPETENCIA', 'REGRAS_COMPLETAS_E_AUTORIZADOR', 'ACEITE_EM_HOMOLOGACAO'])],
+    pendencias: [...new Set([...cadastros.pendencias, ...municipal.pendencias, ...comercioExterior.pendencias, ...imoveis.pendencias, 'XSD_OFICIAL_COMPATIVEL', 'CADASTROS_RFB_CEP_POR_COMPETENCIA', 'PARAMETROS_MUNICIPAIS_E_BASES', 'CALCULADORA_POR_COMPETENCIA', 'REGRAS_COMPLETAS_E_AUTORIZADOR', 'ACEITE_EM_HOMOLOGACAO'])],
   };
 }

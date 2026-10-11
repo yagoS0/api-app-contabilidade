@@ -2,6 +2,7 @@ import { prisma } from '../../infrastructure/db/prisma.js';
 import { NFSE_ENV, INTEGRACAO_PARAMETROS_MUNICIPAIS } from '../../config.js';
 import { resolverCertificadosDaEmpresa } from './nfseCertificado.js';
 import { criarClienteParametros, caminhoParametros, erroParametros } from './parametrosMunicipaisClient.js';
+import { parametrosMunicipaisDaCompetencia } from './parametrosMunicipaisCompetencia.js';
 
 export function criarServicoParametros({ db = prisma, ambiente = NFSE_ENV, habilitado = INTEGRACAO_PARAMETROS_MUNICIPAIS,
   resolverCertificados = resolverCertificadosDaEmpresa, criarCliente = criarClienteParametros } = {}) {
@@ -13,6 +14,13 @@ export function criarServicoParametros({ db = prisma, ambiente = NFSE_ENV, habil
     return company;
   }
   return {
+    async porCompetencia({ portalClientId, municipio, codigoServico, competencia }) {
+      const company = await empresa(portalClientId);
+      const consultas = habilitado ? await db.nfseConsultaMunicipal.findMany({
+        where: { companyId: company.id, ambiente, municipio, codigoServico, recurso: 'servico', status: 'RECEBIDO_PARA_CONFERENCIA' },
+      }) : [];
+      return parametrosMunicipaisDaCompetencia({ consultas, companyId: company.id, ambiente, municipio, codigoServico, competencia });
+    },
     async listar(portalClientId) {
       const company = await empresa(portalClientId);
       const consultas = habilitado ? await db.nfseConsultaMunicipal.findMany({ where: { companyId: company.id, ambiente },
