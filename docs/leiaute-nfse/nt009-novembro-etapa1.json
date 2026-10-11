@@ -1,0 +1,18 @@
+{
+  "data": "2026-10-11",
+  "estado": "PREPARACAO_OFFLINE_PARCIAL",
+  "fonte": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+  "anexo": "VI v1.04.01",
+  "entrada": "DPS 1.01 não assinada, tpAmb=2, competência 2026, contrato NT009_V1_01_NOVEMBRO_2026 explícito",
+  "escopo": "Nota regular, CST 000 / classe 000001, sem operações especiais. Preserva dados fiscais; reposiciona finNFSe, indDest, dest, CST/cClassTrib e cNBS. Compartilha utilitários estruturais com o preparador de 2027.",
+  "validacao": "Teste de ordem e caminhos comparado diretamente com a planilha oficial versionada; não substitui XSD nem regras do autorizador.",
+  "ativacao": "Nenhuma. Emissor e contrato operacional permanecem inalterados; não há ativação automática em 03/11.",
+  "pendencias": [
+    "Integrar seleção do contrato por ambiente e implantação, antes da assinatura, após homologação.",
+    "Completar ocorrência de gIBSCBS e cIndOp por ind_gIBSCBS e catálogo oficial; o XML estrutural desta etapa não comprova atendimento dessa regra.",
+    "Implementar vAjusteBC e validar bases, sem converter deduções por simples renomeação.",
+    "Validar endereços, 17.05, comércio exterior, eventos e demais operações atendidas pelo produto.",
+    "Validar XSD correspondente, importação, retornos, rejeições e homologação por pacote."
+  ],
+  "restricoes": "2027 permanece bloqueado. Nenhuma assinatura, consulta ao autorizador, reserva de numeração ou emissão."
+}
