@@ -39,13 +39,13 @@ export function decimal(v) {
 }
 export function validarAjustesNovembro(valores,servico,competencia) {
  const ajuste=unico(valores,'vAjusteBC',false);if(!ajuste)return;
- somente(ajuste,['pAjusteBCISSQN','vAjusteBCISSQN','documentos']);
+ somente(ajuste,['pAjusteBCISSQN','vAjusteBCISSQN','documentos','vAjusteBCIBSCBSComExt']);
  const vServ=decimal(campo(unico(valores,'vServPrest'),'vServ'));
  const descontos=unico(valores,'vDescCondIncond',false);
  const desconto=descontos?decimal(campo(descontos,'vDescIncond')||'0'):0n;
  const p=campo(ajuste,'pAjusteBCISSQN'),v=campo(ajuste,'vAjusteBCISSQN'),docs=unico(ajuste,'documentos',false);
  exige(!(p!==null&&v!==null),'AJUSTE_DUPLICADO','Escolha valor ou percentual para o ajuste direto.');
- exige(p!==null||v!==null||docs,'AJUSTE_VAZIO','Informe o ajuste ou seus documentos.');
+ exige(p!==null||v!==null||docs||campo(ajuste,'vAjusteBCIBSCBSComExt')!==null,'AJUSTE_VAZIO','Informe o ajuste ou seus documentos.');
  exige(desconto<=vServ,'E0427','Desconto excede o serviço.');
  if(p!==null)exige(decimal(p)>0n&&decimal(p)<=10000n,'E0453','Percentual de ajuste deve ser maior que zero e até cem.');
  const direto=p!==null?((vServ-desconto)*decimal(p)+5000n)/10000n:v!==null?decimal(v):0n;
@@ -74,7 +74,7 @@ export function validarAjustesNovembro(valores,servico,competencia) {
    }
   }
  }
- ordenar(ajuste,['pAjusteBCISSQN','vAjusteBCISSQN','documentos']);
+ ordenar(ajuste,['pAjusteBCISSQN','vAjusteBCISSQN','documentos','vAjusteBCIBSCBSComExt']);
 }
 const municipios = new Set(MUNICIPIOS_IBGE.map(m=>String(m[0])));
 export function validarMunicipio(codigo,codErro){exige(municipios.has(codigo),codErro,'Município ausente da tabela IBGE.');}

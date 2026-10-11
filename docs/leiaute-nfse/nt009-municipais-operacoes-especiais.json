@@ -1,0 +1,54 @@
+{
+  "data": "2026-10-11",
+  "ambito": "Preparador offline do PR141; nenhuma alteração no emissor operacional ou banco.",
+  "fonte": "Anexo VI v1.04.01 da NT009 v1.01, RN DPS_NFS-e e AJUSTE_BC_REPERCUSSÃO; arquivos e hashes já versionados.",
+  "municipais": [
+    "Complemento municipal 000 é recusado (E0315).",
+    "Ajustes incompatíveis com MEI, regime especial e tributação não tributável são recusados; documento excepcional não libera ajustes misturados.",
+    "Parâmetros precisam declarar prestador, município de incidência, serviço nacional/municipal, ambiente, referência conferida e vigência. Data de consulta não substitui vigência.",
+    "Valores desconhecidos de admissão/convênio geram pendência. Permissões falsas geram recusa quando a regra requer admissão.",
+    "Somatórios separam repercussão no ISS e IBS/CBS: tipo 105 não reduz ISS; documentos excepcionais não reduzem ISS sem admissão municipal.",
+    "Ajuste percentual incide sobre serviço menos desconto incondicionado, com aritmética decimal em centavos. Carga mínima de 2% é conferida para não optante nas hipóteses suportadas, respeitando exceções extraídas do anexo."
+  ],
+  "comercioExterior": [
+    "Ocorrência de comExt, domínios de modo/vínculo/mecanismos/movimento/MDIC, NBS e campos documentais.",
+    "DUIMP e DU-E são declaradas explicitamente, sem renomear nDI/nRE. Ajuste exterior assinado é preservado.",
+    "Moeda pode ser conferida contra referência BCB por competência; sem referência ou para modo 5 há pendências explícitas."
+  ],
+  "imoveis": [
+    "Locação: ocorrência, NBS residencial/não residencial, percentual de copropriedade, vServ e descontos proporcionais; identificação e ajustes por unidade.",
+    "Condomínio: imóvel obrigatório, vencimento, limites/repetições de cobranças, descrição de outros tipos, soma de detalhes e descontos por tipo.",
+    "CIB e CEP não são validados contra cadastros externos. Correlação de detalhe/cobrança permanece pendente."
+  ],
+  "contratoEntradaMunicipal": {
+    "contextoMunicipal": {
+      "municipioIncidencia": "IBGE confirmado para a operação",
+      "parametros": {
+        "prestador": "CNPJ/CPF igual ao prestador do XML",
+        "ambiente": "homologacao",
+        "municipio": "mesmo município de incidência",
+        "codigoServicoNacional": "cTribNac do XML",
+        "codigoServicoMunicipal": "cTribMun do XML ou null",
+        "referencia": "identificação do documento/consulta conferida",
+        "conferido": true,
+        "vigenciaInicio": "AAAA-MM-DD",
+        "vigenciaFim": null,
+        "convenioAtivo": "booleano explícito",
+        "admiteValor": "booleano explícito",
+        "admitePercentual": "booleano explícito",
+        "admiteDocumentos": "booleano explícito",
+        "aliquotaIss": "percentual nominal decimal, por exemplo 5.00; nunca pTotTribSN"
+      }
+    }
+  },
+  "limiteReferencia": "Formato local de entrada para testes e conferência, não é contrato de resposta do ADN nem uma declaração de autenticidade. Não altera/persiste configuração da empresa.",
+  "ambiguidadeOficial": "RN541 descreve regime de apuração fora do SN, mas indica regApTribSN=1. Cenário fora do DAS permanece pendente, sem escolher interpretação permissiva.",
+  "naoCoberto": "Benefícios municipais, autenticação/consulta das fontes, validade cadastral e regras restantes do autorizador. Nenhum XML é declarado homologado.",
+  "travas": {
+    "somenteOffline": true,
+    "liberadoParaEmissao": false,
+    "competencia2027": "RECUSADA",
+    "tpAmb1": "RECUSADO",
+    "xmlAssinado": "RECUSADO"
+  }
+}
