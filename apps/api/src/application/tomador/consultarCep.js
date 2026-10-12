@@ -1,5 +1,6 @@
 // Consulta postal auxiliar; não grava cadastro nem executa emissão.
-// Fonte oficial: https://viacep.com.br/ (consultada em 09/09/2026).
+// Documentação do provedor: https://viacep.com.br/ (consultada em 09/09/2026).
+// ViaCEP é fonte auxiliar, não comprovação oficial da RFB nem histórico por competência.
 // GET /ws/{8 dígitos}/json/ retorna cep, logradouro, bairro, localidade, uf e ibge;
 // CEP inexistente retorna { erro: true }. Não há número de imóvel nessa consulta.
 // O "complemento" postal pode descrever o trecho da rua: não é complemento do tomador.

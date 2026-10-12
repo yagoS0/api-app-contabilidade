@@ -1,0 +1,76 @@
+{
+  "fonte": "https://adn.producaorestrita.nfse.gov.br/parametrizacao/swagger/v1/swagger.json",
+  "capturadoEm": "2026-10-10",
+  "sha256Original": "fe11afdc72ee27161af5d906206e4f1d422f48e7556525324ca52a72867d3bd5",
+  "paths": [
+    "/{codigoMunicipio}/{codigoServico}/{competencia}/aliquota",
+    "/{codigoMunicipio}/{codigoServico}/historicoaliquotas",
+    "/{codigoMunicipio}/{numeroBeneficio}/{competencia}/beneficio",
+    "/{codigoMunicipio}/beneficiomunicipal/{idManut}",
+    "/{codigoMunicipio}/convenio",
+    "/{codigoMunicipio}/{codigoServico}/{competencia}/regimes_especiais",
+    "/{codigoMunicipio}/regimes_especiais/{idManut}",
+    "/{codigoMunicipio}/{competencia}/retencoes",
+    "/{codigoMunicipio}/retencoes/{idManut}"
+  ],
+  "schemas": {
+    "ResultadoConsultaConfiguracoesConvenio": {
+      "type": "object",
+      "properties": {
+        "mensagem": {
+          "type": "string",
+          "nullable": true
+        },
+        "parametrosConvenio": {
+          "$ref": "#/components/schemas/ParametrosConfiguracaoConvenio"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Resultado da consulta dos convênios municipais"
+    },
+    "ParametrosConfiguracaoConvenio": {
+      "type": "object",
+      "properties": {
+        "tipoConvenioDeserializationSetter": {
+          "$ref": "#/components/schemas/TipoConvenio"
+        },
+        "aderenteAmbienteNacional": {
+          "$ref": "#/components/schemas/TipoSimNao"
+        },
+        "aderenteEmissorNacional": {
+          "$ref": "#/components/schemas/TipoSimNao"
+        },
+        "situacaoEmissaoPadraoContribuintesRFB": {
+          "$ref": "#/components/schemas/TipoSituacaoEmissaoPadraoContribuintesRFB"
+        },
+        "aderenteMAN": {
+          "$ref": "#/components/schemas/TipoSimNao"
+        },
+        "permiteAproveitametoDeCreditos": {
+          "type": "boolean",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false,
+      "description": ""
+    },
+    "TipoSimNao": {
+      "enum": [
+        0,
+        1,
+        -1
+      ],
+      "type": "integer",
+      "format": "int32"
+    },
+    "TipoSituacaoEmissaoPadraoContribuintesRFB": {
+      "enum": [
+        0,
+        1,
+        -1
+      ],
+      "type": "integer",
+      "format": "int32"
+    }
+  }
+}
