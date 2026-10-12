@@ -93,3 +93,15 @@ test('STAFF e demonstração não oferecem escrita nem disponibilidade oficial',
   expect(screen.queryByRole('button', { name: 'Vincular esta empresa' })).not.toBeInTheDocument();
   await expect(criarApuracaoConsumoMock().prepararRevisaoConsumo()).rejects.toThrow('Nenhum registro foi salvo');
 });
+
+test('IBS apresenta limitações do contrato e fonte oficial sem habilitar operações', async () => {
+  const api = criarApi(); api.getBaseApuracaoConsumo.mockImplementation(async (id, ctx) => ({ ...base(ctx), integracaoIbs: ctx.tributo === 'IBS' ? { versaoContrato: 'MOC1.10', verificadoEm: '2026-10-12', fonte: 'https://cgibs.gov.br/manual.pdf', runtimeHabilitado: false } : null }));
+  render(<BaseApuracaoConsumo companyId="a" api={api} />); abrir(); await screen.findByText('Empresa A · 11111111000111'); preencher('Tributo', 'IBS'); await screen.findByText('Integração IBS indisponível'); expect(screen.getByRole('link', { name: 'Consultar manual oficial do CGIBS' })).toHaveAttribute('href', 'https://cgibs.gov.br/manual.pdf'); expect(screen.getByText(/Saldo, guias e confirmação de pagamento aguardam especificação/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: /emitir/i })).not.toBeInTheDocument();
+});
+
+test('alteração cadastral desmonta status mensal antigo até nova leitura', async () => {
+  const api = criarApi(); let estado = 'CONFERIDA_LOCAL'; api.getMensalConsumo = jest.fn(async (id, ctx) => ({ ok: true, ...ctx, contextoHash: 'a'.repeat(64), versao: 1, estado, capacidades: {}, estabelecimentos: [], pendenciasCalculadas: [], dados: { pendencias: [], guias: [], pagamentos: [], alocacoes: [] } }));
+  const view = render(<BaseApuracaoConsumo companyId="a" api={api} cadastroVersao={1} />); abrir(); await screen.findByText('Empresa A · 11111111000111');
+  const abrirMensal = () => { const el = screen.getByText('Conferência e pagamentos da competência').closest('details'); el.open = true; fireEvent(el, new Event('toggle')); };
+  abrirMensal(); await screen.findByText(/Conferida pelo escritório/); estado = 'EM_CONFERENCIA'; view.rerender(<BaseApuracaoConsumo companyId="a" api={api} cadastroVersao={2} />); expect(screen.queryByText(/Conferida pelo escritório/)).not.toBeInTheDocument(); abrirMensal(); await screen.findByText(/Em conferência local/); expect(api.getMensalConsumo).toHaveBeenCalledTimes(2);
+});

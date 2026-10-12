@@ -1,0 +1,15 @@
+import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
+import { criarTransporteDownloadCbs, enderecoPublicoCbs } from '../CbsDownloadSeguro.js';
+test.each(['0.0.0.0','127.0.0.1','10.1.2.3','172.31.1.1','192.168.1.1','169.254.169.254','100.64.1.1','198.18.0.1','224.0.0.1','255.255.255.255','::1','::','::ffff:127.0.0.1','::ffff:8.8.8.8','fc00::1','fe80::1','2001:db8::1','2002:0808:0808::','64:ff9b::a00:1','3fff::1','invalid'])('bloqueia endereço não público %s', ip => expect(enderecoPublicoCbs(ip)).toBe(false));
+test.each(['8.8.8.8','1.1.1.1','2606:4700:4700::1111','2001:4860:4860::8888'])('aceita global %s', ip => expect(enderecoPublicoCbs(ip)).toBe(true));
+test('DNS misto público/privado recusado antes conexão', async () => { const request = jest.fn(); const fetch = criarTransporteDownloadCbs({ lookup: async () => [{ address: '8.8.8.8', family: 4 },{ address: '127.0.0.1', family: 4 }], request }); await expect(fetch('https://storage.example/a')).rejects.toThrow('Download CBS indisponível.'); expect(request).not.toHaveBeenCalled(); });
+test('pin impede rebinding, mantém TLS hostname, não envia segredo e não usa pool', async () => {
+  const lookup = jest.fn(async () => [{ address: '8.8.8.8', family: 4 }]); let options;
+  const request = jest.fn((url, opts, cb) => { options = opts; const req = new EventEmitter(); req.end = () => { const res = new PassThrough(); res.statusCode = 200; res.headers = {}; res.socket = { encrypted: true, authorized: true }; cb(res); res.end('bytes-exatos'); }; return req; });
+  const fetch = criarTransporteDownloadCbs({ lookup, request }); const response = await fetch('https://storage.example/path?assinatura=secreta', { headers: { Authorization: 'Bearer privado' } }); expect(await response.text()).toBe('bytes-exatos');
+  expect(options.agent).toBe(false); expect(options.servername).toBe('storage.example'); expect(options.rejectUnauthorized).toBe(true); expect(options.headers.Authorization).toBeUndefined();
+  lookup.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]); const cb = jest.fn(); options.lookup('storage.example', {}, cb); expect(cb).toHaveBeenCalledWith(null, '8.8.8.8', 4); expect(lookup).toHaveBeenCalledTimes(1);
+});
+test.each([302,403,500])('não segue redirect nem lê erro HTTP%s', async status => { const request = (url, opts, cb) => { const req = new EventEmitter(); req.end = () => { const res = new PassThrough(); res.statusCode = status; res.headers = { location: 'http://127.0.0.1' }; res.socket = {}; cb(res); }; return req; }; await expect(criarTransporteDownloadCbs({ lookup: async () => [{ address: '8.8.8.8', family: 4 }], request })('https://storage.example/a')).rejects.toThrow('Download CBS indisponível.'); });
+test('abort durante DNS pendente encerra sem abrir conexão', async () => { const request = jest.fn(); const controller = new AbortController(); const result = criarTransporteDownloadCbs({ lookup: () => new Promise(() => {}), request })('https://storage.example/a', { signal: controller.signal }); controller.abort(); await expect(result).rejects.toThrow(); expect(request).not.toHaveBeenCalled(); });

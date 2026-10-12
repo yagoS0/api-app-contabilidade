@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { defaultCompetencia } from '../apuracao/hooks/useApuracao';
+import { ColetasCbs } from './ColetasCbs';
+import { MensalConsumo } from './MensalConsumo';
 
 const PENDENCIAS = {
   COLETA_OFICIAL_NAO_IMPLEMENTADA: 'A coleta oficial ainda não está disponível.',
@@ -14,6 +16,7 @@ const CAPACIDADES = { coletar: 'Coleta oficial', conferir: 'Conferência', confi
 export function BaseApuracaoConsumo(props) { return <Base key={props.companyId} {...props} />; }
 function Base({ companyId, api, cadastroVersao }) {
   const [aberto, setAberto] = useState(false), [tributo, setTributo] = useState('CBS'), [ambiente, setAmbiente] = useState('HOMOLOGACAO');
+  const [contextoVersao, setContextoVersao] = useState(0);
   const [competencia, setCompetencia] = useState(defaultCompetencia);
   return <details onToggle={e => setAberto(e.currentTarget.open)}>
     <summary>Preparação da apuração IBS/CBS</summary>
@@ -24,11 +27,13 @@ function Base({ companyId, api, cadastroVersao }) {
         <label>Ambiente<select value={ambiente} onChange={e => setAmbiente(e.target.value)}><option value="HOMOLOGACAO">Homologação</option><option value="PRODUCAO">Produção</option></select></label>
         <label>Competência da preparação<input type="month" value={competencia} onChange={e => setCompetencia(e.target.value)} /></label>
       </div>
-      {competencia && <Preparacao key={`${companyId}:${tributo}:${ambiente}:${competencia}:${cadastroVersao}`} api={api} companyId={companyId} tributo={tributo} ambiente={ambiente} competencia={competencia} />}
+      {competencia && <Preparacao key={`${companyId}:${tributo}:${ambiente}:${competencia}:${cadastroVersao}`} api={api} companyId={companyId} tributo={tributo} ambiente={ambiente} competencia={competencia} onAlteracao={() => setContextoVersao(v => v + 1)} />}
+      {competencia && <MensalConsumo key={`${cadastroVersao}:${contextoVersao}`} api={api} companyId={companyId} tributo={tributo} ambiente={ambiente} competencia={competencia} />}
+      {tributo === 'CBS' && <ColetasCbs api={api} companyId={companyId} ambiente={ambiente} />}
     </>}
   </details>;
 }
-function Preparacao({ api, companyId, tributo, ambiente, competencia }) {
+function Preparacao({ api, companyId, tributo, ambiente, competencia, onAlteracao }) {
   const [base, setBase] = useState(null), [erro, setErro] = useState(''), [aviso, setAviso] = useState(''), [recarga, setRecarga] = useState(0);
   const [ocupado, setOcupado] = useState(false), [habilitado, setHabilitado] = useState(false);
   const [referenciaContrato, setReferenciaContrato] = useState(''), [motivo, setMotivo] = useState(''), [motivoRevisao, setMotivoRevisao] = useState('');
@@ -62,6 +67,7 @@ function Preparacao({ api, companyId, tributo, ambiente, competencia }) {
       if (!vivo.current || apiAtual.current !== api) return;
       if (!r?.ok || !r[chaveRetorno]) throw new Error('Gravação sem confirmação. Recarregue para conferir o registro.');
       delete intencoes.current[acao];
+      onAlteracao?.();
       setBase(null); setAviso('Preparação local registrada. Nenhuma consulta ou emissão foi realizada.'); setRecarga(v => v + 1);
     } catch (e) { if (vivo.current && apiAtual.current === api) setErro(e.message || 'Não foi possível confirmar o registro.'); }
     finally { bloqueio.current = false; if (vivo.current) setOcupado(false); }
@@ -77,6 +83,11 @@ function Preparacao({ api, companyId, tributo, ambiente, competencia }) {
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {!base && !erro && <p role="status">Carregando preparação…</p>}
     {base && <>
+      {tributo === 'IBS' && base.integracaoIbs && <aside className="reforma-alert" aria-label="Limites da integração IBS">
+        <p><strong>Integração IBS indisponível</strong> · contrato {base.integracaoIbs.versaoContrato}, verificado em {base.integracaoIbs.verificadoEm}.</p>
+        <p>A habilitação e o download de arquivos dependem de endereços oficiais ainda não confirmados. Saldo, guias e confirmação de pagamento aguardam especificação e homologação. O cadastro local não libera essas operações.</p>
+        {base.integracaoIbs.fonte?.startsWith('https://cgibs.gov.br/') && <a href={base.integracaoIbs.fonte} target="_blank" rel="noopener noreferrer">Consultar manual oficial do CGIBS</a>}
+      </aside>}
       {base.demonstracao && <p>Demonstração: a preparação de IBS/CBS não grava dados e não habilita serviços oficiais.</p>}
       {!base.contribuinte ? <>
         <p>Esta empresa ainda não está vinculada à base de apuração.</p>

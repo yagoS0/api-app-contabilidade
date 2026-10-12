@@ -19,3 +19,5 @@
 .reforma a { color: var(--text); text-decoration: underline; }
 .reforma .reforma-evidence { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .reforma { padding: 12px; } .reforma th, .reforma td { padding: 8px; } }
+.reforma .reforma-check { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+.reforma .reforma-check input[type=checkbox] { width: auto; margin: 2px 0; flex-shrink: 0; }
