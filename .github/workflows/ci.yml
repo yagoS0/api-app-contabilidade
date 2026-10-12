@@ -71,7 +71,7 @@ jobs:
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='routineSchedule|scheduledRoutineService|runRoutineLoop|pagamentoWhatsappAgenda|application/fiscal/serpro/|CompanyRotinasService|rotinasAgendaValidacao|avisoPagamento|confirmarPagamentoWhatsapp|solicitarPagamentosWhatsapp|leituraComprovanteCliente|guiaDoAvisoCliente|pagamentoAutomatico|ConsultaPagamentoAutomatica|pagamentosPaginacao|parcelaPagamento|pagtoweb|companyProvisioning|varreduraNotasLocalWorker|dfeNotasWorkerIntervaloAdn'
       - name: Apuracao guards and CBS IBS preparation without external calls
         working-directory: apps/api
-        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='apuracaoConsumo|reformaCadastro|verificarNfse|reformaFiscal|regimeDoPresumido|calculoLpLigacao|apuracaoPresumido|capturaLpSemDuplicarInss|exigirRegimeLp|apuracaoLpRota|recalculoRegistroRota|procedenciaDas|apuracaoBatchVinculo'
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='apuracaoConsumo|[Cc]oleta[Cc]bs|[Cc]bs|[Ii]bs|[Mm]ensalConsumo|reformaCadastro|verificarNfse|reformaFiscal|regimeDoPresumido|calculoLpLigacao|apuracaoPresumido|capturaLpSemDuplicarInss|exigirRegimeLp|apuracaoLpRota|recalculoRegistroRota|procedenciaDas|apuracaoBatchVinculo'
       - name: Accountant frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
@@ -107,6 +107,38 @@ jobs:
       - name: WhatsApp and AI frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|liberarComCanais|canalDeEnvio|envioNaTela|colunaEnvio|reenviarGuia|classificacaoIa|botaoDeIa|clientFallbackAtendimento|pollingEntrega|[Cc]orrigirValor|conferenciaNaTela|ofxImport'
+
+  coleta-cbs-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: coleta_cbs_test
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: coleta_cbs_check
+        ports:
+          - 55441:5432
+        options: >-
+          --health-cmd "pg_isready -U coleta_cbs_test -d coleta_cbs_check"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://coleta_cbs_test:ci_test_only@127.0.0.1:55441/coleta_cbs_check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Apply migrations to disposable database
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Verify CBS isolation, concurrency, encrypted evidence and idempotency without network
+        run: node apps/api/scripts/verify-coleta-cbs-postgres.mjs "$DATABASE_URL" "$GITHUB_WORKSPACE/node_modules/.prisma/client"
+      - name: Verify monthly ledger, partial allocation and immutable history without network
+        run: node apps/api/scripts/verify-mensal-consumo-postgres.mjs "$DATABASE_URL" "$GITHUB_WORKSPACE/node_modules/.prisma/client"
 
   whatsapp-postgres:
     runs-on: ubuntu-latest

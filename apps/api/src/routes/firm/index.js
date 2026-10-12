@@ -2,6 +2,7 @@ import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraServ
 import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
 import { createReformaFiscalRouter } from "./reformaFiscal.js";
 import { createApuracaoConsumoRouter } from "./apuracaoConsumo.js";
+import { criarRuntimeCbsDoAmbiente } from "../../infrastructure/cbs/CbsRuntime.js";
 import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { createParcelamentosAcompanhamentoRouter } from "./parcelamentosAcompanhamento.js";
 import { reprocessarSitfisParcelamentos, prepararAcompanhamentoParcelamentosEmpresa } from "../../application/fiscal/serpro/ParcelamentoDescobertaService.js";
@@ -578,7 +579,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   }
   router.use(requireAuth(), requireAccountType("FIRM"));
   router.use(createReformaFiscalRouter({ prisma, requireFirmCompanyAccess }));
-  router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess }));
+  router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess, cbsDeps: criarRuntimeCbsDoAmbiente({ db: prisma }) }));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createPendenciasManuaisRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createExportacaoLoteRouter());

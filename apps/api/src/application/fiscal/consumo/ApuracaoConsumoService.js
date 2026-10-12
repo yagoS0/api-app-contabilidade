@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { periodoNaData } from '@contabilidade/shared/reforma-cadastro';
 import { normalizarDocumento, cnpjTemDvValido } from '@contabilidade/shared/documentos-fiscais';
 import { intervaloCompetencia } from '../reforma/ReformaFiscalService.js';
+import { obterCapacidadesIbs } from '../../../infrastructure/ibs/IbsCapacidades.js';
 
 const erro = (status, message) => Object.assign(new Error(message), { status });
 const pesos = { STAFF: 1, ACCOUNTANT: 2, FIRM_ADMIN: 3 };
@@ -53,7 +54,7 @@ async function empresa(db, id) {
   if (!r) throw erro(404, 'Empresa não encontrada.');
   return r;
 }
-async function carregarGrupo(db, companyId, usuario, escrita = false) {
+export async function carregarGrupo(db, companyId, usuario, escrita = false) {
   await autorizar(db, [companyId], usuario, escrita);
   await empresa(db, companyId);
   const vinculo = await db.apuracaoConsumoEstabelecimento.findUnique({ where: { portalClientId: companyId } });
@@ -66,7 +67,7 @@ async function carregarGrupo(db, companyId, usuario, escrita = false) {
   if (estabelecimentos.length !== ids.length || estabelecimentos.some(e => baseCnpj(e.cnpj) !== grupo.cnpjBase)) throw erro(409, 'O cadastro dos estabelecimentos mudou. Revise os vínculos antes de continuar.');
   return { ...grupo, estabelecimentos, podeEditar };
 }
-async function transacao(db, fn) {
+export async function transacao(db, fn) {
   try { return await db.$transaction(fn, { isolationLevel: 'Serializable' }); }
   catch (e) {
     if (['P2002', 'P2034'].includes(e.code)) throw erro(409, 'Os dados mudaram durante a gravação. Recarregue e confira a intenção antes de repetir.');
@@ -98,10 +99,10 @@ export async function vincularEstabelecimentos(db, companyId, entrada, usuario) 
   });
 }
 
-async function ultimaConfiguracao(db, contribuinteId, ctx) {
+export async function ultimaConfiguracao(db, contribuinteId, ctx) {
   return db.apuracaoConsumoConfiguracao.findFirst({ where: { contribuinteId, tributo: ctx.tributo, ambiente: ctx.ambiente }, orderBy: { versao: 'desc' } });
 }
-async function disponibilidadeCredencial(db, configuracao) {
+export async function disponibilidadeCredencial(db, configuracao) {
   const { credencialId, credencialPortalClientId } = configuracao?.dados || {};
   if (!credencialId) return null;
   return Boolean(await db.companyCredential.findFirst({ where: { id: credencialId, portalClientId: credencialPortalClientId }, select: { id: true } }));
@@ -138,7 +139,7 @@ export async function salvarConfiguracaoConsumo(db, companyId, entrada, usuario)
   });
 }
 
-async function enquadramentos(db, grupo, competencia) {
+export async function enquadramentos(db, grupo, competencia) {
   const intervalo = intervaloCompetencia(competencia);
   const inicio = `${competencia}-01`, fim = new Date(intervalo.lt.getTime() - 86400000).toISOString().slice(0, 10);
   const snapshots = [];
@@ -181,16 +182,17 @@ export async function prepararRevisaoConsumo(db, companyId, entrada, usuario) {
 
 export async function lerBaseConsumo(db, companyId, entrada, usuario) {
   const ctx = contexto(entrada, true);
+  const integracaoIbs = ctx.tributo === 'IBS' ? obterCapacidadesIbs(ctx) : null;
   return transacao(db, async tx => {
     // A própria existência de uma referência ao cofre requer ACCOUNTANT.
     const grupo = await carregarGrupo(tx, companyId, usuario, true);
     if (!grupo) return { contribuinte: null, configuracao: null, revisao: null, desatualizada: false,
-      podeEditar: await autorizar(tx, [companyId], usuario), capacidades, ...ctx };
+      podeEditar: await autorizar(tx, [companyId], usuario), capacidades, integracaoIbs, ...ctx };
     const configuracao = await ultimaConfiguracao(tx, grupo.id, ctx);
     const revisao = await tx.apuracaoConsumoRevisao.findFirst({ where: { contribuinteId: grupo.id, ...ctx }, orderBy: { versao: 'desc' } });
     const cadastroAtual = await enquadramentos(tx, grupo, ctx.competencia);
     const credencialDisponivel = await disponibilidadeCredencial(tx, configuracao);
-    return { contribuinte: grupo, configuracao, revisao, cadastroAtual, credencialDisponivel, ...ctx, podeEditar: grupo.podeEditar, capacidades,
+    return { contribuinte: grupo, configuracao, revisao, cadastroAtual, credencialDisponivel, integracaoIbs, ...ctx, podeEditar: grupo.podeEditar, capacidades,
       desatualizada: Boolean(revisao && (revisao.configuracaoId !== configuracao?.id || canonico(revisao.cadastroSnapshot) !== canonico(cadastroAtual)
         || revisao.dados.credencialDisponivel !== credencialDisponivel)) };
   });

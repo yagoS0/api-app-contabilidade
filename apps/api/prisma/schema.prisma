@@ -5893,6 +5893,55 @@ model ApuracaoConsumoContribuinte {
   estabelecimentos ApuracaoConsumoEstabelecimento[]
   configuracoes ApuracaoConsumoConfiguracao[]
   revisoes ApuracaoConsumoRevisao[]
+  coletasCbs ApuracaoCbsColeta[]
+  mesesLocais ApuracaoConsumoMesLocal[]
+  documentosLocais ApuracaoConsumoDocumentoLocal[]
+}
+
+// Livro local append-only: declaração/conferência humana nunca é confirmação oficial.
+model ApuracaoConsumoMesLocal {
+  id String @id @default(uuid())
+  contribuinteId String
+  tributo String
+  ambiente String
+  competencia String
+  versao Int
+  acao String
+  estado String
+  dados Json
+  contextoSnapshot Json
+  comando Json
+  requestKey String
+  requestHash String
+  criadoPorId String
+  createdAt DateTime @default(now())
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  @@unique([contribuinteId, tributo, ambiente, competencia, versao], map: "consumo_mes_local_versao_key")
+  @@unique([contribuinteId, requestKey], map: "consumo_mes_local_intencao_key")
+}
+
+// Evita reutilizar a mesma guia/pagamento em meses distintos do mesmo contexto.
+model ApuracaoConsumoDocumentoLocal {
+  id String @id @default(uuid())
+  contribuinteId String
+  tributo String
+  ambiente String
+  competencia String
+  tipo String
+  referenciaHash String
+  referencia String
+  criadoPorId String
+  createdAt DateTime @default(now())
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  @@unique([contribuinteId, tributo, ambiente, tipo, referenciaHash], map: "consumo_doc_local_referencia_key")
+}
+
+// Reserva durável de emissão OAuth, sem segredo e preservada após revogação da credencial.
+model ApuracaoCbsTokenEmissao {
+  id String @id @default(uuid())
+  credencialId String
+  createdAt DateTime @default(now())
+  @@index([credencialId, createdAt], map: "cbs_token_emissao_janela_idx")
 }
 
 model ApuracaoConsumoEstabelecimento {
@@ -5920,6 +5969,7 @@ model ApuracaoConsumoConfiguracao {
   createdAt DateTime @default(now())
   contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
   revisoes ApuracaoConsumoRevisao[]
+  coletasCbs ApuracaoCbsColeta[]
   @@unique([contribuinteId, tributo, ambiente, versao], map: "consumo_config_versao_key")
   @@unique([contribuinteId, requestKey], map: "consumo_config_intencao_key")
   @@unique([id, contribuinteId, tributo, ambiente], map: "consumo_config_escopo_key")
@@ -5944,4 +5994,71 @@ model ApuracaoConsumoRevisao {
   configuracao ApuracaoConsumoConfiguracao @relation(fields: [configuracaoId, contribuinteId, tributo, ambiente], references: [id, contribuinteId, tributo, ambiente], onDelete: Restrict)
   @@unique([contribuinteId, tributo, ambiente, competencia, versao], map: "consumo_revisao_versao_key")
   @@unique([contribuinteId, requestKey], map: "consumo_revisao_intencao_key")
+}
+
+// Coleta técnica por CNPJ-base. O contrato oficial não aceita filtro de competência.
+model ApuracaoCbsColeta {
+  id String @id @default(uuid())
+  contribuinteId String
+  tributo String @default("CBS")
+  ambiente String
+  recurso String
+  configuracaoId String
+  estado String @default("RESERVADA")
+  requestKey String
+  requestHash String
+  ticket String?
+  etaSegundos String?
+  arquivoExpiraEm DateTime?
+  dadosDownloadCifrados Bytes?
+  operacaoEmCursoId String?
+  erroCodigo String?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  contribuinte ApuracaoConsumoContribuinte @relation(fields: [contribuinteId], references: [id], onDelete: Restrict)
+  configuracao ApuracaoConsumoConfiguracao @relation(fields: [configuracaoId, contribuinteId, tributo, ambiente], references: [id, contribuinteId, tributo, ambiente], onDelete: Restrict)
+  tentativas ApuracaoCbsTentativa[]
+  arquivos ApuracaoCbsArquivo[]
+  @@unique([contribuinteId, requestKey], map: "cbs_coleta_intencao_key")
+  @@unique([contribuinteId, ambiente, ticket], map: "cbs_coleta_ticket_key")
+  @@unique([id, contribuinteId, ambiente], map: "cbs_coleta_escopo_key")
+  @@index([contribuinteId, ambiente, createdAt], map: "cbs_coleta_contexto_idx")
+}
+
+// Tentativa é reservada antes do I/O e finalizada uma única vez. Nenhum replay automático.
+model ApuracaoCbsTentativa {
+  id String @id @default(uuid())
+  coletaId String
+  contribuinteId String
+  ambiente String
+  operacao String
+  requestKey String
+  requestHash String
+  estado String @default("RESERVADA")
+  // Evidência canônica allowlist do transporte; NÃO é o corpo HTTP original.
+  evidenciaCifrada Bytes?
+  erroCodigo String?
+  criadoPorId String
+  iniciadaEm DateTime @default(now())
+  finalizadaEm DateTime?
+  coleta ApuracaoCbsColeta @relation(fields: [coletaId, contribuinteId, ambiente], references: [id, contribuinteId, ambiente], onDelete: Restrict)
+  @@unique([contribuinteId, requestKey], map: "cbs_tentativa_intencao_key")
+  @@index([coletaId, iniciadaEm], map: "cbs_tentativa_coleta_idx")
+}
+
+// Bytes EXATOS recebidos no download, cifrados. Não contém valores normalizados/conferidos.
+model ApuracaoCbsArquivo {
+  id String @id @default(uuid())
+  coletaId String @unique
+  contribuinteId String
+  ambiente String
+  sha256 String
+  tamanhoBytes Int
+  contentType String @default("application/octet-stream")
+  conteudoCifrado Bytes
+  criadoPorId String
+  createdAt DateTime @default(now())
+  coleta ApuracaoCbsColeta @relation(fields: [coletaId, contribuinteId, ambiente], references: [id, contribuinteId, ambiente], onDelete: Restrict)
+  @@index([contribuinteId, ambiente, sha256], map: "cbs_arquivo_hash_idx")
 }
