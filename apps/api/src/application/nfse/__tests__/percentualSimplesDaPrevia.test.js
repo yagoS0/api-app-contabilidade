@@ -12,7 +12,19 @@ test('preenche apuração da competência, convertendo fração em percentual e 
 test('PGDAS-D é referência conferível, sem usar DAS pago nem notas capturadas', async () => {
  expect(await preparar([], [{...circular,dasTotal:9999}]).run()).toMatchObject({estado:'REFERENCIA',valor:6,fonte:'PGDAS_D',referencia:'declaracao'});
 });
-test('competência anterior nunca é automática',async()=>expect(await preparar([{...apuracao,competencia:'2026-09'}]).run()).toMatchObject({estado:'REFERENCIA',exata:false}));
+test('mês imediatamente anterior preenche provisoriamente com fonte e competência',async()=>{
+ expect(await preparar([{...apuracao,competencia:'2026-09'}]).run()).toMatchObject({estado:'AUTOMATICO',exata:false,provisorio:true,competencia:'2026-09',valor:6});
+ expect(await preparar([],[{...circular,competencia:'2026-09'}]).run()).toMatchObject({estado:'AUTOMATICO',provisorio:true,fonte:'PGDAS_D',referencia:'declaracao'});
+});
+test('janeiro usa dezembro do ano anterior',async()=>expect(await preparar([{...apuracao,competencia:'2025-12'}]).run({competencia:'2026-01-10'})).toMatchObject({estado:'AUTOMATICO',provisorio:true}));
+test('referência mais antiga e apuração provisória ou simulada não entram automaticamente',async()=>{
+ expect(await preparar([{...apuracao,competencia:'2026-08'}]).run()).toMatchObject({estado:'REFERENCIA',provisorio:false});
+ for(const extra of [{estado:'calculada'},{simulacaoSerpro:{}}]) expect(await preparar([{...apuracao,competencia:'2026-09',...extra}]).run()).toMatchObject({estado:'REFERENCIA',provisorio:false});
+});
+test('conflito no mês anterior exige conferência e competência atual tem prioridade',async()=>{
+ expect(await preparar([{...apuracao,competencia:'2026-09',aliquotaEfetivaPorAnexo:{III:{receita:10000,efetiva:0.08}}}],[{...circular,competencia:'2026-09'}]).run()).toMatchObject({estado:'REFERENCIA',provisorio:false});
+ expect(await preparar([apuracao],[{...circular,competencia:'2026-09'}]).run()).toMatchObject({estado:'AUTOMATICO',exata:true,provisorio:false,competencia:'2026-10'});
+});
 test('divergência com PGDAS-D exige confirmação',async()=>expect(await preparar([{...apuracao,aliquotaEfetivaPorAnexo:{III:{receita:10000,efetiva:0.08}}}],[circular]).run()).toMatchObject({estado:'REFERENCIA',mensagem:expect.stringContaining('divergem')}));
 test.each([null, '', -0.1, 2])('alíquota inválida %s não preenche',async efetiva=>expect(await preparar([{...apuracao,aliquotaEfetivaPorAnexo:{III:{receita:10000,efetiva}}}]).run()).toMatchObject({estado:'INDISPONIVEL',valor:null}));
 test('zero válido é preservado',async()=>expect(await preparar([{...apuracao,aliquotaEfetivaPorAnexo:{III:{receita:10000,efetiva:0}}}]).run()).toMatchObject({valor:0}));

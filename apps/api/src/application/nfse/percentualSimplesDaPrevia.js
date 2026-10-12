@@ -5,6 +5,8 @@ const positivas = obj => Object.entries(obj || {}).filter(([, v]) => numero(v) >
 // Usa apenas dados já apurados/importados. Nunca consulta ou transmite PGDAS-D nesta leitura.
 export async function percentualSimplesDaPrevia({ db, portalClientId, competencia, servicoUnico }) {
   const mes = String(competencia).slice(0, 7);
+  const [ano, numeroMes] = mes.split('-').map(Number);
+  const mesAnterior = `${numeroMes === 1 ? ano - 1 : ano}-${String(numeroMes === 1 ? 12 : numeroMes - 1).padStart(2, '0')}`;
   const vazio = { estado: 'INDISPONIVEL', valor: null, competencia: null, fonte: null,
     mensagem: 'Não há percentual compatível disponível. Informe o percentual conferido pelo contador.' };
   if (!servicoUnico) return { ...vazio, mensagem: 'Há mais de um serviço no cadastro. Confira o percentual aplicável à atividade desta nota.' };
@@ -28,7 +30,7 @@ export async function percentualSimplesDaPrevia({ db, portalClientId, competenci
         || imposto == null || imposto < 0 || Math.abs(Number(atividades[0].receita) - receita) > 0.01) continue;
       const valor = Number((imposto / receita * 100).toFixed(2));
       if (percentual(valor)) candidatos.push({ valor, competencia: c.competencia, fonte: 'PGDAS_D',
-        referencia: c.pgdasNumeroDeclaracao, prioridade: 0, exigeConfirmacao: true });
+        referencia: c.pgdasNumeroDeclaracao, prioridade: 0, exigeConfirmacao: true, permiteAnterior: true });
     }
     for (const a of apuracoes) {
       const tipos = positivas(a.receitaPorTipo);
@@ -40,17 +42,20 @@ export async function percentualSimplesDaPrevia({ db, portalClientId, competenci
       if (efetiva === null || efetiva < 0 || efetiva > 1) continue;
       const valor = efetiva == null ? null : Number((efetiva * 100).toFixed(2));
       if (percentual(valor)) candidatos.push({ valor, competencia: a.competencia, fonte: 'APURACAO_LOCAL', anexo: anexos[0][0], prioridade: 1,
-        exigeConfirmacao: Boolean(a.simulacaoSerpro) || !['fechada', 'confirmada'].includes(a.estado) });
+        exigeConfirmacao: Boolean(a.simulacaoSerpro) || !['fechada', 'confirmada'].includes(a.estado),
+        permiteAnterior: !a.simulacaoSerpro && ['fechada', 'confirmada'].includes(a.estado) });
     }
     candidatos.sort((a, b) => b.competencia.localeCompare(a.competencia) || a.prioridade - b.prioridade);
     const escolhido = candidatos[0];
     if (!escolhido) return vazio;
-    const { prioridade, exigeConfirmacao, ...dados } = escolhido;
+    const { prioridade, exigeConfirmacao, permiteAnterior, ...dados } = escolhido;
     const exata = escolhido.competencia === mes;
     const conflito = candidatos.some(c => c.competencia === escolhido.competencia && Math.abs(c.valor - escolhido.valor) > 0.01);
-    const confirmar = !exata || exigeConfirmacao || conflito;
-    return { ...dados, exata, estado: confirmar ? 'REFERENCIA' : 'AUTOMATICO',
+    const referenciaAnterior = escolhido.competencia === mesAnterior && permiteAnterior && !conflito;
+    const confirmar = conflito || (!referenciaAnterior && (!exata || exigeConfirmacao));
+    return { ...dados, exata, provisorio: referenciaAnterior, estado: confirmar ? 'REFERENCIA' : 'AUTOMATICO',
       mensagem: conflito ? 'Apuração e PGDAS-D divergem. Confira antes de usar o percentual.'
+        : referenciaAnterior ? `Percentual provisório do mês anterior (${mesAnterior}); ajuste se necessário para esta nota.`
         : !exata ? `Referência de ${escolhido.competencia}; confirme se é aplicável à competência desta nota.`
           : confirmar ? 'Percentual sugerido para conferência da atividade e da competência.'
             : 'Percentual preenchido pela apuração da competência.' };
