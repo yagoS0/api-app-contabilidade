@@ -7,6 +7,7 @@ export const CONFIG_EMPRESA = [
   { id: 'planoContas', grupo: 'Contabilidade', titulo: 'Plano de contas', descricao: 'Contas contábeis usadas nesta empresa.', tab: 'planoContas', termos: 'debito credito contabil' },
 ];
 export const CONFIG_GERAIS = [
+  { id: 'consumo', grupo: 'Integrações', titulo: 'CBS e IBS', descricao: 'Credenciais da apuração por empresa e orientações de habilitação.', href: '/configuracoes/cbs-ibs', termos: 'client id secret receita integra reforma tributaria' },
   { id: 'biblioteca', grupo: 'Atendimento', titulo: 'Biblioteca compartilhada', descricao: 'Mensagens rápidas, orientações, honorários e modelos de contratos.', href: '/biblioteca', termos: 'whatsapp procuracao gov assinatura mensagens textos propostas' },
   { id: 'integracoes', grupo: 'Integrações', titulo: 'SERPRO e certificados', descricao: 'Conexão, certificado do escritório e parâmetros da integração.', href: '/firm-settings/guides', termos: 'api receita procuração certificado a1' },
   { id: 'contabilidade', grupo: 'Contabilidade', titulo: 'Plano de contas global', descricao: 'Estrutura e contas padrão do escritório.', href: '/firm-settings/chart', termos: 'contabil debito credito' },

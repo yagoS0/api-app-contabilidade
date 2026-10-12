@@ -11,6 +11,7 @@ const PAGE_TO_PATH = {
   comunicadosWhatsapp: "/whatsapp/comunicados",
   bibliotecaComercial: "/biblioteca",
   configuracoesGerais: "/configuracoes",
+  credenciaisConsumo: "/configuracoes/cbs-ibs",
   login: "/login",
   companies: "/companies",
   createCompany: "/companies/new",
@@ -46,6 +47,7 @@ const PAGE_TO_PATH = {
 // log, sem 404 — foi o destino de `/calendario` e `/pendencias` por um tempo. Um teste é a única
 // forma de essa falha aparecer antes do usuário.
 export function pathToPageName(pathname) {
+  if (pathname === "/configuracoes/cbs-ibs" || pathname === "/configuracoes/cbs-ibs/") return "credenciaisConsumo";
   if (pathname === "/biblioteca" || pathname === "/biblioteca/") return "bibliotecaComercial";
   if (pathname === "/" || pathname === "") return "companies";
   if (pathname === "/configuracoes" || pathname === "/configuracoes/atendimento") return "configuracoesGerais";
