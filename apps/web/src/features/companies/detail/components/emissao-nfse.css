@@ -1,4 +1,8 @@
 .nfse-settings { min-width: 0; }
+.nfse-emission-title { margin: 0 0 16px; }
+.nfse-profile-heading { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.nfse-profile-heading h2 { margin: 0; }
+.nfse-profile-heading .btn { flex: 0 0 auto; width: auto; margin-left: auto; }
 .config-page:has(.nfse-settings) .config-columns > * { min-width: 0; }
 .config-embedded .company-form-page-shell:has(.nfse-settings) { min-width: 0; width: 100%; max-width: 100%; padding: 0; }
 .nfse-settings h2 { font-size: 1.1rem; margin: 0 0 12px; }
