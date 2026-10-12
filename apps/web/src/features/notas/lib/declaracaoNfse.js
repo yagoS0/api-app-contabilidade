@@ -47,17 +47,11 @@ export const MOTIVO_P_TOT_TRIB_SN =
   "Percentual total de tributos do Simples Nacional. O Padrão Nacional o exige em toda nota "
   + "declarada como Simples Nacional. Sem ele o servidor recusa a nota.";
 
-// ⚠ DE ONDE O NÚMERO VEM — e por que a tela NÃO o preenche sozinha.
-// O percentual é dado fiscal: sai do extrato do PGDAS-D (alíquota efetiva do Simples Nacional) e
-// depende do anexo do serviço desta nota. O sistema não tem esse número em forma utilizável no
-// momento da emissão: o extrato que guardamos é PDF (não campo), e a alíquota efetiva que o motor
-// de apuração calcula é POR ANEXO e só existe depois de apurada a competência — a nota é emitida
-// durante o mês. Sugerir ali um número seria a tela inventando dado fiscal.
+// A prévia identifica a fonte e a competência; o contador pode ajustar o percentual.
 export const FONTE_P_TOT_TRIB_SN =
-  "O número é dado fiscal e a tela não o preenche: ele sai do extrato do PGDAS-D (alíquota efetiva "
-  + "do Simples Nacional) e depende do anexo do serviço desta nota. A apuração da competência ainda "
-  + "não existe quando a nota é emitida, então não há de onde copiá-lo com segurança — confira no "
-  + "extrato ou com quem responde pela apuração.";
+  "A prévia usa a apuração compatível com a atividade ou, provisoriamente, o percentual do mês "
+  + "anterior. Confira a fonte e a competência indicadas e ajuste quando necessário. Este percentual "
+  + "informa o total de tributos; não substitui a alíquota de ISS retido.";
 
 // ⚠ A EMPRESA NÃO OPTANTE EMITE — e o que ela precisa NÃO é o `pTotTribSN`.
 //

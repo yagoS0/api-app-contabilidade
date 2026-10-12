@@ -36,11 +36,14 @@ function Verificacao() {
     consultarParametrosMunicipais: async () => { throw new Error('Consulta externa desativada nesta demonstração.'); },
   }), [perfil]);
   return <main className="nfse-settings" style={{ maxWidth: 1000, margin: 'auto', padding: 24 }}>
+    <h1 className="company-form-page__title nfse-emission-title">Emissão de NFS-e</h1>
+    <div className="company-form-page__panel nfse-settings">
     <GuiaEmissaoLink />
     <p role="status" style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 24px' }}>PRÉVIA LOCAL · Dados de demonstração · Emissão desativada</p>
     <EditorPerfilEmissao dados={{ perfis: [perfil], sugestoes }} podeEditar onSalvar={async (_, corpo) => setPerfil({ ...perfil, ...corpo })} />
     <details className="nfse-section nfse-municipal-disclosure"><summary>Consultar parâmetros municipais de ISS</summary><ParametrosMunicipais companyId="demo" api={api} podeConsultar /></details>
     <div className="nfse-preview-actions"><Button type="button" onClick={() => setEmitindo(true)}>Verificar fluxo até a conferência</Button></div>
+    </div>
     {emitindo && <EmitirNfseWizard companyId="demo" regime="SIMPLES" codigoMunicipioIbge="3304557" apiPerfis={api}
       cadastroEmissao={{ cnpj: '39254243000191', inscricaoMunicipal: '12345678', codigoServicoNacional: '170601', codigoServicoMunicipal: '001', rpsSerie: '00001' }}
       valoresIniciais={{ tomador: { cnpjCpf: '12345678000199', nome: 'Tomador de demonstração' }, servico: { descricao: 'Gestão de campanhas de anúncios e tráfego pago', valorServicos: '1,00' } }}

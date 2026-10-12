@@ -30,7 +30,6 @@ export function corpoDoPerfil(form, campos) {
 export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   const [form, setForm] = useState(null);
   const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
   const catalogos = catalogosDoPerfil(dados, campos);
   const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
@@ -40,7 +39,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
     ...(id === 'codigoServicoNacional' && valor !== anterior.codigoServicoNacional ? { _revisarServico: true } : {}) }));
   async function salvar(e) {
     e.preventDefault();
-    setErro(""); setSucesso("");
+    setErro("");
     const normalizado = { ...form };
     for (const [id, itens] of Object.entries(catalogos)) {
       const valor = String(form[id] ?? '').trim();
@@ -64,7 +63,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
     }
     try {
       await onSalvar(form.id || null, corpoDoPerfil(normalizado, campos));
-      setForm(null); setSucesso("Perfil de emissão salvo.");
+      setForm(null);
     } catch (err) {
       const detalhes = err?.payload?.erros?.map((e) => e.motivo).filter(Boolean).join(" ");
       setErro(detalhes || err?.message || "Não foi possível salvar o perfil.");
@@ -72,17 +71,18 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   }
   if (!dados || !podeEditar) return null;
   return <section className="nfse-profile-editor nfse-settings" aria-label="Editar perfis de emissão">
-    <h2>Perfis de emissão</h2>
+    <div className="nfse-profile-heading">
+      <h2>Perfis de emissão</h2>
+      {!form && <Button type="button" onClick={() => { setErro(""); setForm({ ...dados.derivadoDoCadastro, nome: "", ativo: true, padrao: false }); }}>Novo perfil</Button>}
+    </div>
     {dados.integracaoLigada === false && <p role="status">Os perfis estão desativados neste ambiente. Salvar um perfil não altera a nota até a integração ser habilitada.</p>}
     {dados.ibscbsLigado === false && <p role="status">O envio de IBS/CBS está desativado. Operações que já exigem essas informações serão bloqueadas antes da emissão.</p>}
-    {sucesso && <p role="status">{sucesso}</p>}
     {!form ? <>
-      <Button type="button" onClick={() => { setErro(""); setSucesso(""); setForm({ ...dados.derivadoDoCadastro, nome: "", ativo: true, padrao: false }); }}>Novo perfil</Button>
       {!dados.perfis?.length && <p className="nfse-empty">Nenhum perfil cadastrado. Crie um perfil para organizar os parâmetros de cada serviço.</p>}
       <ul className="nfse-profile-list">{(dados.perfis || []).map((p) => <li key={p.id}>
         <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span>
           <small>{dados.sugestoes?.porServico?.find(s => s.codigo === p.codigoServicoNacional)?.descricao}</small><p>{completudePerfilEmissao(p)}</p></div>
-        <Button type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setSucesso(""); setForm({ ...p }); }}>Editar</Button>
+        <Button type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setForm({ ...p }); }}>Editar</Button>
       </li>)}</ul>
     </> : <form onSubmit={salvar} className="nfse-profile-form" onInvalidCapture={e => { const secao = e.target.closest("details"); if (secao) secao.open = true; }}>
       <fieldset disabled={salvando} style={{ border: 0, padding: 0 }}>

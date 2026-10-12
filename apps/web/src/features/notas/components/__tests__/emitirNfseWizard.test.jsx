@@ -201,6 +201,17 @@ it("mantém todas as saídas do diálogo indisponíveis durante a emissão", asy
 });
 
 describe("o campo que faltava — pTotTribSN", () => {
+  it('preenche o mês anterior provisoriamente e permite corrigir sem confirmar a sugestão', async () => {
+    const apiPerfis = { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: false, perfis: [] })),
+      previaEmissaoNfse: jest.fn(async () => ({ ok: true, pendencias: [], regimeVigente: { regime: 'SIMPLES' },
+        percentualSimples: { estado: 'AUTOMATICO', provisorio: true, valor: 6, fonte: 'PGDAS_D', competencia: '2026-09', mensagem: 'Percentual provisório do mês anterior (2026-09); ajuste se necessário para esta nota.' } })) };
+    abrir({apiPerfis});
+    await waitFor(() => expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('6'));
+    expect(screen.queryByRole('button', {name:'Confirmar percentual sugerido'})).not.toBeInTheDocument();
+    expect(screen.getByText(/Percentual provisório do mês anterior/)).toBeInTheDocument();
+    digitar('Total de tributos do Simples Nacional', '7');
+    expect(screen.getByLabelText(/Total de tributos do Simples Nacional/)).toHaveValue('7');
+  });
   it('preenche apuração automaticamente, preserva edição e descarta percentual ao mudar competência', async () => {
     const apiPerfis = { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: false, perfis: [] })),
       previaEmissaoNfse: jest.fn(async (_id, entrada) => ({ ok: true, pendencias: [], regimeVigente: { regime: 'SIMPLES' },

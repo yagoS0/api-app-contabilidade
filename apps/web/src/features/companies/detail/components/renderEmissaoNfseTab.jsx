@@ -161,14 +161,10 @@ export function EmissaoNfseTab({
   }
 
   return (
-    <section className="company-form-page__panel nfse-settings">
+    <section className="nfse-settings nfse-emission-page">
+      <h1 className="company-form-page__title nfse-emission-title">Emissão de NFS-e</h1>
+      <div className="company-form-page__panel nfse-settings">
       <GuiaEmissaoLink />
-      <div className="company-form-page__intro">
-        <h1 className="company-form-page__title">Emissão de NFS-e</h1>
-        <p className="company-form-page__description">
-          Organize os perfis de serviço e os parâmetros usados na emissão de notas desta empresa.
-        </p>
-      </div>
 
       {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : empresaDosPerfis !== portalClientId || !perfis ? <div role="status"><p>Não foi possível carregar os perfis de emissão.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div> : null}
       <EditorPerfilEmissao
@@ -225,6 +221,7 @@ export function EmissaoNfseTab({
           />
         </form></details>
       )}
+      </div>
     </section>
   );
 }
