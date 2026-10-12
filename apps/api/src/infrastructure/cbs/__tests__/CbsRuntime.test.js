@@ -34,6 +34,13 @@ test('configuração alterada e carteira revogada barram cliente previamente res
   const c = await resolver()(req); ultimaConfiguracao.mockResolvedValue({ id: 'nova', habilitado: true, dados: {} }); await expect(c.cliente.consultar({ tiqueteSolicitacao: 'ticket' })).rejects.toMatchObject({ code: 'CBS_RUNTIME_BLOQUEADO' });
   carregarGrupo.mockRejectedValue(Object.assign(Error('sem acesso'), { status: 403 })); await expect(c.cliente.baixar({})).rejects.toMatchObject({ code: 'CBS_RUNTIME_BLOQUEADO' }); expect(fetchImpl).not.toHaveBeenCalled();
 });
+
+test('revogação antes da abertura declara certeza de ausência de envio', async () => {
+  const c = await resolver()(req);
+  ultimaConfiguracao.mockResolvedValue({ id: 'revogada', habilitado: false, dados: {} });
+  await expect(c.cliente.abrir({ cnpjBase: '12345678', tipo: 'DEBITOS' })).rejects.toMatchObject({ code: 'CBS_RUNTIME_BLOQUEADO', resultadoIncerto: false });
+  expect(fetchImpl).not.toHaveBeenCalled(); expect(decrypt).not.toHaveBeenCalled();
+});
 test('falha de auditoria impede decrypt e token sem vazar mensagem interna', async () => {
   const c = await resolver()(req); db.companyCredentialAcesso.create.mockRejectedValue(Error('segredo-interno')); await expect(c.cliente.consultar({ tiqueteSolicitacao: 'ticket' })).rejects.toMatchObject({ code: 'CBS_CREDENCIAL_INDISPONIVEL' }); expect(decrypt).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled();
 });

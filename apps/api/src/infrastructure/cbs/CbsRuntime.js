@@ -5,7 +5,7 @@ import { criarProvedorTokenCbs } from './CbsOAuth.js';
 import { criarReservaEmissaoCbs } from './CbsTokenReserva.js';
 import { criarProtecaoCbsComRotacao } from '../../application/fiscal/consumo/CbsProtecao.js';
 
-const fail = () => Object.assign(new Error('Integração CBS não autorizada para este contexto.'), { code: 'CBS_RUNTIME_BLOQUEADO', status: 503 });
+const fail = () => Object.assign(new Error('Integração CBS não autorizada para este contexto.'), { code: 'CBS_RUNTIME_BLOQUEADO', status: 503, resultadoIncerto: false });
 const texto = v => typeof v === 'string' && v.trim().length > 0;
 const versao = v => v instanceof Date && Number.isFinite(v.getTime()) ? v.toISOString() : null;
 
