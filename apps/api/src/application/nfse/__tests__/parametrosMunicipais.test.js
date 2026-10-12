@@ -30,6 +30,12 @@ test('caminhos documentados; rejeita recurso de manutenção e injeção de cami
     expect(() => caminhoParametros({ ...entrada, ...caso })).toThrow();
   }
 });
+test('resolução por competência lê histórico da empresa e ambiente sem certificado ou transmissão', async () => {
+  const m = montar();
+  await m.service.porCompetencia({ portalClientId: 'portal', municipio: '3304557', codigoServico: '171901001', competencia: '2026-11-03' });
+  expect(m.db.nfseConsultaMunicipal.findMany).toHaveBeenCalledWith({ where: { companyId: 'legada', ambiente: 'homolog', municipio: '3304557', status: 'RECEBIDO_PARA_CONFERENCIA', OR: [{ codigoServico: '171901001', recurso: 'servico' }, { recurso: 'convenio' }] } });
+  expect(m.resolverCertificados).not.toHaveBeenCalled(); expect(m.criarCliente).not.toHaveBeenCalled();
+});
 test.each(['homolog', 'producao'])('transporte isolado e verificado em %s', async ambiente => {
   const http = { get: jest.fn(async () => ({ status: 200, data: '{"valor":0}' })) };
   const criarHttp = jest.fn(() => http);

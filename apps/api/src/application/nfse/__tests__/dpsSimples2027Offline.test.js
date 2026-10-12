@@ -64,7 +64,7 @@ test('adapta os caminhos e a ordem conforme o Anexo VI sem mudar ISS, descriçã
   expect(texto(doc, 'indFinal')).toBe('1');
   for (const nome of ['finNFSe', 'indDest']) expect(tag(doc, nome).parentNode.localName).toBe('infDPS');
   for (const nome of ['CST', 'cClassTrib']) expect(tag(doc, nome).parentNode.localName).toBe('trib');
-  for (const nome of ['Signature', 'gIBSCBS', 'gTribSN', 'vReceitaBrutaSN', 'pIBS', 'pCBS']) expect(tag(doc, nome)).toBeUndefined();
+  for (const nome of ['Signature',  'gTribSN', 'vReceitaBrutaSN', 'pIBS', 'pCBS']) expect(tag(doc, nome)).toBeUndefined();
   const base = 'NFSe/infNFSe/DPS/infDPS/';
   conferirOrdem(tag(doc, 'infDPS'), base);
   conferirOrdem(tag(doc, 'regTrib'), base + 'prest/regTrib/');

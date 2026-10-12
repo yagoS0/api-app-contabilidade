@@ -1,0 +1,460 @@
+openapi: "3.0.0"
+info:
+  version: "v2"
+  title: "Consulta CNPJ DF v2"
+servers:  
+  - url: "https://gateway.apiserpro.serpro.gov.br/consulta-cnpj-df/v2"
+    description: "Produção"    
+paths:
+  /basica/{ni}:
+    get:
+      summary: "Retorna os dados do cadastro de pessoa jurídica (CNPJ) - Básico"
+      tags:
+        - CNPJ
+      description: "Chaves para degustação? &nbsp; [Acesse aqui](https://apicenter.estaleiro.serpro.gov.br/documentacao/consulta-cnpj/pt/quick_start/#como-utilizar-a-api-cnpj-demonstracao)"
+      parameters:
+        - in: path
+          name: ni
+          description: Número de inscrição no CNPJ
+          required: true
+          schema:
+            type: string
+        - in: "header"
+          name: "x-signature"
+          description: "Solicitação de assinatura de carimbo de tempo. Informe 1 para assinar, ou deixe em branco para não assinar."
+          required: false
+          schema:
+            type: string
+        - in: "header"
+          name: "x-request-tag"
+          description: "Campo opcional para identificar requisições. O conteúdo é um texto livre para que o cliente possa identificar a origem da requisição, não há validação do seu conteúdo pela API. Máximo 32 caracteres."
+          required: false
+          schema:
+            type: string
+            maxLength: 32          
+      responses:
+        200:
+          description: 'OK - Retorna os dados da Pessoa Jurídica.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CNPJ-BASICO'          
+          headers:
+            stamp:
+              schema:
+                type: string
+              description: 'Assinatura de carimbo de tempo, caso solicitada.'
+        206:
+          description: 'Conteúdo parcial. Algum campo específico não pôde ser retornado.'
+        400:
+          description: 'O número de inscrição informado não é válido.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensagem:
+                    type: string
+                    description: 'Mensagem de retorno de validação.'
+                    example: 'CNPJ <12345678901234> inválido!'
+        404:
+          description: 'Não existe CNPJ com o número de inscrição informado.'
+        500:
+          description: 'Erro interno do servidor.'
+  /qsa/{ni}:
+    get:
+      summary: "Retorna os dados do cadastro de pessoa jurídica (CNPJ) - QSA"
+      tags:
+        - CNPJ
+      description: "Chaves para degustação? &nbsp; [Acesse aqui](https://apicenter.estaleiro.serpro.gov.br/documentacao/consulta-cnpj/pt/quick_start/#como-utilizar-a-api-cnpj-demonstracao)"
+      parameters:
+        - in: path
+          name: ni
+          description: Número de inscrição no CNPJ
+          required: true
+          schema:
+            type: string
+        - in: "header"
+          name: "x-signature"
+          description: "Solicitação de assinatura de carimbo de tempo. Informe 1 para assinar, ou deixe em branco para não assinar."
+          required: false
+          schema:
+            type: string
+        - in: "header"
+          name: "x-request-tag"
+          description: "Campo opcional para identificar requisições. O conteúdo é um texto livre para que o cliente possa identificar a origem da requisição, não há validação do seu conteúdo pela API. Máximo 32 caracteres."
+          required: false
+          schema:
+            type: string
+            maxLength: 32          
+      responses:
+        200:
+          description: 'OK - Retorna os dados da Pessoa Jurídica.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CNPJ-QSA'          
+          headers:
+            stamp:
+              schema:
+                type: string
+              description: 'Assinatura de carimbo de tempo, caso solicitada.'
+        206:
+          description: 'Conteúdo parcial. Algum campo específico não pôde ser retornado.'
+        400:
+          description: 'O número de inscrição informado não é válido.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensagem:
+                    type: string
+                    description: 'Mensagem de retorno de validação.'
+                    example: 'CNPJ <12345678901234> inválido!'
+        404:
+          description: 'Não existe CNPJ com o número de inscrição informado.'
+        500:
+          description: 'Erro interno do servidor.'
+  /empresa/{ni}:
+    get:
+      summary: "Retorna os dados do cadastro de pessoa jurídica (CNPJ) - Empresa"
+      tags:
+        - CNPJ
+      description: "Chaves para degustação? &nbsp; [Acesse aqui](https://apicenter.estaleiro.serpro.gov.br/documentacao/consulta-cnpj/pt/quick_start/#como-utilizar-a-api-cnpj-demonstracao)"
+      parameters:
+        - in: path
+          name: ni
+          description: Número de inscrição no CNPJ
+          required: true
+          schema:
+            type: string
+        - in: "header"
+          name: "x-signature"
+          description: "Solicitação de assinatura de carimbo de tempo. Informe 1 para assinar, ou deixe em branco para não assinar."
+          required: false
+          schema:
+            type: string
+        - in: "header"
+          name: "x-request-tag"
+          description: "Campo opcional para identificar requisições. O conteúdo é um texto livre para que o cliente possa identificar a origem da requisição, não há validação do seu conteúdo pela API. Máximo 32 caracteres."
+          required: false
+          schema:
+            type: string
+            maxLength: 32          
+      responses:
+        200:
+          description: 'OK - Retorna os dados da Pessoa Jurídica.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CNPJ-EMPRESA'          
+          headers:
+            stamp:
+              schema:
+                type: string
+              description: 'Assinatura de carimbo de tempo, caso solicitada.'
+        206:
+          description: 'Conteúdo parcial. Algum campo específico não pôde ser retornado.'
+        400:
+          description: 'O número de inscrição informado não é válido.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensagem:
+                    type: string
+                    description: 'Mensagem de retorno de validação.'
+                    example: 'CNPJ <12345678901234> inválido!'
+        404:
+          description: 'Não existe CNPJ com o número de inscrição informado.'
+        500:
+          description: 'Erro interno do servidor.'   
+  /status:
+      get:
+        summary: 'Retorna o status da API CNPJ'
+        tags:
+          - Status
+        responses:
+          200:
+            description: "API Consulta CNPJ disponível."
+          500:
+            description: "API Consulta CNPJ indisponível."
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+ 
+    CNPJ-EMPRESA:
+      properties:
+        ni:
+          type: string
+        tipoEstabelecimento:
+          type: string
+        nomeEmpresarial:
+          type: string
+        nomeFantasia:
+          type: string
+        situacaoCadastral:
+          $ref: '#/components/schemas/SituacaoCadastral-2'
+        naturezaJuridica:
+          $ref: '#/components/schemas/CodigoDescricao'
+        dataAbertura:
+          type: string
+        cnaePrincipal:
+          $ref: '#/components/schemas/CodigoDescricao'
+        cnaeSecundarias:
+          $ref: '#/components/schemas/CodigoDescricao-2'
+        endereco:
+          $ref: '#/components/schemas/Endereco-2'
+        municipioJurisdicao:
+            $ref: '#/components/schemas/CodigoDescricao'
+        telefones:
+          items:
+            $ref: '#/components/schemas/Telefone'
+          type: array
+        correioEletronico:
+          type: string
+        capitalSocial:
+          type: string
+        porte:
+          type: string  
+        situacaoEspecial:
+          type: string
+        dataSituacaoEspecial:
+          type: string
+        informacoesAdicionais:
+          properties:
+            optanteSimples:
+              type: string
+            optanteMei:
+              type: string
+            listaPeriodoSimples:
+              items:
+                properties:
+                  dataInicio:
+                    type: string
+                  dataFim:
+                    type: string
+              type: array
+        socios:
+          items:
+            properties:
+              tipoSocio:
+                type: string
+              cpf:
+                type: string
+              nome:
+                type: string
+              qualificacao:
+                type: string
+              dataInclusao:
+                type: string
+              pais:
+                properties:
+                  codigo:
+                    type: string
+                  descricao:
+                    type: string
+                type: object
+              representanteLegal:
+                properties:
+                  cpf:
+                    type: string
+                  nome:
+                    type: string
+                  qualificacao:
+                    type: string
+                type: object
+          type: array  
+      type: object
+      
+    CNPJ-QSA:
+      properties:
+        ni:
+          type: string
+        tipoEstabelecimento:
+          type: string
+        nomeEmpresarial:
+          type: string
+        nomeFantasia:
+          type: string
+        situacaoCadastral:
+          $ref: '#/components/schemas/SituacaoCadastral-2'
+        naturezaJuridica:
+          $ref: '#/components/schemas/CodigoDescricao'
+        dataAbertura:
+          type: string
+        cnaePrincipal:
+          $ref: '#/components/schemas/CodigoDescricao'
+        cnaeSecundarias:
+          $ref: '#/components/schemas/CodigoDescricao-2'
+        endereco:
+          $ref: '#/components/schemas/Endereco-2'
+        municipioJurisdicao:
+            $ref: '#/components/schemas/CodigoDescricao'
+        telefones:
+          items:
+            $ref: '#/components/schemas/Telefone'
+          type: array
+        correioEletronico:
+          type: string
+        capitalSocial:
+          type: string
+        porte:
+          type: string  
+        situacaoEspecial:
+          type: string
+        dataSituacaoEspecial:
+          type: string
+        informacoesAdicionais:
+          properties:
+            optanteSimples:
+              type: string
+            optanteMei:
+              type: string
+            listaPeriodoSimples:
+              items:
+                properties:
+                  dataInicio:
+                    type: string
+                  dataFim:
+                    type: string
+              type: array
+        socios:
+          items:
+            properties:
+              tipoSocio:
+                type: string
+              nome:
+                type: string
+              qualificacao:
+                type: string
+              pais:
+                properties:
+                  codigo:
+                    type: string
+                  descricao:
+                    type: string
+                type: object
+              representanteLegal:
+                properties:
+                  nome:
+                    type: string
+                  qualificacao:
+                    type: string
+                type: object
+          type: array  
+      type: object
+      
+    CNPJ-BASICO:
+      properties:
+        ni:
+          type: string
+        tipoEstabelecimento:
+          type: string
+        nomeEmpresarial:
+          type: string
+        nomeFantasia:
+          type: string
+        situacaoCadastral:
+          $ref: '#/components/schemas/SituacaoCadastral-2'
+        naturezaJuridica:
+          $ref: '#/components/schemas/CodigoDescricao'
+        dataAbertura:
+          type: string
+        cnaePrincipal:
+          $ref: '#/components/schemas/CodigoDescricao'
+        cnaeSecundarias:
+          $ref: '#/components/schemas/CodigoDescricao-2'
+        endereco:
+          $ref: '#/components/schemas/Endereco-2'
+        municipioJurisdicao:
+            $ref: '#/components/schemas/CodigoDescricao'
+        telefones:
+          items:
+            $ref: '#/components/schemas/Telefone'
+          type: array
+        correioEletronico:
+          type: string
+        capitalSocial:
+          type: string
+        porte:
+          type: string  
+        situacaoEspecial:
+          type: string
+        dataSituacaoEspecial:
+          type: string
+      
+    CodigoDescricao:
+      properties:
+        codigo:
+          type: string
+        descricao:
+          type: string
+      type: object
+      
+    CodigoDescricao-2:
+      items:
+        properties:
+          codigo:
+            type: string
+          descricao:
+            type: string
+      type: array
+     
+    Telefone:
+      properties:
+        ddd:
+          type: string
+        numero:
+          type: string
+      type: object
+
+    Endereco-2:
+      properties:
+        tipoLogradouro:
+          type: string
+        logradouro:
+          type: string
+        numero:
+          type: string
+        complemento:
+          type: string
+        cep:
+          type: string
+        bairro:
+          type: string
+        municipio:
+          properties:
+            codigo:
+              type: string
+            descricao:
+              type: string
+          type: object  
+        uf:
+          type: string
+        pais:
+          properties:
+            codigo:
+              type: string
+            descricao:
+              type: string
+          type: object  
+      type: object
+      
+    SituacaoCadastral-2:
+      properties:
+        codigo:
+          type: string
+        data:
+          type: string
+        motivo:
+          type: string
+      type: object  
+
+security:
+  - bearerAuth: []

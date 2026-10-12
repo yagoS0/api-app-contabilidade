@@ -1,0 +1,27 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
+import XLSX from 'xlsx';
+const root=fileURLToPath(new URL('../../../',import.meta.url));
+const dir=root+'docs/leiaute-nfse/documentacao-tecnica/rtc-2026-10-05/';
+const sources=JSON.parse(fs.readFileSync(dir+'fontes.json','utf8').replace(/^\uFEFF/,''));
+function read(name){const bytes=fs.readFileSync(dir+name),source=sources.find(s=>s.file===name);if(!source||createHash('sha256').update(bytes).digest('hex')!==source.sha256)throw Error('Fonte divergente: '+name);return bytes;}
+const data=JSON.parse(gunzipSync(read('svrs-classificacao.html.gz')).toString().match(/var dadosOriginais\s*=\s*(\[.*?\]);/s)[1]);
+const classes=data.flatMap(s=>s.ClassificacoesTributarias.filter(c=>c.IndNfse).map(c=>({codigo:c.CodClassTrib,cst:s.Cst,inicio:c.DthIniVig.slice(0,10),fim:c.DthFimVig?.slice(0,10)||null,inicioCst:s.DthIniVig.slice(0,10),fimCst:s.DthFimVig?.slice(0,10)||null,ind_gIBSCBS:s.IndExigeTrib,tribRegular:c.IndTribRegular,diferimento:s.IndDiferimento,creditoPresumido:c.IndPermiteCredPres})));
+if(!classes.length || new Set(classes.map(c=>c.codigo)).size!==classes.length)throw Error('Classificações inválidas');
+if(classes.some(c=>['ind_gIBSCBS','tribRegular','diferimento','creditoPresumido'].some(k=>typeof c[k]!=='boolean')))throw Error('Indicador ausente');
+const book=XLSX.read(read('anexo-vii-v1.03.00.xlsx'),{type:'buffer'});
+const rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1});
+const operations=rows.filter(r=>/^\d{6}$/.test(String(r[0]??''))).filter(r=>r[7]==='S').map(r=>({codigo:String(r[0]),local:r[9]}));
+if(!operations.length||new Set(operations.map(x=>x.codigo)).size!==operations.length)throw Error('Operações inválidas');
+const anexo=XLSX.read(read('anexo-vi-v1.04.01.xlsx'),{type:'buffer'});
+const rn=XLSX.utils.sheet_to_json(anexo.Sheets['RN DPS_NFS-e'],{header:1});
+const codigosRegra=id=>Array.from(new Set((rn.find(r=>r[0]===id)?.[3]||'').match(/\b\d{6}\b/g)||[]));
+const repercussao=XLSX.utils.sheet_to_json(anexo.Sheets['AJUSTE_BC_REPERCUSSÃO'],{header:1})
+ .filter(r=>typeof r[0]==='number').map(r=>({tipo:String(r[0]),iss:r[4]==='V',ibscbs:r[5]==='V',simples:r[7]==='V',inicio:XLSX.SSF.format('yyyy-mm-dd',r[2])}));
+const ajustes={excecoesSimples:codigosRegra(543),excecoesCargaMinima:codigosRegra(548),repercussao};
+if(ajustes.excecoesSimples.length<30||ajustes.excecoesCargaMinima.length<30||repercussao.length!==13)throw Error('Regras municipais incompletas');
+const result={fonte:'Snapshot SVRS 2026-10-05 / IndExigeTrib; Anexo VII v1.03.00',classes,operacoes:operations,ajustes};
+fs.writeFileSync(root+'apps/api/src/application/nfse/laboratorio/tabelasNovembro.data.js','// Gerado por gerar-tabelas-nt009.mjs; uso offline, não substitui consulta à calculadora por competência.\nexport const TABELAS_NOVEMBRO = '+JSON.stringify(result,null,2)+';\n');
+console.log({classes:classes.length,operacoes:operations.length});

@@ -1,0 +1,58 @@
+{
+  "contrato": "NT009_V1_01_NOVEMBRO_2026",
+  "aceitoPeloXsd": false,
+  "camposNT009Presentes": {
+    "vAjusteBC": false,
+    "nDUIMP": false,
+    "nDUE": false,
+    "verCalcIBSCBS": false
+  },
+  "erros": [
+    "Element '{http://www.sped.fazenda.gov.br/nfse}finNFSe': This element is not expected. Expected is one of ( {http://www.sped.fazenda.gov.br/nfse}cMotivoEmisTI, {http://www.sped.fazenda.gov.br/nfse}chNFSeRej, {http://www.sped.fazenda.gov.br/nfse}cLocEmi )."
+  ],
+  "arquivos": [
+    {
+      "nome": "CNC_v1.00.xsd",
+      "sha256": "26961f705970ccb1dede1b6bb0ab544ca1d089137c22e93371d789c1e15ef0c4"
+    },
+    {
+      "nome": "DPS_v1.01.xsd",
+      "sha256": "c7dab363d8cf7c83fc2b3b21e72cf669a51bd30947a5690685ea96c4b3e39dcd"
+    },
+    {
+      "nome": "evento_v1.01.xsd",
+      "sha256": "dd14062174d439a67a11266d82e822cb9021db1595a41bd876a16560a38f6aec"
+    },
+    {
+      "nome": "NFSe_v1.01.xsd",
+      "sha256": "1dd8f543060a4ba6f355693f1fa5d79a269acae7c3dfe42d621f62911cfebac0"
+    },
+    {
+      "nome": "pedRegEvento_v1.01.xsd",
+      "sha256": "186c83f33752a195845300af61ffbe7136547f84cab032b35238c78f9d78f7c6"
+    },
+    {
+      "nome": "tiposCnc_v1.00.xsd",
+      "sha256": "c1cc33f1007251075b1fff7766bf881bba6a8ad7f1f36d149e54ae98090c77f8"
+    },
+    {
+      "nome": "tiposComplexos_v1.01.xsd",
+      "sha256": "6f792f408a33c11e799042a8d61cac7d1c9f5992c53e07e60ce75a15f157d1ac"
+    },
+    {
+      "nome": "tiposEventos_v1.01.xsd",
+      "sha256": "6c9ae744b1cb886607c1138c32eeb76cd410b856ce7301197b95d48d63f7b40b"
+    },
+    {
+      "nome": "tiposSimples_v1.01.xsd",
+      "sha256": "3d8171c9b7c9a82ecb48eed9a96485f2077006e7d21db6cd182839dd34dbb5e4"
+    },
+    {
+      "nome": "xmldsig-core-schema.xsd",
+      "sha256": "bf43998b2df1fedd9ed7d6914f91ab4d34958e8730c3b500cbe0b21e60335f11"
+    }
+  ],
+  "liberadoParaEmissao": false,
+  "transmitido": false,
+  "limite": "XSD valida estrutura; n\u00c3\u00a3o comprova regras externas, assinatura ou homologa\u00c3\u00a7\u00c3\u00a3o. XML n\u00c3\u00a3o assinado pode exigir assinatura no contrato definitivo."
+}

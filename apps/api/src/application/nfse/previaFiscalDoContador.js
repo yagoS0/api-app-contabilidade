@@ -1,5 +1,5 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { NFSE_ENV, INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from '../../config.js';
+import { NFSE_ENV, INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS, INTEGRACAO_PARAMETROS_MUNICIPAIS } from '../../config.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { resolverPerfilDeEmissao } from './perfilEmissao/resolverPerfilDeEmissao.js';
 import { escolherCodigoServicoNacional } from './codigoServicoDaNota.js';
@@ -8,12 +8,14 @@ import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from './dpsCodigos.j
 import { pAliqDaDps } from './pAliqDaDps.js';
 import { snapshotFiscal } from './snapshotFiscal.js';
 import { percentualSimplesDaPrevia } from './percentualSimplesDaPrevia.js';
+import { conferenciaMunicipalDaPrevia } from './conferenciaMunicipalDaPrevia.js';
 
 // Somente leitura. Usa os resolvedores da emissão, sem reservar DPS, assinar ou consultar o ADN.
 // A validação integral do payload e a revalidação fiscal continuam obrigatórias na emissão.
 export async function previaFiscalDoContador({ portalClientId, competencia, perfilId = null, servico = {} }, {
   db = prisma, resolverPerfil = resolverPerfilDeEmissao, ambiente = NFSE_ENV,
   perfisHabilitados = INTEGRACAO_PERFIL_EMISSAO_NFSE, ibscbsLigado = INTEGRACAO_NFSE_IBSCBS,
+  parametrosHabilitados = INTEGRACAO_PARAMETROS_MUNICIPAIS,
 } = {}) {
   const previa = { ok: false, competencia, ambiente, pendencias: [], validacaoIntegral: false };
   const recusar = (codigo, mensagem, correcao) => ({ ...previa, pendencias: [{ codigo, mensagem, correcao }] });
@@ -67,5 +69,9 @@ export async function previaFiscalDoContador({ portalClientId, competencia, perf
     ? await percentualSimplesDaPrevia({ db, portalClientId, competencia,
       servicoUnico: new Set([...(company.codigosServicoNacional || []), company.codigoServicoNacional].filter(Boolean)).size === 1 })
     : { estado: 'NAO_APLICAVEL', valor: null };
+  previa.conferenciaMunicipal = await conferenciaMunicipalDaPrevia({ db, companyId: portal.companyId, ambiente,
+    municipio: contexto.incidencia.municipio, codigoServicoNacional: escolha.codigo,
+    codigoServicoMunicipal: perfil?.codigoServicoMunicipal || company.codigoServicoMunicipal,
+    competencia, habilitado: parametrosHabilitados });
   return { ...previa, ok: true };
 }

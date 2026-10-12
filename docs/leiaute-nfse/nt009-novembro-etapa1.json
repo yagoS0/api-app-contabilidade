@@ -1,0 +1,48 @@
+{
+  "data": "2026-10-11",
+  "estado": "CONFORMIDADE_PARCIAL_LIBERACAO_BLOQUEADA",
+  "fonte": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf",
+  "anexo": "VI v1.04.01",
+  "entrada": "DPS 1.01 não assinada, tpAmb=2, competência 2026, contrato NT009_V1_01_NOVEMBRO_2026 explícito",
+  "escopo": "Preparação offline de DPS 2026 da nota regular do prestador: tributação IBS/CBS, ajustes municipais por referência explícita, comércio exterior, locação imobiliária e condomínios. Campos e valores declarados são preservados; não há inferência de enquadramento, assinatura ou transmissão.",
+  "validacao": "Ordem/caminhos comparados ao Anexo VI. Validação XSD executada e reprovada: pacote oficial publicado é julho, não contempla finNFSe na raiz da infDPS nem vAjusteBC/nDUIMP/nDUE/verCalcIBSCBS. Diagnóstico completo em nt009-validacao-xsd-2026-10-11.json.",
+  "ativacao": "Nenhuma. Emissor e contrato operacional permanecem inalterados; não há ativação automática em 03/11.",
+  "pendencias": [
+    "XSD oficial compatível e validação positiva; homologação ponta a ponta dos pacotes.",
+    "Consulta da calculadora por classificação e competência; snapshot offline não comprova indicador vigente no autorizador.",
+    "Cadastros RFB e correspondência CEP/município por competência, CIB e seus dígitos verificadores.",
+    "Obtenção e autenticação dos parâmetros municipais: retorno bruto do ADN não é convertido em permissão. Benefícios municipais e regime de ISS do Simples fora do DAS continuam pendentes.",
+    "Enquadramento exterior, câmbio e base final; para modo 5, confirmação da parcela consumida no país ou exportada. Autenticidade e atualização da tabela BCB fornecida.",
+    "Correlação entre tipos de cobrança/detalhamento de condomínio; enquadramento e cálculo final das operações imobiliárias.",
+    "Nota do tomador, obras, bens móveis, notas de ajuste, crédito presumido e integração operacional/retorno continuam fora desta preparação."
+  ],
+  "restricoes": "2027 permanece bloqueado. Nenhuma assinatura, consulta ao autorizador, reserva de numeração ou emissão.",
+  "regrasLocais": [
+    "E0859/E0860",
+    "E0960/E0961",
+    "E0964/E0965",
+    "E0971/E0972",
+    "E0453",
+    "E0427 (ajuste direto e desconto)",
+    "E0462/E0463/E0464/E0465",
+    "E0467/E0469/E0472/E0474",
+    "E0460/E0470/E0476/E0479",
+    "E0390/E0392/E0393/E0394/E0395",
+    "E0235/E0919 (ocorrência do endereço)",
+    "E0920 (IBGE)",
+    "E1321 (seleção do município 170501)"
+  ],
+  "correcaoEtapaAnterior": "Preservar gIBSCBS para CST000, inclusive no preparador de 2027. A ocorrência obrigatória não depende de campos opcionais; a remoção anterior estava incorreta.",
+  "xsdPublicado": {
+    "consulta": "2026-10-11",
+    "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita/esquemas-nfse-rtc-v1-01-20260727.zip",
+    "sha256": "6c7e0510d3ecff4454f291f4e10b742d27a4818f23aab181494f96d0ea79f3dc",
+    "observacao": "Download repetido confirmou o mesmo pacote versionado. Não foi criado XSD próprio para simular conformidade."
+  },
+  "comandos": [
+    "node apps/api/scripts/gerar-tabelas-nt009.mjs",
+    "node apps/api/scripts/preparar-dps-nt009-offline.mjs entrada.json resultado.json",
+    "python apps/api/scripts/validar-dps-nt009-xsd.py --xsd DPS_v1.01.xsd --preparacao resultado.json"
+  ],
+  "etapaMunicipalEspecial": "nt009-municipais-operacoes-especiais.json"
+}

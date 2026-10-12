@@ -1,0 +1,30 @@
+{
+  "data": "2026-10-12",
+  "status": "INTEGRACAO_PARCIAL_SEM_COMPROVACAO_HISTORICA",
+  "municipal": {
+    "contrato": "adn-contrato-convenio.json",
+    "fonte": "https://adn.producaorestrita.nfse.gov.br/parametrizacao/swagger/v1/swagger.json",
+    "resultado": "A API de convênio retorna adesões e situação padrão de emissão para contribuintes RFB, sem datas de vigência ou permissões de dedução. Crédito não equivale a dedução de base.",
+    "implementacao": "Consulta por competência inclui análise dos convênios já persistidos no mesmo tenant, ambiente e município. Guarda referência e hash do conteúdo no relatório, aponta conflito e mantém pendência histórica. Não introduz endpoints municipais de manutenção.",
+    "verificacaoSomenteLeitura": "Produção contém consulta de convênio da Klaus Nigro com os campos previstos, sem vigências. Nenhuma consulta externa ao ADN nem alteração de configuração executada nesta etapa."
+  },
+  "rfb": {
+    "fonteContrato": "https://apicenter.estaleiro.serpro.gov.br/documentacao/dist/swaggers/api-cnpj-df-v2.yaml",
+    "snapshot": "documentacao-tecnica/serpro-cnpj-v2-20261012.yaml",
+    "sha256": "3a2dd126dbf4ce47477faebfe928e37a768700a227e1522b301013838b4ae97c",
+    "fonteAutenticacao": "https://apicenter.estaleiro.serpro.gov.br/documentacao/consulta-cnpj/pt/quick_start/",
+    "implementacao": "OAuth2 client_credentials e GET /consulta-cnpj-df/v2/basica/{ni}, hosts fixos, redirecionamento desabilitado, timeout, limite de resposta e retorno sanitizado. Valida documento e DV, recusa resposta parcial e preserva apenas campos necessários. Município RFB não é interpretado automaticamente como IBGE.",
+    "configuracao": ["NFSE_RFB_CNPJ_CONSUMER_KEY", "NFSE_RFB_CNPJ_CONSUMER_SECRET"],
+    "disponibilidade": "Credenciais específicas ausentes no serviço API de produção na consulta de 12/10. Não reutilizar credenciais do Integra Contador. Não foi efetuada consulta paga.",
+    "limite": "Resposta básica representa cadastro atual. Data de abertura, data da situação cadastral e carimbo da consulta não comprovam vigência do endereço. CPF e consulta histórica ainda não integrados."
+  },
+  "cep": {
+    "fonte": "https://viacep.com.br/",
+    "implementacao": "Reutiliza consultarCep e lista IBGE compartilhada, sem gravar endereço. Correspondência atual com município do XML é informativa e não elimina a pendência histórica.",
+    "limite": "ViaCEP é fonte auxiliar, não comprovante oficial RFB/Correios por competência."
+  },
+  "execucao": "node apps/api/scripts/conferir-dps-nt009-fontes.mjs entrada.json resultado.json --consultar-cadastros",
+  "validacao": "1.141 testes em 55 suítes de NFS-e e 51 testes de rotas/CEP aprovados. CLI executada com DPS sintética: ViaCEP confirmou município atual, RFB indicou ausência de configuração; liberadoParaEmissao=false e transmitido=false. Não comprova homologação fiscal.",
+  "travas": ["Preparação recusa 2027, tpAmb=1 e assinatura antes da rede", "Sem assinatura, reserva ou transmissão fiscal", "Não ativado no emissor nem em produção", "2027 bloqueado"],
+  "paraConcluir": ["Habilitar acesso contratado à API Consulta CNPJ e testar autenticação", "Obter fonte municipal com vigência explícita de convênio e permissões", "Obter fonte cadastral/postal histórica ou evidências oficiais aplicáveis à competência", "Validar XSD futuro e homologar antes de liberar o novo contrato"]
+}

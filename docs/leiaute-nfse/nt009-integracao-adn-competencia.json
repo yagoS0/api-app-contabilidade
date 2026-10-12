@@ -1,0 +1,20 @@
+{
+  "status": "PARCIAL_EMISSAO_BLOQUEADA",
+  "fonteRegras": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/rtc",
+  "contratoADN": "ResultadoConsultaAliquotas, reutilizado da integração autenticada e da conferência municipal existentes",
+  "integracao": {
+    "rota": "GET /companies/:companyId/parametros-municipais/competencia?municipio=3304557&codigoServico=170601001&competencia=2026-11-03",
+    "acesso": "Mesma autorização ACCOUNTANT por carteira das consultas municipais",
+    "origem": "Somente consultas locais persistidas pelo cliente ADN; não chama rede nem carrega certificado",
+    "escopo": ["empresa legada vinculada ao portal", "ambiente configurado no servidor", "município", "serviço nacional e complemento", "origem e caminho oficiais", "HTTP 200 e status documental"],
+    "vigencia": "DtIni/DtFim cobrindo o dia da prestação. Sobreposição, respostas divergentes e formato desconhecido permanecem pendentes.",
+    "naoInfere": ["convênio histórico", "admissão de deduções", "alíquota efetiva do Simples", "isenção a partir de ausência de resposta"]
+  },
+  "cadastrosOffline": {
+    "entrada": "evidenciasCadastrais: lista com papel toma/dest, documento, fonte RFB, referencia, conferido, existe, municipio, vigenciaInicio e vigenciaFim",
+    "natureza": "Contrato interno de evidência declarada; não representa endpoint da RFB nem autenticação da evidência",
+    "regras": ["existência na competência", "município do destinatário conforme evidência", "exceção 170501 para mesma raiz CNPJ ou mesmo CPF dispensa apenas igualdade municipal"],
+    "pendencias": ["conector cadastral histórico autenticado", "CEP por competência", "autenticidade das evidências"]
+  },
+  "limites": ["Sem alteração automática de perfil ou imposto", "Sem integração do novo contrato ao emissor operacional", "Sem homologação ou validação positiva pelo novo XSD", "Emissão de 2027 permanece bloqueada", "Nenhuma nota emitida"]
+}

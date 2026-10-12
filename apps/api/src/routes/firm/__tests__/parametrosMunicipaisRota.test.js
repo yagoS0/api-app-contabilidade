@@ -6,6 +6,7 @@ import { prisma } from '../../../infrastructure/db/prisma.js';
 import { createParametrosMunicipaisRouter } from '../parametrosMunicipais.js';
 function app(user = { id: 'contador', role: 'accountant' }) {
   const servico = { listar: jest.fn(async () => ({ consultas: [] })), consultar: jest.fn(async x => ({ status: 'RECEBIDO_PARA_CONFERENCIA', portalClientId: x.portalClientId })) };
+  servico.porCompetencia = jest.fn(async () => ({ estado: 'PENDENTE' }));
   const a = express(); a.use(express.json()); a.use((req, _res, next) => { req.auth = { user }; next(); });
   a.use('/companies/:companyId', createParametrosMunicipaisRouter({ servico }));
   return { a, servico };
@@ -32,6 +33,17 @@ test('requisição não injeta empresa, autor ou endpoint', async () => {
 test('GET lê somente registros locais', async () => {
   const { a, servico } = app(); await request(a).get('/companies/portal/parametros-municipais');
   expect(servico.listar).toHaveBeenCalledWith('portal'); expect(servico.consultar).not.toHaveBeenCalled();
+});
+test('competência usa empresa autorizada e não dispara consulta ao ADN', async () => {
+  const { a, servico } = app();
+  const entrada = { municipio: '3304557', codigoServico: '170601001', competencia: '2026-11-03' };
+  expect((await request(a).get('/companies/portal/parametros-municipais/competencia').query(entrada)).status).toBe(200);
+  expect(servico.porCompetencia).toHaveBeenCalledWith({ portalClientId: 'portal', ...entrada });
+  expect(servico.consultar).not.toHaveBeenCalled();
+  expect((await request(a).get('/companies/portal/parametros-municipais/competencia').query({ ...entrada, companyId: 'outra' })).status).toBe(400);
+  expect((await request(a).get('/companies/portal/parametros-municipais/competencia').query({ ...entrada, competencia: '2026-02-30' })).status).toBe(400);
+  prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+  expect((await request(a).get('/companies/outra/parametros-municipais/competencia').query(entrada)).status).toBe(403);
 });
 test('erro interno não retorna credenciais/configuração', async () => {
   const { a, servico } = app(); servico.listar.mockRejectedValue(new Error('senha-secreta'));

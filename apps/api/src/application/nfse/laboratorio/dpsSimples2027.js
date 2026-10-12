@@ -6,28 +6,7 @@ import { regimeDaCompetencia, diaFiscal } from '../regimeDaCompetencia.js';
 import { apuracaoIbsCbsDaCompetencia } from '../apuracaoIbsCbsDaCompetencia.js';
 import { erroAtividadeSimples } from '@contabilidade/shared/atividades-simples';
 
-const NS = 'http://www.sped.fazenda.gov.br/nfse';
-const falhar = (code, message) => { throw Object.assign(new Error(message), { code }); };
-const filhos = no => Array.from(no.childNodes).filter(n => n.nodeType === 1);
-function unico(no, nome, obrigatorio = true) {
-  const encontrados = filhos(no).filter(n => n.localName === nome);
-  if (encontrados.length > 1 || (obrigatorio && encontrados.length !== 1)) {
-    falhar('XML_BASE_INVALIDO', `Esperado um único ${nome} em ${no.localName}.`);
-  }
-  return encontrados[0] || null;
-}
-function somente(no, nomes) {
-  if (filhos(no).some(n => !nomes.includes(n.localName))) {
-    falhar('CENARIO_NAO_PREPARADO', `Grupo ${no.localName} contém campos fora do cenário local suportado.`);
-  }
-}
-function ordenar(no, nomes) {
-  somente(no, nomes);
-  for (const nome of nomes) {
-    const filho = unico(no, nome, false);
-    if (filho) no.appendChild(filho);
-  }
-}
+import { NS, falhar, unico, somente, ordenar } from './xmlEstruturaOffline.js';
 
 export function validarAtividadeSimples({ cAtvSN, cTribNac }) {
   const motivo = erroAtividadeSimples(cAtvSN, cTribNac);
@@ -114,7 +93,7 @@ export function prepararDpsSimples2027Offline({ xmlBase, company, perfil, indFin
   if (dest) inf.appendChild(dest);
   trib.appendChild(cst);
   trib.appendChild(classe);
-  trib.removeChild(grupo); // Não emitir grupo vazio: CST/classificação agora pertencem a trib.
+  ordenar(trib, ['CST', 'cClassTrib', 'gIBSCBS']); // CST000 exige gIBSCBS (E0960), mesmo sem opcionais.
   if (indFinal != null) {
     if (!['0', '1'].includes(indFinal)) falhar('IND_FINAL_INVALIDO', 'indFinal deve ser 0 ou 1, declarado explicitamente.');
     adicionar(ibs, 'indFinal', indFinal);

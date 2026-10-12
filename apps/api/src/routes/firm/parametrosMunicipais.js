@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireFirmCompanyAccess } from '../../middlewares/requireFirmCompanyAccess.js';
 import { criarServicoParametros } from '../../application/nfse/parametrosMunicipaisService.js';
+import { diaFiscal } from '../../application/nfse/regimeDaCompetencia.js';
 
 export function createParametrosMunicipaisRouter({ servico = criarServicoParametros(), log } = {}) {
   const router = Router({ mergeParams: true });
@@ -14,6 +15,15 @@ export function createParametrosMunicipaisRouter({ servico = criarServicoParamet
   };
   router.get('/parametros-municipais', acesso, async (req, res) => {
     try { res.json(await servico.listar(String(req.params.companyId))); } catch (err) { falha(res, err); }
+  });
+  router.get('/parametros-municipais/competencia', acesso, async (req, res) => {
+    const { municipio, codigoServico, competencia } = req.query;
+    if (Object.keys(req.query).some(k => !['municipio', 'codigoServico', 'competencia'].includes(k))
+      || typeof municipio !== 'string' || !/^\d{7}$/.test(municipio)
+      || typeof codigoServico !== 'string' || !/^\d{9}$/.test(codigoServico)
+      || typeof competencia !== 'string' || !diaFiscal(competencia)) return res.status(400).json({ error: 'NFSE_PARAMETROS_ENTRADA_INVALIDA' });
+    try { res.json(await servico.porCompetencia({ portalClientId: String(req.params.companyId), municipio, codigoServico, competencia })); }
+    catch (err) { falha(res, err); }
   });
   router.post('/parametros-municipais/consultas', acesso, async (req, res) => {
     const { municipio, recurso, codigoServico, codigoServicoMunicipal, requestKey } = req.body || {};
