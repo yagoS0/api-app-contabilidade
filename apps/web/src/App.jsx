@@ -1,6 +1,7 @@
 import { useProtegerCamposDaRolagem } from './components/ui/useProtegerCamposDaRolagem';
 import { modoAtendimento } from "./features/whatsapp/lib/atendimentoPwa";
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { CredenciaisConsumoPage } from "./features/configuracoes/CredenciaisConsumo";
 import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
@@ -218,6 +219,7 @@ function AppInterno({ session, feedback }) {
   }
 
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
+  if (session.page === "credenciaisConsumo") return <CredenciaisConsumoPage key={session.user?.id} api={api} />;
   if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/comercial")} onUsarMensagem={mensagem => { setMensagemBiblioteca(mensagem); navigate("/comercial/conversas"); }} />;
 
   if (session.page === "guideSettings") {

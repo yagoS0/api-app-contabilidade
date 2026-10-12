@@ -1,0 +1,10 @@
+.consumo-credentials { min-width: 0; max-width: 100%; }
+.consumo-credentials label { display: grid; gap: .4rem; margin: 1rem 0; }
+.consumo-credentials input, .consumo-credentials select { box-sizing: border-box; width: 100%; min-width: 0; padding: .65rem; }
+.consumo-credentials-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.consumo-credentials-grid section { border: 1px solid var(--border-color, #cbd5e1); border-radius: 12px; padding: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.consumo-credentials fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+.consumo-credentials button { padding: .65rem 1rem; cursor: pointer; }
+.consumo-credentials button:disabled { cursor: wait; opacity: .65; }
+.consumo-credentials summary { cursor: pointer; }
+@media (max-width: 900px) { .consumo-credentials-grid { grid-template-columns: minmax(0, 1fr); } }

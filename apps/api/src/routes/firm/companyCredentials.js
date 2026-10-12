@@ -41,11 +41,11 @@ export function createCompanyCredentialsRouter({ log } = {}) {
 
   // ⚠ O `err` NUNCA é serializado para o cliente e NUNCA vai inteiro para o log. Erro desconhecido
   // vindo daqui pode carregar um payload do Prisma, e um payload do Prisma desta tabela carrega a
-  // coluna cifrada. Só a mensagem do erro é logada, e só as mensagens escritas à mão no service
-  // chegam ao usuário.
+  // coluna cifrada inclusive em `message`. O log usa somente contexto fixo; só as mensagens
+  // escritas à mão no service chegam ao usuário.
   function falhar(res, err, contexto) {
     const conhecido = err instanceof CompanyCredentialError;
-    if (!conhecido) log?.error?.({ err: err?.message || "erro", ...contexto }, "Falha no cofre de credenciais");
+    if (!conhecido) log?.error?.({ ...contexto, code: "COFRE_ERRO_INTERNO" }, "Falha no cofre de credenciais");
     return res.status(conhecido ? err.status : 500).json({
       ok: false,
       error: conhecido ? err.code : "erro_interno",
