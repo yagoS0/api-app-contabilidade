@@ -57,17 +57,17 @@ test('convênios contraditórios não selecionam o mais permissivo', () => {
 });
 const entrada = { xmlBase, contrato: 'NT009_V1_01_NOVEMBRO_2026' };
 function fontes() {
-  return { rfb: { consultar: jest.fn(async () => ({ ok: true, fonte: 'RFB_SERPRO', municipioDescricao: 'Rio de Janeiro', uf: 'RJ', vigenciaComprovada: false })) },
+  return { cadastroCnpj: { consultar: jest.fn(async () => ({ ok: true, fonte: 'RFB_SERPRO', municipioDescricao: 'Rio de Janeiro', uf: 'RJ', vigenciaComprovada: false })) },
     cep: jest.fn(async () => ({ ok: true, endereco: { cMun: '3304557' } })), carregarMunicipios: jest.fn(async () => [['3304557','Rio de Janeiro','RJ']]), agora };
 }
 test('consulta ligada à preparação preserva XML e pendências históricas', async () => {
   const f = fontes(), r = await conferirFontesNovembro2026(entrada,f);
-  expect(f.rfb.consultar).toHaveBeenCalledWith(cnpj); expect(f.cep).toHaveBeenCalledWith('20040002',expect.any(Object));
+  expect(f.cadastroCnpj.consultar).toHaveBeenCalledWith(cnpj,expect.any(Object)); expect(f.cep).toHaveBeenCalledWith('20040002',expect.any(Object));
   expect(r.consultasCadastrais[0].cadastro).toMatchObject({ municipioIbge: '3304557', coincideMunicipioXml: true });
   expect(r.consultasCadastrais[0].postal.vigenciaComprovada).toBe(false); expect(r.liberadoParaEmissao).toBe(false); expect(r.transmitido).toBe(false);
   expect(r.pendencias).toContain('CADASTRO_RFB_POR_COMPETENCIA');
 });
 test.each([['2026-11-03</dCompet>','2027-01-01</dCompet>'],['<tpAmb>2','<tpAmb>1'],['</DPS>','<Signature/></DPS>']])('travas executam antes da rede', async (a,b) => {
   const f = fontes(); await expect(conferirFontesNovembro2026({ ...entrada, xmlBase: xmlBase.replace(a,b) },f)).rejects.toThrow();
-  expect(f.rfb.consultar).not.toHaveBeenCalled(); expect(f.cep).not.toHaveBeenCalled(); expect(f.carregarMunicipios).not.toHaveBeenCalled();
+  expect(f.cadastroCnpj.consultar).not.toHaveBeenCalled(); expect(f.cep).not.toHaveBeenCalled(); expect(f.carregarMunicipios).not.toHaveBeenCalled();
 });

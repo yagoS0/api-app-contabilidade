@@ -73,6 +73,28 @@ test('2027 sem escolha exige cadastro, sem assumir opção pelo DAS', async () =
  const r = await preparar({ regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: '2020-01-01' }] }).executar({ competencia: '2027-01' });
  expect(r.pendencias[0].codigo).toBe('NFSE_IBSCBS_OPCAO_PENDENTE');
 });
+test('prévia conecta histórico municipal sem alterar alíquota nem percentual Simples', async () => {
+ const { executar, db } = preparar({ codigoServicoMunicipal: '001' }, { parametrosHabilitados: true });
+ db.nfseConsultaMunicipal = { findMany: jest.fn(async () => []) };
+ const r = await executar({ competencia: '2025-12-01' });
+ expect(r.ok).toBe(true); expect(r.conferenciaMunicipal.validacaoMunicipalCompleta).toBe(false);
+ expect(db.nfseConsultaMunicipal.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId: 'legado', ambiente: 'homolog', municipio: '3304557' }) }));
+ expect(r.iss.informar).toBe(false);
+});
+test('mês sem dia e 2027 não consultam o histórico municipal', async () => {
+ const { executar, db } = preparar({ codigoServicoMunicipal: '001', regimeHistorico: periodosOpcao }, { parametrosHabilitados: true });
+ db.nfseConsultaMunicipal = { findMany: jest.fn() };
+ expect((await executar({ competencia: '2026-12' })).conferenciaMunicipal.motivo).toBe('INFORMAR_DIA_PRESTACAO');
+ expect((await executar({ competencia: '2027-01-01' })).ok).toBe(false);
+ expect(db.nfseConsultaMunicipal.findMany).not.toHaveBeenCalled();
+});
+test('falha da fonte auxiliar é visível sem inviabilizar cenário corrente', async () => {
+ const { executar, db } = preparar({ codigoServicoMunicipal: '001' }, { parametrosHabilitados: true });
+ db.nfseConsultaMunicipal = { findMany: jest.fn(async () => { throw Error('segredo'); }) };
+ const r = await executar({ competencia: '2025-12-01' });
+ expect(r.ok).toBe(true); expect(r.conferenciaMunicipal.motivo).toBe('HISTORICO_MUNICIPAL_INDISPONIVEL');
+ expect(JSON.stringify(r)).not.toContain('segredo');
+});
 test('não usa opção futura e recusa ambiguidade dentro do mês', async () => {
  const { executar } = preparar({ regimeHistorico: [
  { ...periodosOpcao[1], vigenciaFim: '2027-01-15' }, { ...periodosOpcao[2], vigenciaInicio: '2027-01-16' },

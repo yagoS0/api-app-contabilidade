@@ -1,5 +1,24 @@
 import { CAMPOS_PERFIL_EMISSAO, textoDoValor } from '../../../lib/nfse/perfilEmissao';
 
+export function linhasDaConferenciaMunicipal(conferencia) {
+  if (!conferencia) return [];
+  const motivos = {
+    CONSULTA_MUNICIPAL_DESABILITADA: 'Consulta municipal desabilitada neste ambiente.',
+    INFORMAR_DIA_PRESTACAO: 'Informe o dia da prestação para comparar o histórico municipal.',
+    ESCOPO_MUNICIPAL_INCOMPLETO: 'Confira município e complemento municipal do serviço.',
+    HISTORICO_MUNICIPAL_INDISPONIVEL: 'Histórico municipal indisponível para conferência.',
+    PARAMETROS_MUNICIPAIS_POR_COMPETENCIA: 'Nenhuma consulta municipal correspondente à operação foi localizada.',
+    PARAMETROS_SEM_VIGENCIA: 'O histórico municipal não cobre a data da prestação.',
+    PARAMETROS_RESPOSTAS_DIVERGENTES: 'As consultas municipais divergem; confira a fonte antes de aplicar a alíquota.',
+    PARAMETROS_VIGENCIA_AMBIGUA: 'Há períodos municipais sobrepostos; confira a fonte.',
+  };
+  const localizada = conferencia.estado === 'HISTORICO_LOCALIZADO';
+  return localizada ? [
+    `Referência ADN de ISS: ${conferencia.aliquotaIss}% · vigência ${conferencia.vigenciaInicio} até ${conferencia.vigenciaFim || 'sem término informado'}.`,
+    'A referência municipal não substitui a alíquota do Simples nem comprova convênio ou autorização de deduções.',
+  ] : [motivos[conferencia.motivo || conferencia.pendencias?.[0]] || 'Parâmetros municipais ainda precisam de conferência.'];
+}
+
 export function linhasDaPreviaFiscal(dados) {
   if (!dados) return [];
   const c = dados.contextoFiscal;
@@ -21,6 +40,7 @@ export function linhasDaPreviaFiscal(dados) {
     ...(dados.iss ? [`ISS retido: ${dados.iss.retido ? 'sim' : 'não'}`] : []),
     ...(dados.iss?.ok ? [`Alíquota de ISS na DPS: ${dados.iss.informar ? `${dados.iss.pAliq}% · origem: ${dados.iss.fonteAliquota}` : 'não enviada nas condições desta operação'}`,
       ...(dados.iss.motivo ? [dados.iss.motivo] : [])] : []),
+    ...linhasDaConferenciaMunicipal(dados.conferenciaMunicipal),
   ];
 }
 

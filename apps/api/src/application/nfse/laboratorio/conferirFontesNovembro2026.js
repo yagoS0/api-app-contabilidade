@@ -1,7 +1,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import { prepararDpsNovembro2026Offline } from './dpsNovembro2026.js';
 import { unico } from './xmlEstruturaOffline.js';
-import { criarClienteRfbCnpj } from '../rfbCnpjClient.js';
+import { criarClienteCadastroPublico } from '../cadastroPublicoClient.js';
 import { consultarCep } from '../../tomador/consultarCep.js';
 import { carregarMunicipiosIbge } from '../lote/municipiosIbge.js';
 const campo = (n,k) => n && unico(n,k,false)?.textContent;
@@ -9,7 +9,7 @@ const normalizar = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f
 
 // Orquestração explícita de consultas cadastrais, separada do preparador puro e do emissor.
 // Não transforma a fotografia atual em evidência de vigência, nem altera o XML/cadastro.
-export async function conferirFontesNovembro2026(entrada, { rfb = criarClienteRfbCnpj(), cep = consultarCep,
+export async function conferirFontesNovembro2026(entrada, { cadastroCnpj = criarClienteCadastroPublico(), cep = consultarCep,
   carregarMunicipios = carregarMunicipiosIbge, agora = () => new Date() } = {}) {
   // Recusa produção, 2027 e assinatura ANTES de qualquer consulta externa.
   const preparacao = prepararDpsNovembro2026Offline(entrada);
@@ -21,9 +21,9 @@ export async function conferirFontesNovembro2026(entrada, { rfb = criarClienteRf
     const pessoa = unico(inf,papel,false);
     if (!pessoa) continue;
     const cnpj = campo(pessoa,'CNPJ'), end = unico(pessoa,'end',false), nac = end && unico(end,'endNac',false);
-    let cadastro = { ok: false, fonte: 'RFB_SERPRO', motivo: 'CPF_OU_EXTERIOR_NAO_SUPORTADO', vigenciaComprovada: false };
+    let cadastro = { ok: false, fonte: null, motivo: 'CPF_OU_EXTERIOR_NAO_SUPORTADO', vigenciaComprovada: false };
     if (cnpj) {
-      if (!cacheCnpj.has(cnpj)) cacheCnpj.set(cnpj, await rfb.consultar(cnpj));
+      if (!cacheCnpj.has(cnpj)) cacheCnpj.set(cnpj, await cadastroCnpj.consultar(cnpj, { municipios }));
       cadastro = cacheCnpj.get(cnpj);
     }
     let postal = { ok: false, motivo: 'SEM_CEP_NACIONAL', vigenciaComprovada: false };

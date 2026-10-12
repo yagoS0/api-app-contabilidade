@@ -1,0 +1,12 @@
+{
+  "data": "2026-10-12",
+  "decisao": "Consulta CNPJ gratuita como padrão; SERPRO opcional, não contratado e não ativado.",
+  "validacao": "1.150 testes em 56 suítes de NFS-e, 469 testes em 34 suítes do painel e build web aprovados. Consulta pública da Klaus Nigro retornou sucesso pela Minha Receita com município informado; não gera comprovação histórica.",
+  "padrao": "Reutiliza consultarCnpj: BrasilAPI com fallback Minha Receita; CEP via ViaCEP. Não consulta CPF nem documento inválido. CNPJ alfanumérico permanece sem consulta pública automática nesta integração.",
+  "serpro": "Só utilizado na CLI com --fonte=serpro e credenciais específicas. Não existe fallback automático da fonte gratuita para a paga.",
+  "fontes": ["https://brasilapi.com.br/docs#tag/CNPJ", "https://docs.minhareceita.org/", "https://viacep.com.br/", "https://www.gov.br/pt-br/servicos/obter-solucao-de-consulta-de-dados-do-cadastro-nacional-de-pessoas-juridicas-cnpj"],
+  "previaContador": "Conecta histórico municipal persistido à operação após resolver competência, regime e perfil. Usa empresa/ambiente/serviço/município corretos. Exige dia para selecionar vigência. Alíquota municipal aparece como referência, sem substituir ISS da DPS ou percentual Simples. Fonte auxiliar indisponível não interrompe cenários atualmente suportados, e é exibida como pendente.",
+  "limites": "Fonte pública ou cadastro atual do SERPRO não comprovam histórico por competência nem regularidade fiscal integral. O contrato NT009 não foi ativado no emissor. 2027 permanece bloqueado.",
+  "producaoSomenteLeitura": "Prévia Klaus Nigro válida no cenário já suportado; percentual 6% identificado como referência PGDAS-D 2026-08, não apuração confirmada de outubro. Nota existente nº 11 permanece autorizada. Nenhuma nota transmitida.",
+  "assinaturasExistentes": "DPS original enviada e assinatura externa da NFS-e autorizada verificadas localmente. A assinatura da DPS extraída do retorno não validou nessa serialização; não se afirma validação de todas as assinaturas internas. Cadeia/revogação não consultadas."
+}
