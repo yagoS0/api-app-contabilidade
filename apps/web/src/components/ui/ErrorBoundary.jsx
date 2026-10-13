@@ -36,7 +36,12 @@ function ehChunkVelho(error) {
 export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { error: null, info: null, chunkVelho: false };
+    this.state = { error: null, info: null, chunkVelho: false, resetKey: props.resetKey };
+  }
+
+  static getDerivedStateFromProps(props, state) {
+    return props.resetKey !== state.resetKey
+      ? { error: null, info: null, chunkVelho: false, resetKey: props.resetKey } : null;
   }
 
   static getDerivedStateFromError(error) {
@@ -49,10 +54,14 @@ export class ErrorBoundary extends React.Component {
     console.error("[ErrorBoundary]", error, info);
 
     if (!ehChunkVelho(error)) return;
-    let ultima = 0;
-    try { ultima = Number(sessionStorage.getItem(CHAVE_RECARGA) || 0); } catch { /* modo privado */ }
-    if (Date.now() - ultima < JANELA_ANTI_LOOP_MS) return; // já tentou agora há pouco: mostra o aviso
-    try { sessionStorage.setItem(CHAVE_RECARGA, String(Date.now())); } catch { /* idem */ }
+    try {
+      const ultima = Number(sessionStorage.getItem(CHAVE_RECARGA) || 0);
+      if (Date.now() - ultima < JANELA_ANTI_LOOP_MS) return;
+      sessionStorage.setItem(CHAVE_RECARGA, String(Date.now()));
+    } catch {
+      // Sem marcador persistente, recarregar automaticamente pode criar um laço.
+      return;
+    }
     // `reload(true)` não existe mais nos browsers modernos; o navegador revalida o index.html e
     // pega o manifesto novo, que é o que basta.
     window.location.reload();
@@ -69,10 +78,10 @@ export class ErrorBoundary extends React.Component {
           background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10,
           color: "var(--text)", fontFamily: "system-ui, sans-serif",
         }}>
-          <h2 style={{ margin: "0 0 8px", fontSize: "1.05rem" }}>O aplicativo foi atualizado</h2>
+          <h2 style={{ margin: "0 0 8px", fontSize: "1.05rem" }}>Não foi possível carregar esta tela</h2>
           <p style={{ margin: "0 0 16px", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-            Esta aba estava aberta durante uma atualização e ficou com a versão anterior. Recarregue
-            para continuar — nenhum dado foi perdido.
+            Isso pode acontecer após uma atualização do aplicativo ou uma falha de conexão.
+            Recarregue para tentar novamente. Alterações ainda não salvas podem ser perdidas.
           </p>
           <Button type="button" onClick={() => window.location.reload()}>
             Recarregar

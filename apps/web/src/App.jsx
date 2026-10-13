@@ -436,6 +436,9 @@ function AppInterno({ session, feedback }) {
         usuarioId={session.user?.id}
         company={{
           selectedCompany: companiesWorkspace.selectedCompany,
+          loadingCompany: ["idle", "loading"].includes(companiesWorkspace.companiesLoadStatus),
+          companyError: companiesWorkspace.companiesLoadError,
+          onRetryCompany: () => companiesWorkspace.loadCompanies(),
           onBack: () => session.goBack(),
           companyDetailTab: companiesWorkspace.companyDetailTab,
           setCompanyDetailTab: companiesWorkspace.setCompanyDetailTab,

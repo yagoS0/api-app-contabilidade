@@ -759,6 +759,16 @@ Resolvido na raiz: `babel.config.js` reescreve `import.meta.env` → `process.en
 - Regra de tela vive em `lib/` com teste próprio (ex.: `circular/lib/estadoGuia.js`); o teste de
   componente cobre a **ligação** (cor, chip, rodapé saindo da mesma leitura), não a regra de novo.
 
+## Recuperação de abas após deploy — 13/10/2026
+
+O wrapper de WorkspaceNavigationProvider deve permanecer montado em todas as rotas: apenas a classe company-workspace muda. Alternar entre div/filhos desmontava SessionBoundary e AppInterno ao entrar/sair da empresa, repetia autenticação/cargas e perdia estado das tarefas. Cobertura de montagem e navegação no app completo. ErrorBoundary usa resetKey para limpar falha entre abas sem remontar conteúdo saudável: usar key da aba no React perde a guia de origem do fluxo Parcelamento → Guias. Key de empresa continua isolando contextos.
+
+Validação: build final aprovado e percursos específicos de navegação aprovados. A execução de toda a suíte web foi interrompida após mais de 15 minutos sem resultado; não registrá-la como aprovada. Conferência visual local cobriu carteira → Parcelamentos, retorno sem nova autenticação e recarga direta de Guias. Em produção foi reproduzida a falha anterior, sem publicar a correção nesta etapa.
+
+Revisão ampliada: entrada direta só monta a aba após identificar a empresa; falha da lista oferece retorno e nova tentativa. A identidade anterior não pode renderizar sob a URL da próxima empresa. CompanyDetailPage tem limite de erro por empresa/aba, e as rotas gerais aceitam barra final. O chip de parcelamento da carteira oferece Guias e Parcelamentos por navegação interna; Abrir apuração aponta para cadastro-fiscal. `todasRotas.test.jsx` percorre as 23 abas para Simples/Presumido e 21 páginas gerais usando apenas API mock. `entradaDireta`, `mapaRotas` e `atalhosDaCarteira` cobrem carga ausente, falha, links e histórico. Não confundir validação mock com homologação de serviços fiscais reais.
+
+Uma sessão antiga em produção falhou ao importar o chunk de Lançamentos e desmontou o app. A recarga manual restabeleceu Circular e Lançamentos. Manter ErrorBoundary na raiz e no conteúdo de Lançamentos: Suspense trata espera, não rejeição de import. A recuperação existente tenta recarregar uma vez na janela de 15 segundos; se sessionStorage estiver bloqueado, oferece recuperação manual para evitar laço. A mensagem não deve afirmar que todo erro de rede é atualização nem prometer preservar edições não salvas. Validação local: 39 testes de recuperação/navegação/montagem e build web. A verificação em produção restabeleceu a sessão; não comprova publicação desta correção.
+
 ## Regras
 
 - Toda feature nova precisa de entrada no `mockApi.js` antes de integrar o real

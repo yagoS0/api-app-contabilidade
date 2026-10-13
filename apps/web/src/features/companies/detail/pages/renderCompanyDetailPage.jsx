@@ -456,6 +456,7 @@ function CompanyDetailContent({
 
         {/* Conteúdo full-width — sem restrição de max-width */}
         <div style={{ flex: 1 }}>
+          <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
           <AccountingEntriesTab
             companyId={companyId}
@@ -504,6 +505,7 @@ function CompanyDetailContent({
             error={accountingPanel.error}
           />
           </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
     );
@@ -1411,7 +1413,15 @@ function CompanyDetailContent({
 
 // Todas as seções reutilizam seus formulários e APIs; links antigos continuam válidos.
 export function CompanyDetailPage(props) {
- return <ProtecaoEdicao><CompanyDetailComConfiguracoes {...props}/></ProtecaoEdicao>;
+ const { selectedCompany, companyDetailTab, onBack, loadingCompany = true, companyError, onRetryCompany } = props.company;
+ if (!selectedCompany?.companyId) return <AppShell>
+   <PageHeader title="Empresa" actions={<BackButton onClick={onBack} />} />
+   {loadingCompany ? <CompanyTabLoading/> : <>
+     <Feedback error={companyError || "Empresa não encontrada ou sem acesso."}/>
+     {onRetryCompany && <Button onClick={onRetryCompany}>Tentar novamente</Button>}
+   </>}
+ </AppShell>;
+ return <ErrorBoundary key={selectedCompany.companyId} resetKey={companyDetailTab}><ProtecaoEdicao><CompanyDetailComConfiguracoes {...props}/></ProtecaoEdicao></ErrorBoundary>;
 }
 
 function CompanyDetailComConfiguracoes(props) {

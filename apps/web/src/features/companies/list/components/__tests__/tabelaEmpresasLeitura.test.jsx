@@ -275,5 +275,5 @@ test('presumido resume tributos, preserva detalhes e separa parcelamentos', () =
   expect(screen.queryByText(/parcela atrasada/i)).not.toBeInTheDocument();
   fireEvent.click(resumo);
   fireEvent.click(screen.getByRole('button', { name: /IRPJ: falta gerar/ }));
-  expect(screen.getByRole('button', { name: 'Abrir apuração' })).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Abrir apuração' })).toHaveAttribute('href', '/companies/c1/cadastro-fiscal');
 });
