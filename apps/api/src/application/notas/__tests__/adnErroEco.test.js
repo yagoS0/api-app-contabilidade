@@ -1,3 +1,4 @@
+jest.mock("../../guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn(async () => ({ assertActive: jest.fn(), release: jest.fn(async () => {}) })) }));
 // UM ERRO QUE SOBREVIVE À CONSULTA QUE O DESMENTIU É INFORMAÇÃO FALSA.
 //
 // `adnLastError` só era zerado por `persistCursor`, e `persistCursor` só roda quando VEM DOCUMENTO.
@@ -113,4 +114,89 @@ describe("adnLastError não sobrevive a uma captura bem-sucedida", () => {
     expect(r.ok).toBe(false);
     expect(limpezasDeErro()).toHaveLength(0);
   });
+});
+import { __tx } from "../../../infrastructure/db/prisma.js";
+import { acquireGuideLease } from "../../guides/GuideLockService.js";
+
+const lote = (count = 1) => ({ status: "DOCUMENTOS_LOCALIZADOS", errors: [], items: Array.from({ length: count }, (_, i) => ({ NSU: String(11 + i), ArquivoXml: Buffer.from("<n/>").toString("base64"), TipoDocumento: "NFSE" })) });
+
+test("rollback do primeiro lote nunca informa documentos confirmados", async () => {
+  fetchDfeNFSe.mockResolvedValueOnce(lote());
+  prisma.$transaction.mockImplementationOnce(async cb => { await cb(__tx); throw new Error("commit failed"); });
+  const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
+  expect(r).toMatchObject({ ok: false, totalDocs: 0, newCursor: "10", byStatus: { upserted: 0 } });
+  expect(limpezasDeErro()).toHaveLength(0);
+  expect(r.backoffUntil).toBeInstanceOf(Date);
+});
+
+test("lote confirmado seguido de 429 preserva progresso e espera solicitada", async () => {
+  const start = Date.now();
+  fetchDfeNFSe.mockResolvedValueOnce(lote(50)).mockRejectedValueOnce(Object.assign(new Error("Limite da consulta"), { code: "HTTP_429", retryAfterSec: 3600 }));
+  const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
+  expect(r).toMatchObject({ ok: true, partial: true, reason: "HTTP_429", totalDocs: 50, newCursor: "60" });
+  expect(r.backoffUntil.getTime()).toBeGreaterThanOrEqual(start + 3600000);
+  expect(limpezasDeErro()).toHaveLength(0);
+  expect(prisma.portalSyncState.upsert.mock.calls.at(-1)[0].update.adnBackoffUntil).toEqual(r.backoffUntil);
+});
+
+test("lease ocupada impede transporte e consulta de cursor", async () => {
+  acquireGuideLease.mockResolvedValueOnce(null);
+  expect(await syncAdnNotasForCompany({ portalClientId: "p1" })).toMatchObject({ ok: false, reason: "ADN_SYNC_IN_PROGRESS" });
+  expect(fetchDfeNFSe).not.toHaveBeenCalled();
+  expect(prisma.portalSyncState.findUnique).not.toHaveBeenCalled();
+});
+
+test("perda da lease depois do transporte impede persistir lote", async () => {
+  const lease = { assertActive: jest.fn().mockImplementationOnce(() => {}).mockImplementation(() => { throw Object.assign(new Error("lost"), { code: "GUIDE_LEASE_LOST" }); }), release: jest.fn(async () => {}) };
+  acquireGuideLease.mockResolvedValueOnce(lease);
+  fetchDfeNFSe.mockResolvedValueOnce(lote());
+  await expect(syncAdnNotasForCompany({ portalClientId: "p1" })).rejects.toMatchObject({ code: "GUIDE_LEASE_LOST" });
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(lease.release).toHaveBeenCalledTimes(1);
+});
+
+test("rollback posterior não soma documentos não confirmados", async () => {
+  fetchDfeNFSe.mockResolvedValueOnce(lote(50)).mockResolvedValueOnce(lote(2));
+  prisma.$transaction.mockImplementationOnce(async cb => cb(__tx)).mockImplementationOnce(async cb => { await cb(__tx); throw new Error("commit failed"); });
+  const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
+  expect(r).toMatchObject({ ok: true, partial: true, totalDocs: 50, newCursor: "60" });
+});
+
+test("duas execuções simultâneas consultam uma única vez", async () => {
+  let busy = false;
+  const acquire = async () => {
+    if (busy) return null;
+    busy = true;
+    return { assertActive() {}, async release() { busy = false; } };
+  };
+  acquireGuideLease.mockImplementationOnce(acquire).mockImplementationOnce(acquire);
+  fetchDfeNFSe.mockResolvedValueOnce({ status: "NENHUM_DOCUMENTO_LOCALIZADO", items: [] });
+  const resultados = await Promise.all([syncAdnNotasForCompany({ portalClientId: "p1" }), syncAdnNotasForCompany({ portalClientId: "p1" })]);
+  expect(resultados.map(r => r.ok).sort()).toEqual([false, true]);
+  expect(fetchDfeNFSe).toHaveBeenCalledTimes(1);
+  expect(busy).toBe(false);
+});
+
+test("rejeição do ADN não expõe JSON do provedor", async () => {
+  fetchDfeNFSe.mockResolvedValueOnce({ status: "REJEICAO", items: [], errors: [{ detail: "<html>private provider detail</html>" }] });
+  const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
+  expect(r).toMatchObject({ ok: false, reason: "ADN_REJEICAO", totalDocs: 0 });
+  expect(JSON.stringify(r)).not.toMatch(/html|private|provider detail/);
+});
+
+test("50 páginas completas retornam parcial sem repetir nem afirmar sincronização completa", async () => {
+  const realTimeout = global.setTimeout;
+  const timer = jest.spyOn(global, "setTimeout").mockImplementation((fn, ms, ...args) => realTimeout(fn, ms === 1100 ? 0 : ms, ...args));
+  try {
+    let page = 0;
+    fetchDfeNFSe.mockImplementation(async () => {
+      const items = lote(50).items.map((item, i) => ({ ...item, NSU: String(11 + (page * 50) + i) }));
+      page++;
+      return { status: "DOCUMENTOS_LOCALIZADOS", items };
+    });
+    const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
+    expect(r).toMatchObject({ ok: true, partial: true, reason: "ADN_LIMITE_PAGINACAO", iterations: 50, totalDocs: 2500, newCursor: "2510" });
+    expect(fetchDfeNFSe).toHaveBeenCalledTimes(50);
+    expect(limpezasDeErro()).toHaveLength(0);
+  } finally { timer.mockRestore(); }
 });

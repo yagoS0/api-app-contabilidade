@@ -1,3 +1,4 @@
+import { acquireGuideLease } from "../../guides/GuideLockService.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Q12.B+ rework: captura de NFS-e via ADN Nacional do gov.br/nfse.
 //
@@ -202,7 +203,8 @@ async function setBackoff({ clientId, errorMsg, minutes }) {
     where: { clientId },
     create: { clientId, adnBackoffUntil: backoffUntil, adnLastError: errorMsg },
     update: { adnBackoffUntil: backoffUntil, adnLastError: errorMsg },
-  }).catch(() => null);
+  });
+  return backoffUntil;
 }
 
 // ─── API pública ───────────────────────────────────────────────────────────
@@ -214,6 +216,10 @@ async function setBackoff({ clientId, errorMsg, minutes }) {
  * @param {"prod"|"hom"} [opts.env="prod"]
  */
 export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
+  // Cursor compartilhado pela empresa: protege rota individual, lote e worker.
+  const lease = await acquireGuideLease(`adn-sync:${portalClientId}`);
+  if (!lease) return { ok: false, reason: "ADN_SYNC_IN_PROGRESS", message: "Já existe uma consulta de NFS-e em andamento para esta empresa. Aguarde sua conclusão." };
+  try {
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
     select: { id: true, razao: true, cnpj: true, status: true },
@@ -260,6 +266,7 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
         await new Promise((res) => setTimeout(res, DELAY_BETWEEN_REQUESTS_MS));
       }
 
+      lease.assertActive();
       const r = await fetchDfeNFSe({
         cnpj: companyCnpj,
         ultNSU: cursor.toString(),
@@ -273,23 +280,26 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
       const items = r.items || [];
 
       if (status === "REJEICAO") {
-        throw new AdnNotasSyncError("ADN_REJEICAO", `ADN rejeitou: ${JSON.stringify(r.errors || {})}`);
+        throw new AdnNotasSyncError("ADN_REJEICAO", "O ADN Nacional rejeitou a consulta. Confira o CNPJ e a autorização do certificado A1 desta empresa antes de uma nova tentativa.");
       }
       if (status === "NENHUM_DOCUMENTO_LOCALIZADO" || items.length === 0) {
         break;
       }
 
       let maxNsuThisIter = cursor;
+      let loteDocs = 0;
+      const loteStatus = {};
+      lease.assertActive();
       await prisma.$transaction(async (tx) => {
         for (const item of items) {
-          totalDocs++;
+          loteDocs++;
           const nsuRaw = item.NSU || item.nsu;
           if (nsuRaw) {
             const n = BigInt(nsuRaw);
             if (n > maxNsuThisIter) maxNsuThisIter = n;
           }
           const arquivoXml = item.ArquivoXml || item.arquivoXml;
-          if (!arquivoXml) { byStatus.skipped++; continue; }
+          if (!arquivoXml) { loteStatus.skipped = (loteStatus.skipped || 0) + 1; continue; }
 
           const xmlPlain = decodeXml(arquivoXml);
           // Ramifica por tipo: EVENTO (cancelamento etc.) vs NFSE (a nota). Antes tudo virava nota
@@ -297,12 +307,12 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
           const tipoDoc = String(item.TipoDocumento || item.tipoDocumento || "").toUpperCase();
           if (tipoDoc === "EVENTO") {
             const r = await applyNfseEvento(tx, { portalClientId, item, xmlPlain });
-            byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+            loteStatus[r.status] = (loteStatus[r.status] || 0) + 1;
             continue;
           }
           const metadata = parseXmlMetadata(xmlPlain);
           const r = await upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPlain, metadata });
-          byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+          loteStatus[r.status] = (loteStatus[r.status] || 0) + 1;
         }
         // ⚠ O CURSOR GUARDA O ÚLTIMO NSU QUE JÁ TEMOS — NÃO o "próximo a buscar".
         //
@@ -321,18 +331,23 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
         //
         // Efeito acumulado: como cada varredura recomeçava do cursor inflado, o PRIMEIRO documento
         // de cada nova rodada era perdido — não só um por empresa.
+        lease.assertActive();
         await persistCursor(tx, { clientId: portalClientId, newCursor: maxNsuThisIter });
       });
+      // Somente o commit confirma progresso; rollback não pode virar sucesso parcial.
+      totalDocs += loteDocs;
+      for (const [status, count] of Object.entries(loteStatus)) byStatus[status] = (byStatus[status] || 0) + count;
 
       // Nenhum item trouxe NSU utilizável → o cursor não anda, e insistir seria buscar o mesmo lote
       // até estourar MAX_ITERATIONS. Antes o `+1` mascarava isso avançando às cegas (e pulando
       // documento). Parar é honesto: a próxima execução tenta de novo do mesmo ponto.
-      if (maxNsuThisIter === cursor) break;
+      if (maxNsuThisIter === cursor) throw new AdnNotasSyncError("ADN_CURSOR_SEM_AVANCO", "A consulta retornou documentos sem avanço do identificador de distribuição. A captura ficou incompleta; o ponto de retomada foi preservado para conferência.");
       cursor = maxNsuThisIter;
 
       // Q42: sem maxNSU no ADN, o fim é o lote INCOMPLETO (< 50). Enquanto vier lote cheio,
       // continua puxando os próximos 50. Isso substitui a varredura 1-em-1.
       if (items.length < LOTE_MAX) break;
+      if (iterations === MAX_ITERATIONS) throw new AdnNotasSyncError("ADN_LIMITE_PAGINACAO", "O limite de páginas desta consulta foi atingido. Os documentos confirmados foram preservados, mas a captura ainda pode ter mais páginas. Retome a busca após o prazo indicado.");
     }
 
     // ⚠ CONSULTA QUE DEU CERTO APAGA O ERRO ANTERIOR — MESMO QUE NÃO VENHA NENHUMA NOTA.
@@ -350,6 +365,7 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
     //
     // É o mesmo princípio da Situação Fiscal: o estado na tela tem de ser o estado de AGORA. Erro
     // que sobrevive à consulta que o desmentiu é informação falsa, não histórico.
+    lease.assertActive();
     await prisma.portalSyncState
       .updateMany({
         where: { clientId: portalClientId },
@@ -363,21 +379,24 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
       newCursor: cursor.toString(),
     };
   } catch (err) {
+    if (err?.code === "GUIDE_LEASE_LOST") throw err;
+    lease.assertActive();
     const code = err?.code || "ADN_SYNC_FAILED";
     const msg = err?.message || String(err);
-    // Se ESTA run já capturou notas antes do erro, é sucesso parcial — não mostra "erro" nem seta
-    // backoff longo (as notas entraram; o resto vem na próxima). Só o cursor foi persistido a cada lote.
+    // Falha após lotes confirmados conserva o progresso e a espera do provedor.
+    const defaultMinutes = code === "HTTP_429" ? BACKOFF_MINUTES_ON_429 : BACKOFF_MINUTES_ON_ERROR;
+    const requestedSeconds = Number(err?.retryAfterSec);
+    const minutes = Number.isFinite(requestedSeconds) && requestedSeconds > 0
+      ? Math.max(defaultMinutes, requestedSeconds / 60) : defaultMinutes;
+    const backoffUntil = await setBackoff({ clientId: portalClientId, errorMsg: (`[${code}] ${msg}`).slice(0, 500), minutes });
     if (totalDocs > 0) {
-      await prisma.portalSyncState
-        .updateMany({ where: { clientId: portalClientId }, data: { adnLastSyncAt: new Date(), adnLastError: null, adnBackoffUntil: null } })
-        .catch(() => null);
-      return { ok: true, cnpj: companyCnpj, certVia: cert.via, iterations, totalDocs, byStatus, newCursor: cursor.toString(), warning: `${code}: ${msg}` };
+      return { ok: true, partial: true, reason: code, message: msg, backoffUntil,
+        cnpj: companyCnpj, certVia: cert.via, iterations, totalDocs, byStatus,
+        newCursor: cursor.toString(), warning: [code, msg].join(": ") };
     }
-    // Q12.B+++.10: backoff curto pra 429 (retoma em 15min do mesmo cursor)
-    const minutes = code === "HTTP_429" ? BACKOFF_MINUTES_ON_429 : BACKOFF_MINUTES_ON_ERROR;
-    await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500), minutes });
-    // Importante: cursor JÁ FOI persistido a cada iteração bem-sucedida.
-    // Próximo ciclo retoma do mesmo ponto sem perder progresso.
-    return { ok: false, reason: code, message: msg, iterations, totalDocs };
+    return { ok: false, reason: code, message: msg, backoffUntil, iterations, totalDocs, byStatus, newCursor: cursor.toString() };
+  }
+  } finally {
+    await lease.release();
   }
 }

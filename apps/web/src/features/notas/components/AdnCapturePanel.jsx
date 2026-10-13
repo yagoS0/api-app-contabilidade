@@ -1,5 +1,6 @@
 // Q12.B+: captura manual de NFS-e (ADN / Emissor Nacional) — versão enxuta (só o botão de consultar).
 
+import { mensagemCapturaAdn } from "../lib/mensagemCapturaAdn";
 import { PANEL } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
 
@@ -59,12 +60,9 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError, mo
           </button>
         )}
         {mostrarStatus && hasError && (
-          <span style={{ color: "var(--danger)", fontSize: "0.78rem", maxWidth: 520 }} title={adnState.adnLastError}>
-            {/* ⚠ O texto do erro é TRUNCADO na tela e vai inteiro no `title`. Ele vem do servidor e já
-                chegou a ser HTML cru do gov.br (`<html><body><h1>429 Too Many Requests…`) despejado
-                aqui dentro. A origem foi corrigida no `AdnNacionalClient`, mas o erro fica GRAVADO no
-                banco até a próxima captura bem-sucedida: os registros antigos ainda passam por aqui. */}
-            {String(adnState.adnLastError).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180)}
+          <span style={{ color: "var(--danger)", fontSize: "0.78rem", maxWidth: 520 }} >
+            {/* Normaliza também erros técnicos legados já persistidos no banco. */}
+            {mensagemCapturaAdn(adnState.adnLastError)}
             {tentativaEm && (
               <span style={{ color: PANEL.muted, marginLeft: 6 }}>
                 (da tentativa de {tentativaEm} — abrir a aba não consulta o ADN)

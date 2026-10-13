@@ -49,6 +49,35 @@ function rfbQueRecusa({ receitasRuins = [], folhasRuins = [] }) {
 }
 
 describe("convergência dos períodos", () => {
+  it("limite conserva os períodos recusados sem afirmar aceitação nem expor valores", async () => {
+    const { executar, chamadas } = rfbQueRecusa({
+      receitasRuins: ["2025-06"], folhasRuins: ["2025-06", "2025-07"],
+    });
+    await expect(executarComAjusteDePeriodos(executar, {
+      receitasBrutasAnteriores: receitas, folhasSalario: folhas,
+    })).rejects.toMatchObject({
+      code: "RECEITAS_ANTERIORES_NAO_CONVERGIU",
+      detalhe: {
+        tentativas: 3,
+        periodosRemovidos: { receitas: ["2025-06"], folhas: ["2025-06", "2025-07"] },
+        acao: "REVISAR_PERIODOS_ANTERIORES",
+        ajusteConfirmado: false,
+      },
+    });
+    expect(chamadas).toHaveLength(3);
+    expect(receitas).toHaveLength(3);
+    expect(folhas).toHaveLength(3);
+  });
+
+  it("recusa sem distinguir folha de receita não remove períodos nem faz outra chamada", async () => {
+    const erro = new Error("Período desnecessário: 06/2025. Remova este período.");
+    const executar = jest.fn(async () => { throw erro; });
+    await expect(executarComAjusteDePeriodos(executar, {
+      receitasBrutasAnteriores: receitas, folhasSalario: folhas,
+    })).rejects.toBe(erro);
+    expect(executar).toHaveBeenCalledTimes(1);
+  });
+
   it("devolve as DUAS listas aceitas — receitas E folhas", async () => {
     // `gravarDaSimulacao` só guardava receitas. A FOLHA é justamente o que precisa ser podado nas
     // empresas de Fator-R — as mesmas que mais gastavam (CHAYM, IOHANNA).

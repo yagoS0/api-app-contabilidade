@@ -2,6 +2,7 @@
 // Único hook, instanciado pelo CompanyDetailPage via lazy load.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { mensagemCapturaAdn, avisoCapturaParcial } from "../lib/mensagemCapturaAdn";
 import { resultadoImportacao } from "../lib/resultadoImportacao";
 
 // Competência (YYYY-MM) do mês anterior ao atual.
@@ -264,16 +265,20 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
       if (!montado.current || empresaAtual.current !== companyId) return;
       if (!out || typeof out.ok !== "boolean" || !out.result || (out.ok && !Number.isFinite(Number(out.result.totalDocs)))) throw new Error("Não foi possível confirmar o resultado da captura NFS-e. Confira o estado antes de buscar novamente.");
       setAdnLastResult(out?.result || out);
-      if (out?.ok) {
+      const avisoParcial = avisoCapturaParcial(out.result);
+      if (avisoParcial) {
+        feedback?.notifyError?.(avisoParcial);
+      } else if (out?.ok) {
         feedback?.notifySuccess?.(`Captura NFS-e (${env}) concluída — ${out.result?.totalDocs || 0} documentos.`);
       } else {
-        feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura ADN.");
+        feedback?.notifyError?.(mensagemCapturaAdn(out?.result?.message || out?.message));
       }
       // Recarrega estado E a lista de notas — as notas capturadas aparecem sem precisar consultar de novo.
       await Promise.all([loadAll(), recarregarNotasAtuais.current?.()]);
-      if (!out.ok && montado.current && empresaAtual.current === companyId) setError(out.result?.message || out.message || "Falha na captura NFS-e.");
+      if (avisoParcial && montado.current && empresaAtual.current === companyId) setError(avisoParcial);
+      if (!out.ok && montado.current && empresaAtual.current === companyId) setError(mensagemCapturaAdn(out.result?.message || out.message));
     } catch (err) {
-      if (empresaAtual.current === companyId) { setError(err?.message || "Falha na captura NFS-e."); feedback?.notifyError?.(err?.message || "Erro."); }
+      if (empresaAtual.current === companyId) { setError(mensagemCapturaAdn(err?.message)); feedback?.notifyError?.(mensagemCapturaAdn(err?.message)); }
     } finally {
       capturaAtiva.current = false;
       setAdnSyncing(false);

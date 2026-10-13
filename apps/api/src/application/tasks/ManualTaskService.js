@@ -57,11 +57,14 @@ export function createManualTaskService({ db = prisma, schedule = (fn) => setImm
         const progress = async (completed, detail = null) => update({ completed, ...(detail ? { progress: clean(detail) } : {}) });
         const { statusCode = 200, body = null } = await run(progress);
         const attention = body?.ok === false || body?.sent === false && body?.envio?.naoSeAplica !== true
+          || body?.result?.warning || body?.result?.partial === true
+          || Object.values(body?.result?.posTransmissao || {}).some(r => r?.skipped === true || r?.ok === false)
           || body?.errors?.length > 0 || body?.recusadas > 0 || body?.ignoradas > 0
           || body?.processando === true || body?.errorCount > 0 || body?.failed > 0
           || body?.results?.some(r => r.ok === false || r.error || ["error", "erro", "failed"].includes(r.status))
           || body?.resultados?.some(r => !r.ok || r.tom === "pendente");
-        await update({ status: statusCode >= 400 ? "error" : attention ? "partial" : "done",
+        const failedCapture = body?.ok === false && body?.result?.ok === false && body?.result?.totalDocs === 0;
+        await update({ status: statusCode >= 400 || failedCapture ? "error" : attention ? "partial" : "done",
           result: clean(body), responseStatus: statusCode, completed: total, activeKey: null, finishedAt: new Date() });
       } catch (err) {
         // Uma falha de persistência depois do transporte não autoriza repetir o transporte.

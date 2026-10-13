@@ -273,6 +273,22 @@ describe('Vínculo entre simulação e fechamento', () => {
     expect(mockTransmitir).not.toHaveBeenCalled();
     expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({data:expect.objectContaining({estado:'calculada'})}));
   });
+  it('aceita negativa oficial HTTP 400 antes da transmissão explicitamente solicitada', async () => {
+    const {calculoId} = await simulacaoSalva();
+    mockIndice.mockRejectedValueOnce(Object.assign(new Error('Negativa'), {
+      code: 'SERPRO_BUSINESS_ERROR', status: 400,
+      details: { dados: '', mensagens: [{ codigo: '[EntradaIncorreta-PGDASD-MSG_ISN_005]' }] },
+    }));
+    await transmitirFechamento({...BASE, calculoId});
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+  it('não transforma outra recusa HTTP em permissão para transmitir', async () => {
+    const {calculoId} = await simulacaoSalva();
+    const erro = Object.assign(new Error('Recusa'), { code: 'SERPRO_BUSINESS_ERROR', status: 400, details: { dados: '' } });
+    mockIndice.mockRejectedValueOnce(erro);
+    await expect(transmitirFechamento({...BASE, calculoId})).rejects.toBe(erro);
+    expect(mockTransmitir).not.toHaveBeenCalled();
+  });
   it('reserva exclusiva impede duas transmissões concorrentes', async () => {
     const {calculoId} = await simulacaoSalva();
     prisma.apuracaoSnapshot.updateMany.mockResolvedValueOnce({count:1}).mockResolvedValueOnce({count:0});
