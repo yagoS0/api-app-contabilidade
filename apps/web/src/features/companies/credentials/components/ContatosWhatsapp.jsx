@@ -75,7 +75,7 @@ const COR_SITUACAO = {
 };
 
 function LinhaContato({ contato, usuarios, salvando, onRemover, onSalvarContato, onSalvarPermissoes }) {
-  const situacao = situacaoDoContato(contato);
+  const situacao = contato.consentimentoWhatsapp?.status === 'REVOGADO' ? SITUACAO_CONTATO.SEM_OPT_IN : situacaoDoContato(contato);
   const pessoa = pessoaDoContato(contato, usuarios);
   const antigo = pareceFormatoAntigo(contato.telefoneE164);
   const optIn = fmtData(contato.optInEm);
@@ -174,6 +174,7 @@ function LinhaContato({ contato, usuarios, salvando, onRemover, onSalvarContato,
           <span>não ligado a uma pessoa do portal — recebe a comunicação pelos canais cadastrados</span>
         )}
         {contato.optInOrigem && situacao === SITUACAO_CONTATO.RECEBE ? <span>origem do opt-in: {contato.optInOrigem}</span> : null}
+        {contato.consentimentoWhatsapp?.status === 'REVOGADO' ? <span role="status" style={{color:'var(--state-warn)'}}>Bloqueado pelo cliente. Para autorizar novamente, ele deve enviar “Autorizo receber as guias pelo WhatsApp” ao suporte. Editar este cadastro não libera os envios.</span> : null}
         {antigo ? (
           <span style={{ color: "var(--state-warn)" }} data-testid={`aviso-formato-antigo-${contato.id}`}>
             ⚠ 8 dígitos: se for celular, este cadastro está no formato antigo — o envio só casa dígito a dígito. Corrija o número.

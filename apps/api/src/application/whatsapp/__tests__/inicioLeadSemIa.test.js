@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 jest.mock("../../guides/ConfirmarPagamentoWhatsappService.js", () => ({ ...jest.requireActual("../../guides/ConfirmarPagamentoWhatsappService.js"), fluxoPagamentoAtual: jest.fn(async () => null) }));
 jest.mock("../../../config.js", () => ({
   ...jest.requireActual("../../../config.js"),

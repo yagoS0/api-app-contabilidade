@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 jest.mock("../../guides/ConfirmarPagamentoWhatsappService.js", () => ({ ...jest.requireActual("../../guides/ConfirmarPagamentoWhatsappService.js"), fluxoPagamentoAtual: jest.fn(async()=>null) }));
 // O QUE O EVENTO VIRA. As duas pontas (conversa e envio de guia) entram como dublês: o que este
 // teste prova é a COSTURA — quem é chamado, com o quê, e o que acontece quando algo falha no meio.

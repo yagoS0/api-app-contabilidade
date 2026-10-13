@@ -1,4 +1,5 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { processarConsentimentoWhatsapp } from './ConsentimentoWhatsappService.js';
 import { suporteNoPiloto } from '../assistente/pilotoSuporte.js';
 import { fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
@@ -219,6 +220,9 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   });
   // Apenas metadados validados do canal, sem token. Não confiar em finalidade enviada pelo lead.
   if (r) r.canal = canal;
+  // Consentimento é do número e precede seleção de empresa, IA, piloto e atendimento humano.
+  const consentimento = r && await processarConsentimentoWhatsapp(r);
+  if (consentimento) return {desfecho:r.duplicada?DESFECHOS.DUPLICADA:DESFECHOS.GRAVADA,motivo:'CONSENTIMENTO_'+consentimento.status};
   const conteudoIndisponivel = ["unsupported", "unknown"].includes(item.tipo);
   if (!conteudoIndisponivel && r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");

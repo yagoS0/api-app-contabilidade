@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 // O CLIENTE DA CLOUD API — exercido inteiro, sem UMA chamada de rede.
 //
 // ⚠ A TRAVA DE REDE É ESTRUTURAL, NÃO UMA PROMESSA. `globalThis.fetch` é substituído por um espião

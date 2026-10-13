@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 // O ENVIO DA GUIA POR WHATSAPP — o caminho inteiro, sem UMA chamada de rede.
 //
 // ⚠ A TRAVA DE REDE É ESTRUTURAL: `globalThis.fetch` é substituído por um espião que ESTOURA. Se
