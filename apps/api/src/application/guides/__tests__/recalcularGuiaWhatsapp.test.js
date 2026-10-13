@@ -19,13 +19,13 @@ function cenario() {
     enviarGuiaComPagamento: jest.fn(async () => { ordem.push('PDF_E_CODIGO'); return { wamid: 'pdf' }; }) };
   const deps = { recalcular: jest.fn(async () => { ordem.push('RECALCULO'); return { ...guia }; }), carregarPdf: jest.fn(async () => Buffer.from('PDF')), prepararPagamento: jest.fn(async () => ({ linhaDigitavel: '8' + '0'.repeat(47) })) };
   const args = { id: ID, conversa: { id: 'cv', portalClientId: 'c', telefoneE164: token.telefone }, mensagem: { id: 'm', direcao: 'in', conversaId: 'cv' }, client, cloud,
-    enviar: jest.fn(async ({ chamada }) => chamada()), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
+    enviar: jest.fn(async ({ chamada }) => chamada()), encaminhar: jest.fn(async () => {}), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
   return { guia, token, records, client, cloud, deps, args, ordem, run: () => recalcularGuiaWhatsapp(args, deps) };
 }
 
 test('clique envia aguarde, recalcula e entrega PDF e código em sequência, sem portal', async () => {
   const f = cenario(); expect(await f.run()).toMatchObject({ tratado: true, acao: 'RECALCULAR_GUIA', codigo: { status: 'ENVIADO' } });
-  expect(f.ordem).toEqual(['Aguarde em quanto recalculamos.', 'RECALCULO', 'PDF_E_CODIGO']);
+  expect(f.ordem).toEqual(['Aguarde enquanto atualizamos sua guia.', 'RECALCULO', 'PDF_E_CODIGO']);
   expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledWith(expect.objectContaining({ telefone: f.token.telefone, conteudoPdf: Buffer.from('PDF') }));
   expect(f.cloud.enviarTexto.mock.calls.some(([a]) => /https?:|portal/i.test(a.texto))).toBe(false);
   const tokenNovo = f.records.get(f.cloud.enviarBotoes.mock.calls[0][0].botoes[0].id).value;
@@ -35,7 +35,7 @@ test('dois cliques concorrentes executam um único recálculo e envio', async ()
   const f = cenario(); await Promise.all([f.run(), f.run()]);
   expect(f.deps.recalcular).toHaveBeenCalledTimes(1); expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledTimes(1);
 });
-test.each(['outra_empresa', 'outro_telefone', 'expirado', 'hash_alterado', 'paga', 'contato_revogado', 'nao_recalculavel', 'nao_vencida'])('recusa %s antes de custo ou PDF', async caso => {
+test.each(['outra_empresa', 'outro_telefone', 'expirado', 'hash_alterado', 'paga', 'contato_revogado', 'nao_vencida'])('recusa %s antes de custo ou PDF', async caso => {
   const f = cenario();
   if (caso === 'outra_empresa') f.token.companyId = 'outra';
   if (caso === 'outro_telefone') f.token.telefone = '5500000000000';
@@ -56,10 +56,25 @@ test('timeout não executa novamente o pedido', async () => {
   const f = cenario(); f.deps.recalcular.mockRejectedValue(Error('timeout'));
   await f.run(); await f.run(); expect(f.deps.recalcular).toHaveBeenCalledTimes(1);
   expect([...f.records.values()].some(r => r.value.status === 'CONFERENCIA_NECESSARIA')).toBe(true);
+  expect(f.args.encaminhar).toHaveBeenCalledTimes(1);
 });
 test('falha do PDF não afirma entrega; código ausente é parcial', async () => {
   const f = cenario(); f.deps.carregarPdf.mockResolvedValue(null); expect(await f.run()).toMatchObject({ pendente: true });
   expect(f.cloud.enviarGuiaComPagamento).not.toHaveBeenCalled();
   const p = cenario(); p.deps.prepararPagamento.mockRejectedValue(Object.assign(Error('sem código'), { code: 'LINHA_DIGITAVEL_INDISPONIVEL' }));
   expect(await p.run()).toMatchObject({ pendente: true }); expect(p.cloud.enviarGuiaComPagamento).not.toHaveBeenCalled();
+});
+
+test('guia sem recálculo automático registra pedido antes de avisar, sem custo fiscal', async () => {
+ const f = cenario(); f.guia.source = 'MANUAL'; f.guia.tipo = 'GUIA_AVULSA';
+ f.args.encaminhar = jest.fn(async () => { f.ordem.push('CONTADOR'); });
+ expect(await f.run()).toMatchObject({ encaminhado: true });
+ expect(f.args.encaminhar).toHaveBeenCalledWith(expect.stringContaining('g: atualização pelo contador'));
+ expect(f.ordem[0]).toBe('CONTADOR'); expect(f.ordem[1]).toContain('Solicitei ao contador');
+ expect(f.deps.recalcular).not.toHaveBeenCalled(); expect(f.deps.carregarPdf).not.toHaveBeenCalled();
+});
+test('não afirma encaminhamento quando o registro falha', async () => {
+ const f = cenario(); f.guia.source = 'MANUAL'; f.guia.tipo = 'GUIA_AVULSA';
+ f.args.encaminhar = jest.fn(async () => { throw Error('db'); });
+ await f.run(); expect(f.ordem.join(' ')).not.toContain('Solicitei ao contador'); expect(f.deps.recalcular).not.toHaveBeenCalled();
 });

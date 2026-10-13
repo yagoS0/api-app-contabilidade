@@ -982,7 +982,7 @@ export function CompaniesHomePage({
             </div>
           )}
               {empresaFluxo && <FluxoCarteiraDetalhe key={`${empresaFluxo.companyId}:${dashboardCompetencia}`} company={empresaFluxo} competencia={dashboardCompetencia} api={api} onFechar={() => setEmpresaFluxo(null)} onChanged={onRefreshCompanies} onOpenCompany={onOpenCompany} />}
-              <CompaniesTable
+              <CompaniesTable api={api}
                 onFluxo={setEmpresaFluxo}
                 /* ⚠ A LISTA DA ABA ATIVA — a mesma de onde saem `idsVisiveis` e a seleção. */
                 companies={empresasVisiveis}

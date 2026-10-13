@@ -163,7 +163,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   router.get('/whatsapp/suporte/pendencias', async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
-    try { return res.json({ ok: true, ...await listarEncaminhamentosSuporte({ visiveis: await empresasVisiveis(req), client }) }); }
+    try { return res.json({ ok: true, ...await listarEncaminhamentosSuporte({ visiveis: await empresasVisiveis(req), companyId: typeof req.query.companyId === "string" ? req.query.companyId : null, client }) }); }
     catch (err) { return falhar(res, err, { operacao: 'pendencias-suporte' }); }
   });
 

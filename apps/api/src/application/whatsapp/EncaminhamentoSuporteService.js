@@ -19,15 +19,18 @@ export async function registrarEncaminhamentoSuporte({ conversa, mensagem, motiv
   return registro;
 }
 
-export async function listarEncaminhamentosSuporte({ visiveis, client = prisma }) {
-  const where = { estado: { not: 'RESOLVIDO' }, conversa: { portalClientId: { in: visiveis }, excluidaEm: null,
+export async function listarEncaminhamentosSuporte({ visiveis, companyId = null, client = prisma }) {
+  const where = { estado: { not: 'RESOLVIDO' }, conversa: { portalClientId: { in: companyId ? visiveis.filter(id => id === companyId) : visiveis }, excluidaEm: null,
     NOT: { chaveEscopo: { startsWith: 'legado:' } } } };
-  const [total, itens] = await Promise.all([
+  const [contagens, total, itens] = await Promise.all([
+    client.conversaWhatsapp.findMany({ where: { ...where.conversa, encaminhamentosSuporte: { some: { estado: { not: "RESOLVIDO" } } } }, select: { portalClientId: true, _count: { select: { encaminhamentosSuporte: { where: { estado: { not: "RESOLVIDO" } } } } } } }),
     client.encaminhamentoSuporte.count({ where }),
     client.encaminhamentoSuporte.findMany({ where, orderBy: { createdAt: 'asc' }, take: 100,
-      include: { conversa: { select: { portalClient: { select: { razao: true } } } } } }),
+      include: { conversa: { select: { portalClient: { select: { id: true, razao: true } } } } } }),
   ]);
-  return { total, itens: itens.map(({ conversa, ...i }) => ({ ...i, empresa: conversa.portalClient?.razao || '' })) };
+  const porEmpresa = {};
+  for (const c of contagens) porEmpresa[c.portalClientId] = (porEmpresa[c.portalClientId] || 0) + c._count.encaminhamentosSuporte;
+  return { total, porEmpresa, itens: itens.map(({ conversa, ...i }) => ({ ...i, empresaId: conversa.portalClient?.id, empresa: conversa.portalClient?.razao || '' })) };
 }
 
 export async function atualizarEncaminhamentosSuporte({ conversaId, estado, responsavelId, client = prisma }) {

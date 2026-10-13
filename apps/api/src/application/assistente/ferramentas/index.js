@@ -652,7 +652,12 @@ const EXECUTORES = {
     const guide = await ctx.prisma.guide.findFirst({ where: { id: String(input.guideId || ""), portalClientId: sessao.portalClientId, liberadaCliente: true } });
     if (!guide) return recusa("not_found", "Não encontrei essa guia entre as liberadas para a empresa.");
     if (guide.status !== "PROCESSED") return recusa("guia_nao_processada", "Esta guia ainda está sendo processada.");
-    if (!servicos.canGuideRecalculate(guide)) return recusa("recalculo_indisponivel", "Esta guia não pode ser gerada de novo por aqui. Fale com o escritório.");
+    if (guide.baixada || guide.clienteConfirmouEm || String(guide.paymentStatus || "").toUpperCase() === "PAID") return recusa("guia_paga", "O pagamento desta guia já está registrado. Não é necessário atualizá-la.");
+    if (!servicos.canGuideRecalculate(guide)) return recusa("recalculo_indisponivel", "Solicitei ao contador a atualização desta guia. Ele vai conferir e retornar por aqui.", {
+      encaminharEscritorio: true,
+      motivoEncaminhamento: `Atualizar guia ${guiaCurta(guide).tipo} · ${guide.competencia || "competência não informada"} · ${guide.id}: atualização pelo contador`,
+      respostaObrigatoria: "Solicitei ao contador a atualização desta guia. Ele vai conferir e retornar por aqui.",
+    });
     if (!servicos.isGuideOverdue(guide, ctx.agora || new Date())) return recusa("guia_nao_vencida", "Esta guia ainda não venceu — use a que você já tem. Depois do vencimento dá para pedir a atualizada.");
     const aviso = servicos.avisoDeRecalculo({ guide, now: ctx.agora || new Date(), ehCliente: true });
     const corpo = [

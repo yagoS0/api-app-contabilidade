@@ -21,3 +21,10 @@ test('custos detalhados distinguem consumo de reserva', async () => {
   render(<ConsumoIaDetalhado api={api} />); fireEvent.click(screen.getByText('Custos por área'));
   expect(await screen.findByText(/Suporte:.*0,0045/)).toBeTruthy(); expect(screen.getByText(/Reservado:/)).toBeTruthy();
 });
+
+test('anotações consultam a empresa selecionada e mostram o pedido ao contador', async()=>{
+ const api={getPendenciasSuporte:jest.fn(async()=>({ok:true,total:1,itens:[{id:'p',conversaId:'cv',motivo:'Atualizar guia DAS',estado:'AGUARDANDO'}]}))};
+ render(<PendenciasSuporte api={api} companyId="pc1" onAbrir={()=>{}}/>);
+ expect(await screen.findByText('Pedidos ao contador · 1')).toBeInTheDocument();
+ expect(api.getPendenciasSuporte).toHaveBeenCalledWith('pc1');expect(screen.getByText('Atualizar guia DAS')).toBeVisible();
+});

@@ -51,7 +51,7 @@ export async function resolverConsultaCliente({ texto, interacao, acaoMenu, regi
   return null;
 }
 
-export async function atenderConsultaCliente({ pedido, registro, sessao, agora, executar, client, cloud, enviar, antesDeEnviar, permitida, vincularOpcoes, rotular }) {
+export async function atenderConsultaCliente({ pedido, registro, sessao, agora, executar, client, cloud, enviar, antesDeEnviar, permitida, vincularOpcoes, rotular, encaminhar }) {
   const { conversa, mensagem } = registro;
   const contexto = dados => ({ ...dados, schema: 1, token: mensagem.id, empresaId: conversa.portalClientId, conversaId: conversa.id,
     versao: registro.contexto?.versao ?? null, criadaEm: agora.toISOString(), expiraEm: new Date(+agora + TTL).toISOString() });
@@ -116,6 +116,7 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     const ferramenta = meta.recalculo ? 'preparar_recalculo' : 'enviar_pdf_da_guia';
     if (meta.recalculo) {
       const r = await chamar(ferramenta, { guideId: guia.guideId });
+      if (r.encaminharEscritorio) await encaminhar(r.motivoEncaminhamento || r.mensagem);
       await texto(r.texto || r.textoDeConfirmacao || r.mensagem || 'Não consegui preparar a atualização dessa guia. A equipe pode conferir.', undefined, ferramenta);
       return;
     }

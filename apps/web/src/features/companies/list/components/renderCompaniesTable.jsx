@@ -13,7 +13,7 @@ import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // Os cards continuam existindo e são o padrão no celular — a grade de 6 colunas não sobrevive a
 // 375px de largura.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
@@ -154,7 +154,7 @@ function GuiasResumidas({ tags, company, competencia, acoes }) {
   </span>;
 }
 
-function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
+function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
   const [config, setConfig] = useState(false);
   const [consultando, setConsultando] = useState(false);
   const fluxo = fluxoDaEmpresa(company);
@@ -242,6 +242,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
           >
             {nomeRender}
           </span>
+          {pendencias > 0 && <a href={`/companies/${encodeURIComponent(company.companyId)}/anotacoes`} aria-label={`${pendencias} pedido(s) ao contador: ${nome}`} title="Pedidos ao contador" onClick={e => e.stopPropagation()} style={{ color: "var(--state-warn)", fontSize: "0.75rem", whiteSpace: "nowrap" }}>● {pendencias}</a>}
           {/* ⚠ A TAG DE CERTIFICADO FICA NA LINHA, por decisão do dono — o plano v2 mandava tudo
               que é configuração para o popover, e sem A1 não se captura NFS-e: é a única
               configuração que faz a empresa parar de receber nota sem avisar.
@@ -396,7 +397,7 @@ const ROTULO_ORDEM = {
   guias: "guias",
 };
 
-export function CompaniesTable({
+export function CompaniesTable({ api,
   companies, travas, competencia, onOpenCompany, acoesGuia, busca, imprimindo,
   // ⚠ Os quatro abaixo existem para a tabela parar de responder "não há" quando a resposta certa é
   // "não carregou" ou "os filtros escondem". Ver `lib/falhaDeCarga.js`: são três coisas diferentes
@@ -434,6 +435,16 @@ export function CompaniesTable({
   const [ordem, setOrdem] = useState({ campo: "urgencia", asc: true });
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const corpoRef = useRef(null);
+  const [avisos, setAvisos] = useState({});
+  const [erroAvisos, setErroAvisos] = useState(false);
+  useEffect(() => {
+    let ativo = true;
+    setAvisos({}); setErroAvisos(false);
+    if (!api?.getPendenciasSuporte) return;
+    const carregar = async () => { try { const r = await api.getPendenciasSuporte(); if (!r?.ok) throw Error(); if (ativo) { setAvisos(r.porEmpresa || {}); setErroAvisos(false); } } catch { if (ativo) setErroAvisos(true); } };
+    carregar(); const timer = setInterval(carregar, 30000);
+    return () => { ativo = false; clearInterval(timer); };
+  }, [api]);
   const selecaoAtiva = typeof onAlternarSelecao === "function";
   const marcadas = selecionados instanceof Set ? selecionados : new Set(selecionados || []);
 
@@ -568,6 +579,7 @@ export function CompaniesTable({
           crescia até três vezes a altura. Com um mínimo, o contêiner rola na horizontal — que é
           desconforto — em vez de destruir a leitura, que é perda de informação. A tabela continua
           sendo o padrão só a partir de 1024px; abaixo disso o dashboard já abre em Cards. */}
+      {erroAvisos && <p role="status">Não foi possível atualizar os pedidos ao contador.</p>}
       <table className="companies-table" role="table" aria-busy={carregando || undefined} style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: "0.85rem" }} onKeyDown={aoTeclar}>
         <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
           Empresas da carteira na competência {competencia}, com estado do fechamento e guias do mês.
@@ -652,7 +664,7 @@ export function CompaniesTable({
 
           {abertas.map((c) => (
             <Linha
-              key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
+              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
               selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />
@@ -680,7 +692,7 @@ export function CompaniesTable({
           )}
           {fechadasVisiveis && fechadas.map((c) => (
             <Linha
-              key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
+              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
               selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />

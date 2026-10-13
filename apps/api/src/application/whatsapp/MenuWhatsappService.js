@@ -154,7 +154,7 @@ export function linhasDoCliente(sessao) {
     ["quanto_devo", IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO, "Quanto devo", "Guias liberadas ainda em aberto"],
     ["listar_notas", IDS_MENU_WHATSAPP.CLIENTE_NOTAS, "Notas do mês", "Consultar NFS-e emitidas"],
     ["consultar_faturamento", IDS_MENU_WHATSAPP.CLIENTE_FATURAMENTO, "Faturamento", "Ver quanto a empresa faturou no período"],
-    ["preparar_recalculo", IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, "Recalcular guia", "Pedido com confirmação por código"],
+    ["preparar_recalculo", IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, "Atualizar guia", "Atualização automática ou pelo contador"],
     ["preparar_cancelamento", IDS_MENU_WHATSAPP.CLIENTE_CANCELAMENTO, "Cancelar NFS-e", "Pedido com confirmação por código"],
   ];
   const linhas = candidatas.filter(([nome]) => ferramentaLiberada(sessao, nome))
@@ -342,15 +342,15 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     if (janela.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
   };
   const assinatura = JSON.stringify({ ok: sessao.ok, userId: sessao.userId, papel: sessao.papel, permissoes: [...(sessao.permissoesAssistente || [])].sort() });
-  const encaminhar = async () => {
+  const encaminhar = async (motivo = 'Cliente solicitou atendimento da equipe') => {
     await antesDeEnviar(null, assinatura);
     const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
       ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora,
-        aoEncaminhar: tx => IA_SUPORTE_OPENAI && !comercialPublico && conversa.portalClientId
-          ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo: 'Cliente solicitou atendimento da equipe', client: tx, agora }) : Promise.resolve() })
+        aoEncaminhar: tx => (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ')) && !comercialPublico && conversa.portalClientId
+          ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora }) : Promise.resolve() })
       : await client.$transaction(async tx => {
         const mudou = await marcarHandoff(conversa, agora, tx);
-        if (mudou.count && IA_SUPORTE_OPENAI && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo: 'Cliente solicitou atendimento da equipe', client: tx, agora });
+        if (mudou.count && (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ')) && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora });
         return mudou;
       });
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
@@ -363,7 +363,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
 
   if (!comercialPublico && idRecebido.startsWith('altan.payment.recalculate.')) {
     const resultado = await recalcularGuiaWhatsapp({ id: idRecebido, conversa, mensagem, client, cloud: whatsapp, enviar,
-      agora, conferirAcesso: () => antesDeEnviar(null, assinatura) });
+      agora, encaminhar, conferirAcesso: () => antesDeEnviar(null, assinatura) });
     await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     return resultado;
   }
@@ -412,7 +412,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   if (consulta) {
     await atenderConsultaCliente({ pedido: consulta, registro, sessao, agora, executar, client, cloud: whatsapp, enviar,
       antesDeEnviar: nome => antesDeEnviar(nome, assinatura), permitida: nome => ferramentaLiberada(sessao, nome),
-      vincularOpcoes: opcoesNoContexto, rotular: corpo => rotularEmpresa(corpo, conversa) });
+      vincularOpcoes: opcoesNoContexto, rotular: corpo => rotularEmpresa(corpo, conversa), encaminhar });
     await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     return { tratado: true, motivo: "CONSULTA_SEM_IA", acao: consulta.acao === "GUIAS" ? "GUIAS_MES" : consulta.acao };
   }

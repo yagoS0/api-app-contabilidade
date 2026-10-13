@@ -3,7 +3,7 @@ import { podeNotificarInscricao } from '../AtendimentoPushService.js';
 
 function banco() {
   const fila = [];
-  const client = { encaminhamentoSuporte: {
+  const client = { conversaWhatsapp: { findMany: jest.fn(async () => []) }, encaminhamentoSuporte: {
     findFirst: jest.fn(async ({ where }) => fila.find(i => i.conversaId === where.conversaId && i.estado !== 'RESOLVIDO')),
     findUnique: jest.fn(async ({ where }) => fila.find(i => where.mensagemId ? i.mensagemId === where.mensagemId : i.id === where.id)),
     create: jest.fn(async ({ data }) => { const r = { estado: 'AGUARDANDO', ...data }; fila.push(r); return r; }),
@@ -35,4 +35,11 @@ test('push de encaminhamento continua autorizado depois da leitura e cessa ao re
   const args = { inscricao: { ativa: true, userId: 'u1', fila: true }, evento: { id: `suporte:${r.id}`, tipo: 'SUPORTE', conversaId: 'cv', expiraEm: new Date(Date.now() + 60000) } };
   expect(await podeNotificarInscricao(args, { client })).toBe(true);
   fila[0].estado = 'RESOLVIDO'; expect(await podeNotificarInscricao(args, { client })).toBe(false);
+});
+
+test('resumo conta todas as pendências por empresa sem truncar na página e respeita filtro autorizado', async () => {
+ const {client}=banco(); client.conversaWhatsapp.findMany.mockResolvedValue([{portalClientId:'pc1',_count:{encaminhamentosSuporte:102}}]);
+ const r=await listarEncaminhamentosSuporte({visiveis:['pc1'],companyId:'pc1',client});expect(r.porEmpresa).toEqual({pc1:102});
+ await listarEncaminhamentosSuporte({visiveis:['pc1'],companyId:'pc2',client});
+ expect(client.encaminhamentoSuporte.count).toHaveBeenLastCalledWith({where:expect.objectContaining({conversa:expect.objectContaining({portalClientId:{in:[]}})})});
 });

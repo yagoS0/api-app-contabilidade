@@ -277,3 +277,11 @@ test('presumido resume tributos, preserva detalhes e separa parcelamentos', () =
   fireEvent.click(screen.getByRole('button', { name: /IRPJ: falta gerar/ }));
   expect(screen.getByRole('link', { name: 'Abrir apuração' })).toHaveAttribute('href', '/companies/c1/cadastro-fiscal');
 });
+
+test('aviso junto ao nome abre Anotações e não aparece em outra empresa',async()=>{
+ const api={getPendenciasSuporte:jest.fn(async()=>({ok:true,porEmpresa:{c1:2}}))};
+ montar({api,companies:[empresa(),empresa({companyId:'c2',razao:'OUTRA'})]});
+ const aviso=await screen.findByRole('link',{name:'2 pedido(s) ao contador: ACME LTDA'});
+ expect(aviso).toHaveAttribute('href','/companies/c1/anotacoes');
+ expect(screen.queryByRole('link',{name:/contador: OUTRA/})).not.toBeInTheDocument();
+});

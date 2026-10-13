@@ -46,6 +46,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       // ⚠ O dublê passa a HONRAR o `where` (06/09/2026): sem isso o filtro por empresa "passaria"
       // no teste devolvendo tudo, e a guarda de isolamento não teria prova nenhuma.
       findMany: jest.fn(async ({ where = {}, take, cursor, skip = 0 } = {}) => {
+        if (where.encaminhamentosSuporte) return []; // Este cenário não tem encaminhamentos abertos.
         const todas = [...mockConversas.values()];
         const casaUm = (c, w) => {
           if (w.OR && !w.OR.some((parte) => casaUm(c, parte))) return false;
@@ -205,6 +206,14 @@ describe('pendências humanas do suporte', () => {
     expect(r.status).toBe(200); expect(r.body).toMatchObject({ ok: true, total: 0 });
     expect(prisma.encaminhamentoSuporte.count).toHaveBeenCalledWith({ where: expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: { in: ['pc-1'] } }) }) });
     expect((await request(montarApp({ id: 'u', role: 'staff' })).get('/firm/whatsapp/suporte/pendencias')).status).toBe(403);
+  });
+  test('resumo de pendências retorna contagem por empresa e filtra a seleção', async () => {
+    prisma.conversaWhatsapp.findMany.mockResolvedValueOnce([{portalClientId:'pc-1',_count:{encaminhamentosSuporte:2}}]);
+    const r=await request(montarApp()).get('/firm/whatsapp/suporte/pendencias?companyId=pc-1');
+    expect(r.status).toBe(200);expect(r.body.porEmpresa).toEqual({'pc-1':2});
+    expect(prisma.conversaWhatsapp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({where:expect.objectContaining({portalClientId:{in:['pc-1']}})}));
+    await request(montarApp()).get('/firm/whatsapp/suporte/pendencias?companyId=pc-2');
+    expect(prisma.encaminhamentoSuporte.count).toHaveBeenLastCalledWith({where:expect.objectContaining({conversa:expect.objectContaining({portalClientId:{in:[]}})})});
   });
   test('resolver exige carteira e posse; mantém IA pausada até devolução explícita', async () => {
     const app = montarApp();

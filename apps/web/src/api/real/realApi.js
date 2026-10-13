@@ -1103,7 +1103,7 @@ export function createRealApi() {
     async getResumoWhatsapp({ area = '' } = {}) {
       return request(`/firm/whatsapp/resumo${area ? `?area=${encodeURIComponent(area)}` : ''}`);
     },
-    async getPendenciasSuporte() { return request('/firm/whatsapp/suporte/pendencias'); },
+    async getPendenciasSuporte(companyId) { return request('/firm/whatsapp/suporte/pendencias' + (companyId ? '?companyId=' + encodeURIComponent(companyId) : '')); },
     async getConsumoIaDetalhado() { return request('/firm/whatsapp/consumo-ia'); },
     async resolverSuporte(conversaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/resolver-suporte`, { method: 'POST' }); },
     whatsappContratoV2: true,
