@@ -10,6 +10,7 @@ import { Button } from "../../../../components/ui/Button";
 import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { ModalCorrigirValorGuia } from "./ModalCorrigirValorGuia";
+import { ModalCorrigirCompetenciaGuia } from "./ModalCorrigirCompetenciaGuia";
 import { ParcelamentoWizard } from "../../../accounting/parcelamento/components/ParcelamentoWizard";
 import { parcelasFaltantesDoRelatorio, parcelasFaltantesDaVisao } from "../lib/parcelasFaltantes";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
@@ -658,6 +659,7 @@ export function CompanyGuidesTable({
 
   // Completar flow (modal split p/ guia já existente)
   const [corrigindoValor, setCorrigindoValor] = useState(null);
+  const [corrigindoCompetencia, setCorrigindoCompetencia] = useState(null);
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
@@ -1032,6 +1034,7 @@ export function CompanyGuidesTable({
         <Button variant="secondary" size="sm" onClick={onLimparGuiaDeOrigem}>Mostrar todas as guias</Button>
       </div>}
       {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
+      {corrigindoCompetencia && <ModalCorrigirCompetenciaGuia key={`${companyId}:${corrigindoCompetencia.guideId || corrigindoCompetencia.id}`} api={expectedGuidesApi} companyId={companyId} guia={corrigindoCompetencia} aoFechar={() => setCorrigindoCompetencia(null)} aoCorrigir={async () => { clearSelection(); await onRefresh?.(); setVazioRefreshKey(k => k + 1); }} />}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
         <GuideCaptureModal
@@ -1253,6 +1256,7 @@ export function CompanyGuidesTable({
               {/* Barra única de ações da guia selecionada (uma guia por vez). */}
               {selectedCount === 1 && selectedGuide && (
                 <>
+                  {companyId && selectedGuide.status === "PROCESSED" && expectedGuidesApi?.corrigirCompetenciaGuia && <Button variant="secondary" size="sm" disabled={actionsBusy} onClick={() => setCorrigindoCompetencia(selectedGuide)}>Corrigir competência</Button>}
                   {selectedGuide.parcelamentoAvulso && <Button variant="secondary" size="sm" onClick={() => {
                     setAnexoArquivo(null); setAnexoGuia(selectedGuide); setAnexoIndicacao(null); setAnexoParcelamentoId(""); setAnexoParcelamentoOpen(true);
                   }}>Vincular parcelamento</Button>}

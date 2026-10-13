@@ -21,6 +21,8 @@ jest.mock("../../../../../api/client", () => ({
     getFechamentoContabil: jest.fn().mockResolvedValue({ fechado: false }),
     markGuideVazio: jest.fn(),
     undoGuideVazio: jest.fn(),
+    preverCorrecaoCompetenciaGuia: jest.fn(),
+    corrigirCompetenciaGuia: jest.fn(),
   }),
 }));
 jest.mock("../../../capture/components/renderGuideCaptureModal", () => ({
@@ -89,6 +91,18 @@ function selecionar(guide) {
   fireEvent.click(screen.getByRole("checkbox", { name: /^Selecionar guia/ }));
   return guide;
 }
+
+test("correção de competência abre apenas para uma guia selecionada", async () => {
+  renderTabela([guiaDoDas(), guiaDaParcela()]);
+  expect(screen.queryByRole("button", { name: "Corrigir competência" })).not.toBeInTheDocument();
+  const caixas = screen.getAllByRole("checkbox", { name: /^Selecionar guia/ });
+  fireEvent.click(caixas[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Corrigir competência" }));
+  expect(screen.getByRole("dialog", { name: "Corrigir competência" })).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Fechar", { exact: true }));
+  fireEvent.click(caixas[1]);
+  expect(screen.queryByRole("button", { name: "Corrigir competência" })).not.toBeInTheDocument();
+});
 
 describe("envio das guias selecionadas", () => {
   it("envia somente os IDs escolhidos e mantém selecionada a guia que falhou", async () => {

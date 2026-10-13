@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Correção de competência — 13/10/2026 (desenvolvimento)
+
+Selecionar uma guia processada oferece “Corrigir competência”. Modal compacto com mês/ano, prévia e confirmação; a alteração é apenas cadastral, preserva PDF, valor e vencimento. Depois de salvar, recarrega a lista e os indicadores, limpando a seleção. A API protege empresa/autoria, revisões concorrentes, duplicidade no destino e competências fechadas. Guias pagas, liberadas/enviadas, de parcelamento ou com lançamentos/documentos fiscais vinculados exigem revisão e não são movidas automaticamente. Não exclui/reimporta, não consulta SERPRO e não envia ao cliente. A correção deixa auditoria em AppSetting. O mock explica que precisa do servidor real; testes usam fixtures isoladas.
+
 ## Envio em segundo plano — 25/09/2026
 
 Correção de entrada direta em 13/10/2026: nunca comparar apenas `guiaDeOrigem?.companyId === companyId`. Antes de a empresa carregar, os dois lados podem ser undefined e a leitura de `guiaDeOrigem.id` derruba a tela. Exigir empresa e ID da origem presentes para filtrar, selecionar e mostrar o atalho. Reproduzido no acesso às Guias pelo chip de parcelamento da carteira; o teste `vencimentoNaEmpresa` cobre a fase sem empresa e a carga seguinte.
