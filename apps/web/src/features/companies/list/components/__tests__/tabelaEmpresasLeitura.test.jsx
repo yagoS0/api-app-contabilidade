@@ -268,7 +268,7 @@ test('presumido resume tributos, preserva detalhes e separa parcelamentos', () =
   expect(resumo.title).toContain('IRPJ: falta gerar');
   expect(resumo.title).toContain('CSLL: gerada, falta enviar');
   const parc = screen.getByRole('button', { name: /Parcelamento:/ });
-  expect(parc).toHaveTextContent('PARC 2');
+  expect(parc).toHaveTextContent('PARC · 2 guia(s)');
   expect(parc.title).toContain('PARCSN · parcela 3');
   expect(parc.title).toContain('PERT · parcela 8');
   expect(screen.getByText('Pendente')).toBeVisible();

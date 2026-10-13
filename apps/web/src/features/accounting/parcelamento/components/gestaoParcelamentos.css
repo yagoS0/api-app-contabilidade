@@ -1,0 +1,21 @@
+.gestao-parcelamentos { font-size: .84rem; color: var(--text); display: grid; gap: 12px; min-width: 0; }
+.gestao-parcelamentos table { width: 100%; min-width: 650px; border-collapse: collapse; }
+.gestao-parcelamentos td, .gestao-parcelamentos th { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.gestao-parcelamentos th { color: var(--text-muted); font-weight: 500; }
+.gestao-scroll { overflow: auto; max-height: 55vh; }
+.gestao-parcelamentos thead { position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
+.gestao-acoes, .gestao-acoes nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gestao-acoes { justify-content: space-between; }
+.gestao-parcelamentos fieldset .gestao-acoes { justify-content: flex-start; }
+.gestao-parcelamentos label:has(>input[type=date]) { width: fit-content; }
+.gestao-parcelamentos input, .gestao-parcelamentos select, .gestao-parcelamentos textarea { color: var(--text); background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 5px; padding: 6px; max-width: 100%; }
+.gestao-parcelamentos td input { width: 130px; box-sizing: border-box; }
+.gestao-parcelamentos td input[aria-label^="Descrição"] { width: 220px; }
+.gestao-parcelamentos td button { min-height: 28px; padding: 4px 8px; font-size: .8rem; }
+.gestao-parcelamentos input[type=checkbox], .gestao-parcelamentos input[type=radio] { width: auto; }
+.gestao-parcelamentos label { display: inline-flex; flex-direction: column; gap: 4px; }
+.gestao-parcelamentos textarea { min-width: 300px; }
+.gestao-parcelamentos fieldset { border: 0; padding: 0; display: grid; gap: 12px; min-width: 0; }
+.gestao-link { border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; text-decoration: underline; }
+.gestao-selecionado { background: color-mix(in srgb, var(--accent, #9274dd) 10%, transparent); }
+.gestao-parcelamentos [role=alert] { color: var(--state-danger); }

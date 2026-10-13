@@ -1388,6 +1388,9 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/parcelamentos${suffix}`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
+    async gestaoParcelamento(companyId, id, action = '', body) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/parcelamentos/${encodeURIComponent(id)}/gestao${action}`, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) });
+    },
     // ⚠ `getParcelamento` FOI REMOVIDA (F2.3), com a rota `GET /parcelamentos/:parcId`. Ela devolvia
     // o MESMO objeto decorado que `listParcelamentos` já devolve para a lista inteira e não tinha um
     // chamador sequer — enquanto existia, era o curinga que engolia as rotas literais de

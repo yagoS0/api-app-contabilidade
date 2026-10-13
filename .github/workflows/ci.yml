@@ -72,6 +72,9 @@ jobs:
       - name: Apuracao guards and CBS IBS preparation without external calls
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='apuracaoConsumo|[Cc]oleta[Cc]bs|[Cc]bs|[Ii]bs|[Mm]ensalConsumo|reformaCadastro|verificarNfse|reformaFiscal|regimeDoPresumido|calculoLpLigacao|apuracaoPresumido|capturaLpSemDuplicarInss|exigirRegimeLp|apuracaoLpRota|recalculoRegistroRota|procedenciaDas|apuracaoBatchVinculo'
+      - name: Installment management and accounting reversals
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/accounting/parcelamento/__tests__|estornoBaixa|saldoProvisaoEstorno'
       - name: Accountant frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
