@@ -60,7 +60,13 @@ describe("camada NOSSA — nada saiu da máquina", () => {
 });
 
 describe("camada RECEITA — o sistema nacional analisou e recusou", () => {
-  it("4xx é recusa fiscal: status `rejected` e número LIBERADO", () => {
+  it('lê Codigo/Descricao do retorno nacional sem apresentar JSON na mensagem', () => {
+    const Descricao = 'Conjunto de Série, Número, Código do Município Emissor e CNPJ/CPF informado nesta DPS já existe';
+    const d = classificarFalha(erroDoProvedor(400, { erros: [{ Codigo: 'E0014', Descricao }] }));
+    expect(d).toMatchObject({ codigo: 'E0014', mensagem: Descricao, numeroReutilizavel: false });
+    expect(classificarFalha(erroDoProvedor(400, { Codigo: 'E0014', Descricao })).mensagem).toBe(Descricao);
+  });
+  it("E0014 mantém recusa fiscal, mas exige conciliação e NÃO libera número", () => {
     const d = classificarFalha(
       erroDoProvedor(400, {
         message:
@@ -71,8 +77,10 @@ describe("camada RECEITA — o sistema nacional analisou e recusou", () => {
     expect(d.camada).toBe(CAMADA.RECEITA);
     expect(d.status).toBe(STATUS.REJECTED);
     expect(d.codigo).toBe("E0014");
-    // Ela analisou e recusou: não existe NFS-e com esse número, então ele volta a valer.
-    expect(d.numeroReutilizavel).toBe(true);
+    expect(d.numeroReutilizavel).toBe(false);
+    expect(d.correcao).toMatch(/Consulte a DPS/);
+    expect(d.correcao).toMatch(/outra operação/);
+    expect(d.correcao).toMatch(/não confirma a emissão solicitada/);
   });
 
   it("acha o E#### em qualquer canto do payload, sem supor a forma da resposta", () => {
@@ -135,7 +143,7 @@ describe("as três camadas produzem registros distinguíveis", () => {
   it("⚠ o mesmo sintoma na tela deixa de ser o mesmo dado no banco", () => {
     const nosso = classificarFalha(erroNosso("MISSING_P_TOT_TRIB_SN"));
     const rede = classificarFalha(erroNosso("ETIMEDOUT"));
-    const receita = classificarFalha(erroDoProvedor(400, { codigo: "E0014" }));
+    const receita = classificarFalha(erroDoProvedor(400, { codigo: "E0718" }));
 
     const camadas = [nosso.camada, rede.camada, receita.camada];
     expect(new Set(camadas).size).toBe(3);

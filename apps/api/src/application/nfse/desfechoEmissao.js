@@ -18,7 +18,7 @@
 // |---|---|---|---|
 // | `NOSSA`      | recusamos antes de enviar (validação, sem cert, sem município, série fora da faixa) | **não** | **sim** |
 // | `TRANSPORTE` | o pedido saiu e o desfecho é desconhecido (timeout, DNS, 5xx, TLS) | **não se sabe** | **não** — consultar antes |
-// | `RECEITA`    | o sistema nacional respondeu recusando (código `E####`) | **sim, e recusou** | **sim** |
+// | `RECEITA`    | o sistema nacional respondeu recusando (código `E####`) | **sim, e recusou** | **exceto E0014: número ocupado** |
 //
 // ⚠ A LINHA DO MEIO É A RAZÃO DE O CAMPO NÃO SER UM SÓ. Sem ela, "não sei se emitiu" seria
 // arquivado ou como erro nosso (e o número seria reusado, arriscando E0014) ou como recusa da
@@ -40,7 +40,7 @@ export const CAMADA = Object.freeze({
 export const STATUS = Object.freeze({
   PENDING: "pending",
   ISSUED: "issued",
-  /** A Receita recusou. Fato fiscal, definitivo, número liberado. */
+  /** A Receita recusou a tentativa; E0014 mantém a numeração ocupada. */
   REJECTED: "rejected",
   /** Nós recusamos, ou o transporte falhou. Não é fato fiscal. */
   FALHA_ENVIO: "falha_envio",
@@ -169,15 +169,24 @@ export function extrairCodigoReceita(providerData) {
   return m ? m[0] : null;
 }
 
-function primeiraMensagem(providerData, fallback) {
+export function primeiraMensagem(providerData, fallback) {
+  if (typeof providerData === 'string') {
+    const texto = providerData.trim();
+    if (texto.startsWith('{') || texto.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(texto);
+        return primeiraMensagem(Array.isArray(parsed) ? { erros: parsed } : parsed, fallback);
+      } catch { /* JSON legado inválido: preservar texto original. */ }
+    }
+  }
   const d = providerData;
   if (d && typeof d === "object") {
-    const direta = d.message || d.error || d.detail || d.mensagem || d.motivo;
+    const direta = d.message || d.error || d.detail || d.mensagem || d.motivo || d.Descricao;
     if (typeof direta === "string" && direta.trim()) return direta.trim();
     const lista = d.erros || d.errors || d.mensagens;
     if (Array.isArray(lista) && lista.length) {
       const p = lista[0];
-      const t = typeof p === "string" ? p : p?.mensagem || p?.message || p?.descricao;
+      const t = typeof p === "string" ? p : p?.mensagem || p?.message || p?.descricao || p?.Descricao;
       if (typeof t === "string" && t.trim()) return t.trim();
     }
     try {
@@ -222,14 +231,16 @@ export function classificarFalha(err) {
   // DEPOIS de a DPS ter sido aceita e antes de a resposta voltar. Tratá-lo como recusa liberaria
   // o número de uma nota possivelmente existente.
   if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+    const codigo = extrairCodigoReceita(providerData);
+    const duplicada = codigo === 'E0014';
     return {
       camada: CAMADA.RECEITA,
-      codigo: extrairCodigoReceita(providerData),
+      codigo,
       mensagem: primeiraMensagem(providerData, err?.message || "DPS recusada pelo sistema nacional."),
-      correcao: null,
+      correcao: duplicada ? 'A numeração desta DPS já está ocupada no sistema nacional. A nota existente pode corresponder a outra operação; esta resposta não confirma a emissão solicitada. Consulte a DPS e confira o documento antes de continuar. Não reenvie esta tentativa nem avance o número automaticamente.' : null,
       status: STATUS.REJECTED,
-      // A Receita analisou e recusou: não há NFS-e com esse número, então ele volta a valer.
-      numeroReutilizavel: true,
+      // E0014 recusa esta tentativa porque a numeração pertence a documento já existente.
+      numeroReutilizavel: !duplicada,
       providerData,
     };
   }
@@ -247,7 +258,7 @@ export function classificarFalha(err) {
       "não tem inutilização, um número pulado é buraco permanente. Consulte o Id da DPS no " +
       "sistema nacional antes de decidir.",
     status: STATUS.FALHA_ENVIO,
-    // ⚠ A ÚNICA das três em que o número NÃO se libera sozinho.
+    // Transporte nunca libera o número sozinho; E0014 também exige conciliação.
     numeroReutilizavel: false,
     providerData,
   };

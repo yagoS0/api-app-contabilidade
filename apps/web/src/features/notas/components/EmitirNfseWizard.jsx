@@ -879,7 +879,7 @@ export function EmitirNfseWizard({
   const tomRegime = regime.bloqueiaEmissao ? TOM_REGIME.bloqueado : TOM_REGIME.ok;
   // ⚠⚠ DESFECHO DESCONHECIDO TRAVA O BOTÃO. Falha de transporte quer dizer que a nota PODE ter sido
   // autorizada do outro lado; clicar de novo é como se duplica nota fiscal. Ver `rejeicaoDaEmissao`.
-  const travadoPelaRejeicao = Boolean(rejeicao?.desfechoDesconhecido);
+  const travadoPelaRejeicao = Boolean(rejeicao && !rejeicao.podeTentarDeNovo);
 
   return (
     <Modal titulo="Emitir nota de serviço" tamanho="lg" aoFechar={onClose} ocupado={enviando}>
@@ -1472,9 +1472,9 @@ export function EmitirNfseWizard({
             }}
           >
             <strong style={{ color: "var(--state-danger)" }}>
-              {rejeicao.desfechoDesconhecido
+              {rejeicao.duplicidade ? "A numeração da DPS já está ocupada." : rejeicao.desfechoDesconhecido
                 ? "A emissão falhou e o desfecho é DESCONHECIDO."
-                : "A nota não foi emitida."}
+                : rejeicao.conferenciaNecessaria ? "Tentativa bloqueada para conferência." : "A nota não foi emitida."}
             </strong>
             <div>{rejeicao.mensagem}</div>
             {rejeicao.codigoDoProvedor && (
@@ -1504,6 +1504,7 @@ export function EmitirNfseWizard({
                 </Button>
               </div>
             )}
+            {rejeicao.duplicidade && <div style={{ color: "var(--state-warn)" }}>Esta tentativa está bloqueada até a conferência. A numeração ocupada não comprova que esta operação foi emitida.</div>}
             {rejeicao.desfechoDesconhecido && (
               <div style={{ color: "var(--state-warn)" }}>
                 O botão Emitir fica travado até você fechar este assistente: reemitir sem consultar
@@ -1561,6 +1562,8 @@ export function EmitirNfseWizard({
               disabled={enviando || !prontoParaEmitir || travadoPelaRejeicao}
               title={
                 enviando ? "Emissão em andamento — aguarde a resposta do servidor."
+                  : rejeicao?.duplicidade ? "Numeração da DPS ocupada. Confira a nota existente e compare os dados."
+                  : rejeicao?.conferenciaNecessaria ? "Consulte e confira esta tentativa antes de continuar."
                   : travadoPelaRejeicao ? "O desfecho da tentativa anterior é desconhecido: consulte antes de emitir de novo."
                     : prontoParaEmitir ? undefined
                       : `Faltam dados: ${textoDosProblemas}`

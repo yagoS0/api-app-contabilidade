@@ -9,6 +9,7 @@
 //   | `TRANSPORTE` | 502  | o pedido saiu e o desfecho é **desconhecido** | ⚠ **NÃO reenvie** — consulte    |
 //   | `RECEITA`    | 422  | o sistema nacional analisou e recusou         | corrija a nota e emita de novo  |
 //
+// E0014 é exceção à correção fiscal: a DPS já existe, portanto só permite conferência.
 // A tabela é de `apps/api/src/application/nfse/desfechoEmissao.js`; o mapa para HTTP é de
 // `apps/api/src/routes/nfseEmissaoHttp.js`. Nada aqui decide nada — só traduz o que o servidor já
 // respondeu para o que a tela precisa desenhar.
@@ -27,6 +28,8 @@ export const TIPO = Object.freeze({
   NOSSA: "NOSSA",
   TRANSPORTE: "TRANSPORTE",
   RECEITA: "RECEITA",
+  DUPLICIDADE: "DUPLICIDADE",
+  CONFERENCIA: "CONFERENCIA",
   /** 403 do portão (`EMISSAO_CLIENTE_*`) — a permissão mudou entre abrir a tela e enviar. */
   PORTAO: "PORTAO",
   /** 400 do validador — campo do formulário. */
@@ -212,6 +215,14 @@ export function lerErroEmissao(err) {
     extra: corpo,
   };
 
+  // E0014 prova que a identificação da DPS já está vinculada a uma NFS-e.
+  // Não é correção de formulário: inclusive respostas legadas que liberam número ficam bloqueadas.
+  if ([corpo.codigo, code, corpo.error].some(v => String(v || "").toUpperCase() === "E0014")
+    || /\bE0014\b/i.test(base.message || "")) {
+    return { ...base, tipo: TIPO.DUPLICIDADE, podeReenviar: false, retryInvoiceId: null,
+      correcao: "Peça ao seu contador para conferir a nota existente e comparar os dados: ela pode pertencer a outra operação. Não reenvie nem altere a numeração antes da conferência. A nota existente só pode ser vinculada a esta tentativa se os dados corresponderem à mesma operação." };
+  }
+
   if (status === 401) return { ...base, tipo: TIPO.SESSAO };
 
   // O portão, com os dois códigos distintos. A tela já o lê antes de montar o formulário, mas ele
@@ -223,6 +234,11 @@ export function lerErroEmissao(err) {
   if (code === CODIGO_NUMERO_INDETERMINADO || camada === "TRANSPORTE") {
     // ⚠ SEM REENVIO. Nem aqui, nem na tela, nem automaticamente — em nenhuma circunstância.
     return { ...base, tipo: TIPO.TRANSPORTE, podeReenviar: false, retryInvoiceId: null };
+  }
+
+  if ([code, corpo.error, corpo.codigo].some(v => String(v || "").toUpperCase() === "NFSE_RETRY_NAO_PERMITIDO") || corpo.numeroReutilizavel === false) {
+    return { ...base, tipo: TIPO.CONFERENCIA, podeReenviar: false, retryInvoiceId: null,
+      correcao: "Esta tentativa está bloqueada para conferência. Consulte as notas e peça ao contador para verificar o resultado e os dados da tentativa antes de continuar. Não reenvie nem altere a numeração por conta própria." };
   }
 
   if (camada === "RECEITA" || camada === "NOSSA") {

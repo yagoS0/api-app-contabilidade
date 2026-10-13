@@ -177,6 +177,21 @@ describe("4) a recusa do servidor", () => {
     expect(screen.getAllByText(/Buscar NFS-e/).length).toBeGreaterThan(0);
   });
 
+  it("E0014 preserva prova oficial e impede segundo envio", async () => {
+    const emitir = await emitirEFalhar(Object.assign(new Error("DPS já existe"), {code:"nfse_rejected",payload:{codigo:"E0014",camada:"RECEITA",message:"A DPS informada já existe.",correcao:"Corrija e emita de novo.",numeroReutilizavel:true}}));
+    expect(screen.getByText(/A numeração da DPS já está ocupada/)).toBeInTheDocument();
+    expect(screen.queryByText("A nota não foi emitida.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:/Emitir nota/})).toBeDisabled();
+    fireEvent.click(screen.getByRole("button",{name:/Emitir nota/}));
+    expect(emitir).toHaveBeenCalledTimes(1);
+  });
+
+  it("retry não permitido trava ação sem afirmar se houve emissão", async () => {
+    await emitirEFalhar(Object.assign(new Error("Tentativa bloqueada"), {code:"nfse_retry_nao_permitido",payload:{error:"nfse_retry_nao_permitido",codigo:"NFSE_RETRY_NAO_PERMITIDO",numeroReutilizavel:false}}));
+    expect(screen.getByText("Tentativa bloqueada para conferência.")).toBeInTheDocument();
+    expect(screen.getByRole("button",{name:/Emitir nota/})).toBeDisabled();expect(screen.queryByText("A nota não foi emitida.")).not.toBeInTheDocument();
+  });
+
   it("recusa que a tela não conhece NÃO ganha procedimento inventado", async () => {
     await emitirEFalhar(new Error("codigo_que_ninguem_mapeou"));
     const alerta = screen.getByRole("alert");

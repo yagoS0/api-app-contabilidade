@@ -112,3 +112,15 @@ describe("o que a tela NÃO sabe, ela não inventa", () => {
     expect(lerRejeicao(null).mensagem).toMatch(/Não foi possível emitir/);
   });
 });
+
+it.each(['RECEITA','TRANSPORTE'])('E0014 bloqueia reenvio inclusive correcao legada em %s',camada=>{
+ const r=lerRejeicao({code:'nfse_rejected',payload:{codigo:'E0014',camada,message:'A DPS já existe.',correcao:'Corrija e emita de novo.',numeroReutilizavel:true}});
+ expect(r.duplicidade).toBe(true);expect(r.podeTentarDeNovo).toBe(false);expect(r.oQueFazer).toMatch(/somente se os dados corresponderem à mesma operação/);expect(r.oQueFazer).not.toContain('Corrija e emita de novo');expect(r.mensagem).toBe('A DPS já existe.');
+});
+
+it.each([
+ {error:'nfse_retry_nao_permitido',codigo:'NFSE_RETRY_NAO_PERMITIDO',numeroReutilizavel:false},
+ {error:'nfse_rejected',camada:'RECEITA',codigo:'OUTRO',numeroReutilizavel:false},
+])('bloqueia número não reutilizável sem inventar desfecho (%j)',payload=>{
+ const r=lerRejeicao({code:payload.error,payload});expect(r.podeTentarDeNovo).toBe(false);expect(r.conferenciaNecessaria).toBe(true);expect(r.oQueFazer).toMatch(/bloqueada para conferência/);
+});

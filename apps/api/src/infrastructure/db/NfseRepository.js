@@ -2,6 +2,7 @@ import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseDate } from "../../utils/date.js";
 import { numeroDaNfse } from '../../application/nfse/numeroDaNfse.js';
+import { primeiraMensagem } from '../../application/nfse/desfechoEmissao.js';
 
 function serialize(invoice) {
   if (!invoice) return null;
@@ -35,13 +36,12 @@ function serialize(invoice) {
       ? {
           camada: invoice.falhaCamada,
           codigo: invoice.falhaCodigo,
-          mensagem: invoice.falhaMensagem,
+          mensagem: primeiraMensagem(invoice.falhaMensagem, invoice.falhaMensagem),
           correcao: invoice.falhaCorrecao,
           em: dateToIso(invoice.falhaEm),
-          // Derivado, não gravado: a camada JÁ responde a pergunta, e uma coluna a mais poderia
-          // discordar dela. `TRANSPORTE` é a única em que o desfecho é desconhecido — e, como não
-          // existe inutilização na NFS-e, número pulado é buraco permanente.
-          numeroReutilizavel: invoice.falhaCamada !== "TRANSPORTE",
+          // E0014 confirma que a numeração já existe. Transporte e estados ainda não
+          // conciliados também não autorizam reutilizar a tentativa.
+          numeroReutilizavel: invoice.falhaCamada !== "TRANSPORTE" && invoice.falhaCodigo !== "E0014" && ["rejected", "falha_envio"].includes(invoice.status),
         }
       : null,
     createdAt: dateToIso(invoice.createdAt),

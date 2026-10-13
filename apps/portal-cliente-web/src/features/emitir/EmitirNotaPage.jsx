@@ -1187,7 +1187,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       // ⚠⚠ DESFECHO DESCONHECIDO APAGA O FORMULÁRIO. Não é limpeza de tela: é tirar do caminho o
       // "enviar de novo" de um clique só sobre uma nota que talvez já exista. Quem quiser
       // reemitir depois de consultar terá de digitar tudo outra vez, de propósito.
-      if (lido.tipo === TIPO.TRANSPORTE || lido.tipo === TIPO.DESCONHECIDO) {
+      if (lido.tipo === TIPO.TRANSPORTE || lido.tipo === TIPO.DESCONHECIDO || lido.tipo === TIPO.DUPLICIDADE || lido.tipo === TIPO.CONFERENCIA) {
         setForm(formVazio());
         marcarDescricaoDigitada(false);
         setOrigemNome(ORIGEM.AUSENTE);
