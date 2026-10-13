@@ -52,13 +52,18 @@ test('etapa da carteira é configurada como obrigação recorrente, sem rotina s
 });
 
 test('obrigação da carteira abre conferência com competência e empresa da ocorrência',async()=>{
-  const obs=obrigacoes().map(o=>({...o,verificador:'CARTEIRA_IMPORTAR',conclusaoAutomatica:true,ocorrencias:o.ocorrencias.map(oc=>({...oc,competenciaRef:'2026-08'}))}));
-  const getFluxoCarteira=jest.fn(async()=>({ok:true,fluxo:{regime:'Simples',status:{rotulo:'Importação'},tarefas:[]},lancamentos:[]}));
-  montar({obs,extras:{getFluxoCarteira}});
-  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  const obs=obrigacoes().map(o=>({...o,nome:'Transmitir apuração · Simples Nacional',verificador:'CARTEIRA_TRANSMITIR',conclusaoAutomatica:true,ocorrencias:o.ocorrencias.map(oc=>({...oc,competenciaRef:'2026-08'}))}));
+  const getFluxoCarteira=jest.fn(async()=>({ok:true,fluxo:{regime:'Simples',status:{rotulo:'Obrigações'},tarefas:[{chave:'transmitir',titulo:'Transmitir apuração',dados:{},versao:0,hash:'base'},{chave:'contabilizar',titulo:'Contabilizar e fechar o mês',dados:{},automatica:true}]},lancamentos:[]}));
+  const salvarFluxoTarefa=jest.fn(async()=>({ok:true}));
+  montar({obs,extras:{getFluxoCarteira,salvarFluxoTarefa}});
+  fireEvent.click(await screen.findByRole('button',{name:'Transmitir apuração · Simples Nacional'}));
   fireEvent.click(screen.getAllByRole('button',{name:'Conferir etapa'})[0]);
   await waitFor(()=>expect(getFluxoCarteira).toHaveBeenCalledWith('a','2026-08'));
-  expect(screen.getByRole('dialog')).toHaveTextContent('Tarefas · Clínica Alfa · 2026-08');
+  const checkbox=await within(screen.getByRole('dialog')).findByRole('checkbox',{name:/Transmitir apuração/});
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Transmitir apuração · Clínica Alfa · 2026-08');
+  expect(screen.queryByText('Contabilizar e fechar o mês')).not.toBeInTheDocument();
+  fireEvent.click(checkbox);
+  await waitFor(()=>expect(salvarFluxoTarefa).toHaveBeenCalledWith('a','transmitir',{acao:'concluir',competencia:'2026-08',versao:0,hash:'base'}));
 });
 test.each([['2026-01-31','fevereiro de 2026'],['2024-02-29','março de 2024'],['2026-12-31','janeiro de 2027']])('navega um mês civil de %s',async(referencia,destino)=>{
   montar({visao:'mes',referencia});fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));expect(await screen.findByText(destino)).toBeInTheDocument();

@@ -118,3 +118,6 @@ A agenda lê marcos pela rota leve /firm/marcos-fiscais, filtra período/empresa
 
 ## Verificadores limitados ao período visível — 09/10/2026
 A agenda envia inicio/fim em GET /firm/obrigacoes, inclusive na reconciliação após editar. O servidor valida o intervalo e aplica verificadores somente às ocorrências sobrepostas, com fallback pelo vencimento das legadas; companyId restringe também a verificação ao escopo autorizado. A chave do cache inclui o período para não reaproveitar estados de outra semana. Listagens e jobs sem intervalo mantêm a reconciliação completa. Ensaio com 13 competências versus uma: 80 versus 8 leituras dos contextos da carteira (serviço de guias mockado); não representa latência medida em produção.
+
+## Etapas da carteira — 13/10/2026 (desenvolvimento)
+Conferir etapa abre somente a tarefa indicada pelo verificador CARTEIRA_* da ocorrência. O fluxo inteiro pertence ao Status da empresa. Confirmação manual por checkbox, sem evidência textual obrigatória; versão, hash, dependências e auditoria continuam no contrato compartilhado. Guias/fechamento acompanham operações reais. Ver docs/fluxo-carteira-2026-10-06.md.

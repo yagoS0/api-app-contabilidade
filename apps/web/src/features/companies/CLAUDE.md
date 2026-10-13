@@ -1558,3 +1558,6 @@ mock esconde um ramo neste projeto. Ele é coberto por teste em
 
 ## WhatsApp na home (F5, 06/09/2026)
 Resumo agregado com selo de não lidas na gaveta e ponto no botão. Falha é null, sem selo; nunca zero. Polling para com a aba oculta. Detalhes e verificação: docs/whatsapp-central-retomada.md na raiz.
+
+## Checklist do fluxo — 13/10/2026 (desenvolvimento)
+Status abre Fluxo da empresa com checklist direto, sem editores expansíveis. Agenda limita a apresentação à chave da etapa. Confirmação manual não exige campos nem recibo; origem, hash, autor, versão e histórico permanecem. Etapas automáticas continuam derivadas de operações reais. Esta decisão substitui a exigência anterior de texto de evidência para concluir. Detalhes em docs/fluxo-carteira-2026-10-06.md.

@@ -34,3 +34,11 @@ A projeção e a validação são compartilhadas pela API e pelo mock. O mock ma
 Testes de projeção, validação, acesso às rotas, leitura da tabela e calendário. O ensaio `scripts/testar-fluxo-carteira-local.mjs` usa registros sintéticos no banco local e cobre histórico, agenda, isolamento, importação parcial, alteração dos lançamentos, reabertura e concorrência. Remove somente os registros criados pelo próprio ensaio.
 
 Prévia visual: `http://127.0.0.1:5173/carteira-dev.html`, exclusivamente com dados fictícios. Não é uma entrada do build de produção.
+
+## Etapa isolada e conclusão simples — 13/10/2026 (desenvolvimento)
+
+A agenda abre somente a chave CARTEIRA_* da ocorrência, na empresa e competência correspondentes. Não apresentar o fluxo completo dentro de Transmitir apuração ou de outra etapa. O fluxo completo continua no Status da empresa, com o título Fluxo da empresa.
+
+As confirmações manuais usam checkbox, sem formulário de responsável, observações ou evidência obrigatória. A conclusão persiste a origem CONFIRMACAO_MANUAL e conserva hash, versão, autor, data e histórico; texto de evidência de clientes antigos continua aceito. Não inventar recibo nem executar transmissão ao marcar. Dependências, autorização e invalidação por mudança da base permanecem. Guias e fechamento continuam observando a operação real.
+
+O checkbox de importação confirma explicitamente todos os lançamentos pendentes do ERP na competência, somente quando todos estão exportados e o mês fechado. A API continua aceitando seleção parcial validada; confirmações anteriores são preservadas. Não confundir exportação com importação. Nenhuma migração ou alteração em dados de produção nesta frente.
