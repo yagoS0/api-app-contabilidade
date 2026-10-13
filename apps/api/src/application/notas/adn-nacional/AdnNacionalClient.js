@@ -106,6 +106,7 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
   if (!baseUrl) throw new AdnNacionalClientError("INVALID_ENV", `env=${env} (prod|hom)`);
 
   const agent = buildHttpsAgent({ pfxBuffer, password });
+  try {
   const client = axios.create({
     baseURL: baseUrl,
     httpsAgent: agent,
@@ -142,8 +143,12 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
           // Q42: lote=true → retorna até 50 docs por chamada (corrige a varredura 1-em-1).
           res = await client.get(path, ADN_LOTE ? { params: { lote: true } } : undefined);
         } catch (err) {
+          const tlsFailure = /SSL|TLS|bad record mac|decryption failed/i.test([err?.code, err?.message].join(" "));
           throw new AdnNacionalClientError("NETWORK_ERROR",
-            `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+            tlsFailure
+              ? "A conexão segura com o ADN Nacional foi interrompida. A consulta não foi concluída; aguarde o prazo indicado antes de tentar novamente."
+              : "Não foi possível concluir a conexão com o ADN Nacional. Aguarde o prazo indicado antes de tentar novamente.",
+            { cause: err, category: tlsFailure ? "TLS" : "NETWORK", path });
         }
         // 5xx = gateway/serviço do gov.br instável → tenta de novo (backoff curto)
         if (res.status >= 500 && attempt < MAX_5XX_RETRIES) {
@@ -215,13 +220,9 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
       }
 
       // Outros status sem body JSON → erro real
-      const bodyPreview = typeof res.data === "string"
-        ? res.data.slice(0, 300)
-        : JSON.stringify(res.data || {}).slice(0, 300);
-      const headersPreview = JSON.stringify(res.headers || {}).slice(0, 300);
       throw new AdnNacionalClientError(`HTTP_${res.status}`,
-        `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}. Headers: ${headersPreview}`,
-        { status: res.status, body: res.data, headers: res.headers, path });
+        `O ADN Nacional não concluiu a consulta (HTTP ${res.status}). Confira a autorização do certificado se a recusa persistir.`,
+        { status: res.status, path });
     }
   }
 
@@ -254,6 +255,10 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
   throw new AdnNacionalClientError("ENDPOINT_NOT_FOUND",
     `Nenhum path retornou JSON válido. Tentados: ${tried.join(", ")}.`,
     { tried });
+  } finally {
+    // O agente pertence a esta página: fecha sockets e libera o material A1.
+    agent.destroy();
+  }
 }
 
 function parseResponse(data, { triedPath, httpStatus }) {

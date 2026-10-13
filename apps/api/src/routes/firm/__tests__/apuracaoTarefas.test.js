@@ -7,9 +7,10 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({ requireFi
 } }));
 jest.mock("../../../application/notas/apuracao/v2/FechamentoService.js", () => ({
   transmitirFechamento: jest.fn(async () => ({ numeroDeclaracao: "simulada" })),
+  calcularFechamento: jest.fn(),
   FechamentoError: class extends Error {},
 }));
-import { transmitirFechamento } from "../../../application/notas/apuracao/v2/FechamentoService.js";
+import { transmitirFechamento, calcularFechamento, FechamentoError } from "../../../application/notas/apuracao/v2/FechamentoService.js";
 import { manualTasks } from "../../../application/tasks/ManualTaskService.js";
 import { createApuracaoV2Router } from "../apuracaoV2.js";
 
@@ -23,6 +24,28 @@ beforeEach(() => {
   start = jest.spyOn(manualTasks, "start").mockImplementation(async (_descriptor, run) => { execute = run; return { id: "task-1", newlyStarted: true }; });
 });
 afterEach(() => start.mockRestore());
+
+test('cálculo repetido informa espera sem expor detalhe interno', async () => {
+  calcularFechamento.mockRejectedValueOnce(Object.assign(new Error('Aguarde antes de repetir.'), {
+    code: 'SERPRO_CHAMADA_REPETIDA', detalhe: { segundosRestantes: 279, segredo: 'interno' },
+  }));
+  await request(app()).post('/companies/minha/fechamento/2026-09/calcular').set('Prefer', 'respond-async').send({}).expect(202);
+  const result = await execute(jest.fn());
+  expect(result.statusCode).toBe(409);
+  expect(result.body).toMatchObject({ error: 'SERPRO_CHAMADA_REPETIDA', retryAfterSeconds: 279, action: 'aguardar_sem_repetir' });
+  expect(JSON.stringify(result.body)).not.toContain('interno');
+});
+
+test('recusa de períodos devolve somente competências válidas para a revisão', async () => {
+  calcularFechamento.mockRejectedValueOnce(Object.assign(new FechamentoError('Revise os períodos recusados.'), {
+    code: 'RECEITAS_ANTERIORES_NAO_CONVERGIU', detalhe: { periodosRemovidos: { receitas: ['2026-01', '2026-99', 'segredo'], folhas: ['2025-12'] }, segredo: 'interno' },
+  }));
+  await request(app()).post('/companies/minha/fechamento/2026-09/calcular').set('Prefer', 'respond-async').send({}).expect(202);
+  const result = await execute(jest.fn());
+  expect(result.statusCode).toBe(400);
+  expect(result.body.detalhe).toEqual({ periodosRemovidos: { receitas: ['2026-01'], folhas: ['2025-12'] } });
+  expect(JSON.stringify(result.body)).not.toMatch(/interno|segredo/);
+});
 
 test("nega empresa alheia antes de aceitar transmissão em segundo plano", async () => {
   await request(app()).post("/companies/alheia/fechamento/2026-09/transmitir").set("Prefer", "respond-async").send({ confirmCompetencia: "2026-09" }).expect(403);

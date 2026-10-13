@@ -1,6 +1,13 @@
 import { createBackgroundTaskClient } from "../backgroundTasks";
 import { importarNotasEmLotes } from "../importarNotasEmLotes";
 
+test('limite de acompanhamento mantém identificador para retomar apenas a leitura', async () => {
+  const request = jest.fn(async () => ({ task: { status: 'running' } }));
+  const client = createBackgroundTaskClient(request, { wait: async () => {} });
+  await expect(client.result({ taskId: 'persistida' })).rejects.toMatchObject({ taskId: 'persistida', code: 'TASK_MONITORING_TIMEOUT' });
+  expect(request.mock.calls.every(([path, options]) => path.includes('/tarefas/persistida') && !options)).toBe(true);
+});
+
 test("inicia uma vez e consulta apenas progresso até concluir", async () => {
   const request = jest.fn().mockResolvedValueOnce({ taskId: "a" }).mockResolvedValueOnce({ task: { status: "running" } }).mockResolvedValueOnce({ task: { status: "done", result: { sent: true } } });
   const client = createBackgroundTaskClient(request, { wait: async () => {} });

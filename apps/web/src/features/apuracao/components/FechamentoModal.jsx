@@ -27,6 +27,29 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const operacao = useRef(false);
   const pedidoAtual = useRef(0);
   const [dados, setDados] = useState(null);
+  const [erroLocal, setErroLocal] = useState(null);
+  const [erroCarga, setErroCarga] = useState(false);
+  function avisarErro(err, fallback) {
+    const code = err?.code || err?.payload?.error;
+    let mensagem = code === "SERPRO_CHAMADA_REPETIDA"
+      ? "Esta tentativa repetiria uma consulta recente ao SERPRO. Confira o resultado em Tarefas antes de tentar novamente."
+      : code === "RECEITAS_ANTERIORES_NAO_CONVERGIU"
+        ? (err?.message && err.message !== code ? err.message : "Não foi possível conciliar as receitas anteriores exigidas pelo PGDAS-D. Confira o histórico de receitas antes de recalcular. Esta simulação não concluiu.")
+        : err?.message || fallback;
+    if (code === "SERPRO_CHAMADA_REPETIDA") {
+      const espera = Number(err?.payload?.retryAfterSeconds);
+      if (Number.isFinite(espera) && espera > 0) mensagem += ` Aguarde pelo menos ${Math.ceil(espera)} segundos antes de uma nova tentativa. Nenhuma repetição será automática.`;
+    }
+    if (code === "RECEITAS_ANTERIORES_NAO_CONVERGIU") {
+      const periodos = err?.payload?.detalhe?.periodosRemovidos;
+      for (const [chave, rotulo] of [["receitas", "receitas"], ["folhas", "folha"]]) {
+        const meses = Array.isArray(periodos?.[chave]) ? periodos[chave].filter(p => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(p))).map(p => String(p).slice(5) + "/" + String(p).slice(0, 4)) : [];
+        if (meses.length) mensagem += " Períodos de " + rotulo + " removidos conforme retorno da Receita: " + meses.join(", ") + ".";
+      }
+    }
+    setErroLocal(mensagem);
+    feedback?.notifyError?.(mensagem);
+  }
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
   const [atividades, setAtividades] = useState([]);
@@ -46,15 +69,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const [savingCadastro, setSavingCadastro] = useState(false);
 
   async function abrirCadastro() {
+    setErroLocal(null);
     try {
-      const out = await api.getCadastroFiscal?.(portalClientId);
+      if (!api.getCadastroFiscal) throw new Error("Consulta de cadastro indisponível.");
+      const out = await api.getCadastroFiscal(portalClientId);
+      if (out?.ok !== true) throw new Error(out?.message || "Falha ao consultar cadastro.");
       if (contextoAtual.current !== contexto) return;
       // pré-preenche o CNAE que a empresa já tem (Company) quando não há CadastroFiscal ainda
       const cadastro = out?.cadastro || (dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null);
       setCadastroData({ cadastro, cnaePrincipalRef: out?.cnaePrincipalRef || null });
     } catch {
       if (contextoAtual.current !== contexto) return;
-      setCadastroData({ cadastro: dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null, cnaePrincipalRef: null });
+      avisarErro(null, "Não foi possível carregar o cadastro fiscal. Tente abrir o cadastro novamente; nenhum dado foi alterado.");
+      return;
     }
     setShowCadastro(true);
   }
@@ -76,6 +103,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   async function load() {
     const pedido = ++pedidoAtual.current;
     const vigente = () => contextoAtual.current === contexto && pedidoAtual.current === pedido;
+    setErroLocal(null); setErroCarga(false);
     setLoading(true); setActing(false); setRelatorioGerando(false); setDados(null); invalidarCalculo(); setShowCadastro(false); setCadastroData(null); setSemMovimento(false);
     try {
       // Q19: carrega o catálogo oficial de atividades (de-para idAtividade) em paralelo.
@@ -98,7 +126,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (Array.isArray(d?.folhaMensal12)) for (const f of d.folhaMensal12) folhaInit[f.pa] = f.valor;
       setFolha(folhaInit);
     } catch (err) {
-      if (vigente()) feedback?.notifyError?.(err?.message || "Falha ao carregar fechamento");
+      if (vigente()) { setErroCarga(true); avisarErro(err, "Falha ao carregar fechamento"); }
     } finally { if (vigente()) setLoading(false); }
   }
   useEffect(() => { load(); return () => { pedidoAtual.current += 1; revisao.current += 1; }; /* eslint-disable-next-line */ }, [portalClientId, competencia]);
@@ -254,6 +282,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   async function handleCalcular() {
     if (operacao.current) return;
     operacao.current = true;
+    const anterior = { resultado, relatorio, relatorioErro };
+    setErroLocal(null);
     invalidarCalculo();
     const versao = revisao.current;
     const vigente = () => contextoAtual.current === contexto && revisao.current === versao;
@@ -266,13 +296,18 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
         semMovimento: semMovimento && declaracaoZerada,
       });
       if (contextoAtual.current !== contexto) return;
-      if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
+      if (!out?.ok) throw Object.assign(new Error(out?.message || out?.error || "Falha"), { code: out?.error, payload: out });
       if (!vigente()) return;
       setResultado({ ...out.result, calculoId: out.result?.calculoId || out.result?.snapshot?.idempotencyKey });
       feedback?.notifySuccess?.(`DAS calculado: ${fmtMoney(out.result?.dasValor || 0)}`);
       calculou = true;
     } catch (err) {
-      if (vigente()) feedback?.notifyError?.(err?.message || "Erro no cálculo (SERPRO)");
+      if (vigente()) {
+        if ((err?.code || err?.payload?.error) === "SERPRO_CHAMADA_REPETIDA" && anterior.resultado?.calculoId) {
+          setResultado(anterior.resultado); setRelatorio(anterior.relatorio); setRelatorioErro(anterior.relatorioErro);
+        }
+        avisarErro(err, "Erro no cálculo (SERPRO)");
+      }
     } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
 
     // ⚠ FORA do try/finally do cálculo: o resultado já está na tela e os botões já foram
@@ -283,6 +318,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   async function handleSalvar() {
     if (operacao.current || !resultado?.calculoId) return;
     operacao.current = true;
+    setErroLocal(null);
     setActing(true);
     try {
       const out = await api.salvarFechamento(portalClientId, competencia, {
@@ -295,7 +331,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       onChanged?.();
       onClose?.();
     } catch (err) {
-      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "Erro ao salvar");
+      if (contextoAtual.current === contexto) avisarErro(err, "Erro ao salvar");
     } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
@@ -332,7 +368,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       onChanged?.();
       onClose?.();
     } catch (err) {
-      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "Erro na transmissão");
+      if (contextoAtual.current === contexto) avisarErro(err, "Erro na transmissão");
     } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
@@ -358,6 +394,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
           <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>🔒 Fechamento — {razao} · {competencia}</div>
           <button disabled={acting} onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
+
+        {erroLocal && <div role="alert"><p>{erroLocal}</p>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</div>}
 
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
 
@@ -676,7 +714,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
             {/* Q44: feedback das ações (Calcular/Salvar/Transmitir) — antes os notify* eram invisíveis */}
             {(feedback?.message || feedback?.error) && (
-              <Feedback message={feedback?.message} error={feedback?.error} />
+              <Feedback message={feedback?.message} error={erroLocal ? null : feedback?.error} />
             )}
 
             {/* Botões */}

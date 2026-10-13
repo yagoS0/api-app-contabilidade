@@ -1,3 +1,4 @@
+jest.mock("../../guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn(async () => ({ assertActive: jest.fn(), release: jest.fn(async () => {}) })) }));
 // O EVENTO DE CANCELAMENTO PARA DE SER DESTRUÍDO NA HORA EM QUE É APLICADO.
 //
 // Até 10/08/2026 `applyNfseEvento` escrevia duas colunas (`statusEfetivo`/`status`) e jogava fora

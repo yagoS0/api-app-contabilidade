@@ -4,16 +4,28 @@ import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
 import { taskTitles, taskStatuses, taskRunning, taskPath } from "./taskLabels";
 import { resultadoImportacao } from "../notas/lib/resultadoImportacao";
+import { mensagemCapturaAdn, avisoCapturaParcial } from "../notas/lib/mensagemCapturaAdn";
 import "./tasks.css";
 import { useTaskCenterTarget } from "./TaskCenterPlacement";
 
-function Resultado({ result, tipo }) {
+function Resultado({ result, tipo, descricao }) {
   if (!result) return null;
   if (["import-nfe", "import-nfse"].includes(tipo) && ("importadas" in result || "created" in result)) {
     const summary = resultadoImportacao(result, tipo === "import-nfe" ? "NFE" : "NFSE");
     return <div className="task-center__result"><p>{summary.mensagem}</p>{summary.problemas.map((p, i) => <p key={i}><strong>{p.arquivo}:</strong> {p.mensagem}</p>)}</div>;
   }
   const data = result.result && typeof result.result === "object" ? result.result : result;
+  if (tipo === 'apuracao-calculo' && data.calculoId && data.dasValor != null) {
+    return <div className="task-center__result"><p>Simulação concluída. DAS estimado: {Number(data.dasValor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.</p><p>Este resultado não confirma a transmissão da declaração.</p></div>;
+  }
+  if (['apuracao-transmissao', 'apuracao-retificacao'].includes(tipo) && (data.numeroDeclaracao || data.snapshot?.numeroDeclaracao)) {
+    return <div className="task-center__result"><p>Declaração confirmada: {data.numeroDeclaracao || data.snapshot.numeroDeclaracao}.</p>
+      {Object.entries(data.posTransmissao || {}).filter(([, value]) => value?.skipped || value?.ok === false).map(([key]) => <p key={key}>{key === 'guia' ? 'Guia' : 'Extrato'} pendente. Consulte o documento sem retransmitir a declaração.</p>)}
+    </div>;
+  }
+  if (tipo === 'consulta-fiscal' && descricao === 'Consulta de NFS-e' && typeof data.totalDocs === 'number') {
+    return <div className="task-center__result"><p>{data.ok ? avisoCapturaParcial(data) || `Captura concluída: ${data.totalDocs} documento(s).` : mensagemCapturaAdn(data.message || data.reason || 'Não foi possível concluir a captura.')}</p></div>;
+  }
   const rows = data.resultados || data.results || data.errors || data.items || data.details?.failed || [];
   const reasons = { campos_obrigatorios: "Preencha os campos obrigatórios.", data_invalida: "Data inválida.", conta_sintetica: "Selecione uma conta analítica para o lançamento." };
   return <div className="task-center__result">
@@ -57,13 +69,13 @@ function TaskItem({ task, api, companies }) {
     {task.total > 0 && taskRunning(task) && <><progress aria-label={`Progresso: ${taskTitles[task.tipo] || "tarefa"}`} value={task.processadas || 0} max={task.total} /><small>{task.processadas || 0} de {task.total} processados</small></>}
     {task.browserDependent && taskRunning(task) && <p className="task-center__context">Você pode navegar pelo sistema. Mantenha esta aba do navegador aberta até concluir.</p>}
     {task.erroMensagem && <p role="alert">{task.erroMensagem}</p>}
-    {(task.result || task.progress) && <Resultado result={task.result || task.progress} tipo={task.tipo} />}
+    {(task.result || task.progress) && <Resultado result={task.result || task.progress} tipo={task.tipo} descricao={task.descricao} />}
     <div className="task-center__actions">
       {(task.onOpen || task.arquivoDisponivel || task.origem === "manual" || task.tipo === "captura-notas") && <Button size="sm" variant="secondary" disabled={busy} onClick={openResult}>{busy ? "Abrindo…" : task.arquivoDisponivel ? "Baixar arquivo" : "Ver resultado"}</Button>}
       {ids.length === 1 && <Link to={`/companies/${ids[0]}/${taskPath(task)}`}>Abrir empresa</Link>}
     </div>
     {error && <p role="alert">{error}</p>}
-    {details && <Resultado result={details} tipo={task.tipo} />}
+    {details && <Resultado result={details} tipo={task.tipo} descricao={task.descricao} />}
   </li>;
 }
 

@@ -18,6 +18,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => ({
     // (`receitaPorTipoMercado`) — sem notas, ela é `{}`, que é o correto para o mês vazio.
     portalInvoice: { aggregate: jest.fn(async () => ({ _sum: { total: 0 } })), findMany: jest.fn(async () => []) },
     portalClient: { findUnique: jest.fn(async () => ({ cnpj: "58546710000100" })) },
+    cadastroFiscal: { findUnique: jest.fn(async () => ({ regimeApuracao: "COMPETENCIA" })) },
     apuracaoSnapshot: { findUnique: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
   },
 }));
