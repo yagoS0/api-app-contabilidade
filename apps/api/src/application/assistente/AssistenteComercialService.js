@@ -1,3 +1,5 @@
+import { dadosContingenciaIa } from '../onboarding/ContingenciaComercialService.js';
+import { registrarContingenciaComercialPush } from '../whatsapp/AtendimentoPushService.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { decidirRespostaComercial } from "./politicaComercialWhatsapp.js";
 export { decidirRespostaComercial } from "./politicaComercialWhatsapp.js";
@@ -26,7 +28,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
   let lease, timer, leaseValido = true, renovando = false, guarda, resposta, lead;
   let handoff = false, handoffEm = null, houveSaida = false, ferramentaValida = false;
   let bolhas = [], orientacao = null, consulta = null;
-  let contextoInicial;
+  let contextoInicial, motivoContingencia = null;
   const renovar = async () => {
     if (!leaseValido) throw falha("LEASE_PERDIDA");
     if (lease && !await renovarLease(lease, { client: db })) { leaseValido = false; throw falha("LEASE_PERDIDA"); }
@@ -74,8 +76,18 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
       OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: m.registradaEm } }],
     }, data: { atendidaDesde: em } });
     if (!r.count) throw falha("ASSUMIDA_POR_HUMANO");
+    if (motivoContingencia && lead) {
+      const atual = await tx.atendimentoLead.findFirst({ where: { id: lead.id, encerradoEm: null }, include: { onboarding: true } });
+      const conversa = await tx.conversaWhatsapp.findUnique({ where: { id: conversaId } });
+      await exigirConversaDoCaso(atual, conversa, tx);
+      await tx.atendimentoLead.update({ where: { id: lead.id }, data: { versao: { increment: 1 }, triagem: {
+        ...atual.triagem, contingenciaIa: dadosContingenciaIa({ motivo: motivoContingencia, mensagemId, agora: em }),
+        preatendimento: { ...atual.triagem?.preatendimento, estado: 'ENCAMINHADO', encaminhadoEm: em.toISOString() },
+      } } });
+      await registrarContingenciaComercialPush({ atendimentoId: lead.id, mensagemId, conversaId, client: tx, agora: em });
+    }
     };
-    if (contextoInicial.interlocutorId) await db.$transaction(reservar); else await reservar(db);
+    if (db.$transaction) await db.$transaction(reservar); else await reservar(db);
     handoffEm = em;
   };
   try {
@@ -168,15 +180,16 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
           });
           await (deps.concluir || concluirChamadaIa)(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client: db });
         } catch (e) {
+          motivoContingencia = e.codigo || e.code || "IA_INDISPONIVEL";
           await (deps.concluir || concluirChamadaIa)(guarda.contexto, { erroCodigo: e.codigo || e.code || "ERRO", usage: e.usage }, { client: db });
           handoff = true;
         }
         guarda = null;
-      } else handoff = true;
+      } else { handoff = true; motivoContingencia = guarda.motivo || "IA_INDISPONIVEL"; }
     } else handoff = true;
     await conferir();
     const pergunta = proximaPergunta(lead.onboarding);
-    if (!ferramentaValida || resposta?.recusou || ["max_iteracoes", "erro"].includes(resposta?.stopReason)) handoff = true;
+    if (!ferramentaValida || resposta?.recusou || ["max_iteracoes", "erro"].includes(resposta?.stopReason)) { handoff = true; if (m.tipo === "text") motivoContingencia ||= "IA_RESPOSTA_INVALIDA"; }
     if (handoff) await encaminhar();
     const livre = respostaComercialUtilizavel(resposta?.texto) ? resposta.texto.trim() : null;
     const texto = handoff ? FRASE_EQUIPE : orientacao?.texto || livre || [consulta?.razaoSocial ? `Consultei os dados públicos de ${consulta.razaoSocial}. Situação cadastral: ${consulta.situacaoCadastral || "não informada"}. Isso não confirma a regularidade fiscal.` : "", pergunta.pergunta, pergunta.opcoes?.map(o => o.rotulo).join(" · ")].filter(Boolean).join("\n\n");

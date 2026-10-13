@@ -6,6 +6,15 @@ const contato = { id:'ct1',nome:'Contato',ativo:true,portalClientId:'empresa1',v
 const caso = { id:'caso1',onboardingId:'onb1',encerradoEm:null,onboarding:{origem:'ABERTURA',status:'COLETA'} };
 const decidir = extra => classificarRelacionamento({vinculoNumero,interlocutor,...extra});
 
+test('contingência aparece antes da qualificação sem expor dados internos nem criar identidade', () => {
+  const contingenciaIa = { estado: 'PENDENTE', motivo: 'OPENAI_TIMEOUT', criadaEm: '2026-10-13T12:00:00Z', mensagemId: 'privado', erro: 'interno' };
+  const pendente = { id: 'primeiro-contato', conversaId: 'comercial', triagem: { contingenciaIa } };
+  const conversa = { id: 'comercial', canalWhatsapp: { finalidade: 'COMERCIAL' } };
+  expect(decidir({ caso: pendente, conversa })).toMatchObject({ relacionamento: { tipo: 'A_IDENTIFICAR' }, contingenciaIa: { estado: 'PENDENTE', motivo: 'OPENAI_TIMEOUT' } });
+  expect(decidir({ caso: pendente, conversa }).contingenciaIa).not.toHaveProperty('erro');
+  expect(decidir({ caso: { ...pendente, encerradoEm: new Date() } }).contingenciaIa).toBeNull();
+});
+
 describe('relacionamento é evidência, não permissão', () => {
   test('contato cadastrado sem portal é cliente, sem inventar autorização', () => {
     const r=decidir({contatos:[contato]});

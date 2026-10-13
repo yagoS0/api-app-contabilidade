@@ -1,9 +1,11 @@
 jest.mock("../../config.js",()=>({INTEGRACAO_WHATSAPP:true,log:{error:jest.fn()}}));
 jest.mock("../../application/whatsapp/WhatsappInboxService.js",()=>({processarInboxWhatsappUmaVez:jest.fn()}));
 jest.mock("../../application/assistente/TurnoIaWhatsappService.js",()=>({processarTurnosIaUmaVez:jest.fn()}));
+jest.mock("../../application/onboarding/WatchdogComercialService.js",()=>({processarContingenciasComerciaisUmaVez:jest.fn().mockResolvedValue({})}));
 import {iniciarWorkerWhatsappDuravel,pararWorkerWhatsappDuravel} from "../whatsappDurableWorker.js";
 import {processarInboxWhatsappUmaVez} from "../../application/whatsapp/WhatsappInboxService.js";
 import {processarTurnosIaUmaVez} from "../../application/assistente/TurnoIaWhatsappService.js";
+import {processarContingenciasComerciaisUmaVez} from "../../application/onboarding/WatchdogComercialService.js";
 it("inbox continua durante IA lenta e shutdown aguarda turno atual",async()=>{
  jest.useFakeTimers();let terminar;const lento=new Promise(resolve=>{terminar=resolve;});
  processarInboxWhatsappUmaVez.mockResolvedValue({});processarTurnosIaUmaVez.mockReturnValue(lento);
@@ -11,5 +13,16 @@ it("inbox continua durante IA lenta e shutdown aguarda turno atual",async()=>{
  expect(processarInboxWhatsappUmaVez.mock.calls.length).toBeGreaterThan(1);expect(processarTurnosIaUmaVez).toHaveBeenCalledTimes(1);
  let encerrado=false;const fim=pararWorkerWhatsappDuravel().then(()=>{encerrado=true;});await Promise.resolve();expect(encerrado).toBe(false);
  terminar({});await fim;expect(encerrado).toBe(true);const n=processarInboxWhatsappUmaVez.mock.calls.length;await jest.advanceTimersByTimeAsync(10000);expect(processarInboxWhatsappUmaVez).toHaveBeenCalledTimes(n);
+ jest.useRealTimers();
+});
+
+it("contingência continua mesmo com coleta síncrona e turno IA travados",async()=>{
+ jest.useFakeTimers(); let liberarInbox, liberarIa;
+ processarInboxWhatsappUmaVez.mockReturnValue(new Promise(r=>{liberarInbox=r;}));
+ processarTurnosIaUmaVez.mockReturnValue(new Promise(r=>{liberarIa=r;}));
+ processarContingenciasComerciaisUmaVez.mockClear();
+ iniciarWorkerWhatsappDuravel(); await jest.advanceTimersByTimeAsync(62000);
+ expect(processarContingenciasComerciaisUmaVez).toHaveBeenCalledTimes(3);
+ liberarInbox({}); liberarIa({}); await pararWorkerWhatsappDuravel();
  jest.useRealTimers();
 });

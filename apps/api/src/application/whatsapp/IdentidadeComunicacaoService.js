@@ -54,7 +54,7 @@ export async function projetarIdentidadeConversa(conversa, { client = prisma } =
     client.contatoWhatsapp.findMany({ where: { vinculoNumeroId: vinculo.id } }),
     client.atendimentoLead.findFirst({ where: { interlocutorId: vinculo.interlocutorId, encerradoEm: null }, include: { onboarding: true } }),
   ]);
-  return { interlocutorId: vinculo.interlocutorId, ...classificarRelacionamento({ contatos, caso, interlocutor: vinculo.interlocutor, vinculoNumero: vinculo }) };
+  return { interlocutorId: vinculo.interlocutorId, ...classificarRelacionamento({ contatos, caso, interlocutor: vinculo.interlocutor, vinculoNumero: vinculo, conversa }) };
 }
 
 /** Conferência não concede acesso. NOVO_TITULAR mantém contatos/arquivos anteriores na vigência antiga. */

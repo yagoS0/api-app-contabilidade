@@ -206,7 +206,7 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     });
     const canal = canais.find(c => c.id === (segmento.canalId || 'principal'));
     const pendencia = pendencias.find(p => p.conversaId === segmento.id);
-    const projecao = classificarRelacionamento({ contatos: doGrupo, caso: completo ? caso : null, interlocutor, vinculoNumero: vinculo });
+    const projecao = classificarRelacionamento({ contatos: doGrupo, caso: completo ? caso : null, interlocutor, vinculoNumero: vinculo, conversa: segmento });
     if (!completo) projecao.identidade.evidencia = null;
     // Uma pessoa com vários números usa os contatos ativos de todas as vigências atuais.
     if (doGrupo.some(c => c.ativo && g.segmentos.some(s => s.vinculoNumeroId === c.vinculoNumeroId && !s.vinculoNumero?.encerrouEm))) projecao.relacionamento = { tipo: 'CLIENTE', motivo: 'CONTATO_ATIVO_CADASTRADO', fonte: 'CONTATO_WHATSAPP', versao: interlocutor?.versao || 1 };

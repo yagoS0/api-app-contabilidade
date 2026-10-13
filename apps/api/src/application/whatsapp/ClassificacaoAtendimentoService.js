@@ -1,5 +1,5 @@
 // Projeção de apresentação: nunca concede RBAC nem autorização de consulta/emissão.
-export function classificarRelacionamento({ contatos = [], caso = null, interlocutor = null, vinculoNumero = null } = {}) {
+export function classificarRelacionamento({ contatos = [], caso = null, interlocutor = null, vinculoNumero = null, conversa = null } = {}) {
   const ativos = contatos.filter(c => c.ativo !== false && c.portalClientId
     && (!vinculoNumero?.id || c.vinculoNumeroId === vinculoNumero.id));
   const usuarios = new Set(ativos.map(c => c.userId).filter(Boolean));
@@ -9,6 +9,12 @@ export function classificarRelacionamento({ contatos = [], caso = null, interloc
     || ['ABERTURA', 'TRANSFERENCIA', 'INATIVA', 'PLANEJAMENTO', 'GESTAO'].includes(pre?.intencao)));
   const tipo = ativos.length ? 'CLIENTE' : comercial ? 'LEAD' : 'A_IDENTIFICAR';
   return {
+    contingenciaIa: caso && !caso.encerradoEm && caso.triagem?.contingenciaIa
+      && conversa?.canalWhatsapp?.finalidade === 'COMERCIAL' && caso.conversaId === conversa.id ? {
+      estado: caso.triagem.contingenciaIa.estado,
+      motivo: caso.triagem.contingenciaIa.motivo,
+      criadaEm: caso.triagem.contingenciaIa.criadaEm,
+    } : null,
     relacionamento: {
       tipo, motivo: ativos.length ? 'CONTATO_ATIVO_CADASTRADO' : comercial ? 'SOLICITACAO_COMERCIAL_CONFIRMADA'
         : contatos.length ? 'CADASTRO_ANTERIOR' : 'SEM_EVIDENCIA_DE_RELACIONAMENTO',

@@ -91,7 +91,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       }),
     },
     mensagemWhatsapp: { findUnique:jest.fn(async({where})=>mockSaidas.find(m=>m.intencaoEnvioId===where.intencaoEnvioId) || null), create: jest.fn(async ({data}) => { const m={id:`out${mockSaidas.length+1}`,...data}; mockSaidas.push(m); return m; }), update: jest.fn(async ({where,data}) => Object.assign(mockSaidas.find(m=>m.id===where.id),data)), updateMany: jest.fn(async()=>({count:1})), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
-    atendimentoLead: { findFirst: jest.fn(async () => null) },
+    atendimentoLead: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), update: jest.fn(async ({ data }) => data) },
     atendimentoResponsavelWhatsapp: { findUnique: jest.fn(async () => mockAtendimento ? { ...mockAtendimento } : null) },
     // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
     // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
@@ -186,6 +186,8 @@ function montarApp(user = { id: "u-contador", name: "Contador Teste", role: "con
 beforeEach(() => {
   cloud.enviarDocumento.mockClear(); cloud.enviarImagem.mockClear();
   prisma.atendimentoLead.findFirst.mockReset().mockResolvedValue(null);
+  prisma.atendimentoLead.findMany.mockReset().mockResolvedValue([]);
+  prisma.atendimentoLead.update.mockClear();
   cloud.enviarTexto.mockClear();
   mockSaidas.length=0; mockIntencoes.length=0; mockRascunhos.length=0;
   cloud.enviarTemplate.mockClear();
@@ -1057,4 +1059,25 @@ describe('retomada com assunto e gestão no canal autorizado',()=>{
   const r=await request(app).post('/firm/whatsapp/conversas/cv1/retomar/modelo').send({token:'ignorar',nome:'arbitrario',corpo:'ignorar'});
   expect(r.status).toBe(200);expect(r.body.statusMeta).toBe('PENDING');expect(criarModelo).toHaveBeenCalledWith(expect.objectContaining({name:'reabrir_conversa'}));expect(cloud.enviarTemplate).not.toHaveBeenCalled();expect(cloud.enviarTexto).not.toHaveBeenCalled();
  });
+});
+
+describe('contingência comercial na devolução', () => {
+  it('resolve o aviso e preserva resumo na mesma devolução', async () => {
+    const caso = { id: 'caso', triagem: { preatendimento: { nome: 'Ana' }, contingenciaIa: { estado: 'PENDENTE', mensagemId: 'm', motivo: 'OPENAI_ERRO' } } };
+    prisma.atendimentoLead.findMany.mockResolvedValue([caso]);
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
+    expect(r.status).toBe(200);
+    expect(prisma.atendimentoLead.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'caso' }, data: expect.objectContaining({ triagem: expect.objectContaining({ preatendimento: { nome: 'Ana' }, contingenciaIa: expect.objectContaining({ estado: 'RESOLVIDA', mensagemId: 'm' }) }) }) }));
+  });
+  it('falha ao resolver impede confirmar devolução e reverte o responsável na transação', async () => {
+    const antes = { ...mockConversas.get('cv1'), atendidaPor: 'u-contador', atendidaDesde: new Date() };
+    mockConversas.set('cv1', { ...antes });
+    prisma.atendimentoLead.findMany.mockRejectedValueOnce(new Error('Banco indisponível'));
+    prisma.$transaction.mockImplementationOnce(async fn => {
+      try { return await fn(prisma); } catch (e) { mockConversas.set('cv1', { ...antes }); throw e; }
+    });
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
+    expect(r.status).toBe(500);
+    expect(mockConversas.get('cv1').atendidaPor).toBe('u-contador');
+  });
 });

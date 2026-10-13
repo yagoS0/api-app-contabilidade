@@ -45,6 +45,7 @@ function corresponde(row, where = {}) {
 function memoria(mensagens = [entrada()]) {
   const db = {
     mensagens: mensagens.map(clone), eventos: [],
+    eventoPushAtendimento: { upsert: jest.fn(async ({ create }) => create) },
     conversa: { id: "cv", telefoneE164: "5511999999999", portalClientId: null, chaveEscopo: "sem-empresa:5511999999999", atendidaPor: null, atendidaDesde: null, excluidaEm: null, automacaoInvalidadaEm: null },
     lead: { id: "lead", conversaId: "cv", onboardingId: "ficha", encerradoEm: null, autorizacao: null, onboarding: { id: "ficha", origem: "ABERTURA", dados: {}, versao: 1 } },
   };
@@ -84,6 +85,7 @@ function memoria(mensagens = [entrada()]) {
     findFirst: jest.fn(async ({ where }) => corresponde(db.lead, where) ? clone(db.lead) : null),
     update: jest.fn(async ({ data }) => clone(Object.assign(db.lead, data))),
   };
+  db.$transaction = async fn => fn(db);
   return db;
 }
 const fim = (texto = "Pode contratar só a abertura. Também podemos comparar com a contabilidade mensal.") => ({ texto, usage: { input_tokens: 10, output_tokens: 15 }, iteracoes: 2, ferramentasChamadas: ["registrar_atendimento"], stopReason: "end_turn" });
@@ -240,6 +242,8 @@ test("teto de custo não chama o modelo e persiste encaminhamento", async () => 
   const a = ambiente(); a.deps.autorizar.mockResolvedValueOnce({ ok: false, motivo: "LIMITE" });
   expect(await a.rodar()).toMatchObject({ feito: true, motivo: "ENCAMINHADA" });
   expect(a.deps.assistente.responder).not.toHaveBeenCalled();
+  expect(a.db.lead.triagem.contingenciaIa).toMatchObject({ estado: "PENDENTE", motivo: "LIMITE" });
+  expect(a.db.eventoPushAtendimento.upsert).toHaveBeenCalled();
   expect(a.db.conversa.atendidaDesde).toBeInstanceOf(Date);
 });
 

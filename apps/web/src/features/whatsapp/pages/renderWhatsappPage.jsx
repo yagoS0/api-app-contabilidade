@@ -45,7 +45,7 @@ function LinhaConversa({ c, ativa, onAbrir }) {
     <div className="wa-conversation-copy">
       <div className="wa-conversation-title"><strong title={identidade.pessoa}>{identidade.pessoa}</strong>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
       <div className="wa-contact-preview">{c.ultimaMensagem?.corpo || c.ultimaMensagem?.resumo || (c.ultimaMensagem?.cartaoGuia ? `${c.ultimaMensagem.cartaoGuia.tipo} · ${c.ultimaMensagem.cartaoGuia.competencia}` : c.ultimaMensagem?.tipo === "document" ? "Documento" : "")}</div>
-      <div className="wa-contact-meta"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span></div>
+      <div className="wa-contact-meta"><span className="wa-relationship" data-relacionamento={relacionamento.tipo}>{relacionamento.rotulo}</span>{c.contingenciaIa?.estado === "PENDENTE" && c.atendidaDesde && !c.atendidaPor && <span className="wa-contingency-label">Precisa de atendimento</span>}</div>
     </div>
   </button>;
 }

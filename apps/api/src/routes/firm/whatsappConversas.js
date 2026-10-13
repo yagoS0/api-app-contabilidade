@@ -18,6 +18,7 @@
 
 import { criarRecursosComerciais } from "../../application/onboarding/RecursosComerciaisService.js";
 import { resolverConversaEnvioComercial } from "../../application/onboarding/CanalEnvioComercialService.js";
+import { resolverContingenciasComerciais } from "../../application/onboarding/ContingenciaComercialService.js";
 import { Router } from "express";
 import multer from "multer";
 import { validarAnexoManual } from "../../application/whatsapp/anexoManual.js";
@@ -254,6 +255,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client,
         aoAlterar: async (tx, ids) => {
           for (const conversaId of ids) await atualizarEncaminhamentosSuporte({ conversaId, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+          if (!atendidaPor) await resolverContingenciasComerciais({ conversaIds: ids, client: tx });
         } });
     }
     return client.$transaction(async tx => {
@@ -263,6 +265,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     });
     if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
     await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+    if (!atendidaPor) await resolverContingenciasComerciais({ conversaIds: [conversa.id], client: tx });
     await tx.turnoIaWhatsapp.updateMany({where:{conversaId:conversa.id,status:{in:['pendente','falhou','processando']}},data:{status:'ignorado',motivo:'ASSUMIDA_POR_HUMANO',reservaToken:null,leaseAte:null,concluidoEm:new Date()}});
     await tx.acaoPendenteWhatsapp.updateMany({where:{conversaId:conversa.id,status:'pendente'},data:{status:'cancelada'}});
     return null;

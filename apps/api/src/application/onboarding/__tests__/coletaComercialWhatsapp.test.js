@@ -318,3 +318,29 @@ test.each([true,false])('qualificação fiscal entrega humano e usa somente guia
   expect((await t.chamar('Já autorizei',{ia,enviar,consultaPublica})).motivo).toBe('AUTOMACAO_INVALIDADA');
   expect(t.caso.autorizacao.estado).toBe('NAO_SOLICITADA');
 });
+
+test.each(['OPENAI_ERRO', 'OPENAI_TIMEOUT', 'TETO_LEAD'])('falha %s preserva resumo, pausa e avisa contador uma vez', async motivo => {
+  const t = banco(); await t.chamar('Quero abrir uma empresa');
+  t.caso.triagem.preatendimento.nome = 'Marina';
+  const ia = iaTeste(interpretacaoTeste([]));
+  if (motivo === 'TETO_LEAD') ia.autorizar.mockResolvedValue({ ok: false, motivo });
+  else ia.assistente.interpretar.mockRejectedValue(Object.assign(new Error('segredo do provedor'), { codigo: motivo }));
+  const r = await t.chamar('Preciso de ajuda', { id: 'falha', ia });
+  expect(r.resultado.encaminhar).toBe(true);
+  expect(t.caso.triagem.preatendimento).toMatchObject({ nome: 'Marina', estado: 'ENCAMINHADO' });
+  expect(t.caso.triagem.contingenciaIa).toMatchObject({ estado: 'PENDENTE', motivo, mensagemId: 'falha' });
+  expect(JSON.stringify(t.caso.triagem.contingenciaIa)).not.toContain('segredo');
+  expect(t.conversa.atendidaDesde).toBeTruthy();
+  expect(t.db.eventoPushAtendimento.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ tipo: 'COMERCIAL_CONTINGENCIA', id: 'contingencia:a:falha' }) }));
+  await t.chamar('Preciso de ajuda', { id: 'falha', ia });
+  expect(t.db.eventoPushAtendimento.upsert).toHaveBeenCalledTimes(1);
+});
+
+test('falha sem intenção no primeiro contato ainda cria encaminhamento humano sem inventar ficha', async () => {
+  const t = banco(); t.caso.onboarding = null; t.caso.onboardingId = null;
+  const ia = iaTeste(interpretacaoTeste([])); ia.autorizar.mockResolvedValue({ ok: false, motivo: 'TETO_LEAD' });
+  const r = await t.chamar('Preciso de uma orientação', { ia });
+  expect(r.resultado.encaminhar).toBe(true);
+  expect(t.caso.triagem.contingenciaIa.estado).toBe('PENDENTE');
+  expect(t.caso.onboardingId).toBeNull();
+});
