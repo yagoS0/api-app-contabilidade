@@ -1,7 +1,39 @@
-import { projetarPendenciasParcelamento, complianceParcelamentos, mesOperacionalDaCompetencia } from "../pendenciasParcelamento.js";
+import { projetarPendenciasParcelamento, complianceParcelamentos, mesOperacionalDaCompetencia, guiasParcelamentoDoMes } from "../pendenciasParcelamento.js";
 const contrato = extra => ({ id: "c1", portalClientId: "empresa", status: "ATIVO", tipo: "PARCSN", formaPagamento: "GUIA_MENSAL", parcelas: [], ...extra });
 const parcela = extra => ({ id: "p1", numeroParcela: 1, competencia: "2026-09", vencimento: "2026-09-20", ...extra });
 const projetar = (contratos, indicacoes = []) => projetarPendenciasParcelamento({ contratos, indicacoes, mesOperacional: "2026-09", agora: new Date("2026-09-24Z"), enviada: g => g.emailStatus === "SENT" });
+
+test("aviso mensal desaparece com PDF mesmo sem envio ou baixa e preserva histórico", () => {
+  const r = projetar([guiaAvulsa()], [indicioUpload({ parcelasEmAtraso: 3 })]);
+  expect(guiasParcelamentoDoMes(r.itens, "2026-09")).toEqual([]);
+  expect(complianceParcelamentos(r.itens).pendenciaOperacional).toBe(true);
+});
+
+test("aviso agrupa tipos e mantém outro contrato do mesmo tipo sem guia", () => {
+  const r = projetar([guiaAvulsa(), contrato({ id: "c2" }), contrato({ id: "c3", tipo: "PARCMEI" })]);
+  const grupos = guiasParcelamentoDoMes(r.itens, "2026-09");
+  expect(grupos.map(g => g.tipoParcelamento)).toEqual(["PARCMEI", "PARCSN"]);
+  expect(grupos[1].itens.map(i => i.parcelamentoId)).toEqual(["c2"]);
+});
+
+test("guia anterior não resolve aviso mensal e atrasos não viram contagem", () => {
+  const r = projetar([guiaAvulsa({ vencimento: "2026-08-20" })], [indicioUpload({ parcelasEmAtraso: 3 })]);
+  const grupos = guiasParcelamentoDoMes(r.itens, "2026-09");
+  expect(grupos).toHaveLength(1);
+  expect(grupos[0].itens).toHaveLength(1);
+  expect(grupos[0].itens[0]).toMatchObject({ referencia: "2026-09", atrasosInformados: null, atrasada: false });
+});
+
+test("pagamento sem PDF e PDF não processado continuam exigindo documento", () => {
+  const r = projetar([contrato({ parcelas: [parcela({ pagamentoStatus: "CONFIRMADO" })] }),
+    contrato({ id: "c2", parcelas: [parcela({ id: "p2", guia: { status: "ERROR", storageKey: "g.pdf" } })] })]);
+  expect(guiasParcelamentoDoMes(r.itens, "2026-09")[0].itens).toHaveLength(2);
+});
+
+test("débito automático não exige upload mensal", () => {
+  const r = projetar([contrato({ formaPagamento: "DEBITO_AUTOMATICO", parcelas: [parcela({})] })]);
+  expect(guiasParcelamentoDoMes(r.itens, "2026-09")).toEqual([]);
+});
 
 test("indício SITFIS aparece sem inventar três parcelas, valor ou provisão", () => {
   const r = projetar([], [{ id: "i", status: "PENDENTE", portalClientId: "empresa", parcelasEmAtraso: 3 }]);

@@ -147,7 +147,7 @@ function GuiasResumidas({ tags, company, competencia, acoes }) {
     </button>
     {aberto && <Popover onFechar={() => setAberto(false)}>
       <strong>Guias · {competencia}</strong>
-      {tags.map(tag => <div key={tag.key || tag.label} style={{ marginTop: 10 }}>
+      {tags.map(tag => <div key={tag.id || tag.key || tag.label} style={{ marginTop: 10 }}>
         <GuiaChip tag={tag} empresa={company} competencia={competencia} acoes={acoes}/>
       </div>)}
     </Popover>}
@@ -312,7 +312,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
       <td data-label="Guias" style={CELULA}>
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {resumirGuias && tributos.length > 0 && <GuiasResumidas tags={tributos} company={company} competencia={competencia} acoes={acoesGuia || {}}/>}
-          {(resumirGuias ? tags.filter(tag => tag.key === 'parcDas') : tags).map(tag => <GuiaChip compacto key={tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
+          {(resumirGuias ? tags.filter(tag => tag.key === 'parcDas') : tags).map(tag => <GuiaChip compacto key={tag.id || tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
           {!tags.length && <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{company.guideCompliance ? 'Sem guias previstas' : 'Não disponível'}</span>}
         </span>
       </td>
