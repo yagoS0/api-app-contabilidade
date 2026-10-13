@@ -222,7 +222,13 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   if (r) r.canal = canal;
   // Consentimento é do número e precede seleção de empresa, IA, piloto e atendimento humano.
   const consentimento = r && await processarConsentimentoWhatsapp(r);
-  if (consentimento) return {desfecho:r.duplicada?DESFECHOS.DUPLICADA:DESFECHOS.GRAVADA,motivo:'CONSENTIMENTO_'+consentimento.status};
+  if (consentimento) {
+    if (consentimento.status === 'AUTORIZADO' && consentimento.aplicado) {
+      const { confirmarConsentimentoWhatsapp } = await import('./ConfirmarConsentimentoWhatsappService.js');
+      await confirmarConsentimentoWhatsapp({ ...r, consentimento });
+    }
+    return {desfecho:r.duplicada?DESFECHOS.DUPLICADA:DESFECHOS.GRAVADA,motivo:'CONSENTIMENTO_'+consentimento.status};
+  }
   const conteudoIndisponivel = ["unsupported", "unknown"].includes(item.tipo);
   if (!conteudoIndisponivel && r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");

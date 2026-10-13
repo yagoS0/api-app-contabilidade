@@ -1,4 +1,7 @@
 jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
+jest.mock('../ConfirmarConsentimentoWhatsappService.js', () => ({ confirmarConsentimentoWhatsapp: jest.fn(async () => ({ enviado: true })) }));
+import { processarConsentimentoWhatsapp } from '../ConsentimentoWhatsappService.js';
+import { confirmarConsentimentoWhatsapp } from '../ConfirmarConsentimentoWhatsappService.js';
 jest.mock("../../guides/ConfirmarPagamentoWhatsappService.js", () => ({ ...jest.requireActual("../../guides/ConfirmarPagamentoWhatsappService.js"), fluxoPagamentoAtual: jest.fn(async()=>null) }));
 // O QUE O EVENTO VIRA. As duas pontas (conversa e envio de guia) entram como dublês: o que este
 // teste prova é a COSTURA — quem é chamado, com o quê, e o que acontece quando algo falha no meio.
@@ -37,9 +40,22 @@ const MENSAGEM = {
 };
 
 beforeEach(() => {
+  processarConsentimentoWhatsapp.mockReset().mockResolvedValue(null);
+  confirmarConsentimentoWhatsapp.mockClear();
   registrarMensagemRecebida.mockReset();
   aplicarStatusDoProvedor.mockReset();
   aplicarFalhaDoProvedor.mockReset();
+});
+
+test('Sim reconhecido como autorização confirma sem seletor, coleta ou GPT', async () => {
+  const consentimento = { status: 'AUTORIZADO', aplicado: true, mensagemId: 'm-sim' };
+  processarConsentimentoWhatsapp.mockResolvedValue(consentimento);
+  registrarMensagemRecebida.mockResolvedValue({ mensagem: { id: 'm-sim' }, conversa: { id: 'cv' }, vinculo: { situacao: 'AMBIGUO' } });
+  const atenderContexto = jest.fn(), responderMenu = jest.fn(), responderColeta = jest.fn(), responder = jest.fn();
+  const r = await processarEventoWhatsapp(evento({ messages: [{ ...MENSAGEM, text: { body: 'Sim' } }] }), { agora: AGORA, logger: logSpy(), atenderContexto, responderMenu, responderColeta, responder });
+  expect(r.erros).toEqual([]);
+  expect(confirmarConsentimentoWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ consentimento }));
+  for(const fn of [atenderContexto, responderMenu, responderColeta, responder])expect(fn).not.toHaveBeenCalled();
 });
 
 describe("mensagens recebidas", () => {
