@@ -60,6 +60,7 @@ import { createWhatsappGuiasRouter, createIndividualGuideHandler } from "./whats
 import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
 import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createCorrigirCompetenciaGuiaRouter } from "./corrigirCompetenciaGuia.js";
+import { createGestaoParcelamentoRouter } from "./gestaoParcelamento.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
 import { createWhatsappComunicadosRouter } from "./whatsappComunicados.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
@@ -5510,6 +5511,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use("/", createWhatsappArquivosRouter({ log }));
   router.use("/", createCorrigirValorGuiaRouter({ log }));
   router.use("/", createCorrigirCompetenciaGuiaRouter({ log }));
+  router.use("/", createGestaoParcelamentoRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
   router.use("/", createAtendimentoPushRouter());

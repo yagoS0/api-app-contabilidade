@@ -1,4 +1,5 @@
 import {ComposicaoParcelamentoModal} from '../components/ComposicaoParcelamentoModal';
+import {GestaoParcelamentos} from '../components/GestaoParcelamentos';
 // Aba "Parcelamento" (grupo Contabilidade) — e, desde a F2.3, a PORTA DE ENTRADA do parcelamento.
 //
 // ⚠ A CRIAÇÃO INVERTEU. Antes o parcelamento nascia como efeito colateral de subir uma guia; hoje
@@ -1208,6 +1209,7 @@ function ParcelamentoTabContent({
 }) {
   // Recarga da fila de baixa pendente depois de um pagamento localizado na linha da parcela.
   const [baixaRefreshKey, setBaixaRefreshKey] = useState(0);
+  const [ferramentasAbertas, setFerramentasAbertas] = useState(false);
   const [wizardAberto, setWizardAberto] = useState(false);
   const [composicaoAberta,setComposicaoAberta]=useState(null);
   const [composicaoSolicitada] = useState(() => new URLSearchParams(window.location.search).get('composicao'));
@@ -1234,6 +1236,7 @@ function ParcelamentoTabContent({
   // que o contador procura pode estar na segunda fila, não na primeira.
   const [focoContrato, setFocoContrato] = useState(null);
   const pedirBaixa = useCallback((parc, lote) => {
+    setFerramentasAbertas(true);
     setFocoContrato(parc?.id ? { id: parc.id, label: parc.label || null } : null);
     setPedidoBaixa({
       parcelamentoId: parc?.id || null, label: parc?.label || null,
@@ -1326,6 +1329,9 @@ function ParcelamentoTabContent({
         </div>
       )}
 
+      {parcelaApi.gestaoParcelamento && <GestaoParcelamentos companyId={companyId} contratos={contratos} api={parcelaApi} onAtualizar={aposLocalizarPagamento} onComposicao={setComposicaoAberta} onBaixaDocumental={p=>pedirBaixa(p,false)}/>}
+      <details open={!parcelaApi.gestaoParcelamento || ferramentasAbertas} onToggle={e=>setFerramentasAbertas(e.currentTarget.open)}>
+      <summary>Conferência de comprovantes, configurações e operações do contrato</summary>
       {(carregandoGuias || carregandoSemGuia) && (
         <div role="status" style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>
           Carregando pendências das parcelas…
@@ -1360,7 +1366,6 @@ function ParcelamentoTabContent({
         aprovarConferencia={parcelamentos.aprovarConferencia}
       />
 
-      {composicaoAberta && <ComposicaoParcelamentoModal acordo={composicaoAberta} listar={parcelamentos.listarDebitosCircular} salvar={parcelamentos.salvarComposicao} onClose={()=>setComposicaoAberta(null)}/>}
       <ParcelamentosList onComposicao={setComposicaoAberta}
         emptyMessage="Nenhum contrato contabilizado."
         parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO" && (p.aberturaEntryId || !p.fiscalSituacao))}
@@ -1399,6 +1404,8 @@ function ParcelamentoTabContent({
         onExcluir={parcelamentos.previewExclusao ? (parc) => setAto({ tipo: "EXCLUSAO", parcelamento: parc }) : null}
       />
 
+      </details>
+      {composicaoAberta && <ComposicaoParcelamentoModal acordo={composicaoAberta} listar={parcelamentos.listarDebitosCircular} salvar={parcelamentos.salvarComposicao} onClose={()=>{setComposicaoAberta(null);aposLocalizarPagamento();}}/>}
       {ato?.tipo === "EXCLUSAO" && (
         <ExclusaoParcelamentoModal
           parcelamento={ato.parcelamento}

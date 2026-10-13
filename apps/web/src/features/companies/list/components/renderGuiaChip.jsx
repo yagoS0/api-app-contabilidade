@@ -198,7 +198,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
           cursor: "pointer", font: "inherit", lineHeight: 1.6,
         }}
       >
-        {compacto && ehParcela ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>PARC {quantidade}</> : <>
+        {compacto && ehParcela ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>PARC · {tag.itens?.some(i=>i.estado) ? `${tag.itens.filter(i=>i.estado&&i.estado!=='RESOLVIDA').length} tarefas` : `${quantidade} guia(s)`}</> : <>
           <span aria-hidden="true">{meta.icone}</span>
           {tag.label}{tag.key === "parcDas" && tag.pendencias > 0 ? ` · ${tag.pendencias} pendente(s)` : ""}
           {tag.state === "enviada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}

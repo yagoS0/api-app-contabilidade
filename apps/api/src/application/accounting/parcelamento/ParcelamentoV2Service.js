@@ -197,7 +197,7 @@ const LINHA_LABEL = {
 // Q24: cria UM AccountingEntry por linha (lançamento de uma perna só — um lado preenchido, o outro
 // vazio). O balanço fecha no CONJUNTO (mesmo loteImportacao), não em cada lançamento. Retorna os
 // entries criados (o 1º serve de referência p/ aberturaEntryId / openEntryId).
-async function criarLancamentosIndividuais(tx, {
+export async function criarLancamentosIndividuais(tx, {
   portalClientId, parcelamentoId, linhas, data, competencia, tipo, subtipo, origem, lote,
   historicoBase, statusPagamento = "ABERTO", openEntryId = null, sourceGuideId = null,
   // ⚠ DEFAULT `null` = exatamente o que estava escrito aqui como literal até agora, então nenhum
