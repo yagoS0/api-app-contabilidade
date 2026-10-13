@@ -121,3 +121,7 @@ A agenda envia inicio/fim em GET /firm/obrigacoes, inclusive na reconciliação 
 
 ## Etapas da carteira — 13/10/2026 (desenvolvimento)
 Conferir etapa abre somente a tarefa indicada pelo verificador CARTEIRA_* da ocorrência. O fluxo inteiro pertence ao Status da empresa. Confirmação manual por checkbox, sem evidência textual obrigatória; versão, hash, dependências e auditoria continuam no contrato compartilhado. Guias/fechamento acompanham operações reais. Ver docs/fluxo-carteira-2026-10-06.md.
+
+Conclusão direta — 13/10/2026: o checkbox de CARTEIRA_* fica na própria lista de empresas da tarefa, sem Conferir etapa ou segunda janela. Lê a empresa/competência somente ao clicar, grava com versão/hash e atualiza apenas sua linha pelo estado confirmado. Bloqueia cliques duplicados e conserva lista aberta em sucesso/erro. Etapas automáticas permanecem somente leitura.
+
+Revisão de design e funcionalidade — 13/10/2026: checkbox na primeira coluna, ao lado do nome, padronizado para tarefas e obrigações manuais. Salvando e falha aparecem na linha. Leitura posterior com falha não desfaz visualmente gravação já confirmada. Estado atual evita confirmação duplicada; label alterna Concluir/Reabrir. Agendamentos legados tipo fluxo também abrem a lateral, sem ações de ocorrência inexistente. Etapas automáticas têm explicação visível. Prévia .local/etapa.html agora usa CalendarioAgenda completo e empresas fictícias, não o modal do fluxo isolado.

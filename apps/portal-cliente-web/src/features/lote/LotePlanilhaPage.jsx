@@ -28,6 +28,7 @@ import { consultarDocumentos } from "./lib/consultasDoLote";
 import { lerRecusaDaPlanilha } from "./lib/recusaDaPlanilha";
 import {
   aindaCorrendo,
+  observacaoDaLinha,
   avisoDaLinhaIndeterminada,
   confirmacaoDaEmissao,
   conviteParaRetentar,
@@ -1034,7 +1035,7 @@ function RelatorioDoLote({ companyId, lote, reconhecido, ocupado, aoRetomar, aoR
                   {/* ⚠ Traço na linha não tentada — ninguém encostou nela, e pôr a data do LOTE
                       aqui carimbaria de fato o que nunca aconteceu. */}
                   <td>{fmtDataHora(l.tentadaEm)}</td>
-                  <td>{l.mensagem || l.correcao || "—"}</td>
+                  <td>{observacaoDaLinha(l)}</td>
                   <td><BotaoDanfseDaLinha linha={l} companyId={companyId} /></td>
                 </tr>
               );
