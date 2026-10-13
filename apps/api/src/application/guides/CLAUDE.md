@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## Correção cadastral de competência — 13/10/2026 (desenvolvimento)
+
+CorrigirCompetenciaGuiaService tem prévia GET e POST autenticados por empresa/contador. A revisão assina guia, relações e destino; o POST repete as guardas em transação serializável e grava autoria/antes/depois em AppSetting. Preserva PDF/hash, valores, vencimento, estados e evidência original. Bloqueia meses fechados na origem/destino, outra guia do mesmo tipo no destino, pagamento, envio/liberação, parcelamento, lançamentos e TaxDocument vinculados. Não move vínculos contábeis, exclui duplicatas, dispara consultas nem envia mensagens. Sem migração. Testes corrigirCompetenciaGuia e corrigirCompetenciaGuiaRota cobrem regras e autorização.
+
 ## Cobrança e pagamento — 23/09/2026
 
 `Guide.valor` é documento de cobrança; `valorOriginal` é a primeira captura, que pode já conter encargos. Nenhum deles comprova quanto foi pago. Recaptura conserva status/data/autoria e comprovante via `atualizarGuiaComEvidencia`: atualização condicional pela revisão `updatedAt`, com releitura limitada em disputa. Testes simulam corrida; não constituem ensaio concorrente PostgreSQL. Não copiar o valor baixado para a guia/PDF.

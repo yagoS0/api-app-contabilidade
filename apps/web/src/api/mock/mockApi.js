@@ -8054,6 +8054,12 @@ export function createMockApi() {
     async preverCorrecaoValorGuia() {
       throw new Error("A conferência do PDF original para correção de valor exige o servidor real. Nenhum valor foi alterado.");
     },
+    async preverCorrecaoCompetenciaGuia() {
+      throw new Error("A correção de competência exige conferir os vínculos no servidor real. Nenhuma guia foi alterada.");
+    },
+    async corrigirCompetenciaGuia() {
+      throw new Error("A correção de competência não é aplicada no ambiente de demonstração.");
+    },
     async corrigirValorGuia() {
       throw new Error("A correção do valor não é simulada no ambiente de demonstração.");
     },
