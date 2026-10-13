@@ -161,7 +161,9 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   const entrada = limpar(texto);
   const t = normalizar(entrada);
   const interacaoId = typeof interacao === 'string' ? interacao : interacao?.id;
-  const guardar = (v) => codigoDeAto(v) ? null : limpar(v) || null;
+  // Uma resposta isolada não é um pedido para reproduzir após escolher a empresa.
+  // No contexto vigente, continuar() preserva o texto para a etapa que o solicitou.
+  const guardar = (v) => codigoDeAto(v) || /^(?:sim|ok|certo|obrigad[oa])[.!\s]*$/.test(normalizar(v)) ? null : limpar(v) || null;
   const pendente = guardar(contexto.pedidoPendente);
   const pedidoAtual = guardar(entrada);
   const pedir = (motivo, pedido = pedidoAtual || pendente) => {

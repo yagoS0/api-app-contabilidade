@@ -140,7 +140,7 @@ test('troca do escritório continua recusando empresa que não cadastrou o núme
 });
 afterEach(() => { jest.useRealTimers(); __limparLeases(); });
 
-async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }]) {
+async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }], textoLivreDisponivel = true) {
   const f = await fixture();
   f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
   f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
@@ -154,7 +154,7 @@ async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guide
   });
   const coleta = jest.fn(async () => ({ tratado: false }));
   f.processar.mockImplementation((registro, item, lease) => responderMenuWhatsapp({ registro, texto: item.corpo, interacao: item.interacao,
-    agora: new Date(), client: f.client, cloud: f.cloud, executar, coleta, resolverVinculo: f.resolverVinculo,
+    agora: new Date(), client: f.client, cloud: f.cloud, executar, coleta, textoLivreDisponivel, resolverVinculo: f.resolverVinculo,
     conferirJanela: async () => ({ situacao: 'ABERTA' }), logger: log, ...lease }));
   const clicar = async (opcao) => {
     jest.setSystemTime(new Date(Date.now() + 1000));
@@ -164,6 +164,16 @@ async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guide
   const guia = () => f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.titulo === 'Guias em aberto');
   return { ...f, executar, coleta, clicar, guia };
 }
+
+test.each(['Sim', 'OK', 'Obrigada!'])('resposta %s antes da seleção abre menu sem encaminhar quando GPT não está disponível', async texto => {
+  const f = await fixtureComMenu(['GUIAS'], [], false);
+  await f.selecionar(texto, 'lente');
+  expect(f.processar.mock.calls.at(-1)[1].corpo).toBe('menu');
+  expect(f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.some(o => o.titulo === 'Guias em aberto')).toBe(true);
+  expect(f.atendimento().atendidaDesde).toBeNull();
+  expect(f.cloud.enviarTexto.mock.calls.some(([a]) => /Encaminhei/.test(a.texto))).toBe(false);
+  expect(f.executar).not.toHaveBeenCalled();
+});
 
 const GUIAS_DA_JORNADA = [
   { guideId: 'guia-simples', tipo: 'Simples Nacional', tipoCodigo: 'SIMPLES', competencia: '2026-08', valorFormatado: 'R$ 740,00', vencimento: '21/09/2026' },
