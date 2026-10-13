@@ -63,8 +63,10 @@ try {
   await comercial.publico(link.token, { versao: ficha.versao, dados, finalizar: true });
   ficha = await db.onboarding.findUnique({ where: { id } });
   assert.equal(ficha.status, "RECEBIDO"); assert.equal(ficha.cnpj, null); assert.equal(ficha.dados.socios.length, 2);
-  await assert.rejects(comercial.publico(link.token), e => e.code === "link_invalido");
-  ok("Formulário público completa a ficha sem exigir CNPJ inexistente e encerra o link após envio");
+  assert.deepEqual(await comercial.publico(link.token), { enviado: true });
+  assert.deepEqual(await comercial.publico(link.token, { dados: {}, finalizar: true }), { enviado: true });
+  assert.deepEqual((await db.onboarding.findUnique({ where: { id } })).dados, ficha.dados);
+  ok("Formulário público completa a ficha sem exigir CNPJ inexistente e confirma recebimento sem expor dados nem permitir nova gravação");
   const jornada = criarJornadaLead({ db, cloud, janela: async () => ({ situacao: "ABERTA" }) });
   const diagnostico = await jornada.diagnosticar(id, user, { versao: ficha.versao, ...diagnosticoSintetico("SIMULAÇÃO: endereço e atividade conferidos pelo contador; viabilidade e registro serão realizados externamente."), servicos: "Abertura da sociedade e contabilidade mensal, conforme proposta sintética." });
   await jornada.enviarDevolutiva(id, user, { diagnosticoId: diagnostico.id });

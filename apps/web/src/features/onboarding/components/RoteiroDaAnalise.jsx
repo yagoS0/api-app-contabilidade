@@ -1,7 +1,7 @@
 import { DADOS_ANALISE, conferenciasDaOrigem } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
-export function DadosDaAnalise({ roteiro, onChange }) {
-  return <><p>Registre o que o interessado informou. Campo vazio significa informação ainda não obtida; zero deve ser informado somente quando confirmado.</p><div className="lead-analysis-data">{DADOS_ANALISE.filter(c => !c.campoFicha).map(c => <label key={c.chave}>{c.rotulo}<input type={c.tipo === "texto" ? "text" : "number"} min={c.tipo === "texto" ? undefined : 0} step={c.tipo === "valor" ? "0.01" : c.tipo === "inteiro" ? "1" : undefined} maxLength={c.tipo === "texto" ? 500 : undefined} value={roteiro.dados[c.chave] ?? ""} onChange={e => onChange({ ...roteiro, dados: { ...roteiro.dados, [c.chave]: e.target.value === "" ? "" : c.tipo === "texto" ? e.target.value : Number(e.target.value) } })} /></label>)}</div></>;
+export function DadosDaAnalise({ roteiro, onChange, camposNaFicha = ["qtdFuncionarios", "notasRecebidasMes"] }) {
+  return <><p>Registre o que o interessado informou. Campo vazio significa informação ainda não obtida; zero deve ser informado somente quando confirmado.</p><div className="lead-analysis-data">{DADOS_ANALISE.filter(c => !camposNaFicha.includes(c.campoFicha)).map(c => <label key={c.chave}>{c.rotulo}<input type={c.tipo === "texto" ? "text" : "number"} min={c.tipo === "texto" ? undefined : 0} step={c.tipo === "valor" ? "0.01" : c.tipo === "inteiro" ? "1" : undefined} maxLength={c.tipo === "texto" ? 500 : undefined} value={roteiro.dados[c.chave] ?? ""} onChange={e => onChange({ ...roteiro, dados: { ...roteiro.dados, [c.chave]: e.target.value === "" ? "" : c.tipo === "texto" ? e.target.value : Number(e.target.value) } })} /></label>)}</div></>;
 }
 
 export function ConferenciasDaAnalise({ roteiro, origem, onChange }) {

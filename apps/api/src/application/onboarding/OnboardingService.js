@@ -1,3 +1,4 @@
+import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 // ONBOARDING — regras do funil pré-cadastro.
 //
 // ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
@@ -7,7 +8,6 @@
 // não deixa remover um sócio. Substituição é a única semântica sem caso ambíguo — e o front já
 // manda o rascunho inteiro a cada salvamento.
 
-import { podarInvisiveis } from "@contabilidade/shared/onboarding";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
 import { prepararArquivoConversao, conferirFontesDoArquivo } from "./ArquivoConversaoService.js";
@@ -156,7 +156,9 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
     if (patch.dados === null || typeof patch.dados !== "object" || Array.isArray(patch.dados)) {
       throw new OnboardingError("dados_invalidos", "`dados` deve ser um objeto.", 400);
     }
-    dadosEfetivos = podarInvisiveis(origemEfetiva, patch.dados);
+    const validacao = validarDadosOnboarding(origemEfetiva, patch.dados);
+    if (!validacao.ok) throw Object.assign(new OnboardingError("dados_invalidos", Object.values(validacao.erros)[0], 400), { erros: validacao.erros });
+    dadosEfetivos = validacao.dados;
     data.dados = dadosEfetivos;
   }
 

@@ -14,7 +14,7 @@ export function createPublicOnboardingRouter({ servico = criarServicoComercial()
     // Token não viaja no path nem em query, evitando logs e Referer.
     const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ""))?.[1];
     try { return res.json({ ok: true, ...await servico.publico(token, editar ? req.body : null) }); }
-    catch (e) { return res.status(e instanceof OnboardingError ? e.status : 500).json({ ok: false, error: e instanceof OnboardingError ? e.code : "erro_interno", message: e instanceof OnboardingError ? e.message : "Não foi possível salvar. Tente novamente." }); }
+    catch (e) { return res.status(e instanceof OnboardingError ? e.status : 500).json({ ok: false, error: e instanceof OnboardingError ? e.code : "erro_interno", ...(e instanceof OnboardingError && e.erros ? { erros: e.erros } : {}), message: e instanceof OnboardingError ? e.message : "Não foi possível salvar. Tente novamente." }); }
   };
   router.get("/onboarding", responder(false));
   router.patch("/onboarding", responder(true));

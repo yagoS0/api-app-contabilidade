@@ -11,7 +11,7 @@ import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
 import { resolverConversaEnvioComercial } from "./CanalEnvioComercialService.js";
-import { normalizarDiagnosticoComercial, pendenciasDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
+import { dadosAnaliseDaFicha, normalizarDiagnosticoComercial, pendenciasDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 const erro = (codigo, mensagem) => new OnboardingError(codigo, mensagem, 409);
 const confirmados = new Set(["enviado", "entregue", "lido"]);
@@ -36,7 +36,7 @@ export function dadosIniciaisPendentes(ficha) {
 }
 function perfilDaAnalise(ficha) {
   const d = ficha.dados || {};
-  return Object.fromEntries(Object.entries({ regime: d.regimeAtual || d.regimePretendido, qtdFuncionarios: d.qtdFuncionarios, notasRecebidasMes: d.notasRecebidasMes, consultoriaMensal: d.consultoriaMensal, pretendeReativar: d.pretendeReativar }).filter(([, v]) => v != null && v !== ""));
+  return Object.fromEntries(Object.entries({ regime: d.regimeAtual || d.regimePretendido, qtdFuncionarios: d.qtdFuncionarios, notasEmitidasMes: d.notasEmitidasMes, faturamentoMensal: d.faturamentoMensal, notasRecebidasMes: d.notasRecebidasMes, consultoriaMensal: d.consultoriaMensal, pretendeReativar: d.pretendeReativar }).filter(([, v]) => v != null && v !== ""));
 }
 function contextoDoDiagnostico(ficha, analiseId, conferencia = null, roteiroVersao = 0, perfilConferido = {}) {
   const d = ficha.dados || {};
@@ -113,7 +113,7 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
         if (!await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_SITFIS_CONFERIDA", dados: { path: ["analiseId"], equals: fiscal.id } } })) throw erro("analise_pendente", "Registre a conferência do relatório antes do diagnóstico.");
         analiseId = fiscal.id;
       }
-      const estruturado = normalizarDiagnosticoComercial({ ...body, roteiro: { ...body.roteiro, dados: { ...body.roteiro?.dados, funcionariosClt: ficha.dados?.qtdFuncionarios, documentosEntradaMes: ficha.dados?.notasRecebidasMes } } }, ficha.origem);
+      const estruturado = normalizarDiagnosticoComercial({ ...body, roteiro: { ...body.roteiro, dados: dadosAnaliseDaFicha(ficha, body.roteiro?.dados) } }, ficha.origem);
       const perfilConferido = perfilDaAnalise(ficha);
       const contexto = contextoDoDiagnostico(ficha, analiseId, conferenciaCadastro, estruturado.roteiro.versao, perfilConferido);
       const anterior = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });

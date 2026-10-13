@@ -13,7 +13,7 @@ import { avisoAtendimentoComercial, modalidadeDoBotao } from "./mensagensComerci
 import { interpretarMensagemLead } from "../assistente/InterpretarMensagemLeadService.js";
 
 import { pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
-import { identificarIntencaoComercial, origemDaIntencao, prepararPreatendimento, mensagemDeValor } from "./preatendimentoComercial.js";
+import { identificarIntencaoComercial, origemDaIntencao, prepararPreatendimento, resumoComFicha, mensagemDeValor } from "./preatendimentoComercial.js";
 export { interpretarColetaComercial, identificarOrigemComercial, pedidoOperacionalComercial } from "./interpretacaoComercialWhatsapp.js";
 
 function mensagemAnterior(mensagem, triagem = {}) {
@@ -75,7 +75,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const ia = !anterior && tipo === "text" && !idInteracao && !escolhaModalidade && origem !== "MULTIPLOS"
     ? await interpretarMensagemLead({ texto: textoEntrada, intencao: existente?.triagem?.preatendimento?.intencao || existente?.onboarding?.origem || origem,
       campoEsperado: existente?.triagem?.preatendimento?.campoEsperado || null, conversaId: conversa.id, mensagemId: mensagem.id,
-      resumo: { nome: pessoa?.nome || inicial.nomePerfilProvedor || null, ...existente?.triagem?.preatendimento },
+      resumo: resumoComFicha({ nome: pessoa?.nome || inicial.nomePerfilProvedor || null, ...existente?.triagem?.preatendimento }, existente?.onboarding?.dados),
       telefone: conversa.telefoneE164, canalId: inicial.canalId, client: db, deps: deps.ia || {} }) : null;
   origem ||= ia?.interpretacao?.intencao || null;
   if (ia?.estado !== 'FALLBACK' && !existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };

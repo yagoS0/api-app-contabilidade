@@ -29,7 +29,7 @@ test("CNPJ é validado e gravado com dígitos; não comprova vínculo", () => {
 });
 test("não sei preserva ausência e dúvida não vira dado cadastral", () => {
   const r = interpretarColetaComercial({ texto: "Não sei", origem: "ABERTURA", campoEsperado: "qtdFuncionarios" });
-  expect(r.desconhecido).toBe("qtdFuncionarios"); expect(r.operacoes).toEqual([]);
+  expect(r.desconhecido).toBe("qtdFuncionarios"); expect(r.operacoes).toEqual([{ campo: "qtdFuncionarios", acao: "set", valor: "NAO_SEI" }]);
   expect(interpretarColetaComercial({ texto: "Quanto custa?", origem: "ABERTURA", campoEsperado: "responsavelNome" }).operacoes).toEqual([]);
 });
 

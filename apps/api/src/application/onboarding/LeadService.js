@@ -1,7 +1,8 @@
+import { exigirDadosOnboarding, respostaEspecial, permiteRespostaEspecial, proximaPerguntaOnboarding } from "@contabilidade/shared/onboarding-dados";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
 import { emTransacaoComercial, identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./ContextoComercialService.js";
-import { descritorDe, podarInvisiveis } from "@contabilidade/shared/onboarding";
+import { descritorDe } from "@contabilidade/shared/onboarding";
 const erro = (code, message, status = 409) => new OnboardingError(code, message, status);
 export const ORIGENS_LEAD = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 export const encerrado = r => ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(r?.status);
@@ -183,6 +184,7 @@ export function aplicarCampos(origem, atual, operacoes) {
       continue;
     }
     const v = op.valor;
+    if (respostaEspecial(v) && permiteRespostaEspecial(d)) { dados[op.campo] = v; continue; }
     if (v === null || v === undefined || JSON.stringify(v).length > 5000) throw erro("valor_invalido", "Confira o valor informado.", 400);
     if (d.tipo === "booleano" && typeof v !== "boolean") throw erro("valor_invalido", "Informe sim ou não.", 400);
     if (["inteiro", "moeda"].includes(d.tipo) && (typeof v !== "number" || !Number.isFinite(v) || v < 0 || d.tipo === "inteiro" && !Number.isInteger(v))) throw erro("valor_invalido", "Informe um número válido.", 400);
@@ -192,7 +194,7 @@ export function aplicarCampos(origem, atual, operacoes) {
     if (d.tipo === "lista" && !Array.isArray(v)) throw erro("valor_invalido", "Informe uma lista completa.", 400);
     dados[op.campo] = v;
   }
-  return podarInvisiveis(origem, dados);
+  try { return exigirDadosOnboarding(origem, dados); } catch (e) { throw erro(e.code, e.message, e.status); }
 }
 export async function registrarCampos({
   onboardingId,
@@ -292,36 +294,4 @@ export async function registrarCampos({
     });
   });
 }
-export function proximaPergunta(r, { desconhecidos = [] } = {}) {
-  if (!r) return {
-    campo: "origem",
-    pergunta: "Você quer abrir uma empresa, trocar de contador ou resolver a situação de uma empresa parada?"
-  };
-  const encerramento = r.origem === "INATIVA" && r.dados?.pretendeReativar === "BAIXAR";
-  const mensal = !encerramento && r.dados?.modalidadeServico !== "AVULSO" ? ["qtdFuncionarios", "notasRecebidasMes"] : [];
-  const ordem = r.origem === "ABERTURA" ? ["responsavelNome", "atividadePretendida", "municipioAtendimento", "modalidadeServico", ...mensal, "enderecoPretendido"] : ["cnpj", "responsavelNome", ...(r.origem === "INATIVA" ? ["paradaDesde", "pretendeReativar"] : ["motivoTroca"]), ...(!encerramento ? ["modalidadeServico", ...mensal] : [])];
-  const perguntas = {
-    responsavelNome: "Como você se chama?", cnpj: "Qual é o CNPJ da empresa?",
-    atividadePretendida: "Qual atividade você pretende exercer?", municipioAtendimento: "Em qual cidade e estado a empresa vai funcionar?",
-    modalidadeServico: r.origem === "ABERTURA" ? "Você quer apenas a abertura ou também a contabilidade mensal? Podemos preparar as duas opções para comparar." : "Você procura um serviço pontual ou também acompanhamento contábil mensal? Podemos comparar as opções.",
-    qtdFuncionarios: "A empresa terá funcionários? Se sim, quantos, sem contar os sócios?",
-    notasRecebidasMes: "Tem uma ideia de quantas notas de compras e serviços a empresa recebe por mês? Tudo bem se ainda não souber.",
-    enderecoPretendido: "Qual é o endereço pensado para a empresa? Se ainda não tiver, pode dizer que está a definir.",
-    paradaDesde: "Desde quando a empresa está sem movimentação? Informe o mês e o ano, se lembrar; por exemplo, janeiro de 2023.", pretendeReativar: "Você pretende voltar a usar a empresa ou quer avaliar o encerramento?",
-    motivoTroca: "O que está motivando a troca de contador?",
-  };
-  for (const campo of ordem) {
-    if (desconhecidos.includes(campo)) continue;
-    const d = descritorDe(r.origem, campo);
-    if (d && (r.dados?.[campo] === undefined || r.dados?.[campo] === "" || r.dados?.[campo] === null)) return {
-      campo,
-      pergunta: perguntas[campo] || d.rotulo + "?",
-      opcoes: d.opcoes
-    };
-  }
-  return {
-    campo: null,
-    pergunta: encerramento ? "Já temos os dados iniciais. O contador vai conferir a situação e preparar o orçamento do encerramento, com eventuais regularizações separadas."
-      : "Já temos os dados iniciais. O contador vai conferir o escopo e preparar as opções de proposta."
-  };
-}
+export const proximaPergunta = proximaPerguntaOnboarding;

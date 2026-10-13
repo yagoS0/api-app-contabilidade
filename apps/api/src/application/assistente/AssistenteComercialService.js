@@ -1,3 +1,4 @@
+import { permiteRespostaEspecial, RESPOSTAS_ESPECIAIS } from "@contabilidade/shared/onboarding-dados";
 import { dadosContingenciaIa } from '../onboarding/ContingenciaComercialService.js';
 import { registrarContingenciaComercialPush } from '../whatsapp/AtendimentoPushService.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -141,7 +142,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
         let usada = false;
         try {
           resposta = await (deps.assistente || new AssistenteClient({ maxIteracoes: 2 })).responder({
-            system: montarPromptComercial({ ficha: lead.onboarding, campos: (lead.onboarding ? camposDaOrigem(lead.onboarding.origem) : ["ABERTURA", "TRANSFERENCIA", "INATIVA"].flatMap(camposDaOrigem)).map(d => ({ campo: d.campo, tipo: d.tipo, opcoes: d.opcoes })), orientacoes: aprovadas.map(o => ({ id: o.id, chave: o.chave, titulo: o.titulo })) }),
+            system: montarPromptComercial({ ficha: lead.onboarding, campos: (lead.onboarding ? camposDaOrigem(lead.onboarding.origem) : ["ABERTURA", "TRANSFERENCIA", "INATIVA"].flatMap(camposDaOrigem)).map(d => ({ campo: d.campo, tipo: d.tipo, opcoes: d.opcoes, respostasEspeciais: permiteRespostaEspecial(d) ? RESPOSTAS_ESPECIAIS : undefined })), orientacoes: aprovadas.map(o => ({ id: o.id, chave: o.chave, titulo: o.titulo })) }),
             messages: montarHistorico(historico.filter(h => !ids.includes(h.id)), pedido), ferramentas,
             executar: async (nome, input) => {
               await conferir();

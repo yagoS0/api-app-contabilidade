@@ -66,7 +66,7 @@ it("gera token aleatório, persiste somente hash e revoga links anteriores", asy
 it("leitura pública só devolve dados declarados e versão, nunca análise/identidade interna", async () => {
   const t = setup(); const r = await t.servico.publico("a".repeat(43));
   expect(Object.keys(r.onboarding).sort()).toEqual(["dados", "origem", "status", "ultimoPasso", "versao"]);
-  expect(t.db.onboardingLink.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ revokedAt: null, submittedAt: null, expiresAt: { gt: now } }) }));
+  expect(t.db.onboardingLink.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ revokedAt: null, expiresAt: { gt: now } }) }));
 });
 it("link expirado/revogado/consumido não carrega formulário", async () => {
   const t = setup(); t.db.onboardingLink.findFirst.mockResolvedValue(null);
@@ -135,4 +135,20 @@ it("link público salva cadastro CNPJ completo como declarado sem criar prova de
   expect(data.dados.cadastroCnpj.empresa.cnaePrincipal).toBe("6201501");
   expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled();
   expect(t.consultaPublica).not.toHaveBeenCalled();
+});
+
+it("link enviado permite confirmar recebimento sem expor ou alterar a ficha", async () => {
+  const t = setup(); t.db.onboardingLink.findFirst.mockResolvedValue({ submittedAt: now });
+  expect(await t.servico.publico("a".repeat(43))).toEqual({ enviado: true });
+  expect(await t.servico.publico("a".repeat(43), { finalizar: true, dados: { responsavelNome: "Não gravar" } })).toEqual({ enviado: true });
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
+it.each([{ qtdFuncionarios: -2 }, { responsavelEmail: "invalido" }, { notasEmitidasMes: "1.5" }])("recusa resposta pública inválida antes de salvar: %j", async dados => {
+  const t = setup();
+  await expect(t.servico.publico("a".repeat(43), { versao: 1, dados })).rejects.toMatchObject({ status: 400, code: "dados_invalidos" });
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
+it("normaliza respostas públicas para o diagnóstico e preserva desconhecimento", async () => {
+  const t = setup(); await t.servico.publico("a".repeat(43), { versao: 1, dados: { qtdFuncionarios: "2", notasEmitidasMes: "20", faturamentoMensal: "10.500,50", temDebitos: "NAO_SEI" } });
+  expect(t.db.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dados: { qtdFuncionarios: 2, notasEmitidasMes: 20, faturamentoMensal: 10500.50, temDebitos: "NAO_SEI" } }) }));
 });

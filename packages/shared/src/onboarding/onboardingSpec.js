@@ -74,10 +74,15 @@ export const ONBOARDING_CAMPOS = Object.freeze([
   { passo: "identificacao", campo: "servicoSolicitado", tipo: "texto", origens: ["PESSOA_FISICA"], rotulo: "O que precisa resolver?", obrigatorio: () => true },
   { passo: "responsavel", campo: "responsavelCpf", tipo: "cpf", origens: ["PESSOA_FISICA"], rotulo: "CPF (opcional neste momento)" },
   { passo: "situacao", campo: "modalidadeServico", tipo: "escolha", rotulo: "Serviço desejado", opcoes: [{ valor: "AVULSO", rotulo: "Somente serviço avulso" }, { valor: "RECORRENTE", rotulo: "Serviço e contabilidade mensal" }, { valor: "COMPARAR", rotulo: "Quero comparar as opções" }] },
-  { passo: "situacao", campo: "notasRecebidasMes", tipo: "inteiro", rotulo: "Notas recebidas e despesas por mês", ajuda: "Não inclui notas emitidas." },
+  { passo: "situacao", campo: "notasRecebidasMes", tipo: "inteiro", rotulo: "Notas recebidas e despesas por mês", ajuda: "Não inclui notas emitidas. Conte cada documento uma única vez; uma estimativa é suficiente." },
   { passo: "situacao", campo: "consultoriaMensal", tipo: "booleano", rotulo: "Deseja consultoria mensal?" },
   { passo: "situacao", campo: "municipioAtendimento", tipo: "texto", rotulo: "Município e UF do estabelecimento" },
   { passo: "situacao", campo: "enderecoPretendido", tipo: "texto", origens: ["ABERTURA"], rotulo: "Endereço pretendido para análise de viabilidade" },
+
+  { passo: "situacao", campo: "notasEmitidasMes", tipo: "inteiro", rotulo: "Média de notas emitidas por mês", sensivel: true, ajuda: "Notas de vendas ou serviços emitidas pela empresa. Uma estimativa é suficiente." },
+  { passo: "situacao", campo: "faturamentoMensal", tipo: "moeda", origens: ["TRANSFERENCIA", "INATIVA"], rotulo: "Faturamento mensal aproximado (R$)", sensivel: true, ajuda: "Informe a média dos meses com movimento. Não é o lucro." },
+  { passo: "situacao", campo: "contatoContadorAnterior", tipo: "texto", origens: ["TRANSFERENCIA"], rotulo: "Contato do contador anterior (opcional)", ajuda: "Telefone ou e-mail, se souber. Usado pela equipe para organizar a transferência." },
+  { passo: "situacao", campo: "inicioCompetenciaAltan", tipo: "mesAno", origens: ["TRANSFERENCIA"], rotulo: "Mês pretendido para início na ALTAN", ajuda: "A equipe confirmará a divisão das responsabilidades com você." },
 
   // ── Identificação ───────────────────────────────────────────────────────────
   {
@@ -239,7 +244,7 @@ export const ONBOARDING_CAMPOS = Object.freeze([
   },
   {
     passo: "situacao", campo: "qtdFuncionarios", tipo: "inteiro",
-    rotulo: "Quantidade de funcionários", sensivel: true,
+    rotulo: "Quantidade de funcionários", sensivel: true, ajuda: "Informe zero se não houver. Não conte os sócios.", pergunta: "A empresa tem ou pretende ter funcionários? Quantos, sem contar os sócios?",
   },
   {
     passo: "situacao", campo: "temProLabore", tipo: "booleano",
@@ -275,10 +280,11 @@ export function ehObrigatorio(descritor, dados) {
 }
 
 /** Descritores VISÍVEIS de um passo, na ordem da spec. */
+const ORDEM_SITUACAO = ["modalidadeServico", "regimeAtual", "regimePretendido", "faturamentoMensal", "previsaoFaturamento", "qtdFuncionarios", "temProLabore", "notasEmitidasMes", "notasRecebidasMes", "municipioAtendimento", "enderecoPretendido", "paradaDesde", "pretendeReativar", "contadorAnterior", "contatoContadorAnterior", "motivoTroca", "ultimaCompetenciaEntregue", "inicioCompetenciaAltan", "temDebitos", "debitosDeclarados", "temParcelamento", "pendenciasDeclaradas", "consultoriaMensal"];
 export function camposDoPasso(origem, passo, dados) {
   return ONBOARDING_CAMPOS.filter(
     (d) => d.passo === passo && valeParaOrigem(d, origem) && estaVisivel(d, dados)
-  ).sort((a, b) => Number(Boolean(b.consultaReceita)) - Number(Boolean(a.consultaReceita)));
+  ).sort((a, b) => passo === "situacao" ? ORDEM_SITUACAO.indexOf(a.campo) - ORDEM_SITUACAO.indexOf(b.campo) : Number(Boolean(b.consultaReceita)) - Number(Boolean(a.consultaReceita)));
 }
 
 /** Todos os descritores da origem, visíveis ou não — usado pela poda e pelo `rascunhoVazio`. */

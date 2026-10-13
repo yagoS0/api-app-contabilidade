@@ -7,3 +7,17 @@ test("token público não usa sessão do escritório nem aciona refresh ao expir
  expect(global.fetch).toHaveBeenCalledTimes(1);expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/public\/onboarding$/),expect.objectContaining({credentials:"omit",cache:"no-store",headers:expect.objectContaining({Authorization:"Bearer token-publico"})}));expect(handler).not.toHaveBeenCalled();
  }finally{global.fetch=anterior;}
 });
+
+test("requisição pública sem resposta termina e não repete o PATCH", async () => {
+ jest.useFakeTimers(); const anterior = global.fetch;
+ global.fetch = jest.fn(() => new Promise(() => {}));
+ try {
+  const api = createRealApi();
+  const req = api.salvarFormularioOnboarding("token-publico", { versao: 1, dados: {}, finalizar: true });
+  const resultado = expect(req).rejects.toMatchObject({ code: "timeout" });
+  await jest.advanceTimersByTimeAsync(15000);
+  await resultado;
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+  expect(global.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+ } finally { global.fetch = anterior; jest.useRealTimers(); }
+});

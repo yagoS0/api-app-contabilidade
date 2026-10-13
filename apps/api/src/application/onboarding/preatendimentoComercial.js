@@ -1,3 +1,4 @@
+import { validarDadosOnboarding, numeroDeclarado, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
 import { enriquecerResumoCadastral } from './ConsultaCadastralInicial.js';
 import { identificarOrigemComercial, interpretarColetaComercial, responderDuvidaComercial, cnpjValido, extrairCnpjComercial } from './interpretacaoComercialWhatsapp.js';
 import { camposDispensadosNaResposta, esclarecimentoCadastralSimples } from './respostasQualificacao.js';
@@ -39,9 +40,32 @@ export function mensagemDeValor(pre) {
 }
 
 /** Pré-atendimento termina na equipe. Campos da ficha e contratação não são requisitos. */
+// O contexto atual da ficha inclui respostas manuais e do link, sem inventar evidências da mensagem.
+export function resumoComFicha(resumo = {}, dados = {}) {
+  const atual = { ...resumo };
+  for (const [campo, destino] of Object.entries({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })) {
+    if (!resumo.evidenciasIa?.[destino] && typeof dados[campo] === 'string' && dados[campo].trim()) atual[destino] = dados[campo];
+  }
+  for (const campo of ['qtdFuncionarios', 'notasRecebidasMes', 'notasEmitidasMes', 'faturamentoMensal']) {
+    const n = numeroDeclarado(dados[campo]);
+    if (Number.isFinite(n) && n >= 0) atual[campo] = String(n);
+    else if (Object.hasOwn(dados, campo)) delete atual[campo];
+  }
+  if (Object.hasOwn(dados, 'faturamentoMensal')) {
+    const n = numeroDeclarado(dados.faturamentoMensal);
+    if (Number.isFinite(n) && n >= 0) atual.faturamento = String(n);
+    else if (respostaEspecial(dados.faturamentoMensal)) {
+      delete atual.faturamento;
+      atual.dispensados = [...new Set([...(atual.dispensados || []), 'faturamento'])];
+    }
+  }
+  return atual;
+}
+
 export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFicha = {}, nomeConhecido = null, campoAnterior = null, mensagemId, interpretacaoIa = null, falhaIa = false, consultaPublica = null }) {
   const raw = String(texto || '').trim(), t = normalizar(raw);
   const origem = origemDaIntencao(intencao);
+  anterior = resumoComFicha(anterior, dadosFicha);
   const pre = { ...enriquecerResumoCadastral(anterior, consultaPublica), versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) }, ...(anterior.evidenciasIa ? { evidenciasIa: { ...anterior.evidenciasIa } } : {}), ...(anterior.evidenciasDeclaradas ? { evidenciasDeclaradas: { ...anterior.evidenciasDeclaradas } } : {}) };
   const campo = anterior.campoEsperado || ({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })[campoAnterior];
   const campoFicha = ({ cnpj: 'cnpj', nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: intencao === 'TRANSFERENCIA' ? 'motivoTroca' : null })[campo];
@@ -75,6 +99,14 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
       return ia.dados.some(d => d.campo === campoIa && (o.acao === 'set'
         ? d.valor !== null && normalizar(d.valor) === normalizar(o.valor) : d.valor === null));
     });
+  }
+  if (ia?.comportamento === 'DADOS' && origem && !leitura.humano) {
+    for (const d of ia.dados.filter(d => ['qtdFuncionarios', 'notasRecebidasMes', 'notasEmitidasMes', 'faturamentoMensal'].includes(d.campo))) {
+      const validacao = validarDadosOnboarding(origem, { [d.campo]: d.valor });
+      if (!validacao.ok || d.valor !== null && !Object.hasOwn(validacao.dados, d.campo)) continue;
+      leitura.operacoes = leitura.operacoes.filter(o => o.campo !== d.campo);
+      leitura.operacoes.push(d.valor === null ? { campo: d.campo, acao: 'unset' } : { campo: d.campo, acao: 'set', valor: validacao.dados[d.campo] });
+    }
   }
   const capturados = Object.fromEntries(leitura.operacoes.filter(o => o.acao === 'set').map(o => [o.campo, o.valor]));
   if (!revisaoIdentidade && !falhaIa && !origem && (!ia || ia.comportamento === 'DADOS')) {

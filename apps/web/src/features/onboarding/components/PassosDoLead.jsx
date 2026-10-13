@@ -1,10 +1,11 @@
+import { numeroDeclarado, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
 import { camposDaOrigem } from "../lib/onboardingSpec";
 import { AcoesDaEtapa } from "./AcoesDaEtapa";
 import { DadosDaAnalise, ConferenciasDaAnalise } from "./RoteiroDaAnalise";
-import { BLOCOS_DEVOLUTIVA, DADOS_ANALISE, normalizarRoteiroAnalise, normalizarDiagnosticoComercial, pendenciasRoteiroAnalise, textoDaDevolutiva } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
+import { BLOCOS_DEVOLUTIVA, DADOS_ANALISE, dadosAnaliseDaFicha, normalizarRoteiroAnalise, normalizarDiagnosticoComercial, pendenciasRoteiroAnalise, textoDaDevolutiva } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 export function ProgressoDoLead({ jornada, selecionado, onSelecionar, ocupado }) {
   const nomes = { cadastro: "Dados iniciais", publica: "CNPJ", autorizacao: "Procuração", fiscal: "Situação fiscal", diagnostico: "Diagnóstico", devolutiva: "Apresentação", proposta: "Proposta", contrato: "Contrato", pagamento: "Pagamento", conclusao: "Ficha e documentos" };
@@ -28,7 +29,7 @@ export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado, sempreAbe
   }} />)}
     {versaoEdicao.current !== null && versaoEdicao.current !== onboarding.versao && <p role="alert">A ficha foi atualizada enquanto você preenchia. Seus campos estão preservados; confira a versão atual antes de salvar.</p>}
     <div className="lead-form-actions"><Button disabled={!Object.keys(rascunho).length} onClick={async () => {
-      const operacoes = Object.entries(rascunho).map(([campo, valor]) => { const d = descritores.find(x => x.campo === campo); return { campo, acao: valor === "" || valor == null ? "unset" : "set", valor: ["inteiro", "moeda"].includes(d.tipo) && valor !== "" ? Number(String(valor).replace(",", ".")) : valor }; });
+      const operacoes = Object.entries(rascunho).map(([campo, valor]) => { const d = descritores.find(x => x.campo === campo); return { campo, acao: valor === "" || valor == null ? "unset" : "set", valor: ["inteiro", "moeda"].includes(d.tipo) && valor !== "" ? (respostaEspecial(valor) ? valor : numeroDeclarado(valor)) : valor }; });
       if (await onSalvar({ versao: versaoEdicao.current, operacoes })) { setRascunho({}); versaoEdicao.current = null; setAberto(sempreAberto); onEdicaoPendente?.(false); }
     }}>Salvar dados deste passo</Button>
     {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher dados</Button>}
@@ -48,7 +49,7 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
     for (const c of DADOS_ANALISE) if (c.campoFicha && inicial.dados[c.chave] == null && onboarding.dados?.[c.campoFicha] != null) inicial.dados[c.chave] = onboarding.dados[c.campoFicha];
     return inicial;
   });
-  useEffect(() => { setRoteiro(v => ({ ...v, dados: { ...v.dados, funcionariosClt: onboarding.dados?.qtdFuncionarios, documentosEntradaMes: onboarding.dados?.notasRecebidasMes } })); }, [onboarding.dados?.qtdFuncionarios, onboarding.dados?.notasRecebidasMes]);
+  useEffect(() => { setRoteiro(v => ({ ...v, dados: dadosAnaliseDaFicha(onboarding, v.dados) })); }, [onboarding.dados?.qtdFuncionarios, onboarding.dados?.notasRecebidasMes, onboarding.dados?.notasEmitidasMes, onboarding.dados?.faturamentoMensal]);
   const fiscal = jornada?.analises?.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
   const diagnosticoBaseId = jornada?.diagnostico?.id || jornada?.diagnosticoAnteriorId || null;
   const contexto = JSON.stringify([onboarding.id, onboarding.versao, onboarding.cnpj, fiscal?.id, diagnosticoBaseId]);
@@ -76,7 +77,7 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
     {!["ABERTURA", "PESSOA_FISICA"].includes(onboarding.origem) && <><label>Regularização antes da contabilidade mensal<select value={regularizacao.necessaria == null ? "" : String(regularizacao.necessaria)} onChange={e => setRegularizacao(v => ({ ...v, necessaria: e.target.value === "" ? null : e.target.value === "true" }))}><option value="">Conferir necessidade</option><option value="true">Necessária, com orçamento separado</option><option value="false">Não identificada no escopo conferido</option></select></label><label>Motivo da decisão sobre regularização<textarea rows={2} maxLength={1200} value={regularizacao.justificativa} onChange={e => setRegularizacao(v => ({ ...v, justificativa: e.target.value }))} /></label>{regularizacao.necessaria === true && <p>A contabilidade mensal começa após a regularização. Na proposta, os valores serão separados.</p>}</>}
     {limitado && <label>Limitação do serviço e motivo para dispensar a consulta privada<textarea rows={3} maxLength={1200} value={dispensaConsultaPrivada} onChange={e => setDispensaConsultaPrivada(e.target.value)} /><small>A limitação aparecerá na proposta. Esta opção não registra procuração nem consulta fiscal realizada.</small></label>}
     <p>Esses textos serão apresentados ao lead na próxima etapa. Registre apenas o que foi conferido e deixe claras as condições pendentes.</p>
-    {onboarding.origem !== "PESSOA_FISICA" && <><details><summary>Dados da análise</summary>{onSalvarDados && <><p>Regime, funcionários, documentos e consultoria usam a mesma ficha do orçamento. Salve estes dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
+    {onboarding.origem !== "PESSOA_FISICA" && <><details><summary>Dados da análise</summary>{onSalvarDados && <><p>Regime, funcionários, documentos e consultoria usam a mesma ficha do orçamento. Salve estes dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise camposNaFicha={onSalvarDados ? ["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal"] : undefined} roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
     <details><summary>Conferências</summary><ConferenciasDaAnalise roteiro={roteiro} origem={onboarding.origem} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
     </>}
     </AcoesDaEtapa>
