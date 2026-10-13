@@ -1,3 +1,4 @@
+import { ConsultaResultadoNfse } from '@contabilidade/shared/nfse-conciliacao';
 import { TIPO } from "./lib/desfechoEmissao";
 import { mensagemDeErro } from "../../lib/mensagens";
 import { TRACO, brl, texto } from "../../lib/format";
@@ -60,17 +61,19 @@ function LinhaDado({ rotulo, valor }) {
  */
 const NADA_FOI_ENVIADO = "Nada foi enviado e nenhum número de nota foi consumido — tentar de novo é seguro.";
 
-export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
+export function DesfechoEmissao({ companyId, consultarResultado, aoRecuperar, desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
   if (!desfecho) return null;
+
+  const consulta = <ConsultaResultadoNfse key={companyId + ":" + desfecho.extra?.nfse?.id} companyId={companyId} invoiceId={desfecho.extra?.nfse?.id} consultar={consultarResultado} aoRecuperar={aoRecuperar} />;
 
   // ── SUCESSO ───────────────────────────────────────────────────────────────────────────────
   if (desfecho.tipo === TIPO.SUCESSO) {
     const nfse = desfecho.nfse || {};
     return (
       <div className="card card-success" role="status">
-        <h2>Nota {texto(nfse.numeroNfse)} emitida</h2>
+        <h2>Nota {texto(nfse.numeroNfse)} {desfecho.recuperada ? "recuperada" : "emitida"}</h2>
         <p className="muted">
-          A nota foi aceita pelo sistema nacional. Ela já aparece na sua lista de notas.
+          {desfecho.recuperada ? "A consulta recuperou a mesma operação já autorizada. Nenhuma nova nota foi emitida nesta consulta." : "A nota foi aceita pelo sistema nacional. Ela já aparece na sua lista de notas."}
         </p>
         <dl>
           <LinhaDado rotulo="Número da NFS-e" valor={texto(nfse.numeroNfse)} />
@@ -162,6 +165,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
             ? ` · RPS série ${texto(desfecho.extra.nfse.rpsSerie)} nº ${texto(desfecho.extra.nfse.rpsNumero)}`
             : ""}
         </p>
+        {consulta}
         <div className="actions">
           <button type="button" className="btn" onClick={aoVoltarParaNotas}>
             Ver minhas notas
@@ -180,6 +184,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
       {desfecho.message && <p>{desfecho.message}</p>}
       <p><strong>O que fazer:</strong> {desfecho.correcao}</p>
       <p className="muted">Referência para o contador: {texto(desfecho.codigo)}</p>
+      {consulta}
       <div className="actions"><button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>Ver minhas notas</button></div>
     </div>;
   }
@@ -190,6 +195,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
       {desfecho.message && <p>{desfecho.message}</p>}
       <p><strong>O que fazer:</strong> {desfecho.correcao}</p>
       <p className="muted">Referência para o contador: {texto(desfecho.codigo)}</p>
+      {consulta}
       <div className="actions"><button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>Ver minhas notas</button></div>
     </div>;
   }

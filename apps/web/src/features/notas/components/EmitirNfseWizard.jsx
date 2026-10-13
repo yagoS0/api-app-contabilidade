@@ -1,3 +1,4 @@
+import { ConsultaResultadoNfse } from '@contabilidade/shared/nfse-conciliacao';
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
 import { usePreviaFiscal } from '../hooks/usePreviaFiscal';
@@ -350,6 +351,7 @@ export function EmitirNfseWizard({
   // (ou não) o que a Receita devolveu tem de olhar o campo COMO ELE ESTÁ quando a resposta chega.
   const tomadorRef = useRef(tomador);
   const enderecoRef = useRef(endereco);
+  const camposDoCep = useRef({});
   tomadorRef.current = tomador;
   enderecoRef.current = endereco;
   // `null` = a tela não tem nada a dizer sobre consulta (é o estado do CPF, e o do campo vazio).
@@ -531,7 +533,7 @@ export function EmitirNfseWizard({
       setEndereco(valorAtual => {
         const proximo = { ...valorAtual };
         for (const campo of ['cMun', 'xLgr', 'xBairro']) {
-          if (!valorAtual[campo] && valorAtual[campo] === antes[campo] && r.endereco?.[campo]) proximo[campo] = r.endereco[campo];
+          if (!valorAtual[campo] && valorAtual[campo] === antes[campo] && r.endereco?.[campo]) { proximo[campo] = r.endereco[campo]; camposDoCep.current[campo] = r.endereco[campo]; }
         }
         return proximo;
       });
@@ -543,7 +545,18 @@ export function EmitirNfseWizard({
   }
 
   function alterarEndereco(campoNome, valorNovo) {
-    if (campoNome === 'CEP') { cepSequencia.current++; setConsultaCep(null); }
+    if (campoNome === 'CEP') {
+      cepSequencia.current++; setConsultaCep(null);
+      if (String(valorNovo).replace(/\D/g, '') !== String(enderecoRef.current.CEP).replace(/\D/g, '')) {
+        const preenchidos = camposDoCep.current;
+        camposDoCep.current = {};
+        setEndereco(atual => {
+          const proximo = { ...atual };
+          for (const [chave, valor] of Object.entries(preenchidos)) if (proximo[chave] === valor) proximo[chave] = '';
+          return proximo;
+        });
+      }
+    } else { delete camposDoCep.current[campoNome]; }
     marcarOrigemEndereco(ORIGEM.DIGITADO);
     setEndereco((atual) => ({ ...atual, [campoNome]: valorNovo }));
   }
@@ -627,7 +640,9 @@ export function EmitirNfseWizard({
 
   // ⚠ Endereço é TUDO OU NADA — é assim que o backend o trata. Um campo preenchido e outro não
   // faria o servidor descartar o bloco inteiro sem avisar ninguém.
-  const camposEndereco = [endereco.cMun, endereco.CEP, endereco.xLgr, endereco.nro, endereco.xBairro];
+  const camposObrigatoriosEndereco = [["cMun", "município", CAMPO.CMUN], ["CEP", "CEP", CAMPO.CEP], ["xLgr", "logradouro", CAMPO.LOGRADOURO], ["nro", "número", CAMPO.NUMERO], ["xBairro", "bairro", CAMPO.BAIRRO]];
+  const faltasEndereco = camposObrigatoriosEndereco.filter(([chave]) => !String(endereco[chave] ?? "").trim());
+  const camposEndereco = camposObrigatoriosEndereco.map(([chave]) => String(endereco[chave] ?? "").trim());
   const enderecoCompleto = camposEndereco.every(Boolean);
   const enderecoParcial = camposEndereco.some(Boolean) && !enderecoCompleto;
 
@@ -671,9 +686,9 @@ export function EmitirNfseWizard({
       !String(tomador.nome).trim() && { texto: "informe o nome ou a razão social do tomador", campo: CAMPO.NOME, grave: false },
       !emailValido && { texto: "o e-mail informado não parece um e-mail", campo: CAMPO.EMAIL, grave: true },
       enderecoParcial && {
-        texto: "o endereço precisa estar completo (município, CEP, logradouro, número e bairro) ou totalmente vazio — o servidor descarta endereço incompleto",
-        campo: CAMPO.CMUN,
-        grave: true,
+        texto: consultaCep?.estado === "consultando" ? "Consultando o CEP para completar o endereço do tomador…" : `Complete o endereço do tomador: falta ${faltasEndereco.map(([, nome]) => nome).join(", ")}. A consulta de CEP não informa o número.`,
+        campo: faltasEndereco[0]?.[2] || CAMPO.CMUN,
+        grave: consultaCep?.estado !== "consultando",
       },
       !String(servico.descricao).trim() && { texto: "descreva o serviço prestado", campo: CAMPO.DESCRICAO, grave: false },
       (!Number.isFinite(valor) || valor <= 0) && {
@@ -693,7 +708,7 @@ export function EmitirNfseWizard({
       // CURTA — a explicação inteira está no bloco do regime, na mesma tela.
       regime.bloqueiaEmissao && { texto: regime.motivoCurto, campo: null, grave: true },
     ].filter(Boolean);
-  }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
+  }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial, endereco, consultaCep?.estado,
     servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
     leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, buscaPerfil, retencoesComplementares, obra, destinatario, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao]);
 
@@ -820,10 +835,10 @@ export function EmitirNfseWizard({
     return (
       <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
         <div style={{ ...caixa, width: 620 }}>
-          <h3 style={{ margin: "0 0 10px" }}>{autorizada ? "✓ Nota autorizada" : "Nota registrada"}</h3>
+          <h3 style={{ margin: "0 0 10px" }}>{resultado.recuperada ? "Nota autorizada recuperada" : autorizada ? "✓ Nota autorizada" : "Nota registrada"}</h3>
           {autorizada ? (
             <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
-              A prefeitura autorizou a nota.
+              {resultado.recuperada ? "A consulta recuperou a mesma operação já autorizada. Nenhuma nova nota foi emitida nesta consulta." : "A prefeitura autorizou a nota."}
             </p>
           ) : recado ? (
             <div style={{
@@ -1480,6 +1495,7 @@ export function EmitirNfseWizard({
             {rejeicao.codigoDoProvedor && (
               <div style={{ color: PANEL.muted }}>Código do provedor: <code>{rejeicao.codigoDoProvedor}</code></div>
             )}
+            {!rejeicao.podeTentarDeNovo && <ConsultaResultadoNfse key={companyId + ":" + rejeicao.invoiceId} companyId={companyId} invoiceId={rejeicao.invoiceId} consultar={apiPerfis?.conciliarNfse} aoRecuperar={(r) => { setResultado({ ...r, status: "issued", recuperada: true }); onEmitida?.(r); }} />}
             {rejeicao.camposDoCadastro.length > 0 && (
               <div style={{ color: PANEL.muted }}>
                 Campos que o servidor apontou no cadastro: {rejeicao.camposDoCadastro.join(", ")}.

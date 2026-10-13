@@ -759,6 +759,7 @@ export function createRealApi() {
     // novo. Só deve ser mandado quando o servidor disse `numeroReutilizavel: true` — nunca depois
     // de uma falha de TRANSPORTE, em que o próprio servidor recusa com
     // `nfse_numero_em_estado_indeterminado`.
+    async conciliarNfse(companyId, invoiceId) { return pedir('/client/companies/' + encodeURIComponent(companyId) + '/nfse/' + encodeURIComponent(invoiceId) + '/conciliar', { method: 'POST', body: {} }); },
     async emitirNfse(companyId, payload, { retryInvoiceId = null } = {}) {
       const corpo = { ...payload };
       if (retryInvoiceId) corpo.retryInvoiceId = retryInvoiceId;

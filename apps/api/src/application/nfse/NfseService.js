@@ -1,4 +1,5 @@
 import { validarPercentualSimples } from './validarPercentualSimples.js';
+import { conciliarDps } from './conciliacaoDps.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { CONTRATO_NACIONAL } from './contratoNacional.js';
@@ -218,6 +219,15 @@ function escapeXml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+// O GET de todos os eventos é publicado pelo ADN. Reutiliza o mTLS da empresa,
+// em host oficial do mesmo ambiente; não redireciona nem envia DPS a esse endpoint.
+function clientEventosDaEmpresa(client) {
+  const base = NFSE_ENV === 'producao'
+    ? 'https://adn.nfse.gov.br/contribuintes'
+    : 'https://adn.producaorestrita.nfse.gov.br/contribuintes';
+  return { get: (path, options) => client.get(`${base}${path}`, { ...options, timeout: 15000, maxRedirects: 0 }) };
 }
 
 function formatDateOnly(value) {
@@ -1824,6 +1834,49 @@ export class NfseService {
    * tentativa anterior — e só é aceito quando a falha daquela linha LIBEROU o número (camadas
    * `NOSSA` e `RECEITA`). Falha de `TRANSPORTE` não libera: ali o desfecho é desconhecido.
    */
+  static async conciliarTentativa({ companyId, invoiceId }) {
+    const anterior = await prisma.serviceInvoice.findUnique({ where: { id: invoiceId } });
+    if (!anterior || anterior.companyId !== companyId) {
+      throw Object.assign(new Error('Tentativa não encontrada nesta empresa.'), { code: 'NFSE_RETRY_INVOICE_NOT_FOUND' });
+    }
+    if (anterior.status === STATUS.ISSUED && anterior.chaveAcesso) {
+      return { estado: 'MESMA', recuperada: true, message: 'Nota autorizada já recuperada.',
+        nfse: await NfseRepository.findById(anterior.id) };
+    }
+    if (![STATUS.REJECTED, STATUS.FALHA_ENVIO].includes(anterior.status)
+      || !(anterior.falhaCodigo === 'E0014' || anterior.falhaCamada === CAMADA.TRANSPORTE)
+      || !anterior.idDps || !(anterior.xmlDps || anterior.xml)) {
+      throw Object.assign(new Error('Esta tentativa não possui um envio pendente de conferência que possa ser consultado.'), { code: 'NFSE_CONCILIACAO_NAO_PERMITIDA' });
+    }
+    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) throw Object.assign(new Error('Empresa não encontrada.'), { code: 'COMPANY_NOT_FOUND' });
+    const certificados = await resolverCertificadosDaEmpresa(companyId);
+    const client = buildAxiosClient(certificados.transporte);
+    const resultado = await conciliarDps({ client, clientEventos: clientEventosDaEmpresa(client),
+      idDps: anterior.idDps, xmlEnviado: anterior.xmlDps || anterior.xml,
+      ambiente: NFSE_ENV === 'producao' ? '1' : '2', cnpjPrestador: normalizarDocumento(company.cnpj),
+      dpsPath: NFSE_DPS_PATH, nfsePath: NFSE_NFSE_PATH });
+    const configuracaoFiscal = { ...(anterior.configuracaoFiscal || {}), ultimaConciliacao: {
+      estado: resultado.estado, motivo: resultado.motivo, chaveAcesso: resultado.chaveAcesso || null,
+      xml: resultado.xml || null, consultadaEm: new Date().toISOString(),
+    } };
+    const alteracao = resultado.estado === 'MESMA' ? { status: STATUS.ISSUED,
+      chaveAcesso: resultado.chaveAcesso, numeroNfse: resultado.numeroNfse,
+      xml: resultado.xml, ...CAMPOS_DE_FALHA_LIMPOS, configuracaoFiscal } : { configuracaoFiscal };
+    const aplicado = await prisma.serviceInvoice.updateMany({ where: { id: anterior.id, companyId,
+      status: anterior.status, updatedAt: anterior.updatedAt }, data: alteracao });
+    if (aplicado.count !== 1) {
+      throw Object.assign(new Error('A tentativa foi atualizada durante a consulta. Confira o resultado salvo antes de continuar.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+    }
+    return { estado: resultado.estado, recuperada: resultado.estado === 'MESMA',
+      message: resultado.estado === 'MESMA'
+        ? 'Nota autorizada recuperada. Esta consulta não emitiu uma nova nota.'
+        : resultado.estado === 'OUTRA'
+          ? 'A DPS pertence a outra operação. Esta consulta não emitiu nota nem alterou a numeração. Confira o acervo antes de iniciar uma nova emissão.'
+          : 'Não foi possível confirmar o resultado. A tentativa continua bloqueada; esta consulta não enviou nova nota.',
+      nfse: await NfseRepository.findById(anterior.id) };
+  }
+
   static async issue({ data, log, retryInvoiceId = null, antesDeEnviar = null }) {
     const company = await prisma.company.findUnique({
       where: { id: data.companyId },
@@ -1998,6 +2051,19 @@ export class NfseService {
     // ── 2. NUMERAÇÃO: RESERVA TRANSACIONAL ───────────────────────────────────────────────
     let record;
     let numeracao;
+    const reservarTentativa = () => reservarNumeracao({
+      companyId: company.id,
+      rpsSerie: company.rpsSerie,
+      criarLinha: (tx, { rpsSerie, rpsNumero }) => tx.serviceInvoice.create({ data: {
+        companyId: data.companyId, clientId: data.clientId || null,
+        tomadorDoc: data.tomador.doc, tomadorNome: data.tomador.nome,
+        valorServicos: data.servico.valorServicos, aliquota: data.servico.aliquota,
+        issRetido: data.servico.issRetido ?? false,
+        competencia: data.competencia ? parseDate(data.competencia) : null,
+        idDps: buildDpsId(company, { rpsSerie, rpsNumero }),
+        rpsSerie, rpsNumero, status: STATUS.PENDING,
+      } }),
+    });
     if (retryInvoiceId) {
       const anterior = await prisma.serviceInvoice.findUnique({ where: { id: retryInvoiceId } });
       if (!anterior || anterior.companyId !== company.id) {
@@ -2029,37 +2095,18 @@ export class NfseService {
         throw err;
       }
     } else {
-      const reserva = await reservarNumeracao({
-        companyId: company.id,
-        rpsSerie: company.rpsSerie,
-        criarLinha: (tx, { rpsSerie, rpsNumero }) =>
-          tx.serviceInvoice.create({
-            data: {
-              companyId: data.companyId,
-              clientId: data.clientId || null,
-              tomadorDoc: data.tomador.doc,
-              tomadorNome: data.tomador.nome,
-              valorServicos: data.servico.valorServicos,
-              aliquota: data.servico.aliquota,
-              issRetido: data.servico.issRetido ?? false,
-              competencia: data.competencia ? parseDate(data.competencia) : null,
-              // ⚠ O `idDps` é montado a partir do número JÁ RESERVADO, dentro da mesma transação.
-              // Antes ele saía de `buildDpsId(company)`, que relia o contador do cadastro — e o
-              // incremento acontecia num `update` separado, depois do envio.
-              idDps: buildDpsId(company, { rpsSerie, rpsNumero }),
-              rpsSerie,
-              rpsNumero,
-              status: STATUS.PENDING,
-            },
-          }),
-      });
+      const reserva = await reservarTentativa();
       numeracao = { rpsSerie: reserva.rpsSerie, rpsNumero: reserva.rpsNumero };
       record = reserva.linha;
     }
 
     // ── 3. MONTAGEM, ASSINATURA E ENVIO ──────────────────────────────────────────────────
+    const MAX_TENTATIVAS = 3;
+    const conciliacoes = [];
+    for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa += 1) {
     let rawXml = null;
     let requestUrl = null;
+    let conciliacao = null;
     try {
       const client = buildAxiosClient(certificados.transporte);
       const construido = buildDpsPayload({
@@ -2082,8 +2129,9 @@ export class NfseService {
       await prisma.serviceInvoice.update({ where: { id: record.id }, data: {
         contratoEmissao: CONTRATO_NACIONAL.id,
         xmlDps: rawXml,
-        configuracaoFiscal: snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
+        configuracaoFiscal: { ...snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
           codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS, contextoFiscal: construido.contextoFiscal, regimeVigente }),
+          ...(conciliacoes.length ? { conciliacoes: [...conciliacoes] } : {}) },
       } });
 
       if (construido.localPrestacaoAssumido) {
@@ -2098,9 +2146,43 @@ export class NfseService {
       requestUrl = `${client.defaults.baseURL}${NFSE_PATH}`;
       // Agendamentos persistem o vínculo com a tentativa ANTES de qualquer envio externo.
       if (antesDeEnviar) await antesDeEnviar(record.id);
-      const { data: response } = await client.post(NFSE_PATH, {
-        dpsXmlGZipB64: construido.dpsXmlGZipB64,
-      });
+      let response;
+      try {
+        ({ data: response } = await client.post(NFSE_PATH, {
+          dpsXmlGZipB64: construido.dpsXmlGZipB64,
+        }));
+      } catch (erroEnvio) {
+        const falha = classificarFalha(erroEnvio);
+        if (falha.codigo !== 'E0014') throw erroEnvio;
+        conciliacao = await conciliarDps({ client, clientEventos: clientEventosDaEmpresa(client), idDps: construido.infId, xmlEnviado: rawXml,
+          ambiente: NFSE_ENV === 'producao' ? '1' : '2', cnpjPrestador: normalizarDocumento(company.cnpj),
+          dpsPath: NFSE_DPS_PATH, nfsePath: NFSE_NFSE_PATH });
+        const evidencia = { tentativaId: record.id, idDps: construido.infId,
+          estado: conciliacao.estado, motivo: conciliacao.motivo,
+          chaveAcesso: conciliacao.chaveAcesso || null, consultadaEm: new Date().toISOString(),
+          xml: conciliacao.xml || null };
+        conciliacoes.push(evidencia);
+        // A prova fica na tentativa recusada; nunca vincular a chave de outra operação a ela.
+        await prisma.serviceInvoice.update({ where: { id: record.id }, data: {
+          configuracaoFiscal: { ...snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
+            codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS,
+            contextoFiscal: construido.contextoFiscal, regimeVigente }), conciliacoes },
+        } });
+        if (conciliacao.estado === 'MESMA') {
+          response = { status: STATUS.ISSUED, chaveAcesso: conciliacao.chaveAcesso,
+            numeroNfse: conciliacao.numeroNfse, xmlRecuperado: conciliacao.xml };
+        } else if (conciliacao.estado === 'OUTRA' && tentativa + 1 < MAX_TENTATIVAS) {
+          await NfseRepository.markIssued(record.id, { ...camposDeFalha(falha), xml: rawXml });
+          // Só uma recusa explícita E0014 com XML de outra operação autoriza avançar.
+          // A reserva usa o mesmo contador transacional das emissões concorrentes.
+          const reserva = await reservarTentativa();
+          record = reserva.linha;
+          numeracao = { rpsSerie: reserva.rpsSerie, rpsNumero: reserva.rpsNumero };
+          continue;
+        } else {
+          throw erroEnvio;
+        }
+      }
 
       const issued = await NfseRepository.markIssued(record.id, {
         status: response.status || STATUS.ISSUED,
@@ -2108,7 +2190,7 @@ export class NfseService {
         chaveAcesso: response.chaveAcesso || response.numeroNfse || null,
         numeroNfse: response.numeroNfse || null,
         codigoVerificacao: response.codigoVerificacao || response.codigo || null,
-        xml: response.nfseXmlGZipB64 || rawXml || null,
+        xml: response.xmlRecuperado || response.nfseXmlGZipB64 || rawXml || null,
         pdfUrl: response.pdfUrl || null,
         ...CAMPOS_DE_FALHA_LIMPOS,
       });
@@ -2156,7 +2238,10 @@ export class NfseService {
 
       return {
         status: issued.status || STATUS.ISSUED,
-        message: "NFS-e emitida com sucesso (padrão nacional).",
+        message: conciliacao?.estado === 'MESMA'
+          ? 'NFS-e existente recuperada e conferida. Nenhuma nova nota foi emitida nesta recuperação.'
+          : "NFS-e emitida com sucesso (padrão nacional).",
+        recuperada: conciliacao?.estado === 'MESMA',
         nfse: issued,
       };
     } catch (err) {
@@ -2166,6 +2251,12 @@ export class NfseService {
       // coluna de motivo — e as validações NOSSAS, lançadas de dentro deste mesmo `try`, caíam no
       // mesmo balde: uma nota que nunca saiu da máquina ficava gravada como recusada pela Receita.
       const desfecho = classificarFalha(err);
+
+      if (desfecho.codigo === 'E0014' && conciliacao) {
+        desfecho.correcao = conciliacao.estado === 'OUTRA'
+          ? 'O limite de três DPS ocupadas foi atingido. Atualize o acervo de notas e confira a numeração antes de continuar.'
+          : 'Não foi possível confirmar a operação da DPS ocupada. Consulte o resultado antes de emitir novamente.';
+      }
 
       log.error(
         {
@@ -2199,6 +2290,7 @@ export class NfseService {
         url: requestUrl,
         nfse: gravado,
       };
+    }
     }
   }
 }

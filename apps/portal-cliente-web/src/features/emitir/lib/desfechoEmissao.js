@@ -176,6 +176,7 @@ export function lerResultado(resultado) {
   if (resultado?.status === "issued") {
     return {
       tipo: TIPO.SUCESSO,
+      recuperada: resultado.recuperada === true,
       nfse,
       message: resultado.message || null,
       podeReenviar: false,

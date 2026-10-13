@@ -95,6 +95,7 @@ import { NfseService } from "../../application/nfse/NfseService.js";
 import { resolveLegacyCompanyId } from "../middlewares/portalAccess.js";
 import { ensureEmissaoNfseAutorizada } from "../middlewares/emissaoNfseGate.js";
 import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoHttp.js";
+import { responderErroConciliacao } from "../nfseConciliacaoHttp.js";
 // As duas portas de LEITURA do lote por planilha (modelo + conferência). Ver o bloco
 // "O LOTE DE NFS-e POR PLANILHA", abaixo — nada ali emite.
 import { createNfseLoteRouter } from "../nfseLoteRoutes.js";
@@ -1910,6 +1911,15 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       }
     }
   );
+
+  router.post("/companies/:companyId/nfse/:invoiceId/conciliar", requireClientCompanyAccess(), async (req, res) => {
+    try {
+      // O path já autorizado prevalece sobre qualquer empresa enviada no corpo.
+      const companyId = await resolveLegacyCompanyId(String(req.params.companyId));
+      if (!companyId) return res.status(404).json({ error: "company_not_found" });
+      return res.json(await NfseService.conciliarTentativa({ companyId, invoiceId: req.params.invoiceId, log }));
+    } catch (err) { return responderErroConciliacao(res, err, { log }); }
+  });
 
   // ── EMISSÃO DE NFS-e PELO APP DO CLIENTE ───────────────────────────────────────────────────
   //

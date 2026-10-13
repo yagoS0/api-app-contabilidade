@@ -1818,6 +1818,7 @@ export function createRealApi() {
         method: 'POST', body: JSON.stringify({ tipo, valor }),
       });
     },
+    async conciliarNfse(companyId, invoiceId) { return request('/nfse/' + encodeURIComponent(invoiceId) + '/conciliar', { method: 'POST', body: JSON.stringify({ companyId }) }); },
     async emitirNfse(payload) {
       return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
     },

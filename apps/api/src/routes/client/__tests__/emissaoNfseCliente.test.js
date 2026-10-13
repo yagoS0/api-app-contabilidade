@@ -37,6 +37,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
 
 jest.mock("../../../application/nfse/NfseService.js", () => ({
   NfseService: {
+    conciliarTentativa: jest.fn(async () => ({ estado: "INCONCLUSIVA", message: "Confira a tentativa", recuperada: false })),
     issue: jest.fn(async () => ({ status: "issued", nfse: { id: "nf-1" } })),
   },
 }));
@@ -90,6 +91,28 @@ beforeEach(() => {
 
   prisma.companyClientUser.findUnique.mockImplementation(async () => cenario.clientLink);
   prisma.companyFirmAccess.findUnique.mockImplementation(async () => cenario.firmLink);
+});
+
+describe("conciliação sem emissão pelo cliente", () => {
+  test("membro ativo consulta e empresa do path vence corpo", async () => {
+    const r = await request(montarApp(usuarioCliente("VIEWER"))).post(`/client/companies/${PORTAL_ID}/nfse/nf-1/conciliar`).send({ companyId: "outra-empresa" });
+    expect(r.status).toBe(200);
+    expect(r.body.estado).toBe("INCONCLUSIVA");
+    expect(NfseService.conciliarTentativa).toHaveBeenCalledWith({ companyId: LEGACY_ID, invoiceId: "nf-1", log: expect.anything() });
+    expect(NfseService.issue).not.toHaveBeenCalled();
+  });
+  test("sem vínculo ativo não alcança serviço", async () => {
+    const user = usuarioCliente("OWNER"); cenario.clientLink = { role: "OWNER", status: "INACTIVE" };
+    const r = await request(montarApp(user)).post(`/client/companies/${PORTAL_ID}/nfse/nf-1/conciliar`).send({});
+    expect(r.status).toBe(403);
+    expect(NfseService.conciliarTentativa).not.toHaveBeenCalled();
+  });
+  test.each([["NFSE_RETRY_INVOICE_NOT_FOUND", 404], ["NFSE_CONCILIACAO_ESTADO_ALTERADO", 409], ["NFSE_CONCILIACAO_NAO_PERMITIDA", 409], ["NO_COMPANY_CERT", 422]])("recusa nomeada %s preserva status", async (code, status) => {
+    NfseService.conciliarTentativa.mockRejectedValueOnce(Object.assign(new Error("Recusa"), { code }));
+    const r = await request(montarApp(usuarioCliente("OWNER"))).post(`/client/companies/${PORTAL_ID}/nfse/nf-outra/conciliar`).send({});
+    expect(r.status).toBe(status);
+    expect(NfseService.issue).not.toHaveBeenCalled();
+  });
 });
 
 function usuarioCliente(role) {

@@ -45,6 +45,9 @@ it('CEP preenche endereço parcial sem inventar número e preserva edição em a
   endereco();
   digitar('nfse-cep', '22770-010');
   fireEvent.click(screen.getByRole('button', { name: 'Consultar CEP' }));
+  expect(screen.getByText('Consultando o CEP para completar o endereço do tomador…')).toBeInTheDocument();
+  expect(screen.queryByText(/Complete o endereço do tomador/)).not.toBeInTheDocument();
+  expect(screen.getByText('Continuar →').closest('button')).toBeDisabled();
   digitar('nfse-xlgr', 'Rua informada manualmente');
   await act(async () => terminar({ ok: true, endereco: { cMun: '3304557', xLgr: 'Rua do CEP', xBairro: 'Centro' } }));
   expect(document.getElementById('nfse-xlgr')).toHaveValue('Rua informada manualmente');
@@ -76,4 +79,31 @@ it('percentual manual não desaparece quando a prévia termina de carregar', asy
   await waitFor(() => expect(api.previaEmissaoNfse).toHaveBeenCalled());
   await waitFor(() => expect(screen.queryByText('Conferindo histórico e regras da operação…')).not.toBeInTheDocument());
   expect(document.getElementById('nfse-ptottribsn')).toHaveValue('6');
+});
+
+it.each(['antes', 'durante', 'depois'])('CEP completo e número preenchido %s da consulta não acusa endereço incompleto', async momento => {
+ let terminar; const consultar=jest.fn(()=>new Promise(r=>{terminar=r;})); abrir(consultar); endereco();
+ digitar('nfse-cep','22770010');
+ if(momento==='antes') digitar('nfse-nro','0');
+ fireEvent.click(screen.getByRole('button',{name:'Consultar CEP'}));
+ if(momento==='durante') digitar('nfse-nro','123');
+ await act(async()=>terminar({ok:true,endereco:{cMun:'3304557',CEP:'22770010',xLgr:'Rua do CEP',xBairro:'Centro',nro:null}}));
+ if(momento==='depois') digitar('nfse-nro','45');
+ expect(document.getElementById('nfse-nro').value).toBe(momento==='antes'?'0':momento==='durante'?'123':'45');
+ expect(screen.queryByText(/Complete o endereço do tomador/)).not.toBeInTheDocument();
+ expect(screen.queryByText(/o endereço precisa estar completo/)).not.toBeInTheDocument();
+ expect(document.getElementById('nfse-xlgr')).toHaveValue('Rua do CEP');expect(document.getElementById('nfse-xbairro')).toHaveValue('Centro');
+});
+
+it('troca de CEP limpa autopreenchimento antigo e preserva número e logradouro editado', async()=>{
+ const consultar=jest.fn().mockResolvedValueOnce({ok:true,endereco:{cMun:'3304557',xLgr:'Rua Rio Branco',xBairro:'Centro'}}).mockResolvedValueOnce({ok:true,endereco:{cMun:'3550308',xLgr:'Rua São Paulo',xBairro:'Cambuci'}});
+ abrir(consultar);endereco();digitar('nfse-cep','20040002');
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Consultar CEP'})));
+ digitar('nfse-nro','100');digitar('nfse-xlgr','Logradouro editado');digitar('nfse-cep','01551020');
+ expect(document.getElementById('nfse-xbairro')).toHaveValue('');
+ expect(document.getElementById('nfse-xlgr')).toHaveValue('Logradouro editado');
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Consultar CEP'})));
+ expect(consultar).toHaveBeenLastCalledWith('empresa','cep','01551020');
+ expect(document.getElementById('nfse-xbairro')).toHaveValue('Cambuci');expect(document.getElementById('nfse-nro')).toHaveValue('100');
+ expect(screen.queryByText(/Complete o endereço do tomador/)).not.toBeInTheDocument();
 });

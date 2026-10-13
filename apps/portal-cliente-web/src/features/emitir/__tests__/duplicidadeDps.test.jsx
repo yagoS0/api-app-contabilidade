@@ -1,4 +1,4 @@
-import {render,screen,fireEvent} from '@testing-library/react';
+import {render,screen,fireEvent,act} from '@testing-library/react';
 import {DesfechoEmissao} from '../DesfechoEmissao';
 import {lerErroEmissao,TIPO,desfechoMantemOFormulario} from '../lib/desfechoEmissao';
 import {ApiError} from '../../../api/ApiError';
@@ -30,4 +30,12 @@ it.each([
  render(<DesfechoEmissao desfecho={d} aoCorrigir={jest.fn()} aoNovaNota={jest.fn()} aoVoltarParaNotas={jest.fn()}/>);
  expect(screen.getByText('Tentativa bloqueada para conferência.')).toBeInTheDocument();expect(screen.queryByRole('button',{name:/Corrigir|Preencher/})).not.toBeInTheDocument();
  expect(screen.queryByText(/A nota não chegou a ser enviada|O sistema nacional recusou esta nota|Nota emitida/)).not.toBeInTheDocument();
+});
+
+it.each(['RECEITA','TRANSPORTE'])('consulta resultado da tentativa sem chamar nova emissão (%s)',async camada=>{
+ const consultarResultado=jest.fn(async()=>({estado:'MESMA',nfse:{id:'tentativa',numeroNfse:'42'}}));const aoRecuperar=jest.fn();const aoNovaNota=jest.fn();
+ const desfecho=lerErroEmissao(new ApiError(422,'nfse_rejected','rejeitada',{...corpo,camada,codigo:camada==='TRANSPORTE'?'TIMEOUT':'E0014',message:'Conferir tentativa'}));
+ render(<DesfechoEmissao companyId="empresa" desfecho={desfecho} consultarResultado={consultarResultado} aoRecuperar={aoRecuperar} aoNovaNota={aoNovaNota}/>);
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Consultar resultado'})));
+ expect(consultarResultado).toHaveBeenCalledWith('empresa','tentativa');expect(aoRecuperar).toHaveBeenCalledTimes(1);expect(aoNovaNota).not.toHaveBeenCalled();
 });

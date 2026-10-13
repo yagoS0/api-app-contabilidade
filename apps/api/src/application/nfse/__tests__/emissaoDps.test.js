@@ -74,7 +74,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   };
 });
 
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import axios from "axios";
 import { prisma, __tx } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
@@ -1075,5 +1075,133 @@ describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
     expect(prisma.serviceInvoice.update).not.toHaveBeenCalled();
     expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('conciliação integrada E0014 sem duplicar operação', () => {
+  const chave = '4'.repeat(50);
+  const semEventos = { status: 200, data: { TipoAmbiente: 2, StatusProcessamento: 'NENHUM_DOCUMENTO_LOCALIZADO', LoteDFe: [], Erros: [] } };
+  const erroDuplicada = () => Object.assign(new Error('ocupada'), { response: { status: 400, data: { erros: [{ Codigo: 'E0014', Descricao: 'Numeração ocupada' }] } } });
+  function oficial(xml, outra = false) {
+    const dps = xml.slice(xml.indexOf('<DPS'));
+    const conteudo = outra ? dps.replace(/<vServ>[^<]+<\/vServ>/, '<vServ>999999.99</vServ>') : dps;
+    return `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS${chave}"><nNFSe>265</nNFSe><cStat>100</cStat>${conteudo}</infNFSe></NFSe>`;
+  }
+  function preparar({ outra = false, colisoes = 1, falhaGet = null, timeoutSegundo = false } = {}) {
+    montarCenario();
+    let numero = 41;
+    __tx.$queryRaw.mockImplementation(async () => [{ rpsNumero: String(++numero) }]);
+    prisma.serviceInvoice.create.mockImplementation(async ({ data }) => ({ id: `inv-${data.rpsNumero}`, ...data }));
+    let enviado;
+    let posts = 0;
+    postMock.mockImplementation(async (_url, body) => {
+      enviado = gunzipSync(Buffer.from(body.dpsXmlGZipB64, 'base64')).toString('utf8');
+      posts++;
+      if (posts <= colisoes) throw erroDuplicada();
+      if (timeoutSegundo) throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+      return { data: { status: 'issued', chaveAcesso: chave, numeroNfse: '266' } };
+    });
+    const get = jest.fn(async url => {
+      if (falhaGet) throw falhaGet;
+      if (url.endsWith('/Eventos')) return semEventos;
+      if (url.startsWith('/dps/')) return { status: 200, data: { chaveAcesso: chave } };
+      return { status: 200, data: { nfseXmlGZipB64: gzipSync(oficial(enviado, outra)).toString('base64') } };
+    });
+    axios.create.mockReturnValue({ defaults: { baseURL: 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional' }, post: postMock, get });
+    return get;
+  }
+  afterEach(() => {
+    __tx.$queryRaw.mockImplementation(async () => [{ rpsNumero: '42' }]);
+    prisma.serviceInvoice.create.mockImplementation(async ({ data }) => ({ id: 'inv-1', ...data }));
+  });
+  it('MESMA recupera após1POST+3GET e não reserva novamente', async () => {
+    const get = preparar();
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ status: 'issued', recuperada: true, nfse: { numeroNfse: '265' } });
+    expect(postMock).toHaveBeenCalledTimes(1); expect(get).toHaveBeenCalledTimes(3);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+  });
+  it('OUTRA mantém tentativa rejeitada e reserva número diferente antes do segundoPOST', async () => {
+    const get = preparar({ outra: true });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe('issued'); expect(r.recuperada).toBe(false);
+    expect(postMock).toHaveBeenCalledTimes(2); expect(get).toHaveBeenCalledTimes(2);
+    expect(prisma.serviceInvoice.create.mock.calls.map(([arg]) => arg.data.rpsNumero)).toEqual(['42', '43']);
+    expect(prisma.serviceInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inv-42' }, data: expect.objectContaining({ status: 'rejected', falhaCodigo: 'E0014' }) }));
+  });
+  it('eventos existentes impedem recuperação e segundoPOST mesmo com DPS equivalente', async () => {
+    const get = preparar();
+    const consultar = get.getMockImplementation();
+    get.mockImplementation(async url => url.endsWith('/Eventos')
+      ? { status: 200, data: { TipoAmbiente: 2, StatusProcessamento: 'DOCUMENTOS_LOCALIZADOS', LoteDFe: [{ TipoDocumento: 'EVENTO', Evento: 'CANCELAMENTO' }], Erros: [] } }
+      : consultar(url));
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ codigo: 'E0014', numeroReutilizavel: false });
+    expect(r.recuperada).not.toBe(true);
+    expect(get).toHaveBeenCalledTimes(3); expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.update.mock.calls.some(([arg]) => arg.data.configuracaoFiscal?.conciliacoes?.some(c => c.estado === 'INCONCLUSIVA'))).toBe(true);
+  });
+  it.each([Object.assign(new Error('404'), { response: { status: 404 } }), Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })])('consulta inconclusiva impede segundoPOST: %s', async falhaGet => {
+    preparar({ falhaGet }); const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ codigo: 'E0014', numeroReutilizavel: false });
+    expect(postMock).toHaveBeenCalledTimes(1); expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+  });
+  it('três colisões limitamPOST e reserva a três', async () => {
+    const get = preparar({ outra: true, colisoes: 3 }); const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.codigo).toBe('E0014'); expect(postMock).toHaveBeenCalledTimes(3); expect(get).toHaveBeenCalledTimes(6);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(3);
+  });
+  it('XML oficial não recuperável deixa colisão inconclusiva sem segundoPOST', async () => {
+    const get = preparar();
+    get.mockImplementation(async url => url.startsWith('/dps/') ? { status: 200, data: { chaveAcesso: chave } } : { status: 200, data: { nfseXmlGZipB64: gzipSync('<NFSe/>').toString('base64') } });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ codigo: 'E0014', numeroReutilizavel: false });
+    expect(get).toHaveBeenCalledTimes(2); expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+  });
+  it('timeout do segundoPOST não inicia terceiro', async () => {
+    preparar({ outra: true, timeoutSegundo: true }); const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ camada: 'TRANSPORTE', numeroReutilizavel: false }); expect(postMock).toHaveBeenCalledTimes(2);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(2);
+  });
+  it('2027 continua bloqueado antes de qualquerGET ouPOST', async () => {
+    const get = preparar();
+    prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE, regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: new Date('2027-01-01'), apuracaoIbsCbs: 'REGULAR', comprovanteOpcaoIbsCbs: 'teste' }] });
+    const r = await NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2027-01-01' }, log });
+    expect(r.codigo).toBe('NFSE_CONTRATO_SIMPLES_2027_PENDENTE'); expect(get).not.toHaveBeenCalled(); expect(postMock).not.toHaveBeenCalled();
+  });
+  async function pendente() {
+    montarCenario(); await NfseService.issue({ data: PAYLOAD_BASE, log });
+    const xml = xmlEnviado();
+    const row = { id: 'pendente', companyId: 'company-1', status: 'rejected', falhaCodigo: 'E0014', falhaCamada: 'RECEITA', idDps: /<infDPS Id="([^"]+)"/.exec(xml)[1], xmlDps: xml, updatedAt: new Date('2026-10-13T10:00:00Z') };
+    prisma.serviceInvoice.findUnique.mockResolvedValue(row);
+    jest.clearAllMocks();
+    const get = jest.fn(async url => url.endsWith('/Eventos') ? semEventos : url.startsWith('/dps/') ? { status: 200, data: { chaveAcesso: chave } } : { status: 200, data: { nfseXmlGZipB64: gzipSync(oficial(xml)).toString('base64') } });
+    axios.create.mockReturnValue({ defaults: { baseURL: 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional' }, post: postMock, get });
+    return { row, get, xml };
+  }
+  it('consulta manual verifica empresa antes da rede', async () => {
+    const { get } = await pendente();
+    await expect(NfseService.conciliarTentativa({ companyId: 'outra', invoiceId: 'pendente' })).rejects.toMatchObject({ code: 'NFSE_RETRY_INVOICE_NOT_FOUND' });
+    expect(get).not.toHaveBeenCalled(); expect(postMock).not.toHaveBeenCalled(); expect(resolverCertificadosDaEmpresa).not.toHaveBeenCalled();
+  });
+  it('consulta manual MESMA usaCAS e nenhumPOST', async () => {
+    const { row, get } = await pendente();
+    expect(await NfseService.conciliarTentativa({ companyId: row.companyId, invoiceId: row.id })).toMatchObject({ estado: 'MESMA', recuperada: true });
+    expect(get).toHaveBeenCalledTimes(3); expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: row.id, companyId: row.companyId, status: row.status, updatedAt: row.updatedAt }, data: expect.objectContaining({ status: 'issued', numeroNfse: '265' }) }));
+  });
+  it('consulta manual OUTRA só registra evidência, sem numeração/envio', async () => {
+    const { row, get, xml } = await pendente();
+    get.mockImplementation(async url => url.startsWith('/dps/') ? { status: 200, data: { chaveAcesso: chave } } : { status: 200, data: { nfseXmlGZipB64: gzipSync(oficial(xml, true)).toString('base64') } });
+    expect(await NfseService.conciliarTentativa({ companyId: row.companyId, invoiceId: row.id })).toMatchObject({ estado: 'OUTRA', recuperada: false });
+    expect(prisma.serviceInvoice.updateMany.mock.calls[0][0].data).not.toHaveProperty('status');
+    expect(postMock).not.toHaveBeenCalled(); expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it('CAS perdido não sobrescreve o resultado concorrente', async () => {
+    const { row } = await pendente(); prisma.serviceInvoice.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(NfseService.conciliarTentativa({ companyId: row.companyId, invoiceId: row.id })).rejects.toMatchObject({ code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+    expect(prisma.serviceInvoice.update).not.toHaveBeenCalled(); expect(postMock).not.toHaveBeenCalled();
   });
 });

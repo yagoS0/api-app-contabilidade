@@ -37,6 +37,7 @@ jest.mock("../../infrastructure/db/prisma.js", () => {
 
 jest.mock("../../application/nfse/NfseService.js", () => ({
   NfseService: {
+    conciliarTentativa: jest.fn(async () => ({ estado: "OUTRA", message: "Número ocupado", recuperada: false })),
     issue: jest.fn(async () => ({ status: "issued", nfse: { id: "nf-1" } })),
     sendEvent: jest.fn(async () => ({ providerData: {} })),
     syncFromProvider: jest.fn(async () => ({ ok: true })),
@@ -117,6 +118,29 @@ beforeEach(() => {
   prisma.companyFirmAccess.findUnique.mockImplementation(async () => cenario.firmLink);
 
   NfseRepository.findByChaveAcesso.mockResolvedValue({ companyId: LEGACY_ID, status: "issued" });
+});
+
+describe("conciliação no contador", () => {
+  test("resolve portal para empresa legada antes de delegar", async () => {
+    const r = await request(montarApp(usuarioEscritorioVinculado())).post("/nfse/nf-1/conciliar").send({ companyId: PORTAL_ID });
+    expect(r.status).toBe(200);
+    expect(r.body.estado).toBe("OUTRA");
+    expect(NfseService.conciliarTentativa).toHaveBeenCalledWith({ companyId: LEGACY_ID, invoiceId: "nf-1", log: expect.anything() });
+    expect(NfseService.issue).not.toHaveBeenCalled(); expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+  test("sem vínculo não consulta documento", async () => {
+    const r = await request(montarApp({ id: "sem-acesso", role: "staff" })).post("/nfse/nf-1/conciliar").send({ companyId: PORTAL_ID });
+    expect(r.status).toBe(403); expect(NfseService.conciliarTentativa).not.toHaveBeenCalled();
+  });
+  test("sem usuário não alcança conciliação", async () => {
+    const r = await request(montarApp(null)).post("/nfse/nf-1/conciliar").send({ companyId: PORTAL_ID });
+    expect(r.status).toBe(401); expect(NfseService.conciliarTentativa).not.toHaveBeenCalled();
+  });
+  test.each([["NFSE_RETRY_INVOICE_NOT_FOUND", 404], ["NFSE_CONCILIACAO_ESTADO_ALTERADO", 409], ["NFSE_CONCILIACAO_NAO_PERMITIDA", 409]])("recusa do serviço %s", async (code, status) => {
+    NfseService.conciliarTentativa.mockRejectedValueOnce(Object.assign(new Error("Recusa"), { code }));
+    const r = await request(montarApp(usuarioEscritorioVinculado())).post("/nfse/nota-alheia/conciliar").send({ companyId: PORTAL_ID });
+    expect(r.status).toBe(status); expect(NfseService.issue).not.toHaveBeenCalled();
+  });
 });
 
 function usuarioCliente(role) {
