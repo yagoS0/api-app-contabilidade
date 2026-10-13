@@ -12,8 +12,8 @@ export function erroCalculoObsoleto() {
 export function exigirRegimeSuportado(regime = 'COMPETENCIA') {
   if ((regime || 'COMPETENCIA') !== 'COMPETENCIA') throw Object.assign(new Error('Apuração por regime de caixa ainda não tem suporte integral neste fluxo. Não foi enviada consulta nem declaração; utilize o fluxo oficial para esta empresa.'), { code: 'REGIME_APURACAO_NAO_SUPORTADO' });
 }
-export function criarVinculoCalculo({ portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, contribuinteCnpj, contratanteCnpj }) {
-  const dados = { portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, ...(contribuinteCnpj ? { contribuinteCnpj, contratanteCnpj } : {}) };
+export function criarVinculoCalculo({ portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, contribuinteCnpj, contratanteCnpj, contextoOrigem }) {
+  const dados = { portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, ...(contribuinteCnpj ? { contribuinteCnpj, contratanteCnpj } : {}), ...(contextoOrigem ? { contextoOrigem } : {}) };
   return { ...dados, calculoId: `fech:v1:${crypto.randomUUID()}:${hashCalculo(dados)}` };
 }
 export function validarCalculoConfirmado(snapshot, { portalClientId, competencia, calculoId, formulario }) {

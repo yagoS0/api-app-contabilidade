@@ -8,7 +8,10 @@ import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/s
 //   salvar    → persiste config no snapshot, estado "fechada", grava memória
 //   transmitir→ consulta-antes-de-transmitir + TRANSDECLARACAO11 (individual)
 
-import { criarVinculoCalculo, validarCalculoConfirmado, insumosFormulario, exigirRegimeSuportado, exigirEstadoLivre, erroCalculoObsoleto } from "./CalculoConfirmado.js";
+import { criarVinculoCalculo, validarCalculoConfirmado, insumosFormulario, exigirRegimeSuportado, exigirEstadoLivre, erroCalculoObsoleto, hashCalculo } from "./CalculoConfirmado.js";
+import { acquireGuideLease } from '../../../guides/GuideLockService.js';
+import { contextoOrigemCalculo, recuperarCalculo } from './RecuperacaoCalculo.js';
+import { executarComRetomada } from './PeriodosRecusadosService.js';
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { derivarFolha12m } from "./FolhaDerivadaService.js";
@@ -473,7 +476,13 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
 
+  let contextoAtual = null;
+  if (snapshot) {
+    try { contextoAtual = await contextoOrigemCalculo({ portalClientId, competencia }); } catch { /* Falha de leitura mantém o cálculo somente para consulta. */ }
+  }
+  const recuperacao = recuperarCalculo(snapshot, { portalClientId, competencia, cnpj: portal.cnpj, regimeApuracao: cadastro?.regimeApuracao || "COMPETENCIA", contextoOrigem: contextoAtual });
   return {
+    ...recuperacao,
     portalClientId, competencia,
     razao: portal.razao, cnpj: portal.cnpj,
     regimeApuracao: cadastro?.regimeApuracao || "COMPETENCIA",
@@ -603,7 +612,7 @@ const RE_PERIODO_DESNECESSARIO = /foi enviada\s+(folha|receita bruta)[^:]*per[í
 
 // Exportada para teste: a regra de "de qual lista remover" já saiu errada uma vez e travou o
 // Calcular de toda empresa com Fator-R, sem deixar rastro nenhum.
-export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores, folhasSalario, ...params }) {
+export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores, folhasSalario, ...params }, { onPeriodoRemovido } = {}) {
   let receitas = [...(receitasBrutasAnteriores || [])];
   let folhas = [...(folhasSalario || [])];
   const removidos = { receitas: [], folhas: [] };
@@ -616,7 +625,7 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
     } catch (err) {
       const msg = String(err?.message || "");
       const comSujeito = msg.match(RE_PERIODO_DESNECESSARIO);
-      if (!comSujeito) throw err;
+      if (!comSujeito || (onPeriodoRemovido && err?.code !== 'SERPRO_BUSINESS_ERROR')) throw err;
 
       const ehFolha = /folha/i.test(comSujeito[1]);
       const [mes, ano] = [comSujeito[2], comSujeito[3]];
@@ -627,6 +636,8 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
       if (depois.length === alvo.length) throw err; // PA não está na lista → evita loop infinito
       if (ehFolha) { folhas = depois; removidos.folhas.push(pa); }
       else { receitas = depois; removidos.receitas.push(pa); }
+      // Registre a evidência antes de qualquer nova chamada paga. Falha de persistência interrompe.
+      await onPeriodoRemovido?.({ lista: ehFolha ? 'folhas' : 'receitas', pa });
     }
   }
   throw new FechamentoError(
@@ -689,7 +700,14 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
  * [Calcular] — simulação oficial SERPRO (não transmite). Verdade do preview.
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
-export async function calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }) {
+export async function calcularFechamento(params) {
+  const lease = await acquireGuideLease(`apuracao-calculo:${params.portalClientId}:${params.competencia}`);
+  if (!lease) throw new FechamentoError('CALCULO_EM_ANDAMENTO', 'Já existe um cálculo em andamento para esta empresa e competência. Acompanhe a tarefa antes de tentar novamente.');
+  try { return await calcularFechamentoReservado(params, lease); }
+  finally { await lease.release(); }
+}
+
+async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }, lease) {
   exigirRegimeSuportado(regimeApuracao);
   const regimeCadastrado = await prisma.cadastroFiscal.findUnique({ where: { portalClientId }, select: { regimeApuracao: true } });
   exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
@@ -754,6 +772,13 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
   const rbt = await getRbt12({ portalClientId, competencia });
 
+  const contextoOrigem = await contextoOrigemCalculo({ portalClientId, competencia });
+  const recuperacao = recuperarCalculo(anterior, { portalClientId, competencia, cnpj: contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA', contextoOrigem });
+  const salvo = recuperacao.calculoRecuperavel;
+  if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao }))) {
+    return { ok: true, ...salvo, recuperado: true, snapshot: anterior };
+  }
+
   const sim = new PgdasSimulacaoService();
   const folhasSalario = await folhasSalarioSeAplicavel(atividades, folhaMensal12);
 
@@ -779,8 +804,8 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const receitasIniciais = podar(rbt.detalhePorMes, aceitos?.receitas);
   const folhasIniciais = podar(folhasSalario, aceitos?.folhas);
 
-  const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await executarComAjusteDePeriodos(
-    (p) => sim.simular(p),
+  const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await executarComRetomada(
+    (p) => { lease.assertActive(); return sim.simular(p); },
     {
       contratanteCnpj, contribuinteCnpj, competencia,
       regimeApuracao: regimeApuracao || "COMPETENCIA",
@@ -789,7 +814,11 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
       folhasSalario: folhasIniciais,
       permitirSemMovimento: semMovimento && semAtividades,
     },
+    { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos },
   ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
+
+  lease.assertActive();
+  if (hashCalculo(contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
 
   const faturamentoInterno = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const faturamentoExterno = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
@@ -817,7 +846,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   // Persiste snapshot (configurando→calculada)
   const vinculo = criarVinculoCalculo({ portalClientId, competencia,
     formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }),
-    receitasBrutasAnteriores: receitasAceitas, folhasSalario: folhasAceitas, contribuinteCnpj, contratanteCnpj });
+    receitasBrutasAnteriores: receitasAceitas, folhasSalario: folhasAceitas, contribuinteCnpj, contratanteCnpj, contextoOrigem });
   const idempotencyKey = vinculo.calculoId;
   const data = {
     rbt12: round2(resultado.rbt12 ?? rbt.rbt12),
@@ -893,7 +922,8 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
   if (!existing) throw new FechamentoError("NAO_CALCULADA", "Calcule a apuração antes de salvar.");
 
   exigirEstadoLivre(existing);
-  validarCalculoConfirmado(existing, { portalClientId, competencia, calculoId, formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }) });
+  const vinculo = validarCalculoConfirmado(existing, { portalClientId, competencia, calculoId, formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }) });
+  if (!vinculo.contextoOrigem || hashCalculo(vinculo.contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
   if (!['calculada', 'fechada'].includes(existing.estado)) throw erroCalculoObsoleto();
   // Camada 2 (Robustez): se a conferência com o ADN achou nota que falta no nosso lado, TRAVA o
   // fechamento (é o "28 vs 27"). Só trava em divergência confirmada — "nao_conferivel" (município
@@ -1008,6 +1038,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   exigirEstadoLivre(snapshot);
   const vinculo = validarCalculoConfirmado(snapshot, { portalClientId, competencia, calculoId });
+  if (!vinculo.contextoOrigem || hashCalculo(vinculo.contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
   if (!['calculada', 'fechada'].includes(snapshot.estado)) throw erroCalculoObsoleto();
   const reserva = await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: calculoId, estado: snapshot.estado }, data: { estado: 'transmitindo', simulacaoSerpro: { ...snapshot.simulacaoSerpro, _portalTransmissao: { retificar, iniciadaEm: new Date().toISOString() } } } });
   if (reserva.count !== 1) throw erroCalculoObsoleto();

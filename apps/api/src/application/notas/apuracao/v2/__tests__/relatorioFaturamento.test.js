@@ -1,3 +1,19 @@
+// Infraestrutura da nova recuperação tem suítes próprias; estes testes conservam
+// o ajuste real dos períodos e o transporte mockado, sem lease/banco/provedor externos.
+jest.mock("../../../../guides/GuideLockService.js", () => ({
+  acquireGuideLease: jest.fn(async () => ({ assertActive: jest.fn(), release: jest.fn(async () => {}) })),
+}));
+jest.mock("../RecuperacaoCalculo.js", () => ({
+  ...jest.requireActual("../RecuperacaoCalculo.js"),
+  contextoOrigemCalculo: jest.fn(async ({ portalClientId, competencia }) => ({
+    versao: 1, hash: "a".repeat(64), portalClientId, competencia,
+    contribuinteCnpj: "34627370000175", regimeApuracao: "COMPETENCIA",
+  })),
+}));
+jest.mock("../PeriodosRecusadosService.js", () => ({
+  executarComRetomada: jest.fn((executar, params, { ajustarPeriodos }) => ajustarPeriodos(executar, params)),
+}));
+
 // RELATÓRIO "Faturamento no Período — Consolidado" — o que ele NÃO pode fazer.
 //
 // Cinco travas, e a última é a que mais importa:

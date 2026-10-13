@@ -69,3 +69,47 @@ it.each([undefined,{}])('resposta de cadastro não confirmada não inicia formul
  montar({getCadastroFiscal:jest.fn(async()=>out)});fireEvent.click(await screen.findByRole('button',{name:/Cadastro fiscal/}));
  await screen.findByText(/Não foi possível carregar o cadastro fiscal/);expect(screen.queryByText('Fechar cadastro')).not.toBeInTheDocument();
 });
+
+const recuperavel = (folhaMensal12 = []) => ({calculoId:'salvo-validado',dasValor:12,rbt12:2400,formulario:{atividades:[{...atividade,valorInterno:200}],folhaMensal12,regimeApuracao:'COMPETENCIA'}});
+const dadosRecuperados = (extra={}) => ({dados:{atividades:[atividade],regimeApuracao:'COMPETENCIA',folhaMensal12:[{pa:'2026-05',valor:999}],faturamento:{total:200},cadastroCompleto:true,calculoRecuperavel:recuperavel(),...extra}});
+it('reabre cálculo validado sem nova consulta e salva inputs exatos inclusive folha vazia',async()=>{
+ const {api}=montar({getFechamento:jest.fn(async()=>dadosRecuperados())});
+ await screen.findByText(/Cálculo salvo recuperado/);
+ expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(200);
+ expect(screen.getByRole('button',{name:/Salvar/})).toBeEnabled();
+ expect(api.calcularFechamento).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:/Salvar/}));
+ await waitFor(()=>expect(api.salvarFechamento).toHaveBeenCalledWith('A','2026-06',{calculoId:'salvo-validado',...recuperavel().formulario}));
+});
+it('recupera folha exata da simulação sem substituir pela memória atual',async()=>{
+ const calc=recuperavel([{pa:'2026-05',valor:125}]);
+ const {api}=montar({getFechamento:jest.fn(async()=>dadosRecuperados({calculoRecuperavel:calc}))});
+ await screen.findByText(/Cálculo salvo recuperado/);fireEvent.click(screen.getByRole('button',{name:/Salvar/}));
+ await waitFor(()=>expect(api.salvarFechamento).toHaveBeenCalledWith('A','2026-06',{calculoId:'salvo-validado',...calc.formulario}));
+});
+it('editar cálculo recuperado invalida token e indicação de recuperação',async()=>{
+ montar({getFechamento:jest.fn(async()=>dadosRecuperados())});await screen.findByText(/Cálculo salvo recuperado/);
+ fireEvent.change(screen.getAllByRole('spinbutton')[0],{target:{value:'201'}});
+ expect(screen.getByRole('button',{name:/Salvar/})).toBeDisabled();expect(screen.getByRole('button',{name:/Transmitir/})).toBeDisabled();
+ expect(screen.queryByText(/Cálculo salvo recuperado/)).not.toBeInTheDocument();
+});
+it('snapshot sem envelope recuperável não habilita fechar e mostra motivo do servidor',async()=>{
+ montar({getFechamento:jest.fn(async()=>dadosRecuperados({calculoRecuperavel:null,calculoRecuperacaoMotivo:'As receitas mudaram desde a simulação.',snapshot:{estado:'calculada',idempotencyKey:'antigo'}}))});
+ await screen.findByText('As receitas mudaram desde a simulação.');expect(screen.getByRole('button',{name:/Salvar/})).toBeDisabled();
+});
+it('recuperação atrasada da empresa anterior não contamina o novo contexto',async()=>{
+ let resolve;const pending=new Promise(r=>{resolve=r;});
+ const {rerender,props}=montar({getFechamento:jest.fn(id=>id==='A'?pending:Promise.resolve(dadosRecuperados({calculoRecuperavel:null})))});
+ rerender(<FechamentoModal {...props} portalClientId="B"/>);await screen.findByRole('button',{name:/Salvar/});
+ await act(async()=>resolve(dadosRecuperados()));
+ expect(screen.getByRole('button',{name:/Salvar/})).toBeDisabled();expect(screen.queryByText(/Cálculo salvo recuperado/)).not.toBeInTheDocument();
+});
+
+it('simulação legada disponível para leitura não hidrata dados nem habilita ações',async()=>{
+ const {api}=montar({getFechamento:jest.fn(async()=>dadosRecuperados({calculoRecuperavel:null,calculoRecuperacaoMotivo:'A simulação antiga não comprova o contexto atual.',calculoSalvo:{...recuperavel(),estado:'calculada'}}))});
+ await screen.findByText('Simulação salva — somente consulta');expect(screen.getByText(/DAS da simulação salva/)).toHaveTextContent(/12,00/);
+ expect(screen.getByText('A simulação antiga não comprova o contexto atual.')).toBeInTheDocument();
+ expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(100);
+ expect(screen.getByRole('button',{name:/Salvar/})).toBeDisabled();expect(screen.getByRole('button',{name:/Transmitir/})).toBeDisabled();
+ expect(api.calcularFechamento).not.toHaveBeenCalled();expect(api.salvarFechamento).not.toHaveBeenCalled();
+});
