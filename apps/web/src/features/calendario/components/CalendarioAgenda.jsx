@@ -1,5 +1,4 @@
 import { MODELOS_OBRIGACOES_CARTEIRA, chaveDaObrigacaoCarteira } from '@contabilidade/shared/fluxo-carteira';
-import { FluxoCarteiraDetalhe } from "../../companies/list/components/RotinasCarteira";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -19,6 +18,9 @@ import { somarDiasAgenda, ocorrenciasDaTarefa } from '../../../../../../packages
 import { agruparAtividades, blocosDiarios, corAtividade, dataBR, dataExtenso, dataLocal, diasDoPeriodo, faixasDoPeriodo, itensDasObrigacoes, fimVisual, horarioAtividade, minutos, posicionarHorarios, RECORRENCIAS } from '../lib/agendaWorkspace';
 
 const conferir = out => { if (out?.ok === false) throw new Error(out.message || 'Não foi possível atualizar a agenda.'); return out; };
+const chaveEtapa = i => chaveDaObrigacaoCarteira(i.verificador) || (i.tipo === 'fluxo' || i.fonte === 'CARTEIRA' ? i.chave : null);
+const podeConcluirNaLista = i => Boolean(chaveEtapa(i) || i.tarefaId || (i.fonte === 'OBRIGACAO' && i.ocorrenciaId));
+const automaticaNaLista = i => chaveEtapa(i) ? ['obter_guias','enviar_guias','contabilizar'].includes(chaveEtapa(i)) : Boolean(i.conclusaoAutomatica);
 const obrigacao = i => i.tipo === 'obrigacao';
 const faixa = i => !i.horaInicio || i.dataInicio !== i.dataFim;
 const ICONE = <svg aria-hidden="true" width="13" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
@@ -38,7 +40,7 @@ function Faixas({ itens, dias, abrir, criar, mes = false, gestos, onConcluir }) 
 }
 
 export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdFixo = null, initialContext, onContextChange }) {
-  const [itensCarteira,setItensCarteira]=useState([]), [empresaFluxo,setEmpresaFluxo]=useState(null), [erroCarteira,setErroCarteira]=useState('');
+  const [itensCarteira,setItensCarteira]=useState([]), [erroCarteira,setErroCarteira]=useState('');
   const agora = useRelogioAgenda();
   const [referencia, setReferencia] = useState(initialContext?.referencia || dataLocal());
   const [visao, setVisao] = useState(['mes','semana','dia','lista'].includes(initialContext?.visao) ? initialContext.visao : initialContext?.visao === 'agenda' ? 'lista' : 'semana');
@@ -172,7 +174,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const criarPeriodo = useCallback(patch => { const cell = document.activeElement?.getBoundingClientRect?.(); setErro(''); setCriacao({...patch,companyId:companyIdFixo, ancora:cell?.width ? {x:cell.right + 12,y:cell.top} : null}); }, [companyIdFixo]);
   const atualizarRascunho = useCallback(patch => setCriacao(atual => atual ? {...atual,...patch} : atual), []);
   function abrirAtividade(item) {
-    if(item.fonte==='CARTEIRA' || item.tipo==='fluxo'){setEmpresaFluxo(item);return;}
+    if(item.fonte==='CARTEIRA' || item.tipo==='fluxo'){setErro('');setDetalhe({...item,somenteSerie:true,itens:[{...item,competenciaRef:item.competenciaRef || item.competencia}]});return;}
     if (edicoes.pendente(item)) return;
     item = item.atividadeOriginal ? { ...item.atividadeOriginal, diaSelecionado: item.diaSelecionado } : item;
     setErro('');
@@ -197,6 +199,52 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     setOcupado(true); setErro('');
     try { conferir(await fn()); if (fechar) { setDetalhe(null); setConfirmacao(null); setEdicaoLegada(null); } recarregar(); }
     catch(e) { setErro(e.message); } finally { setOcupado(false); }
+  }
+  const conclusaoEmpresaRef = useRef(false);
+  const [empresaSalvando, setEmpresaSalvando] = useState(null);
+  function atualizarEmpresa(item, patch) {
+    setDetalhe(d => d ? { ...d, itens: d.itens.map(i => i.id === item.id ? { ...i, ...patch } : i) } : d);
+  }
+  async function concluirEtapaEmpresa(item) {
+    if (conclusaoEmpresaRef.current || ocupado || automaticaNaLista(item) || !podeConcluirNaLista(item)) return;
+    conclusaoEmpresaRef.current = true;
+    setOcupado(true); setEmpresaSalvando(item.id); atualizarEmpresa(item, { erroConclusao: '' });
+    let salvo = false;
+    try {
+      const chave = chaveEtapa(item);
+      const desejado = !item.resolvido;
+      if (chave) {
+        const detalheEmpresa = conferir(await api.getFluxoCarteira(item.companyId, item.competenciaRef));
+        const tarefa = detalheEmpresa.fluxo.tarefas.find(t => t.chave === chave);
+        if (!tarefa) throw new Error('Esta tarefa não se aplica à empresa nesta competência.');
+        if (Boolean(tarefa.concluida) === desejado) {
+          atualizarEmpresa(item, { resolvido: desejado }); recarregar(); return;
+        }
+        if (tarefa.automatica || (!desejado && !tarefa.dados?.conclusao)) throw new Error('Esta etapa acompanha a operação registrada na empresa.');
+        if (desejado && tarefa.aguardando?.length) throw new Error('Conclua as etapas anteriores antes de concluir esta tarefa.');
+        const corpo = { acao: desejado ? 'concluir' : 'reabrir', competencia: item.competenciaRef, versao: tarefa.versao || 0, hash: tarefa.hash };
+        if (chave === 'importar' && desejado) {
+          const pendentes = (detalheEmpresa.lancamentos || []).filter(e => !e.importado);
+          if (!pendentes.length || pendentes.some(e => !e.importavel)) throw new Error('Feche o mês e exporte os lançamentos antes de confirmar a importação.');
+          corpo.entryIds = pendentes.map(e => e.id);
+        }
+        conferir(await api.salvarFluxoTarefa(item.companyId, chave, corpo));
+        salvo = true;
+        atualizarEmpresa(item, { resolvido: desejado });
+        const atualizado = conferir(await api.getFluxoCarteira(item.companyId, item.competenciaRef));
+        atualizarEmpresa(item, { resolvido: Boolean(atualizado.fluxo.tarefas.find(t => t.chave === chave)?.concluida) });
+      } else {
+        conferir(await (item.tarefaId
+          ? api.acaoTarefaAgenda(item.tarefaId, { cicloChave:item.cicloChave, acao:desejado ? 'CONCLUIR' : 'REABRIR' })
+          : desejado ? api.concluirOcorrencia(item.ocorrenciaId) : api.reabrirOcorrencia(item.ocorrenciaId)));
+        salvo = true; atualizarEmpresa(item, { resolvido: desejado });
+      }
+    } catch(e) {
+      atualizarEmpresa(item, { erroConclusao: salvo ? 'Alteração salva. Não foi possível atualizar a conferência; reabra a tarefa para consultar o estado atual.' : e.message });
+    } finally {
+      if (salvo) recarregar();
+      conclusaoEmpresaRef.current = false; setOcupado(false); setEmpresaSalvando(null);
+    }
   }
   async function concluirNaGrade(item) {
     if (ocupado || item.salvando || item.tipo !== 'tarefa' || item.itens?.length > 1 || item.conclusaoAutomatica) return;
@@ -258,7 +306,6 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     <header className="agenda-toolbar"><div className="agenda-period-nav">{visao !== 'lista' && <><Button variant="secondary" size="sm" aria-label="Período anterior" onClick={() => navegar(-1)}>‹</Button><Button variant="secondary" size="sm" aria-label="Próximo período" onClick={() => navegar(1)}>›</Button></>}<h2>{visao === 'lista' ? 'Atividades' : periodo}</h2>{visao !== 'lista' && <Button variant="secondary" size="sm" onClick={() => setReferencia(dataLocal())}>Hoje</Button>}</div>
       <div className="agenda-view-nav">{visao !== 'lista' && <select aria-label="Visualização do calendário" value={visao} onChange={e => { if (visao === 'mes' && e.target.value === 'semana') setReferencia(dataLocal()); setVisao(e.target.value); }}><option value="semana">Semana</option><option value="dia">Dia</option><option value="mes">Mês</option></select>}<Button variant="secondary" size="sm" aria-pressed={visao === 'lista'} onClick={() => { if (visao === 'lista') setVisao(visaoCalendario); else { setVisaoCalendario(visao); setVisao('lista'); } }}>{visao === 'lista' ? 'Calendário' : 'Lista'}</Button></div></header>
     {erroCarteira && <p role="alert">Tarefas: {erroCarteira} <button type="button" onClick={recarregar}>Atualizar</button></p>}
-    {empresaFluxo && <FluxoCarteiraDetalhe key={empresaFluxo.id} company={{companyId:empresaFluxo.companyId,razao:empresaFluxo.empresa}} competencia={empresaFluxo.competencia} tarefaChave={empresaFluxo.chave} api={api} onFechar={()=>setEmpresaFluxo(null)} onChanged={recarregar} onOpenCompany={onOpenCompany} />}
     {erro && !detalhe && !confirmacao && !edicaoLegada && <div className="agenda-error" role="alert">{erro} <button onClick={recarregar}>Tentar novamente</button></div>}
     {edicoes.quantidade > 0 && <div className="agenda-saving" role="status">Salvando alterações…</div>}
     {carregando && <div className="agenda-loading" role="status">Atualizando agenda…</div>}
@@ -275,7 +322,22 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
       <div className="agenda-detail">{detalhe.regraId && dados.regras.some(r => (r.regraId || r.id) === detalhe.regraId) && <button className="agenda-text-action" onClick={() => configurarObrigacao(detalhe.regraId)}>Configurar obrigação</button>}<p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">{chaveDaObrigacaoCarteira(detalhe.verificador) ? 'Prazo interno' : 'Vencimento fiscal'} · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}
       {detalhe.itens?.length > 1 && <div className="agenda-progress"><span>{detalhe.itens.filter(i => i.resolvido).length} de {detalhe.itens.length} concluídas</span><progress max={detalhe.itens.length} value={detalhe.itens.filter(i => i.resolvido).length}/></div>}
-      {(detalhe.itens || []).map(i => <div className={`agenda-company-row${i.resolvido ? ' is-complete' : ''}`} key={i.id}><div className="agenda-company-identity"><strong className="agenda-company-name">{i.empresa || i.titulo}</strong>{i.companyId && <small>{soDigitosCnpj(i.cnpj) ? <BotaoCopiar valor={soDigitosCnpj(i.cnpj)} rotulo={`Copiar o CNPJ de ${i.empresa || i.titulo} sem máscara`} titulo="Copiar CNPJ">{formatarCnpj(i.cnpj)}</BotaoCopiar> : 'CNPJ não informado'}</small>}{!vencimentoComum && i.dataVencimento && obrigacao(i) && <small>{chaveDaObrigacaoCarteira(i.verificador) ? 'Prazo interno' : 'Vencimento fiscal'} · {dataBR(i.dataVencimento)}</small>}<small className="agenda-company-status" aria-live="polite">{i.resolvido && <span aria-hidden="true">✓ </span>}{i.resolvido ? 'Concluída' : 'Pendente'}</small></div><div className="agenda-company-actions">{chaveDaObrigacaoCarteira(i.verificador) && <Button size="sm" variant="secondary" onClick={() => {setEmpresaFluxo({...i,competencia:i.competenciaRef,chave:chaveDaObrigacaoCarteira(i.verificador)});setDetalhe(null);}}>Conferir etapa</Button>}{i.fonte === 'OBRIGACAO' && !i.conclusaoAutomatica && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => agir(async () => { const out = conferir(await (i.resolvido ? api.reabrirOcorrencia(i.ocorrenciaId) : api.concluirOcorrencia(i.ocorrenciaId))); setDetalhe(d => ({ ...d, itens: d.itens.map(x => x.id === i.id ? { ...x, resolvido: !x.resolvido } : x) })); return out; },false)}>{i.resolvido ? 'Reabrir' : 'Concluir'}</Button>}{i.tarefaId && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => agir(() => api.acaoTarefaAgenda(i.tarefaId, { cicloChave: i.cicloChave, acao: i.resolvido ? 'REABRIR' : 'CONCLUIR' }))}>{i.resolvido ? 'Reabrir' : 'Concluir'}</Button>}{i.companyId && onOpenCompany && <Button size="sm" variant="secondary" onClick={() => onOpenCompany(i.companyId)}>Abrir empresa</Button>}{detalhe.itens.length > 1 && <button className="agenda-text-action" disabled={ocupado} onClick={() => setConfirmacao({ alvo:{...i,diaSelecionado:detalhe.diaSelecionado} })}>Excluir ocorrência</button>}</div></div>)}
+      {(detalhe.itens || []).map(i => <div className={`agenda-company-row${i.resolvido ? ' is-complete' : ''}`} key={i.id}>
+        {podeConcluirNaLista(i) && <input className="agenda-company-checkbox" type="checkbox" aria-label={`${i.resolvido ? 'Reabrir' : 'Concluir'} ${detalhe.titulo} para ${i.empresa || i.titulo}`} checked={Boolean(i.resolvido)} disabled={ocupado || automaticaNaLista(i)} onChange={() => concluirEtapaEmpresa(i)} />}
+        <div className="agenda-company-identity">
+          <strong className="agenda-company-name">{i.empresa || i.titulo}</strong>
+          {i.companyId && <small>{soDigitosCnpj(i.cnpj) ? <BotaoCopiar valor={soDigitosCnpj(i.cnpj)} rotulo={`Copiar o CNPJ de ${i.empresa || i.titulo} sem máscara`} titulo="Copiar CNPJ">{formatarCnpj(i.cnpj)}</BotaoCopiar> : 'CNPJ não informado'}</small>}
+          {!vencimentoComum && i.dataVencimento && obrigacao(i) && <small>{chaveEtapa(i) ? 'Prazo interno' : 'Vencimento fiscal'} · {dataBR(i.dataVencimento)}</small>}
+          <small className="agenda-company-status" aria-live="polite">{empresaSalvando === i.id ? 'Salvando…' : i.resolvido ? 'Concluída' : 'Pendente'}</small>
+          {automaticaNaLista(i) && <small>Atualizado pela operação da empresa.</small>}
+          {chaveEtapa(i) === 'importar' && !i.resolvido && <small>Marcar confirma todos os lançamentos pendentes como importados no ERP.</small>}
+          {i.erroConclusao && <p className="agenda-error" role="alert">{i.erroConclusao}</p>}
+        </div>
+        <div className="agenda-company-actions">
+          {i.companyId && onOpenCompany && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => onOpenCompany(i.companyId)}>Abrir empresa</Button>}
+          {detalhe.itens.length > 1 && i.ocorrenciaId && <button className="agenda-text-action" disabled={ocupado} onClick={() => setConfirmacao({ alvo:{...i,diaSelecionado:detalhe.diaSelecionado} })}>Excluir ocorrência</button>}
+        </div>
+      </div>)}
       {detalhe.empresasVazias && <p>Nenhuma ocorrência ativa para esta obrigação.</p>}
       {erro && <p className="agenda-error" role="alert">{erro}</p>}
       </div>

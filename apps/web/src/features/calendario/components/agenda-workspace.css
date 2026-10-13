@@ -281,3 +281,13 @@
   .agenda-list-row { padding:10px; }
   .agenda-list-name { flex-basis:calc(100% - 28px); }
 }
+
+.agenda-company-complete { display:flex; align-items:center; gap:8px; min-height:32px; font-size:13px; cursor:pointer; }
+.agenda-company-complete input { width:18px; height:18px; accent-color:var(--primary, #1351b4); }
+.agenda-company-complete:has(input:disabled) { cursor:default; }
+
+.agenda-detail .agenda-company-row { display:grid; grid-template-columns:22px minmax(0,1fr); column-gap:10px; }
+.agenda-company-checkbox { grid-column:1; grid-row:1; width:18px; height:18px; margin:1px 0 0; accent-color:var(--primary, #1351b4); cursor:pointer; }
+.agenda-company-checkbox:disabled { cursor:default; }
+.agenda-detail .agenda-company-identity, .agenda-detail .agenda-company-actions { grid-column:2; }
+.agenda-company-identity .agenda-error { grid-column:1 / -1; margin:6px 0; }
