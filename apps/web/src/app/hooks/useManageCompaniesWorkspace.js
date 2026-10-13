@@ -19,7 +19,6 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "auditoria", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "documentos", "anotacoes", "edit"];
 // Q17: competência default do dashboard = mês civil anterior.
 function dashboardPrevMonth() {
   const now = new Date();
@@ -165,16 +164,22 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // Status do plano de contas global — pré-requisito para criar empresas
   const [globalChartStatus, setGlobalChartStatus] = useState(null);
 
-  const selectedCompany = companiesState.selectedCompany;
+  const selectedCompany = companyIdDaUrl && companyIdDaUrl !== companiesState.selectedCompanyId
+    ? null : companiesState.selectedCompany;
+  const [companiesLoadStatus, setCompaniesLoadStatus] = useState("idle");
+  const [companiesLoadError, setCompaniesLoadError] = useState("");
 
   async function loadCompanies(competenciaArg) {
     if (page === "login") return;
     const competencia = competenciaArg || dashboardCompetencia;
     companiesState.setLoadingCompanies(true);
+    setCompaniesLoadStatus("loading");
+    setCompaniesLoadError("");
     feedback.clearFeedback();
     try {
       const data = await api.listCompanies(competencia);
       companiesState.setCompanies(data);
+      setCompaniesLoadStatus("ready");
       // ⚠ NUNCA auto-selecionar quando a URL já diz qual empresa é. Este atalho ("nenhuma
       // selecionada → pega a primeira da lista") era a causa direta do caso mais visível: abrir
       // `/companies/<X>/apuracao` por link ou refresh começa com o estado vazio, a lista carrega, e
@@ -184,6 +189,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         companiesState.setSelectedCompanyId(data[0].companyId);
       }
     } catch (err) {
+      setCompaniesLoadStatus("error");
+      setCompaniesLoadError(err?.message || "Falha ao carregar empresas");
       feedback.setError(err?.message || "Falha ao carregar empresas");
     } finally {
       companiesState.setLoadingCompanies(false);
@@ -1400,6 +1407,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     // Trocando de empresa? Use esta, com o id explícito — `setCompanyDetailTab` resolve a empresa
     // sozinho e leva para a anterior quando o `setSelectedCompanyId` ainda não renderizou.
     openCompanyTab,
+    companiesLoadStatus,
+    companiesLoadError,
     submittingCompany,
     submittingCompanyEdit,
     jobEnabled,

@@ -18,6 +18,8 @@
 // que um screenshot dessaturado continue legível).
 
 import { useEffect, useRef, useState } from "react";
+import { InternalLink } from "../../../../components/ui/InternalLink";
+import { companyTabPath } from "../../detail/lib/rotasDaEmpresa";
 // O envio por WhatsApp que FALHOU: três respostas para "posso tentar de novo?", três desenhos.
 import { ofertaDeRetentativa } from "../../../guides/lib/canalDeEnvio";
 
@@ -211,7 +213,10 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
           <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{rotuloEstado}</div>
           {ehParcela && <div style={{ marginBottom: 10 }}>
             {tag.itens?.length > 0 && <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{tag.itens.map((item, idx) => <li key={item.id || `${item.parcelamentoId}-${item.referencia}-${idx}`} style={{ marginBottom: 5 }}>{item.tipo || item.tipoParcelamento || "Parcelamento"}{item.numeroParcelamento ? ` nº ${item.numeroParcelamento}` : " · identificar acordo"}{item.referencia ? ` · ${item.referencia}` : ""}{item.numeroParcela ? ` · parcela ${item.numeroParcela}` : ""}{item.label ? ` — ${item.label}` : ""}</li>)}</ul>}
-            <a href={`/companies/${encodeURIComponent(empresa.companyId)}/guides`} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</a>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <InternalLink href={companyTabPath(empresa.companyId, "guides")} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</InternalLink>
+              <InternalLink href={companyTabPath(empresa.companyId, "parcelamento")} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir parcelamentos</InternalLink>
+            </div>
           </div>}
 
           {/* Qual parcelamento e qual parcela — sem isto o chip diria só "Parcelamento", e numa
@@ -287,7 +292,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
                 }}
               />
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <BotaoAcao onClick={() => acoes.onAbrirEmpresa?.(empresa.companyId)}>Abrir apuração</BotaoAcao>
+                <InternalLink href={companyTabPath(empresa.companyId, "cadastroFiscal")}>Abrir apuração</InternalLink>
                 <BotaoAcao
                   disabled={ocupado}
                   onClick={() => executar(() => acoes.onMarcarVazio?.(empresa.companyId, tipo, competencia, motivo))}

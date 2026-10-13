@@ -21,6 +21,13 @@ const guides = [
   guia("SEM-DATA", "2026-08", null),
 ];
 beforeEach(() => { jest.clearAllMocks(); mockReport.mockResolvedValue({ outros: [] }); });
+
+test('abrir Guias antes de carregar a empresa não confunde ausência com guia de origem', () => {
+  const { rerender } = render(<CompanyGuidesTable companyId={undefined} guides={guides} guiaDeOrigem={null} loadingGuides />);
+  expect(screen.queryByRole('button', { name: 'Mostrar todas as guias' })).not.toBeInTheDocument();
+  rerender(<CompanyGuidesTable companyId="c1" competencia="2026-08" guides={guides} guiaDeOrigem={null} loadingGuides={false} />);
+  expect(screen.getByText('DAS-AGOSTO')).toBeVisible();
+});
 test("atalho do acompanhamento seleciona a guia anterior sem alterar a competência", async () => {
   const limpar = jest.fn();
   const props = { companyId: "c1", competencia: "2026-08", guides, loadingGuides: false, guiaDeOrigem: { companyId: "c1", id: "ANTIGA" }, onLimparGuiaDeOrigem: limpar };

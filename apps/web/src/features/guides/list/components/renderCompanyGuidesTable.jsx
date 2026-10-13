@@ -661,13 +661,14 @@ export function CompanyGuidesTable({
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
+  const temGuiaDeOrigem = Boolean(companyId && guiaDeOrigem?.id && guiaDeOrigem.companyId === companyId);
   const filteredGuides = useMemo(() => {
-    if (guiaDeOrigem?.companyId === companyId) return (guides || []).filter(g => (g.guideId || g.id) === guiaDeOrigem.id);
+    if (temGuiaDeOrigem) return (guides || []).filter(g => (g.guideId || g.id) === guiaDeOrigem.id);
     return guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal });
-  }, [visao, mesVencimento, competenciaFiscal, guides, guiaDeOrigem, companyId]);
+  }, [visao, mesVencimento, competenciaFiscal, guides, guiaDeOrigem, temGuiaDeOrigem]);
   useEffect(() => {
-    if (guiaDeOrigem?.companyId === companyId && !loadingGuides) setSelectedIds(new Set([guiaDeOrigem.id]));
-  }, [guiaDeOrigem, companyId, loadingGuides]);
+    if (temGuiaDeOrigem && !loadingGuides) setSelectedIds(new Set([guiaDeOrigem.id]));
+  }, [guiaDeOrigem, temGuiaDeOrigem, loadingGuides]);
   const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length
     + parcelasFaltantesDaVisao(conferencia.faltantes, { visao: "anteriores", mes: mesVencimento }).length;
   const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento }).length;
@@ -1026,7 +1027,7 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
-      {guiaDeOrigem?.companyId === companyId && <div role="status" style={{ padding: "10px 12px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: "var(--text-muted)" }}>
+      {temGuiaDeOrigem && <div role="status" style={{ padding: "10px 12px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: "var(--text-muted)" }}>
         {filteredGuides.length ? "Parcela selecionada a partir do acompanhamento." : loadingGuides ? "Localizando a guia da parcela…" : "A guia da parcela não foi localizada nesta listagem. Atualize os documentos para conferir."}
         <Button variant="secondary" size="sm" onClick={onLimparGuiaDeOrigem}>Mostrar todas as guias</Button>
       </div>}

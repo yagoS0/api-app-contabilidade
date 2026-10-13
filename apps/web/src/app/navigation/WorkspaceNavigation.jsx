@@ -49,6 +49,8 @@ export function WorkspaceNavigationProvider({ children }) {
     setModoVisao("calendario");
   }, []);
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
-    {companyRoute ? <div className="company-workspace">{children}</div> : children}
+    {/* A estrutura precisa permanecer a mesma: inserir/remover este div desmontava a sessão,
+        os hooks e as tarefas ao passar entre a carteira e uma empresa. Só a classe muda. */}
+    <div className={companyRoute ? "company-workspace" : undefined}>{children}</div>
   </WorkspaceNavigation.Provider>;
 }

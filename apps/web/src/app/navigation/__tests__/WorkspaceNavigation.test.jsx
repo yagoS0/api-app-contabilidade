@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useEffect, useState } from "react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { WorkspaceNavigationProvider, WorkspaceHomeLink, useWorkspaceNavigation } from "../WorkspaceNavigation";
 
@@ -20,6 +21,23 @@ function Screen() {
 function setup(route = "/companies") {
   return render(<MemoryRouter initialEntries={[route]}><WorkspaceNavigationProvider><Screen /></WorkspaceNavigationProvider></MemoryRouter>);
 }
+
+test('entrar e sair de empresas conserva a sessão montada e o trabalho em memória', () => {
+  const montar = jest.fn(), desmontar = jest.fn();
+  function Sessao() {
+    const [valor, setValor] = useState('');
+    useEffect(() => { montar(); return desmontar; }, []);
+    return <><Screen/><input aria-label="Trabalho em andamento" value={valor} onChange={e => setValor(e.target.value)}/></>;
+  }
+  render(<MemoryRouter initialEntries={['/companies']}><WorkspaceNavigationProvider><Sessao/></WorkspaceNavigationProvider></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText('Trabalho em andamento'), { target: { value: 'preservar' } });
+  for (const nome of ['Notas', 'Planejamento', 'Voltar', 'Voltar', 'Notas']) {
+    fireEvent.click(screen.getByText(nome));
+    expect(screen.getByLabelText('Trabalho em andamento')).toHaveValue('preservar');
+  }
+  expect(montar).toHaveBeenCalledTimes(1);
+  expect(desmontar).not.toHaveBeenCalled();
+});
 test("voltar restaura a rota interna anterior, incluindo competência", () => {
   setup();
   fireEvent.click(screen.getByText("Notas"));

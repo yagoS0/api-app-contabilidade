@@ -2,6 +2,8 @@
 
 ## Envio em segundo plano — 25/09/2026
 
+Correção de entrada direta em 13/10/2026: nunca comparar apenas `guiaDeOrigem?.companyId === companyId`. Antes de a empresa carregar, os dois lados podem ser undefined e a leitura de `guiaDeOrigem.id` derruba a tela. Exigir empresa e ID da origem presentes para filtrar, selecionar e mostrar o atalho. Reproduzido no acesso às Guias pelo chip de parcelamento da carteira; o teste `vencimentoNaEmpresa` cobre a fase sem empresa e a carga seguinte.
+
 O envio e o reenvio da empresa mostram progresso no topo do shell, com empresa de origem, quantidade processada e resultado por guia. `GuideSendActivity` permanece ao navegar internamente; não é uma fila persistente no servidor e não promete continuidade após fechar/recarregar o navegador. Confirmação de reenvio fecha antes de aguardar a requisição. Lock síncrono impede cliques duplicados entre envio individual/lote/reenvio.
 
 `usePollingEntrega` faz releituras locais limitadas com `{ background: true }`; o workspace preserva linhas, seleção e mensagens nessas leituras e após o envio. Falha da releitura não apaga guias nem o resultado do transporte. Nunca consultar o SERPRO ou reenviar para atualizar a coluna. Resposta de outra empresa não altera a tabela atual. Aceite da Meta continua distinto de entrega. Publicação na main autorizada pelo usuário em 25/09/2026 após revisão do mock. Validação local: 71 testes relacionados aprovados, compilação e navegação visual conferidas; regressão integrada obrigatória antes do merge.
