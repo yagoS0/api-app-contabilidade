@@ -31,7 +31,7 @@ import {
 const casamentosApi = createApiClient();
 
 const card = {
-  background: "var(--surface)",
+  background: "var(--bg-surface)",
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,
@@ -290,7 +290,7 @@ export function PainelDeCasamentos({
         return (
           <div
             key={linha.debito?.id}
-            style={{ ...card, display: "grid", gap: 10, background: "var(--surface-2, var(--surface))" }}
+            style={{ ...card, display: "grid", gap: 10, background: "var(--surface-2, var(--bg-surface))" }}
           >
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 260px" }}>

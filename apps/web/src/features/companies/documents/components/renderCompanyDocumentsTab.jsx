@@ -11,8 +11,8 @@
 // mostrava TRÊS vermelhos em repouso — numa tela onde nada está errado. A regra de cor do projeto
 // é explícita: cor forte = precisa de ação AGORA; quando o padrão grita, a exceção some. E era
 // também um segundo caminho para a mesma ação: a seleção múltipla já existia logo acima, com
-// Baixar e Enviar. Hoje há um caminho só, e o vermelho só aparece depois que alguém selecionou
-// alguma coisa — ou seja, quando existe mesmo uma ação destrutiva possível.
+// Baixar e Enviar. Hoje há um caminho só; a barra de seleção usa ações neutras e o vermelho
+// fica reservado à confirmação da exclusão.
 //
 // ⚠ AS CONFIRMAÇÕES DEIXARAM DE SER `window.confirm`. Não é estética: o `confirm` nativo não
 // respeita a paleta, não é acessível pelo mesmo caminho do resto e, sobretudo, ele já tinha
@@ -179,7 +179,7 @@ export function CompanyDocumentsTab({ docs }) {
     <div style={{ color: "var(--text)" }}>
       {resumoExclusao && <p role="status">{resumoExclusao}</p>}
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
-        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Documentos</h2>
+        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Documentos</h2>
         <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
           {carregando ? "carregando…" : `${documentos.length} documento(s)`}
         </span>
@@ -191,8 +191,7 @@ export function CompanyDocumentsTab({ docs }) {
         </div>
       </div>
 
-      {/* Barra de ações: só aparece com algo selecionado — sem seleção não há ação possível, e é
-          isto que mantém o vermelho fora da tela em repouso. */}
+      {/* Ações neutras da seleção; a confirmação concentra o destaque destrutivo. */}
       {totalSelecionado > 0 && (
         <div style={{
           display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap",
@@ -201,10 +200,10 @@ export function CompanyDocumentsTab({ docs }) {
         }}>
           <strong style={{ fontSize: "0.82rem" }}>{totalSelecionado} selecionado(s)</strong>
           <Button size="sm" variant="secondary" onClick={baixarSelecionados}>⬇ Baixar</Button>
-          <Button size="sm" disabled={enviando} onClick={() => setConfirmando("enviar")}>
+          <Button size="sm" variant="secondary" disabled={enviando} onClick={() => setConfirmando("enviar")}>
             {enviando ? "Enviando…" : "✉ Enviar por e-mail"}
           </Button>
-          <Button size="sm" variant="danger" disabled={excluindo} onClick={() => setConfirmando("excluir")}>
+          <Button size="sm" variant="secondary" disabled={excluindo} onClick={() => setConfirmando("excluir")}>
             {excluindo ? "Excluindo…" : "Excluir"}
           </Button>
           <Button size="sm" variant="secondary" style={{ marginLeft: "auto" }} onClick={limparSelecao}>

@@ -41,7 +41,7 @@ import { cnpjFormatado, dataCivil, dinheiro, leituraDaOrigemDoPagamento } from "
 const LISTA_DE_CONTAS = "contas-do-lote";
 
 const card = {
-  background: "var(--surface)",
+  background: "var(--bg-surface)",
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 12,

@@ -89,18 +89,17 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
     <div className="stack-gap">
       <div className="page-header">
         <h1>Enviar extrato bancário</h1>
-        <button type="button" className="btn" onClick={aoVoltar}>Voltar</button>
+        <div className="page-actions">
+          <button type="button" className="btn" onClick={aoVoltar}>Voltar</button>
+        </div>
       </div>
 
-      <section className="card stack-gap">
+      <section className="card stack-gap extrato-envio">
+        <h2>Arquivo bancário</h2>
         <p className="meta">
-          Baixe o extrato do seu banco no formato <strong>OFX</strong> e envie aqui. As{" "}
-          <strong>saídas</strong> viram despesas na fila do seu contador — ele confere e lança.
-        </p>
-        {/* ⚠ As duas frases que a tela NÃO pode omitir: o que ela não faz, e o que o envio faz. */}
-        <p className="meta">
-          As <strong>entradas</strong> ficam de fora: elas não são despesa. E nada aqui é lançado
-          automaticamente — quem decide a conta contábil é o contador.
+          Envie o arquivo <strong>OFX</strong> do seu banco. Apenas as <strong>saídas</strong> vão
+          para conferência; entradas ficam de fora. Nada é lançado automaticamente — quem decide
+          a conta contábil é o contador.
         </p>
 
         <label className="stack-gap">
@@ -121,15 +120,14 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
 
         {/* ⚠⚠ A frase vem ANTES do botão, e fala de REENVIO — não de conferência. Não há preview:
             o envio grava. Prometer "conferir antes" seria descrever um passo que não existe. */}
-        <p className="meta">
-          O envio é imediato — não há uma etapa de conferência antes. Enviar o mesmo período duas
-          vezes é seguro: as saídas que já entraram não entram de novo.
-        </p>
-
-        <div>
+        <div className="extrato-envio-acoes">
+          <p className="meta">
+            O envio é imediato — não há uma etapa de conferência antes. Saídas já importadas
+            não se repetem ao reenviar o período.
+          </p>
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn-primary"
             disabled={!arquivo || enviando}
             // ⚠ Botão desabilitado nunca é mudo.
             title={!arquivo ? "Escolha o arquivo do extrato." : undefined}

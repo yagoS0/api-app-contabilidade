@@ -1,5 +1,11 @@
-.wa-comunicados { max-width: 1040px; margin: 0 auto; }
-.wa-comunicados h2 { font-size: 1.15rem; margin-top: 24px; }
+.wa-comunicados { max-width: var(--content-max); margin: 0 auto; }
+.wa-comunicados h2 { font-size: 1rem; font-weight: 600; margin-top: 24px; }
+.wa-comunicados > form { max-width: 760px; }
+.wa-comunicados > form > h2:not(:first-child) { padding-top: 24px; border-top: 1px solid var(--border); }
+.wa-comunicados > form > section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.wa-comunicados input:focus-visible, .wa-comunicados textarea:focus-visible, .wa-comunicados select:focus-visible, .wa-comunicados summary:focus-visible, .wa-aviso-linha:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.wa-aviso-linha:hover { background: var(--bg-subtle); }
+.wa-aviso-linha strong { font-weight: 500; }
 .wa-comunicados label:not(.wa-aviso-check) { display: grid; gap: 7px; margin: 14px 0; font-size: .9rem; }
 .wa-comunicados input:not([type=checkbox]), .wa-comunicados textarea, .wa-comunicados select { width: 100%; padding: 10px 12px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; box-sizing: border-box; }
 .wa-comunicados textarea { resize: vertical; }

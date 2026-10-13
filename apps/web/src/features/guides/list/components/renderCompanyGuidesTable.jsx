@@ -1360,7 +1360,7 @@ export function CompanyGuidesTable({
             </div>
           </div>
         ) : !loadingGuides && filteredGuides.length > 0 ? (
-          <p className="guides-list-panel__hint">{filteredGuides.length} guia{filteredGuides.length !== 1 ? "s" : ""} · Selecione uma ou mais guias para ver as ações.</p>
+          <p className="guides-list-panel__hint">{filteredGuides.length} guia{filteredGuides.length !== 1 ? "s" : ""}</p>
         ) : null}
 
         {loadingGuides ? (

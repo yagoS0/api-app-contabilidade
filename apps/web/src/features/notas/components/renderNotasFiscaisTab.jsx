@@ -234,36 +234,7 @@ export function NotasFiscaisTab({
               + Emitir nota
             </Button>
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} mostrarStatus={false} />
-            {hrefConfiguracaoEmissao && (
-              /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
-                 cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
-                 `title` diz para quem passa o mouse. Sem os dois, isto é um desenho clicável.
-                 ⚠ CINZA, de propósito: verde é CONCLUÍDO neste app e âmbar é PENDÊNCIA.
-                 Configuração não é nem uma coisa nem outra — ela não pede ação hoje. */
-              <a
-                href={hrefConfiguracaoEmissao}
-                aria-label="Configurar a emissão de NFS-e desta empresa"
-                title="Configurar a emissão de NFS-e (códigos de serviço, série da DPS, carga tributária e liberação ao cliente)"
-                data-testid="engrenagem-emissao-nfse"
-                onClick={(event) => {
-                  // Ctrl/Cmd/Shift/Alt e botão do meio: o navegador assume e abre em outra guia.
-                  if (oNavegadorAssumeOClique(event)) return;
-                  event.preventDefault();
-                  onAbrirConfiguracaoEmissao?.();
-                }}
-                style={{
-                  marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 11px", borderRadius: 6, border: "1px solid var(--border)",
-                  background: "transparent", color: "var(--text-faint)", textDecoration: "none",
-                  fontSize: "0.85rem", fontWeight: 600, lineHeight: 1,
-                }}
-              >
-                {/* ⚠ SÓ A ENGRENAGEM em tela — foi o que o dono pediu, e ele está cortando texto.
-                    O ícone é `aria-hidden`: quem lê tela recebe o `aria-label` do link, não o
-                    nome do caractere. Sem isso, o leitor anunciaria "engrenagem, link". */}
-                <span aria-hidden="true" style={{ fontSize: "1.05rem" }}>⚙</span>
-              </a>
-            )}
+
           </>
         ) : (
           <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
@@ -272,6 +243,36 @@ export function NotasFiscaisTab({
           {importing ? "Importando…" : janelaAtiva === "NFE" ? "⬆️ Importar XML / ZIP" : "⬆️ Importar XML"}
           <input aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
         </label>
+        {janelaAtiva === "NFSE" && hrefConfiguracaoEmissao && (
+          /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
+             cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
+             `title` diz para quem passa o mouse. Sem os dois, isto é um desenho clicável.
+             ⚠ CINZA, de propósito: verde é CONCLUÍDO neste app e âmbar é PENDÊNCIA.
+             Configuração não é nem uma coisa nem outra — ela não pede ação hoje. */
+          <a
+            href={hrefConfiguracaoEmissao}
+            aria-label="Configurar a emissão de NFS-e desta empresa"
+            title="Configurar a emissão de NFS-e (códigos de serviço, série da DPS, carga tributária e liberação ao cliente)"
+            data-testid="engrenagem-emissao-nfse"
+            onClick={(event) => {
+              // Ctrl/Cmd/Shift/Alt e botão do meio: o navegador assume e abre em outra guia.
+              if (oNavegadorAssumeOClique(event)) return;
+              event.preventDefault();
+              onAbrirConfiguracaoEmissao?.();
+            }}
+            style={{
+              marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 36, minHeight: 36, boxSizing: "border-box",
+              padding: "8px 11px", borderRadius: 6, border: "1px solid var(--border)",
+              background: "transparent", color: "var(--text-faint)", textDecoration: "none",
+              fontSize: "0.85rem", fontWeight: 600, lineHeight: 1,
+            }}
+          >
+            {/* ⚠ SÓ A ENGRENAGEM em tela — foi o que o dono pediu, e ele está cortando texto.
+                O ícone é `aria-hidden`: quem lê tela recebe o `aria-label` do link, não o
+                nome do caractere. Sem isso, o leitor anunciaria "engrenagem, link". */}
+            <span aria-hidden="true" style={{ fontSize: "1.05rem" }}>⚙</span>
+          </a>
+        )}
       </div>
       {nfseApi.mode === "mock" && <div style={{ marginBottom: 12 }}><Button variant="ghost" size="sm" disabled={importing} onClick={() => {
         const quantidade = janelaAtiva === "NFE" ? 25 : 55;

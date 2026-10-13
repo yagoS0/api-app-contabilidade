@@ -25,23 +25,7 @@ import path from "node:path";
 
 const SRC = path.join(__dirname, "..", "..");
 
-/**
- * ⚠⚠ UMA EXCEÇÃO, E ELA É DECLARADA, MEDIDA E TEMPORÁRIA: `--surface`.
- *
- * Ele é o nome do PORTAL DO CLIENTE (`apps/portal-cliente-web/src/styles/tokens.css`). Aqui o token
- * chama `--bg-surface`, e o vocabulário do outro app entrou junto com as features `conferencia` e
- * `recorrencia`. Como `background-color` inválido cai em TRANSPARENTE, os cards ficam vazados sobre
- * o `--bg-page`. Medido no navegador em 30/08/2026, na aba Conferência de UMA empresa: **29
- * elementos vivos** com `background-color: rgba(0, 0, 0, 0)` onde se queria `#24253A`.
- *
- * ⚠ NÃO foi consertado junto do `--text-2` de propósito: trocar `--surface` por `--bg-surface` faz
- * 29 cards GANHAREM fundo de uma vez, o que é mudança de aparência de uma tela que ninguém pediu
- * para mexer. É decisão do dono, como foi a do `--text-2`.
- *
- * ⚠ A exceção é por NOME, sem site: prender a linha faria este teste ficar vermelho a cada edição
- * dos arquivos vizinhos, e teste que fica vermelho por motivo errado é teste que alguém desliga.
- */
-const ADIADOS = ["--surface"];
+// Revisão de design de 13/10/2026: fundos usam o token local, sem exceções.
 
 /**
  * ⚠ Percorre `src/` inteiro, e não só `styles/`: neste app quase toda cor entra por
@@ -115,15 +99,7 @@ describe("⚠⚠ nenhum `var(--x)` nu aponta para um token que não existe", () 
     expect(usadosNus().has("--text-2")).toBe(false);
   });
 
-  it("⚠ só `--surface` continua órfão, e ele está NOMEADO acima", () => {
-    const fora = orfaos().filter((a) => !ADIADOS.some((n) => a.startsWith(`${n} (`)));
-    expect(fora).toEqual([]);
-  });
-
-  it("⚠ e o adiado precisa continuar EXISTINDO — se sumir sozinho, esta exceção sai junto", () => {
-    // Sem esta linha, o dia em que alguém consertar o `--surface` deixaria para trás uma exceção
-    // protegendo um caso que não há — e a próxima importação de vocabulário alheio entraria por ela.
-    expect(usadosNus().has("--surface")).toBe(true);
-    expect(definidos().has("--surface")).toBe(false);
+  it("nenhum token usado fica sem definição", () => {
+    expect(orfaos()).toEqual([]);
   });
 });

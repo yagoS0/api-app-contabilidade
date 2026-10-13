@@ -43,12 +43,12 @@ import {
 
 // Mesmo visual dos demais campos do formulário (`styles/tokens.css` + inline; sem Tailwind).
 const CAIXA = {
-  background: "#282A36", border: "1px solid #44475A", borderRadius: 5,
-  color: "#F8F8F2", padding: "7px 9px", fontSize: "0.85rem", width: "100%",
+  background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 5,
+  color: "var(--text)", padding: "7px 9px", fontSize: "0.85rem", width: "100%",
   boxSizing: "border-box",
 };
 
-const AJUDA = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 };
+const AJUDA = { fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.5 };
 
 function Campo({ id, titulo, valor, onChange, leitura, ajuda, placeholder, extra }) {
   return (
@@ -65,7 +65,7 @@ function Campo({ id, titulo, valor, onChange, leitura, ajuda, placeholder, extra
           ...CAIXA,
           // Formato errado tem de ser visível no campo, não só na mensagem: quem digita olha o
           // campo. Ausência NÃO pinta de vermelho — vazio é legítimo (a empresa só não emite).
-          borderColor: leitura.problema ? "var(--state-danger)" : "#44475A",
+          borderColor: leitura.problema ? "var(--state-danger)" : "var(--border)",
         }}
       />
       <span style={AJUDA}>{ajuda}</span>
@@ -166,11 +166,8 @@ export function CamposEmissaoNfse({
 
   return (
     <>
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+      <div className="full" style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12 }}>
         <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Emissão de NFS-e</strong>
-        <div style={{ ...AJUDA, marginTop: 4 }}>
-          Configuração da nota de serviço que este sistema emite.
-        </div>
       </div>
 
       {/* ⚠ VAI O VALOR CRU em `codigos`, não `nacional.codigos`. O seletor faz a própria leitura

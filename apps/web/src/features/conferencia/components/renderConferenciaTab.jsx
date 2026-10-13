@@ -82,7 +82,7 @@ import {
 const conferenciaApi = createApiClient();
 
 const card = {
-  background: "var(--surface)",
+  background: "var(--bg-surface)",
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,

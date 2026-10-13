@@ -18,7 +18,7 @@ import { createApiClient } from "../../../api/client";
 const saidasApi = createApiClient();
 
 const card = {
-  background: "var(--surface)",
+  background: "var(--bg-surface)",
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,
@@ -159,7 +159,7 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
                   placeholder="Por que esta saída não fica? (o cliente vai ler)"
                   style={{
                     padding: "8px 10px", borderRadius: 8, font: "inherit", fontSize: "0.82rem",
-                    border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
+                    border: "1px solid var(--border)", background: "var(--bg-surface)", color: "var(--text)",
                   }}
                 />
                 <div style={{ display: "flex", gap: 8 }}>

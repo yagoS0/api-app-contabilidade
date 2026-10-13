@@ -8,9 +8,9 @@ import { Button } from "../../../components/ui/Button";
 const SITUACAO_META = {
   INCONCLUSIVO: { label: "Leitura inconclusiva", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
   COM_PENDENCIA: { label: "Com pendência", color: "var(--danger)", bg: "rgba(255,71,87,0.12)" },
-  EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
+  EM_PARCELAMENTO: { label: "Em parcelamento", color: "var(--accent-purple)", bg: "rgba(189,147,249,0.12)" },
   REGULAR: { label: "Regular", color: "var(--success)", bg: "rgba(105,255,71,0.10)" },
-  PROCESSANDO: { label: "Processando", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
+  PROCESSANDO: { label: "Processando", color: "var(--text-muted)", bg: "var(--bg-subtle)" },
 };
 
 function formatDateTime(value) {
@@ -22,8 +22,10 @@ function formatDateTime(value) {
 
 function SituacaoBadge({ situacao }) {
   const meta = SITUACAO_META[situacao] || { label: "Sem consulta", color: "#A7B0C0", bg: "rgba(167,176,192,0.10)" };
+  const icon = { REGULAR: "✓", COM_PENDENCIA: "!", INCONCLUSIVO: "?", EM_PARCELAMENTO: "↔", PROCESSANDO: "◷" }[situacao] || "○";
   return (
-    <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: "0.8rem", fontWeight: 700, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}` }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: situacao === "REGULAR" ? 0 : "3px 9px", borderRadius: 999, fontSize: "0.8rem", fontWeight: 500, color: meta.color, background: situacao === "REGULAR" ? "transparent" : meta.bg }}>
+      <span aria-hidden="true">{icon}</span>
       {meta.label}
     </span>
   );
@@ -178,8 +180,7 @@ export function PendenciasContent({ pendenciasPanel }) {
           </div>
 
           <p style={{ marginTop: 12, color: "var(--text-faint)", fontSize: "0.78rem" }}>
-            A marcação de pendência é derivada do relatório SITFIS por palavra-chave (aproximada) — confirme
-            sempre no relatório completo. A consulta ao SERPRO só funciona com a integração SITFIS habilitada.
+            Leitura automática aproximada: confirme a situação no relatório SITFIS completo.
           </p>
 
           <Feedback message={null} error={null} />

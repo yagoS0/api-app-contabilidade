@@ -401,8 +401,10 @@ export function RotinasPage({
               )}
             </div>
 
-            <h3>Execuções programadas</h3>
-            <Button type="button" variant="secondary" onClick={() => onRefreshWorkerStatus?.()}>Atualizar execuções</Button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
+              <h3 style={{ margin: 0 }}>Execuções programadas</h3>
+              <Button type="button" variant="secondary" onClick={() => onRefreshWorkerStatus?.()}>Atualizar execuções</Button>
+            </div>
             <div style={{ overflowX: "auto", marginTop: 12 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 650 }}>
                 <thead><tr><th style={th}>Rotina</th><th style={th}>Situação</th><th style={th}>Última execução</th><th style={th}>Próximo horário</th></tr></thead>
@@ -419,7 +421,6 @@ export function RotinasPage({
                         {row.lastRun.result?.mensagem && <p>{row.lastRun.result.mensagem}</p>}
                         {row.lastRun.result?.avisosEnviados > 0 && <p>{row.lastRun.result.avisosEnviados} aviso(s) de pagamento enviado(s).</p>}
                         {row.lastRun.result?.avisosPendentes > 0 && <p>{row.lastRun.result.avisosPendentes} aviso(s) aguardam ação do contador. Confira o canal e o destinatário.</p>}
-                        <p>Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
                         {[...(row.lastRun.result?.results || []), ...(row.lastRun.result?.extratoResults || []), ...(row.lastRun.result?.parcelaResults || [])].map((item, i) => <div key={`${item.companyId || "item"}-${i}`}>
                           <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || (row.routine === "pagamento" && ESTADOS_CONSULTA_PAGAMENTO[item.status]) || item.status}</p>
                           {(item.competencia || item.tipo) && <p>{[item.tipo, item.competencia].filter(Boolean).join(" · ")}</p>}
@@ -436,6 +437,7 @@ export function RotinasPage({
                   </tr>
                 ))}</tbody>
               </table>
+              <p className="text-muted">Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
               {!(workerStatus?.routines || executionStatus).length && <p>Histórico por rotina ainda não disponível. O último registro geral não confirma todas as consultas.</p>}
             </div>
           </section>

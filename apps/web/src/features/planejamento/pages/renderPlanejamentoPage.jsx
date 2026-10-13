@@ -75,7 +75,7 @@ import { LogoAltan } from "../../../components/ui/LogoAltan";
 
 const C = { page: "#1A1B26", surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0", accent: "#BD93F9", alerta: "#FFB347" };
 const campo = { background: "#1A1B26", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.86rem", width: "100%", boxSizing: "border-box" };
-const rotulo = { display: "grid", gap: 4, fontSize: "0.76rem", color: C.muted };
+const rotulo = { display: "grid", gap: 4, fontSize: "0.8rem", color: C.muted };
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 
@@ -418,7 +418,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   function RecusaDeColagem({ campo }) {
     if (recusaDeColagem?.campo !== campo) return null;
     return (
-      <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
+      <span style={{ display: "block", marginTop: 4, fontSize: "0.8rem", color: "var(--state-warn)" }}>
         {recusaDeColagem.texto}
       </span>
     );
@@ -788,8 +788,8 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             seletor. */}
         {empresaId && (carregando || erroCarga) ? (
           <div data-print-hide style={{ display: "grid", gap: 4 }}>
-            {carregando && <span style={{ fontSize: "0.76rem", color: C.muted }}>Carregando os dados da empresa…</span>}
-            {erroCarga && <span style={{ fontSize: "0.76rem", color: C.alerta }}>⚠ {erroCarga}</span>}
+            {carregando && <span style={{ fontSize: "0.8rem", color: C.muted }}>Carregando os dados da empresa…</span>}
+            {erroCarga && <span style={{ fontSize: "0.8rem", color: C.alerta }}>⚠ {erroCarga}</span>}
           </div>
         ) : null}
 
@@ -806,7 +806,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               </select>
             </label>
             {prefill.temEmpresa && prefill.referencia && (
-              <span style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.45 }}>
+              <span style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>
                 Campos apurados sobre os 12 meses de <strong>{prefill.referencia.janelaRotulo}</strong>.
                 Tudo abaixo é <strong>editável</strong> — isto é um cenário, não o cadastro da empresa,
                 e só é guardado ao usar Salvar cenário. O que for digitado por cima sai marcado no PDF.
@@ -939,11 +939,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.borda}`,
                 borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
               }}>
-                <div style={{ fontSize: "0.74rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>
+                <div style={{ fontSize: "0.8rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>
                   {ofertaDo16.excecoes.map((e) => <li key={e}>{e}</li>)}
                 </ul>
-                <div style={{ display: "flex", gap: 14, fontSize: "0.76rem", color: C.texto }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: "0.8rem", color: C.texto }}>
                   <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
                     <input type="radio" name="servicos16" checked={servicos16 === true} onChange={() => setServicos16(true)} />
                     Enquadra — usar 16%
@@ -956,12 +956,12 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 {/* ⚠ ENQUANTO NINGUÉM RESPONDE, A TELA DIZ O QUE A OMISSÃO CUSTA. Ausência de
                     resposta não é resposta, e aqui ela deixa o Presumido mais caro do que pode ser. */}
                 {servicos16 == null ? (
-                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: "0.8rem", color: C.alerta, lineHeight: 1.4 }}>
                     ⚠ Sem resposta, o comparativo usa 32% — o total do Lucro Presumido pode estar superestimado.
                   </div>
                 ) : null}
                 {ofertaDo16.aviso ? (
-                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>⚠ {ofertaDo16.aviso}</div>
+                  <div style={{ fontSize: "0.8rem", color: C.alerta, lineHeight: 1.4 }}>⚠ {ofertaDo16.aviso}</div>
                 ) : null}
               </div>
             ) : null}
@@ -986,7 +986,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               rotuloTexto="ISS (%)"
               abaixo={<>
                 {issLido.fora && (
-                  <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--state-warn)" }}>
                     {textoDoPercentualForaDaFaixa("A alíquota de ISS")}
                   </span>
                 )}
@@ -1002,7 +1002,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             </Campo>
           </div>
 
-          {prefill.temEmpresa && <details style={{ color: C.muted, fontSize: "0.78rem" }}>
+          {prefill.temEmpresa && <details style={{ color: C.muted, fontSize: "0.8rem" }}>
             <summary style={{ cursor: "pointer" }}>Origem dos dados e premissas</summary>
             <dl style={{ display: "grid", gap: 10 }}>
               {procedencias.map(l => <div key={l.chave}><dt style={{ fontWeight: 600 }}>{l.rotulo}: {valorImpresso(l)}</dt><dd style={{ margin: 0 }}>{l.texto}</dd></div>)}
@@ -1014,7 +1014,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
               está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}
           {prefill.temEmpresa && (
-            <div style={{ fontSize: "0.78rem", color: prefill.campos.regimeAtual.apurado ? C.muted : C.alerta, lineHeight: 1.45 }}>
+            <div style={{ fontSize: "0.8rem", color: prefill.campos.regimeAtual.apurado ? C.muted : C.alerta, lineHeight: 1.45 }}>
               {prefill.campos.regimeAtual.apurado
                 ? <>Regime atual da empresa: <strong style={{ color: C.texto }}>{ROTULO_REGIME[prefill.campos.regimeAtual.valor] || prefill.campos.regimeAtual.valor}</strong> · {prefill.campos.regimeAtual.origem}</>
                 : <>⚠ {prefill.campos.regimeAtual.motivoAusencia}</>}
@@ -1040,7 +1040,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               id="pl-margem"
               rotuloTexto="Margem de lucro real (%)"
               abaixo={margemLida.fora ? (
-                <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--state-warn)" }}>
                   {/* ⚠⚠ Aqui a guarda é a que impede IMPOSTO NEGATIVO: margem negativa entrava em
                       `custoAnualReal` sem barreira nenhuma, e o `sort` do comparador coroaria o
                       Lucro Real como vencedor por causa disso — num PDF que vai ao cliente. */}
@@ -1076,7 +1076,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           <ReceitasPorAtividade value={ajustes.atividades} onChange={v => setAjustes(a => ({ ...a, atividades: v }))} />
           {mesesInicioAtividade && (
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+              <div style={{ fontSize: "0.8rem", color: C.alerta }}>
                 ⚠ Início de atividade: o RBT12 deixa de ser digitado e passa a ser <strong>proporcionalizado</strong> a
                 partir da receita informada — o campo acima está desativado de propósito.
               </div>
@@ -1086,13 +1086,13 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                   baixar a alíquota E revelar um estouro de limite. Se a tela não disser, o padrão
                   (receita uniforme) vira a resposta por omissão. */}
               {!detalharMeses && (
-                <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.borda}`, fontSize: "0.78rem", lineHeight: 1.5 }}>
+                <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.borda}`, fontSize: "0.8rem", lineHeight: 1.5 }}>
                   Empresa em rampa costuma pagar <strong>menos</strong> nos primeiros meses — e é também
                   quando o limite proporcional pode estourar sem aparecer no total do ano.{" "}
                   <button
                     type="button"
                     onClick={() => setDetalharMeses(true)}
-                    style={{ background: "transparent", border: "none", color: C.accent, font: "inherit", fontSize: "0.78rem", textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                    style={{ background: "transparent", border: "none", color: C.accent, font: "inherit", fontSize: "0.8rem", textDecoration: "underline", cursor: "pointer", padding: 0 }}
                   >
                     Detalhar a receita mês a mês
                   </button>{" "}
@@ -1103,11 +1103,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               {detalhando && (
                 <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}`, display: "grid", gap: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: "0.78rem" }}>Receita mês a mês ({mesesInicioAtividade} {mesesInicioAtividade === 1 ? "mês" : "meses"})</strong>
+                    <strong style={{ fontSize: "0.8rem" }}>Receita mês a mês ({mesesInicioAtividade} {mesesInicioAtividade === 1 ? "mês" : "meses"})</strong>
                     <button
                       type="button"
                       onClick={() => { setDetalharMeses(false); setSerieMensal([]); }}
-                      style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "3px 9px", font: "inherit", fontSize: "0.74rem", cursor: "pointer" }}
+                      style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "3px 9px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
                     >
                       Voltar à receita uniforme
                     </button>
@@ -1133,7 +1133,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                       </label>
                     ))}
                   </div>
-                  <div style={{ fontSize: "0.74rem", color: C.muted, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.5 }}>
                     A <strong>receita anual</strong> continua sendo a base da comparação entre regimes. A série
                     define o <strong>RBT12 proporcionalizado</strong> (média dos meses anteriores × 12) e a receita
                     acumulada que o <strong>limite proporcional</strong> do ano de início verifica.
@@ -1145,17 +1145,17 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           {((num(mesesAtividade) != null && !mesesInicioAtividade) || issForaDaFaixa || avisoTrava) && <section aria-label="Conferências das premissas" className="planejamento-conferencias">
           <strong>Confira antes de usar a comparação</strong>
           {num(mesesAtividade) != null && !mesesInicioAtividade && (
-            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+            <div style={{ fontSize: "0.8rem", color: C.alerta }}>
               Informe de 1 a 12 meses. Do 13º mês em diante a empresa já tem os 12 meses de histórico:
               deixe o campo vazio e preencha o RBT12 real.
             </div>
           )}
           {issForaDaFaixa && (
-            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+            <div style={{ fontSize: "0.8rem", color: C.alerta }}>
               A alíquota de ISS informada está fora da faixa legal de 2% a 5% (LC 116/2003) — confira o cadastro.
             </div>
           )}
-          {avisoTrava && <div style={{ fontSize: "0.78rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
+          {avisoTrava && <div style={{ fontSize: "0.8rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
           </section>}
         </div>
 
@@ -1310,7 +1310,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
 
             {/* Na TELA o aviso aparece aqui; no PAPEL ele já saiu no cabeçalho — os dois porque o
                 PDF e a tela são lidos em situações diferentes. */}
-            <div style={{ fontSize: "0.76rem", color: C.muted, lineHeight: 1.5 }}>
+            <div style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.5 }}>
               Tabelas fiscais verificadas em <strong>{resultado.fontesVerificadasEm}</strong> · ano-base {resultado.anoBase}.
               {" "}{resultado.aviso}
             </div>
