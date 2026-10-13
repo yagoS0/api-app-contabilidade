@@ -40,3 +40,22 @@ test.each([
 ])('recusa mensagem ambígua, negativa contraditória e falha técnica: %j', indice => {
   expect(() => detectarDeclaracaoExistente(indice, pa)).toThrow(expect.objectContaining({ code: 'CONSULTA_DECLARACAO_FALHOU' }));
 });
+
+// Retorno observado no CONSDECLARACAO13 de produção em 13/10/2026 (sem dados de contribuinte).
+const ausenciaSemDeclaracoes = { codigo: '[Aviso-PGDASD-MSG_ISN_027]', texto: 'Não há declarações transmitidas para os parâmetros informados.' };
+test('negativa explícita MSG_ISN_027 com dados vazios é ausência, não resposta incompleta', () => {
+  expect(detectarDeclaracaoExistente({ status: 200, dados: '', mensagens: [ausenciaSemDeclaracoes] }, pa)).toBe(false);
+});
+test.each([
+  { status: 200, dados: JSON.stringify({ periodo }), mensagens: [ausenciaSemDeclaracoes] },
+  { status: 503, dados: '', mensagens: [ausenciaSemDeclaracoes] },
+  { status: 200, dados: '', mensagens: [ausenciaSemDeclaracoes, { codigo: 'Erro-PGDASD' }] },
+  { status: 200, dados: '', mensagens: [{ texto: ausenciaSemDeclaracoes.texto }] },
+  { status: 200, dados: '{}', mensagens: [ausenciaSemDeclaracoes] },
+])('MSG_ISN_027 não libera dados contraditórios ou erro técnico %#', indice => {
+  expect(() => detectarDeclaracaoExistente(indice, pa)).toThrow(expect.objectContaining({ code: 'CONSULTA_DECLARACAO_FALHOU' }));
+});
+
+test.each([undefined, 400, 404, 422])('MSG_ISN_027 exige HTTP 200, recebido %s', status => {
+  expect(() => detectarDeclaracaoExistente({ status, dados: '', mensagens: [ausenciaSemDeclaracoes] }, pa)).toThrow(expect.objectContaining({ code: 'CONSULTA_DECLARACAO_FALHOU' }));
+});

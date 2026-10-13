@@ -1226,9 +1226,15 @@ export function detectarDeclaracaoExistente(indice, competencia) {
   const vazio = dados == null || (typeof dados === 'string' && !dados.trim());
   const mensagens = Array.isArray(indice?.mensagens) ? indice.mensagens : [];
   const ausencia = mensagens.length > 0 && mensagens.every(m =>
-    ['[EntradaIncorreta-PGDASD-MSG_ISN_005]', 'EntradaIncorreta-PGDASD-MSG_ISN_005'].includes(m?.codigo));
+    ['[EntradaIncorreta-PGDASD-MSG_ISN_005]', 'EntradaIncorreta-PGDASD-MSG_ISN_005', '[Aviso-PGDASD-MSG_ISN_027]'].includes(m?.codigo));
   // Código oficial de ausência; texto solto, erro técnico ou payload contraditório não bastam.
-  if (ausencia) return vazio && [undefined, 200, 400, 404, 422].includes(indice?.status) ? false : falhar();
+  if (ausencia) {
+    // MSG_ISN_027: negativa explícita observada em produção com HTTP 200 e dados vazios.
+    // Não generalizar avisos nem aceitar texto livre como prova de ausência de entrega.
+    const avisoSemDeclaracoes = mensagens.some(m => m.codigo === '[Aviso-PGDASD-MSG_ISN_027]');
+    const statusValido = avisoSemDeclaracoes ? indice?.status === 200 : [undefined, 200, 400, 404, 422].includes(indice?.status);
+    return vazio && statusValido ? false : falhar();
+  }
   if (indice?.status != null && indice.status !== 200) return falhar();
   if (mensagens.some(m => m?.codigo !== 'Sucesso-PGDASD')) return falhar();
   if (typeof dados === 'string') { try { dados = JSON.parse(dados); } catch { return falhar(); } }
