@@ -79,7 +79,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
     String(form.cnaePrincipal).trim() &&
     enderecoCompleto &&
     String(form.ownerEmail).trim() &&
-    (!senhaExigida || senhaOk) && form.cadastroConferido;
+    (!senhaExigida || senhaOk) && form.cadastroConferido && typeof form.hasProlabore === "boolean" && typeof form.temFolha === "boolean";
 
   function set(campo, valor) {
     if (campo === "cnpj" && soDigitosCnpj(valor) !== soDigitosCnpj(form.cnpj)) {
@@ -304,13 +304,11 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           </Campo>
         )}
 
-        <label style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", fontSize: 13, marginBottom: "var(--space-4)" }}>
-          <input
-            type="checkbox"
-            checked={form.hasProlabore}
-            onChange={(e) => set("hasProlabore", e.target.checked)}
-          />
-          Há pró-labore (exige guia de INSS na competência)
+        <label>Há pró-labore (exige guia de INSS na competência)
+          <select value={form.hasProlabore === null ? "" : String(form.hasProlabore)} onChange={e => set("hasProlabore", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
+        </label>
+        <label>A empresa possui funcionários na implantação?
+          <select value={form.temFolha === null ? "" : String(form.temFolha)} onChange={e => set("temFolha", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
         </label>
 
         <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>

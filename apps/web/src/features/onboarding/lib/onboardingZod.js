@@ -1,3 +1,4 @@
+import { validarDadosOnboarding, permiteRespostaEspecial } from "@contabilidade/shared/onboarding-dados";
 // Zod DERIVADO da spec — zero regra duplicada.
 //
 // `obrigatorio` está escrito UMA vez, no descritor. Aqui só se lê. Um schema escrito à mão ao lado
@@ -69,7 +70,9 @@ export function buildZodFromSpec(origem, dados, { passo } = {}) {
 
   const shape = {};
   for (const descritor of descritores) {
-    const base = baseDoTipo(descritor);
+    let base = baseDoTipo(descritor);
+    if (["inteiro", "moeda"].includes(descritor.tipo)) base = z.union([z.string(), z.number()]).refine(v => !validarDadosOnboarding(origem, { ...dados, [descritor.campo]: v }).erros[descritor.campo], "informe um número válido");
+    if (permiteRespostaEspecial(descritor)) base = base.or(z.enum(["NAO_SEI", "NAO_APLICAVEL"]));
     if (ehObrigatorio(descritor, dados)) {
       shape[descritor.campo] = exigirPreenchido(base, descritor);
       continue;
@@ -100,7 +103,7 @@ export function buildZodFromSpec(origem, dados, { passo } = {}) {
 export function validarPasso(origem, dados, passo) {
   const schema = buildZodFromSpec(origem, dados, { passo });
   const parsed = schema.safeParse(dados || {});
-  if (parsed.success) return { ok: true, erros: {} };
+  if (parsed.success) { const coerencia = validarDadosOnboarding(origem, dados, { passo }); return { ok: coerencia.ok, erros: coerencia.erros }; }
   const erros = {};
   for (const issue of parsed.error.issues) {
     const campo = issue.path?.[0];

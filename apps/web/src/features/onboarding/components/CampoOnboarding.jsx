@@ -1,3 +1,4 @@
+import { permiteRespostaEspecial, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
 // Um campo do formulário, renderizado A PARTIR DO DESCRITOR.
 //
 // A tela nunca decide rótulo, obrigatoriedade nem visibilidade — isso é da spec. Aqui só se traduz
@@ -132,6 +133,8 @@ export function CampoOnboarding({
     "aria-describedby": [descritor.ajuda && `${id}-ajuda`, erro && `${id}-erro`].filter(Boolean).join(" ") || undefined,
   };
 
+  const especial = respostaEspecial(valor) && permiteRespostaEspecial(descritor);
+  if (especial) valor = "";
   let controle;
   switch (descritor.tipo) {
     case "booleano":
@@ -177,7 +180,7 @@ export function CampoOnboarding({
         <input
           {...comum}
           type="text"
-          inputMode={["inteiro", "moeda", "cnpj", "cpf", "telefone"].includes(descritor.tipo) ? "numeric" : undefined}
+          inputMode={descritor.tipo === "moeda" ? "decimal" : ["inteiro", "cnpj", "cpf", "telefone"].includes(descritor.tipo) ? "numeric" : undefined}
           value={valor ?? ""}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -194,7 +197,12 @@ export function CampoOnboarding({
         origemPreenchimento={origemPreenchimento}
       />
       <div className="onboarding-field__control" style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", alignItems: "flex-start" }}>
-        <div className="onboarding-field__input" style={{ flex: "1 1 16rem", minWidth: 0 }}>{controle}</div>
+        <div className="onboarding-field__input" style={{ flex: "1 1 16rem", minWidth: 0 }}>
+          {permiteRespostaEspecial(descritor) && <select aria-label={`Como responder: ${descritor.rotulo.toLowerCase()}`} value={especial ? (dados?.[descritor.campo] || "") : "VALOR"} onChange={e => onChange(e.target.value === "VALOR" ? "" : e.target.value)} style={{ ...INPUT_STYLE, marginBottom: 6 }}>
+            <option value="VALOR">Informar resposta</option><option value="NAO_SEI">Não sei / preciso confirmar</option><option value="NAO_APLICAVEL">Não se aplica</option>
+          </select>}
+          {!especial && controle}
+        </div>
         {acaoExtra && <div className="onboarding-field__action">{acaoExtra}</div>}
       </div>
       {descritor.ajuda && (

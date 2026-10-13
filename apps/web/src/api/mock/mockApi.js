@@ -1,3 +1,4 @@
+import { exigirDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
 import { withFluxoCarteiraMock } from "./fluxoCarteiraMock";
@@ -11102,8 +11103,8 @@ export function createMockApi() {
       mockLinksComerciais.set(token,{...link,token});return {ok:true,link,token};
     },
     async revogarLinkOnboarding(id,linkId){const l=[...mockLinksComerciais.values()].find(l=>l.id===linkId&&l.onboardingId===id);if(!l)throw new Error("Link não encontrado.");l.revokedAt=new Date().toISOString();return {ok:true};},
-    async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
-    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=patch.dados;o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado ou revogado.");if(l.submittedAt)return {ok:true,enviado:true};const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado ou revogado.");if(l.submittedAt)return {ok:true,enviado:true};if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=exigirDadosOnboarding(o.origem,patch.dados);o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
     async criarDemandaOnboarding(id, { origem, versao, chaveSolicitacao }) {
       const anterior = mockOnboardings.get(id);
       if (!anterior) throw new Error("Atendimento não encontrado.");

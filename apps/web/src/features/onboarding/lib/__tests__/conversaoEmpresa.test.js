@@ -15,3 +15,8 @@ test("nova consulta invalida revisão e preserva sócios e consentimento explíc
   const proximo = aplicarConsultaNaConversao(atual, { capitalSocial: 0, cnaesSecundarios: [] });
   expect(proximo.cadastroConferido).toBe(false); expect(proximo.capitalSocial).toBe("0"); expect(proximo.cnaesSecundarios).toBe(""); expect(proximo.socios).toEqual(atual.socios); expect(proximo.whatsappAutorizado).toBe(true);
 });
+
+test("desconhecimento de folha e pró-labore não vira declaração negativa", () => {
+  const form = prepararConversao({ dados: { qtdFuncionarios: "NAO_SEI", temProLabore: "NAO_SEI" } });
+  expect(form.temFolha).toBeNull(); expect(form.hasProlabore).toBeNull();
+});

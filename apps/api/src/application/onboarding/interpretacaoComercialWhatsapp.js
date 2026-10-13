@@ -1,3 +1,5 @@
+import { numeroDeclarado, permiteRespostaEspecial } from "@contabilidade/shared/onboarding-dados";
+import { descritorDe } from "@contabilidade/shared/onboarding";
 import { pediuMenuWhatsapp, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
 import { pedidoDeConsulta } from "../whatsapp/consultaClienteWhatsapp.js";
 
@@ -258,11 +260,17 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   if (/\b(?:nao (?:tenho|tera|tem)|sem|nenhum)\b.{0,15}\bfuncionarios?\b/.test(t)) set("qtdFuncionarios", 0);
   const quantidade = t.match(/\b(\d{1,4}|zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|vinte|trinta)\s+funcionarios?\b/)?.[1];
   if (quantidade && !campos.has("qtdFuncionarios")) set("qtdFuncionarios", /^\d+$/.test(quantidade) ? Number(quantidade) : NUMEROS[quantidade]);
-  const notas = t.match(/\b(\d{1,5})\s+notas?\b/)?.[1];
-  if (notas && /receb|compra|despesa/.test(t)) set("notasRecebidasMes", Number(notas));
+  // Cada volume exige a própria evidência; "30 notas" isolado não identifica o tipo.
+  for (const [campo, verbos, adjetivos] of [["notasRecebidasMes", "recebo|recebemos", "recebidas|de compras"], ["notasEmitidasMes", "emito|emitimos", "emitidas|de vendas"]]) {
+    const n = t.match(new RegExp(`\\b(?:${verbos})\\s+(?:em media\\s+)?(\\d{1,6})\\s+notas?\\b`))?.[1]
+      || t.match(new RegExp(`\\b(\\d{1,6})\\s+notas?\\s+(?:${adjetivos})\\b`))?.[1];
+    if (n && !/\b(?:nao|nem)\b.{0,20}\b(?:emito|emitimos|recebo|recebemos|tenho)\b/.test(t) && !/por dia|por semana|semanais|por ano|anuais/.test(t)) set(campo, Number(n));
+  }
+  const receita = t.match(/\b(?:faturamento mensal(?: de| e)?|faturo(?: em media)?)\s*(?:r\$\s*)?([\d.,]+)(?:\s*(?:por mes|mensais|ao mes))?\b/)?.[1];
+  if (receita && Number.isFinite(numeroDeclarado(receita))) set("faturamentoMensal", numeroDeclarado(receita));
   if (campoEsperado === "qtdFuncionarios" && /^(?:nao|nenhum|nenhuma|zero|nao tenho|so eu|apenas eu|somente eu|somos so os socios|so os socios)$/.test(t)) set("qtdFuncionarios", 0);
   if (campoEsperado === "qtdFuncionarios" && /^(?:sim|tenho|sim tenho)$/.test(t)) { resposta = "Quantos funcionários, sem contar os sócios?"; respostaSubstituiPergunta = true; }
-  if (["qtdFuncionarios", "notasRecebidasMes"].includes(campoEsperado) && !desconhece) {
+  if (["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes"].includes(campoEsperado) && !desconhece) {
     if (/^\d{1,5}$/.test(t)) set(campoEsperado, Number(t));
     else if (NUMEROS[t] !== undefined) set(campoEsperado, NUMEROS[t]);
   }
@@ -296,7 +304,10 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
       if (campos.has("paradaDesde") || desconhece) anoParadaAtualizado = null;
     }
   }
-  let desconhecido = desconhece && !campos.has(campoEsperado) ? campoEsperado : null;
+  if (campoEsperado === "faturamentoMensal" && Number.isFinite(numeroDeclarado(raw))) set(campoEsperado, numeroDeclarado(raw));
+  const descritorEsperado = descritorDe(origem, campoEsperado);
+  if (desconhece && descritorEsperado && permiteRespostaEspecial(descritorEsperado)) set(campoEsperado, "NAO_SEI");
+  let desconhecido = desconhece && (!campos.has(campoEsperado) || campos.get(campoEsperado)?.valor === "NAO_SEI") ? campoEsperado : null;
   if (campoEsperado === "cnpj" && /^(?:ainda )?nao (?:tenho|encontrei|achei)(?: (?:o |um |meu )?cnpj)?(?: (?:aqui|agora|comigo))?$/.test(t)) desconhecido = campoEsperado;
   if (campoEsperado === "enderecoPretendido" && /^(?:ainda )?nao (?:tenho|defini|escolhi)(?: (?:o |um )?endereco)?(?: ainda)?$/.test(t)) desconhecido = campoEsperado;
   if (campoEsperado && !campos.has(campoEsperado) && !desconhecido && !pergunta && !identificarOrigemComercial(raw)) {

@@ -11,7 +11,7 @@ export function prepararConversao(onboarding) {
     ownerEmail: onboarding?.responsavelEmail || "", ownerName: onboarding?.responsavelNome || "", ownerPassword: "",
     telefoneResponsavel: d.responsavelTelefone || "", guideNotificationEmail: onboarding?.responsavelEmail || "",
     whatsappAutorizado: false, cadastroConferido: false,
-    hasProlabore: d.temProLabore === true, temFolha: Number(d.qtdFuncionarios || 0) > 0,
+    hasProlabore: typeof d.temProLabore === "boolean" ? d.temProLabore : null, temFolha: d.qtdFuncionarios != null && d.qtdFuncionarios !== "" && Number.isFinite(Number(d.qtdFuncionarios)) ? Number(d.qtdFuncionarios) > 0 : null,
     capitalSocial: textoDecimal(cadastro.capitalSocial ?? d.capitalSocialPretendido ?? d.capitalSocial),
     socios: (d.socios || []).map(s => ({ ...s, nome: s.nome || s.name || "", cpf: s.cpf || s.documento || "", participacao: textoDecimal(s.participacao) })),
     naturezaJuridica: cadastro.naturezaJuridica || d.naturezaJuridica || "", porte: cadastro.porte || d.porte || "", dataAbertura: cadastro.dataAbertura || d.dataAbertura || "",

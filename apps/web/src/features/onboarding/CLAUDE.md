@@ -1,5 +1,15 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Coleta alinhada entre escritório, link e IA — 13/10/2026
+
+Preservar as duas entradas: preenchimento manual e link individual do cliente. `@contabilidade/shared/onboarding-dados` valida respostas preenchidas e normaliza quantidades/moeda; ausência continua permitida em rascunhos. `NAO_SEI` e `NAO_APLICAVEL` são declarações distintas de zero/false, não autorizam preço ou conclusão fiscal. Campos de notas emitidas/recebidas, faturamento mensal e transição do contador alimentam a mesma ficha. Receita de 12 meses permanece informação própria: não multiplicar automaticamente a média mensal por 12.
+
+Preservar tanto o pré-atendimento curto legado quanto a qualificação natural já publicada (CNPJ, estrutura, urgência e investigação de pendências); a interpretação aproveita volumes espontâneos com evidência literal. O assistente de coleta complementar usa a ficha atual e o próximo campo compartilhado. Formulário público e API validam antes da escrita. Dados complementares seguem acessíveis em seção recolhível; nenhum caminho manual ou recurso de link foi removido.
+
+Conflito de versão ou falha incerta preserva edição em memória e oferece verificar salvamento; a reconciliação compara base/local/remoto e exige escolha em divergências. Não reenviar automaticamente. Token enviado apenas confirma recebimento, sem devolver a ficha nem gravar novamente. Requisições públicas têm limite de 15 segundos; consulta CNPJ, de 10 segundos. Rascunhos não são persistidos no navegador. Na conversão, folha/pró-labore desconhecidos exigem confirmação explícita.
+
+Validação: `alinhamentoPublico.test.jsx`, `alinhamentoColeta.test.js`, contrato do transporte público e `scripts/run-onboarding-postgres.mjs <pgBin>`. O último cria cluster local descartável, aplica migrações e executa percurso manual/link → diagnóstico → proposta → assinatura conferida → pagamento → carteira/documentos. Todos os contatos, preços e comprovantes são sintéticos; provedores externos ficam bloqueados. A aprovação dos testes locais não é comprovação de publicação em produção.
+
 ## Autorização e relatório fiscal do lead — 10/10/2026
 
 A qualificação fiscal concluída prepara a orientação aprovada com o CNPJ institucional e passa o atendimento ao contador. Aceite da autorização acontece manualmente no portal da Receita. A interface não consulta automaticamente: o contador confere o representante, confirma o aceite e solicita a verificação da procuração e depois SITFIS.

@@ -79,9 +79,13 @@ export async function consultarCnpj(cnpj, { fetchImpl = null } = {}) {
     return { ok: false, motivo: "sem_fetch", mensagem: "Consulta indisponível neste ambiente." };
   }
 
-  let resposta;
+  let resposta, timer;
+  const controller = new AbortController();
   try {
-    resposta = await f(`${BASE}/${digitos}`);
+    resposta = await Promise.race([
+      f(`${BASE}/${digitos}`, { signal: controller.signal }),
+      new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("Consulta indisponível")); }, 10000); }),
+    ]);
   } catch {
     // Rede corporativa, bloqueador, offline. A escapatória manual é o caminho, não o erro.
     return {
@@ -89,7 +93,7 @@ export async function consultarCnpj(cnpj, { fetchImpl = null } = {}) {
       motivo: "rede",
       mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
     };
-  }
+  } finally { clearTimeout(timer); }
 
   if (resposta.status === 404) {
     return { ok: false, motivo: "nao_encontrado", mensagem: "CNPJ não encontrado na base da Receita." };

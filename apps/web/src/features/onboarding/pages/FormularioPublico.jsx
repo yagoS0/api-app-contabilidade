@@ -1,7 +1,8 @@
+import { validarDadosOnboarding, reconciliarDados } from "@contabilidade/shared/onboarding-dados";
 import { useEffect, useRef, useState } from "react";
 import { CampoOnboarding } from "../components/CampoOnboarding";
 import { FichaDeclarada } from "../components/PassoRevisao";
-import { camposDoPasso, passosVisiveis, podarInvisiveis } from "../lib/onboardingSpec";
+import { camposDoPasso, passosVisiveis, podarInvisiveis, descritorDe } from "../lib/onboardingSpec";
 import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
 import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";
 import { Button } from "../../../components/ui/Button";
@@ -21,10 +22,15 @@ export function FormularioPublico({ api }) {
   const [registro, setRegistro] = useState(null), [dados, setDados] = useState({}), [passo, setPasso] = useState("identificacao");
   const [erro, setErro] = useState(""), [aviso, setAviso] = useState(""), [ocupado, setOcupado] = useState(false), [concluido, setConcluido] = useState(false);
   const [confirmado, setConfirmado] = useState(false);
+  const [errosCampos, setErrosCampos] = useState({}), [conflitos, setConflitos] = useState([]), [verificar, setVerificar] = useState(false);
+  const baseSalva = useRef({}), trava = useRef(false);
+  function concluir() { setConcluido(true); setVerificar(false); window.history.replaceState(null, "", window.location.pathname); }
+
   const [dadosSalvos, setDadosSalvos] = useState("");
+  const [releitura, setReleitura] = useState(0);
   const tituloEtapa = useRef(null);
   const etapaAnterior = useRef(null);
-  function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor })); setAviso("Alterações ainda não salvas."); setConfirmado(false); }
+  function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor })); setAviso("Alterações ainda não salvas."); setConfirmado(false); setErrosCampos(e => ({ ...e, [campo]: undefined })); }
   const cnpj = useConsultaCnpjOnboarding({ contexto: token, origem: registro?.origem, dados, alterarCampo, habilitado: Boolean(registro && !concluido) });
   const dadosAtuais = registro ? JSON.stringify(podarInvisiveis(registro.origem, dados)) : "";
   const alterado = Boolean(registro && !concluido && dadosAtuais !== dadosSalvos);
@@ -38,10 +44,10 @@ export function FormularioPublico({ api }) {
     let vivo = true;
     if (!token) { setErro("Link incompleto. Peça um novo link ao escritório."); return; }
     api.consultarFormularioOnboarding(token).then((r) => {
-      if (!vivo) return; setRegistro(r.onboarding); setDados(r.onboarding.dados || {}); setPasso(r.onboarding.ultimoPasso || "identificacao"); setDadosSalvos(JSON.stringify(podarInvisiveis(r.onboarding.origem, r.onboarding.dados || {})));
+      if (!vivo) return; if (r.enviado) { concluir(); return; } baseSalva.current = r.onboarding.dados || {}; setRegistro(r.onboarding); setDados(r.onboarding.dados || {}); setPasso(r.onboarding.ultimoPasso || "identificacao"); setDadosSalvos(JSON.stringify(podarInvisiveis(r.onboarding.origem, r.onboarding.dados || {})));
     }).catch((e) => { if (vivo) setErro(e.message); });
     return () => { vivo = false; };
-  }, [api, token]);
+  }, [api, token, releitura]);
   const passos = registro ? passosVisiveis(registro.origem).filter((p) => p.chave !== "origem") : [];
   const indice = Math.max(0, passos.findIndex((p) => p.chave === passo));
   const atual = passos[indice]?.chave;
@@ -52,15 +58,48 @@ export function FormularioPublico({ api }) {
     }
     etapaAnterior.current = atual;
   }, [atual]);
-  async function salvar(destino = atual, finalizar = false) {
-    if (ocupado || !registro || (finalizar && !confirmado)) return;
-    setOcupado(true); setErro(""); setAviso("");
+  async function verificarSalvamento() {
+    if (trava.current) return;
+    trava.current = true; setOcupado(true); setErro("");
     try {
-      const r = await api.salvarFormularioOnboarding(token, { dados: podarInvisiveis(registro.origem, dados), ultimoPasso: destino, finalizar, versao: registro.versao });
-      setDadosSalvos(JSON.stringify(podarInvisiveis(registro.origem, dados)));
-      if (finalizar) { setConcluido(true); window.history.replaceState(null, "", window.location.pathname); }
-      else { setRegistro(r.onboarding); setPasso(destino); setAviso("Dados salvos. Você pode continuar depois usando o mesmo link."); }
-    } catch (e) { setErro(e.message); } finally { setOcupado(false); }
+      const r = await api.consultarFormularioOnboarding(token);
+      if (r.enviado) { concluir(); return; }
+      if (r.onboarding.origem !== registro.origem) { setErro("A equipe alterou o tipo de atendimento. Suas respostas continuam nesta tela; peça à equipe para conferir antes de continuar."); return; }
+      const remoto = r.onboarding.dados || {};
+      const normalizar = d => validarDadosOnboarding(registro.origem, d).dados;
+      const conciliacao = reconciliarDados(normalizar(baseSalva.current), normalizar(dados), normalizar(remoto));
+      baseSalva.current = remoto;
+      setRegistro(r.onboarding); setDados(conciliacao.dados); setConflitos(conciliacao.conflitos);
+      setDadosSalvos(JSON.stringify(podarInvisiveis(registro.origem, remoto)));
+      setConfirmado(false); setVerificar(false);
+      setAviso(conciliacao.conflitos.length ? "A equipe ou a IA atualizou alguns campos. Escolha qual resposta manter antes de salvar." : "Salvamento conferido. As respostas da equipe e as suas foram preservadas. Confira e continue.");
+    } catch (e) { setErro(e.message); } finally { trava.current = false; setOcupado(false); }
+  }
+  async function salvar(destino = atual, finalizar = false) {
+    if (trava.current || !registro || conflitos.length || verificar || (finalizar && !confirmado)) return;
+    const validacao = validarDadosOnboarding(registro.origem, dados);
+    if (!validacao.ok) {
+      setErrosCampos(validacao.erros); setErro("Confira os campos indicados. Suas respostas continuam nesta tela.");
+      const campo = Object.keys(validacao.erros)[0];
+      setPasso(descritorDe(registro.origem, campo)?.passo || atual);
+      return;
+    }
+    trava.current = true; setOcupado(true); setErro(""); setAviso(""); setErrosCampos({});
+    try {
+      const r = await api.salvarFormularioOnboarding(token, { dados: validacao.dados, ultimoPasso: destino, finalizar, versao: registro.versao });
+      if (finalizar || r.enviado) { concluir(); return; }
+      const salvos = r.onboarding.dados || validacao.dados;
+      baseSalva.current = salvos; setDados(salvos);
+      setDadosSalvos(JSON.stringify(podarInvisiveis(registro.origem, salvos)));
+      setRegistro(r.onboarding); setPasso(destino); setAviso("Dados salvos. Você pode continuar depois usando o mesmo link.");
+    } catch (e) {
+      setErro(e.message); setErrosCampos(e.payload?.erros || {});
+      if (e.status !== 400) setVerificar(true);
+    } finally { trava.current = false; setOcupado(false); }
+  }
+  const complementares = new Set(["socios", "capitalSocialPretendido", "consultoriaMensal", "responsavelCargo", "responsavelCpf"]);
+  function campoPublico(descritor) {
+    return <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} erro={errosCampos[descritor.campo]} onChange={v => cnpj.editar(descritor.campo, v)} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />;
   }
   return <main className="onboarding-workspace onboarding-public">
     <header className="onboarding-public__header"><span className="onboarding-eyebrow">ALTAN · ENTRADA DE CLIENTES</span>
@@ -68,12 +107,21 @@ export function FormularioPublico({ api }) {
     <p>Preencha o que souber. Os dados serão conferidos pelo contador. Não informe senhas ou certificados neste formulário.</p>
     {registro?.origem === "ABERTURA" && <p>Você ainda não precisa ter CNPJ. Conte sobre a empresa que pretende abrir.</p>}</header>
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
+    {!registro && erro && token && !concluido && <Button onClick={() => { setErro(""); setReleitura(n => n + 1); }}>Tentar carregar novamente</Button>}
+    {verificar && !concluido && <Button disabled={ocupado} onClick={verificarSalvamento}>Verificar salvamento e recuperar respostas</Button>}
+    {conflitos.length > 0 && <section aria-label="Respostas para conferir">{conflitos.map(c => <div key={c.campo}>
+      <p>{descritorDe(registro.origem, c.campo)?.rotulo || c.campo}</p>
+      <Button onClick={() => setConflitos(lista => lista.filter(x => x.campo !== c.campo))}>Manter minha resposta: {JSON.stringify(c.local) ?? "não informado"}</Button>
+      <Button onClick={() => { alterarCampo(c.campo, c.remoto ?? ""); setConflitos(lista => lista.filter(x => x.campo !== c.campo)); }}>Usar resposta atualizada: {JSON.stringify(c.remoto) ?? "não informado"}</Button>
+    </div>)}</section>}
     {concluido ? <h2>Cadastro enviado. O escritório dará continuidade ao atendimento.</h2> : !registro ? <p>{erro ? "Seu preenchimento não foi alterado." : "Carregando formulário…"}</p> : <>
       <div className="onboarding-public__progress"><h2 ref={tituloEtapa} tabIndex={-1} style={{ scrollMarginTop: 24 }}>Etapa {indice + 1} de {passos.length}: {passos[indice]?.titulo}</h2><progress aria-label="Progresso do formulário" value={indice + 1} max={passos.length} /></div>
-      <fieldset disabled={ocupado} className="onboarding-public__fields">
+      <fieldset disabled={ocupado || verificar || conflitos.length > 0} className="onboarding-public__fields">
         <legend style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap" }}>{passos[indice]?.titulo}</legend>
         {atual === "identificacao" && <ConsultaCnpjOnboarding consulta={cnpj.consulta} carregando={cnpj.carregando} cadastro={dados.cadastroCnpj} />}
-        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label className="onboarding-public__consent"><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} /><span>Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</span></label></> : camposDoPasso(registro.origem, atual, dados).map((descritor) => <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} onChange={(v) => cnpj.editar(descritor.campo, v)} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />)}
+        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label className="onboarding-public__consent"><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} /><span>Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</span></label></> : <>{camposDoPasso(registro.origem, atual, dados).filter(d => !complementares.has(d.campo)).map(campoPublico)}
+          {camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo)) && <details open={camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo) && errosCampos[d.campo]) || undefined}><summary>Dados complementares — preencha se já souber</summary><p>Podem ser completados com a equipe na contratação ou implantação.</p>{camposDoPasso(registro.origem, atual, dados).filter(d => complementares.has(d.campo)).map(campoPublico)}</details>}</>}
+
         <div className="onboarding-public__actions">
           {indice > 0 && <Button variant="secondary" onClick={() => salvar(passos[indice - 1].chave)}>Salvar e voltar</Button>}
           <Button variant="secondary" onClick={() => salvar()}>Salvar para continuar depois</Button>

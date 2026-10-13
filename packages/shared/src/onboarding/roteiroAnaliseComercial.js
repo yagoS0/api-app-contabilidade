@@ -1,10 +1,12 @@
+import { numeroDeclarado, respostaEspecial } from "./dadosOnboarding.js";
 // Roteiro orientativo: nenhum resultado é presumido por consulta ou por abrir a tela.
 export const DADOS_ANALISE = [
   { chave: 'receita12Meses', rotulo: 'Receita dos últimos 12 meses (R$)', tipo: 'valor' },
   { chave: 'funcionariosClt', rotulo: 'Funcionários CLT', campoFicha: 'qtdFuncionarios', tipo: 'inteiro' },
   { chave: 'sociosProLabore', rotulo: 'Sócios com pró-labore', tipo: 'inteiro' },
   { chave: 'documentosEntradaMes', rotulo: 'Notas recebidas e despesas por mês', campoFicha: 'notasRecebidasMes', tipo: 'inteiro' },
-  { chave: 'notasEmitidasMes', rotulo: 'Notas emitidas por mês', tipo: 'inteiro' },
+  { chave: 'notasEmitidasMes', rotulo: 'Notas emitidas por mês', campoFicha: 'notasEmitidasMes', tipo: 'inteiro' },
+  { chave: 'faturamentoMensal', rotulo: 'Faturamento mensal aproximado (R$)', campoFicha: 'faturamentoMensal', tipo: 'valor' },
   { chave: 'formaEmissao', rotulo: 'Como emite notas atualmente', tipo: 'texto' },
   { chave: 'contasBancarias', rotulo: 'Contas bancárias movimentadas', tipo: 'inteiro' },
   { chave: 'maquininhas', rotulo: 'Maquininhas movimentadas', tipo: 'inteiro' },
@@ -34,8 +36,9 @@ export function normalizarRoteiroAnalise(entrada = {}, origem) {
   if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) falhar('Confira o roteiro da análise.');
   const dados = {}, conferencias = {};
   for (const c of (origem === "PESSOA_FISICA" ? [] : DADOS_ANALISE)) {
-    const v = entrada.dados?.[c.chave];
-    if (v == null || v === '') continue;
+    const bruto = entrada.dados?.[c.chave];
+    if (bruto == null || bruto === '' || respostaEspecial(bruto)) continue;
+    const v = c.tipo === 'texto' ? bruto : numeroDeclarado(bruto);
     if (c.tipo === 'texto') {
       if (typeof v !== 'string' || v.trim().length > 500) falhar('Confira ' + c.rotulo.toLowerCase() + '.');
       dados[c.chave] = v.trim();
@@ -98,4 +101,13 @@ export function textoDaDevolutiva(dados, { cnpj, manual = false, pessoaFisica = 
   if (dados.roteiroPendencias?.length) partes.push('Ainda não conferido nesta análise: ' + dados.roteiroPendencias.join('; ') + '.');
   partes.push('Apresentaremos os valores em uma proposta individual. Esta leitura também fica com você se decidir não contratar.');
   return partes.join('\n\n');
+}
+
+export function dadosAnaliseDaFicha(ficha, dados = {}) {
+  const resultado = { ...dados };
+  for (const c of DADOS_ANALISE.filter(c => c.campoFicha)) {
+    const v = ficha?.dados?.[c.campoFicha];
+    if (v !== undefined && v !== null && v !== '') resultado[c.chave] = v;
+  }
+  return resultado;
 }

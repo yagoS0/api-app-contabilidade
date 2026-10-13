@@ -6,7 +6,8 @@ import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixt
 const url = new URL(process.argv[2]);
 const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && ["/lead_flow_check_v2", "/lead_flow_final_20260921"].includes(url.pathname));
 const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
-if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Somente cluster descartável 55440/lead_flow_check ou CI 55439/whatsapp_delivery_check.");
+const onboardingLocal = url.hostname === "127.0.0.1" && url.username === "lead_test" && url.pathname === "/onboarding_alignment_check" && process.env.ONBOARDING_LOCAL_CHECK === "1";
+if (url.protocol !== "postgresql:" || !(local || ci || onboardingLocal)) throw Error("Somente cluster descartável 55440/lead_flow_check ou CI 55439/whatsapp_delivery_check.");
 process.env.DATABASE_URL = url.href;
 const semRede = () => { throw Error("Provedores externos proibidos nesta validação."); };
 globalThis.fetch = http.get = http.request = https.get = https.request = semRede;
@@ -263,5 +264,6 @@ try {
   ok("Reinícios concorrentes criam uma única nova solicitação, preservam a ficha anterior e rejeitam a aba desatualizada");
   const { verificarJornada } = await import("./checks-jornada-lead.js");
   await verificarJornada({ db, user, ok });
+  if (onboardingLocal) { const { verificarAlinhamento } = await import("./checks-onboarding-alinhamento.js"); await verificarAlinhamento({ db, user, ok }); }
   process.stdout.write(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } finally { await db.$disconnect(); }

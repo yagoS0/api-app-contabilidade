@@ -329,14 +329,24 @@ function writeStored(key, value) {
 function readStoredToken() { return readStored(TOKEN_STORAGE_KEY); }
 
 async function formularioPublicoRequest(token, patch) {
-  const response = await fetch(getApiBaseUrl() + "/public/onboarding", {
-    method: patch ? "PATCH" : "GET", credentials: "omit", cache: "no-store",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    ...(patch ? { body: JSON.stringify(patch) } : {}),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(payload.message || "Não foi possível acessar o formulário. Confira a validade do link com o escritório."), { status: response.status, payload });
-  return payload;
+  const controller = new AbortController();
+  let timer;
+  const limite = new Promise((_, reject) => { timer = setTimeout(() => {
+    controller.abort();
+    reject(Object.assign(new Error("O servidor demorou a responder. Suas respostas continuam nesta tela. Verifique o salvamento antes de tentar novamente."), { code: "timeout" }));
+  }, 15000); });
+  try {
+    return await Promise.race([limite, (async () => {
+      const response = await fetch(getApiBaseUrl() + "/public/onboarding", {
+        method: patch ? "PATCH" : "GET", credentials: "omit", cache: "no-store", signal: controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        ...(patch ? { body: JSON.stringify(patch) } : {}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw Object.assign(new Error(payload.message || "Não foi possível acessar o formulário. Confira a validade do link com o escritório."), { status: response.status, payload });
+      return payload;
+    })()]);
+  } finally { clearTimeout(timer); }
 }
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
