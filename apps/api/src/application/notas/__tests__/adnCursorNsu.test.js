@@ -1,3 +1,4 @@
+jest.mock("../../guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn(async () => ({ assertActive: jest.fn(), release: jest.fn(async () => {}) })) }));
 // O CURSOR NSU DO ADN — o bug que fazia nota emitida sumir sem deixar erro.
 //
 // `ultNSU` quer dizer "último NSU que eu JÁ TENHO", e o ADN devolve os documentos POSTERIORES a ele
@@ -122,6 +123,7 @@ describe("cursor NSU do ADN", () => {
     });
     const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
     expect(r.ok).toBe(true);
+    expect(r).toMatchObject({ partial: true, reason: "ADN_CURSOR_SEM_AVANCO" });
     expect(r.iterations).toBe(1);
     expect(r.newCursor).toBe("0");
   });

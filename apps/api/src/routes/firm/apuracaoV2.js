@@ -80,8 +80,29 @@ export function createApuracaoV2Router({ log } = {}) {
     return res.status(status).json({ ok: false, error, message, ...extra });
   }
 
+  function detalheFechamento(err) {
+    if (err?.code === 'SERPRO_CHAMADA_REPETIDA') {
+      const seconds = Number(err?.detalhe?.segundosRestantes);
+      return Number.isFinite(seconds) && seconds > 0
+        ? { retryAfterSeconds: Math.ceil(seconds), action: 'aguardar_sem_repetir' }
+        : { action: 'aguardar_sem_repetir' };
+    }
+    if (err?.code === 'RECEITAS_ANTERIORES_NAO_CONVERGIU') {
+      const validPeriods = list => Array.isArray(list) ? list.filter(pa => /^\d{4}-(0[1-9]|1[0-2])$/.test(pa)).slice(0, 36) : [];
+      return { action: 'revisar_periodos_anteriores', detalhe: {
+        periodosRemovidos: {
+          receitas: validPeriods(err?.detalhe?.periodosRemovidos?.receitas),
+          folhas: validPeriods(err?.detalhe?.periodosRemovidos?.folhas),
+        },
+      } };
+    }
+    return {};
+  }
+
   // Erro de negócio/config conhecido (validação nossa ou rejeição do SERPRO) → 400; 500 só pro inesperado.
   function statusForFechamentoErr(err) {
+    if (err?.code === 'SERPRO_CHAMADA_REPETIDA') return 409;
+    if (err?.code === 'SERPRO_MEDICAO_INDISPONIVEL') return 503;
     if (['CALCULO_DESATUALIZADO', 'TRANSMISSAO_PENDENTE_CONFERENCIA', 'TRANSMISSAO_RESULTADO_INCERTO'].includes(err?.code)) return 409;
     if (err?.code === 'REGIME_APURACAO_NAO_SUPORTADO') return 400;
     if (err?.code === 'CONSULTA_DECLARACAO_FALHOU') return 502;
@@ -684,7 +705,7 @@ export function createApuracaoV2Router({ log } = {}) {
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
-        return bad(res, statusForFechamentoErr(err), err?.code || "calcular_failed", err?.message || "Erro");
+        return bad(res, statusForFechamentoErr(err), err?.code || "calcular_failed", err?.message || "Erro", detalheFechamento(err));
       }
     }, "Simular apuração")
   );

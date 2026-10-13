@@ -26,7 +26,10 @@ export function createBackgroundTaskClient(request, { wait = ms => new Promise(r
       }
       await wait(2000);
     }
-    throw new Error("A tarefa continua disponível em Tarefas. Consulte o andamento antes de iniciar outra tentativa.");
+    const err = new Error("A tarefa continua disponível em Tarefas. Consulte o andamento antes de iniciar outra tentativa.");
+    err.taskId = out.taskId;
+    err.code = 'TASK_MONITORING_TIMEOUT';
+    throw err;
   }
   return { start, result, request: async (path, options, onProgress) => result(await start(path, options), onProgress) };
 }

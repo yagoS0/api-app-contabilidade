@@ -18,6 +18,19 @@ function setup() {
 }
 const input = { ownerId: "user-a", requestKey: "request-1234567890", kind: "envio-guias", companyIds: ["company-a"], total: 2, fingerprint: "selection" };
 
+test.each([
+  [{ ok: false, result: { ok: false, totalDocs: 0, reason: 'NETWORK_ERROR' } }, 'error'],
+  [{ ok: true, result: { ok: true, totalDocs: 2, warning: 'HTTP_429' } }, 'partial'],
+  [{ ok: true, result: { numeroDeclaracao: 'confirmada', posTransmissao: { extrato: { ok: true }, guia: { skipped: true } } } }, 'partial'],
+  [{ ok: true, result: { numeroDeclaracao: 'confirmada', posTransmissao: { extrato: { ok: true }, guia: { guideId: 'guia' } } } }, 'done'],
+])('preserva resultado e classifica desfecho fiscal %#', async (body, status) => {
+  const { service, rows, scheduled } = setup();
+  const run = jest.fn(async () => ({ body }));
+  await service.start(input, run); await scheduled[0]();
+  expect(rows[0]).toMatchObject({ status, result: body });
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
 test("contexto aceito preserva empresa, ator e competência após término da requisição", () => {
   const req = { params: { companyId: "a" }, body: { competencia: "2026-09" }, query: {}, auth: { user: { id: "u" } }, headers: {} };
   const snapshot = snapshotTaskRequest(req);

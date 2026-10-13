@@ -598,9 +598,8 @@ async function folhasSalarioSeAplicavel(atividades, folhaMensal12) {
 //
 // Por isso o subject entra no regex: é ele que decide de QUAL lista remover.
 const RE_PERIODO_DESNECESSARIO = /foi enviada\s+(folha|receita bruta)[^:]*per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
-// Guarda de compatibilidade: se a RFB mudar a frase e o subject não casar, volta ao comportamento
-// antigo (tratar como receita) em vez de deixar de ajustar.
-const RE_PERIODO_DESNECESSARIO_SEM_SUJEITO = /per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
+// Sem identificação explícita da lista, não presumir que a recusa é de receita.
+// Uma frase nova do provedor deve ser conferida antes de alterar o payload fiscal.
 
 // Exportada para teste: a regra de "de qual lista remover" já saiu errada uma vez e travou o
 // Calcular de toda empresa com Fator-R, sem deixar rastro nenhum.
@@ -617,11 +616,10 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
     } catch (err) {
       const msg = String(err?.message || "");
       const comSujeito = msg.match(RE_PERIODO_DESNECESSARIO);
-      const generico = comSujeito ? null : msg.match(RE_PERIODO_DESNECESSARIO_SEM_SUJEITO);
-      if (!comSujeito && !generico) throw err;
+      if (!comSujeito) throw err;
 
-      const ehFolha = comSujeito ? /folha/i.test(comSujeito[1]) : false;
-      const [mes, ano] = comSujeito ? [comSujeito[2], comSujeito[3]] : [generico[1], generico[2]];
+      const ehFolha = /folha/i.test(comSujeito[1]);
+      const [mes, ano] = [comSujeito[2], comSujeito[3]];
       const pa = `${ano}-${mes}`; // "06/2025" → "2025-06"
 
       const alvo = ehFolha ? folhas : receitas;
@@ -633,7 +631,14 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
   }
   throw new FechamentoError(
     "RECEITAS_ANTERIORES_NAO_CONVERGIU",
-    "Interrompido após três tentativas. Revise os períodos anteriores de receita e folha antes de tentar novamente.",
+    "Processamento interrompido após três tentativas: a Receita recusou períodos anteriores informados como desnecessários. Esta tentativa não foi concluída. Confira os períodos recusados antes de tentar novamente; repetir sem ajustar pode gerar as mesmas recusas e novas cobranças.",
+    { detalhe: {
+      tentativas: 3,
+      periodosRemovidos: removidos,
+      acao: "REVISAR_PERIODOS_ANTERIORES",
+      // Não chamar as listas restantes de 'aceitas': nenhuma resposta confirmou sucesso.
+      ajusteConfirmado: false,
+    } },
   );
 }
 
@@ -1050,9 +1055,9 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
   const pgdas = new SerproPgdasdService();
   const indice = await pgdas.consultarDeclaracaoIndice({
     contratanteCnpj, contribuinteCnpj, periodoApuracao: competencia,
-  });
+  }).catch(err => reconhecerAusenciaDeclaracao(err, competencia));
   if (!indice) throw new FechamentoError('CONSULTA_DECLARACAO_FALHOU', 'Não foi possível conferir se esta competência já foi entregue. Nenhuma transmissão foi iniciada.');
-  const jaDeclarado = detectarDeclaracaoExistente(indice);
+  const jaDeclarado = detectarDeclaracaoExistente(indice, competencia);
   // Q55: em RETIFICAÇÃO, NÃO fazemos o short-circuit — o objetivo é justamente retransmitir.
   if (jaDeclarado && !retificar) {
     const updated = await prisma.apuracaoSnapshot.update({
@@ -1162,22 +1167,56 @@ export async function conferirTransmissaoFechamento({ portalClientId, competenci
   if (snapshot?.estado !== 'erro_transmissao') throw new FechamentoError('ESTADO_INVALIDO', 'A conferência está disponível para transmissões sem confirmação.');
   if (snapshot.simulacaoSerpro?._portalTransmissao?.retificar || snapshot.numeroDeclaracao) return { ok: true, confirmada: false, mensagem: 'A competência já tinha uma declaração anterior. O índice sozinho não comprova a retificadora. Confira o recibo da retificação no portal oficial; o envio permanece bloqueado para evitar uma nova retificadora.' };
   const cnpjs = await resolverCnpjs(portalClientId);
-  const indice = await new SerproPgdasdService().consultarDeclaracaoIndice({ ...cnpjs, periodoApuracao: competencia });
-  if (!detectarDeclaracaoExistente(indice)) return { ok: true, confirmada: false, mensagem: 'A entrega ainda não consta no índice. O envio permanece bloqueado para evitar duplicidade. Confira o recibo no portal oficial antes de qualquer nova transmissão.' };
+  const indice = await new SerproPgdasdService().consultarDeclaracaoIndice({ ...cnpjs, periodoApuracao: competencia }).catch(err => reconhecerAusenciaDeclaracao(err, competencia));
+  if (!detectarDeclaracaoExistente(indice, competencia)) return { ok: true, confirmada: false, mensagem: 'A entrega ainda não consta no índice. O envio permanece bloqueado para evitar duplicidade. Confira o recibo no portal oficial antes de qualquer nova transmissão.' };
   const update = await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: 'erro_transmissao' }, data: { estado: 'transmitida', erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() } });
   if (update.count !== 1) throw erroCalculoObsoleto();
   return { ok: true, confirmada: true, mensagem: 'Declaração localizada na Receita. A competência foi marcada como transmitida, sem novo envio.' };
 }
 
-/** Heurística: o índice CONSDECLARACAO13 indica declaração existente pro PA?
- * Q44: o retorno do SERPRO usa `dados` (não `dadosSaida`) — lê os dois por robustez. */
-function detectarDeclaracaoExistente(indice) {
+/** Contrato CONSDECLARACAO13: periodo mensal ou periodos anuais, com operacoes.
+ * https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_declaracao_por_ano_pa/
+ * Resposta desconhecida nunca autoriza transmissão. Exportado para regressões sem rede. */
+function reconhecerAusenciaDeclaracao(err, competencia) {
+  if (err?.code === 'SERPRO_BUSINESS_ERROR' && [400, 404, 422].includes(err.status) && err.details) {
+    try { if (detectarDeclaracaoExistente({ ...err.details, status: err.status }, competencia) === false) return err.details; } catch { /* conserva a recusa original */ }
+  }
+  throw err;
+}
+
+export function detectarDeclaracaoExistente(indice, competencia) {
+  const falhar = () => { throw new FechamentoError('CONSULTA_DECLARACAO_FALHOU', 'A consulta de declarações retornou dados incompletos. Nenhuma transmissão foi iniciada; confira a situação antes de tentar novamente.'); };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(competencia))) return falhar();
+  const pa = competencia.replace('-', '');
   let dados = indice?.dados ?? indice?.dadosSaida;
-  if (typeof dados === 'string') { try { dados = JSON.parse(dados); } catch { dados = null; } }
+  const vazio = dados == null || (typeof dados === 'string' && !dados.trim());
+  const mensagens = Array.isArray(indice?.mensagens) ? indice.mensagens : [];
+  const ausencia = mensagens.length > 0 && mensagens.every(m =>
+    ['[EntradaIncorreta-PGDASD-MSG_ISN_005]', 'EntradaIncorreta-PGDASD-MSG_ISN_005'].includes(m?.codigo));
+  // Código oficial de ausência; texto solto, erro técnico ou payload contraditório não bastam.
+  if (ausencia) return vazio && [undefined, 200, 400, 404, 422].includes(indice?.status) ? false : falhar();
+  if (indice?.status != null && indice.status !== 200) return falhar();
+  if (mensagens.some(m => m?.codigo !== 'Sucesso-PGDASD')) return falhar();
+  if (typeof dados === 'string') { try { dados = JSON.parse(dados); } catch { return falhar(); } }
+  if (dados?.periodo !== undefined || dados?.periodos !== undefined) {
+    if (dados.periodo !== undefined && dados.periodos !== undefined) return falhar();
+    const ano = dados.anoCalendario ?? dados.anocalendario;
+    if (ano != null && String(ano) !== pa.slice(0, 4)) return falhar();
+    const periodos = dados.periodo !== undefined ? [dados.periodo] : dados.periodos;
+    if (!Array.isArray(periodos) || !periodos.length || periodos.some(p => !/^\d{4}(0[1-9]|1[0-2])$/.test(String(p?.periodoApuracao)) || !Array.isArray(p?.operacoes))) return falhar();
+    const correspondentes = periodos.filter(p => String(p.periodoApuracao) === pa);
+    if (correspondentes.length !== 1) return falhar();
+    const operacoes = correspondentes[0].operacoes;
+    if (operacoes.some(o => typeof o?.indiceDeclaracao?.numeroDeclaracao === 'string' && o.indiceDeclaracao.numeroDeclaracao.trim())) return true;
+    // Lista sem índice de declaração (inclusive só DAS) não prova ausência de entrega.
+    return falhar();
+  }
+  // Compatibilidade de respostas antigas: um PA explícito divergente sempre invalida o índice.
+  if (dados?.periodoApuracao != null && String(dados.periodoApuracao).replace('-', '') !== pa) return falhar();
   if (dados && !Array.isArray(dados) && (dados.idDeclaracao || dados.numeroDeclaracao)) return true;
   const lista = Array.isArray(dados) ? dados : dados?.declaracoes ?? dados?.listaDeclaracoes ?? dados?.declaracaoTransmitida;
-  if (Array.isArray(lista)) return lista.length > 0;
-  throw new FechamentoError('CONSULTA_DECLARACAO_FALHOU', 'A consulta de declarações retornou dados incompletos. Nenhuma transmissão foi iniciada; confira a situação antes de tentar novamente.');
+  if (Array.isArray(lista) && lista.every(d => d && (d.idDeclaracao || d.numeroDeclaracao) && (d.periodoApuracao == null || String(d.periodoApuracao).replace('-', '') === pa))) return lista.length > 0;
+  return falhar();
 }
 
 // Q44: a mensagem de negócio do SERPRO que prova que já existe declaração no PA

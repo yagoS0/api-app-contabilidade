@@ -6,6 +6,20 @@ import { OfficeNavigation } from "../../../app/navigation/OfficeNavigation";
 import { useBackgroundJobs } from "../../companies/list/hooks/useBackgroundJobs";
 import { renderHook } from "@testing-library/react";
 
+test.each([
+  ['apuracao-calculo', { calculoId: 'c1', dasValor: 248.92 }, /DAS estimado: R\$\s*248,92/],
+  ['apuracao-transmissao', { numeroDeclaracao: '123', posTransmissao: { guia: { skipped: true } } }, /Guia pendente/],
+  ['consulta-fiscal', { ok: true, totalDocs: 2, warning: 'HTTP_429' }, /incompleta/i],
+  ['consulta-fiscal', { ok: false, totalDocs: 0, message: 'SSL routines:decryption failed or bad record mac' }, /conexão/i],
+])('resultado %s explica efeito confirmado sem nova operação', (tipo, result, expected) => {
+  const api = { getBackgroundTask: jest.fn() };
+  render(<MemoryRouter><TaskCenter api={api} background={{ tarefas: [{ jobId: 'fiscal', tipo, descricao: tipo === 'consulta-fiscal' ? 'Consulta de NFS-e' : '', status: 'done', result: { ok: true, result } }] }} /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: /Tarefas/ }));
+  expect(screen.getByText(expected)).toBeInTheDocument();
+  expect(screen.queryByText(/SSL routines/)).not.toBeInTheDocument();
+  expect(api.getBackgroundTask).not.toHaveBeenCalled();
+});
+
 test("lista múltiplas tarefas sem modal e conserva resultados após navegação", async () => {
   const jobs = [{ jobId: "a", tipo: "notas", total: 3, processadas: 1, status: "processando" }];
   const local = [{ jobId: "send-a", tipo: "envio-guias", status: "running", companyName: "Empresa A", total: 2, processadas: 0 }];

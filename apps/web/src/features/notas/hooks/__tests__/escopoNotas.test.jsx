@@ -95,3 +95,14 @@ test.each([{}, { ok: false, result: { message: "Captura recusada" } }])("captura
   expect(result.current.erroCaptura).toBeTruthy();
   expect(feedback.notifySuccess).not.toHaveBeenCalled();
 });
+
+test("captura parcial conserva contagem e alerta após recarregar lista", async () => {
+ const api={...apiBase(),syncAdn:jest.fn(async()=>({ok:true,result:{ok:true,totalDocs:1,warning:'NETWORK_ERROR: decryption failed or bad record mac'}}))};
+ const feedback={notifyError:jest.fn(),notifySuccess:jest.fn()};
+ const {result}=renderHook(()=>useNotasFiscais({api,companyId:'A',feedback}));await act(async()=>{});
+ await act(async()=>result.current.syncAdn());
+ expect(result.current.erroCaptura).toMatch(/incompleta: 1 documento/);
+ expect(result.current.erroCaptura).toMatch(/conexão segura/);
+ expect(result.current.erroCaptura).not.toMatch(/bad record mac/);
+ expect(feedback.notifySuccess).not.toHaveBeenCalled();expect(api.syncAdn).toHaveBeenCalledTimes(1);
+});
