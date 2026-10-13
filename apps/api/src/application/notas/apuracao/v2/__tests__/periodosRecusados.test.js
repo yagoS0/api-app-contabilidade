@@ -28,17 +28,66 @@ function banco() {
   } };
 }
 
-test('três recusas ficam gravadas mesmo sem sucesso; nova ação não reapresenta os mesmos períodos', async () => {
+test('recusas ficam gravadas mesmo se uma falha técnica interromper; nova ação não reapresenta os mesmos períodos', async () => {
   const { db, rows } = banco();
-  const executar = jest.fn(async p => { throw recusar(p.receitasBrutasAnteriores[0].pa); });
-  await expect(executarComRetomada(executar, params, { ...ctx, db })).rejects.toMatchObject({ code: 'RECEITAS_ANTERIORES_NAO_CONVERGIU' });
-  expect(executar).toHaveBeenCalledTimes(3); expect(rows.size).toBe(3);
+  const erro = Object.assign(new Error('Rede indisponível'), { code: 'NETWORK_ERROR' });
+  const executar = jest.fn(async p => {
+    if (p.receitasBrutasAnteriores.length === 1) throw erro;
+    throw recusar(p.receitasBrutasAnteriores[0].pa);
+  });
+  await expect(executarComRetomada(executar, params, { ...ctx, db })).rejects.toBe(erro);
+  expect(executar).toHaveBeenCalledTimes(4); expect(rows.size).toBe(3);
   const sucesso = jest.fn(async () => ({ dasValor: 6 }));
   const resultado = await executarComRetomada(sucesso, params, { ...ctx, db });
   expect(sucesso.mock.calls[0][0].receitasBrutasAnteriores.map(r => r.pa)).toEqual(['2025-12']);
   expect(sucesso.mock.calls[0][0].folhasSalario).toEqual(params.folhasSalario);
   expect(resultado.periodosReaproveitados.receitas).toEqual(['2025-09', '2025-10', '2025-11']);
   expect(sucesso).toHaveBeenCalledTimes(1);
+});
+
+test('simulação conclui após mais de três recusas, cada payload distinto e persistido antes da próxima chamada', async () => {
+  const { db, rows } = banco(); const assinaturas = [];
+  const executar = jest.fn(async p => {
+    expect(rows.size).toBe(assinaturas.length);
+    assinaturas.push(await assinaturaSimulacao(p));
+    if (p.receitasBrutasAnteriores.length) throw recusar(p.receitasBrutasAnteriores[0].pa);
+    return { dasValor: 6 };
+  });
+  const out = await executarComRetomada(executar, params, { ...ctx, db });
+  expect(out.resultado.dasValor).toBe(6);
+  expect(executar).toHaveBeenCalledTimes(5);
+  expect(new Set(assinaturas).size).toBe(5);
+  expect(rows.size).toBe(4);
+  expect(out.folhasAceitas).toEqual(params.folhasSalario);
+});
+
+test('erro de rede com texto semelhante a recusa não é repetido nem gravado', async () => {
+  const { db, rows } = banco();
+  const erro = Object.assign(new Error(mensagem('2025-09')), { code: 'NETWORK_ERROR' });
+  const executar = jest.fn(async () => { throw erro; });
+  await expect(executarComRetomada(executar, params, { ...ctx, db })).rejects.toBe(erro);
+  expect(executar).toHaveBeenCalledTimes(1); expect(rows.size).toBe(0);
+});
+
+test('recusa de período já removido interrompe sem reenviar o mesmo payload', async () => {
+  const { db, rows } = banco();
+  const executar = jest.fn(async () => { throw recusar('2025-09'); });
+  await expect(executarComRetomada(executar, params, { ...ctx, db })).rejects.toMatchObject({ code: 'SERPRO_BUSINESS_ERROR' });
+  expect(executar).toHaveBeenCalledTimes(2); expect(rows.size).toBe(1);
+});
+
+test('limite da simulação continua finito mesmo com uma lista maior que a série mensal', async () => {
+  const { db, rows } = banco();
+  const receitasBrutasAnteriores = Array.from({ length: 26 }, (_, i) => ({ pa: new Date(Date.UTC(2023, i, 1)).toISOString().slice(0, 7), valorInterno: 10 }));
+  const executar = jest.fn(async p => { throw recusar(p.receitasBrutasAnteriores[0].pa); });
+  await expect(executarComRetomada(executar, { ...params, receitasBrutasAnteriores }, { ...ctx, db })).rejects.toMatchObject({ code: 'RECEITAS_ANTERIORES_NAO_CONVERGIU' });
+  expect(executar).toHaveBeenCalledTimes(25); expect(rows.size).toBe(25);
+});
+
+test('caminho sem wrapper persistente mantém teto de três chamadas usado pela transmissão', async () => {
+  const executar = jest.fn(async p => { throw recusar(p.receitasBrutasAnteriores[0].pa); });
+  await expect(executarComAjusteDePeriodos(executar, params)).rejects.toMatchObject({ code: 'RECEITAS_ANTERIORES_NAO_CONVERGIU' });
+  expect(executar).toHaveBeenCalledTimes(3);
 });
 
 test.each(['empresa', 'competencia', 'valor'])('recusas não atravessam alteração de %s', async tipo => {

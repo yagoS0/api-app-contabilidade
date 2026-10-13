@@ -182,13 +182,17 @@ export function parseRetornoSimulacao(raw) {
   const decl = Array.isArray(dados) ? dados[0] : dados;
 
   const valoresDevidos = Array.isArray(decl?.valoresDevidos) ? decl.valoresDevidos : [];
-  const dasValor = valoresDevidos.length
-    ? round2(valoresDevidos.reduce((s, v) => s + Number(v.valor || 0), 0))
+  const valorValido = (valor) => (typeof valor === "number" || (typeof valor === "string" && valor.trim() !== ""))
+    && Number.isFinite(Number(valor)) && Number(valor) >= 0;
+  const soma = valoresDevidos.every((v) => valorValido(v?.valor))
+    ? valoresDevidos.reduce((s, v) => s + Number(v.valor), 0) : NaN;
+  const dasValor = valoresDevidos.length && Number.isFinite(soma)
+    ? round2(soma)
     : null;
   const tributos = valoresDevidos.map((v) => ({
-    codigo: v.codigoTributo,
-    nome: COD_TRIBUTO[v.codigoTributo] || String(v.codigoTributo),
-    valor: Number(v.valor || 0),
+    codigo: v?.codigoTributo,
+    nome: COD_TRIBUTO[v?.codigoTributo] || String(v?.codigoTributo),
+    valor: valorValido(v?.valor) ? Number(v.valor) : null,
   }));
   const numeroDeclaracao = decl?.idDeclaracao ?? null;
   const dataHoraTransmissao = decl?.dataHoraTransmissao ?? null;

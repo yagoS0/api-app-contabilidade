@@ -20,7 +20,7 @@ describe("executarComAjusteDePeriodos", () => {
       const [ano, mes] = p.receitasBrutasAnteriores[0].pa.split("-");
       throw new Error(`SN-Entregar: Foi enviada receita bruta de um período desnecessário: ${mes}/${ano}. Remova este período e tente novamente.`);
     });
-    await expect(executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores: [...receitas, { pa: "2025-09", valorInterno: 100 }] })).rejects.toThrow("três tentativas");
+    await expect(executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores: [...receitas, { pa: "2025-09", valorInterno: 100 }] })).rejects.toThrow("limite de ajustes");
     expect(executar).toHaveBeenCalledTimes(3);
   });
   test("queixa de FOLHA remove da folha e NÃO toca nas receitas", async () => {

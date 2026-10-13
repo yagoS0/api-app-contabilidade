@@ -612,12 +612,13 @@ const RE_PERIODO_DESNECESSARIO = /foi enviada\s+(folha|receita bruta)[^:]*per[í
 
 // Exportada para teste: a regra de "de qual lista remover" já saiu errada uma vez e travou o
 // Calcular de toda empresa com Fator-R, sem deixar rastro nenhum.
-export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores, folhasSalario, ...params }, { onPeriodoRemovido } = {}) {
+export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores, folhasSalario, ...params }, { onPeriodoRemovido, maxTentativas = 3 } = {}) {
   let receitas = [...(receitasBrutasAnteriores || [])];
   let folhas = [...(folhasSalario || [])];
   const removidos = { receitas: [], folhas: [] };
-  // No máximo três chamadas por ação. Novas recusas exigem revisar os períodos antes de repetir.
-  for (let tentativa = 0; tentativa < 3; tentativa += 1) {
+  // Cada recusa precisa eliminar um período presente; nunca há repetição automática por rede.
+  const limite = Math.min(25, Math.max(1, Math.trunc(Number(maxTentativas) || 3)));
+  for (let tentativa = 0; tentativa < limite; tentativa += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const resultado = await executar({ ...params, receitasBrutasAnteriores: receitas, folhasSalario: folhas });
@@ -642,9 +643,11 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
   }
   throw new FechamentoError(
     "RECEITAS_ANTERIORES_NAO_CONVERGIU",
-    "Processamento interrompido após três tentativas: a Receita recusou períodos anteriores informados como desnecessários. Esta tentativa não foi concluída. Confira os períodos recusados antes de tentar novamente; repetir sem ajustar pode gerar as mesmas recusas e novas cobranças.",
+    onPeriodoRemovido
+      ? "A simulação atingiu o limite de ajustes de períodos. Os períodos explicitamente recusados foram salvos e não serão reenviados com os mesmos dados. O cálculo ainda não foi concluído; confira a configuração antes de continuar."
+      : "A simulação atingiu o limite de ajustes de períodos e não foi concluída. Confira os períodos recusados antes de continuar.",
     { detalhe: {
-      tentativas: 3,
+      tentativas: limite,
       periodosRemovidos: removidos,
       acao: "REVISAR_PERIODOS_ANTERIORES",
       // Não chamar as listas restantes de 'aceitas': nenhuma resposta confirmou sucesso.
@@ -817,6 +820,10 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
     { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos },
   ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
+  // HTTP 200 não comprova um cálculo utilizável. Zero explícito é válido.
+  if (typeof resultado?.dasValor !== "number" || !Number.isFinite(resultado.dasValor) || resultado.dasValor < 0) {
+    throw new FechamentoError("SIMULACAO_RESPOSTA_INVALIDA", "O provedor retornou uma resposta sem valor de DAS válido. O cálculo anterior foi preservado. Confira o registro da tentativa antes de continuar; não repita a simulação automaticamente.");
+  }
   lease.assertActive();
   if (hashCalculo(contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
 
@@ -1223,9 +1230,15 @@ export function detectarDeclaracaoExistente(indice, competencia) {
   const vazio = dados == null || (typeof dados === 'string' && !dados.trim());
   const mensagens = Array.isArray(indice?.mensagens) ? indice.mensagens : [];
   const ausencia = mensagens.length > 0 && mensagens.every(m =>
-    ['[EntradaIncorreta-PGDASD-MSG_ISN_005]', 'EntradaIncorreta-PGDASD-MSG_ISN_005'].includes(m?.codigo));
+    ['[EntradaIncorreta-PGDASD-MSG_ISN_005]', 'EntradaIncorreta-PGDASD-MSG_ISN_005', '[Aviso-PGDASD-MSG_ISN_027]'].includes(m?.codigo));
   // Código oficial de ausência; texto solto, erro técnico ou payload contraditório não bastam.
-  if (ausencia) return vazio && [undefined, 200, 400, 404, 422].includes(indice?.status) ? false : falhar();
+  if (ausencia) {
+    // MSG_ISN_027: negativa explícita observada em produção com HTTP 200 e dados vazios.
+    // Não generalizar avisos nem aceitar texto livre como prova de ausência de entrega.
+    const avisoSemDeclaracoes = mensagens.some(m => m.codigo === '[Aviso-PGDASD-MSG_ISN_027]');
+    const statusValido = avisoSemDeclaracoes ? indice?.status === 200 : [undefined, 200, 400, 404, 422].includes(indice?.status);
+    return vazio && statusValido ? false : falhar();
+  }
   if (indice?.status != null && indice.status !== 200) return falhar();
   if (mensagens.some(m => m?.codigo !== 'Sucesso-PGDASD')) return falhar();
   if (typeof dados === 'string') { try { dados = JSON.parse(dados); } catch { return falhar(); } }

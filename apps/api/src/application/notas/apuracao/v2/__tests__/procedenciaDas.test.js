@@ -374,3 +374,55 @@ it('cadastro CAIXA não é contornado omitindo regime no formulário',async()=>{
  prisma.cadastroFiscal.findUnique.mockResolvedValue({regimeApuracao:'CAIXA'});
  await expect(calcularFechamento({...BASE,atividades:ATIVIDADES})).rejects.toMatchObject({code:'REGIME_APURACAO_NAO_SUPORTADO'});expect(mockSimular).not.toHaveBeenCalled();
 });
+
+// O caminho posterior à transmissão também é simulado: nenhum PDF ou extrato fiscal real.
+jest.mock("../../../../fiscal/serpro/SerproPgdasDeclaracaoService.js", () => ({
+  syncPgdasByCompetencia: jest.fn(async () => { throw new Error("Extrato indisponível no transporte simulado"); }),
+}));
+jest.mock("../../../../fiscal/serpro/CaptureSerproGuidesService.js", () => ({
+  capturePgdasGuideForCompany: jest.fn(async () => { throw new Error("Guia indisponível no transporte simulado"); }),
+}));
+import { recuperarCalculo } from "../RecuperacaoCalculo.js";
+const indice027 = { status: 200, dados: '', mensagens: [{ codigo: '[Aviso-PGDASD-MSG_ISN_027]', texto: 'Não há declarações transmitidas para os parâmetros informados.' }] };
+
+describe('Fluxo completo de transmissão com negativa MSG_ISN_027 (provedores simulados)', () => {
+  it('consulta índice, transmite uma única vez e conserva confirmação mesmo se guia/extrato falharem', async () => {
+    const { snapshot, calculoId } = await simulacaoSalva();
+    mockIndice.mockResolvedValueOnce(indice027);
+    const result = await transmitirFechamento({ ...BASE, calculoId });
+    expect(mockIndice).toHaveBeenCalledTimes(1);
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+    expect(mockTransmitir).toHaveBeenCalledWith(expect.objectContaining({ competencia: COMPETENCIA, atividades: snapshot.atividadesEscolhidas, tipoDeclaracao: 1 }));
+    expect(result).toMatchObject({ ok: true, jaDeclarado: false, numeroDeclaracao: 'D1', dasValor: 812, snapshot: { estado: 'transmitida', numeroDeclaracao: 'D1' }, posTransmissao: { extrato: { skipped: true }, guia: { skipped: true } } });
+    expect(prisma.apuracaoSnapshot.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ estado: 'transmitida', dasRetornadoSerpro: 812, numeroDeclaracao: 'D1' }) }));
+  });
+  it.each([
+    { ...indice027, dados: '{}' },
+    { ...indice027, mensagens: [...indice027.mensagens, { codigo: 'Erro-PGDASD' }] },
+    { ...indice027, status: 503 },
+  ])('índice ambíguo não transmite e mantém cálculo recuperável %#', async indice => {
+    const { snapshot, calculoId } = await simulacaoSalva();
+    mockIndice.mockResolvedValueOnce(indice);
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'CONSULTA_DECLARACAO_FALHOU' });
+    expect(mockTransmitir).not.toHaveBeenCalled();
+    // Reconstitui as escritas realmente solicitadas pelo serviço, inclusive reserva e rollback.
+    let persistido = { ...snapshot };
+    for (const [arg] of prisma.apuracaoSnapshot.updateMany.mock.calls) persistido = { ...persistido, ...arg.data };
+    const out = recuperarCalculo(persistido, { ...BASE, cnpj: '34627370000175', regimeApuracao: 'COMPETENCIA', contextoOrigem: snapshot.simulacaoSerpro._portalCalculo.contextoOrigem });
+    expect(out.calculoRecuperavel).toMatchObject({ calculoId, dasValor: 812.34, formulario: snapshot.simulacaoSerpro._portalCalculo.formulario });
+    expect(persistido.estado).toBe('calculada');
+  });
+  it('timeout após a transmissão mockada nunca libera o cálculo para repetir envio', async () => {
+    const { snapshot, calculoId } = await simulacaoSalva();
+    mockIndice.mockResolvedValueOnce(indice027);
+    mockTransmitir.mockRejectedValueOnce(new Error('timeout simulado após envio'));
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'TRANSMISSAO_RESULTADO_INCERTO' });
+    let persistido = { ...snapshot };
+    for (const [arg] of prisma.apuracaoSnapshot.updateMany.mock.calls) persistido = { ...persistido, ...arg.data };
+    expect(persistido.estado).toBe('erro_transmissao');
+    expect(recuperarCalculo(persistido, { ...BASE, cnpj: '34627370000175', regimeApuracao: 'COMPETENCIA', contextoOrigem: snapshot.simulacaoSerpro._portalCalculo.contextoOrigem }).calculoRecuperavel).toBeNull();
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue(persistido);
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'TRANSMISSAO_PENDENTE_CONFERENCIA' });
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+});
