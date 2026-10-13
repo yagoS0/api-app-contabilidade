@@ -35,6 +35,17 @@ test('dois cliques concorrentes executam um único recálculo e envio', async ()
   const f = cenario(); await Promise.all([f.run(), f.run()]);
   expect(f.deps.recalcular).toHaveBeenCalledTimes(1); expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledTimes(1);
 });
+
+test.each([
+  { tipo: 'SIMPLES' },
+  { tipo: 'OUTRA', sourceFileId: 'serpro:dctfweb:lp:empresa:2026-09' },
+])('guia elegível $tipo conclui automaticamente sem encaminhar ao contador', async dados => {
+  const f = cenario(); Object.assign(f.guia, dados);
+  expect(await f.run()).toMatchObject({ acao: 'RECALCULAR_GUIA', codigo: { status: 'ENVIADO' } });
+  expect(f.deps.recalcular).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledTimes(1);
+  expect(f.args.encaminhar).not.toHaveBeenCalled();
+});
 test.each(['outra_empresa', 'outro_telefone', 'expirado', 'hash_alterado', 'paga', 'contato_revogado', 'nao_vencida'])('recusa %s antes de custo ou PDF', async caso => {
   const f = cenario();
   if (caso === 'outra_empresa') f.token.companyId = 'outra';
