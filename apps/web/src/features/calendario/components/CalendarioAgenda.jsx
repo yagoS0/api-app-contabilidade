@@ -41,6 +41,10 @@ function Faixas({ itens, dias, abrir, criar, mes = false, gestos, onConcluir }) 
 
 export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdFixo = null, initialContext, onContextChange }) {
   const [itensCarteira,setItensCarteira]=useState([]), [erroCarteira,setErroCarteira]=useState('');
+  const [conclusoesLocais, setConclusoesLocais] = useState({});
+  const conclusaoEmpresaRef = useRef(new Set());
+  const versaoConclusaoRef = useRef(0);
+  const [empresasSalvando, setEmpresasSalvando] = useState(new Set());
   const agora = useRelogioAgenda();
   const [referencia, setReferencia] = useState(initialContext?.referencia || dataLocal());
   const [visao, setVisao] = useState(['mes','semana','dia','lista'].includes(initialContext?.visao) ? initialContext.visao : initialContext?.visao === 'agenda' ? 'lista' : 'semana');
@@ -89,12 +93,15 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     let ativo = true; setCarregando(true); setErro('');
     const consulta = ++leiturasRef.current;
     const leitura = edicoes.capturarLeitura();
+    const versaoConclusao = versaoConclusaoRef.current;
+    const pendentesConclusao = new Set(conclusaoEmpresaRef.current);
     Promise.resolve().then(() => Promise.all([leituras.ler(`obrigacoes:${inicio}:${fim}`, () => api.listObrigacoes({ companyId: companyIdFixo, inicio, fim })), leituras.ler(`tarefas:${inicio}:${fim}`, () => api.getTarefasAgenda(inicio, fim))]))
       .then(resultados => {
         resultados.forEach(conferir);
         if (!ativo || consulta !== leiturasRef.current) return;
         const [obs, tasks] = resultados;
         setDados(d => ({ ...d, obrigacoes: obs.obrigacoes || [], tarefas: tasks.tarefas || [], itens: companyIdFixo ? [] : tasks.itens || [], ocultos: tasks.ocultos || [], opcoes: obs.opcoes }));
+        setConclusoesLocais(xs => Object.fromEntries(Object.entries(xs).filter(([id, x]) => x.versao > versaoConclusao || pendentesConclusao.has(id) || conclusaoEmpresaRef.current.has(id))));
         edicoes.confirmarLeitura(leitura);
       }).catch(e => { if (ativo) setErro(e.message); }).finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
@@ -134,7 +141,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const atividades = useMemo(() => agruparAtividades([
     ...itensDasObrigacoes(dados.obrigacoes), ...dados.itens, ...itensCarteira.filter(i => !dados.obrigacoes.some(o => o.companyId === i.companyId && chaveDaObrigacaoCarteira(o.verificador) === i.chave && o.ocorrencias.some(oc => oc.competenciaRef === i.competencia))),
     ...dados.fiscais.filter(i => !dados.ocultos.includes(`${i.tipo}|${i.id}`)),
-  ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim)).map(i => ({...i, salvando:edicoes.pendente(i)})), [dados, itensCarteira, inicio, fim, edicoes.pendente]);
+  ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim).map(i => conclusoesLocais[i.id] ? { ...i, ...conclusoesLocais[i.id].patch } : i)).map(i => ({...i, salvando:edicoes.pendente(i)})), [dados, itensCarteira, inicio, fim, edicoes.pendente, conclusoesLocais]);
   const blocos = useMemo(() => blocosDiarios(atividades, inicio, fim), [atividades, inicio, fim]);
   const horarios = useMemo(() => Object.fromEntries(dias.map(d => [d,posicionarHorarios(blocos.filter(i => !faixa(i) && i.dataInicio === d))])), [blocos,dias]);
   useEffect(() => {
@@ -174,7 +181,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const criarPeriodo = useCallback(patch => { const cell = document.activeElement?.getBoundingClientRect?.(); setErro(''); setCriacao({...patch,companyId:companyIdFixo, ancora:cell?.width ? {x:cell.right + 12,y:cell.top} : null}); }, [companyIdFixo]);
   const atualizarRascunho = useCallback(patch => setCriacao(atual => atual ? {...atual,...patch} : atual), []);
   function abrirAtividade(item) {
-    if(item.fonte==='CARTEIRA' || item.tipo==='fluxo'){setErro('');setDetalhe({...item,somenteSerie:true,itens:[{...item,competenciaRef:item.competenciaRef || item.competencia}]});return;}
+    if(item.fonte==='CARTEIRA' || item.tipo==='fluxo'){const original=item.itens?.[0] || item;setErro('');setDetalhe({...item,somenteSerie:true,itens:[{...original,competenciaRef:original.competenciaRef || original.competencia}]});return;}
     if (edicoes.pendente(item)) return;
     item = item.atividadeOriginal ? { ...item.atividadeOriginal, diaSelecionado: item.diaSelecionado } : item;
     setErro('');
@@ -200,15 +207,17 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     try { conferir(await fn()); if (fechar) { setDetalhe(null); setConfirmacao(null); setEdicaoLegada(null); } recarregar(); }
     catch(e) { setErro(e.message); } finally { setOcupado(false); }
   }
-  const conclusaoEmpresaRef = useRef(false);
-  const [empresaSalvando, setEmpresaSalvando] = useState(null);
   function atualizarEmpresa(item, patch) {
+    const versao = ++versaoConclusaoRef.current;
+    setConclusoesLocais(xs => ({ ...xs, [item.id]: { versao, patch: { ...xs[item.id]?.patch, ...patch } } }));
     setDetalhe(d => d ? { ...d, itens: d.itens.map(i => i.id === item.id ? { ...i, ...patch } : i) } : d);
   }
   async function concluirEtapaEmpresa(item) {
-    if (conclusaoEmpresaRef.current || ocupado || automaticaNaLista(item) || !podeConcluirNaLista(item)) return;
-    conclusaoEmpresaRef.current = true;
-    setOcupado(true); setEmpresaSalvando(item.id); atualizarEmpresa(item, { erroConclusao: '' });
+    if (conclusaoEmpresaRef.current.has(item.id) || ocupado || automaticaNaLista(item) || !podeConcluirNaLista(item)) return;
+    conclusaoEmpresaRef.current.add(item.id);
+    setEmpresasSalvando(xs => new Set([...xs, item.id]));
+    atualizarEmpresa(item, { resolvido: !item.resolvido, erroConclusao: '' });
+    leituras.limpar();
     let salvo = false;
     try {
       const chave = chaveEtapa(item);
@@ -218,7 +227,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
         const tarefa = detalheEmpresa.fluxo.tarefas.find(t => t.chave === chave);
         if (!tarefa) throw new Error('Esta tarefa não se aplica à empresa nesta competência.');
         if (Boolean(tarefa.concluida) === desejado) {
-          atualizarEmpresa(item, { resolvido: desejado }); recarregar(); return;
+          atualizarEmpresa(item, { resolvido: desejado }); return;
         }
         if (tarefa.automatica || (!desejado && !tarefa.dados?.conclusao)) throw new Error('Esta etapa acompanha a operação registrada na empresa.');
         if (desejado && tarefa.aguardando?.length) throw new Error('Conclua as etapas anteriores antes de concluir esta tarefa.');
@@ -240,10 +249,11 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
         salvo = true; atualizarEmpresa(item, { resolvido: desejado });
       }
     } catch(e) {
-      atualizarEmpresa(item, { erroConclusao: salvo ? 'Alteração salva. Não foi possível atualizar a conferência; reabra a tarefa para consultar o estado atual.' : e.message });
+      atualizarEmpresa(item, { ...(!salvo ? { resolvido: Boolean(item.resolvido) } : {}), erroConclusao: salvo ? 'Alteração salva. Não foi possível atualizar a conferência; reabra a tarefa para consultar o estado atual.' : e.message });
     } finally {
-      if (salvo) recarregar();
-      conclusaoEmpresaRef.current = false; setOcupado(false); setEmpresaSalvando(null);
+      leituras.limpar();
+      conclusaoEmpresaRef.current.delete(item.id);
+      setEmpresasSalvando(xs => { const proximo = new Set(xs); proximo.delete(item.id); return proximo; });
     }
   }
   async function concluirNaGrade(item) {
@@ -319,23 +329,23 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
       {criacao && !criacao.tarefaId && !criacao.ocorrenciaIds && !criacao.regraEdicao && criacao.horaInicio && criacao.dataInicio === d && <div className="agenda-selected-slot" aria-hidden="true" style={{top:minutos(criacao.horaInicio)/60*ALTURA_HORA,height:Math.max(22,(minutos(criacao.horaFim || criacao.horaInicio)-minutos(criacao.horaInicio))/60*ALTURA_HORA)}}>{criacao.titulo || 'Nova tarefa'} · {criacao.horaInicio}–{criacao.horaFim}</div>}
       {horarios[d].map(({item,coluna,colunas,extensao = 1}) => <Atividade mostrarHorario onConcluir={concluirNaGrade} gestos={gestos} key={item.id} item={item} abrir={abrirAtividade} style={{ '--event-left':`${coluna*100/colunas}%`, position:'absolute', top: minutos(item.horaInicio)/60*ALTURA_HORA, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*ALTURA_HORA-2), width:`calc(${100*extensao/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}{gestos.previa && <div className={`agenda-drag-preview${gestos.previa.tipoGesto === 'criar' ? ' is-creating' : ''}`} aria-live="polite" style={{'--event-color':corAtividade(gestos.previa.item),left:gestos.previa.left,width:gestos.previa.width,top:minutos(gestos.previa.horaInicio)/60*ALTURA_HORA,height:Math.max(22,(fimVisual(gestos.previa)-minutos(gestos.previa.horaInicio))/60*ALTURA_HORA-2)}}><strong>{horarioAtividade(gestos.previa)}{gestos.previa.horaFim && <small>{minutos(gestos.previa.horaFim)-minutos(gestos.previa.horaInicio)} min</small>}</strong><span>{gestos.previa.item.titulo}</span></div>}<LinhaHorarioAtual dias={dias} agora={agora}/><div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
     {criacao && <ModalAtividade key={criacao.regraEdicao?.regraId || criacao.regraEdicao?.id || 'atividade'} inicial={inicialEdicao} onRascunho={atualizarRascunho} onOpenCompany={onOpenCompany} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !(criacao.ocorrenciaIds?.length > 1) && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onConfigurarObrigacao={criacao.regraId && dados.regras.some(r => (r.regraId || r.id) === criacao.regraId) ? () => configurarObrigacao(criacao.regraId) : undefined} onFechar={() => setCriacao(null)} onEditarOcorrencia={editarOcorrencia} onSalvo={() => { setCriacao(null); recarregar(); }}/ >}
-    {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
+    {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado || empresasSalvando.size > 0} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado || empresasSalvando.size > 0} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado || empresasSalvando.size > 0} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
       <div className="agenda-detail">{detalhe.regraId && dados.regras.some(r => (r.regraId || r.id) === detalhe.regraId) && <button className="agenda-text-action" onClick={() => configurarObrigacao(detalhe.regraId)}>Configurar obrigação</button>}<p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">{chaveDaObrigacaoCarteira(detalhe.verificador) ? 'Prazo interno' : 'Vencimento fiscal'} · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}
       {detalhe.itens?.length > 1 && <div className="agenda-progress"><span>{detalhe.itens.filter(i => i.resolvido).length} de {detalhe.itens.length} concluídas</span><progress max={detalhe.itens.length} value={detalhe.itens.filter(i => i.resolvido).length}/></div>}
       {(detalhe.itens || []).map(i => <div className={`agenda-company-row${i.resolvido ? ' is-complete' : ''}`} key={i.id}>
-        {podeConcluirNaLista(i) && <input className="agenda-company-checkbox" type="checkbox" aria-label={`${i.resolvido ? 'Reabrir' : 'Concluir'} ${detalhe.titulo} para ${i.empresa || i.titulo}`} checked={Boolean(i.resolvido)} disabled={ocupado || automaticaNaLista(i)} onChange={() => concluirEtapaEmpresa(i)} />}
+        {podeConcluirNaLista(i) && <input className="agenda-company-checkbox" type="checkbox" aria-label={`${i.resolvido ? 'Reabrir' : 'Concluir'} ${detalhe.titulo} para ${i.empresa || i.titulo}`} checked={Boolean(i.resolvido)} disabled={ocupado || empresasSalvando.has(i.id) || automaticaNaLista(i)} onChange={() => concluirEtapaEmpresa(i)} />}
         <div className="agenda-company-identity">
           <strong className="agenda-company-name">{i.empresa || i.titulo}</strong>
           {i.companyId && <small>{soDigitosCnpj(i.cnpj) ? <BotaoCopiar valor={soDigitosCnpj(i.cnpj)} rotulo={`Copiar o CNPJ de ${i.empresa || i.titulo} sem máscara`} titulo="Copiar CNPJ">{formatarCnpj(i.cnpj)}</BotaoCopiar> : 'CNPJ não informado'}</small>}
           {!vencimentoComum && i.dataVencimento && obrigacao(i) && <small>{chaveEtapa(i) ? 'Prazo interno' : 'Vencimento fiscal'} · {dataBR(i.dataVencimento)}</small>}
-          <small className="agenda-company-status" aria-live="polite">{empresaSalvando === i.id ? 'Salvando…' : i.resolvido ? 'Concluída' : 'Pendente'}</small>
+          <small className="agenda-company-status" aria-live="polite">{empresasSalvando.has(i.id) ? 'Salvando…' : i.resolvido ? 'Concluída' : 'Pendente'}</small>
           {automaticaNaLista(i) && <small>Atualizado pela operação da empresa.</small>}
           {chaveEtapa(i) === 'importar' && !i.resolvido && <small>Marcar confirma todos os lançamentos pendentes como importados no ERP.</small>}
           {i.erroConclusao && <p className="agenda-error" role="alert">{i.erroConclusao}</p>}
         </div>
         <div className="agenda-company-actions">
-          {i.companyId && onOpenCompany && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => onOpenCompany(i.companyId)}>Abrir empresa</Button>}
-          {detalhe.itens.length > 1 && i.ocorrenciaId && <button className="agenda-text-action" disabled={ocupado} onClick={() => setConfirmacao({ alvo:{...i,diaSelecionado:detalhe.diaSelecionado} })}>Excluir ocorrência</button>}
+          {i.companyId && onOpenCompany && <Button size="sm" variant="secondary" disabled={ocupado || empresasSalvando.size > 0} onClick={() => onOpenCompany(i.companyId)}>Abrir empresa</Button>}
+          {detalhe.itens.length > 1 && i.ocorrenciaId && <button className="agenda-text-action" disabled={ocupado || empresasSalvando.size > 0} onClick={() => setConfirmacao({ alvo:{...i,diaSelecionado:detalhe.diaSelecionado} })}>Excluir ocorrência</button>}
         </div>
       </div>)}
       {detalhe.empresasVazias && <p>Nenhuma ocorrência ativa para esta obrigação.</p>}

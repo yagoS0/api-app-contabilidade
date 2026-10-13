@@ -234,6 +234,7 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   expect(within(linhas[0]).getByText('Concluída')).toBeInTheDocument();
   expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2');
   expect(screen.queryByRole('button',{name:'Concluir tarefa'})).not.toBeInTheDocument();
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisão EFD'}});
   fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-16'}});
@@ -288,6 +289,7 @@ test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empres
   fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
   await screen.findByText('1 de 2 concluídas');
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   expect(screen.getByLabelText('De')).toHaveValue('2026-09-10');expect(screen.getByLabelText('Até')).toHaveValue('2026-09-15');
   expect(screen.queryByRole('button',{name:'Alta'})).not.toBeInTheDocument();
@@ -524,7 +526,8 @@ test('tarefa agrupada abre empresas, conclui somente uma e edita o período do g
  expect(screen.getByText('Clínica Alfa')).toBeInTheDocument();expect(screen.getByText('Consultoria Beta')).toBeInTheDocument();
  fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
  await screen.findByText('1 de 2 concluídas');expect(concluir).toHaveBeenCalledTimes(1);expect(concluir).toHaveBeenCalledWith('oc-a');
- fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
  expect(screen.queryByRole('button',{name:'Concluir',exact:true})).not.toBeInTheDocument();
  expect(screen.getByLabelText('Tipo')).toBeDisabled();expect(screen.getByLabelText('Recorrência')).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência revisada'}});
@@ -684,4 +687,37 @@ test('marco informativo não oferece checkbox nem grava ocorrência inexistente'
   montar({extras:{getTarefasAgenda:async()=>({tarefas:[],itens:[{id:'marco',tipo:'marco',titulo:'Vencimento informativo',empresa:'Clínica Alfa',companyId:'a',dataInicio:'2026-09-10',dataFim:'2026-09-10'}]})}});
   fireEvent.click(await screen.findByRole('button',{name:'Vencimento informativo'}));
   expect(within(screen.getByRole('dialog')).queryByRole('checkbox')).not.toBeInTheDocument();
+});
+
+test('checkbox atualiza lateral e cartão imediatamente, permite outra empresa e não recarrega a agenda',async()=>{
+  const obs=obrigacoes().map(o=>({...o,verificador:'CARTEIRA_TRANSMITIR',conclusaoAutomatica:true,ocorrencias:o.ocorrencias.map(oc=>({...oc,competenciaRef:'2026-08'}))}));
+  const estados={a:false,b:false}, pendentes={};
+  const getFluxoCarteira=jest.fn(async id=>({fluxo:{tarefas:[{chave:'transmitir',concluida:estados[id],versao:0,hash:'base',dados:{}}]}}));
+  const salvarFluxoTarefa=jest.fn((id)=>new Promise((resolve,reject)=>{pendentes[id]={resolve:()=>{estados[id]=true;resolve({ok:true});},reject};}));
+  const {api}=montar({obs,extras:{getFluxoCarteira,salvarFluxoTarefa}});
+  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  const alfa=screen.getByRole('checkbox',{name:'Concluir EFD-Contribuições para Clínica Alfa'});
+  const beta=screen.getByRole('checkbox',{name:'Concluir EFD-Contribuições para Consultoria Beta'});
+  fireEvent.click(alfa);
+  expect(alfa).toBeChecked();expect(alfa).toBeDisabled();expect(beta).toBeEnabled();
+  expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
+  expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2');
+  expect(screen.getByText('Salvando…')).toBeInTheDocument();
+  fireEvent.click(beta);
+  expect(beta).toBeChecked();
+  await waitFor(()=>expect(salvarFluxoTarefa).toHaveBeenCalledTimes(2));
+  pendentes.b.resolve();
+  await waitFor(()=>expect(beta).toBeEnabled());
+  pendentes.a.reject(new Error('Falha ao salvar Alfa'));
+  await screen.findByText('Falha ao salvar Alfa');
+  expect(alfa).not.toBeChecked();expect(beta).toBeChecked();
+  expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
+  expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2');
+  expect(api.listObrigacoes).toHaveBeenCalledTimes(1);
+  expect(api.getCalendario).toHaveBeenCalledTimes(1);
+  expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'EFD-Contribuições'}));
+  expect(screen.getByRole('checkbox',{name:'Reabrir EFD-Contribuições para Consultoria Beta'})).toBeChecked();
+  expect(screen.getByRole('checkbox',{name:'Concluir EFD-Contribuições para Clínica Alfa'})).not.toBeChecked();
 });
