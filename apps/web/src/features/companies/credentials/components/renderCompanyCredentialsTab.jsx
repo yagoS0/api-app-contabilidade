@@ -18,7 +18,7 @@ import {
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
   background: "transparent", color: "var(--text)", fontSize: "0.78rem",
-  cursor: "pointer", fontFamily: "inherit",
+  cursor: "pointer", fontFamily: "inherit", minHeight: 36,
 });
 
 const btnDesabilitado = {
@@ -142,7 +142,7 @@ function LinhaCredencial({ credencial, revelada, podeRevelar, papelMinimoRevelar
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           <button
             type="button"
-            style={btn("var(--danger)")}
+            style={btn()}
             onClick={onExcluir}
             title={`Excluir a credencial "${credencial.rotulo}"`}
           >
@@ -273,16 +273,23 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
           />
         </label>
       </div>
-      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", alignItems: "flex-end" }}>
-        <label style={{ flex: 1, fontSize: "0.74rem", color: "var(--text-muted)" }}>
+      <div style={{ marginTop: "var(--space-3)" }}>
+        <label style={{ display: "block", fontSize: "0.74rem", color: "var(--text-muted)" }}>
           Observação (não é cifrada)
           <input
             style={{ ...campo, marginTop: 4 }}
             value={observacao}
             onChange={(e) => setObservacao(e.target.value)}
-            placeholder="titular, pergunta secreta, onde renovar…"
+            placeholder="Titular ou instrução de renovação"
           />
         </label>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: "var(--space-2)", marginTop: "var(--space-3)", paddingTop: "var(--space-3)", borderTop: "1px solid var(--border)" }}>
+        {onFechar ? (
+          <button type="button" style={btn()} disabled={salvando} onClick={onFechar}>
+            Fechar
+          </button>
+        ) : null}
         <button
           type="button"
           style={rotulo.trim() && !salvando ? btn("var(--accent-purple)") : btnDesabilitado}
@@ -292,13 +299,6 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
         >
           {salvando ? "Guardando…" : "Guardar"}
         </button>
-        {/* Só existe quando alguém ABRIU o formulário. Com a lista vazia ele nasce aberto, e um
-            "Fechar" ali deixaria a aba sem nada e sem porta de entrada. */}
-        {onFechar ? (
-          <button type="button" style={btn()} disabled={salvando} onClick={onFechar}>
-            Fechar
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -332,7 +332,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   }
 
   return (
-    <section style={{ marginTop: "var(--space-6)" }}>
+    <section style={{ marginTop: "var(--space-6)", paddingTop: "var(--space-5)", borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "baseline", marginBottom: "var(--space-2)" }}>
         <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "var(--text)" }}>Outras informações</h3>
         <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
@@ -358,19 +358,25 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
         </span>
       </p>
 
-      <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ flex: "1 1 180px", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+          Rótulo
         <input
-          style={{ ...campo, flex: "0 1 220px" }}
+          style={{ ...campo, marginTop: 4 }}
           value={rotulo}
           onChange={(e) => setRotulo(e.target.value)}
-          placeholder="Rótulo (ex.: contador anterior)"
+          placeholder="Ex.: contador anterior"
         />
+        </label>
+        <label style={{ flex: "2 1 240px", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+          Valor
         <input
-          style={{ ...campo, flex: "1 1 240px" }}
+          style={{ ...campo, marginTop: 4 }}
           value={valor}
           onChange={(e) => setValor(e.target.value)}
           placeholder="Valor"
         />
+        </label>
         <button
           type="button"
           style={rotulo.trim() && valor.trim() ? btn("var(--accent-purple)") : btnDesabilitado}
@@ -392,7 +398,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
           <span style={{ fontSize: "0.86rem", color: "var(--text)", wordBreak: "break-word" }}>{i.valor}</span>
           <button
             type="button"
-            style={{ ...btn("var(--danger)"), marginLeft: "auto" }}
+            style={{ ...btn(), marginLeft: "auto" }}
             onClick={() => confirmarExclusao(i)}
             title={`Excluir a informação "${i.rotulo}"`}
           >

@@ -33,3 +33,23 @@ test('cliente reduz o período e todas as visões recebem o intervalo escolhido'
 test('resultado não oferece edição do contador nem links internos de empresa',async()=>{
  await abrir();await screen.findByText('Entradas');fireEvent.click(screen.getByRole('button',{name:'Resultado',exact:true}));expect(await screen.findByText('DRE gerencial comparativa')).toBeInTheDocument();expect(screen.queryByText(/Conferir pagamentos de/)).not.toBeInTheDocument();expect(document.querySelector('a[href^="/companies/"]')).toBeNull();
 });
+
+test.each(['rejeicao', 'resposta'])('mês aberto orienta o cliente a aguardar o escritório (%s)',async(tipo)=>{
+ jest.spyOn(api,'getFechamentosRelatorio').mockResolvedValue(acesso);
+ const mensagem='Feche a contabilidade em Lançamentos para consultar: 2026-10.';
+ const consulta=jest.spyOn(api,'getAnalisePlanejamento');
+ if(tipo==='rejeicao') consulta.mockRejectedValue(Object.assign(new Error(mensagem),{code:'CONTABILIDADE_ABERTA'}));
+ else consulta.mockResolvedValue({ok:false,error:'CONTABILIDADE_ABERTA',message:mensagem});
+ render(<PainelPage empresa={empresa}/>);
+ expect(await screen.findByText('Relatório disponível após o fechamento pelo escritório. Selecione um período encerrado.')).toBeInTheDocument();
+ expect(screen.queryByText(mensagem)).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:/Filtrar período/})).toBeInTheDocument();
+});
+
+test('não reescreve outros erros mesmo quando o texto menciona fechamento',async()=>{
+ jest.spyOn(api,'getFechamentosRelatorio').mockResolvedValue(acesso);
+ const mensagem='Feche a contabilidade: informação indisponível por falha de conexão.';
+ jest.spyOn(api,'getAnalisePlanejamento').mockRejectedValue(Object.assign(new Error(mensagem),{code:'ERRO_CONEXAO'}));
+ render(<PainelPage empresa={empresa}/>);
+ expect(await screen.findByText(mensagem)).toBeInTheDocument();
+});

@@ -17,7 +17,7 @@ import { Button } from "../../../components/ui/Button";
 const extratoApi = createApiClient();
 
 const card = {
-  background: "var(--surface)",
+  background: "var(--bg-surface)",
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,

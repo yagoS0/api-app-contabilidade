@@ -484,9 +484,7 @@ export function CompanyForm({
     <form className="company-form" onSubmit={onSubmit}>
       {cnpjReadOnly ? <TrilhaDeSecoes /> : null}
       <div className="form-grid two-col">
-      <SecaoDoFormulario id="secao-responsavel-pelo-acesso" titulo="Responsável pelo acesso" primeira
-        ajuda={<>Quem vai entrar no portal do cliente.</>}
-      />
+      <SecaoDoFormulario id="secao-responsavel-pelo-acesso" titulo="Responsável pelo acesso" primeira />
       <label>
         Nome do responsavel
         <input value={form.ownerName} onChange={(event) => onChange("ownerName", event.target.value)} />
@@ -745,11 +743,15 @@ export function CompanyForm({
       <ListaCnaesSecundarios valor={form.cnaesSecundarios} descricoes={cnaeDescricoes} />
       <SecaoDoFormulario id="secao-endereco" titulo="Endereço" />
       <label>
-        Endereco - rua
-        <input value={form.enderecoRua} onChange={(event) => onChange("enderecoRua", event.target.value)} required />
+        CEP
+        <input value={form.enderecoCep} onChange={(event) => onChange("enderecoCep", event.target.value)} required autoComplete="postal-code" />
+      </label>
+      <label className="full">
+        Rua
+        <input value={form.enderecoRua} onChange={(event) => onChange("enderecoRua", event.target.value)} required autoComplete="address-line1" />
       </label>
       <label>
-        Endereco - numero
+        Número
         <input
           value={form.enderecoNumero}
           onChange={(event) => onChange("enderecoNumero", event.target.value)}
@@ -757,7 +759,11 @@ export function CompanyForm({
         />
       </label>
       <label>
-        Endereco - bairro
+        Complemento
+        <input value={form.enderecoComplemento} onChange={(event) => onChange("enderecoComplemento", event.target.value)} autoComplete="address-line2" />
+      </label>
+      <label className="full">
+        Bairro
         <input
           value={form.enderecoBairro}
           onChange={(event) => onChange("enderecoBairro", event.target.value)}
@@ -765,7 +771,7 @@ export function CompanyForm({
         />
       </label>
       <label>
-        Endereco - cidade
+        Cidade
         <input
           value={form.enderecoCidade}
           onChange={(event) => onChange("enderecoCidade", event.target.value)}
@@ -773,25 +779,12 @@ export function CompanyForm({
         />
       </label>
       <label>
-        Endereco - UF
+        UF
         <input value={form.enderecoUf} onChange={(event) => onChange("enderecoUf", event.target.value)} required />
-      </label>
-      <label>
-        Endereco - CEP
-        <input value={form.enderecoCep} onChange={(event) => onChange("enderecoCep", event.target.value)} required />
-      </label>
-      <label className="full">
-        Endereco - complemento
-        <input
-          value={form.enderecoComplemento}
-          onChange={(event) => onChange("enderecoComplemento", event.target.value)}
-        />
       </label>
 
       {/* ── Ficha de cadastro ── */}
-      <SecaoDoFormulario id="secao-dados-da-ficha" titulo="Dados da ficha"
-        ajuda={<>Porte, natureza jurídica, capital e abertura preenchem sozinhos pelo CNPJ.</>}
-      />
+      <SecaoDoFormulario id="secao-dados-da-ficha" titulo="Dados da ficha" />
       <label>
         Data de abertura
         <input type="date" value={form.dataAbertura} onChange={(event) => onChange("dataAbertura", event.target.value)} />

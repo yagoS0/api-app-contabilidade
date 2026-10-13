@@ -84,7 +84,6 @@ export function SerproSettingsPage({
   return (
     <PageShell
       title="Configuração SERPRO"
-      subtitle="Certificado do procurador e credenciais da API. As agendas automáticas ficam em Rotinas e as buscas por empresa em Funções em lote."
       onBack={onBack}
     >
       <AppShell className="serpro-settings-shell">
@@ -94,10 +93,7 @@ export function SerproSettingsPage({
           {/* ── Config SERPRO (Integra Contador) — só conexão/credenciais (agenda → Rotinas) ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
-              <h1 className="serpro-settings-card__title">Integra Contador</h1>
-              <p className="serpro-settings-card__description">
-                Configure a conexão principal com o SERPRO para capturar guias estruturadas direto da Receita.
-              </p>
+              <h2 className="serpro-settings-card__title">Integra Contador</h2>
             </div>
 
             <form className="serpro-settings-form" onSubmit={handleSubmit}>
@@ -107,27 +103,12 @@ export function SerproSettingsPage({
               </label>
 
               <div className="serpro-settings-form__grid">
-                <label>
+                <label className="full">
                   Ambiente
                   <select value={form.environment} onChange={(event) => setField("environment", event.target.value)}>
                     <option value="homolog">Homologação</option>
                     <option value="producao">Produção</option>
                   </select>
-                </label>
-
-                <label>
-                  Timeout (ms)
-                  <input type="number" min="1000" value={form.timeoutMs} onChange={(event) => setField("timeoutMs", event.target.value)} />
-                </label>
-
-                <label className="full">
-                  URL de autenticação
-                  <input value={form.authUrl} onChange={(event) => setField("authUrl", event.target.value)} />
-                </label>
-
-                <label className="full">
-                  Base URL
-                  <input value={form.baseUrl} onChange={(event) => setField("baseUrl", event.target.value)} />
                 </label>
 
                 <label>
@@ -145,11 +126,33 @@ export function SerproSettingsPage({
                   />
                 </label>
 
+              </div>
+
+              <details style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.875rem", fontWeight: 500 }}>Conexão avançada</summary>
+                <div className="serpro-settings-form__grid" style={{ marginTop: 16 }}>
+                <label>
+                  Timeout (ms)
+                  <input type="number" min="1000" value={form.timeoutMs} onChange={(event) => setField("timeoutMs", event.target.value)} />
+                </label>
+
+                <label className="full">
+                  URL de autenticação
+                  <input value={form.authUrl} onChange={(event) => setField("authUrl", event.target.value)} />
+                </label>
+
+                <label className="full">
+                  Base URL
+                  <input value={form.baseUrl} onChange={(event) => setField("baseUrl", event.target.value)} />
+                </label>
+
                 <label className="full">
                   Scope
                   <input value={form.scope} onChange={(event) => setField("scope", event.target.value)} />
                 </label>
-              </div>
+                </div>
+              </details>
+
 
               <div className="serpro-settings-form__actions">
                 <Button type="submit" variant="primary" disabled={saving}>
@@ -199,10 +202,10 @@ export function SerproSettingsPage({
                 </label>
               </div>
               <div className="serpro-settings-form__actions">
-                <Button type="submit" variant="primary" disabled={uploadingCertificate || !certificateFile || !certificatePassword}>
+                <Button type="submit" variant="secondary" disabled={uploadingCertificate || !certificateFile || !certificatePassword}>
                   {uploadingCertificate ? "Enviando..." : "Enviar certificado"}
                 </Button>
-                <Button type="button" variant="danger" disabled={deletingCertificate || !settings?.certificate?.hasCertificate} onClick={onDeleteCertificate}>
+                <Button type="button" variant="secondary" disabled={deletingCertificate || !settings?.certificate?.hasCertificate} onClick={onDeleteCertificate}>
                   {deletingCertificate ? "Removendo..." : "Remover certificado"}
                 </Button>
               </div>

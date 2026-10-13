@@ -2,7 +2,7 @@
 .reforma summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .reforma h3 { font-size: 1rem; margin: 0 0 8px; }
 .reforma p { font-size: .85rem; line-height: 1.5; }
-.reforma small { color: var(--text-muted); }
+.reforma small { color: var(--text-muted); font-size: .8rem; line-height: 1.5; }
 .reforma .reforma-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; margin: 12px 0; }
 .reforma label { display: grid; gap: 5px; font-size: .8rem; min-width: 0; }
 .reforma input, .reforma select, .reforma textarea { width: 100%; min-width: 0; box-sizing: border-box; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit; }
@@ -12,7 +12,7 @@
 .reforma .reforma-table { overflow: auto; margin-top: 12px; }
 .reforma table { width: 100%; border-collapse: collapse; font-size: .82rem; text-align: left; }
 .reforma th, .reforma td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.reforma .reforma-alert { border-left: 3px solid var(--state-warning, #d9a441); padding: 8px 12px; }
+.reforma .reforma-alert { border-left: 3px solid var(--state-warn); padding: 8px 12px; }
 .reforma [role=alert] { color: var(--state-danger, #e57777); }
 .reforma .reforma-cards { display: flex; gap: 8px 22px; flex-wrap: wrap; margin: 16px 0; font-size: .86rem; }
 .reforma .reforma-finding { padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }

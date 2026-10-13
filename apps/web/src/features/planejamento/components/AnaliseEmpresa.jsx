@@ -19,6 +19,9 @@ const nomes = { faturamento: 'Faturamento documental', resultado: 'Resultado da 
 const destinos = { faturamento:'geral', resultado:'resultado', margemLiquida:'resultado', despesas:'despesas', tributos:'impostos' };
 const despesas = ['pessoal','gerais','tributarias','depreciacao','despesasFinanceiras'];
 const ePercentual = k => k.startsWith('margem') || k === 'carga';
+const mensagemErroAnalise = (erro, portalCliente) => portalCliente && erro?.code === 'CONTABILIDADE_ABERTA'
+  ? 'Relatório disponível após o fechamento pelo escritório. Selecione um período encerrado.'
+  : erro?.message || 'Não foi possível carregar a análise.';
 
 function Variacao({ valor, pontos = false }) {
   if (!valor) return null;
@@ -56,7 +59,7 @@ export function AnaliseEmpresa({ api, empresaId, empresaNome, empresaCnpj, porta
   useEffect(() => { let vivo=true; setErro(''); setConta(null);
     if (!competenciasFechadas || !de || !ate || (portalCliente && !fechamentos?.liberado)) return;
     if (de>ate) { setErro('Informe um intervalo válido.'); return; }
-    Promise.resolve().then(()=>api.getAnalisePlanejamento(empresaId,{de,ate,comparar})).then(r=>{if(!r || r.ok===false) throw new Error(r?.message||'Resposta inválida.'); if(vivo)setResposta({chave,dados:r});}).catch(e=>{if(vivo){setResposta(null);setErro(e.message||'Não foi possível carregar a análise.');}});
+    Promise.resolve().then(()=>api.getAnalisePlanejamento(empresaId,{de,ate,comparar})).then(r=>{if(!r || r.ok===false) throw Object.assign(new Error(r?.message||'Resposta inválida.'), { code: r?.code || r?.error }); if(vivo)setResposta({chave,dados:r});}).catch(e=>{if(vivo){setResposta(null);setErro(mensagemErroAnalise(e,portalCliente));}});
     return ()=>{vivo=false;};
   },[api,empresaId,de,ate,comparar,chave,tentativa,competenciasFechadas]);
   const atual = dados?.atual, anterior = dados?.anterior;

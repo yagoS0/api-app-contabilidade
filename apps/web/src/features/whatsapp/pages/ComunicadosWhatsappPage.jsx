@@ -64,13 +64,13 @@ export function ComunicadosWhatsappPage({ api, companies = [], onBack }) {
   const pendentes = ds.filter(d => d.status === 'PENDENTE' && d.elegivel).length;
   const podeRevisar = selecionado?.status === 'APROVADO' && pendentes > 0;
   return <PageShell title="Comunicados" subtitle="Avisos pelo WhatsApp · um envio por número, mesmo quando representa várias empresas" onBack={onBack}
-    actions={<Button disabled={!disponivel || ocupado} onClick={iniciar}>Novo comunicado</Button>} contentStyle={{ maxWidth: 'var(--content-max)', width: '100%', margin: '0 auto', padding: 24 }}>
+    actions={<Button variant={form || selecionado ? 'secondary' : 'primary'} disabled={!disponivel || ocupado} onClick={iniciar}>Novo comunicado</Button>} contentStyle={{ maxWidth: 'var(--content-max)', width: '100%', margin: '0 auto', padding: 24 }}>
     <div className="wa-comunicados">
       {!disponivel && <p role="status">Comunicados estão disponíveis no ambiente conectado. A demonstração não envia mensagens.</p>}
       {erro && <p role="alert" className="wa-aviso-erro">{erro}</p>}
       {carregando && <p role="status">Carregando comunicados…</p>}
       {!form && !selecionado && !carregando && <section aria-label="Histórico de comunicados">
-        <p>Prepare o aviso, escolha os contatos e envie o texto para aprovação da Meta. Após a aprovação, revise a lista e confirme o envio.</p>
+        <p className="wa-aviso-ajuda">O envio exige aprovação da Meta e confirmação dos destinatários.</p>
         {!itens.length && <p>Nenhum comunicado criado.</p>}
         {itens.map(c => <button type="button" className="wa-aviso-linha" key={c.id} onClick={() => abrir(c.id)} disabled={ocupado}><strong>{c.titulo}</strong><span>{rotulos[c.status] || c.status}</span><span>{contatos(c._count?.destinatarios || 0)}</span></button>)}
         {cursor && <Button variant="secondary" onClick={() => listar(cursor).catch(e => setErro(e.message))}>Carregar mais comunicados</Button>}
@@ -79,7 +79,7 @@ export function ComunicadosWhatsappPage({ api, companies = [], onBack }) {
         <h2>1. Escreva o aviso</h2>
         <label>Título interno<input required maxLength={100} value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} disabled={ocupado} /></label>
         <label>Mensagem para os clientes<textarea required rows={6} maxLength={900} value={form.corpo} onChange={e => setForm({ ...form, corpo: e.target.value })} disabled={ocupado} placeholder="Escreva o aviso completo que todos os contatos selecionados receberão." /></label>
-        <p className="wa-aviso-ajuda">{form.corpo.length}/900 caracteres. Links podem ser incluídos. O texto ficará fixo após salvar, para corresponder ao modelo aprovado.</p>
+        <p className="wa-aviso-ajuda">{form.corpo.length}/900 caracteres · O texto fica fixo após salvar para corresponder ao modelo aprovado.</p>
         <label>Tipo de aviso<select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} disabled={ocupado}><option value="MARKETING">Comunicado geral</option><option value="UTILITY">Atualização de serviço contratado</option></select></label>
         <p className="wa-aviso-ajuda">Use atualização de serviço para uma informação específica de um serviço já contratado. A Meta define a categoria final e cobra conforme suas tarifas.</p>
         <h2>2. Escolha quem recebe</h2>
@@ -103,7 +103,7 @@ export function ComunicadosWhatsappPage({ api, companies = [], onBack }) {
           {selecionado.status === 'RASCUNHO' && <Button disabled={ocupado} onClick={() => acao(`/${selecionado.id}/submeter`)}>Enviar para aprovação da Meta</Button>}
           {['SUBMETENDO', 'EM_ANALISE', 'PAUSADO', 'APROVADO'].includes(selecionado.status) && <Button variant="secondary" disabled={ocupado} onClick={() => acao(`/${selecionado.id}/consultar-aprovacao`)}>Consultar aprovação</Button>}
           {podeRevisar && !revisar && <Button disabled={ocupado} onClick={() => setRevisar(true)}>Revisar e enviar</Button>}
-          {!['CANCELADO', 'CONCLUIDO'].includes(selecionado.status) && <Button variant="danger" disabled={ocupado} onClick={() => acao(`/${selecionado.id}/cancelar`)}>Cancelar comunicado</Button>}
+          {!['CANCELADO', 'CONCLUIDO'].includes(selecionado.status) && <Button variant="secondary" disabled={ocupado} onClick={() => acao(`/${selecionado.id}/cancelar`)}>Cancelar comunicado</Button>}
         </div>
         {revisar && podeRevisar && <section className="wa-aviso-confirmacao" aria-label="Confirmar transmissão"><h3>Confirmar envio para {contatos(pendentes)}</h3><p>Todos receberão o aviso acima uma única vez. O envio pode ser cobrado pela Meta na categoria {categoria(selecionado.categoria)}. As respostas chegam às conversas individuais.</p><Button disabled={ocupado} onClick={() => acao(`/${selecionado.id}/enviar`, { previaHash: selecionado.previaHash })}>Confirmar envio para {contatos(pendentes)}</Button></section>}
         <details open={['ENVIANDO', 'CONCLUIDO', 'CANCELADO'].includes(selecionado.status)}><summary>Destinatários e acompanhamento</summary><div className="wa-aviso-tabela"><table><thead><tr><th>Contato</th><th>WhatsApp</th><th>Resultado</th></tr></thead><tbody>{ds.map(d => <tr key={d.id}><td>{d.nome}</td><td>+{d.telefone}</td><td>{rotulos[d.entrega] || rotulos[d.status] || d.status}{d.status === 'PENDENTE' && !d.elegivel ? ' · cadastro não habilitado' : ''}{d.erroEntrega || d.motivo ? <small>{d.erroEntrega || d.motivo}</small> : null}</td></tr>)}</tbody></table></div></details>

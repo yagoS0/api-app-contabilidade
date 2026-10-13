@@ -88,9 +88,10 @@ export function SeletorMunicipioIbge({
         Município emissor da nota (código IBGE)
       </label>
 
-      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        {MOTIVO_CODIGO_MUNICIPIO} {PORQUE_ESCOLHA_E_NAO_DEDUCAO}
-      </div>
+      <details style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
+        <summary style={{ cursor: "pointer" }}>Como escolher o município</summary>
+        <p style={{ margin: "6px 0 0" }}>{MOTIVO_CODIGO_MUNICIPIO} {PORQUE_ESCOLHA_E_NAO_DEDUCAO}</p>
+      </details>
 
       {textoCadastro && (
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>

@@ -24,13 +24,13 @@ const EMPTY_FORM = { codigo: "", nome: "", codigoCompleto: "", tipo: "DESPESA", 
 const AJUDA_CONTA_MAE = "Código completo do ERP (ex.: 111010001 para o reduzido 5). Serve à análise: quem tem outra conta abaixo dela vira SINTÉTICA e sai da sugestão do lançamento — continua digitável.";
 
 const PANEL = {
-  page: "#1A1B26",
-  surface: "#24253A",
-  field: "#1A1B26",
-  border: "#44475A",
-  text: "#F8F8F2",
-  muted: "#6272A4",
-  accent: "#BD93F9",
+  page: "var(--bg-page)",
+  surface: "var(--bg-surface)",
+  field: "var(--bg-page)",
+  border: "var(--border)",
+  text: "var(--text)",
+  muted: "var(--text-muted)",
+  accent: "var(--accent-purple)",
   success: "var(--success)",
   danger: "var(--danger)",
   warning: "#FFB347",
@@ -345,7 +345,7 @@ export function ChartOfAccountsPage({
       {/* Header */}
       <div style={{ ...sectionStyle, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700 }}>
+          <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}>
             {isGlobal ? "Plano de Contas Global" : "Plano de contas da empresa"}
           </h2>
           <p style={{ margin: "4px 0 0", color: PANEL.muted, fontSize: "0.875rem" }}>
@@ -359,7 +359,7 @@ export function ChartOfAccountsPage({
         </div>
         {onBack && <BackButton onClick={onBack} />}
       </div>
-      {!isGlobal && <p>As contas da empresa têm prioridade pelo código reduzido. Os demais códigos usam o plano global. Personalizar ou importar aqui altera somente esta empresa.</p>}
+      {!isGlobal && <details style={{ marginBottom: 16, color: PANEL.muted, fontSize: "0.875rem" }}><summary>Como o plano da empresa funciona</summary><p>As contas da empresa têm prioridade pelo código reduzido. Os demais códigos usam o plano global. Personalizar ou importar aqui altera somente esta empresa.</p></details>}
 
       {message && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(105,255,71,0.12)", color: PANEL.success, borderRadius: 8, fontSize: "0.9rem" }}>{message}</p>}
       {error && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(255,87,87,0.12)", color: PANEL.danger, borderRadius: 8, fontSize: "0.9rem" }}>{error}</p>}
@@ -573,7 +573,7 @@ export function ChartOfAccountsPage({
                         <span style={CODE}>{account.codigo}</span>
                         {!isGlobal && !isAccountGlobal && <span style={{ marginLeft: 6, fontSize: "0.75rem", color: PANEL.accent }}>EMPRESA</span>}
                         {isAccountGlobal && (
-                          <span style={{ marginLeft: 6, fontSize: "0.8125rem", fontWeight: 700, color: PANEL.page, background: "#8BE9FD", padding: "2px 6px", borderRadius: 999 }}>
+                          <span style={{ marginLeft: 6, fontSize: "0.75rem", fontWeight: 500, color: PANEL.muted, border: `1px solid ${PANEL.border}`, padding: "2px 6px", borderRadius: 999 }}>
                             GLOBAL
                           </span>
                         )}
@@ -606,12 +606,12 @@ export function ChartOfAccountsPage({
                                 quer dizer que a conta não tem código completo e portanto não tem
                                 resposta — desenhá-la como analítica afirmaria o que ninguém sabe. */}
                             {account.analitica === false && (
-                              <span title="Conta de agregação: sai da sugestão do dropdown de lançamento, mas continua digitável." style={{ fontSize: "0.7rem", fontWeight: 700, color: PANEL.page, background: PANEL.warning, borderRadius: 999, padding: "2px 8px" }}>
+                              <span title="Conta de agregação: sai da sugestão do dropdown de lançamento, mas continua digitável." style={{ fontSize: "0.75rem", fontWeight: 500, color: PANEL.muted, border: `1px solid ${PANEL.border}`, borderRadius: 999, padding: "2px 8px" }}>
                                 Sintética
                               </span>
                             )}
                             {account.analitica === true && (
-                              <span style={{ fontSize: "0.7rem", fontWeight: 700, color: PANEL.muted, border: `1px solid ${PANEL.border}`, borderRadius: 999, padding: "2px 8px" }}>
+                              <span style={{ fontSize: "0.75rem", fontWeight: 500, color: PANEL.muted, border: `1px solid ${PANEL.border}`, borderRadius: 999, padding: "2px 8px" }}>
                                 Analítica
                               </span>
                             )}
@@ -632,7 +632,7 @@ export function ChartOfAccountsPage({
                       <td style={CELL}>
                         {isPending
                           ? <span style={{ display: "inline-block", background: PANEL.warning, color: PANEL.page, borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px" }}>Pendente ERP</span>
-                          : <span style={{ display: "inline-block", background: "rgba(105,255,71,0.18)", color: PANEL.success, borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px" }}>Confirmada</span>}
+                          : <span style={{ color: PANEL.success, fontSize: "0.75rem", fontWeight: 500 }}>✓ Confirmada</span>}
                       </td>
                       <td style={{ ...CELL, textAlign: "right", whiteSpace: "nowrap" }}>
                         <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => editAccount(account)}>{isReadOnly ? "Personalizar na empresa" : "Editar conta"}</Button>

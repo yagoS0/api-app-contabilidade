@@ -777,7 +777,7 @@
 }
 
 .form-grid.two-col {
-  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .form-grid .full {
@@ -786,6 +786,7 @@
 
 .form-grid label {
   display: grid;
+  min-width: 0;
   gap: var(--space-2);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -803,6 +804,9 @@
   color: var(--text);
   background: var(--bg-surface);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 400;
 }
 
 .form-grid textarea {
@@ -821,6 +825,8 @@
 
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
 }
 
@@ -865,6 +871,11 @@
   border: 1px solid transparent;
   font-weight: 600;
   font-size: 0.875rem;
+  font-family: inherit;
+  line-height: 1.35;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
@@ -880,19 +891,19 @@
 }
 
 .btn-md {
-  min-height: 38px;
-  padding: 0 var(--space-4);
+  min-height: 40px;
+  padding: 8px var(--space-4);
 }
 
 .btn-sm {
   min-height: 32px;
-  padding: 0 var(--space-3);
+  padding: 5px var(--space-3);
   font-size: 0.8125rem;
 }
 
 .btn-lg {
-  min-height: 40px;
-  padding: 0 18px;
+  min-height: 44px;
+  padding: 10px 18px;
 }
 
 .btn-primary {
@@ -1489,8 +1500,9 @@ th {
     width: 100%;
   }
 
-  .form-grid.two-col {
-    grid-template-columns: 1fr;
+  .form-grid.two-col,
+  .company-form-page__panel .form-grid.two-col {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .page-header__actions {
@@ -1548,18 +1560,18 @@ th {
   overflow: hidden;
   color: #f8f8f2;
   font-size: 1.25rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.2;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .page-shell__subtitle {
   overflow: hidden;
-  color: #6272a4;
+  color: var(--text-muted);
   font-size: 0.8125rem;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .page-shell__actions {

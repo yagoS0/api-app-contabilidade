@@ -41,7 +41,7 @@ const CAIXA = {
   boxSizing: "border-box",
 };
 
-const AJUDA = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 };
+const AJUDA = { fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.6 };
 
 export function SeletorServicosNacionais({
   codigos,
@@ -95,9 +95,10 @@ export function SeletorServicosNacionais({
         Códigos de serviço (tributação nacional)
       </label>
 
-      <div style={AJUDA}>
-        {MOTIVO_CODIGOS_SERVICO_NACIONAL} {PORQUE_LISTA_OFICIAL}
-      </div>
+      <details style={AJUDA}>
+        <summary style={{ cursor: "pointer" }}>Sobre o catálogo de serviços</summary>
+        <p style={{ margin: "6px 0 0" }}>{MOTIVO_CODIGOS_SERVICO_NACIONAL} {PORQUE_LISTA_OFICIAL}</p>
+      </details>
 
       {erroCarga && (
         <div style={{ fontSize: 12, color: "var(--state-danger)" }}>
