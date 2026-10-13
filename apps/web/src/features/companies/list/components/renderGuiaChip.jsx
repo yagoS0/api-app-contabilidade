@@ -140,7 +140,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
   const canaisEnviados = rotuloCanaisEnviados(tag);
   const estadosParcela = tag.key === "parcDas" ? [...new Set((tag.itens || []).filter(i => i.estado !== "RESOLVIDA").map(i => i.estado))] : [];
   const rotuloParcela = { IDENTIFICAR: "identificar parcelamento", CONFERIR_PARCELA: "conferir parcelas", CONSULTAR_PAGAMENTO: "confirmar pagamento", CONTABILIZAR: "pagamento confirmado, falta contabilizar", OBTER_GUIA: "obter guia", ENVIAR: "enviar guia", DIVERGENCIA: "conferir divergência", CONFERIR_DOCUMENTO: "conferir documento", CONSULTA_FALHOU: "consulta não concluída" };
-  const rotuloEstado = estadosParcela.length ? estadosParcela.length === 1 ? rotuloParcela[estadosParcela[0]] || "conferir acompanhamento" : `${tag.pendencias || estadosParcela.length} tarefas de acompanhamento` : canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
+  const rotuloEstado = tag.mensal ? 'falta guia do mês' : estadosParcela.length ? estadosParcela.length === 1 ? rotuloParcela[estadosParcela[0]] || "conferir acompanhamento" : `${tag.pendencias || estadosParcela.length} tarefas de acompanhamento` : canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
   // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
   const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";
@@ -198,7 +198,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
           cursor: "pointer", font: "inherit", lineHeight: 1.6,
         }}
       >
-        {compacto && ehParcela ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>PARC · {tag.itens?.some(i=>i.estado) ? `${tag.itens.filter(i=>i.estado&&i.estado!=='RESOLVIDA').length} tarefas` : `${quantidade} guia(s)`}</> : <>
+        {tag.mensal ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{tag.label} · {tag.referencia?.split('-').reverse().join('/')}</> : compacto && ehParcela ? <><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>PARC · {tag.itens?.some(i=>i.estado) ? `${tag.itens.filter(i=>i.estado&&i.estado!=='RESOLVIDA').length} tarefas` : `${quantidade} guia(s)`}</> : <>
           <span aria-hidden="true">{meta.icone}</span>
           {tag.label}{tag.key === "parcDas" && tag.pendencias > 0 ? ` · ${tag.pendencias} pendente(s)` : ""}
           {tag.state === "enviada" && !tag.itens?.length && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
@@ -209,7 +209,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
 
       {aberto && (
         <Popover onFechar={() => { setAberto(false); setErro(null); }}>
-          <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {competencia}</div>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {tag.referencia || competencia}</div>
           <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{rotuloEstado}</div>
           {ehParcela && <div style={{ marginBottom: 10 }}>
             {tag.itens?.length > 0 && <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{tag.itens.map((item, idx) => <li key={item.id || `${item.parcelamentoId}-${item.referencia}-${idx}`} style={{ marginBottom: 5 }}>{item.tipo || item.tipoParcelamento || "Parcelamento"}{item.numeroParcelamento ? ` nº ${item.numeroParcelamento}` : " · identificar acordo"}{item.referencia ? ` · ${item.referencia}` : ""}{item.numeroParcela ? ` · parcela ${item.numeroParcela}` : ""}{item.label ? ` — ${item.label}` : ""}</li>)}</ul>}

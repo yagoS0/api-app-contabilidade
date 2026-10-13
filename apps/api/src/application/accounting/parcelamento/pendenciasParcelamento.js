@@ -30,6 +30,24 @@ export function complianceParcelamentos(itens) {
     itens, quantidade: itens.length, pendencias, atrasadas: itens.filter(i => i.atrasada).length, pendenciaOperacional: pendencias > 0 };
 }
 
+/** Avisos da carteira: apenas documentos do mês, agrupados por modalidade.
+ * Confirmação, envio e baixa pertencem ao acompanhamento do contrato. */
+export function guiasParcelamentoDoMes(itens, mesOperacional) {
+  const grupos = new Map();
+  for (const item of itens) {
+    const mes = item.vencimento?.slice(0, 7) || item.referencia;
+    if (item.anterior || item.somenteAnteriores || mes !== mesOperacional
+      || item.guiaDoMesPresente || item.documentoDisponivel
+      || item.formaPagamento === 'DEBITO_AUTOMATICO') continue;
+    const tipo = item.tipo || 'Parcelamento';
+    const grupo = grupos.get(tipo) || { tipoParcelamento: tipo, referencia: mesOperacional, itens: [] };
+    grupo.itens.push({ ...item, estado: 'OBTER_GUIA', acao: 'obter_guia',
+      label: 'Falta guia do mês', atrasada: false, atrasosInformados: null });
+    grupos.set(tipo, grupo);
+  }
+  return [...grupos.values()].sort((a, b) => a.tipoParcelamento.localeCompare(b.tipoParcelamento));
+}
+
 /** Uma projeção operacional; não altera obrigações, documentos nem lançamentos. */
 export function projetarPendenciasParcelamento({ contratos = [], indicacoes = [], mesOperacional, enviada = () => false, agora = new Date() }) {
   if (!MESES.test(String(mesOperacional))) throw Object.assign(new Error("Mês operacional inválido."), { code: "MES_OPERACIONAL_INVALIDO", status: 400 });
@@ -100,6 +118,7 @@ export function projetarPendenciasParcelamento({ contratos = [], indicacoes = []
         numeroParcela: p.numeroParcela, referencia: referencia || null, vencimento,
         vencimentoPrevisto: !g?.vencimento && Boolean(p.vencimento), valor: pago ? valor(p.valorEfetivoPago ?? p.valorPago ?? g?.extracted?.comprovante?.total) : valor(g?.valor ?? p.valorPrevisto),
         estado, acao, label, anterior, atrasada, enviada: enviado, pagamentoConfirmado: pago, contabilizacaoPendente,
+        documentoDisponivel: Boolean(g?.status === 'PROCESSED' && temPdf),
         pagamentoConsultadoEm: p.pagamentoConsultadoEm, consultaErro: p.pagamentoErro || null,
         divergenciaMotivo: divergente ? p.pagamentoErro || "PAGAMENTO_DIVERGENTE" : null,
         valorPago: valor(p.valorEfetivoPago ?? p.valorPago ?? p.pagamentoEvidencia?.comprovante?.total ?? p.pagamentoEvidencia?.valorPago),

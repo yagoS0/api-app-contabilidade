@@ -29,6 +29,14 @@ export function getComplianceTags(guideCompliance) {
   // (que decide com base no regime tributário + pró-labore).
   const tags = [];
   for (const { key, label } of COMPLIANCE_CANDIDATES) {
+    if (key === 'parcDas' && Array.isArray(guideCompliance.guiasParcelamentoMes)) {
+      for (const grupo of guideCompliance.guiasParcelamentoMes) {
+        tags.push({ key, id: `parcDas:${grupo.tipoParcelamento}`, label: grupo.tipoParcelamento,
+          mensal: true, referencia: grupo.referencia, tipoParcelamento: grupo.tipoParcelamento,
+          state: 'missing', ok: false, pendenciaOperacional: true, itens: grupo.itens || [] });
+      }
+      continue;
+    }
     const node = guideCompliance[key];
     if (node?.required) {
       // A parcela se identifica pelo número: "Parcela 3/60" diz o que precisa ser entregue ESTE
