@@ -51,20 +51,35 @@ test('etapa da carteira é configurada como obrigação recorrente, sem rotina s
   await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({tipo:'OBRIGACAO',periodicidade:'MENSAL',verificador:'CARTEIRA_APURAR',filtros:{regimes:['SIMPLES'],temFolha:null}})));
 });
 
-test('obrigação da carteira abre conferência com competência e empresa da ocorrência',async()=>{
+test.each([false,true])('conclusão direta por empresa mantém a lista aberta; falha=%s',async(falha)=>{
   const obs=obrigacoes().map(o=>({...o,nome:'Transmitir apuração · Simples Nacional',verificador:'CARTEIRA_TRANSMITIR',conclusaoAutomatica:true,ocorrencias:o.ocorrencias.map(oc=>({...oc,competenciaRef:'2026-08'}))}));
-  const getFluxoCarteira=jest.fn(async()=>({ok:true,fluxo:{regime:'Simples',status:{rotulo:'Obrigações'},tarefas:[{chave:'transmitir',titulo:'Transmitir apuração',dados:{},versao:0,hash:'base'},{chave:'contabilizar',titulo:'Contabilizar e fechar o mês',dados:{},automatica:true}]},lancamentos:[]}));
-  const salvarFluxoTarefa=jest.fn(async()=>({ok:true}));
+  let concluida=false;
+  const getFluxoCarteira=jest.fn(async()=>({ok:true,fluxo:{tarefas:[{chave:'transmitir',titulo:'Transmitir apuração',concluida,dados:concluida?{conclusao:{em:'hoje'}}:{},versao:concluida?1:0,hash:'base'}]},lancamentos:[]}));
+  const salvarFluxoTarefa=jest.fn(async(id,chave,corpo)=>{
+    if(falha)throw new Error('Não foi possível salvar');
+    concluida=corpo.acao==='concluir'; return {ok:true};
+  });
   montar({obs,extras:{getFluxoCarteira,salvarFluxoTarefa}});
   fireEvent.click(await screen.findByRole('button',{name:'Transmitir apuração · Simples Nacional'}));
-  fireEvent.click(screen.getAllByRole('button',{name:'Conferir etapa'})[0]);
-  await waitFor(()=>expect(getFluxoCarteira).toHaveBeenCalledWith('a','2026-08'));
-  const checkbox=await within(screen.getByRole('dialog')).findByRole('checkbox',{name:/Transmitir apuração/});
-  expect(screen.getByRole('dialog')).toHaveAccessibleName('Transmitir apuração · Clínica Alfa · 2026-08');
-  expect(screen.queryByText('Contabilizar e fechar o mês')).not.toBeInTheDocument();
-  fireEvent.click(checkbox);
+  expect(getFluxoCarteira).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button',{name:'Conferir etapa'})).not.toBeInTheDocument();
+  const checkbox=screen.getByRole('checkbox',{name:'Concluir Transmitir apuração · Simples Nacional para Clínica Alfa'});
+  fireEvent.click(checkbox);fireEvent.click(checkbox);
   await waitFor(()=>expect(salvarFluxoTarefa).toHaveBeenCalledWith('a','transmitir',{acao:'concluir',competencia:'2026-08',versao:0,hash:'base'}));
+  expect(salvarFluxoTarefa).toHaveBeenCalledTimes(1);
+  expect(getFluxoCarteira).toHaveBeenCalledWith('a','2026-08');
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Transmitir apuração · Simples Nacional');
+  expect(screen.getByRole('checkbox',{name:/para Consultoria Beta/})).not.toBeChecked();
+  if(falha){await screen.findAllByText('Não foi possível salvar'); expect(checkbox).not.toBeChecked();}
+  else {
+    await waitFor(()=>expect(checkbox).toBeChecked());
+    fireEvent.click(checkbox);
+    await waitFor(()=>expect(salvarFluxoTarefa).toHaveBeenLastCalledWith('a','transmitir',{acao:'reabrir',competencia:'2026-08',versao:1,hash:'base'}));
+    await waitFor(()=>expect(checkbox).not.toBeChecked());
+  }
 });
+
 test.each([['2026-01-31','fevereiro de 2026'],['2024-02-29','março de 2024'],['2026-12-31','janeiro de 2027']])('navega um mês civil de %s',async(referencia,destino)=>{
   montar({visao:'mes',referencia});fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));expect(await screen.findByText(destino)).toBeInTheDocument();
 });
@@ -228,7 +243,7 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   const evento=await screen.findByRole('button',{name:/Revisão EFD/});
   expect(evento.closest('.agenda-event')).not.toHaveClass('is-complete');fireEvent.click(evento);
   expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'Concluir',exact:true}));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox',{name:/^Concluir /}));
   await screen.findByText('2 de 2 concluídas');
   await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/}).closest('.agenda-event')).toHaveClass('is-complete'));
   expect(screen.getByLabelText('2 de 2 concluídas')).toHaveTextContent('2/2');
@@ -238,7 +253,7 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   const reabertas=screen.getByRole('dialog').querySelectorAll('.agenda-company-row');
   expect(reabertas[0]).toHaveClass('is-complete');
   expect(reabertas[1]).toHaveClass('is-complete');
-  fireEvent.click(within(reabertas[1]).getByRole('button',{name:'Reabrir',exact:true}));
+  fireEvent.click(within(reabertas[1]).getByRole('checkbox',{name:/^Reabrir /}));
   await waitFor(()=>expect(reabertas[1]).not.toHaveClass('is-complete'));
   expect(reabertas[0]).toHaveClass('is-complete');
   await waitFor(()=>expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2'));
@@ -271,7 +286,7 @@ test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empres
   expect(eventos).toHaveLength(4);
   eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e.closest('.agenda-event')).toHaveStyle({top:ALTURA_HORA * 9 + 'px',height:ALTURA_HORA - 2 + 'px'});expect(e.closest('.agenda-event').style.getPropertyValue('--event-color')).toBe('#1351b4');});
   fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
-  fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
+  fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
   await screen.findByText('1 de 2 concluídas');
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   expect(screen.getByLabelText('De')).toHaveValue('2026-09-10');expect(screen.getByLabelText('Até')).toHaveValue('2026-09-15');
@@ -507,7 +522,7 @@ test('tarefa agrupada abre empresas, conclui somente uma e edita o período do g
  jest.spyOn(api,'editarOcorrenciasAgenda');
  fireEvent.click(await screen.findByRole('button',{name:'Conferir empresas'}));
  expect(screen.getByText('Clínica Alfa')).toBeInTheDocument();expect(screen.getByText('Consultoria Beta')).toBeInTheDocument();
- fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
+ fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
  await screen.findByText('1 de 2 concluídas');expect(concluir).toHaveBeenCalledTimes(1);expect(concluir).toHaveBeenCalledWith('oc-a');
  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
  expect(screen.queryByRole('button',{name:'Concluir',exact:true})).not.toBeInTheDocument();
@@ -632,4 +647,41 @@ test('tarefas ficam utilizáveis antes de marcos e regras lentos terminarem',asy
  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
  expect(screen.getByRole('dialog')).toBeInTheDocument();
  expect(screen.queryByText('Atualizando agenda…')).not.toBeInTheDocument();
+});
+
+test.each(['mes','semana','dia'])('checkbox aparece junto à empresa ao abrir pela visão %s',async(visao)=>{
+  montar({visao,obs:obrigacoes()});
+  fireEvent.click((await screen.findAllByRole('button',{name:'EFD-Contribuições'}))[0]);
+  const caixa=within(screen.getByRole('dialog')).getByRole('checkbox',{name:'Concluir EFD-Contribuições para Clínica Alfa'});
+  expect(caixa).toBeEnabled();expect(caixa).toHaveClass('agenda-company-checkbox');
+  expect(screen.queryByRole('button',{name:'Conferir etapa'})).not.toBeInTheDocument();
+});
+test('etapa automática explica por que checkbox é somente leitura',async()=>{
+  montar({obs:obrigacoes().map(o=>({...o,verificador:'CARTEIRA_ENVIAR_GUIAS',conclusaoAutomatica:true}))});
+  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  expect(within(screen.getByRole('dialog')).getAllByRole('checkbox').every(e=>e.disabled)).toBe(true);
+  expect(screen.getAllByText('Atualizado pela operação da empresa.')).toHaveLength(2);
+});
+test('falha de releitura não apresenta uma gravação confirmada como pendente',async()=>{
+  let salvo=false;
+  const getFluxoCarteira=jest.fn(async()=>{if(salvo)throw new Error('Sem rede');return {fluxo:{tarefas:[{chave:'transmitir',concluida:false,versao:0,hash:'h',dados:{}}]}};});
+  const salvarFluxoTarefa=jest.fn(async()=>{salvo=true;return {ok:true};});
+  montar({obs:obrigacoes().map(o=>({...o,verificador:'CARTEIRA_TRANSMITIR',conclusaoAutomatica:true})),extras:{getFluxoCarteira,salvarFluxoTarefa}});
+  fireEvent.click(await screen.findByRole('button',{name:'EFD-Contribuições'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Concluir EFD-Contribuições para Clínica Alfa'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Alteração salva.');
+  expect(screen.getByRole('checkbox',{name:'Reabrir EFD-Contribuições para Clínica Alfa'})).toBeChecked();
+  expect(salvarFluxoTarefa).toHaveBeenCalledTimes(1);
+});
+test('agendamento legado abre a lateral com checkbox sem chamar janela removida',async()=>{
+  montar({extras:{getAgendaCarteira:jest.fn(async()=>({ok:true,itens:[{id:'legado',tipo:'fluxo',chave:'transmitir',companyId:'a',empresa:'Clínica Alfa',competencia:'2026-08',titulo:'Transmissão legada',dataInicio:'2026-09-10',dataFim:'2026-09-10'}]}))}});
+  fireEvent.click(await screen.findByRole('button',{name:'Transmissão legada'}));
+  expect(within(screen.getByRole('dialog')).getByRole('checkbox',{name:'Concluir Transmissão legada para Clínica Alfa'})).toBeEnabled();
+  expect(screen.queryByRole('button',{name:'Excluir ocorrência'})).not.toBeInTheDocument();
+});
+
+test('marco informativo não oferece checkbox nem grava ocorrência inexistente',async()=>{
+  montar({extras:{getTarefasAgenda:async()=>({tarefas:[],itens:[{id:'marco',tipo:'marco',titulo:'Vencimento informativo',empresa:'Clínica Alfa',companyId:'a',dataInicio:'2026-09-10',dataFim:'2026-09-10'}]})}});
+  fireEvent.click(await screen.findByRole('button',{name:'Vencimento informativo'}));
+  expect(within(screen.getByRole('dialog')).queryByRole('checkbox')).not.toBeInTheDocument();
 });
