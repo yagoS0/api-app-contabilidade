@@ -14,9 +14,9 @@
 import request from "supertest";
 import express from "express";
 import { consultarCnpj } from '../../../application/tomador/consultaCnpj.js';
-import { consultarCep } from '../../../application/tomador/consultarCep.js';
+import { consultarCepComAlternativa as consultarCep } from '../../../application/tomador/consultarCep.js';
 jest.mock('../../../application/tomador/consultaCnpj.js', () => ({ consultarCnpj: jest.fn() }));
-jest.mock('../../../application/tomador/consultarCep.js', () => ({ consultarCep: jest.fn() }));
+jest.mock('../../../application/tomador/consultarCep.js', () => ({ consultarCepComAlternativa: jest.fn() }));
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const models = {};
