@@ -234,6 +234,7 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   expect(within(linhas[0]).getByText('Concluída')).toBeInTheDocument();
   expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2');
   expect(screen.queryByRole('button',{name:'Concluir tarefa'})).not.toBeInTheDocument();
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisão EFD'}});
   fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-16'}});
@@ -288,6 +289,7 @@ test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empres
   fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
   await screen.findByText('1 de 2 concluídas');
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   expect(screen.getByLabelText('De')).toHaveValue('2026-09-10');expect(screen.getByLabelText('Até')).toHaveValue('2026-09-15');
   expect(screen.queryByRole('button',{name:'Alta'})).not.toBeInTheDocument();
@@ -524,7 +526,8 @@ test('tarefa agrupada abre empresas, conclui somente uma e edita o período do g
  expect(screen.getByText('Clínica Alfa')).toBeInTheDocument();expect(screen.getByText('Consultoria Beta')).toBeInTheDocument();
  fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('checkbox',{name:/^Concluir /})[0]);
  await screen.findByText('1 de 2 concluídas');expect(concluir).toHaveBeenCalledTimes(1);expect(concluir).toHaveBeenCalledWith('oc-a');
- fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
  expect(screen.queryByRole('button',{name:'Concluir',exact:true})).not.toBeInTheDocument();
  expect(screen.getByLabelText('Tipo')).toBeDisabled();expect(screen.getByLabelText('Recorrência')).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência revisada'}});
