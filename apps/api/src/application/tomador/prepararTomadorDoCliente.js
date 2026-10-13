@@ -1,7 +1,7 @@
 // Preparação compartilhável pelo chat guiado e pelas ferramentas: nenhuma emissão ou escrita.
 // A revisão vence a memória da MESMA empresa, depois CNPJ e CEP completam somente lacunas.
 import { buscarTomadoresEmitidos } from "../nfse/tomadorEmitido.js";
-import { consultarCnpj } from "./consultaCnpj.js";
+import { consultarCnpjComCache as consultarCnpj } from "./consultaCnpjRuntime.js";
 import { consultarCep } from "./consultarCep.js";
 import { camposDeEnderecoDaReceita, CAMPOS_ENDERECO_EXIGIDOS } from "./consultaTomador.js";
 import { municipiosIbgeOuNulo } from "../nfse/lote/municipiosIbge.js";
@@ -70,7 +70,7 @@ export async function prepararTomadorDoCliente(input, deps) {
     return municipios;
   };
   if (doc.length === 14 && (!tomador.nome || (!completo(endereco) && !manual.CEP))) {
-    const consulta = await (deps.consultarCnpj || consultarCnpj)(doc, { municipios: await municipiosOficiais(), log });
+    const consulta = await (deps.consultarCnpj || consultarCnpj)(doc, { municipios: await municipiosOficiais(), log, escopo: `empresa:${input.portalClientId}`, finalidade: 'EMISSOR' });
     if (consulta.ok) {
       for (const [campo, chave] of [["nome", "tomadorNome"], ["email", "tomadorEmail"]]) {
         if (!tomador[campo] && consulta.tomador?.[campo]) { tomador[campo] = consulta.tomador[campo]; origens[chave] = "cnpj"; }

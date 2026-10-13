@@ -25,6 +25,7 @@
 
 import { log as logPadrao } from "../../config.js";
 import { decidirConsulta, NAO_CONSULTA, tomadorDaReceita } from "./consultaTomador.js";
+import { criarConsultaCadastral, cadastroGratuitoSuficiente } from "./consultaCadastral.js";
 
 export const BRASILAPI_CNPJ_BASE = "https://brasilapi.com.br/api/cnpj/v1";
 export const MINHA_RECEITA_CNPJ_BASE = "https://minhareceita.org";
@@ -65,19 +66,19 @@ async function consultarFonte({ fonte, digitos, fetchImpl, municipios, prazoMs }
     return await Promise.race([limite, (async () => {
       const resposta = await fetchImpl(`${fonte.base}/${digitos}`, { method: "GET", signal: abortador.signal, headers: { Accept: "application/json" } });
       const status = Number(resposta?.status ?? 0);
-      if (status === 404) return falha(MOTIVOS.NAO_ENCONTRADO, "CNPJ não encontrado na base pública consultada.", false, status);
+      if (status === 404) return falha(MOTIVOS.NAO_ENCONTRADO, "CNPJ não encontrado na base pública consultada.", true, status);
       if (!resposta?.ok) return falha(MOTIVOS.INDISPONIVEL, "Não conseguimos consultar os dados públicos do CNPJ agora.", status === 403 || status === 429 || (status >= 500 && status < 600), status);
       let bruto;
       try { bruto = await resposta.json(); }
       catch (causa) {
         if (abortador.signal.aborted || causa?.name === "AbortError") throw causa;
-        return falha(MOTIVOS.RESPOSTA_INVALIDA, "A base pública respondeu em um formato que não conseguimos ler.", false, status);
+        return falha(MOTIVOS.RESPOSTA_INVALIDA, "A base pública respondeu em um formato que não conseguimos ler.", true, status);
       }
       const documento = typeof bruto?.cnpj === "string" ? bruto.cnpj.trim() : "";
       if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)
         || !/^(?:\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})$/.test(documento)
         || documento.replace(/\D/g, "") !== digitos) {
-        return falha(MOTIVOS.RESPOSTA_INVALIDA, "A resposta da base pública não confirmou o CNPJ solicitado.", false, status);
+        return falha(MOTIVOS.RESPOSTA_INVALIDA, "A resposta da base pública não confirmou o CNPJ solicitado.", true, status);
       }
       return { ok: true, tomador: tomadorDaReceita(bruto, { municipios }), bruto, status };
     })()]);
@@ -99,7 +100,11 @@ async function consultarFonte({ fonte, digitos, fetchImpl, municipios, prazoMs }
  * @param {object} [opcoes.log]
  * @returns {Promise<{ok:true, cnpj:string, tomador:object, bruto:object}|{ok:false, motivo:string, mensagem:string, cnpj:string|null}>}
  */
-export async function consultarCnpj(cnpj, { fetchImpl = null, municipios = null, timeoutMs = TIMEOUT_MS, log = logPadrao } = {}) {
+export async function consultarCnpjGratuito(cnpj, { fetchImpl = null, municipios = null, timeoutMs = TIMEOUT_MS, log = logPadrao, exigirCadastroSuficiente = false } = {}) {
+  // Não transformar documento com letras/caracteres inesperados em outro CNPJ numérico.
+  if (typeof cnpj !== 'string' || !/^[\d.\-/\s]*$/.test(cnpj)) {
+    return { ok: false, motivo: MOTIVOS.CNPJ_INCOMPLETO, mensagem: "Consulta disponível para CNPJ numérico. Preencha os dados manualmente.", cnpj: null };
+  }
   const decisao = decidirConsulta(cnpj);
   if (!decisao.consultar) {
     if (decisao.motivo === NAO_CONSULTA.CPF) {
@@ -116,6 +121,7 @@ export async function consultarCnpj(cnpj, { fetchImpl = null, municipios = null,
   const inicio = Date.now();
   const totalMs = Math.min(TIMEOUT_MS, Math.max(1, Number(timeoutMs) || TIMEOUT_MS));
   const fontesTentadas = [];
+  let parcial = null;
   let ultima = { ok: false, motivo: MOTIVOS.TIMEOUT, mensagem: "A consulta dos dados públicos demorou demais para responder." };
   for (const [indice, fonte] of FONTES.entries()) {
     const restante = totalMs - (Date.now() - inicio);
@@ -129,7 +135,17 @@ export async function consultarCnpj(cnpj, { fetchImpl = null, municipios = null,
     if (resultado.ok) log?.info?.({ ...registro, comEndereco: Boolean(resultado.tomador.endereco) }, "consulta pública de CNPJ concluída");
     else log?.warn?.(registro, "consulta pública de CNPJ indisponível");
     ultima = { ...publico, cnpj: digitos, fonte: fonte.id, fontesTentadas: [...fontesTentadas] };
-    if (resultado.ok || !fallbackElegivel) return ultima;
+    if (resultado.ok) {
+      if (!exigirCadastroSuficiente || cadastroGratuitoSuficiente(resultado.bruto)) return ultima;
+      // Não misturar campos de fontes distintas; conservar o melhor cadastro parcial.
+      if (!parcial || (!parcial.tomador.nome && resultado.tomador.nome)) parcial = ultima;
+    } else if (!fallbackElegivel) break;
   }
-  return ultima;
+  return parcial ? { ...parcial, fontesTentadas: [...fontesTentadas] } : ultima;
+}
+
+// Runtime permanece gratuito. Nenhuma variável de ambiente ou entrada HTTP ativa SERPRO.
+const consultaDoRuntime = criarConsultaCadastral({ consultarGratuito: consultarCnpjGratuito });
+export async function consultarCnpj(cnpj, opcoes = {}) {
+  return consultaDoRuntime(cnpj, opcoes);
 }

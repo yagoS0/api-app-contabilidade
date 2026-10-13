@@ -268,7 +268,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
     setProgresso({ feitas: 0, total: alvos.length });
 
     const { resultados } = await consultarDocumentos(alvos, {
-      consultar: (cnpj) => api.consultarCnpj(cnpj),
+      consultar: (cnpj) => api.consultarCnpj(cnpj, { companyId }),
       municipios,
       jaConhecidos: consultas,
       aoProgredir: ({ feitas, total }) => setProgresso({ feitas, total }),

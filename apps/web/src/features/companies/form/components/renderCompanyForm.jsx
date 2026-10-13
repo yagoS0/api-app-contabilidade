@@ -1,7 +1,8 @@
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { consultarCnpj, sociosDaConsulta } from '../../../onboarding/lib/brasilApi';
 import { descricoesGravadas, fundirDescricoes } from "../../../../lib/cnae/descricoesDeAtividades";
 import { estadoDoResponsavel } from "../../../../lib/portal/responsavelCompartilhado";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../../../../components/ui/Button";
@@ -24,9 +25,9 @@ const ERROR_TEXT_STYLE = {
 
 async function fetchCnpjData(cnpj) {
   const digits = normalizarDocumento(cnpj);
-  const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
-  if (!res.ok) throw new Error("CNPJ não encontrado");
-  return res.json();
+  const res = await consultarCnpj(digits, { cadastroEfetivo: true });
+  if (!res.ok) throw new Error(res.mensagem || "CNPJ não encontrado");
+  return res;
 }
 
 // Porte da BrasilAPI ("MICRO EMPRESA", "EMPRESA DE PEQUENO PORTE"...) → como a ficha escreve.
@@ -89,6 +90,12 @@ function applyBrasilApiData(data, onChange) {
     if (codigo && c?.descricao) descritas.push(`${codigo} - ${c.descricao}`);
   }
   onChange("atividadesDescritas", descritas);
+}
+
+export function aplicarConsultaEmpresaPreservandoEdicoes(data, inicio, atual, onChange) {
+  applyBrasilApiData(data, (campo, valor) => {
+    if (JSON.stringify(atual[campo]) === JSON.stringify(inicio[campo]) && valor !== '' && valor != null) onChange(campo, valor);
+  });
 }
 
 // Descrições dos CNAEs vindas da consulta — só para EXIBIR ao lado do código. O que é gravado
@@ -423,6 +430,10 @@ export function CompanyForm({
   dangerSaving,      // bool — loading state pros botões da zona de risco
 }) {
   const [cnpjLoading, setCnpjLoading] = useState(false);
+  const consultaAtual = useRef({ form, onChange, empresaAtualId });
+  consultaAtual.current = { form, onChange, empresaAtualId };
+  const consultaSequencia = useRef(0);
+  useEffect(() => () => { ++consultaSequencia.current; }, []);
   const [cnpjError, setCnpjError] = useState(null);
   // Descrições dos CNAEs da última consulta — só para exibir; o que é gravado é o código.
   // ⚠⚠ A LEGENDA NASCE DO QUE ESTA GRAVADO, e nao vazia. Em modo EDICAO `handleCnpjBlur` nunca
@@ -459,16 +470,24 @@ export function CompanyForm({
   async function handleCnpjBlur() {
     const digits = normalizarDocumento(form.cnpj);
     if (!/^\d{14}$/.test(digits)) return;
+    const sequencia = ++consultaSequencia.current;
+    const inicio = { ...consultaAtual.current, form: { ...form } };
     setCnpjLoading(true);
     setCnpjError(null);
     try {
-      const data = await fetchCnpjData(digits);
-      applyBrasilApiData(data, onChange);
+      const { bruto: data, fonte } = await fetchCnpjData(digits);
+      const atual = consultaAtual.current;
+      if (sequencia !== consultaSequencia.current || atual.empresaAtualId !== inicio.empresaAtualId || normalizarDocumento(atual.form.cnpj) !== digits) return;
+      aplicarConsultaEmpresaPreservandoEdicoes(data, inicio.form, atual.form, atual.onChange);
+      if (fonte === 'SERPRO_EMPRESA' && !atual.form.socios?.length && atual.form.socios === inicio.form.socios) {
+        const socios = sociosDaConsulta(data).map(s => ({ name: s.nome, documento: s.documento, participacao: '', representante: false }));
+        if (socios.length) atual.onChange('socios', socios);
+      }
       setCnaeDaConsulta(descricoesDosCnaes(data));
     } catch {
-      setCnpjError("CNPJ não encontrado ou inválido.");
+      if (sequencia === consultaSequencia.current && normalizarDocumento(consultaAtual.current.form.cnpj) === digits) setCnpjError("Não foi possível consultar o CNPJ. Preencha os dados manualmente.");
     } finally {
-      setCnpjLoading(false);
+      if (sequencia === consultaSequencia.current) setCnpjLoading(false);
     }
   }
 

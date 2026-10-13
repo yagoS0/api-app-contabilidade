@@ -338,7 +338,7 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     await act(async () => {});
     await screen.findByRole("button", { name: "Emitir nota" });
 
-    await waitFor(() => expect(api.consultarCnpj).toHaveBeenCalledWith("44555666000177"));
+    await waitFor(() => expect(api.consultarCnpj).toHaveBeenCalledWith("44555666000177", { companyId: 'pc-001' }));
     await act(async () => {});
     expect(campo("emitir-nome").value).toBe("TOMADOR EXEMPLO LTDA");
     // ⚠ E os dois lados ficam à vista — o digitado vence, mas "por que o nome mudou?" tem resposta.

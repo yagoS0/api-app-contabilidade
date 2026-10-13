@@ -13,9 +13,9 @@
 
 import request from "supertest";
 import express from "express";
-import { consultarCnpj } from '../../../application/tomador/consultaCnpj.js';
+import { consultarCnpjComCache as consultarCnpj } from '../../../application/tomador/consultaCnpjRuntime.js';
 import { consultarCepComAlternativa as consultarCep } from '../../../application/tomador/consultarCep.js';
-jest.mock('../../../application/tomador/consultaCnpj.js', () => ({ consultarCnpj: jest.fn() }));
+jest.mock('../../../application/tomador/consultaCnpjRuntime.js', () => ({ consultarCnpjComCache: jest.fn() }));
 jest.mock('../../../application/tomador/consultarCep.js', () => ({ consultarCepComAlternativa: jest.fn() }));
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {

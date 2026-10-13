@@ -27,7 +27,7 @@ import { guideTypeEmailLabel } from "../../guides/guideEmailCopy.js";
 import { isGuiaDeParcelamento } from "../../guides/guideContract.js";
 import { gerarDanfseDaNota } from "../../nfse/danfse/danfseDaNotaDoPortal.js";
 import { listarTomadoresEmitidos } from "../../nfse/tomadorEmitido.js";
-import { consultarCnpj } from "../../tomador/consultaCnpj.js";
+import { consultarCnpjComCache as consultarCnpj } from "../../tomador/consultaCnpjRuntime.js";
 import { consultarCep } from "../../tomador/consultarCep.js";
 import { camposDeEnderecoDaReceita } from "../../tomador/consultaTomador.js";
 import { prepararTomadorDoCliente, enderecoDaMemoria } from "../../tomador/prepararTomadorDoCliente.js";
@@ -511,7 +511,7 @@ const EXECUTORES = {
     const r = exigirPapel(ctx, PAPEL_MINIMO_EMISSAO);
     if (r) return r;
     const municipios = await ctx.servicos.municipiosIbgeOuNulo({ log: ctx.log });
-    const res = await ctx.servicos.consultarCnpj(input.cnpj, { municipios, log: ctx.log });
+    const res = await ctx.servicos.consultarCnpj(input.cnpj, { municipios, log: ctx.log, escopo: `empresa:${ctx.sessao.portalClientId}`, finalidade: 'EMISSOR' });
     if (!res.ok) return recusa(res.motivo, `${res.mensagem} A emissão segue normalmente — os dados do tomador podem ser informados à mão.`);
     const t = res.tomador;
     return { ok: true, cnpj: formatarDoc(res.cnpj), nome: t.nome, email: t.email, endereco: t.endereco || (res.bruto ? camposDeEnderecoDaReceita(res.bruto, { municipios }) : null), enderecoFaltantes: t.enderecoFaltantes, motivoMunicipio: t.motivoMunicipio, aviso: t.avisoSituacao, municipioTexto: t.municipioTexto, uf: t.uf };

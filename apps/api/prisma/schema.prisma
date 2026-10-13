@@ -1,3 +1,45 @@
+model ConsultaCnpjCache {
+  chave String @id
+  escopo String
+  cnpj String
+  modalidade String
+  conteudo String?
+  expiraEm DateTime? @db.Timestamptz
+  lease String?
+  leaseAte DateTime? @db.Timestamptz
+  atualizadoEm DateTime @default(now()) @db.Timestamptz
+  @@index([expiraEm])
+}
+
+model ConsultaCnpjOrcamento {
+  id String @id
+  habilitado Boolean @default(false)
+  limiteMicros BigInt @default(0)
+  basicaMicros BigInt @default(0)
+  empresaMicros BigInt @default(0)
+  qsaMicros BigInt @default(0)
+  precosAte DateTime? @db.Timestamptz
+  reservas ConsultaCnpjReserva[]
+}
+
+model ConsultaCnpjReserva {
+  id String @id
+  orcamentoId String
+  orcamento ConsultaCnpjOrcamento @relation(fields: [orcamentoId], references: [id])
+  requestKey String
+  escopo String
+  cnpj String
+  modalidade String
+  mes String
+  custoMicros BigInt
+  status String @default("RESERVADA")
+  criadaEm DateTime @default(now()) @db.Timestamptz
+  concluidaEm DateTime? @db.Timestamptz
+  @@unique([orcamentoId, requestKey])
+  @@index([orcamentoId, mes], map: "ConsultaCnpjReserva_mes_idx")
+  @@index([orcamentoId, escopo, cnpj, modalidade], map: "ConsultaCnpjReserva_documento_idx")
+}
+
 // Trabalho iniciado explicitamente pelo usuário. Não é agenda nem fila de retry.
 model ManualTask {
   id String @id @default(uuid())

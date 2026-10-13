@@ -1,3 +1,4 @@
+import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
 import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
 import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
 import { createReformaFiscalRouter } from "./reformaFiscal.js";
@@ -580,6 +581,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) { next(err); }
   }
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(criarRotasConsultaCnpj({ empresaAccess: requireFirmCompanyAccess(), permitirCadastro: true }));
   router.use(createReformaFiscalRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess, cbsDeps: criarRuntimeCbsDoAmbiente({ db: prisma }) }));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));

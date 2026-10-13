@@ -630,7 +630,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     }
 
     if (consultaCnpjPendente.current?.chave !== chaveConsulta) {
-      consultaCnpjPendente.current = { chave: chaveConsulta, promessa: Promise.resolve().then(() => api.consultarCnpj(decisao.digitos)) };
+      consultaCnpjPendente.current = { chave: chaveConsulta, promessa: Promise.resolve().then(() => api.consultarCnpj(decisao.digitos, { companyId })) };
     }
     const promessaCnpj = consultaCnpjPendente.current.promessa;
     (async () => {

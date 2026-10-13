@@ -22,6 +22,7 @@ export function prepararConversao(onboarding) {
 
 export function aplicarConsultaNaConversao(atual, consulta) {
   const proximo = { ...atual, cadastroConferido: false };
+  if (!atual.socios?.length && consulta.socios?.length) proximo.socios = consulta.socios;
   for (const campo of ["razaoSocial", "nomeFantasia", "telefone", "cnaePrincipal", "naturezaJuridica", "porte", "dataAbertura"]) {
     if (consulta[campo]) proximo[campo] = consulta[campo];
   }

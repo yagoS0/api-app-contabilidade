@@ -1,4 +1,5 @@
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { createRealApi } from '../../../api/real/realApi';
 // ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
 //
 //   `apps/portal-cliente-web/src/api/real/brasilApi.js`
@@ -65,13 +66,21 @@ function situacaoCadastral(data) {
 /**
  * @returns {Promise<{ok: true, empresa, situacao, bruto} | {ok: false, motivo: string, mensagem: string}>}
  */
-export async function consultarCnpj(cnpj, { fetchImpl = null } = {}) {
+export async function consultarCnpj(cnpj, { fetchImpl = null, companyId, tokenPublico, cadastroEfetivo = false } = {}) {
   const digitos = soDigitosCnpj(cnpj);
   if (/[A-Z]/.test(digitos)) {
     return { ok: false, motivo: 'cnpj_alfanumerico_sem_consulta', mensagem: 'Preencha os dados manualmente. A consulta pública deste sistema ainda não foi homologada para CNPJ alfanumérico.' };
   }
   if (digitos.length !== 14) {
     return { ok: false, motivo: "cnpj_incompleto", mensagem: "Informe os 14 dígitos do CNPJ." };
+  }
+
+  // Produção usa a política central autenticada. fetchImpl continua como adaptador
+  // explícito para fixtures legadas que devolvem o contrato bruto do fornecedor.
+  if (!fetchImpl) {
+    const r = await createRealApi().consultarCnpjCadastro(digitos, { companyId, tokenPublico, cadastroEfetivo });
+    return r?.ok ? { ...r, empresa: mapearParaOnboarding(r.bruto), situacao: situacaoCadastral(r.bruto) }
+      : { ok: false, motivo: r?.motivo || 'indisponivel', mensagem: r?.mensagem || 'Consulta indisponível. Preencha manualmente.' };
   }
 
   const f = fetchImpl || (typeof fetch === "function" ? fetch : null);
@@ -142,13 +151,21 @@ export function mapearParaOnboarding(data) {
  * `cnaePrincipal`, e a ficha de onboarding não coleta nenhum dos dois. É por isso que o modal
  * consulta de novo — não por preciosismo.
  */
-export function mapearParaFormularioEmpresa(data) {
+export function sociosDaConsulta(data) {
+  return (Array.isArray(data?.qsa) ? data.qsa : []).filter(s => s && typeof s.nome_socio === 'string' && s.nome_socio.trim()).map(s => {
+    const documento = normalizarDocumento(s.cnpj_cpf_do_socio);
+    return { nome: s.nome_socio.trim(), documento: /^(?:\d{11}|\d{14})$/.test(documento) ? documento : '', participacao: '' };
+  });
+}
+
+export function mapearParaFormularioEmpresa(data, { incluirSocios = false } = {}) {
   const secundarios = Array.isArray(data?.cnaes_secundarios)
     ? data.cnaes_secundarios.map((c) => String(c?.codigo || "").replace(/\D+/g, "")).filter(Boolean)
     : [];
   return {
     razaoSocial: String(data?.razao_social || "").trim(),
     nomeFantasia: String(data?.nome_fantasia || "").trim(),
+    ...(incluirSocios ? { socios: sociosDaConsulta(data).map(s => ({ nome: s.nome, cpf: s.documento.length === 11 ? s.documento : '', participacao: '' })) } : {}),
     telefone: [data?.ddd_telefone_1, data?.ddd_telefone_2].filter(Boolean).join(" / "),
     cnaePrincipal: data?.cnae_fiscal ? String(data.cnae_fiscal) : "",
     cnaesSecundarios: secundarios,

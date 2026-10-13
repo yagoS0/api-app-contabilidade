@@ -1,4 +1,5 @@
 jest.mock("../../../config.js", () => ({ log: null }));
+jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 import { prepararTomadorDoCliente } from "../prepararTomadorDoCliente.js";
 import { buscarTomadoresEmitidos } from "../../nfse/tomadorEmitido.js";
 import { camposDeEnderecoDaReceita, enderecoDaReceita } from "../consultaTomador.js";
