@@ -203,6 +203,9 @@ export function lerRejeicao(erro) {
   // `correcao`. Não há texto local que acrescente algo — inventar um seria adivinhar a regra da
   // prefeitura.
   const recusaFiscal = codigo === "nfse_rejected" || camada === "RECEITA";
+  const duplicidade = [payload.codigo, erro?.code, payload.error].some(v => normalizarCodigo(v) === "e0014")
+    || /\bE0014\b/i.test(payload.message || erro?.message || "");
+  const conferenciaNecessaria = codigo === "nfse_retry_nao_permitido" || normalizarCodigo(payload.codigo) === "nfse_retry_nao_permitido" || payload.numeroReutilizavel === false;
   const transporte = camada === "TRANSPORTE" || Boolean(conhecida?.desfechoDesconhecido);
 
   const mensagem =
@@ -210,9 +213,13 @@ export function lerRejeicao(erro) {
     || textoOuNulo(erro?.message)
     || "Não foi possível emitir a nota.";
 
-  // ⚠ A `correcao` DO SERVIDOR VENCE. Ela é escrita olhando o caso concreto; o texto local é o
-  // genérico do código.
-  const oQueFazer = textoOuNulo(payload.correcao) || conhecida?.oQueFazer || null;
+  // A correção do servidor vence, exceto a orientação legada de reenviar E0014:
+  // nesse caso a identificação já existe e é obrigatório conferir a NFS-e vinculada.
+  const oQueFazer = duplicidade
+    ? "Confira a nota existente no sistema nacional e compare os dados: ela pode pertencer a outra operação. Não reenvie nem altere a numeração antes da conferência. Recupere e vincule a nota a esta tentativa somente se os dados corresponderem à mesma operação."
+    : conferenciaNecessaria && !transporte
+      ? "Tentativa bloqueada para conferência. Consulte o resultado e compare os dados da tentativa com as notas existentes antes de continuar. Não reenvie nem altere a numeração antes da conferência."
+      : textoOuNulo(payload.correcao) || conhecida?.oQueFazer || null;
 
   const campo = conhecida?.campo || null;
   const camposDoCadastro = Array.isArray(payload.missing)
@@ -230,7 +237,9 @@ export function lerRejeicao(erro) {
     codigoDoProvedor: textoOuNulo(payload.codigo),
     camposDoCadastro,
     // Corrigir e tentar de novo é o caminho normal — EXCETO quando ninguém sabe o que aconteceu.
-    podeTentarDeNovo: !transporte,
+    duplicidade,
+    conferenciaNecessaria,
+    podeTentarDeNovo: !transporte && !duplicidade && !conferenciaNecessaria,
     desfechoDesconhecido: transporte,
     // "Reconhecida" quer dizer que a tela tem o que dizer além de repetir o servidor. Recusa fiscal
     // com `correcao` conta; código nunca visto, não — e aí a tela DIZ que não sabe, em vez de

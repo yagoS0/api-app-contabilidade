@@ -176,7 +176,7 @@ describe("os desfechos são OS MESMOS de `/nfse/issue` — três camadas, três 
     cenario.emissaoClienteLiberada = true;
   });
 
-  it("RECEITA (recusa fiscal) → 422 nfse_rejected", async () => {
+  it("E0014 exige conciliação → 409 e nunca libera o número", async () => {
     NfseService.issue.mockResolvedValueOnce({
       status: "rejected",
       camada: "RECEITA",
@@ -185,8 +185,8 @@ describe("os desfechos são OS MESMOS de `/nfse/issue` — três camadas, três 
       numeroReutilizavel: true,
     });
     const r = await emitir(usuarioCliente("OWNER"));
-    expect(r.status).toBe(422);
-    expect(r.body).toMatchObject({ error: "nfse_rejected", camada: "RECEITA", codigo: "E0014" });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ error: "nfse_dps_ja_existente", camada: "RECEITA", codigo: "E0014", numeroReutilizavel: false });
   });
 
   it("⚠ TRANSPORTE → 502, e a correção manda CONSULTAR antes de reemitir", async () => {

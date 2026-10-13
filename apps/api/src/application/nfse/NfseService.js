@@ -2005,6 +2005,11 @@ export class NfseService {
         err.code = "NFSE_RETRY_INVOICE_NOT_FOUND";
         throw err;
       }
+      if (anterior.falhaCodigo === 'E0014' || ![STATUS.REJECTED, STATUS.FALHA_ENVIO].includes(anterior.status)) {
+        const err = new Error('Esta tentativa já existe ou ainda precisa ser conciliada. Consulte a DPS e confira o resultado anterior; não reenvie nem substitua por uma nova nota.');
+        err.code = 'NFSE_RETRY_NAO_PERMITIDO';
+        throw err;
+      }
       if (anterior.falhaCamada === CAMADA.TRANSPORTE) {
         const err = new Error(
           "A tentativa anterior falhou no TRANSPORTE: não se sabe se a DPS foi processada. " +

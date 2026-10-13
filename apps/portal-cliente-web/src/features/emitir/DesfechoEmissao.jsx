@@ -174,6 +174,26 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
     );
   }
 
+  if (desfecho.tipo === TIPO.CONFERENCIA) {
+    return <div className="alerta alerta-aviso" role="alert">
+      <p><strong>Tentativa bloqueada para conferência.</strong></p>
+      {desfecho.message && <p>{desfecho.message}</p>}
+      <p><strong>O que fazer:</strong> {desfecho.correcao}</p>
+      <p className="muted">Referência para o contador: {texto(desfecho.codigo)}</p>
+      <div className="actions"><button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>Ver minhas notas</button></div>
+    </div>;
+  }
+
+  if (desfecho.tipo === TIPO.DUPLICIDADE) {
+    return <div className="alerta alerta-aviso" role="alert">
+      <p><strong>A numeração da DPS já está ocupada.</strong></p>
+      {desfecho.message && <p>{desfecho.message}</p>}
+      <p><strong>O que fazer:</strong> {desfecho.correcao}</p>
+      <p className="muted">Referência para o contador: {texto(desfecho.codigo)}</p>
+      <div className="actions"><button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>Ver minhas notas</button></div>
+    </div>;
+  }
+
   // ── RECEITA: recusa fiscal ────────────────────────────────────────────────────────────────
   if (desfecho.tipo === TIPO.RECEITA) {
     return (

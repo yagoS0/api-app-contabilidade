@@ -78,6 +78,7 @@ import axios from "axios";
 import { prisma, __tx } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
 import { NfseService } from "../NfseService.js";
+import { NfseRepository } from '../../../infrastructure/db/NfseRepository.js';
 
 const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -620,7 +621,7 @@ describe("desfecho — o motivo é gravado, e a camada distingue os casos", () =
     expect(r.status).toBe("rejected");
     expect(r.camada).toBe("RECEITA");
     expect(r.codigo).toBe("E0014");
-    expect(r.numeroReutilizavel).toBe(true);
+    expect(r.numeroReutilizavel).toBe(false);
     expect(prisma.serviceInvoice.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ falhaCamada: "RECEITA", falhaCodigo: "E0014" }),
@@ -654,6 +655,7 @@ describe("reemissão reusa a linha e o número — não queima numeração", () 
       companyId: "company-1",
       rpsSerie: "00001",
       rpsNumero: "42",
+      status: "rejected",
       falhaCamada: "RECEITA",
     });
 
@@ -672,6 +674,7 @@ describe("reemissão reusa a linha e o número — não queima numeração", () 
       companyId: "company-1",
       rpsSerie: "00001",
       rpsNumero: "42",
+      status: "falha_envio",
       falhaCamada: "TRANSPORTE",
     });
 
@@ -1009,4 +1012,20 @@ describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled(); expect(postMock).not.toHaveBeenCalled();
   });
  });
+});
+
+ describe('tentativa não reutilizável', () => {
+  it.each([['rejected', 'E0014', false], ['issued', null, false], ['pending', null, false], ['rejected', 'E0718', true]])('serializa %s/%s com reutilização %s', async (status, falhaCodigo, esperado) => {
+    prisma.serviceInvoice.findUnique.mockResolvedValue({ id: 'anterior', status, falhaCamada: 'RECEITA', falhaCodigo });
+    expect((await NfseRepository.findById('anterior')).falha.numeroReutilizavel).toBe(esperado);
+  });
+  it.each([{ status: 'issued' }, { status: 'pending' }, { status: 'cancelled' }, { status: 'rejected', falhaCodigo: 'E0014' }])('bloqueia %j antes de escrita ou HTTP', async anterior => {
+    montarCenario();
+    prisma.serviceInvoice.findUnique.mockResolvedValue({ id: 'inv-antiga', companyId: 'company-1', falhaCamada: 'RECEITA', ...anterior });
+    await expect(NfseService.issue({ data: PAYLOAD_BASE, log, retryInvoiceId: 'inv-antiga' })).rejects.toMatchObject({ code: 'NFSE_RETRY_NAO_PERMITIDO' });
+    expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.update).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 });

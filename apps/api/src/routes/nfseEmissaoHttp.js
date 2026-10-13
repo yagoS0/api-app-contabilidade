@@ -27,6 +27,11 @@
  * @returns o próprio `res` já respondido — o chamador só dá `return`.
  */
 export function responderResultadoEmissao(res, result) {
+  if (result.codigo === 'E0014') {
+    return res.status(409).json({ error: 'nfse_dps_ja_existente', camada: result.camada, codigo: result.codigo,
+      message: 'A numeração desta DPS já está ocupada. Isso não confirma a emissão solicitada; confira a nota existente.',
+      correcao: result.correcao, numeroReutilizavel: false, nfse: result.nfse });
+  }
   // ⚠ RECUSA DA RECEITA E ERRO NOSSO NÃO TÊM A MESMA RESPOSTA. Antes tudo era `422 nfse_rejected`:
   // timeout, DNS, 500 do provedor, validação nossa e recusa fiscal. O cliente não tinha como saber
   // se corrigia a nota, tentava de novo, ou consultava antes.
@@ -71,6 +76,9 @@ export function responderResultadoEmissao(res, result) {
  * @returns o próprio `res` já respondido — o chamador só dá `return`.
  */
 export function responderErroEmissao(res, err, { log } = {}) {
+  if (err.code === 'NFSE_RETRY_NAO_PERMITIDO') {
+    return res.status(409).json({ error: 'nfse_retry_nao_permitido', codigo: err.code, message: err.message, numeroReutilizavel: false });
+  }
   if (err.code === "COMPANY_NOT_FOUND") {
     return res.status(404).json({ error: "company_not_found" });
   }
