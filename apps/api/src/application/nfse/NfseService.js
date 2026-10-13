@@ -2019,10 +2019,15 @@ export class NfseService {
         throw err;
       }
       numeracao = { rpsSerie: anterior.rpsSerie, rpsNumero: anterior.rpsNumero };
-      record = await NfseRepository.markIssued(anterior.id, {
+      record = await NfseRepository.claimRetry(anterior, {
         status: STATUS.PENDING,
         ...CAMPOS_DE_FALHA_LIMPOS,
       });
+      if (!record) {
+        const err = new Error('Esta tentativa foi retomada ou atualizada por outra operação. Confira o resultado anterior antes de continuar. Nenhum novo envio foi iniciado por esta solicitação.');
+        err.code = 'NFSE_RETRY_NAO_PERMITIDO';
+        throw err;
+      }
     } else {
       const reserva = await reservarNumeracao({
         companyId: company.id,

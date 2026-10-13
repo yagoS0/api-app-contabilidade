@@ -60,6 +60,19 @@ describe("camada NOSSA — nada saiu da máquina", () => {
 });
 
 describe("camada RECEITA — o sistema nacional analisou e recusou", () => {
+  it.each([false, true])('E0014 prevalece após erro corrigível, inclusive JSON serializado (%s)', serializado => {
+    const resposta = { erros: [
+      { Codigo: 'E0718', Descricao: 'Rejeição corrigível' },
+      { Codigo: 'E0014', Descricao: 'Numeração já ocupada' },
+    ] };
+    const dados = serializado ? JSON.stringify(resposta) : resposta;
+    expect(extrairCodigoReceita(dados)).toBe('E0014');
+    expect(classificarFalha(erroDoProvedor(400, dados))).toMatchObject({
+      codigo: 'E0014', numeroReutilizavel: false,
+      correcao: expect.stringContaining('não confirma a emissão solicitada'),
+    });
+    expect(extrairCodigoReceita({ erros: [{ Codigo: 'E0718' }, { Codigo: 'E0010' }] })).toBe('E0718');
+  });
   it('lê Codigo/Descricao do retorno nacional sem apresentar JSON na mensagem', () => {
     const Descricao = 'Conjunto de Série, Número, Código do Município Emissor e CNPJ/CPF informado nesta DPS já existe';
     const d = classificarFalha(erroDoProvedor(400, { erros: [{ Codigo: 'E0014', Descricao }] }));
