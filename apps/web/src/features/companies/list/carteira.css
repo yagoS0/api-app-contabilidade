@@ -102,6 +102,12 @@
 .carteira-etapa { border: 1px solid var(--border); background: var(--bg-subtle); color: var(--text); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: .74rem; cursor: pointer; white-space: nowrap; }
 .carteira-task-list { list-style: none; padding: 0; display: grid; gap: 8px; margin: 16px 0; }
 .carteira-task-list > li { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.carteira-task-check { display: flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+.carteira-task-check input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--primary, #1351b4); }
+.carteira-task-check span { flex: 1; min-width: 0; }
+.carteira-task-check small, .carteira-task-list > li > small { color: var(--text-muted); }
+.carteira-task-check:has(input:disabled) { cursor: default; }
+.carteira-task-list p, .carteira-task-list details { margin: 8px 0 0; font-size: .85rem; }
 .carteira-task-toggle { width: 100%; display: flex; justify-content: space-between; gap: 12px; text-align: left; border: 0; background: var(--bg-subtle); color: var(--text); padding: 10px; font: inherit; cursor: pointer; border-radius: 6px; }
 .carteira-task-toggle small, .carteira-task-list small { color: var(--text-muted); }
 .carteira-task-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 12px 0; }

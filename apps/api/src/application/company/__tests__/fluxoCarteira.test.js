@@ -85,3 +85,19 @@ test('recusa importação de ID de outra empresa ou não exportado',()=>{
   const d={fluxo:{contabilizacao:{chave:'fechado'}},lancamentos:[{id:'meu',importavel:false}]};
   expect(()=>validarEdicaoTarefa({versao:0,acao:'concluir',evidencia:'ERP lote 123',hash:'atual',entryIds:['outro']},tarefa('importar'),d)).toThrow('outra competência');
 });
+
+test('confirma transmissão sem exigir formulário, conservando origem e vínculo com os dados',()=>{
+  const dados=validarEdicaoTarefa({versao:0,acao:'concluir',hash:'atual'},tarefa('transmitir'),{});
+  expect(dados.conclusao).toEqual({hash:'atual',origem:'CONFIRMACAO_MANUAL'});
+  const f=projetarFluxoCarteira(empresa(),contexto({hashes:{transmitir:'atual'},registros:[{chave:'transmitir',dados:{...dados,conclusao:{...dados.conclusao,em:'hoje'}}}]}));
+  expect(f.tarefas.find(t=>t.chave==='transmitir').concluida).toBe(true);
+  expect(f.tarefas.find(t=>t.chave==='contabilizar').concluida).toBe(false);
+});
+test('confirmação simples continua recusando dependências e hash alterado',()=>{
+  expect(()=>validarEdicaoTarefa({versao:0,acao:'concluir',hash:'atual'},tarefa('transmitir',{aguardando:['apurar']}),{})).toThrow('etapas necessárias');
+  expect(()=>validarEdicaoTarefa({versao:0,acao:'concluir',hash:'antigo'},tarefa('transmitir'),{})).toThrow('mudaram');
+});
+test('evidência opcional conserva texto legado sem aceitar tipos inválidos',()=>{
+  expect(validarEdicaoTarefa({versao:0,acao:'concluir',hash:'atual',evidencia:' Recibo 123 '},tarefa('transmitir'),{}).conclusao.evidencia).toBe('Recibo 123');
+  expect(()=>validarEdicaoTarefa({versao:0,acao:'concluir',evidencia:{}},tarefa('transmitir'),{})).toThrow('Evidência inválida');
+});

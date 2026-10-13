@@ -24,7 +24,8 @@ export function validarEdicaoTarefa(corpo, tarefa, detalhe) {
   }
   if (tarefa.automatica) throw erro('Esta tarefa acompanha o registro da operação. Abra a empresa para executá-la.');
   if (acao === 'reabrir') { delete dados.conclusao; delete dados.importacoes; return dados; }
-  if (typeof corpo.evidencia !== 'string' || corpo.evidencia.trim().length < 8 || corpo.evidencia.length > 2000) throw erro('Descreva a conferência, documento ou recibo que comprova a conclusão.');
+  // Conclusão é a confirmação do contador; texto adicional é opcional.
+  if (corpo.evidencia !== undefined && (typeof corpo.evidencia !== 'string' || corpo.evidencia.length > 2000)) throw erro('Evidência inválida ou muito longa.');
   if (tarefa.aguardando?.length) throw erro('Conclua as etapas necessárias antes de registrar esta conclusão.');
   if (tarefa.hash && corpo.hash !== tarefa.hash) throw erro('Os dados mudaram desde a conferência. Atualize a tarefa.', 409);
   if (tarefa.chave === 'obrigacoes' && detalhe.fluxo.obrigacoes.some(o => !o.concluida && o.verificador !== 'MES_FECHADO')) throw erro('Há obrigações cadastradas pendentes. Conclua-as na agenda.');
@@ -36,7 +37,7 @@ export function validarEdicaoTarefa(corpo, tarefa, detalhe) {
     dados.importacoes = { ...(dados.importacoes || {}) };
     for (const e of selecionados) dados.importacoes[e.id] = { hash: e.hash };
   }
-  dados.conclusao = { hash: tarefa.hash, evidencia: corpo.evidencia.trim() };
+  dados.conclusao = { hash: tarefa.hash, origem: 'CONFIRMACAO_MANUAL', ...(corpo.evidencia?.trim() ? { evidencia: corpo.evidencia.trim() } : {}) };
   return dados;
 }
 
