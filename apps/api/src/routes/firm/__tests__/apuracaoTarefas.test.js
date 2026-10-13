@@ -68,7 +68,7 @@ test("retificação exige a segunda confirmação sem transmitir nada", async ()
   expect(transmitirFechamento).not.toHaveBeenCalled();
 });
 
- test.each([['CALCULO_EM_ANDAMENTO',409],['SERPRO_CHAMADA_EM_ANDAMENTO',409],['SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL',409],['PERIODOS_RECUSADOS_REGISTRO_INDISPONIVEL',503]])('expõe %s com status apropriado sem repetir', async (code,status) => {
+ test.each([['CALCULO_EM_ANDAMENTO',409],['SERPRO_CHAMADA_EM_ANDAMENTO',409],['SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL',409],['SIMULACAO_RESPOSTA_INVALIDA',502],['PERIODOS_RECUSADOS_REGISTRO_INDISPONIVEL',503]])('expõe %s com status apropriado sem repetir', async (code,status) => {
  calcularFechamento.mockRejectedValueOnce(Object.assign(new Error('Operação interrompida. Nenhuma nova tentativa iniciada.'),{code}));
  await request(app()).post('/companies/minha/fechamento/2026-09/calcular').set('Prefer','respond-async').send({}).expect(202);
  const result=await execute(jest.fn());expect(result.statusCode).toBe(status);expect(result.body.error).toBe(code);

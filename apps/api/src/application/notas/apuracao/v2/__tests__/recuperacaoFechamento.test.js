@@ -146,3 +146,34 @@ test("salvar resultado confirmado e origem igual mantém token e fecha sem simul
   expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ idempotencyKey: s.idempotencyKey }), data: expect.objectContaining({ estado: "fechada" }) }));
   expect(mockSimular).not.toHaveBeenCalled(); expect(mockTransmitir).not.toHaveBeenCalled();
 });
+
+test.each([null, undefined, NaN, Infinity, -1, "6"])("DAS inválido %s não substitui cálculo salvo", async dasValor => {
+  const anterior = snapshot();
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue(anterior);
+  mockSimular.mockResolvedValueOnce({ dasValor });
+  const alterado = { ...form, atividades: [{ ...form.atividades[0], valorInterno: 101 }] };
+  await expect(calcularFechamento({ ...args, ...alterado })).rejects.toMatchObject({ code: "SIMULACAO_RESPOSTA_INVALIDA" });
+  expect(mockSimular).toHaveBeenCalledTimes(1);
+  expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+  expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+  expect((await getDadosFechamento(args)).calculoRecuperavel).toMatchObject({ dasValor: 6, formulario: form, calculoId: anterior.idempotencyKey });
+  expect(mockTransmitir).not.toHaveBeenCalled();
+  expect(lease.release).toHaveBeenCalled();
+});
+
+test.each([{ dados: "{" }, { dados: "{}" }, { dados: JSON.stringify({ valoresDevidos: [] }) }, { dados: JSON.stringify({ valoresDevidos: [{ valor: "inválido" }] }) }])("resposta HTTP200 malformada não grava cálculo: %j", async raw => {
+  const { parseRetornoSimulacao } = jest.requireActual("../../../../fiscal/serpro/PgdasSimulacaoService.js");
+  mockSimular.mockResolvedValueOnce(parseRetornoSimulacao(raw));
+  await expect(calcularFechamento({ ...args, ...form, atividades: [{ ...form.atividades[0], valorInterno: 101 }] })).rejects.toMatchObject({ code: "SIMULACAO_RESPOSTA_INVALIDA" });
+  expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+  expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+  expect((await getDadosFechamento(args)).calculoRecuperavel).toMatchObject({ dasValor: 6, formulario: form });
+});
+
+test("DAS zero numérico explícito permanece válido", async () => {
+  mockSimular.mockResolvedValueOnce({ dasValor: 0 });
+  const result = await calcularFechamento({ ...args, ...form, atividades: [{ ...form.atividades[0], valorInterno: 101 }] });
+  expect(result).toMatchObject({ ok: true, dasValor: 0, snapshot: { estado: "calculada", dasSimuladoSerpro: 0 } });
+  expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledTimes(1);
+  expect(mockTransmitir).not.toHaveBeenCalled();
+});

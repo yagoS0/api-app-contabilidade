@@ -37,7 +37,7 @@ export async function lerResposta(payload, rota, client = prisma) {
       const row = await client.serproRespostaCache.findUnique({ where: { chave } });
       if (row && new Date(row.expiraEm).getTime() > Date.now()) return row.resposta;
       const concluida = await client.serproChamada.findFirst({ where: { ...where, status: 'ok', httpStatus: 200 }, select: { id: true } });
-      if (concluida) throw Object.assign(new Error('Esta simulação já recebeu uma resposta, mas ela não está mais disponível para recuperação automática. Recupere o cálculo salvo ou confira a tentativa anterior antes de solicitar uma nova simulação. Nenhuma nova consulta foi enviada.'), { code: 'SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL', status: 409 });
+      if (concluida) throw Object.assign(new Error('Esta simulação já recebeu uma resposta, mas ela não está mais disponível para recuperação automática. Isso não confirma que o cálculo foi concluído. Recupere o cálculo salvo, se houver, ou confira a tentativa anterior antes de solicitar uma nova simulação. Nenhuma nova consulta foi enviada.'), { code: 'SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL', status: 409 });
       return null;
     } catch (err) {
       if (['SERPRO_CHAMADA_EM_ANDAMENTO', 'SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL'].includes(err?.code)) throw err;

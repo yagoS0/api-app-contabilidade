@@ -820,6 +820,10 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
     { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos },
   ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
+  // HTTP 200 não comprova um cálculo utilizável. Zero explícito é válido.
+  if (typeof resultado?.dasValor !== "number" || !Number.isFinite(resultado.dasValor) || resultado.dasValor < 0) {
+    throw new FechamentoError("SIMULACAO_RESPOSTA_INVALIDA", "O provedor retornou uma resposta sem valor de DAS válido. O cálculo anterior foi preservado. Confira o registro da tentativa antes de continuar; não repita a simulação automaticamente.");
+  }
   lease.assertActive();
   if (hashCalculo(contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
 
