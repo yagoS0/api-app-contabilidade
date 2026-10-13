@@ -101,7 +101,7 @@ export function createApuracaoV2Router({ log } = {}) {
 
   // Erro de negócio/config conhecido (validação nossa ou rejeição do SERPRO) → 400; 500 só pro inesperado.
   function statusForFechamentoErr(err) {
-    if (err?.code === 'SERPRO_CHAMADA_REPETIDA') return 409;
+    if (['SERPRO_CHAMADA_REPETIDA', 'SERPRO_CHAMADA_EM_ANDAMENTO', 'SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL'].includes(err?.code)) return 409;
     if (['SERPRO_MEDICAO_INDISPONIVEL', 'PERIODOS_RECUSADOS_REGISTRO_INDISPONIVEL'].includes(err?.code)) return 503;
     if (['CALCULO_EM_ANDAMENTO', 'CALCULO_DESATUALIZADO', 'TRANSMISSAO_PENDENTE_CONFERENCIA', 'TRANSMISSAO_RESULTADO_INCERTO'].includes(err?.code)) return 409;
     if (err?.code === 'REGIME_APURACAO_NAO_SUPORTADO') return 400;
