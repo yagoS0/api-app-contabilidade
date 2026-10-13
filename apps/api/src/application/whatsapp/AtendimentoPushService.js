@@ -83,6 +83,13 @@ export async function registrarEncaminhamentoComercialPush({ atendimentoId, mens
     create: { id, conversaId, tipo: 'COMERCIAL', createdAt: agora, expiraEm: new Date(agora.getTime() + VIDA_EVENTO_MS) } });
 }
 
+/** Contingência não é resolvida ao ler: exige assumir o atendimento. */
+export async function registrarContingenciaComercialPush({ atendimentoId, mensagemId, conversaId, client, agora = new Date() }) {
+  const id = `contingencia:${atendimentoId}:${mensagemId}`;
+  return client.eventoPushAtendimento.upsert({ where: { id }, update: {},
+    create: { id, conversaId, tipo: 'COMERCIAL_CONTINGENCIA', createdAt: agora, expiraEm: new Date(agora.getTime() + VIDA_EVENTO_MS) } });
+}
+
 export async function podeNotificarInscricao({ inscricao, evento }, { client = prisma } = {}) {
   if (!inscricao?.ativa || !evento || evento.expiraEm <= new Date()) return false;
   const user = await client.user.findUnique({ where: { id: inscricao.userId } });
@@ -92,6 +99,14 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
   const encaminhamento = evento.tipo === 'SUPORTE' ? await client.encaminhamentoSuporte.findUnique({ where: { id: evento.id.replace(/^suporte:/, '') } }) : null;
   if (evento.tipo === 'SUPORTE' && (!encaminhamento || encaminhamento.estado === 'RESOLVIDO' || encaminhamento.conversaId !== conversa.id)) return false;
   let comercial = null;
+  if (evento.tipo === 'COMERCIAL_CONTINGENCIA') {
+    const [prefixo, atendimentoId, mensagemId, extra] = evento.id.split(':');
+    if (prefixo !== 'contingencia' || !atendimentoId || !mensagemId || extra) return false;
+    comercial = await client.atendimentoLead.findUnique({ where: { id: atendimentoId }, include: { onboarding: true } });
+    const pendencia = comercial?.triagem?.contingenciaIa;
+    if (!comercial || comercial.encerradoEm || comercial.conversaId !== conversa.id || !conversa.atendidaDesde
+      || pendencia?.estado !== 'PENDENTE' || pendencia.mensagemId !== mensagemId) return false;
+  }
   if (evento.tipo === 'COMERCIAL') {
     const [prefixo, atendimentoId, mensagemId, extra] = evento.id.split(':');
     if (prefixo !== 'comercial' || !atendimentoId || !mensagemId || extra) return false;
@@ -134,9 +149,9 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
 }
 
 export function payloadPush({ evento, inscricao }) {
-  return { title: "Altan Atendimento", body: evento.tipo === 'SUPORTE' ? 'Um atendimento precisa da equipe. Abra o suporte para continuar.' : evento.tipo === 'COMERCIAL' ? 'Um atendimento comercial precisa do contador. Abra o comercial para continuar.' : "Nova mensagem. Abra o atendimento para responder.",
-    ...(['SUPORTE','COMERCIAL'].includes(evento.tipo) ? { tipo: evento.tipo } : {}),
-    url: `${evento.tipo === 'SUPORTE' ? '/suporte' : evento.tipo === 'COMERCIAL' ? '/comercial/conversas' : '/whatsapp'}?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
+  return { title: "Altan Atendimento", body: evento.tipo === 'SUPORTE' ? 'Um atendimento precisa da equipe. Abra o suporte para continuar.' : evento.tipo === 'COMERCIAL_CONTINGENCIA' ? 'A IA precisa de ajuda. Abra o comercial e assuma o atendimento.' : evento.tipo === 'COMERCIAL' ? 'Um atendimento comercial precisa do contador. Abra o comercial para continuar.' : "Nova mensagem. Abra o atendimento para responder.",
+    ...(['SUPORTE','COMERCIAL','COMERCIAL_CONTINGENCIA'].includes(evento.tipo) ? { tipo: evento.tipo } : {}),
+    url: `${evento.tipo === 'SUPORTE' ? '/suporte' : ['COMERCIAL','COMERCIAL_CONTINGENCIA'].includes(evento.tipo) ? '/comercial/conversas' : '/whatsapp'}?app=atendimento&conversa=${encodeURIComponent(evento.conversaId)}`,
     tag: `atendimento:${hash(evento.conversaId).slice(0, 24)}`, vinculo: inscricao.vinculo };
 }
 

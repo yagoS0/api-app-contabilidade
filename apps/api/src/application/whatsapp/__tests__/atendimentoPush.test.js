@@ -160,3 +160,24 @@ test("revogação durante autorização impede transporte com inscrição antiga
   await processarPushAtendimento({ ...s, autorizar });
   expect(s.transportar).not.toHaveBeenCalled(); expect(s.item.status).toBe("CANCELADA");
 });
+
+test('contingência comercial avisa a fila mesmo após leitura e direciona para assumir', async () => {
+  const s = estado();
+  Object.assign(s.evento, { id: 'contingencia:a:m1', tipo: 'COMERCIAL_CONTINGENCIA' });
+  Object.assign(s.conversa, { atendidaDesde: new Date(), lidaAteEm: new Date(Date.now() + 1000) });
+  s.client.atendimentoLead = { findUnique: jest.fn(async () => ({ id: 'a', conversaId: 'conv1', triagem: { contingenciaIa: { estado: 'PENDENTE', mensagemId: 'm1' } } })) };
+  expect(await podeNotificarInscricao(s, s)).toBe(true);
+  expect(payloadPush(s)).toMatchObject({ tipo: 'COMERCIAL_CONTINGENCIA', url: '/comercial/conversas?app=atendimento&conversa=conv1' });
+  s.conversa.atendidaPor = 'outro'; expect(await podeNotificarInscricao(s, s)).toBe(false);
+  s.conversa.atendidaPor = user.id; expect(await podeNotificarInscricao(s, s)).toBe(true);
+  s.inscricao.minhas = false; expect(await podeNotificarInscricao(s, s)).toBe(false);
+});
+
+test('contingência de outro interlocutor não vaza para identidade atual', async () => {
+  const s = estado();
+  Object.assign(s.evento, { id: 'contingencia:a:m1', tipo: 'COMERCIAL_CONTINGENCIA' });
+  Object.assign(s.conversa, { atendidaDesde: new Date(), vinculoNumeroId: 'v' });
+  s.client.atendimentoLead = { findUnique: jest.fn(async () => ({ id: 'a', conversaId: 'conv1', interlocutorId: 'antigo', triagem: { contingenciaIa: { estado: 'PENDENTE', mensagemId: 'm1' } } })) };
+  carregarGrupoIdentidade.mockResolvedValue({ origem: { vinculoNumero: { interlocutor: { id: 'atual' } } }, segmentos: [] });
+  expect(await podeNotificarInscricao(s, s)).toBe(false);
+});

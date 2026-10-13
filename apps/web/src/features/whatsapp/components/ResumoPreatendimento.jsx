@@ -5,7 +5,7 @@ const CAMPOS_IA = { cnpj: "CNPJ", nome: "Nome", atividade: "Atividade", cidade: 
 
 export function ResumoPreatendimento({ atendimento, atendimentoHumano = false }) {
   const pre = atendimento?.triagem?.preatendimento;
-  if (!pre || !INTENCOES[pre.intencao]) return null;
+  if (!pre || (!INTENCOES[pre.intencao] && !atendimento?.triagem?.contingenciaIa)) return null;
   const evidencias = { ...pre.evidenciasIa, ...pre.evidenciasDeclaradas };
   const relatos = Array.isArray(pre.relatosCliente) ? pre.relatosCliente.filter(r => typeof r?.texto === 'string' && r.texto.trim()) : [];
   const cnpj = pre.aguardandoConfirmacaoCnpj ? null : pre.cnpj || pre.dadosInformados?.cnpj;
@@ -19,7 +19,7 @@ export function ResumoPreatendimento({ atendimento, atendimentoHumano = false })
     ["Origem informada", pre.origemDeclarada], ["Palavra de entrada", pre.palavraEntrada],
   ].filter(([, valor]) => valor);
   return <section className="wa-pre-summary" aria-label="Resumo do pré-atendimento">
-    <header><h3>{INTENCOES[pre.intencao]}</h3><span>{atendimento.encerradoEm ? "Solicitação anterior" : atendimentoHumano || pre.estado === "ENCAMINHADO" ? "Com a equipe" : "Conversa inicial"}</span></header>
+    <header><h3>{INTENCOES[pre.intencao] || "Atendimento inicial"}</h3><span>{atendimento.encerradoEm ? "Solicitação anterior" : atendimentoHumano || pre.estado === "ENCAMINHADO" ? "Com a equipe" : "Conversa inicial"}</span></header>
     {pre.autorizacaoFiscal?.estado === 'AGUARDANDO_AUTORIZACAO' && <p role="status">Autorização solicitada. O contador acompanha o aceite na Receita e a consulta fiscal.</p>}
     {pre.autorizacaoFiscal?.estado === 'REVISAO_NECESSARIA' && <p role="status">A equipe precisa conferir a orientação de autorização.</p>}
     {pre.ultimaInterpretacaoIa?.estado === 'FALLBACK' && <p>A IA não conseguiu interpretar a última mensagem. O atendimento foi encaminhado à equipe; confira o relato recebido.</p>}

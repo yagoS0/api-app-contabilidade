@@ -72,3 +72,12 @@ test('aviso comercial reaproveita janela comercial sem perder documento aberto',
   expect(a.mensagens).toEqual([{ tipo: 'ABRIR_CONVERSA', url: '/comercial/conversas?app=atendimento&conversa=lead-abc' }]);
   expect(a.cliente.focus).toHaveBeenCalled(); expect(a.navegar).not.toHaveBeenCalled(); expect(a.self.clients.openWindow).not.toHaveBeenCalled();
 });
+
+test('contingência avisa explicitamente e abre a conversa certa sem expor erro ou relato', async () => {
+  const a = ambiente(); await a.vincular();
+  await a.disparar('push', { data: { json: () => ({ tipo: 'COMERCIAL_CONTINGENCIA', vinculo: 'nonce-atual', body: 'dado privado', erro: 'segredo', url: '/comercial/conversas?conversa=lead-falha' }) } });
+  expect(a.mostrar).toHaveBeenCalledWith('IA indisponível · assuma o atendimento', expect.objectContaining({ data: { url: '/comercial/conversas?app=atendimento&conversa=lead-falha', vinculo: 'nonce-atual' } }));
+  expect(JSON.stringify(a.mostrar.mock.calls)).not.toMatch(/privado|segredo/);
+  await a.disparar('notificationclick', { notification: { close: jest.fn(), data: a.mostrar.mock.calls[0][1].data } });
+  expect(a.self.clients.openWindow).toHaveBeenCalledWith('/comercial/conversas?app=atendimento&conversa=lead-falha');
+});

@@ -1,0 +1,55 @@
+name: Disponibilidade do atendimento
+
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/atendimento-monitor.yml'
+      - 'scripts/monitor-atendimento*'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: atendimento-monitor
+  cancel-in-progress: false
+
+jobs:
+  disponibilidade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Testar o verificador sem rede
+        run: node --test scripts/monitor-atendimento.test.mjs
+      - name: Conferir produção por fora da infraestrutura da Altan
+        id: probe
+        continue-on-error: true
+        run: node scripts/monitor-atendimento.mjs
+      - name: Registrar ou encerrar incidente
+        if: always() && steps.probe.outcome != 'skipped' && steps.probe.outcome != ''
+        uses: actions/github-script@v7
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+        with:
+          script: |
+            const title = '[Monitor] Atendimento indisponível';
+            const marker = '<!-- altan-atendimento-monitor -->';
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', creator: 'github-actions[bot]', per_page: 100 });
+            const incident = issues.find(i => !i.pull_request && i.title === title && i.body?.includes(marker));
+            if (process.env.PROBE_OUTCOME !== 'success') {
+              if (!incident) await github.rest.issues.create({ owner, repo, title,
+                body: `${marker}\nO monitor externo não confirmou a disponibilidade da API/banco ou do portal após três tentativas. Confira os serviços no Railway e preserve os atendimentos pendentes.\n\n[Resultado da verificação](https://github.com/${owner}/${repo}/actions/runs/${context.runId}).\n\nEste monitor não testa respostas do GPT nem entrega de WhatsApp. O aviso externo depende das notificações do GitHub da equipe.`,
+                assignees: [owner] });
+              core.setFailed('Atendimento indisponível; incidente registrado no GitHub.');
+            } else if (incident) {
+              await github.rest.issues.update({ owner, repo, issue_number: incident.number, state: 'closed', state_reason: 'completed' });
+            }

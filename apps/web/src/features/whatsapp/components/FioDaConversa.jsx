@@ -21,6 +21,7 @@ import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { NotaDaMensagem } from "./NotaDaMensagem";
 import { PainelAtendimento } from "./PainelAtendimento";
 import { AtualizacaoAtendimento } from "./AtendimentoComercial";
+import { ContingenciaIa } from "./ContingenciaIa";
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
 import { AvatarConversa, SituacaoConversa, SituacaoIdentificacao, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
@@ -224,6 +225,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
           </div></details>
         </div>
       </div>
+      <ContingenciaIa key={conversa.id} conversa={conversa} hook={hook} somenteLeitura={somenteLeitura} onDetalhes={onDetalhes} />
       {conversa.atendimento?.empresaAtual && !conversa.atendimento.aguardandoSelecao && !somenteLeitura ? <details className="wa-company-context" data-testid="contexto-empresa">
         <summary>{`Empresa: ${conversa.atendimento.empresaAtual.razao}`}</summary>
         <p><span>Empresa selecionada no atendimento automático:</span> <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></p>

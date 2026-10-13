@@ -1,6 +1,7 @@
+import { dadosContingenciaIa } from './ContingenciaComercialService.js';
 import { consultarCadastroInicial, resumoDaConsulta } from './ConsultaCadastralInicial.js';
 import { prepararSolicitacaoAutorizacao } from './SolicitacaoAutorizacaoComercial.js';
-import { registrarEncaminhamentoComercialPush } from '../whatsapp/AtendimentoPushService.js';
+import { registrarEncaminhamentoComercialPush, registrarContingenciaComercialPush } from '../whatsapp/AtendimentoPushService.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { WHATSAPP_COLETA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
 import { iniciarAtendimento, registrarCampos, encerrado } from "./LeadService.js";
@@ -77,7 +78,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
       resumo: { nome: pessoa?.nome || inicial.nomePerfilProvedor || null, ...existente?.triagem?.preatendimento },
       telefone: conversa.telefoneE164, canalId: inicial.canalId, client: db, deps: deps.ia || {} }) : null;
   origem ||= ia?.interpretacao?.intencao || null;
-  if (!existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
+  if (ia?.estado !== 'FALLBACK' && !existente?.onboarding && !existente?.triagem?.preatendimento?.intencao && (!origem || origem === "MULTIPLOS")) return { tratado: false, motivo: origem === "MULTIPLOS" ? "MULTIPLOS_PEDIDOS" : "SEM_INTENCAO_COMERCIAL" };
   const intencaoDaColeta = existente?.triagem?.preatendimento?.intencao || existente?.onboarding?.origem || origem;
   const preflight = prepararPreatendimento({ texto: textoEntrada, intencao: intencaoDaColeta,
     anterior: existente?.triagem?.preatendimento, dadosFicha: existente?.onboarding?.dados,
@@ -170,12 +171,15 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
         preatendimento: { ...pre, ultimaResposta: texto.slice(0, 600), valorApresentado: Boolean(pre.valorApresentado || valorEnviado), valorTexto: valorEnviado || pre.valorTexto || null, estado: encaminhar ? "ENCAMINHADO" : "EM_CONVERSA",
           ...(ia || pre.ultimaInterpretacaoIa ? { ultimaInterpretacaoIa: { estado: ia?.estado || "NAO_UTILIZADA", modelo: ia?.modelo || null, motivo: ia?.motivo || null, mensagemId: mensagem.id } } : {}),
           ...(handoffEm ? { encaminhadoEm: handoffEm.toISOString() } : {}) },
+        ...(ia?.estado === 'FALLBACK' && encaminhar ? { contingenciaIa: dadosContingenciaIa({ motivo: ia.motivo, mensagemId: mensagem.id, agora }) } : {}),
         campoEsperado: null,
         desconhecidos: (triagem.desconhecidos || []).filter(campo => !preparo.operacoes.some(o => o.campo === campo && o.acao === "set")),
         ultimaMensagemEm: new Date(mensagem.registradaEm).toISOString(),
         ...(mensagem.ocorridaEmProvedor ? { ultimaMensagemProvedorEm: new Date(mensagem.ocorridaEmProvedor).toISOString() } : {}),
         ...(mudouOrigem ? { proximaSolicitacao: { intencao: origem, mensagemId: mensagem.id, relato: String(textoEntrada || "").slice(0, 1000) } } : {}),
       } } : {}) } });
+    if (encaminhar && ia?.estado === 'FALLBACK') await registrarContingenciaComercialPush({ atendimentoId: caso.id,
+      mensagemId: mensagem.id, conversaId: atual.id, client: tx, agora });
     if (encaminhar && orientacaoAutorizacao) await registrarEncaminhamentoComercialPush({ atendimentoId: caso.id,
       mensagemId: mensagem.id, conversaId: atual.id, client: tx, agora });
     return tx.coletaComercialWhatsapp.create({ data: { mensagemId: mensagem.id, atendimentoLeadId: caso.id, identidadeVersao,
