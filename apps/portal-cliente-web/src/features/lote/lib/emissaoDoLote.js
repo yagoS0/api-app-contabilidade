@@ -210,6 +210,7 @@ const MOTIVO_DESFECHO_DESCONHECIDO =
 /** Por que esta linha NÃO pode ser retentada — `null` quando ela pode. */
 export function bloqueioDaRetentativa(linha, lote = null) {
   const desfecho = linha?.desfecho;
+  if (exigeConferenciaDaLinha(linha)) return ORIENTACAO_CONFERENCIA;
   /**
    * ⚠⚠ ESPELHO do ramo de 31/08/2026: a linha cuja nota NÓS cancelamos volta a ser retentável —
    * reemitir depois de cancelar é o ciclo fiscal legítimo. `notaCancelada` chega do servidor
@@ -341,4 +342,30 @@ export function textoDoReconhecimento(lote) {
     + `${r.emitidas === 1 ? "linha virou nota" : "linhas viraram nota"}. `
     + "Abaixo está o que aconteceu com cada uma — nenhuma nota nova foi emitida agora."
   );
+}
+
+const ORIENTACAO_CONFERENCIA = "Numeração da DPS já ocupada ou tentativa pendente de conferência. Confira a nota existente e compare os dados: ela pode pertencer a outra operação. Não reenvie nem altere a numeração antes da conferência.";
+export function exigeConferenciaDaLinha(linha) {
+  return /\bE0014\b/i.test(String(linha?.codigo || "") + " " + String(linha?.mensagem || ""))
+    || linha?.numeroReutilizavel === false
+    || String(linha?.codigo || "").toUpperCase() === "NFSE_RETRY_NAO_PERMITIDO";
+}
+export function observacaoDaLinha(linha) {
+  if (exigeConferenciaDaLinha(linha)) return ORIENTACAO_CONFERENCIA;
+  const original = linha?.mensagem || linha?.correcao;
+  if (!original) return "—";
+  if (typeof original === "string" && !/^[\s]*[\[{]/.test(original)) return original;
+  try {
+    const objeto = typeof original === "string" ? JSON.parse(original) : original;
+    const mensagens = [];
+    function visitar(v, profundidade = 0) {
+      if (!v || typeof v !== "object" || profundidade > 5) return;
+      if (Array.isArray(v)) return v.forEach(item => visitar(item, profundidade + 1));
+      const descricao = v.Descricao || v.descricao || v.mensagem || v.message;
+      if (typeof descricao === "string" && !/^[\s]*[\[{]/.test(descricao)) mensagens.push(descricao);
+      for (const chave of ["erros", "Erros", "errors"]) visitar(v[chave], profundidade + 1);
+    }
+    visitar(objeto);
+    return [...new Set(mensagens)].join(" · ") || "A tentativa foi recusada. Consulte o contador para conferir o retorno fiscal.";
+  } catch { return "Não foi possível interpretar o retorno fiscal. Consulte o contador antes de reenviar."; }
 }

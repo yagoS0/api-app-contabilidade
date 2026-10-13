@@ -509,21 +509,14 @@ describe("⚠⚠ o lote reconhecido: a frase diz o que ACONTECEU, e a saída exi
     expect(document.querySelector('[data-emissao="retentar"]')).toBeNull();
   });
 
-  test("⚠⚠ O CASO PARCIAL: com nota já emitida no lote, a ressalva aparece ANTES do botão", async () => {
+  test("lote parcial com E0014 não oferece retentativa e orienta conferência", async () => {
     await abrirLote();
-    // `#recusa` recusa a PRIMEIRA linha e emite as demais.
     await subirPlanilhaEEmitir("notas#recusa#jaemitido.xlsx");
-
-    const bloco = document.querySelector('[data-emissao="retentar"]');
-    expect(bloco).not.toBeNull();
-    const ressalva = document.querySelector('[data-emissao="retentar-ressalva"]');
-    expect(ressalva).not.toBeNull();
-    expect(ressalva.textContent).toMatch(/já virou nota fiscal|já viraram nota fiscal/i);
-
-    // ⚠ A ORDEM IMPORTA: "tentar de novo" se lê como "refazer o lote", e a ressalva é o que desfaz
-    // isso. Depois do botão, ela é lida depois do clique.
-    expect(ressalva.compareDocumentPosition(document.querySelector('[data-emissao="retentar-botao"]')))
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(document.querySelector('[data-emissao="retentar"]')).toBeNull();
+    const linha = document.querySelector('tr[data-desfecho="recusada_receita"]');
+    expect(linha.textContent).toMatch(/outra operação/);
+    expect(linha.textContent).toMatch(/Não reenvie/);
+    expect(api.retentarLoteEmissao).not.toHaveBeenCalled();
   });
 
   test("⚠⚠ o relatório diz QUANDO — por linha, e o carimbo do lote diz a que se refere", async () => {

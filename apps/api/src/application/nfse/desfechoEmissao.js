@@ -165,6 +165,9 @@ export function extrairCodigoReceita(providerData) {
   } catch {
     return null;
   }
+  // Numeração já ocupada prevalece sobre rejeições corrigíveis na mesma resposta.
+  // Escolher apenas o primeiro erro poderia liberar uma DPS existente.
+  if (/\bE0014\b/.test(String(texto))) return 'E0014';
   const m = /\bE\d{4}\b/.exec(String(texto));
   return m ? m[0] : null;
 }

@@ -73,6 +73,21 @@ function buildUpdateData(data) {
 }
 
 export class NfseRepository {
+  static async claimRetry(anterior, data) {
+    // Compare-and-set: só a requisição que ainda encontra a versão lida pode enviar.
+    // updatedAt também impede retomar um resultado novo que voltou ao mesmo status.
+    const claimed = await prisma.serviceInvoice.updateMany({
+      where: {
+        id: anterior.id, companyId: anterior.companyId,
+        status: anterior.status, updatedAt: anterior.updatedAt,
+        falhaCamada: anterior.falhaCamada ?? null,
+        falhaCodigo: anterior.falhaCodigo ?? null,
+      },
+      data,
+    });
+    return claimed.count === 1 ? serialize({ ...anterior, ...data }) : null;
+  }
+
   static async createPending(data) {
     const created = await prisma.serviceInvoice.create({
       data,

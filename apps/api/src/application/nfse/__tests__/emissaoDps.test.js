@@ -50,6 +50,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const serviceInvoice = {
     create: jest.fn(async ({ data }) => ({ id: "inv-1", ...data })),
     update: jest.fn(async ({ data }) => ({ id: "inv-1", ...data })),
+    updateMany: jest.fn(async () => ({ count: 1 })),
     findUnique: jest.fn(async () => null),
   };
   const tx = {
@@ -140,6 +141,7 @@ test('percentual ausente é recusado antes da reserva e da rede', async () => {
 });
 
 function montarCenario({ empresa = {}, cadastroFiscal = null, respostaProvedor } = {}) {
+  prisma.serviceInvoice.updateMany.mockReset().mockResolvedValue({ count: 1 });
   // O cenário declara uma vigência explícita; cadastro atual sozinho não autoriza emissão.
   prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,
     regimeHistorico: [{ id: 'rh-teste', regime: cadastroFiscal?.regime || ('regimeTributario' in empresa ? empresa.regimeTributario : EMPRESA_BASE.regimeTributario), vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], ...empresa });
@@ -648,6 +650,42 @@ describe("desfecho — o motivo é gravado, e a camada distingue os casos", () =
 });
 
 describe("reemissão reusa a linha e o número — não queima numeração", () => {
+  it('duas leituras simultâneas da mesma rejeição resultam em somente um envio', async () => {
+    montarCenario();
+    const anterior = { id: 'inv-antiga', companyId: 'company-1', status: 'rejected', falhaCamada: 'RECEITA', falhaCodigo: 'E0718', rpsSerie: '00001', rpsNumero: '42', updatedAt: new Date('2026-10-13T10:00:00Z') };
+    let liberar;
+    const ambasLeram = new Promise(resolve => { liberar = resolve; });
+    let leituras = 0;
+    prisma.serviceInvoice.findUnique.mockImplementation(async () => {
+      if (++leituras === 2) liberar();
+      await ambasLeram;
+      return { ...anterior };
+    });
+    let estado = { ...anterior };
+    prisma.serviceInvoice.updateMany.mockImplementation(async ({ where, data }) => {
+      const corresponde = Object.entries(where).every(([campo, valor]) => estado[campo] === valor);
+      if (!corresponde) return { count: 0 };
+      estado = { ...estado, ...data };
+      return { count: 1 };
+    });
+    const resultados = await Promise.allSettled([1, 2].map(() => NfseService.issue({ data: PAYLOAD_BASE, log, retryInvoiceId: anterior.id })));
+    expect(resultados.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(resultados.find(r => r.status === 'rejected').reason.code).toBe('NFSE_RETRY_NAO_PERMITIDO');
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId: anterior.companyId, updatedAt: anterior.updatedAt, status: 'rejected' }) }));
+  });
+
+  it('versão atualizada após leitura não é enviada mesmo que o status tenha voltado a rejected', async () => {
+    montarCenario();
+    prisma.serviceInvoice.findUnique.mockResolvedValue({ id: 'inv-antiga', companyId: 'company-1', status: 'rejected', falhaCamada: 'RECEITA', updatedAt: new Date('2026-10-13T10:00:00Z') });
+    prisma.serviceInvoice.updateMany.mockResolvedValue({ count: 0 });
+    await expect(NfseService.issue({ data: PAYLOAD_BASE, log, retryInvoiceId: 'inv-antiga' })).rejects.toMatchObject({ code: 'NFSE_RETRY_NAO_PERMITIDO' });
+    expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.update).not.toHaveBeenCalled();
+  });
+
   it("reaproveita a ServiceInvoice anterior quando a falha LIBEROU o número", async () => {
     montarCenario();
     prisma.serviceInvoice.findUnique.mockResolvedValue({

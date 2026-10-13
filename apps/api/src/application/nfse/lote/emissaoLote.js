@@ -162,6 +162,9 @@ function desfechosDoModo(modo) {
  */
 export function bloqueioDaRetentativa(linha, lote = null) {
   const desfecho = linha?.desfecho;
+  if (/\bE0014\b/i.test(`${linha?.codigo || ""} ${linha?.mensagem || ""}`) || linha?.numeroReutilizavel === false || String(linha?.codigo || "").toUpperCase() === "NFSE_RETRY_NAO_PERMITIDO") {
+    return "Numeração da DPS já ocupada ou tentativa pendente de conferência. Compare a nota existente; não reenvie nem altere a numeração.";
+  }
   /**
    * ⚠⚠ A NOTA CANCELADA REABRE A LINHA (31/08/2026) — e é a ÚNICA exceção à lista de inclusão.
    *
@@ -439,6 +442,7 @@ export async function processarLoteEmissao({
   }
 
   for (const linha of pendentes) {
+    if (modo === MODO.RETENTATIVA && !podeRetentar(linha, lote)) continue;
     // ⚠⚠ A RESERVA DA LINHA É ATÔMICA — `updateMany` COM O DESFECHO NO `where`, e o `count` é lido.
     //
     // Isto não é a mesma coisa que `update({ where: { id } })`, e a diferença é uma nota fiscal

@@ -629,3 +629,16 @@ describe("⚠⚠ o laço em MODO.RETENTATIVA", () => {
     expect(emitir.mock.calls[0][0].retryInvoiceId).toBeNull();
   });
 });
+
+ it("não reserva nem envia linha com E0014 legado ao retentar", async () => {
+   const prisma = prismaFalso(); const lote = await montar(prisma, 1);
+   await processarLoteEmissao({ prisma, loteId: lote.id, companyId: COMPANY, emitir: jest.fn(async () => ({status:"rejected", camada:"RECEITA", message: JSON.stringify({erros:[{Codigo:"E0014",Descricao:"DPS ocupada"}]})})) });
+   const emitir = jest.fn();
+   const final = await processarLoteEmissao({prisma,loteId:lote.id,companyId:COMPANY,emitir,modo:MODO.RETENTATIVA});
+   expect(final.status).toBe("concluido");
+   expect(final.recusadas).toBe(1);
+   expect(final.emitidas).toBe(0);
+   expect(final.linhas[0].desfecho).toBe(DESFECHO_LINHA.RECUSADA_RECEITA);
+   expect(emitir).not.toHaveBeenCalled();
+   expect(podeRetentar({desfecho:DESFECHO_LINHA.RECUSADA_RECEITA,codigo:"E0014"})).toBe(false);
+ });
