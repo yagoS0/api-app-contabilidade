@@ -301,7 +301,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-message-row .wa-bubble-author { font-size: .72rem; margin-bottom: 5px; }
 .wa-message-row .wa-bubble-author strong { font-size: .78rem; font-weight: 600; }
 .wa-message-row .wa-bubble-author > time { display: none; }
-.wa-message-row .wa-bubble-footer { justify-content: flex-end; font-size: .70rem; margin-top: 6px; }
+.wa-message-row .wa-bubble-footer { justify-content: flex-end; font-size: .8125rem; margin-top: 6px; }
 .wa-message-row .wa-bubble-footer time { display: inline; }
 .wa-message-row--note { width: fit-content; max-width: min(88%, 740px); margin: 12px auto; padding: 0; border: 0; background: none; }
 .wa-message-row--note > .wa-avatar { display: none; }
@@ -435,7 +435,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-message-row--out > .wa-bubble { background: color-mix(in srgb, var(--primary) 15%, var(--bg-surface)); }
   .wa-page .wa-bubble-text, .wa-company-chat .wa-bubble-text { font-size: 15px; line-height: 1.45; }
   .wa-message-actions { position: absolute; top: 0; right: 0; margin: 0; }
-  .wa-bubble:has(.wa-message-actions) .wa-bubble-author { padding-right: 30px; }
+  .wa-bubble:has(.wa-message-actions) .wa-bubble-author { padding-right: 48px; }
   .wa-thread .wa-message-actions > button:first-child { width: 44px; min-height: 44px; padding: 0; border-radius: 10px; }
   .wa-message-actions > button:not(:first-child) { position: absolute; top: 38px; right: 0; z-index: 5; width: 176px; min-height: 44px; padding: 10px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow); text-align: left; }
   .wa-composer { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); background: var(--bg-surface); }
@@ -468,3 +468,10 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-unavailable-message { display: grid; gap: 8px; max-width: 100%; }
 .wa-unavailable-message p { margin: 0; line-height: 1.5; }
 .wa-unavailable-message .btn { min-height: 44px; white-space: normal; justify-self: start; }
+
+/* Prévia de anexo também é renderizada fora do contêiner do chat. */
+.wa-attachment-preview { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.wa-attachment-preview p { margin: 0; line-height: 1.5; }
+.wa-attachment-preview label { display: grid; gap: 8px; font-weight: 500; }
+.wa-attachment-preview textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 96px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; font-weight: 400; }
+.wa-attachment-preview :is(textarea, a):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }

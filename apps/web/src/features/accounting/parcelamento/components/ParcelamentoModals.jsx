@@ -974,7 +974,7 @@ export function ParcelamentosList({
         {onOpenCreate && <Button size="sm" variant="primary" onClick={onOpenCreate}>+ Novo parcelamento</Button>}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 12 }}>
         {parcelamentos.map((p) => {
           // ⚠ AS CORES ESTAVAM INVERTIDAS: ATIVO era VERDE e QUITADO era ciano. Verde significa
           // CONCLUÍDO neste app; um contrato ativo é trabalho em curso. `tomDoStatus` traz o par

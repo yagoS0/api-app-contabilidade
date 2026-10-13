@@ -57,11 +57,13 @@ export function AnexoDaConversa({ api, conversa, disabled, onEnviado }) {
     {incerto && api.getIntencaoWhatsapp && <Button data-envio-pendente="true" variant="secondary" disabled={ocupado} onClick={conferir}>Conferir envio do anexo</Button>}
     {remoto.erro && <p role="alert">{remoto.erro}</p>}
     {arquivo && <Modal titulo="Enviar anexo pelo WhatsApp" tamanho="md" ocupado={ocupado} aoFechar={() => setArquivo(null)} rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setArquivo(null)}>Fechar</Button><Button disabled={disabled || ocupado || incerto} onClick={enviar}>{ocupado ? "Enviando…" : "Assumir e enviar anexo"}</Button></>}>
+      <div className="wa-attachment-preview">
       <p>Destinatário: <strong>{conversa.contato?.nome || conversa.nomePerfilProvedor || conversa.telefoneMascarado}</strong> · {conversa.telefoneMascarado}</p>
       <p>{arquivo.name} · {Math.ceil(arquivo.size / 1024)} KB</p>
       {url && (arquivo.type.startsWith("image/") ? <img src={url} alt="Prévia do anexo" style={{ maxWidth: "100%", maxHeight: 260 }} /> : <a href={url} target="_blank" rel="noreferrer">Abrir PDF para conferir</a>)}
       <label>Legenda opcional<textarea value={legenda} maxLength={1024} onChange={e => setLegenda(e.target.value)} style={{ width: "100%" }} /></label>
       {erro && <p role="alert">{erro}</p>}{incerto && <p>Envio sem confirmação. Confira o histórico antes de preparar outro envio.</p>}
+      </div>
     </Modal>}
   </>;
 }

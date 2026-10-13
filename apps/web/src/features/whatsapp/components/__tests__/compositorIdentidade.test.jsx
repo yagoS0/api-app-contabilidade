@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CompositorConversa } from "../CompositorConversa";
 import { relacionamentoDaConversa, chaveDoRascunho } from "../../lib/identidadeAtendimento";
 
@@ -19,6 +19,31 @@ test("número desconhecido não vira lead; relacionamento e solicitação são i
   expect(relacionamentoDaConversa({ portalClientId: null }).tipo).toBe("A_IDENTIFICAR");
   expect(relacionamentoDaConversa({ relacionamento: { tipo: "CLIENTE" }, solicitacaoComercial: { origem: "ABERTURA" } }).tipo).toBe("CLIENTE");
   expect(chaveDoRascunho(c, { modo: "NOTA", escopo: { portalClientId: "klaus" } })).not.toBe(chaveDoRascunho(c, { modo: "NOTA", escopo: { portalClientId: "lente" } }));
+});
+
+test("canal preparado fica visível com as ferramentas fechadas e acompanha a escolha explícita", async () => {
+  const h = hook(); const ui = render(<CompositorConversa conversa={c} hook={h} />);
+  expect(screen.getByRole("status", { name: "Canal preparado" })).toHaveTextContent("Enviar por WhatsApp Atendimento");
+  expect(screen.queryByRole("combobox", { name: "Canal da mensagem" })).not.toBeInTheDocument();
+  ui.rerender(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
+  expect(screen.getByRole("status", { name: "Canal preparado" })).toHaveTextContent("Atendimento");
+  fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
+  expect(screen.queryByRole("status", { name: "Canal preparado" })).not.toBeInTheDocument();
+  const seletores = screen.getAllByRole("combobox", { name: "Canal da mensagem" });
+  expect(seletores).toHaveLength(1);
+  fireEvent.change(seletores[0], { target: { value: "comercial" } });
+  fireEvent.click(screen.getByRole("button", { name: "Fechar ações da mensagem" }));
+  expect(screen.getByRole("status", { name: "Canal preparado" })).toHaveTextContent("Enviar por WhatsApp Comercial");
+  expect(h.responder).not.toHaveBeenCalled();
+  await act(async () => {});
+});
+
+test.each([
+  ["canal único", { ...c, canais: [c.canais[0]] }],
+  ["lead com canal comercial obrigatório", { ...c, relacionamento: { tipo: "LEAD" } }],
+])("não acrescenta rótulo de canal sem escolha: %s", (_, conversa) => {
+  render(<CompositorConversa conversa={conversa} hook={hook()} />);
+  expect(screen.queryByRole("status", { name: "Canal preparado" })).not.toBeInTheDocument();
 });
 
 test("chegada em outro canal não muda remetente; rascunhos dos canais ficam separados", async () => {

@@ -81,3 +81,9 @@
 
 @media(max-width:1050px){.bi-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.bi-visao-grade{grid-template-columns:minmax(0,1fr)}.bi-estatisticas{grid-template-columns:repeat(4,minmax(0,1fr))}.bi-kpis strong{font-size:1.25rem}}
 @media(max-width:600px){.analise-empresa{gap:12px}.bi-cabecalho{align-items:flex-start}.bi-acoes{width:100%}.bi-card{padding:13px}.bi-tabs{gap:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#665b7a transparent;align-items:stretch}.analise-empresa .bi-tabs button{padding:10px;font-size:.8rem;white-space:nowrap;flex-shrink:0}.bi-cards,.bi-estatisticas,.bi-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.bi-kpis strong{font-size:1.05rem}.bi-kpis button>span{min-height:1.3em}.bi-periodo-datas{gap:8px}.bi-filtros label{flex:1;min-width:140px}.bi-filtros select{max-width:100%}.laboratorio-empresa>.bi-cards{grid-template-columns:1fr}.bi-pendencias li{align-items:flex-start;flex-direction:column}.bi-scroll th,.bi-scroll td{padding:9px}.bi-evolucao{overflow-x:auto}.bi-evolucao svg{min-width:480px}.bi-grafico-legenda{gap:8px;font-size:.7rem}}
+
+/* Filtros do laboratório mantêm campos legíveis em telas estreitas. */
+.laboratorio-empresa .bi-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items: end; gap: 12px; }
+.laboratorio-empresa .bi-filtros label { min-width: 0; display: grid; gap: 6px; }
+.laboratorio-empresa .bi-filtros :is(input, select) { width: 100%; min-width: 0; box-sizing: border-box; }
+.laboratorio-empresa .bi-filtros button { white-space: normal; min-height: 40px; }

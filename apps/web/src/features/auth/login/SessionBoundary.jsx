@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/renderLoginPage";
 import { OfficeNavigation } from "../../../app/navigation/OfficeNavigation";
 import { useResumoWhatsapp } from "../../whatsapp/hooks/useResumoWhatsapp";
 import { TaskCenterPlacement } from "../../tasks/TaskCenterPlacement";
+import { Button } from "../../../components/ui/Button";
 
 function OfficeWorkspace({ api, children }) {
   const resumoWhatsapp = useResumoWhatsapp({ api, area: 'suporte' });
@@ -28,7 +29,7 @@ export function SessionBoundary({ api, tokenStorageKey, children }) {
   if (session.sessionChecking) {
     return <main className="page"><p role="status">Verificando sessão…</p></main>;
   }
-  if (session.sessionError) return <main className="page"><p role="alert">{session.sessionError}</p><button type="button" onClick={session.retrySession}>Tentar novamente</button></main>;
+  if (session.sessionError) return <main className="page"><p role="alert">{session.sessionError}</p><Button type="button" onClick={session.retrySession}>Tentar novamente</Button></main>;
   if (!session.user || session.page === "login") {
     return <LoginPage
       apiMode={api.mode}

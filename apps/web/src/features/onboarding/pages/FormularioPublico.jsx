@@ -1,7 +1,7 @@
 import { validarDadosOnboarding, reconciliarDados } from "@contabilidade/shared/onboarding-dados";
 import { useEffect, useRef, useState } from "react";
 import { CampoOnboarding } from "../components/CampoOnboarding";
-import { FichaDeclarada } from "../components/PassoRevisao";
+import { FichaDeclarada, formatarValor } from "../components/PassoRevisao";
 import { camposDoPasso, passosVisiveis, podarInvisiveis, descritorDe } from "../lib/onboardingSpec";
 import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
 import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";
@@ -15,6 +15,14 @@ const AJUDAS_CLIENTE = {
 };
 const descritorDoCliente = (d, origem) => origem === "ABERTURA" && AJUDAS_CLIENTE[d.campo]
   ? { ...d, ajuda: AJUDAS_CLIENTE[d.campo] } : d;
+const complementares = new Set(["socios", "capitalSocialPretendido", "consultoriaMensal", "responsavelCargo", "responsavelCpf"]);
+
+function RespostaEmConflito({ descritor, valor }) {
+  if (valor && typeof valor === "object" && descritor?.tipo !== "lista") {
+    return <dl>{Object.entries(valor).map(([chave, item]) => <div key={chave}><dt>{chave.replace(/([a-z])([A-Z])/g, "$1 $2")}</dt><dd><RespostaEmConflito valor={item} /></dd></div>)}</dl>;
+  }
+  return <>{formatarValor(descritor || { tipo: typeof valor === "boolean" ? "booleano" : "texto" }, valor) || "Não informado"}</>;
+}
 
 // Token fica só na memória da página e no fragmento do link; nunca localStorage/query string.
 export function FormularioPublico({ api }) {
@@ -22,6 +30,7 @@ export function FormularioPublico({ api }) {
   const [registro, setRegistro] = useState(null), [dados, setDados] = useState({}), [passo, setPasso] = useState("identificacao");
   const [erro, setErro] = useState(""), [aviso, setAviso] = useState(""), [ocupado, setOcupado] = useState(false), [concluido, setConcluido] = useState(false);
   const [confirmado, setConfirmado] = useState(false);
+  const [complementaresAbertos, setComplementaresAbertos] = useState({});
   const [errosCampos, setErrosCampos] = useState({}), [conflitos, setConflitos] = useState([]), [verificar, setVerificar] = useState(false);
   const baseSalva = useRef({}), trava = useRef(false);
   function concluir() { setConcluido(true); setVerificar(false); window.history.replaceState(null, "", window.location.pathname); }
@@ -51,6 +60,11 @@ export function FormularioPublico({ api }) {
   const passos = registro ? passosVisiveis(registro.origem).filter((p) => p.chave !== "origem") : [];
   const indice = Math.max(0, passos.findIndex((p) => p.chave === passo));
   const atual = passos[indice]?.chave;
+  useEffect(() => {
+    if (registro && camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo) && errosCampos[d.campo])) {
+      setComplementaresAbertos(abertos => abertos[atual] ? abertos : { ...abertos, [atual]: true });
+    }
+  }, [registro, atual, dados, errosCampos]);
   useEffect(() => {
     if (etapaAnterior.current && atual && etapaAnterior.current !== atual) {
       tituloEtapa.current?.focus({ preventScroll: true });
@@ -97,7 +111,6 @@ export function FormularioPublico({ api }) {
       if (e.status !== 400) setVerificar(true);
     } finally { trava.current = false; setOcupado(false); }
   }
-  const complementares = new Set(["socios", "capitalSocialPretendido", "consultoriaMensal", "responsavelCargo", "responsavelCpf"]);
   function campoPublico(descritor) {
     return <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} erro={errosCampos[descritor.campo]} onChange={v => cnpj.editar(descritor.campo, v)} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />;
   }
@@ -109,18 +122,27 @@ export function FormularioPublico({ api }) {
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {!registro && erro && token && !concluido && <Button onClick={() => { setErro(""); setReleitura(n => n + 1); }}>Tentar carregar novamente</Button>}
     {verificar && !concluido && <Button disabled={ocupado} onClick={verificarSalvamento}>Verificar salvamento e recuperar respostas</Button>}
-    {conflitos.length > 0 && <section aria-label="Respostas para conferir">{conflitos.map(c => <div key={c.campo}>
-      <p>{descritorDe(registro.origem, c.campo)?.rotulo || c.campo}</p>
-      <Button onClick={() => setConflitos(lista => lista.filter(x => x.campo !== c.campo))}>Manter minha resposta: {JSON.stringify(c.local) ?? "não informado"}</Button>
-      <Button onClick={() => { alterarCampo(c.campo, c.remoto ?? ""); setConflitos(lista => lista.filter(x => x.campo !== c.campo)); }}>Usar resposta atualizada: {JSON.stringify(c.remoto) ?? "não informado"}</Button>
-    </div>)}</section>}
+    {conflitos.length > 0 && <section aria-label="Respostas para conferir">{conflitos.map(c => {
+      const descritor = descritorDe(registro.origem, c.campo);
+      return <section className="onboarding-conflict" key={c.campo} aria-label={descritor?.rotulo || c.campo}>
+        <h3>{descritor?.rotulo || c.campo}</h3>
+        <div className="onboarding-conflict__comparison">
+          <div><h4>Minha resposta</h4><div className="onboarding-conflict__value"><RespostaEmConflito descritor={descritor} valor={c.local} /></div></div>
+          <div><h4>Resposta atualizada</h4><div className="onboarding-conflict__value"><RespostaEmConflito descritor={descritor} valor={c.remoto} /></div></div>
+        </div>
+        <div className="onboarding-conflict__actions">
+          <Button variant="secondary" onClick={() => setConflitos(lista => lista.filter(x => x.campo !== c.campo))}>Manter minha resposta</Button>
+          <Button variant="secondary" onClick={() => { alterarCampo(c.campo, c.remoto ?? ""); setConflitos(lista => lista.filter(x => x.campo !== c.campo)); }}>Usar resposta atualizada</Button>
+        </div>
+      </section>;
+    })}</section>}
     {concluido ? <h2>Cadastro enviado. O escritório dará continuidade ao atendimento.</h2> : !registro ? <p>{erro ? "Seu preenchimento não foi alterado." : "Carregando formulário…"}</p> : <>
       <div className="onboarding-public__progress"><h2 ref={tituloEtapa} tabIndex={-1} style={{ scrollMarginTop: 24 }}>Etapa {indice + 1} de {passos.length}: {passos[indice]?.titulo}</h2><progress aria-label="Progresso do formulário" value={indice + 1} max={passos.length} /></div>
       <fieldset disabled={ocupado || verificar || conflitos.length > 0} className="onboarding-public__fields">
         <legend style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap" }}>{passos[indice]?.titulo}</legend>
         {atual === "identificacao" && <ConsultaCnpjOnboarding consulta={cnpj.consulta} carregando={cnpj.carregando} cadastro={dados.cadastroCnpj} />}
         {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label className="onboarding-public__consent"><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} /><span>Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</span></label></> : <>{camposDoPasso(registro.origem, atual, dados).filter(d => !complementares.has(d.campo)).map(campoPublico)}
-          {camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo)) && <details open={camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo) && errosCampos[d.campo]) || undefined}><summary>Dados complementares — preencha se já souber</summary><p>Podem ser completados com a equipe na contratação ou implantação.</p>{camposDoPasso(registro.origem, atual, dados).filter(d => complementares.has(d.campo)).map(campoPublico)}</details>}</>}
+          {camposDoPasso(registro.origem, atual, dados).some(d => complementares.has(d.campo)) && <details open={Boolean(complementaresAbertos[atual])} onToggle={e => { const aberto = e.currentTarget.open; setComplementaresAbertos(v => v[atual] === aberto ? v : { ...v, [atual]: aberto }); }}><summary>Dados complementares — preencha se já souber</summary><p>Podem ser completados com a equipe na contratação ou implantação.</p>{camposDoPasso(registro.origem, atual, dados).filter(d => complementares.has(d.campo)).map(campoPublico)}</details>}</>}
 
         <div className="onboarding-public__actions">
           {indice > 0 && <Button variant="secondary" onClick={() => salvar(passos[indice - 1].chave)}>Salvar e voltar</Button>}

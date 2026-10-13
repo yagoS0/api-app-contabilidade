@@ -159,6 +159,10 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [pedindo, setPedindo] = useState(false);
   const [recusa, setRecusa] = useState(null);
   const [avisoAcrescimo, setAvisoAcrescimo] = useState(null);
+  const campoPagamentoRef = useRef(null);
+  const tituloGuiasRef = useRef(null);
+  const botoesPagamentoRef = useRef(new Map());
+  const retornoConfirmacaoRef = useRef(null);
   const [confirmacao, setConfirmacao] = useState(null);   // { guia, aviso }
   /**
    * ⚠⚠ O DIA EM QUE ELE PAGOU — e ele nasce VAZIO, de propósito (30/08/2026).
@@ -174,6 +178,19 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [pagoEm, setPagoEm] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [avisoConfirmacao, setAvisoConfirmacao] = useState(null);
+  useEffect(() => {
+    if (confirmacao?.aviso) {
+      retornoConfirmacaoRef.current = { companyId, guiaId: confirmacao.guia.guideId };
+      campoPagamentoRef.current?.focus();
+    } else if (retornoConfirmacaoRef.current && !query.carregando && !confirmando) {
+      const origem = retornoConfirmacaoRef.current;
+      if (origem.aguardandoResposta === query.dados && !query.erro) return;
+      retornoConfirmacaoRef.current = null;
+      if (origem.companyId === companyId) {
+        (botoesPagamentoRef.current.get(origem.guiaId) || tituloGuiasRef.current)?.focus();
+      }
+    }
+  }, [confirmacao, query.carregando, query.dados, query.erro, confirmando, companyId]);
   const total = resposta?.total ?? 0;
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
@@ -241,6 +258,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     setRecusa(null);
     try {
       const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId, { pagoEm });
+      if (retornoConfirmacaoRef.current) retornoConfirmacaoRef.current.aguardandoResposta = query.dados;
       setConfirmacao(null);
       setPagoEm("");
       setAvisoConfirmacao(r?.aviso || null);
@@ -273,7 +291,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   return (
     <>
       <div className="page-header">
-        <h1>Guias</h1>
+        <h1 ref={tituloGuiasRef} tabIndex={-1}>Guias</h1>
       </div>
       {guiaDoAviso && <div className="alerta alerta-atencao" role="status">
         <p>{avisoDoLink || "Você está vendo a guia indicada no aviso."}</p>
@@ -346,6 +364,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             <span>Em que dia você pagou?</span>
             <input
               id="pago-em"
+              ref={campoPagamentoRef}
               type="date"
               value={pagoEm}
               /* ⚠⚠ `hojeNoCampoDeData`, NUNCA `toISOString()`: aquele converte para UTC e às 21h
@@ -526,6 +545,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             disabled={confirmando}
                             /* ⚠ Abrir a caixa ZERA a data: a que sobrou de outra guia seria aceita por engano na
                                próxima, e ninguém veria — são pagamentos diferentes. */
+                            ref={elemento => { if (elemento) botoesPagamentoRef.current.set(guia.guideId, elemento); else botoesPagamentoRef.current.delete(guia.guideId); }}
                             onClick={() => { setRecusa(null); setPagoEm(""); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
                           >
                             Já paguei
