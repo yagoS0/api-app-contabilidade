@@ -273,7 +273,7 @@ export function TabelaAnexoReferencia({ atividades, rbt12, folha12m }) {
         </Legenda>
       ) : null}
 
-      {situacao === SITUACAO_ANEXO.RESOLVIDO && fatorR != null ? (
+      {situacao === SITUACAO_ANEXO.RESOLVIDO && fatorR != null && Array.isArray(atividades) && atividades.some(a => a?.sujeitoFatorR === true) ? (
         <Legenda>
           Fator R desta competência: <strong style={{ fontFamily: "monospace" }}>{pct(fatorR)}</strong>
           {" "}(limite {pct(limiteFatorR)}).

@@ -23,6 +23,7 @@ import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { SugestaoModal } from "../components/SugestaoModal";
+import { baseTabelaAnexo } from "../lib/baseTabelaAnexo";
 import { TabelaAnexoReferencia } from "../components/TabelaAnexoReferencia";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
@@ -471,13 +472,9 @@ export function ApuracaoV2Tab({
           {/* ⚠⚠ A TABELA DO ANEXO — o pedido do dono ("sem tabela do anexo"). Ela fica AQUI, logo
               abaixo dos KPIs e antes do relatório, porque a pergunta que ela responde ("em que
               faixa esta empresa está?") se lê junto do RBT12 e do DAS, que estão nos KPIs acima.
-              ⚠ `folha12m` vem do snapshot e pode ser NULA — é `null` que faz a regra dizer "depende
-              do Fator R" em vez de escolher o Anexo III sozinha. Não trocar por `|| 0`. */}
-          <TabelaAnexoReferencia
-            atividades={fechDados?.atividades}
-            rbt12={fechDados?.rbt12}
-            folha12m={snap?.folha12m}
-          />
+              A recuperação validada fornece atividades, RBT12 e folha da mesma simulação.
+              Ausência de folha continua nula; não converter lista vazia em zero. */}
+          <TabelaAnexoReferencia {...baseTabelaAnexo(fechDados, snap)} />
 
           {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
               aqui. Ao abrir a aba mostra a foto salva (GET); gerar é um clique. Nem o GET nem o
