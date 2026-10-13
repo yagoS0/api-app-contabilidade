@@ -36,3 +36,14 @@ Portal: seis capturas em `test-evidence/design-portal/` cobrem Extrato, painel i
 A captura do painel indisponível revelou texto destinado ao contador na tela do cliente. A mensagem foi corrigida exclusivamente para `portalCliente` e código `CONTABILIDADE_ABERTA`, orientando selecionar período encerrado e aguardar o escritório. Sete testes do painel passaram, inclusive resposta rejeitada, `ok:false` e preservação de outros erros. As capturas anteriores de painel indisponível documentam o achado original; não representam o novo texto. A lógica de disponibilidade não mudou.
 
 Limites: a revisão de código não equivale à inspeção visual de todos os estados, modais e permissões. O onboarding/comercial está em edição concorrente e deve ser revisado depois de estabilizar. Fluxos fiscais externos e produção não foram exercitados. Não marcar a aplicação inteira como homologada com base apenas nos testes dirigidos.
+
+## Segunda publicação de design — 13/10/2026
+
+Revisão sobre a main atual após onboarding e atendimento, em checkout isolado. Inclui chat (estados legíveis, espaço das ações, prévia de anexos, canal preparado), cadastro de sócios/histórico com nomes acessíveis, grade móvel de parcelamentos, autocomplete contido, remoção da ação duplicada de parcelamento, Button da recuperação de sessão, estado vazio de upload sem duplicação, filtros responsivos do Laboratório e foco da confirmação de pagamento no portal.
+
+Pendências do onboarding tratadas nesta publicação: seção complementar mantém abertura durante correção; folha/pró-labore usam os controles e agrupamento do modal; conciliação separa respostas legíveis de ações curtas neutras. Regras fiscais, envio, confirmação e payloads permanecem preservados.
+
+Cobertura: revisão multiagente dos pontos de entrada de todos os módulos, testes dirigidos e CI da publicação. Chat e anexo conferidos em 1440/390 px com mock e rede externa bloqueada. A cobertura de inventário não implica homologação de todas as combinações fiscais, permissões ou estados de serviços externos. A revisão contínua acompanha futuras alterações e os estados que ainda não tenham evidência visual.
+
+Validação final do onboarding: 34 suítes/266 testes aprovados; seis capturas dos estados de correção, conflito e conversão em 390/1440 px, sem overflow ou erros JavaScript. Fixtures e dados fictícios permanecem locais.
+

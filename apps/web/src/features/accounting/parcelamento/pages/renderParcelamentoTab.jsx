@@ -1371,7 +1371,6 @@ function ParcelamentoTabContent({
         parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO" && (p.aberturaEntryId || !p.fiscalSituacao))}
         loading={parcelamentos.loading}
         onRescindir={async (parcId, body) => { await parcelamentos.rescindir(parcId, body); await aposAto(); }}
-        onOpenCreate={() => setWizardAberto(true)}
         getConfig={parcelamentos.getConfig}
         saveConfig={async (...args) => { const out = await parcelamentos.saveConfig(...args); await aposAto(); return out; }}
         accounts={accounts}

@@ -61,6 +61,22 @@ describe("⚠⚠ confirmar pagamento pede o DIA em que pagou", () => {
     const campo = screen.getByLabelText(/Em que dia você pagou/i);
     expect(campo).toHaveValue("");
     expect(campo.getAttribute("type")).toBe("date");
+    expect(campo).toHaveFocus();
+  });
+
+  it("devolve o foco à guia ao cancelar a confirmação", async () => {
+    await montar();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByRole("button", { name: "Já paguei" })).toHaveFocus();
+    expect(api.confirmarPagamentoDaGuia).not.toHaveBeenCalled();
+  });
+
+  it("mantém um destino de foco quando o pagamento remove a ação da linha", async () => {
+    await montar();
+    api.getGuides = jest.fn(async () => ({ data: [{ ...GUIA_EM_ABERTO, paymentStatus: "PAID", canConfirmPayment: false }], page: 1, limit: 25, total: 1 }));
+    fireEvent.change(screen.getByLabelText(/Em que dia você pagou/i), { target: { value: "2026-07-14" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Já paguei esta guia/i })); });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Guias" })).toHaveFocus());
   });
 
   it("⚠⚠ sem data o botão NÃO envia — e diz o que falta", async () => {

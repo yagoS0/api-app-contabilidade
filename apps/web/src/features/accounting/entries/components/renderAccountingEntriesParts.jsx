@@ -300,7 +300,7 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
           position: "absolute", top: "calc(100% + 3px)", left: 0, zIndex: 400,
           background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`,
           borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.25)",
-          minWidth: 320, maxWidth: 480, maxHeight: 260, overflowY: "auto",
+          minWidth: 0, width: "100%", maxWidth: 480, maxHeight: 260, overflowY: "auto", overflowWrap: "anywhere",
         }}>
           {matches.map((a, i) => (
             <button

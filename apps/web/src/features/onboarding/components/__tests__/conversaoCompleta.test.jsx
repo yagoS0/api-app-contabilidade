@@ -14,7 +14,7 @@ test("contador revisa sócios, capital e endereço antes de enviar a ficha compl
   fireEvent.change(screen.getByLabelText("CNAEs secundários"), { target: { value: "8599604" } });
   for (const [campo, valor] of [["Rua", "Rua de Teste"], ["Número", "100"], ["Bairro", "Centro"], ["Cidade", "São Paulo"], ["UF", "SP"], ["CEP", "01001000"]]) fireEvent.change(screen.getByLabelText(new RegExp(`^${campo}`)), { target: { value: valor } });
   fireEvent.change(screen.getByLabelText(/Há pró-labore/), { target: { value: "false" } });
-  fireEvent.change(screen.getByLabelText("A empresa possui funcionários na implantação?"), { target: { value: "true" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "A empresa possui funcionários na implantação?" }), { target: { value: "true" } });
   const revisao = screen.getByRole("checkbox", { name: /Conferi os dados definitivos/ });
   expect(screen.getByRole("button", { name: "Criar empresa" })).toBeDisabled();
   fireEvent.click(revisao);

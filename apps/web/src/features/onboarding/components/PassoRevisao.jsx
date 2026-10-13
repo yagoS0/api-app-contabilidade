@@ -7,7 +7,7 @@
 import { ONBOARDING_PASSOS, camposDoPasso, problemasDoRascunho } from "../lib/onboardingSpec";
 import { SeloDeclarado } from "./SeloDeclarado";
 
-function formatarValor(descritor, valor) {
+export function formatarValor(descritor, valor) {
   if (descritor.tipo === "moeda" && typeof valor === "number") return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   if (valor === "NAO_SEI") return "Não sei / preciso confirmar";
   if (valor === "NAO_APLICAVEL") return "Não se aplica";
@@ -19,7 +19,7 @@ function formatarValor(descritor, valor) {
   if (descritor.tipo === "lista") {
     if (!Array.isArray(valor) || valor.length === 0) return null;
     return valor
-      .map((linha) => (descritor.colunas || []).map((c) => linha?.[c.campo]).filter(Boolean).join(" · "))
+      .map((linha) => (descritor.colunas || []).map((c) => formatarValor({ ...c, tipo: c.tipo || (typeof linha?.[c.campo] === "boolean" ? "booleano" : "texto") }, linha?.[c.campo])).filter((v) => v != null && v !== "").join(" · "))
       .filter(Boolean)
       .join("  |  ");
   }

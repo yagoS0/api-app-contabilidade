@@ -194,13 +194,13 @@ function SociosEditor({ socios, onChange }) {
             <tbody>
               {linhas.map((s, i) => (
                 <tr key={i} style={{ opacity: s.dataSaida ? 0.6 : 1 }}>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.name} onChange={(e) => setLinha(i, "name", e.target.value)} placeholder="nome do sócio" /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.documento} onChange={(e) => setLinha(i, "documento", e.target.value)} placeholder="000.000.000-00" /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.participacao} onChange={(e) => setLinha(i, "participacao", e.target.value)} placeholder="100" /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={s.dataNascimento} onChange={(e) => setLinha(i, "dataNascimento", e.target.value)} /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.rg} onChange={(e) => setLinha(i, "rg", e.target.value)} /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.rgOrgaoEmissor} onChange={(e) => setLinha(i, "rgOrgaoEmissor", e.target.value)} placeholder="DIC/RJ" /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={s.dataSaida} onChange={(e) => setLinha(i, "dataSaida", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Nome do sócio ${i + 1}`} style={MINI_INPUT} value={s.name} onChange={(e) => setLinha(i, "name", e.target.value)} placeholder="nome do sócio" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`CPF do sócio ${i + 1}`} style={MINI_INPUT} value={s.documento} onChange={(e) => setLinha(i, "documento", e.target.value)} placeholder="000.000.000-00" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Participação (%) do sócio ${i + 1}`} style={MINI_INPUT} value={s.participacao} onChange={(e) => setLinha(i, "participacao", e.target.value)} placeholder="100" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Nascimento do sócio ${i + 1}`} style={MINI_INPUT} type="date" value={s.dataNascimento} onChange={(e) => setLinha(i, "dataNascimento", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`RG do sócio ${i + 1}`} style={MINI_INPUT} value={s.rg} onChange={(e) => setLinha(i, "rg", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Órgão emissor do RG do sócio ${i + 1}`} style={MINI_INPUT} value={s.rgOrgaoEmissor} onChange={(e) => setLinha(i, "rgOrgaoEmissor", e.target.value)} placeholder="DIC/RJ" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Data de saída do sócio ${i + 1}`} style={MINI_INPUT} type="date" value={s.dataSaida} onChange={(e) => setLinha(i, "dataSaida", e.target.value)} /></td>
                   <td style={{ padding: 3, textAlign: "center" }}>
                     <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button>
                   </td>
@@ -256,15 +256,15 @@ export function RegimeHistoricoEditor({ historico, onChange }) {
               {linhas.map((r, i) => (
                 <tr key={i}>
                   <td style={{ padding: 3 }}>
-                    <select style={MINI_INPUT} value={r.regime} onChange={(e) => setLinha(i, "regime", e.target.value)}>
+                    <select aria-label={`Regime do período ${i + 1}`} style={MINI_INPUT} value={r.regime} onChange={(e) => setLinha(i, "regime", e.target.value)}>
                       <option value="SIMPLES">Simples Nacional</option>
                       <option value="LUCRO_PRESUMIDO">Lucro Presumido</option>
                       <option value="LUCRO_REAL">Lucro Real</option>
                       <option value="MEI">MEI</option>
                     </select>
                   </td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaInicio} onChange={(e) => setLinha(i, "vigenciaInicio", e.target.value)} /></td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaFim} onChange={(e) => setLinha(i, "vigenciaFim", e.target.value)} placeholder="vigente" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Início da vigência do período ${i + 1}`} style={MINI_INPUT} type="date" value={r.vigenciaInicio} onChange={(e) => setLinha(i, "vigenciaInicio", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Fim da vigência do período ${i + 1}`} style={MINI_INPUT} type="date" value={r.vigenciaFim} onChange={(e) => setLinha(i, "vigenciaFim", e.target.value)} placeholder="vigente" /></td>
                   <td style={{ padding: 3 }}>
                     {r.regime === 'SIMPLES' ? <>
                       <select aria-label={`Apuração de IBS/CBS do período ${i + 1}`} style={MINI_INPUT} value={r.apuracaoIbsCbs || ''} onChange={e => setLinha(i, 'apuracaoIbsCbs', e.target.value)}>
@@ -273,9 +273,9 @@ export function RegimeHistoricoEditor({ historico, onChange }) {
                       {r.apuracaoIbsCbs && <input aria-label={`Referência do comprovante de IBS/CBS do período ${i + 1}`} style={{ ...MINI_INPUT, marginTop: 6 }} maxLength={300} required={r.apuracaoIbsCbs === 'REGULAR'} value={r.comprovanteOpcaoIbsCbs || ''} onChange={e => setLinha(i, 'comprovanteOpcaoIbsCbs', e.target.value)} placeholder="Protocolo ou referência do comprovante" />}
                     </> : <span>Não se aplica</span>}
                   </td>
-                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={r.impostos} onChange={(e) => setLinha(i, "impostos", e.target.value)} placeholder="ISS/PIS/COFINS/CSLL/IRPJ" /></td>
+                  <td style={{ padding: 3 }}><input aria-label={`Impostos do período ${i + 1}`} style={MINI_INPUT} value={r.impostos} onChange={(e) => setLinha(i, "impostos", e.target.value)} placeholder="ISS/PIS/COFINS/CSLL/IRPJ" /></td>
                   <td style={{ padding: 3, textAlign: "center" }}>
-                    <input type="checkbox" checked={Boolean(r.desoneracao)} onChange={(e) => setLinha(i, "desoneracao", e.target.checked)} />
+                    <input aria-label={`Desoneração do período ${i + 1}`} type="checkbox" checked={Boolean(r.desoneracao)} onChange={(e) => setLinha(i, "desoneracao", e.target.checked)} />
                   </td>
                   <td style={{ padding: 3, textAlign: "center" }}>
                     <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button>

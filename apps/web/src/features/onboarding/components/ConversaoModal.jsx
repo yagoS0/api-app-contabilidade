@@ -304,12 +304,17 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           </Campo>
         )}
 
-        <label>Há pró-labore (exige guia de INSS na competência)
-          <select value={form.hasProlabore === null ? "" : String(form.hasProlabore)} onChange={e => set("hasProlabore", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
-        </label>
-        <label>A empresa possui funcionários na implantação?
-          <select value={form.temFolha === null ? "" : String(form.temFolha)} onChange={e => set("temFolha", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
-        </label>
+        <fieldset style={{ minWidth: 0, border: "1px solid var(--border)", padding: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+          <legend>Folha e pró-labore</legend>
+          <div className="onboarding-conversion-grid">
+            <Campo rotulo="Há pró-labore (exige guia de INSS na competência)" obrigatorio>
+              <select style={INPUT} value={form.hasProlabore === null ? "" : String(form.hasProlabore)} onChange={e => set("hasProlabore", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
+            </Campo>
+            <Campo rotulo="A empresa possui funcionários na implantação?" obrigatorio>
+              <select style={INPUT} value={form.temFolha === null ? "" : String(form.temFolha)} onChange={e => set("temFolha", e.target.value === "" ? null : e.target.value === "true")}><option value="">Confirme com o responsável</option><option value="true">Sim</option><option value="false">Não</option></select>
+            </Campo>
+          </div>
+        </fieldset>
 
         <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>
       </div>

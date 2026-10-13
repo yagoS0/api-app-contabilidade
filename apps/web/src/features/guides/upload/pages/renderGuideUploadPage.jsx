@@ -103,9 +103,7 @@ export function GuideUploadPage({
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="text-muted">Nenhum resultado ainda.</p>
-        )}
+        ) : null}
       </section>
 
       <section className="panel">
