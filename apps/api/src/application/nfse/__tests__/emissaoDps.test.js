@@ -1015,6 +1015,16 @@ describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
 });
 
  describe('tentativa não reutilizável', () => {
+  it.each([
+    [JSON.stringify({ erros: [{ Codigo: 'E0014', Descricao: 'A numeração desta DPS já existe' }] }), 'A numeração desta DPS já existe'],
+    ['Mensagem comum preservada', 'Mensagem comum preservada'],
+    ['{JSON inválido', '{JSON inválido'],
+  ])('serializa mensagem legada legível sem modificar o registro: %s', async (falhaMensagem, esperada) => {
+    const registro = { id: 'anterior', status: 'rejected', falhaCamada: 'RECEITA', falhaCodigo: 'E0014', falhaMensagem };
+    prisma.serviceInvoice.findUnique.mockResolvedValue(registro);
+    expect((await NfseRepository.findById('anterior')).falha.mensagem).toBe(esperada);
+    expect(registro.falhaMensagem).toBe(falhaMensagem);
+  });
   it.each([['rejected', 'E0014', false], ['issued', null, false], ['pending', null, false], ['rejected', 'E0718', true]])('serializa %s/%s com reutilização %s', async (status, falhaCodigo, esperado) => {
     prisma.serviceInvoice.findUnique.mockResolvedValue({ id: 'anterior', status, falhaCamada: 'RECEITA', falhaCodigo });
     expect((await NfseRepository.findById('anterior')).falha.numeroReutilizavel).toBe(esperado);

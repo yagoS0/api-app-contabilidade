@@ -1,7 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 import { listarPendenciasParcelamento } from "../accounting/parcelamento/ParcelamentoAcompanhamentoService.js";
-import { complianceParcelamentos, mesOperacionalDaCompetencia } from "../accounting/parcelamento/pendenciasParcelamento.js";
+import { complianceParcelamentos, mesOperacionalDaCompetencia, guiasParcelamentoDoMes } from "../accounting/parcelamento/pendenciasParcelamento.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
@@ -477,12 +477,12 @@ export async function computeGuideComplianceMap(rows, competencia) {
     };
     const itensParc = acompanhamentoByPortal.get(portalId) || [];
     const parcDas = itensParc.length ? complianceParcelamentos(itensParc) : legacyParcDas;
+    const guiasParcelamentoMes = guiasParcelamentoDoMes(itensParc, mesOperacionalDaCompetencia(competencia));
     map.set(portalId, {
-      ...current, inss, das, irpj, csll, pisCofins, iss, parcDas,
-      hasPendenciasParcelamento: Boolean(parcDas.pendenciaOperacional),
-      // `parcDas.ok` entra no agregado: parcela do mês sem guia É pendência. O `base.ok` lá em cima
-      // já a considerava — as duas metades discordavam entre si.
-      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && parcDas.ok,
+      ...current, inss, das, irpj, csll, pisCofins, iss, parcDas, guiasParcelamentoMes,
+      hasPendenciasParcelamento: guiasParcelamentoMes.length > 0,
+      // Na carteira, parcelamento exige apenas o documento do mês operacional.
+      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && !guiasParcelamentoMes.length,
     });
   }
 

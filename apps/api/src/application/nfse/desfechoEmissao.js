@@ -169,7 +169,16 @@ export function extrairCodigoReceita(providerData) {
   return m ? m[0] : null;
 }
 
-function primeiraMensagem(providerData, fallback) {
+export function primeiraMensagem(providerData, fallback) {
+  if (typeof providerData === 'string') {
+    const texto = providerData.trim();
+    if (texto.startsWith('{') || texto.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(texto);
+        return primeiraMensagem(Array.isArray(parsed) ? { erros: parsed } : parsed, fallback);
+      } catch { /* JSON legado inválido: preservar texto original. */ }
+    }
+  }
   const d = providerData;
   if (d && typeof d === "object") {
     const direta = d.message || d.error || d.detail || d.mensagem || d.motivo || d.Descricao;

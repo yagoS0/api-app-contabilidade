@@ -2,6 +2,7 @@ import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseDate } from "../../utils/date.js";
 import { numeroDaNfse } from '../../application/nfse/numeroDaNfse.js';
+import { primeiraMensagem } from '../../application/nfse/desfechoEmissao.js';
 
 function serialize(invoice) {
   if (!invoice) return null;
@@ -35,7 +36,7 @@ function serialize(invoice) {
       ? {
           camada: invoice.falhaCamada,
           codigo: invoice.falhaCodigo,
-          mensagem: invoice.falhaMensagem,
+          mensagem: primeiraMensagem(invoice.falhaMensagem, invoice.falhaMensagem),
           correcao: invoice.falhaCorrecao,
           em: dateToIso(invoice.falhaEm),
           // E0014 confirma que a numeração já existe. Transporte e estados ainda não
