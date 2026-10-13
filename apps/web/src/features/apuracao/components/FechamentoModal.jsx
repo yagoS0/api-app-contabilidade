@@ -56,6 +56,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const [atividadeOpcoes, setAtividadeOpcoes] = useState([]); // Q19: catálogo PGDAS-D p/ dropdown
   const [folha, setFolha] = useState({}); // { pa: valor }
   const [resultado, setResultado] = useState(null);
+  const [formularioRecuperado, setFormularioRecuperado] = useState(null);
   const [showTransmit, setShowTransmit] = useState(false);
   const [confirmComp, setConfirmComp] = useState("");
   const [semMovimento, setSemMovimento] = useState(false); // declaração zerada (empresa sem receita)
@@ -113,18 +114,31 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       ]);
       if (!vigente()) return;
       const d = out?.dados || out;
-      setDados(d);
+      // Somente o envelope validado pelo servidor pode recuperar um cálculo. Snapshot cru não habilita ações.
+      const candidato = d?.calculoRecuperavel;
+      const recuperado = candidato?.calculoId && Array.isArray(candidato.formulario?.atividades)
+        && Array.isArray(candidato.formulario?.folhaMensal12) && candidato.formulario?.regimeApuracao
+        ? candidato : null;
+      const formulario = recuperado?.formulario;
+      setDados(formulario ? { ...d, regimeApuracao: formulario.regimeApuracao } : d);
       // Dica: empresa marcada como zerada + sem faturamento → já sugere o modo sem movimento.
       // `semFaturamento` é a afirmação POR MÊS feita na aba Lançamentos; `empresaZerada` é da
       // empresa inteira. Qualquer uma das duas pré-marca a caixa — mas só PRÉ-MARCA: quem aperta
       // o botão continua sendo o contador, porque isto vira ato fiscal.
       if (d?.semMovimentoDisponivel && (d?.empresaZerada || d?.semFaturamento)) setSemMovimento(true);
       setAtividadeOpcoes(Array.isArray(atvOut?.atividades) ? atvOut.atividades : []);
-      setAtividades(Array.isArray(d?.atividades) ? d.atividades.filter((a) => a && a.idAtividade != null) : []);
+      setAtividades(formulario ? formulario.atividades : Array.isArray(d?.atividades) ? d.atividades.filter((a) => a && a.idAtividade != null) : []);
       // folha: pré-preenche da memória se houver
       const folhaInit = {};
-      if (Array.isArray(d?.folhaMensal12)) for (const f of d.folhaMensal12) folhaInit[f.pa] = f.valor;
+      const serie = formulario?.folhaMensal12 || d?.folhaMensal12;
+      if (Array.isArray(serie)) for (const f of serie) folhaInit[f.pa] = f.valor;
       setFolha(folhaInit);
+      if (recuperado) {
+        setFormularioRecuperado(formulario);
+        setResultado({ ...recuperado, recuperado: true });
+      } else if (typeof d?.calculoRecuperacaoMotivo === "string" && d.calculoRecuperacaoMotivo) {
+        setErroLocal(d.calculoRecuperacaoMotivo);
+      }
     } catch (err) {
       if (vigente()) { setErroCarga(true); avisarErro(err, "Falha ao carregar fechamento"); }
     } finally { if (vigente()) setLoading(false); }
@@ -132,7 +146,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   useEffect(() => { load(); return () => { pedidoAtual.current += 1; revisao.current += 1; }; /* eslint-disable-next-line */ }, [portalClientId, competencia]);
 
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
-  const folhaSerie = pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
+  const folhaSerie = formularioRecuperado?.folhaMensal12 ?? pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
 
   // ⚠ ZERADA É QUEM **SOMA** ZERO — não quem tem a lista vazia.
   //
@@ -192,6 +206,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   // `somaAtividades` quanto `buildDeclaracaoPayload` leem `Number(v || 0)`.
   function invalidarCalculo() {
     revisao.current += 1;
+    setFormularioRecuperado(null);
     setResultado(null); setRelatorio(null); setRelatorioErro(null); setShowTransmit(false); setConfirmComp('');
   }
   function setAtvValor(idx, campo, valor) {
@@ -282,7 +297,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   async function handleCalcular() {
     if (operacao.current) return;
     operacao.current = true;
-    const anterior = { resultado, relatorio, relatorioErro };
+    const anterior = { resultado, relatorio, relatorioErro, formularioRecuperado };
     setErroLocal(null);
     invalidarCalculo();
     const versao = revisao.current;
@@ -304,6 +319,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     } catch (err) {
       if (vigente()) {
         if ((err?.code || err?.payload?.error) === "SERPRO_CHAMADA_REPETIDA" && anterior.resultado?.calculoId) {
+          setFormularioRecuperado(anterior.formularioRecuperado);
           setResultado(anterior.resultado); setRelatorio(anterior.relatorio); setRelatorioErro(anterior.relatorioErro);
         }
         avisarErro(err, "Erro no cálculo (SERPRO)");
@@ -676,11 +692,27 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 pintava de verde, mostrava "—" e jogava as mensagens fora, então "calculou e não
                 apareceu nada" era literalmente o que a tela fazia. Sem DAS a caixa fica âmbar e as
                 mensagens da RFB aparecem — elas são a única explicação que existe. */}
+            {!resultado && dados.calculoSalvo && (
+              <Aviso tom="neutro" titulo="Simulação salva — somente consulta">
+                <p>Este resultado foi salvo anteriormente. Ele não habilita fechar ou transmitir a apuração atual.</p>
+                {dados.calculoSalvo.dasValor != null && <div>DAS da simulação salva: <strong>{fmtMoney(dados.calculoSalvo.dasValor)}</strong></div>}
+                {dados.calculoSalvo.rbt12 != null && <div>RBT12 usado: {fmtMoney(dados.calculoSalvo.rbt12)}</div>}
+                <details>
+                  <summary>Dados usados na simulação salva</summary>
+                  <p>Regime: {dados.calculoSalvo.formulario?.regimeApuracao || "Não informado"}</p>
+                  <ul>{(dados.calculoSalvo.formulario?.atividades || []).map((a, i) => (
+                    <li key={i}>{a.descricao || "Atividade " + a.idAtividade}: mercado interno {fmtMoney(a.valorInterno)}, mercado externo {fmtMoney(a.valorExterno)}</li>
+                  ))}</ul>
+                  {(dados.calculoSalvo.formulario?.folhaMensal12 || []).length > 0 && <ul>{dados.calculoSalvo.formulario.folhaMensal12.map((f, i) => <li key={i}>Folha {f.pa}: {fmtMoney(f.valor)}</li>)}</ul>}
+                </details>
+              </Aviso>
+            )}
             {resultado && (
               <Aviso
                 tom={resultado.dasValor != null ? "ok" : "atencao"}
                 titulo={resultado.dasValor != null ? "DAS calculado (oficial SERPRO)" : "A RFB não devolveu valor devido"}
               >
+                {resultado.recuperado && <p role="status">Cálculo salvo recuperado. Os campos correspondem à simulação validada; nenhuma nova consulta foi feita.</p>}
                 {resultado.dasValor != null && (
                   <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--state-ok)" }}>{fmtMoney(resultado.dasValor)}</div>
                 )}

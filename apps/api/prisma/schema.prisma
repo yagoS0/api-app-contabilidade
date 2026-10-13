@@ -4263,6 +4263,23 @@ model RbtExtratoCache {
   @@map("rbt_extrato_cache")
 }
 
+/// Recusas explícitas de períodos na simulação. Não são períodos aceitos nem receitas oficiais.
+/// Mesmo padrão de isolamento por portalClientId do RbtExtratoCache; acesso só pelo serviço interno.
+model ApuracaoPeriodoRecusado {
+  id             String   @id
+  portalClientId String
+  competencia    String
+  insumosHash    String
+  lista          String
+  pa             String
+  fonte          String   @default("RESPOSTA_SIMULACAO")
+  serproChamadaId String?
+  criadoEm       DateTime @default(now())
+
+  @@unique([portalClientId, competencia, insumosHash, lista, pa], map: "apuracao_periodos_recusados_contexto_key")
+  @@map("apuracao_periodos_recusados")
+}
+
 // Q15 — memória da última configuração de apuração por empresa (defaults).
 // Reaparece pré-preenchida na próxima competência.
 model ApuracaoConfigMemory {
