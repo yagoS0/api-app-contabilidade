@@ -34,7 +34,9 @@ export async function executarComRetomada(executar, params, {
 }) {
   if (typeof executar !== 'function' || typeof ajustarPeriodos !== 'function') throw new TypeError('Executores da simulação são obrigatórios.');
   const preparado = await prepararRetomada(params, { portalClientId, competencia, db });
-  const resultado = await ajustarPeriodos(executar, preparado.params, { onPeriodoRemovido: preparado.onPeriodoRemovido });
+  // Uma chamada por período restante, mais a confirmação final. Só avança com recusa explícita persistida.
+  const maxTentativas = Math.min(25, preparado.params.receitasBrutasAnteriores.length + preparado.params.folhasSalario.length + 1);
+  const resultado = await ajustarPeriodos(executar, preparado.params, { onPeriodoRemovido: preparado.onPeriodoRemovido, maxTentativas });
   return { ...resultado, periodosReaproveitados: preparado.periodosReaproveitados };
 }
 
