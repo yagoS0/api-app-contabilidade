@@ -8,6 +8,7 @@
 import { CAMPOS_ENDERECO_EXIGIDOS, codigoMunicipioVerificado } from "./consultaTomador.js";
 
 export const VIACEP_BASE = "https://viacep.com.br/ws";
+export const OPENCEP_BASE = 'https://opencep.com/v1';
 export const TIMEOUT_MS = 8000;
 export const MOTIVOS = Object.freeze({
   CEP_INVALIDO: "cep_invalido",
@@ -112,4 +113,23 @@ export async function consultarCep(cep, { fetchImpl = null, municipios = null, t
     log?.[resultado.ok ? "info" : "warn"]?.({ ok: resultado.ok, motivo: resultado.motivo || null, status, duracaoMs: Date.now() - inicio }, "consulta auxiliar de CEP no ViaCEP");
   } catch { /* Falha do logger não impede preenchimento manual. */ }
   return resultado;
+}
+
+// Alternativa pública documentada em https://opencep.com/ (13/10/2026).
+// Reaproveita as mesmas verificações de CEP e município, com orçamento total único.
+export async function consultarCepComAlternativa(cep, opcoes = {}) {
+  const inicio = Date.now();
+  const total = Math.min(TIMEOUT_MS, Math.max(1, Number(opcoes.timeoutMs) || TIMEOUT_MS));
+  const primeiro = await consultarCep(cep, { ...opcoes, timeoutMs: Math.max(1, Math.floor(total / 2)) });
+  if (primeiro.ok || ![MOTIVOS.REDE, MOTIVOS.TIMEOUT, MOTIVOS.INDISPONIVEL].includes(primeiro.motivo)) return primeiro;
+  const restante = total - (Date.now() - inicio);
+  const codigo = normalizarCep(cep);
+  const buscar = opcoes.fetchImpl || globalThis.fetch;
+  if (!codigo || restante <= 0 || typeof buscar !== 'function') return primeiro;
+  const segundo = await consultarCep(cep, {
+    ...opcoes, timeoutMs: restante, log: null,
+    fetchImpl: (_url, init) => buscar(`${OPENCEP_BASE}/${codigo}`, init),
+  });
+  return { ...segundo, fonte: 'OPENCEP', fontesTentadas: ['VIACEP', 'OPENCEP'],
+    ...(!segundo.ok && segundo.motivo === MOTIVOS.NAO_ENCONTRADO ? { mensagem: 'CEP não encontrado na base pública consultada.' } : {}) };
 }

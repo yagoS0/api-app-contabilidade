@@ -15,7 +15,7 @@
 
 import { Router } from "express";
 import { consultarCnpj } from '../../application/tomador/consultaCnpj.js';
-import { consultarCep } from '../../application/tomador/consultarCep.js';
+import { consultarCepComAlternativa as consultarCep } from '../../application/tomador/consultarCep.js';
 import { municipiosIbgeOuNulo } from '../../application/nfse/lote/municipiosIbge.js';
 import { previaFiscalDoContador } from '../../application/nfse/previaFiscalDoContador.js';
 import { prisma } from "../../infrastructure/db/prisma.js";

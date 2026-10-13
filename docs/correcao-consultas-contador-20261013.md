@@ -6,4 +6,6 @@ O contador passa a usar `POST /firm/companies/:companyId/consulta-tomador`, prot
 
 O botão Consultar CEP preenche campos vazios, preservando número, complemento e edições. Respostas de documento/CEP antigo são descartadas. O percentual manual permanece durante a recarga da prévia; troca de competência ou atividade invalida sua aplicação. A demonstração local identifica que as consultas estão desativadas e oferece acesso ao portal real.
 
+Na validação de produção, o ViaCEP apresentou falha de conexão do servidor. A rota do contador usa OpenCEP como alternativa em falha de rede, timeout ou indisponibilidade, dentro de oito segundos totais. As duas fontes passam pelas mesmas verificações de CEP retornado e município/UF/IBGE; nenhum número ou complemento é inventado. Documentação do provedor: https://opencep.com/.
+
 Verificação: testes de consulta, retentativa, concorrência, autorização e ausência de gravação; testes do assistente e build do contador. Em produção, a verificação termina na conferência, sem acionar emissão. O bloqueio de 2027 permanece no resolvedor fiscal existente.
