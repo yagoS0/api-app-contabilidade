@@ -710,3 +710,14 @@ it("exclusão enquanto ferramenta consulta guia impede pendência fiscal tardia"
  const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente,servicos:{criarPendencia,canGuideRecalculate:()=>true,isGuideOverdue:()=>true,avisoDeRecalculo:()=>({texto:"x"})}})});
  expect(r.motivo).toBe("AUTOMACAO_INVALIDADA");expect(criarPendencia).not.toHaveBeenCalled();expect(cloud.enviarTexto).not.toHaveBeenCalled();
 });
+
+it('guia não recalculável cria aviso e push antes de responder e não repete recusa do modelo', async () => {
+ const client=bancoEmMemoria(),cloud=cloudFalso();
+ client.guide.findFirst.mockResolvedValue({id:'g1',tipo:'GUIA_AVULSA',status:'PROCESSED',competencia:'2026-09'});
+ const assistente={responder:async({executar})=>{await executar('preparar_recalculo',{guideId:'g1'});return {texto:'Fale com o escritório.',usage:{input_tokens:1,output_tokens:1},ferramentasChamadas:['preparar_recalculo']};}};
+ const criarPendencia=jest.fn();
+ const r=await responderMensagem({conversaId:'cv1',mensagemId:'m1',deps:deps({client,cloud,assistente,servicos:{canGuideRecalculate:()=>false,criarPendencia}})});
+ expect(r.feito).toBe(true);expect(client.encaminhamentoSuporte.create).toHaveBeenCalledTimes(1);expect(client.eventoPushAtendimento.create).toHaveBeenCalledTimes(1);
+ expect(client.encaminhamentoSuporte.create.mock.invocationCallOrder[0]).toBeLessThan(cloud.enviarTexto.mock.invocationCallOrder[0]);
+ expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Solicitei ao contador')}));expect(criarPendencia).not.toHaveBeenCalled();
+});

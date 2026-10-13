@@ -62,7 +62,7 @@ test("guia não liberada fica pendente; guia DAS oferece dois botões sem URL", 
   expect(await f.run()).toMatchObject({ status: "PENDENTE", motivo: "GUIA_NAO_LIBERADA" });
   Object.assign(f.guide, { liberadaCliente: true, source: "SERPRO", tipo: "SIMPLES" }); await f.run();
   const { acoes } = f.transporte.whatsapp.mock.calls[0][0]; expect(acoes).toHaveLength(1);
-  expect(acoes[0]).toMatchObject({ id: expect.stringMatching(/^altan\.payment\.recalculate\./), label: 'Recalcular guia' });
+  expect(acoes[0]).toMatchObject({ id: expect.stringMatching(/^altan\.payment\.recalculate\./), label: 'Atualizar guia' });
   expect(acoes[0].url).toBeUndefined();
 });
 test("vínculo posterior da mesma guia não duplica aviso", async () => {

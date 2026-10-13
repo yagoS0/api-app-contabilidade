@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { canGuideRecalculate } from "./lib/recalculoDaGuia.js";
 import { faseAvisoGuia, calendarioAvisosGuia } from './calendarioAvisosGuia.js';
 import { templateOperacional } from '../whatsapp/TemplateOperacionalWhatsapp.js';
 
@@ -18,7 +17,7 @@ export async function transportePadrao() {
       const { enviarMensagemRastreada } = await import("../whatsapp/SaidaWhatsappService.js");
       const conversa = await garantirConversa({ telefone: contato.telefoneE164, portalClientId: companyId });
       const aberta = (await janelaDaConversa(conversa.id)).situacao === 'ABERTA';
-      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : acoes.length ? 'guia_pagamento_depois_recalculo_v1' : 'guia_pagamento_depois_v1';
+      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : acoes.length ? 'guia_pagamento_depois_atualizacao_v2' : 'guia_pagamento_depois_v1';
       const template = aberta ? null : await templateOperacional(chaveTemplate, prisma);
       const checar = async () => {
         await conferir();
@@ -62,7 +61,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const { p, g, companyId, company, fase } = doc;
   const referencia = p?.anoMesParcela || g?.competencia || p?.competencia;
   if (!companyId || !referencia) return { status: "PENDENTE", motivo: "IDENTIFICACAO_INCOMPLETA" };
-  const acoes = fase === 'DEPOIS' && canGuideRecalculate(g) ? [{ acao: 'recalcular', label: 'Recalcular guia' }] : [];
+  const acoes = fase === 'DEPOIS' ? [{ acao: 'recalcular', label: 'Atualizar guia' }] : [];
   // O vínculo posterior pode mudar parcela/contrato; a guia e sua competência preservam a identidade.
   const base = createHash("sha256").update(JSON.stringify([companyId, g.id, g.competencia || referencia, fase, new Date(g.vencimento).toISOString().slice(0, 10)])).digest("hex");
   const transporte = deps.transporte || await transportePadrao();
@@ -72,7 +71,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const tipo = p ? `parcela${p.numeroParcela ? ` ${p.numeroParcela}` : ""} do parcelamento${p.parcelamento?.numeroParcelamento ? ` ${p.parcelamento.numeroParcelamento}` : ""}` : g.tipo;
   const vencimento = calendarioAvisosGuia(g.vencimento, feriados, company?.municipio).vencimento.split('-').reverse().join('/');
   const variaveis = [company?.razao || 'Empresa', tipo, referencia, vencimento].map(String);
-  const texto = `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Recalcular guia para receber a guia atualizada aqui no WhatsApp, com os acréscimos aplicáveis' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
+  const texto = `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
   const resultados = [];
   for (const target of targets) {
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;

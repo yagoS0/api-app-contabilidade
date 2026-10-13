@@ -22,6 +22,7 @@ import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
 import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
 // Q41: hook próprio da aba Situação Fiscal (SITFIS)
 import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
+import { PendenciasSuporte } from "../../../whatsapp/components/PendenciasSuporte";
 import { createApiClient } from "../../../../api/client";
 import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/liberacao";
@@ -157,6 +158,7 @@ function CompanyNotesTabWrapper({ companyId, feedback, usuarioId }) {
     <div className="wa-notes-toolbar"><Button variant="secondary" size="sm" aria-expanded={mostrarNotas} onClick={() => setMostrarNotas(v => !v)}>{mostrarNotas ? "Ocultar anotações e ampliar conversa" : "Mostrar anotações"}</Button></div>
     <div className="anotacoes-com-chat" data-notas={mostrarNotas ? "visiveis" : "ocultas"}>
       <div hidden={!mostrarNotas} style={{ minWidth: 0 }}>
+        <PendenciasSuporte api={companyDocsApi} companyId={companyId} onAbrir={id => { window.location.href = `/suporte?conversa=${encodeURIComponent(id)}`; }} />
         <CompanyNotesTab notes={notes} rascunho={rascunho} aoUsarRascunho={() => setRascunho(null)} />
       </div>
       <div className="anotacoes-com-chat__chat">

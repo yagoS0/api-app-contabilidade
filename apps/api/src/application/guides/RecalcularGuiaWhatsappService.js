@@ -29,12 +29,13 @@ export async function recalcularGuiaNoServico(guia, contato, client) {
 }
 
 // O botão já autoriza a operação identificada. Reserva antes do provedor, sem repetir custo após timeout/crash.
-export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, cloud, enviar, conferirAcesso, agora = new Date() },
+export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, cloud, enviar, conferirAcesso, encaminhar, agora = new Date() },
   { recalcular = recalcularGuiaNoServico, carregarPdf = null, prepararPagamento = prepararGuiaPagamentoWhatsapp } = {}) {
   if (!String(id || '').startsWith(PREFIXO_RECALCULO)) return null;
   const texto = async (corpo, sufixo) => enviar({ corpo, idTurno: `recalculo:${mensagem.id}:${sufixo}`, chamada: () => cloud.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
   let reserva = null;
   let iniciouRecalculo = false;
+  let guiaDoPedido = null;
   try {
     if (!/^altan\.payment\.recalculate\.[0-9a-f-]{36}$/.test(id) || !conversa.portalClientId || mensagem.direcao !== 'in' || mensagem.conversaId !== conversa.id) throw recusar();
     const token = (await client.appSetting.findUnique({ where: { key: id } }))?.value;
@@ -52,10 +53,16 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
       return g;
     };
     const guia = await conferirGuia(token.guideId, token.hash);
+    guiaDoPedido = guia;
     const company = await client.portalClient.findUnique({ where: { id: token.companyId }, select: { municipio: true } });
     const feriados = await client.feriado.findMany({});
     const vencimento = calendarioAvisosGuia(guia.vencimento, feriados, company?.municipio)?.vencimento;
-    if (!canGuideRecalculate(guia) || !vencimento || vencimento >= hojeSaoPaulo(agora)) throw recusar();
+    if (!vencimento || vencimento >= hojeSaoPaulo(agora)) throw recusar();
+    if (!canGuideRecalculate(guia)) {
+      await encaminhar(`Atualizar guia ${guia.tipo} · ${guia.competencia} · ${guia.id}: atualização pelo contador`);
+      await texto('Solicitei ao contador a atualização desta guia. Ele vai conferir e retornar por aqui.', 'contador');
+      return { tratado: true, acao: 'ATUALIZAR_GUIA', encaminhado: true };
+    }
     const key = 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify([token.companyId, guia.id, guia.hash || null, guia.vencimento])).digest('hex');
     const value = { status: 'RESERVADO', guideId: guia.id, companyId: token.companyId, mensagemId: mensagem.id, criadoEm: agora.toISOString() };
     try { await client.appSetting.create({ data: { key, value } }); reserva = { key, value }; }
@@ -64,7 +71,7 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
       await texto('Esta atualização já foi solicitada. Confira as mensagens desta conversa; se a guia ainda não chegou, o escritório verificará o pedido.', 'repetido');
       return { tratado: true, acao: 'RECALCULAR_GUIA', repetido: true };
     }
-    await texto('Aguarde em quanto recalculamos.', 'aguarde');
+    await texto('Aguarde enquanto atualizamos sua guia.', 'aguarde');
     await conferirGuia(token.guideId, token.hash);
     const contato = await contatoAtual();
     iniciouRecalculo = true;
@@ -93,8 +100,9 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     return { tratado: true, acao: 'RECALCULAR_GUIA', codigo };
   } catch (e) {
     if (reserva) await client.appSetting.update({ where: { key: reserva.key }, data: { value: { ...reserva.value, status: iniciouRecalculo ? 'CONFERENCIA_NECESSARIA' : 'FALHOU', motivo: e.code || e.codigo || 'RECALCULO_FALHOU' } } });
+    if (iniciouRecalculo) await encaminhar(`Atualizar guia ${guiaDoPedido.tipo} · ${guiaDoPedido.competencia} · ${guiaDoPedido.id}: falha automática; conferir antes de repetir.`);
     const resposta = e.code === 'RECALCULO_RECUSADO' ? e.message : iniciouRecalculo
-      ? 'Não consegui concluir a entrega da guia atualizada. O escritório precisa conferir este pedido antes de uma nova tentativa.'
+      ? 'Não consegui concluir a entrega da guia atualizada. Avisei o contador para conferir o pedido e retornar por aqui.'
       : traduzirRecusaParaCliente(e).mensagem;
     await texto(resposta, 'falha');
     return { tratado: true, acao: 'RECALCULAR_GUIA', pendente: true };

@@ -196,7 +196,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     const encaminharParaEquipe = async (motivo = 'Atendimento precisa da equipe') => {
       await conferirPortao();
       const quando = new Date();
-      const registrar = (tx) => (deps.usarOpenAI ?? IA_SUPORTE_OPENAI)
+      const registrar = (tx) => (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) || motivo.startsWith('Atualizar guia ')
         ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora: quando }) : Promise.resolve();
       if (conversa.atendimentoId || conversa.vinculoNumeroId) {
         await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client, quando, aoEncaminhar: registrar });
@@ -354,6 +354,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     const pendenciasDoTurno = [];
     let chamouEscritorio = null;
+    let respostaEncaminhamentoObrigatoria = null;
     const documentosTentados = new Map();
     const ctx = {
       sessao, conversa, prisma: client, servicos: {
@@ -429,8 +430,9 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           return escolhaDePerfilDoTurno;
         }
         const resultado = await executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
+        if (resultado?.respostaObrigatoria && resultado.encaminharEscritorio) respostaEncaminhamentoObrigatoria = resultado.respostaObrigatoria;
         if (resultado?.encaminharEscritorio === true || resultado?.motivo === 'FERRAMENTA_FALHOU') {
-          chamouEscritorio = { motivo: resultado.mensagem || 'A operação precisa de análise da equipe' };
+          chamouEscritorio = { motivo: resultado.motivoEncaminhamento || resultado.mensagem || 'A operação precisa de análise da equipe', respostaObrigatoria: resultado.respostaObrigatoria };
         }
         if (nome === "preparar_emissao" && resultado?.motivo === "ESCOLHER_PERFIL_EMISSAO") escolhaDePerfilDoTurno = resultado;
         return resultado;
@@ -444,14 +446,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
     await concluirChamadaIa(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client, log });
 
-    if (resposta.recusou || respostaComMarcador(resposta.texto) || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length)) {
+    if (!respostaEncaminhamentoObrigatoria && (resposta.recusou || respostaComMarcador(resposta.texto) || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length))) {
       await encaminharFalha();
       return concluir({ feito: true, motivo: "RESPOSTA_INCOMPLETA" });
     }
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
     if (chamouEscritorio) await encaminharParaEquipe(chamouEscritorio.motivo);
-    const texto = (resposta.texto || "").trim();
+    const texto = (respostaEncaminhamentoObrigatoria || resposta.texto || "").trim();
     if (texto) {
       // A ferramenta pode ter lido dados e a autorização ser retirada enquanto o modelo redige a
       // frase final. Reconfere o mesmo usuário, papel e conjunto de permissões antes de liberar o

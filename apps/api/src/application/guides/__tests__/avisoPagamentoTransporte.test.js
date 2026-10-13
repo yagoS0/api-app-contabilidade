@@ -22,7 +22,7 @@ test('janela aberta envia dois botões de resposta sem links', async () => {
 });
 test.each(['ANTES', 'DEPOIS'])('janela fechada envia template %s com os payloads dos botões', async fase => {
   const f = cenario(false); f.args.fase = fase; if (fase === 'ANTES') f.args.acoes = [];
-  await f.run(); expect(f.cloud.enviarTemplate).toHaveBeenCalledWith(expect.objectContaining({ template: fase === 'ANTES' ? 'guia_pagamento_antes_v1' : 'guia_pagamento_depois_recalculo_v1', variaveis: f.args.variaveis, botoesResposta: fase === 'ANTES' ? ['confirmar'] : ['confirmar', 'recalcular'] }));
+  await f.run(); expect(f.cloud.enviarTemplate).toHaveBeenCalledWith(expect.objectContaining({ template: fase === 'ANTES' ? 'guia_pagamento_antes_v1' : 'guia_pagamento_depois_atualizacao_v2', variaveis: f.args.variaveis, botoesResposta: fase === 'ANTES' ? ['confirmar'] : ['confirmar', 'recalcular'] }));
   expect(f.cloud.enviarBotoes).not.toHaveBeenCalled();
 });
 test('modelo não aprovado fica pendente sem envio livre fora da janela', async () => {

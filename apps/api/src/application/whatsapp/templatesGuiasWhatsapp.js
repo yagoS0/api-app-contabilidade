@@ -17,6 +17,10 @@ export const TEMPLATES_GUIAS_WHATSAPP = {
     variaveis: ['empresa', 'tipo', 'referencia', 'vencimento_util'], botoes: ['Confirmar pagamento'],
     corpo: 'Olá! Para {{1}}, ainda não recebemos a confirmação da guia de {{2}}, referência {{3}}, com vencimento em {{4}}. Se já pagou, toque em Confirmar pagamento para informar a data. Não é necessário pagar novamente. Se ainda não pagou, solicite a atualização ao escritório.',
   },
+  guia_pagamento_depois_atualizacao_v2: {
+    variaveis: ['empresa', 'tipo', 'referencia', 'vencimento_util'], botoes: ['Confirmar pagamento', 'Atualizar guia'],
+    corpo: 'Olá! Para {{1}}, ainda não recebemos a confirmação da guia de {{2}}, referência {{3}}, com vencimento em {{4}}. Se já pagou, toque em Confirmar pagamento para informar a data. Não pague novamente. Se ainda não pagou, toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido.',
+  },
   guia_pagamento_depois_recalculo_v1: {
     variaveis: ['empresa', 'tipo', 'referencia', 'vencimento_util'], botoes: ['Confirmar pagamento', 'Recalcular guia'],
     corpo: 'Olá! Para {{1}}, ainda não recebemos a confirmação da guia de {{2}}, referência {{3}}, com vencimento em {{4}}. Se já pagou, toque em Confirmar pagamento para informar a data. Não é necessário pagar novamente. Se ainda não pagou, toque em Recalcular guia: enviaremos a guia atualizada aqui, com os acréscimos aplicáveis.',

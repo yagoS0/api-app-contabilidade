@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 
-export function PendenciasSuporte({ api, onAbrir }) {
+export function PendenciasSuporte({ api, onAbrir, companyId = null }) {
   const [fila, setFila] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
   const carregar = async () => {
-    const r = await api.getPendenciasSuporte();
+    const r = await api.getPendenciasSuporte(companyId);
     if (!r?.ok || !Array.isArray(r.itens)) throw new Error('Não foi possível ler os atendimentos da equipe.');
     return r;
   };
   useEffect(() => {
     if (!api.getPendenciasSuporte) return;
-    let vivo = true;
+    let vivo = true; setFila(null); setErro('');
     const atualizar = async () => { try { const r = await carregar(); if (vivo) { setFila(r); setErro(''); } } catch { if (vivo) setErro('Fila de suporte indisponível.'); } };
     atualizar(); const timer = setInterval(atualizar, 30000);
     return () => { vivo = false; clearInterval(timer); };
-  }, [api]);
+  }, [api, companyId]);
   async function agir(item, acao) {
     setOcupado(true); setErro('');
     try {
@@ -23,8 +23,8 @@ export function PendenciasSuporte({ api, onAbrir }) {
     finally { setOcupado(false); }
   }
   if (!api.getPendenciasSuporte) return null;
-  return <details className="wa-support-queue">
-    <summary>Equipe{fila ? ` · ${fila.total}` : ''}</summary>
+  return <details className="wa-support-queue" open={companyId ? true : undefined}>
+    <summary>{companyId ? "Pedidos ao contador" : "Equipe"}{fila ? ` · ${fila.total}` : ''}</summary>
     {erro && <p role="alert">{erro}</p>}
     {fila?.total === 0 && <p>Nenhum atendimento pendente.</p>}
     {fila?.itens.map(item => <article key={item.id}>
