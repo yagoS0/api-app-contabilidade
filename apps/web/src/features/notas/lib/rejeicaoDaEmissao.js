@@ -234,6 +234,7 @@ export function lerRejeicao(erro) {
     campo,
     rotuloDoCampo: campo ? ROTULO_DO_CAMPO[campo] || null : null,
     camada,
+    invoiceId: payload.nfse?.id || null,
     codigoDoProvedor: textoOuNulo(payload.codigo),
     camposDoCadastro,
     // Corrigir e tentar de novo é o caminho normal — EXCETO quando ninguém sabe o que aconteceu.

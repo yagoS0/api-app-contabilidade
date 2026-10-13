@@ -16,6 +16,7 @@ import { ensureEmissaoNfseAutorizada } from "./middlewares/emissaoNfseGate.js";
 // cliente veria "erro interno" onde o portal do contador vê a recusa nomeada.
 import { responderResultadoEmissao, responderErroEmissao } from "./nfseEmissaoHttp.js";
 import { responderErroCancelamento } from "./nfseCancelamentoHttp.js";
+import { responderErroConciliacao } from "./nfseConciliacaoHttp.js";
 
 // ⚠ OS TRÊS CAMINHOS (emissão, consulta e evento) PASSARAM A EXIGIR O A1 DA PRÓPRIA EMPRESA.
 // Antes, todos usavam um PFX GLOBAL (`NFSE_CERT_PFX_PATH`) sem conferir de quem ele era. Cada
@@ -105,6 +106,19 @@ export function createNfseRouter({ ensureAuthorized, log }) {
     } catch (err) {
       return responderErroEmissao(res, err, { log });
     }
+  });
+
+  router.post("/:invoiceId/conciliar", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    if (!req.body?.companyId) return res.status(400).json({ error: "company_id_required" });
+    try {
+      const companyId = await resolveLegacyCompanyId(req.body.companyId);
+      if (!companyId) return res.status(404).json({ error: "company_not_found" });
+      const access = await ensureLegacyCompanyAccess(req, res, companyId);
+      if (!access.ok) return;
+      // Consulta e conciliação local; não autoriza emissão ou cancelamento.
+      return res.json(await NfseService.conciliarTentativa({ companyId, invoiceId: req.params.invoiceId, log }));
+    } catch (err) { return responderErroConciliacao(res, err, { log }); }
   });
 
   router.get("/", async (req, res) => {

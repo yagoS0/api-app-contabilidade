@@ -1248,6 +1248,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           `desfechoMantemOFormulario`. */}
       {desfecho && !desfechoMantemOFormulario(desfecho) ? (
         <DesfechoEmissao
+          companyId={companyId}
+          consultarResultado={api.conciliarNfse}
+          aoRecuperar={(r) => setDesfecho({ tipo: TIPO.SUCESSO, nfse: r.nfse, recuperada: true })}
           desfecho={desfecho}
           aoVoltarParaNotas={aoVoltarParaNotas}
           aoCorrigir={() => setDesfecho(null)}
@@ -1272,6 +1275,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
               formulário nunca saiu. */}
           {desfecho && desfechoMantemOFormulario(desfecho) ? (
             <DesfechoEmissao
+          companyId={companyId}
+          consultarResultado={api.conciliarNfse}
+          aoRecuperar={(r) => setDesfecho({ tipo: TIPO.SUCESSO, nfse: r.nfse, recuperada: true })}
               desfecho={desfecho}
               aoVoltarParaNotas={aoVoltarParaNotas}
               aoCorrigir={() => setDesfecho(null)}
