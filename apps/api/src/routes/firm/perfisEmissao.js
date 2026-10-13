@@ -14,6 +14,9 @@
 // divergem — e o precedente está medido: `perfilAtividades` tem 3 campos sem leitor.
 
 import { Router } from "express";
+import { consultarCnpj } from '../../application/tomador/consultaCnpj.js';
+import { consultarCep } from '../../application/tomador/consultarCep.js';
+import { municipiosIbgeOuNulo } from '../../application/nfse/lote/municipiosIbge.js';
 import { previaFiscalDoContador } from '../../application/nfse/previaFiscalDoContador.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
@@ -36,6 +39,22 @@ const CAMPOS_ACEITOS = [...IDS, ...CAMPOS_DE_IDENTIDADE, 'categoriaObrigacaoIbsc
 
 export function createPerfisEmissaoRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+
+  // Consultas auxiliares: mesma autorização da prévia, sem gravação ou emissão.
+  router.post('/consulta-tomador', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    const { tipo, valor } = req.body || {};
+    if (!['cnpj', 'cep'].includes(tipo) || typeof valor !== 'string'
+      || !(tipo === 'cnpj' ? /^\d{14}$/ : /^\d{5}-?\d{3}$/).test(valor)) {
+      return res.status(400).json({ error: 'consulta_invalida', message: 'Informe CNPJ ou CEP válido.' });
+    }
+    res.set('Cache-Control', 'no-store');
+    try {
+      const municipios = await municipiosIbgeOuNulo({ log });
+      return res.json(await (tipo === 'cnpj' ? consultarCnpj : consultarCep)(valor, { municipios, log }));
+    } catch {
+      return res.status(503).json({ error: 'consulta_indisponivel', message: 'Consulta indisponível. Preencha manualmente ou tente novamente.' });
+    }
+  });
 
   router.post('/previa-emissao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
     const { competencia, perfilId, servico } = req.body || {};

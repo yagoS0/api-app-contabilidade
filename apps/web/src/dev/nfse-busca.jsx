@@ -39,7 +39,7 @@ function Verificacao() {
     <h1 className="company-form-page__title nfse-emission-title">Emissão de NFS-e</h1>
     <div className="company-form-page__panel nfse-settings">
     <GuiaEmissaoLink />
-    <p role="status" style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 24px' }}>PRÉVIA LOCAL · Dados de demonstração · Emissão desativada</p>
+    <p role="status" style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 24px' }}>PRÉVIA LOCAL · Consultas de CNPJ/CEP e emissão desativadas. <a href="https://app.altan.company/companies">Abrir o portal do contador</a></p>
     <EditorPerfilEmissao dados={{ perfis: [perfil], sugestoes }} podeEditar onSalvar={async (_, corpo) => setPerfil({ ...perfil, ...corpo })} />
     <details className="nfse-section nfse-municipal-disclosure"><summary>Consultar parâmetros municipais de ISS</summary><ParametrosMunicipais companyId="demo" api={api} podeConsultar /></details>
     <div className="nfse-preview-actions"><Button type="button" onClick={() => setEmitindo(true)}>Verificar fluxo até a conferência</Button></div>

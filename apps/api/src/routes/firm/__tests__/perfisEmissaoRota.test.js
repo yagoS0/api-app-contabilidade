@@ -13,6 +13,10 @@
 
 import request from "supertest";
 import express from "express";
+import { consultarCnpj } from '../../../application/tomador/consultaCnpj.js';
+import { consultarCep } from '../../../application/tomador/consultarCep.js';
+jest.mock('../../../application/tomador/consultaCnpj.js', () => ({ consultarCnpj: jest.fn() }));
+jest.mock('../../../application/tomador/consultarCep.js', () => ({ consultarCep: jest.fn() }));
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const models = {};
@@ -116,6 +120,38 @@ beforeEach(() => {
   prismaMock.perfilEmissaoNfse.create.mockImplementation(async ({ data }) => ({ id: "pf-novo", ...data }));
   prismaMock.perfilEmissaoNfse.update.mockImplementation(async ({ data }) => ({ id: "pf-1", ...data }));
   prismaMock.perfilEmissaoNfse.updateMany.mockResolvedValue({ count: 0 });
+});
+
+describe('consultas auxiliares do contador', () => {
+  const url = `/firm/companies/${PORTAL_ID}/consulta-tomador`;
+  it.each(['cnpj', 'cep'])('consulta %s sem gravar cadastro ou emitir', async tipo => {
+    const consultar = tipo === 'cnpj' ? consultarCnpj : consultarCep;
+    consultar.mockResolvedValue({ ok: true, fonte: 'PUBLICA' });
+    const valor = tipo === 'cnpj' ? '24352609000198' : '22770010';
+    const r = await request(app).post(url).send({ tipo, valor });
+    expect(r.status).toBe(200);
+    expect(r.headers['cache-control']).toBe('no-store');
+    expect(consultar).toHaveBeenCalledWith(valor, expect.objectContaining({ municipios: expect.any(Array) }));
+    expect(prismaMock.company.update).not.toHaveBeenCalled();
+    expect(prismaMock.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+  it('recusa CPF, URL e tipo desconhecido antes de consultar', async () => {
+    for (const entrada of [{ tipo: 'cnpj', valor: '12345678901' }, { tipo: 'cep', valor: 'https://x' }, { tipo: 'url', valor: '22770010' }]) {
+      expect((await request(app).post(url).send(entrada)).status).toBe(400);
+    }
+    expect(consultarCnpj).not.toHaveBeenCalled();
+    expect(consultarCep).not.toHaveBeenCalled();
+  });
+  it('recusa usuário do cliente antes de consultar', async () => {
+    const r = await request(montarApp({ id: 'cliente', role: 'client', accountType: 'CLIENT' })).post(url).send({ tipo: 'cep', valor: '22770010' });
+    expect([401, 403]).toContain(r.status);
+    expect(consultarCep).not.toHaveBeenCalled();
+  });
+  it('falha externa permanece explícita', async () => {
+    consultarCep.mockResolvedValue({ ok: false, motivo: 'timeout', mensagem: 'Tente novamente.' });
+    const r = await request(app).post(url).send({ tipo: 'cep', valor: '22770010' });
+    expect(r.body).toMatchObject({ ok: false, motivo: 'timeout' });
+  });
 });
 
 describe('prévia fiscal do contador', () => {
