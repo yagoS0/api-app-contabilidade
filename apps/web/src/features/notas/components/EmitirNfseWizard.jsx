@@ -355,7 +355,12 @@ export function EmitirNfseWizard({
   // `null` = a tela não tem nada a dizer sobre consulta (é o estado do CPF, e o do campo vazio).
   const [consulta, setConsulta] = useState(null);
   const [ultimoConsultado, setUltimoConsultado] = useState(null);
-  const consultando = useRef(false);
+  const consultando = useRef(null);
+  const consultaSequencia = useRef(0);
+  const [consultaCep, setConsultaCep] = useState(null);
+  const cepSequencia = useRef(0);
+  useEffect(() => () => { consultaSequencia.current++; cepSequencia.current++; }, []);
+  useEffect(() => { cepSequencia.current++; setConsultaCep(null); }, [tomador.cnpjCpf]);
   const [servico, setServico] = useState(() => ({
     descricao: "", valorServicos: "", aliquota: "", issRetido: false, ...(valoresIniciais?.servico || {}),
   }));
@@ -423,14 +428,20 @@ export function EmitirNfseWizard({
   // ── A consulta do tomador na Receita ──────────────────────────────────────
   // ⚠ Nada aqui entra em `problemasDaNota`. A consulta ajuda; ela não decide se a nota pode sair.
   async function consultarTomador(digitos) {
-    if (consultando.current) return;
-    consultando.current = true;
+    if (consultando.current === digitos) return;
+    consultando.current = digitos;
+    const sequencia = ++consultaSequencia.current;
+    const aindaAtual = () => sequencia === consultaSequencia.current && normalizarDocumento(tomadorRef.current.cnpjCpf) === digitos;
     // Marcado ANTES da chamada: é o que impede o mesmo CNPJ de ser consultado de novo enquanto a
     // primeira resposta ainda está no ar.
     setUltimoConsultado(digitos);
     setConsulta({ estado: "consultando" });
     try {
-      const r = await consultarCnpj(digitos, { fetchImpl: fetchCnpj });
+      const r = !fetchCnpj && apiPerfis?.consultarTomadorNfse
+        ? await apiPerfis.consultarTomadorNfse(companyId, 'cnpj', digitos)
+        : await consultarCnpj(digitos, { fetchImpl: fetchCnpj });
+      if (!aindaAtual()) return;
+      if (r.ok && !r.situacao) r.situacao = { texto: r.bruto?.descricao_situacao_cadastral, ativa: r.bruto?.descricao_situacao_cadastral === 'ATIVA' };
       if (!r.ok) {
         // A recusa APARECE (o projeto tem o precedente do erro engolido virando "o botão não faz
         // nada") e o caminho segue aberto — nenhum campo é tocado, nenhum passo é bloqueado.
@@ -442,6 +453,7 @@ export function EmitirNfseWizard({
       // dinâmico, fora do bundle inicial. Falha de carga não é erro de consulta: vira "sem código
       // verificável", e o endereço deixa de ser oferecido.
       const listaIbge = await carregarMunicipiosIbge().catch(() => null);
+      if (!aindaAtual()) return;
       if (listaIbge) setMunicipios(listaIbge);
       const leituraEndereco = enderecoDaReceita(r.bruto, { municipios: listaIbge });
       const nome = nomeDaReceita(r.bruto);
@@ -480,8 +492,10 @@ export function EmitirNfseWizard({
         enderecoAplicado: enderecoAplicado.aplicou,
         mensagemEndereco: mensagemEndereco(leituraEndereco),
       });
+    } catch {
+      if (aindaAtual()) setConsulta({ estado: 'recusada', mensagem: 'Consulta de CNPJ indisponível. Tente novamente ou preencha manualmente.' });
     } finally {
-      consultando.current = false;
+      if (sequencia === consultaSequencia.current) consultando.current = null;
     }
   }
 
@@ -499,7 +513,37 @@ export function EmitirNfseWizard({
 
   // ⚠ Toda digitação no endereço marca `DIGITADO` — e é isso que impede uma consulta posterior de
   // apagar o que o contador escreveu.
+  async function buscarCepDoTomador() {
+    const cep = String(enderecoRef.current.CEP).replace(/\D/g, '');
+    if (cep.length !== 8 || !apiPerfis?.consultarTomadorNfse) return;
+    const sequencia = ++cepSequencia.current;
+    const documento = normalizarDocumento(tomadorRef.current.cnpjCpf);
+    const antes = { ...enderecoRef.current };
+    const atual = () => sequencia === cepSequencia.current
+      && documento === normalizarDocumento(tomadorRef.current.cnpjCpf)
+      && cep === String(enderecoRef.current.CEP).replace(/\D/g, '');
+    setConsultaCep({ estado: 'consultando' });
+    try {
+      const r = await apiPerfis.consultarTomadorNfse(companyId, 'cep', cep);
+      if (!atual()) return;
+      if (!r.ok) { setConsultaCep({ estado: 'erro', mensagem: r.mensagem || 'CEP não encontrado. Confira ou preencha manualmente.' }); return; }
+      // Número/complemento não vêm do CEP. Edições durante a consulta prevalecem.
+      setEndereco(valorAtual => {
+        const proximo = { ...valorAtual };
+        for (const campo of ['cMun', 'xLgr', 'xBairro']) {
+          if (!valorAtual[campo] && valorAtual[campo] === antes[campo] && r.endereco?.[campo]) proximo[campo] = r.endereco[campo];
+        }
+        return proximo;
+      });
+      marcarOrigemEndereco(ORIGEM.DIGITADO);
+      setConsultaCep({ estado: 'ok', mensagem: 'CEP consultado. Campos já preenchidos foram preservados; confira o endereço e informe o número.' });
+    } catch {
+      if (atual()) setConsultaCep({ estado: 'erro', mensagem: 'Consulta de CEP indisponível. Tente novamente ou preencha manualmente.' });
+    }
+  }
+
   function alterarEndereco(campoNome, valorNovo) {
+    if (campoNome === 'CEP') { cepSequencia.current++; setConsultaCep(null); }
     marcarOrigemEndereco(ORIGEM.DIGITADO);
     setEndereco((atual) => ({ ...atual, [campoNome]: valorNovo }));
   }
@@ -546,7 +590,8 @@ export function EmitirNfseWizard({
   const regimeEfetivo = previaFiscal.habilitada ? previaFiscal.dados?.regimeVigente?.regime : regimeCadastrado;
   const regime = useMemo(() => regimeDeclaradoNaNota(regimeEfetivo), [regimeEfetivo]);
   const sugestaoPercentual = previaFiscal.dados?.percentualSimples;
-  const contextoPercentual = JSON.stringify([companyId, competencia, perfilEscolhido?.id, servico.codigoServicoNacional, regimeEfetivo, sugestaoPercentual]);
+  // Recarregar a prévia não muda a escolha manual; só uma nova competência/atividade a invalida.
+  const contextoPercentual = JSON.stringify([companyId, competencia, perfilEscolhido?.id, servico.codigoServicoNacional]);
   const pTotTribSN = percentualManual?.contexto === contextoPercentual ? percentualManual.valor
     : sugestaoPercentual?.estado === 'AUTOMATICO' ? String(sugestaoPercentual.valor) : '';
   const setPTotTribSN = valor => setPercentualManual({ contexto: contextoPercentual, valor });
@@ -1113,7 +1158,11 @@ export function EmitirNfseWizard({
                             : "Município e UF juntos — é a UF que separa os homônimos."}
                         />
                       </div>
-                      <label htmlFor={CAMPO.CEP} style={rotulo}>CEP<input id={CAMPO.CEP} value={endereco.CEP} onChange={(e) => alterarEndereco("CEP", e.target.value)} style={campo} /></label>
+                      <div>
+                        <label htmlFor={CAMPO.CEP} style={rotulo}>CEP<input id={CAMPO.CEP} value={endereco.CEP} onChange={(e) => alterarEndereco("CEP", e.target.value)} style={campo} /></label>
+                        {apiPerfis?.consultarTomadorNfse && <Button type="button" variant="secondary" size="sm" onClick={buscarCepDoTomador} disabled={String(endereco.CEP).replace(/\D/g, '').length !== 8 || consultaCep?.estado === 'consultando'}>{consultaCep?.estado === 'consultando' ? 'Consultando CEP…' : 'Consultar CEP'}</Button>}
+                        {consultaCep?.mensagem && <div role="status" style={{ fontSize: '0.8rem', marginTop: 6 }}>{consultaCep.mensagem}</div>}
+                      </div>
                       <label htmlFor={CAMPO.NUMERO} style={rotulo}>Número<input id={CAMPO.NUMERO} value={endereco.nro} onChange={(e) => alterarEndereco("nro", e.target.value)} style={campo} /></label>
                       <label htmlFor={CAMPO.LOGRADOURO} style={{ ...rotulo, gridColumn: "1 / -1" }}>Logradouro<input id={CAMPO.LOGRADOURO} value={endereco.xLgr} onChange={(e) => alterarEndereco("xLgr", e.target.value)} style={campo} /></label>
                       <label style={rotulo}>Complemento<input value={endereco.xCpl} onChange={(e) => alterarEndereco("xCpl", e.target.value)} style={campo} /></label>

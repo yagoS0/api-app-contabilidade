@@ -1804,6 +1804,11 @@ export function createRealApi() {
      * é o wizard, e o preview obrigatório é a última porta antes desta chamada.
      * ⚠ Ato fiscal irreversível: não chamar sem confirmação explícita do contador.
      */
+    async consultarTomadorNfse(companyId, tipo, valor) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/consulta-tomador`, {
+        method: 'POST', body: JSON.stringify({ tipo, valor }),
+      });
+    },
     async emitirNfse(payload) {
       return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
     },
