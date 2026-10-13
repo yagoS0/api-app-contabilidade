@@ -1,5 +1,17 @@
 # Notas — revisão de uso (08/09/2026)
 
+## CEP e consulta de resultado — 13/10/2026, PR #163
+
+`EmitirNfseWizard` rastreia os campos trazidos pela consulta de CEP. Ao trocar o CEP, limpar somente os valores ainda iguais aos preenchidos automaticamente pela consulta anterior. Preservar número, complemento e alterações manuais, inclusive feitas durante a consulta. Respostas antigas não podem preencher outro CEP/empresa. CEP permanece texto: preservar zero inicial (`01551020`), sem conversão numérica.
+
+Endereço nacional é completo ou vazio. Os obrigatórios são `cMun`, `CEP`, `xLgr`, `nro` e `xBairro`; `xCpl` é opcional. A validação normaliza texto e não confunde número `0` com ausência. Indicar exatamente os campos faltantes e focar o primeiro deles; não reintroduzir o aviso genérico de endereço incompleto com todos os campos preenchidos. A memoização depende dos valores do endereço e do estado da consulta, não só do booleano `enderecoParcial`.
+
+Durante a consulta, mostrar progresso e manter o avanço bloqueado enquanto o endereço estiver incompleto. O retorno completo remove a pendência de endereço; outros erros do formulário permanecem. CEP não informa número: não inventá-lo nem confundi-lo com o número fiscal da nota.
+
+Preservar regressão de `20040002` para `01551020`: o endereço automático do Rio é limpo, o de São Paulo é carregado e o número digitado permanece. Em produção, o segundo CEP retornou Rua Doutor Inácio Arruda, Vila Monumento, São Paulo/3550308. Esse dado é exemplo de QA, não deve ser hardcoded. Testes: `components/__tests__/consultasContador.test.jsx` cobre antes/durante/depois, troca de CEP, edições manuais e número zero.
+
+`ConsultaResultadoNfse` é compartilhado com o cliente: consultar tentativa persistida não é reenviar. Não passar função/payload de emissão ao componente nem liberar retry em resultado incerto. Resultado recuperado deve ser identificado como recuperação de nota existente. Ler `packages/shared/src/nfse/CLAUDE.md` e `apps/api/src/application/nfse/CLAUDE.md` (caminhos da raiz). Conferir testes de rejeição/consulta dos dois portais e builds quando alterar a integração. Manter bloqueio de 2027; testes não emitem nota real.
+
 ## Revisão de concorrência e tratamento — 18/09/2026
 
 Lista, detalhe, captura e auditoria descartam respostas de outra empresa/competência ou de uma nota já fechada. Recarga após captura/importação usa os filtros atuais. Erros de listagem e captura têm retentativas distintas; resposta sem lista não equivale a nenhuma nota. Busca por nome não inclui documento vazio; busca numérica cobre emitente e tomador, também nos resumos.
