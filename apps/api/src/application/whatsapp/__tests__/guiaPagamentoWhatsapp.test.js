@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 import { WhatsappCloudClient } from '../WhatsappCloudClient.js';
 const args = { telefone: '5521994400833', conteudoPdf: Buffer.from('%PDF-teste'), nomeArquivo: 'teste.pdf',
   texto: 'Guia de teste', referencia: 'envio-1', linhaDigitavel: '8' + '0'.repeat(47), valor: 12.34, descricao: 'SIMPLES 09/2026' };

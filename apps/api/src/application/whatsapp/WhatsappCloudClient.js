@@ -1,3 +1,4 @@
+import { conferirEnvioConsentido } from './ConsentimentoWhatsappService.js';
 // CLIENTE DA WHATSAPP CLOUD API (Meta) — Entrega 1, F3.
 //
 // ⚠ NADA FOI ENVIADO, EM AMBIENTE NENHUM. Nenhuma rota, nenhum worker e nenhum serviço chama este
@@ -316,6 +317,7 @@ export class WhatsappCloudClient {
    * @param {object} [opcoes.config]  sobrescreve o que vem de `config.js` (usado só por teste).
    */
   constructor(opcoes = {}) {
+    this.conferirConsentimento = opcoes.conferirConsentimento || conferirEnvioConsentido;
     const cfg = opcoes.config || {};
     this.fetchImpl = opcoes.fetchImpl || globalThis.fetch;
     this.habilitada = cfg.habilitada ?? INTEGRACAO_WHATSAPP;
@@ -376,6 +378,8 @@ export class WhatsappCloudClient {
    */
   async chamar({ recurso, corpo, formulario }) {
     this.assertPronta();
+    // Todas as saídas (incluindo guias, templates, humano e filas antigas) passam por este portão.
+    if (recurso === 'messages' && corpo?.to) await this.conferirConsentimento(corpo.to);
 
     const url = this.url(recurso);
     const cabecalhos = { Authorization: `Bearer ${this.token}` };

@@ -75,6 +75,17 @@ async function montar({ api = apiFalso() } = {}) {
 
 afterEach(() => { jest.restoreAllMocks(); });
 
+it('recusa do cliente mostra bloqueio e orienta autorização pelo WhatsApp, mesmo com opt-in antigo',async()=>{
+ const api=apiFalso({listarContatosWhatsapp:jest.fn(async()=>({ok:true,contatos:[{...COM_OPT_IN,consentimentoWhatsapp:{status:'REVOGADO'}},SEM_OPT_IN],canalPadraoEnvio:'WHATSAPP'}))});
+ await montar({api});
+ const linha=screen.getByTestId('contato-whatsapp-c1');
+ expect(linha).toHaveAttribute('data-situacao','SEM_OPT_IN');
+ expect(linha).toHaveTextContent('Bloqueado pelo cliente');
+ expect(linha).toHaveTextContent('Autorizo receber as guias pelo WhatsApp');
+ expect(linha).toHaveTextContent('Editar este cadastro não libera os envios');
+ expect(api.salvarContatoWhatsapp).not.toHaveBeenCalled();
+});
+
 describe("a seção existe e diz quem recebe", () => {
   it("lista os dois contatos com o telefone formatado e a situação de cada um", async () => {
     await montar();

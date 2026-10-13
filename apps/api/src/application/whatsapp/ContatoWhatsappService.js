@@ -4,6 +4,7 @@
 // protege o número do escritório.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { conferirEnvioConsentido, lerConsentimentoWhatsapp } from './ConsentimentoWhatsappService.js';
 import {
   normalizarPermissoesAssistente,
   permissoesAssistenteInvalidas,
@@ -37,10 +38,11 @@ export function normalizarEmail(valor) {
 }
 
 export async function listarContatos(portalClientId) {
-  return prisma.contatoWhatsapp.findMany({
+  const contatos = await prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId) },
     orderBy: [{ ativo: "desc" }, { createdAt: "asc" }],
   });
+  return Promise.all(contatos.map(async c => ({...c, consentimentoWhatsapp: c.telefoneE164 ? await lerConsentimentoWhatsapp(c.telefoneE164) : null})));
 }
 
 /**
@@ -160,6 +162,11 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
   // O opt-in é gravado com DATA e ORIGEM porque ele é o que se apresenta se a Meta questionar o
   // envio. "Marcamos a caixinha" não é registro de consentimento; quando e de onde, é.
   if (optIn === true) {
+    const numero = telefone !== undefined ? e164 : id ? (await prisma.contatoWhatsapp.findFirst({where:{id:String(id),portalClientId:String(portalClientId)},select:{telefoneE164:true}}))?.telefoneE164 : null;
+    if(numero)try { await conferirEnvioConsentido(numero); } catch(e) {
+      if(e.code === 'WHATSAPP_CONSENTIMENTO_REVOGADO')throw new ContatoWhatsappError(e.code,e.message);
+      throw e;
+    }
     dados.optInEm = new Date();
     dados.optInOrigem = String(optInOrigem || "").trim() || "nao_informado";
   }

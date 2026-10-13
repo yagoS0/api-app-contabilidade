@@ -1,3 +1,4 @@
+jest.mock("../ConsentimentoWhatsappService.js", () => ({ conferirEnvioConsentido: jest.fn(async () => {}), lerConsentimentoWhatsapp: jest.fn(async () => null), processarConsentimentoWhatsapp: jest.fn(async () => null) }));
 // A LIGAÇÃO COM O BANCO — a regra é `vinculoTelefone.js`, testada à parte.
 //
 // O que se trava aqui é o fio: a rede larga da busca (que é o que permite `divergemPeloNonoDigito`

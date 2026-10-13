@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Consentimento no WhatsApp — 13/10/2026
+
+Recusa explícita bloqueia saídas para o número em todos os canais e empresas. “Não” sozinho só vale como resposta à apresentação que pergunta “Podemos enviar por este número?”. “Não paguei” não é recusa. Somente mensagem nova do próprio destinatário com autorização explícita (por exemplo “Autorizo receber as guias pelo WhatsApp”) restaura o consentimento. Editar contato, reativá-lo ou marcar opt-in manualmente não desfaz recusa. Evidência e estado ficam em AppSetting com mensagem, data do provedor e origem; eventos antigos/duplicados não sobrescrevem decisões novas, e recusa vence empate. WhatsappCloudClient verifica o bloqueio antes de qualquer chamada de envio, inclusive humano e filas antigas. O cadastro mostra a orientação de liberação. Sem concessão de papéis, sem envio de prova em produção. Ensaio de banco: scripts/run-consentimento-whatsapp-dev.mjs.
+
 ## NFS-e: CEP e conciliação de DPS — 13/10/2026
 
 PR #163, publicado em produção no commit `a15f37bf56efa27bb4fe8b5e82b05970bbcdb306`. Antes de alterar emissão, consultas de endereço, tratamento de E0014 ou rotas de conciliação, ler `apps/api/src/application/nfse/CLAUDE.md`, `apps/web/src/features/notas/CLAUDE.md`, `apps/portal-cliente-web/src/features/emitir/CLAUDE.md` e `packages/shared/src/nfse/CLAUDE.md`. Essas regras complementam os registros antigos: E0014 não autoriza retry cego nem avanço de número; somente a conciliação comprovada de outra operação permite a reserva seguinte. Manter 2027 bloqueado até homologação e autorização de liberação. Testes de regressão não emitem, cancelam ou transmitem documentos reais.

@@ -1,0 +1,15 @@
+import {interpretarConsentimento,conferirEnvioConsentido,chaveConsentimento} from '../ConsentimentoWhatsappService.js';
+import {WhatsappCloudClient} from '../WhatsappCloudClient.js';
+test.each(['Não quero receber mensagens','não quero mais receber guias','Não me envie guias','pare de enviar mensagens','STOP','sair'])('recusa explícita: %s',texto=>expect(interpretarConsentimento(texto)).toBe('REVOGADO'));
+test.each(['Não','Não obrigado','Prefiro não'])('recusa curta só responde à apresentação: %s',texto=>{expect(interpretarConsentimento(texto)).toBeNull();expect(interpretarConsentimento(texto,true)).toBe('REVOGADO')});
+test.each(['Não paguei','Não recebi a guia','Não quero recalcular','Não quero receber multa','Não me envie essa guia recalculada','Hoje','Sem comprovante','Oi','Sim'])('não inventa consentimento a partir de %s',texto=>expect(interpretarConsentimento(texto)).toBeNull());
+test.each(['Autorizo receber as guias pelo WhatsApp','Pode enviar as guias','Autorizo receber mensagens neste número'])('nova autorização explícita: %s',texto=>expect(interpretarConsentimento(texto)).toBe('AUTORIZADO'));
+test('sim só autoriza como resposta à pergunta de consentimento',()=>expect(interpretarConsentimento('Sim',true)).toBe('AUTORIZADO'));
+const banco=status=>({contatoWhatsapp:{findMany:async()=>[]},appSetting:{findUnique:async({where})=>({value:{status},key:where.key})}});
+test('mesma recusa bloqueia transportes de qualquer canal',async()=>{await expect(conferirEnvioConsentido('21999998888',banco('REVOGADO'))).rejects.toMatchObject({codigo:'WHATSAPP_CONSENTIMENTO_REVOGADO'});await expect(conferirEnvioConsentido('21999998888',banco('AUTORIZADO'))).resolves.toBeUndefined()});
+test('alias confirmado pela Meta usa o bloqueio do número cadastrado',async()=>{const db=banco('REVOGADO');db.contatoWhatsapp.findMany=async()=>[{telefoneE164:'5521999998888'}];db.appSetting.findUnique=async({where})=>where.key===chaveConsentimento('5521999998888')?{value:{status:'REVOGADO'}}:null;await expect(conferirEnvioConsentido('552199998888',db)).rejects.toMatchObject({codigo:'WHATSAPP_CONSENTIMENTO_REVOGADO'})});
+test.each(['text','template','document','interactive'])('portão final impede %s antes de chamar a Meta',async type=>{
+ const fetchImpl=jest.fn();const cloud=new WhatsappCloudClient({fetchImpl,conferirConsentimento:telefone=>conferirEnvioConsentido(telefone,banco('REVOGADO')),config:{habilitada:true,token:'TESTE',phoneNumberId:'TESTE',log:null}});
+ await expect(cloud.chamar({recurso:'messages',corpo:{to:'5521999998888',type}})).rejects.toMatchObject({codigo:'WHATSAPP_CONSENTIMENTO_REVOGADO'});expect(fetchImpl).not.toHaveBeenCalled();
+});
+test('falha ao ler consentimento impede o envio',async()=>{const fetchImpl=jest.fn();const cloud=new WhatsappCloudClient({fetchImpl,conferirConsentimento:async()=>{throw Error('banco indisponível')},config:{habilitada:true,token:'TESTE',phoneNumberId:'TESTE',log:null}});await expect(cloud.chamar({recurso:'messages',corpo:{to:'5521999998888'}})).rejects.toThrow('banco indisponível');expect(fetchImpl).not.toHaveBeenCalled()});

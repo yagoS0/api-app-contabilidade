@@ -217,3 +217,8 @@ jobs:
         env:
           WHATSAPP_TEST_DATABASE_URL: postgresql://whatsapp_check:ci_test_only@127.0.0.1:55439/whatsapp_delivery_check
         run: node scripts/verify-whatsapp-inbound-postgres.js
+      - name: Verify recipient refusal, authorization and final transport gate without network
+        working-directory: apps/api
+        env:
+          LOG_LEVEL: fatal
+        run: node scripts/verify-consentimento-whatsapp-dev.mjs
