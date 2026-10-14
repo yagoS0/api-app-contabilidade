@@ -88,7 +88,7 @@ export function ListaRecorrencias({ api, companyId, revisao = 0, className, styl
       <strong>{item.modelo.tomador.nome} · {moeda(item.modelo.servico.valorServicos)}</strong>
       <p>{item.modelo.servico.descricao}</p>
       <p>{item.ativa ? 'Ativa' : 'Pausada'} · Dia {item.dia} · {item.ativa ? 'Próxima' : 'Data registrada'}: {dataBR(item.proximaData)} · {item.ambiente === 'homolog' ? 'Homologação' : 'Produção'}</p>
-      {!item.ativa && <label>Nova primeira emissão <input type="date" aria-label={`Retomar ${item.modelo.tomador.nome}`} value={datas[item.id] || ''} onChange={e => setDatas({ ...datas, [item.id]: e.target.value })} /></label>}
+      {!item.ativa && <label>Nova primeira emissão <input type="date" aria-label={`Retomar ${item.modelo.tomador.nome}`} value={datas[item.id] || ''} disabled={ocupado} onChange={e => setDatas({ ...datas, [item.id]: e.target.value })} /></label>}
       <ActionButton type="button" disabled={ocupado || (!item.ativa && !datas[item.id])} onClick={() => alterar(item)}>{item.ativa ? 'Pausar' : 'Retomar'}</ActionButton>
       {item.execucoes.length > 0 && <ul>{item.execucoes.map(run => <li key={run.id}>{run.competencia} — {run.status === 'EXECUTANDO' ? 'Em andamento ou interrompida; não será repetida automaticamente' : run.status === 'EMITIDA' ? 'Emitida' : 'Revisão necessária'}{run.erro ? `: ${run.erro}` : ''}{run.invoiceId ? ` · Registro da nota: ${run.invoiceId}` : ''}</li>)}</ul>}
     </article>)}

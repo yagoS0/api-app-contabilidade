@@ -8,7 +8,7 @@ export function AlertasMonitoramento({ items, competencia, onOpenCompany }) {
   const alertas = items.flatMap(item => (item.alertasFiscais || []).map(alerta => ({ ...alerta, empresa: item.razao, cnpj: item.cnpj, estado: item.estado, numeroDeclaracao: item.entregaPgdas?.numeroDeclaracaoRfb, portalClientId: item.portalClientId })));
   const exibidos = alertas.filter(a => categoria === "todos" || a.categoria === categoria);
   const monitorado = items.length > 0 && items.every(item => Array.isArray(item.alertasFiscais));
-  if (items.some(item => item.monitoramentoErro)) return <p role="alert">Não foi possível carregar os alertas do monitoramento. Atualize a lista para tentar novamente. A apuração continua disponível.</p>;
+  if (items.some(item => item.monitoramentoErro)) return <p role="alert" className="apuracao-alertas-erro">Não foi possível carregar os alertas do monitoramento. Atualize a lista para tentar novamente. A apuração continua disponível.</p>;
   if (!monitorado) return null;
   return <details className="apuracao-alertas">
     <summary>Alertas do monitoramento · {alertas.length}</summary>
