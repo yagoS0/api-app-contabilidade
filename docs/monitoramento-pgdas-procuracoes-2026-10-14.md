@@ -36,3 +36,12 @@ Validação local concluída: 454 testes de regressão SERPRO/fechamento, 34 tes
 Preparação sobre main atual (PR 187), preservando revisão visual posterior. A rota existente de sincronização aceita somenteDocumentos=true: consulta procuração e escopo, recupera declaração/recibo e atualiza a circular oficial, sem emitir DAS, alterar pagamento, gerar lançamentos ou marcar mês sem faturamento. Importação comum e fechamento mantêm os efeitos anteriores. A trava de mês fechado continua vigente. Essa opção é usada na recuperação assistida em produção; não ativa outras rotinas.
 
 Levantamento inicial somente leitura em 14/10/2026: competência 09/2026, 26 empresas do Simples com extrato habilitado, duas com documentação completa. A recuperação considera apenas empresas habilitadas e meses abertos; as duas completas são reutilizadas.
+
+
+## Continuação: marcador e conciliação na tela
+
+Consultas mostra a última verificação de procuração, validade e filtros Ativas, Regularizar, Revalidar e Não verificadas. Informação vencida, mais antiga que 24 horas ou vinculada a outro contribuinte/procurador não aparece como autorização atual. O marcador é evidência salva; o serviço continua validando a autorização antes da conciliação.
+
+Testar procuração atualiza a linha com o retorno oficial, incluindo ausência confirmada. Filtrar limpa a seleção, e Rodar usa somente empresas visíveis. Conciliar PGDAS-D — somente documentos usa a rota protegida com somenteDocumentos=true; mantém a importação de extrato antiga para quem precisa de seus efeitos contábeis. Retorno incompleto não aparece como conciliação concluída. Se consulta de procuração e conciliação forem selecionadas juntas, a procuração é verificada primeiro.
+
+Validação: 25 testes de interface/contrato, compilação web e sintaxe da API aprovados. Inspeção em 1440 e 390 pixels sem transbordamento da página. Nenhuma consulta fiscal de teste.
