@@ -17,7 +17,6 @@ import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFu
 import { RotinasPage } from "./features/fiscal/rotinas/pages/renderRotinasPage";
 import { LaboratorioEmpresa } from "./features/planejamento/components/LaboratorioEmpresa";
 import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamentoPage";
-import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { SessionBoundary } from "./features/auth/login/SessionBoundary";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
@@ -308,6 +307,8 @@ function AppInterno({ session, feedback }) {
     );
   }
 
+  if (/^\/guides\/upload\/?$/.test(location.pathname)) return <Navigate to="/companies" replace />;
+
   // Links antigos abrem a lista integrada à agenda.
   if (session.page === "obrigacoes") {
     const context = calendarioNavigation.contexto;
@@ -408,22 +409,6 @@ function AppInterno({ session, feedback }) {
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onRunPaymentConfirmation={() => api.runSerproPaymentConfirmation({})}
         onBack={() => session.goBack()}
-        message={feedback.message}
-        error={feedback.error}
-      />
-    );
-  }
-
-  if (session.page === "guideUpload") {
-    return (
-      <GuideUploadPage
-        onBack={() => session.goBack()}
-        onUpload={companiesWorkspace.handleGuideUpload}
-        uploading={companiesWorkspace.uploadingGuides}
-        uploadResults={companiesWorkspace.uploadResults}
-        unidentifiedGuides={companiesWorkspace.unidentifiedGuides}
-        loadingUnidentifiedGuides={companiesWorkspace.loadingUnidentifiedGuides}
-        onRefreshUnidentified={companiesWorkspace.loadUnidentifiedGuides}
         message={feedback.message}
         error={feedback.error}
       />
@@ -636,7 +621,6 @@ function AppInterno({ session, feedback }) {
       companies={companiesWorkspace.companiesState.companies}
       loadingCompanies={companiesWorkspace.companiesState.loadingCompanies}
       onCreateCompany={() => session.setPage("createCompany")}
-      onOpenGuideUpload={() => session.setPage("guideUpload")}
       onOpenGuideSettings={() => session.setPage("guideSettings")}
       onOpenChartGlobal={() => session.setPage("chartOfAccountsGlobal")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}

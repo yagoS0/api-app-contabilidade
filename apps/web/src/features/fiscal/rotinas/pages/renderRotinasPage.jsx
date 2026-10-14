@@ -1,8 +1,15 @@
+import "./rotinas.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
+
+function mensagemRotinas(erro, alternativa) {
+ const mensagens = { forbidden_admin_or_contador_only: 'Rotinas exige acesso de administrador ou contador do escritório.', unauthorized: 'Entre novamente para continuar.', forbidden: 'Seu acesso não permite consultar ou alterar estas rotinas.' };
+ if (erro?.message && !mensagens[erro.message]) return erro.message;
+ return mensagens[erro?.reason || erro?.error || erro?.message] || alternativa;
+}
 
 const ESTADOS_CONSULTA_PAGAMENTO = {
   paid: "Pagamento confirmado via SERPRO", open: "Pagamento não localizado",
@@ -25,7 +32,7 @@ const ESTADOS_CONSULTA_PAGAMENTO = {
 
 const DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => {
   const day = String(index + 1);
-  const label = index >= 28 ? `Dia ${day} (fim de mês)` : `Dia ${day}`;
+  const label = `Dia ${day}`;
   return { value: day, label };
 });
 
@@ -36,7 +43,7 @@ const ROTINA_HINT = {
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
   pagamento: "Confirma pagamentos de DAS, INSS e parcelas acompanhadas",
-  conferencia: "Confere as NFS-e contra o ADN nacional no dia 1 — antes do fechamento",
+  conferencia: "Confere as NFS-e contra o ADN nacional antes do fechamento",
 };
 
 function pad2(value) {
@@ -81,7 +88,7 @@ export function RotinasPage({
       setExecutionStatus(out?.executions || []);
       setEmpresas(Array.isArray(out?.empresas) ? out.empresas : []);
     } catch (err) {
-      setNotice({ type: "error", text: err?.message || "Falha ao carregar rotinas." });
+      setNotice({ type: "error", text: mensagemRotinas(err, "Falha ao carregar rotinas.") });
     } finally {
       setLoading(false);
     }
@@ -148,7 +155,7 @@ export function RotinasPage({
       onRefreshWorkerStatus?.();
       setNotice({ type: "ok", text: "Rotinas salvas." });
     } catch (err) {
-      setNotice({ type: "error", text: err?.message || "Falha ao salvar rotinas." });
+      setNotice({ type: "error", text: mensagemRotinas(err, "Falha ao salvar rotinas.") });
     } finally {
       setSaving(false);
     }
@@ -167,34 +174,44 @@ export function RotinasPage({
     return out;
   }, [rotinas, empresas]);
 
-  const th = { padding: "8px 6px", fontSize: "0.75rem", color: "#A7B0C0", fontWeight: 700, textAlign: "center" };
+  const th = { padding: "8px 6px", fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600, textAlign: "center" };
   const td = { padding: "6px", textAlign: "center" };
 
   return (
     <PageShell
       title="Rotinas"
-      subtitle="O que cada empresa captura automaticamente, e quando."
+
       onBack={onBack}
     >
-      <AppShell className="serpro-settings-shell">
+      <AppShell className="serpro-settings-shell rotinas-page">
         <div className="serpro-settings-page">
+            {notice && (
+              <div role={notice.type === "error" ? "alert" : "status"} style={{
+                margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
+                background: notice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
+                border: `1px solid ${notice.type === "error" ? "var(--danger)" : "var(--success)"}`,
+                color: notice.type === "error" ? "var(--danger)" : "var(--success)",
+              }}>
+                {notice.text}
+              </div>
+            )}
+          <fieldset className="rotinas-configuracao" disabled={saving}>
           {/* ── Agenda: um dia/hora por rotina, valendo pras empresas marcadas ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
-              <h1 className="serpro-settings-card__title">Agenda</h1>
+              <h2 className="serpro-settings-card__title">Agenda</h2>
               <p className="serpro-settings-card__description">
                 Horário de Brasília. Consultas apenas na agenda salva, sem novas tentativas automáticas. Se o mês não tiver o dia escolhido, a rotina não será executada naquele mês.
-                Se o dia não existir no mês, usamos o último dia disponível.
               </p>
             </div>
 
             {loading ? (
-              <p style={{ color: "#A7B0C0", margin: 0 }}>Carregando…</p>
+              <p role="status" style={{ color: "var(--text-muted)", margin: 0 }}>Carregando…</p>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", minWidth: 620 }}>
+                <table className="rotinas-agenda" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                   <thead>
-                    <tr style={{ background: "#21222C" }}>
+                    <tr style={{ background: "var(--bg-subtle)" }}>
                       <th style={{ ...th, textAlign: "left" }}>Rotina</th>
                       <th style={th}>Ligada</th>
                       <th style={th}>Dia</th>
@@ -207,10 +224,10 @@ export function RotinasPage({
                       const cfg = agenda[r.key] || {};
                       const ligada = cfg.enabled !== false;
                       return (
-                        <tr key={r.key} style={{ borderTop: "1px solid #2b2d45", opacity: ligada ? 1 : 0.55 }}>
-                          <td style={{ padding: "6px", color: "#F8F8F2" }}>
+                        <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: ligada ? 1 : 0.55 }}>
+                          <td style={{ padding: "6px", color: "var(--text)" }}>
                             <strong>{r.label}</strong>
-                            <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{ROTINA_HINT[r.key]}</div>
+                            <div style={{ fontSize: "0.8125rem", color: "var(--text-faint)" }}>{ROTINA_HINT[r.key]}</div>
                             {r.key === "pagamento" && (
                               <select aria-label="Frequência da consulta de pagamentos" disabled={!ligada}
                                 value={cfg.frequency || "MONTHLY"}
@@ -235,7 +252,7 @@ export function RotinasPage({
                               disabled={!ligada || cfg.frequency === "DAILY"}
                               aria-label={`Dia de ${r.label}`}
                               onChange={(e) => setAgendaCampo(r.key, "day", Number(e.target.value))}
-                              style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
+                              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             >
                               {DAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
@@ -248,10 +265,10 @@ export function RotinasPage({
                               value={`${pad2(cfg.hour ?? 7)}:00`}
                               disabled={!ligada}
                               onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(23, Number(String(e.target.value || "07:00").split(":")[0]))))}
-                              style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
+                              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             />
                           </td>
-                          <td style={{ padding: "6px", color: "#A7B0C0", fontSize: "0.8rem" }}>
+                          <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
                             {contagem[r.key] || 0} de {empresas.length}
                           </td>
                         </tr>
@@ -273,21 +290,12 @@ export function RotinasPage({
               </p>
             </div>
 
-            {notice && (
-              <div style={{
-                margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
-                background: notice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
-                border: `1px solid ${notice.type === "error" ? "var(--danger)" : "var(--success)"}`,
-                color: notice.type === "error" ? "var(--danger)" : "var(--success)",
-              }}>
-                {notice.text}
-              </div>
-            )}
 
-            <div style={{ overflowX: "auto", border: "1px solid #2b2d45", borderRadius: 8 }}>
+
+            <div role="region" aria-label="Rotinas por empresa" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", minWidth: 820 }}>
                 <thead>
-                  <tr style={{ background: "#21222C" }}>
+                  <tr style={{ background: "var(--bg-subtle)" }}>
                     <th style={{ ...th, width: 36 }}>
                       <input
                         type="checkbox"
@@ -315,14 +323,14 @@ export function RotinasPage({
                             <button
                               type="button"
                               onClick={() => aplicarEmLote(r.key, true)}
-                              title={`Marcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              aria-label={`Marcar ${r.label} nas selecionadas`} title={`Marcar ${r.label} nas selecionadas`}
+                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.875rem", minWidth: 32, minHeight: 32, cursor: "pointer", padding: "0 4px" }}
                             >✓</button>
                             <button
                               type="button"
                               onClick={() => aplicarEmLote(r.key, false)}
-                              title={`Desmarcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              aria-label={`Desmarcar ${r.label} nas selecionadas`} title={`Desmarcar ${r.label} nas selecionadas`}
+                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.875rem", minWidth: 32, minHeight: 32, cursor: "pointer", padding: "0 4px" }}
                             >✕</button>
                           </div>
                         )}
@@ -334,23 +342,23 @@ export function RotinasPage({
                   {loading && (
                     <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
                   )}
-                  {!loading && empresas.length === 0 && (
+                  {!loading && notice?.type !== "error" && empresas.length === 0 && (
                     <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                   )}
                   {empresas.map((e) => {
                     const checked = selectedIds.has(e.companyId);
                     const suspensa = e.status === "SUSPENSA";
                     return (
-                      <tr key={e.companyId} style={{ borderTop: "1px solid #2b2d45", background: checked ? "rgba(139,233,253,0.06)" : "transparent", opacity: suspensa ? 0.5 : 1 }}>
+                      <tr key={e.companyId} style={{ borderTop: "1px solid var(--border)", background: checked ? "rgba(139,233,253,0.06)" : "transparent", opacity: suspensa ? 0.5 : 1 }}>
                         <td style={td}>
                           <input type="checkbox" checked={checked} onChange={() => toggleOne(e.companyId)} aria-label={`Selecionar ${e.razao}`} />
                         </td>
-                        <td style={{ padding: "6px", color: "#F8F8F2" }}>
+                        <td style={{ padding: "6px", color: "var(--text)" }}>
                           {e.razao}
-                          {suspensa && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "#FFB347" }}>suspensa</span>}
-                          <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{e.cnpj}</div>
+                          {suspensa && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "var(--state-warn)" }}>suspensa</span>}
+                          <div style={{ fontSize: "0.8125rem", color: "var(--text-faint)" }}>{e.cnpj}</div>
                         </td>
-                        <td style={{ padding: "6px", color: "#A7B0C0", fontSize: "0.8rem" }}>
+                        <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
                           {e.regime === "LUCRO_PRESUMIDO" ? "Presumido" : e.regime === "SIMPLES" ? "Simples" : "—"}
                         </td>
                         {rotinas.map((r) => (
@@ -372,26 +380,28 @@ export function RotinasPage({
             </div>
 
             <div className="serpro-settings-form__actions" style={{ marginTop: 16 }}>
-              <Button type="button" variant="primary" disabled={saving || loading} onClick={handleSave}>
-                {saving ? "Salvando..." : "Salvar rotinas"}
-              </Button>
               <Button type="button" variant="secondary" disabled={loading} onClick={load}>
                 Descartar
               </Button>
+              <Button type="button" variant="primary" disabled={saving || loading || !rotinas.length} onClick={handleSave}>
+                {saving ? "Salvando..." : "Salvar rotinas"}
+              </Button>
             </div>
           </section>
+
+          </fieldset>
 
           {/* ── Disparo manual + última execução ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
               <h2 className="serpro-settings-card__title">Rodar agora</h2>
               <p className="serpro-settings-card__description">
-                Executa fora da agenda, respeitando as mesmas marcações da tabela.
+                Executa fora da agenda usando a configuração salva. Consultas externas podem gerar custos.
               </p>
             </div>
 
             <div className="serpro-settings-form__actions">
-              <Button type="button" variant="secondary" disabled={runningCron} onClick={() => onRunCron && onRunCron({})}>
+              <Button type="button" variant="secondary" disabled={runningCron || !onRunCron} onClick={() => onRunCron && onRunCron({})}>
                 {runningCron ? "Rodando captura…" : "Rodar captura agora"}
               </Button>
               {onRunPaymentConfirmation && (

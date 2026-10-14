@@ -151,11 +151,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
   const [sendingSelectedPending, setSendingSelectedPending] = useState(false);
-  const [uploadResults, setUploadResults] = useState([]);
-  const [uploadingGuides, setUploadingGuides] = useState(false);
   const [uploadingCompanyGuide, setUploadingCompanyGuide] = useState(false);
-  const [unidentifiedGuides, setUnidentifiedGuides] = useState([]);
-  const [loadingUnidentifiedGuides, setLoadingUnidentifiedGuides] = useState(false);
   // Página "Envio de e-mails em lote"
   const [batchEmailReport, setBatchEmailReport] = useState(null);
   const [loadingBatchEmailReport, setLoadingBatchEmailReport] = useState(false);
@@ -656,22 +652,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
-  async function loadUnidentifiedGuides() {
-    setLoadingUnidentifiedGuides(true);
-    try {
-      const payload = await api.getUnidentifiedGuides({ page: 1, limit: 200 });
-      setUnidentifiedGuides(Array.isArray(payload?.data) ? payload.data : []);
-    } catch (err) {
-      feedback.setError(err?.message || "Falha ao carregar pendências de identificação.");
-      setUnidentifiedGuides([]);
-    } finally {
-      setLoadingUnidentifiedGuides(false);
-    }
-  }
-
   function handleToggleJob() {
     feedback.setMessage(
-      "A leitura de PDF é feita pelo serviço pdf-reader (PDF_READER_URL na API). Os PDFs das guias ficam gravados no banco de dados. Use Upload de guias."
+      "Para adicionar um PDF, abra a empresa e use o upload na aba Guias."
     );
   }
 
@@ -1009,41 +992,6 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     return executarEnvioGuias(items, { lote: true });
   }
 
-  async function handleGuideUpload(files) {
-    if (!Array.isArray(files) || !files.length) {
-      feedback.setError("Selecione pelo menos um PDF para enviar.");
-      return false;
-    }
-    setUploadingGuides(true);
-    feedback.clearFeedback();
-    try {
-      const payload = await api.uploadGuides(files);
-      const result = payload?.result || {};
-      setUploadResults(Array.isArray(result?.items) ? result.items : []);
-      const processed = Number(result?.processed || 0);
-      const errors = Number(result?.errors || 0);
-      const skipped = Number(result?.skipped || 0);
-      const sent = Number(result?.sent || 0);
-      const failed = Number(result?.failedToSend || 0);
-      // ⚠ Falava em "envio automático". O upload NÃO envia nada desde a Q55: a rota devolve
-      // `emailDispatch: { attempted:false, reason:"batch_email_only" }` — as guias nascem PENDING e
-      // esperam um clique. "Não pôde iniciar" sugeria que ele iniciaria mais tarde; não inicia.
-      const emailSuffix = sent > 0 || failed > 0
-        ? ` E-mails: ${sent} enviados, ${failed} falhas.`
-        : " Nenhum e-mail foi enviado: o envio é manual (use 'Envio de e-mails em lote').";
-      await loadUnidentifiedGuides();
-      feedback.setMessage(
-        `Upload concluído: ${processed} processadas, ${errors} com erro, ${skipped} ignoradas.${emailSuffix}`
-      );
-      return true;
-    } catch (err) {
-      feedback.setError(err?.message || "Falha ao enviar e processar guias.");
-      return false;
-    } finally {
-      setUploadingGuides(false);
-    }
-  }
-
   async function handleDeleteGuide(guideId) {
     const telaOrigem = telaAtual.current;
     const vigente = () => telaAtual.current === telaOrigem;
@@ -1167,8 +1115,6 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     setSerproWorkerStatus(null);
     setPendingGuides([]);
     setSelectedPendingGuideIds([]);
-    setUploadResults([]);
-    setUnidentifiedGuides([]);
   }
 
   useEffect(() => {
@@ -1203,8 +1149,6 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       loadSerproWorkerStatus();
     } else if (page === "pendingReport") {
       loadPendingGuidesReport();
-    } else if (page === "guideUpload") {
-      loadUnidentifiedGuides();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
@@ -1451,17 +1395,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     selectedPendingGuideIds,
     loadingPendingGuides,
     sendingSelectedPending,
-    uploadResults,
-    uploadingGuides,
-    unidentifiedGuides,
-    loadingUnidentifiedGuides,
     selectedCompany,
     loadCompanies,
     dashboardCompetencia,
     changeDashboardCompetencia,
     loadGuides,
     loadPendingGuidesReport,
-    loadUnidentifiedGuides,
     handleToggleJob,
     handleCreateCompany,
     handleUpdateCompany,
@@ -1484,7 +1423,6 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleLiberarGuias,
     liberarGuiasBusy,
     handleDeleteGuide,
-    handleGuideUpload,
     handleCompanyGuideUpload,
     handleIdentifyGuide,
     handleFetchGuidePdf,

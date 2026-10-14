@@ -1,7 +1,9 @@
+import "../../../fiscal/serpro/pages/consultas.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
+import { rotuloRegime } from "../../../../lib/vocabulario";
 import { lerFalhaDeCarga } from "../../../../lib/falhaDeCarga";
 
 // Q48: página top-level "Download de Notas" — seleciona período + filtros + empresas e baixa os XMLs
@@ -19,7 +21,7 @@ const PAPEL_OPTIONS = [
   { value: "DEST", label: "Recebidas" },
 ];
 const STATUS_META = {
-  processando: { label: "Processando…", color: "#8BE9FD" },
+  processando: { label: "Processando…", color: "var(--accent-cyan)" },
   concluido: { label: "Concluído", color: "var(--success)" },
   erro: { label: "Erro", color: "var(--danger)" },
   expirado: { label: "Expirado", color: "var(--text-muted)" },
@@ -180,46 +182,41 @@ export function NotasDownloadContent({ api, companies }) {
     : 0;
 
   return (
-    <div>
+    <div className="consultas-content">
       <section className="serpro-settings-card">
         <div className="serpro-settings-card__head">
-          <h1 className="serpro-settings-card__title">Baixar notas em lote</h1>
+          <h2 className="serpro-settings-card__title">Baixar notas em lote</h2>
+          <p className="serpro-settings-card__description">Gera um ZIP dos XMLs já salvos. Não busca notas novas.</p>
         </div>
 
             {/* Filtros */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 De
                 <input type="month" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} disabled={creating || running} />
               </label>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Até
                 <input type="month" value={dateTo} onChange={(e) => setDateTo(e.target.value)} disabled={creating || running} />
               </label>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Tipo
                 <select value={tipo} onChange={(e) => setTipo(e.target.value)} disabled={creating || running}
-                  style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "6px 8px", fontSize: "0.85rem" }}>
+                  style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "var(--text)", padding: "6px 8px", fontSize: "0.85rem" }}>
                   {TIPO_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Papel
                 <select value={papel} onChange={(e) => setPapel(e.target.value)} disabled={creating || running}
-                  style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "6px 8px", fontSize: "0.85rem" }}>
+                  style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "var(--text)", padding: "6px 8px", fontSize: "0.85rem" }}>
                   {PAPEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
-              <Button type="button" variant="primary" disabled={creating || running || !someSelected} onClick={iniciarDownload}>
-                {creating ? "Criando…" : "⬇ Baixar notas"}
-              </Button>
-              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>
-                {[...selectedIds].length} empresa(s) selecionada(s)
-              </span>
             </div>
 
             {notice && (
-              <div style={{
+              <div role={notice.type === "error" ? "alert" : "status"} style={{
                 margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
                 background: notice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
                 border: `1px solid ${notice.type === "error" ? "var(--danger)" : "var(--success)"}`,
@@ -231,9 +228,9 @@ export function NotasDownloadContent({ api, companies }) {
 
             {/* Progresso do job ativo */}
             {job && (
-              <div style={{ margin: "0 0 14px", padding: 12, borderRadius: 8, background: "#21222C", border: "1px solid #2b2d45" }}>
+              <div style={{ margin: "0 0 14px", padding: 12, borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: "0.85rem", color: STATUS_META[job.status]?.color || "#A7B0C0", fontWeight: 700 }}>
+                  <div style={{ fontSize: "0.85rem", color: STATUS_META[job.status]?.color || "var(--text-muted)", fontWeight: 600 }}>
                     {STATUS_META[job.status]?.label || job.status}
                     {running && ` — ${job.processadas || 0}/${job.totalEmpresas || 0} empresa(s), ${job.totalNotas || 0} nota(s)`}
                     {job.status === "concluido" && ` — ${job.totalNotas || 0} nota(s)${job.arquivoBytes ? `, ${fmtBytes(job.arquivoBytes)}` : ""}`}
@@ -246,7 +243,7 @@ export function NotasDownloadContent({ api, companies }) {
                 </div>
                 {running && (
                   <div style={{ marginTop: 8, height: 8, borderRadius: 4, background: "#1A1B26", overflow: "hidden" }}>
-                    <div style={{ width: `${progressoPct}%`, height: "100%", background: "#8BE9FD", transition: "width 0.4s ease" }} />
+                    <div style={{ width: `${progressoPct}%`, height: "100%", background: "var(--accent-cyan)", transition: "width 0.4s ease" }} />
                   </div>
                 )}
                 {job.status === "erro" && (
@@ -256,10 +253,10 @@ export function NotasDownloadContent({ api, companies }) {
             )}
 
             {/* Tabela de empresas */}
-            <div style={{ overflowX: "auto", border: "1px solid #2b2d45", borderRadius: 8 }}>
+            <div role="region" aria-label="Tabela de download de notas" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                 <thead>
-                  <tr style={{ background: "#21222C", textAlign: "left" }}>
+                  <tr style={{ background: "var(--bg-subtle)", textAlign: "left" }}>
                     <th style={{ padding: "8px 10px", width: 36 }}>
                       <input
                         type="checkbox"
@@ -281,20 +278,28 @@ export function NotasDownloadContent({ api, companies }) {
                   )}
                   {companyList.map((company) => {
                     const checked = selectedIds.has(company.companyId);
-                    const regime = company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario || "—";
+                    const regime = rotuloRegime(company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario) || "—";
                     return (
-                      <tr key={company.companyId} style={{ borderTop: "1px solid #2b2d45", background: checked ? "rgba(139,233,253,0.06)" : "transparent" }}>
+                      <tr key={company.companyId} style={{ borderTop: "1px solid var(--border)", background: checked ? "rgba(139,233,253,0.06)" : "transparent" }}>
                         <td style={{ padding: "8px 10px" }}>
                           <input type="checkbox" checked={checked} onChange={() => toggleOne(company.companyId)} disabled={creating || running} aria-label={`Selecionar ${company.razao}`} />
                         </td>
-                        <td style={{ padding: "8px 10px", color: "#F8F8F2" }}>{company.razao}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{company.cnpj}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{regime}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text)" }}>{company.razao}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{company.cnpj}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{regime}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 16 }}>
+              <Button type="button" variant="primary" disabled={creating || running || !someSelected} onClick={iniciarDownload}>
+                {creating ? "Criando…" : "⬇ Baixar notas"}
+              </Button>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>
+                {[...selectedIds].length} empresa(s) selecionada(s)
+              </span>
             </div>
           </section>
 
@@ -304,10 +309,10 @@ export function NotasDownloadContent({ api, companies }) {
               <h2 className="serpro-settings-card__title">Downloads recentes</h2>
               <p className="serpro-settings-card__description">Os ZIPs ficam disponíveis por 7 dias.</p>
             </div>
-            <div style={{ overflowX: "auto", border: "1px solid #2b2d45", borderRadius: 8 }}>
+            <div role="region" aria-label="Tabela de download de notas" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
-                  <tr style={{ background: "#21222C", textAlign: "left" }}>
+                  <tr style={{ background: "var(--bg-subtle)", textAlign: "left" }}>
                     <th style={{ padding: "8px 10px" }}>Criado em</th>
                     <th style={{ padding: "8px 10px" }}>Período</th>
                     <th style={{ padding: "8px 10px" }}>Filtros</th>
@@ -320,16 +325,16 @@ export function NotasDownloadContent({ api, companies }) {
                 <tbody>
                   {/* ⚠ "não carregou" × "não há" × "sem acesso" — três respostas, três linhas. */}
                   {carregandoRecentes && recentes.length === 0 && !falhaRecentes && (
-                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
+                    <tr><td role="status" colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
                   )}
                   {!carregandoRecentes && falhaRecentes && (
                     <tr>
                       <td colSpan={7} style={{ padding: 16, textAlign: "center" }}>
-                        <div style={{ color: falhaRecentes.semAcesso ? "#F8F8F2" : "var(--danger)", fontWeight: 700 }}>
+                        <div style={{ color: falhaRecentes.semAcesso ? "var(--text)" : "var(--danger)", fontWeight: 600 }}>
                           {falhaRecentes.titulo}
                         </div>
-                        <div style={{ color: "#A7B0C0", fontSize: "0.82rem", marginTop: 4 }}>{falhaRecentes.motivo}</div>
-                        <div style={{ color: "#A7B0C0", fontSize: "0.8rem", marginTop: 4 }}>
+                        <div style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginTop: 4 }}>{falhaRecentes.motivo}</div>
+                        <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
                           Pode haver ZIP pronto que esta lista não está mostrando — gerar de novo é refazer
                           trabalho já feito.
                         </div>
@@ -343,18 +348,18 @@ export function NotasDownloadContent({ api, companies }) {
                     <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhum download ainda.</td></tr>
                   )}
                   {recentes.map((j) => {
-                    const meta = STATUS_META[j.status] || { label: j.status, color: "#A7B0C0" };
+                    const meta = STATUS_META[j.status] || { label: j.status, color: "var(--text-muted)" };
                     const filtros = [
                       TIPO_OPTIONS.find((o) => o.value === (j.tipo || ""))?.label,
                       PAPEL_OPTIONS.find((o) => o.value === (j.papel || ""))?.label,
                     ].filter((x) => x && x !== "Todas").join(" · ") || "Todas";
                     return (
-                      <tr key={j.id} style={{ borderTop: "1px solid #2b2d45" }}>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{fmtDateTime(j.createdAt)}</td>
-                        <td style={{ padding: "8px 10px", color: "#F8F8F2" }}>{j.competenciaDe} → {j.competenciaAte}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{filtros}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{j.status === "processando" ? `${j.processadas}/${j.totalEmpresas}` : j.totalEmpresas}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{j.totalNotas}{j.arquivoBytes ? ` (${fmtBytes(j.arquivoBytes)})` : ""}</td>
+                      <tr key={j.id} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{fmtDateTime(j.createdAt)}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text)" }}>{j.competenciaDe} → {j.competenciaAte}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{filtros}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{j.status === "processando" ? `${j.processadas}/${j.totalEmpresas}` : j.totalEmpresas}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{j.totalNotas}{j.arquivoBytes ? ` (${fmtBytes(j.arquivoBytes)})` : ""}</td>
                         <td style={{ padding: "8px 10px", color: meta.color, fontWeight: 600 }} title={j.erroMensagem || ""}>{meta.label}</td>
                         <td style={{ padding: "8px 10px" }}>
                           {j.status === "concluido" && (

@@ -28,7 +28,6 @@ test('suporte mantém aviso humano mesmo sem mensagens não lidas', () => {
 
 test.each([
   ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas"],
-  ["/guides/upload", "Operação", "Guias não identificadas"],
   ["/download-notas", "Operação", "Consultas"],
   ["/onboardings/abc/editar", "Comercial", "Onboarding"],
   ["/whatsapp/comunicados", "Suporte", "Comunicados"],
@@ -132,4 +131,11 @@ test.each(["/companies", "/companies/new", "/apuracao"])("tela principal recolhe
 test.each(["/login", "/onboarding/publico", "/proposta/publica"])("não cria navegação nas rotas públicas: %s", (route) => {
   setup(route);
   expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
+});
+
+ test("Operação não oferece Guias não identificadas", () => {
+  setup();
+  if (screen.queryByRole("button", { name: "Navegar" })) fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
+  expect(screen.queryByRole("link", { name: "Guias não identificadas" })).not.toBeInTheDocument();
+  expect(document.querySelector('a[href="/guides/upload"]')).toBeNull();
 });

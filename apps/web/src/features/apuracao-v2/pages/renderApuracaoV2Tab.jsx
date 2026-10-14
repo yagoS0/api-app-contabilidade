@@ -385,7 +385,7 @@ export function ApuracaoV2Tab({
               tela inteira parecendo uma empresa sem faturamento. */}
           {!(Number.isFinite(baseCarga) && baseCarga > 0) && <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Receita ausente ou zero: percentual indisponível.</p>}
           {fechErro && !fechLoading && (
-            <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div role="alert" style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ flex: 1, minWidth: 240 }}>
                 ⚠ Os dados da apuração não puderam ser carregados: {fechErro}
                 <div style={{ color: PANEL.muted, marginTop: 2 }}>

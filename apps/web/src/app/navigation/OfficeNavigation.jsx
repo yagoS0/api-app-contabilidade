@@ -12,7 +12,6 @@ const OFFICE_AREAS = [
       { label: "Apuração", to: "/apuracao" },
       { label: "Consultas", to: "/funcoes-serpro", paths: ["/funcoes-serpro", "/download-notas"] },
       { label: "Rotinas", to: "/rotinas" },
-      { label: "Guias não identificadas", to: "/guides/upload" },
     ],
   },
   {

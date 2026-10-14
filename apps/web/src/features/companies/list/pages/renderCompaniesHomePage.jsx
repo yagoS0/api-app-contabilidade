@@ -73,7 +73,6 @@ export function CompaniesHomePage({
   companies,
   loadingCompanies,
   onCreateCompany,
-  onOpenGuideUpload,
   onOpenGuideSettings,
   onOpenChartGlobal,
   onRefreshCompanies,

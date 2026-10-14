@@ -1,3 +1,4 @@
+import "./consultas.css";
 import { useMemo, useState } from "react";
 import { rotuloRegime } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
@@ -188,7 +189,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
   function renderResultCell(companyId) {
     const r = results[companyId];
     if (!r || r.status === "idle") return <span style={{ color: "var(--text-faint)" }}>—</span>;
-    if (r.status === "running") return <span style={{ color: "#8BE9FD" }}>⏳ rodando…</span>;
+    if (r.status === "running") return <span style={{ color: "var(--accent-cyan)" }}>⏳ rodando…</span>;
     if (r.status === "ok") return <span style={{ color: "var(--success)", fontSize: "0.78rem" }} title={r.message || ""}>✓ {r.message || "ok"}</span>;
     return <span style={{ color: "var(--danger)", fontSize: "0.78rem" }} title={r.message || ""}>⚠ {r.message || "erro"}</span>;
   }
@@ -197,7 +198,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
   // escolhe UMA e troca o conteúdo; aqui marcam-se várias e nada muda de tela. Por isso continua
   // com contorno e tinta (o vocabulário de "marcado") em vez de virar `Tabs`.
   const chip = (active) => ({
-    display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 20,
+    display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", minHeight: 44, boxSizing: "border-box", borderRadius: 8,
     border: `1px solid ${active ? "var(--accent-purple)" : "var(--border)"}`,
     background: active ? "var(--accent-purple-surface)" : "transparent",
     color: active ? "var(--text)" : "var(--state-neutral)", fontSize: "0.82rem", fontWeight: 600,
@@ -207,10 +208,9 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
   return (
     <PageShell
       title="Consultas"
-      subtitle="Buscas SERPRO em lote, situação fiscal, consulta de notas no ADN/SEFAZ e download de XML por período."
       onBack={onBack}
     >
-      <AppShell className="serpro-settings-shell">
+      <AppShell className="serpro-settings-shell consultas-content">
         <div>
           {/* Mini-nav. ⚠ "Consultar notas" vem ANTES de "Download de notas" de propósito: consultar
               é o que traz nota nova do ADN/SEFAZ; baixar só empacota o que já está no banco. Na
@@ -239,14 +239,11 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
           ) : (
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
-              <h1 className="serpro-settings-card__title">Buscas SERPRO</h1>
-              <p className="serpro-settings-card__description">
-                1) marque as funções · 2) marque as empresas na tabela · 3) clique em <strong>Rodar</strong>.
-                As credenciais e o certificado ficam em <strong>Configuração SERPRO</strong>.
-              </p>
+              <h2 className="serpro-settings-card__title">Buscas SERPRO</h2>
+
             </div>
 
-            {!settingsReady && <div role="status">{settingsError || "Verificando configuração SERPRO…"}{settingsError && <Button onClick={onRetrySettings}>Tentar novamente</Button>}</div>}
+            {!settingsReady && <div role={settingsError ? "alert" : "status"}>{settingsError || "Verificando configuração SERPRO…"}{settingsError && <Button onClick={onRetrySettings}>Tentar novamente</Button>}</div>}
             {settingsReady && (!serproEnabled || !certReady) && (
               <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 6, background: "rgba(255,179,71,0.15)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem" }}>
                 {!serproEnabled && <div>⚠ Integração SERPRO desabilitada — habilite e salve em Configuração SERPRO.</div>}
@@ -257,11 +254,10 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
             {/* 1) Funções */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#A7B0C0", textTransform: "uppercase", letterSpacing: "0.04em" }}>Funções</span>
-                <button type="button" disabled={running} onClick={toggleAllOps}
-                  style={{ background: "none", border: "none", color: "#8BE9FD", fontSize: "0.78rem", cursor: running ? "default" : "pointer", padding: 0 }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-muted)",  letterSpacing: "0.04em" }}>Funções</span>
+                <Button variant="secondary" size="sm" type="button" disabled={running} onClick={toggleAllOps}>
                   {allOpsSelected ? "limpar" : "selecionar todas"}
-                </button>
+                </Button>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {OP_DEFS.map((o) => {
@@ -278,11 +274,11 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
 
             {/* 2) Intervalo (só quando alguma função usa competência) */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14, opacity: usaIntervalo ? 1 : 0.5 }}>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 De
                 <input type="month" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} disabled={running || !usaIntervalo} />
               </label>
-              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "#A7B0C0" }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Até
                 <input type="month" value={dateTo} onChange={(event) => setDateTo(event.target.value)} disabled={running || !usaIntervalo} />
               </label>
@@ -291,18 +287,8 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
               )}
             </div>
 
-            {/* 3) Rodar */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
-              <Button type="button" variant="primary" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
-                {running ? `Rodando… (${progress.done}/${progress.total})` : "▶ Rodar"}
-              </Button>
-              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
-                {selectedOps.size} função(ões) · {[...selectedIds].length} empresa(s) selecionada(s)
-              </span>
-            </div>
-
             {localNotice && (
-              <div style={{
+              <div role={localNotice.type === "error" ? "alert" : "status"} style={{
                 margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
                 background: localNotice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
                 border: `1px solid ${localNotice.type === "error" ? "var(--danger)" : "var(--success)"}`,
@@ -312,10 +298,10 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
               </div>
             )}
 
-            <div style={{ overflowX: "auto", border: "1px solid #2b2d45", borderRadius: 8 }}>
+            <div role="region" aria-label="Empresas para consulta" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                 <thead>
-                  <tr style={{ background: "#21222C", textAlign: "left" }}>
+                  <tr style={{ background: "var(--bg-subtle)", textAlign: "left" }}>
                     <th style={{ padding: "8px 10px", width: 36 }}>
                       <input
                         type="checkbox"
@@ -344,14 +330,14 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                     const regime = rotuloRegime(company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario) || "—";
                     const proc = company.serproStatus?.procurationStatus || company.serproStatus?.status || "—";
                     return (
-                      <tr key={company.companyId} style={{ borderTop: "1px solid #2b2d45", background: checked ? "rgba(189,147,249,0.06)" : "transparent" }}>
+                      <tr key={company.companyId} style={{ borderTop: "1px solid var(--border)", background: checked ? "rgba(189,147,249,0.06)" : "transparent" }}>
                         <td style={{ padding: "8px 10px" }}>
                           <input type="checkbox" checked={checked} onChange={() => toggleOne(company.companyId)} disabled={running} aria-label={`Selecionar ${company.razao}`} />
                         </td>
-                        <td style={{ padding: "8px 10px", color: "#F8F8F2" }}>{company.razao}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{company.cnpj}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{regime}</td>
-                        <td style={{ padding: "8px 10px", color: "#A7B0C0" }}>{proc}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text)" }}>{company.razao}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{company.cnpj}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{regime}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{proc}</td>
                         <td style={{ padding: "8px 10px" }}>{renderResultCell(company.companyId)}</td>
                       </tr>
                     );
@@ -359,6 +345,16 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                 </tbody>
               </table>
             </div>
+            {/* 3) Rodar */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 16, marginBottom: 14 }}>
+              <Button type="button" variant="primary" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
+                {running ? `Rodando… (${progress.done}/${progress.total})` : "Rodar"}
+              </Button>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                {selectedOps.size} função(ões) · {[...selectedIds].length} empresa(s) selecionada(s)
+              </span>
+            </div>
+
           </section>
           )}
 

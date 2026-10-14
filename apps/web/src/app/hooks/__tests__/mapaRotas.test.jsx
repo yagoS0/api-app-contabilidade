@@ -3,7 +3,7 @@ import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from '../../../feature
 
 const rotas = {
   '/login': 'login', '/companies': 'companies', '/companies/new': 'createCompany',
-  '/guides/upload': 'guideUpload', '/guides/pending': 'pendingReport', '/guides/batch-email': 'batchEmail',
+  '/guides/upload': 'companies', '/guides/pending': 'pendingReport', '/guides/batch-email': 'batchEmail',
   '/firm-settings/guides': 'guideSettings', '/firm-settings/chart': 'chartOfAccountsGlobal',
   '/apuracao': 'apuracao', '/rotinas': 'rotinas', '/laboratorio': 'laboratorio', '/planejamento': 'planejamento',
   '/obrigacoes': 'obrigacoes', '/suporte': 'whatsapp', '/whatsapp': 'whatsapp',
