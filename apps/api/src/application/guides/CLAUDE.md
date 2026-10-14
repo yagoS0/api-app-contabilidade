@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## Identificação dos envios por empresa — 14/10/2026
+
+Liberação pela página inicial e lote de WhatsApp mantêm ordem estável por empresa/tipo/competência/parcela/id. Cada empresa reinicia a sequência `Guia N de T` dos documentos selecionados; não é contador de entregas. O template de PDF/pagamento já aprovado recebe empresa, sequência e tipo na segunda variável. O PDF também identifica empresa, sequência, tipo e competência. Envios avulsos e recálculos identificam a empresa sem inventar tamanho de lote. Recálculo repete empresa/guia/competência no botão de confirmação, preservando o token vinculado à guia. Sem alteração das reservas, consentimento, recibos ou regras fiscais. Testes reais de apresentação usam DTOs em memória e o destinatário de teste autorizado: nunca cadastrar guias fictícias em empresas reais.
+
 ## Correção cadastral de competência — 13/10/2026 (desenvolvimento)
 
 CorrigirCompetenciaGuiaService tem prévia GET e POST autenticados por empresa/contador. A revisão assina guia, relações e destino; o POST repete as guardas em transação serializável e grava autoria/antes/depois em AppSetting. Preserva PDF/hash, valores, vencimento, estados e evidência original. Bloqueia meses fechados na origem/destino, outra guia do mesmo tipo no destino, pagamento, envio/liberação, parcelamento, lançamentos e TaxDocument vinculados. Não move vínculos contábeis, exclui duplicatas, dispara consultas nem envia mensagens. Sem migração. Testes corrigirCompetenciaGuia e corrigirCompetenciaGuiaRota cobrem regras e autorização.

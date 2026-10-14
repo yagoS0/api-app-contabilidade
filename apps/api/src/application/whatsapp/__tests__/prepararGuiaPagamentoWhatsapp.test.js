@@ -1,5 +1,5 @@
 import { prepararGuiaPagamentoWhatsapp } from '../PrepararGuiaPagamentoWhatsapp.js';
-const guide = { tipo: 'SIMPLES', competencia: '2026-09', valor: 10, linhaDigitavel: '8' + '0'.repeat(47), linhaDigitavelLidaEm: new Date() };
+const guide = { portalClient: { razao: 'EMPRESA A' }, tipo: 'SIMPLES', competencia: '2026-09', valor: 10, linhaDigitavel: '8' + '0'.repeat(47), linhaDigitavelLidaEm: new Date() };
 function cenario() {
   const args = { guide: { ...guide }, conteudoPdf: Buffer.from('PDF'), referencia: 'tentativa-1', conversa: { id: 'cv' }, conferir: jest.fn() };
   const deps = { client: { templateWhatsapp: { findUnique: jest.fn(async () => ({ nomeMeta: 'guia_documento_pagamento_v1', idioma: 'pt_BR', statusAprovacao: 'APROVADO', temDocumento: true })) } }, ler: jest.fn(), janela: jest.fn(async () => ({ situacao: 'ABERTA' })) };
@@ -7,6 +7,7 @@ function cenario() {
 }
 test('recálculo na janela usa mensagem conjunta e repete acesso antes da rede', async () => {
   const f = cenario(); const p = await f.run(); expect(p.template).toBeNull(); expect(p.linhaDigitavel).toBe(guide.linhaDigitavel);
+  expect(p.texto).toContain('EMPRESA A — SIMPLES'); expect(p.descricao).toContain('EMPRESA A');
   await p.antesDeEnviar(); expect(f.args.conferir).toHaveBeenCalledTimes(2);
   f.deps.janela.mockResolvedValue({ situacao: 'FECHADA' }); await expect(p.antesDeEnviar()).rejects.toMatchObject({ code: 'WHATSAPP_JANELA_FECHADA' });
 });

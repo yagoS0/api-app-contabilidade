@@ -757,8 +757,8 @@ export function variaveisDaGuia({ nomeContato, tipoGuia, competencia, valorForma
 }
 
 /** Nome do anexo que o cliente vê no WhatsApp. Mesma intenção do `guidePdfFilename` do e-mail. */
-export function nomeArquivoDaGuia({ tipoGuia, competencia }) {
-  const parte = (v) => String(v ?? "").trim().replace(/[\\/]+/g, "-");
-  const base = [parte(tipoGuia), parte(competencia)].filter(Boolean).join("-");
+export function nomeArquivoDaGuia({ empresa, tipoGuia, competencia, sequencia }) {
+  const parte = (v) => String(v ?? "").trim().replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-").replace(/\s+/g, "_").slice(0, 100);
+  const base = [parte(empresa), sequencia ? `${sequencia.indice}-de-${sequencia.total}` : '', parte(tipoGuia), parte(competencia)].filter(Boolean).join("-");
   return `${base || "guia"}.pdf`;
 }

@@ -207,7 +207,7 @@ describe("o que o cliente lê", () => {
     expect(fetchMeta).toHaveBeenCalledTimes(2);
     const payload = JSON.parse(fetchMeta.mock.calls[1][1].body);
     expect(payload.template.components.find(c => c.type === "body").parameters.map(c => c.text))
-      .toEqual(["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "a conferir no PDF anexo"]);
+      .toEqual(["Maria", "LENTE LTDA — Simples Nacional", "Julho/2026", "1.243,80", "a conferir no PDF anexo"]);
     expect(prisma.envioGuia.create).toHaveBeenCalledWith({ data: expect.objectContaining({ canal: "EMAIL", status: "enviado" }) });
     expect(guia.vencimento).toBe(vencimento);
   });
@@ -293,6 +293,19 @@ describe("opt-in é exigência para MANDAR", () => {
 // ── O envio individual ──────────────────────────────────────────────────────────────────────────
 
 describe("o envio de uma guia", () => {
+  it("a identificação do lote chega à mensagem, ao PDF e ao pagamento", async () => {
+    cenarioLimpo();
+    const cliente = clienteFalso();
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, sequencia: { indice: 2, total: 3 }, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
+    expect(r.enviada).toBe(true);
+    expect(cliente.enviarGuia.mock.calls[0][0]).toMatchObject({
+      nomeArquivo: 'LENTE_LTDA-2-de-3-Simples_Nacional-2026-07.pdf',
+      variaveis: ['Maria', 'LENTE LTDA — Guia 2 de 3 — Simples Nacional', 'Julho/2026', '1.243,80', '20/08/2026'],
+    });
+    const { prepararGuiaPagamentoWhatsapp } = jest.requireMock('../PrepararGuiaPagamentoWhatsapp.js');
+    expect(prepararGuiaPagamentoWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ identificacao: 'LENTE LTDA — Guia 2 de 3 — Simples Nacional' }));
+  });
+
   it("caminho feliz: sobe o PDF, manda o template e grava o wamid no ENVIO", async () => {
     cenarioLimpo();
     const cliente = clienteFalso({ wamid: "wamid.ABC" });
@@ -303,7 +316,7 @@ describe("o envio de uma guia", () => {
       telefone: "5521999998888",
       template: 'guia_documento_pagamento_v1',
       // Primeiro nome · tipo · competência por extenso · valor · vencimento — a ORDEM do esqueleto.
-      variaveis: ["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "20/08/2026"],
+      variaveis: ["Maria", "LENTE LTDA — Simples Nacional", "Julho/2026", "1.243,80", "20/08/2026"],
     }));
     expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "enviado", providerMessageId: "wamid.ABC" }),
