@@ -269,7 +269,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       const result = await api.runSerproCron(input);
       setSerproCronRunResult(result || null);
-      feedback.setMessage("Execução manual do cron SERPRO concluída.");
+      feedback.setMessage("Retorno da captura recebido. Confira os resultados.");
       // atualiza o card "última execução" automaticamente
       await loadSerproWorkerStatus();
       return result;
