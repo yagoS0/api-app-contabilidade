@@ -1241,13 +1241,16 @@ export function createRealApi() {
     },
     // O extrato do Simples (declaração/recibo do PGDAS-D). Mesmo padrão do SITFIS: o `<a href>`
     // não carrega o token, então o PDF vem como blob autenticado.
-    async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao") {
+    async getPgdasHistorico(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/historico`);
+    },
+    async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao", versao = null) {
       const baseUrl = getApiBaseUrl();
       const headers = {};
       const tok = accessToken || readStoredToken();
       if (tok) headers.Authorization = `Bearer ${tok}`;
       const res = await fetch(
-        `${baseUrl}/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/pdf?tipo=${encodeURIComponent(tipo)}`,
+        `${baseUrl}/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/${versao ? `historico/${encodeURIComponent(versao)}/` : ""}pdf?tipo=${encodeURIComponent(tipo)}`,
         { method: "GET", headers },
       );
       if (!res.ok) {

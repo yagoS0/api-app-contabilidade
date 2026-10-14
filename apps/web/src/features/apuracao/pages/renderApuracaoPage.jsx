@@ -155,7 +155,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                       {it.entregaPgdas && (() => {
                         const entrega = estadoEntregaPgdas({ ...it.entregaPgdas, estadoApuracao: it.estado, numeroDeclaracaoPortal: it.numeroDeclaracao });
                         return <div title={entrega.detalhe} style={{ marginTop: 4, fontSize: "0.72rem", maxWidth: 230, color: CORES_TOM[entrega.tom].cor }}>
-                          {entrega.chave === "capturada_da_rfb" ? "Entrega confirmada na Receita" : entrega.rotulo}
+                          {entrega.chave === "capturada_da_rfb" ? (it.numeroDeclaracao ? "Entrega confirmada na Receita" : "Entrega na Receita · sem transmissão registrada aqui") : entrega.rotulo}
                         </div>;
                       })()}
                     </td>
