@@ -88,13 +88,12 @@ export function SugestaoModal({
                       {leitura.rotulo}
                     </div>
                     <div style={{ fontSize: "0.9rem" }}>{p.resumo}</div>
-                    {leitura.explicacao && (
-                      <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4 }}>{leitura.explicacao}</div>
-                    )}
-                    {p.competencia && (
-                      <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4 }}>
-                        {p.competencia} · {fmtDate(p.createdAt)}
-                      </div>
+                    {(leitura.explicacao || p.competencia) && (
+                      <details style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4 }}>
+                        <summary style={{ cursor: "pointer", minHeight: 44, alignContent: "center" }}>Detalhes da pendência</summary>
+                        {leitura.explicacao && <p style={{ margin: "0 0 8px" }}>{leitura.explicacao}</p>}
+                        {p.competencia && <div>{p.competencia} · {fmtDate(p.createdAt)}</div>}
+                      </details>
                     )}
                   </div>
                   {p.tipo === "ITEM_SEM_REGRA" && (

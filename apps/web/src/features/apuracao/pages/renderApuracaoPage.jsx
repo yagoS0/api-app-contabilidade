@@ -10,6 +10,7 @@ import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { BatchProgressModal } from "../components/BatchProgressModal";
+import "./apuracao-lista.css";
 
 const ESTADO_BADGE = {
   aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
@@ -53,46 +54,47 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
   return (
     <PageShell
       title="Apuração"
-      subtitle="Selecione as empresas fechadas e apure em lote. O fechamento é feito dentro de cada empresa (aba Apuração)."
+      subtitle="Apuração em lote das empresas fechadas."
       onBack={onBack}
     >
       <AppShell>
-      <section className="panel" style={{ padding: 16 }}>
+      <section className="panel apuracao-lista" style={{ padding: 16 }}>
         {/* Filtros */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 14 }}>
+        <div className="apuracao-lista-filtros">
           <label style={{ display: "flex", alignItems: "center", gap: 6, color: PANEL.muted, fontSize: "0.85rem" }}>
             Competência:
             <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
               style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px" }} />
           </label>
-          <input type="text" placeholder="Filtrar por nome ou CNPJ" value={search}
+          <label className="apuracao-lista-busca">Empresa
+          <input type="search" placeholder="Nome ou CNPJ" value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", flex: 1, minWidth: 220 }} />
-          <Button variant="secondary" onClick={reload} disabled={loading}>{loading ? "..." : "Atualizar"}</Button>
+            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px" }} /></label>
+          <Button variant="secondary" onClick={reload} disabled={loading}>{loading ? "Atualizando…" : "Atualizar"}</Button>
         </div>
 
         {/* Barra de ações em lote */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, padding: 10, background: PANEL.field, borderRadius: 8 }}>
-          <button onClick={selectAllFechadas} disabled={!listaPronta || submitting || fechadasCount === 0}
-            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+        <div className="apuracao-lista-acoes">
+          <Button variant="secondary" onClick={selectAllFechadas} disabled={!listaPronta || submitting || fechadasCount === 0}>
             {selected.size === fechadasCount && fechadasCount > 0 ? "Desmarcar todas" : "Selecionar fechadas"}
-          </button>
+          </Button>
           <span style={{ color: PANEL.muted, fontSize: "0.82rem" }}>
-            {selected.size} selecionada(s) · {fechadasCount} fechada(s)
+            {selected.size} selecionada(s)
           </span>
           <Button onClick={apurarEmLote} disabled={!listaPronta || submitting || selected.size === 0} style={{ marginLeft: "auto" }}>
-            {submitting ? "Iniciando lote…" : `📤 Apurar em lote (${selected.size})`}
+            {submitting ? "Iniciando lote…" : `Apurar em lote (${selected.size})`}
           </Button>
         </div>
 
         {/* Resumo — Q19: só nº de empresas e empresas fechadas */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
-          <Box label="Empresas" value={items.length} accent={PANEL.text} />
-          <Box label="Empresas fechadas" value={fechadasCount} accent="var(--state-ok)" />
+        <div className="apuracao-lista-resumo">
+          {listaPronta && <span>{items.length} empresas · {fechadasCount} fechadas</span>}
+          <details><summary>Como preparar o lote</summary><p>Feche a competência na aba Apuração de cada empresa. Só empresas fechadas podem ser selecionadas.</p></details>
         </div>
+        {loading && <p role="status">Carregando empresas…</p>}
 
         {error && (
-          <div style={{ padding: 12, marginBottom: 12, background: "var(--danger-surface)", border: "1px solid var(--danger)", borderRadius: 6, color: "var(--danger)" }}>{error}</div>
+          <div role="alert" style={{ padding: 12, marginBottom: 12, background: "var(--danger-surface)", border: "1px solid var(--danger)", borderRadius: 6, color: "var(--danger)" }}>{error}</div>
         )}
 
         {/* Q44: feedback das ações (apurar em lote / fechar) — antes os notify* eram no-op invisível */}
@@ -115,6 +117,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     onChange={selectAllFechadas}
                     disabled={!listaPronta || submitting || fechadasCount === 0}
                     title={fechadasCount === 0 ? "Nenhuma empresa fechada para selecionar" : "Selecionar todas as empresas fechadas"}
+                    aria-label="Selecionar todas as empresas fechadas"
                     style={{ cursor: fechadasCount === 0 ? "not-allowed" : "pointer" }}
                   />
                 </th>
@@ -134,20 +137,21 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                   <tr key={it.portalClientId} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
                     <td style={td}>
                       <input type="checkbox" disabled={!listaPronta || submitting || !isFechada}
+                        aria-label={`Selecionar ${it.razao}`}
                         checked={selected.has(it.portalClientId)}
                         onChange={() => toggleSelect(it.portalClientId)}
                         title={isFechada ? "" : "Só empresas fechadas entram no lote"} />
                     </td>
                     <td style={td}>
-                      <a onClick={() => onOpenCompanyNotas?.(it.portalClientId)} style={{ color: PANEL.accent, cursor: "pointer", fontWeight: 500 }}>{it.razao}</a>
-                      <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>{it.cnpj}</div>
+                      <button type="button" className="apuracao-lista-empresa" onClick={() => onOpenCompanyNotas?.(it.portalClientId)}>{it.razao}</button>
+                      <div style={{ fontSize: 13, color: PANEL.muted, fontFamily: "monospace" }}>{it.cnpj}</div>
                     </td>
                     <td style={td}><EstadoBadge estado={it.estado} /></td>
                     <td style={{ ...td, textAlign: "right" }}>{it.totalNotas}</td>
-                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "var(--success)" }}>{fmtMoney(it.receitaEmitida)}</td>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(it.receitaEmitida)}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{it.rbt12 != null ? fmtMoney(it.rbt12) : "—"}</td>
                     <td style={{ ...td, textAlign: "right" }}>{it.fatorR != null ? `${(Number(it.fatorR) * 100).toFixed(2)}%` : "—"}</td>
-                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
                       {/* Transmitido → simulado → nosso motor. Os três chegam separados do
                           backend desde a separação das colunas; a preferência é a da força da
                           evidência, e o `title` diz qual dos três está na célula. */}
@@ -183,14 +187,5 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
       )}
       </AppShell>
     </PageShell>
-  );
-}
-
-function Box({ label, value, accent }) {
-  return (
-    <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 12 }}>
-      <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: accent }}>{value}</div>
-    </div>
   );
 }

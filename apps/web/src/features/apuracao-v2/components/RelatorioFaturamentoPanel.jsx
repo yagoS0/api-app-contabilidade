@@ -136,11 +136,11 @@ function BlocoGrupo({ grupo }) {
     <details style={{ ...caixa, padding: 12, borderColor: alerta ? "var(--state-warn)" : PANEL.border }}>
       <summary style={{ cursor: "pointer" }}>
         <strong style={{ fontSize: "0.88rem", color: corTitulo }}>{grupo.rotulo}</strong>
-        <span style={{ marginLeft: 12, fontFamily: "monospace", fontWeight: 700 }}>{fmtMoney(grupo.total?.valorContabil)}</span>
+        <span style={{ marginLeft: 12, fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(grupo.total?.valorContabil)}</span>
         <span style={{ marginLeft: 12, color: PANEL.muted }}>{grupo.total?.itens} item(ns) · Ver notas</span>
       </summary>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.74rem", color: PANEL.muted }}>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.875rem", color: PANEL.muted }}>
         <span>Segregação (item 6.5): <CelulaDimensao leitura={seg} /></span>
         <span>Qualificações (item 6.6.1): <CelulaDimensao leitura={qual} /></span>
         {grupo.linhaAtividade?.rfb ? (
@@ -206,13 +206,13 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null, temOfici
         </details>
       ) : null}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 10 }}>
         {/* A estimativa só ocupa um cartão quando há valor; zero calculado é válido. */}
         {proc.nosso.disponivel && <div style={{ padding: 10, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
           <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
             {proc.nosso.rotulo}
           </div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 700, fontFamily: "monospace", color: PANEL.text }}>
+          <div style={{ fontSize: "1.1rem", fontWeight: 600, fontFamily: "monospace", color: PANEL.text }}>
             {fmtMoney(proc.nosso.valor)}
           </div>
         </div>}
@@ -222,11 +222,11 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null, temOfici
           <div style={{ fontSize: "0.68rem", color: proc.oficial.ambiguo ? "var(--state-warn)" : PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
             {proc.oficial.rotulo}
           </div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 700, fontFamily: "monospace", color: proc.oficial.disponivel ? PANEL.text : PANEL.muted }}>
+          <div style={{ fontSize: "1.1rem", fontWeight: 600, fontFamily: "monospace", color: proc.oficial.disponivel ? PANEL.text : PANEL.muted }}>
             {proc.oficial.disponivel ? fmtMoney(proc.oficial.valor) : "—"}
           </div>
           {proc.oficial.aviso ? (
-            <div style={{ fontSize: "0.72rem", color: "var(--state-warn)", marginTop: 4 }}>⚠ {proc.oficial.aviso}</div>
+            <div style={{ fontSize: "0.875rem", color: "var(--state-warn)", marginTop: 4 }}>⚠ {proc.oficial.aviso}</div>
           ) : null}
         </div>
 
@@ -236,13 +236,13 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null, temOfici
             <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Diferença (portal − Receita)
             </div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 700, fontFamily: "monospace" }}>{fmtMoney(proc.diferenca)}</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 600, fontFamily: "monospace" }}>{fmtMoney(proc.diferenca)}</div>
           </div>
         ) : null}
       </div>
 
       {preApurado?.ok === true ? (
-        <div style={{ fontSize: "0.72rem", color: PANEL.muted }}>
+        <div style={{ fontSize: "0.875rem", color: PANEL.muted }}>
           {preApurado.rbt12 != null ? <>RBT12 usado: <strong>{fmtMoney(preApurado.rbt12)}</strong>. </> : null}
           O cálculo do portal é conferência: ele não foi transmitido, não foi gravado na apuração e
           não substitui o que a Receita responde no PGDAS-D.
@@ -315,13 +315,13 @@ export function RelatorioFaturamentoPanel({
     <div data-print-hide style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <strong style={{ fontSize: "0.9rem" }}>Relatório de faturamento</strong>
       {relatorio ? (
-        <span style={{ fontSize: "0.74rem", color: PANEL.muted }}>
+        <span style={{ fontSize: "0.875rem", color: PANEL.muted }}>
           foto gerada em {fmtDataHora(relatorio.geradoEm)}
         </span>
       ) : null}
       <div style={{ flex: 1 }} />
       {onGerar ? (
-        <Button
+        <Button variant="secondary"
           onClick={onGerar}
           disabled={gerando || loading}
           title={gerando ? "Gerando o relatório…" : (loading ? "Carregando o relatório salvo…" : "")}
@@ -331,7 +331,7 @@ export function RelatorioFaturamentoPanel({
       ) : null}
       {relatorio && imprimivel ? (
         <Button variant="secondary" onClick={() => setImprimindo(true)} disabled={imprimindo}>
-          🖨 Imprimir
+          Imprimir
         </Button>
       ) : null}
     </div>
@@ -356,6 +356,7 @@ export function RelatorioFaturamentoPanel({
   }
 
   const emp = dados.empresa || {};
+  const totaisIguais = dados.totalMes?.valorContabil != null && dados.totalMes.valorContabil === dados.totalConsolidado?.valorContabil;
 
   return (
     <div
@@ -398,7 +399,7 @@ export function RelatorioFaturamentoPanel({
           "oficial (SERPRO)".
         </p>
         {(dados.limitacoes || []).map((l) => (
-          <p key={l.codigo} style={{ margin: "0 0 3px", fontSize: "0.74rem" }}>
+          <p key={l.codigo} style={{ margin: "0 0 3px", fontSize: "0.875rem" }}>
             <strong>⚠ {l.titulo}.</strong> {l.efeito}
           </p>
         ))}
@@ -407,14 +408,15 @@ export function RelatorioFaturamentoPanel({
 
       {/* Cabeçalho de tela */}
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <div style={{ fontSize: "1rem", fontWeight: 700 }}>{dados.titulo}</div>
+        <details data-print-hide><summary style={{ cursor: "pointer", fontSize: "0.875rem", color: PANEL.muted }}>Identificação do relatório</summary>
+        <div style={{ fontSize: "1rem", fontWeight: 600 }}>{dados.titulo}</div>
         <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
           {dados.subtitulo} · {emp.razaoSocial} · CNPJ {emp.cnpj}
         </div>
         <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
           Competência <strong style={{ color: PANEL.text }}>{dados.competenciaExtenso}</strong> ·
           {" "}gerado em {fmtDataHora(relatorio.geradoEm)}
-        </div>
+        </div></details>
       </div>
 
       {/* ⚠ OS AVISOS VÊM ANTES DO TOTAL. O grupo não classificado fica por último na lista de
@@ -473,16 +475,16 @@ export function RelatorioFaturamentoPanel({
           <strong style={{ fontFamily: "monospace" }}>{fmtMoney(dados.totalMes?.valorContabil)}</strong>
           <span style={{ color: PANEL.muted }}> ({dados.totalMes?.itens} linhas)</span>
         </span>
-        <span style={{ fontSize: "0.85rem" }} title="O período deste relatório é sempre UMA competência, então o consolidado é igual ao total do mês.">
+        {(!totaisIguais || imprimivel) && <span {...(totaisIguais ? { "data-print-only": true } : {})} style={{ fontSize: "0.85rem", ...(totaisIguais ? { display: "none" } : {}) }} title="O período deste relatório é sempre UMA competência, então o consolidado é igual ao total do mês.">
           Total consolidado:{" "}
           <strong style={{ fontFamily: "monospace" }}>{fmtMoney(dados.totalConsolidado?.valorContabil)}</strong>
-        </span>
+        </span>}
       </div>
 
       {/* Quadro-resumo por tipo de operação — o rodapé do modelo. */}
       {!compacto && (dados.resumoPorTipoOperacao || []).length > 0 && (
-        <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          <strong style={{ fontSize: "0.88rem" }}>Resumo por tipo de operação</strong>
+        <details style={{ ...caixa, padding: 12 }}>
+          <summary style={{ cursor: "pointer", fontSize: "0.875rem", fontWeight: 500 }}>Resumo por tipo de operação</summary>
           <div data-print-tabela style={{ overflowX: "auto", maxWidth: "100%" }}>
             <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse", fontSize: "0.78rem" }}>
               <thead>
@@ -507,19 +509,19 @@ export function RelatorioFaturamentoPanel({
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: `2px solid ${PANEL.border}` }}>
-                  <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Total do mês</td>
-                  <td style={{ ...tdNum, fontWeight: 700 }}>{dados.totalMes?.itens}</td>
-                  <td style={{ ...tdNum, fontWeight: 700 }}>{fmtMoney(dados.totalMes?.valorContabil)}</td>
+                  <td style={{ ...td, fontWeight: 600 }} colSpan={3}>Total do mês</td>
+                  <td style={{ ...tdNum, fontWeight: 600 }}>{dados.totalMes?.itens}</td>
+                  <td style={{ ...tdNum, fontWeight: 600 }}>{fmtMoney(dados.totalMes?.valorContabil)}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
-        </div>
+        </details>
       )}
 
       {/* Conferência do próprio relatório — aparece sempre, inclusive quando fecha. */}
       {dados.conferencia ? (
-        <div style={{ fontSize: "0.74rem", color: dados.conferencia.confere ? PANEL.muted : "var(--state-danger)" }}>
+        <div style={{ fontSize: "0.875rem", color: dados.conferencia.confere ? PANEL.muted : "var(--state-danger)" }}>
           {dados.conferencia.confere ? "✓ " : "⚠ "}
           Conferência: total do relatório {fmtMoney(dados.conferencia.totalRelatorio)} ·
           faturamento da competência {fmtMoney(dados.conferencia.faturamentoEmit)} ·
@@ -545,12 +547,12 @@ export function RelatorioFaturamentoPanel({
               QUANTAS ressalvas existem antes de alguém decidir não abri-las. */}
           <summary>O que este relatório NÃO afirma ({dados.limitacoes.length})</summary>
           {dados.limitacoes.map((l) => (
-            <div key={l.codigo} style={{ fontSize: "0.72rem", color: PANEL.muted }}>
+            <div key={l.codigo} style={{ fontSize: "0.875rem", color: PANEL.muted }}>
               <strong>⚠ {l.titulo}.</strong> {l.efeito}
             </div>
           ))}
           {dados.vocabulario?.fonte ? (
-            <div style={{ fontSize: "0.72rem", color: PANEL.muted, marginTop: 4 }}>
+            <div style={{ fontSize: "0.875rem", color: PANEL.muted, marginTop: 4 }}>
               Vocabulário oficial: {dados.vocabulario.fonte}.{" "}
               {dados.vocabulario.avisoCodigos}
             </div>

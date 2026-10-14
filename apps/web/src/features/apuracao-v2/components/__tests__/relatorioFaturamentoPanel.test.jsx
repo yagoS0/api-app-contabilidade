@@ -300,3 +300,12 @@ describe("RelatorioFaturamentoPanel — impressão", () => {
     expect(screen.queryByRole("button", { name: /Imprimir/ })).not.toBeInTheDocument();
   });
 });
+
+test("consolidado igual ao mês fica reservado à impressão; valores diferentes continuam visíveis", () => {
+  const { rerender } = render(<RelatorioFaturamentoPanel relatorio={relatorioFixture()} />);
+  const consolidado = screen.getByText(/Total consolidado:/);
+  expect(consolidado).not.toBeVisible();
+  expect(consolidado).toHaveAttribute("data-print-only");
+  rerender(<RelatorioFaturamentoPanel relatorio={relatorioFixture({ totalConsolidado: { valorContabil: 2000 } })} />);
+  expect(screen.getByText(/Total consolidado:/)).toBeVisible();
+});

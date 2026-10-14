@@ -126,13 +126,13 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
   };
   const inputS = {
     background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4,
-    color: PANEL.text, padding: "6px 8px", fontSize: "0.8rem", width: "100%",
+    color: PANEL.text, padding: "6px 8px", fontSize: "0.8rem", width: "100%", minWidth: 0, boxSizing: "border-box",
   };
 
   return (
     <div style={caixa}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <strong style={{ fontSize: "0.9rem", color: PANEL.text }}>Empresa zerada nesta competência</strong>
+        <strong style={{ fontSize: "0.9rem", fontWeight: 600, color: PANEL.text }}>Empresa zerada nesta competência</strong>
         {marcada && (
           <span style={{ fontSize: "0.78rem", color: ZERADA.cor }}>
             marcada em {fmtDate(dados?.semFaturamentoEm)}
@@ -143,10 +143,8 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
 
       {!marcada && (
         <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-          Afirma que o mês não teve receita e resolve a competência <strong>aqui dentro</strong>:
-          ela sai da fila de pendências e o DAS deixa de ser cobrado no painel. Na confirmação você
-          diz também <strong>se a declaração zerada já foi entregue fora do portal</strong> — é o
-          registro do que já foi feito à mão.
+          Registra ausência de receita: retira a competência da fila de pendências e a cobrança de DAS do painel.
+          Informe na confirmação se a declaração já foi entregue fora do portal.
           {" "}<strong style={{ color: "var(--state-danger)" }}>Nada aqui transmite o PGDAS-D.</strong>
         </div>
       )}
@@ -178,7 +176,7 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
           ) : (
           <>
           <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-            E a declaração zerada desta competência — o que já aconteceu com ela?
+            Situação da declaração zerada
           </div>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.8rem", cursor: "pointer" }}>
             <input type="radio" name="entrega-zerada" checked={entregueFora === true} onChange={() => setEntregueFora(true)} />
@@ -197,14 +195,14 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
           </label>
           {entregueFora === true && (
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.76rem", color: PANEL.muted }}>
-              Recibo / observação (opcional — nada é preenchido por padrão)
+              Recibo / observação (opcional)
               <input value={observacao} onChange={(e) => setObservacao(e.target.value)}
                 placeholder="ex.: entregue no PGDAS-D em 12/07, recibo nº …" style={inputS} />
             </label>
           )}
           </>
           )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <Button variant="secondary" size="sm" onClick={() => setConfirmando(null)} disabled={salvando}>Cancelar</Button>
             {/* ⚠ Desabilitado NOMEIA o motivo: nenhuma das duas respostas nasce escolhida, porque
                 cada default seria uma afirmação nossa sobre um ato fiscal do contador. */}
@@ -230,7 +228,7 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
             <input value={observacao} onChange={(e) => setObservacao(e.target.value)}
               placeholder="ex.: entregue no PGDAS-D em 12/07, recibo nº …" style={inputS} />
           </label>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <Button variant="secondary" size="sm" onClick={() => setConfirmando(null)} disabled={salvando}>Cancelar</Button>
             <Button size="sm" disabled={salvando} onClick={() => chamar(
               () => api.registrarEntregaPgdasExterna?.(portalClientId, competencia, {
@@ -251,7 +249,7 @@ export function EmpresaZeradaPanel({ api, feedback, dados, portalClientId, compe
             em <strong>{competencia}</strong>? A competência volta à fila de pendências e o DAS
             volta a ser cobrado no painel.
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <Button variant="secondary" size="sm" onClick={() => setConfirmando(null)} disabled={salvando}>Cancelar</Button>
             <Button variant="danger" size="sm" disabled={salvando} onClick={() => chamar(
               () => api.setSemFaturamento?.(portalClientId, competencia, false),

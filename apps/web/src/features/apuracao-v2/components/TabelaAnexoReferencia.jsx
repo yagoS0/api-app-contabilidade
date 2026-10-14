@@ -250,15 +250,11 @@ export function TabelaAnexoReferencia({ atividades, rbt12, folha12m }) {
 
       {/* ⚠⚠ A frase que separa referência de apuração. Sem ela, uma tabela ao lado do DAS se lê como
           a memória de cálculo do imposto — e quem calcula o DAS é a Receita, não esta tela. */}
-      <Legenda>
-        Serve para conferir em que faixa a empresa está e como a alíquota se reparte. <strong>Não é a
-        apuração</strong> — o valor do DAS é o que a Receita calcula.
-      </Legenda>
+      <details><summary style={{ cursor: "pointer", color: PANEL.muted, fontSize: "0.875rem" }}>Referência de anexo e faixa · Não é a apuração</summary><Legenda>Serve para conferir a faixa da empresa e a repartição da alíquota. O valor do DAS é o que a Receita calcula.</Legenda></details>
 
       {situacao === SITUACAO_ANEXO.SEM_ATIVIDADE ? (
         <Legenda>
-          Nenhuma atividade escolhida nesta competência, então não há anexo a mostrar. As atividades
-          ficam no perfil fiscal da empresa.
+          Nenhuma atividade escolhida nesta competência. Confira o Perfil fiscal da empresa.
         </Legenda>
       ) : null}
 
