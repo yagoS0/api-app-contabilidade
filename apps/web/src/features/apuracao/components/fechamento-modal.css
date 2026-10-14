@@ -1,0 +1,30 @@
+.fechamento-conteudo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.55; }
+.fechamento-conteudo strong { font-weight: 600; }
+.fechamento-resumo { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; padding: 18px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.fechamento-resumo dt { color: var(--text-muted); font-size: .8125rem; }
+.fechamento-resumo dd { margin: 4px 0 0; color: var(--text); font-size: 1rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.fechamento-resumo small { display: block; margin-top: 4px; color: var(--text-muted); font-size: .8125rem; }
+.fechamento-secao { min-width: 0; padding-top: 20px; border-top: 1px solid var(--border); }
+.fechamento-atividades { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; font-size: .875rem; }
+.fechamento-atividades th { font-weight: 500; }
+.fechamento-atividades td { vertical-align: top; }
+.fechamento-atividades td:first-child { overflow-wrap: anywhere; }
+.fechamento-atividades input, .fechamento-atividades select { max-width: 100%; }
+.fechamento-acoes { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid var(--border); }
+.fechamento-confirmacao input { max-width: 240px; }
+@media (max-width: 600px) {
+  .fechamento-resumo { gap: 16px; padding: 14px; }
+  .fechamento-resumo dd { font-size: .9375rem; }
+  .fechamento-atividades, .fechamento-atividades tbody { display: block; }
+  .fechamento-atividades thead { display: none; }
+  .fechamento-atividades tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px 0; }
+  .fechamento-atividades td { display: grid; gap: 5px; text-align: left !important; min-width: 0; }
+  .fechamento-atividades td::before { content: attr(data-label); color: var(--text-muted); font-size: .8125rem; }
+  .fechamento-atividades td:first-child { grid-column: 1 / -1; }
+  .fechamento-atividades td:nth-child(2) { grid-column: 1 / -1; }
+  .fechamento-atividades td:last-child { justify-self: start; }
+  .fechamento-atividades td:last-child::before { display: none; }
+  .fechamento-atividades input { width: 100% !important; min-height: 44px !important; }
+  .fechamento-atividades select { min-height: 44px !important; }
+  .fechamento-acoes .btn { flex: 1 1 100%; min-height: 44px; margin-right: 0 !important; }
+}

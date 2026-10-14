@@ -18,9 +18,9 @@ const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", c
 const pct = (v) => (v == null ? "—" : `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`);
 
 const caixa = { padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface };
-const titulo = { fontSize: "0.9rem", fontWeight: 700, color: C.texto, marginBottom: 8 };
+const titulo = { fontSize: "0.9rem", fontWeight: 600, color: C.texto, marginBottom: 8 };
 
-export function PainelProLabore({ simulacao }) {
+export function PainelProLabore({ simulacao, compacto = false }) {
   if (!simulacao) return null;
 
   // ⚠⚠ RECUSA COM O MESMO PESO DO NÚMERO — a regra do módulo. Um painel que some quando não sabe
@@ -43,11 +43,11 @@ export function PainelProLabore({ simulacao }) {
   return (
     <div style={caixa}>
       <div style={titulo}>Pró-labore e o Fator R</div>
-      <div style={{ fontSize: "0.78rem", color: C.muted, marginBottom: 10, lineHeight: 1.45 }}>
+      {!compacto && <div style={{ fontSize: "0.78rem", color: C.muted, marginBottom: 10, lineHeight: 1.45 }}>
         O Fator R está em <strong style={{ color: C.texto }}>{pct(simulacao.fatorRAtual)}</strong> e precisa
         chegar a <strong style={{ color: C.texto }}>28%</strong> para a empresa ficar no Anexo{" "}
         {simulacao.anexoDestino}.
-      </div>
+      </div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
         <Bloco rotulo="Pró-labore mensal dos sócios hoje" valor={brl(simulacao.proLaboreHoje)} />
@@ -84,7 +84,7 @@ export function PainelProLabore({ simulacao }) {
           border: `1px solid ${compensa ? C.ok : C.alerta}44`,
           background: "#1A1B26",
         }}>
-          <div style={{ fontSize: "0.95rem", fontWeight: 700, color: compensa ? C.ok : C.alerta }}>
+          <div style={{ fontSize: "0.95rem", fontWeight: 600, color: compensa ? C.ok : C.alerta }}>
             {compensa
               ? `Compensa: sobra ${brl(saldoAnual)} no ano`
               : `Não compensa: custa ${brl(Math.abs(saldoAnual))} a mais no ano`}
@@ -97,9 +97,9 @@ export function PainelProLabore({ simulacao }) {
 
       {/* ⚠⚠ A PREMISSA QUE DECIDE O RESULTADO VAI IMPRESSA, não em rodapé recolhido: se ela não
           valer (Anexo IV), a conta inteira muda de sinal. */}
-      <ul style={{ margin: "10px 0 0", paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.5 }}>
+      {!compacto && <ul style={{ margin: "10px 0 0", paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.5 }}>
         {simulacao.premissas.map((p) => <li key={p}>{p}</li>)}
-      </ul>
+      </ul>}
       <div style={{ fontSize: "0.68rem", color: C.alerta, marginTop: 6, lineHeight: 1.5 }}>
         ⚠ Fora desta conta: {simulacao.naoConsiderado.join(" · ")}.
       </div>
@@ -113,7 +113,7 @@ function Bloco({ rotulo, valor, nota, destaque }) {
       <div style={{ fontSize: "0.66rem", color: C.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
         {rotulo}
       </div>
-      <div style={{ fontSize: "1rem", fontWeight: 700, color: destaque ? C.accent : C.texto, marginTop: 2 }}>
+      <div style={{ fontSize: "1rem", fontWeight: 600, color: destaque ? C.accent : C.texto, marginTop: 2 }}>
         {valor}
       </div>
       {nota ? <div style={{ fontSize: "0.66rem", color: C.muted, marginTop: 2 }}>{nota}</div> : null}

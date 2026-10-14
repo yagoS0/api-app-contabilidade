@@ -53,7 +53,7 @@ const botao = () => {
 const esperarCalculo = () =>
   waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
 
-it("preserva novos ajustes, acompanhamento e conclusão ao salvar e reabrir", async () => {
+it("preserva premissas e opção IBS/CBS ao salvar e reabrir", async () => {
   let salvo;
   const api = montar({
     salvarSimulacaoPlanejamento: jest.fn(async (_id, p) => { salvo = { id: "c1", geradoEm: "2026-09-15T12:00:00Z", ...p }; return { ok: true, simulacao: salvo }; }),
@@ -62,22 +62,16 @@ it("preserva novos ajustes, acompanhamento e conclusão ao salvar e reabrir", as
   await esperarCalculo();
   fireEvent.change(screen.getByLabelText("Nome do cenário (opcional)"), { target: { value: "Projeção revisada" } });
   fireEvent.click(screen.getByText("Folha, sócios e comparação com o regime atual"));
-  fireEvent.click(screen.getByText("Acompanhamento mensal · 2026"));
-  fireEvent.click(screen.getByText("Conclusão do contador e próxima revisão"));
+  fireEvent.click(screen.getByLabelText("Incluir IBS e CBS no estudo"));
   fireEvent.change(screen.getByLabelText(/Base anual da CPP/), { target: { value: "50000" } });
   fireEvent.change(screen.getByLabelText(/RAT\/FAP e terceiros no ano/), { target: { value: "0" } });
-  fireEvent.change(screen.getByLabelText("Plano Jan"), { target: { value: "10000" } });
-  fireEvent.change(screen.getByLabelText("Realizado Jan"), { target: { value: "12000" } });
-  fireEvent.change(screen.getByLabelText(/Conclusão, condições/), { target: { value: "Conferir receita trimestral antes de optar." } });
   fireEvent.click(screen.getByRole("button", { name: /^Salvar cenário$/ }));
   await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1));
-  expect(salvo.resultado.acompanhamentoMensal.desvio).toBe(2000);
-  expect(salvo.resultado.conclusao.texto).toMatch(/Conferir receita/);
+  expect(salvo.entradas.formularioCenario.ajustes.incluirIbsCbs).toBe(true);
   expect(salvo.entradas.formularioCenario.ajustes.nomeCenario).toBe("Projeção revisada");
-  fireEvent.change(screen.getByLabelText("Realizado Jan"), { target: { value: "1" } });
   fireEvent.click(screen.getByRole("button", { name: /^Abrir cenário$/ }));
   fireEvent.click(await screen.findByRole("button", { name: /Abrir 2026-08/ }));
-  expect(screen.getByLabelText("Realizado Jan")).toHaveValue(12000);
+  expect(screen.getByLabelText("Incluir IBS e CBS no estudo")).toBeChecked();
   expect(screen.getByLabelText(/Base anual da CPP/)).toHaveValue(50000);
   expect(screen.getByLabelText("Nome do cenário (opcional)")).toHaveValue("Projeção revisada");
   expect(screen.getByText(/^Cenário salvo$/)).toBeInTheDocument();
@@ -260,8 +254,7 @@ describe("⚠⚠⚠ A EMPRESA QUE CHEGA DEPOIS — defeito achado no navegador e
     await act(async () => { chegar(); });
     await waitFor(() => expect(cliente.getDadosPlanejamento).toHaveBeenCalledWith("e1"));
     expect(cliente.getFechamentosRelatorio).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Relatório tributário', { exact: true }));
-    await waitFor(() => expect(cliente.getFechamentosRelatorio).toHaveBeenCalledWith("e1"));
+    expect(screen.queryByText('Relatório tributário', { exact: true })).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Seções da análise' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Projeção financeira/ })).toBeNull();
     expect(cliente.getFechamentosRelatorio.mock.calls.every(([id]) => id === "e1")).toBe(true);

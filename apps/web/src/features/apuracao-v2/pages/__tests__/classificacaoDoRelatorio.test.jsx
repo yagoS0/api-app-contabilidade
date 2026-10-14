@@ -25,15 +25,17 @@ function montar() {
 
 it("relatório histórico abre a classificação e é regenerado após classificar a competência", async () => {
   const { api, panel } = montar();
-  await screen.findByText("Há receita sem classificação nesta competência");
+  await waitFor(() => expect(api.getRelatorioFaturamento).toHaveBeenCalled());
   expect(screen.queryByText(/botão de classificação/)).toBeNull();
-  fireEvent.click(screen.getAllByRole("button", { name: "Revisar classificação" })[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Classificar" }));
   const modal = within(screen.getByRole("dialog"));
   expect(modal.getByText("Classificação das notas — 2026-08")).toBeInTheDocument();
   fireEvent.click(modal.getByRole("button", { name: "Classificar competência" }));
   await waitFor(() => expect(api.gerarRelatorioFaturamento).toHaveBeenCalledWith("empresa-1", "2026-08"));
   expect(panel.classificarV2).toHaveBeenCalledWith({ competencia: "2026-08" });
   await waitFor(() => expect(screen.queryByText("Há receita sem classificação nesta competência")).toBeNull());
+  fireEvent.click(screen.getAllByRole("button", { name: "Fechar" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Relatório de faturamento" }));
   expect(screen.getByText("R$ 60,00")).toBeInTheDocument();
   expect(api.syncPgdasCircular).not.toHaveBeenCalled();
 });
@@ -42,8 +44,8 @@ it("classificação da competência anterior não regenera relatório após troc
   const { api, panel, rerender, tela } = montar();
   let resolver;
   panel.classificarV2.mockImplementation(() => new Promise(r => { resolver = r; }));
-  await screen.findByText("Há receita sem classificação nesta competência");
-  fireEvent.click(screen.getAllByRole("button", { name: "Revisar classificação" })[1]);
+  await waitFor(() => expect(api.getRelatorioFaturamento).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Classificar" }));
   fireEvent.click(screen.getByRole("button", { name: "Classificar competência" }));
   rerender(tela("2026-09"));
   await act(async () => resolver({}));

@@ -26,3 +26,16 @@ No backend, simulacaoSerpro usa envelope {raw, _portalCalculo, _portalTransmissa
 CAIXA é recusado antes da chamada fiscal (inclusive quando cadastrado e omitido no payload), pois o fluxo não tem suporte integral. Não converter silenciosamente em competência. Transmissão reutiliza as listas aceitas, inclusive vazias; não reconstrói RBT12.
 
 Falha após iniciar envio pode ter resultado incerto: mantém bloqueio sem retry. Botão “Conferir envio na Receita” só consulta. Declaração original comprovada recupera estado; índice vazio/inválido não autoriza reenvio, nem declaração antiga comprova uma retificadora. Retificadora incerta e processo interrompido em transmitindo exigem conferência/recuperação operacional com comprovante; não existe desbloqueio automático por tempo.
+
+## Organização solicitada — 14/10/2026
+
+Apuração começa com competência, estado, ações e os cinco indicadores no mesmo quadro. A tabela do anexo fica aberta; Classificar fica no cabeçalho da seção. Fator R e comparação ficam visíveis, nessa ordem; a barra mostra progresso até 28% sem transformar folha desconhecida em zero. O cenário Simples híbrido é explicitamente planejamento sem estimativa, dependente das premissas de IBS/CBS. Relatório de faturamento fica em diálogo aberto pela ação superior; PDFs e atualização explícita do extrato continuam no topo. Avisos fiscais, erro de leitura e estado de transmissão não são removidos para limpar a página. Após alteração no fechamento, reler snapshot mantém o DAS salvo no indicador com sua procedência.
+## Classificação selecionável — 14/10/2026
+
+Classificar permite selecionar o tipo/anexo por nota ou selecionar em lote as notas da competência carregada. Sugerir apenas preenche opções disponíveis: a aplicação exige seleção explícita e o botão Aplicar classificação selecionada. Não cria regras globais nem altera outras competências. Servidor verifica empresa, competência, nota emitida autorizada e itens, e recusa competência fechada/transmitida/confirmada ou envio incerto. Pendências restantes são contadas no mesmo escopo.
+
+Reclassificar preserva os números/foto anteriores, mas rotaciona a chave de reserva da apuração e invalida reutilização. A interface identifica DAS anterior, suspende carga efetiva e pede novo cálculo; não mostrar resultado antigo como atualizado. Concorrência coberta por teste de disputa de versão com mocks, sem alegar homologação transacional de banco real.
+
+## Correção de ordem e concisão — preferência posterior do usuário
+
+Ações imediatamente ao lado da competência, no mesmo flex, sem margin-left:auto nem grupo que empurre os botões à extrema direita. Estado/extrato dentro da identificação da competência; os cinco indicadores vêm logo abaixo, no mesmo quadro. Ordem estrita: quadro inicial → anexo com tabela sempre aberta e Classificar → Fator R com barra → comparativo. Não recolher tabela nem reintroduzir legendas explicativas, próxima faixa, repartição em chips ou referências expansíveis nesta tela. A variante compacta da tabela retira esses extras. Preservar somente estados fiscais, erros, ausência de dados e limitações de tributos que afetam os números, em textos curtos. Publicação permanece pausada por solicitação do usuário.

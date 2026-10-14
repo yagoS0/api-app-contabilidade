@@ -33,6 +33,7 @@ import { estadoDaClassificacao, kpiDasApurado } from "../lib/relatorioFaturament
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { Aviso } from "../../../components/ui/Aviso";
+import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 
 function competenciaAnterior() {
@@ -85,6 +86,7 @@ export function ApuracaoV2Tab({
 }) {
   // ⚠ Era `const [secao, setSecao] = useState("apuracao")` — o estado do terceiro nível de abas.
   // Sobrou só a pergunta que ele de fato respondia: a classificação está aberta ou não.
+  const [relatorioAberto, setRelatorioAberto] = useState(false);
   const [sugestaoAberta, setSugestaoAberta] = useState(false);
   const [resolvendo, setResolvendo] = useState(null);
   // ⚠ A COMPETÊNCIA É DA EMPRESA, não desta aba — vem do seletor do header.
@@ -210,7 +212,7 @@ export function ApuracaoV2Tab({
     carregarRelatorio();
   }, [carregarRelatorio]);
 
-  useEffect(() => { setFechando(null); }, [contexto]);
+  useEffect(() => { setFechando(null); setRelatorioAberto(false); }, [contexto]);
   const [conferindoEnvio, setConferindoEnvio] = useState(false);
   async function conferirEnvio() {
     if (conferindoEnvio) return;
@@ -289,14 +291,14 @@ export function ApuracaoV2Tab({
     } finally { if (contextoAtual.current === contexto) setSugLoading(false); }
   }
 
-  async function classificar() {
+  async function classificar(opcoes = {}) {
     setClassificando(true);
     try {
-      await panel.classificarV2({ competencia });
+      await panel.classificarV2({ competencia, ...opcoes });
       if (contextoAtual.current !== contexto) return;
       await Promise.all([carregarApuracao(), gerarRelatorio()]);
       if (contextoAtual.current === contexto && sugData) await sugerir();
-    } catch { /* o hook já exibe o erro via feedback */ }
+    } catch (err) { throw err; }
     finally { if (contextoAtual.current === contexto) setClassificando(false); }
   }
 
@@ -313,8 +315,13 @@ export function ApuracaoV2Tab({
   // O estado "procedência ambígua" continua existindo — para os snapshots gravados ANTES da
   // separação, cuja procedência não pôde ser provada pela própria linha.
   const das = kpiDasApurado(snap);
+  const classificacaoAlterada = String(snap?.idempotencyKey || '').startsWith('reclassificada:');
+  const calculoDesatualizado = classificacaoAlterada || Boolean(fechDados?.calculoSalvo && !fechDados?.calculoRecuperavel && fechDados?.calculoRecuperacaoMotivo);
+  const motivoCalculoDesatualizado = classificacaoAlterada
+    ? 'A classificação foi alterada. O DAS exibido pertence ao cálculo anterior; calcule novamente antes de fechar ou transmitir.'
+    : fechDados?.calculoRecuperacaoMotivo;
   const baseCarga = Number(fat.interno) + Number(fat.externo);
-  const cargaCalculada = das.valor != null && Number.isFinite(baseCarga) && baseCarga > 0
+  const cargaCalculada = !calculoDesatualizado && das.valor != null && Number.isFinite(baseCarga) && baseCarga > 0
     ? `${(Number(das.valor) / baseCarga * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—";
   const extDados = extrato?.dados || extrato?.circular || null;
   const classificacao = estadoDaClassificacao({ pendencias, relatorio });
@@ -326,35 +333,23 @@ export function ApuracaoV2Tab({
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto" }}>
       {/* ── APURAÇÃO — a página inteira, sem o terceiro nível de abas ──── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+          <section aria-label="Resumo e ações da competência" style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
                 só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
                 e sumir com ele deixaria os botões "Calcular / Fechar" sem período à vista. */}
             <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
             <span style={{ display: "grid", gap: 3, fontSize: "0.875rem", color: PANEL.muted }}>
               Competência
-              <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
+              <strong style={{ fontSize: "0.95rem", color: PANEL.text }}>{competencia}</strong>
+              <span style={{ fontSize: "0.8rem" }}><EstadoBadge estado={estado} />{extDados ? " · Extrato salvo" : ""}</span>
             </span>
-            <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: 12, borderTop: `1px solid ${PANEL.border}` }}>
-            {/* ⚠ A PENDÊNCIA É NOMEADA, NÃO BLOQUEIA — e isso é decisão, não descuido.
-                O caso CARO já é bloqueado onde importa: `motivoCalcularBloqueado`
-                (`apuracao/components/FechamentoModal.jsx`) impede a chamada PAGA ao SERPRO quando
-                as atividades somam zero, com o motivo no `title`. Desabilitar aqui deixaria a
-                empresa com pendência crônica sem saída pela tela — o botão é a única porta para o
-                modal, que é onde se resolve. Então o que faltava não era a trava: era o contador
-                saber, ANTES de clicar, que há pendência aberta e quantas. */}
-            {/* ⚠⚠ ELE RENDERIZA SEMPRE, E ISSO É O QUE SALVA A LEITURA DE TRÊS ESTADOS.
-                Ele era condicionado à existência de pendência, e funcionava porque a seção Sugestão estava ali ao
-                lado para mostrar o resto. Com a seção virando modal, este botão passou a ser a
-                ÚNICA porta: mantido o `> 0`, a resposta *"nenhuma pendência aberta — e isso ainda
-                NÃO quer dizer classificada"* (`estadoDaClassificacao`, o caso de 16.153/16.153
-                itens sem `tipoReceita` em produção) ficaria sem nenhum lugar na tela. Lista vazia
-                se leria como trabalho concluído, que é exatamente o que aquela regra existe para
-                impedir.
-                ⚠ Rótulo e tom saem da MESMA leitura que o modal usa — não há segundo texto. */}
-            <Button variant="secondary" onClick={() => setSugestaoAberta(true)} aria-description={classificacao.rotulo} title={classificacao.detalhe}>Revisar classificação</Button>
+
+
+              {!extDados && <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading || fechLoading}>{extratoLoading ? "Buscando…" : "Buscar extrato"}</Button>}
+              <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
+              {extrato?.files?.declaracaoFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>}
+              {extrato?.files?.reciboFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>}
+              <Button variant="secondary" onClick={() => setRelatorioAberto(true)}>Relatório de faturamento</Button>
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
@@ -365,8 +360,7 @@ export function ApuracaoV2Tab({
               </Button>
             )}
             </div>
-            <p style={{ margin: 0, fontSize: "0.875rem", color: PANEL.muted }}>{classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}</p>
-          </div>
+
 
           {/* Faturamento + valor apurado (a prévia completa — CNAEs/alíquota/DAS — sai no modal ao Calcular). */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10 }}>
@@ -376,7 +370,7 @@ export function ApuracaoV2Tab({
               title={`${das.label} dividido pelo faturamento interno e externo desta competência. Não indica pagamento.${baseCarga > 0 ? "" : " Receita ausente ou zero: percentual indisponível."}`} />
             <Kpi label="Receita 12 meses" title={`${RBT12_NOME} (RBT12)`} value={`${fmtMoney(fechDados?.rbt12)}`} />
             <Kpi
-              label={das.label}
+              label={calculoDesatualizado ? "DAS salvo · revisar base" : das.label}
               title={das.titulo}
               value={das.valor != null ? `${fmtMoney(das.valor)}` : "—"}
               // Procedência ambígua não ganha a cor de categoria do Simples: âmbar diz que há uma
@@ -384,14 +378,12 @@ export function ApuracaoV2Tab({
               cor={das.procedencia === "ambigua" ? "var(--state-warn)" : "var(--accent-cyan)"}
             />
           </div>
+          {calculoDesatualizado && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: "var(--state-warn)" }}>{motivoCalculoDesatualizado}</p>}
+          </section>
 
           {/* ⚠ ERRO ≠ AUSÊNCIA. Sem esta caixa, uma falha de backend deixava os KPIs em "—" com a
               tela inteira parecendo uma empresa sem faturamento. */}
           {!(Number.isFinite(baseCarga) && baseCarga > 0) && <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Receita ausente ou zero: percentual indisponível.</p>}
-          <details style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}><summary style={{ cursor: "pointer" }}>Como a carga efetiva é calculada · não indica imposto pago</summary><p>
-            Carga calculada em {competencia}: {das.label} ÷ receita interna e externa
-            {Number.isFinite(baseCarga) && baseCarga > 0 ? ` (${fmtMoney(baseCarga)}).` : ". Receita ausente ou zero: percentual indisponível."} Não indica imposto pago.
-          </p></details>
           {fechErro && !fechLoading && (
             <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ flex: 1, minWidth: 240 }}>
@@ -465,59 +457,19 @@ export function ApuracaoV2Tab({
               faixa esta empresa está?") se lê junto do RBT12 e do DAS, que estão nos KPIs acima.
               A recuperação validada fornece atividades, RBT12 e folha da mesma simulação.
               Ausência de folha continua nula; não converter lista vazia em zero. */}
-          <TabelaAnexoReferencia {...baseTabelaAnexo(fechDados, snap)} />
+          <TabelaAnexoReferencia compacta {...baseTabelaAnexo(fechDados, snap)} onClassificar={() => setSugestaoAberta(true)} classificacao={classificacao} />
           <ComparacaoTributaria key={contexto} competencia={competencia}
             {...baseTabelaAnexo(fechDados, snap)}
             origem={fechDados?.rbt12Origem} receitaMensal={fat.interno}
             receitaExterna={fat.externo} />
 
-          {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
-              aqui. Ao abrir a aba mostra a foto salva (GET); gerar é um clique. Nem o GET nem o
-              POST chamam ADN/SEFAZ/SERPRO, e o POST não persiste `ApuracaoSnapshot`.
-              `imprimivel={!fechando}`: só pode existir UM `data-print-area` por página, e com o
-              modal aberto quem imprime é o de dentro dele. */}
-          <RelatorioFaturamentoPanel
-            apuracaoAtual={snap}
-            extratoSalvo={extrato}
-            relatorio={relatorio}
-            loading={relatorioLoading}
-            gerando={relatorioGerando}
-            erro={relatorioErro}
-            onGerar={gerarRelatorio}
-            onAbrirClassificacao={() => setSugestaoAberta(true)}
-            imprimivel={!fechando}
-          />
-
-          {/* Extrato do Simples — o que realmente foi pra Receita (conferência). */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "0.9rem" }}>Extrato do Simples Nacional</strong>
-              {!extDados && <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading || fechLoading}>
-                {extratoLoading ? "Buscando…" : "Buscar extrato"}
-              </Button>}
-              {extDados && <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>Extrato salvo{extrato?.consultadoEm ? ` · ${fmtDate(extrato.consultadoEm)}` : ""}</span>}
-              <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
-            </div>
-            {extDados && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10 }}>
-                <Kpi label="Receita bruta" value={`${fmtMoney(extDados.receitaBruta)}`} />
-                <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="var(--accent-cyan)" />
-                {/* ⚠ Estes dois botões existiam e NUNCA apareciam: liam `files.declaracaoUrl`, e o
-                    backend devolve `files.declaracaoFileId`. O campo errado é sempre `undefined`,
-                    então a condição nunca era verdadeira — botão escrito, nunca renderizado.
-                    E não dá para usar a URL mesmo quando ela existe: com o provider LOCAL ela é
-                    `file:///…`. Quem serve o arquivo é a rota `/pgdas/:competencia/pdf`, com o
-                    token no header — por isso blob, não `<a href>`. */}
-                {extrato?.files?.declaracaoFileId && (
-                  <Button type="button" variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>
-                )}
-                {extrato?.files?.reciboFileId && (
-                  <Button type="button" variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>
-                )}
-              </div>
-            )}
-          </div>
       </div>
+
+      {relatorioAberto && <Modal titulo={`Relatório de faturamento · ${competencia}`} tamanho="lg" aoFechar={() => setRelatorioAberto(false)}>
+        <RelatorioFaturamentoPanel apuracaoAtual={snap} extratoSalvo={extrato} relatorio={relatorio}
+          loading={relatorioLoading} gerando={relatorioGerando} erro={relatorioErro} onGerar={gerarRelatorio}
+          onAbrirClassificacao={() => { setRelatorioAberto(false); setSugestaoAberta(true); }} imprimivel={!fechando} />
+      </Modal>}
 
       {/* ⚠ A seção CADASTRO saiu daqui e virou a aba **Perfil fiscal**, do grupo Empresa
           (`renderPerfilFiscalTab.jsx`). Junto com ela foi consertado o default que imprimia

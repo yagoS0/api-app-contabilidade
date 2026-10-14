@@ -1,17 +1,5 @@
-// CLASSIFICAÇÃO DAS NOTAS POR ANEXO — pendências + sugestão, num MODAL.
-//
-// ⚠⚠ ERA UMA SEÇÃO DA ABA APURAÇÃO até 24/08/2026, e virou modal a pedido do dono ("muitas abas").
-// Ela era o terceiro item de um terceiro nível de navegação (grupo → sub-aba → seção), sem URL, e
-// só respondia a UMA pergunta: *"há nota sem classificar nesta competência?"*. Essa pergunta já
-// tinha um botão na barra de ações da Apuração — agora ele é a porta.
-//
-// ⚠ MODAL, E NÃO PAINEL REVELADO NA PRÓPRIA ABA: a seção Apuração é impressa (`data-print-area`),
-// e só pode existir UM por página. Um painel embutido entraria na impressão do relatório de
-// faturamento, que não fala de classificação.
-//
-// ⚠ NADA DE REGRA MUDOU AQUI. `estadoDaClassificacao` e `leituraDaPendencia` continuam sendo as
-// mesmas libs testadas; este arquivo só mudou o contêiner.
-
+import { useEffect, useState } from "react";
+import { TIPOS_CLASSIFICACAO } from "../lib/tiposClassificacao";
 import { PANEL, fmtDate } from "../../notas/components/notasStyles";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
@@ -32,19 +20,32 @@ export function SugestaoModal({
   onClose,
   SugestaoAnexoTabela,
 }) {
+  const [selecoes, setSelecoes] = useState({});
+  const [tipoLote, setTipoLote] = useState("");
+  const [erroAplicacao, setErroAplicacao] = useState("");
+  useEffect(() => { setSelecoes({}); setTipoLote(""); }, [competencia, sugData]);
+  const selecionadas = Object.entries(selecoes).filter(([, tipo]) => tipo);
+  async function aplicar() {
+    setErroAplicacao("");
+    try {
+      await classificar({ classificacoes: selecionadas.map(([notaId, tipoReceita]) => ({ notaId, tipoReceita })) });
+      setSelecoes({});
+    } catch (e) { setErroAplicacao(e?.message || "Não foi possível aplicar a seleção."); }
+  }
   return (
     <Modal
       titulo={`Classificação das notas — ${competencia}`}
       aoFechar={onClose}
       tamanho="lg"
-      rodape={<Button variant="secondary" onClick={onClose}>Fechar</Button>}
+      ocupado={classificando}
+      rodape={<Button variant="secondary" onClick={onClose} disabled={classificando}>Fechar</Button>}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Button variant="secondary" onClick={sugerir} disabled={sugLoading}>
+          <Button variant="secondary" onClick={sugerir} disabled={sugLoading || classificando}>
             {sugLoading ? "Carregando…" : "Sugerir"}
           </Button>
-          <Button onClick={classificar} disabled={classificando}>
+          <Button onClick={() => Promise.resolve(classificar()).catch(e => setErroAplicacao(e?.message || "Falha ao classificar."))} disabled={classificando}>
             {classificando ? "Classificando…" : "Classificar competência"}
           </Button>
         </div>
@@ -107,13 +108,29 @@ export function SugestaoModal({
           )}
         </div>
 
+        {erroAplicacao && <p role="alert">{erroAplicacao}</p>}
         {sugErro && (
           <div role="alert" style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)", fontSize: "0.85rem" }}>{sugErro}</div>
         )}
         {sugData && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Sugestão de anexo por nota</div>
-            <SugestaoAnexoTabela data={sugData} />
+            <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Escolha o anexo das notas desta competência. A seleção só é gravada ao aplicar; o cadastro da empresa e as declarações anteriores permanecem preservados. Atividades sujeitas ao fator R usam III ou V conforme a folha.</p>
+            {sugData.notas?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end" }}>
+              <label style={{ display: "grid", gap: 6, flex: "1 1 240px", minWidth: 0 }}>Anexo para as notas da competência
+                <select value={tipoLote} onChange={e => setTipoLote(e.target.value)} disabled={classificando} style={{ minHeight: 40, width: "100%", color: PANEL.text, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: 8 }}>
+                  <option value="">Escolha um tipo de receita</option>
+                  {TIPOS_CLASSIFICACAO.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <Button variant="secondary" disabled={!tipoLote || classificando} onClick={() => setSelecoes(Object.fromEntries(sugData.notas.filter(n => n.itens > 0).map(n => [n.notaId, tipoLote])))}>Selecionar para todas</Button>
+            </div>}
+            <SugestaoAnexoTabela data={sugData} selecoes={selecoes} onSelecionar={(id, tipo) => setSelecoes(s => ({ ...s, [id]: tipo }))} disabled={classificando} />
+            {selecionadas.length > 0 && <div style={{ display: "grid", gap: 10 }}>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: PANEL.muted }}>{selecionadas.length} nota(s) selecionada(s). Todos os itens dessas notas receberão o tipo escolhido. Recalcule o DAS depois de aplicar.</p>
+              <Button disabled={classificando} onClick={aplicar}>Aplicar classificação selecionada</Button>
+            </div>}
+
           </div>
         )}
       </div>

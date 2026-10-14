@@ -10,25 +10,11 @@ function montar(empresaDados = dados) {
   render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
   return api;
 }
-test("salva acompanhamento automático mesmo sem abrir a seção e preserva edição/apagamento", async () => {
-  const api = montar();
-  await waitFor(() => expect(screen.getByLabelText("Receita anual (R$)")).toHaveValue("1.200.000,00"));
-  fireEvent.click(screen.getByRole("button", { name: "Salvar cenário", exact: true }));
-  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
-  expect(api.salvarSimulacaoPlanejamento.mock.calls[0][1].resultado.acompanhamentoMensal.linhas[0].realizado).toBe(98765);
-  fireEvent.click(screen.getByText("Acompanhamento mensal · 2026"));
-  expect(screen.getByLabelText("Realizado Jan")).toHaveValue(98765);
-  expect(screen.getByLabelText("Folha Jan")).toHaveValue(1234);
-  expect(screen.queryByText(/Importar apurações/)).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Realizado Jan"), { target: { value: "" } });
-  fireEvent.change(screen.getByLabelText("ISS (%)"), { target: { value: "4" } });
-  expect(screen.getByLabelText("Realizado Jan")).toHaveValue(null);
-  fireEvent.click(screen.getByText("Confirmar folha contábil para este cenário"));
-  expect(screen.queryByText("Confirmar folha contábil para este cenário")).not.toBeInTheDocument();
-});
-test("histórico mensal continua acessível quando não há base para receita anual", async () => {
-  montar({ ...dados, campos: { ...dados.campos, receitaAnual: { valor: null, apurado: false } } });
-  fireEvent.click(await screen.findByText("Acompanhamento mensal · 2026"));
-  expect(screen.getByLabelText("Realizado Jan")).toHaveValue(98765);
-  expect(screen.getByLabelText("Plano Jan")).toHaveValue(null);
+test("histórico alimenta as premissas sem reintroduzir acompanhamento na página", async () => {
+ const api=montar();
+ await waitFor(() => expect(screen.getByLabelText("Receita anual (R$)")).toHaveValue("1.200.000,00"));
+ expect(screen.queryByText("Acompanhamento mensal · 2026")).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Salvar cenário",exact:true}));
+ await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
+ expect(api.salvarSimulacaoPlanejamento.mock.calls[0][1].entradas.receitaAnual).toBe(1200000);
 });

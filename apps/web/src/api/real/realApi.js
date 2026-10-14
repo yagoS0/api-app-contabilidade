@@ -2642,11 +2642,11 @@ export function createRealApi() {
         body: JSON.stringify(payload),
       });
     },
-    async classificarV2(companyId, { force = false, competencia } = {}) {
+    async classificarV2(companyId, { force = false, competencia, classificacoes } = {}) {
       const q = new URLSearchParams();
       if (force) q.set("force", "true");
       if (competencia) q.set("competencia", competencia);
-      return background.request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST" });
+      return background.request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST", ...(classificacoes !== undefined ? { body: JSON.stringify({ competencia, classificacoes }) } : {}) });
     },
     // Q14.3 — motor de apuração local
     async apurarV2(companyId, competencia, { folha12m } = {}) {
