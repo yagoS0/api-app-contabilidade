@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chaveDoInterlocutor } from "../lib/identidadeAtendimento";
+import { notificarLeituraConfirmada } from "../lib/leituraConfirmada";
 
 export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const feedbackRef = useRef(feedback);
@@ -209,11 +210,20 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     await recarregarTudo(id); return r;
   }, [acao, api, recarregarTudo]);
   const marcarLida = useCallback(async (id, mensagemId) => {
-    if (!mensagemId || typeof api?.marcarConversaWhatsappLida !== "function" || selecionada.current !== id || document.visibilityState === "hidden") return;
+    if (!contextoVigente() || !mensagemId || typeof api?.marcarConversaWhatsappLida !== "function" || selecionada.current !== id || document.visibilityState === "hidden") return;
     if (lidas.current.get(id) === mensagemId) return;
     lidas.current.set(id, mensagemId);
-    try { await api.marcarConversaWhatsappLida(id, mensagemId); }
-    catch (err) { lidas.current.delete(id); if (contextoVigente()) setErroFio(err?.message || "Não foi possível registrar a leitura."); }
+    try {
+      const resposta = await api.marcarConversaWhatsappLida(id, mensagemId);
+      if (!contextoVigente()) return;
+      if (resposta?.ok !== true) throw new Error("Não foi possível registrar a leitura.");
+      notificarLeituraConfirmada();
+      await polling.current.carregar(polling.current.filtro, true);
+    } catch (err) {
+      if (!contextoVigente()) return;
+      if (lidas.current.get(id) === mensagemId) lidas.current.delete(id);
+      setErroFio(err?.message || "Não foi possível registrar a leitura.");
+    }
   }, [api, contextoVigente]);
   const salvarNota = useCallback(async (id, body) => {
     const abertaInicio = selecionada.current;

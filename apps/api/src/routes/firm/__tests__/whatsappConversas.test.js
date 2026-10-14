@@ -22,7 +22,7 @@ let mockAtendimento = null;
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const prisma = {
-    encaminhamentoSuporte: { updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+    encaminhamentoSuporte: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
     rascunhoAtendimento: {
       create:jest.fn(async({data})=>{if(mockRascunhos.some(r=>r.userId===data.userId && r.chaveEscopo===data.chaveEscopo)) throw Object.assign(new Error('unique'),{code:'P2002'});const r={id:`d${mockRascunhos.length}`,...data};mockRascunhos.push(r);return{...r};}),
       findUnique:jest.fn(async({where:{userId_chaveEscopo:k}})=>{const r=mockRascunhos.find(r=>r.userId===k.userId && r.chaveEscopo===k.chaveEscopo);return r?{...r}:null;}),
@@ -1088,5 +1088,47 @@ describe('contingência comercial na devolução', () => {
     const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/devolver');
     expect(r.status).toBe(500);
     expect(mockConversas.get('cv1').atendidaPor).toBe('u-contador');
+  });
+});
+
+describe('excluir demanda de suporte preserva o atendimento', () => {
+  let demanda;
+  beforeEach(() => {
+    demanda = { id: 'p1', conversaId: 'cv1', estado: 'AGUARDANDO' };
+    prisma.encaminhamentoSuporte.findFirst.mockImplementation(async ({ where }) => demanda.id === where.id && demanda.conversaId === where.conversaId && (!where.estado || demanda.estado === where.estado) ? { ...demanda } : null);
+    prisma.encaminhamentoSuporte.updateMany.mockReset().mockImplementation(async ({ where, data }) => {
+      if (where.id !== demanda.id || where.conversaId !== demanda.conversaId || demanda.estado === 'RESOLVIDO') return { count: 0 };
+      Object.assign(demanda, data); return { count: 1 };
+    });
+  });
+  afterEach(() => { prisma.encaminhamentoSuporte.findFirst.mockReset().mockResolvedValue(null); prisma.encaminhamentoSuporte.updateMany.mockReset().mockResolvedValue({ count: 0 }); });
+  const url = '/firm/whatsapp/conversas/cv1/suporte/p1/excluir';
+  test('exige perfil autorizado, carteira e vínculo da demanda', async () => {
+    expect((await request(montarApp({ id: 'u', role: 'staff' })).post(url)).status).toBe(403);
+    expect((await request(montarApp()).post('/firm/whatsapp/conversas/cv2/suporte/p1/excluir')).status).toBe(404);
+    expect((await request(montarApp()).post('/firm/whatsapp/conversas/cv1/suporte/outra/excluir')).status).toBe(404);
+    expect(prisma.encaminhamentoSuporte.updateMany).not.toHaveBeenCalled();
+  });
+  test('arquiva somente demanda indicada sem assumir, devolver, apagar conversa ou enviar', async () => {
+    const conversa = { ...mockConversas.get('cv1') };
+    prisma.conversaWhatsapp.updateMany.mockClear();
+    expect((await request(montarApp()).post(url)).status).toBe(200);
+    expect(demanda).toMatchObject({ estado: 'RESOLVIDO', responsavelId: 'u-contador' });
+    expect(demanda.resolvidoEm).toBeInstanceOf(Date);
+    expect(prisma.encaminhamentoSuporte.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'p1', conversaId: 'cv1', conversa: expect.objectContaining({ excluidaEm: null, portalClientId: { in: ['pc-1'] } }) }) }));
+    expect(mockConversas.get('cv1')).toEqual(conversa); expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+    expect(prisma.mensagemWhatsapp.create).not.toHaveBeenCalled(); expect(cloud.enviarTexto).not.toHaveBeenCalled(); expect(cloud.enviarTemplate).not.toHaveBeenCalled();
+    expect((await request(montarApp()).post(url)).status).toBe(200);
+    expect(prisma.encaminhamentoSuporte.updateMany).toHaveBeenCalledTimes(1);
+  });
+  test('não exclui demanda assumida por outro atendente', async () => {
+    mockConversas.get('cv1').atendidaPor = 'outro';
+    expect((await request(montarApp()).post(url)).status).toBe(409);
+    expect(demanda.estado).toBe('AGUARDANDO'); expect(prisma.encaminhamentoSuporte.updateMany).not.toHaveBeenCalled();
+  });
+  test('recusa corrida de estado sem apresentar exclusão confirmada', async () => {
+    prisma.encaminhamentoSuporte.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect((await request(montarApp()).post(url)).status).toBe(409);
+    expect(demanda.estado).toBe('AGUARDANDO');
   });
 });

@@ -162,3 +162,13 @@ describe("Modal — tamanho", () => {
     expect(container.querySelector(".modal-caixa").style.maxWidth).toBe("640px");
   });
 });
+
+it('ignora campos desabilitados pelo fieldset no foco inicial e Tab', () => {
+  const { container } = abrir({ ocupado: true }, <fieldset disabled><input data-modal-autofocus aria-label="indisponível" /><button>Salvar</button></fieldset>);
+  const caixa = container.querySelector('.modal-caixa');
+  expect(document.activeElement).toBe(caixa);
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(caixa);
+  fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+  expect(document.activeElement).toBe(caixa);
+});

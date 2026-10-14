@@ -28,6 +28,9 @@ const FOCAVEIS = [
   "select:not([disabled])", "textarea:not([disabled])", "summary", "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
+const podeFocar = el => !el.matches(':disabled') && (!el.closest('details:not([open])') || el.tagName === 'SUMMARY');
+const primeiroFocavel = (raiz, seletor) => Array.from(raiz?.querySelectorAll(seletor) || []).find(podeFocar);
+
 /**
  * @param {string}   titulo            Obrigatório — é o `aria-label` do diálogo e o que distingue
  *                                     dois modais abertos pelo mesmo botão.
@@ -79,10 +82,10 @@ export function Modal({
     gatilhoRef.current = document.activeElement;
     const caixa = caixaRef.current;
     const corpo = caixa?.querySelector(".modal-corpo");
-    const alvo = caixa?.querySelector("[autofocus]")
-      || corpo?.querySelector('[data-modal-autofocus]')
-      || corpo?.querySelector(FOCAVEIS)
-      || caixa?.querySelector(FOCAVEIS)
+    const alvo = primeiroFocavel(caixa, "[autofocus]")
+      || primeiroFocavel(corpo, '[data-modal-autofocus]')
+      || primeiroFocavel(corpo, FOCAVEIS)
+      || primeiroFocavel(caixa, FOCAVEIS)
       || caixa;
     alvo?.focus?.();
     return () => gatilhoRef.current?.focus?.();
@@ -102,7 +105,7 @@ export function Modal({
       // Prende o Tab dentro do diálogo: com `aria-modal` o leitor de tela já ignora o resto da
       // página, mas o foco do teclado continuaria passeando por trás do fundo escuro.
       if (e.key !== "Tab" || !caixaRef.current) return;
-      const itens = Array.from(caixaRef.current.querySelectorAll(FOCAVEIS)).filter(el => !el.closest('details:not([open])') || el.tagName === 'SUMMARY');
+      const itens = Array.from(caixaRef.current.querySelectorAll(FOCAVEIS)).filter(podeFocar);
       // ⚠⚠ ZERO FOCÁVEIS NÃO É "DEIXA PASSAR" — é quando o trap MAIS importa. Acontece de verdade:
       // com `ocupado`, o ✕ some e os botões do rodapé ficam `disabled`, então a caixa fica sem
       // nenhum elemento focável e o navegador já jogou o foco no `<body>`. Deixar o Tab seguir

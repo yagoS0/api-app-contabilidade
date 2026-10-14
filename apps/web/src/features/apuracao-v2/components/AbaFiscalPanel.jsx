@@ -87,7 +87,7 @@ export function AbaFiscalPanel({ panel }) {
         <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, fontSize: "0.8rem", color: "#FFB347", lineHeight: 1.5 }}>
           <strong>⚠ {origem.aviso.titulo}</strong>
           <div style={{ marginTop: 4, color: PANEL.text }}>{origem.aviso.texto}</div>
-          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.74rem" }}>{origem.aviso.consequencia}</div>
+          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.875rem" }}>{origem.aviso.consequencia}</div>
         </div>
       )}
 

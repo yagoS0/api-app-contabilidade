@@ -115,3 +115,11 @@ Foram 218 execuções de cenários ao longo de quatro rodadas (incluindo falhas 
 Evidências: `test-evidence/avaliacao-suporte-gpt.json`, `test-evidence/suporte-gpt-regressao-final-20261010.log` e `test-evidence/guarda-orcamento-suporte-20261010.json`. A aprovação se refere a este conjunto sintético; conversas longas, correções em sequência e entregas reais precisam do piloto supervisionado.
 
 Esta avaliação usa ferramentas fiscais, documentos e encaminhamentos simulados. A persistência da fila e dos avisos foi validada nos testes locais com PostgreSQL registrados acima; o envio real pelo WhatsApp e a recepção do aviso no telefone ainda dependem do piloto. Nenhuma configuração de produção foi alterada por esta avaliação.
+
+## Aceitar e excluir demanda — 14/10/2026
+
+A fila da equipe oferece Aceitar (a mesma assunção existente) e Excluir demanda, com confirmação que identifica empresa e pedido. Excluir apenas retira o encaminhamento indicado da fila, usando o estado terminal RESOLVIDO já existente; não exclui registro, conversa, mensagem ou histórico fiscal, não assume o contato, não envia mensagem e não devolve à IA. Resolver e Devolver à IA continuam ações distintas.
+
+POST /firm/whatsapp/conversas/:conversaId/suporte/:pendenciaId/excluir exige admin/contador, empresa na carteira e demanda vinculada à conversa. Recusa atendimento de outro responsável. A atualização é limitada ao ID confirmado e pode ser repetida com segurança quando já resolvido, sem encerrar demandas posteriores. A interface preserva a confirmação em falhas, evita clique duplo e ignora leituras/ações atrasadas após troca de empresa.
+
+Validação local: 7 testes da fila e 121 testes das rotas/encaminhamentos passaram, sem provedores externos. Prévia demonstrativa em dev/comercial.jsx possui a ação equivalente em memória. Publicação não realizada nesta etapa.

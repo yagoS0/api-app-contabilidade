@@ -1,0 +1,24 @@
+.company-selection { min-width: 0; margin-bottom: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); }
+.company-selection__header, .company-selection__summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.company-selection__header { justify-content: space-between; margin-bottom: 12px; }
+.company-selection__summary strong { font-weight: 600; }
+.company-selection__actions { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: stretch; }
+.company-selection__group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.company-selection__group + .company-selection__group { border-left: 1px solid var(--border); padding-left: 20px; }
+.company-selection .btn { min-height: 36px; white-space: normal; text-align: left; }
+.company-selection-preview { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.company-selection-preview li { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .company-selection__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .company-selection__group { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .company-selection__group + .company-selection__group { border-left: 0; border-top: 1px solid var(--border); padding: 12px 0 0; }
+  .company-selection .btn { min-height: 44px; }
+}
+
+.company-export-period { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; margin-block: 16px; }
+.company-export-period label { display: grid; gap: 6px; font-weight: 500; min-width: 0; }
+.company-export-period input { min-width: 0; width: 100%; box-sizing: border-box; }
+.company-export-result { padding-block: 12px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.company-export-result strong { font-weight: 600; }
+
+.company-export-period input { min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text); color-scheme: dark; font: inherit; }

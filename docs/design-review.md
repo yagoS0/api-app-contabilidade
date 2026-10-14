@@ -47,3 +47,17 @@ Cobertura: revisão multiagente dos pontos de entrada de todos os módulos, test
 
 Validação final do onboarding: 34 suítes/266 testes aprovados; seis capturas dos estados de correção, conflito e conversão em 390/1440 px, sem overflow ou erros JavaScript. Fixtures e dados fictícios permanecem locais.
 
+
+## Modais, seleção e suporte — 14/10/2026
+
+Continuação multiagente sobre `061e7c8`, branch `codex/design-modais-suporte-20261014`. A solicitação desta rodada também autoriza corrigir o funcionamento da leitura e das demandas de suporte.
+
+- Barra da seleção: operações separadas dos arquivos, limpeza no cabeçalho, ações neutras e disposição móvel. A prévia usa Modal compartilhado, começa pelos avisos fiscais e devolve foco ao gatilho ao fechar. Exportação CSV: períodos agrupados, empresas selecionadas em detalhe expansível, resultados separados e uma ação primária por etapa.
+- Suporte: leitura confirmada invalida imediatamente lista e resumo; resposta antiga em voo não restaura contagem. Demandas encaminhadas têm Aceitar e Excluir demanda com confirmação; exclusão arquiva apenas a demanda indicada, preserva conversa/histórico e não envia mensagem nem reativa IA. O contador da fila atualiza após ação confirmada, independentemente do contador de mensagens não lidas. Permissões, carteira e disputa de atendente são verificadas no servidor.
+- Certificado A1, exclusão de empresa e Excel: revisão de legibilidade, rótulos, avisos, rolagem, botões e comportamento de diálogo. Notas: estados de progresso e pendência inspecionados. Cofre: login longo deixa de alargar a página no celular; rótulos/avisos legíveis. Atividade fiscal não salva mantém consequência visível.
+
+Evidência local: `test-evidence/design-selection/` (barra, prévia, carregamento, erro, vazio e CSV, 390/1440 px); `design-modais-cadastro-coverage.md`; `design-cofre-portal-coverage.md`; `design-suporte/` (fila, aceite, confirmação, erro e vazio). Componentes reais com dados simulados e rede externa bloqueada; nenhuma execução fiscal ou envio real. Scripts/fixtures `.local` não integram o produto.
+
+Cobertura do portal nesta rodada: confirmação de cancelamento inicial/erro/ocupado e gaveta do dia vazia. Cobertura fiscal: bloco de atividades, vazio/carregando/erro/perfil derivado não salvo. ServiçosTributação, CadastroReforma e demais combinações de dados/permissões/serviços externos continuam pendentes de evidência visual. Inventário de módulos revisado não equivale à homologação visual de todos os estados da aplicação.
+
+Validação desta rodada: suíte completa WhatsApp (38 suítes/310 testes), seleção/exportação (33 testes), tokens (14), modais/Excel/fila (42), backend de conversas/encaminhamentos (121), cofre/perfil (46) e portal (91), todos aprovados. Contagens de conjuntos dirigidos podem se sobrepor; não somar como total único. Build web aprovado, com avisos existentes de bundle/imports mistos.

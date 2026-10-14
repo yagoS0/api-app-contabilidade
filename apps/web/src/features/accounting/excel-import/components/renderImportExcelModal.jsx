@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { Modal } from "../../../../components/ui/Modal";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { historicoSugeridoDaLinha } from "../lib/historicoSugerido";
 import { contasSugeriveis, sinteticasNasLinhas } from "../../entries/lib/contaSintetica";
@@ -9,19 +10,10 @@ const PANEL = {
   field: "#1A1B26",
   border: "#44475A",
   text: "#F8F8F2",
-  muted: "#6272A4",
+  muted: "var(--text-muted)",
   accent: "#BD93F9",
 };
 
-const overlay = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100,
-  display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-};
-const modalBox = {
-  background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-  padding: 22, width: 1100, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto",
-  color: PANEL.text, boxSizing: "border-box",
-};
 const inputStyle = {
   background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
   color: PANEL.text, padding: "6px 8px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box",
@@ -73,11 +65,15 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
   const [error, setError] = useState("");
   const [bulkD, setBulkD] = useState("");
   const [bulkC, setBulkC] = useState("");
+  const trava = useRef(false);
+  const ocupado = loading || saving;
+  const fechar = () => { if (!trava.current) onClose(); };
 
   async function handlePreview() {
+    if (trava.current) return;
     if (!file) { setError("Selecione um arquivo Excel."); return; }
     setError("");
-    setLoading(true);
+    trava.current = true; setLoading(true);
     try {
       const res = await onPreview(file);
       const list = Array.isArray(res?.transactions) ? res.transactions : [];
@@ -99,7 +95,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
     } catch (err) {
       setError(err?.message || "Falha ao processar Excel.");
     } finally {
-      setLoading(false);
+      trava.current = false; setLoading(false);
     }
   }
 
@@ -143,6 +139,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
   const canCommit = completeRows > 0 && !saving;
 
   async function handleCommit() {
+    if (trava.current) return;
     setError("");
     const toSend = transactions
       .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && sinteticasDaLinha(t).length === 0)
@@ -162,7 +159,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
       setError("Nenhum lançamento pronto para importar.");
       return;
     }
-    setSaving(true);
+    trava.current = true; setSaving(true);
     try {
       const res = await onCommit(toSend);
       if (res?.ok) {
@@ -173,27 +170,33 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
     } catch (err) {
       setError(err?.message || "Falha ao importar.");
     } finally {
-      setSaving(false);
+      trava.current = false; setSaving(false);
     }
   }
 
   return (
-    <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={modalBox}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Importar Excel</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
-        </div>
-
+    <Modal titulo="Importar Excel" tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} rodape={step === "review" ? (<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+              <Button variant="secondary" disabled={ocupado} onClick={() => { setStep("upload"); setTransactions([]); setError(""); }}>Voltar</Button>
+              <Button variant="secondary" onClick={saving ? onClose : fechar}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
+              <Button variant="primary" onClick={handleCommit} disabled={!canCommit}>
+                {saving ? "Importando..." : `Importar ${completeRows} ${completeRows === 1 ? "linha" : "linhas"}`}
+              </Button>
+            </div>) : <Button variant="secondary" disabled={ocupado} onClick={fechar}>Cancelar</Button>}>
+      <fieldset disabled={ocupado} style={{ margin: 0, padding: 0, border: 0, minWidth: 0 }}>
         {step === "upload" && (
           <div>
             <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
               Formato esperado: planilha com colunas <strong>Data | Descrição | Valor</strong> (cabeçalho opcional).
-              O sistema casa as descrições com históricos já cadastrados para preencher automaticamente as contas. Descrições novas ficam pendentes para você declarar — e a partir dali ficam memorizadas para próximos imports.
-              O <strong>histórico do lançamento</strong> vem sugerido (<em>PAGO</em> + descrição, ou o que você já escreveu antes para aquela descrição) e é <strong>editável</strong> linha a linha: nada é gravado sem você ver.
             </p>
+            <p style={{ fontSize: "0.875rem", margin: "0 0 12px" }}>Revise contas e históricos na prévia antes de importar. Nada é gravado nesta etapa.</p>
+            <details style={{ fontSize: "0.875rem", color: PANEL.muted, marginBottom: 16 }}>
+              <summary>Como as sugestões são preenchidas</summary>
+              <p>Descrições conhecidas sugerem contas pelos históricos cadastrados. Descrições novas ficam pendentes para você declarar e são memorizadas para as próximas importações. O histórico sugerido usa PAGO + descrição, ou o texto já cadastrado, e pode ser editado linha a linha.</p>
+            </details>
+            <label htmlFor="import-excel-arquivo" style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: 6 }}>Planilha Excel ou CSV</label>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <input
+                id="import-excel-arquivo"
                 type="file"
                 accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -204,7 +207,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
               </Button>
             </div>
             {error && (
-              <div style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+              <div role="alert" style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.875rem" }}>
                 {error}
               </div>
             )}
@@ -329,8 +332,9 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
             <ListaDeContas id={ID_LISTA_CONTAS} accounts={accounts} />
 
             {pendingRows > 0 && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", padding: 10, background: PANEL.field, borderRadius: 6, marginBottom: 12 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "end", padding: 10, background: PANEL.field, borderRadius: 6, marginBottom: 12 }}>
                 <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>Aplicar a todas pendentes:</span>
+                <label style={{ display: "grid", gap: 4 }}>Débito
                 <input
                   type="text"
                   list={ID_LISTA_CONTAS}
@@ -339,6 +343,8 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                   placeholder="Débito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkD ? "#8BE9FD" : PANEL.muted, textAlign: "center" }}
                 />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>Crédito
                 <input
                   type="text"
                   list={ID_LISTA_CONTAS}
@@ -347,6 +353,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                   placeholder="Crédito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? "var(--success)" : PANEL.muted, textAlign: "center" }}
                 />
+                </label>
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC}>
                   Aplicar
                 </Button>
@@ -354,21 +361,15 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
             )}
 
             {error && (
-              <div style={{ marginBottom: 10, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+              <div role="alert" style={{ marginBottom: 10, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
                 {error}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Button variant="secondary" onClick={() => { setStep("upload"); setTransactions([]); setError(""); }}>Voltar</Button>
-              <Button variant="secondary" onClick={onClose}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
-              <Button variant="primary" onClick={handleCommit} disabled={!canCommit}>
-                {saving ? "Importando..." : `Importar ${completeRows} ${completeRows === 1 ? "linha" : "linhas"}`}
-              </Button>
-            </div>
+
           </div>
         )}
-      </div>
-    </div>
+      </fieldset>
+    </Modal>
   );
 }
