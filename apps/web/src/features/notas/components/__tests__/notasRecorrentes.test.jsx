@@ -36,3 +36,28 @@ test('lista distingue worker desligado e permite pausar', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Pausar' }));
   await waitFor(() => expect(api.alterarRecorrenciaNfse).toHaveBeenCalledWith('empresa', 'r', 'pausar', expect.any(Object)));
 });
+
+test('bloqueia datas de retomada durante operação e libera após recusa sem alterar payload', async () => {
+  let recusar;
+  const api = {
+    listarRecorrenciasNfse: jest.fn(async () => ({ items: [
+      { id: 'r', ativa: false, dia: 15, proximaData: '2026-10-15', modelo, execucoes: [] },
+      { id: 's', ativa: false, dia: 15, proximaData: '2026-10-15', modelo: { ...modelo, tomador: { nome: 'Outro cliente' } }, execucoes: [] },
+    ] })),
+    alterarRecorrenciaNfse: jest.fn(() => new Promise((resolve, reject) => { recusar = reject; })),
+  };
+  render(<ListaRecorrencias api={api} companyId="empresa" embutida />);
+  const data = await screen.findByLabelText('Retomar Cliente mensal');
+  const outraData = screen.getByLabelText('Retomar Outro cliente');
+  fireEvent.change(data, { target: { value: '2026-11-15' } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Retomar' })[0]);
+  expect(data).toBeDisabled();
+  expect(outraData).toBeDisabled();
+  expect(api.alterarRecorrenciaNfse).toHaveBeenCalledTimes(1);
+  expect(api.alterarRecorrenciaNfse).toHaveBeenCalledWith('empresa', 'r', 'retomar', { inicio: '2026-11-15', confirmada: true });
+  recusar(new Error('Permissão revogada.'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Permissão revogada.');
+  expect(data).toBeEnabled();
+  expect(outraData).toBeEnabled();
+  expect(data).toHaveValue('2026-11-15');
+});

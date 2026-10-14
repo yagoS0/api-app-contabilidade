@@ -648,3 +648,34 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 });
+import { useState } from "react";
+
+describe("resultado da emissão em diálogo acessível", () => {
+  it.each([
+    [{ status: "issued", nfse: { numeroNfse: "123" } }, "✓ Nota autorizada"],
+    [{ status: "pending", message: "Certificado não configurado.", nfse: {} }, "Nota registrada"],
+    [{ status: "issued", recuperada: true, nfse: { numeroNfse: "123" } }, "Nota autorizada recuperada"],
+  ])("preserva foco, Escape e retorno ao gatilho: %s", async (resultado, titulo) => {
+    const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const emitir = jest.fn(async () => resultado);
+    function Host() {
+      const [aberto, setAberto] = useState(false);
+      return <><button onClick={() => setAberto(true)}>Abrir emissor</button>{aberto && <EmitirNfseWizard companyId="c-1" regime="SIMPLES" codigoMunicipioIbge="3304557" cadastroEmissao={CADASTRO_COMPLETO} fetchCnpj={FETCH_QUE_NUNCA_RESPONDE} onEmitir={emitir} onClose={() => setAberto(false)} />}</>;
+    }
+    render(<Host />);
+    const gatilho = screen.getByRole("button", { name: "Abrir emissor" });
+    gatilho.focus(); fireEvent.click(gatilho);
+    ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84"); continuar();
+    fireEvent.click(screen.getByRole("button", { name: "Emitir nota", exact: true }));
+    const dialogo = await screen.findByRole("dialog", { name: titulo });
+    const fechar = within(dialogo).getAllByRole("button", { name: "Fechar", exact: true }).at(-1);
+    await waitFor(() => expect(fechar).toHaveFocus());
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(dialogo.contains(document.activeElement)).toBe(true);
+    if (resultado.status === "pending") expect(dialogo).toHaveTextContent("Certificado não configurado.");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(gatilho).toHaveFocus(); expect(emitir).toHaveBeenCalledTimes(1);
+    confirmar.mockRestore();
+  });
+});

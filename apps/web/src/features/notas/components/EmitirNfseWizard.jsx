@@ -815,9 +815,6 @@ export function EmitirNfseWizard({
     }
   }
 
-  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
-  const caixa = { background: "var(--bg-surface)", border: `1px solid ${PANEL.border}`, borderRadius: 12, padding: 20, width: 960, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", color: PANEL.text, boxSizing: "border-box" };
-
   // ── Depois de emitida: o resultado, não o formulário ──────────────────────
   if (resultado) {
     const st = String(resultado?.status || resultado?.nfse?.status || "").toLowerCase();
@@ -831,9 +828,9 @@ export function EmitirNfseWizard({
     // resposta que ninguém vai dar. Quando o servidor diz por quê, é o servidor que fala.
     const recado = String(resultado?.message || "").trim();
     return (
-      <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div style={{ ...caixa, width: 620 }}>
-          <h3 style={{ margin: "0 0 10px" }}>{resultado.recuperada ? "Nota autorizada recuperada" : autorizada ? "✓ Nota autorizada" : "Nota registrada"}</h3>
+      <Modal titulo={resultado.recuperada ? "Nota autorizada recuperada" : autorizada ? "✓ Nota autorizada" : "Nota registrada"}
+        tamanho="md" className="emissor-resultado-modal" aoFechar={onClose}
+        rodape={<Button type="button" autoFocus onClick={onClose}>Fechar</Button>}>
           {autorizada ? (
             <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
               {resultado.recuperada ? "A consulta recuperou a mesma operação já autorizada. Nenhuma nova nota foi emitida nesta consulta." : "A prefeitura autorizou a nota."}
@@ -881,11 +878,7 @@ export function EmitirNfseWizard({
             {resultado?.nfse?.numeroNfse && <><dt style={{ color: PANEL.muted }}>Número</dt><dd style={{ margin: 0 }}>{resultado.nfse.numeroNfse}</dd></>}
             {resultado?.nfse?.chaveAcesso && <><dt style={{ color: PANEL.muted }}>Chave</dt><dd style={{ margin: 0, wordBreak: "break-all", fontFamily: "monospace", fontSize: "0.74rem" }}>{resultado.nfse.chaveAcesso}</dd></>}
           </dl>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-            <Button type="button" onClick={onClose}>Fechar</Button>
-          </div>
-        </div>
-      </div>
+      </Modal>
     );
   }
 

@@ -16,7 +16,10 @@ async function walk(dir) {
     }
   }
 }
-for (const app of ['web', 'portal-cliente-web']) await walk(path.join(root, 'apps', app, 'src'));
+for (const source of ['apps/web/src', 'apps/portal-cliente-web/src', 'packages/shared/src']) {
+  try { await walk(path.join(root, source)); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
 let previous;
 try { previous = JSON.parse(await readFile(statePath, 'utf8')); }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
