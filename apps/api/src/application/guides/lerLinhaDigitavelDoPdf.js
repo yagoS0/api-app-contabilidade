@@ -84,7 +84,9 @@ function recusa(motivo, lidaEm, valorLidoCentavos = null) {
  */
 async function textoPadraoDoPdf(buffer) {
   const pdfParse = (await import("pdf-parse")).default;
-  return String((await pdfParse(buffer))?.text || "");
+  // pdf.js legado pode ler fora do slice de um Buffer pequeno alocado no pool do Node.
+  // Uma cópia com offset zero evita "bad XRef entry" em PDFs válidos.
+  return String((await pdfParse(new Uint8Array(buffer)))?.text || "");
 }
 
 /**
@@ -117,6 +119,10 @@ export async function lerLinhaDigitavelDoPdf(pdfBuffer, referencia = {}, opcoes 
   }
 
   const lida = extrairLinhaDigitavelDoTexto(texto);
+  // O envio sem botão só é permitido após uma leitura que distingue ausência de código inválido.
+  // O modo legado continua preservado para os consumidores que gravam as quatro colunas.
+  if (opcoes.distinguirAusencia && !texto.trim()) return recusa(MOTIVOS_LEITURA.PDF_ILEGIVEL, agora);
+  if (opcoes.distinguirAusencia && !lida.ok && lida.candidatos > 0) return recusa(lida.detalhe?.motivo || 'codigo_divergente_no_documento', agora);
   if (!lida.ok) return recusa(lida.motivo, agora);
 
   // ⚠ SEM REFERÊNCIA NÃO HÁ CONFERÊNCIA, E SEM CONFERÊNCIA NÃO HÁ NÚMERO PAGÁVEL.

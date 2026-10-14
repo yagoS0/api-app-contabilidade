@@ -2,7 +2,9 @@
 
 ## Identificação dos envios por empresa — 14/10/2026
 
-Liberação pela página inicial e lote de WhatsApp mantêm ordem estável por empresa/tipo/competência/parcela/id. Cada empresa reinicia a sequência `Guia N de T` dos documentos selecionados; não é contador de entregas. O template de PDF/pagamento já aprovado recebe empresa, sequência e tipo na segunda variável. O PDF também identifica empresa, sequência, tipo e competência. Envios avulsos e recálculos identificam a empresa sem inventar tamanho de lote. Recálculo repete empresa/guia/competência no botão de confirmação, preservando o token vinculado à guia. Sem alteração das reservas, consentimento, recibos ou regras fiscais. Testes reais de apresentação usam DTOs em memória e o destinatário de teste autorizado: nunca cadastrar guias fictícias em empresas reais.
+Liberação pela página inicial e lote de WhatsApp mantêm ordem estável por empresa/tipo/competência/parcela/id. Cada empresa reinicia a sequência `Guia N de T` dos documentos selecionados; não é contador de entregas. A segunda variável identifica empresa, sequência e tipo. O nome curto do arquivo começa com PDF e inclui empresa, tipo, competência e sequência. Envios avulsos e recálculos identificam a empresa sem inventar tamanho de lote; a confirmação após recálculo repete empresa/guia/competência e preserva o token vinculado à guia.
+
+`guia_documento_empresa_v2` destaca ABRIR PDF e COPIAR CÓDIGO; só é usado após aprovação no catálogo, com v1 como alternativa durante aprovação. Ausência de código exige releitura estrita do PDF e modelo aprovado `guia_documento_sem_codigo_v1`, sem botão de pagamento. PDF sem texto, erro de leitura, código inválido/ambíguo ou divergente não permitem essa alternativa. Nenhum dado de leitura é inventado ou salvo por essa decisão. O leitor usa Uint8Array com offset zero para evitar falha de pdf.js em Buffers pequenos do pool do Node. Sem alteração de reservas, consentimento ou recibos. Testes reais usam DTOs em memória: nunca cadastrar guias fictícias em empresas reais.
 
 ## Correção cadastral de competência — 13/10/2026 (desenvolvimento)
 

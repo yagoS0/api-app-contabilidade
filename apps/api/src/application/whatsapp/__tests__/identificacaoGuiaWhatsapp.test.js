@@ -20,5 +20,5 @@ test('não envia identificação sem empresa e não inventa numeração em envio
 });
 
 test('nome do PDF distingue empresa, parcela e posição no lote, sem caracteres de caminho', () => {
-  expect(nomeArquivoDaGuia({ empresa: 'EMPRESA A/B', tipoGuia: 'Parcela 2', competencia: '2026-09', sequencia: { indice: 2, total: 3 } })).toBe('EMPRESA_A-B-2-de-3-Parcela_2-2026-09.pdf');
+  expect(nomeArquivoDaGuia({ empresa: 'EMPRESA A/B', tipoGuia: 'Parcela 2', competencia: '2026-09', sequencia: { indice: 2, total: 3 } })).toBe('PDF-EMPRESA_A-B-Parcela_2-2026-09-2de3.pdf');
 });

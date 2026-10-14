@@ -626,16 +626,17 @@ export class WhatsappCloudClient {
   }
 
   async enviarGuiaComPagamento({ telefone, conteudoPdf, nomeArquivo, texto, referencia, linhaDigitavel, valor, descricao,
-    template = null, idioma = this.idioma, variaveis = [], antesDeEnviar = async () => {} }) {
+    template = null, idioma = this.idioma, variaveis = [], antesDeEnviar = async () => {}, somenteDocumento = false }) {
     const para = this.destino(telefone);
-    const pagamento = parametrosPagamentoGuia({ referencia, linhaDigitavel, valor, descricao });
+    const pagamento = somenteDocumento ? null : parametrosPagamentoGuia({ referencia, linhaDigitavel, valor, descricao });
     await antesDeEnviar();
     const mediaId = await this.uploadDocumento({ conteudo: conteudoPdf, nomeArquivo, mimeType: 'application/pdf' });
     await antesDeEnviar();
     const corpo = template
       ? montarPayloadTemplate({ para, template, idioma, componentes: [montarHeaderDocumento({ mediaId, nomeArquivo }),
-        montarCorpoTemplate(variaveis), { type: 'button', sub_type: 'order_details', index: '0',
-          parameters: [{ type: 'action', action: { order_details: pagamento } }] }] })
+        montarCorpoTemplate(variaveis), ...(pagamento ? [{ type: 'button', sub_type: 'order_details', index: '0',
+          parameters: [{ type: 'action', action: { order_details: pagamento } }] }] : [])] })
+      : somenteDocumento ? montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda: textoObrigatorio(texto, 'A mensagem da guia', 1024) })
       : { messaging_product: 'whatsapp', to: para, type: 'interactive', interactive: {
         type: 'order_details', header: { type: 'document', document: { id: mediaId, filename: nomeArquivo } },
         body: { text: textoObrigatorio(texto, 'A mensagem da guia', 1024) },
@@ -758,7 +759,8 @@ export function variaveisDaGuia({ nomeContato, tipoGuia, competencia, valorForma
 
 /** Nome do anexo que o cliente vê no WhatsApp. Mesma intenção do `guidePdfFilename` do e-mail. */
 export function nomeArquivoDaGuia({ empresa, tipoGuia, competencia, sequencia }) {
-  const parte = (v) => String(v ?? "").trim().replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-").replace(/\s+/g, "_").slice(0, 100);
-  const base = [parte(empresa), sequencia ? `${sequencia.indice}-de-${sequencia.total}` : '', parte(tipoGuia), parte(competencia)].filter(Boolean).join("-");
+  const parte = (v) => String(v ?? "").trim().replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-").replace(/\s+/g, "_").slice(0, 40);
+  const tipo = empresa && tipoGuia === 'Simples Nacional' ? 'DAS' : tipoGuia;
+  const base = [empresa ? 'PDF' : '', parte(empresa), parte(tipo), parte(competencia), sequencia ? `${sequencia.indice}de${sequencia.total}` : ''].filter(Boolean).join("-");
   return `${base || "guia"}.pdf`;
 }

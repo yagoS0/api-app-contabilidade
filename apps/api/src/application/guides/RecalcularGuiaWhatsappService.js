@@ -95,7 +95,7 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     await client.appSetting.create({ data: { key: botaoConfirmacao, value: { companyId: token.companyId, guideId: nova.id,
       competencia: nova.competencia || null, hash: nova.hash || null, contatoId: token.contatoId, telefone: token.telefone,
       expiraEm: new Date(agora.getTime() + 7 * 86400000).toISOString() } } });
-    const codigo = { status: 'ENVIADO', formato: 'PDF_E_CODIGO_NA_MESMA_MENSAGEM' };
+    const codigo = { status: 'ENVIADO', formato: pagamento.somenteDocumento ? 'PDF_SEM_CODIGO' : 'PDF_E_CODIGO_NA_MESMA_MENSAGEM' };
     const textoConfirmacao = `${identificacao} — ${nova.competencia}\nQuando pagar esta guia, toque em Confirmar pagamento para informar a data.`;
     await enviar({ tipo: 'interactive', corpo: textoConfirmacao, idTurno: `${key}:confirmar`,
       chamada: async () => { await conferirGuia(nova.id, nova.hash); return cloud.enviarBotoes({ telefone: conversa.telefoneE164,

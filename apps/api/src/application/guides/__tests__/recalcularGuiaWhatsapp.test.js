@@ -26,7 +26,7 @@ function cenario() {
 test('clique envia aguarde, recalcula e entrega PDF e código em sequência, sem portal', async () => {
   const f = cenario(); expect(await f.run()).toMatchObject({ tratado: true, acao: 'RECALCULAR_GUIA', codigo: { status: 'ENVIADO' } });
   expect(f.ordem).toEqual(['Aguarde enquanto atualizamos sua guia.', 'RECALCULO', 'PDF_E_CODIGO']);
-  expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledWith(expect.objectContaining({ telefone: f.token.telefone, conteudoPdf: Buffer.from('PDF'), nomeArquivo: 'EMPRESA_A-SIMPLES-2026-09.pdf' }));
+  expect(f.cloud.enviarGuiaComPagamento).toHaveBeenCalledWith(expect.objectContaining({ telefone: f.token.telefone, conteudoPdf: Buffer.from('PDF'), nomeArquivo: 'PDF-EMPRESA_A-SIMPLES-2026-09.pdf' }));
   expect(f.cloud.enviarBotoes.mock.calls[0][0].texto).toContain('EMPRESA A — SIMPLES — 2026-09');
   expect(f.cloud.enviarTexto.mock.calls.some(([a]) => /https?:|portal/i.test(a.texto))).toBe(false);
   const tokenNovo = f.records.get(f.cloud.enviarBotoes.mock.calls[0][0].botoes[0].id).value;

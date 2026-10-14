@@ -299,7 +299,7 @@ describe("o envio de uma guia", () => {
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, sequencia: { indice: 2, total: 3 }, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
     expect(r.enviada).toBe(true);
     expect(cliente.enviarGuia.mock.calls[0][0]).toMatchObject({
-      nomeArquivo: 'LENTE_LTDA-2-de-3-Simples_Nacional-2026-07.pdf',
+      nomeArquivo: 'PDF-LENTE_LTDA-DAS-2026-07-2de3.pdf',
       variaveis: ['Maria', 'LENTE LTDA — Guia 2 de 3 — Simples Nacional', 'Julho/2026', '1.243,80', '20/08/2026'],
     });
     const { prepararGuiaPagamentoWhatsapp } = jest.requireMock('../PrepararGuiaPagamentoWhatsapp.js');
