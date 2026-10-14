@@ -197,3 +197,11 @@ Sobre main af25947c, o resultado do emissor NFS-e passou do overlay próprio par
 Validação: 40 testes do emissor,4 de recorrências,7 de alertas/CSV e3 de tokens aprovados. Seis capturas do resultado NFS-e e12 dos alertas em390/1440, sem overflow ou erros JS na amostra. Evidências locais em test-evidence/design-nfse-resultado e test-evidence/alertas-monitoramento. APIs e permissões simuladas, sem emissão, consulta fiscal ou envio real. Alterações mantidas locais nesta execução, sem publicação.
 
 O inventário de hashes passa a incluir packages/shared/src, além dos dois portais. A primeira observação dos componentes compartilhados é inventário, não homologação integral. As novas alterações não commitadas do histórico PGDAS em altan-pgdas-monitoramento-release permanecem pendentes por edição concorrente; o checkout original foi preservado.
+
+## Histórico PGDAS: documentos, confirmação e permissões — 14/10/2026
+
+Após integração do histórico e estabilização dos arquivos, revisão multiagente do modal sobre main eacd820a. Leitura salva e consulta paga ficam separadas, com confirmação no mesmo Modal compartilhado, foco em Voltar e retorno ao gatilho. PDFs têm rótulos curtos, nomes acessíveis por versão e estado de abertura. Recusas de acesso, mês fechado e documento indisponível são legíveis; falha de atualização identifica os dados anteriores. Preservados avisos fiscais, números, versões, payloads e autorização do servidor.
+
+Validação: 14 testes de interface e 24 de backend aprovados. Leitura/PDF exercitados para STAFF, ACCOUNTANT e FIRM_ADMIN ativos, administrador global, ausência de autenticação, vínculo inativo e isolamento por empresa/competência. A exigência de ACCOUNTANT foi testada com middleware real em rota de prova; não é execução integral da consulta fiscal. Contexto testado pela remontagem com key usada pelo consumidor.
+
+QA local: 36 cenários em390/1440 e seis rechecagens após refinamentos, sem overflow horizontal ou erros JavaScript. Foco, Escape, bloqueio ocupado, vazio, carga, recusas e arquivos ausentes conferidos com serviços simulados. Evidências em test-evidence/historico-pgdas/coverage.md. Nenhuma consulta paga ou transmissão real; não representa homologação de todas as sessões em produção. Esta rodada resolve a pendência do modal histórico integrado, preservando outras edições concorrentes.

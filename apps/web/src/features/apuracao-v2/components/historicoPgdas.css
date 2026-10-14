@@ -3,7 +3,22 @@
 .pgdas-historico-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
 .pgdas-historico ol { list-style: none; padding: 0; }
 .pgdas-historico li { border-top: 1px solid var(--border); padding: 16px 0; display: grid; gap: 8px; overflow-wrap: anywhere; }
-.pgdas-historico strong { font-weight: 500; }
+.pgdas-historico strong { font-weight: 600; }
 .pgdas-historico dl { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
 .pgdas-historico dd { margin: 0; }
 .pgdas-historico p.pgdas-historico-alerta { color: var(--state-warn); }
+
+.pgdas-historico { display: grid; gap: 12px; }
+.pgdas-historico p { margin: 0; }
+.pgdas-historico ol { margin: 0; }
+.pgdas-historico-nota { font-size: 13px; }
+.pgdas-historico-resumo { padding-top: 8px; border-top: 1px solid var(--border); }
+.pgdas-historico-vazio { padding: 16px; background: var(--bg-subtle); border-radius: 8px; }
+.pgdas-historico [role="alert"] { color: var(--danger); }
+.pgdas-historico-confirmacao { display: grid; gap: 12px; }
+.pgdas-historico-confirmacao h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.pgdas-historico-modal button { white-space: normal; }
+@media (max-width: 600px) {
+  .pgdas-historico-modal button { min-height: 44px; min-width: 44px; }
+  .pgdas-historico-acoes > button { flex: 1 1 auto; }
+}
