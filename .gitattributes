@@ -12,6 +12,7 @@
 #
 # `-text` = não trate como texto, não converta nada, em nenhuma direção.
 docs/** -text
+apps/api/src/application/tomador/dados/municipios-tom.csv binary
 
 # Os binários já versionados, pelo mesmo motivo (aqui era inofensivo, mas a regra é a mesma).
 *.xlsx binary

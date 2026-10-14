@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
-import { consultarCnpj } from "../tomador/consultaCnpj.js";
+import { consultarCnpjComCache as consultarCnpj } from "../tomador/consultaCnpjRuntime.js";
 import { SerproProcurationService } from "../fiscal/serpro/SerproProcurationService.js";
 import { getResolvedSerproCredentials } from "../fiscal/serpro/SerproRuntimeSettings.js";
 import { obterRelatorio } from "../fiscal/serpro/SerproSitfisService.js";
@@ -124,7 +124,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     let status = "CONCLUIDA", documentoCifrado = null;
     try {
       if (tipo === "PUBLICA") {
-        const out = await consultaPublica(r.cnpj);
+        const out = await consultaPublica(r.cnpj, { escopo: `conta:${user.id}`, finalidade: 'PUBLICO' });
         resultado.fonte = out.fonte === "BRASILAPI" ? "BrasilAPI / dados públicos CNPJ" : out.fonte === "MINHA_RECEITA" ? "Minha Receita / dados públicos CNPJ" : "Dados públicos de CNPJ (provedor não informado)";
         if (!out.ok) throw erro("consulta_publica_indisponivel", out.mensagem || "Consulta pública indisponível.", 502);
         const b = out.bruto || {};

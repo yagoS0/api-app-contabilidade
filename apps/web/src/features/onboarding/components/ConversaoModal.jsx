@@ -103,14 +103,14 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
     const inicio = { form, id: onboarding?.id };
     setConsultando(true);
     setAvisoConsulta(null);
-    const r = await consultarCnpj(form.cnpj);
+    const r = await consultarCnpj(form.cnpj, { cadastroEfetivo: true });
     if (sequencia !== consultaRef.current || inicio.id !== atualRef.current.id || soDigitosCnpj(inicio.form.cnpj) !== soDigitosCnpj(atualRef.current.form.cnpj)) return;
     setConsultando(false);
     if (!r.ok) {
       setAvisoConsulta(r.mensagem);
       return;
     }
-    const mapeado = mapearParaFormularioEmpresa(r.bruto);
+    const mapeado = mapearParaFormularioEmpresa(r.bruto, { incluirSocios: r.fonte === 'SERPRO_EMPRESA' });
     setForm((atual) => aplicarConsultaNaConversaoPreservandoEdicoes(atual, mapeado, inicio.form));
     if (r.situacao?.texto && !r.situacao.ativa) {
       setAvisoConsulta(`Situação cadastral na Receita: ${r.situacao.texto}.`);

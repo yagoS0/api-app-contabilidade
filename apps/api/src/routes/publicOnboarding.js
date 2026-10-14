@@ -1,5 +1,7 @@
 import { criarPropostasComerciais } from "../application/onboarding/PropostasComerciaisService.js";
 import { Router, json } from "express";
+import { createHash } from 'node:crypto';
+import { consultarCnpjComCache } from '../application/tomador/consultaCnpjRuntime.js';
 import rateLimit from "express-rate-limit";
 import { criarServicoComercial } from "../application/onboarding/ComercialService.js";
 import { OnboardingError } from "../application/onboarding/OnboardingService.js";
@@ -18,6 +20,16 @@ export function createPublicOnboardingRouter({ servico = criarServicoComercial()
   };
   router.get("/onboarding", responder(false));
   router.patch("/onboarding", responder(true));
+  router.post('/onboarding/consulta-cnpj', async (req, res) => {
+    const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ''))?.[1];
+    try {
+      const ficha = await servico.publico(token);
+      if (!ficha?.onboarding || ficha.enviado) return res.status(403).json({ ok: false });
+      if (typeof req.body?.cnpj !== 'string' || req.body.cnpj.length > 30 || Object.keys(req.body).some(k => k !== 'cnpj')) return res.status(400).json({ ok: false });
+      const escopo = `link:${createHash('sha256').update(token).digest('hex')}`;
+      return res.json(await consultarCnpjComCache(req.body.cnpj, { escopo, finalidade: 'PUBLICO' }));
+    } catch { return res.status(403).json({ ok: false, mensagem: 'Link inválido, expirado ou consulta indisponível.' }); }
+  });
   const proposta = aceitar => async (req, res) => {
     const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ""))?.[1];
     try { res.json({ ok: true, ...await propostas.publico(token, aceitar ? req.body : null) }); }

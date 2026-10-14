@@ -441,7 +441,7 @@ export function EmitirNfseWizard({
     try {
       const r = !fetchCnpj && apiPerfis?.consultarTomadorNfse
         ? await apiPerfis.consultarTomadorNfse(companyId, 'cnpj', digitos)
-        : await consultarCnpj(digitos, { fetchImpl: fetchCnpj });
+        : await consultarCnpj(digitos, { fetchImpl: fetchCnpj, companyId });
       if (!aindaAtual()) return;
       if (r.ok && !r.situacao) r.situacao = { texto: r.bruto?.descricao_situacao_cadastral, ativa: r.bruto?.descricao_situacao_cadastral === 'ATIVA' };
       if (!r.ok) {

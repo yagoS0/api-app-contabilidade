@@ -14,7 +14,7 @@
 // divergem — e o precedente está medido: `perfilAtividades` tem 3 campos sem leitor.
 
 import { Router } from "express";
-import { consultarCnpj } from '../../application/tomador/consultaCnpj.js';
+import { consultarCnpjComCache as consultarCnpj } from '../../application/tomador/consultaCnpjRuntime.js';
 import { consultarCepComAlternativa as consultarCep } from '../../application/tomador/consultarCep.js';
 import { municipiosIbgeOuNulo } from '../../application/nfse/lote/municipiosIbge.js';
 import { previaFiscalDoContador } from '../../application/nfse/previaFiscalDoContador.js';
@@ -50,7 +50,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
     res.set('Cache-Control', 'no-store');
     try {
       const municipios = await municipiosIbgeOuNulo({ log });
-      return res.json(await (tipo === 'cnpj' ? consultarCnpj : consultarCep)(valor, { municipios, log }));
+      return res.json(await (tipo === 'cnpj' ? consultarCnpj : consultarCep)(valor, { municipios, log, escopo: `empresa:${req.params.companyId}`, finalidade: 'EMISSOR' }));
     } catch {
       return res.status(503).json({ error: 'consulta_indisponivel', message: 'Consulta indisponível. Preencha manualmente ou tente novamente.' });
     }

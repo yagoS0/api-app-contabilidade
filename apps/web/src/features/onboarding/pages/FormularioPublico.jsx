@@ -40,7 +40,7 @@ export function FormularioPublico({ api }) {
   const tituloEtapa = useRef(null);
   const etapaAnterior = useRef(null);
   function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor })); setAviso("Alterações ainda não salvas."); setConfirmado(false); setErrosCampos(e => ({ ...e, [campo]: undefined })); }
-  const cnpj = useConsultaCnpjOnboarding({ contexto: token, origem: registro?.origem, dados, alterarCampo, habilitado: Boolean(registro && !concluido) });
+  const cnpj = useConsultaCnpjOnboarding({ contexto: token, origem: registro?.origem, dados, alterarCampo, habilitado: Boolean(registro && !concluido), tokenPublico: token });
   const dadosAtuais = registro ? JSON.stringify(podarInvisiveis(registro.origem, dados)) : "";
   const alterado = Boolean(registro && !concluido && dadosAtuais !== dadosSalvos);
   useEffect(() => {

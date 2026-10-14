@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import express from "express";
 import request from "supertest";
+jest.mock('../../application/tomador/consultaCnpjRuntime.js',()=>({consultarCnpjComCache:jest.fn()}));
+import { consultarCnpjComCache } from '../../application/tomador/consultaCnpjRuntime.js';
 jest.mock("../../application/onboarding/ComercialService.js", () => ({ criarServicoComercial: jest.fn() }));
 jest.mock("../../application/onboarding/OnboardingService.js", () => ({ OnboardingError: class extends Error { constructor(code, message, status) { super(message); this.code = code; this.status = status; } } }));
 import { createPublicOnboardingRouter } from "../publicOnboarding.js";
@@ -12,6 +14,18 @@ function setup() {
   const app = express(); app.use("/public", createPublicOnboardingRouter({ servico })); app.use(express.json());
   return { app, servico };
 }
+
+it('consulta pública exige link ativo e fixa política gratuita, sem token no escopo', async () => {
+  consultarCnpjComCache.mockResolvedValue({ok:true});
+  const {app,servico}=setup();const token='a'.repeat(43);
+  await request(app).post('/public/onboarding/consulta-cnpj').set('Authorization',`Bearer ${token}`).send({cnpj:'11222333000181'}).expect(200);
+  expect(servico.publico).toHaveBeenCalledWith(token);
+  expect(consultarCnpjComCache).toHaveBeenLastCalledWith('11222333000181',expect.objectContaining({finalidade:'PUBLICO'}));
+  expect(consultarCnpjComCache.mock.calls.at(-1)[1].escopo).not.toContain(token);
+  consultarCnpjComCache.mockClear();servico.publico.mockResolvedValue({enviado:true});
+  await request(app).post('/public/onboarding/consulta-cnpj').set('Authorization',`Bearer ${token}`).send({cnpj:'11222333000181'}).expect(403);
+  expect(consultarCnpjComCache).not.toHaveBeenCalled();
+});
 it("token é lido somente do Authorization; resposta não pode ser cacheada", async () => {
   const { app, servico } = setup(); const token = "a".repeat(43);
   const r = await request(app).get("/public/onboarding").set("Authorization", `Bearer ${token}`);

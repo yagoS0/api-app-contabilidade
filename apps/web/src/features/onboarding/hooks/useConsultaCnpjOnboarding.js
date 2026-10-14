@@ -3,7 +3,7 @@ import { cnpjTemDvValido } from "@contabilidade/shared/documentos-fiscais";
 import { consultarCnpj, soDigitosCnpj, mapearParaFormularioEmpresa } from "../lib/brasilApi";
 
 // Consulta cadastral não confirma análise comercial nem dispara consultas fiscais.
-export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCampo, habilitado = true }) {
+export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCampo, habilitado = true, tokenPublico }) {
   const atual = useRef({});
   atual.current = { contexto, origem, dados, alterarCampo, habilitado };
   const sequencia = useRef(0);
@@ -20,7 +20,7 @@ export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCamp
     const inicio = { ...atual.current, dados: { ...atual.current.dados } };
     setCarregando(true);
     let resultado;
-    try { resultado = await consultarCnpj(cnpj); }
+    try { resultado = await consultarCnpj(cnpj, { tokenPublico }); }
     catch { resultado = { ok: false, mensagem: "Consulta indisponível. Preencha os dados manualmente." }; }
     const agora = atual.current;
     if (numero !== sequencia.current || inicio.contexto !== agora.contexto || inicio.origem !== agora.origem || cnpj !== soDigitosCnpj(agora.dados.cnpj) || !agora.habilitado) return;
@@ -28,7 +28,7 @@ export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCamp
     setConsulta(resultado);
     if (!resultado.ok) return;
     const empresa = { ...resultado.empresa, ...mapearParaFormularioEmpresa(resultado.bruto) };
-    agora.alterarCampo("cadastroCnpj", { cnpj, fonte: "BRASIL_API", consultadoEm: new Date().toISOString(), empresa, situacao: resultado.situacao });
+    agora.alterarCampo("cadastroCnpj", { cnpj, fonte: resultado.fonte || "CONSULTA_CADASTRAL", consultadoEm: resultado.consultadoEm || new Date().toISOString(), empresa, situacao: resultado.situacao });
     for (const campo of ["razaoSocial", "nomeFantasia"]) {
       // Correções durante a consulta vencem o retorno remoto.
       if (agora.dados[campo] === inicio.dados[campo] && (!agora.dados[campo] || agora.dados[campo] === inicio.dados.cadastroCnpj?.empresa?.[campo])) agora.alterarCampo(campo, empresa[campo] || "");

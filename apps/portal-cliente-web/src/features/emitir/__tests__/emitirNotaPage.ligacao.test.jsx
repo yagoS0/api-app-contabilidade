@@ -270,7 +270,7 @@ describe("⚠⚠ CPF NÃO SE CONSULTA — a asserção é sobre a AUSÊNCIA da c
     const doc = screen.getByLabelText(/CNPJ ou CPF do tomador/);
 
     fireEvent.change(doc, { target: { value: "11.222.333/0001-81" } });
-    await waitFor(() => expect(api.consultarCnpj).toHaveBeenCalledWith("11222333000181"));
+    await waitFor(() => expect(api.consultarCnpj).toHaveBeenCalledWith("11222333000181", { companyId: 'pc-001' }));
     expect(api.consultarCnpj).toHaveBeenCalledTimes(1);
   });
 

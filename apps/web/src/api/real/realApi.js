@@ -446,6 +446,18 @@ export function createRealApi() {
     ...acompanhamentoParcelamentosApi(request),
     ...reformaFiscalApi(request),
     ...apuracaoConsumoApi(request),
+    async consultarCnpjCadastro(cnpj, { companyId, tokenPublico, cadastroEfetivo = false } = {}) {
+      try {
+        if (tokenPublico) {
+          const res = await fetch(getApiBaseUrl() + '/public/onboarding/consulta-cnpj', { method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenPublico}` }, body: JSON.stringify({ cnpj }) });
+          if (!res.ok) return { ok: false, motivo: 'indisponivel', mensagem: 'Consulta indisponível. Preencha manualmente.' };
+          return await res.json();
+        }
+        const path = companyId ? `/firm/companies/${encodeURIComponent(companyId)}/consulta-cnpj` : cadastroEfetivo ? '/firm/cadastro/consulta-cnpj-completa' : '/firm/cadastro/consulta-cnpj';
+        return await request(path, { method: 'POST', body: JSON.stringify({ cnpj }) });
+      } catch { return { ok: false, motivo: 'indisponivel', mensagem: 'Consulta indisponível. Preencha manualmente.' }; }
+    },
     ...atendimentoMovelApi(request),
     setUnauthorizedHandler(handler) {
       unauthorizedHandler = typeof handler === "function" ? handler : null;

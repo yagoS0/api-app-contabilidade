@@ -1,4 +1,5 @@
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
 import { Router } from "express";
 import { createRelatoriosClienteRouter } from './relatorios.js';
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
@@ -161,6 +162,7 @@ function buildCompetenciaRange(from, to) {
 export function createClientPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use(requireAuth(), requireAccountType("CLIENT"));
+  router.use(criarRotasConsultaCnpj({ empresaAccess: requireClientCompanyAccess() }));
   router.use('/companies/:companyId/relatorios', createRelatoriosClienteRouter());
   const upload = multer({
     storage: multer.memoryStorage(),

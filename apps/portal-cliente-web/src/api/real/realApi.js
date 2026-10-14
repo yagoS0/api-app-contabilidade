@@ -10,7 +10,6 @@
 import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
-import { consultarCnpjNaBrasilApi } from "./brasilApi";
 import { consultarCep } from "./cep";
 import { competenciaPadrao } from "../../lib/format";
 // ⚠ Só o DRE ainda é demonstração — o fluxo de caixa passou a vir do servidor em 27/08/2026.
@@ -570,8 +569,10 @@ export function createRealApi() {
     // BrasilAPI viraria **dados do mock** numa tela que emite nota fiscal de verdade.
     consultarCep,
 
-    async consultarCnpj(cnpj) {
-      return consultarCnpjNaBrasilApi(cnpj);
+    async consultarCnpj(cnpj, { companyId } = {}) {
+      if (!companyId) return { ok: false, motivo: 'empresa_necessaria', mensagem: 'Selecione a empresa.' };
+      try { return await pedir(`/client/companies/${encodeURIComponent(companyId)}/consulta-cnpj`, { method: 'POST', body: { cnpj } }); }
+      catch { return { ok: false, motivo: 'indisponivel', mensagem: 'Consulta indisponível. Preencha os dados manualmente.' }; }
     },
 
     // --- O LOTE POR PLANILHA: baixar o modelo e conferir o preenchido ------------------------

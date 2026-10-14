@@ -22,7 +22,7 @@ test("erro de rede pode recuperar pelo fallback sem repetir a primeira fonte", a
   expect(f).toHaveBeenCalledTimes(2);
 });
 
-test.each([400, 401, 404])("HTTP%s não dispara uma segunda consulta", async status => {
+test.each([400, 401])("HTTP%s não dispara uma segunda consulta", async status => {
   const f = jest.fn().mockResolvedValue(resposta(status));
   expect((await consultarCnpj(CNPJ, opcoes(f))).ok).toBe(false);
   expect(f).toHaveBeenCalledTimes(1);
@@ -45,7 +45,35 @@ test.each([OUTRO, null, undefined, 12345678000190])("documento retornado não co
   const r = await consultarCnpj(CNPJ, opcoes(f));
   expect(r).toMatchObject({ ok: false, motivo: "resposta_invalida" });
   expect(r.tomador).toBeUndefined();
-  expect(f).toHaveBeenCalledTimes(1);
+  expect(f).toHaveBeenCalledTimes(2);
+});
+
+test('404 na base gratuita não comprova inexistência e tenta a alternativa', async () => {
+  const f = jest.fn().mockResolvedValueOnce(resposta(404)).mockResolvedValueOnce(resposta(200, CADASTRO));
+  expect(await consultarCnpj(CNPJ, opcoes(f))).toMatchObject({ ok: true, fonte: 'MINHA_RECEITA' });
+  expect(f).toHaveBeenCalledTimes(2);
+});
+
+test('cadastro incompleto tenta segunda gratuita e preserva parcial se ela falhar', async () => {
+  const parcial = { cnpj: CNPJ, razao_social: 'EMPRESA SINTETICA' };
+  const f = jest.fn().mockResolvedValueOnce(resposta(200, parcial)).mockResolvedValueOnce(resposta(503));
+  expect(await consultarCnpj(CNPJ, opcoes(f))).toMatchObject({ ok: true, bruto: parcial,
+    fontesTentadas: ['BRASILAPI', 'MINHA_RECEITA'] });
+});
+
+test('letras não são removidas para consultar outro documento', async () => {
+  const f = jest.fn();
+  expect((await consultarCnpj(`A${CNPJ}`, opcoes(f))).ok).toBe(false);
+  expect(f).not.toHaveBeenCalled();
+});
+
+test('opções externas não conseguem ativar o provedor pago no runtime', async () => {
+  const consultar = jest.fn();
+  const f = jest.fn().mockResolvedValue(resposta(503));
+  await consultarCnpj('11222333000181', { ...opcoes(f), habilitarPago: true, serpro: { consultar },
+    escritorioId: 'escritorio', requestKey: 'tentativa' });
+  expect(consultar).not.toHaveBeenCalled();
+  expect(f).toHaveBeenCalledTimes(2);
 });
 
 test("fallback também recusa resposta de outro CNPJ", async () => {
