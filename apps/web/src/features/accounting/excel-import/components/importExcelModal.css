@@ -1,0 +1,8 @@
+.import-excel-modal input:not([type="checkbox"]) { min-height: 40px; }
+.import-excel-modal th { text-transform: none; letter-spacing: normal; }
+.import-excel-modal [role="region"]:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+@media (max-width: 600px) { .import-excel-modal input:not([type="checkbox"]), .import-excel-modal button { min-height: 44px; } }
+
+.import-excel-pular { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+@media (max-width: 600px) { .import-excel-pular { min-width: 44px; min-height: 44px; } }
+.import-excel-modal table input[list] { min-width: 88px; }

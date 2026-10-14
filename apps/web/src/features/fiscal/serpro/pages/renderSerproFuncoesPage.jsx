@@ -70,6 +70,8 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
 
   const statusProcuracao = (company) => procuracoesAtualizadas[company.companyId] || company.serproStatus || {};
   const visiveis = companyList.filter(company => filtroProcuracao === "todas" || marcadorProcuracao(statusProcuracao(company)).chave === filtroProcuracao);
+  const idsVisiveis = new Set(visiveis.map(company => company.companyId));
+  const resultadosForaDoFiltro = companyList.filter(company => !idsVisiveis.has(company.companyId) && results[company.companyId] && results[company.companyId].status !== "idle");
   const allSelected = visiveis.length > 0 && visiveis.every((c) => selectedIds.has(c.companyId));
   const someSelected = visiveis.some((c) => selectedIds.has(c.companyId));
   const allOpsSelected = OP_DEFS.every((o) => selectedOps.has(o.key));
@@ -189,7 +191,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
     setProgress({ done: 0, total: 0, op: null });
     setLocalNotice({
       type: errCount ? "error" : "info",
-      text: `Concluído: ${okCount} empresa(s) ok${errCount ? `, ${errCount} com erro (ver coluna Resultado)` : ""}.`,
+      text: `Concluído: ${okCount} empresa(s) ok${errCount ? `, ${errCount} com erro (consulte os resultados)` : ""}.`,
     });
   }
 
@@ -313,7 +315,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
               </select>
               <span style={{fontSize:"0.8rem",color:"var(--text-muted)"}}>{visiveis.length} empresa(s)</span>
             </label>
-            <div role="region" aria-label="Empresas para consulta" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+            {visiveis.length === 0 ? <p role="status" className="consultas-empresas-vazio">{companyList.length ? "Nenhuma empresa neste filtro." : "Nenhuma empresa."}</p> : <div role="region" aria-label="Empresas para consulta" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                 <thead>
                   <tr style={{ background: "var(--bg-subtle)", textAlign: "left" }}>
@@ -335,9 +337,6 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                   </tr>
                 </thead>
                 <tbody>
-                  {visiveis.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
-                  )}
                   {visiveis.map((company) => {
                     const checked = selectedIds.has(company.companyId);
                     // Sem rotuloRegime aqui a tabela mostrava "LUCRO_PRESUMIDO" — enum cru, com
@@ -360,7 +359,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                   })}
                 </tbody>
               </table>
-            </div>
+            </div>}
             {/* 3) Rodar */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 16, marginBottom: 14 }}>
               <Button type="button" variant="primary" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
@@ -370,6 +369,14 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                 {selectedOps.size} função(ões) · {visiveis.filter(c => selectedIds.has(c.companyId)).length} empresa(s) selecionada(s)
               </span>
             </div>
+
+            {resultadosForaDoFiltro.length > 0 && <section className="consultas-resultados-fora" aria-label="Resultados fora do filtro">
+              <h3>Resultados fora do filtro</h3>
+              <ul>{resultadosForaDoFiltro.map(company => <li key={company.companyId}>
+                <div><strong>{company.razao}</strong>{company.cnpj && <span>{company.cnpj}</span>}</div>
+                <div role="status">{renderResultCell(company.companyId)}</div>
+              </li>)}</ul>
+            </section>}
 
           </section>
           )}
