@@ -26,6 +26,7 @@ import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { resolverAliquota, calcularAliquotaEfetiva, AliquotaResolverError } from "./AliquotaResolver.js";
 import { calcularEPersistirFatorR, decidirFatorR, resolverFolha12m, FatorRError } from "./FatorRService.js";
 import { PROCEDENCIA_DAS } from "./procedenciaDas.js";
+import { getRbt12 } from "./RbtExtratoService.js";
 
 export class MotorApuracaoError extends Error {
   constructor(code, message, extra = {}) {
@@ -49,13 +50,6 @@ const TIPO_RECEITA_PARA_ANEXO = {
 function rangeMes(competencia) {
   const [y, m] = competencia.split("-").map(Number);
   return { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
-}
-function range12m(competencia) {
-  const [y, m] = competencia.split("-").map(Number);
-  return {
-    gte: new Date(Date.UTC(y - 1, m, 1)), // mês equivalente ano anterior
-    lt: new Date(Date.UTC(y, m, 1)),       // primeiro dia mês competência
-  };
 }
 function dataReferenciaCompetencia(competencia) {
   const [y, m] = competencia.split("-").map(Number);
@@ -223,16 +217,7 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
   }
 
   // ─── RBT12 (móvel 12m) ────────────────────────────────────────────────────
-  const agg12 = await prisma.portalInvoice.aggregate({
-    where: {
-      clientId: portalClientId,
-      papel: "EMIT",
-      statusEfetivo: "autorizada",
-      competencia: range12m(competencia),
-    },
-    _sum: { total: true },
-  });
-  const rbt12 = +Number(agg12._sum.total || 0).toFixed(2);
+  const { rbt12 } = await getRbt12({ portalClientId, competencia, persistir });
 
   // ─── FATOR R (Q14.4): decide anexo do SERVICO_FATOR_R mensalmente ────────
   let decisaoFatorR = null;

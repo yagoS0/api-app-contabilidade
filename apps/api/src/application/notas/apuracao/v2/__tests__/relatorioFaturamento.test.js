@@ -54,6 +54,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
       cadastroFiscal: model(),
       filaPendencia: model(),
       companyMonthlyCircular: model(),
+      rbtExtratoCache: model(),
       logDecisaoFatorR: model(),
       aliquotaSimplesNacional: model(),
       relatorioFaturamento: model(),
@@ -129,7 +130,10 @@ const NOTA_SEM_ITEM = {
 
 function comNotas(notas) {
   const soma = notas.reduce((s, n) => s + Number(n.total || 0), 0);
-  prisma.portalInvoice.findMany.mockResolvedValue(notas);
+  prisma.portalInvoice.findMany.mockImplementation(async ({ where, select } = {}) =>
+    select?.total && where?.competencia?.lt?.toISOString().startsWith('2026-06-01')
+      ? notas.map(n => ({ ...n, competencia: new Date('2026-05-01T00:00:00Z') }))
+      : notas);
   prisma.portalInvoice.aggregate.mockResolvedValue({ _sum: { total: soma } });
   prisma.portalClient.findUnique.mockResolvedValue(EMPRESA);
   return soma;
@@ -548,6 +552,8 @@ describe("4. ⚠ O PRÉ-APURADO NÃO PERSISTE — abrir o relatório não muda a
     expect(prisma.apuracaoSnapshot.update).not.toHaveBeenCalled();
     expect(prisma.logDecisaoFatorR.create).not.toHaveBeenCalled();
     expect(prisma.logDecisaoFatorR.update).not.toHaveBeenCalled();
+    expect(prisma.rbtExtratoCache.create).not.toHaveBeenCalled();
+    expect(prisma.rbtExtratoCache.update).not.toHaveBeenCalled();
   });
 
   it("o LOG DO FATOR R também não é gravado — ele é escrita igual ao snapshot", async () => {

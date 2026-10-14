@@ -24,6 +24,7 @@ import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { SugestaoModal } from "../components/SugestaoModal";
 import { baseTabelaAnexo } from "../lib/baseTabelaAnexo";
+import { ComparacaoTributaria } from "../components/ComparacaoTributaria";
 import { TabelaAnexoReferencia } from "../components/TabelaAnexoReferencia";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
@@ -465,6 +466,10 @@ export function ApuracaoV2Tab({
               A recuperação validada fornece atividades, RBT12 e folha da mesma simulação.
               Ausência de folha continua nula; não converter lista vazia em zero. */}
           <TabelaAnexoReferencia {...baseTabelaAnexo(fechDados, snap)} />
+          <ComparacaoTributaria key={contexto} competencia={competencia}
+            {...baseTabelaAnexo(fechDados, snap)}
+            origem={fechDados?.rbt12Origem} receitaMensal={fat.interno}
+            receitaExterna={fat.externo} />
 
           {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
               aqui. Ao abrir a aba mostra a foto salva (GET); gerar é um clique. Nem o GET nem o

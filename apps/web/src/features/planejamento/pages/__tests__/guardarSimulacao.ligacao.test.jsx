@@ -259,7 +259,11 @@ describe("⚠⚠⚠ A EMPRESA QUE CHEGA DEPOIS — defeito achado no navegador e
 
     await act(async () => { chegar(); });
     await waitFor(() => expect(cliente.getDadosPlanejamento).toHaveBeenCalledWith("e1"));
+    expect(cliente.getFechamentosRelatorio).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Relatório tributário', { exact: true }));
     await waitFor(() => expect(cliente.getFechamentosRelatorio).toHaveBeenCalledWith("e1"));
+    expect(screen.queryByRole('navigation', { name: 'Seções da análise' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Projeção financeira/ })).toBeNull();
     expect(cliente.getFechamentosRelatorio.mock.calls.every(([id]) => id === "e1")).toBe(true);
     await waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
   });

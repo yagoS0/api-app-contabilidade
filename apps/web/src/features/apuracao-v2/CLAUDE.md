@@ -1,5 +1,10 @@
 # Apuração da empresa — 14/09/2026
 
+## Comparação e RBT12 — 14/10/2026
+
+A Apuração inclui comparação hipotética dos anexos I–V e Presumido pelos motores do Planejamento e mostra folha mínima e diferença acumulada para atingir 28%. Folha desconhecida não vira zero; remuneração para CPP é campo separado da FS12. Cenário não altera apuração. RBT12 usa os 12 meses anteriores ao PA, extratos PGDAS já salvos com prioridade por mês e notas locais como alternativa, sem duplicar fontes. Cache parcial é recomposto; relatório sem persistência não grava nem cache. Histórico oficial completo é identificado como EXTRATO_PGDAS; base incompleta continua PARCIAL_LOCAL.
+
+
 ## Cartão de estimativa vazio — 17/09/2026
 
 Pedido do usuário: o cartão “DAS pré-apurado pelo portal” com “não calculado” é ruído. Exibir o cartão somente quando `procedenciaDoDas().nosso.disponivel` for verdadeiro, inclusive zero calculado. Preservar o resultado oficial, a distinção entre simulação/transmissão e o diagnóstico de pendências existente; ausência de estimativa nunca vira zero nem impede o relatório. Ajuste em desenvolvimento, sem publicação nesta etapa.

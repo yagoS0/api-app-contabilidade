@@ -73,6 +73,16 @@ function comBase({ company = null, cadastro = null, snapshot = null, circular = 
 
 const rodar = () => montarDadosPlanejamento({ portalClientId: "emp-1", agora: AGORA });
 
+test('recompõe RBT12 da janela atual antes de usar snapshot antigo, sem gravar', async () => {
+  comBase({ snapshot: { competencia:'2026-06', rbt12:1000 } });
+  prisma.portalInvoice.findMany.mockResolvedValueOnce([{ competencia:new Date('2025-07-01T00:00:00Z'),total:25000,itens:[] }]);
+  const { campos } = await rodar();
+  expect(campos.rbt12).toMatchObject({ apurado:true, valor:25000 });
+  expect(campos.rbt12.origem).toContain('12 meses anteriores');
+  expect(prisma.rbtExtratoCache.create).not.toHaveBeenCalled();
+  expect(prisma.rbtExtratoCache.update).not.toHaveBeenCalled();
+});
+
 test("histórico completo preenche receita anual, RBT12 e folha sem exigir notas capturadas", async () => {
   comBase();
   const competencias = Array.from({ length: 12 }, (_, i) => { const d = new Date(Date.UTC(2025, 6 + i, 1)); return d.toISOString().slice(0, 7); });
