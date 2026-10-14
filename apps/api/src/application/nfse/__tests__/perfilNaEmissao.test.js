@@ -87,6 +87,9 @@ function montarMocks({ flagLigada, perfil, ibscbsLigada = false, regimeDoCadastr
   const tx = { serviceInvoice, $queryRaw: jest.fn(async () => [{ rpsNumero: "41" }]) };
   jest.doMock("../../../infrastructure/db/prisma.js", () => ({
     prisma: {
+      companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
+      apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
+      apuracao: { findUnique: jest.fn(async () => null) },
       company: { findUnique: jest.fn(async () => ({ ...COMPANY, regimeHistorico: [{ regime: regimeDoCadastro, vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }] })) },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
       portalInvoice: { findMany: jest.fn(async () => []) },
