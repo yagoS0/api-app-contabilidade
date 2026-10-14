@@ -74,6 +74,17 @@ import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
 
+function mensagemDaFalha(erro, alternativa, usarMensagem = true) {
+  const codigo = erro?.reason || erro?.error || erro?.message;
+  const mensagens = {
+    insufficient_role: "Salvar cenários e documentos exige perfil de contador ou administrador do escritório.",
+    forbidden: "Você não tem acesso a esta empresa. Verifique sua carteira com o administrador.",
+    scope_required: "Seu acesso não permite esta operação. Verifique as permissões com o administrador.",
+    unauthorized: "Entre novamente para continuar.",
+  };
+  return mensagens[codigo] || (usarMensagem ? erro?.message : null) || alternativa;
+}
+
 const C = { page: "var(--bg-page)", surface: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", muted: "var(--text-muted)", accent: "var(--accent-purple)", alerta: "var(--state-warn)" };
 const campo = { background: "var(--bg-subtle)", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.875rem", minHeight: 40, minWidth: 0, width: "100%", boxSizing: "border-box" };
 const rotulo = { display: "grid", gap: 4, fontSize: "0.8rem", color: C.muted };
@@ -240,12 +251,12 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
         if (!r || r.ok === false) throw new Error(r?.error || "falha");
         setDadosEmpresa(r);
       })
-      .catch(() => {
+      .catch((erro) => {
         if (cancelado) return;
         setDadosEmpresa(null);
         // ⚠ RECUSA COM MOTIVO, e sem cair para simulação livre em silêncio: um formulário em branco
         // depois de escolher a empresa se lê como "a empresa não tem dado nenhum".
-        setErroCarga("Não foi possível carregar os dados desta empresa. Os campos continuam em branco — nada foi preenchido por suposição.");
+        setErroCarga(mensagemDaFalha(erro, "Não foi possível carregar os dados desta empresa. Os campos continuam em branco — nada foi preenchido por suposição.", false));
       })
       .finally(() => { if (!cancelado) setCarregando(false); });
     return () => { cancelado = true; };
@@ -487,9 +498,9 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     try {
       const r = await api.listarSimulacoesPlanejamento(empresaDaBusca);
       if (empresaAtualCenario.current !== empresaDaBusca) return;
-      if (r?.ok === false) throw new Error(r.message || "Não foi possível ler os cenários.");
+      if (r?.ok === false) throw new Error(r.message || r.error || "Não foi possível ler os cenários.");
       setCenariosSalvos(ordenarCenarios(r?.simulacoes));
-    } catch (e) { if (empresaAtualCenario.current === empresaDaBusca) setDesfechoDoGuardar({ tom: "erro", texto: e.message || "Não foi possível ler os cenários salvos." }); }
+    } catch (e) { if (empresaAtualCenario.current === empresaDaBusca) setDesfechoDoGuardar({ tom: "erro", texto: mensagemDaFalha(e, "Não foi possível ler os cenários salvos.") }); }
     finally { if (empresaAtualCenario.current === empresaDaBusca) setCarregandoCenarios(false); }
   }
   function abrirCenario(cenario) {
@@ -668,7 +679,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       });
       if (empresaAtualCenario.current !== empresaDoSalvar) return;
       if (!salvo?.ok) {
-        setDesfechoDoGuardar({ tom: "erro", texto: salvo?.message || "Não foi possível salvar a simulação." });
+        setDesfechoDoGuardar({ tom: "erro", texto: mensagemDaFalha(salvo, "Não foi possível salvar a simulação.") });
         return;
       }
       setCenarioSalvo(assinaturaCenario);
@@ -685,16 +696,15 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
         // à toa — e o defeito nem é dele: sem o Volume no Railway o storage recusa.
         setDesfechoDoGuardar({
           tom: "erro",
-          texto: doc?.message
-            || "A simulação foi salva, mas o PDF não pôde ser guardado. Verifique o armazenamento de arquivos.",
+          texto: `A simulação foi salva, mas o PDF não pôde ser guardado. ${mensagemDaFalha(doc, "Verifique o armazenamento de arquivos.")}`,
         });
         return;
       }
       setDesfechoDoGuardar({ tom: "ok", texto: "Guardado em Documentos da empresa." });
     } catch (err) {
       if (empresaAtualCenario.current === empresaDoSalvar) setDesfechoDoGuardar({ tom: "erro", texto: cenarioFoiSalvo
-        ? `A simulação foi salva, mas o PDF não pôde ser guardado. ${err?.message || "Tente gerar o documento novamente."}`
-        : err?.message || "Não foi possível guardar." });
+        ? `A simulação foi salva, mas o PDF não pôde ser guardado. ${mensagemDaFalha(err, "Tente gerar o documento novamente.")}`
+        : mensagemDaFalha(err, "Não foi possível guardar.") });
     } finally {
       setGuardando(false);
     }
@@ -779,8 +789,8 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             seletor. */}
         {empresaId && (carregando || erroCarga) ? (
           <div data-print-hide style={{ display: "grid", gap: 4 }}>
-            {carregando && <span style={{ fontSize: "0.8rem", color: C.muted }}>Carregando os dados da empresa…</span>}
-            {erroCarga && <span style={{ fontSize: "0.8rem", color: C.alerta }}>⚠ {erroCarga}</span>}
+            {carregando && <span role="status" style={{ fontSize: "0.8rem", color: C.muted }}>Carregando os dados da empresa…</span>}
+            {erroCarga && <span role="alert" style={{ fontSize: "0.8rem", color: C.alerta }}>⚠ {erroCarga}</span>}
           </div>
         ) : null}
 
@@ -1156,14 +1166,14 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <div className="planejamento-cenario-botoes">
           <Button type="button" variant="secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</Button>
-          <Button type="button" variant="primary" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</Button>
+          <Button type="button" variant="primary" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>{guardando ? "Salvando…" : "Salvar cenário"}</Button>
           </div>
           {!empresaId && <span style={{ color: C.muted, fontSize: "0.875rem" }}>Vincule uma empresa para guardar e retomar cenários.</span>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
             <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={exportarEstudos} />
           </div>}
         </section>
-        {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
+        {desfechoDoGuardar && <p role={desfechoDoGuardar.tom === "erro" ? "alert" : "status"} style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
 
         {/* ── RESULTADO ────────────────────────────────────────────────────── */}
         {resultado && (

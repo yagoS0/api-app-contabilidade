@@ -1,3 +1,4 @@
+import { mensagemDaPendencia } from './mensagemDaPendencia';
 import { useRef, useState } from 'react';
 import { Modal } from '../../../../components/ui/Modal';
 import { Button } from '../../../../components/ui/Button';
@@ -24,15 +25,15 @@ export function PendenciaManualModal({ item, fonte = 'MUNICIPAL', salvar, aoFech
       lock.current = true; setOcupado(true);
       await salvar({ id: id.current, ...(item ? { versao: item.versao } : {}), dados });
       aoFechar();
-    } catch (err) { setErro(err.reason || err.message || 'Não foi possível salvar.'); }
+    } catch (err) { setErro(mensagemDaPendencia(err)); }
     finally { lock.current = false; setOcupado(false); }
   }
   return <Modal titulo={`${item ? 'Editar pendência' : 'Nova pendência'} · ${FONTES_MANUAIS[dados.fonte]}`} aoFechar={aoFechar} ocupado={ocupado} fecharAoClicarFundo={false}
     rodape={<><Button variant="secondary" disabled={ocupado} onClick={aoFechar}>Cancelar</Button><Button type="submit" form="pendencia-manual" disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar pendência'}</Button></>}>
     <form id="pendencia-manual" onSubmit={submit} className="pf-form"><fieldset disabled={ocupado}>
-      <label>Valor (R$)<input name="total" value={dados.total} onChange={mudar} inputMode="decimal" placeholder="0,00" /></label>
-      <label>Competência<input name="competencia" value={dados.competencia || ''} onChange={mudar} maxLength={7} placeholder="MM/AAAA" /></label>
       <label>Imposto<input name="tributo" value={dados.tributo || ''} onChange={mudar} required maxLength={120} placeholder="Ex.: ISS" /></label>
+      <label>Competência<input name="competencia" value={dados.competencia || ''} onChange={mudar} maxLength={7} placeholder="MM/AAAA" /></label>
+      <label>Valor (R$)<input name="total" value={dados.total} onChange={mudar} inputMode="decimal" placeholder="0,00" /></label>
       <label>Vencimento<input name="vencimento" value={dados.vencimento || ''} onChange={mudar} onInput={mudar} type="date" /></label>
       <label className="pf-form-wide">Descrição<textarea name="observacoes" value={dados.observacoes || ''} onChange={mudar} maxLength={2000} rows={3} /></label>
     </fieldset>{erro && <p role="alert" className="feedback error">{erro}</p>}</form>

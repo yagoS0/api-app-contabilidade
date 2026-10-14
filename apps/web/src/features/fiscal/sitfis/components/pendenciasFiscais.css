@@ -90,3 +90,8 @@
 @media(max-width: 560px) {
   .sitfis-actions .btn, .sitfis-document-actions .btn, .sitfis-read-error .btn, .sitfis-pdf-error .btn, .pendencias-fiscais .btn { min-height: 44px; }
 }
+
+@media(max-width: 560px) {
+  .pf-pdf-controls .btn { min-height: 44px; }
+  .pf-pdf-source legend label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+}

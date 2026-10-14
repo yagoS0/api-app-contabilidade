@@ -1,3 +1,4 @@
+import { mensagemDaPendencia } from './mensagemDaPendencia';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { projetarPendenciasSitfis, subtotalDocumental } from '@contabilidade/shared/pendencias-fiscais';
 import { projetarPendenciaManual, TIPOS_PENDENCIA, CAMPOS_VALOR } from '@contabilidade/shared/pendencias-manuais';
@@ -62,7 +63,7 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
     if (lock.current) return;
     lock.current = true; setOcupado(true); setErro('');
     try { await manuais.excluir(remover.manual); setRemover(null); setDetalhe(null); setSelecao(s => { const n = new Set(s); n.delete(remover.id); return n; }); }
-    catch (e) { setErro(e.reason || e.message); }
+    catch (e) { setErro(mensagemDaPendencia(e)); }
     finally { lock.current = false; setOcupado(false); }
   }
   return <section className="pendencias-fiscais" aria-label="Pendências por origem">
@@ -74,8 +75,8 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
     </div>
     {erroPdf && !opcoesPdf && <p role="alert" className="feedback error">{erroPdf}</p>}
     {contabeis?.loading && <p role="status" className="hint">Carregando pendências da contabilidade…</p>}
-    {contabeis?.error && <div role="alert" className="feedback error">{contabeis.error} <Button size="sm" variant="secondary" onClick={contabeis.reload}>Recarregar contabilidade</Button></div>}
-    {manuais?.error && <div role="alert" className="feedback error">{manuais.error} <Button variant="secondary" size="sm" onClick={manuais.reload}>Recarregar lançamentos</Button></div>}
+    {contabeis?.error && <div role="alert" className="feedback error">{mensagemDaPendencia(contabeis.error)} <Button size="sm" variant="secondary" onClick={contabeis.reload}>Recarregar contabilidade</Button></div>}
+    {manuais?.error && <div role="alert" className="feedback error">{mensagemDaPendencia(manuais.error)} <Button variant="secondary" size="sm" onClick={manuais.reload}>Recarregar lançamentos</Button></div>}
     {manuais?.loading && <p className="hint" role="status">Carregando lançamentos…</p>}
     {selecionadas.length > 0 && <div className="pf-selection" role="status"><strong>{selecionadas.length} selecionado(s)</strong>{resumo(selecionadas)}<Button size="sm" variant="secondary" onClick={() => setSelecao(new Set())}>Limpar seleção</Button></div>}
     {fontes.map(fonte => {
@@ -105,7 +106,7 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
     {podeEditar && editor && <PendenciaManualModal {...editor} salvar={manuais.salvar} aoFechar={() => setEditor(null)} />}
     {opcoesPdf && <ExportarPendenciasModal fontes={opcoesPdf} aoExportar={exportarPdf} aoFechar={() => setOpcoesPdf(null)} ocupado={exportando} erro={erroPdf} />}
     {pdf && <Modal titulo="PDF de pendências fiscais" tamanho="sm" aoFechar={() => setPdf(null)} rodape={<><Button variant="secondary" onClick={() => setPdf(null)}>Fechar</Button><a className="btn btn-primary btn-md" href={pdf.url} download={pdf.nome}>Baixar PDF</a></>}><p><strong>{pdf.empresa}</strong></p><p className="hint">Arquivo pronto · {pdf.quantidade} registro(s). Baixe para imprimir ou enviar ao cliente.</p></Modal>}
-    {detalhe && <Modal titulo={detalhe.tributo || detalhe.titulo} aoFechar={() => setDetalhe(null)} rodape={podeEditar && detalhe.manual ? <><Button variant="danger" onClick={() => { setRemover(detalhe); setDetalhe(null); setErro(''); }}>Excluir</Button><Button onClick={() => { setEditor({ item: detalhe.manual }); setDetalhe(null); }}>Editar</Button></> : null}>
+    {detalhe && <Modal titulo={detalhe.tributo || detalhe.titulo} aoFechar={() => setDetalhe(null)} rodape={podeEditar && detalhe.manual ? <><Button variant="secondary" onClick={() => { setRemover(detalhe); setDetalhe(null); setErro(''); }}>Excluir</Button><Button onClick={() => { setEditor({ item: detalhe.manual }); setDetalhe(null); }}>Editar</Button></> : null}>
       <p className="hint">{detalhe.manual ? 'Lançamento manual' : detalhe.titulo}</p>
       <dl className="pf-detail">{Object.entries(CAMPOS_VALOR).map(([k,v]) => <div key={k}><dt>{v}</dt><dd>{dinheiro(detalhe[k])}</dd></div>)}
         {Object.entries(detalhe.evidencia.registro).map(([k,v]) => <div key={k}><dt>{k}</dt><dd>{String(v ?? '—')}</dd></div>)}</dl>

@@ -45,6 +45,9 @@ export function NotaDaMensagem({ conversa, mensagem, hook, aoFechar }) {
       <Button variant="primary" disabled={ocupado || hook.ocupado || indisponivel || !texto.trim()} onClick={salvar}>{ocupado ? "Salvando…" : "Salvar nota interna"}</Button></>}>
     <div className="wa-message-note-form">
       <p>Visível apenas à equipe autorizada. Não é enviada ao WhatsApp.</p>
+      {conversa.capacidades?.notaInterna === false ? <p role="status">Você não tem permissão para criar uma nota neste atendimento.</p>
+        : typeof hook.salvarNota !== "function" ? <p role="status">Salvar notas não está disponível neste atendimento.</p>
+          : !escopos.length ? <p role="status">Nenhum caso ou empresa disponível para salvar esta nota.</p> : null}
       <div className="wa-message-note-source"><small>{cabecalho}</small><blockquote>{trecho}</blockquote></div>
       <label>Salvar para<select aria-label="Escopo da nota interna" value={escopoId} disabled={ocupado || hook.ocupado} onChange={e => { setEscopoId(e.target.value); setErro(""); }}>
         <option value="">Selecione o caso ou a empresa</option>{escopos.map(e => <option key={e.id} value={e.id}>{e.rotulo}</option>)}

@@ -8,12 +8,12 @@ export function ComparacaoCenarios({ cenarios, onAbrir, disabled = false, onExpo
   const selecionados = cenarios.filter(c => ids.includes(c.id));
   const regimes = [...new Set(selecionados.flatMap(c => (c.resultado?.regimes || []).map(r => r.regime)))];
   const linha = (rotulo, obter) => <tr key={rotulo}><th scope="row">{rotulo}</th>{selecionados.map(c => <td key={c.id}>{obter(c)}</td>)}</tr>;
-  if (!cenarios.length) return <p>Nenhum cenário salvo para esta empresa.</p>;
+  if (!cenarios.length) return <p role="status">Nenhum cenário salvo para esta empresa.</p>;
   return <div className="planejamento-avancado planejamento-cenarios" data-print-hide>
     <p>Selecione de dois a três cenários para comparar os valores salvos. Abrir um cenário carrega as premissas para recalcular com as tabelas atuais.</p>
     <div className="planejamento-lista-cenarios">{cenarios.map(c => <div key={c.id}>
       <label><input type="checkbox" checked={ids.includes(c.id)} disabled={disabled || (!ids.includes(c.id) && selecionados.length >= 3)}
-        onChange={e => setIds(e.target.checked ? [...ids, c.id] : ids.filter(id => id !== c.id))} /> {nomeCenario(c)} · {dataCenario(c)}</label>
+        onChange={e => setIds(e.target.checked ? [...ids, c.id] : ids.filter(id => id !== c.id))} /> <span>{nomeCenario(c)} · {dataCenario(c)}</span></label>
       <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onAbrir(c)}>Abrir {c.competencia || "simulação"} · {dataCenario(c)}</button>
     </div>)}</div>
     {selecionados.length >= 2 && onExportar && <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onExportar(selecionados)}>Baixar comparação em PDF</button>}

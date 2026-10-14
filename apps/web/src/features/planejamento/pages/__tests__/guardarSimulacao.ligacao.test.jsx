@@ -322,3 +322,24 @@ it("não mostra sucesso do PDF de outra empresa após trocar o contexto", async 
   await act(async () => resolverPdf({ ok: true }));
   expect(screen.queryByText("Guardado em Documentos da empresa.")).not.toBeInTheDocument();
 });
+
+
+it('anuncia recusa de perfil sem esconder premissas nem chamar geração de PDF', async()=>{
+ const api=montar({salvarSimulacaoPlanejamento:jest.fn(async()=>{throw Object.assign(new Error('insufficient_role'),{reason:'insufficient_role'});})});
+ await esperarCalculo();fireEvent.click(screen.getByRole('button',{name:'Salvar cenário'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('exige perfil de contador');
+ expect(screen.getByLabelText('Receita anual (R$)')).toHaveValue('300.000,00');
+ expect(api.gerarDocumentoDaSimulacao).not.toHaveBeenCalled();
+});
+it('busy mostra Salvando e mantém bloqueio contra clique repetido',async()=>{
+ let concluir;const api=montar({salvarSimulacaoPlanejamento:jest.fn(()=>new Promise(r=>{concluir=r;}))});
+ await esperarCalculo();fireEvent.click(screen.getByRole('button',{name:'Salvar cenário'}));
+ expect(screen.getByRole('button',{name:'Salvando…'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Salvando…'}));expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1);
+ await act(async()=>concluir({ok:true,simulacao:{id:'busy'}}));expect(screen.getByRole('button',{name:'Salvar cenário'})).toBeEnabled();
+});
+it('resposta negada do PDF preserva informação de que cenário foi salvo',async()=>{
+ montar({gerarDocumentoDaSimulacao:jest.fn(async()=>({ok:false,error:'insufficient_role'}))});await esperarCalculo();fireEvent.click(botao());
+ expect(await screen.findByRole('alert')).toHaveTextContent('A simulação foi salva, mas o PDF não pôde ser guardado.');
+ expect(screen.getByRole('alert')).toHaveTextContent('exige perfil de contador');
+});
