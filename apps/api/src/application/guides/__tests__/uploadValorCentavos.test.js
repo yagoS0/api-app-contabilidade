@@ -16,5 +16,3 @@ test.each([[14101.25,14101,14101.25],[100.01,100,100.01],[100.99,101,100.99],[nu
   await uploadGuideForPortalClient({ portalClientId: 'empresa', fileBuffer: Buffer.from('%PDF'), fileName: 'guia.pdf', metadata: { valor: informado } });
   expect(createOrUpdateGuideFromProcessing).toHaveBeenCalledWith(expect.objectContaining({ parsed: expect.objectContaining({ valor: esperado }), extracted: expect.objectContaining({ valor: esperado }) }));
 });
-
-
