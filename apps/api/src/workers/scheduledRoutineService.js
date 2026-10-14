@@ -95,17 +95,24 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
     presumido: "SERPRO_PGDASD_WORKER_ENABLED", parcelamento: "SERPRO_PGDASD_WORKER_ENABLED",
     inss: "SERPRO_DCTFWEB_WORKER_ENABLED", pagamento: "SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED",
     conferencia: "CONFERENCIA_ADN_WORKER_ENABLED",
+    avisos_guias_whatsapp: "GUIAS_WHATSAPP_AVISOS",
   };
-  return Promise.all(Object.entries(settings.rotinas || {}).map(async ([routine, config]) => {
+  const rotinas = { ...settings.rotinas };
+  if (settings.rotinas?.pagamento) rotinas.avisos_guias_whatsapp = {
+    enabled: settings.rotinas.pagamento.enabled, frequency: 'DAILY', hour: settings.rotinas.pagamento.hour,
+  };
+  return Promise.all(Object.entries(rotinas).map(async ([routine, config]) => {
     const workerFlag = workers[routine];
+    const avisoWhatsapp = routine === 'avisos_guias_whatsapp';
+    const workerEnabled = process.env[avisoWhatsapp ? 'INTEGRACAO_WHATSAPP' : workerFlag] === '1';
     const [latest, heartbeat] = await Promise.all([
       prisma.appSetting.findFirst({ where: { key: { startsWith: `${PREFIX}${routine}:` } }, orderBy: { key: "desc" } }),
       prisma.appSetting.findUnique({ where: { key: `fiscal_worker:${workerFlag}` } }),
     ]);
     const schedule = describeSchedule(config, now);
     const integrationEnabled = routine !== "parcelamento" || process.env.INTEGRACAO_SERPRO_PARCELAMENTO === "1";
-    const enabled = integrationEnabled && process.env[workerFlag] === "1" && config.enabled === true
-      && (routine === "conferencia" || settings.enabled);
+    const enabled = integrationEnabled && workerEnabled && config.enabled === true
+      && (avisoWhatsapp || routine === "conferencia" || settings.enabled);
     const heartbeatAt = heartbeat?.value?.observedAt || null;
     const alive = heartbeatAt && now - new Date(heartbeatAt) < 180000;
     const retryExhausted = latest?.value?.status === "FAILED" && Number(latest.value.attempts) >= MAX_ATTEMPTS;
@@ -113,7 +120,7 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
       && (!latest || latest.value.scheduledAt < schedule.previousAt);
     const interrupted = latest?.value?.status === "RUNNING" && new Date(latest.value.leaseUntil) <= now;
     const nextEffectiveAt = schedule.nextAt;
-    return { routine, enabled, integrationEnabled, workerEnabled: process.env[workerFlag] === "1",
+    return { routine, ...(avisoWhatsapp ? { label: 'Lembretes de guias no WhatsApp' } : {}), enabled, integrationEnabled, workerEnabled,
       heartbeatAt, alive: Boolean(alive), overdue: Boolean(overdue), interrupted, retryExhausted, maxAttempts: MAX_ATTEMPTS,
       ...schedule, nextEffectiveAt, lastRun: latest ? { ...latest.value, retryAt: null } : null };
   }));
