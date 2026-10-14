@@ -229,3 +229,12 @@ describe("5. o histórico é SUGESTÃO editável — e a descrição da planilha
     expect(campos(0).h.value).toBe("TARIFAS BANCARIAS DO MES");
   });
 });
+it('identifica campos e seleção por linha na região de revisão', async () => {
+  await abrirRevisao();
+  expect(screen.getByRole('region', { name: 'Revisão dos lançamentos da planilha' })).toHaveAttribute('tabindex', '0');
+  expect(screen.getByLabelText('Débito da linha 1')).toBe(campos(0).d);
+  expect(screen.getByLabelText('Crédito da linha 1')).toBe(campos(0).c);
+  fireEvent.click(screen.getByLabelText('Pular linha 1'));
+  expect(campos(0).d).toBeDisabled();
+  expect(campos(1).d).toBeEnabled();
+});

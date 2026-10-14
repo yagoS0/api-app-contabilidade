@@ -1,3 +1,4 @@
+import "./importExcelModal.css";
 import { memo, useState, useEffect, useRef } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { Modal } from "../../../../components/ui/Modal";
@@ -6,12 +7,12 @@ import { historicoSugeridoDaLinha } from "../lib/historicoSugerido";
 import { contasSugeriveis, sinteticasNasLinhas } from "../../entries/lib/contaSintetica";
 
 const PANEL = {
-  surface: "#24253A",
-  field: "#1A1B26",
-  border: "#44475A",
-  text: "#F8F8F2",
+  surface: "var(--bg-surface)",
+  field: "var(--bg-subtle)",
+  border: "var(--border)",
+  text: "var(--text)",
   muted: "var(--text-muted)",
-  accent: "#BD93F9",
+  accent: "var(--accent-purple)",
 };
 
 const inputStyle = {
@@ -19,8 +20,8 @@ const inputStyle = {
   color: PANEL.text, padding: "6px 8px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box",
 };
 const headStyle = {
-  padding: "8px 6px", textAlign: "left", color: "#aeb6d3", fontSize: "0.75rem",
-  fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em",
+  padding: "8px 6px", textAlign: "left", color: "var(--text-muted)", fontSize: "0.8125rem",
+  fontWeight: 600,
   borderBottom: `1px solid ${PANEL.border}`, background: PANEL.field,
 };
 
@@ -175,7 +176,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
   }
 
   return (
-    <Modal titulo="Importar Excel" tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} rodape={step === "review" ? (<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+    <Modal className="import-excel-modal" titulo="Importar Excel" tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} rodape={step === "review" ? (<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="secondary" disabled={ocupado} onClick={() => { setStep("upload"); setTransactions([]); setError(""); }}>Voltar</Button>
               <Button variant="secondary" onClick={saving ? onClose : fechar}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
               <Button variant="primary" onClick={handleCommit} disabled={!canCommit}>
@@ -207,7 +208,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
               </Button>
             </div>
             {error && (
-              <div role="alert" style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.875rem" }}>
+              <div role="alert" style={{ marginTop: 12, padding: 8, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 6, color: "var(--state-danger)", fontSize: "0.875rem" }}>
                 {error}
               </div>
             )}
@@ -218,7 +219,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
           <div>
             <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.85rem", flexWrap: "wrap" }}>
               <span><strong style={{ color: "var(--success)" }}>{matchedRows}</strong> casadas</span>
-              <span><strong style={{ color: "#FFB347" }}>{pendingRows}</strong> pendentes</span>
+              <span><strong style={{ color: "var(--state-warn)" }}>{pendingRows}</strong> pendentes</span>
               <span><strong style={{ color: PANEL.accent }}>{completeRows}</strong> prontas para importar</span>
               {skipRows > 0 && <span><strong style={{ color: PANEL.muted }}>{skipRows}</strong> ignoradas</span>}
               <span style={{ color: PANEL.muted }}>{totalRows} no total</span>
@@ -228,7 +229,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                 recusaria estas linhas de qualquer forma, e devolver só uma contagem de falhas no
                 fim é a recusa muda que este aviso existe para evitar. */}
             {bloqueadasPorSintetica.length > 0 && (
-              <div style={{ marginBottom: 12, fontSize: "0.8125rem", color: "#FF5757", fontWeight: 600 }}>
+              <div style={{ marginBottom: 12, fontSize: "0.8125rem", color: "var(--state-danger)", fontWeight: 600 }}>
                 {bloqueadasPorSintetica.length === 1 ? "1 linha não será importada" : `${bloqueadasPorSintetica.length} linhas não serão importadas`}
                 {" — conta sintética (de agregação) não recebe lançamento: "}
                 {[...new Set(bloqueadasPorSintetica.flatMap((t) => sinteticasDaLinha(t).map((s) => `${s.codigo} ${s.nome}`)))].join(", ")}
@@ -236,7 +237,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
               </div>
             )}
 
-            <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${PANEL.border}`, marginBottom: 12 }}>
+            <div role="region" aria-label="Revisão dos lançamentos da planilha" tabIndex={0} style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${PANEL.border}`, marginBottom: 12 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr>
@@ -283,25 +284,27 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                           <input
                             type="text"
                             list={ID_LISTA_CONTAS}
+                            aria-label={`Débito da linha ${t.rowIndex}`}
                             value={t.contaDebito || ""}
                             onChange={(e) => updateRow(idx, { contaDebito: e.target.value })}
                             placeholder="—"
                             disabled={t.skip}
-                            style={{ ...inputStyle, fontWeight: 700, color: t.contaDebito ? "#8BE9FD" : PANEL.muted, textAlign: "center" }}
+                            style={{ ...inputStyle, fontWeight: 500, color: t.contaDebito ? "var(--text)" : PANEL.muted, textAlign: "center" }}
                           />
                         </td>
                         <td style={{ padding: "5px 8px" }}>
                           <input
                             type="text"
                             list={ID_LISTA_CONTAS}
+                            aria-label={`Crédito da linha ${t.rowIndex}`}
                             value={t.contaCredito || ""}
                             onChange={(e) => updateRow(idx, { contaCredito: e.target.value })}
                             placeholder="—"
                             disabled={t.skip}
-                            style={{ ...inputStyle, fontWeight: 700, color: t.contaCredito ? "var(--success)" : PANEL.muted, textAlign: "center" }}
+                            style={{ ...inputStyle, fontWeight: 500, color: t.contaCredito ? "var(--text)" : PANEL.muted, textAlign: "center" }}
                           />
                         </td>
-                        <td style={{ padding: "5px 8px", fontSize: "0.78rem" }}>
+                        <td style={{ padding: "5px 8px", fontSize: "0.8125rem" }}>
                           {t.skip ? <span style={{ color: PANEL.muted }}>—</span>
                             : matched ? (
                               <span style={{ color: "var(--success)" }}>
@@ -310,16 +313,19 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                             ) : ready ? (
                               <span style={{ color: PANEL.accent }}>✓ Pronto</span>
                             ) : (
-                              <span style={{ color: "#FFB347" }}>⚠ Pendente</span>
+                              <span style={{ color: "var(--state-warn)" }}>⚠ Pendente</span>
                             )}
                         </td>
                         <td style={{ padding: "5px 8px", textAlign: "center" }}>
+                          <label className="import-excel-pular">
                           <input
                             type="checkbox"
+                            aria-label={`Pular linha ${t.rowIndex}`}
                             checked={Boolean(t.skip)}
                             onChange={(e) => updateRow(idx, { skip: e.target.checked })}
                             style={{ width: 16, height: 16, cursor: "pointer", accentColor: PANEL.accent }}
                           />
+                          </label>
                         </td>
                       </tr>
                     );
@@ -333,7 +339,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
 
             {pendingRows > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "end", padding: 10, background: PANEL.field, borderRadius: 6, marginBottom: 12 }}>
-                <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>Aplicar a todas pendentes:</span>
+                <span style={{ fontSize: "0.8125rem", color: PANEL.muted }}>Aplicar a todas pendentes:</span>
                 <label style={{ display: "grid", gap: 4 }}>Débito
                 <input
                   type="text"
@@ -341,7 +347,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                   value={bulkD}
                   onChange={(e) => setBulkD(e.target.value)}
                   placeholder="Débito"
-                  style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkD ? "#8BE9FD" : PANEL.muted, textAlign: "center" }}
+                  style={{ ...inputStyle, width: 110, fontWeight: 500, color: bulkD ? "var(--text)" : PANEL.muted, textAlign: "center" }}
                 />
                 </label>
                 <label style={{ display: "grid", gap: 4 }}>Crédito
@@ -351,7 +357,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                   value={bulkC}
                   onChange={(e) => setBulkC(e.target.value)}
                   placeholder="Crédito"
-                  style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? "var(--success)" : PANEL.muted, textAlign: "center" }}
+                  style={{ ...inputStyle, width: 110, fontWeight: 500, color: bulkC ? "var(--text)" : PANEL.muted, textAlign: "center" }}
                 />
                 </label>
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC}>
@@ -361,7 +367,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
             )}
 
             {error && (
-              <div role="alert" style={{ marginBottom: 10, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+              <div role="alert" style={{ marginBottom: 10, padding: 8, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 6, color: "var(--state-danger)", fontSize: "0.8125rem" }}>
                 {error}
               </div>
             )}
