@@ -15,7 +15,7 @@ import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExe
 import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
 import { runRoutineLoop } from "./runRoutineLoop.js";
 import { previousCompetencia } from "./routineSchedule.js";
-import { documentosPgdas, procuracaoPermitePgdas } from "../application/fiscal/serpro/pgdasDocumentos.js";
+import { documentosPgdas, procuracaoPermitePgdas, whereDasSalvo } from "../application/fiscal/serpro/pgdasDocumentos.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
@@ -114,7 +114,7 @@ async function executarPgdasd(options = {}) {
         if (company.regimeTributario === "SIMPLES") {
           const [circular, guide] = await Promise.all([
             prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: company.id, competencia } } }),
-            prisma.guide.findFirst({ where: { portalClientId: company.id, competencia, tipo: "SIMPLES", source: "SERPRO", status: "PROCESSED", parcelamentoId: null, NOT: { sourceFileId: { startsWith: "PARC-" } } }, orderBy: { updatedAt: "desc" }, select: { id: true, pdfBytes: true } }),
+            prisma.guide.findFirst({ where: whereDasSalvo(company.id, competencia), orderBy: { updatedAt: "desc" }, select: { id: true, pdfBytes: true } }),
           ]);
           documentos = documentosPgdas(circular, guide);
           // Retorno fiscal negativo exige uma nova consulta explícita do contador.
@@ -216,15 +216,7 @@ async function executarPgdasd(options = {}) {
         // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)
         // eslint-disable-next-line no-await-in-loop
         const existingForCompetencia = await prisma.guide.findFirst({
-          where: {
-            portalClientId: company.id,
-            source: "SERPRO",
-            tipo: "SIMPLES",
-            parcelamentoId: null,
-            NOT: { sourceFileId: { startsWith: "PARC-" } },
-            competencia,
-            status: "PROCESSED",
-          },
+          where: whereDasSalvo(company.id, competencia),
           select: { id: true, pdfBytes: true },
         });
 

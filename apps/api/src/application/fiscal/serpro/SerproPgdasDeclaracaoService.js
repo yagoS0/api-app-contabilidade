@@ -1,5 +1,5 @@
 import { SerproProcurationService } from "./SerproProcurationService.js";
-import { procuracaoPermitePgdas } from "./pgdasDocumentos.js";
+import { procuracaoPermitePgdas, whereDasSalvo } from "./pgdasDocumentos.js";
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { parseTributosPgdas, tributosPorTributoParaColuna } from "./parseTributosPgdas.js";
@@ -576,8 +576,8 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     return { company, circular: salva, guide: null, reutilizado: true, accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex };
   }
   if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasNumeroDeclaracao && salva.pgdasDeclaracaoFileId && salva.pgdasReciboFileId) {
-    const guide = await prisma.guide.findFirst({ where: { portalClientId: company.id, competencia: competenciaStorage, tipo: "SIMPLES", source: "SERPRO", parcelamentoId: null, status: "PROCESSED" }, orderBy: { updatedAt: "desc" } });
-    if (guide?.pdfBytes?.length || !salva.dasNumeroDocumento) return { company, circular: salva, guide, reutilizado: true,
+    const guide = await prisma.guide.findFirst({ where: whereDasSalvo(company.id, competenciaStorage), orderBy: { updatedAt: "desc" } });
+    if (somenteDocumentos || guide?.pdfBytes?.length || !salva.dasNumeroDocumento) return { company, circular: salva, guide, reutilizado: true,
       accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex,
       files: { declaracaoFileId: salva.pgdasDeclaracaoFileId, reciboFileId: salva.pgdasReciboFileId } };
   }

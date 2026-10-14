@@ -36,7 +36,7 @@ test("horário DAS não executa outras rotinas e não exige e-mail", async () =>
   expect(result.captured).toBe(1);
   expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
   expect(prepararAcompanhamentoParcelamentosEmpresa).not.toHaveBeenCalled();
-  expect(prisma.guide.findFirst.mock.calls[0][0].where).toMatchObject({ parcelamentoId: null, NOT: { sourceFileId: { startsWith: "PARC-" } } });
+  expect(prisma.guide.findFirst.mock.calls[0][0].where).toMatchObject({ parcelamentoId: null, OR: [{ sourceFileId: null }, { NOT: { sourceFileId: { startsWith: "PARC-" } } }] });
 });
 
 test("contrato antigo acompanha sem abertura contábil e mesmo fora do Simples", async () => {
@@ -104,4 +104,13 @@ test("DAS pronto não impede recuperar extrato ausente", async () => {
   await runSerproPgdasdWorkerOnce({ routines: ["das", "extrato"], competencia: "2026-08" });
   expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
   expect(syncPgdasByCompetencia).toHaveBeenCalledTimes(1);
+});
+
+
+test("DAS por upload encerra rotina sem procuração ou captura", async () => {
+  prisma.guide.findFirst.mockImplementation(async ({ where }) => where.source ? null : { id: "upload", source: "UPLOAD", pdfBytes: Buffer.from("pdf") });
+  const result = await runSerproPgdasdWorkerOnce({ routines: ["das"], competencia: "2026-09" });
+  expect(result.results[0].status).toBe("documentos_ja_recuperados");
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(SerproProcurationService.mock.results.at(-1).value.checkCompanyProcuration).not.toHaveBeenCalled();
 });

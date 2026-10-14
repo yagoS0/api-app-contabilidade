@@ -24,3 +24,10 @@ test.each([{ atualizar: true }, { existingGuideId: "g1" }, { dataConsolidacao: "
   await expect(capturePgdasGuideForCompany({ ...input, ...extra })).rejects.toThrow("CHAMADA_FISCAL_SIMULADA");
   expect(emitir).toHaveBeenCalledTimes(1); expect(prisma.guide.findFirst).not.toHaveBeenCalled();
 });
+
+
+test("upload processado é reutilizado sem emissão nem alteração da guia", async () => {
+  prisma.guide.findFirst.mockImplementation(async ({ where }) => where.source ? null : { id: "upload", source: "UPLOAD", pdfBytes: Buffer.from("pdf") });
+  expect(await capturePgdasGuideForCompany(input)).toMatchObject({ reutilizado: true, guide: { guideId: "upload" }, integration: { chamadaSerpro: false } });
+  expect(SerproPgdasdService).not.toHaveBeenCalled();
+});
