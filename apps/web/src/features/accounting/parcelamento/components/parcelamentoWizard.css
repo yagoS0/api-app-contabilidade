@@ -1,0 +1,7 @@
+.parcelamento-wizard-conteudo { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.parcelamento-wizard label { min-width: 0; }
+@media (max-width: 600px) { .parcelamento-wizard input:not([type="radio"]):not([type="checkbox"]), .parcelamento-wizard select { min-height: 44px; } }
+.parcelamento-wizard th { text-transform: none; letter-spacing: normal; }
+
+.parcelamento-wizard button:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+@media (max-width: 600px) { .parcelamento-wizard button { min-height: 44px; min-width: 44px; } }

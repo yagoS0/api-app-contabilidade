@@ -159,3 +159,13 @@ Rotinas separa agenda, empresas e execução manual; agenda empilhada no celular
 A pedido explícito do usuário, removida a aba Guias não identificadas, seu componente, estados/handlers e métodos de cliente exclusivos. A URL antiga redireciona para Empresas; navegação não oferece o destino. Upload de guias na empresa e registros fiscais existentes permanecem. A remoção da aba não apaga dados do banco nem muda contratos backend.
 
 Evidência local: 78 testes de navegação/rotas aprovados, inclusive URLs antigas; testes dirigidos dos três módulos e build web aprovados. Capturas de componentes reais com dados simulados em390/1440, relatórios design-rotinas-coverage.md, design-apuracao-classificacao-coverage.md e design-consultas/coverage.md. Permissões exercitadas como recusas simuladas; nenhuma consulta paga, transmissão ou mutação fiscal real. LP teve revisão estática sem mudanças. Os relatórios registram os estados efetivamente conferidos e não representam homologação de todas as combinações externas.
+
+## Históricos, novo parcelamento e estados de Planejamento — 14/10/2026
+
+Continuação multiagente após PR187. Históricos mantém tabela no computador e apresenta cada registro em campos no celular, sem exigir rolagem lateral para editar contas. Nomes completos, escopo neutro, ações compartilhadas e estado de gravação legível; filtros indicam seleção. Preservados handlers, alcance global/empresa e exclusão existente.
+
+Novo parcelamento usa Modal compartilhado, com foco, retorno ao gatilho e confirmação de descarte que preserva o rascunho. Durante gravação, campos e saídas ficam bloqueados. Grades se adaptam à largura e textos/cores seguem tokens. Avisos de custo, memória global, composição e consequência contábil permanecem. Recusas conhecidas são legíveis; regras, cálculos e payload não mudam.
+
+Planejamento conserva a estrutura posterior do PR186: cenários legíveis e alvos móveis, comparação com região acessível pelo teclado, geração do relatório com estado ocupado anunciado. Lista, gravação recusada, PDF de Documentos recusado após salvar e erro de impressão local foram exercitados com serviços simulados. Não houve nova homologação das páginas internas do PDF.
+
+Evidências locais em historicos-estados (14 capturas), design-wizard-estados (18) e design-planejamento-periodo (22), nas larguras390/1440, com componentes reais e rede externa bloqueada. Sem overflow de página ou erros JS nos estados capturados, com inspeção visual amostral. Testes dirigidos e build web aprovados; relatórios locais discriminam limites e revisões posteriores. Permissões simuladas não equivalem à autenticação de todos os papéis em produção. Nenhuma gravação contábil, consulta fiscal ou emissão real foi realizada na validação.

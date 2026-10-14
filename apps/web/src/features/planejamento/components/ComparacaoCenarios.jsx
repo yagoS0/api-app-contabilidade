@@ -17,7 +17,7 @@ export function ComparacaoCenarios({ cenarios, onAbrir, disabled = false, onExpo
       <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onAbrir(c)}>Abrir {c.competencia || "simulação"} · {dataCenario(c)}</button>
     </div>)}</div>
     {selecionados.length >= 2 && onExportar && <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onExportar(selecionados)}>Baixar comparação em PDF</button>}
-    {selecionados.length >= 2 && <div className="planejamento-tabela-scroll"><table>
+    {selecionados.length >= 2 && <div className="planejamento-tabela-scroll" role="region" aria-label="Comparação dos cenários salvos" tabIndex={0}><table>
       <caption>Comparação dos resultados salvos — diferenças de premissas não representam economia realizada.</caption>
       <thead><tr><th scope="col">Informação</th>{selecionados.map(c => <th scope="col" key={c.id}>{nomeCenario(c)}<small>{dataCenario(c)}</small></th>)}</tr></thead>
       <tbody>
