@@ -78,6 +78,12 @@ describe("apurar — o Lucro Presumido é DITO, não escondido", () => {
     expect(a.fora[0].motivo).toMatch(/retificadora/i);
   });
 
+  test("entrega comprovada por fora não entra novamente no lote", () => {
+    const a = acaoDoPlano(plano([empresa({ fluxoCarteira: { apuracao: { porFora: true } } })]), "apurar");
+    expect(a.alvos).toHaveLength(0);
+    expect(a.fora[0].motivo).toMatch(/retificadora/i);
+  });
+
   test("Simples ainda não apurada entra, e o alvo AVISA que o servidor revalida", () => {
     const a = acaoDoPlano(plano([empresa()]), "apurar");
     expect(a.alvos).toHaveLength(1);

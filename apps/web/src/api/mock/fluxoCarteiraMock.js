@@ -5,7 +5,8 @@ export function withFluxoCarteiraMock(api, fonte = () => ({ entries: [], fechado
   const registros = new Map();
   const fingerprint = value => JSON.stringify(value);
   function detalhe(company, competencia, obrigacoes = []) {
-    const id=company.companyId, { entries, fechadoEm }=fonte(id,competencia);
+    const id=company.companyId, { entries, fechadoEm, numeroDeclaracaoRfb }=fonte(id,competencia);
+    company = { ...company, apuracao: { ...company.apuracao, numeroDeclaracaoRfb: numeroDeclaracaoRfb || null } };
     const regs=[...registros.values()].filter(r=>r.portalClientId===id && r.competencia===competencia);
     const importacoes=regs.find(r=>r.chave==='importar')?.dados.importacoes || {};
     const lancamentos=entries.filter(e=>e.tipo!=='PARCELA').map(e=>({id:e.id,historico:e.historico,status:e.status,hash:fingerprint([fechadoEm,e.id,e.status,e.data,e.historico,e.lines]),importavel:Boolean(fechadoEm)&&e.status==='EXPORTADO'}));

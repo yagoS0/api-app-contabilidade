@@ -1,3 +1,4 @@
+import { apuradaPorFora } from '@contabilidade/shared/fluxo-carteira';
 // Q15.7: página global de Apuração (fluxo novo). Agora é SELECT-ONLY:
 // tabela de empresas × competência; seleção múltipla das FECHADAS → [Apurar em lote].
 // Fechar/transmitir/retificar saíram daqui — agora é dentro de cada empresa (aba Apuração).
@@ -15,6 +16,7 @@ import { estadoEntregaPgdas, CORES_TOM } from "../lib/entregaPgdas";
 import { AlertasMonitoramento } from "../components/AlertasMonitoramento";
 
 const ESTADO_BADGE = {
+  apurada_fora: { c: "var(--state-ok)", s: "var(--state-ok-surface)", l: "Apurada por fora" },
   aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
   configurando:  { c: "var(--accent-cyan)",    s: "rgba(139, 233, 253, 0.13)",   l: "configurando" },
   calculada:     { c: "var(--accent-purple)",  s: "var(--accent-purple-surface)", l: "calculada" },
@@ -137,6 +139,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
             <tbody>
               {items.map((it) => {
                 const isFechada = it.estado === "fechada";
+                const porFora = apuradaPorFora({ numeroDeclaracaoRfb: it.entregaPgdas?.numeroDeclaracaoRfb, numeroDeclaracaoPortal: it.numeroDeclaracao, estado: it.estado });
                 return (
                   <tr key={it.portalClientId} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
                     <td style={td}>
@@ -151,11 +154,12 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                       <div style={{ fontSize: 13, color: PANEL.muted, fontFamily: "monospace" }}>{it.cnpj}</div>
                     </td>
                     <td style={td}>
-                      <EstadoBadge estado={it.estado} />
+                      <EstadoBadge estado={porFora ? "apurada_fora" : it.estado} />
+                      {porFora && <div style={{ marginTop: 4, fontSize: "0.72rem", color: PANEL.muted }}>Fechamento interno: {ESTADO_BADGE[it.estado]?.l || it.estado || "aberta"}</div>}
                       {it.entregaPgdas && (() => {
                         const entrega = estadoEntregaPgdas({ ...it.entregaPgdas, estadoApuracao: it.estado, numeroDeclaracaoPortal: it.numeroDeclaracao });
                         return <div title={entrega.detalhe} style={{ marginTop: 4, fontSize: "0.72rem", maxWidth: 230, color: CORES_TOM[entrega.tom].cor }}>
-                          {entrega.chave === "capturada_da_rfb" ? (it.numeroDeclaracao ? "Entrega confirmada na Receita" : "Entrega na Receita · sem transmissão registrada aqui") : entrega.rotulo}
+                          {entrega.chave === "capturada_da_rfb" ? (it.numeroDeclaracao ? "Entrega confirmada na Receita" : "Entrega comprovada na Receita") : entrega.rotulo}
                         </div>;
                       })()}
                     </td>

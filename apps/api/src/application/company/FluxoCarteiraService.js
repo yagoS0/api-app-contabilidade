@@ -24,8 +24,8 @@ export async function contextosCarteira(companies, competencia, db = prisma) {
   fim.setUTCMonth(fim.getUTCMonth() + 1);
   const [registros, snapshots, circulares, entries, notas, ocorrencias] = await Promise.all([
     db.carteiraTarefa.findMany({ where: { portalClientId: { in: ids }, competencia } }),
-    db.apuracaoSnapshot.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, estado: true, idempotencyKey: true, transmitidoEm: true } }),
-    db.companyMonthlyCircular.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, fechadoContabilEm: true } }),
+    db.apuracaoSnapshot.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, estado: true, idempotencyKey: true, transmitidoEm: true, numeroDeclaracao: true } }),
+    db.companyMonthlyCircular.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, fechadoContabilEm: true, pgdasNumeroDeclaracao: true } }),
     db.accountingEntry.findMany({ where: { portalClientId: { in: ids }, competencia, tipo: { not: 'PARCELA' } }, include: { lines: true }, orderBy: { id: 'asc' } }),
     db.portalInvoice.findMany({ where: { clientId: { in: ids }, competencia: { gte: inicio, lt: fim }, papel: 'EMIT' }, select: { clientId: true, id: true, total: true, statusEfetivo: true, updatedAt: true }, orderBy: { id: 'asc' } }),
     db.ocorrenciaObrigacao.findMany({ where: { competenciaRef: competencia, canceladaEm: null, foraDaRecorrencia: false, obrigacao: { portalClientId: { in: ids }, ativa: true, tipo: 'OBRIGACAO', OR: [{ verificador: null }, { NOT: { verificador: { startsWith: 'CARTEIRA_' } } }] } }, include: { obrigacao: { select: { portalClientId: true, nome: true, verificador: true } } }, orderBy: { id: 'asc' } }),
@@ -34,15 +34,18 @@ export async function contextosCarteira(companies, competencia, db = prisma) {
     const id = company.companyId;
     const regs = registros.filter(r => r.portalClientId === id);
     const snapshot = snapshots.find(s => s.portalClientId === id);
-    const fechadoEm = circulares.find(c => c.portalClientId === id)?.fechadoContabilEm || null;
+    const circular = circulares.find(c => c.portalClientId === id);
+    const fechadoEm = circular?.fechadoContabilEm || null;
     const es = entries.filter(e => e.portalClientId === id);
     const registroImportacao = regs.find(r => r.chave === 'importar')?.dados?.importacoes || {};
     const lancamentos = es.map(e => ({ id: e.id, historico: e.historico || 'Sem histórico', status: e.status, hash: hashLancamento(e, fechadoEm), importavel: Boolean(fechadoEm) && e.status === 'EXPORTADO' }));
     for (const e of lancamentos) e.importado = e.importavel && registroImportacao[e.id]?.hash === e.hash;
-    const base = [id, competencia, company.legacyCompany?.regimeTributario, notas.filter(n => n.clientId === id), snapshot || null];
+    // Campo adicional de apresentação não invalida confirmações manuais já registradas.
+    const { numeroDeclaracao: _numero, ...snapshotBase } = snapshot || {};
+    const base = [id, competencia, company.legacyCompany?.regimeTributario, notas.filter(n => n.clientId === id), snapshot ? snapshotBase : null];
     const obrigacoes = ocorrencias.filter(o => o.obrigacao.portalClientId === id).map(o => ({ id: o.id, nome: o.obrigacao.nome, verificador: o.obrigacao.verificador, concluida: o.obrigacao.verificador === 'MES_FECHADO' ? Boolean(fechadoEm) : o.obrigacao.verificador === 'APURACAO_TRANSMITIDA' ? ['transmitida','confirmada'].includes(snapshot?.estado) : o.status === 'CONCLUIDA', vencimento: o.dataVencimento, updatedAt: o.updatedAt }));
     const contexto = { competencia, registros: regs, obrigacoes, hashes: { apurar: hash(base), transmitir: hash(base), obrigacoes: hash([base, obrigacoes]), importar: hash(lancamentos) }, lancamentos: { total: es.length, importados: lancamentos.filter(e => e.importado).length } };
-    const atual = { ...company, apuracao: { ...company.apuracao, estado: snapshot?.estado || null, transmitidoEm: snapshot?.transmitidoEm || null }, fechamentoContabil: { fechado: Boolean(fechadoEm), fechadoEm } };
+    const atual = { ...company, apuracao: { ...company.apuracao, estado: snapshot?.estado || null, numeroDeclaracao: snapshot?.numeroDeclaracao || null, numeroDeclaracaoRfb: circular?.pgdasNumeroDeclaracao || null, transmitidoEm: snapshot?.transmitidoEm || null }, fechamentoContabil: { fechado: Boolean(fechadoEm), fechadoEm } };
     return [id, { fluxo: projetarFluxoCarteira(atual, contexto), lancamentos, contexto, company: atual }];
   }));
 }
