@@ -16,11 +16,11 @@ import { RecalcularGuiasSitfis } from "./RecalcularGuiasSitfis";
 // Resumo do relatório: campos rotulados + as tabelas de pendência.
 
 const SITUACAO_META = {
-  INCONCLUSIVO: { label: "Leitura inconclusiva", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
-  COM_PENDENCIA: { label: "Com pendência", color: "var(--danger)", bg: "rgba(255,71,87,0.12)" },
-  EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
-  REGULAR: { label: "Regular", color: "var(--success)", bg: "rgba(105,255,71,0.10)" },
-  PROCESSANDO: { label: "Processando", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
+  INCONCLUSIVO: { label: "Leitura inconclusiva", color: "var(--state-warn)", bg: "var(--state-warn-surface)" },
+  COM_PENDENCIA: { label: "Com pendência", color: "var(--state-danger)", bg: "var(--state-danger-surface)" },
+  EM_PARCELAMENTO: { label: "Em parcelamento", color: "var(--text)", bg: "var(--state-neutral-surface)" },
+  REGULAR: { label: "Regular", color: "var(--text-muted)", bg: "var(--state-neutral-surface)" },
+  PROCESSANDO: { label: "Processando", color: "var(--state-warn)", bg: "var(--state-warn-surface)" },
 };
 
 function formatDateTime(value) {
@@ -33,7 +33,7 @@ function formatDateTime(value) {
 function SituacaoBadge({ situacao }) {
   const meta = SITUACAO_META[situacao] || { label: situacao ? `Situação não reconhecida: ${situacao}` : "Situação não informada", color: "var(--text-muted)", bg: "var(--state-neutral-surface)" };
   return (
-    <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: "0.85rem", fontWeight: 700, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}` }}>
+    <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: "0.85rem", fontWeight: 500, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}` }}>
       {meta.label}
     </span>
   );
@@ -75,35 +75,39 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empre
         <h2>Situação Fiscal</h2>
         <div className="sitfis-actions">
           {guidesPanel && <Button size="sm" variant="secondary" onClick={abrirRecalculo}>Recalcular guia</Button>}
-          {status?.relatorioPdfFileId && <Button size="sm" variant="secondary" onClick={() => setVerPdf(v => !v)}>{verPdf ? "Ocultar PDF" : "Ver PDF oficial"}</Button>}
-          {pdfUrl && <a className="btn btn-secondary btn-sm" href={pdfUrl} download="situacao-fiscal.pdf">Baixar PDF oficial</a>}
-          <Button size="sm" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>{consulting ? "Consultando…" : "Consultar situação fiscal agora"}</Button>
+
+          <Button disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>{consulting ? "Consultando…" : "Consultar situação fiscal agora"}</Button>
         </div>
       </div>
-      {bloqueado && <p className="sitfis-meta">Nova consulta em {formatDateTime(proximaConsultaEm)}</p>}
+      <p className="sitfis-meta sitfis-consultation-note">Consulta ao SERPRO com custo para o escritório · limite de uma a cada 4 horas.{bloqueado && <> Nova consulta em {formatDateTime(proximaConsultaEm)}.</>}</p>
 
       {error && (
-        <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", fontSize: "0.9rem" }}>
+        <div role="alert" className="sitfis-read-error">
           {error}
           <Button variant="secondary" onClick={reload}>Tentar ler o relatório salvo novamente</Button>
         </div>
       )}
       {notice && !error && (
-        <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", color: "#8BE9FD", fontSize: "0.9rem" }}>
+        <div role="status" className="sitfis-notice">
           {notice}
         </div>
       )}
 
       <div className="sitfis-summary">
-        {loading ? <span>Carregando…</span> : !status && error ? null : !status ? (
+        {loading ? <span role="status">Carregando relatório salvo…</span> : !status && error ? null : !status ? (
           <span>Nenhuma consulta de situação fiscal foi feita ainda.</span>
         ) : <>
           <div className="sitfis-summary-item"><span>Situação no relatório federal</span><SituacaoBadge situacao={status.situacao} /></div>
           <div className="sitfis-summary-item"><span>Último relatório obtido</span><strong>{formatDateTime(status.ultimoRelatorioEm)}</strong></div>
-          <span className="sitfis-meta">Última tentativa: {formatDateTime(status.checkedAt)}</span>
-          {status.relatorio?.emitidoEm && <span className="sitfis-meta">Emitido em {status.relatorio.emitidoEm}</span>}
+          <details className="sitfis-report-meta"><summary>Datas da consulta</summary><p>Última tentativa: {formatDateTime(status.checkedAt)}</p>
+          {status.relatorio?.emitidoEm && <p>Emitido em {status.relatorio.emitidoEm}</p>}</details>
         </>}
       </div>
+      {(status?.relatorioPdfFileId || pdfUrl) && <div className="sitfis-document-actions" aria-label="Documento oficial salvo">
+        <span>Documento oficial salvo</span>
+          {status?.relatorioPdfFileId && <Button size="sm" variant="secondary" onClick={() => setVerPdf(v => !v)}>{verPdf ? "Ocultar PDF" : "Ver PDF oficial"}</Button>}
+          {pdfUrl && <a className="btn btn-secondary btn-sm" href={pdfUrl} download="situacao-fiscal.pdf">Baixar PDF oficial</a>}
+      </div>}
       {status?.relatorioPdfFileId && !status.relatorio && <p className="sitfis-meta">Relatório antigo, gravado antes de guardarmos o texto — só o PDF está disponível.</p>}
       {verPdf && (pdfUrl ? (
         <iframe title="Relatório de situação fiscal (SITFIS)" src={pdfUrl} style={{ width: "100%", height: "70vh", minHeight: 300, border: "1px solid var(--border)", borderRadius: 8, background: "#fff", marginTop: 12 }} />
@@ -113,7 +117,7 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empre
           <Button size="sm" variant="secondary" onClick={recarregarPdf}>Tentar carregar PDF novamente</Button>
           <span>Esta tentativa lê o arquivo salvo e não faz uma nova consulta ao SERPRO.</span>
         </div>
-      ) : <p className="sitfis-meta">Carregando o PDF…</p>)}
+      ) : <p role="status" className="sitfis-meta">Carregando o PDF…</p>)}
       <PendenciasFiscaisTabelas podeEditar={["ACCOUNTANT", "FIRM_ADMIN"].includes(String(empresa?.myRole || "").toUpperCase())} key={`${companyId || ""}:${status?.ultimoRelatorioEm || ""}:${JSON.stringify(status?.relatorio)}`} relatorio={status?.relatorio} manuais={sitfisPanel?.manuais} contabeis={sitfisPanel?.contabeis} empresa={empresa} />
 
       {guidesPanel && <div ref={areaRecalculo}><RecalcularGuiasSitfis guidesPanel={guidesPanel} feedback={feedback} /></div>}

@@ -67,8 +67,8 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
   }
   return <section className="pendencias-fiscais" aria-label="Pendências por origem">
     <div className="pf-toolbar">
-      <input aria-label="Buscar nas pendências" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar tributo, competência ou inscrição" />
-      <select aria-label="Tipo de registro" value={tipo} onChange={e => setTipo(e.target.value)}><option value="">Todos os tipos</option>{Object.entries(TIPOS_PENDENCIA).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select>
+      <label className="pf-search">Buscar nas pendências<input aria-label="Buscar nas pendências" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Tributo, competência ou inscrição" /></label>
+      <label className="pf-type">Tipo de registro<select aria-label="Tipo de registro" value={tipo} onChange={e => setTipo(e.target.value)}><option value="">Todos os tipos</option>{Object.entries(TIPOS_PENDENCIA).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
       <Button variant="secondary" onClick={escolherPdf} disabled={exportando || manuais?.loading || !!manuais?.error || contabeis?.loading || !!contabeis?.error}>{exportando ? 'Gerando PDF…' : selecionadas.length ? 'PDF da seleção' : 'Exportar PDF'}</Button>
       <details className="pf-info"><summary>Sobre os valores</summary><p>Valores do relatório{projecao.emitidoEm ? ` de ${projecao.emitidoEm}` : ''} e valores manuais e contábeis são somados separadamente. Podem se referir ao mesmo débito. “—” indica valor não informado. Os subtotais não comprovam saldo negociável; acordos e registros manuais pagos ou parcelados ficam fora da soma.</p>{projecao.avisos.map((a,i) => <p key={i}>{a}</p>)}</details>
     </div>
@@ -85,7 +85,7 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
       return <section key={fonte.id} className="pf-source" aria-label={fonte.nome}>
         <header className="pf-source-header"><div><h3>{fonte.nome}</h3><span className="pf-count">{!filtradas.length && (fonte.id === "CONTABILIDADE" ? contabeis?.error || contabeis?.loading : manuais?.error || manuais?.loading) ? "—" : filtradas.length}</span>
           {COBERTURA[fonte.cobertura] && <span className="pf-muted">{COBERTURA[fonte.cobertura]}</span>}</div>
-          {podeEditar && manuais?.disponivel && ['MUNICIPAL','ESTADUAL','RFB','PGFN'].includes(fonte.id) && <Button size="sm" variant="secondary" disabled={manuais.loading || !!manuais.error} onClick={() => setEditor({ fonte: fonte.id })}>Adicionar</Button>}
+          {podeEditar && manuais?.disponivel && ['MUNICIPAL','ESTADUAL','RFB','PGFN'].includes(fonte.id) && <Button size="sm" variant="secondary" aria-description={`Lançamento manual em ${fonte.nome}`} disabled={manuais.loading || !!manuais.error} onClick={() => setEditor({ fonte: fonte.id })}>Adicionar</Button>}
         </header>
         {!!fonte.avisos.length && <details className="pf-reading"><summary>Conferir leitura ({fonte.avisos.length})</summary>{fonte.avisos.map((a,i) => <p key={i}>{a}</p>)}</details>}
         {filtradas.length ? <><div className="pf-scroll" role="region" aria-label={`Tabela ${fonte.nome}`} tabIndex={0}>

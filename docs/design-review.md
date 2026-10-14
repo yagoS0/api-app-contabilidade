@@ -113,3 +113,17 @@ Empresa: competência/estado separados das ações; valores com peso moderado; r
 Critério para futuras alterações: informações necessárias à decisão ficam visíveis; explicações gerais ficam sob demanda. Não repetir o mesmo total ou contexto em cartões/legendas. A próxima ação deve estar separada do diagnóstico e do material de referência. Não alterar cálculo, payload, autorização ou consequência fiscal para simplificar o visual.
 
 Validação local: suíte apuracao+tokens com 33 suítes/378 testes aprovados antes dos últimos refinamentos visuais; testes dirigidos adicionais e build registrados nos relatórios locais. Capturas sintéticas desktop/celular em test-evidence/design-apuracao*, com limites por estado. Não houve consulta SERPRO, transmissão, pagamento ou mutação fiscal real. Capturas não equivalem a homologação integral de todas as combinações.
+
+## Comparação tributária — 14/10/2026
+
+Após a integração do PR181, a revisão preservou a comparação e o Fator R em um único expansível, inicialmente recolhido e identificado como Simulação, para não deslocar o relatório da apuração. Recolher mantém campos e resultados montados. RBT12 parcial aparece antes do Fator R; consequências e limitações continuam visíveis quando o estudo é aberto. Frases positivas idênticas por anexo foram removidas; motivos de indisponibilidade e tributos não considerados permanecem. Tabela com rolagem local e região acessível pelo teclado; campos e grades contidos no celular. Cálculos, dados, APIs e critérios de comparação inalterados.
+
+Validação: 4 suítes/13 testes dirigidos aprovados, incluindo preservação de campos e resultados ao reabrir. 16 capturas sintéticas (390/1440): recolhido, Fator R, comparação, RBT12 parcial/ausente, exportação, ISS inválido e integração na aba real. Sem overflow de página ou erros JS; amostras inspecionadas. Evidência em test-evidence/design-comparacao. Sem consultas fiscais ou transmissão real; não representa homologação de todas as combinações fiscais.
+
+## Planejamento e Situação fiscal — complemento de 14/10/2026
+
+Pedido posterior do usuário ampliou a rodada da comparação. Planejamento: ações de abrir/salvar e nome do cenário depois das premissas, alterações não salvas e desfecho permanecem visíveis; seção Lucro Real identificada, pesos/tokens padronizados, grades/valores/tabelas contidos no celular. Nenhum motor, hook ou regra de cálculo alterado.
+
+Situação fiscal: consulta e atalho de recálculo no cabeçalho; PDF na área do relatório salvo; datas adicionais recolhíveis; filtros com labels e ações de adicionar nomeadas pela origem. Estados de carga/erro anunciados; permissões de edição preservadas. Corrigida fuga horizontal do texto acessível da coluna de ações com ancestral posicionado no scroll local e largura da célula Detalhes; alvos móveis de 44px. Avisos de consulta paga, prazo de 4h, leitura salva, relatório antigo e possível e-mail no recálculo permanecem.
+
+Evidências locais: design-planejamento (aba empresa com dados sintéticos e detalhes das ações) e design-sitfis-layout (salvo/vazio/carregando/erro/bloqueio/leitor/antigo/aviso, 390 e 1440). Sem overflow de página/erros JS nos estados finais. Suítes dirigidas passaram; execução combinada e build em test-evidence. Não houve consulta SERPRO, recálculo ou envio real. Cobertura sintética não certifica todas as permissões/desfechos em produção.

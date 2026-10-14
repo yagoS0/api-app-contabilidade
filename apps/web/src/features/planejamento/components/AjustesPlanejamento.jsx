@@ -7,7 +7,7 @@ export function CampoNumero({ label, value, onChange, ...props }) {
   const invalido = value != null && value !== "" && numeroInformado(value) == null;
   return <label htmlFor={id} style={{ display: "grid", gap: 4, fontSize: ".8rem" }}>{label}
     <input {...props} id={id} type="number" inputMode="decimal" min="0" step="0.01" value={value ?? ""} onChange={e => onChange(e.target.value)} aria-invalid={invalido}
-      style={{ width: "100%", boxSizing: "border-box", padding: 8, background: "var(--surface-input, #1A1B26)", color: "inherit", border: "1px solid #44475A", borderRadius: 6 }} />
+      style={{ width: "100%", boxSizing: "border-box", padding: 8, background: "var(--bg-subtle)", color: "inherit", border: "1px solid var(--border)", borderRadius: 6 }} />
     {invalido && <span role="alert">Informe um valor válido, igual ou maior que zero.</span>}
   </label>;
 }
@@ -23,7 +23,7 @@ export function AjustesPlanejamento({ value, onChange, fatorR }) {
           <option value="">Usar cadastro da empresa</option><option value="SIMPLES_NACIONAL">Simples Nacional</option><option value="LUCRO_PRESUMIDO">Lucro Presumido</option><option value="LUCRO_REAL">Lucro Real</option>
         </select>
       </label>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 230px), 1fr))", gap: 12 }}>
         <CampoNumero label="Base anual da CPP — remunerações sem encargos (R$)" value={value.folhaRemuneracoesAnual} onChange={v => set("folhaRemuneracoesAnual", v)} />
         <CampoNumero label="RAT/FAP e terceiros no ano (R$)" value={value.encargosAdicionaisAnuais} onChange={v => set("encargosAdicionaisAnuais", v)} />
       </div>
@@ -31,7 +31,7 @@ export function AjustesPlanejamento({ value, onChange, fatorR }) {
       {fatorR && <>
         <strong>Pró-labore dos sócios</strong>
         <small>Informe a remuneração de cada sócio, sem salários de empregados. Nesta simulação, o aumento é dividido igualmente entre os sócios informados.</small>
-        {socios.map((s, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "end" }}>
+        {socios.map((s, i) => <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end" }}>
           <CampoNumero label={`Pró-labore mensal do sócio ${i + 1} (R$)`} value={s.proLaboreMensal} onChange={v => set("socios", socios.map((x, j) => j === i ? { ...x, proLaboreMensal: v } : x))} />
           <button type="button" className="btn btn-secondary" onClick={() => set("socios", socios.filter((_, j) => j !== i))}>Remover sócio {i + 1}</button>
         </div>)}

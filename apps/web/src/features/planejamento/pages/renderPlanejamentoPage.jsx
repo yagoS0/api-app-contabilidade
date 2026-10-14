@@ -70,11 +70,12 @@ import { CENARIO } from "../lib/ibsCbsNoSimples";
 import { PainelProLabore } from "../components/PainelProLabore";
 import { simularProLaboreParaFatorR } from "../lib/proLabore";
 import { montarComparativo } from "../lib/comparativoDeRegimes";
+import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
 
-const C = { page: "#1A1B26", surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0", accent: "#BD93F9", alerta: "#FFB347" };
-const campo = { background: "#1A1B26", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.86rem", width: "100%", boxSizing: "border-box" };
+const C = { page: "var(--bg-page)", surface: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", muted: "var(--text-muted)", accent: "var(--accent-purple)", alerta: "var(--state-warn)" };
+const campo = { background: "var(--bg-subtle)", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.875rem", minHeight: 40, minWidth: 0, width: "100%", boxSizing: "border-box" };
 const rotulo = { display: "grid", gap: 4, fontSize: "0.8rem", color: C.muted };
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -729,7 +730,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
 
   return (
     <div className="planejamento-page" onClickCapture={(event) => { if (event.target.closest("button")) edicoesDoCenario.current += 1; }} onChangeCapture={() => { edicoesDoCenario.current += 1; }} style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
-      <div style={{ width: empresaFixa ? "100%" : "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
+      <div style={{ width: empresaFixa ? "100%" : "var(--content-wide)", margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {onVoltar && (
             <BackButton onClick={onVoltar} />
@@ -757,17 +758,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
         </nav>
         {!empresaFixa && <CarteiraPlanejamento api={api} empresas={empresas} onAbrirEmpresa={onAbrirEmpresa} />}
-        <section aria-label="Cenários salvos" className="planejamento-avancado" data-print-hide style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
-          {empresaId && <label style={rotulo}>Nome do cenário (opcional)<input style={campo} maxLength={80} value={ajustes.nomeCenario || ""} onChange={e => setAjustes(a => ({ ...a, nomeCenario: e.target.value }))} /></label>}
-          <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
-          <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
-          <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
-          {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
-          {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
-            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={exportarEstudos} />
-          </div>}
-        </section>
-        {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
+
 
         {/* ── SELETOR DE EMPRESA ─────────────────────────────────────────────
             A porta de entrada do modo carteira. Nasce em "Simulação livre" de propósito: a tela
@@ -819,7 +810,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
         {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
         <div id="premissas-cenario" tabIndex={-1} style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Premissas do cenário</h2>
-          <p style={{ margin: 0 }}>Revise receita e histórico, folha e atividade. As escolhas abaixo alteram somente este cenário, sem mudar o cadastro fiscal da empresa.</p>
+          <p style={{ margin: 0 }}>As premissas alteram somente este cenário, sem mudar o cadastro fiscal.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16 }}>
             <Campo
               id="pl-receita"
@@ -937,7 +928,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             {ofertaDo16?.cabe ? (
               <div style={{
                 gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.borda}`,
-                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
+                borderRadius: 6, background: "var(--bg-page)", display: "grid", gap: 6,
               }}>
                 <div style={{ fontSize: "0.8rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
                 <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>
@@ -1034,8 +1025,9 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
 
           {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
 
+          <h3 style={{ margin: "8px 0 0", fontSize: "0.95rem", fontWeight: 600 }}>Lucro Real</h3>
           {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16, paddingTop: 16, borderTop: `1px solid ${C.borda}` }}>
             <Campo
               id="pl-margem"
               rotuloTexto="Margem de lucro real (%)"
@@ -1049,7 +1041,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               ) : null}
             >
               {(a) => (
-                <input {...a} value={margem} onChange={(e) => setMargem(e.target.value)} inputMode="decimal" placeholder="não estimamos por você" style={campo} />
+                <input {...a} value={margem} onChange={(e) => setMargem(e.target.value)} inputMode="decimal" placeholder="Não informado" style={campo} />
               )}
             </Campo>
             <Campo
@@ -1064,7 +1056,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                   onChange={(e) => setCreditos(mascararDinheiro(e.target.value))}
                   onPaste={aoColar(setCreditos, "creditos")}
                   inputMode="numeric"
-                  placeholder="não estimamos por você"
+                  placeholder="Não informado"
                   style={campo}
                 />
               )}
@@ -1159,9 +1151,23 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           </section>}
         </div>
 
+        <section aria-label="Cenários salvos" className="planejamento-cenario-acoes" data-print-hide style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+          {empresaId && <label style={rotulo}>Nome do cenário (opcional)<input style={campo} maxLength={80} value={ajustes.nomeCenario || ""} onChange={e => setAjustes(a => ({ ...a, nomeCenario: e.target.value }))} /></label>}
+          <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
+          <div className="planejamento-cenario-botoes">
+          <Button type="button" variant="secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</Button>
+          <Button type="button" variant="primary" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</Button>
+          </div>
+          {!empresaId && <span style={{ color: C.muted, fontSize: "0.875rem" }}>Vincule uma empresa para guardar e retomar cenários.</span>}
+          {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
+            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={exportarEstudos} />
+          </div>}
+        </section>
+        {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
+
         {/* ── RESULTADO ────────────────────────────────────────────────────── */}
         {resultado && (
-          <div id="comparacao-cenario" tabIndex={-1} data-print-area style={{ display: "grid", gap: 14 }}>
+          <div id="comparacao-cenario" tabIndex={-1} data-print-area style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16 }}>
             <h2 data-print-hide style={{ margin: 0, fontSize: "1.1rem" }}>Comparação dos regimes</h2>
             <p aria-label="Receita usada no cálculo" style={{ margin: 0, color: C.muted, fontSize: "0.85rem" }}>
               Receita anual: <strong>{brl(entradas.receitaAnual)}</strong> · média mensal: <strong>{brl(entradas.receitaAnual / 12)}</strong>
@@ -1170,7 +1176,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
             <div data-print-only style={{ display: "none" }}>
         {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
-            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            `var(--text)`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
             liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
             ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
             `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
@@ -1198,7 +1204,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                   onde a resposta é "informado nesta simulação", que é uma informação, não um vazio. */}
               {prefill.temEmpresa && (
                 <table data-print-tabela style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.72rem", margin: "0 0 10px" }}>
-                  <caption style={{ textAlign: "left", fontWeight: 700, padding: "0 0 3px" }}>
+                  <caption style={{ textAlign: "left", fontWeight: 600, padding: "0 0 3px" }}>
                     Procedência dos dados usados nesta simulação
                     {prefill.referencia ? ` · apuração sobre ${prefill.referencia.janelaRotulo}` : ""}
                   </caption>
@@ -1206,7 +1212,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                     {procedencias.map((l) => (
                       <tr key={l.chave}>
                         <td style={{ padding: "2px 6px 2px 0", whiteSpace: "nowrap" }}>{l.rotulo}</td>
-                        <td style={{ padding: "2px 6px", whiteSpace: "nowrap", fontWeight: 700 }}>{valorImpresso(l)}</td>
+                        <td style={{ padding: "2px 6px", whiteSpace: "nowrap", fontWeight: 600 }}>{valorImpresso(l)}</td>
                         <td style={{ padding: "2px 0" }}>
                           {l.estado === "ausente" ? "não foi possível apurar — " : ""}{l.texto}
                         </td>
@@ -1240,7 +1246,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             {resultado.economiaAnual > 0 && (
               <div style={{ fontSize: "0.9rem" }}>
                 O <strong>{resultado.vencedor.regime}</strong> sai{" "}
-                <strong style={{ color: "#50FA7B" }}>{brl(resultado.economiaAnual)}</strong> mais barato por ano
+                <strong style={{ color: "var(--state-ok)" }}>{brl(resultado.economiaAnual)}</strong> mais barato por ano
                 que a segunda opção.
               </div>
             )}

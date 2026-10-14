@@ -1,0 +1,16 @@
+.comparacao-tributaria { padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.comparacao-tributaria-abertura { cursor: pointer; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.comparacao-tributaria-abertura > span { display: inline-block; margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.comparacao-tributaria-conteudo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+.comparacao-tributaria p { line-height: 1.5; }
+.comparacao-tributaria strong { font-weight: 600; }
+.comparacao-tributaria-aviso { margin: 0; color: var(--text-muted); }
+.comparacao-tributaria-alerta { margin: 0; color: var(--state-warn); }
+.comparacao-tributaria-regimes { padding-top: 16px; border-top: 1px solid var(--border); }
+.comparacao-tributaria-tabela { min-width: 0; max-width: 100%; }
+.comparacao-tributaria th { text-transform: none; font-size: 13px; font-weight: 600; letter-spacing: normal; }
+.comparacao-tributaria summary:focus-visible, .comparacao-tributaria-tabela:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .comparacao-tributaria summary { min-height: 44px; }
+  .comparacao-tributaria-abertura > span { display: block; margin-left: 0; }
+}

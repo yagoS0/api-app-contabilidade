@@ -150,3 +150,5 @@ describe("⚠⚠ A IMPRESSÃO ABRE OS CARDS — senão o PDF sai sem o detalhame
     expect(document.body.classList.contains("imprimindo")).toBe(false);
   });
 });
+
+ it('ações de cenário vêm depois das premissas, com salvar por último',()=>{montar();const campo=screen.getByLabelText('Créditos anuais de PIS/COFINS (R$)');const abrir=screen.getByRole('button',{name:'Abrir cenário'});const salvar=screen.getByRole('button',{name:'Salvar cenário'});expect(campo.compareDocumentPosition(abrir)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();expect(abrir.compareDocumentPosition(salvar)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();expect(screen.getByText('Premissas não salvas')).toBeVisible();});
