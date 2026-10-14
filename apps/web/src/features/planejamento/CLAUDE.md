@@ -1,5 +1,17 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+## Revisão enxuta solicitada antes de publicar — 14/10/2026
+
+Manter estritamente Premissas (IBS/CBS opcional), Comparativos e quadros, Cálculo comparativo de impostos e Fator R, nesta ordem, com Imprimir relatório no início. Não restaurar navegação de etapas, introduções ou descrições redundantes. Erros, ausência de dados, limites necessários, rótulos e valores permanecem; Salvar/Abrir cenário e Guardar em Documentos preservam suas permissões. IBS/CBS e Fator R usam apresentação compacta nesta página, sem alterar motores nem o conteúdo útil do PDF. A publicação está suspensa até revisão do usuário.
+
+## Reestruturação solicitada em 14/10/2026, após a publicação do RBT12
+
+Decisão posterior do usuário: manter somente Premissas (IBS/CBS opcional), Comparativos e quadros, Cálculo comparativo de impostos e Fator R, nessa ordem. Retirados desta página acompanhamento mensal, estudos adicionais, transição separada, conclusão, ponto de equilíbrio, carteira e relatório gerencial tributário. Os componentes e relatórios compartilhados permanecem disponíveis aos demais consumidores. Premissas detalhadas de folha, Lucro Real e receitas segregadas ficam no primeiro bloco porque influenciam os resultados.
+
+`Imprimir relatório` no cabeçalho gera PDF local A4 com a fotografia do cenário visível, sem salvar ou fazer consultas fiscais. Inclui comparativos, memória de bases/alíquotas, anexos I–V e Fator R, inclusive se os detalhes estiverem recolhidos. IBS/CBS só integra o documento quando `ajustes.incluirIbsCbs` estiver marcado; essa opção é salva e restaurada com o cenário. Não somar o estudo complementar ao comparativo anual de 2026. Ausência não vira zero e cenários alternativos/limites continuam identificados. O PDF de exemplo usa dados fictícios.
+
+Salvar/Abrir cenário e Guardar em Documentos permanecem nas ações após premissas; o PDF de Documentos continua a fotografia do serviço existente. Novos snapshots não calculam nem acrescentam estudos/acompanhamentos removidos; campos legados de edição permanecem preservados ao reabrir. Esta seção prevalece sobre a organização anterior abaixo.
+
 ## Organização solicitada em 14/10/2026
 
 Planejamento abre diretamente no simulador tributário. Relatórios gerenciais ficam em Contábil → Relatórios; apenas o relatório tributário aparece também no Planejamento, usando `AnaliseEmpresa` com `somenteTributario`. Não remontar a navegação geral da análise nessa aba. A comparação tributária e a distância para o Fator R aparecem também na Apuração, sem salvar premissas na declaração. A leitura de RBT12 no planejamento recompõe os 12 meses anteriores com `persistir:false`, sem gravar cache ou alterar snapshots.

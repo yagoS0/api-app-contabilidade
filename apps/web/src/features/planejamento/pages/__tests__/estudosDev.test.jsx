@@ -14,46 +14,15 @@ function montar(mode = "mock") {
   render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
   return api;
 }
-test.each(["real", "real_with_mock_fallback"])("produção exibe e salva estudos com API %s", async mode => {
-  const api = montar(mode);
-  await waitFor(() => expect(screen.getByLabelText("Receita anual (R$)")).toHaveValue("1.200.000,00"));
-  expect(screen.getByText("Estudos adicionais")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Salvar cenário", exact: true }));
-  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
-  expect(api.salvarSimulacaoPlanejamento.mock.calls[0][1].resultado.estudosAvancados.mensal.resultados).toHaveLength(3);
+test.each(["real", "mock"])("não exibe estudos adicionais no Planejamento em %s", async mode => {
+ const api = montar(mode);
+ await waitFor(() => expect(screen.getByLabelText("Receita anual (R$)")).toHaveValue("1.200.000,00"));
+ expect(screen.queryByText("Estudos adicionais")).not.toBeInTheDocument();
+ expect(screen.queryByText("Conclusão do contador e próxima revisão")).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button", {name:"Salvar cenário",exact:true}));
+ await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
 });
-test("mock preenche receita mensal, salva parâmetros/resultados e reabre sem perder o estudo", async () => {
-  const api = montar();
-  fireEvent.click(await screen.findByText("Tributos mensais, atividades mistas e início de atividade"));
-  expect(screen.getByLabelText("Receita do mês (R$)")).toHaveValue(98765);
-  fireEvent.change(screen.getByLabelText("Receita do mês (R$)"), { target: { value: "110000" } });
-  fireEvent.change(screen.getByLabelText("Receita mensal da atividade 1 (R$)"), { target: { value: "110000" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar cenário", exact: true }));
-  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
-  const p = api.salvarSimulacaoPlanejamento.mock.calls[0][1];
-  expect(p.entradas.formularioCenario.ajustes.estudos.tributos.meses[0].receita).toBe("110000");
-  expect(p.resultado.estudosAvancados.mensal.resultados[0].meses[0].receita).toBe(110000);
-  fireEvent.change(screen.getByLabelText("Receita do mês (R$)"), { target: { value: "99999" } });
-  fireEvent.click(screen.getByRole("button", { name: "Abrir cenário", exact: true }));
-  fireEvent.click(await screen.findByRole("button", { name: /Abrir 2026-09/ }));
-  await waitFor(() => expect(screen.getByLabelText("Receita do mês (R$)")).toHaveValue(110000));
-});
-test("editar parâmetros revoga conferência da operação e PDF recebe estudo mesmo fechado", async () => {
-  montar();
-  fireEvent.click(await screen.findByText("Operações especiais e benefícios"));
-  fireEvent.click(screen.getByRole("button", { name: "Adicionar operação", exact: true }));
-  fireEvent.change(screen.getByLabelText("Tributo da operação 1"), { target: { value: "ICMS" } });
-  fireEvent.change(screen.getByLabelText("Base final (R$)"), { target: { value: "1000" } });
-  fireEvent.change(screen.getByLabelText("Alíquota interna / do tributo (%)"), { target: { value: "18" } });
-  const check = screen.getByLabelText("Incidência, base final, benefício e crédito conferidos");
-  fireEvent.click(check); expect(check).toBeChecked();
-  fireEvent.change(screen.getByLabelText("Base final (R$)"), { target: { value: "2000" } });
-  expect(check).not.toBeChecked();
-  fireEvent.click(screen.getByText("Operações especiais e benefícios"));
-  fireEvent.click(screen.getByRole("button", { name: "Baixar relatório dos estudos (PDF)" }));
-  await waitFor(() => expect(baixarPdfEstudos).toHaveBeenCalled());
-  expect(baixarPdfEstudos.mock.calls.at(-1)[0].estudos.operacoes.operacoes[0].base).toBe("2000");
-});
+
 test("PDF conjunto recebe somente as fotos selecionadas, sem abrir ou recalcular", () => {
   const fotos = [1, 2, 3].map(i => ({ id: `c${i}`, competencia: `2026-0${i}`, entradas: { receitaAnual: i * 100000 }, resultado: { anoBase: 2026, regimes: [] } }));
   const onExportar = jest.fn(), onAbrir = jest.fn();

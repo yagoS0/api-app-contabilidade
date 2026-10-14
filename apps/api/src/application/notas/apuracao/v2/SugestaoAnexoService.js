@@ -53,6 +53,8 @@ export async function sugerirAnexosDaCompetencia({ portalClientId, competencia }
     orderBy: { numero: "asc" },
   });
 
+  const candidatos = [...new Set((perfil?.candidatos || []).filter(c => c.ativo && c.tipoReceita && !c.ambiguo).map(c => c.tipoReceita))];
+  const sugestaoPerfil = candidatos.length === 1 ? candidatos[0] : null;
   const resumo = { alta: 0, media: 0, revisao: 0, porAnexo: {} };
   const out = notas.map((nota) => {
     const itens = nota.itens || [];
@@ -99,6 +101,7 @@ export async function sugerirAnexosDaCompetencia({ portalClientId, competencia }
       tipo: nota.type, // NFSE | NFE
       total: round2(nota.total),
       itens: itens.length,
+      tipoReceitaSugerido: temNaoClassificado ? sugestaoPerfil : new Set(itens.map(i => i.tipoReceita)).size === 1 ? itens[0]?.tipoReceita || null : null,
       anexos,
       anexoDominante,
       confianca,

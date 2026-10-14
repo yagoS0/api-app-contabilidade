@@ -19,7 +19,7 @@ const pct = (v) => `${(Number(v || 0) * 100).toFixed(2).replace(".", ",")}%`;
 /** A "zona de risco": passar raspando não é estar seguro, porque a apuração é mensal. */
 const MARGEM_ESTREITA = 0.02; // 2 p.p.
 
-export function GaugeFatorR({ fatorR, economiaSeMudar = null }) {
+export function GaugeFatorR({ fatorR, economiaSeMudar = null, compacto = false }) {
   if (!fatorR) return null;
 
   const atinge = fatorR.atinge;
@@ -33,6 +33,16 @@ export function GaugeFatorR({ fatorR, economiaSeMudar = null }) {
   const MAX = 0.40;
   const posicao = Math.min(100, Math.max(0, (valor / MAX) * 100));
   const marca = (FATOR_R_LIMITE / MAX) * 100;
+
+  if (compacto) return <div style={{ padding: 16, borderRadius: 12, border: "1px solid var(--border)", display: "grid", gap: 12 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><strong style={{ fontWeight: 600 }}>{pct(valor)}</strong><span>Limite: 28%</span></div>
+    <div role="progressbar" aria-label="Fator R" aria-valuemin={0} aria-valuemax={40} aria-valuenow={Math.min(40, valor * 100)} aria-valuetext={pct(valor)} style={{ position: "relative", height: 12, background: "var(--bg-subtle)", borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ width: `${posicao}%`, height: "100%", background: atinge ? "var(--state-ok)" : "var(--state-warn)" }} />
+      <span style={{ position: "absolute", left: `${marca}%`, top: 0, height: "100%", borderLeft: "2px solid var(--text)" }} />
+    </div>
+    <div>Anexo {atinge ? "III" : "V"} · {atinge ? "Margem de folha" : "Falta de folha em 12 meses"}: <strong>{brl(Math.abs(fatorR.diferenca))}</strong></div>
+    {economiaSeMudar > 0 && <div>Redução estimada do DAS: <strong>{brl(economiaSeMudar)}/ano</strong> · custo adicional da folha não incluído.</div>}
+  </div>;
 
   return (
     <div style={{ padding: 16, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, color: C.texto }}>

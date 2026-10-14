@@ -35,6 +35,7 @@ export function BlocoIbsCbs({
   cores: C,
   rotulo,
   campo,
+  compacto = false,
 }) {
   const cbsLida = lerPercentual(cbsEstimada);
   const r = ibsCbsDoSimples({
@@ -52,6 +53,35 @@ export function BlocoIbsCbs({
     display: "grid", gap: 12,
   };
   const nota = { fontSize: "0.875rem", color: C.muted, lineHeight: 1.6, margin: 0 };
+
+  if (compacto) return <section style={caixa} aria-label="IBS e CBS no Simples Nacional">
+    <strong style={{ fontWeight: 600 }}>IBS e CBS</strong>
+    <div role="group" aria-label="Cenário" style={{ display: "flex", gap: 8 }}>
+      {[[CENARIO.EM_2026, "2026"], [CENARIO.DE_2027_A_2028, "2027–2028"]].map(([chave, texto]) => <button key={chave} type="button" className="btn btn-secondary" aria-pressed={cenario === chave} onClick={() => aoTrocarCenario(chave)}>{texto}</button>)}
+    </div>
+    {r.zeroPorLei ? <div>IBS/CBS no Simples em 2026: <strong>R$ 0,00</strong></div> : <>
+      <label style={{ ...rotulo, maxWidth: 360 }}>Alíquota da CBS no regime regular (%) — estimativa sua
+        <input value={cbsEstimada} onChange={e => aoMudarCbs(e.target.value)} inputMode="decimal" placeholder="Não informada" style={campo} />
+        {cbsLida.fora && <span role="alert">{textoDoPercentualForaDaFaixa("A alíquota da CBS")}</span>}
+      </label>
+      <div>IBS: {pct(IBS_2027_2028.estadual, 2)} estadual + {pct(IBS_2027_2028.municipal, 2)} municipal</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 12 }}>
+        <div style={caixa}><strong>Simples com IBS/CBS no DAS</strong>
+          <span>DAS anual: {r.imposto?.porDentro.mudaEmRelacaoAHoje ? "Não calculado nesta faixa para 2027–2028" : brl(r.imposto?.porDentro.dasAnual)}</span>
+          <span>CBS no DAS: {brl(r.imposto?.porDentro.cbsDentroDoDas)}</span>
+          <span>IBS no DAS: {r.imposto?.porDentro.ibsDentroDoDas == null ? "Fora do DAS por sublimite" : brl(r.imposto.porDentro.ibsDentroDoDas)}</span>
+          <span>Crédito do comprador: {pct(r.porDentro?.creditoPct)}</span>
+        </div>
+        <div style={caixa}><strong>Simples híbrido · IBS/CBS por fora</strong>
+          <span>Parcela retirada do DAS: {brl(r.imposto?.porFora?.parcelaQueSaiDoDas)}</span>
+          <span>Débito anual de IBS/CBS: {brl(r.imposto?.porFora?.debitoSobreAReceita)}</span>
+          <span>Crédito do comprador: {pct(r.porFora?.totalPct)}</span>
+          <span style={{ color: C.alerta }}>Total incompleto: depende dos créditos das compras e tributos fora do DAS.</span>
+        </div>
+      </div>
+      {r.diferencaPct != null && <div>Diferença de crédito ao comprador no regime regular: {pct(r.diferencaPct)}</div>}
+    </>}
+  </section>;
 
   return (
     <section style={caixa} aria-label="IBS e CBS no Simples Nacional">

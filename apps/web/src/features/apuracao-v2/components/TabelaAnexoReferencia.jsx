@@ -16,6 +16,7 @@
 // ⚠ A decisão de QUAL anexo mostrar mora em `../lib/anexoDaEmpresa.js`, que é pura e testada. Este
 // arquivo só desenha — inclusive os casos em que a resposta é "não dá para afirmar".
 
+import { Button } from "../../../components/ui/Button";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { VIGENCIA_ATUAL, FONTES_VERIFICADAS_EM } from "../../planejamento/lib/tabelasFiscais";
 import {
@@ -95,7 +96,7 @@ function ProximaFaixa({ chave, rbt12 }) {
   );
 }
 
-function TabelaDeUmAnexo({ chave, rbt12 }) {
+function TabelaDeUmAnexo({ chave, rbt12, compacta }) {
   const t = tabelaDoAnexo(chave, rbt12);
   if (!t) return null;
 
@@ -105,7 +106,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
   return (
     <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontWeight: 700, color: PANEL.text }}>{t.anexo.nome}</div>
+        <div style={{ fontWeight: 600, color: PANEL.text }}>{t.anexo.nome}</div>
         {t.situacao === SITUACAO_FAIXA.RESOLVIDA && t.aliquotaEfetiva != null ? (
           <div style={{ fontFamily: "monospace", color: PANEL.text }}>
             <span style={{ color: PANEL.muted, fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
@@ -117,8 +118,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
       </div>
 
       <div style={{ marginTop: 8, color: PANEL.muted }}>{marcada ? `Faixa ${marcada} · RBT12 ${fmtMoney(rbt12)}` : "Faixa ainda não definida"}</div>
-      <details style={{ marginTop: 10 }}>
-      <summary style={{ cursor: "pointer", color: PANEL.muted }}>Ver faixas e composição dos tributos</summary>
+      <div style={{ marginTop: 10 }}>
       <div style={{ overflowX: "auto", marginTop: 10 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
           <thead>
@@ -140,7 +140,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
                     // ⚠ Cor de token, e NUNCA `--state-danger`: vermelho, nesta casa, bloqueia
                     // fechamento, e esta tabela não bloqueia nada.
                     background: ehDaEmpresa ? "var(--surface-raised, rgba(255,255,255,0.06))" : "transparent",
-                    fontWeight: ehDaEmpresa ? 700 : 400,
+                    fontWeight: ehDaEmpresa ? 600 : 400,
                     color: PANEL.text,
                   }}
                 >
@@ -165,11 +165,11 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
         </table>
       </div>
 
-      <ProximaFaixa chave={chave} rbt12={rbt12} />
+      {!compacta && <ProximaFaixa chave={chave} rbt12={rbt12} />}
 
       {/* A repartição sai SÓ da faixa da empresa. Oito colunas × seis faixas seria ruído, e o
           contador quer a partilha do caso dele. */}
-      {porTributo ? (
+      {porTributo && !compacta ? (
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: "0.72rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
             Repartição da alíquota efetiva, nesta faixa
@@ -196,7 +196,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
         </div>
       ) : null}
 
-      </details>
+      </div>
       {t.situacao === SITUACAO_FAIXA.RBT12_DESCONHECIDO ? (
         <Legenda>
           A receita dos últimos 12 meses ainda não é conhecida nesta competência, então nenhuma faixa
@@ -218,7 +218,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
         </Legenda>
       ) : null}
 
-      {t.foraDoDasNaSextaFaixa.length ? (
+      {t.foraDoDasNaSextaFaixa.length && (!compacta || marcada === 6) ? (
         <Legenda>
           Na 6ª faixa {t.foraDoDasNaSextaFaixa.map((x) => NOME_DO_TRIBUTO[x] || x).join(" e ")} sai do
           DAS e passa a ser recolhido por fora — o DAS encolhe sem a empresa pagar menos.
@@ -234,23 +234,26 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
  * @param {number|string|null} p.rbt12
  * @param {number|string|null} p.folha12m  ⚠ `null` é "não informada", e NÃO zero
  */
-export function TabelaAnexoReferencia({ atividades, rbt12, folha12m }) {
+export function TabelaAnexoReferencia({ atividades, rbt12, folha12m, onClassificar, classificacao, compacta = false }) {
   const { anexos, situacao, fatorR, limiteFatorR } = anexosDaEmpresa({ atividades, folha12m, rbt12 });
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>Anexo e faixa da empresa</h3>
+        <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600, color: PANEL.text }}>Anexo e faixa da empresa</h3>
+
         {/* ⚠ A VIGÊNCIA VAI IMPRESSA, como o Planejamento Tributário já faz. Tabela fiscal sem data
             de vigência não é conferível: quem lê não sabe se está olhando a regra do ano dele. */}
         <span style={{ fontSize: "0.72rem", color: PANEL.muted, fontFamily: "monospace" }}>
-          vigência {VIGENCIA_ATUAL} · fontes conferidas em {FONTES_VERIFICADAS_EM}
+          Tabela {VIGENCIA_ATUAL}
         </span>
+        {onClassificar && <Button variant="secondary" onClick={onClassificar}>Classificar</Button>}
       </div>
 
+      {classificacao?.tom !== "ok" && classificacao && <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>{compacta && classificacao.rotulo.startsWith("Nenhuma pendência aberta") ? "Classificação não confirmada" : classificacao.rotulo}</p>}
       {/* ⚠⚠ A frase que separa referência de apuração. Sem ela, uma tabela ao lado do DAS se lê como
           a memória de cálculo do imposto — e quem calcula o DAS é a Receita, não esta tela. */}
-      <details><summary style={{ cursor: "pointer", color: PANEL.muted, fontSize: "0.875rem" }}>Referência de anexo e faixa · Não é a apuração</summary><Legenda>Serve para conferir a faixa da empresa e a repartição da alíquota. O valor do DAS é o que a Receita calcula.</Legenda></details>
+
 
       {situacao === SITUACAO_ANEXO.SEM_ATIVIDADE ? (
         <Legenda>
@@ -277,7 +280,7 @@ export function TabelaAnexoReferencia({ atividades, rbt12, folha12m }) {
       ) : null}
 
       {anexos.map((chave) => (
-        <TabelaDeUmAnexo key={chave} chave={chave} rbt12={rbt12} />
+        <TabelaDeUmAnexo key={chave} chave={chave} rbt12={rbt12} compacta={compacta} />
       ))}
     </section>
   );

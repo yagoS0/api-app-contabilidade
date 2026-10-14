@@ -10,6 +10,7 @@ import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalF
 import { RelatorioFaturamentoPanel } from "../../apuracao-v2/components/RelatorioFaturamentoPanel";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { EmpresaZeradaPanel } from "./EmpresaZeradaPanel";
+import "./fechamento-modal.css";
 
 function pasAnteriores(competencia, n = 12) {
   const [y, m] = String(competencia).split("-").map(Number);
@@ -389,7 +390,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
-  const inputS = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4, color: PANEL.text, padding: "4px 8px", fontSize: "0.875rem", minWidth: 0, boxSizing: "border-box", minHeight: 36 };
+  const inputS = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4, color: PANEL.text, padding: "4px 8px", fontSize: "0.875rem", minWidth: 0, boxSizing: "border-box", minHeight: 40 };
 
   // Esc fecha — o mesmo que o ✕ e o clique no fundo já faziam, agora pelo teclado.
   // ⚠ Com a confirmação de transmissão aberta, Esc RECUA um passo em vez de fechar tudo: é o
@@ -405,9 +406,9 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }, [showTransmit, onClose]);
 
   return (
-    <Modal titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting} fecharAoEscape={false} tamanho="lg">
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20, minWidth: 0, overflowWrap: "anywhere" }}>
-        {erroLocal && <div role="alert"><p>{erroLocal}</p>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</div>}
+    <Modal titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting} fecharAoEscape={false} tamanho="lg" className="fechamento-modal">
+      <div className="fechamento-conteudo">
+        {erroLocal && <Aviso tom="erro" titulo="Não foi possível concluir"><div role="alert">{erroLocal}</div>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</Aviso>}
 
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
 
@@ -416,14 +417,13 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             {/* Q44: Cadastro fiscal acessível aqui (a aba "Apuração V2" saiu do menu). */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {!dados.cadastroCompleto && (
-                <span style={{ padding: "6px 10px", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: "var(--radius-sm)", color: "var(--state-warn)", fontSize: "0.82rem" }}>
+                <span style={{ padding: "6px 10px", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: "var(--radius-sm)", color: "var(--state-warn)", fontSize: "0.875rem" }}>
                   ⚠ Cadastro fiscal incompleto (sem CNAE) — o anexo pode não vir automático.
                 </span>
               )}
-              <button type="button" onClick={() => (showCadastro ? setShowCadastro(false) : abrirCadastro())}
-                style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: PANEL.field, color: PANEL.text, cursor: "pointer", fontSize: "0.82rem" }}>
-                {showCadastro ? "Fechar cadastro" : "📋 Cadastro fiscal"}
-              </button>
+              <Button variant="secondary" onClick={() => (showCadastro ? setShowCadastro(false) : abrirCadastro())}>
+                {showCadastro ? "Fechar cadastro" : "Cadastro fiscal"}
+              </Button>
             </div>
 
             {showCadastro && (
@@ -437,17 +437,12 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               </div>
             )}
 
-            {/* Resumo read-only compacto (Q19) — uma linha em vez de 4 cards */}
-            <div style={{
-              display: "flex", flexWrap: "wrap", gap: 16, padding: "8px 12px",
-              background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8,
-              fontSize: "0.8rem", color: PANEL.muted,
-            }}>
-              <span>Fat. interno <strong style={{ color: "var(--state-ok)" }}>{fmtMoney(dados.faturamento?.interno)}</strong></span>
-              <span>Fat. externo <strong style={{ color: "var(--accent-cyan)" }}>{fmtMoney(dados.faturamento?.externo)}</strong></span>
-              <span>RBT12 <strong style={{ color: PANEL.text }}>{fmtMoney(dados.rbt12)}</strong>{dados.rbt12Origem ? ` (${dados.rbt12Origem})` : ""}</span>
-              <span>Regime <strong style={{ color: PANEL.text }}>{dados.regimeApuracao}</strong></span>
-            </div>
+            <dl className="fechamento-resumo" aria-label="Base da apuração">
+              <div><dt>Faturamento interno</dt><dd>{fmtMoney(dados.faturamento?.interno)}</dd></div>
+              <div><dt>Faturamento externo</dt><dd>{fmtMoney(dados.faturamento?.externo)}</dd></div>
+              <div><dt>Receita em 12 meses</dt><dd>{fmtMoney(dados.rbt12)}</dd>{dados.rbt12Origem && <small>{dados.rbt12Origem}</small>}</div>
+              <div><dt>Regime de apuração</dt><dd>{dados.regimeApuracao === "COMPETENCIA" ? "Competência" : dados.regimeApuracao === "CAIXA" ? "Caixa" : dados.regimeApuracao || "Não informado"}</dd></div>
+            </dl>
 
             {/* Disparidades */}
             {Array.isArray(dados.disparidades) && dados.disparidades.length > 0 && (
@@ -460,31 +455,28 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
             {/* Atividades — Q19: a Atividade é um dropdown; o Anexo segue a seleção.
                 Empresa pode ter várias atividades (incl. Anexo V) — "+ atividade" / "×". */}
-            <div>
+            <section className="fechamento-secao" aria-label="Atividades e receitas">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                 <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Atividades e receitas</div>
-                <button onClick={addAtividade} disabled={atividadeOpcoes.length === 0}
-                  style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, padding: "4px 10px", cursor: atividadeOpcoes.length === 0 ? "not-allowed" : "pointer", fontSize: "0.78rem" }}>
-                  + atividade
-                </button>
+                <Button variant="secondary" onClick={addAtividade} disabled={atividadeOpcoes.length === 0}>+ atividade</Button>
               </div>
               {atividades.length === 0 ? (
-                <div style={{ color: PANEL.muted, fontSize: "0.8rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
+                <div style={{ color: PANEL.muted, fontSize: "0.875rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
                   Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
                 </div>
               ) : (
-                <div style={{ overflowX: "auto", maxWidth: "100%" }}><table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                <div style={{ overflowX: "auto", maxWidth: "100%" }}><table className="fechamento-atividades">
                   <thead><tr style={{ color: PANEL.muted, textAlign: "left" }}>
                     <th style={{ padding: 4 }}>Atividade</th>
                     <th style={{ padding: 4, width: 90 }}>Anexo</th>
                     <th style={{ padding: 4, textAlign: "right", width: 120 }}>Interno</th>
                     <th style={{ padding: 4, textAlign: "right", width: 120 }}>Externo</th>
-                    <th style={{ padding: 4, width: 32 }}></th>
+                    <th style={{ padding: 4, width: 52 }}><span className="sr-only">Ações</span></th>
                   </tr></thead>
                   <tbody>
                     {atividades.map((a, idx) => (
                       <tr key={idx} style={{ borderTop: `1px solid ${PANEL.border}` }}>
-                        <td style={{ padding: 4 }}>
+                        <td data-label="Atividade" style={{ padding: 4 }}>
                           {/* ⚠ `title` no PRÓPRIO select, não só nas opções. A descrição da
                               atividade é longa e o `<select>` nativo corta no fim da caixa sem
                               reticências e SEM hover recuperável — a opção fechada não é um
@@ -495,7 +487,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                           {atividadeOpcoes.length > 0 ? (
                             <select value={a.idAtividade} onChange={(e) => setAtvAtividade(idx, e.target.value)}
                               aria-label={`Atividade ${idx + 1}`} title={tituloAtividade(a)}
-                              style={{ ...inputS, width: "100%", colorScheme: "dark" }}>
+                              style={{ ...inputS, width: "100%", colorScheme: "normal" }}>
                               {/* garante a opção atual mesmo se fora do catálogo */}
                               {!atividadeOpcoes.some((o) => String(o.idAtividade) === String(a.idAtividade)) && (
                                 <option value={a.idAtividade}>{a.descricao || `#${a.idAtividade}`}</option>
@@ -508,20 +500,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                             <span>{a.descricao || `#${a.idAtividade}`} <span style={{ color: PANEL.muted }}>({a.idAtividade})</span></span>
                           )}
                         </td>
-                        <td style={{ padding: 4 }}>{a.anexoImplicito}{a.sujeitoFatorR ? " ★FR" : ""}</td>
-                        <td style={{ padding: 4, textAlign: "right" }}>
+                        <td data-label="Anexo" style={{ padding: 4 }}>{a.anexoImplicito}{a.sujeitoFatorR ? " ★FR" : ""}</td>
+                        <td data-label="Receita interna" style={{ padding: 4, textAlign: "right" }}>
                           {/* ⚠ `?? ""`, NUNCA `|| 0`. Com `|| 0` o campo renderiza **0** para
                               null/undefined, e o "vazio" que o backend manda quando não sabe o
                               valor nunca chegaria à tela — a mudança inteira ficaria invisível, com
                               um zero fabricado no lugar do campo em branco. */}
                           <input type="number" step="0.01" aria-label={`Receita interna da atividade ${idx + 1}`} placeholder="—" value={a.valorInterno ?? ""} onChange={(e) => setAtvValor(idx, "valorInterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
-                        <td style={{ padding: 4, textAlign: "right" }}>
+                        <td data-label="Receita externa" style={{ padding: 4, textAlign: "right" }}>
                           <input type="number" step="0.01" aria-label={`Receita externa da atividade ${idx + 1}`} placeholder="—" value={a.valorExterno ?? ""} onChange={(e) => setAtvValor(idx, "valorExterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
                         <td style={{ padding: 4, textAlign: "center" }}>
-                          <button onClick={() => removeAtividade(idx)} title="Remover atividade"
-                            style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}>×</button>
+                          <Button variant="secondary" onClick={() => removeAtividade(idx)} aria-label={`Remover atividade ${idx + 1}`} title="Remover atividade">×</Button>
                         </td>
                       </tr>
                     ))}
@@ -536,7 +527,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   quebrado — e o contador reporia "o que estava lá antes", que é justamente o valor
                   de outra competência que esta mudança tirou do caminho. */}
               {dados?.prefillValor?.indefinido && (
-                <div style={{ marginTop: 8, padding: 10, background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, color: "var(--state-warn)", fontSize: "0.78rem" }}>
+                <div style={{ marginTop: 8, padding: 10, background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, color: "var(--state-warn)", fontSize: "0.875rem" }}>
                   ⚠ Os valores vieram em branco de propósito. {dados.prefillValor.motivo}
                   {dados.prefillValor.total > 0 && (
                     <div style={{ color: PANEL.muted, marginTop: 4 }}>
@@ -550,7 +541,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   única informação de exportação que esta base tem — `flagExportacao` nunca é escrita
                   para NFS-e, então a nota da empresa exportadora chega aqui como se fosse interna. */}
               {dados?.prefillValor?.origem === "faturamento_da_competencia" && !dados.prefillValor.indefinido && atividades.length > 0 && (
-                <div style={{ marginTop: 8, fontSize: "0.74rem", color: PANEL.muted }}>
+                <div style={{ marginTop: 8, fontSize: "0.875rem", color: PANEL.muted }}>
                   Valor pré-preenchido com o faturamento <strong>desta competência</strong> ({fmtMoney(dados.prefillValor.total)})
                   {dados.prefillValor.mercadoAplicado === "EXTERNO"
                     ? <> no mercado <strong>EXTERNO</strong>, como a configuração desta empresa indica.</>
@@ -565,7 +556,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   caixa vivia dentro daquele ramo ela nunca aparecia — o modo "sem movimento",
                   que é o caminho da declaração zerada, era inalcançável na tela. */}
               {dados?.semMovimentoDisponivel && declaracaoZerada && (
-                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, marginTop: 8, background: "rgba(139,233,253,0.08)", border: "1px solid var(--accent-cyan)", borderRadius: "var(--radius-sm)", fontSize: "0.82rem", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, marginTop: 8, background: "var(--bg-subtle)", border: "1px solid var(--accent-cyan)", borderRadius: "var(--radius-sm)", fontSize: "0.875rem", cursor: "pointer" }}>
                   <input type="checkbox" checked={semMovimento} onChange={(e) => { invalidarCalculo(); setSemMovimento(e.target.checked); }} style={{ marginTop: 2 }} />
                   <span>
                     <strong>Declarar SEM MOVIMENTO (zerado)</strong> — a empresa não teve receita nesta competência.
@@ -595,11 +586,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   />
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Folha 12m (Fator-R) — só se houver atividade sujeita */}
             {temFatorR && (
-              <div>
+              <section className="fechamento-secao" aria-label="Folha de salários e Fator R">
                 <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 6 }}>
                   Folha de salários · Fator-R (12 meses)
                 </div>
@@ -611,7 +602,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     const divergeMes = derivadaDisponivel && derivadoMes != null
                       && Math.abs(derivadoMes - digitadoMes) > 0.01;
                     return (
-                      <label key={pa} style={{ fontSize: "0.7rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
+                      <label key={pa} style={{ fontSize: "0.875rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
                         {pa}
                         <input
                           type="number" step="0.01" value={folha[pa] || ""}
@@ -620,7 +611,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                           style={divergeMes ? { ...inputS, borderColor: "var(--state-warn)" } : inputS}
                         />
                         {divergeMes && (
-                          <span style={{ color: "var(--state-warn)", fontSize: "0.65rem" }} title="Débito na conta de despesa de folha/pró-labore desta competência (o pagamento não entra)">
+                          <span style={{ color: "var(--state-warn)", fontSize: "0.875rem" }} title="Débito na conta de despesa de folha/pró-labore desta competência (o pagamento não entra)">
                             lançado: {fmtMoney(derivadoMes)}
                           </span>
                         )}
@@ -679,7 +670,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                         não há segunda fonte para conferir.</>}
                   </Aviso>
                 )}
-              </div>
+              </section>
             )}
 
             {/* Resultado.
@@ -712,9 +703,9 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 {resultado.dasValor != null && (
                   <div style={{ fontSize: "1.3rem", fontWeight: 600, color: "var(--state-ok)" }}>{fmtMoney(resultado.dasValor)}</div>
                 )}
-                {resultado.rbt12 != null && <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>RBT12 usado: {fmtMoney(resultado.rbt12)}</div>}
+                {resultado.rbt12 != null && <div style={{ fontSize: "0.875rem", color: PANEL.muted }}>RBT12 usado: {fmtMoney(resultado.rbt12)}</div>}
                 {Array.isArray(resultado.mensagens) && resultado.mensagens.length > 0 && (
-                  <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "0.75rem", color: PANEL.muted }}>
+                  <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "0.875rem", color: PANEL.muted }}>
                     {resultado.mensagens.map((m, i) => (
                       <li key={i}>{typeof m === "string" ? m : (m?.texto || m?.mensagem || JSON.stringify(m))}</li>
                     ))}
@@ -755,7 +746,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 há UM accent, e ele é sempre o próximo passo legítimo.
                 As cores antigas eram token de ESTADO em botão de AÇÃO (ciano = categoria,
                 âmbar = pendência) — ver `apps/web/CLAUDE.md`. */}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            {motivoCalcularBloqueado && <Aviso compacto tom="atencao" titulo="Antes de calcular">{dados?.semMovimentoDisponivel ? "As atividades somam R$ 0,00. Confirme a opção de declaração sem movimento antes de calcular." : motivoCalcularBloqueado}</Aviso>}
+            <div className="fechamento-acoes">
               {/* ⚠ Saída no RODAPÉ, não só no ✕ do topo. O modal rola por dentro
                   (`maxHeight: 94vh` + `overflowY: auto`) e o cabeçalho rola junto: quem desceu até
                   os botões não tem o ✕ na tela, e a única saída visível vira o clique no fundo —
@@ -787,7 +779,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 ⚠ A cor era `var(--danger)`, que NÃO é `--state-danger` (`#FF5757`) — dois vermelhos
                 quase iguais convivendo no mesmo app é como se perde a régua de "isto bloqueia". */}
             {showTransmit && (
-              <div style={{ padding: 12, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="fechamento-confirmacao" style={{ padding: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ color: "var(--state-danger)", fontSize: "0.85rem", fontWeight: 600 }}>
                   {retificar
                     ? `⚠ RETIFICADORA OFICIAL — substitui a declaração já enviada. Digite a competência (${competencia}) pra confirmar:`
@@ -796,7 +788,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 {/* Pela SOMA: a atividade listada valendo R$ 0,00 é descartada no payload, então o
                     que sai é a declaração ZERADA — e quem vai confirmar precisa ler isso. */}
                 {declaracaoZerada && (
-                  <div style={{ color: "var(--accent-cyan)", fontSize: "0.8rem" }}>
+                  <div style={{ color: "var(--accent-cyan)", fontSize: "0.875rem" }}>
                     Declaração <strong>SEM MOVIMENTO</strong>: será transmitido o PGDAS-D com receita R$ 0,00.
                   </div>
                 )}
@@ -807,6 +799,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   {/* Este é o clique irreversível do lado da Receita — `danger` é o único lugar
                       desta tela onde o vermelho é a AÇÃO, e ele já vive dentro da caixa de
                       confirmação com a competência digitada. */}
+                  <Button variant="secondary" disabled={acting} onClick={() => { setShowTransmit(false); setConfirmComp(""); }}>Voltar à conferência</Button>
                   <Button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} variant="danger">{acting ? "Transmitindo…" : "Confirmar"}</Button>
                 </div>
               </div>

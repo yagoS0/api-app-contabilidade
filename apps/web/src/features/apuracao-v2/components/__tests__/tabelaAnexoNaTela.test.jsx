@@ -28,14 +28,15 @@ describe("a tabela do anexo aparece na aba", () => {
   // olhando a regra do ano dele. Mesma disciplina do Planejamento Tributário.
   it("imprime a vigência da tabela usada", () => {
     render(<TabelaAnexoReferencia atividades={comercio} rbt12={500_000} folha12m={null} />);
-    expect(screen.getByText(new RegExp(`vigência ${VIGENCIA_ATUAL}`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`Tabela ${VIGENCIA_ATUAL}`))).toBeInTheDocument();
   });
 
   // ⚠⚠ A frase que separa REFERÊNCIA de APURAÇÃO. Sem ela, uma tabela ao lado do DAS se lê como a
   // memória de cálculo do imposto — e quem calcula o DAS é a Receita, não esta tela.
-  it("diz, na tela, que NÃO é a apuração", () => {
+  it("mantém a tabela aberta sem expansível intermediário", () => {
     render(<TabelaAnexoReferencia atividades={comercio} rbt12={500_000} folha12m={null} />);
-    expect(screen.getByText(/Não é a/)).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeVisible();
+    expect(screen.getByRole("table").closest("details")).toBeNull();
   });
 });
 

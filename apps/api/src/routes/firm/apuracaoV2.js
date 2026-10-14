@@ -5,6 +5,7 @@ import { Router } from "express";
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
+import { aplicarClassificacaoManual } from "../../application/notas/apuracao/v2/ClassificacaoManualService.js";
 import { classificarItensV2 } from "../../application/notas/apuracao/v2/ClassificadorService.js";
 import {
   resolverPendenciaItemSemRegra,
@@ -958,11 +959,13 @@ export function createApuracaoV2Router({ log } = {}) {
       const force = req.query.force === "true" || req.body?.force === true;
       const competencia = req.body?.competencia || req.query.competencia;
       try {
-        const result = await classificarItensV2({ portalClientId, force, competencia });
+        const result = req.body?.classificacoes !== undefined
+          ? await aplicarClassificacaoManual({ portalClientId, competencia, classificacoes: req.body.classificacoes, userId: req.auth?.user?.id })
+          : await classificarItensV2({ portalClientId, force, competencia });
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn({ err: err?.message, portalClientId }, "Falha ao classificar v2");
-        return bad(res, 500, "classify_failed", err?.message || "Erro");
+        return bad(res, err?.status || 500, err?.code || "classify_failed", err?.message || "Erro");
       }
     }, "Classificar notas")
   );
