@@ -40,10 +40,15 @@ test("canal preparado fica visível com as ferramentas fechadas e acompanha a es
 
 test.each([
   ["canal único", { ...c, canais: [c.canais[0]] }],
-  ["lead com canal comercial obrigatório", { ...c, relacionamento: { tipo: "LEAD" } }],
 ])("não acrescenta rótulo de canal sem escolha: %s", (_, conversa) => {
   render(<CompositorConversa conversa={conversa} hook={hook()} />);
   expect(screen.queryByRole("status", { name: "Canal preparado" })).not.toBeInTheDocument();
+});
+
+test("lead identifica o canal comercial obrigatório sem oferecer troca", () => {
+  render(<CompositorConversa conversa={{ ...c, relacionamento: { tipo: "LEAD" } }} hook={hook()} />);
+  expect(screen.getByRole("status", { name: "Canal preparado" })).toHaveTextContent("Comercial");
+  expect(screen.queryByLabelText("Canal da mensagem")).not.toBeInTheDocument();
 });
 
 test("chegada em outro canal não muda remetente; rascunhos dos canais ficam separados", async () => {

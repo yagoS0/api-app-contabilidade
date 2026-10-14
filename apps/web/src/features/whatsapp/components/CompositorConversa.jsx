@@ -178,7 +178,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
       <textarea ref={textoRef} rows={1} aria-label="Responder ao cliente" value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder="Mensagem…" onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
       <Button variant="primary" className="wa-composer-send" aria-label={nomeEnviar} title={nomeEnviar} disabled={bloqueado || !texto.trim()} onClick={enviar}><WhatsappIcon nome="enviar" size={21} /></Button>
     </div>
-    {!acoesAbertas && !comercialObrigatorio && canais.length > 1 && canal && <div className="wa-compose-channel" role="status" aria-label="Canal preparado">Enviar por WhatsApp {canal.nome || canal.chave || canal.finalidade || "Principal"}</div>}
+    {!acoesAbertas && (comercialObrigatorio || canais.length > 1) && canal && <div className="wa-compose-channel" role="status" aria-label="Canal preparado">Enviar por WhatsApp {canal.nome || canal.chave || canal.finalidade || "Principal"}</div>}
     <div ref={ferramentasRef} className="wa-compose-footer wa-compose-sheet" hidden={!acoesAbertas} role="region" aria-label="Mensagem e arquivos" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); fecharFerramentas(); } }}>
       <div className="wa-compose-sheet-heading" ref={tituloFerramentasRef} tabIndex={-1}><strong>Mensagem e arquivos</strong><Button variant="secondary" aria-label="Fechar ações da mensagem" onClick={fecharFerramentas}><WhatsappIcon nome="fechar" size={18} /></Button></div>
       {seletorCanal && <div className="wa-compose-context">{seletorCanal}</div>}
