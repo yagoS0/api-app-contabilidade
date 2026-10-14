@@ -331,6 +331,11 @@ it('anuncia recusa de perfil sem esconder premissas nem chamar geração de PDF'
  expect(screen.getByLabelText('Receita anual (R$)')).toHaveValue('300.000,00');
  expect(api.gerarDocumentoDaSimulacao).not.toHaveBeenCalled();
 });
+it('preserva a orientação humana junto do código de recusa',async()=>{
+ montar({salvarSimulacaoPlanejamento:jest.fn(async()=>({ok:false,error:'forbidden',message:'Acesso revogado pelo escritório. Solicite revisão da carteira.'}))});
+ await esperarCalculo();fireEvent.click(screen.getByRole('button',{name:'Salvar cenário'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Acesso revogado pelo escritório. Solicite revisão da carteira.');
+});
 it('busy mostra Salvando e mantém bloqueio contra clique repetido',async()=>{
  let concluir;const api=montar({salvarSimulacaoPlanejamento:jest.fn(()=>new Promise(r=>{concluir=r;}))});
  await esperarCalculo();fireEvent.click(screen.getByRole('button',{name:'Salvar cenário'}));

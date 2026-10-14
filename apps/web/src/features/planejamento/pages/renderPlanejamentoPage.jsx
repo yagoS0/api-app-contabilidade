@@ -82,7 +82,8 @@ function mensagemDaFalha(erro, alternativa, usarMensagem = true) {
     scope_required: "Seu acesso não permite esta operação. Verifique as permissões com o administrador.",
     unauthorized: "Entre novamente para continuar.",
   };
-  return mensagens[codigo] || (usarMensagem ? erro?.message : null) || alternativa;
+  const mensagem = usarMensagem && erro?.message;
+  return (mensagem && !mensagens[mensagem] ? mensagem : null) || mensagens[codigo] || alternativa;
 }
 
 const C = { page: "var(--bg-page)", surface: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", muted: "var(--text-muted)", accent: "var(--accent-purple)", alerta: "var(--state-warn)" };
