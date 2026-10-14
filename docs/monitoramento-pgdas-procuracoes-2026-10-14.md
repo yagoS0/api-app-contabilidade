@@ -64,3 +64,19 @@ Rotina DAS, captura normal e reaproveitamento do extrato também reconhecem guia
 Validação: 34 testes dirigidos API e 46 de interface aprovados; build web; inspeção 390/1440 sem transbordamento global; download real do CSV com filtro. A nova consulta local ao banco, somente leitura, reconheceu os três uploads já conferidos em produção. Nenhuma chamada fiscal ou envio externo foi executado.
 
 Próximas frentes do projeto amplo: histórico auditável de retificações e integrações de outras declarações exigem etapas próprias, com validação de endpoints, autorizações e critérios de exigibilidade. A prioridade escolhida pelo usuário nesta continuação é painel/relatórios de pendências por empresa e competência; não habilitar varredura histórica ou notificações externas por inferência.
+
+
+## Continuação: histórico e conferência de retificações
+
+Histórico PGDAS-D na apuração da empresa lê registros locais por empresa e competência. Mostra a declaração atual e versões preservadas, valores, datas de consulta e PDFs antigos. Números distintos sinalizam diferença a conferir; não identificam automaticamente origem interna/externa, ordem fiscal ou necessidade de retransmissão. Não reconstruímos versões anteriores que já foram perdidas. Registros legados aparecem como preexistentes.
+
+A sincronização preserva a evidência anterior antes de substituí-la e grava novos registros por conteúdo em AppSetting, no prefixo pgdas_historico. Upsert com chave determinística e update vazio impede sobrescrever a versão registrada em repetição/concorrência. Os arquivos novos têm chave exclusiva. Falha de persistência impede substituir os PDFs anteriores e retorna erro; uma evidência recuperada pode constar no histórico sem ser o registro atual se a atualização posterior falhar. Até 500 versões mais recentes são apresentadas, com aviso quando limitado.
+
+Conferir retificação na Receita é ação explícita que usa a rota existente com somenteDocumentos=true e atualizar=true. Valida procuração e poderes, preserva bloqueio de mês fechado e guardas de orçamento/cooldown/resultado incerto. Não agenda reconsultas, transmite, gera DAS ou altera lançamentos. Abrir/reler histórico e PDFs não chama o SERPRO. Nova declaração sem PDF não herda arquivos da declaração anterior. Nenhuma migração ou varredura fiscal histórica é habilitada.
+
+Validação dirigida cobre isolamento de empresa/competência, PDFs ausentes, repetição de conteúdo, versões distintas, falha ao preservar histórico, resposta incompleta, modo documental, abertura sem consultas e resposta tardia. Layout 390/1440 conferido, incluindo recusa de procuração simulada com histórico preservado. Nenhuma consulta fiscal real usada nos testes.
+
+
+Reforços solicitados pelo usuário: entrega comprovada na Receita sem número de transmissão interno aparece separadamente da apuração interna, inclusive quando aberta. Diferença entre número interno e número recuperado pede conferência dos recibos, sem inferir qual é mais recente ou quem transmitiu. Empresas já apuradas com extrato, recibo e DAS completos continuam sendo ignoradas pela rotina antes da consulta de procuração; abrir o histórico também não consulta. Apenas a ação explícita de conferência busca eventual mudança posterior.
+
+Validacao final desta etapa: 38 testes dirigidos de API e 45 de interface aprovados; suite ampliada fiscal/fechamento com 808 testes aprovada (sobreposta aos dirigidos); build web concluido e layout desktop/celular verificado.

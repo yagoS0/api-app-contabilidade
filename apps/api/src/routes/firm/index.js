@@ -1,3 +1,4 @@
+import { createPgdasHistoricoRouter } from "./pgdasHistorico.js";
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
 import { anexarAlertasMonitoramento } from "../../application/fiscal/serpro/alertasMonitoramento.js";
 import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
@@ -590,6 +591,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess, cbsDeps: criarRuntimeCbsDoAmbiente({ db: prisma }) }));
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createPendenciasManuaisRouter({ prisma, requireFirmCompanyAccess }));
+  router.use(createPgdasHistoricoRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createExportacaoLoteRouter());
   router.use(createLaboratorioRouter());
   // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.

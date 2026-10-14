@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { registrarVersaoPgdas, hashDocumentoPgdas } from "./PgdasHistoricoService.js";
 import { SerproProcurationService } from "./SerproProcurationService.js";
 import { procuracaoPermitePgdas, whereDasSalvo } from "./pgdasDocumentos.js";
 import { Buffer } from "node:buffer";
@@ -314,7 +316,7 @@ function decodeBase64Pdf(value, code) {
 
 async function saveBase64Pdf({ companyId, competencia, type, filename, base64 }) {
   const buffer = decodeBase64Pdf(base64, "SERPRO_PGDASD_PDF_INVALID");
-  const key = `serpro/pgdas/${companyId}/${competencia}/${type}-${Date.now()}-${String(filename || "documento.pdf").replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
+  const key = `serpro/pgdas/${companyId}/${competencia}/${type}-${Date.now()}-${randomUUID()}-${String(filename || "documento.pdf").replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
   const storage = GuideStorageService.create();
   const uploaded = await storage.upload({ key, buffer, contentType: "application/pdf" });
   return {
@@ -651,18 +653,24 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       return { company, circular: updated, guide: guideResult.guide, guideFetchError: guideResult.error, accounting: { ok: true, generatedEntries: [] }, dados, dasIndex };
     }
 
+    await registrarVersaoPgdas({ circular: salva, companyId: company.id, competencia: competenciaStorage, legado: true });
     const declaracaoPayload = pickPdfPayload(dados?.declaracao);
     const reciboPayload = pickPdfPayload(dados?.recibo);
 
     if (!declaracaoPayload?.pdf) {
+      const mudouNumero = dados?.numeroDeclaracao && String(dados.numeroDeclaracao) !== salva?.pgdasNumeroDeclaracao;
+      const parcial = mudouNumero ? { pgdasNumeroDeclaracao: String(dados.numeroDeclaracao), serproLastSyncAt: new Date() } : salva;
+      const historicoId = await registrarVersaoPgdas({ circular: parcial, companyId: company.id, competencia: competenciaStorage });
       const updated = await prisma.companyMonthlyCircular.update({
         where: { id: circular.id },
         data: {
           ...(dados?.numeroDeclaracao ? { pgdasNumeroDeclaracao: String(dados.numeroDeclaracao) } : {}),
+          ...(mudouNumero ? { pgdasDeclaracaoFileId: null, pgdasDeclaracaoFileUrl: null, pgdasReciboFileId: null, pgdasReciboFileUrl: null } : {}),
           serproSyncStatus: "INCOMPLETE",
           serproLastSyncAt: new Date(),
           metadata: {
             ...(circular.metadata && typeof circular.metadata === "object" ? circular.metadata : {}),
+            pgdasHistoricoId: historicoId,
             integrationSource: "SERPRO_PGDASD_DECLARACAO",
             sistema: "PGDASD",
             servico: SERPRO_PGDASD_SERVICE_DECLARACAO,
@@ -716,6 +724,11 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       }
     }
 
+    const historicoId = await registrarVersaoPgdas({ companyId: company.id, competencia: competenciaStorage,
+      circular: { pgdasNumeroDeclaracao: dados.numeroDeclaracao, receitaBruta, dasTotal,
+        pgdasDeclaracaoFileId: declaracaoFile.id, pgdasReciboFileId: reciboFile?.id || null, serproLastSyncAt: new Date() },
+      hashes: [hashDocumentoPgdas(declaracaoFile.buffer), hashDocumentoPgdas(reciboFile?.buffer)] });
+
     const updated = await prisma.companyMonthlyCircular.update({
       where: { id: circular.id },
       data: {
@@ -740,6 +753,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         serproLastError: null,
         metadata: {
           ...(circular.metadata && typeof circular.metadata === "object" ? circular.metadata : {}),
+          pgdasHistoricoId: historicoId,
           integrationSource: "SERPRO_PGDASD_DECLARACAO",
           sistema: "PGDASD",
           servico: SERPRO_PGDASD_SERVICE_DECLARACAO,

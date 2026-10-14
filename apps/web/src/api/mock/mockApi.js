@@ -6504,7 +6504,16 @@ export function createMockApi() {
       synthesizeCircularEntries(companyId, circular);
       return { ok: true, circular, accounting: { ok: true, generatedEntries: [] } };
     },
-    async syncPgdasCircular(companyId, competencia) {
+    async getPgdasHistorico(companyId, competencia) {
+      await delay();
+      const c = mockMonthlyCirculars.get(makeCircularKey(companyId, competencia));
+      return { ok: true, competencia, atualId: c?.pgdasNumeroDeclaracao || null, mudancaDetectada: false,
+        ultimaConsultaEm: c?.serproLastSyncAt || null, ultimaConsultaStatus: c?.serproSyncStatus || null,
+        versoes: c?.pgdasNumeroDeclaracao ? [{ id: c.pgdasNumeroDeclaracao, numeroDeclaracao: c.pgdasNumeroDeclaracao,
+          receitaBruta: c.receitaBruta, dasTotal: c.dasTotal, legado: true, atual: true, consultadaEm: c.serproLastSyncAt,
+          temDeclaracao: !!c.pgdasDeclaracaoFileId, temRecibo: !!c.pgdasReciboFileId }] : [] };
+    },
+    async syncPgdasCircular(companyId, competencia, input = {}) {
       await delay();
       const company = mockCompanies.find((item) => item.companyId === companyId);
       if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
@@ -6543,7 +6552,7 @@ export function createMockApi() {
         updatedAt: new Date().toISOString(),
       };
       mockMonthlyCirculars.set(makeCircularKey(companyId, competencia), circular);
-      synthesizeCircularEntries(companyId, circular);
+      if (!input.somenteDocumentos) synthesizeCircularEntries(companyId, circular);
       return { ok: true, result: { company: { id: companyId, razao: company.razao, cnpj: company.cnpj }, circular, accounting: { ok: true, generatedEntries: [] } } };
     },
     async approveAccountingEntry(companyId, entryId) {

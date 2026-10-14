@@ -1,3 +1,4 @@
+import { HistoricoPgdas } from "../components/HistoricoPgdas";
 // Grupo "Fiscal" da empresa → aba "Apuração". É onde a empresa é FECHADA para apuração,
 // transmitida e retificada — tudo por dentro da própria empresa.
 //
@@ -108,6 +109,7 @@ export function ApuracaoV2Tab({
   const [fechando, setFechando] = useState(null); // { retificar } → abre o FechamentoModal
   // Extrato do Simples (o que realmente foi pra Receita) — botão explícito (bate no SERPRO).
   const [extrato, setExtrato] = useState(null);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
   const [extratoLoading, setExtratoLoading] = useState(false);
   // Relatório de faturamento salvo desta competência (GET; nunca gera sozinho).
   const [relatorio, setRelatorio] = useState(null);
@@ -212,7 +214,7 @@ export function ApuracaoV2Tab({
     carregarRelatorio();
   }, [carregarRelatorio]);
 
-  useEffect(() => { setFechando(null); setRelatorioAberto(false); }, [contexto]);
+  useEffect(() => { setFechando(null); setRelatorioAberto(false); setHistoricoAberto(false); }, [contexto]);
   const [conferindoEnvio, setConferindoEnvio] = useState(false);
   async function conferirEnvio() {
     if (conferindoEnvio) return;
@@ -349,6 +351,8 @@ export function ApuracaoV2Tab({
               <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
               {extrato?.files?.declaracaoFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>}
               {extrato?.files?.reciboFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>}
+              <Button variant="secondary" onClick={() => setHistoricoAberto(true)} disabled={extratoLoading}>Histórico PGDAS-D</Button>
+              {historicoAberto && <HistoricoPgdas key={contexto} api={api} companyId={companyId} competencia={competencia} onClose={() => setHistoricoAberto(false)} onAtualizado={setExtrato} bloqueado={extratoLoading || ['transmitindo', 'erro_transmissao'].includes(estado)} />}
               <Button variant="secondary" onClick={() => setRelatorioAberto(true)}>Relatório de faturamento</Button>
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}

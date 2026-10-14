@@ -1,0 +1,9 @@
+.pgdas-historico { color: var(--text); min-width: 0; font-size: 14px; line-height: 1.5; }
+.pgdas-historico p, .pgdas-historico li > span, .pgdas-historico dt { color: var(--text-muted); }
+.pgdas-historico-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.pgdas-historico ol { list-style: none; padding: 0; }
+.pgdas-historico li { border-top: 1px solid var(--border); padding: 16px 0; display: grid; gap: 8px; overflow-wrap: anywhere; }
+.pgdas-historico strong { font-weight: 500; }
+.pgdas-historico dl { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
+.pgdas-historico dd { margin: 0; }
+.pgdas-historico p.pgdas-historico-alerta { color: var(--state-warn); }
