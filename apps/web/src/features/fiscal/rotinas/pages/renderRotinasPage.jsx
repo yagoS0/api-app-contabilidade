@@ -1,8 +1,11 @@
 import "./rotinas.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
+import { Modal } from "../../../../components/ui/Modal";
+import { ResultadoRotinaModal } from "./ResultadoRotinaModal";
+import { elegivelLimparAviso, chaveAvisoRotina, estadoExecucaoRotina } from "./rotinasPresentation";
 import { Button } from "../../../../components/ui/Button";
 
 function mensagemRotinas(erro, alternativa) {
@@ -10,16 +13,6 @@ function mensagemRotinas(erro, alternativa) {
  if (erro?.message && !mensagens[erro.message]) return erro.message;
  return mensagens[erro?.reason || erro?.error || erro?.message] || alternativa;
 }
-
-const ESTADOS_CONSULTA_PAGAMENTO = {
-  paid: "Pagamento confirmado via SERPRO", open: "Pagamento não localizado",
-  NAO_LOCALIZADO: "Pagamento não localizado", DIVERGENTE: "Pagamento divergente — conferir",
-  already_paid: "Confirmação já registrada — sem nova consulta",
-  sem_numero_documento: "Sem número do documento — consulta não realizada",
-  sem_vencimento_confirmado: "Sem vencimento confirmado — consulta não realizada",
-  ainda_nao_vencida: "Ainda não vencida — consulta não realizada",
-  conferencia_manual: "Aguardando conferência manual",
-};
 
 // Página "Rotinas" — QUEM faz o quê (tabela empresa × rotina) e QUANDO (agenda por rotina).
 //
@@ -76,7 +69,31 @@ export function RotinasPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [runningPayment, setRunningPayment] = useState(false);
+  const focoRetornoManual = useRef(false);
+  const [aba, setAba] = useState("acompanhamento");
+  const [atualizando, setAtualizando] = useState(false);
+  const [erroAtualizacao, setErroAtualizacao] = useState("");
+  const [resultadoAberto, setResultadoAberto] = useState(null);
+  const [execucaoAberta, setExecucaoAberta] = useState(false);
+  const [operacao, setOperacao] = useState("captura");
+  const [executandoManual, setExecutandoManual] = useState(false);
+  const [resultadoManual, setResultadoManual] = useState(null);
+  const [erroExecucao, setErroExecucao] = useState("");
+  const [carregou, setCarregou] = useState(false);
+  const [baseline, setBaseline] = useState("");
+  const [avisosVistos, setAvisosVistos] = useState(() => new Set());
   const [notice, setNotice] = useState(null); // { type: "error"|"ok", text }
+
+  useEffect(() => {
+    if (!resultadoAberto && focoRetornoManual.current) {
+      document.getElementById("rotinas-retorno-manual")?.focus();
+      focoRetornoManual.current = false;
+    }
+  }, [resultadoAberto]);
+  function fecharResultado() {
+    focoRetornoManual.current = Boolean(resultadoAberto?.manual);
+    setResultadoAberto(null);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,7 +104,10 @@ export function RotinasPage({
       setAgenda(out?.agenda || {});
       setExecutionStatus(out?.executions || []);
       setEmpresas(Array.isArray(out?.empresas) ? out.empresas : []);
+      setBaseline(JSON.stringify({ agenda: out?.agenda || {}, empresas: Array.isArray(out?.empresas) ? out.empresas : [] }));
+      setCarregou(true);
     } catch (err) {
+      setCarregou(false);
       setNotice({ type: "error", text: mensagemRotinas(err, "Falha ao carregar rotinas.") });
     } finally {
       setLoading(false);
@@ -96,7 +116,7 @@ export function RotinasPage({
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (onRefreshWorkerStatus) onRefreshWorkerStatus();
+    if (onRefreshWorkerStatus) atualizarExecucoes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,6 +172,7 @@ export function RotinasPage({
         agenda: payloadAgenda,
       });
       if (out?.agenda) setAgenda(out.agenda);
+      setBaseline(JSON.stringify({ agenda: out?.agenda || agenda, empresas }));
       onRefreshWorkerStatus?.();
       setNotice({ type: "ok", text: "Rotinas salvas." });
     } catch (err) {
@@ -161,10 +182,50 @@ export function RotinasPage({
     }
   }
 
-  async function handleRunPayment() {
-    if (!onRunPaymentConfirmation) return;
-    setRunningPayment(true);
-    try { await onRunPaymentConfirmation(); } finally { setRunningPayment(false); }
+  const ocupadoManual = executandoManual || runningCron || runningPayment;
+  const naoSalvo = carregou && baseline !== JSON.stringify({ agenda, empresas });
+  const execucoes = workerStatus?.routines || executionStatus;
+  const avisosRevisaveis = execucoes.filter(row => elegivelLimparAviso(row) && !avisosVistos.has(chaveAvisoRotina(row)));
+  const tituloRotina = row => row.label || rotinas.find(r => r.key === row.routine)?.label || row.routine;
+
+  async function atualizarExecucoes() {
+    if (!onRefreshWorkerStatus || atualizando) return;
+    setAtualizando(true);
+    setErroAtualizacao("");
+    try {
+      const result = await onRefreshWorkerStatus();
+      if (result === null) setErroAtualizacao("Não foi possível atualizar as execuções. Os dados anteriores foram mantidos.");
+    } catch (err) { setErroAtualizacao(mensagemRotinas(err, "Não foi possível atualizar as execuções. Os dados anteriores foram mantidos.")); }
+    finally { setAtualizando(false); }
+  }
+  function limparAvisos() {
+    setAvisosVistos(prev => new Set([...prev, ...avisosRevisaveis.map(chaveAvisoRotina)]));
+    setNotice({ type: "ok", text: "Avisos limpos nesta tela. O histórico foi mantido." });
+  }
+  async function executarAgora() {
+    if (ocupadoManual || !carregou || loading) return;
+    setExecutandoManual(true);
+    setErroExecucao("");
+    const pagamento = operacao === "pagamento";
+    setRunningPayment(pagamento);
+    try {
+      const retorno = await (pagamento ? onRunPaymentConfirmation() : onRunCron({}));
+      if (!retorno || retorno.ok === false) {
+        setErroExecucao(retorno?.message || retorno?.reason || retorno?.error || "Não foi possível concluir a execução. Confira os avisos antes de repetir.");
+        return;
+      }
+      const row = { routine: pagamento ? "pagamento" : "captura", label: pagamento ? "Consulta de pagamentos" : "Captura de guias e extratos", manual: true,
+        lastRun: { status: "RETURNED", finishedAt: new Date().toISOString(), result: retorno.result || retorno } };
+      setResultadoManual(row);
+      setExecucaoAberta(false);
+      setResultadoAberto(row);
+      await atualizarExecucoes();
+    } catch (err) {
+      setErroExecucao(mensagemRotinas(err, "Falha ao executar. Confira o resultado antes de repetir; a consulta pode ter gerado custo."));
+    } finally {
+      setExecutandoManual(false);
+      setRunningPayment(false);
+    }
   }
 
   // Quantas empresas fazem cada rotina — cabeçalho mostra o alcance de cada uma.
@@ -195,6 +256,33 @@ export function RotinasPage({
                 {notice.text}
               </div>
             )}
+          <div className="rotinas-abas" role="tablist" aria-label="Seções de Rotinas">
+            {[["acompanhamento", "Acompanhamento"], ["configuracao", "Configuração"]].map(([id, label]) => <button key={id} type="button" role="tab" id={`rotinas-tab-${id}`} aria-controls={`rotinas-painel-${id}`} aria-selected={aba === id} tabIndex={aba === id ? 0 : -1} onClick={() => setAba(id)} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "acompanhamento" : event.key === "End" ? "configuracao" : aba === "acompanhamento" ? "configuracao" : "acompanhamento"; setAba(next); document.getElementById(`rotinas-tab-${next}`)?.focus(); } }}>{label}</button>)}
+          </div>
+          <div id="rotinas-painel-acompanhamento" role="tabpanel" aria-labelledby="rotinas-tab-acompanhamento" hidden={aba !== "acompanhamento"}>
+            <section className="serpro-settings-card rotinas-manual">
+              <div><h2 className="serpro-settings-card__title">Execução manual</h2><p className="text-muted">Usa a configuração salva. Consultas externas podem gerar custos.</p>{naoSalvo && <p role="status">Há alterações não salvas em Configuração.</p>}</div>
+              <Button variant="secondary" disabled={!carregou || loading || ocupadoManual || (!onRunCron && !onRunPaymentConfirmation)} onClick={() => { setOperacao(onRunCron ? "captura" : "pagamento"); setErroExecucao(""); setExecucaoAberta(true); }}>{ocupadoManual ? "Executando…" : "Executar agora"}</Button>
+            </section>
+            {resultadoManual && <section className="serpro-settings-card rotinas-manual"><div><h3>Último retorno manual</h3><p>{tituloRotina(resultadoManual)} · {formatDateTime(resultadoManual.lastRun.finishedAt)}</p></div><Button id="rotinas-retorno-manual" variant="secondary" onClick={() => setResultadoAberto(resultadoManual)}>Ver retorno manual</Button></section>}
+            <section className="serpro-settings-card">
+              <div className="rotinas-execucoes-topo"><h2 className="serpro-settings-card__title">Execuções programadas</h2><div className="rotinas-acoes"><Button variant="secondary" disabled={!avisosRevisaveis.length} onClick={limparAvisos}>Limpar avisos</Button><Button variant="secondary" disabled={loading || atualizando || !onRefreshWorkerStatus} onClick={atualizarExecucoes}>{atualizando ? "Atualizando…" : "Atualizar"}</Button></div></div>
+              {loading && <p role="status">Carregando rotinas…</p>}
+              {erroAtualizacao && <p role="alert">{erroAtualizacao}</p>}
+              {!loading && !carregou && <Button variant="secondary" onClick={load}>Tentar novamente</Button>}
+              {!loading && carregou && !execucoes.length && <p>Histórico por rotina ainda não disponível. O último registro geral não confirma todas as consultas.</p>}
+              {!!execucoes.length && <table className="rotinas-execucoes"><thead><tr><th>Rotina</th><th>Situação</th><th>Última execução</th><th>Próximo horário</th><th><span className="rotinas-sr-only">Resultado</span></th></tr></thead><tbody>{execucoes.map(row => <tr key={row.routine}>
+                <td data-label="Rotina">{tituloRotina(row)}</td>
+                <td data-label="Situação">{estadoExecucaoRotina(row, avisosVistos.has(chaveAvisoRotina(row)))}</td>
+                <td data-label="Última execução">{formatDateTime(row.lastRun?.finishedAt || row.lastRun?.startedAt)}</td>
+                <td data-label="Próximo horário">{row.enabled ? formatDateTime(row.nextEffectiveAt || row.nextAt) : "—"}</td>
+                <td>{row.lastRun && <Button variant="secondary" onClick={() => setResultadoAberto(row)} aria-label={`Ver resultado de ${tituloRotina(row)}`}>Ver resultado</Button>}</td>
+              </tr>)}</tbody></table>}
+              <p className="text-muted">Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
+            </section>
+          </div>
+          <div id="rotinas-painel-configuracao" role="tabpanel" aria-labelledby="rotinas-tab-configuracao" hidden={aba !== "configuracao"}>
+            {naoSalvo && <p role="status">Alterações não salvas.</p>}
           <fieldset className="rotinas-configuracao" disabled={saving}>
           {/* ── Agenda: um dia/hora por rotina, valendo pras empresas marcadas ── */}
           <section className="serpro-settings-card">
@@ -391,68 +479,20 @@ export function RotinasPage({
 
           </fieldset>
 
-          {/* ── Disparo manual + última execução ── */}
-          <section className="serpro-settings-card">
-            <div className="serpro-settings-card__head">
-              <h2 className="serpro-settings-card__title">Rodar agora</h2>
-              <p className="serpro-settings-card__description">
-                Executa fora da agenda usando a configuração salva. Consultas externas podem gerar custos.
-              </p>
-            </div>
-
-            <div className="serpro-settings-form__actions">
-              <Button type="button" variant="secondary" disabled={runningCron || !onRunCron} onClick={() => onRunCron && onRunCron({})}>
-                {runningCron ? "Rodando captura…" : "Rodar captura agora"}
-              </Button>
-              {onRunPaymentConfirmation && (
-                <Button type="button" variant="secondary" disabled={runningPayment} onClick={handleRunPayment}>
-                  {runningPayment ? "Consultando pagamentos…" : "Confirmar pagamentos agora"}
-                </Button>
-              )}
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
-              <h3 style={{ margin: 0 }}>Execuções programadas</h3>
-              <Button type="button" variant="secondary" onClick={() => onRefreshWorkerStatus?.()}>Atualizar execuções</Button>
-            </div>
-            <div style={{ overflowX: "auto", marginTop: 12 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 650 }}>
-                <thead><tr><th style={th}>Rotina</th><th style={th}>Situação</th><th style={th}>Última execução</th><th style={th}>Próximo horário</th></tr></thead>
-                <tbody>{(workerStatus?.routines || executionStatus).map((row) => (
-                  <tr key={row.routine} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={td}>{rotinas.find((r) => r.key === row.routine)?.label || row.routine}</td>
-                    <td style={td}>{!row.enabled ? "Desativada" : row.interrupted ? "Execução interrompida" : !row.alive ? "Sem sinal do executor" : row.lastRun?.status === "RUNNING" ? "Em execução" : row.lastRun?.status === "FAILED" ? "Consultar falha" : row.overdue ? "Horário não executado" : "Aguardando horário"}</td>
-                    <td style={td}>
-                      {formatDateTime(row.lastRun?.finishedAt || row.lastRun?.startedAt)}
-                      {row.lastRun && <details><summary>Resultado</summary>
-                        <p>{row.interrupted ? "Execução interrompida" : row.lastRun.status === "SUCCEEDED" ? "Concluída" : row.lastRun.status === "FAILED" ? "Execução com pendências" : "Em execução"}</p>
-                        {row.lastRun.result?.divergentes > 0 && <p>{row.lastRun.result.divergentes} empresa(s) com divergência fiscal para conferir.</p>}
-                        {row.lastRun.error && <p>{row.lastRun.error}</p>}
-                        {row.lastRun.result?.mensagem && <p>{row.lastRun.result.mensagem}</p>}
-                        {row.lastRun.result?.avisosEnviados > 0 && <p>{row.lastRun.result.avisosEnviados} aviso(s) de pagamento enviado(s).</p>}
-                        {row.lastRun.result?.avisosPendentes > 0 && <p>{row.lastRun.result.avisosPendentes} aviso(s) aguardam ação do contador. Confira o canal e o destinatário.</p>}
-                        {[...(row.lastRun.result?.results || []), ...(row.lastRun.result?.extratoResults || []), ...(row.lastRun.result?.parcelaResults || [])].map((item, i) => <div key={`${item.companyId || "item"}-${i}`}>
-                          <p>{item.razao || item.companyId || item.guideId || item.parcelaId || "Consulta"}: {item.reason || item.error || (row.routine === "pagamento" && ESTADOS_CONSULTA_PAGAMENTO[item.status]) || item.status}</p>
-                          {(item.competencia || item.tipo) && <p>{[item.tipo, item.competencia].filter(Boolean).join(" · ")}</p>}
-                          {item.diagnostico && <p>{item.diagnostico.mensagem}{item.diagnostico.httpStatus ? ` (HTTP ${item.diagnostico.httpStatus})` : ""}{item.diagnostico.codigoSerpro ? ` · ${item.diagnostico.codigoSerpro}` : ""}</p>}
-                          {!item.diagnostico && item.error === "SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA" && <p>Consulta sem conclusão. Este registro antigo não guardou o motivo detalhado; não significa que a guia não foi paga.</p>}
-                          {item.aviso && <p>{item.aviso.status === "ENVIADO" ? "Aviso enviado ao cliente." : item.aviso.status === "JA_ENVIADO" ? "Cliente já avisado; sem novo envio." : item.aviso.status === "IGNORADO" ? "Aviso não enviado: pagamento ou confirmação precisa ser conferido." : "Aviso pendente para o contador; nenhuma nova consulta à Receita será feita automaticamente."}</p>}
-                          {item.aviso?.mensagem && <p>{item.aviso.mensagem}</p>}
-                          {(item.aviso?.resultados || []).filter(resultado => resultado.mensagem && !["ENVIADO", "JA_ENVIADO"].includes(resultado.status)).map((resultado, j) => <p key={`aviso-${j}`}>{resultado.mensagem}</p>)}
-                          {(item.parcelas || []).map((parcela, j) => <p key={j}>Parcela {parcela.anoMes || parcela.anoMesParcela || parcela.numeroParcela || "consultada"}: {parcela.reason || parcela.error || parcela.status}</p>)}
-                        </div>)}
-                      </details>}
-                    </td>
-                    <td style={td}>{row.enabled ? formatDateTime(row.nextEffectiveAt || row.nextAt) : "—"}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-              <p className="text-muted">Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.</p>
-              {!(workerStatus?.routines || executionStatus).length && <p>Histórico por rotina ainda não disponível. O último registro geral não confirma todas as consultas.</p>}
-            </div>
-          </section>
-
+          </div>
           <Feedback message={message} error={error} />
+          {execucaoAberta && <Modal titulo="Executar agora" tamanho="md" className="rotinas-executar-modal" ocupado={ocupadoManual} aoFechar={() => setExecucaoAberta(false)} fecharAoClicarFundo={false} rodape={<><Button variant="secondary" disabled={ocupadoManual} onClick={() => setExecucaoAberta(false)}>Cancelar</Button><Button disabled={ocupadoManual || !carregou || (operacao === "pagamento" ? !onRunPaymentConfirmation : !onRunCron)} onClick={executarAgora}>{ocupadoManual ? "Executando…" : operacao === "pagamento" ? "Consultar pagamentos" : "Capturar guias e extratos"}</Button></>}>
+            <fieldset disabled={ocupadoManual} className="rotinas-operacoes"><legend>Operação</legend>
+              {onRunCron && <label><input type="radio" name="rotinas-operacao" checked={operacao === "captura"} onChange={() => setOperacao("captura")} />Capturar guias e extratos</label>}
+              {onRunPaymentConfirmation && <label><input type="radio" name="rotinas-operacao" checked={operacao === "pagamento"} onChange={() => setOperacao("pagamento")} />Consultar pagamentos</label>}
+            </fieldset>
+            <p>Executa fora da agenda para as empresas elegíveis pela configuração salva. A seleção de empresas em Configuração não limita esta execução.</p>
+            {naoSalvo && <p>As alterações ainda não salvas não serão usadas.</p>}
+            <p>Consultas externas podem gerar custos. Não há nova tentativa automática em caso de falha.</p>
+            {operacao === "pagamento" && <p>Consulta, confirmação do cliente e baixa contábil são etapas distintas.</p>}
+            {erroExecucao && <p role="alert">{erroExecucao}</p>}
+          </Modal>}
+          {resultadoAberto && <ResultadoRotinaModal row={resultadoAberto} titulo={tituloRotina(resultadoAberto)} onClose={fecharResultado} />}
         </div>
       </AppShell>
     </PageShell>

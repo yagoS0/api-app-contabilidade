@@ -9,10 +9,10 @@ test('histórico mostra empresa, competência e diagnóstico sem confundir erro 
       { guideId: 'guia-antiga', error: 'SERPRO_PAGTOWEB_CONSULTA_NAO_CONCLUIDA' },
     ] } } }] })) };
   render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
-  fireEvent.click(await screen.findByText('Resultado'));
-  expect(screen.getByText(/Empresa de teste:/)).toBeVisible();
+  fireEvent.click(await screen.findByRole('button',{name:'Ver resultado de Pagamento'}));
+  expect(screen.getByText('Empresa de teste')).toBeVisible();
   expect(screen.getByText('INSS · 2026-09')).toBeVisible();
-  expect(screen.getByText('Confira a procuração. (HTTP 403)')).toBeVisible();
+  expect(screen.getAllByText(/Confira a procuração/).some(el=>el.closest('details') === null)).toBe(true);expect(screen.getByText('HTTP 403')).toBeVisible();
   expect(screen.getByText(/registro antigo não guardou o motivo/)).toBeVisible();
 });
 
@@ -25,6 +25,7 @@ test("horário meia-noite e frequência diária são conservados ao salvar", asy
     saveRotinas: jest.fn(async (body) => ({ agenda: body.agenda })),
   };
   render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
+  fireEvent.click(screen.getByRole("tab",{name:"Configuração"}));
   fireEvent.change(await screen.findByLabelText("Horário de Pagamento"), { target: { value: "00:00" } });
   fireEvent.change(screen.getByLabelText("Frequência da consulta de pagamentos"), { target: { value: "DAILY" } });
   expect(screen.getByLabelText("Dia de Pagamento")).toBeDisabled();
@@ -53,5 +54,5 @@ test("falha mostra ação do contador e não promete retry antigo", async () => 
   expect(screen.queryByText(/Nova tentativa a partir/)).not.toBeInTheDocument();
 });
 
-test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Salvar rotinas'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
-test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar rotinas'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar'})).toBeDisabled();await act(async()=>concluir({}));});
+test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));expect(screen.getByRole('button',{name:'Salvar rotinas'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
+test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar rotinas'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar'})).toBeDisabled();await act(async()=>concluir({}));});
