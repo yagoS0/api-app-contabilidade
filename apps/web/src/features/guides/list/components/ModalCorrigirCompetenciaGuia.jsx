@@ -1,3 +1,4 @@
+import { mensagemCorrecaoGuia } from "./mensagemCorrecaoGuia";
 import { useState } from "react";
 import { Modal } from "../../../../components/ui/Modal";
 import { Button } from "../../../../components/ui/Button";
@@ -24,17 +25,17 @@ export function ModalCorrigirCompetenciaGuia({ api, companyId, guia, aoFechar, a
         setConcluida(true);
         try { await aoCorrigir?.(); } catch { setErro("Competência corrigida. Atualize a página para recarregar a lista."); }
       }
-    } catch (e) { setErro(e?.message || "Não foi possível corrigir a competência."); setPrevia(null); }
+    } catch (e) { setErro(mensagemCorrecaoGuia(e, "Não foi possível corrigir a competência.")); setPrevia(null); }
     finally { setOcupado(false); }
   }
   return <Modal titulo="Corrigir competência" tamanho="sm" ocupado={ocupado} aoFechar={aoFechar} rodape={<>
     <Button variant="secondary" disabled={ocupado} onClick={aoFechar}>Fechar</Button>
-    {!concluida && <Button disabled={ocupado || !competencia || competencia === guia.competencia} onClick={salvar}>{ocupado ? "Conferindo…" : previa ? "Confirmar correção" : "Conferir alteração"}</Button>}
+    {!concluida && <Button disabled={ocupado || !competencia || competencia === guia.competencia} onClick={salvar}>{ocupado ? (previa ? "Corrigindo…" : "Conferindo…") : previa ? "Confirmar correção" : "Conferir alteração"}</Button>}
   </>}>
     <p>{guia.tipo} · Competência cadastrada: <strong>{formatar(guia.competencia)}</strong></p>
     {concluida ? <p role="status">Competência corrigida para {formatar(competencia)}.</p> : <>
       <label htmlFor="guia-nova-competencia">Competência correta</label>
-      <input id="guia-nova-competencia" type="month" value={competencia} disabled={ocupado} onChange={e => { setCompetencia(e.target.value); setPrevia(null); setErro(null); }} style={{ display: "block", marginTop: 8, padding: 8, color: "var(--text)", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 6 }} />
+      <input id="guia-nova-competencia" type="month" value={competencia} disabled={ocupado} onChange={e => { setCompetencia(e.target.value); setPrevia(null); setErro(null); }} style={{ display: "block", width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 40, marginTop: 8, padding: 8, color: "var(--text)", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 6 }} />
       <p>Informe a competência que consta no PDF. O documento, o valor e o vencimento serão mantidos.</p>
       {previa && <p role="status">Alterar de <strong>{formatar(previa.competenciaAtual)}</strong> para <strong>{formatar(previa.novaCompetencia)}</strong>?</p>}
     </>}

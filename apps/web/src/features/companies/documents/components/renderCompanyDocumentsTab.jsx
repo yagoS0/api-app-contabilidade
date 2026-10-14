@@ -180,7 +180,7 @@ export function CompanyDocumentsTab({ docs }) {
       {resumoExclusao && <p role="status">{resumoExclusao}</p>}
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Documentos</h2>
-        <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
+        <span role={carregando ? "status" : undefined} style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
           {carregando ? "carregando…" : `${documentos.length} documento(s)`}
         </span>
         {/* ⚠ SEMPRE no cabeçalho. Ele chegou a ser condicional (`documentos.length > 0`), com a
@@ -251,7 +251,7 @@ export function CompanyDocumentsTab({ docs }) {
           <div style={{ display: "flex", gap: "var(--space-2)" }}>{barraDeAdicionar}</div>
         </div>
       ) : erro && !documentos.length ? null : (
-        <div className="table-wrap">
+        <div className="table-wrap" role="region" aria-label="Documentos da empresa" tabIndex={0}>
           <table className="tabela--densa">
             <thead>
               <tr>
@@ -285,7 +285,7 @@ export function CompanyDocumentsTab({ docs }) {
                   ) : null}
                   <td style={{ color: "var(--text-muted)" }}>{fmtData(d.createdAt)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <Button size="sm" variant="secondary" onClick={() => baixar(d)}>Baixar</Button>
+                    <Button size="sm" variant="secondary" aria-label={`Baixar ${d.nome}`} onClick={() => baixar(d)}>Baixar</Button>
                   </td>
                 </tr>
               ))}
@@ -358,7 +358,7 @@ export function CompanyDocumentsTab({ docs }) {
           </p>
           <label htmlFor="doc-destinatario" style={rotulo}>E-mail do destinatário</label>
           <input id="doc-destinatario" type="text" inputMode="email" value={destinatario} onChange={(e) => setDestinatario(e.target.value)} style={{ ...campo, marginBottom: 12 }} />
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem" }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem", overflowWrap: "anywhere" }}>
             {selecionadosDocs.map((d) => <li key={d.id}>{d.nome}</li>)}
           </ul>
         </Modal>
@@ -387,7 +387,7 @@ export function CompanyDocumentsTab({ docs }) {
           <p style={{ margin: "0 0 8px", fontSize: "0.85rem" }}>
             Isto apaga do portal, e não tem desfazer:
           </p>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem" }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem", overflowWrap: "anywhere" }}>
             {selecionadosDocs.map((d) => (
               <li key={d.id}>
                 {d.nome} <span style={{ color: "var(--text-muted)" }}>· {tipoLabels[d.tipo] || d.tipo}</span>

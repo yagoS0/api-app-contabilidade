@@ -1,3 +1,4 @@
+import { mensagemCorrecaoGuia } from "./mensagemCorrecaoGuia";
 import { useEffect, useState } from "react";
 import { Modal } from "../../../../components/ui/Modal";
 import { Button } from "../../../../components/ui/Button";
@@ -18,7 +19,7 @@ export function ModalCorrigirValorGuia({ api, companyId, guia, aoFechar, aoCorri
       if (!vivo) return;
       if (!r?.revisao || r.guideId !== guideId || r.companyId !== companyId || r.pdfPreservado !== true || r.linhaConfirmada !== true || Number(r.novoValor) !== valor) throw new Error("A prévia não confirmou a guia, o PDF e o valor solicitado.");
       setPrevia(r);
-    }).catch(e => { if (vivo) setErro(e?.message || "Não foi possível conferir o PDF."); })
+    }).catch(e => { if (vivo) setErro(mensagemCorrecaoGuia(e, "Não foi possível conferir o PDF.")); })
       .finally(() => { if (vivo) setOcupado(false); });
     return () => { vivo = false; };
   }, [api, companyId, guideId, valor]);
@@ -30,20 +31,20 @@ export function ModalCorrigirValorGuia({ api, companyId, guia, aoFechar, aoCorri
       if (r?.ok !== true) throw new Error(r?.message || "A correção não foi confirmada.");
       setConcluida(true);
       try { await aoCorrigir?.(); } catch { setErro("O valor foi corrigido, mas a lista não foi atualizada. Atualize a página para conferir."); }
-    } catch(e) { setErro(e?.message || "Não foi possível confirmar a correção. Atualize e confira o valor antes de repetir."); setPrevia(null); }
+    } catch(e) { setErro(mensagemCorrecaoGuia(e, "Não foi possível confirmar a correção. Atualize e confira o valor antes de repetir.")); setPrevia(null); }
     finally { setOcupado(false); }
   }
   return <Modal titulo="Conferir e corrigir o valor da guia" ocupado={ocupado} aoFechar={aoFechar} rodape={<>
     <Button variant="secondary" disabled={ocupado} onClick={aoFechar}>Fechar</Button>
-    {!concluida ? <Button disabled={ocupado || !previa || !confirmado} onClick={corrigir}>Confirmar correção do valor</Button> : null}
+    {!concluida ? <Button disabled={ocupado || !previa || !confirmado} onClick={corrigir}>{ocupado && previa ? "Corrigindo…" : "Confirmar correção do valor"}</Button> : null}
   </>}>
-    {ocupado && !previa ? <p>Conferindo o PDF e os lançamentos vinculados…</p> : null}
+    {ocupado && !previa ? <p role="status">Conferindo o PDF e os lançamentos vinculados…</p> : null}
     {erro ? <p role="alert">{erro}</p> : null}
     {concluida ? <p role="status">Valor corrigido para {fmtMoney(valor)}. O PDF foi preservado. Nenhuma mensagem foi enviada ao cliente.</p> : previa ? <>
-      <p>Valor cadastrado: <strong>{fmtMoney(previa.valorAtual)}</strong>. Valor confirmado no PDF: <strong>{fmtMoney(previa.novoValor)}</strong>.</p>
+      <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: 16, margin: "0 0 20px" }}><div><dt>Valor cadastrado</dt><dd style={{ margin: "6px 0 0", fontWeight: 600 }}>{fmtMoney(previa.valorAtual)}</dd></div><div><dt>Valor confirmado no PDF</dt><dd style={{ margin: "6px 0 0", fontWeight: 600 }}>{fmtMoney(previa.novoValor)}</dd></div></dl>
       <p>{previa.lancamentosAfetados} lançamento(s) de provisão em rascunho será(ão) atualizado(s), mantendo débito e crédito balanceados. O PDF original será preservado.</p>
       <p>Esta ação não confirma pagamento nem envia a guia.</p>
-      <label><input type="checkbox" checked={confirmado} onChange={e => setConfirmado(e.target.checked)}/> Conferi o PDF e confirmo a correção para {fmtMoney(previa.novoValor)}.</label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 16 }}><input disabled={ocupado} type="checkbox" checked={confirmado} onChange={e => setConfirmado(e.target.checked)}/> Conferi o PDF e confirmo a correção para {fmtMoney(previa.novoValor)}.</label>
     </> : null}
   </Modal>;
 }

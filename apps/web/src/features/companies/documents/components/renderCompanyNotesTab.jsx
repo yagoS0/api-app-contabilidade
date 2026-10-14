@@ -22,6 +22,7 @@ const ROTULO_IMPORTANCIA = { ALTA: "Alta", MEDIA: "Média", BAIXA: "Baixa" };
 const btn = (cor = PANEL.border) => ({
   padding: "6px 10px", borderRadius: 8, border: `1px solid ${cor}`,
   background: "transparent", color: PANEL.text, fontSize: "0.78rem", cursor: "pointer",
+  minHeight: 44,
 });
 
 function fmtData(iso) {
@@ -45,7 +46,7 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
           {ROTULO_IMPORTANCIA[nota.importancia] || nota.importancia}
         </span>
         <span style={{ fontSize: "0.72rem", color: PANEL.muted }}>{fmtData(nota.createdAt)}</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 6 }}>
           <select
             value={nota.importancia}
             onChange={(e) => onMudarImportancia(e.target.value)}
@@ -59,10 +60,10 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
           {destaque
             ? <button type="button" style={btn()} onClick={onDesfixar}>Desafixar</button>
             : <button type="button" style={btn("var(--state-warn)")} onClick={onFixar}>Fixar</button>}
-          <button type="button" style={btn("var(--state-danger)")} onClick={onExcluir}>Excluir</button>
+          <button type="button" style={btn()} onClick={onExcluir}>Excluir</button>
         </div>
       </div>
-      <p style={{ margin: 0, fontSize: "0.86rem", whiteSpace: "pre-wrap" }}>{nota.texto}</p>
+      <p style={{ margin: 0, fontSize: "0.86rem", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{nota.texto}</p>
     </article>
   );
 }
@@ -119,8 +120,8 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
        Documentos saltava para 1200 — exatamente o salto que este redesign existe para eliminar. */
     <div style={{ color: PANEL.text }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Anotações</h2>
-        <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
+        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Anotações</h2>
+        <span role={carregando ? "status" : undefined} style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
           {carregando ? "carregando…" : `${(fixada ? 1 : 0) + demais.length} anotação(ões)`}
         </span>
         <label style={{ marginLeft: "auto", fontSize: "0.78rem", color: PANEL.muted, display: "flex", gap: 6, alignItems: "center" }}>

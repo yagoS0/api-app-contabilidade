@@ -20,9 +20,9 @@ export function ImportacaoNotasModal({ andamento, resultado, ocupado, aoFechar }
     </div>
     {andamento.temZip && <p style={{ fontSize: ".8rem", color: "var(--text-muted)" }}>Cada ZIP conta como um arquivo. As notas dentro dele serão contabilizadas após o processamento.</p>}
     <dl style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, margin: "20px 0" }}>
-      {[["Novas", totais.novas], ["Atualizadas", totais.atualizadas], ["Duplicadas", totais.duplicadas], ["Não importadas", totais.recusadas]].map(([rotulo, valor]) => <div key={rotulo} style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}><dt style={{ fontSize: ".8rem", color: "var(--text-muted)" }}>{rotulo}</dt><dd style={{ margin: "4px 0 0", fontSize: "1.3rem", fontWeight: 700 }}>{valor || 0}</dd></div>)}
+      {[["Novas", totais.novas], ["Atualizadas", totais.atualizadas], ["Duplicadas", totais.duplicadas], ["Não importadas", totais.recusadas]].map(([rotulo, valor]) => <div key={rotulo} style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}><dt style={{ fontSize: ".8rem", color: "var(--text-muted)" }}>{rotulo}</dt><dd style={{ margin: "4px 0 0", fontSize: "1.3rem", fontWeight: 600 }}>{valor || 0}</dd></div>)}
     </dl>
-    {resultado && <div role={resultado.falhou || resultado.quantidadeProblemas > 0 ? "alert" : "status"}>
+    {resultado && <div style={{ overflowWrap: "anywhere" }} role={resultado.falhou || resultado.quantidadeProblemas > 0 ? "alert" : "status"}>
       <p>{resultado.mensagem}</p>
       {!!resultado.problemas?.length && <details><summary>Ver arquivos com pendências ({resultado.problemas.length})</summary><ul style={{ paddingLeft: 20, overflowWrap: "anywhere" }}>{resultado.problemas.map((problema, i) => <li key={i}><strong>{problema.arquivo || "Arquivo"}:</strong> {problema.mensagem}</li>)}</ul></details>}
       {resultado.detalhesTruncados && <p>Os totais incluem todo o lote; os detalhes mostram apenas parte dos arquivos.</p>}

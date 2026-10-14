@@ -1,0 +1,18 @@
+.pagamentos-provisionados { min-width: 0; }
+.pagamentos-provisionados-scroll { position: relative; overflow-x: auto; max-width: 100%; margin-top: 16px; }
+.pagamentos-provisionados table { min-width: 700px; }
+.pagamentos-provisionados th { font-size: .875rem; font-weight: 500; text-transform: none; letter-spacing: normal; }
+.pagamentos-provisionados td { vertical-align: top; }
+.pagamentos-provisionados td:last-child { min-width: 112px; }
+.pagamentos-provisionados td .btn { white-space: nowrap; }
+.pagamentos-provisionados small { font-size: .875rem; line-height: 1.5; color: var(--text-muted); margin-block: 4px; }
+@media(max-width:560px) { .pagamentos-provisionados .btn { min-height:44px; } }
+@media (max-width:560px) {
+ .pagamentos-provisionados table { min-width:0; }
+ .pagamentos-provisionados thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .pagamentos-provisionados tbody,.pagamentos-provisionados tr,.pagamentos-provisionados td { display:block; }
+ .pagamentos-provisionados tr { padding:8px 0; border-bottom:1px solid var(--border); }
+ .pagamentos-provisionados td { border:0; padding:8px 0; overflow-wrap:anywhere; }
+ .pagamentos-provisionados td::before { content:attr(data-label); display:block; font-size:.875rem; font-weight:500; color:var(--text-muted); margin-bottom:4px; }
+ .pagamentos-provisionados select { min-height:44px; }
+}

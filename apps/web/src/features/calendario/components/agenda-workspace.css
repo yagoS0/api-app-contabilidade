@@ -103,6 +103,7 @@
 .agenda-empty { color:var(--text-muted); padding:40px 20px; text-align:center; }
 .agenda-error { color:var(--state-danger); font-size:13px; margin:8px 0 12px; }
 .agenda-form { display:flex; flex-direction:column; gap:18px; }
+.agenda-form-fields { margin:0; padding:0; border:0; min-width:0; }
 .agenda-field { display:flex; flex-direction:column; gap:7px; font-size:12px; color:var(--text-muted); min-width:0; }
 .agenda-field input,.agenda-field select,.agenda-field textarea { font-size:14px; background:var(--bg-page); }
 .agenda-field textarea { resize:vertical; min-height:88px; }
