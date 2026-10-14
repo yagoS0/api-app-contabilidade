@@ -45,3 +45,11 @@ Consultas mostra a última verificação de procuração, validade e filtros Ati
 Testar procuração atualiza a linha com o retorno oficial, incluindo ausência confirmada. Filtrar limpa a seleção, e Rodar usa somente empresas visíveis. Conciliar PGDAS-D — somente documentos usa a rota protegida com somenteDocumentos=true; mantém a importação de extrato antiga para quem precisa de seus efeitos contábeis. Retorno incompleto não aparece como conciliação concluída. Se consulta de procuração e conciliação forem selecionadas juntas, a procuração é verificada primeiro.
 
 Validação: 25 testes de interface/contrato, compilação web e sintaxe da API aprovados. Inspeção em 1440 e 390 pixels sem transbordamento da página. Nenhuma consulta fiscal de teste.
+
+## Continuação: alertas locais na Apuração
+
+A listagem inclui alertas calculados dos registros salvos de procuração e entrega, apenas para as empresas autorizadas na consulta. Não chama o SERPRO, não agenda tarefas e não altera apuração, seleção ou documentos. O painel recolhível separa procurações vencidas/ausentes/a verificar, entrega pendente de comprovação, consulta inconclusiva e documentos incompletos. Resolver a evidência remove o alerta na próxima atualização, sem duplicação.
+
+Pendência de comprovação não significa declaração atrasada. Só é sugerida para competências encerradas do Simples, respeitando abertura/opção quando cadastradas. Não há inferência de prazo legal. Entrega oficial confirmada, inclusive externa, prevalece sobre falha de consulta posterior. Falha no carregamento opcional dos alertas mantém a apuração disponível e mostra indisponibilidade.
+
+Sem migração, notificações externas ou nova rotina. As proteções existentes de reaproveitamento de DAS/extrato completos permanecem. Validação: 36 testes dirigidos de API e 42 de interface aprovados, build web concluído e inspeção em 1440/390 pixels sem transbordamento global. Nenhuma consulta fiscal foi executada para validar estes alertas.

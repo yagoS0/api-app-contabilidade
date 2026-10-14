@@ -12,6 +12,7 @@ import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { BatchProgressModal } from "../components/BatchProgressModal";
 import "./apuracao-lista.css";
 import { estadoEntregaPgdas, CORES_TOM } from "../lib/entregaPgdas";
+import { AlertasMonitoramento } from "../components/AlertasMonitoramento";
 
 const ESTADO_BADGE = {
   aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
@@ -93,6 +94,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           <details><summary>Como preparar o lote</summary><p>Feche a competência na aba Apuração de cada empresa. Só empresas fechadas podem ser selecionadas.</p></details>
         </div>
         {loading && <p role="status">Carregando empresas…</p>}
+        {listaPronta && <AlertasMonitoramento key={competencia} items={items} competencia={competencia} onOpenCompany={onOpenCompanyNotas} />}
 
         {error && (
           <div role="alert" style={{ padding: 12, marginBottom: 12, background: "var(--danger-surface)", border: "1px solid var(--danger)", borderRadius: 6, color: "var(--danger)" }}>{error}</div>
