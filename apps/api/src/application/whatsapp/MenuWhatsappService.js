@@ -36,6 +36,7 @@ export const IDS_MENU_WHATSAPP = Object.freeze({
   CLIENTE_QUANTO_DEVO: "altan.client.guides.balance.v1",
   CLIENTE_NOTAS: "altan.client.invoices.current.v1",
   CLIENTE_FATURAMENTO: "altan.client.revenue.v1",
+  CLIENTE_CNPJ: "altan.client.cnpj.v1",
   CLIENTE_DOCUMENTOS: "altan.client.documents.v1",
   CLIENTE_RECALCULO: "altan.client.guide.recalculate.v1",
   CLIENTE_EMISSAO: "altan.client.nfse.issue.v1",
@@ -54,6 +55,7 @@ const ACAO_POR_ID = Object.freeze({
   [IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO]: "QUANTO_DEVO",
   [IDS_MENU_WHATSAPP.CLIENTE_NOTAS]: "NOTAS",
   [IDS_MENU_WHATSAPP.CLIENTE_FATURAMENTO]: "FATURAMENTO",
+  [IDS_MENU_WHATSAPP.CLIENTE_CNPJ]: "CNPJ",
   [IDS_MENU_WHATSAPP.CLIENTE_DOCUMENTOS]: "DOCUMENTOS",
   [IDS_MENU_WHATSAPP.CLIENTE_RECALCULO]: "RECALCULO",
   [IDS_MENU_WHATSAPP.CLIENTE_EMISSAO]: "EMISSAO",
@@ -159,6 +161,7 @@ export function linhasDoCliente(sessao) {
   ];
   const linhas = candidatas.filter(([nome]) => ferramentaLiberada(sessao, nome))
     .map(([, id, titulo, descricao]) => ({ id, titulo, descricao }));
+  linhas.push({ id: IDS_MENU_WHATSAPP.CLIENTE_CNPJ, titulo: "CNPJ da empresa", descricao: "Receber o número para copiar" });
   linhas.push({ id: IDS_MENU_WHATSAPP.CLIENTE_EQUIPE, titulo: "Falar com a equipe", descricao: "Encaminhar para atendimento humano" });
   return linhas;
 }
@@ -185,12 +188,6 @@ function textoNotas(resultado, competencia) {
   if (!resultado?.ok) return resultado?.mensagem || "Não consegui consultar as notas agora.";
   if (!resultado.notas?.length) return `Não encontrei NFS-e emitida em ${competencia}.`;
   return [`NFS-e emitidas em ${competencia}:`, ...resultado.notas.slice(0, 10).map((n) => `• nº ${n.numero || "não informado"} · ${n.valorFormatado} · ${n.outraParte || "tomador não informado"}`)].join("\n");
-}
-
-function textoDocumentos(resultado) {
-  if (!resultado?.ok) return resultado?.mensagem || "Não consegui consultar os documentos agora.";
-  if (!resultado.documentos?.length) return resultado.observacao;
-  return ["Documentos disponíveis:", ...resultado.documentos.slice(0, 10).map((d) => `• ${d.tipoDescricao}: ${d.nome}${d.validade ? ` · válido até ${d.validade}` : ""}`), "Escreva o nome do documento que deseja receber."].join("\n");
 }
 
 function textoDePreparacao(acao) {
@@ -346,11 +343,11 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     await antesDeEnviar(null, assinatura);
     const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
       ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora,
-        aoEncaminhar: tx => (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ')) && !comercialPublico && conversa.portalClientId
+        aoEncaminhar: tx => (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId
           ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora }) : Promise.resolve() })
       : await client.$transaction(async tx => {
         const mudou = await marcarHandoff(conversa, agora, tx);
-        if (mudou.count && (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ')) && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora });
+        if (mudou.count && (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora });
         return mudou;
       });
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
@@ -487,7 +484,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       ? textoDePreparacao(acao)
       : "Este número não está autorizado a usar essa função. A equipe pode revisar o acesso no cadastro do contato.";
     await enviar({ corpo, ferramenta: ferramentaLiberada(sessao, ferramenta) ? ferramenta : null, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
-  } else if (["SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS", "DOCUMENTOS"].includes(acao)) {
+  } else if (["SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS"].includes(acao)) {
     const ferramenta = FERRAMENTA_POR_ACAO[acao];
     if (!ferramentaLiberada(sessao, ferramenta)) {
       const corpo = "Este número não está autorizado a consultar essa informação. A equipe pode revisar o acesso no cadastro do contato.";
@@ -506,8 +503,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       });
       const resposta = acao === "SITUACAO_FISCAL" ? textoSituacao(resultado)
           : acao === "QUANTO_DEVO" ? textoQuantoDevo(resultado)
-            : acao === "NOTAS" ? textoNotas(resultado, competencia)
-              : textoDocumentos(resultado);
+            : textoNotas(resultado, competencia);
       const corpo = rotularEmpresa(resposta, conversa);
       await enviar({ corpo, ferramenta, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     }

@@ -21,11 +21,19 @@ export async function resolverConsultaCliente({ texto, interacao, acaoMenu, regi
     return valida && token === anterior.token ? { acao: 'OPCAO', opcao: resto.join('.'), anterior } : { acao: 'EXPIRADA' };
   }
   // Atalho inicial lista todas as guias liberadas em aberto, sem limitar o vencimento ao mês.
+  if (acaoMenu === 'DOCUMENTOS' || acaoMenu === 'CNPJ') return { acao: acaoMenu };
   if (acaoMenu === 'GUIAS_ABERTO') return { acao: 'GUIAS', todas: true };
   if (acaoMenu && !['GUIAS_MES', 'RECALCULO', 'FATURAMENTO', 'ID_DESCONHECIDO'].includes(acaoMenu)) return null;
   if (id && !['GUIAS_MES', 'RECALCULO', 'FATURAMENTO'].includes(acaoMenu)) return null;
   const pedido = pedidoDeConsulta(texto, agora);
   const numero = numeroDaOpcao(texto), t = normalizarConsulta(texto).replace(/[.!?]+$/, '');
+  if (valida && anterior.tipo === 'DOCUMENTOS' && !id) {
+    if (numero) return { acao: 'OPCAO', opcao: `d${numero}`, anterior };
+    if (/^(mais|proxima|proxima pagina)$/.test(t)) return { acao: 'OPCAO', opcao: 'proxima', anterior };
+    const visiveis = anterior.documentos.slice(anterior.offset || 0, (anterior.offset || 0) + PAGINA);
+    const indices = visiveis.map((d, i) => normalizarConsulta(d.nome) === t || normalizarConsulta(d.tipoDescricao) === t ? i : -1).filter(i => i >= 0);
+    if (indices.length === 1) return { acao: 'OPCAO', opcao: `d${indices[0] + 1}`, anterior };
+  }
   if (valida && anterior.tipo === 'GUIAS' && !id) {
     if (numero) return { acao: 'OPCAO', opcao: `g${numero}`, anterior };
     if (/^(?:todas|todos|manda todas|mande todas|envie todas|enviar todas|quero todas|todas por favor)$/.test(t)) return { acao: 'OPCAO', opcao: 'todas', anterior };
@@ -131,9 +139,57 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     return r.ok && r.enviado === true;
   };
 
-  if (pedido.acao === 'EXPIRADA') { await texto('Essa lista é de um atendimento anterior. Escreva “guias” ou “faturamento” para consultar as opções atuais.'); return; }
+  const mostrarDocumentos = async dados => {
+    const meta = contexto({ ...dados, tipo: 'DOCUMENTOS' });
+    const visiveis = meta.documentos.slice(meta.offset || 0, (meta.offset || 0) + PAGINA);
+    const itens = visiveis.map((d, i) => ({ chave: `d${i + 1}`, titulo: `${i + 1}. ${d.nome}`, descricao: d.tipoDescricao }));
+    if ((meta.offset || 0) + PAGINA < meta.documentos.length || meta.proximaPagina) itens.push({ chave: 'proxima', titulo: 'Ver mais documentos' });
+    await opcoes('Qual documento você quer receber? Escolha abaixo ou responda com o número.\n' + visiveis.map((d, i) => `${i + 1}. ${String(d.nome).slice(0, 60)}`).join('\n'), itens, meta, 'listar_documentos');
+  };
+  if (pedido.acao === 'CNPJ') {
+    await antesDeEnviar();
+    const empresa = await client.portalClient.findUnique({ where: { id: sessao.portalClientId }, select: { cnpj: true } });
+    const cnpj = String(empresa?.cnpj || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    await texto(cnpj.length === 14 ? `CNPJ para copiar:\n${cnpj}` : 'O CNPJ não está disponível no cadastro. A equipe pode conferir.'); return;
+  }
+  if (pedido.acao === 'DOCUMENTOS') {
+    const r = await chamar('listar_documentos', {});
+    if (!r.ok) { await texto(r.mensagem || 'Não consegui consultar os documentos agora.'); return; }
+    if (!r.documentos?.length) { await texto('Ainda não há documentos disponíveis no cadastro desta empresa. Escreva “equipe” para pedir ao escritório.'); return; }
+    await mostrarDocumentos({ documentos: r.documentos, proximaPagina: r.proximaPagina, offset: 0 }); return;
+  }
+  if (pedido.acao === 'EXPIRADA') { await texto('Essa lista é de um atendimento anterior. Escreva “documentos”, “guias” ou “faturamento” para consultar as opções atuais.'); return; }
   if (pedido.acao === 'OPCAO') {
     const a = pedido.anterior, op = pedido.opcao;
+    if (a.tipo === 'DOCUMENTOS') {
+      if (op === 'proxima') {
+        let documentos = [...a.documentos], proximaPagina = a.proximaPagina;
+        const offset = (a.offset || 0) + PAGINA;
+        if (offset + PAGINA > documentos.length && proximaPagina) {
+          const r = await chamar('listar_documentos', { pagina: proximaPagina });
+          if (!r.ok) { await texto(r.mensagem || 'Não consegui consultar a próxima página.'); return; }
+          documentos.push(...(r.documentos || [])); proximaPagina = r.proximaPagina;
+        }
+        await mostrarDocumentos({ documentos, proximaPagina, offset: offset < documentos.length ? offset : 0 }); return;
+      }
+      const n = /^d([1-8])$/.exec(op);
+      const documento = n ? a.documentos.slice(a.offset || 0, (a.offset || 0) + PAGINA)[+n[1] - 1] : null;
+      if (!documento) { await mostrarDocumentos(a); return; }
+      const ferramenta = 'enviar_documento_da_empresa';
+      const r = await chamar(ferramenta, { documentId: documento.documentId }, { enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType }) => {
+        const imagem = String(mimeType || '').toLowerCase().startsWith('image/');
+        return enviar({ tipo: imagem ? 'image' : 'document', corpo: rotular(legenda || nomeArquivo), ferramenta,
+          chamada: () => (imagem ? cloud.enviarImagem : cloud.enviarDocumento).call(cloud, { telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda: rotular(legenda || nomeArquivo), mimeType }),
+        });
+      } });
+      if (!r.ok) {
+        if (['DOCUMENTO_NAO_ENCONTRADO', 'DOCUMENTO_INDISPONIVEL'].includes(r.motivo)) {
+          await encaminhar(`Documento indisponível: ${String(documento.nome).slice(0, 200)}. Conferir o arquivo cadastrado e enviar ao cliente.`);
+          await texto('Não consegui acessar esse arquivo. Avisei a equipe para conferir e enviar o documento para você.');
+        } else await texto(r.mensagem || 'Não consegui enviar o documento agora. Escreva “equipe” para pedir ajuda.');
+      }
+      return;
+    }
     if (a.tipo === 'PERIODO') {
       if (op === 'outro') { const ano = mesAtualConsulta(agora).slice(0, 4); await texto(`Qual mês ou ano você quer ver? Pode escrever “agosto de ${ano}” ou “${ano}”.`, contexto({ tipo: 'PERIODO', alvo: a.alvo, aguardando: true })); return; }
       if (/^mes\.\d{4}-\d{2}$/.test(op) && a.opcoes?.includes(op)) pedido = { acao: a.alvo, periodo: { inicio: op.slice(4), fim: op.slice(4) } };
