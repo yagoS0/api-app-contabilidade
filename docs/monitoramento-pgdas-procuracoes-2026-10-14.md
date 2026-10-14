@@ -53,3 +53,14 @@ A listagem inclui alertas calculados dos registros salvos de procuração e entr
 Pendência de comprovação não significa declaração atrasada. Só é sugerida para competências encerradas do Simples, respeitando abertura/opção quando cadastradas. Não há inferência de prazo legal. Entrega oficial confirmada, inclusive externa, prevalece sobre falha de consulta posterior. Falha no carregamento opcional dos alertas mantém a apuração disponível e mostra indisponibilidade.
 
 Sem migração, notificações externas ou nova rotina. As proteções existentes de reaproveitamento de DAS/extrato completos permanecem. Validação: 36 testes dirigidos de API e 42 de interface aprovados, build web concluído e inspeção em 1440/390 pixels sem transbordamento global. Nenhuma consulta fiscal foi executada para validar estes alertas.
+
+
+## Continuação: relatório de pendências e DAS de outras origens
+
+Painel de alertas mostra a quantidade de empresas afetadas pela categoria selecionada e exporta CSV da competência e empresas exibidas. Inclui CNPJ, orientação, declaração oficial conhecida e estado interno sem confundir comprovação com atraso. Download local, sem chamada de API/SERPRO ou efeito na seleção/lote. Campos são escapados contra fórmulas, aspas e separadores; CNPJ conserva zeros iniciais.
+
+Rotina DAS, captura normal e reaproveitamento do extrato também reconhecem guias processadas enviadas por upload, da mesma empresa/competência, com PDF não vazio. Parcelamentos, registros sem arquivo e guias em revisão continuam excluídos; sourceFileId nulo é permitido. Recálculo explícito permanece buscando nova versão. Conciliação somente documental não repete extrato completo por falta de DAS, pois não captura guias nesse modo.
+
+Validação: 34 testes dirigidos API e 46 de interface aprovados; build web; inspeção 390/1440 sem transbordamento global; download real do CSV com filtro. A nova consulta local ao banco, somente leitura, reconheceu os três uploads já conferidos em produção. Nenhuma chamada fiscal ou envio externo foi executado.
+
+Próximas frentes do projeto amplo: histórico auditável de retificações e integrações de outras declarações exigem etapas próprias, com validação de endpoints, autorizações e critérios de exigibilidade. A prioridade escolhida pelo usuário nesta continuação é painel/relatórios de pendências por empresa e competência; não habilitar varredura histórica ou notificações externas por inferência.

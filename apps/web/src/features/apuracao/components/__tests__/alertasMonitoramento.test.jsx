@@ -1,3 +1,5 @@
+jest.mock("../relatorioMonitoramento", () => ({ baixarRelatorioMonitoramento: jest.fn() }));
+import { baixarRelatorioMonitoramento } from "../relatorioMonitoramento";
 import React from 'react';
 import {fireEvent,render,screen} from '@testing-library/react';
 import {AlertasMonitoramento} from '../AlertasMonitoramento';
@@ -20,4 +22,25 @@ test('falha não vira lista vazia e contrato antigo não inventa alerta',()=>{
  const {rerender}=render(<AlertasMonitoramento items={[{monitoramentoErro:true}]} competencia="2026-09"/>);
  expect(screen.getByRole('alert')).toHaveTextContent('A apuração continua disponível');
  rerender(<AlertasMonitoramento items={[{portalClientId:'a'}]} competencia="2026-09"/>);expect(screen.queryByText(/Alertas do monitoramento/)).not.toBeInTheDocument();
+});
+
+
+test('exporta somente categoria exibida e competência atual sem abrir empresa',()=>{
+ const abrir=jest.fn(); render(<AlertasMonitoramento items={items} competencia="2026-09" onOpenCompany={abrir}/>);
+ fireEvent.click(screen.getByText('Alertas do monitoramento · 2'));
+ fireEvent.change(screen.getByLabelText('Mostrar alertas'),{target:{value:'procuracao'}});
+ fireEvent.click(screen.getByRole('button',{name:'Baixar pendências (CSV)'}));
+ expect(baixarRelatorioMonitoramento).toHaveBeenLastCalledWith([expect.objectContaining({portalClientId:'b'})],'2026-09');
+ expect(abrir).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText('Mostrar alertas'),{target:{value:'documentos'}});
+ expect(screen.getByRole('button',{name:'Baixar pendências (CSV)'})).toBeDisabled();
+});
+
+test('falha de download é visível e mantém pendências',()=>{
+ baixarRelatorioMonitoramento.mockImplementationOnce(()=>{throw Error('download');});
+ render(<AlertasMonitoramento items={items} competencia="2026-09"/>);
+ fireEvent.click(screen.getByText('Alertas do monitoramento · 2'));
+ fireEvent.click(screen.getByRole('button',{name:'Baixar pendências (CSV)'}));
+ expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível baixar');
+ expect(screen.getByText('Entrega pendente de comprovação')).toBeInTheDocument();
 });

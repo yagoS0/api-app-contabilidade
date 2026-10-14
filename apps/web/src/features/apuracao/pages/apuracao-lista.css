@@ -2,6 +2,7 @@
 .apuracao-alertas { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
 .apuracao-alertas summary { cursor: pointer; color: var(--text); font-weight: 500; }
 .apuracao-alertas p, .apuracao-alertas li > span { color: var(--text-muted); line-height: 1.5; }
+.apuracao-alertas-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .apuracao-alertas label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .apuracao-alertas select { max-width: 100%; min-height: 40px; }
 .apuracao-alertas ul { padding: 0; list-style: none; max-height: 420px; overflow-y: auto; }

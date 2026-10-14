@@ -26,3 +26,19 @@ test('sucesso sem recibo não interrompe recuperação', async () => {
   prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ serproSyncStatus: 'SUCCESS', pgdasNumeroDeclaracao: '123', pgdasDeclaracaoFileId: 'f1' });
   await expect(syncPgdasByCompetencia(input)).rejects.toThrow('PARADA_ANTES_HTTP');
 });
+
+
+test('DAS por upload evita repetir extrato completo', async () => {
+  prisma.guide.findFirst.mockImplementation(async ({ where }) => where.source ? null : { id: 'upload', pdfBytes: Buffer.from('pdf') });
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ serproSyncStatus: 'SUCCESS', pgdasDeclaracaoFileId: 'f1', pgdasNumeroDeclaracao: '123', pgdasReciboFileId: 'r', dasNumeroDocumento: '123' });
+  expect(await syncPgdasByCompetencia(input)).toMatchObject({ reutilizado: true, guide: { id: 'upload' } });
+  expect(getResolvedSerproCredentials).not.toHaveBeenCalled();
+});
+
+test('conciliação somente documental não repete extrato por falta de DAS', async () => {
+  prisma.guide.findFirst.mockResolvedValue(null);
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ serproSyncStatus: 'SUCCESS', pgdasDeclaracaoFileId: 'f1', pgdasNumeroDeclaracao: '123', pgdasReciboFileId: 'r', dasNumeroDocumento: '123' });
+  expect(await syncPgdasByCompetencia({ ...input, somenteDocumentos: true })).toMatchObject({ reutilizado: true });
+  expect(getResolvedSerproCredentials).not.toHaveBeenCalled();
+  expect(prisma.companyMonthlyCircular.upsert).not.toHaveBeenCalled();
+});
