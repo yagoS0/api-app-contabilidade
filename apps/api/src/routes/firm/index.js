@@ -1,4 +1,5 @@
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
+import { anexarAlertasMonitoramento } from "../../application/fiscal/serpro/alertasMonitoramento.js";
 import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
 import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
 import { createReformaFiscalRouter } from "./reformaFiscal.js";
@@ -5559,9 +5560,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const REGIMES_FORA_APURACAO = new Set(["LUCRO_PRESUMIDO", "LUCRO_REAL"]);
     const legacyIds = companiesRaw.map((c) => c.companyId).filter(Boolean);
     const regimes = legacyIds.length
-      ? await prisma.company.findMany({ where: { id: { in: legacyIds } }, select: { id: true, regimeTributario: true } })
+      ? await prisma.company.findMany({ where: { id: { in: legacyIds } }, select: { id: true, regimeTributario: true, dataAbertura: true, simplesDataOpcao: true } })
       : [];
     const regimeByCompanyId = new Map(regimes.map((r) => [r.id, r.regimeTributario || null]));
+    const inicioPgdasByCompanyId = new Map(regimes.map(r => [r.id, [r.dataAbertura, r.simplesDataOpcao].filter(Boolean).map(data => new Date(data).toISOString().slice(0, 7)).sort().at(-1) || null]));
     const regimeDe = (c) => (c.companyId ? regimeByCompanyId.get(c.companyId) || null : null);
     const companies = companiesRaw.filter((c) => !REGIMES_FORA_APURACAO.has(regimeDe(c)));
 
@@ -5637,6 +5639,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         razao: c.razao,
         cnpj: c.cnpj,
         regime: regimeDe(c),
+        inicioMonitoramentoPgdas: inicioPgdasByCompanyId.get(c.companyId) || null,
         // Q15: estado vem do snapshot (aberta/configurando/calculada/fechada/transmitida)
         estado: snap?.estado || "aberta",
         // ⚠ TRÊS CAMPOS PORQUE SÃO TRÊS FATOS. Até a separação das colunas, o valor que esta tabela
@@ -5669,7 +5672,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       };
     });
 
-    return res.json({ ok: true, competencia, items });
+    const monitorados = await anexarAlertasMonitoramento(items, attachSerproStatusToCompaniesList, competencia);
+    return res.json({ ok: true, competencia, items: monitorados });
   });
 
   // Q15.6: fila de transmissão em lote ao SERPRO
