@@ -63,8 +63,10 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       createMany: jest.fn(async ({ data }) => { store.itens.push(...data); return { count: data.length }; }),
       create: jest.fn(async ({ data }) => { store.itens.push(data); return data; }),
     },
+    apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
     companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
-    pendenciaPosFechamento: { create: jest.fn(async () => ({})) },
+    pendenciaPosFechamento: { upsert: jest.fn(async ({ create }) => create), create: jest.fn(async () => ({})) },
   };
   db.$transaction = jest.fn(async (cb) => cb(db));
   return { __store: store, prisma: db };
@@ -381,4 +383,22 @@ describe("substituirItensPreservandoClassificacao — o critério de casamento",
     await substituirItensPreservandoClassificacao(tx, { notaId: "n1", itens: [] });
     expect(tx.itens).toHaveLength(1);
   });
+});
+
+
+test('apuração salva detecta nota nova; recaptura da mesma nota não repete aviso', async () => {
+  const { prisma } = await import('../../../infrastructure/db/prisma.js');
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ dasCalculadoLocal: 100 });
+  await capturar(xmlNfse()); await capturar(xmlNfse());
+  expect(prisma.pendenciaPosFechamento.upsert).toHaveBeenCalledTimes(1);
+  expect(prisma.pendenciaPosFechamento.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ situacaoPeriodo: 'APURADA', notaId: expect.any(String) }) }));
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue(null);
+});
+test('recaptura de nota que já existia antes da apuração não cria falso aviso', async () => {
+  const { prisma } = await import('../../../infrastructure/db/prisma.js');
+  await capturar(xmlNfse());
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ reciboNumero: 'recibo' });
+  await capturar(xmlNfse());
+  expect(prisma.pendenciaPosFechamento.upsert).not.toHaveBeenCalled();
+  prisma.apuracaoSnapshot.findUnique.mockResolvedValue(null);
 });

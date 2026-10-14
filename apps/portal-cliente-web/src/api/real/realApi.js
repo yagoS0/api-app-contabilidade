@@ -547,6 +547,9 @@ export function createRealApi() {
     // ⚠ Devolve a RESPOSTA INTEIRA, não só o array: `lerPerfis` distingue "não recebida" (rota
     // fora do ar, contrato antigo) de "esta empresa não tem perfil", e um `|| []` aqui apagaria a
     // distinção antes de ela chegar à regra.
+    async getSituacaoPeriodo(companyId, competencia) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse/periodo?competencia=${encodeURIComponent(competencia)}`);
+    },
     async getPerfisDeEmissao(companyId) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse/perfis`);
     },

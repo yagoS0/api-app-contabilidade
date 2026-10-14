@@ -28,6 +28,7 @@ function Verificacao() {
   const api = useMemo(() => ({
     getPerfisEmissao: async () => ({ integracaoLigada: true, perfis: [perfil] }),
     previaEmissaoNfse: async (_, entrada) => ({ ok: true, pendencias: [], demonstracao: true,
+      periodo: String(entrada.competencia).startsWith('2026-') ? { competencia: entrada.competencia.slice(0, 7), exigeRevisao: true, estado: 'TRANSMITIDA', mensagem: 'Demonstração: este período já tem declaração transmitida. Confira a receita considerada; poderá ser necessária retificação.' } : { exigeRevisao: false },
       competencia: entrada.competencia, perfil, codigoServico: perfil.codigoServicoNacional,
       regimeVigente: { regime: 'SIMPLES', vigenciaInicio: '2025-01-14' },
       configuracaoFiscal: { perfil }, iss: { ok: true, informar: false, retido: false },

@@ -1,3 +1,5 @@
+import { processarAvisoDaEmissao } from "../../application/notas/pendenciasDoPeriodo.js";
+import { NFSE_ENV, log } from "../../config.js";
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseDate } from "../../utils/date.js";
@@ -99,8 +101,10 @@ export class NfseRepository {
     const numero = data.numeroNfse || numeroDaNfse(data.xml, data.chaveAcesso);
     const updated = await prisma.serviceInvoice.update({
       where: { id },
-      data: numero ? { ...data, numeroNfse: numero } : data,
+      data: { ...data, ...(numero ? { numeroNfse: numero } : {}), revisaoPeriodoPendente: NFSE_ENV === "producao" },
     });
+    try { await processarAvisoDaEmissao(prisma, updated); }
+    catch (error) { log?.error?.({ invoiceId: id, erro: error.message }, 'Aviso de período pendente de processamento local'); }
     return serialize(updated);
   }
 
@@ -112,8 +116,10 @@ export class NfseRepository {
     if (!existing) return null;
     const updated = await prisma.serviceInvoice.update({
       where: { id: existing.id },
-      data: buildUpdateData(data),
+      data: { ...buildUpdateData(data), ...(['cancelled', 'cancelled_substitution'].includes(data.status) && NFSE_ENV === 'producao' ? { revisaoPeriodoPendente: true } : {}) },
     });
+    try { await processarAvisoDaEmissao(prisma, updated); }
+    catch (error) { log?.error?.({ invoiceId: updated.id, erro: error.message }, 'Aviso do evento aguarda processamento local'); }
     return serialize(updated);
   }
 

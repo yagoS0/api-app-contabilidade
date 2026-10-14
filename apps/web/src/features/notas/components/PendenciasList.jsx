@@ -1,5 +1,5 @@
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtDate } from "./notasStyles";
+import { PANEL, fmtDate, fmtMoney } from "./notasStyles";
 import { FRASE_MOTIVO_PENDENCIA } from "../lib/auditoriaTela";
 
 // A LISTA DE PENDÊNCIAS PÓS-FECHAMENTO — "entrou nota depois que eu fechei o mês?"
@@ -65,6 +65,8 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
                     identificador cru ao contador; e o código desconhecido continua aparecendo cru,
                     que é feio e honesto — a mesma disciplina de `FRASE_NAO_CONFERIVEL`. */}
                 {FRASE_MOTIVO_PENDENCIA[p.motivo] || p.motivo}
+                {p.valor != null && <span style={{ display: 'block' }}>Valor do documento: {fmtMoney(Number(p.valor))}</span>}
+                {p.serviceInvoiceId && !p.notaId && <span style={{ display: 'block', fontSize: '0.75rem' }}>Emissão do portal identificada; o vínculo com a nota capturada será preenchido quando ela chegar ao acervo.</span>}
                 {p.observacoes && <span style={{ color: PANEL.muted, display: "block", fontSize: "0.75rem" }}>{p.observacoes}</span>}
               </td>
               <td style={{ padding: 6, color: PANEL.muted }}>{fmtDate(p.createdAt)}</td>

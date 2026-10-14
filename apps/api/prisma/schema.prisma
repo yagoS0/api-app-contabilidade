@@ -593,6 +593,7 @@ model InvoiceItem {
 }
 
 model ServiceInvoice {
+  revisaoPeriodoPendente Boolean @default(false)
   id                String    @id @default(uuid())
   companyId         String
   clientId          String?
@@ -3625,6 +3626,12 @@ model NotaItem {
 // Q12.A: notas que chegam em competência já fechada — não atualizam a base; viram pendência.
 // Contador resolve reabrindo a competência (volta pra em_conferencia) OU marcando como ignorada.
 model PendenciaPosFechamento {
+  chaveEvento String? @unique
+  serviceInvoiceId String?
+  origem String?
+  situacaoPeriodo String?
+  valor String?
+  resolucaoMotivo String?
   id                String    @id @default(uuid())
   portalClientId    String
   competencia       String // YYYY-MM

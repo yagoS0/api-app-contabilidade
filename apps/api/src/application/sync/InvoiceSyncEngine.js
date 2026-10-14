@@ -1,3 +1,4 @@
+import { registrarPendenciaDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import crypto from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -184,7 +185,12 @@ async function upsertPortalInvoiceSafe({ clientId, data }) {
   }
 
   try {
-    const created = await prisma.portalInvoice.create({ data });
+    const created = await prisma.$transaction(async tx => {
+      const nota = await tx.portalInvoice.create({ data });
+      await registrarPendenciaDoPeriodo(tx, { portalClientId: clientId, competencia: nota.competencia,
+        chaveAcesso: nota.chaveAcesso, notaId: nota.id, papel: nota.papel, valor: nota.total, origem: 'SINCRONIZACAO' });
+      return nota;
+    });
     return { action: "created", invoiceId: created.id, invoice: created };
   } catch (err) {
     if (err?.code === "P2002") {

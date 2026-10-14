@@ -465,3 +465,18 @@ describe("⚠⚠ as legendas removidas a pedido do dono NÃO voltam", () => {
     expect(screen.getByText(/Não recebemos o regime desta empresa/i)).toBeInTheDocument();
   });
 });
+
+
+test('avisa competência transmitida no cliente sem emitir nem afirmar retificação automática', async () => {
+  jest.spyOn(api, 'getSituacaoPeriodo').mockImplementation(async (_, competencia) => ({ competencia: competencia.slice(0, 7), estado: 'TRANSMITIDA', exigeRevisao: true, mensagem: 'Declaração transmitida; poderá ser necessária retificação.' }));
+  await renderizar();
+  expect(await screen.findByRole('status', { name: 'Revisão da competência' })).toHaveTextContent('poderá ser necessária retificação');
+  expect(screen.getByText(/Nenhuma declaração será retificada automaticamente/)).toBeInTheDocument();
+});
+
+test('falha ao ler apuração no cliente aparece como erro, nunca período aberto', async () => {
+  jest.spyOn(api, 'getSituacaoPeriodo').mockRejectedValue(new Error('offline'));
+  await renderizar();
+  expect(await screen.findByText(/Não foi possível conferir o período/)).toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Revisão da competência' })).not.toBeInTheDocument();
+});

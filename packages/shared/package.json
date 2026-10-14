@@ -23,6 +23,7 @@
     "./fechamento-contabil": "./src/accounting/fechamentoBlockers.js",
     "./fluxo-carteira": "./src/accounting/fluxoCarteira.js",
     "./validar-tarefa-carteira": "./src/accounting/validarTarefaCarteira.js",
+    "./aviso-periodo": "./src/nfse/AvisoPeriodo.jsx",
     "./nfse-conciliacao": "./src/nfse/ConsultaResultadoNfse.jsx"
   }
 }

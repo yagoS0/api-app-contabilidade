@@ -2,7 +2,7 @@ import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { FechamentoModal } from '../FechamentoModal';
 const atividade={idAtividade:1,descricao:'Serviço',anexoImplicito:'III',sujeitoFatorR:true,valorInterno:100,valorExterno:0};
 function montar(over={}) {
- const api={getFechamento:jest.fn(async()=>({dados:{atividades:[atividade],regimeApuracao:'COMPETENCIA',faturamento:{total:100},cadastroCompleto:true,semMovimentoDisponivel:true}})),listAtividadesPgdasd:jest.fn(async()=>({atividades:[atividade]})),calcularFechamento:jest.fn(async()=>({ok:true,result:{calculoId:'token-1',dasValor:6}})),salvarFechamento:jest.fn(async()=>({ok:true})),...over};
+ const api={listPendenciasPosFechamento:jest.fn(async()=>[]),getFechamento:jest.fn(async()=>({dados:{atividades:[atividade],regimeApuracao:'COMPETENCIA',faturamento:{total:100},cadastroCompleto:true,semMovimentoDisponivel:true}})),listAtividadesPgdasd:jest.fn(async()=>({atividades:[atividade]})),calcularFechamento:jest.fn(async()=>({ok:true,result:{calculoId:'token-1',dasValor:6}})),salvarFechamento:jest.fn(async()=>({ok:true})),...over};
  const props={api,portalClientId:'A',competencia:'2026-06',feedback:{notifySuccess:jest.fn(),notifyError:jest.fn()}};
  const view=render(<FechamentoModal {...props}/>);return {api,props,...view};
 }

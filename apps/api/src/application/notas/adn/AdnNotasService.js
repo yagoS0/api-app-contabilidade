@@ -1,3 +1,4 @@
+import { registrarPendenciaDoPeriodo } from "../pendenciasDoPeriodo.js";
 import { acquireGuideLease } from "../../guides/GuideLockService.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // Q12.B+ rework: captura de NFS-e via ADN Nacional do gov.br/nfse.
@@ -139,7 +140,7 @@ async function applyNfseEvento(tx, { portalClientId, item, xmlPlain }) {
   // `eventos` é chaveado por `chaveAcesso` e não exige que a nota exista.
   const nota = await tx.portalInvoice.findFirst({
     where: { clientId: portalClientId, chaveAcesso: chave },
-    select: { id: true },
+    select: { id: true, competencia: true, papel: true, statusEfetivo: true, total: true },
   });
   if (!nota) return { status: "evento_nota_ausente" };
 
@@ -183,6 +184,9 @@ async function applyNfseEvento(tx, { portalClientId, item, xmlPlain }) {
     where: { id: nota.id },
     data: { statusEfetivo: "cancelada", status: "CANCELADA" },
   });
+  if (nota.statusEfetivo !== 'cancelada') await registrarPendenciaDoPeriodo(tx, {
+    portalClientId, competencia: nota.competencia, notaId: nota.id, chaveAcesso: chave,
+    papel: nota.papel, valor: nota.total, evento: 'evento_retroativo', origem: 'EVENTO_ADN' });
   return { status: tipo === "canc_por_substituicao" ? "evento_substituiu" : "evento_cancelou" };
 }
 

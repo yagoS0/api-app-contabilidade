@@ -1,3 +1,4 @@
+import { PendenciasPeriodoBanner } from "../../notas/components/PendenciasPeriodoBanner";
 // Q15.7 — Modal de fechamento da apuração.
 // Faturamento (read-only, das notas), folha 12m (grade), atividades (editável),
 // aviso de disparidade, alíquota/DAS calculado. Botões: Calcular | Salvar | Transmitir.
@@ -408,6 +409,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   return (
     <Modal titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting} fecharAoEscape={false} tamanho="lg" className="fechamento-modal">
       <div className="fechamento-conteudo">
+        <PendenciasPeriodoBanner api={api} companyId={portalClientId} competencia={competencia} ocupado={acting} />
         {erroLocal && <Aviso tom="erro" titulo="Não foi possível concluir"><div role="alert">{erroLocal}</div>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</Aviso>}
 
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
