@@ -25,7 +25,11 @@
 // Recusa silenciosa aqui é o pior resultado possível: o contador clica, nada acontece, e ele não
 // tem como saber se desfez ou não.
 
+import "./estornoBaixa.css";
 import { useEffect, useState } from "react";
+import { Modal } from "../../../../components/ui/Modal";
+import { Button } from "../../../../components/ui/Button";
+import { recusaDeAcesso } from "../../parcelamento/lib/recusaDeAcesso";
 import { ACCOUNTING_PANEL } from "../../entries/lib/accountingEntriesShared";
 
 // ⚠ Mínimo do motivo. O servidor checa (`MOTIVO_OBRIGATORIO`) e o banco também (CHECK
@@ -74,7 +78,7 @@ export function EstornoBaixaModal({
         if (!vivo) return;
         setErroPrevia({
           code: err?.code || null,
-          message: err?.message || "Não foi possível carregar o que será desfeito.",
+          message: recusaDeAcesso(err?.message) || err?.message || recusaDeAcesso(err?.code) || "Não foi possível carregar o que será desfeito.",
         });
       })
       .finally(() => { if (vivo) setCarregando(false); });
@@ -104,7 +108,7 @@ export function EstornoBaixaModal({
     } catch (err) {
       setErroExecucao({
         code: err?.code || null,
-        message: err?.message || "Falha ao estornar a baixa.",
+        message: recusaDeAcesso(err?.message) || err?.message || recusaDeAcesso(err?.code) || "Falha ao estornar a baixa.",
       });
     } finally {
       setSalvando(false);
@@ -114,38 +118,18 @@ export function EstornoBaixaModal({
   const contraLancamento = preview?.modo === "CONTRA_LANCAMENTO";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Desfazer baixa"
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1750,
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-      }}
-    >
-      <div style={{
-        background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`,
-        borderRadius: 10, padding: 20, width: "100%", maxWidth: 620,
-        maxHeight: "90vh", overflowY: "auto", color: ACCOUNTING_PANEL.text,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700 }}>↩ Desfazer baixa</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, cursor: "pointer", fontSize: "1.4rem", lineHeight: 1 }}
-          >
-            ×
-          </button>
-        </div>
-        <p style={{ margin: "0 0 14px", fontSize: "0.78rem", color: ACCOUNTING_PANEL.muted, lineHeight: 1.4 }}>
+    <Modal className="estorno-baixa-modal" titulo="Desfazer baixa" tamanho="md" ocupado={salvando} aoFechar={onClose} fecharAoClicarFundo={false} rodape={<>
+      <Button variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
+      <Button onClick={handleConfirmar} disabled={!podeConfirmar}>{salvando ? "Desfazendo…" : (quantosLancamentos > 1 ? `Desfazer ${quantosLancamentos} lançamentos` : "Desfazer baixa")}</Button>
+    </>}>
+      <div style={{ color: ACCOUNTING_PANEL.text, overflowWrap: "anywhere" }}>
+        <p style={{ margin: "0 0 14px", fontSize: "0.875rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
           O estorno fica registrado com o motivo, com quem desfez e com o que foi desfeito. Confira
           abaixo o que sai do razão antes de confirmar.
         </p>
 
         {carregando && (
-          <div style={{ padding: "18px 0", fontSize: "0.85rem", color: ACCOUNTING_PANEL.muted }}>
+          <div role="status" style={{ padding: "18px 0", fontSize: "0.85rem", color: "var(--text-muted)" }}>
             Carregando o que será desfeito…
           </div>
         )}
@@ -153,7 +137,7 @@ export function EstornoBaixaModal({
         {/* Recusa da prévia: não há o que confirmar, então nem o campo de motivo aparece. Mas a
             razão aparece — some o fluxo, nunca a explicação. */}
         {!carregando && erroPrevia && (
-          <div style={{
+          <div role="alert" style={{
             ...CAIXA_AVISO, color: "var(--state-danger)",
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
           }}>
@@ -164,23 +148,23 @@ export function EstornoBaixaModal({
         {!carregando && preview && (
           <>
             {/* ── O LOTE, COM VALORES ────────────────────────────────────────────────────── */}
-            <div style={{ fontSize: "0.72rem", color: ACCOUNTING_PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+            <div style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: 6 }}>
               {preview.lancamentos.length > 1
                 ? `${preview.lancamentos.length} lançamentos serão desfeitos`
                 : "1 lançamento será desfeito"}
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 4, fontSize: "0.8rem" }}>
+            <table style={{ width: "100%", minWidth: 0, tableLayout: "fixed", borderCollapse: "collapse", marginBottom: 4, fontSize: "0.8rem" }}>
               <tbody>
                 {preview.lancamentos.map((l) => (
                   <tr key={l.id} style={{ borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}>
                     <td style={{ padding: "6px 4px", verticalAlign: "top" }}>
                       <div>{l.historico || "Lançamento sem histórico"}</div>
-                      <div style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
+                      <div style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
                         {fmtComp(l.competencia)}
                         {l.tipoLinha ? ` · ${l.tipoLinha}` : ""}
                       </div>
                     </td>
-                    <td style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap", fontWeight: 700, verticalAlign: "top" }}>
+                    <td style={{ padding: "6px 4px", width: "34%", textAlign: "right", whiteSpace: "nowrap", fontWeight: 600, verticalAlign: "top" }}>
                       R$ {fmtBRL(l.valor)}
                     </td>
                   </tr>
@@ -188,10 +172,10 @@ export function EstornoBaixaModal({
               </tbody>
               <tfoot>
                 <tr>
-                  <td style={{ padding: "8px 4px", fontWeight: 700 }}>Total a estornar</td>
+                  <td style={{ padding: "8px 4px", fontWeight: 600 }}>Total a estornar</td>
                   {/* ⚠ Este número não é decoração: é ele que viaja de volta como `totalConferido`.
                       É o que o contador declara ter visto. */}
-                  <td style={{ padding: "8px 4px", textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "8px 4px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>
                     R$ {fmtBRL(preview.totalEstornado)}
                   </td>
                 </tr>
@@ -223,8 +207,8 @@ export function EstornoBaixaModal({
             {/* ── A GUIA / PARCELA ───────────────────────────────────────────────────────── */}
             {preview.guia && (
               <div style={{ ...CAIXA_AVISO, marginBottom: 12, background: "var(--state-neutral-surface)", border: `1px solid ${ACCOUNTING_PANEL.border}` }}>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>A guia volta para a fila</div>
-                <div style={{ color: ACCOUNTING_PANEL.muted }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>A guia volta para a fila</div>
+                <div style={{ color: "var(--text-muted)" }}>
                   {preview.guia.tipo || "Guia"}
                   {preview.guia.numeroParcela ? ` · parcela ${preview.guia.numeroParcela}` : ""}
                   {preview.guia.valor != null ? ` · R$ ${fmtBRL(preview.guia.valor)}` : ""}
@@ -235,7 +219,7 @@ export function EstornoBaixaModal({
                 {/* Confirmação vinda do SERPRO NÃO se desfaz: o dinheiro saiu e o comprovante
                     existe. O que se desfaz é o lançamento, não o fato — e a tela diz qual dos dois
                     casos é este, em vez de deixar o contador descobrir depois. */}
-                <div style={{ color: ACCOUNTING_PANEL.muted, marginTop: 4 }}>
+                <div style={{ color: "var(--text-muted)", marginTop: 4 }}>
                   {preview.guia.pagamentoSeraDesfeito
                     ? "O pagamento manual também será desfeito (a guia volta a ficar em aberto)."
                     : "A confirmação de pagamento permanece — só o lançamento é desfeito."}
@@ -257,13 +241,13 @@ export function EstornoBaixaModal({
             ))}
 
             {/* ── O MOTIVO ───────────────────────────────────────────────────────────────── */}
-            <label style={{ display: "grid", gap: 4, fontSize: "0.78rem", color: ACCOUNTING_PANEL.muted, marginBottom: 4 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: 4 }}>
               Motivo do estorno (obrigatório)
               <textarea
                 rows={3}
                 autoFocus
                 value={motivo}
-                disabled={Boolean(bloqueios.length)}
+                disabled={salvando || Boolean(bloqueios.length)}
                 onChange={(e) => { setMotivo(e.target.value); setErroExecucao(null); }}
                 placeholder="Ex.: baixa lançada na guia errada — o pagamento era da parcela 04"
                 style={{
@@ -275,7 +259,7 @@ export function EstornoBaixaModal({
             </label>
             {/* O motivo curto é dito ANTES do clique — descobrir a exigência por um erro do
                 servidor é a versão cara da mesma informação. */}
-            <div style={{ fontSize: "0.72rem", color: motivoCurto ? "var(--state-warn)" : ACCOUNTING_PANEL.muted, marginBottom: 12 }}>
+            <div style={{ fontSize: "0.875rem", color: motivoCurto ? "var(--state-warn)" : "var(--text-muted)", marginBottom: 12 }}>
               {motivoCurto
                 ? `Mínimo de ${MOTIVO_MIN} caracteres — faltam ${MOTIVO_MIN - motivoLimpo.length}.`
                 : "Fica registrado na auditoria do estorno."}
@@ -285,7 +269,7 @@ export function EstornoBaixaModal({
 
         {/* Recusa da EXECUÇÃO — o 409 chega aqui, com o motivo, ao lado do campo que o resolve. */}
         {erroExecucao && (
-          <div style={{
+          <div role="alert" style={{
             ...CAIXA_AVISO, marginBottom: 12, color: "var(--state-danger)",
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
           }}>
@@ -293,40 +277,7 @@ export function EstornoBaixaModal({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={salvando}
-            style={{
-              padding: "8px 16px", borderRadius: 6, border: `1px solid ${ACCOUNTING_PANEL.border}`,
-              background: "transparent", color: ACCOUNTING_PANEL.text, cursor: salvando ? "default" : "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            Cancelar
-          </button>
-          {/* ⚠ AÇÃO PRIMÁRIA É O ACCENT, NUNCA VERDE. Verde quer dizer CONCLUÍDO no vocabulário
-              desta tela (a guia paga, o ✓ da célula, o `D = C ✓ ok` do rodapé); um botão verde de
-              "faça isto" ensina o contrário exatamente onde o verde precisa ser lido como estado. */}
-          <button
-            type="button"
-            onClick={handleConfirmar}
-            disabled={!podeConfirmar}
-            style={{
-              padding: "8px 16px", borderRadius: 6, border: "none",
-              background: podeConfirmar ? ACCOUNTING_PANEL.accent : ACCOUNTING_PANEL.border,
-              color: podeConfirmar ? "#1A1B26" : ACCOUNTING_PANEL.muted,
-              cursor: podeConfirmar ? "pointer" : "not-allowed",
-              fontWeight: 700, fontSize: "0.85rem",
-            }}
-          >
-            {salvando
-              ? "Desfazendo…"
-              : (quantosLancamentos > 1 ? `Desfazer ${quantosLancamentos} lançamentos` : "Desfazer baixa")}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

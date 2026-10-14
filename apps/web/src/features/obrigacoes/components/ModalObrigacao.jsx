@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { calcularPreviaVencimentos } from "../lib/previaVencimentos";
@@ -11,6 +11,7 @@ function Campo({ label, children }) { return <label style={{ display: "grid", ga
 
 /** Um cadastro para tarefas avulsas e obrigações, com vencimento fiscal independente. */
 export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvando, erro }) {
+  const formId = useId();
   const editando = Boolean(inicial?.obrigacaoId);
   const [alcance, setAlcance] = useState("ESTA");
   const unica = Boolean(inicial?.ocorrenciaId) && alcance === "ESTA";
@@ -39,8 +40,9 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
     const janela = form.janelaTrabalho;
     const ciclo = inicial?.cicloChave || String(form.dataVencimento).slice(0, 7);
     const previsaoFutura = calcularPreviaVencimentos(form, new Date(ciclo + "-01T00:00:00Z"));
-    return <Modal titulo="Editar esta e as próximas" aoFechar={onFechar} ocupado={salvando} tamanho="md">
-      <form onSubmit={e => { e.preventDefault(); onSalvar({ ...form, alcance, janelaTrabalho: janela, regra: { periodicidade: form.periodicidade, mesReferencia: Number(form.mesReferencia), diaVencimento: Number(form.diaVencimento), ajusteDiaUtil: form.ajusteDiaUtil, defasagemMeses: Number(form.defasagemMeses), diasPreparacao: Number(form.diasPreparacao) } }); }} style={{ display: "grid", gap: 14 }}>
+    return <Modal titulo="Editar esta e as próximas" aoFechar={onFechar} ocupado={salvando} tamanho="md" rodape={<div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button variant="secondary" disabled={salvando} onClick={() => setAlcance("ESTA")} type="button">Somente esta ocorrência</Button><Button disabled={salvando} type="submit" form={formId}>{salvando ? "Salvando…" : "Salvar esta e as próximas"}</Button></div>}>
+      <form id={formId} onSubmit={e => { e.preventDefault(); onSalvar({ ...form, alcance, janelaTrabalho: janela, regra: { periodicidade: form.periodicidade, mesReferencia: Number(form.mesReferencia), diaVencimento: Number(form.diaVencimento), ajusteDiaUtil: form.ajusteDiaUtil, defasagemMeses: Number(form.defasagemMeses), diasPreparacao: Number(form.diasPreparacao) } }); }} style={{ display: "grid", gap: 14 }}>
+      <fieldset disabled={salvando} aria-label="Dados da obrigação" style={{ display: "grid", gap: 14, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <p><strong>{form.nome}</strong> · a partir do ciclo {ciclo.split("-").reverse().join("/")}. Altera frequência, vencimento e janela a partir deste ciclo. Ocorrências anteriores, concluídas, excluídas e exceções individuais são preservadas. Meses que saírem da frequência deixam de aparecer na agenda.</p>
         {(erro || falha) && <p role="alert">{erro || falha}</p>}
         <Campo label="Frequência"><select value={form.periodicidade} onChange={e => set("periodicidade", e.target.value)} style={campo}><option value="MENSAL">Mensal</option><option value="TRIMESTRAL">Trimestral</option><option value="ANUAL">Anual</option></select></Campo>
@@ -56,23 +58,25 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
         </> : <Campo label="Dias corridos de preparação"><input required type="number" min="0" max="365" value={form.diasPreparacao} onChange={e => set("diasPreparacao", Number(e.target.value))} style={campo} /></Campo>}
         <p>Aparece em todos os dias do período. Dias que não existem no mês usam o último dia desse mês. Se o ciclo inicial sair da nova frequência, sua ocorrência deixa de aparecer.</p>
         <p>Prévia de vencimentos: <strong>{previsaoFutura.proximas.map(fmt).join(" · ") || "—"}</strong>. Considera fins de semana; feriados cadastrados são aplicados pelo servidor.</p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button disabled={salvando} onClick={() => setAlcance("ESTA")} type="button">Somente esta ocorrência</Button><Button disabled={salvando} type="submit">{salvando ? "Salvando…" : "Salvar esta e as próximas"}</Button></div>
-      </form>
+
+      </fieldset>
+    </form>
     </Modal>;
   }
-  return <Modal titulo={titulo} aoFechar={onFechar} ocupado={salvando} tamanho="md">
-    <form onSubmit={(e) => {
+  return <Modal titulo={titulo} aoFechar={onFechar} ocupado={salvando} tamanho="md" rodape={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}><Button type="button" variant="secondary" onClick={onFechar} disabled={salvando}>Cancelar</Button><Button type="submit" form={formId} variant="primary" disabled={salvando}>{salvando ? "Salvando…" : editando ? "Salvar" : form.tipo === "TAREFA" ? "Criar tarefa" : "Criar obrigação"}</Button></div>}>
+    <form id={formId} onSubmit={(e) => {
       e.preventDefault();
       if (!form.companyId) { setFalha("Selecione uma empresa para salvar."); return; }
       if ((avulsa || unica) && (!form.dataInicio || !form.dataFim || form.dataFim < form.dataInicio)) { setFalha("O fim planejado deve ser igual ou posterior ao início do trabalho."); return; }
       onSalvar({ ...form, ...(inicial?.ocorrenciaId ? { alcance } : {}), verificador: form.tipo === "TAREFA" || avulsa ? "" : form.verificador, incluirVencidoDoMes: podeMarcarVencido && form.incluirVencidoDoMes });
     }} style={{ display: "grid", gap: 14 }}>
+      <fieldset disabled={salvando} aria-label="Dados da obrigação" style={{ display: "grid", gap: 14, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {(erro || falha) && <div role="alert" style={{ color: "var(--danger)", padding: 10, border: "1px solid var(--danger)", borderRadius: 6 }}>{erro || falha}</div>}
       {inicial?.ocorrenciaId && form.periodicidade !== "AVULSA" && <Campo label="Aplicar alteração"><select value={alcance} onChange={e => setAlcance(e.target.value)} style={campo}><option value="ESTA">Somente esta ocorrência</option><option value="ESTA_E_PROXIMAS">Esta e as próximas — frequência, prazo e janela</option></select></Campo>}
       {alcance === "ESTA_E_PROXIMAS" && <p>Concluídas e ocorrências ajustadas individualmente mantêm seu histórico. O prazo fiscal não muda.</p>}
       {unica ? <p style={{ margin: 0 }}>{form.nome} · {inicial.competenciaRef}. {form.tipo === "TAREFA" ? "O fim planejado será o novo prazo desta tarefa." : `Altera apenas a janela de trabalho; o vencimento fiscal permanece em ${fmt(form.dataVencimento)}.`}</p> : <>
         <Campo label="Nome"><input required value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Ex.: Transmitir apuração do Simples" style={campo} /></Campo>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))", gap: 12 }}>
           <Campo label="Tipo"><select value={form.tipo} disabled={editando} onChange={(e) => set("tipo", e.target.value)} style={campo}><option value="TAREFA">Tarefa</option><option value="OBRIGACAO">Obrigação</option></select></Campo>
           <Campo label="Empresa"><select required disabled={editando} value={form.companyId} onChange={(e) => set("companyId", e.target.value)} style={campo}><option value="">Selecione a empresa</option>{empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}</select></Campo>
           <Campo label="Repetição"><select value={form.periodicidade} disabled={editando} onChange={(e) => set("periodicidade", e.target.value)} style={campo}>{Object.entries({ AVULSA: "Uma vez (avulsa)", MENSAL: "Mensal", TRIMESTRAL: "Trimestral", ANUAL: "Anual" }).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Campo>
@@ -80,7 +84,7 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
         </div>
       </>}
       {(avulsa || unica) ? <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))", gap: 12 }}>
           <Campo label="Início do trabalho"><input required type="date" value={form.dataInicio} onChange={(e) => set("dataInicio", e.target.value)} style={campo} /></Campo>
           <Campo label="Fim planejado"><input required type="date" value={form.dataFim} onChange={(e) => set("dataFim", e.target.value)} style={campo} /></Campo>
           {form.tipo === "OBRIGACAO" && !unica && <Campo label="Vencimento fiscal"><input required type="date" value={form.dataVencimento} onChange={(e) => set("dataVencimento", e.target.value)} style={campo} /></Campo>}
@@ -89,7 +93,7 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
         {form.tipo === "OBRIGACAO" && form.dataFim > form.dataVencimento && <p role="status" style={{ margin: 0, color: "var(--state-warn)" }}>O fim planejado ultrapassa o vencimento fiscal de {fmt(form.dataVencimento)}.</p>}
       </> : <>
         {editando && <p style={{ margin: 0, color: "var(--text-muted)" }}>Esta edição atualiza as ocorrências pendentes e futuras. As concluídas mantêm seu histórico. Para ajustar apenas uma janela, use “Editar ocorrência” na lista.</p>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))", gap: 12 }}>
           <Campo label="Dia do vencimento"><input required type="number" min="1" max="31" value={form.diaVencimento} onChange={(e) => set("diaVencimento", e.target.value)} style={campo} /></Campo>
           {form.periodicidade !== "MENSAL" && <Campo label={form.periodicidade === "ANUAL" ? "Mês" : "Primeiro mês do ciclo"}><select value={form.mesReferencia} onChange={(e) => set("mesReferencia", e.target.value)} style={campo}>{Array.from({ length: 12 }, (_, i) => <option key={i} value={i + 1}>{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(new Date(2026, i, 1))}</option>)}</select></Campo>}
           <Campo label="Janela de trabalho"><select value={form.janelaTrabalho ? "FIXA" : "RELATIVA"} onChange={e => set("janelaTrabalho", e.target.value === "FIXA" ? { modo: "DIAS_DO_CICLO", diaInicio: 10, diaFim: 15, deslocamentoFim: 0 } : null)} style={campo}><option value="RELATIVA">Dias antes do vencimento</option><option value="FIXA">Dias fixos de cada ciclo</option></select></Campo>
@@ -115,7 +119,8 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
         <Campo label="Avisar com antecedência de (dias)"><input type="number" min="0" max="90" value={form.antecedenciaLembreteDias} onChange={(e) => set("antecedenciaLembreteDias", e.target.value)} style={campo} /></Campo>
         {form.tipo === "OBRIGACAO" && !avulsa ? <Campo label="Concluir sozinha"><select value={form.verificador} onChange={(e) => set("verificador", e.target.value)} style={campo}><option value="">Eu marco quando concluir</option>{(opcoes?.verificadores || []).map((v) => <option key={v.chave} value={v.chave}>{v.rotulo}</option>)}</select></Campo> : <p style={{ margin: 0, color: "var(--text-muted)" }}>Conclusão manual: você marca quando o trabalho estiver concluído.</p>}
       </>}
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}><Button type="button" variant="secondary" onClick={onFechar} disabled={salvando}>Cancelar</Button><Button type="submit" variant="primary" disabled={salvando}>{salvando ? "Salvando…" : editando ? "Salvar" : form.tipo === "TAREFA" ? "Criar tarefa" : "Criar obrigação"}</Button></div>
+
+    </fieldset>
     </form>
   </Modal>;
 }

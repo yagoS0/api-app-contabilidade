@@ -1,3 +1,5 @@
+import './pagamentosProvisionados.css';
+import { recusaDeAcesso } from '../../parcelamento/lib/recusaDeAcesso';
 import { useRef, useState } from 'react';
 import { leituraDoPagamento } from '../../circular/lib/procedenciaDoPagamento';
 import { Modal } from '../../../../components/ui/Modal';
@@ -19,32 +21,32 @@ export function PagamentosProvisionadosModal({ pendentes, competencia, accounts,
       const r = await onBuscarPagamento(e.sourceGuide.id);
       setResultado({ texto: r?.encontrado ? 'Pagamento localizado na Receita. Use Dar baixa para registrar os lançamentos.' : r?.motivo || 'Pagamento ainda não localizado na Receita.' });
       await pendentes.reload();
-    } catch (err) { setResultado({ erro: true, texto: err.message || 'Não foi possível consultar o pagamento.' }); }
+    } catch (err) { setResultado({ erro: true, texto: recusaDeAcesso(err?.message) || err?.message || recusaDeAcesso(err?.code) || 'Não foi possível consultar o pagamento.' }); }
     finally { buscaLock.current = false; setBuscando(null); }
   }
   const competencias = [...new Set(pendentes.itens.map(e => e.competencia))].sort().reverse();
   const itens = pendentes.itens.filter(e => !origem || e.competencia === origem);
   if (entry) return <BaixaModal entry={entry} accounts={accounts} saving={saving} competenciaPagamento={competencia} onLoadBaixaTemplate={onLoadBaixaTemplate} onClose={() => setEntry(null)} onSave={async input => { await onSave(entry.id, input); onClose(); }} />;
   return <Modal titulo="Pagamentos" aoFechar={onClose} tamanho="lg" ocupado={!!buscando}>
-    <label style={{display:'grid',gap:6,maxWidth:300,fontSize:'.85rem'}}>Competência
+    <div className="pagamentos-provisionados"><label style={{display:'grid',gap:6,maxWidth:300,fontSize:'.85rem'}}>Competência
       <select aria-label="Competência da provisão" style={{...PANEL_FIELD_STYLE,width:'100%',height:38}} value={origem} onChange={e => setOrigem(e.target.value)}>
         <option value="">Todas as competências</option>{competencias.map(comp => <option key={comp} value={comp}>{formatar(comp)}</option>)}
       </select>
     </label>
     {pendentes.loading && <p role="status">Carregando pagamentos…</p>}
     {resultado && <p role={resultado.erro ? 'alert' : 'status'}>{resultado.texto}</p>}
-    {pendentes.error && <p role="alert" className="feedback error">{pendentes.error} <Button size="sm" onClick={pendentes.reload}>Tentar novamente</Button></p>}
+    {pendentes.error && <p role="alert" className="feedback error">{recusaDeAcesso(pendentes.error) || pendentes.error} <Button size="sm" variant="secondary" onClick={pendentes.reload}>Tentar novamente</Button></p>}
     {!pendentes.loading && !pendentes.error && !itens.length && <p className="hint">Nenhum pagamento pendente.</p>}
-    {!!itens.length && <div style={{overflowX:'auto',marginTop:12}}><table style={{width:'100%'}}><thead><tr><th>Imposto / descrição</th><th>Competência</th><th>Saldo</th><th>Consulta</th><th>Ações</th></tr></thead><tbody>{itens.map(e => {
+    {!!itens.length && <div className="pagamentos-provisionados-scroll" role="region" aria-label="Pagamentos provisionados" tabIndex={0}><table style={{width:'100%'}}><thead><tr><th>Imposto / descrição</th><th>Competência</th><th>Saldo</th><th>Consulta</th><th>Ações</th></tr></thead><tbody>{itens.map(e => {
       const pagamento = leituraDoPagamento(e.sourceGuide);
-      return <tr key={e.id}><td>{e.subtipo || e.historico}</td><td>{e.competencia.split('-').reverse().join('/')}</td><td>{Number(e.saldo ?? e.valor ?? e.totalD).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-        <td><span>{pagamento?.rotulo || (e.pagamentoLocalizado ? 'Pagamento localizado' : e.sourceGuide?.id ? 'Sem pagamento confirmado' : 'Sem guia vinculada')}</span>
+      return <tr key={e.id}><td data-label="Imposto / descrição">{e.subtipo || e.historico}</td><td data-label="Competência">{e.competencia.split('-').reverse().join('/')}</td><td data-label="Saldo">{Number(e.saldo ?? e.valor ?? e.totalD).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+        <td data-label="Consulta"><span>{pagamento?.rotulo || (e.pagamentoLocalizado ? 'Pagamento localizado' : e.sourceGuide?.id ? 'Sem pagamento confirmado' : 'Sem guia vinculada')}</span>
           {pagamento?.detalhe && <small style={{display:'block'}}>{pagamento.detalhe}</small>}
           {pagamento?.procedencia === 'CLIENTE' && e.sourceGuide?.paymentConfirmedAt && <small style={{display:'block'}}>Data informada pelo cliente: {fmtDataCivil(e.sourceGuide.paymentConfirmedAt)}</small>}
           {e.comprovante?.dataArrecadacao && <small style={{display:'block'}}>Arrecadação: {e.comprovante.dataArrecadacao}</small>}
           {e.comprovante?.total != null && <small style={{display:'block'}}>Total: {Number(e.comprovante.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</small>}
           {e.sourceGuide?.id && onBuscarPagamento && <Button size="sm" variant="secondary" disabled={!!buscando || pendentes.loading} onClick={() => consultar(e)}>{buscando === e.id ? 'Buscando…' : 'Buscar pagamento'}</Button>}
-        </td><td><Button size="sm" disabled={!!buscando || pendentes.loading || !!pendentes.error} onClick={() => setEntry(e)}>Dar baixa</Button></td></tr>;
+        </td><td data-label="Ações"><Button size="sm" disabled={!!buscando || pendentes.loading || !!pendentes.error} onClick={() => setEntry(e)}>Dar baixa</Button></td></tr>;
     })}</tbody></table></div>}
-  </Modal>;
+  </div></Modal>;
 }

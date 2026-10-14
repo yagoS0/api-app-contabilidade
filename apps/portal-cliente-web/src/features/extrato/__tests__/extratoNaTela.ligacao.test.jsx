@@ -64,6 +64,7 @@ describe("⚠ o envio", () => {
     escolherArquivo();
     fireEvent.click(screen.getByRole("button", { name: /Enviar extrato/i }));
     await screen.findByText(/despesas novas na fila/i);
+    expect(screen.getByRole('region', { name: 'Resultado do envio do extrato' })).toHaveFocus();
     expect(screen.getByRole("button", { name: /Enviar extrato/i })).toBeDisabled();
   });
 });

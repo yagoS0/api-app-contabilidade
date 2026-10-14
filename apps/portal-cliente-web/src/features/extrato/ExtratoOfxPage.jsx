@@ -46,6 +46,8 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
   const [erro, setErro] = useState(null);
   const [relatorio, setRelatorio] = useState(null);
   const campoRef = useRef(null);
+  const resultadoRef = useRef(null);
+  useEffect(() => { if (relatorio) resultadoRef.current?.focus(); }, [relatorio]);
 
   // ⚠⚠ A GUARDA GÊMEA DA `LotePlanilhaPage` — *"guarda de um lado só não é guarda"* (`AppShell`).
   // A casca fecha o modo ao trocar de empresa, mas `empresaAtiva` é um `useMemo`: ela pode mudar sem
@@ -143,7 +145,7 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
       </section>
 
       {relatorio ? (
-        <section className="card stack-gap" data-extrato="relatorio">
+        <section ref={resultadoRef} tabIndex={-1} aria-label="Resultado do envio do extrato" className="card stack-gap" data-extrato="relatorio">
           <div className="card-header">
             <h2>O que entrou</h2>
             <span className="meta">{conta.rotulo}</span>
@@ -189,8 +191,8 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
           {Array.isArray(relatorio.recusadas) && relatorio.recusadas.length ? (
             <div className="stack-gap">
               <h3>Recusadas ao entrar na fila</h3>
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap" role="region" aria-label="Transações recusadas" tabIndex={0}>
+                <table className="table" style={{ minWidth: 420 }}>
                   <thead>
                     <tr><th>Motivo</th><th>Descrição no banco</th></tr>
                   </thead>
@@ -215,8 +217,8 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
               {fraseDaAmostraDeDescartes(relatorio) ? (
                 <p className="meta">{fraseDaAmostraDeDescartes(relatorio)}</p>
               ) : null}
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap" role="region" aria-label="Linhas não lidas do extrato" tabIndex={0}>
+                <table className="table" style={{ minWidth: 420 }}>
                   <thead>
                     <tr><th>Motivo</th><th>Data</th><th className="num">Valor</th></tr>
                   </thead>

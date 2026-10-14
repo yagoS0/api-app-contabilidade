@@ -123,6 +123,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onEd
   const fiscalInput = (rotulo, chave, extra = {}) => <label className="agenda-field">{rotulo}<input type="number" value={fiscal[chave]} onChange={e => setF(chave, e.target.value)} {...extra}/></label>;
   return <Modal titulo={modoRegra ? 'Configurar obrigação' : edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho={compacto ? 'sm' : 'md'} className={compacto ? 'agenda-editor' : ''} ancora={compacto ? inicial.ancora : null}>
     <form className="agenda-form" onSubmit={salvar} onInvalid={e => { const details = e.target.closest('details'); if (details) details.open = true; }}>
+      <fieldset className="agenda-form agenda-form-fields" disabled={ocupado} aria-label="Dados da atividade">
       {passo === 1 ? <>
         {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'O que você gostaria de fazer?', autoFocus: true, 'data-modal-autofocus': true })}
         {onConfigurarObrigacao && <button type="button" className="agenda-text-action" onClick={onConfigurarObrigacao}>Configurar obrigação</button>}
@@ -166,6 +167,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onEd
       </>}
       {erro && <p role="alert" className="agenda-error">{erro}</p>}
       <div className="agenda-form-actions">{onExcluir && <button className="agenda-text-action agenda-task-delete" type="button" disabled={ocupado} onClick={onExcluir}>Excluir ocorrência</button>}<Button variant="secondary" type="button" disabled={ocupado} onClick={passo === 2 ? () => setPasso(1) : onFechar}>{passo === 2 ? 'Anterior' : 'Cancelar'}</Button><Button type="submit" disabled={ocupado || (passo === 2 && !previa?.total)}>{ocupado ? 'Salvando…' : passo === 1 && precisaFiscal ? 'Continuar' : 'Salvar'}</Button></div>
+      </fieldset>
     </form>
   </Modal>;
 }

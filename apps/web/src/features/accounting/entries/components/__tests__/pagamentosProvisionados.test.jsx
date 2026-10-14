@@ -36,3 +36,7 @@ test('sem guia não oferece consulta e falha na consulta mantém a baixa dispon�
   expect(await screen.findByRole('alert')).toHaveTextContent('Consulta indisponível');
   expect(screen.getByText('Dar baixa')).toBeEnabled();
 });
+test('preserva orientação humana da consulta com código de acesso',async()=>{
+ render(<PagamentosProvisionadosModal pendentes={{itens:[{id:'p',competencia:'2026-09',subtipo:'PIS',saldo:500,sourceGuide:{id:'g'}}]}} onClose={()=>{}} onBuscarPagamento={async()=>{throw Object.assign(new Error('Peça acesso à empresa selecionada.'),{code:'forbidden'});}}/>);
+ fireEvent.click(screen.getByText('Buscar pagamento'));expect(await screen.findByRole('alert')).toHaveTextContent('Peça acesso à empresa selecionada.');
+});

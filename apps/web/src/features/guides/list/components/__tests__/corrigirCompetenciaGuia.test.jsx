@@ -40,3 +40,7 @@ test("recusa prévia de outra empresa e preserva correção concluída se refres
   expect(await screen.findByRole("alert")).toHaveTextContent("Competência corrigida");
   expect(screen.queryByRole("button", { name: "Confirmar correção" })).not.toBeInTheDocument();
 });
+
+test('acesso negado permanece visível sem alterar a competência',async()=>{const api=makeApi();api.preverCorrecaoCompetenciaGuia.mockRejectedValue(new Error('forbidden'));abrir(api);fireEvent.change(screen.getByLabelText('Competência correta'),{target:{value:'2026-09'}});fireEvent.click(screen.getByRole('button',{name:'Conferir alteração'}));expect(await screen.findByRole('alert')).toHaveTextContent('não tem acesso a esta empresa');expect(api.corrigirCompetenciaGuia).not.toHaveBeenCalled();});
+
+test('orientação humana específica prevalece sobre código genérico de acesso',async()=>{const api=makeApi();api.preverCorrecaoCompetenciaGuia.mockRejectedValue(Object.assign(new Error('Peça ao responsável pela carteira Alfa para reativar o vínculo.'),{error:'forbidden'}));abrir(api);fireEvent.change(screen.getByLabelText('Competência correta'),{target:{value:'2026-09'}});fireEvent.click(screen.getByRole('button',{name:'Conferir alteração'}));expect(await screen.findByRole('alert')).toHaveTextContent('Peça ao responsável pela carteira Alfa para reativar o vínculo.');expect(api.corrigirCompetenciaGuia).not.toHaveBeenCalled();});
