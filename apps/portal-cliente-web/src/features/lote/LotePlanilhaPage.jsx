@@ -763,11 +763,19 @@ function BlocoDeEmissao({
   aoConfirmar,
 }) {
   const texto = confirmacaoDaEmissao({ prontas, valorTotal });
+  const confirmacaoRef = useRef(null);
+  const conviteRef = useRef(null);
+  const estavaConfirmando = useRef(false);
+  useEffect(() => {
+    if (confirmando) confirmacaoRef.current?.focus();
+    else if (estavaConfirmando.current) conviteRef.current?.focus();
+    estavaConfirmando.current = confirmando;
+  }, [confirmando]);
 
   if (!confirmando) {
     return (
       <div style={{ marginTop: "12px" }} data-emissao="convite">
-        <button type="button" className="btn btn-primary" onClick={aoPedirConfirmacao} disabled={ocupado}>
+        <button ref={conviteRef} type="button" className="btn btn-primary" onClick={aoPedirConfirmacao} disabled={ocupado}>
           Emitir {prontas} {prontas === 1 ? "nota" : "notas"}
         </button>
         {naoProntas > 0 ? (
@@ -782,14 +790,14 @@ function BlocoDeEmissao({
   }
 
   return (
-    <div className="card" style={{ marginTop: "12px", padding: "14px" }} data-emissao="confirmacao">
+    <div ref={confirmacaoRef} tabIndex={-1} role="region" aria-label="Confirmar emissão do lote" className="card" style={{ marginTop: "12px", padding: "14px" }} data-emissao="confirmacao">
       <h3 style={{ marginTop: 0 }}>{texto.titulo}</h3>
       <p style={{ margin: "4px 0" }}>
         Valor total: <strong>{brl(valorTotal)}</strong>
         {naoProntas > 0 ? <> · {naoProntas} linhas ficam de fora</> : null}
       </p>
       <p className="muted" style={{ fontSize: ".85rem" }}>{texto.aviso}</p>
-      <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+      <div className="actions">
         <button type="button" className="btn btn-primary" onClick={aoConfirmar} disabled={ocupado}>
           {ocupado ? "Emitindo…" : "Confirmar e emitir"}
         </button>

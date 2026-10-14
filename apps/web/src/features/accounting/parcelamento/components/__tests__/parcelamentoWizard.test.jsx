@@ -260,7 +260,7 @@ describe("passo 3", () => {
     // A linha 1 (principal, D) vira o passivo: o lado tem de virar C junto.
     const papel1 = screen.getByLabelText(/Papel da linha 1 da provisão/);
     await act(async () => { fireEvent.change(papel1, { target: { value: "PARC" } }); });
-    const dcs = screen.getAllByRole("combobox").filter((s) => Array.from(s.options).map((o) => o.value).join() === "D,C");
+    const dcs = screen.getAllByRole("combobox").filter((s) => s.tagName === "SELECT" && Array.from(s.options).map((o) => o.value).join() === "D,C");
     expect(dcs[0].value).toBe("C");
   });
 

@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { Modal } from "../../../../components/ui/Modal";
+import { Button } from "../../../../components/ui/Button";
+import { useState, useEffect, useRef } from "react";
 const PANEL = {
   page: "#1A1B26",
   surface: "#24253A",
   field: "#1A1B26",
   border: "#44475A",
   text: "#F8F8F2",
-  muted: "#6272A4",
+  muted: "var(--text-muted)",
   accent: "#BD93F9",
   success: "var(--success)",
   danger: "var(--danger)",
@@ -31,7 +33,7 @@ const ACTION = {
 const INPUT = {
   height: 36, border: `1px solid ${PANEL.field}`, borderRadius: 8,
   padding: "0 10px", font: "inherit", fontSize: "0.9375rem",
-  color: PANEL.text, background: PANEL.field, boxSizing: "border-box", outline: "none",
+  color: PANEL.text, background: PANEL.field, boxSizing: "border-box",
 };
 
 const TDv = { padding: "10px 12px", borderBottom: `1px solid ${PANEL.border}`, verticalAlign: "middle", color: PANEL.text };
@@ -42,7 +44,7 @@ function ScopeBadge({ scope }) {
   const isGlobal = scope === "GLOBAL";
   return (
     <span style={{
-      fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.05em",
+      fontSize: "0.8125rem", fontWeight: 700, letterSpacing: "0.05em",
       textTransform: "uppercase", padding: "2px 7px", borderRadius: 999,
       background: isGlobal ? "#44475A" : "#BD93F9",
       color: isGlobal ? "#F8F8F2" : "#1A1B26",
@@ -65,12 +67,16 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState("");
+  const trava = useRef(false);
+  const ocupado = saving || deletingId !== null;
+  const fechar = () => { if (!trava.current) onClose(); };
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
+    setError("");
     setLoading(true);
     try {
       const result = await onLoadAll();
@@ -89,6 +95,8 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
   }
 
   async function saveEdit(item) {
+    if (trava.current) return;
+    trava.current = true;
     setSaving(true);
     setError("");
     try {
@@ -99,30 +107,36 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
       if (result?.ok) {
         setItems((prev) => prev.map((h) => h.id === item.id ? { ...h, ...result.historico } : h));
         setEditingId(null);
-      }
+      } else { setError(result?.message || "Erro ao salvar alterações."); }
     } catch {
       setError("Erro ao salvar alterações.");
     } finally {
+      trava.current = false;
       setSaving(false);
     }
   }
 
   async function promoteToGlobal(item) {
+    if (trava.current) return;
+    trava.current = true;
     setSaving(true);
     setError("");
     try {
       const result = await onUpdate(item.id, { scope: "GLOBAL" });
       if (result?.ok) {
         setItems((prev) => prev.map((h) => h.id === item.id ? { ...h, scope: "GLOBAL" } : h));
-      }
+      } else { setError(result?.message || "Erro ao promover para global."); }
     } catch {
       setError("Erro ao promover para global.");
     } finally {
+      trava.current = false;
       setSaving(false);
     }
   }
 
   async function handleDelete(id) {
+    if (trava.current) return;
+    trava.current = true;
     setDeletingId(id);
     setError("");
     try {
@@ -131,6 +145,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
     } catch {
       setError("Erro ao excluir histórico.");
     } finally {
+      trava.current = false;
       setDeletingId(null);
     }
   }
@@ -145,34 +160,12 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
   const empresaCount = items.filter((h) => h.scope === "COMPANY").length;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 500,
-      background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      <div style={{
-        background: PANEL.surface, color: PANEL.text, borderRadius: 16, border: `1px solid ${PANEL.border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-        width: "min(860px, 96vw)", maxHeight: "85vh",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-      }}>
-
-        {/* Header */}
-        <div style={{
-          padding: "14px 20px", borderBottom: `1px solid ${PANEL.border}`,
-          display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
-        }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: PANEL.text }}>Históricos Salvos</h2>
-            <p style={{ margin: "2px 0 0", fontSize: "0.875rem", color: PANEL.muted }}>
-              Textos reutilizáveis com códigos D/C associados. Salvos automaticamente ao lançar.
-            </p>
-          </div>
-          <button onClick={onClose} style={ACTION}>Fechar</button>
-        </div>
-
+    <Modal titulo="Históricos salvos" tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} rodape={<Button variant="secondary" onClick={fechar} disabled={ocupado}>Fechar</Button>}>
+      <fieldset disabled={ocupado} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {/* Filtros */}
         <div style={{
           padding: "10px 20px", borderBottom: `1px solid ${PANEL.border}`,
-          display: "flex", gap: 8, alignItems: "center", flexShrink: 0,
+          display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", flexShrink: 0,
         }}>
           {[
             { key: "todos",   label: `Todos (${items.length})` },
@@ -191,21 +184,21 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
             >{label}</button>
           ))}
           <div style={{ marginLeft: "auto" }}>
-            <button type="button" onClick={load} style={ACTION}>Atualizar</button>
+            <button type="button" onClick={load} disabled={loading || ocupado} style={ACTION}>Atualizar</button>
           </div>
         </div>
 
         {/* Corpo da tabela */}
-        <div style={{ overflowY: "auto", flex: 1 }}>
+        <div style={{ overflow: "auto", minWidth: 0 }}>
           {error && (
-            <div style={{ padding: "8px 20px", color: PANEL.danger, fontSize: "0.9375rem" }}>{error}</div>
+            <div role="alert" style={{ padding: "8px 20px", color: PANEL.danger, fontSize: "0.9375rem" }}>{error}</div>
           )}
           {loading && (
-            <div style={{ padding: 32, textAlign: "center", color: PANEL.muted, fontSize: "0.9375rem" }}>
+            <div role="status" style={{ padding: 32, textAlign: "center", color: PANEL.muted, fontSize: "0.9375rem" }}>
               Carregando...
             </div>
           )}
-          {!loading && filtered.length === 0 && (
+          {!loading && !error && filtered.length === 0 && (
             <div style={{ padding: 32, textAlign: "center", color: PANEL.muted, fontSize: "0.9375rem" }}>
               Nenhum histórico encontrado.{" "}
               {filter !== "todos" && (
@@ -250,7 +243,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
                       <td style={TDv}>
                         {isEditing ? (
                           <input
-                            type="text" inputMode="numeric" value={editForm.contaDebito}
+                            aria-label="Conta de débito" type="text" inputMode="numeric" value={editForm.contaDebito}
                             onChange={(e) => setEditForm((p) => ({ ...p, contaDebito: e.target.value.replace(/\D/g, "") }))}
                             placeholder="Cód."
                             style={{ ...INPUT, width: 70, textAlign: "center" }}
@@ -264,7 +257,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
                       <td style={TDv}>
                         {isEditing ? (
                           <input
-                            type="text" inputMode="numeric" value={editForm.contaCredito}
+                            aria-label="Conta de crédito" type="text" inputMode="numeric" value={editForm.contaCredito}
                             onChange={(e) => setEditForm((p) => ({ ...p, contaCredito: e.target.value.replace(/\D/g, "") }))}
                             placeholder="Cód."
                             style={{ ...INPUT, width: 70, textAlign: "center" }}
@@ -332,19 +325,8 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
           )}
         </div>
 
-        {/* Footer */}
-        <div style={{
-          padding: "10px 20px", borderTop: `1px solid ${PANEL.border}`,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          flexShrink: 0, background: PANEL.field,
-        }}>
-          <span style={{ fontSize: "0.875rem", color: PANEL.muted }}>
-            Históricos <strong>Empresa</strong> aparecem apenas nesta empresa.{" "}
-            Históricos <strong>Global</strong> aparecem em todas as empresas do escritório.
-          </span>
-          <button type="button" onClick={onClose} style={ACTION}>Fechar</button>
-        </div>
-      </div>
-    </div>
+        <p style={{ fontSize: "0.875rem", color: PANEL.muted }}>Históricos Empresa aparecem apenas nesta empresa. Históricos Global aparecem em todas as empresas do escritório.</p>
+      </fieldset>
+    </Modal>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { EditorPerfilEmissao } from "../../companies/detail/components/EditorPerfilEmissao";
 import { Button } from "../../../components/ui/Button";
+import "./servicos-tributacao.css";
 
 const apiPadrao = createApiClient();
 
@@ -26,14 +27,17 @@ export function ServicosTributacao({ companyId, podeEditar = false, api = apiPad
     } finally { setSalvando(false); }
   }
   if (!companyId) return null;
-  return <section aria-label="Serviços e tributação da emissão">
+  const Resumo = podeEditar ? 'details' : 'div';
+  return <section className="servicos-tributacao" aria-label="Serviços e tributação da emissão">
     <h2>Serviços e tributação da emissão</h2>
-    <p>Os mesmos perfis usados na configuração de emissão. Cada serviço pode ter tributação própria; salvar aqui atualiza esse cadastro único.</p>
+    <p>Alterações atualizam os perfis usados na configuração de emissão.</p>
     {erro ? <p role="alert">{erro} <Button onClick={() => setRevisao((v) => v + 1)}>Tentar novamente</Button></p>
       : !dados ? <p role="status">Carregando perfis…</p> : <>
-        <p>{dados.integracaoLigada === true ? "Perfis integrados à emissão. Confira o perfil escolhido na prévia de cada nota." : "Perfis sem integração ativa na emissão: cadastrar aqui ainda não altera o XML da nota."}</p>
-        {!dados.perfis?.length && <p>Nenhum perfil por serviço cadastrado.</p>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 12 }}>
+        {(dados.integracaoLigada !== false || !podeEditar) && <p>{dados.integracaoLigada === true ? "Perfis integrados à emissão. Confira o perfil escolhido na prévia de cada nota." : "Perfis sem integração ativa na emissão: cadastrar aqui ainda não altera o XML da nota."}</p>}
+        {!podeEditar && !dados.perfis?.length && <p>Nenhum perfil por serviço cadastrado.</p>}
+        {Boolean(dados.perfis?.length) && <Resumo className="servicos-tributacao-resumo">
+          {podeEditar && <summary>Dados fiscais dos perfis ({dados.perfis.length})</summary>}
+        <div className="servicos-tributacao-grid">
           {(dados.perfis || []).map((p) => <article key={p.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 16 }}>
             <h3 style={{ marginTop: 0 }}>{p.nome}</h3>
             <p>{p.ativo === false ? "Inativo" : "Ativo"}{p.padrao ? " · Padrão" : ""}</p>
@@ -43,6 +47,7 @@ export function ServicosTributacao({ companyId, podeEditar = false, api = apiPad
               <dt>Município da prestação</dt><dd>{p.cLocPrestacao || "Definido na operação"}</dd></dl>
           </article>)}
         </div>
+        </Resumo>}
         <EditorPerfilEmissao key={companyId} dados={dados} podeEditar={podeEditar} salvando={salvando} onSalvar={salvar} />
       </>}
   </section>;

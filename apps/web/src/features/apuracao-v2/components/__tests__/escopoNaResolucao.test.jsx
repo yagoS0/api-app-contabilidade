@@ -118,3 +118,16 @@ describe("⚠ O ALCANCE SÓ É PERGUNTADO SE HOUVER REGRA", () => {
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
   });
 });
+
+test('diálogo mantém teclado contido e bloqueia fechamento durante a gravação', () => {
+  const onClose = jest.fn(), onResolver = jest.fn();
+  render(<ResolverPendenciaModal pendencia={PENDENCIA} saving myRole="ACCOUNTANT" onClose={onClose} onResolver={onResolver} />);
+  expect(screen.getByRole('dialog', { name: 'Classificar pendência' })).toBeInTheDocument();
+  expect(screen.getByRole('combobox')).toBeDisabled();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(document.querySelector('.modal-caixa'));
+  expect(onClose).not.toHaveBeenCalled();
+  expect(onResolver).not.toHaveBeenCalled();
+});

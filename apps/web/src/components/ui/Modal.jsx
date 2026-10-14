@@ -55,6 +55,7 @@ export function Modal({
   ocupado = false,
   suspenso = false,
   fecharAoClicarFundo = true,
+  fecharAoEscape = true,
   tamanho = "md",
   lateral = false,
   rodape = null,
@@ -94,7 +95,7 @@ export function Modal({
   useEffect(() => {
     if (suspenso) return undefined;
     function aoTeclar(e) {
-      if (e.key === "Escape" && !ocupado) {
+      if (e.key === "Escape" && !ocupado && fecharAoEscape) {
         // A primeira tecla fecha as sugestões do campo; a próxima pode fechar
         // o diálogo. O listener captura antes do onKeyDown do combobox.
         if (caixaRef.current?.contains(e.target) && e.target?.matches?.('[role="combobox"][aria-expanded="true"]')) return;
@@ -129,7 +130,7 @@ export function Modal({
     }
     document.addEventListener("keydown", aoTeclar, true);
     return () => document.removeEventListener("keydown", aoTeclar, true);
-  }, [aoFechar, ocupado, suspenso]);
+  }, [aoFechar, ocupado, suspenso, fecharAoEscape]);
 
   const largura = LARGURAS[tamanho] || LARGURAS.md;
 

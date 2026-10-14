@@ -1,0 +1,9 @@
+.servicos-tributacao { min-width: 0; }
+.servicos-tributacao > h2 { font-size: 1.1rem; font-weight: 600; }
+.servicos-tributacao > p { color: var(--text-muted); line-height: 1.5; }
+.servicos-tributacao-resumo { margin-block: 16px 24px; }
+.servicos-tributacao-resumo summary { cursor: pointer; padding-block: 10px; font-weight: 500; }
+.servicos-tributacao-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.servicos-tributacao-grid article { min-width: 0; overflow-wrap: anywhere; }
+.servicos-tributacao-grid dt { color: var(--text-muted); margin-top: 12px; }
+.servicos-tributacao-grid dd { margin: 4px 0 0; }

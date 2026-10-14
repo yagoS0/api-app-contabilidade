@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Modal } from "../../../../components/ui/Modal";
+import "./guide-capture.css";
 import { Button } from "../../../../components/ui/Button";
 
 const PANEL = {
@@ -6,7 +8,7 @@ const PANEL = {
   field: "#1A1B26",
   border: "#44475A",
   text: "#F8F8F2",
-  muted: "#6272A4",
+  muted: "var(--text-muted)",
   accent: "#BD93F9",
   danger: "var(--danger)",
 };
@@ -20,14 +22,14 @@ const fieldStyle = {
 };
 
 const labelStyle = {
-  display: "block", fontSize: "0.75rem", color: PANEL.muted,
-  marginBottom: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em",
+  display: "block", fontSize: "0.875rem", color: PANEL.muted,
+  marginBottom: 4, fontWeight: 500,
 };
 
 /**
  * Modal split de captura/identificação de guia.
  *
- * Layout: 60% PDF (iframe nativo) / 40% form, ocupando ~90% da tela.
+ * Layout: PDF e formulário lado a lado no desktop; empilhados no celular.
  *
  * Modos:
  *  - "upload": guia ainda não existe; recebe `pdfFile` (File local) e dispara
@@ -131,19 +133,13 @@ export function GuideCaptureModal({
   }, [mode, initialTipo, initialMetadata?.tipo]);
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "5vh 5vw",
-    }}>
-      <div style={{
-        background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        width: "100%", height: "100%", display: "grid", gridTemplateColumns: "60% 40%",
-        overflow: "hidden", color: PANEL.text, boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
-      }}>
+    <Modal titulo={title} tamanho="lg" ocupado={saving} aoFechar={onClose} fecharAoClicarFundo={false}
+      rodape={<><Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button><Button type="submit" form="guide-capture-form" disabled={saving}>{saving ? "Salvando..." : "Salvar guia"}</Button></>}>
+      <div className="guide-capture-grid">
         {/* Lado esquerdo: PDF */}
-        <div style={{ background: "#000", borderRight: `1px solid ${PANEL.border}`, position: "relative" }}>
+        <div className="guide-capture-pdf">
           {pdfLoading && (
-            <div style={{
+            <div role="status" style={{
               position: "absolute", inset: 0, display: "flex", alignItems: "center",
               justifyContent: "center", color: PANEL.muted, fontSize: "0.9rem",
             }}>
@@ -151,7 +147,7 @@ export function GuideCaptureModal({
             </div>
           )}
           {pdfError && !pdfBlobUrl && (
-            <div style={{
+            <div role="alert" style={{
               position: "absolute", inset: 0, display: "flex", alignItems: "center",
               justifyContent: "center", color: PANEL.danger, fontSize: "0.9rem",
               padding: 20, textAlign: "center",
@@ -169,27 +165,12 @@ export function GuideCaptureModal({
         </div>
 
         {/* Lado direito: form */}
-        <form onSubmit={handleSubmit} style={{
-          padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14,
+        <form id="guide-capture-form" onSubmit={handleSubmit} style={{ minWidth: 0,
+          padding: 0, display: "flex", flexDirection: "column", gap: 14,
         }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>{title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 22, cursor: "pointer", lineHeight: 1 }}
-              aria-label="Fechar"
-            >
-              ✕
-            </button>
-          </div>
-
-          <p style={{ margin: 0, fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.5 }}>
-            Olhe o PDF ao lado e preencha os campos abaixo. Você pode dar zoom/scroll no PDF usando os controles do navegador.
-          </p>
-
+          <p style={{ margin: 0, fontSize: "0.875rem", color: PANEL.muted }}>Confira os dados no PDF antes de salvar.</p>
           {error && (
-            <div style={{
+            <div role="alert" style={{
               padding: 10, background: "rgba(255,87,87,0.15)", border: `1px solid ${PANEL.danger}`,
               borderRadius: 6, color: PANEL.danger, fontSize: "0.8125rem",
             }}>
@@ -198,12 +179,12 @@ export function GuideCaptureModal({
           )}
 
           <div>
-            <label style={labelStyle}>Tipo *</label>
-            <select
+            <label htmlFor="guia-captura-tipo" style={labelStyle}>Tipo *</label>
+            <select id="guia-captura-tipo" disabled={saving}
               style={fieldStyle}
               value={form.tipo}
               onChange={(e) => setField("tipo", e.target.value)}
-              autoFocus={!form.tipo}
+              data-modal-autofocus={!form.tipo || undefined}
             >
               <option value="">Selecione...</option>
               {GUIDE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -211,22 +192,24 @@ export function GuideCaptureModal({
           </div>
 
           <div>
-            <label style={labelStyle}>Competência * (AAAA-MM)</label>
+            <label htmlFor="guia-captura-competencia" style={labelStyle}>Competência * (AAAA-MM)</label>
             <input
               style={fieldStyle}
+              id="guia-captura-competencia" disabled={saving}
               type="text"
               placeholder="2026-01"
               value={form.competencia}
               onChange={(e) => setField("competencia", e.target.value)}
-              autoFocus={Boolean(form.tipo) && !form.competencia}
+              data-modal-autofocus={Boolean(form.tipo) && !form.competencia || undefined}
               autoComplete="off"
             />
           </div>
 
           <div>
-            <label style={labelStyle}>Valor (R$)</label>
+            <label htmlFor="guia-captura-valor" style={labelStyle}>Valor (R$)</label>
             <input
               style={fieldStyle}
+              id="guia-captura-valor" disabled={saving}
               type="number"
               step="0.01"
               min="0"
@@ -238,9 +221,10 @@ export function GuideCaptureModal({
           </div>
 
           <div>
-            <label style={labelStyle}>Vencimento</label>
+            <label htmlFor="guia-captura-vencimento" style={labelStyle}>Vencimento</label>
             <input
               style={fieldStyle}
+              id="guia-captura-vencimento" disabled={saving}
               type="date"
               value={form.vencimento}
               onChange={(e) => setField("vencimento", e.target.value)}
@@ -252,19 +236,9 @@ export function GuideCaptureModal({
               colateral de um upload. Guia de parcelamento agora tem caminho próprio e explícito:
               "+ Subir Guia → PARCELAMENTO", onde o contrato é escolhido ANTES do documento. */}
 
-          <div style={{ flex: 1 }} />
-
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${PANEL.border}` }}>
-            <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
-              Cancelar
-            </Button>
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Salvando..." : "Salvar guia"}
-            </Button>
-          </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
