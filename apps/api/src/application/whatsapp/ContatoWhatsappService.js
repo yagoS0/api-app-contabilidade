@@ -286,7 +286,7 @@ export async function salvarPermissoesAssistente({ portalClientId, contatoId, pe
 export async function destinatariosDeEnvio(portalClientId) {
   const contatos = await prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId), ativo: true },
-    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true,
+    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true, vinculoNumeroId: true,
       ...(WHATSAPP_IDENTIDADE_V2 ? { vinculoNumero: { select: { encerrouEm: true, interlocutor: { select: { estado: true } } } } } : {}) },
     orderBy: { createdAt: "asc" },
   });
@@ -306,7 +306,8 @@ export async function destinatariosDeEnvio(portalClientId) {
         semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164, motivo: 'identificação do destinatário precisa de conferência' });
         continue;
       }
-      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164, waId: c.waId || null });
+      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164, waId: c.waId || null,
+        ...(c.vinculoNumeroId ? { vinculoNumeroId: c.vinculoNumeroId } : {}) });
       else semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164 });
     }
   }

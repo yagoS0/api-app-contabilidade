@@ -3,8 +3,8 @@ beforeEach(() => jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:0
 afterEach(() => jest.useRealTimers());
 function setup() {
   const records = new Map();
-  const guide = { id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23" };
-  const db = { feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
+  const guide = { status: "PROCESSED", hash: "pdf-atual", valor: 100, id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23" };
+  const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => [{ arquivoSha256: guide.hash, snapshot: {guideId:guide.id,portalClientId:guide.portalClientId,telefone:where.envioGuia.destino,competencia:guide.competencia,tipo:guide.tipo,valor:guide.valor,vencimento:guide.vencimento} }]) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error("duplicado"), { code: "P2002" }); records.set(data.key, data); return data; }),
       findUnique: jest.fn(async ({ where }) => records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
   const transporte = { canais: jest.fn(async () => ({ escolha: "EMAIL" })), destinatarios: jest.fn(async () => ({ emails: ["fixture@example.invalid"], telefones: [{ id: "contato", telefoneE164: "5511000000000" }] })),
@@ -90,4 +90,29 @@ test('nenhum aviso no vencimento ou fora dos dois dias definidos', async () => {
   expect(await f.run()).toMatchObject({ status: 'IGNORADO', motivo: 'FORA_DO_DIA_DO_AVISO' });
   f.guide.vencimento = '2026-08-01'; await f.run();
   expect(f.transporte.whatsapp).not.toHaveBeenCalled();
+});
+
+
+test('sem entrega fica pendente sem reservar; entrega posterior permite avaliar novamente', async () => {
+  const f=setup(); const original=f.db.envioGuiaTentativa.findMany.getMockImplementation();
+  f.db.envioGuiaTentativa.findMany.mockResolvedValue([]);
+  expect(await f.run()).toMatchObject({status:'PENDENTE',resultados:[{motivo:'GUIA_WHATSAPP_NAO_ENTREGUE'}]});
+  expect(f.transporte.whatsapp).not.toHaveBeenCalled(); expect(f.records.size).toBe(0);
+  f.db.envioGuiaTentativa.findMany.mockImplementation(original);
+  await f.run(); expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+});
+test('entrega de um contato não habilita o lembrete do outro', async () => {
+ const f=setup(); const original=f.db.envioGuiaTentativa.findMany.getMockImplementation();
+ f.transporte.destinatarios.mockResolvedValue({telefones:[{id:'a',telefoneE164:'5511000000000'},{id:'b',telefoneE164:'5511000000001'}]});
+ f.db.envioGuiaTentativa.findMany.mockImplementation(a=>a.where.envioGuia.destino.endsWith('1')?[]:original(a));
+ expect(await f.run()).toMatchObject({status:'PENDENTE'}); expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+ expect(f.transporte.whatsapp.mock.calls[0][0].contato.id).toBe('a');
+});
+test('recibo deixa de valer durante preparação: não chega ao transporte', async () => {
+ const f=setup(); let enviado=false;
+ f.transporte.whatsapp.mockImplementation(async ({conferir})=>{f.db.envioGuiaTentativa.findMany.mockResolvedValue([]);await conferir();enviado=true;});
+ await f.run();expect(enviado).toBe(false);
+});
+test.each([{status:'ERROR'},{status:'VAZIO'},{paymentConfirmedAt:new Date()}])('estado inelegível %j não envia',async patch=>{
+ const f=setup();Object.assign(f.guide,patch);await f.run();expect(f.transporte.whatsapp).not.toHaveBeenCalled();
 });
