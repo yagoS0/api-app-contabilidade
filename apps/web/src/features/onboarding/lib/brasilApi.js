@@ -1,5 +1,4 @@
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
-import { createRealApi } from '../../../api/real/realApi';
 // ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
 //
 //   `apps/portal-cliente-web/src/api/real/brasilApi.js`
@@ -78,6 +77,7 @@ export async function consultarCnpj(cnpj, { fetchImpl = null, companyId, tokenPu
   // Produção usa a política central autenticada. fetchImpl continua como adaptador
   // explícito para fixtures legadas que devolvem o contrato bruto do fornecedor.
   if (!fetchImpl) {
+    const { createRealApi } = await import('../../../api/real/realApi.js');
     const r = await createRealApi().consultarCnpjCadastro(digitos, { companyId, tokenPublico, cadastroEfetivo });
     return r?.ok ? { ...r, empresa: mapearParaOnboarding(r.bruto), situacao: situacaoCadastral(r.bruto) }
       : { ok: false, motivo: r?.motivo || 'indisponivel', mensagem: r?.mensagem || 'Consulta indisponível. Preencha manualmente.' };
