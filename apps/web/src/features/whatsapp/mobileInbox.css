@@ -38,3 +38,26 @@
 .wa-support-queue button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .wa-cost-breakdown { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--border); }
 .wa-cost-breakdown summary { cursor: pointer; }
+
+/* A lateral prioriza encontrar a conversa; administração fica em um único acesso. */
+.wa-sidebar > .wa-support-queue { padding-block: 4px; }
+.wa-sidebar > .wa-support-queue > summary { min-height: 36px; display: list-item; align-content: center; font-size: 13px; font-weight: 500; }
+.wa-sidebar > .wa-support-queue[open] { max-height: min(30dvh, 280px); }
+.wa-sidebar .wa-sidebar-admin { display: block; padding: 4px 12px; }
+.wa-sidebar-admin .wa-app-tools { min-width: 0; width: 100%; }
+.wa-sidebar-admin .wa-app-tools > details > summary { min-height: 40px; align-content: center; cursor: pointer; font-size: 13px; }
+.wa-sidebar-admin .wa-app-options { max-height: 40dvh; padding-block: 8px; gap: 12px; overflow-wrap: anywhere; }
+.wa-sidebar-admin .wa-inbox-links { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.wa-sidebar-admin .wa-inbox-links :is(a, button) { min-height: 40px; display: inline-flex; align-items: center; font-size: 13px; }
+.wa-sidebar-admin .wa-admin-consumo { border-block: 1px solid var(--border); padding-block: 6px; }
+.wa-sidebar-admin .wa-admin-consumo > summary { min-height: 36px; align-content: center; cursor: pointer; }
+.wa-sidebar-admin .wa-admin-consumo > p { padding-block: 8px; }
+.wa-sidebar-admin .wa-cost-breakdown { padding: 4px 0; border: 0; font-size: 13px; }
+.wa-sidebar-admin .wa-cost-breakdown[open] { max-height: none; overflow: visible; }
+.wa-sidebar-admin .wa-admin-heading { margin: 0; font-size: 13px; font-weight: 600; }
+.wa-sidebar-admin .wa-app-options .btn { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .wa-sidebar > .wa-support-queue > summary,
+  .wa-sidebar-admin .wa-app-tools > details > summary,
+  .wa-sidebar-admin .wa-admin-consumo > summary { min-height: 44px; }
+}

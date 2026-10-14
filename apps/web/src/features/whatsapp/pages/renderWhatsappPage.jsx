@@ -183,8 +183,6 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
         {notificacaoPendente && <p role="status" className="wa-notice">Há uma conversa aberta pela notificação. Salve ou confira seu rascunho antes de mudar. <Button variant="secondary" onClick={() => { if (haRascunhoPendente()) return; window.history.pushState({}, "", notificacaoPendente); window.dispatchEvent(new PopStateEvent("popstate")); setNotificacaoPendente(null); }}>Abrir conversa da notificação</Button><Button variant="secondary" onClick={() => setNotificacaoPendente(null)}>Continuar aqui</Button></p>}
         <div className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${listaOculta ? " wa-workspace--list-hidden" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
           <aside id="wa-lista-contatos" className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef} hidden={listaOculta}>
-            {area !== 'comercial' && <PendenciasSuporte api={api} onAbrir={abrir} />}
-            <ConsumoIaDetalhado api={api} />
             <div className="wa-sidebar-top">
               <div className="wa-section-heading wa-inbox-heading"><h2>Conversas</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span>{area === "comercial" && !listaOculta && <div className="wa-inbox-controls">{controlesLista}</div>}<div className="wa-mobile-inbox-actions"><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando} aria-label="Atualizar conversas"><WhatsappIcon nome="atualizar" size={20} /></Button>{onBack && <Button variant="secondary" onClick={onBack} aria-label="Voltar ao escritório"><WhatsappIcon nome="empresa" size={20} /></Button>}</div></div>
               <label className="wa-search"><WhatsappIcon nome="busca" size={17} /><input aria-label={api?.whatsappContratoV2 ? "Buscar pessoa ou empresa" : "Buscar nas conversas carregadas"} placeholder="Buscar contato ou empresa" value={busca} onChange={e => setBusca(e.target.value)} /></label>
@@ -198,6 +196,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
               {resumo.avisoHistorico ? <p role="status" className="wa-list-note">{resumo.avisoHistorico}. Consulte o filtro Histórico anterior.</p> : null}
               {hook.filtro === "historico" ? <p className="wa-list-note">Mensagens anteriores preservadas para consulta, separadas das conversas atuais.</p> : hook.filtro === "lixeira" ? <p className="wa-list-note">Conversas excluídas da lista. O histórico está preservado e pode ser restaurado.</p> : null}
             </div>
+            {area !== 'comercial' && <PendenciasSuporte api={api} onAbrir={abrir} />}
             <div className="wa-conversation-list">
               {hook.erro ? <p role="status" className="wa-list-note" style={{ color: "var(--state-warn)" }}>Não foi possível ler as conversas{hook.erro.mensagem ? `: ${hook.erro.mensagem}` : ""}. A lista pode existir e não ter sido carregada.</p> : null}
               {hook.carregando && lista.length === 0 ? <p role="status" className="wa-list-note">Carregando conversas…</p> : null}
@@ -207,7 +206,10 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
               {lista.length > 0 && avisoDaLista ? <p data-testid="aviso-paginacao-lista" className="wa-list-note">{avisoDaLista}</p> : null}
               {(termo || soNaoLidas) && !hook.buscaServidor ? <p className="wa-list-note">Busca e filtro de não lidas aplicados às conversas carregadas.</p> : null}
             </div>
-            <div className="wa-sidebar-footer"><AtendimentoAplicativo api={api} onSair={onSair} /><nav className="wa-inbox-links" aria-label="Comunicação">{onComunicados && <button type="button" onClick={onComunicados}>Avisos</button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)">Biblioteca ↗</a></nav><details className="wa-inbox-options"><summary>Consumo IA</summary><div className="wa-options-content"><div className="wa-budget"><strong>Consumo do assistente</strong><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p></div></div></details></div>
+            <div className="wa-sidebar-footer wa-sidebar-admin"><AtendimentoAplicativo api={api} onSair={onSair} opcoes={<>
+              <nav className="wa-inbox-links" aria-label="Comunicação">{onComunicados && <button type="button" onClick={onComunicados}>Avisos</button>}<a href="/biblioteca" target="_blank" rel="noopener noreferrer" aria-label="Gerenciar biblioteca compartilhada (nova aba)">Biblioteca ↗</a></nav>
+              <details className="wa-admin-consumo"><summary>Consumo IA</summary><p data-testid="consumo-ia">{fraseDoConsumo(hook.consumoIa)}</p><ConsumoIaDetalhado api={api} /></details>
+            </>} /></div>
           </aside>
           <section className="wa-chat-column" aria-label="Conversa selecionada">
             {hook.erroFio ? <p role="alert" className="wa-notice">Não foi possível atualizar a conversa: {hook.erroFio}</p> : null}

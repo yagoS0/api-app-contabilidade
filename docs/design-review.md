@@ -90,3 +90,14 @@ Evidências locais: design-accounting-permissoes-coverage.md, design-fiscal-perm
 Validação: accounting7suítes109 testes, fiscal7suítes64, portal5suítes14; central14suítes119 (SITFIS/guias/senha/tokens) e9suítes127 (acessos/configurações, antes teste adicional de revogação). Conjuntos se sobrepõem. Builds web/portal aprovados com avisos existentes de tamanho/imports mistos. CI completo verificado na publicação.
 
 Limites: matriz de permissões é da interface e dos consumidores; não representa autenticação real de cada papel em produção nem homologação integral dos serviços externos. Sessão revogada durante chamada real, todas as combinações de dados, sucesso parcial de cada operação fiscal e estados restantes de guias/conciliação/extrato continuam fora desta evidência. Fixtures e screenshots não integram o produto.
+
+
+### Estrutura do chat — continuação solicitada pelo usuário
+
+O usuário relatou confusão acumulada no chat. A revisão visual confirmou o texto Atendimento esmagado em44px inclusive no desktop, retorno ao chat preso em38px, administração misturada no rodapé e dados do contato depois da jornada comercial inteira.
+
+Reorganização: busca/lista antes da fila, Opções reúne administração/biblioteca/consumo preservando reservas e estimativas; offline permanece visível. Painel separa Atendimento de Contato e mantém formulários montados/rascunhos ao alternar. Cabeçalho usa botão textual no desktop e ícone acessível no celular. Ferramentas mostram canal antes das ações e Escape devolve foco ao botão+, sem desmontar envios pendentes. Motivos de bloqueio repetidos são agrupados e associados aos botões. A interface não envia mensagens automaticamente nem muda o contexto fiscal para resolver layout.
+
+Manutenção: acrescentar cada controle na área correspondente (conversa; mensagem/arquivos; atendimento/contato; opções administrativas). Evitar novas faixas permanentes, ações duplicadas e texto auxiliar que repete o controle. Avisos de autorização, confirmação, destino alterado, resultado incerto e offline continuam visíveis; não recolher erros obrigatórios para limpar a tela. Componentes de envio e atendimento não devem perder estado ao recolher.
+
+Evidência adicional:22 capturas em390/1440 (8 suporte full-app mock,8 fio compartilhado em contêiner da empresa,6 contexto comercial com componentes reais e API simulada), sem overflow horizontal/errosJS. Inspeção direta incluiu conversa, opções, ferramentas móveis e Contato. A fixture comercial cobre o estado inicial, não todas as etapas de contratação. Relatório local design-chat-contextos-coverage.md e resultados design-chat-structure. Suíte completa WhatsApp+tokens:43suítes331 testes aprovados; build web aprovado. Nenhum envio externo nos testes.

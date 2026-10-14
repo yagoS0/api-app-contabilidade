@@ -15,6 +15,10 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const [acoesAbertas, setAcoesAbertas] = useState(false);
   const [acoesPendentes, setAcoesPendentes] = useState(false);
   const ferramentasRef = useRef(null);
+  const abrirFerramentasRef = useRef(null);
+  const tituloFerramentasRef = useRef(null);
+  function abrirFerramentas() { setAcoesAbertas(true); requestAnimationFrame(() => tituloFerramentasRef.current?.focus()); }
+  function fecharFerramentas() { setAcoesAbertas(false); abrirFerramentasRef.current?.focus(); }
   const canais = canaisDaConversa(conversa);
   const comercialObrigatorio = conversa.relacionamento?.tipo === "LEAD";
   const comercialId = canalComercialDaConversa(conversa)?.id;
@@ -167,16 +171,17 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const seletorCanal = !comercialObrigatorio && canais.length > 1 && <label className="wa-compose-channel">Enviar pelo WhatsApp<select aria-label="Canal da mensagem" value={canalId || ""} disabled={ocupado || hook.ocupado} onChange={e => setCanalId(e.target.value)}>
     {!canal && <option value="">Selecione o canal</option>}{canais.map(c => <option key={c.id} value={c.id}>{c.nome || c.chave || c.finalidade || "Principal"}</option>)}
   </select></label>;
-  const dicas = <div className="wa-composer-hint"><span>{`WhatsApp ${comercialObrigatorio ? "Comercial" : canal?.nome || canal?.chave || ""}${mobile ? "" : " · Ctrl + Enter para enviar"}`}</span>{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado || incerto} onClick={descartar}>Descartar rascunho</button>}</div>;
+  const dicas = (!mobile || texto || orientacao) && <div className="wa-composer-hint">{!mobile && <span>Ctrl + Enter para enviar</span>}{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado || incerto} onClick={descartar}>Descartar rascunho</button>}</div>;
   return <div className="wa-composer">
     <div className="wa-composer-row">
-      <Button variant="secondary" className="wa-composer-plus" aria-label="Ações da mensagem e arquivos" aria-expanded={acoesAbertas} onClick={() => setAcoesAbertas(!acoesAbertas)}>{acoesAbertas ? "×" : "+"}</Button>
+      <Button ref={abrirFerramentasRef} variant="secondary" className="wa-composer-plus" aria-label="Ações da mensagem e arquivos" aria-expanded={acoesAbertas} onClick={acoesAbertas ? fecharFerramentas : abrirFerramentas}>{acoesAbertas ? "×" : "+"}</Button>
       <textarea ref={textoRef} rows={1} aria-label="Responder ao cliente" value={texto} onChange={e => mudarTexto(e.target.value)} disabled={bloqueado} placeholder="Mensagem…" onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
       <Button variant="primary" className="wa-composer-send" aria-label={nomeEnviar} title={nomeEnviar} disabled={bloqueado || !texto.trim()} onClick={enviar}><WhatsappIcon nome="enviar" size={21} /></Button>
     </div>
     {!acoesAbertas && !comercialObrigatorio && canais.length > 1 && canal && <div className="wa-compose-channel" role="status" aria-label="Canal preparado">Enviar por WhatsApp {canal.nome || canal.chave || canal.finalidade || "Principal"}</div>}
-    <div ref={ferramentasRef} className="wa-compose-footer wa-compose-sheet" hidden={!acoesAbertas} onKeyDown={e => { if (e.key === "Escape") setAcoesAbertas(false); }}>
-      <div className="wa-compose-sheet-heading"><strong>Mensagem e arquivos</strong><Button variant="secondary" aria-label="Fechar ações da mensagem" onClick={() => setAcoesAbertas(false)}><WhatsappIcon nome="fechar" size={18} /></Button></div>
+    <div ref={ferramentasRef} className="wa-compose-footer wa-compose-sheet" hidden={!acoesAbertas} role="region" aria-label="Mensagem e arquivos" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); fecharFerramentas(); } }}>
+      <div className="wa-compose-sheet-heading" ref={tituloFerramentasRef} tabIndex={-1}><strong>Mensagem e arquivos</strong><Button variant="secondary" aria-label="Fechar ações da mensagem" onClick={fecharFerramentas}><WhatsappIcon nome="fechar" size={18} /></Button></div>
+      {seletorCanal && <div className="wa-compose-context">{seletorCanal}</div>}
       <div className="wa-composer-tools">
         <AnexoDaConversa key={`anexo-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.atualizarConversa(conversa.id)} />
         {hook.api?.comercial && <OrientacoesRapidas key={`orientacoes-${destino}`} api={hook.api} conversa={conversaCanal} usuarioId={usuarioId} onAbrir={setAcoesAbertas} disabled={bloqueado} onEnviado={() => hook.atualizarConversa(conversa.id)} onPreparado={p => {
@@ -188,9 +193,9 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
         }} />}
         {slotAcoes && (typeof slotAcoes === "function" || !conversa.atendimento || conversa.atendimento.contextoSelecionado) && <details className="wa-composer-documents"><summary>Guias e documentos</summary>{typeof slotAcoes === "function" ? slotAcoes(conversaCanal) : slotAcoes}</details>}
       </div>
-      {seletorCanal}{dicas}
+      {dicas}
     </div>
-    {acoesPendentes && !acoesAbertas && <button type="button" className="wa-pending-send" onClick={() => setAcoesAbertas(true)}>Envio aguardando confirmação · Conferir</button>}
+    {acoesPendentes && !acoesAbertas && <button type="button" className="wa-pending-send" onClick={abrirFerramentas}>Envio aguardando confirmação · Conferir</button>}
     {remoto.estado === "salvando" && <p role="status" className="wa-visually-hidden">Salvando rascunho…</p>}
     {remoto.estado === "salvo" && <p role="status" className="wa-visually-hidden">Rascunho salvo</p>}
     {remoto.erro && <div role="alert" className="wa-draft-preview"><p>{remoto.erro}</p><Button variant="secondary" onClick={async () => { try { const valor = await remoto.conferir(); if (chaveRef.current === chave) setVersaoRemota(valor); } catch (e) { setErro(e.message); } }}>Ver versão salva</Button>{remoto.estado !== "conflito" && <Button variant="secondary" onClick={remoto.tentarSalvar}>Tentar salvar</Button>}</div>}

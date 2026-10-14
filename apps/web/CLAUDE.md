@@ -1,3 +1,7 @@
+# Hierarquia do chat — 14/10/2026
+
+A pedido do usuário, manter conversa e composição como foco principal. Busca/lista vêm antes da fila; administração, biblioteca e consumo pertencem a Opções, com aviso offline ainda visível. O painel distingue Atendimento e Contato; alternar/recolher preserva formulário comercial e rascunhos. Ferramentas do compositor mostram canal antes da ação; anexo/documentos/orientações continuam montados quando recolhidos para preservar envios incertos. Desktop usa rótulo legível em Atendimento; celular usa ícone com nome acessível. Não aplicar largura de ícone a botão textual. Novas funções devem usar a área correspondente, evitando faixas permanentes e controles duplicados. Preservar avisos de consequências, destinatário, autorização, incerteza, confirmação e todos os contratos abaixo. Evidências e limites em docs/design-review.md da raiz.
+
 # Atendimento móvel e auditoria — 25/09/2026
 
 ## Retomada no telefone — 28/09/2026

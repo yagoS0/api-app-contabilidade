@@ -53,7 +53,7 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   ui.rerender(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
   expect(screen.queryByLabelText("Canal da resposta")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
-  expect(screen.getByText(/WhatsApp Atendimento/)).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "Canal da mensagem" })).toHaveValue("principal");
   expect(texto).toHaveValue("Mensagem pelo atendimento");
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   expect(texto).toHaveValue("");
@@ -215,4 +215,22 @@ test("envio em andamento impede descarte", async () => {
   expect(screen.getByRole("button", { name: "Descartar rascunho" })).toBeDisabled();
   concluir({ ok: true });
   await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""));
+});
+
+
+test("ferramentas mostram canal antes das ações e Escape devolve foco preservando rascunho", async () => {
+  const h = hook();
+  render(<CompositorConversa conversa={c} hook={h} slotAcoes={<button>Preparar guia</button>} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), {target:{value:"Mensagem preservada"}});
+  const abrir=screen.getByRole("button",{name:"Ações da mensagem e arquivos"});
+  fireEvent.click(abrir);
+  const regiao=screen.getByRole("region",{name:"Mensagem e arquivos"});
+  await waitFor(()=>expect(regiao).toContainElement(document.activeElement));
+  const canal=screen.getByRole("combobox",{name:"Canal da mensagem"});
+  expect(canal.compareDocumentPosition(screen.getByText("Guias e documentos")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.keyDown(document.activeElement,{key:"Escape"});
+  expect(abrir).toHaveFocus();
+  expect(screen.queryByRole("region",{name:"Mensagem e arquivos"})).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Mensagem preservada");
+  expect(h.responder).not.toHaveBeenCalled();
 });

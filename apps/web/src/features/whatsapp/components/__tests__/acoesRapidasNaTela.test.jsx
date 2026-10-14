@@ -209,3 +209,27 @@ test("trocar empresa na mesma conversa limpa guia e destinatários preparados", 
   expect(screen.getByTestId("escolha-do-envio")).toHaveTextContent("OUTRA EMPRESA");
   expect(api.getCompanyGuides).toHaveBeenLastCalledWith("pc-2");
 });
+
+
+describe('motivos compartilhados das ações rápidas', () => {
+  it('exibe motivo idêntico uma vez e associa os dois botões ao aviso', () => {
+    render(<AcoesRapidas conversa={FIO} companyId="pc-1" api={apiFalso()} janela={{situacao:'ABERTA'}} canalLigado={false} />);
+    const motivo=screen.getByText('O canal de WhatsApp está desligado no servidor.');
+    const guia=screen.getByTestId('acao-ENVIAR_GUIA'), documento=screen.getByTestId('acao-ENVIAR_DOCUMENTO');
+    expect(guia).toBeDisabled(); expect(documento).toBeDisabled();
+    expect(guia).toHaveAttribute('aria-describedby',motivo.id); expect(documento).toHaveAttribute('aria-describedby',motivo.id);
+    expect(screen.getAllByText('O canal de WhatsApp está desligado no servidor.')).toHaveLength(1);
+  });
+  it('remove associação da ação liberada e mantém aviso exclusivo do documento', () => {
+    const api=apiFalso();const view=render(<AcoesRapidas conversa={FIO} companyId="pc-1" api={api} janela={{situacao:'ABERTA'}} canalLigado={false} />);
+    view.rerender(<AcoesRapidas conversa={FIO} companyId="pc-1" api={api} janela={{situacao:'FECHADA'}} canalLigado />);
+    expect(screen.getByTestId('acao-ENVIAR_GUIA')).toBeEnabled();
+    expect(screen.getByTestId('acao-ENVIAR_GUIA')).not.toHaveAttribute('aria-describedby');
+    const motivo=screen.getByTestId('motivo-ENVIAR_DOCUMENTO');expect(motivo).toHaveTextContent('documento não é modelo');
+    expect(screen.getByTestId('acao-ENVIAR_DOCUMENTO')).toHaveAttribute('aria-describedby',motivo.id);
+  });
+  it('identificadores não colidem entre dois chats montados', () => {
+    render(<><AcoesRapidas conversa={FIO} companyId="pc-1" api={apiFalso()} canalLigado={false}/><AcoesRapidas conversa={{...FIO,id:'cv2'}} companyId="pc-1" api={apiFalso()} canalLigado={false}/></>);
+    const avisos=screen.getAllByText('O canal de WhatsApp está desligado no servidor.');expect(avisos[0].id).not.toBe(avisos[1].id);
+  });
+});

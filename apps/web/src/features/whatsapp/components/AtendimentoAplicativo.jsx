@@ -7,7 +7,7 @@ function chavePush(valor) {
   const texto = atob(valor.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(valor.length / 4) * 4, "="));
   return Uint8Array.from(texto, c => c.charCodeAt(0));
 }
-export function AtendimentoAplicativo({ api, onSair }) {
+export function AtendimentoAplicativo({ api, onSair, opcoes = null }) {
   const [instalar, setInstalar] = useState(null), [registro, setRegistro] = useState(null), [atualizacao, setAtualizacao] = useState(null);
   const [config, setConfig] = useState(null), [inscrito, setInscrito] = useState(false), [ocupado, setOcupado] = useState(false), [aviso, setAviso] = useState("");
   const [online, setOnline] = useState(navigator.onLine !== false);
@@ -50,7 +50,9 @@ export function AtendimentoAplicativo({ api, onSair }) {
   }
   return <div className="wa-app-tools">
     {!online && <p role="status" className="wa-notice">Sem conexão. Seus textos continuam nesta tela; aguarde a conexão para salvar ou enviar.</p>}
-    <details><summary>Aplicativo e notificações</summary><div className="wa-app-options">
+    <details><summary>{opcoes ? 'Opções' : 'Aplicativo e notificações'}</summary><div className="wa-app-options">
+      {opcoes}
+      {opcoes && <h3 className="wa-admin-heading">Aplicativo e notificações</h3>}
       {instalar ? <Button variant="secondary" onClick={async () => { await instalar.prompt(); setInstalar(null); }}>Instalar Altan Atendimento</Button> : <p>Para instalar: abra o menu do navegador e escolha “Adicionar à tela inicial”. No iPhone, use Compartilhar.</p>}
       {config?.enabled && config.publicKey ? <Button variant="secondary" disabled={ocupado || !online} onClick={notificacoes}>{inscrito ? "Desativar notificações neste aparelho" : "Ativar notificações neste aparelho"}</Button> : <p>Notificações aguardam configuração do escritório. As mensagens continuam atualizando com o atendimento aberto.</p>}
       {atualizacao && <Button variant="secondary" onClick={atualizar}>Atualizar aplicativo</Button>}
