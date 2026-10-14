@@ -44,10 +44,11 @@ export function ConfigurarRecorrencia({ api, companyId, obterModelo, disabled = 
   </section>;
 }
 
-export function ListaRecorrencias({ api, companyId, revisao = 0 }) {
+export function ListaRecorrencias({ api, companyId, revisao = 0, className, style, ActionButton = 'button', embutida = false, onOcupado }) {
   const [resposta, setResposta] = useState(null);
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  useEffect(() => { onOcupado?.(ocupado); }, [ocupado, onOcupado]);
   const [datas, setDatas] = useState({});
   const [atualizar, setAtualizar] = useState(0);
   useEffect(() => {
@@ -72,19 +73,24 @@ export function ListaRecorrencias({ api, companyId, revisao = 0 }) {
     } catch (e) { setErro(e.message); }
     finally { setOcupado(false); }
   }
-  return <details style={{ margin: '16px 0' }}>
-    <summary>Notas recorrentes {resposta ? `(${resposta.items.length})` : ''}</summary>
-    <button type="button" onClick={() => setAtualizar(v => v + 1)} disabled={ocupado}>Atualizar recorrências</button>
+  const Container = embutida ? 'div' : 'details';
+  return <Container className={className} style={{ margin: '16px 0', ...style }}>
+    {!embutida && <summary>Notas recorrentes {resposta ? `(${resposta.items.length})` : ''}</summary>}
+    <div className={embutida ? 'recorrencias-cabecalho' : undefined}>
+      {embutida && <h3>Agendamentos{resposta ? ` (${resposta.items.length})` : ''}</h3>}
+      <ActionButton type="button" onClick={() => setAtualizar(v => v + 1)} disabled={ocupado}>Atualizar recorrências</ActionButton>
+    </div>
+    {embutida && !resposta && !erro && <p role="status">Carregando recorrências…</p>}
     {erro && <p role="alert">{erro}</p>}
-    {resposta?.workerAtivo === false && <p>A emissão automática está desligada neste ambiente. Os agendamentos serão salvos, mas não executados.</p>}
-    {resposta?.items.length === 0 && <p>Nenhuma nota recorrente. Configure uma no formulário de emissão.</p>}
-    {resposta?.items.map(item => <article key={item.id} style={{ borderBottom: '1px solid #999', padding: 12 }}>
+    {resposta?.workerAtivo === false && <p className={embutida ? 'recorrencias-aviso' : undefined}>A emissão automática está desligada neste ambiente. Os agendamentos serão salvos, mas não executados.</p>}
+    {resposta?.items.length === 0 && <p className={embutida ? 'recorrencias-vazio' : undefined}>Nenhuma nota recorrente. Configure uma no formulário de emissão.</p>}
+    {resposta?.items.map(item => <article key={item.id} style={embutida ? { padding: 16 } : { borderBottom: '1px solid #999', padding: 12 }}>
       <strong>{item.modelo.tomador.nome} · {moeda(item.modelo.servico.valorServicos)}</strong>
       <p>{item.modelo.servico.descricao}</p>
       <p>{item.ativa ? 'Ativa' : 'Pausada'} · Dia {item.dia} · {item.ativa ? 'Próxima' : 'Data registrada'}: {dataBR(item.proximaData)} · {item.ambiente === 'homolog' ? 'Homologação' : 'Produção'}</p>
       {!item.ativa && <label>Nova primeira emissão <input type="date" aria-label={`Retomar ${item.modelo.tomador.nome}`} value={datas[item.id] || ''} onChange={e => setDatas({ ...datas, [item.id]: e.target.value })} /></label>}
-      <button type="button" disabled={ocupado || (!item.ativa && !datas[item.id])} onClick={() => alterar(item)}>{item.ativa ? 'Pausar' : 'Retomar'}</button>
+      <ActionButton type="button" disabled={ocupado || (!item.ativa && !datas[item.id])} onClick={() => alterar(item)}>{item.ativa ? 'Pausar' : 'Retomar'}</ActionButton>
       {item.execucoes.length > 0 && <ul>{item.execucoes.map(run => <li key={run.id}>{run.competencia} — {run.status === 'EXECUTANDO' ? 'Em andamento ou interrompida; não será repetida automaticamente' : run.status === 'EMITIDA' ? 'Emitida' : 'Revisão necessária'}{run.erro ? `: ${run.erro}` : ''}{run.invoiceId ? ` · Registro da nota: ${run.invoiceId}` : ''}</li>)}</ul>}
     </article>)}
-  </details>;
+  </Container>;
 }

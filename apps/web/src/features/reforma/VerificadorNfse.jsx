@@ -3,9 +3,10 @@ import { Button } from '../../components/ui/Button';
 import './reforma.css';
 const ESTADOS = { ERRO: 'Erro', REVISAO: 'Revisão necessária', ALERTA: 'Alerta', SEM_ACHADOS: 'Sem achados nas regras cobertas', EXCLUIDA: 'Fora da conferência de ativas' };
 export function VerificadorNfse(props) { return <Verificador key={`${props.companyId}:${props.competencia}`} {...props} />; }
-function Verificador({ api, companyId, competencia, onAbrirNota }) {
-  const [aberto, setAberto] = useState(false), [dados, setDados] = useState(null), [erro, setErro] = useState('');
+function Verificador({ api, companyId, competencia, onAbrirNota, className = '', embutido = false, onOcupado }) {
+  const [aberto, setAberto] = useState(embutido), [dados, setDados] = useState(null), [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false), [filtro, setFiltro] = useState('PENDENTES'), [pagina, setPagina] = useState(0);
+  useEffect(() => { onOcupado?.(ocupado); }, [ocupado, onOcupado]);
   const vivo = useRef(true), seq = useRef(0), executando = useRef(false);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; seq.current++; }; }, []);
   const aceitar = r => { if (!r?.ok || !Object.hasOwn(r, 'verificacao')) throw new Error('Resposta de conferência inválida.'); return r; };
@@ -26,8 +27,9 @@ function Verificador({ api, companyId, competencia, onAbrirNota }) {
   }
   const v = dados?.verificacao, resumo = v?.resumo;
   const itens = (v?.itens || []).filter(i => filtro === 'TODAS' || (filtro === 'PENDENTES' ? ['ERRO', 'REVISAO', 'ALERTA'].includes(i.status) : i.status === filtro));
-  return <details className="reforma" onToggle={e => setAberto(e.currentTarget.open)}>
-    <summary>Verificar conformidade de NFS-e · {competencia || 'selecione a competência'}</summary>
+  const Container = embutido ? 'div' : 'details';
+  return <Container className={`reforma ${className}`} {...(!embutido ? { onToggle: e => setAberto(e.currentTarget.open) } : {})}>
+    {!embutido && <summary>Verificar conformidade de NFS-e · {competencia || 'selecione a competência'}</summary>}
     {aberto && <>
       <p>Conferência local das notas emitidas e recebidas já armazenadas. Inclui documentos sem competência para apontar a falta de informação. Não consulta nem transmite dados ao Fisco.</p>
       {dados?.escopo && <p><small>{dados.escopo}</small></p>}
@@ -53,5 +55,5 @@ function Verificador({ api, companyId, competencia, onAbrirNota }) {
         <details><summary>Regras e cobertura</summary><p>{v.versaoRegras}</p><p>A ausência de achados se limita às regras descritas nesta conferência.</p></details>
       </>}
     </>}
-  </details>;
+  </Container>;
 }

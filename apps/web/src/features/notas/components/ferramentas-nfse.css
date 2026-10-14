@@ -1,0 +1,20 @@
+.notas-ferramentas { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
+.notas-ferramentas-modal .modal-corpo { min-width: 0; overflow-wrap: anywhere; }
+.notas-ferramentas-modal .notas-conformidade-conteudo { border: 0; padding: 0; margin: 0; background: transparent; }
+.notas-ferramentas-modal p, .notas-ferramentas-modal li { font-size: .875rem; line-height: 1.6; }
+.notas-ferramentas-modal strong { font-weight: 600; }
+.notas-ferramentas-modal [role="alert"] { padding: 12px; border: 1px solid var(--state-danger); border-radius: var(--radius-sm); color: var(--state-danger); background: var(--state-danger-surface); }
+.notas-ferramentas-modal .notas-recorrencias-conteudo > article { margin-top: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); }
+.notas-ferramentas-modal .notas-recorrencias-conteudo label { display: grid; gap: 8px; margin: 12px 0; }
+.notas-ferramentas-modal .notas-recorrencias-conteudo input { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--bg-page); color-scheme: dark; font: inherit; }
+.notas-ferramentas-modal .reforma-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
+.notas-ferramentas-modal .reforma-cards > span { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); }
+.notas-ferramentas-modal .reforma-finding { padding: 16px 0; }
+.notas-ferramentas-modal .btn { max-width: 100%; white-space: normal; }
+@media (max-width: 600px) { .notas-ferramentas > .btn { flex: 1 1 180px; } }
+.notas-ferramentas-modal .recorrencias-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.notas-ferramentas-modal .recorrencias-cabecalho h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.notas-ferramentas-modal .recorrencias-aviso { padding: 12px 16px; border-left: 3px solid var(--state-warn); background: var(--state-warn-surface); border-radius: var(--radius-sm); }
+.notas-ferramentas-modal .recorrencias-vazio { padding: 24px 16px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius-sm); }
+
+.notas-ferramentas-contador, .notas-ferramentas-alerta { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--state-warn-surface); color: var(--state-warn); }

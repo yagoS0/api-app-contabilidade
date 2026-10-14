@@ -42,14 +42,13 @@ import { PendenciasPeriodoBanner } from "./PendenciasPeriodoBanner";
 //      trocando o papel para quem emitir NF-e um dia.
 
 import { useEffect, useState } from "react";
-import { VerificadorNfse } from '../../reforma/VerificadorNfse';
+import { FerramentasNfse } from './FerramentasNfse';
 import { PANEL } from "./notasStyles";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
-import { ListaRecorrencias } from '@contabilidade/shared/nfse-recorrencias';
 import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
@@ -182,8 +181,6 @@ export function NotasFiscaisTab({
        ações — era a que mais truncava em 1400px. */
     <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
       <PendenciasPeriodoBanner api={nfseApi} companyId={companyId} competencia={notasFilters.competencia} revisao={notas} />
-      {janelaAtiva === 'NFSE' && <ListaRecorrencias api={nfseApi} companyId={companyId} revisao={Boolean(emissao)} />}
-      {janelaAtiva === 'NFSE' && <VerificadorNfse api={nfseApi} companyId={companyId} competencia={notasFilters.competencia} onAbrirNota={abrirNota} />}
       {(erroCaptura || (erroCaptura === undefined && erroNotas === undefined && error)) && (
         <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
           {erroCaptura || error}
@@ -245,6 +242,8 @@ export function NotasFiscaisTab({
           {importing ? "Importando…" : janelaAtiva === "NFE" ? "⬆️ Importar XML / ZIP" : "⬆️ Importar XML"}
           <input aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
         </label>
+      {janelaAtiva === 'NFSE' && <FerramentasNfse api={nfseApi} companyId={companyId}
+        revisao={Boolean(emissao)} revisaoNotas={notas} competencia={notasFilters.competencia} onAbrirNota={abrirNota} />}
         {janelaAtiva === "NFSE" && hrefConfiguracaoEmissao && (
           /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
              cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
@@ -289,6 +288,7 @@ export function NotasFiscaisTab({
       {janelaAtiva === "NFSE" && <div style={{ marginTop: -8, marginBottom: 16 }}>
         <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onClearError={clearAdnError} somenteStatus />
       </div>}
+
 
       {/* ⚠ FAIXA ÚNICA desde 23/08/2026 — ela absorveu o bloco "Notas recebidas" que ficava acima
           do toggle. Ver o cabeçalho de `NotasResumo` para o porquê de `resumoRecebidas` e `summary`
