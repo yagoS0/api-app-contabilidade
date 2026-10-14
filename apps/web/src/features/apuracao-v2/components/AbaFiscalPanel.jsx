@@ -53,7 +53,7 @@ export function AbaFiscalPanel({ panel }) {
   const origem = origemDoPerfil(perfil);
   const fatorR = avisoDoFatorR(perfil);
 
-  const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 5, color: PANEL.text, padding: "4px 6px", fontSize: "0.78rem", width: "100%" };
+  const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 5, color: PANEL.text, padding: "4px 6px", fontSize: "0.875rem", width: "100%", boxSizing: "border-box", minHeight: 40 };
 
   if (panel?.loading) return <p role="status">Carregando atividades fiscais…</p>;
   if (panel?.perfilError) return <p role="alert">Não foi possível ler o perfil fiscal. {panel.perfilError}</p>;
@@ -61,7 +61,7 @@ export function AbaFiscalPanel({ panel }) {
   if (!rows.length) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
-        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>🧾 Aba Fiscal — Atividades permitidas</div>
+        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>Atividades permitidas</div>
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted, background: PANEL.field, borderRadius: 8 }}>
           Nenhum CNAE encontrado.
         </div>
@@ -73,9 +73,7 @@ export function AbaFiscalPanel({ panel }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Atividades permitidas</div>
-        <Button onClick={salvar} disabled={panel.saving}>
-          {panel.saving ? "Salvando…" : "Salvar perfil"}
-        </Button>
+
       </div>
 
       {/* ⚠⚠ O PERFIL PODE NÃO ESTAR SALVO, E A TELA PRECISA DIZER. Medido: 28 das 34 empresas não
@@ -98,9 +96,9 @@ export function AbaFiscalPanel({ panel }) {
       {fatorR && (
         <div style={{ padding: 10, background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", borderRadius: 8, fontSize: "0.8rem", color: "#8BE9FD", lineHeight: 1.5 }}>
           ℹ {fatorR.texto}
-          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.74rem" }}>{fatorR.ondeVerOValor}</div>
+          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.875rem" }}>{fatorR.ondeVerOValor}</div>
           {fatorR.divergencia && (
-            <div style={{ marginTop: 4, color: "#FFB347", fontSize: "0.74rem" }}>⚠ {fatorR.divergencia}</div>
+            <div style={{ marginTop: 4, color: "#FFB347", fontSize: "0.875rem" }}>⚠ {fatorR.divergencia}</div>
           )}
         </div>
       )}
@@ -178,6 +176,11 @@ export function AbaFiscalPanel({ panel }) {
             ))}
           </tbody>
         </table>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8, borderTop: `1px solid ${PANEL.border}` }}>
+        <Button onClick={salvar} disabled={panel.saving}>
+          {panel.saving ? "Salvando…" : "Salvar perfil"}
+        </Button>
       </div>
     </div>
   );

@@ -101,3 +101,15 @@ Reorganização: busca/lista antes da fila, Opções reúne administração/bibl
 Manutenção: acrescentar cada controle na área correspondente (conversa; mensagem/arquivos; atendimento/contato; opções administrativas). Evitar novas faixas permanentes, ações duplicadas e texto auxiliar que repete o controle. Avisos de autorização, confirmação, destino alterado, resultado incerto e offline continuam visíveis; não recolher erros obrigatórios para limpar a tela. Componentes de envio e atendimento não devem perder estado ao recolher.
 
 Evidência adicional:22 capturas em390/1440 (8 suporte full-app mock,8 fio compartilhado em contêiner da empresa,6 contexto comercial com componentes reais e API simulada), sem overflow horizontal/errosJS. Inspeção direta incluiu conversa, opções, ferramentas móveis e Contato. A fixture comercial cobre o estado inicial, não todas as etapas de contratação. Relatório local design-chat-contextos-coverage.md e resultados design-chat-structure. Suíte completa WhatsApp+tokens:43suítes331 testes aprovados; build web aprovado. Nenhum envio externo nos testes.
+
+## Apuração — hierarquia e texto, 14/10/2026
+
+Pedido do usuário: apuração confusa e com texto demais. Revisão em árvore isolada baseada na main538ae2b, preservando alterações concorrentes do cadastro fiscal, regime do LP e backend no checkout de desenvolvimento.
+
+Lista: filtros com rótulos, seleção/lote em área própria, contagens compactas sem cartões redundantes, instrução de preparação recolhível e estados de erro/carregamento explícitos. Tabela conserva rolagem local e abertura da empresa pelo teclado.
+
+Empresa: competência/estado separados das ações; valores com peso moderado; referências/fórmulas consultivas recolhíveis. Relatório mantém origem, foto salva, limitações, ausência de valor e diferença entre cálculo local e Receita. Classificação separa motivo/ação da explicação e metadados. Fechamento/lote usam Modal compartilhado, preservando bloqueio durante operação e recuo da confirmação por Escape. LP mantém enquadramento, avisos e bases fiscais, com campos agrupados e tabela contida no celular.
+
+Critério para futuras alterações: informações necessárias à decisão ficam visíveis; explicações gerais ficam sob demanda. Não repetir o mesmo total ou contexto em cartões/legendas. A próxima ação deve estar separada do diagnóstico e do material de referência. Não alterar cálculo, payload, autorização ou consequência fiscal para simplificar o visual.
+
+Validação local: suíte apuracao+tokens com 33 suítes/378 testes aprovados antes dos últimos refinamentos visuais; testes dirigidos adicionais e build registrados nos relatórios locais. Capturas sintéticas desktop/celular em test-evidence/design-apuracao*, com limites por estado. Não houve consulta SERPRO, transmissão, pagamento ou mutação fiscal real. Capturas não equivalem a homologação integral de todas as combinações.

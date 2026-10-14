@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Aviso } from "../../../components/ui/Aviso";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import { Feedback } from "../../../components/ui/Feedback";
 import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
 import { RelatorioFaturamentoPanel } from "../../apuracao-v2/components/RelatorioFaturamentoPanel";
@@ -388,7 +389,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     } finally { operacao.current = false; if (contextoAtual.current === contexto) setActing(false); }
   }
 
-  const inputS = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4, color: PANEL.text, padding: "4px 8px", fontSize: "0.8rem" };
+  const inputS = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 4, color: PANEL.text, padding: "4px 8px", fontSize: "0.875rem", minWidth: 0, boxSizing: "border-box", minHeight: 36 };
 
   // Esc fecha — o mesmo que o ✕ e o clique no fundo já faziam, agora pelo teclado.
   // ⚠ Com a confirmação de transmissão aberta, Esc RECUA um passo em vez de fechar tudo: é o
@@ -404,13 +405,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }, [showTransmit, onClose]);
 
   return (
-    <div onClick={() => { if (!operacao.current) onClose?.(); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 22, width: "min(96vw, 1040px)", maxHeight: "94vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>🔒 Fechamento — {razao} · {competencia}</div>
-          <button disabled={acting} onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
-        </div>
-
+    <Modal titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting} fecharAoEscape={false} tamanho="lg">
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20, minWidth: 0, overflowWrap: "anywhere" }}>
         {erroLocal && <div role="alert"><p>{erroLocal}</p>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</div>}
 
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
@@ -465,8 +461,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             {/* Atividades — Q19: a Atividade é um dropdown; o Anexo segue a seleção.
                 Empresa pode ter várias atividades (incl. Anexo V) — "+ atividade" / "×". */}
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Atividades (o anexo vem da atividade escolhida)</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Atividades e receitas</div>
                 <button onClick={addAtividade} disabled={atividadeOpcoes.length === 0}
                   style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, padding: "4px 10px", cursor: atividadeOpcoes.length === 0 ? "not-allowed" : "pointer", fontSize: "0.78rem" }}>
                   + atividade
@@ -477,7 +473,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
                 </div>
               ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                <div style={{ overflowX: "auto", maxWidth: "100%" }}><table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse", fontSize: "0.875rem" }}>
                   <thead><tr style={{ color: PANEL.muted, textAlign: "left" }}>
                     <th style={{ padding: 4 }}>Atividade</th>
                     <th style={{ padding: 4, width: 90 }}>Anexo</th>
@@ -498,7 +494,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                               anexo que muda. */}
                           {atividadeOpcoes.length > 0 ? (
                             <select value={a.idAtividade} onChange={(e) => setAtvAtividade(idx, e.target.value)}
-                              title={tituloAtividade(a)}
+                              aria-label={`Atividade ${idx + 1}`} title={tituloAtividade(a)}
                               style={{ ...inputS, width: "100%", colorScheme: "dark" }}>
                               {/* garante a opção atual mesmo se fora do catálogo */}
                               {!atividadeOpcoes.some((o) => String(o.idAtividade) === String(a.idAtividade)) && (
@@ -518,10 +514,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                               null/undefined, e o "vazio" que o backend manda quando não sabe o
                               valor nunca chegaria à tela — a mudança inteira ficaria invisível, com
                               um zero fabricado no lugar do campo em branco. */}
-                          <input type="number" step="0.01" placeholder="—" value={a.valorInterno ?? ""} onChange={(e) => setAtvValor(idx, "valorInterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
+                          <input type="number" step="0.01" aria-label={`Receita interna da atividade ${idx + 1}`} placeholder="—" value={a.valorInterno ?? ""} onChange={(e) => setAtvValor(idx, "valorInterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
                         <td style={{ padding: 4, textAlign: "right" }}>
-                          <input type="number" step="0.01" placeholder="—" value={a.valorExterno ?? ""} onChange={(e) => setAtvValor(idx, "valorExterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
+                          <input type="number" step="0.01" aria-label={`Receita externa da atividade ${idx + 1}`} placeholder="—" value={a.valorExterno ?? ""} onChange={(e) => setAtvValor(idx, "valorExterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
                         <td style={{ padding: 4, textAlign: "center" }}>
                           <button onClick={() => removeAtividade(idx)} title="Remover atividade"
@@ -530,7 +526,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               )}
 
               {/* ⚠ POR QUE O VALOR ESTÁ EM BRANCO — a explicação anda junto do campo vazio.
@@ -605,7 +601,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             {temFatorR && (
               <div>
                 <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 6 }}>
-                  ★ Folha de salários (12 meses) — pro Fator-R. A RFB decide Anexo III↔V.
+                  Folha de salários · Fator-R (12 meses)
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 6 }}>
                   {pasAnteriores(competencia).map((pa) => {
@@ -714,7 +710,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               >
                 {resultado.recuperado && <p role="status">Cálculo salvo recuperado. Os campos correspondem à simulação validada; nenhuma nova consulta foi feita.</p>}
                 {resultado.dasValor != null && (
-                  <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--state-ok)" }}>{fmtMoney(resultado.dasValor)}</div>
+                  <div style={{ fontSize: "1.3rem", fontWeight: 600, color: "var(--state-ok)" }}>{fmtMoney(resultado.dasValor)}</div>
                 )}
                 {resultado.rbt12 != null && <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>RBT12 usado: {fmtMoney(resultado.rbt12)}</div>}
                 {Array.isArray(resultado.mensagens) && resultado.mensagens.length > 0 && (
@@ -804,8 +800,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     Declaração <strong>SEM MOVIMENTO</strong>: será transmitido o PGDAS-D com receita R$ 0,00.
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={confirmComp} onChange={(e) => setConfirmComp(e.target.value)} placeholder={competencia} style={{ ...inputS, fontFamily: "monospace", flex: 1 }} />
+                <label style={{ display: "grid", gap: 6 }}>Competência para confirmar
+                  <input aria-label="Competência para confirmar" value={confirmComp} onChange={(e) => setConfirmComp(e.target.value)} placeholder={competencia} style={{ ...inputS, fontFamily: "monospace", width: "100%" }} />
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
                   {/* Este é o clique irreversível do lado da Receita — `danger` é o único lugar
                       desta tela onde o vermelho é a AÇÃO, e ele já vive dentro da caixa de
                       confirmação com a competência digitada. */}
@@ -816,7 +814,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
           </fieldset>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

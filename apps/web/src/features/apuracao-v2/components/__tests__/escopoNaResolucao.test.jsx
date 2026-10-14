@@ -127,7 +127,7 @@ test('diálogo mantém teclado contido e bloqueia fechamento durante a gravaçã
   fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
   fireEvent.keyDown(document, { key: 'Tab' });
-  expect(document.activeElement).toBe(document.querySelector('.modal-caixa'));
+  expect(document.activeElement).toBe(screen.getByText('Como funciona o Fator R'));
   expect(onClose).not.toHaveBeenCalled();
   expect(onResolver).not.toHaveBeenCalled();
 });

@@ -28,7 +28,7 @@ import { TabelaAnexoReferencia } from "../components/TabelaAnexoReferencia";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
 import { RelatorioFaturamentoPanel } from "../components/RelatorioFaturamentoPanel";
-import { estadoDaClassificacao, kpiDasApurado, CORES_TOM_RELATORIO } from "../lib/relatorioFaturamento";
+import { estadoDaClassificacao, kpiDasApurado } from "../lib/relatorioFaturamento";
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { Aviso } from "../../../components/ui/Aviso";
@@ -57,7 +57,7 @@ function EstadoBadge({ estado }) {
     return <span style={{ color: PANEL.muted }}>{rotuloEstadoApuracao(estado)}</span>;
   }
   const cor = ESTADO_COR[estado] || "var(--state-warn)";
-  return <span style={{ color: cor, fontWeight: 700 }}>{rotuloEstadoApuracao(estado)}</span>;
+  return <span style={{ color: cor, fontWeight: 600 }}>{rotuloEstadoApuracao(estado)}</span>;
 }
 
 // ⚠ `SecaoTabs` MORREU AQUI em 24/08/2026 — ver o cabeçalho. Ela desenhava a TERCEIRA barra de abas
@@ -68,8 +68,8 @@ function EstadoBadge({ estado }) {
 function Kpi({ label, value, cor, title }) {
   return (
     <div title={title} style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px" }}>
-      <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
-      <div style={{ fontSize: "1.05rem", fontWeight: 700, color: cor || PANEL.text, fontFamily: "monospace" }}>{value}</div>
+      <div style={{ fontSize: "0.875rem", color: PANEL.muted }}>{label}</div>
+      <div style={{ fontSize: "1.05rem", fontWeight: 600, color: cor || PANEL.text, fontFamily: "monospace" }}>{value}</div>
     </div>
   );
 }
@@ -325,16 +325,18 @@ export function ApuracaoV2Tab({
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto" }}>
       {/* ── APURAÇÃO — a página inteira, sem o terceiro nível de abas ──── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
                 só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
                 e sumir com ele deixaria os botões "Calcular / Fechar" sem período à vista. */}
-            <span style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <span style={{ display: "grid", gap: 3, fontSize: "0.875rem", color: PANEL.muted }}>
               Competência
               <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
             </span>
             <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
-            <div style={{ flex: 1 }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: 12, borderTop: `1px solid ${PANEL.border}` }}>
             {/* ⚠ A PENDÊNCIA É NOMEADA, NÃO BLOQUEIA — e isso é decisão, não descuido.
                 O caso CARO já é bloqueado onde importa: `motivoCalcularBloqueado`
                 (`apuracao/components/FechamentoModal.jsx`) impede a chamada PAGA ao SERPRO quando
@@ -351,22 +353,7 @@ export function ApuracaoV2Tab({
                 se leria como trabalho concluído, que é exatamente o que aquela regra existe para
                 impedir.
                 ⚠ Rótulo e tom saem da MESMA leitura que o modal usa — não há segundo texto. */}
-            {(() => {
-              const { cor, fundo } = CORES_TOM_RELATORIO[classificacao.tom];
-              return (
-                <button type="button" onClick={() => setSugestaoAberta(true)}
-                  aria-label="Revisar classificação"
-                  aria-description={classificacao.rotulo}
-                  title={classificacao.detalhe}
-                  style={{
-                    background: fundo, border: `1px solid ${cor}`, color: cor,
-                    borderRadius: "var(--radius-sm)", cursor: "pointer",
-                    padding: "6px 10px", fontSize: "0.78rem", fontWeight: 600, marginBottom: 2,
-                  }}>
-                  Revisar classificação · {classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}
-                </button>
-              );
-            })()}
+            <Button variant="secondary" onClick={() => setSugestaoAberta(true)} aria-description={classificacao.rotulo} title={classificacao.detalhe}>Revisar classificação</Button>
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
@@ -376,10 +363,12 @@ export function ApuracaoV2Tab({
                 🔄 Retificar
               </Button>
             )}
+            </div>
+            <p style={{ margin: 0, fontSize: "0.875rem", color: PANEL.muted }}>{classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}</p>
           </div>
 
           {/* Faturamento + valor apurado (a prévia completa — CNAEs/alíquota/DAS — sai no modal ao Calcular). */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10 }}>
             <Kpi label="Fat. interno" value={`${fmtMoney(fat.interno)}`} />
             <Kpi label="Fat. externo" value={`${fmtMoney(fat.externo)}`} />
             <Kpi label="Carga efetiva calculada" value={cargaCalculada}
@@ -397,10 +386,11 @@ export function ApuracaoV2Tab({
 
           {/* ⚠ ERRO ≠ AUSÊNCIA. Sem esta caixa, uma falha de backend deixava os KPIs em "—" com a
               tela inteira parecendo uma empresa sem faturamento. */}
-          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", margin: "4px 0" }}>
+          {!(Number.isFinite(baseCarga) && baseCarga > 0) && <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Receita ausente ou zero: percentual indisponível.</p>}
+          <details style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}><summary style={{ cursor: "pointer" }}>Como a carga efetiva é calculada · não indica imposto pago</summary><p>
             Carga calculada em {competencia}: {das.label} ÷ receita interna e externa
             {Number.isFinite(baseCarga) && baseCarga > 0 ? ` (${fmtMoney(baseCarga)}).` : ". Receita ausente ou zero: percentual indisponível."} Não indica imposto pago.
-          </p>
+          </p></details>
           {fechErro && !fechLoading && (
             <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ flex: 1, minWidth: 240 }}>
@@ -504,7 +494,7 @@ export function ApuracaoV2Tab({
               <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
             </div>
             {extDados && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 10 }}>
                 <Kpi label="Receita bruta" value={`${fmtMoney(extDados.receitaBruta)}`} />
                 <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="var(--accent-cyan)" />
                 {/* ⚠ Estes dois botões existiam e NUNCA apareciam: liam `files.declaracaoUrl`, e o

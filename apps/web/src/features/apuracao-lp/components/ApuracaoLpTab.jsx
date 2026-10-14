@@ -84,7 +84,7 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
   }
 
   if (!dados && carregando) {
-    return <div style={{ padding: "var(--space-6)", color: "var(--text-muted)" }}>Calculando…</div>;
+    return <div role="status" style={{ padding: "var(--space-6)", color: "var(--text-muted)" }}>Calculando…</div>;
   }
 
   if (!dados) return null;
@@ -101,7 +101,7 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
   const totalApurado = dados.trimestre ? dados.trimestre.total : (dados.pis ?? 0) + (dados.cofins ?? 0);
 
   return (
-    <div style={{ display: "grid", gap: "var(--space-4)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: "var(--space-4)", minWidth: 0 }}>
       {/* ⚠ O regime desconhecido é dito ANTES de qualquer número — senão o cálculo se lê como
           apuração conferida de uma empresa cujo regime ninguém cadastrou. */}
       {dados.avisoDeRegime ? (
@@ -182,7 +182,7 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
                       <>
                         <strong>{dinheiro(l.base)}</strong>
                         {l.baseDescricao ? (
-                          <div style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>{l.baseDescricao}</div>
+                          <div style={{ color: "var(--text-faint)", fontSize: "0.8125rem" }}>{l.baseDescricao}</div>
                         ) : null}
                       </>
                     )}
@@ -197,21 +197,21 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
       </Painel>
 
       {aviso16 ? (
-        <Painel titulo="Presunção de IRPJ dos serviços — a regra dos R$ 120.000">
+        <Painel titulo="Presunção de IRPJ · Serviços até R$ 120.000">
           <Aviso tom={aviso16.tom} titulo={`Presunção aplicada: ${pct(aviso16.presuncao)}`}>
             {aviso16.texto}
           </Aviso>
 
           {aviso16.excecoes.length ? (
-            <ul style={{ margin: "var(--space-3) 0 0", paddingLeft: "1.1rem", color: "var(--text-muted)", fontSize: "0.78rem" }}>
+            <ul style={{ margin: "var(--space-3) 0 0", paddingLeft: "1.1rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
               {aviso16.excecoes.map((e) => <li key={e}>{e}</li>)}
             </ul>
           ) : null}
 
           <div style={{ marginTop: "var(--space-3)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Esta empresa se enquadra?</span>
+            <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Esta empresa se enquadra?</span>
             {ESCOLHAS_16.map((e) => (
-              <label key={String(e.valor)} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: "0.78rem" }}>
+              <label key={String(e.valor)} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: "0.875rem" }}>
                 <input
                   type="radio"
                   name="servicos16"
@@ -227,13 +227,13 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
               resposta, então ela vale só enquanto a tela estiver aberta. Sem esta frase, o contador
               acharia que respondeu de uma vez. */}
           <Aviso tom="neutro" titulo="Esta resposta não fica salva" compacto style={{ marginTop: "var(--space-3)" }}>
-            Ela vale só para este cálculo, nesta tela. Não há campo no cadastro para guardá-la ainda.
+            Válida apenas para este cálculo, enquanto esta tela estiver aberta.
           </Aviso>
         </Painel>
       ) : null}
 
       <Painel titulo="Conferência com a declaração (DCTFWeb)">
-        <Aviso tom={resumo.tom} titulo="O que a conferência diz" compacto>
+        <Aviso tom={resumo.tom} titulo="Resultado da conferência" compacto>
           {resumo.frase}
         </Aviso>
 
@@ -265,8 +265,8 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
         </div>
       </Painel>
 
-      <Painel titulo="O que NÃO é calculado nesta tela">
-        <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--text-muted)", fontSize: "0.78rem", display: "grid", gap: 6 }}>
+      <Painel titulo="Tributos não calculados">
+        <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--text-muted)", fontSize: "0.875rem", display: "grid", gap: 6 }}>
           {(dados.naoCalculado || []).map((t) => (
             <li key={t.chave}>
               <strong style={{ color: "var(--text)" }}>{t.rotulo}</strong> — {t.motivo}
@@ -285,7 +285,7 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
         </Aviso>
       ) : null}
 
-      <p style={{ color: "var(--text-faint)", fontSize: "0.72rem", margin: 0 }}>
+      <p style={{ color: "var(--text-faint)", fontSize: "0.8125rem", margin: 0 }}>
         {/* ⚠ A frase existe porque o contador precisa saber que abrir esta aba não gasta chamada
             paga nem transmite nada — a aba irmã (Apuração do Simples) faz as duas coisas. */}
         Esta tela é só leitura: ela calcula a partir das notas e da DARF já capturadas. Não consulta
@@ -298,7 +298,7 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
 function Numero({ rotulo, valor, destaque = false, tom = "neutro" }) {
   return (
     <div style={{ minWidth: 170 }}>
-      <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{rotulo}</div>
+      <div style={{ fontSize: "0.8125rem", color: "var(--text-faint)" }}>{rotulo}</div>
       <div
         style={{
           fontSize: destaque ? "1.35rem" : "1rem",

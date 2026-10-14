@@ -37,30 +37,31 @@ export function MotorPanel({ panel }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: PANEL.text }}>
       <div>
-        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>🧮 Motor de apuração local (v2)</div>
+        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>Cálculo local do DAS</div>
         <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-          Calcula DAS direto da tabela versionada AliquotaSimplesNacional. Cross-check com SERPRO virá na Fase 6.
+          Estimativa para conferência. Não transmite declaração à Receita.
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: PANEL.muted }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label style={{ display: "grid", gap: 6, minWidth: 0, fontSize: "0.875rem", color: PANEL.muted }}>
           Competência:
           <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
-            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px" }} />
+            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 10px", minHeight: 40, boxSizing: "border-box", maxWidth: "100%" }} />
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: PANEL.muted }}
-          title="Necessário só se houver receita Fator R. Vazio = usa último valor informado pra essa empresa.">
+          >
           Folha 12m (R$):
           <input type="number" step="0.01" value={folha12m} onChange={(e) => setFolha12m(e.target.value)}
             placeholder="opcional" style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", width: 140 }} />
         </label>
         {/* `#BD93F9` era o accent escrito como hex literal — o valor vem do token, via `Button`. */}
         <Button onClick={handleApurar} disabled={panel.saving}>
-          {panel.saving ? "Calculando…" : "🧮 Apurar agora"}
+          {panel.saving ? "Calculando…" : "Calcular estimativa"}
         </Button>
       </div>
 
+      <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Folha de 12 meses: necessária para receitas sujeitas ao Fator R. Se não informada, usa o último valor da empresa.</p>
       {/* Resultado: blockers OU snapshot */}
       {resultado && !resultado.ok && blockers.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -84,7 +85,7 @@ export function MotorPanel({ panel }) {
               borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
             }}>
               <div>
-                <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                <div style={{ fontSize: "0.875rem", color: PANEL.muted }}>
                   ★ Decisão Fator R (mensal)
                 </div>
                 <div style={{ fontSize: "1rem", color: "#BD93F9", fontWeight: 600 }}>
@@ -94,7 +95,7 @@ export function MotorPanel({ panel }) {
                     {resultado.fatorR.anexoDecidido}
                   </strong>
                 </div>
-                <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 4 }}>
+                <div style={{ fontSize: "0.875rem", color: PANEL.muted, marginTop: 4 }}>
                   Folha 12m = {fmtMoney(resultado.fatorR.folha12m)} · RBT12 = {fmtMoney(resultado.rbt12)}
                 </div>
               </div>
@@ -110,11 +111,11 @@ export function MotorPanel({ panel }) {
 
           {/* Detalhe por anexo */}
           <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 14 }}>
-            <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 10 }}>Detalhe por anexo:</div>
+            <details><summary style={{ fontSize: "0.95rem", fontWeight: 500, cursor: "pointer", marginBottom: 10 }}>Detalhes por anexo</summary><div style={{ overflowX: "auto", maxWidth: "100%" }}>
             {Object.keys(anexos).length === 0 ? (
               <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Nenhum anexo com receita.</div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <table style={{ width: "100%", minWidth: 650, borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr style={{ color: PANEL.muted, textAlign: "left" }}>
                     <th style={{ padding: 6 }}>Anexo</th>
@@ -142,11 +143,11 @@ export function MotorPanel({ panel }) {
               </table>
             )}
             {resultado.snapshot?.vigenciaAliquota && (
-              <div style={{ marginTop: 8, fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>
+              <div style={{ marginTop: 8, fontSize: "0.875rem", color: PANEL.muted, fontFamily: "monospace" }}>
                 Vigência da tabela usada: {new Date(resultado.snapshot.vigenciaAliquota).toISOString().slice(0, 10)}
               </div>
             )}
-          </div>
+          </div></details></div>
         </div>
       )}
     </div>
@@ -156,7 +157,7 @@ export function MotorPanel({ panel }) {
 function MoneyCard({ label, value, accent }) {
   return (
     <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 12 }}>
-      <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: "0.875rem", color: PANEL.muted }}>{label}</div>
       <div style={{ fontSize: "1.1rem", fontWeight: 600, color: accent }}>{value}</div>
     </div>
   );

@@ -18,7 +18,7 @@ const TIPOS_RECEITA = [
   { value: "SERVICO_FATOR_R",      label: "Serviço — Fator R (III↔V mensal) ★" },
 ];
 
-const CONF_COLOR = { alta: "var(--success)", media: "#FFB347", baixa: "#8BE9FD" };
+const CONF_COLOR = { alta: "var(--state-ok)", media: "var(--state-warn)", baixa: "var(--text-muted)" };
 const CONF_LABEL = { alta: "alta", media: "média", baixa: "baixa" };
 
 export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving, myRole }) {
@@ -66,14 +66,14 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
       <form id={formId} onSubmit={handleSubmit} style={{ color: PANEL.text, overflowWrap: "anywhere" }}>
       <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 16 }}>
         <div style={{ background: PANEL.field, padding: 12, borderRadius: 6, fontSize: "0.85rem" }}>
-          <div><strong>Código:</strong> <code style={{ color: "#8BE9FD" }}>{tipoCodigo}:{codigo}</code></div>
-          <div><strong>Ocorrências:</strong> {ocorrencias} nota(s) com esse código</div>
-          {pendencia.competencia && <div><strong>Competência:</strong> {pendencia.competencia}</div>}
+          <div>Código: <code>{tipoCodigo}:{codigo}</code></div>
+          <div>{ocorrencias} nota(s) com esse código</div>
+          {pendencia.competencia && <div>Competência: {pendencia.competencia}</div>}
         </div>
 
         {/* Q20: recomendação (atividade SERPRO via CNAE) + confiança */}
         {rec && (
-          <div style={{ background: "rgba(139,233,253,0.08)", border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, padding: 12, borderRadius: 6, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, padding: 12, borderRadius: 6, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
               <strong>Recomendação</strong>
               <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: CONF_COLOR[rec.confianca] || PANEL.muted, border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, borderRadius: 999, padding: "1px 8px" }}>
@@ -98,10 +98,11 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
-          <span style={{ fontSize: "0.8125rem", color: PANEL.muted }}>
-            ★ Fator R = serviços intelectuais; sistema decide III ou V mensalmente conforme folha/RBT12
-          </span>
         </label>
+        <details style={{ fontSize: "0.8125rem", color: PANEL.muted }}>
+          <summary style={{ cursor: "pointer", minHeight: 44, alignContent: "center" }}>Como funciona o Fator R</summary>
+          <p style={{ margin: "0 0 8px" }}>Serviços intelectuais: o sistema decide o Anexo III ou V mensalmente conforme folha/RBT12.</p>
+        </details>
 
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", cursor: "pointer" }}>
           <input type="checkbox" checked={criarRegra} onChange={(e) => setCriarRegra(e.target.checked)} />
