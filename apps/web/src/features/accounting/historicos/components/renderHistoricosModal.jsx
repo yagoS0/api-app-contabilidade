@@ -54,6 +54,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [promotingId, setPromotingId] = useState(null);
   const [error, setError] = useState("");
   const trava = useRef(false);
   const ocupado = saving || deletingId !== null;
@@ -108,6 +109,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
     if (trava.current) return;
     trava.current = true;
     setSaving(true);
+    setPromotingId(item.id);
     setError("");
     try {
       const result = await onUpdate(item.id, { scope: "GLOBAL" });
@@ -119,6 +121,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
     } finally {
       trava.current = false;
       setSaving(false);
+      setPromotingId(null);
     }
   }
 
@@ -288,9 +291,10 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
                                   type="button"
                                   onClick={() => promoteToGlobal(h)}
                                   disabled={!!saving || isDeleting}
+                                  aria-busy={promotingId === h.id || undefined}
                                   title="Disponibilizar para todas as empresas"
                                 >
-                                  → Global
+                                  {promotingId === h.id ? "Salvando…" : "→ Global"}
                                 </Button>
                               )}
                               <Button variant="danger"
