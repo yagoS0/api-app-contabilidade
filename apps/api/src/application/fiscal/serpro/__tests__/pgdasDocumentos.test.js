@@ -9,8 +9,12 @@ test("imposto desconhecido não equivale a zero", () => {
 test("PDF da guia ausente não encerra captura", () => {
   expect(documentosPgdas({ ...circular, dasTotal: 10 }, { id: "g" }).das).toBe(false);
 });
-test.each(["00146", "PGDAS-D - a partir de 01/2018", "PGDASD"])("reconhece escopo %s", s => {
+test.each(["00146", "PGDAS-D - a partir de 01/2018", "PGDASD", "TODOS"])("reconhece escopo %s", s => {
   expect(procuracaoPermitePgdas({ status: "ATIVA", systems: [s] })).toBe(true);
+});
+test("escopo geral exige procuração ativa e correspondência exata", () => {
+  expect(procuracaoPermitePgdas({ status: "AUSENTE", systems: ["TODOS"] })).toBe(false);
+  expect(procuracaoPermitePgdas({ status: "ATIVA", systems: ["TODOS OS SERVIÇOS NÃO AUTORIZADOS"] })).toBe(false);
 });
 test("outro serviço não autoriza", () => {
   expect(procuracaoPermitePgdas({ status: "ATIVA", systems: ["00103"] })).toBe(false);

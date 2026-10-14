@@ -9,6 +9,6 @@ export function documentosPgdas(circular, guide) {
 export function procuracaoPermitePgdas(procuracao) {
   return procuracao?.status === "ATIVA" && (procuracao.systems || []).some((s) => {
     const nome = String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-    return /\b0*146\b/.test(nome) || /PGDAS[ -]?D/.test(nome);
+    return nome.trim() === "TODOS" || /\b0*146\b/.test(nome) || /PGDAS[ -]?D/.test(nome);
   });
 }
