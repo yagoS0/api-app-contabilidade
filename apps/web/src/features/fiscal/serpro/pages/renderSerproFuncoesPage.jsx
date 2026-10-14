@@ -1,5 +1,6 @@
 import "./consultas.css";
 import { useMemo, useState } from "react";
+import { marcadorProcuracao, dataProcuracao } from "../lib/procuracao";
 import { rotuloRegime } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
@@ -19,13 +20,14 @@ import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPag
 // useRange=true → a função roda por competência (usa o intervalo De/Até).
 // useRange=false → roda uma vez por empresa (ignora o intervalo).
 const OP_DEFS = [
+  { key: "procuracao", label: "Testar procuração", useRange: false },
+  { key: "conciliar", label: "Conciliar PGDAS-D — somente documentos", useRange: true },
   { key: "das", label: "DAS — guia do Simples", useRange: true },
   { key: "inss", label: "INSS — DARF da DCTFWeb", useRange: true },
   { key: "extrato", label: "Extrato do Simples — receita e imposto", useRange: true },
   { key: "presumido", label: "DCTFWeb — PIS, COFINS, IRPJ e CSLL", useRange: true },
   { key: "parcelamento", label: "Parcelamento", useRange: false },
   { key: "pagamento", label: "Confirmar pagamento", useRange: true },
-  { key: "procuracao", label: "Testar procuração", useRange: false },
 ];
 
 function currentCompetencia() {
@@ -62,10 +64,14 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
   const [progress, setProgress] = useState({ done: 0, total: 0, op: null });
   const [localNotice, setLocalNotice] = useState(null); // { type: "error"|"info", text }
 
+  const [filtroProcuracao, setFiltroProcuracao] = useState("todas");
+  const [procuracoesAtualizadas, setProcuracoesAtualizadas] = useState({});
   const companyList = useMemo(() => (Array.isArray(companies) ? companies : []), [companies]);
 
-  const allSelected = companyList.length > 0 && companyList.every((c) => selectedIds.has(c.companyId));
-  const someSelected = companyList.some((c) => selectedIds.has(c.companyId));
+  const statusProcuracao = (company) => procuracoesAtualizadas[company.companyId] || company.serproStatus || {};
+  const visiveis = companyList.filter(company => filtroProcuracao === "todas" || marcadorProcuracao(statusProcuracao(company)).chave === filtroProcuracao);
+  const allSelected = visiveis.length > 0 && visiveis.every((c) => selectedIds.has(c.companyId));
+  const someSelected = visiveis.some((c) => selectedIds.has(c.companyId));
   const allOpsSelected = OP_DEFS.every((o) => selectedOps.has(o.key));
   const someOpSelected = selectedOps.size > 0;
   const usaIntervalo = OP_DEFS.some((o) => selectedOps.has(o.key) && o.useRange);
@@ -95,7 +101,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
     });
   }
   function toggleAll() {
-    setSelectedIds(() => (allSelected ? new Set() : new Set(companyList.map((c) => c.companyId))));
+    setSelectedIds(() => (allSelected ? new Set() : new Set(visiveis.map((c) => c.companyId))));
   }
 
   // Roda as FUNÇÕES selecionadas × EMPRESAS selecionadas, sequencial, resultado ao vivo por linha.
@@ -103,7 +109,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
     if (running) return;
     setLocalNotice(null);
     const ops = OP_DEFS.filter((o) => selectedOps.has(o.key));
-    const ids = companyList.filter((c) => selectedIds.has(c.companyId)).map((c) => c.companyId);
+    const ids = visiveis.filter((c) => selectedIds.has(c.companyId)).map((c) => c.companyId);
     if (ops.length === 0) {
       setLocalNotice({ type: "error", text: "Selecione ao menos uma função." });
       return;
@@ -156,6 +162,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
         for (const month of monthsForOp) {
           // eslint-disable-next-line no-await-in-loop
           const res = await onRunOp(o.key, companyId, month);
+          if (res?.procuracao) setProcuracoesAtualizadas(prev => ({ ...prev, [companyId]: { ...res.procuracao, vinculoConfirmado: true } }));
           if (["SERPRO_TETO_MENSAL_ESCRITORIO", "SERPRO_MEDICAO_INDISPONIVEL", "SERPRO_REGISTRO_INDETERMINADO"].includes(res?.code)) {
             setRunning(false);
             setResults(prev => Object.fromEntries(Object.entries(prev).map(([id, item]) => [id, item.status === "running" ? { status: "erro", message: id === companyId ? res.message : "Não executado: lote interrompido." } : item])));
@@ -298,6 +305,14 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
               </div>
             )}
 
+            {selectedOps.has("conciliar") && <p style={{fontSize:"0.8rem",color:"var(--text-muted)"}}>Recupera extrato e recibo após conferir a procuração. Documentos completos são reaproveitados; não transmite declaração nem gera lançamentos.</p>}
+            <label style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+              Procuração
+              <select aria-label="Filtrar por procuração" value={filtroProcuracao} disabled={running} onChange={e => {setFiltroProcuracao(e.target.value);setSelectedIds(new Set());}}>
+                <option value="todas">Todas</option><option value="regularizar">Regularizar</option><option value="ativa">Ativas</option><option value="revalidar">Revalidar</option><option value="nao_verificada">Não verificadas</option>
+              </select>
+              <span style={{fontSize:"0.8rem",color:"var(--text-muted)"}}>{visiveis.length} empresa(s)</span>
+            </label>
             <div role="region" aria-label="Empresas para consulta" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                 <thead>
@@ -320,15 +335,16 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                   </tr>
                 </thead>
                 <tbody>
-                  {companyList.length === 0 && (
+                  {visiveis.length === 0 && (
                     <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                   )}
-                  {companyList.map((company) => {
+                  {visiveis.map((company) => {
                     const checked = selectedIds.has(company.companyId);
                     // Sem rotuloRegime aqui a tabela mostrava "LUCRO_PRESUMIDO" — enum cru, com
                     // underline, enquanto o card do dashboard já dizia "Presumido".
                     const regime = rotuloRegime(company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario) || "—";
-                    const proc = company.serproStatus?.procurationStatus || company.serproStatus?.status || "—";
+                    const dados = statusProcuracao(company);
+                    const proc = marcadorProcuracao(dados);
                     return (
                       <tr key={company.companyId} style={{ borderTop: "1px solid var(--border)", background: checked ? "rgba(189,147,249,0.06)" : "transparent" }}>
                         <td style={{ padding: "8px 10px" }}>
@@ -337,7 +353,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                         <td style={{ padding: "8px 10px", color: "var(--text)" }}>{company.razao}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{company.cnpj}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{regime}</td>
-                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{proc}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}><span style={{color:proc.cor}}>{proc.rotulo}</span><small style={{display:"block"}}>Verificada: {dataProcuracao(dados.checkedAt)}</small>{dados.validUntil && <small style={{display:"block"}}>Validade: {dataProcuracao(dados.validUntil)}</small>}</td>
                         <td style={{ padding: "8px 10px" }}>{renderResultCell(company.companyId)}</td>
                       </tr>
                     );
@@ -351,7 +367,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                 {running ? `Rodando… (${progress.done}/${progress.total})` : "Rodar"}
               </Button>
               <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
-                {selectedOps.size} função(ões) · {[...selectedIds].length} empresa(s) selecionada(s)
+                {selectedOps.size} função(ões) · {visiveis.filter(c => selectedIds.has(c.companyId)).length} empresa(s) selecionada(s)
               </span>
             </div>
 

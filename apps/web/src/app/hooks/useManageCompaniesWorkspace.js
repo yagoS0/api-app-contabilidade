@@ -587,9 +587,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       if (!companyId) return { ok: false, message: "Empresa não informada." };
       switch (op) {
-        case "procuracao":
-          await api.checkSerproCompanyProcuration(companyId, {});
-          return { ok: true };
+        case "procuracao": {
+          const payload = await api.checkSerproCompanyProcuration(companyId, {});
+          const procuracao = payload?.result;
+          return { ok: true, procuracao, message: procuracao?.status === "AUSENTE" ? "Sem procuração ativa. Regularize a autorização antes de conciliar." : "Procuração consultada." };
+        }
+        case "conciliar": {
+          const payload = await api.syncPgdasCircular(companyId, competencia, { somenteDocumentos: true });
+          const circular = payload?.result?.circular;
+          const completa = circular?.pgdasNumeroDeclaracao && circular?.pgdasDeclaracaoFileId && circular?.pgdasReciboFileId;
+          return { ok: Boolean(completa), message: completa ? "Entrega confirmada; extrato e recibo disponíveis." : "Documentação não confirmada. Confira o resultado na Apuração." };
+        }
         case "parcelamento":
           await api.captureSerproParcelamento(companyId);
           return { ok: true };

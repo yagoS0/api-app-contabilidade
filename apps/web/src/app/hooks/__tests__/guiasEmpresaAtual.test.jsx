@@ -233,3 +233,10 @@ it("consulta INSS normal preserva payload e ignora retorno em outra empresa", as
   expect(api.getCompanyGuides).not.toHaveBeenCalled();
   expect(feedback.setMessage).not.toHaveBeenCalled();
 });
+
+it("conciliação busca só documentos e não confirma retorno incompleto", async () => {
+ const syncPgdasCircular=jest.fn().mockResolvedValueOnce({result:{circular:{pgdasNumeroDeclaracao:'123',pgdasDeclaracaoFileId:'pdf',pgdasReciboFileId:'rec'}}}).mockResolvedValueOnce({result:{circular:{pgdasNumeroDeclaracao:'123'}}});
+ const {result}=montar({apiExtras:{syncPgdasCircular}});
+ await act(async()=>{expect((await result.current.workspace.runSerproOp('conciliar','A','2026-09')).ok).toBe(true);expect((await result.current.workspace.runSerproOp('conciliar','A','2026-09')).ok).toBe(false);});
+ expect(syncPgdasCircular).toHaveBeenCalledWith('A','2026-09',{somenteDocumentos:true});
+});

@@ -533,6 +533,9 @@ async function attachSerproStatusToCompaniesList(data) {
         status: runtimeReady && reasons.length === 0 ? "APTA" : "NAO_APTA",
         procurationStatus,
         checkedAt: procuration.checkedAt || null,
+        validUntil: procuration.validUntil || null,
+        systems: Array.isArray(procuration.systems) ? procuration.systems : [],
+        vinculoConfirmado: procuration.cnpj === cnpj && procuration.procuradorCnpj === normalizarDocumento(settings.certificate?.document),
         reasons,
       },
     };
