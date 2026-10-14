@@ -4,7 +4,7 @@
 // O caso exercido é o aceite literal da fase: um parcelamento MIGRADO (23ª de 60, saldo declarado,
 // débito automático) registrado SEM NENHUM PDF.
 
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { ParcelamentoWizard } from "../ParcelamentoWizard.jsx";
 
 function montar(over = {}) {
@@ -13,7 +13,7 @@ function montar(over = {}) {
   const getContasProvisao = jest.fn().mockResolvedValue({ PRINCIPAL: "265", PARC: "553", JUROS: "501", CAIXA: "111" });
   render(
     <ParcelamentoWizard
-      onIngest={onIngest}
+      onIngest={over.onIngest || onIngest}
       onClose={onClose}
       getContasProvisao={getContasProvisao}
       onConsultSerpro={over.onConsultSerpro}
@@ -300,7 +300,7 @@ describe("primeira vez de uma modalidade", () => {
     await preencherPasso2();
     await act(async () => { clicar(/Continuar/); });
     expect(screen.getByRole("button", { name: /Concluir edição/ })).toBeInTheDocument();
-    expect(screen.getByText(/primeira vez/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sem contas memorizadas disponíveis/i)).toBeInTheDocument();
   });
 });
 
@@ -354,4 +354,43 @@ describe("⚠ o atalho do SERPRO é caminho de FALHA ESPERADA", () => {
     expect(onConsultSerpro).not.toHaveBeenCalled();
     expect(screen.getByText(/Informe o nº do parcelamento/)).toBeInTheDocument();
   });
+});
+
+
+describe("acessibilidade do diálogo", () => {
+  it("Escape fecha somente a confirmação e preserva o rascunho", async () => {
+    const { onClose } = montar();
+    await act(async () => {});
+    digitar(/Nº do parcelamento/, "1234567");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Descartar este parcelamento?" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Descartar este parcelamento?" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Nº do parcelamento/)).toHaveValue("1234567");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+  it("impede edição e saída durante gravação", async () => {
+    const onClose = jest.fn();
+    render(<ParcelamentoWizard saving onClose={onClose} />);
+    const dialog = screen.getByRole("dialog", { name: "Novo parcelamento" });
+    expect(within(dialog).getByLabelText(/Nº do parcelamento/)).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: /Continuar/ })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Fechar" })).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+it("apresenta recusa de permissão sem fechar nem perder os campos", async () => {
+  const onIngest = jest.fn().mockResolvedValue({ ok: false, error: "insufficient_role" });
+  const { onClose } = montar({ onIngest });
+  await preencherPasso1();
+  await preencherPasso2();
+  await act(async () => clicar(/Continuar/));
+  fireEvent.change(screen.getAllByPlaceholderText("0,00")[0], { target: { value: "45600" } });
+  await act(async () => clicar(/Criar parcelamento/));
+  expect(screen.getByRole("alert")).toHaveTextContent("esta ação exige permissão de contador");
+  expect(onIngest).toHaveBeenCalledTimes(1);
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getAllByPlaceholderText("0,00")[0]).toHaveValue("45600");
 });

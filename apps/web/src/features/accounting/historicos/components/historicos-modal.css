@@ -1,0 +1,14 @@
+.historicos-modal .btn { min-height: 40px; }
+.historicos-modal-tabela th { text-transform: none; letter-spacing: normal; }
+.historicos-modal-tabela td { overflow-wrap: anywhere; }
+.historicos-modal [role="region"]:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+@media (max-width: 650px) {
+  .historicos-modal .btn, .historicos-modal input { min-height: 44px; }
+  .historicos-modal-tabela { min-width: 0 !important; }
+  .historicos-modal-tabela thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .historicos-modal-tabela tbody { display: block; }
+  .historicos-modal-tabela tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .historicos-modal-tabela td { display: block; min-width: 0; max-width: none !important; border: 0 !important; text-align: left !important; }
+  .historicos-modal-tabela td:first-child, .historicos-modal-tabela td:last-child { grid-column: 1 / -1; }
+  .historicos-modal-tabela td::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: .8125rem; font-weight: 500; margin-bottom: 6px; }
+}

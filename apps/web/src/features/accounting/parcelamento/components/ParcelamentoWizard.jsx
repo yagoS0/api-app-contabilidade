@@ -12,6 +12,9 @@ import {resumoOrigensParcelamento,historicoOrigensParcelamento} from '../../../.
 // próprio. Aqui fica só a ligação.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { recusaDeAcesso } from "../lib/recusaDeAcesso";
+import { Modal } from "../../../../components/ui/Modal";
+import "./parcelamentoWizard.css";
 import { Button } from "../../../../components/ui/Button";
 import { AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
 import {
@@ -23,22 +26,22 @@ import {
 } from "../lib/wizardParcelamento";
 
 const PANEL = {
-  surface: "#21222C", field: "#282A36", border: "#44475A",
-  text: "#F8F8F2", muted: "#aeb6d3",
+  surface: "var(--bg-surface)", field: "var(--bg-subtle)", border: "var(--border)",
+  text: "var(--text)", muted: "var(--text-muted)",
 };
 const FIELD = {
   background: PANEL.field, border: `1px solid ${PANEL.border}`, color: PANEL.text,
-  borderRadius: 6, padding: "6px 10px", fontSize: "0.85rem", width: "100%",
+  borderRadius: 6, padding: "6px 10px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box", minWidth: 0, minHeight: 40,
 };
-const LBL = { fontSize: "0.72rem", color: PANEL.muted, display: "block", marginBottom: 2 };
+const LBL = { fontSize: "0.8125rem", color: PANEL.muted, display: "block", marginBottom: 2 };
 
 function Campo({ label, hint, erro, children }) {
   return (
     <label style={{ display: "block" }}>
       <span style={LBL}>{label}</span>
       {children}
-      {hint && !erro && <span style={{ display: "block", fontSize: "0.66rem", color: PANEL.muted, marginTop: 2, lineHeight: 1.35 }}>{hint}</span>}
-      {erro && <span style={{ display: "block", fontSize: "0.68rem", color: "var(--state-danger)", marginTop: 2, lineHeight: 1.35 }}>{erro}</span>}
+      {hint && !erro && <span style={{ display: "block", fontSize: "0.8125rem", color: PANEL.muted, marginTop: 2, lineHeight: 1.35 }}>{hint}</span>}
+      {erro && <span style={{ display: "block", fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 2, lineHeight: 1.35 }}>{erro}</span>}
     </label>
   );
 }
@@ -47,9 +50,9 @@ function Aviso({ tom = "warn", titulo, children }) {
   const cor = tom === "danger" ? "var(--state-danger)" : tom === "ok" ? "var(--state-ok)" : "var(--state-warn)";
   const fundo = tom === "danger" ? "var(--state-danger-surface)" : tom === "ok" ? "var(--state-ok-surface)" : "var(--state-warn-surface)";
   return (
-    <div role="status" style={{ padding: "7px 10px", borderRadius: 6, background: fundo, border: `1px solid ${cor}` }}>
-      {titulo && <div style={{ color: cor, fontWeight: 700, fontSize: "0.72rem" }}>{titulo}</div>}
-      <div style={{ color: PANEL.muted, fontSize: "0.7rem", marginTop: titulo ? 2 : 0, lineHeight: 1.4 }}>{children}</div>
+    <div role={tom === "danger" ? "alert" : "status"} style={{ padding: "7px 10px", borderRadius: 6, background: fundo, border: `1px solid ${cor}` }}>
+      {titulo && <div style={{ color: cor, fontWeight: 600, fontSize: "0.8125rem" }}>{titulo}</div>}
+      <div style={{ color: PANEL.muted, fontSize: "0.8125rem", marginTop: titulo ? 2 : 0, lineHeight: 1.4 }}>{children}</div>
     </div>
   );
 }
@@ -67,12 +70,12 @@ function Progresso({ passo }) {
             <span style={{
               width: 20, height: 20, borderRadius: 999, border: `1px solid ${cor}`, color: cor,
               display: "inline-flex", alignItems: "center", justifyContent: "center",
-              fontSize: "0.66rem", fontWeight: 700,
+              fontSize: "0.8125rem", fontWeight: 600,
               background: atual ? "var(--accent-purple-surface)" : "transparent",
             }}>
               {concluido ? "✓" : p.id}
             </span>
-            <span style={{ color: cor, fontSize: "0.74rem", fontWeight: atual ? 700 : 600 }}>{p.titulo}</span>
+            <span style={{ color: cor, fontSize: "0.8125rem", fontWeight: 600 }}>{p.titulo}</span>
             {p.id < PASSOS.length && <span style={{ color: "var(--text-faint)", marginLeft: 4 }}>›</span>}
           </li>
         );
@@ -226,16 +229,10 @@ export function ParcelamentoWizard({
 
   const perde = oQueSePerdeAoFechar(dados);
   function pedirParaFechar() {
+    if (busy || saving) return;
     if (!perde.length) { onClose?.(); return; }
     setConfirmandoSaida(true);
   }
-
-  // ESC fecha (passando pela confirmação); clicar fora NÃO — o formulário é longo.
-  useEffect(() => {
-    function onKey(e) { if (e.key === "Escape") pedirParaFechar(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
 
   /**
    * ⚠⚠ O RECIBO PREENCHE, O CONTADOR MANDA (01/09/2026).
@@ -323,12 +320,12 @@ export function ParcelamentoWizard({
       const body = {...montarPayloadIngestao(dados),origensCircular:dados.origensCircular};
       const res = await onIngest(body);
       if (res?.ok === false) {
-        setErroServidor(res?.message || res?.error || "O servidor recusou o parcelamento.");
+        setErroServidor(res?.message || recusaDeAcesso(res?.error) || res?.error || "O servidor recusou o parcelamento.");
         return;
       }
       onClose?.(res);
     } catch (err) {
-      setErroServidor(err?.message || "Falha ao criar o parcelamento.");
+      setErroServidor(recusaDeAcesso(err?.message) || err?.message || "Falha ao criar o parcelamento.");
     } finally {
       setBusy(false);
     }
@@ -340,8 +337,8 @@ export function ParcelamentoWizard({
   const compProxima = competenciaProximaParcela(dados);
 
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
-  const th = { textAlign: "left", padding: "4px 6px", fontSize: "0.66rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" };
-  const td = { padding: "4px 6px", fontSize: "0.78rem", color: PANEL.text };
+  const th = { textAlign: "left", padding: "4px 6px", fontSize: "0.8125rem", color: PANEL.muted, fontWeight: 600 };
+  const td = { padding: "4px 6px", fontSize: "0.8125rem", color: PANEL.text };
 
   // ⚠ O SELETOR D/C ESTAVA SENDO ESPREMIDO — e a largura do MODAL não tinha nada com isso.
   //
@@ -368,38 +365,21 @@ export function ParcelamentoWizard({
   const COL_PAPEL = 168;
   const selectPapel = { ...FIELD, padding: "4px 6px", colorScheme: "dark", minWidth: 140 };
 
-  // ⚠ E A TABELA ROLA DENTRO DELA MESMA, não some pela borda. O painel do modal é
-  // `overflowX: "hidden"`: abaixo de ~710px de viewport a tabela (640px de mínimo) já não cabia e a
-  // coluna do "×" era simplesmente CORTADA, sem barra nenhuma para alcançá-la — o mesmo desfecho
-  // que o card do parcelamento teve no incidente das 60 prestações. Alargar a coluna D/C empurra
-  // esse limiar em 12px, então a rolagem entra junto: `apps/web/CLAUDE.md` manda o conteúdo largo
-  // rolar no PRÓPRIO container, e o corpo da página nunca na horizontal — o `overflowX: "hidden"`
-  // do painel continua garantindo a segunda metade. Acima do limiar nada muda: sem transbordo, sem
-  // barra. O dropdown do `AccountCodeInput` é `position: fixed` justamente para não ser cortado por
-  // isto (ver o comentário dele), e nenhum ancestral tem `transform`, então ele segue escapando.
+  // Tabelas largas mantêm rolagem local, inclusive com o Modal compartilhado.
   const rolagemTabela = { overflowX: "auto" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1600, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 900px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div>
-            <strong style={{ fontSize: "1.05rem" }}>Novo parcelamento</strong>
-            <div style={{ fontSize: "0.74rem", color: PANEL.muted, marginTop: 2, lineHeight: 1.4 }}>
-              O contrato é registrado <strong>sem nenhuma guia</strong>. A guia de cada mês é evidência
-              opcional — em débito automático ela não existe.
-            </div>
-          </div>
-          <button type="button" onClick={pedirParaFechar} aria-label="Fechar" style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
-        </div>
+    <>
+      <Modal titulo="Novo parcelamento" tamanho="lg" className="parcelamento-wizard" ocupado={trabalhando} suspenso={confirmandoSaida} aoFechar={pedirParaFechar} fecharAoClicarFundo={false}>
+        <fieldset disabled={trabalhando} className="parcelamento-wizard-conteudo">
+        <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.8125rem" }}>O contrato é registrado <strong>sem nenhuma guia</strong>. A guia de cada mês é evidência opcional — em débito automático ela não existe.</p>
 
         <Progresso passo={passo} />
 
         {/* ─── PASSO 1 — Identificação ───────────────────────────────────────────────────────── */}
         {passo === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 10 }}>
               <Campo label="Modalidade *" erro={erros.tipo}>
                 <select value={dados.tipo} onChange={(e) => set({ tipo: e.target.value })} style={{ ...FIELD, colorScheme: "dark" }}>
                   {MODALIDADES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
@@ -424,13 +404,13 @@ export function ParcelamentoWizard({
                   }}>
                     <input type="radio" name="situacao-parcelamento" checked={dados.situacao === v} onChange={() => set({ situacao: v })} style={{ marginTop: 2 }} />
                     <span>
-                      <span style={{ display: "block", fontSize: "0.8rem", fontWeight: 700 }}>{titulo}</span>
-                      <span style={{ display: "block", fontSize: "0.68rem", color: PANEL.muted, lineHeight: 1.35 }}>{detalhe}</span>
+                      <span style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600 }}>{titulo}</span>
+                      <span style={{ display: "block", fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.35 }}>{detalhe}</span>
                     </span>
                   </label>
                 ))}
               </div>
-              {erros.situacao && <div style={{ fontSize: "0.68rem", color: "var(--state-danger)", marginTop: 4 }}>{erros.situacao}</div>}
+              {erros.situacao && <div style={{ fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 4 }}>{erros.situacao}</div>}
             </fieldset>
 
             <Campo label="Descrição (opcional)" hint="Quais competências foram parceladas.">
@@ -447,8 +427,8 @@ export function ParcelamentoWizard({
               <div style={{ border: `1px dashed ${PANEL.border}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Recibo da negociação (PDF, opcional)</div>
-                    <div style={{ fontSize: "0.68rem", color: PANEL.muted }}>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Recibo da negociação (PDF, opcional)</div>
+                    <div style={{ fontSize: "0.8125rem", color: PANEL.muted }}>
                       Preenche os valores por tributo, os juros, a multa e o valor da parcela. Você confere e corrige tudo.
                     </div>
                   </div>
@@ -477,8 +457,8 @@ export function ParcelamentoWizard({
             <div style={{ border: `1px dashed ${PANEL.border}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Consultar no SERPRO (opcional)</div>
-                  <div style={{ fontSize: "0.68rem", color: PANEL.muted }}>Tenta preencher total de parcelas e saldo a partir do nº informado.</div>
+                  <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Consultar no SERPRO (opcional)</div>
+                  <div style={{ fontSize: "0.8125rem", color: PANEL.muted }}>Tenta preencher total de parcelas e saldo a partir do nº informado.</div>
                 </div>
                 <Button size="sm" variant="secondary" type="button" onClick={consultarSerpro} disabled={serproBusy || !onConsultSerpro}
                   title={!onConsultSerpro ? "A consulta não está disponível neste modo de API." : "Consulta paga — usa o nº do parcelamento acima."}>
@@ -496,7 +476,7 @@ export function ParcelamentoWizard({
         {passo === 2 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {listarDebitosCircular && <DividasCircular listar={listarDebitosCircular} tipo={dados.tipo} selecionadas={dados.origensCircular} onSelecionar={origensCircular=>set({origensCircular,origensAplicadas:false})} onAplicar={aplicarOrigens}/>}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 10 }}>
               <Campo label="Saldo consolidado atual (R$) *" erro={erros.saldoConsolidado}
                 hint="Informativo: fica gravado e é exibido para conferência. Não vira lançamento.">
                 <input value={dados.saldoConsolidado} onChange={(e) => set({ saldoConsolidado: e.target.value })} placeholder="0,00" inputMode="decimal" style={{ ...FIELD, textAlign: "right" }} />
@@ -510,13 +490,13 @@ export function ParcelamentoWizard({
             </div>
 
             <label style={{ fontSize: '0.8rem' }}><input type="checkbox" checked={!!dados.temEntrada} onChange={e => set({ temEntrada: e.target.checked })} /> Entrada com valor diferente das parcelas</label>
-            {dados.temEntrada && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            {dados.temEntrada && <div style={{ display: 'grid', gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 10 }}>
               <Campo label="Prestações da entrada" erro={erros.numEntradas}><input type="number" min="1" value={dados.numEntradas} onChange={e => set({ numEntradas: e.target.value })} style={FIELD} /></Campo>
               <Campo label="Valor de cada entrada (R$)" erro={erros.valorEntrada}><input inputMode="decimal" value={dados.valorEntrada} onChange={e => set({ valorEntrada: e.target.value })} style={FIELD} /></Campo>
               <Campo label="Vencimento da entrada (dia)" erro={erros.diaEntrada}><input type="number" min="1" max="31" value={dados.diaEntrada} onChange={e => set({ diaEntrada: e.target.value })} style={FIELD} /></Campo>
               <Campo label="Competência da 1ª parcela regular" erro={erros.competenciaRegular}><input type="month" value={dados.competenciaRegular} onChange={e => set({ competenciaRegular: e.target.value })} style={FIELD} /></Campo>
             </div>}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 10 }}>
               {dados.situacao === "EM_ANDAMENTO" ? (
                 <Campo label="Parcelas já pagas *" erro={erros.parcelasJaPagas}
                   hint="Entram como histórico: contam como quitadas e NÃO geram lançamento (não houve pagamento nosso).">
@@ -545,8 +525,8 @@ export function ParcelamentoWizard({
                   }}>
                     <input type="radio" name="forma-pagamento" checked={dados.formaPagamento === v} onChange={() => set({ formaPagamento: v })} style={{ marginTop: 2 }} />
                     <span>
-                      <span style={{ display: "block", fontSize: "0.78rem", fontWeight: 700 }}>{titulo}</span>
-                      <span style={{ display: "block", fontSize: "0.66rem", color: PANEL.muted, lineHeight: 1.35 }}>{detalhe}</span>
+                      <span style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600 }}>{titulo}</span>
+                      <span style={{ display: "block", fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.35 }}>{detalhe}</span>
                     </span>
                   </label>
                 ))}
@@ -555,8 +535,8 @@ export function ParcelamentoWizard({
 
             {/* Rodapé que recalcula a cada tecla. */}
             <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "8px 10px" }}>
-              <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--accent-purple)" }}>{textoDoRodapePasso2(dados)}</div>
-              <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.45 }}>
+              <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--accent-purple)" }}>{textoDoRodapePasso2(dados)}</div>
+              <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.45 }}>
                 Próxima prestação: <strong style={{ color: PANEL.text }}>{proximaParcela(dados)}</strong>
                 {inteiro(dados.totalParcelas) ? ` de ${inteiro(dados.totalParcelas)}` : ""}
                 {compProxima ? ` · competência ${compProxima}` : ""}
@@ -577,7 +557,7 @@ export function ParcelamentoWizard({
         {/* ─── PASSO 3 — Contabilização ──────────────────────────────────────────────────────── */}
         {passo === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10, alignItems: "start" }}>
               <Campo label="Modelo de contas" hint="De qual modalidade puxar as contas já aprendidas.">
                 <select value={dados.modeloContas} onChange={(e) => set({ modeloContas: e.target.value })} style={{ ...FIELD, colorScheme: "dark" }}>
                   {MODALIDADES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
@@ -585,24 +565,23 @@ export function ParcelamentoWizard({
               </Campo>
               {/* ⚠ SEM CHECKBOX "SALVAR COMO PADRÃO DA MODALIDADE" — ver o comentário do efeito acima:
                   o backend SEMPRE grava global, então o checkbox prometeria uma escolha inexistente. */}
-              <div style={{ fontSize: "0.7rem", color: PANEL.muted, lineHeight: 1.45, paddingTop: 18 }}>
+              <div style={{ fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.45, paddingTop: 18 }}>
                 As contas preenchidas aqui viram o <strong style={{ color: PANEL.text }}>padrão desta modalidade para todas as
                 empresas do escritório</strong> — a memória do parcelamento é global, não há padrão por empresa.
                 {templateConhecido === false && (
-                  <> Esta é a <strong style={{ color: "var(--state-warn)" }}>primeira vez</strong> de {rotuloModalidade(modelo)}: as contas
-                  começam em branco.</>
+                  <> Sem contas memorizadas disponíveis para {rotuloModalidade(modelo)}. Confira e preencha as contas.</>
                 )}
               </div>
             </div>
 
             {/* PROVISÃO — com números. */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Provisão da adesão</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Provisão da adesão</div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {editando && <button type="button" onClick={addLinhaProvisao} title="Adicionar linha" style={iconBtn}>+</button>}
                   <button type="button" onClick={() => setEditando((e) => !e)}
-                    style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontWeight: 700, fontSize: "0.72rem", textDecoration: "underline", padding: 0 }}>
+                    style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontWeight: 600, fontSize: "0.8125rem", textDecoration: "underline", padding: 0 }}>
                     {editando ? "Concluir edição" : "Editar lançamentos"}
                   </button>
                 </div>
@@ -650,7 +629,7 @@ export function ParcelamentoWizard({
                           {PAPEIS_PROVISAO.map((p) => <option key={p} value={p}>{ROLE_LABEL[p] || p}</option>)}
                         </select>
                         {diverge && (
-                          <span style={{ display: "block", fontSize: "0.64rem", color: "var(--state-danger)", marginTop: 2, lineHeight: 1.3 }}>
+                          <span style={{ display: "block", fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 2, lineHeight: 1.3 }}>
                             {ROLE_LABEL[l.tipoLinha] || l.tipoLinha} não é {l.tipo === "C" ? "crédito" : "débito"} na provisão.
                           </span>
                         )}
@@ -702,20 +681,20 @@ export function ParcelamentoWizard({
               {/* ⚠ A CONTRAPARTIDA É UMA SÓ, e o rodapé diz de que ela é feita. Sem esta frase, um
                   contador que digitou principal, juros e multa não tem como conferir que o crédito
                   do passivo é a SOMA dos três — que é exatamente o que o dono pediu. */}
-              <div style={{ fontSize: "0.68rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.45 }}>
+              <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.45 }}>
                 A provisão da adesão lança <strong style={{ color: PANEL.text }}>um débito por natureza</strong> (principal,
                 juros, multa) e <strong style={{ color: PANEL.text }}>um único crédito</strong> em Parcelamento a pagar,
                 pela soma dos três. Juros e multa podem apontar para a <strong style={{ color: PANEL.text }}>mesma conta</strong> —
                 o papel continua separado. Natureza sem valor não vira lançamento.
               </div>
-              <div style={{ textAlign: "right", fontSize: "0.72rem", color: somas.balanceado ? PANEL.muted : "var(--state-danger)", marginTop: 4 }}>
+              <div style={{ textAlign: "right", fontSize: "0.8125rem", color: somas.balanceado ? PANEL.muted : "var(--state-danger)", marginTop: 4 }}>
                 Σ D <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(somas.debito)}</strong>
                 {" · "}Σ C <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(somas.credito)}</strong>
                 {somas.balanceado ? " ✓" : "  ⚠ D ≠ C"}
               </div>
               {/* Conferência: o saldo declarado NUNCA é lançado — ele aparece aqui ao lado do que
                   será provisionado, para o contador comparar. */}
-              <div style={{ fontSize: "0.68rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.45 }}>
+              <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.45 }}>
                 Conferência — saldo consolidado declarado: <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(numero(dados.saldoConsolidado))}</strong>
                 {" · "}valor da parcela × {restantes} restantes: <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(projetado)}</strong>.
                 {" "}O saldo é informativo e não vira lançamento.
@@ -724,8 +703,8 @@ export function ParcelamentoWizard({
 
             {/* PAGAMENTO — esquema, SEM valores. */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Pagamento de cada parcela</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Pagamento de cada parcela</div>
                 {editando && <button type="button" onClick={addLinhaPagamento} title="Adicionar linha" style={iconBtn}>+</button>}
               </div>
               <div style={rolagemTabela}>
@@ -786,12 +765,12 @@ export function ParcelamentoWizard({
             {/* Composição por tributo — opcional, colapsada. */}
             <div>
               <button type="button" onClick={() => setComposicaoAberta((a) => !a)} aria-expanded={composicaoAberta}
-                style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontWeight: 700, fontSize: "0.74rem", padding: 0 }}>
+                style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontWeight: 600, fontSize: "0.8125rem", padding: 0 }}>
                 {composicaoAberta ? "▾" : "▸"} Composição por tributo (opcional)
               </button>
               {composicaoAberta && (
                 <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: "0.68rem", color: PANEL.muted, marginBottom: 6, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginBottom: 6, lineHeight: 1.4 }}>
                     Serve para a baixa futura separar principal, juros e multa por código de receita.
                     Sem ela o contrato funciona igual — quem traz a composição é o comprovante.
                   </div>
@@ -831,7 +810,7 @@ export function ParcelamentoWizard({
         )}
 
         {/* ─── Barra de navegação ────────────────────────────────────────────────────────────── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderTop: `1px solid ${PANEL.border}`, paddingTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, borderTop: `1px solid ${PANEL.border}`, paddingTop: 12 }}>
           <button type="button" onClick={pedirParaFechar} disabled={trabalhando}
             style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: "0.85rem" }}>
             Cancelar
@@ -850,24 +829,22 @@ export function ParcelamentoWizard({
             {Object.values(validacao.erros).join(" · ")}
           </Aviso>
         )}
-      </div>
+        </fieldset>
+      </Modal>
 
       {/* ⚠ FECHAR COM DADOS PREENCHIDOS NOMEIA O QUE SE PERDE. */}
       {confirmandoSaida && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1700, padding: 16 }}>
-          <div style={{ background: PANEL.surface, border: `1px solid var(--state-danger)`, borderRadius: 10, padding: 18, width: "min(94vw, 460px)", color: PANEL.text, display: "flex", flexDirection: "column", gap: 10 }}>
-            <strong style={{ fontSize: "0.95rem" }}>Descartar este parcelamento?</strong>
-            <div style={{ fontSize: "0.78rem", color: PANEL.muted, lineHeight: 1.5 }}>
+        <Modal titulo="Descartar este parcelamento?" tamanho="sm" aoFechar={() => setConfirmandoSaida(false)} fecharAoClicarFundo={false}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.5 }}>
               Você perde: {perde.join(" · ")}. Nada foi gravado ainda.
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
               <Button variant="secondary" type="button" onClick={() => setConfirmandoSaida(false)}>Continuar preenchendo</Button>
               <Button variant="danger" type="button" onClick={() => { setConfirmandoSaida(false); onClose?.(); }}>Descartar</Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 

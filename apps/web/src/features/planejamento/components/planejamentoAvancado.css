@@ -74,3 +74,11 @@
 .planejamento-lista-cenarios > div { min-width: 0; }
 .planejamento-lista-cenarios label { min-width: 0; flex: 1 1 240px; }
 .planejamento-lista-cenarios label span { overflow-wrap: anywhere; min-width: 0; }
+/* Cenários salvos: leitura e seleção confortáveis no painel após premissas. */
+.planejamento-cenarios { font-size:.875rem; line-height:1.5; }
+.planejamento-cenarios .btn { font-size:.875rem; }
+.planejamento-cenarios .planejamento-lista-cenarios label { min-height:44px; }
+@media(max-width:600px) {
+ .planejamento-cenarios .btn,.planejamento-cenario-acoes .btn { min-height:44px; }
+}
+.planejamento-cenarios .planejamento-tabela-scroll th { font-size:.875rem; font-weight:500; text-transform:none; letter-spacing:normal; }

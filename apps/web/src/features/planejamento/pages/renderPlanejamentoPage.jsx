@@ -694,7 +694,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             <BackButton onClick={onVoltar} />
           )}
           <h1 style={{ margin: 0, fontSize: "1.2rem" }}>Planejamento tributário</h1>
-          <Button variant="secondary" disabled={!resultado || carregando || gerandoRelatorio} onClick={imprimirRelatorio}>{gerandoRelatorio ? "Gerando relatório…" : "Imprimir relatório"}</Button>
+          <Button variant="secondary" aria-busy={gerandoRelatorio} disabled={!resultado || carregando || gerandoRelatorio} onClick={imprimirRelatorio}>{gerandoRelatorio ? "Gerando relatório…" : "Imprimir relatório"}</Button>
           <span style={{ fontSize: "0.8rem", color: C.muted }}>
             {prefill.empresa?.razao || "Simulação livre — sem empresa vinculada"}
           </span>

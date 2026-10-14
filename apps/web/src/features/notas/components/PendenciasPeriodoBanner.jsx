@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button } from '../../../components/ui/Button';
 export function PendenciasPeriodoBanner({ api, companyId, competencia, revisao, ocupado = false }) {
   const escopo = `${companyId}:${competencia || ''}`;
   const [estado, setEstado] = useState(null);
@@ -12,7 +13,7 @@ export function PendenciasPeriodoBanner({ api, companyId, competencia, revisao, 
     return () => { ativo = false; };
   }, [api, companyId, competencia, revisao, tentativa, escopo]);
   if (estado?.escopo !== escopo) return <p role="status">Conferindo pendências do período…</p>;
-  if (estado.erro) return <p role="alert">Não foi possível conferir as pendências. <button type="button" onClick={() => setTentativa(n => n + 1)}>Tentar novamente</button></p>;
+  if (estado.erro) return <div role="alert" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBlock: 16 }}><span>Não foi possível conferir as pendências.</span><Button variant="secondary" type="button" style={{ minHeight: 44 }} onClick={() => setTentativa(n => n + 1)}>Tentar novamente</Button></div>;
   const abertas = estado.lista.filter(p => !p.resolvida && (!competencia || p.competencia === competencia));
   if (!abertas.length) return null;
   return <aside role="status" style={{ padding: 14, marginBottom: 16, border: '1px solid var(--state-warn)', borderRadius: 8, background: 'var(--state-warn-surface)' }}>
