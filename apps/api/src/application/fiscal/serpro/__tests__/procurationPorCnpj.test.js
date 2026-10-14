@@ -58,3 +58,21 @@ it("resposta inconclusiva não sobrescreve a última procuração", async () => 
   await expect(new SerproProcurationService({ client: { post } }).checkCompanyProcuration({ portalClientId: empresa.id })).rejects.toMatchObject({ code: "SERPRO_PROCURACAO_INCONCLUSIVA" });
   expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
 });
+it("registra ausência explícita oficial sem confundir null com falha", async () => {
+  prisma.appSetting.upsert.mockClear();
+  prisma.portalClient.findUnique.mockResolvedValue(empresa);
+  const post = jest.fn(async () => ({ status: 200, dados: null, mensagens: [{codigo:"[Aviso-PROCURACOES-40400]"}] }));
+  const r = await new SerproProcurationService({client:{post}}).checkCompanyProcuration({portalClientId:empresa.id});
+  expect(r.status).toBe("AUSENTE");
+  expect(prisma.appSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({update:{value:expect.objectContaining({status:"AUSENTE",cnpj:empresa.cnpj})}}));
+});
+it.each([
+  {status:200,dados:null},
+  {status:503,dados:null,mensagens:[{codigo:"[Aviso-PROCURACOES-40400]"}]},
+  {status:200,dados:null,mensagens:[{codigo:"[Aviso-PROCURACOES-40400]"},{codigo:"[Erro-PROCURACOES-50001]"}]},
+  {status:200,dados:"malformado",mensagens:[{codigo:"[Aviso-PROCURACOES-40400]"}]},
+])("retorno ambíguo preserva situação anterior: %j", async response => {
+  prisma.appSetting.upsert.mockClear();
+  await expect(new SerproProcurationService({client:{post:async()=>response}}).checkCompanyProcuration({portalClientId:empresa.id})).rejects.toMatchObject({code:"SERPRO_PROCURACAO_INCONCLUSIVA"});
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+});

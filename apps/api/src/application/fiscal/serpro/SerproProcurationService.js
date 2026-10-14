@@ -131,9 +131,14 @@ export class SerproProcurationService {
 
     const response = await this.client.post("/Consultar", payload);
     const dados = typeof response?.dados === "string" ? parseJsonString(response.dados) : response?.dados;
+    // Ausência explícita oficial pode vir com dados null e HTTP/status 200.
+    const ausenciaConfirmada = Number(response?.status) === 200
+      && [null, undefined, "", "null"].includes(response?.dados)
+      && Array.isArray(response?.mensagens) && response.mensagens.length > 0
+      && response.mensagens.every(m => m?.codigo === "[Aviso-PROCURACOES-40400]");
     if ((response?.status != null && Number(response.status) !== 200)
-      || !Array.isArray(dados)
-      || dados.some((p) => !Number.isFinite(parsePossibleDate(p?.dtexpiracao)?.getTime()) || !Array.isArray(p?.sistemas) || p.sistemas.some(s => typeof s !== "string"))) {
+      || (!ausenciaConfirmada && (!Array.isArray(dados)
+      || dados.some((p) => !Number.isFinite(parsePossibleDate(p?.dtexpiracao)?.getTime()) || !Array.isArray(p?.sistemas) || p.sistemas.some(s => typeof s !== "string"))))) {
       throw Object.assign(new Error("Não foi possível confirmar a procuração. A última verificação foi preservada."), { code: "SERPRO_PROCURACAO_INCONCLUSIVA" });
     }
     const summary = summarizeProcurationResponse(response);
