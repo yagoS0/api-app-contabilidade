@@ -11,10 +11,11 @@
 // que no lugar do valor há a PERGUNTA que falta responder, e ela é um campo, não um aviso.
 
 import { useId } from "react";
+import { Button } from "../../../components/ui/Button";
 
 const C = {
-  surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0",
-  vencedor: "#50FA7B", alerta: "#FFB347", falta: "#8BE9FD",
+  surface: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", muted: "var(--text-muted)",
+  vencedor: "var(--state-ok)", alerta: "var(--state-warn)", falta: "var(--accent-cyan)",
 };
 
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -79,15 +80,15 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
   if (resultado.indisponivel) {
     return (
       <div role="region" aria-label={resultado.regime} style={{
-        flex: "1 1 280px", minWidth: 260, padding: 16, borderRadius: 12,
+        flex: "1 1 280px", minWidth: 0, padding: 16, borderRadius: 12,
         // Borda e fundo com o MESMO destaque dos outros; a cor muda para dizer "falta dado",
         // não para diminuir.
         border: `2px solid ${C.falta}`, background: C.surface, color: C.texto, boxSizing: "border-box",
       }}>
-        <div style={{ fontSize: "0.9rem", fontWeight: 800, marginBottom: 10 }}>{resultado.regime}</div>
+        <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 10 }}>{resultado.regime}</div>
 
         {/* No lugar do valor grande, a pergunta que falta — no mesmo tamanho do valor. */}
-        <div style={{ fontSize: "1.15rem", fontWeight: 800, color: C.falta, lineHeight: 1.3, marginBottom: 8 }}>
+        <div style={{ fontSize: "1.15rem", fontWeight: 600, color: C.falta, lineHeight: 1.3, marginBottom: 8 }}>
           Não dá para comparar ainda
         </div>
         <div style={{ fontSize: "0.82rem", color: C.texto, marginBottom: 10 }}>{resultado.motivo}</div>
@@ -106,22 +107,22 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
 
   return (
     <div role="region" aria-label={resultado.regime} style={{
-      flex: "1 1 280px", minWidth: 260, padding: 16, borderRadius: 12,
+      flex: "1 1 280px", minWidth: 0, padding: 16, borderRadius: 12,
       border: `2px solid ${vencedor ? C.vencedor : C.borda}`,
       background: C.surface, color: C.texto, boxSizing: "border-box",
       opacity: inelegivel ? 0.6 : 1,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.9rem", fontWeight: 800 }}>{resultado.regime}</span>
+        <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>{resultado.regime}</span>
         {vencedor && (
-          <span style={{ fontSize: "0.66rem", fontWeight: 800, letterSpacing: "0.05em", color: "#1A1B26", background: C.vencedor, borderRadius: 999, padding: "2px 8px" }}>
-            MENOR CARGA
+          <span style={{ fontSize: "0.8125rem", fontWeight: 600, letterSpacing: "0.05em", color: "var(--bg-page)", background: C.vencedor, borderRadius: 999, padding: "2px 8px" }}>
+            Menor carga
           </span>
         )}
       </div>
 
       {inelegivel ? (
-        <div style={{ fontSize: "1rem", fontWeight: 700, color: C.alerta }}>
+        <div style={{ fontSize: "1rem", fontWeight: 600, color: C.alerta }}>
           A empresa não é elegível a este regime com esta receita.
           {/* ⚠ A INELEGIBILIDADE PRECISA DIZER O PORQUÊ E A CONSEQUÊNCIA. "Não é elegível" manda o
               usuário embora sem saber o que fazer; o motivo do limite proporcional é acionável —
@@ -136,7 +137,7 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
         <>
           <div style={{ fontSize: "0.76rem", color: C.muted, marginBottom: 4 }}>Total estimado no ano</div>
           {resultado.cobertura?.estado === "parcial" && <strong style={{ color: C.alerta }}>Estimativa parcial</strong>}
-          <div style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1.15 }}>{brl(resultado.total)}</div>
+          <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.15 }}>{brl(resultado.total)}</div>
           <div style={{ fontSize: "0.8rem", color: C.muted, marginTop: 2 }}>
             Carga total estimada: <strong style={{ color: C.texto }}>{pct(resultado.cargaEfetiva)}</strong> da receita
           </div>
@@ -189,15 +190,15 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
             </div>
           )}
 
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={onToggle}
             aria-expanded={Boolean(aberto)}
             aria-controls={detalheId}
-            style={{ marginTop: 10, background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "4px 10px", font: "inherit", fontSize: "0.75rem", cursor: "pointer" }}
+            style={{ marginTop: 12, whiteSpace: "normal" }}
           >
             {aberto ? "▴ Ocultar detalhamento" : "▾ Ver por tributo e premissas"}
-          </button>
+          </Button>
 
           {aberto && (
             <div id={detalheId} role="group" aria-label={`Detalhamento de impostos — ${resultado.regime}`} style={{ marginTop: 10, display: "grid", gap: 3, fontSize: "0.78rem" }}>

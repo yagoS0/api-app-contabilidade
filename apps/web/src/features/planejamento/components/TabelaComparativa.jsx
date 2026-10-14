@@ -13,8 +13,8 @@
 import { celulaDoTributo, fraseDaAusencia, ROTULO_DO_TRIBUTO, AUSENCIA } from "../lib/comparativoDeRegimes";
 
 const C = {
-  surface: "#24253A", borda: "#44475A", texto: "#F8F8F2",
-  muted: "#A7B0C0", accent: "#BD93F9", alerta: "#FFB347",
+  surface: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)",
+  muted: "var(--text-muted)", accent: "var(--accent-purple)", alerta: "var(--state-warn)",
 };
 
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -49,8 +49,8 @@ export function TabelaComparativa({ comparativo }) {
   const { colunas, tributos } = comparativo;
 
   return (
-    <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface }}>
-      <div style={{ fontSize: "0.9rem", fontWeight: 700, color: C.texto, marginBottom: 2 }}>
+    <div style={{ minWidth: 0, padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface }}>
+      <div style={{ fontSize: "0.9rem", fontWeight: 600, color: C.texto, marginBottom: 2 }}>
         Comparativo por tributo
       </div>
       <div style={{ fontSize: "0.74rem", color: C.muted, marginBottom: 10, lineHeight: 1.45 }}>
@@ -70,7 +70,7 @@ export function TabelaComparativa({ comparativo }) {
               <th style={{ ...th, textAlign: "left" }}>&nbsp;</th>
               {colunas.map((c) => (
                 <th key={c.chave} style={{ ...th, color: c.vencedora ? C.accent : C.muted }}>
-                  <div style={{ fontWeight: 700 }}>{c.titulo}</div>
+                  <div style={{ fontWeight: 600 }}>{c.titulo}</div>
                   {/* ⚠ Com Fator R são DUAS colunas de Simples. Sem esta marca o contador acharia
                       que ele escolhe o anexo — e no Fator R ele sai da folha, não da escolha. */}
                   {c.atual === false ? (
@@ -87,7 +87,7 @@ export function TabelaComparativa({ comparativo }) {
             <tr style={{ borderBottom: `1px solid ${C.borda}` }}>
               <td style={tdRotulo}>Total no ano</td>
               {colunas.map((c) => (
-                <td key={c.chave} style={{ ...td, fontWeight: 700, color: c.vencedora ? C.accent : C.texto }}>
+                <td key={c.chave} style={{ ...td, fontWeight: 600, color: c.vencedora ? C.accent : C.texto }}>
                   {/* ⚠⚠ RECUSA COM O MESMO PESO DO NÚMERO. Regime indisponível não vira traço
                       discreto — é a regra do `CardRegime`: número ausente em cinza vira ausência
                       de dúvida. */}
