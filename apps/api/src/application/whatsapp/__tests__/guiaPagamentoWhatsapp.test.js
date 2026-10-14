@@ -31,3 +31,21 @@ test('revogação depois do upload impede mensagem', async () => {
   await expect(cloud.enviarGuiaComPagamento({ ...args, antesDeEnviar: guarda })).rejects.toThrow('revogado');
   expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
+
+test.each([null, 'guia_documento_sem_codigo_v1'])('PDF sem código usa %s sem botão nem parâmetros de pagamento', async template => {
+  const { cloud, fetchImpl } = cenario();
+  await cloud.enviarGuiaComPagamento({ ...args, linhaDigitavel: null, somenteDocumento: true, template, variaveis: ['Cliente', 'EMPRESA A — DAS', '09/2026', '12,34', '20/10/2026'] });
+  const payload = JSON.parse(fetchImpl.mock.calls[1][1].body);
+  if (template) {
+    expect(payload.template.components.map(c => c.type)).toEqual(['header', 'body']);
+  } else {
+    expect(payload.type).toBe('document'); expect(payload.document.id).toBe('media-1');
+  }
+  expect(JSON.stringify(payload)).not.toMatch(/order_details|payment_settings|digitable_line/);
+});
+
+test('PDF sem botão também revalida autorização depois do upload', async () => {
+  const { cloud, fetchImpl } = cenario(); const guarda = jest.fn().mockResolvedValueOnce().mockRejectedValueOnce(Error('revogado'));
+  await expect(cloud.enviarGuiaComPagamento({ ...args, somenteDocumento: true, antesDeEnviar: guarda })).rejects.toThrow('revogado');
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});

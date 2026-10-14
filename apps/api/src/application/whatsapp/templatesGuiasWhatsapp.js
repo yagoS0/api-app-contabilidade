@@ -1,5 +1,15 @@
 // Contratos para submissão no WhatsApp Business. Estes nomes não pressupõem aprovação da Meta.
 export const TEMPLATES_GUIAS_WHATSAPP = {
+  guia_documento_empresa_v2: {
+    documento: true, pagamento: true,
+    variaveis: ['nome', 'empresa_guia', 'referencia', 'valor', 'vencimento'], botoes: ['Copy Pix code'],
+    corpo: 'Olá {{1}}!\n\n*{{2}}*\nCompetência: {{3}}\nValor: R$ {{4}}\nVencimento: {{5}}\n\n📎 *ABRIR PDF:* toque no arquivo anexado no topo desta mensagem.\n📋 *COPIAR CÓDIGO:* abra os detalhes de pagamento abaixo.\n\nSe já pagou, não pague novamente.',
+  },
+  guia_documento_sem_codigo_v1: {
+    documento: true, pagamento: false,
+    variaveis: ['nome', 'empresa_guia', 'referencia', 'valor', 'vencimento'], botoes: [],
+    corpo: 'Olá {{1}}!\n\n*{{2}}*\nCompetência: {{3}}\nValor: R$ {{4}}\nVencimento: {{5}}\n\n📎 *ABRIR PDF:* toque no arquivo anexado no topo desta mensagem.\n\nO código não está disponível para copiar nesta mensagem. Confira as instruções de pagamento no PDF. Se já pagou, não pague novamente.',
+  },
   guia_documento_pagamento_v1: {
     documento: true, pagamento: true,
     variaveis: ['nome', 'tipo', 'referencia', 'valor', 'vencimento'], botoes: ['Copy Pix code'],

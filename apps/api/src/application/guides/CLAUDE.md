@@ -1,5 +1,11 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## Identificação dos envios por empresa — 14/10/2026
+
+Liberação pela página inicial e lote de WhatsApp mantêm ordem estável por empresa/tipo/competência/parcela/id. Cada empresa reinicia a sequência `Guia N de T` dos documentos selecionados; não é contador de entregas. A segunda variável identifica empresa, sequência e tipo. O nome curto do arquivo começa com PDF e inclui empresa, tipo, competência e sequência. Envios avulsos e recálculos identificam a empresa sem inventar tamanho de lote; a confirmação após recálculo repete empresa/guia/competência e preserva o token vinculado à guia.
+
+`guia_documento_empresa_v2` destaca ABRIR PDF e COPIAR CÓDIGO; só é usado após aprovação no catálogo, com v1 como alternativa durante aprovação. Ausência de código exige releitura estrita do PDF e modelo aprovado `guia_documento_sem_codigo_v1`, sem botão de pagamento. PDF sem texto, erro de leitura, código inválido/ambíguo ou divergente não permitem essa alternativa. Nenhum dado de leitura é inventado ou salvo por essa decisão. O leitor usa Uint8Array com offset zero para evitar falha de pdf.js em Buffers pequenos do pool do Node. Sem alteração de reservas, consentimento ou recibos. Testes reais usam DTOs em memória: nunca cadastrar guias fictícias em empresas reais.
+
 ## Correção cadastral de competência — 13/10/2026 (desenvolvimento)
 
 CorrigirCompetenciaGuiaService tem prévia GET e POST autenticados por empresa/contador. A revisão assina guia, relações e destino; o POST repete as guardas em transação serializável e grava autoria/antes/depois em AppSetting. Preserva PDF/hash, valores, vencimento, estados e evidência original. Bloqueia meses fechados na origem/destino, outra guia do mesmo tipo no destino, pagamento, envio/liberação, parcelamento, lançamentos e TaxDocument vinculados. Não move vínculos contábeis, exclui duplicatas, dispara consultas nem envia mensagens. Sem migração. Testes corrigirCompetenciaGuia e corrigirCompetenciaGuiaRota cobrem regras e autorização.

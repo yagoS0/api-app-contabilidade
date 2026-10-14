@@ -136,3 +136,11 @@ describe("nunca derruba o salvamento da guia", () => {
     expect(r.linhaDigitavel).toBeNull();
   });
 });
+
+test('modo de envio distingue ausência, código corrompido e PDF sem texto', async () => {
+  const ler = texto => lerLinhaDigitavelDoPdf(buffer(), { valorTotal: 3422 }, { ...lendo(texto), distinguirAusencia: true });
+  expect((await ler('Documento de arrecadação sem código copiável')).linhaDigitavelMotivo).toBe(MOTIVOS.NAO_ENCONTRADA);
+  expect((await ler(TEXTO_CORROMPIDO)).linhaDigitavelMotivo).not.toBe(MOTIVOS.NAO_ENCONTRADA);
+  expect((await ler('   ')).linhaDigitavelMotivo).toBe(MOTIVOS_LEITURA.PDF_ILEGIVEL);
+  expect((await ler(TEXTO_COM_LINHA)).linhaDigitavel).toBe(LINHA_OK);
+});

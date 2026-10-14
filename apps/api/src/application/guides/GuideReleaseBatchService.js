@@ -8,6 +8,7 @@ import { sendCompanyGuidesEmail } from "./GuideCompanyEmailService.js";
 import { destinatariosDeEnvio, destinatarioWhatsapp } from "../whatsapp/ContatoWhatsappService.js";
 import { carregarCanal, enviarParaTodosOsDestinatarios, SELECT_GUIA_PARA_ENVIO } from "../whatsapp/EnvioGuiaWhatsappService.js";
 import { avaliarLinha } from "../whatsapp/elegibilidadeEnvioGuia.js";
+import { ordenarGuiasWhatsapp, sequenciasGuiasWhatsapp } from "../whatsapp/IdentificacaoGuiaWhatsapp.js";
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 // O primeiro canal altera emailStatus/updatedAt. A conferência entre canais compara o documento,
@@ -82,7 +83,8 @@ export function createGuideReleaseBatchService(deps = {}) {
           }
         } else r.email = { ok: false, tentado: false, naoSeAplica: true, message: linha.email.mensagem };
 
-        for (const anterior of linha.guias) {
+        const sequencias = sequenciasGuiasWhatsapp(linha.guias);
+        for (const anterior of ordenarGuiasWhatsapp(linha.guias)) {
           const guide = await db.guide.findFirst({ where: { id: anterior.id, portalClientId: linha.portalClientId },
             select: { ...SELECT_GUIA_PARA_ENVIO, liberadaCliente: true } });
           if (!guide || assinaturaDocumento(guide) !== assinaturaDocumento(anterior)) throw loteAlterado();
@@ -110,7 +112,7 @@ export function createGuideReleaseBatchService(deps = {}) {
             if (!atual || assinaturaDocumento(atual) !== assinaturaDocumento(anterior)) throw loteAlterado();
             // A reserva do transportador é por guia/canal/destinatário. Nunca força reenvio.
             whatsappIniciado = true;
-            const out = await whatsapp({ guide: atual, destinatarios: alvos, canal, log, reenviar: false });
+            const out = await whatsapp({ guide: atual, sequencia: sequencias.get(atual.id), destinatarios: alvos, canal, log, reenviar: false });
             r.whatsapp.push({ ...out, guideId: guide.id, tentado: true,
               ...(!out.ok && !out.message ? { message: out.mensagem || "WhatsApp com falha ou resultado pendente. Confira o histórico." } : {}) });
           } catch (err) { r.whatsapp.push({ guideId: guide.id, ...falha(err) }); }

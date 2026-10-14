@@ -1,5 +1,6 @@
 import { conferirParcelasParaEnvio, SELECT_PARCELA_ENVIO } from "../guides/GuiaParcelaEnvioGuard.js";
 import { prepararGuiaPagamentoWhatsapp, TEMPLATE_GUIA_PAGAMENTO as WHATSAPP_TEMPLATE_GUIA } from './PrepararGuiaPagamentoWhatsapp.js';
+import { identificarGuiaWhatsapp, ordenarGuiasWhatsapp, sequenciasGuiasWhatsapp } from './IdentificacaoGuiaWhatsapp.js';
 // O ENVIO DA GUIA PELO WHATSAPP — individual e em LOTE. É o MVP da Entrega 1 (plano, P0).
 //
 // ⚠ ESTE É O PRIMEIRO ESCRITOR DE PRODUÇÃO DE `envios_guia`. Até aqui as funções de escrita de
@@ -337,6 +338,7 @@ export async function preverLote({ portalClientIds, competencia, mesVencimento, 
  */
 export async function enviarGuiaPorWhatsapp({
   guide,
+  sequencia = null,
   contato,
   canal,
   /**
@@ -461,15 +463,17 @@ export async function enviarGuiaPorWhatsapp({
       };
     }
 
-    const nomeArquivo = nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia });
+    const empresa = guide.portalClient || await prisma.portalClient.findUnique({ where: { id: guide.portalClientId }, select: { razao: true, cnpj: true } });
+    const identificacao = identificarGuiaWhatsapp({ empresa: empresa?.razao, tipoGuia: tipoLabel, sequencia });
+    const nomeArquivo = nomeArquivoDaGuia({ empresa: empresa.razao, tipoGuia: tipoLabel, competencia: guide.competencia, sequencia });
     const variaveis = variaveisDaGuia({
       nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
-      tipoGuia: tipoLabel, competencia: competenciaLabel, valorFormatado: valorDaGuia,
+      tipoGuia: identificacao, competencia: competenciaLabel, valorFormatado: valorDaGuia,
       vencimentoFormatado: guide.vencimento ? dataCivilBR(guide.vencimento) : "",
     });
     conversaReservada ||= await garantirConversa({ telefone: contato.telefoneE164,
       portalClientId: guide.portalClientId, canalId: CANAL_PRINCIPAL, vinculoNumeroId: vinculoReservado });
-    const pagamento = await prepararGuiaPagamentoWhatsapp({ guide, conteudoPdf, conversa: conversaReservada,
+    const pagamento = await prepararGuiaPagamentoWhatsapp({ guide, identificacao, conteudoPdf, conversa: conversaReservada,
       referencia: tentativaId, conferir: conferirDestinatario, templateOnly: true });
     canal = { ...canal, nomeMeta: pagamento.template, idioma: pagamento.idioma };
     const idiomaDoEnvio = canal.idioma || cliente.idioma || WHATSAPP_TEMPLATE_IDIOMA;
@@ -667,6 +671,7 @@ export function conferirLote(resumoAtual, conferencia) {
  */
 export async function enviarParaTodosOsDestinatarios({
   guide,
+  sequencia = null,
   linha,
   canal,
   cliente,
@@ -684,7 +689,7 @@ export async function enviarParaTodosOsDestinatarios({
   const resultados = [];
   for (const contato of alvos) {
     // eslint-disable-next-line no-await-in-loop
-    resultados.push(await enviarGuiaPorWhatsapp({ guide, contato, canal, cliente, carregarPdf, log, reenviar }));
+    resultados.push(await enviarGuiaPorWhatsapp({ guide, sequencia, contato, canal, cliente, carregarPdf, log, reenviar }));
   }
 
   return resumirDestinatarios(resultados);
@@ -746,7 +751,8 @@ export async function executarLote({
   if (mesVencimento && (!assinatura || assinatura !== previa.assinatura)) throw loteAlterado();
   conferirLote(previa.resumo, conferencia);
 
-  const paraWhatsapp = previa.linhas.filter((l) => l.canalSugerido === CANAIS.WHATSAPP);
+  const paraWhatsapp = ordenarGuiasWhatsapp(previa.linhas.filter((l) => l.canalSugerido === CANAIS.WHATSAPP));
+  const sequencias = sequenciasGuiasWhatsapp(paraWhatsapp);
   const paraEmail = previa.linhas.filter((l) => l.canalSugerido === CANAIS.EMAIL);
 
   const clienteUsado = cliente || await whatsappPorCanal(CANAL_PRINCIPAL);
@@ -790,6 +796,7 @@ export async function executarLote({
       // eslint-disable-next-line no-await-in-loop
       resultado = await enviarParaTodosOsDestinatarios({
         guide,
+        sequencia: sequencias.get(guide.id),
         linha,
         canal: previa.canal,
         cliente: clienteUsado,

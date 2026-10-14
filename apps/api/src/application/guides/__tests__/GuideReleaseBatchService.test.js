@@ -101,5 +101,25 @@ test("duas guias da mesma empresa geram um e-mail agrupado e dois envios de What
   expect(out.results[0]).toMatchObject({ ok: true, liberadas: 2 });
   expect(deps.email).toHaveBeenCalledTimes(1);
   expect(deps.email).toHaveBeenCalledWith(expect.objectContaining({ selectedGuideIds: ["g1", "g2"] }));
-  expect(deps.whatsapp.mock.calls.map(([arg]) => arg.guide.id)).toEqual(["g1", "g2"]);
+  expect(deps.whatsapp.mock.calls.map(([arg]) => arg.guide.id)).toEqual(["g2", "g1"]);
+  expect(deps.whatsapp.mock.calls.map(([arg]) => arg.sequencia)).toEqual([{ indice: 1, total: 2 }, { indice: 2, total: 2 }]);
+});
+
+test("mesmo telefone recebe todas as guias de uma empresa antes da seguinte, com numeração própria", async () => {
+  const { deps, input, executar } = montar();
+  const primeira = (await deps.conferir()).guias[0];
+  const guias = [primeira, { ...primeira, id: 'g2', tipo: 'INSS' }, { ...primeira, id: 'g3', portalClientId: 'c2' }];
+  input.items = [
+    { ...input.items[0], portalClientId: 'c2', guideIds: ['g3'] },
+    { ...input.items[0], guideIds: ['g1', 'g2'] },
+  ];
+  input.permitidas = ['c1', 'c2'];
+  deps.conferir.mockImplementation(async ({ portalClientIds }) => ({ guias: guias.filter(g => portalClientIds.includes(g.portalClientId)) }));
+  deps.db.guide.findFirst.mockImplementation(async ({ where }) => ({ ...guias.find(g => g.id === where.id && g.portalClientId === where.portalClientId), liberadaCliente: true }));
+  const out = await executar();
+  expect(out.results.every(r => r.ok)).toBe(true);
+  expect(deps.whatsapp.mock.calls.map(([a]) => [a.guide.portalClientId, a.guide.id, a.sequencia])).toEqual([
+    ['c1', 'g2', { indice: 1, total: 2 }], ['c1', 'g1', { indice: 2, total: 2 }], ['c2', 'g3', { indice: 1, total: 1 }],
+  ]);
+  for (const [a] of deps.whatsapp.mock.calls) expect(a.destinatarios).toEqual([{ telefoneE164: '5511999990000' }]);
 });

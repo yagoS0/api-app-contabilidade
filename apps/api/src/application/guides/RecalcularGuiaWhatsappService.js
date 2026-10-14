@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { canGuideRecalculate, especieDoRecalculo, ESPECIE_RECALCULO, traduzirRecusaParaCliente } from './lib/recalculoDaGuia.js';
 import { calendarioAvisosGuia, hojeSaoPaulo } from './calendarioAvisosGuia.js';
 import { prepararGuiaPagamentoWhatsapp } from '../whatsapp/PrepararGuiaPagamentoWhatsapp.js';
+import { identificarGuiaWhatsapp } from '../whatsapp/IdentificacaoGuiaWhatsapp.js';
+import { nomeArquivoDaGuia } from '../whatsapp/WhatsappCloudClient.js';
 
 export const PREFIXO_RECALCULO = 'altan.payment.recalculate.';
 const recusar = () => Object.assign(new Error('Esta opção não está mais disponível. Solicite a atualização ao escritório.'), { code: 'RECALCULO_RECUSADO' });
@@ -54,7 +56,7 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     };
     const guia = await conferirGuia(token.guideId, token.hash);
     guiaDoPedido = guia;
-    const company = await client.portalClient.findUnique({ where: { id: token.companyId }, select: { municipio: true } });
+    const company = await client.portalClient.findUnique({ where: { id: token.companyId }, select: { municipio: true, razao: true } });
     const feriados = await client.feriado.findMany({});
     const vencimento = calendarioAvisosGuia(guia.vencimento, feriados, company?.municipio)?.vencimento;
     if (!vencimento || vencimento >= hojeSaoPaulo(agora)) throw recusar();
@@ -80,10 +82,11 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     const nova = await conferirGuia(atualizada.id, atualizada.hash);
     const pdf = carregarPdf ? await carregarPdf(nova) : await (await import('./GuideService.js')).getGuidePdfBuffer(nova);
     if (!pdf?.length) throw Object.assign(new Error('PDF atualizado indisponível.'), { code: 'GUIA_SEM_PDF' });
-    const nomeArquivo = `${nova.tipo} ${nova.competencia}.pdf`.replace(/[\\/]+/g, '-');
+    const identificacao = identificarGuiaWhatsapp({ empresa: company?.razao, tipoGuia: nova.tipo });
+    const nomeArquivo = nomeArquivoDaGuia({ empresa: company.razao, tipoGuia: nova.tipo, competencia: nova.competencia });
     await conferirGuia(nova.id, nova.hash);
-    const pagamento = await prepararPagamento({ guide: nova, conteudoPdf: pdf, conversa, referencia: key, conferir: () => conferirGuia(nova.id, nova.hash) }, { client });
-    await enviar({ tipo: 'interactive', corpo: `Guia atualizada — ${nova.tipo}, ${nova.competencia}`, idTurno: `${key}:pdf`,
+    const pagamento = await prepararPagamento({ guide: nova, identificacao, conteudoPdf: pdf, conversa, referencia: key, conferir: () => conferirGuia(nova.id, nova.hash) }, { client });
+    await enviar({ tipo: 'interactive', corpo: `Guia atualizada — ${identificacao}, ${nova.competencia}`, idTurno: `${key}:pdf`,
       chamada: async () => {
         await conferirGuia(nova.id, nova.hash);
         return cloud.enviarGuiaComPagamento({ telefone: conversa.telefoneE164, conteudoPdf: pdf, nomeArquivo, ...pagamento });
@@ -92,10 +95,11 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     await client.appSetting.create({ data: { key: botaoConfirmacao, value: { companyId: token.companyId, guideId: nova.id,
       competencia: nova.competencia || null, hash: nova.hash || null, contatoId: token.contatoId, telefone: token.telefone,
       expiraEm: new Date(agora.getTime() + 7 * 86400000).toISOString() } } });
-    const codigo = { status: 'ENVIADO', formato: 'PDF_E_CODIGO_NA_MESMA_MENSAGEM' };
-    await enviar({ tipo: 'interactive', corpo: 'Quando pagar esta guia, toque em Confirmar pagamento para informar a data.', idTurno: `${key}:confirmar`,
+    const codigo = { status: 'ENVIADO', formato: pagamento.somenteDocumento ? 'PDF_SEM_CODIGO' : 'PDF_E_CODIGO_NA_MESMA_MENSAGEM' };
+    const textoConfirmacao = `${identificacao} — ${nova.competencia}\nQuando pagar esta guia, toque em Confirmar pagamento para informar a data.`;
+    await enviar({ tipo: 'interactive', corpo: textoConfirmacao, idTurno: `${key}:confirmar`,
       chamada: async () => { await conferirGuia(nova.id, nova.hash); return cloud.enviarBotoes({ telefone: conversa.telefoneE164,
-        texto: 'Quando pagar esta guia, toque em Confirmar pagamento para informar a data.', botoes: [{ id: botaoConfirmacao, titulo: 'Confirmar pagamento' }] }); } });
+        texto: textoConfirmacao, botoes: [{ id: botaoConfirmacao, titulo: 'Confirmar pagamento' }] }); } });
     await client.appSetting.update({ where: { key }, data: { value: { ...value, status: codigo.status === 'ENVIADO' ? 'ENVIADO' : 'PARCIAL', guiaAtualizadaId: nova.id, codigo } } });
     return { tratado: true, acao: 'RECALCULAR_GUIA', codigo };
   } catch (e) {
