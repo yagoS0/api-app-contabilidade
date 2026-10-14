@@ -198,7 +198,7 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-commercial-section { min-width: 0; }
 .wa-commercial-section .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; padding-block: 9px; }
 .wa-details--commercial > .wa-section-heading { gap: 16px; margin-bottom: 18px; }
-.wa-details--commercial > .wa-section-heading > .btn { flex: 0 0 38px; width: 38px; height: 38px; padding: 0; }
+.wa-details--commercial > .wa-section-heading > .btn { flex: 0 0 auto; width: auto; min-height: 40px; height: auto; padding: 8px 12px; }
 .wa-link-company { border-top: 1px solid var(--border); padding-top: 16px; }
 .wa-link-company summary { cursor: pointer; font-size: .875rem; font-weight: 600; }
 .wa-identity-review label, .wa-details .lead-avulsa label, .wa-details .lead-step-fields label, .wa-lead-panel label { display: grid; gap: 6px; margin-block: 10px; font-size: .875rem; }
@@ -331,8 +331,8 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-page input, .wa-page textarea, .wa-page select, .wa-page button { font-family: inherit; }
 .wa-page .wa-bubble-text { font-size: 15px; line-height: 1.6; }
 .wa-previous-requests { min-width: 0; font-size: .875rem; }
-.wa-previous-requests > summary, .wa-contact-data > summary { cursor: pointer; padding-block: 8px; }
-.wa-contact-data { margin-top: 20px; border-top: 1px solid var(--border); }
+.wa-previous-requests > summary { cursor: pointer; padding-block: 8px; }
+.wa-contact-data { margin-top: 0; padding-top: 0; border: 0; }
 
 .wa-company-chat > .wa-section-heading { gap: 10px; flex-shrink: 0; }
 .wa-company-chat > .wa-section-heading select { max-width: 100%; min-width: 0; }
@@ -417,7 +417,8 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
   .wa-thread-header .wa-thread-subtitle .wa-status > span { display: none; }
   .wa-thread-header .wa-relationship { padding: 0; border: 0; background: none; font-size: 12px; }
   .wa-thread-header .wa-thread-actions { flex: 0 0 auto; width: auto; gap: 0; flex-wrap: nowrap; margin: 0; }
-  .wa-thread-header .wa-thread-actions > .btn, .wa-thread-header .wa-mobile-back { width: 44px; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
+  .wa-thread-header .wa-thread-actions > .btn { width: auto; min-width: 44px; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; }
+  .wa-thread-header .wa-mobile-back { width: 44px; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
   .wa-more-actions > summary { width: 44px; min-height: 44px; padding: 0; justify-content: center; font-size: 24px; }
   .wa-more-menu { z-index: 20; width: 265px; max-width: calc(100vw - 24px); }
   .wa-more-identity { padding: 8px; display: grid; gap: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
@@ -475,3 +476,23 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-attachment-preview label { display: grid; gap: 8px; font-weight: 500; }
 .wa-attachment-preview textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 96px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; font-weight: 400; }
 .wa-attachment-preview :is(textarea, a):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+/* Conversa, dados do contato e ferramentas têm áreas próprias. */
+.wa-detail-contexts { display: flex; gap: 8px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.wa-detail-contexts .btn { flex: 1; min-width: 0; }
+.wa-detail-contexts .btn[aria-pressed="true"] { background: var(--bg-subtle); border-color: var(--border-focus); color: var(--text); }
+.wa-details [hidden] { display: none; }
+.wa-import-help { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 16px; font-size: .8125rem; }
+.wa-import-help summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.wa-import-help p { color: var(--text-muted); line-height: 1.5; }
+.wa-compose-context { padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.wa-compose-sheet .wa-compose-context label { display: grid; gap: 6px; font-weight: 500; }
+.wa-compose-sheet .wa-compose-context select { width: 100%; box-sizing: border-box; }
+.wa-compose-sheet-heading strong { font-weight: 600; }
+.wa-compose-sheet-heading:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .wa-thread-header .wa-thread-actions > .btn { width: 44px; padding: 0; }
+  .wa-thread-header .wa-details-label { display: none; }
+  .wa-details > .wa-section-heading { flex-wrap: wrap; gap: 8px; }
+  .wa-details--commercial > .wa-section-heading > .btn { min-height: 44px; }
+}

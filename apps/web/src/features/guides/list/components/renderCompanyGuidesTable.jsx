@@ -1573,6 +1573,7 @@ export function CompanyGuidesTable({
                criação, sem uma segunda cópia do formulário aqui. */
             onCriarNovoParcelamento={parcelamentos?.ingest ? () => setWizardParcela(true) : null}
             parcelamentoIdInicial={anexoParcelamentoId}
+            suspenso={wizardParcela}
             saving={anexoSaving || uploadingGuide}
             onSalvar={handleAnexoSalvar}
             onClose={() => { if (wizardParcela) return; setAnexoParcelamentoOpen(false); setAnexoArquivo(null); }}

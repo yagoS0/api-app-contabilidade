@@ -11,7 +11,7 @@ const dinheiro = n => n == null ? '—' : (n / 100).toLocaleString('pt-BR', { st
 const totalizar = linhas => subtotalDocumental(linhas.filter(l => !['PAGO', 'PARCELADO'].includes(l.estado)));
 const COBERTURA = { NAO_CONSULTADO: 'Não consultado', SEM_REGISTROS: 'Sem pendências no relatório', PARCIAL: 'Conferir leitura', INCONCLUSIVO: 'Leitura inconclusiva' };
 
-export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empresa }) {
+export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empresa, podeEditar = false }) {
   const projecao = useMemo(() => projetarPendenciasSitfis(relatorio), [relatorio]);
   const [busca, setBusca] = useState('');
   const [tipo, setTipo] = useState('');
@@ -83,9 +83,9 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
       const marcadas = filtradas.filter(l => selecao.has(l.id)).length;
       const todasMarcadas = filtradas.length > 0 && marcadas === filtradas.length;
       return <section key={fonte.id} className="pf-source" aria-label={fonte.nome}>
-        <header className="pf-source-header"><div><h3>{fonte.nome}</h3><span className="pf-count">{filtradas.length}</span>
+        <header className="pf-source-header"><div><h3>{fonte.nome}</h3><span className="pf-count">{!filtradas.length && (fonte.id === "CONTABILIDADE" ? contabeis?.error || contabeis?.loading : manuais?.error || manuais?.loading) ? "—" : filtradas.length}</span>
           {COBERTURA[fonte.cobertura] && <span className="pf-muted">{COBERTURA[fonte.cobertura]}</span>}</div>
-          {manuais?.disponivel && ['MUNICIPAL','ESTADUAL','RFB','PGFN'].includes(fonte.id) && <Button size="sm" variant="secondary" disabled={manuais.loading || !!manuais.error} onClick={() => setEditor({ fonte: fonte.id })}>Adicionar</Button>}
+          {podeEditar && manuais?.disponivel && ['MUNICIPAL','ESTADUAL','RFB','PGFN'].includes(fonte.id) && <Button size="sm" variant="secondary" disabled={manuais.loading || !!manuais.error} onClick={() => setEditor({ fonte: fonte.id })}>Adicionar</Button>}
         </header>
         {!!fonte.avisos.length && <details className="pf-reading"><summary>Conferir leitura ({fonte.avisos.length})</summary>{fonte.avisos.map((a,i) => <p key={i}>{a}</p>)}</details>}
         {filtradas.length ? <><div className="pf-scroll" role="region" aria-label={`Tabela ${fonte.nome}`} tabIndex={0}>
@@ -99,19 +99,19 @@ export function PendenciasFiscaisTabelas({ relatorio, manuais, contabeis, empres
             <td>{l.competencia || '—'}</td><td>{l.vencimento || '—'}</td><td className="pf-money">{dinheiro(l.total)}</td>
             <td className="pf-situation" style={l.origem === "CONTABILIDADE" ? { color: l.estado === "VENCIDO" ? "var(--danger)" : l.estado === "A_CONCILIAR" ? "var(--state-warn)" : "var(--text-muted)" } : undefined}>{l.situacao}</td><td className="pf-actions"><Button size="sm" variant="secondary" onClick={() => setDetalhe(l)}>Detalhes</Button></td>
           </tr>)}</tbody></table>
-        </div><footer className="pf-subtotal">{resumo(filtradas)}</footer></> : <p className="pf-empty">{busca || tipo ? 'Nenhum registro para estes filtros.' : fonte.id === 'CONTABILIDADE' ? (contabeis?.error ? 'Consulta indisponível.' : contabeis?.loading ? 'Carregando…' : 'Nenhum saldo contábil em aberto em mês de pagamento fechado.') : 'Nenhum lançamento cadastrado.'}</p>}
+        </div><footer className="pf-subtotal">{resumo(filtradas)}</footer></> : <p className="pf-empty">{busca || tipo ? 'Nenhum registro para estes filtros.' : fonte.id === 'CONTABILIDADE' ? (contabeis?.error ? 'Consulta indisponível.' : contabeis?.loading ? 'Carregando…' : 'Nenhum saldo contábil em aberto em mês de pagamento fechado.') : manuais?.error ? 'Não foi possível conferir todos os registros desta origem.' : manuais?.loading ? 'Carregando registros desta origem…' : 'Nenhum lançamento cadastrado.'}</p>}
       </section>;
     })}
-    {editor && <PendenciaManualModal {...editor} salvar={manuais.salvar} aoFechar={() => setEditor(null)} />}
+    {podeEditar && editor && <PendenciaManualModal {...editor} salvar={manuais.salvar} aoFechar={() => setEditor(null)} />}
     {opcoesPdf && <ExportarPendenciasModal fontes={opcoesPdf} aoExportar={exportarPdf} aoFechar={() => setOpcoesPdf(null)} ocupado={exportando} erro={erroPdf} />}
     {pdf && <Modal titulo="PDF de pendências fiscais" tamanho="sm" aoFechar={() => setPdf(null)} rodape={<><Button variant="secondary" onClick={() => setPdf(null)}>Fechar</Button><a className="btn btn-primary btn-md" href={pdf.url} download={pdf.nome}>Baixar PDF</a></>}><p><strong>{pdf.empresa}</strong></p><p className="hint">Arquivo pronto · {pdf.quantidade} registro(s). Baixe para imprimir ou enviar ao cliente.</p></Modal>}
-    {detalhe && <Modal titulo={detalhe.tributo || detalhe.titulo} aoFechar={() => setDetalhe(null)} rodape={detalhe.manual ? <><Button variant="danger" onClick={() => { setRemover(detalhe); setDetalhe(null); setErro(''); }}>Excluir</Button><Button onClick={() => { setEditor({ item: detalhe.manual }); setDetalhe(null); }}>Editar</Button></> : null}>
+    {detalhe && <Modal titulo={detalhe.tributo || detalhe.titulo} aoFechar={() => setDetalhe(null)} rodape={podeEditar && detalhe.manual ? <><Button variant="danger" onClick={() => { setRemover(detalhe); setDetalhe(null); setErro(''); }}>Excluir</Button><Button onClick={() => { setEditor({ item: detalhe.manual }); setDetalhe(null); }}>Editar</Button></> : null}>
       <p className="hint">{detalhe.manual ? 'Lançamento manual' : detalhe.titulo}</p>
       <dl className="pf-detail">{Object.entries(CAMPOS_VALOR).map(([k,v]) => <div key={k}><dt>{v}</dt><dd>{dinheiro(detalhe[k])}</dd></div>)}
         {Object.entries(detalhe.evidencia.registro).map(([k,v]) => <div key={k}><dt>{k}</dt><dd>{String(v ?? '—')}</dd></div>)}</dl>
       {Object.entries(detalhe.evidencia.anotacoes).map(([k,v]) => <p key={k}>{k}: {String(v)}</p>)}
       {[...detalhe.evidencia.descricao, ...detalhe.evidencia.anotacoesBloco].map((v,i) => <p key={i}>{String(v)}</p>)}
     </Modal>}
-    {remover && <Modal titulo="Excluir pendência" tamanho="sm" ocupado={ocupado} aoFechar={() => setRemover(null)} rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setRemover(null)}>Cancelar</Button><Button variant="danger" disabled={ocupado} onClick={excluir}>{ocupado ? 'Excluindo…' : 'Excluir lançamento'}</Button></>}><p>Excluir o lançamento manual de {remover.tributo}?</p>{erro && <p role="alert" className="feedback error">{erro}</p>}</Modal>}
+    {podeEditar && remover && <Modal titulo="Excluir pendência" tamanho="sm" ocupado={ocupado} aoFechar={() => setRemover(null)} rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setRemover(null)}>Cancelar</Button><Button variant="danger" disabled={ocupado} onClick={excluir}>{ocupado ? 'Excluindo…' : 'Excluir lançamento'}</Button></>}><p>Excluir o lançamento manual de {remover.tributo}?</p>{erro && <p role="alert" className="feedback error">{erro}</p>}</Modal>}
   </section>;
 }

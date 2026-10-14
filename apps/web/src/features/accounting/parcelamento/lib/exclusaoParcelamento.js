@@ -1,3 +1,4 @@
+import { recusaDeAcesso } from "./recusaDeAcesso.js";
 // A REGRA DE TELA DA EXCLUSÃO DO CONTRATO — e do desfazer da rescisão.
 //
 // ⚠ POR QUE ISTO É UMA LIB COM TESTE PRÓPRIO, e não texto dentro do JSX: o que decide se esta tela
@@ -168,6 +169,8 @@ export const RECUSAS_ATO = Object.freeze({
 });
 
 export function explicarRecusaAto(code, mensagemDoServidor) {
+  const acesso = recusaDeAcesso(code);
+  if (acesso) return acesso;
   const doServidor = String(mensagemDoServidor || "").trim();
   // A mensagem do servidor vence: ela é a única que sabe o número, a competência e o histórico.
   if (doServidor && doServidor !== code) return doServidor;

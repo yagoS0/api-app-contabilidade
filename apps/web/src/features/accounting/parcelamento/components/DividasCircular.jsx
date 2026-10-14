@@ -1,3 +1,4 @@
+import { recusaDeAcesso } from "../lib/recusaDeAcesso";
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/Button';
 import { resumoOrigensParcelamento } from '../../../../../../../packages/shared/src/accounting/composicaoParcelamento.js';
@@ -15,7 +16,7 @@ export function DividasCircular({ listar, tipo, selecionadas = [], onSelecionar,
     Promise.resolve().then(() => listar(tipo)).then(r => {
       if (ativo) setEstado({ loading: false, items: r.debitos || [], habilitado: r.habilitado });
     }).catch(e => {
-      if (ativo) setEstado({ loading: false, items: [], habilitado: true, erro: e.message });
+      if (ativo) setEstado({ loading: false, items: [], habilitado: true, erro: recusaDeAcesso(e.code || e.payload?.error) || e.message });
     });
     return () => { ativo = false; };
   }, [listar, tipo, versao]);
@@ -36,8 +37,8 @@ export function DividasCircular({ listar, tipo, selecionadas = [], onSelecionar,
   return <section style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
     <strong>Dívidas da Circular</strong>
     <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0' }}>Selecione o saldo em aberto que compõe o acordo. Sem dívidas cadastradas, continue com a composição manual.</p>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <input aria-label="Filtrar dívidas da Circular" placeholder="Imposto ou competência" value={filtro} onChange={e => setFiltro(e.target.value)} />
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
+      <label style={{display:"grid",gap:4,fontSize:"0.8125rem",flex:"1 1 180px",minWidth:0}}>Filtrar dívidas da Circular<input placeholder="Imposto ou competência" value={filtro} onChange={e => setFiltro(e.target.value)} style={{width:"100%",minWidth:0,boxSizing:"border-box",height:40,padding:"8px 10px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg-subtle)",color:"var(--text)",font:"inherit"}} /></label>
       <Button size="sm" variant="secondary" disabled={disabled} onClick={() => setVersao(v => v + 1)}>Atualizar dívidas</Button>
     </div>
     <div style={{ maxHeight: 240, overflow: 'auto', marginTop: 8 }}>

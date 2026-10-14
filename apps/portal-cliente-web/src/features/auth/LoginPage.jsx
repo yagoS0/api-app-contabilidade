@@ -97,11 +97,10 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
           />
         </label>
 
-        <button type="button" className="btn btn-block" style={{ marginBottom: "var(--gap)" }} disabled={enviando} onClick={()=>setPorCodigo(true)}>Entrar com código por e-mail</button>
-
         <button className="btn btn-primary btn-block" type="submit" disabled={enviando}>
           {enviando ? "Entrando…" : "Entrar"}
         </button>
+        <button type="button" className="btn btn-block stack-gap" disabled={enviando} onClick={()=>setPorCodigo(true)}>Entrar com código por e-mail</button>
 
         {/* ⚠ A saída para quem esqueceu a senha fica NA TELA DO ERRO, não escondida num rodapé:
             é exatamente aqui que a pessoa está quando descobre que não lembra. Até esta entrega

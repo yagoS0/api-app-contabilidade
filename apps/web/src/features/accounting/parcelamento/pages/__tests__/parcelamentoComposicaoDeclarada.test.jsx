@@ -248,7 +248,7 @@ describe("o que sobe na chamada", () => {
     });
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Confirmar composição e baixa" })).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Informar a composição da parcela" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: /Informar a composição da parcela/ })).toBeTruthy();
     expect(mockLancarBaixa.mock.calls.length).toBe(antes);
   });
 

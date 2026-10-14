@@ -40,10 +40,15 @@ test("canal preparado fica visível com as ferramentas fechadas e acompanha a es
 
 test.each([
   ["canal único", { ...c, canais: [c.canais[0]] }],
-  ["lead com canal comercial obrigatório", { ...c, relacionamento: { tipo: "LEAD" } }],
 ])("não acrescenta rótulo de canal sem escolha: %s", (_, conversa) => {
   render(<CompositorConversa conversa={conversa} hook={hook()} />);
   expect(screen.queryByRole("status", { name: "Canal preparado" })).not.toBeInTheDocument();
+});
+
+test("lead identifica o canal comercial obrigatório sem oferecer troca", () => {
+  render(<CompositorConversa conversa={{ ...c, relacionamento: { tipo: "LEAD" } }} hook={hook()} />);
+  expect(screen.getByRole("status", { name: "Canal preparado" })).toHaveTextContent("Comercial");
+  expect(screen.queryByLabelText("Canal da mensagem")).not.toBeInTheDocument();
 });
 
 test("chegada em outro canal não muda remetente; rascunhos dos canais ficam separados", async () => {
@@ -53,7 +58,7 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   ui.rerender(<CompositorConversa conversa={{ ...c, canalId: "comercial" }} hook={h} />);
   expect(screen.queryByLabelText("Canal da resposta")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
-  expect(screen.getByText(/WhatsApp Atendimento/)).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "Canal da mensagem" })).toHaveValue("principal");
   expect(texto).toHaveValue("Mensagem pelo atendimento");
   ui.rerender(<CompositorConversa conversa={c} hook={h} pedidoCanal={{ interlocutorId: "liz", canalId: "comercial" }} />);
   expect(texto).toHaveValue("");
@@ -215,4 +220,22 @@ test("envio em andamento impede descarte", async () => {
   expect(screen.getByRole("button", { name: "Descartar rascunho" })).toBeDisabled();
   concluir({ ok: true });
   await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""));
+});
+
+
+test("ferramentas mostram canal antes das ações e Escape devolve foco preservando rascunho", async () => {
+  const h = hook();
+  render(<CompositorConversa conversa={c} hook={h} slotAcoes={<button>Preparar guia</button>} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), {target:{value:"Mensagem preservada"}});
+  const abrir=screen.getByRole("button",{name:"Ações da mensagem e arquivos"});
+  fireEvent.click(abrir);
+  const regiao=screen.getByRole("region",{name:"Mensagem e arquivos"});
+  await waitFor(()=>expect(regiao).toContainElement(document.activeElement));
+  const canal=screen.getByRole("combobox",{name:"Canal da mensagem"});
+  expect(canal.compareDocumentPosition(screen.getByText("Guias e documentos")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.keyDown(document.activeElement,{key:"Escape"});
+  expect(abrir).toHaveFocus();
+  expect(screen.queryByRole("region",{name:"Mensagem e arquivos"})).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Mensagem preservada");
+  expect(h.responder).not.toHaveBeenCalled();
 });

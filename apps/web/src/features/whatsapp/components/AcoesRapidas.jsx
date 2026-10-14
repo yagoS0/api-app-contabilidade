@@ -8,7 +8,7 @@ import { useRascunhoServidor } from "../hooks/useRascunhoServidor";
 // ⚠ A REGRA de quem pode agora mora em `../lib/acoesRapidas.js`; aqui é a ligação. O motivo do
 // bloqueio sai em TEXTO na tela, nunca em `title` — `title` não aparece no teclado nem no toque.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CnpjDaConversa } from "./ConversaVisual";
 import { campo } from "./FioDaConversa";
@@ -77,6 +77,12 @@ function AcoesRapidasContexto({
     canalLigado,
     temDestinoDeAnotacao: typeof onVirarAnotacao === "function",
   });
+  const motivosId = useId();
+  const motivosAgrupados = [...new Set(acoes.map(a => a.frase).filter(Boolean))].map((frase, index) => ({
+    frase,
+    id: `${motivosId}-motivo-${index}`,
+    acoes: acoes.filter(a => a.frase === frase),
+  }));
   const disponibilidadeAtual = useRef(acoes);
   disponibilidadeAtual.current = acoes;
 
@@ -220,6 +226,7 @@ function AcoesRapidasContexto({
             key={a.acao}
             variant="secondary"
             data-testid={`acao-${a.acao}`}
+            aria-describedby={motivosAgrupados.find(m => m.frase === a.frase)?.id}
             disabled={!a.pode || ocupado || (a.acao === ACAO.ENVIAR_DOCUMENTO && (incerto || !remoto.pronto))}
             onClick={() => abrir(a.acao)}
           >
@@ -229,9 +236,9 @@ function AcoesRapidasContexto({
       </div>
 
       {/* ⚠ O motivo é TEXTO, e aparece ANTES do clique — não depois da recusa. */}
-      {acoes.filter((a) => a.frase).map((a) => (
-        <p key={a.acao} data-testid={`motivo-${a.acao}`} className="wa-list-note">
-          {a.rotulo}: {a.frase}
+      {motivosAgrupados.map(m => (
+        <p key={m.frase} id={m.id} data-testid={`motivo-${m.acoes[0].acao}`} className="wa-list-note">
+          {m.frase}
         </p>
       ))}
 
