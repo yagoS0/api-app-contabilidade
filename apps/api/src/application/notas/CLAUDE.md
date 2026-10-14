@@ -24,3 +24,12 @@ Atualizado em 2026-09-08.
 - Disponibilidade de certificado deve usar a mesma regra da operação real. Empresa com apenas procuração não está disponível para NFSE/DFE.
 
 Validação local: 53 testes em seis suítes passaram em 2026-09-08: `CertResolver`, `certCnpjProprio`, `nfseCertificado`, `adnErroEco`, `dfeJanelaConsulta` e `procurationPorCnpj`. Incluem ausência de A1 com procuração ativa, precedência do A1 próprio, bloqueio antes de acesso HTTP em ADN/DFe e preservação do caminho autorizado de procuração. Os testes usam mocks; não consultam serviços fiscais reais.
+
+
+## Revisão de períodos apurados — 14/10/2026
+
+`pendenciasDoPeriodo.js` é a regra local comum: circular + ApuracaoSnapshot; recibo/número da declaração prova transmissão, cálculo/simulação não. Alertas não afirmam retificação obrigatória sem comparar a receita declarada. Não consultar RFB/ADN nem recalcular/transmitir na leitura. Prévia do contador e GET de período do cliente usam vínculo autorizado; falha permanece explícita, sem fallback para mock/ABERTA. Na emissão, revalidar antes de reservar DPS. Preservar bloqueio de 2027 antes de qualquer envio.
+
+PendenciaPosFechamento usa hash único de empresa/competência/identidade fiscal/evento. Emissão e captura vinculam a mesma pendência; cancelamento é outra ocorrência. Recaptura de nota já existente não cria alerta novo; resolução exige motivo, ator e data e não é apagada pelo upsert. Nota recebida pede revisão de despesas/retenções, não é receita de PGDAS. Sem competência explícita na NFS-e, não deduzir o mês do alerta pela data de emissão.
+
+ServiceInvoice grava revisaoPeriodoPendente junto ao desfecho autorizado em produção; falha do aviso nunca muda issued para falha_envio. O worker local recupera somente o aviso, nunca repete chamada fiscal. Migration 20261014160000_avisos_periodos_apurados antes da API. Nenhum backfill em massa: fatos legados exigem comparação e revisão, sem transformar captura histórica em receita nova. Testes com provedores simulados e PostgreSQL isolado; não emitir nota real para validar.

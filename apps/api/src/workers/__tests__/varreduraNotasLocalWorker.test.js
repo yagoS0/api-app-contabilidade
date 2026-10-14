@@ -1,3 +1,4 @@
+jest.mock("../../infrastructure/db/prisma.js", () => ({ prisma: { serviceInvoice: { findMany: jest.fn(async () => []) } } }));
 jest.mock("../../application/declarados/VarreduraDeNotasService.js", () => ({ varrerEmpresasComVarreduraAutomatica: jest.fn() }));
 jest.mock("../../application/notas/adn/AdnNotasService.js", () => ({ syncAdnNotasForCompany: jest.fn() }));
 jest.mock("../../application/notas/dfe/DfeSyncService.js", () => ({ syncDfeForCompany: jest.fn() }));
@@ -30,7 +31,7 @@ test("não sobrepõe ciclos locais demorados", async () => {
   let concluir;
   varrerEmpresasComVarreduraAutomatica.mockReturnValue(new Promise(resolve => { concluir = resolve; }));
   iniciarWorkerVarreduraNotasLocal();
-  await Promise.resolve();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
   jest.advanceTimersByTime(2 * 60 * 60000);
   expect(varrerEmpresasComVarreduraAutomatica).toHaveBeenCalledTimes(1);
   concluir({ varridas: 0, empresas: [] });

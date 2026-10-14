@@ -261,12 +261,12 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeE
   useEffect(() => () => { pedidoAuditoria.current += 1; pedidoPendencias.current += 1; }, []);
 
   async function confirmarTratamento() {
-    if (!podeEditar || !tratamento || tratandoRef.current || (tratamento.tipo === "reabrir" && !motivo.trim())) return;
+    if (!podeEditar || !tratamento || tratandoRef.current || !motivo.trim()) return;
     tratandoRef.current = true; setTratando(true); setResultadoTratamento(null);
     try {
       const r = tratamento.tipo === "reabrir"
         ? await api.reabrirCompetencia(companyId, tratamento.competencia, motivo.trim())
-        : await api.resolverPendenciaPosFechamento(companyId, tratamento.id);
+        : await api.resolverPendenciaPosFechamento(companyId, tratamento.id, motivo.trim());
       if (r?.ok !== true) throw new Error("Não foi possível confirmar a alteração. Atualize a auditoria antes de tentar novamente.");
       if (escopoAtual.current !== escopo) return;
       setTratamento(null);
@@ -337,7 +337,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeE
           Lançamentos, onde a ação já existe e já tem confirmação. */}
       <PendenciasList pendencias={pendenciasVisiveis} saving={tratando} onAbrirNota={abrirNota}
         onReabrir={podeEditar && api.reabrirCompetencia ? (mes) => { setMotivo(""); setTratamento({ tipo: "reabrir", competencia: mes }); } : undefined}
-            onResolver={podeEditar && api.resolverPendenciaPosFechamento ? (id) => setTratamento({ tipo: "resolver", id }) : undefined}
+            onResolver={podeEditar && api.resolverPendenciaPosFechamento ? (id) => { setMotivo(""); setTratamento({ tipo: "resolver", id }); } : undefined}
         rotuloResolver="Marcar como conferida" />
       {resultadoTratamento && <p role={resultadoTratamento.erro ? "alert" : "status"}>{resultadoTratamento.texto}</p>}
       {pendenciasFalharam && empresaPendencias === companyId && !auditoriaVisivel && <p role="alert">Não foi possível conferir se entrou nota depois de a competência ser fechada.</p>}
@@ -392,8 +392,9 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeE
       ) : null}
       {tratamento && <Modal titulo={tratamento.tipo === "reabrir" ? `Reabrir competência fiscal ${tratamento.competencia}` : "Concluir conferência da pendência"} tamanho="sm" ocupado={tratando} aoFechar={() => setTratamento(null)} rodape={<>
         <Button variant="secondary" disabled={tratando} onClick={() => setTratamento(null)}>Cancelar</Button>
-        <Button disabled={tratando || (tratamento.tipo === "reabrir" && !motivo.trim())} onClick={confirmarTratamento}>{tratando ? "Salvando…" : "Confirmar"}</Button>
+        <Button disabled={tratando || !motivo.trim()} onClick={confirmarTratamento}>{tratando ? "Salvando…" : "Confirmar"}</Button>
       </>}>
+        {tratamento.tipo === "resolver" && <label>Conclusão da revisão<textarea aria-label="Conclusão da revisão" value={motivo} onChange={e => setMotivo(e.target.value)} disabled={tratando} maxLength={2000} rows={3} style={{ width: "100%", boxSizing: "border-box" }} /></label>}
         {tratamento.tipo === "reabrir" ? <><p>A competência fiscal voltará à conferência. Isso não reabre o fechamento contábil, não retifica declarações transmitidas e não resolve a pendência automaticamente.</p><label>Motivo da reabertura<textarea aria-label="Motivo da reabertura" value={motivo} disabled={tratando} onChange={e => setMotivo(e.target.value)} rows={4} style={{ display: "block", marginTop: 6, width: "100%", minWidth: 0, boxSizing: "border-box", padding: "8px 10px", color: "var(--text)", background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", font: "inherit", resize: "vertical" }} /></label></> : <p>Confirme somente depois de revisar a nota e os reflexos na competência. Esta ação encerra o aviso; não altera a nota, o fechamento ou a declaração.</p>}
         {resultadoTratamento?.erro && <p role="alert">{resultadoTratamento.texto}</p>}
       </Modal>}

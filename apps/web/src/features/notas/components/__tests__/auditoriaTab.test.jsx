@@ -65,8 +65,9 @@ test("concluir conferência usa rota própria e só altera depois de confirmar",
   render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} podeEditar />);
   fireEvent.click(await screen.findByRole("button", { name: "Marcar como conferida" }));
   expect(api.resolverPendenciaPosFechamento).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Conclusão da revisão'), { target: { value: 'Receita já contemplada na declaração.' } });
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirmar" }));
-  await waitFor(() => expect(api.resolverPendenciaPosFechamento).toHaveBeenCalledWith("A", "p1"));
+  await waitFor(() => expect(api.resolverPendenciaPosFechamento).toHaveBeenCalledWith("A", "p1", "Receita já contemplada na declaração."));
 });
 
 const AUDITORIA = {

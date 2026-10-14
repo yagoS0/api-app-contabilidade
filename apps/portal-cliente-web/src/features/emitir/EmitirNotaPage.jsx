@@ -1,3 +1,4 @@
+import { AvisoPeriodo } from "@contabilidade/shared/aviso-periodo";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { ConfigurarRecorrencia, ListaRecorrencias } from '@contabilidade/shared/nfse-recorrencias';
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -776,6 +777,19 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // escolha preenche e o que ela PRESERVA. Este bloco é a LIGAÇÃO.
   //
   // ⚠ Não é pedido a quem não pode emitir — a tela nem chega a montar o formulário.
+  const conferenciaPeriodo = useCarregamento(
+    async () => {
+      const periodo = await api.getSituacaoPeriodo(companyId, form.competencia);
+      if (periodo?.competencia !== form.competencia.slice(0, 7) || typeof periodo.exigeRevisao !== 'boolean'
+        || !['ABERTA', 'FECHADA', 'APURADA', 'TRANSMITIDA'].includes(periodo.estado)) throw Error('Conferência do período inválida.');
+      return { companyId, competencia: form.competencia, periodo };
+    },
+    [companyId, form.competencia], { habilitado: portao.podeEmitir && Boolean(form.competencia) }
+  );
+  const periodoAtual = !conferenciaPeriodo.carregando && !conferenciaPeriodo.erro
+    && conferenciaPeriodo.dados?.companyId === companyId && conferenciaPeriodo.dados?.competencia === form.competencia
+    ? conferenciaPeriodo.dados.periodo : null;
+
   const memoriaTomadores = useCarregamento(
     () => api.getTomadoresEmitidos(companyId),
     [companyId],
@@ -1144,6 +1158,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       return;
     }
 
+    if (!periodoAtual) {
+      document.getElementById('emitir-conferencia-periodo')?.focus();
+      return;
+    }
     envioAtivo.current = true;
     aoMudarEnvio?.(true);
     setEnviando(true);
@@ -1679,6 +1697,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                       }}
                     />
                   </label>
+                  <AvisoPeriodo periodo={periodoAtual} />
+                  {conferenciaPeriodo.carregando && <p role="status">Conferindo fechamento e apuração…</p>}
+                  {conferenciaPeriodo.erro && <p id="emitir-conferencia-periodo" tabIndex={-1} role="alert">Não foi possível conferir o período. <button type="button" onClick={conferenciaPeriodo.recarregar}>Atualizar conferência</button></p>}
                   <label htmlFor="emitir-competencia">
                     Data da competência
                     <input
@@ -2082,7 +2103,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
               ) : null}
 
               <ConfigurarRecorrencia api={api} companyId={companyId}
-                disabled={enviando || !conferenciaPerfil.ok || !conferenciaCodigo.ok || !conferenciaAliquota.ok || !conferenciaPTotTribSN.ok || !conferenciaOperacao.ok || Boolean(retryInvoiceId)}
+                disabled={enviando || !periodoAtual || !conferenciaPerfil.ok || !conferenciaCodigo.ok || !conferenciaAliquota.ok || !conferenciaPTotTribSN.ok || !conferenciaOperacao.ok || Boolean(retryInvoiceId)}
                 aoSalvar={() => setRevisaoRecorrencias(v => v + 1)}
                 obterModelo={() => {
                   if (!document.getElementById('formulario-emissao-nfse')?.reportValidity()) return null;
@@ -2090,7 +2111,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                 }} />
               <ListaRecorrencias api={api} companyId={companyId} revisao={revisaoRecorrencias} />
               <div className="form-actions">
-                <button type="submit" className="btn btn-primary" disabled={enviando || !conferenciaPerfil.ok}>
+                <button type="submit" className="btn btn-primary" disabled={enviando || !periodoAtual || !conferenciaPerfil.ok}>
                   {enviando ? "Emitindo…" : "Emitir nota"}
                 </button>
               </div>

@@ -1,5 +1,13 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Organização do emissor — 14/10/2026
+
+O assistente do contador usa `components/emissor-contador.css`, escopado à sua própria classe/modal: campos de altura uniforme, rótulos 500, títulos 600, ações de consulta alinhadas, seções com espaçamento e prévia lateral com valores legíveis. Competência e precisão do período aparecem antes dos dados de serviço na segunda etapa, mantendo os mesmos handlers, payload e regras fiscais. Abaixo de 900px a prévia segue abaixo do formulário; abaixo de 600px os campos empilham. Preservar as três etapas, foco, erros, consulta de CEP/CNPJ, E0014 e bloqueios durante envio. Não aplicar essas regras a todos os modais nem esconder overflow para encobrir campos fora da tela.
+
+Avisos de períodos implementados em 14/10/2026: `PendenciasPeriodoBanner` em Notas e Apuração; `AvisoPeriodo` compartilhado com o cliente, visível fora dos detalhes fiscais. `PendenciaPosFechamento` conserva nota, origem, valor e situação na detecção. Distinguir FECHADA/APURADA de TRANSMITIDA com número de declaração/recibo; retificação é condicional à receita já considerada e regime de caixa/competência. Concluir revisão exige justificativa e grava ator/data; recaptura não reabre pendência resolvida. Emissão e captura se unem pela identidade fiscal, sem fabricar PortalInvoice na emissão. Não reabrir, recalcular, transmitir nem consultar SERPRO automaticamente. Falha da leitura não significa período aberto. Manter 2027 bloqueado; demonstrações locais não emitem.
+
+Aplicar migration `20261014160000_avisos_periodos_apurados` antes do backend. O marcador durável em ServiceInvoice garante recuperação local no worker, sem repetir DPS. Dados anteriores não recebem avisos em massa: primeira descoberta significa revisão, não prova de receita omitida. Ver testes `pendenciasDoPeriodo`, `avisosPeriodo`, ligação do cliente e ensaio PostgreSQL `scripts/run-avisos-periodos-postgres.mjs`.
+
 ## CEP e consulta de resultado — 13/10/2026, PR #163
 
 `EmitirNfseWizard` rastreia os campos trazidos pela consulta de CEP. Ao trocar o CEP, limpar somente os valores ainda iguais aos preenchidos automaticamente pela consulta anterior. Preservar número, complemento e alterações manuais, inclusive feitas durante a consulta. Respostas antigas não podem preencher outro CEP/empresa. CEP permanece texto: preservar zero inicial (`01551020`), sem conversão numérica.

@@ -2223,6 +2223,9 @@ export function createMockApi() {
     // ⚠⚠ O MOCK EXERCITA OS TRÊS RAMOS. Este projeto foi mordido três vezes na mesma semana por
     // ramo inalcançável offline — e aqui o ramo caro é o de VÁRIOS perfis, que é o único em que a
     // tela precisa RECUSAR o submit.
+    async getSituacaoPeriodo(companyId, competencia) {
+      return { competencia: competencia.slice(0, 7), estado: 'ABERTA', exigeRevisao: false };
+    },
     async getPerfisDeEmissao(companyId) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);

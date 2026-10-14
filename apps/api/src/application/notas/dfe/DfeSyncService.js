@@ -1,3 +1,4 @@
+import { registrarPendenciaDoPeriodo } from "../pendenciasDoPeriodo.js";
 // Q12.B.4: orquestra o loop de captura DFe pra uma empresa.
 //
 // Fluxo:
@@ -222,7 +223,7 @@ async function applyEvent(tx, { portalClientId, ev }) {
   if (!ev.chaveAcesso) return { skipped: true };
   const nota = await tx.portalInvoice.findFirst({
     where: { clientId: portalClientId, chaveAcesso: ev.chaveAcesso },
-    select: { id: true },
+    select: { id: true, competencia: true, papel: true, statusEfetivo: true, total: true },
   });
   if (nota) {
     let newStatus = null;
@@ -234,6 +235,9 @@ async function applyEvent(tx, { portalClientId, ev }) {
         data: { statusEfetivo: newStatus },
       });
     }
+    if (ev.action === 'CANCELAMENTO' && nota.statusEfetivo !== 'cancelada') await registrarPendenciaDoPeriodo(tx, {
+      portalClientId, competencia: nota.competencia, notaId: nota.id, chaveAcesso: ev.chaveAcesso,
+      papel: nota.papel, valor: nota.total, evento: 'evento_retroativo', origem: 'EVENTO_DFE' });
     await tx.portalInvoiceEvent.create({
       data: {
         clientId: portalClientId,

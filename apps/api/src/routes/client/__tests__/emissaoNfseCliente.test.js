@@ -26,6 +26,9 @@ const cenario = {
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const prisma = {
+    companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
+    apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => ({ reciboNumero: "recibo-teste" })) },
     company: { findUnique: jest.fn(), findMany: jest.fn() },
     portalClient: { findUnique: jest.fn(), findMany: jest.fn() },
     companyClientUser: { findUnique: jest.fn(), findMany: jest.fn() },
@@ -437,4 +440,18 @@ describe("GET /client/companies — a flag aparece; a auditoria NÃO", () => {
       expect(serializado).not.toContain("user-do-escritorio-1");
     });
   });
+});
+
+
+test('prévia do período do cliente usa empresa autorizada e só lê estado local', async () => {
+  const r = await request(montarApp(usuarioCliente('OWNER'))).get(`/client/companies/${PORTAL_ID}/nfse/periodo?competencia=2026-09-10&companyId=outra`);
+  expect(r.status).toBe(200); expect(r.body.estado).toBe('TRANSMITIDA');
+  expect(prisma.apuracaoSnapshot.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId_competencia: { portalClientId: PORTAL_ID, competencia: '2026-09' } } }));
+  expect(NfseService.issue).not.toHaveBeenCalled();
+});
+test('cliente sem vínculo não lê apuração; competência inválida não alcança banco fiscal', async () => {
+  const user = usuarioCliente('OWNER'); cenario.clientLink = null;
+  expect((await request(montarApp(user)).get(`/client/companies/${PORTAL_ID}/nfse/periodo?competencia=2026-09`)).status).toBe(403);
+  expect(prisma.apuracaoSnapshot.findUnique).not.toHaveBeenCalled();
+  expect((await request(montarApp(usuarioCliente('OWNER'))).get(`/client/companies/${PORTAL_ID}/nfse/periodo?competencia=2026-13`)).status).toBe(400);
 });

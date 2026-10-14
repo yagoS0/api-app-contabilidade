@@ -2023,13 +2023,13 @@ export function createRealApi() {
         body: JSON.stringify({ reason }),
       });
     },
-    async listPendenciasPosFechamento(companyId, { onlyOpen = true } = {}) {
-      const payload = await request(`/firm/companies/${companyId}/pendencias-pos-fechamento?onlyOpen=${onlyOpen}`);
+    async listPendenciasPosFechamento(companyId, { onlyOpen = true, competencia } = {}) {
+      const payload = await request(`/firm/companies/${companyId}/pendencias-pos-fechamento?onlyOpen=${onlyOpen}${competencia ? `&competencia=${encodeURIComponent(competencia)}` : ""}`);
       if (!Array.isArray(payload?.pendencias)) throw new Error("Não foi possível confirmar as pendências pós-fechamento.");
       return payload.pendencias;
     },
-    async resolverPendenciaPosFechamento(companyId, pendId) {
-      return request(`/firm/companies/${companyId}/pendencias-pos-fechamento/${pendId}/resolver`, { method: "POST" });
+    async resolverPendenciaPosFechamento(companyId, pendId, motivo) {
+      return request(`/firm/companies/${companyId}/pendencias-pos-fechamento/${pendId}/resolver`, { method: "POST", body: JSON.stringify({ motivo }) });
     },
 
     // ─── Q12.B: captura DFe ─────────────────────────────────────────────────

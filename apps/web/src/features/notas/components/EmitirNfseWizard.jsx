@@ -1,4 +1,5 @@
 import { ConsultaResultadoNfse } from '@contabilidade/shared/nfse-conciliacao';
+import './emissor-contador.css';
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
 import { usePreviaFiscal } from '../hooks/usePreviaFiscal';
@@ -160,7 +161,7 @@ const campo = {
   background: "var(--bg-page)", border: `1px solid ${PANEL.border}`, borderRadius: 6,
   color: PANEL.text, padding: "8px 10px", fontSize: "0.9rem", width: "100%", boxSizing: "border-box",
 };
-const rotulo = { display: "grid", gap: 4, fontSize: "0.78rem", color: PANEL.muted };
+const rotulo = { display: "grid", gap: 7, fontSize: "0.82rem", fontWeight: 500, color: PANEL.text };
 
 // Cor do bloco "o que vai ser declarado". Regime resolvido NÃO é verde: verde é concluído, e ler o
 // regime não conclui nada. Quando ele bloqueia a emissão, é vermelho — bloqueio é bloqueio.
@@ -244,11 +245,8 @@ function AvisoDeReaproveitamento({ modelo }) {
 // "quanto" —, o mesmo vocabulário do protótipo aprovado.
 function Bloco({ titulo, children, oculto = false }) {
   return (
-    <section hidden={oculto} style={{ display: oculto ? "none" : "grid", gap: 10 }}>
-      <h4 style={{
-        margin: 0, fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.04em",
-        textTransform: "uppercase", color: PANEL.muted,
-      }}>
+    <section className="emissor-bloco" hidden={oculto} style={{ display: oculto ? "none" : "grid" }}>
+      <h4>
         {titulo}
       </h4>
       {children}
@@ -897,18 +895,8 @@ export function EmitirNfseWizard({
   const travadoPelaRejeicao = Boolean(rejeicao && !rejeicao.podeTentarDeNovo);
 
   return (
-    <Modal titulo="Emitir nota de serviço" tamanho="lg" aoFechar={onClose} ocupado={enviando}>
+    <Modal titulo="Emitir nota de serviço" className="emissor-contador-modal" tamanho="lg" aoFechar={onClose} ocupado={enviando}>
       <div className="emissor-contador">
-      <style>{`
-        .emissor-contador { min-width: 0; overflow-wrap: anywhere; }
-        .emissor-contador fieldset { min-width: 0; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 12px; }
-        .emissor-contador label { min-width: 0; }
-        .emissor-contador #nfse-operacao label { display: grid; gap: 6px; font-size: .875rem; }
-        .emissor-contador #nfse-operacao input, .emissor-contador select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; padding: 8px; }
-        .emissor-contador summary { min-height: 40px; padding: 8px 0; cursor: pointer; }
-        .emissor-contador .emissor-campos { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-        @media(max-width: 600px) { .emissor-contador .emissor-campos { grid-template-columns: minmax(0,1fr); } .emissor-contador .emissor-campos > * { grid-column: auto !important; } }
-      `}</style>
 
         {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
           <CampoComBusca id="nfse-perfil" rotulo="Perfil de serviço desta nota" disabled={passo === PASSO_CONFERIR || enviando}
@@ -980,10 +968,11 @@ export function EmitirNfseWizard({
         <AvisoDeReaproveitamento modelo={valoresIniciais} />
 
         {/* Trilha dos passos: onde estou e quanto falta. */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        <div className="emissor-etapas" aria-label="Etapas da emissão">
           {PASSOS.map((p, i) => (
             <span
               key={p}
+              aria-current={i === passo ? 'step' : undefined}
               style={{
                 fontSize: "0.72rem", fontWeight: 700, padding: "3px 10px", borderRadius: 999,
                 border: `1px solid ${i === passo ? PANEL.accent : PANEL.border}`,
@@ -1020,7 +1009,7 @@ export function EmitirNfseWizard({
               <>
                 {/* ── Para quem ─────────────────────────────────────────── */}
                 <Bloco titulo="Para quem" oculto={passo !== 0}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                  <div className="emissor-consulta">
                     <label htmlFor={CAMPO.DOC} style={{ ...rotulo, flex: 1 }}>CNPJ ou CPF do tomador
                       <input
                         id={CAMPO.DOC}
@@ -1140,7 +1129,7 @@ export function EmitirNfseWizard({
                     <input id={CAMPO.EMAIL} value={tomador.email} onChange={(e) => setTomador({ ...tomador, email: e.target.value })} style={campo} />
                   </label>
 
-                  <details open={enderecoAberto} onToggle={(e) => setEnderecoAberto(e.currentTarget.open)}>
+                  <details className="emissor-endereco" open={enderecoAberto} onToggle={(e) => setEnderecoAberto(e.currentTarget.open)}>
                     <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: PANEL.muted }}>
                       Endereço do tomador (opcional — mas só vale completo)
                       {rotuloOrigem(origemEndereco) && <span style={{ marginLeft: 6 }}>({rotuloOrigem(origemEndereco)})</span>}
@@ -1174,8 +1163,10 @@ export function EmitirNfseWizard({
                         />
                       </div>
                       <div>
+                        <div className="emissor-consulta">
                         <label htmlFor={CAMPO.CEP} style={rotulo}>CEP<input id={CAMPO.CEP} value={endereco.CEP} onChange={(e) => alterarEndereco("CEP", e.target.value)} style={campo} /></label>
                         {apiPerfis?.consultarTomadorNfse && <Button type="button" variant="secondary" size="sm" onClick={buscarCepDoTomador} disabled={String(endereco.CEP).replace(/\D/g, '').length !== 8 || consultaCep?.estado === 'consultando'}>{consultaCep?.estado === 'consultando' ? 'Consultando CEP…' : 'Consultar CEP'}</Button>}
+                        </div>
                         {consultaCep?.mensagem && <div role="status" style={{ fontSize: '0.8rem', marginTop: 6 }}>{consultaCep.mensagem}</div>}
                       </div>
                       <label htmlFor={CAMPO.NUMERO} style={rotulo}>Número<input id={CAMPO.NUMERO} value={endereco.nro} onChange={(e) => alterarEndereco("nro", e.target.value)} style={campo} /></label>
@@ -1188,6 +1179,14 @@ export function EmitirNfseWizard({
 
                 {/* ── O que ─────────────────────────────────────────────── */}
                 <Bloco titulo="O que" oculto={passo !== 1}>
+                  <div className="emissor-campos emissor-periodo">
+                    <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência{apiPerfis ? '' : ' (opcional)'}
+                      <input id={CAMPO.COMPETENCIA} type={precisaoCompetencia} value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
+                    </label>
+                    <label style={rotulo}>Informar período por<select value={precisaoCompetencia} onChange={e => { setPrecisaoCompetencia(e.target.value); setCompetencia(e.target.value === 'month' ? competencia.slice(0, 7) : ''); }} style={campo}>
+                      <option value="month">Mês completo</option><option value="date">Dia da prestação</option>
+                    </select><small>Se houver mudança de regime no mês, informe o dia da prestação.</small></label>
+                  </div>
                   {/* ⚠ O CÓDIGO DE SERVIÇO É O QUE SE DECLARA AO FISCO, e ele vinha invisível: a nota
                       saía com o `cTribNac` do cadastro e o contador não via qual, nem com que descrição.
                       Fica ANTES da descrição livre de propósito — a descrição do serviço se escreve
@@ -1265,12 +1264,6 @@ export function EmitirNfseWizard({
                     </div>
                   )}
                   <div className="emissor-campos">
-                    <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência{apiPerfis ? '' : ' (opcional)'}
-                      <input id={CAMPO.COMPETENCIA} type={precisaoCompetencia} value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
-                    </label>
-                    <label style={rotulo}>Informar período por<select value={precisaoCompetencia} onChange={e => { setPrecisaoCompetencia(e.target.value); setCompetencia(e.target.value === 'month' ? competencia.slice(0, 7) : ''); }} style={campo}>
-                      <option value="month">Mês completo</option><option value="date">Dia da prestação</option>
-                    </select><small>Se houver mudança de regime no mês, informe o dia da prestação.</small></label>
                     <MunicipioDoPerfil codigo={servico.cLocPrestacao} busca={buscaLocalPrestacao}
                       onBuscar={texto => { setBuscaLocalPrestacao(texto); setServico(s => ({ ...s, cLocPrestacao: null })); }}
                       onEscolher={codigo => { setBuscaLocalPrestacao(''); setServico(s => ({ ...s, cLocPrestacao: codigo })); }} />
@@ -1450,7 +1443,7 @@ export function EmitirNfseWizard({
 
         {/* Opção desabilitada NUNCA fica sem explicação — e agora cada motivo LEVA ao campo. */}
         {problemasDoPasso.length > 0 && (
-          <div style={{ marginTop: 14 }}>
+          <div className="emissor-pendencias" style={{ marginTop: 14 }}>
             <div style={{ fontSize: "0.78rem", color: temProblemaGrave ? "var(--state-danger)" : "var(--state-neutral)", fontWeight: 700 }}>
               {temProblemaGrave ? "Antes de emitir, corrija:" : "Falta preencher:"}
             </div>
@@ -1531,7 +1524,7 @@ export function EmitirNfseWizard({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", marginTop: 16 }}>
+        <div className="emissor-acoes">
           {/* Voltar de PASSO, não de tela — por isso é `Button variant="secondary"` e não o
               `BackButton`, que é a saída da página. Os outros assistentes (OFX, Excel, regras de
               obrigação) já escreviam exatamente isto. */}

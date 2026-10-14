@@ -203,10 +203,10 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
     } finally { setSaving(false); }
   }
 
-  async function resolverPendencia(pendId) {
+  async function resolverPendencia(pendId, motivo) {
     setSaving(true);
     try {
-      await api.resolverPendenciaPosFechamento(companyId, pendId);
+      await api.resolverPendenciaPosFechamento(companyId, pendId, motivo);
       feedback?.notifySuccess?.("Pendência marcada como resolvida.");
       await loadAll();
     } catch (err) {

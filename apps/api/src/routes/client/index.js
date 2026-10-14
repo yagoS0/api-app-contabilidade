@@ -1,3 +1,4 @@
+import { situacaoDoPeriodo } from "../../application/notas/pendenciasDoPeriodo.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
 import { Router } from "express";
@@ -1836,6 +1837,18 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     // ⚠ O perfil é escopado por `PortalClient`, mas o `:companyId` do path pode ser qualquer um dos
     // dois ids (é a confusão que este projeto já pagou cinco vezes). A volta é sempre pela
     // `Company` legada — `resolveLegacyCompanyId` e depois `PortalClient.companyId`, que é `@unique`.
+  router.get('/companies/:companyId/nfse/periodo', requireClientCompanyAccess(), async (req, res) => {
+    try {
+      const competencia = req.query.competencia;
+      if (typeof competencia !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])(?:-\d{2})?$/.test(competencia)) return res.status(400).json({ message: 'Informe uma competência válida.' });
+      const companyId = await resolveLegacyCompanyId(String(req.params.companyId));
+      const portal = companyId && await prisma.portalClient.findUnique({ where: { companyId }, select: { id: true } });
+      if (!portal) return res.status(404).json({ message: 'Cadastro fiscal indisponível.' });
+      res.set('Cache-Control', 'no-store');
+      return res.json(await situacaoDoPeriodo(prisma, { portalClientId: portal.id, competencia }));
+    } catch { return res.status(503).json({ message: 'Não foi possível conferir o fechamento e a apuração deste período. Atualize a conferência antes de emitir.' }); }
+  });
+
   router.get(
     "/companies/:companyId/nfse/perfis",
       requireClientCompanyAccess(),

@@ -32,3 +32,12 @@ Executar os testes pertinentes com rede simulada: `__tests__/conciliacaoDps.test
 Usar `--runTestsByPath` com caminhos explícitos. `--testPathPatterns=nfse` também combina com o nome absoluto do checkout e pode executar o repositório inteiro por engano. Em `apps/api`, exemplo: `node ../../node_modules/jest/bin/jest.js --runInBand --runTestsByPath src/application/nfse/__tests__/conciliacaoDps.test.js src/application/nfse/__tests__/emissaoDps.test.js`.
 
 No PR #163, passaram 1.319 testes da API em 60 suítes e o CI completo. Esse registro é evidência daquela versão, não substitui testes das próximas mudanças. Não usar emissão/cancelamento real ou consultas fiscais pagas como teste de regressão.
+
+
+## Revisão de períodos apurados — 14/10/2026
+
+`pendenciasDoPeriodo.js` é a regra local comum: circular + ApuracaoSnapshot; recibo/número da declaração prova transmissão, cálculo/simulação não. Alertas não afirmam retificação obrigatória sem comparar a receita declarada. Não consultar RFB/ADN nem recalcular/transmitir na leitura. Prévia do contador e GET de período do cliente usam vínculo autorizado; falha permanece explícita, sem fallback para mock/ABERTA. Na emissão, revalidar antes de reservar DPS. Preservar bloqueio de 2027 antes de qualquer envio.
+
+PendenciaPosFechamento usa hash único de empresa/competência/identidade fiscal/evento. Emissão e captura vinculam a mesma pendência; cancelamento é outra ocorrência. Recaptura de nota já existente não cria alerta novo; resolução exige motivo, ator e data e não é apagada pelo upsert. Nota recebida pede revisão de despesas/retenções, não é receita de PGDAS. Sem competência explícita na NFS-e, não deduzir o mês do alerta pela data de emissão.
+
+ServiceInvoice grava revisaoPeriodoPendente junto ao desfecho autorizado em produção; falha do aviso nunca muda issued para falha_envio. O worker local recupera somente o aviso, nunca repete chamada fiscal. Migration 20261014160000_avisos_periodos_apurados antes da API. Nenhum backfill em massa: fatos legados exigem comparação e revisão, sem transformar captura histórica em receita nova. Testes com provedores simulados e PostgreSQL isolado; não emitir nota real para validar.

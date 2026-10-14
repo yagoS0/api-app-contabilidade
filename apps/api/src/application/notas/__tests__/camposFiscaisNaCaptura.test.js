@@ -65,8 +65,10 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       createMany: jest.fn(async ({ data }) => { store.itens.push(...data); return { count: data.length }; }),
       create: jest.fn(async ({ data }) => { store.itens.push(data); return data; }),
     },
+    apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
     companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
-    pendenciaPosFechamento: { create: jest.fn(async () => ({})) },
+    pendenciaPosFechamento: { upsert: jest.fn(async ({ create }) => create), create: jest.fn(async () => ({})) },
   };
   db.$transaction = jest.fn(async (cb) => cb(db));
   return { __store: store, prisma: db };

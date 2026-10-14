@@ -1,3 +1,4 @@
+import { AvisoPeriodo } from "@contabilidade/shared/aviso-periodo";
 import { CAMPOS_PERFIL_EMISSAO, textoDoValor } from '../../../lib/nfse/perfilEmissao';
 
 export function linhasDaConferenciaMunicipal(conferencia) {
@@ -26,6 +27,7 @@ export function linhasDaPreviaFiscal(dados) {
   return [
     `Ambiente: ${dados.demonstracao ? 'demonstração local' : dados.ambiente === 'homolog' ? 'homologação' : dados.ambiente === 'producao' ? 'produção' : 'não informado'}`,
     `Competência: ${dados.competencia}`,
+    ...(dados.periodo?.exigeRevisao ? [dados.periodo.mensagem] : []),
     ...(r ? [`Regime: ${r.regime} — histórico de ${r.vigenciaInicio} até ${r.vigenciaFim || 'sem término informado'}`] : []),
     ...(dados.opcaoIbsCbs && r?.regime === 'SIMPLES' ? [`Apuração de IBS/CBS: ${dados.opcaoIbsCbs.hibrido ? 'Simples híbrido — regime regular, fora do DAS' : dados.opcaoIbsCbs.apuracao === 'NO_DAS' ? 'Simples — dentro do DAS' : 'não informada para o Simples'} · vigência: ${dados.opcaoIbsCbs.vigenciaInicio} até ${dados.opcaoIbsCbs.vigenciaFim || 'sem término informado'}`] : []),
     `Serviço: ${dados.codigoServico || 'pendente'} · Perfil: ${dados.perfil?.nome || 'cadastro da empresa'}`,
@@ -46,11 +48,12 @@ export function linhasDaPreviaFiscal(dados) {
 
 export function PreviaFiscal({ previa, companyId, destaque = false }) {
   if (!previa.habilitada) return null;
-  return <section aria-labelledby="titulo-previa-fiscal" style={{ margin: '16px 0', overflowWrap: 'anywhere' }}>
+  return <section className="emissor-previa" aria-labelledby="titulo-previa-fiscal" style={{ margin: '16px 0', overflowWrap: 'anywhere' }}>
     <h3 id="titulo-previa-fiscal">Prévia fiscal por competência</h3>
     {previa.carregando && <p role="status">Conferindo histórico e regras da operação…</p>}
     {previa.erro && <p role="alert">{previa.erro}</p>}
     {previa.erro && <button type="button" onClick={previa.tentar}>Atualizar prévia fiscal</button>}
+    {!previa.carregando && !previa.erro && <AvisoPeriodo periodo={previa.dados?.periodo} />}
     {previa.dados && <details open={destaque || undefined}>
       <summary>{previa.dados.competencia} · {previa.dados.regimeVigente?.regime || 'Regime pendente'} · {previa.dados.ok ? 'Ver contexto fiscal' : 'Há pendências'}</summary>
       <ul>{linhasDaPreviaFiscal(previa.dados).map(l => <li key={l}>{l}</li>)}</ul>

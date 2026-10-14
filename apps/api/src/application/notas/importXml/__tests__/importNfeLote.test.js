@@ -39,6 +39,8 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => {
     portalClient: {
       findUnique: jest.fn(async () => ({ id: "p1", cnpj: "71402596000102" })),
     },
+    apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
     companyMonthlyCircular: {
       findFirst: jest.fn(async () => null), // nenhuma competência fechada por padrão
     },
@@ -69,7 +71,7 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => {
         return { count: data.length };
       }),
     },
-    pendenciaPosFechamento: { create: jest.fn(async () => ({ id: "pend1" })) },
+    pendenciaPosFechamento: { upsert: jest.fn(async ({ create }) => create), create: jest.fn(async () => ({ id: "pend1" })) },
     $transaction: jest.fn(async (fn) => (typeof fn === "function" ? fn(db) : Promise.all(fn))),
   };
   return { prisma: db, __store: store };

@@ -60,6 +60,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   return {
     __tx: tx,
     prisma: {
+      companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
+      apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
       company: { findUnique: jest.fn() },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
       // ⚠ A SÉRIE PASSOU A SER LIDA DA ÚLTIMA NOTA (dono, 16/08/2026) — ver `nfseUltimaNota.js`.

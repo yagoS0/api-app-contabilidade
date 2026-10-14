@@ -1,3 +1,4 @@
+import { prisma } from "../../../infrastructure/db/prisma.js";
 // `GET /notas/auditoria` — a rota LITERAL, e a ordem de registro que a torna alcançável.
 //
 // ⚠ ELA VEM ANTES DE `GET /notas/:notaId`, que é curinga. Registrada depois, o Express leria
@@ -25,6 +26,7 @@ jest.mock("../../../application/notas/auditoria/AuditoriaNotasService.js", () =>
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    pendenciaPosFechamento: { findUnique: jest.fn(async () => ({ id: 'p', portalClientId: 'empresa' })), updateMany: jest.fn(async ({ data }) => ({ id: 'p', ...data })) },
     portalInvoice: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     notaItem: { findMany: jest.fn(async () => []) },
     portalInvoiceEvent: { findMany: jest.fn(async () => []) },
@@ -129,4 +131,18 @@ describe("GET /notas/auditoria", () => {
     expect(r.body.error).toBe("auditoria_falhou");
     expect(JSON.stringify(r.body)).not.toContain("segredo");
   });
+});
+
+
+test('concluir revisão exige justificativa e conserva responsável sem transmitir', async () => {
+  const rota = '/firm/companies/empresa/pendencias-pos-fechamento/p/resolver';
+  expect((await request(makeApp()).post(rota).send({})).status).toBe(400);
+  expect(prisma.pendenciaPosFechamento.updateMany).not.toHaveBeenCalled();
+  const r = await request(makeApp()).post(rota).send({ motivo: 'Receita já contemplada na declaração.' });
+  expect(r.status).toBe(200);
+  expect(prisma.pendenciaPosFechamento.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ resolvida: true, resolucaoMotivo: 'Receita já contemplada na declaração.', resolvidaByUserId: 'u1' }) }));
+});
+test('pendência de outra empresa não pode ser resolvida', async () => {
+  const r = await request(makeApp()).post('/firm/companies/outra/pendencias-pos-fechamento/p/resolver').send({ motivo: 'Conferida receita.' });
+  expect(r.status).toBe(404); expect(prisma.pendenciaPosFechamento.updateMany).not.toHaveBeenCalled();
 });

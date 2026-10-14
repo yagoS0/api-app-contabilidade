@@ -1,3 +1,4 @@
+import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import { validarPercentualSimples } from './validarPercentualSimples.js';
 import { conciliarDps } from './conciliacaoDps.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
@@ -1860,7 +1861,7 @@ export class NfseService {
       estado: resultado.estado, motivo: resultado.motivo, chaveAcesso: resultado.chaveAcesso || null,
       xml: resultado.xml || null, consultadaEm: new Date().toISOString(),
     } };
-    const alteracao = resultado.estado === 'MESMA' ? { status: STATUS.ISSUED,
+    const alteracao = resultado.estado === 'MESMA' ? { status: STATUS.ISSUED, revisaoPeriodoPendente: NFSE_ENV === 'producao',
       chaveAcesso: resultado.chaveAcesso, numeroNfse: resultado.numeroNfse,
       xml: resultado.xml, ...CAMPOS_DE_FALHA_LIMPOS, configuracaoFiscal } : { configuracaoFiscal };
     const aplicado = await prisma.serviceInvoice.updateMany({ where: { id: anterior.id, companyId,
@@ -2046,6 +2047,15 @@ export class NfseService {
       }
     } catch (err) {
       return recusaAntesDeEscrever(err, "cadastro da empresa");
+    }
+
+    let periodoDaEmissao = null;
+    try {
+      const portalPeriodo = await prisma.portalClient.findUnique({ where: { companyId: company.id }, select: { id: true } });
+      if (!portalPeriodo) throw new Error('Cadastro fiscal indisponível para conferir o período.');
+      periodoDaEmissao = await situacaoDoPeriodo(prisma, { portalClientId: portalPeriodo.id, competencia: data.competencia || new Date() });
+    } catch (error) {
+      return recusaAntesDeEscrever(Object.assign(new Error('Não foi possível conferir fechamento e apuração. Atualize a prévia antes de emitir.'), { code: 'NFSE_PERIODO_INDISPONIVEL' }), 'competência');
     }
 
     // ── 2. NUMERAÇÃO: RESERVA TRANSACIONAL ───────────────────────────────────────────────
@@ -2241,6 +2251,7 @@ export class NfseService {
         message: conciliacao?.estado === 'MESMA'
           ? 'NFS-e existente recuperada e conferida. Nenhuma nova nota foi emitida nesta recuperação.'
           : "NFS-e emitida com sucesso (padrão nacional).",
+        periodo: periodoDaEmissao,
         recuperada: conciliacao?.estado === 'MESMA',
         nfse: issued,
       };

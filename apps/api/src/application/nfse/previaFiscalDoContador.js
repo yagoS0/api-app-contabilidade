@@ -1,3 +1,4 @@
+import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { NFSE_ENV, INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS, INTEGRACAO_PARAMETROS_MUNICIPAIS } from '../../config.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
@@ -27,6 +28,7 @@ export async function previaFiscalDoContador({ portalClientId, competencia, perf
     rpsSerie: true, pTotTribFed: true, pTotTribEst: true, pTotTribMun: true,
   } });
   if (!company) return recusar('CADASTRO_FISCAL_INDISPONIVEL', 'Cadastro fiscal indisponível.');
+  previa.periodo = await situacaoDoPeriodo(db, { portalClientId, competencia });
   const historico = regimeDaCompetencia({ historico: company.regimeHistorico, competencia });
   if (!historico.ok) return recusar(historico.codigo, historico.message, historico.correcao);
   previa.regimeVigente = historico;
