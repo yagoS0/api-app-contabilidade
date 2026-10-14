@@ -90,6 +90,8 @@ export async function getStoredProcurationStatus(portalClientId) {
     validUntil: value.validUntil || null,
     systems: Array.isArray(value.systems) ? value.systems : [],
     checkedAt: value.checkedAt || null,
+    cnpj: value.cnpj || null,
+    procuradorCnpj: value.procuradorCnpj || null,
     payload: value.payload || null,
   };
 }
@@ -128,13 +130,19 @@ export class SerproProcurationService {
     };
 
     const response = await this.client.post("/Consultar", payload);
+    const dados = typeof response?.dados === "string" ? parseJsonString(response.dados) : response?.dados;
+    if ((response?.status != null && Number(response.status) !== 200)
+      || !Array.isArray(dados)
+      || dados.some((p) => !Number.isFinite(parsePossibleDate(p?.dtexpiracao)?.getTime()) || !Array.isArray(p?.sistemas) || p.sistemas.some(s => typeof s !== "string"))) {
+      throw Object.assign(new Error("Não foi possível confirmar a procuração. A última verificação foi preservada."), { code: "SERPRO_PROCURACAO_INCONCLUSIVA" });
+    }
     const summary = summarizeProcurationResponse(response);
     const checkedAt = new Date().toISOString();
 
     return { ...summary, procuradorCnpj, cnpj: contribuinteCnpj, checkedAt };
   }
 
-  async checkCompanyProcuration({ portalClientId, contratanteCnpj }) {
+  async checkCompanyProcuration({ portalClientId, contratanteCnpj, reutilizar = false }) {
     const company = await prisma.portalClient.findUnique({
       where: { id: String(portalClientId) },
       select: { id: true, cnpj: true, razao: true },
@@ -145,7 +153,18 @@ export class SerproProcurationService {
       throw err;
     }
 
-    const summary = await this.checkCnpjProcuration({ cnpj: company.cnpj, contratanteCnpj });
+    const runtime = await getResolvedSerproCredentials();
+    const procuradorAtual = onlyDigits(contratanteCnpj || runtime.certificate.document);
+    if (reutilizar) {
+      const salva = await getStoredProcurationStatus(company.id);
+      const idade = Date.now() - new Date(salva.checkedAt).getTime();
+      const vigente = salva.status === "ATIVA" && new Date(salva.validUntil).getTime() > Date.now();
+      if (salva.cnpj === onlyDigits(company.cnpj) && salva.procuradorCnpj === procuradorAtual
+        && idade >= 0 && idade < 24 * 60 * 60 * 1000 && (vigente || salva.status === "AUSENTE")) {
+        return { ...salva, company, reutilizado: true };
+      }
+    }
+    const summary = await this.checkCnpjProcuration({ cnpj: company.cnpj, contratanteCnpj: procuradorAtual });
     const { procuradorCnpj, checkedAt } = summary;
 
     await prisma.appSetting.upsert({
@@ -153,6 +172,8 @@ export class SerproProcurationService {
       create: {
         key: keyForPortalClient(company.id),
         value: {
+          cnpj: onlyDigits(company.cnpj),
+          procuradorCnpj,
           status: summary.status,
           validUntil: summary.validUntil,
           systems: summary.systems,
@@ -162,6 +183,8 @@ export class SerproProcurationService {
       },
       update: {
         value: {
+          cnpj: onlyDigits(company.cnpj),
+          procuradorCnpj,
           status: summary.status,
           validUntil: summary.validUntil,
           systems: summary.systems,

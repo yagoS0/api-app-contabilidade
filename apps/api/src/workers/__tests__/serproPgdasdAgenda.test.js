@@ -3,7 +3,7 @@ jest.mock("../../infrastructure/db/prisma.js", () => ({ prisma: { portalClient: 
 jest.mock("../../application/guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn(async () => ({ assertActive() {}, release: jest.fn() })) }));
 jest.mock("../../application/guides/GuideScheduledEmailService.js", () => ({ resolveCompanyNotificationEmail: jest.fn(async () => null) }));
 jest.mock("../../application/fiscal/serpro/SerproRuntimeSettings.js", () => ({ getSerproRuntimeSettings: jest.fn(async () => ({ enabled: true, rotinas: { das: { enabled: true }, extrato: { enabled: true }, parcelamento: { enabled: true } } })) }));
-jest.mock("../../application/fiscal/serpro/SerproProcurationService.js", () => ({ SerproProcurationService: jest.fn(() => ({ checkCompanyProcuration: jest.fn(async () => ({ status: "ATIVA" })) })) }));
+jest.mock("../../application/fiscal/serpro/SerproProcurationService.js", () => ({ SerproProcurationService: jest.fn(() => ({ checkCompanyProcuration: jest.fn(async () => ({ status: "ATIVA", systems: ["00146"] })) })) }));
 jest.mock("../../application/fiscal/serpro/CaptureSerproGuidesService.js", () => ({ capturePgdasGuideForCompany: jest.fn(async () => ({ guide: { guideId: "das" } })) }));
 jest.mock("../../application/fiscal/lp/LucroPresumidoProvisaoService.js", () => ({ capturarLpDaCompetencia: jest.fn() }));
 jest.mock("../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js", () => ({ syncPgdasByCompetencia: jest.fn() }));
@@ -25,6 +25,7 @@ beforeEach(() => {
   prisma.portalClient.findMany.mockResolvedValue([{ id: "empresa", cnpj: "12345678000100", companyId: "legacy" }]);
   prisma.company.findMany.mockResolvedValue([{ id: "legacy", regimeTributario: "SIMPLES" }]);
   prisma.guide.findFirst.mockResolvedValue(null);
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue(null);
   prisma.parcelamento.findMany.mockResolvedValue([{ id: "acordo", numeroParcelamento: "1", aberturaEntryId: null }]);
   prepararAcompanhamentoParcelamentosEmpresa.mockResolvedValue({ ok: true, resultados: [] });
   capturarParcelaGuideForCompany.mockResolvedValue({ ok: true, parcelas: [] });
@@ -59,4 +60,48 @@ test("captura indisponível não equivale a nenhuma parcela devida", async () =>
   capturarParcelaGuideForCompany.mockResolvedValue({ ok: false, reason: "modalidade_nao_suportada", parcelas: [] });
   const result = await runSerproPgdasdWorkerOnce({ routines: ["parcelamento"] });
   expect(result.parcelasErro).toBe(1);
+});
+
+
+test("documentos do fechamento completos dispensam inclusive consulta de procuração", async () => {
+  prisma.guide.findFirst.mockResolvedValue({ id: "das", pdfBytes: Buffer.from("pdf") });
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ pgdasNumeroDeclaracao: "123", pgdasDeclaracaoFileId: "declaracao", pgdasReciboFileId: "recibo", dasTotal: 100 });
+  const result = await runSerproPgdasdWorkerOnce({ routines: ["das", "extrato"], competencia: "2026-08" });
+  expect(result.results[0].status).toBe("documentos_ja_recuperados");
+  expect(result.extratoJaSincronizado).toBe(1);
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
+  expect(SerproProcurationService.mock.results.at(-1).value.checkCompanyProcuration).not.toHaveBeenCalled();
+});
+
+test("SUCCESS sem recibo ainda precisa recuperar documentos", async () => {
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ serproSyncStatus: "SUCCESS", pgdasNumeroDeclaracao: "123", pgdasDeclaracaoFileId: "declaracao" });
+  await runSerproPgdasdWorkerOnce({ routines: ["extrato"], competencia: "2026-08" });
+  expect(syncPgdasByCompetencia).toHaveBeenCalledTimes(1);
+});
+
+test("procuração ativa para outro serviço não autoriza PGDAS", async () => {
+  SerproProcurationService.mockImplementationOnce(() => ({ checkCompanyProcuration: jest.fn(async () => ({ status: "ATIVA", systems: ["00103"] })) }));
+  const result = await runSerproPgdasdWorkerOnce({ routines: ["das", "extrato"], competencia: "2026-08" });
+  expect(result.skippedByProcuration).toBe(1);
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
+});
+
+import { SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
+
+
+test("consulta negativa aguarda conferência sem repetir chamadas", async () => {
+  prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ serproSyncStatus: "NOT_FOUND" });
+  const r = await runSerproPgdasdWorkerOnce({ routines: ["das", "extrato"], competencia: "2026-08" });
+  expect(r.results[0].status).toBe("aguardando_conferencia");
+  expect(r.extratoJaSincronizado).toBe(0);
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
+});
+test("DAS pronto não impede recuperar extrato ausente", async () => {
+  prisma.guide.findFirst.mockResolvedValue({ id: "das", pdfBytes: Buffer.from("pdf") });
+  await runSerproPgdasdWorkerOnce({ routines: ["das", "extrato"], competencia: "2026-08" });
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(syncPgdasByCompetencia).toHaveBeenCalledTimes(1);
 });
