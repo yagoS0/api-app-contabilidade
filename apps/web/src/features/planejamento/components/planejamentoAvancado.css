@@ -70,3 +70,7 @@
 
 .planejamento-cenario-botoes { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 600px) { .planejamento-cenario-botoes { flex-basis: 100%; } }
+
+.planejamento-lista-cenarios > div { min-width: 0; }
+.planejamento-lista-cenarios label { min-width: 0; flex: 1 1 240px; }
+.planejamento-lista-cenarios label span { overflow-wrap: anywhere; min-width: 0; }

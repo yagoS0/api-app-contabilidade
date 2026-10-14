@@ -170,8 +170,8 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
       {filtro === "MAIS_USADAS" && !busca && <p className="wa-quick-description">{temUsos ? "Mais usadas por você neste navegador." : "Todas as mensagens até seu primeiro uso."}</p>}
       {visiveis.some(r => r.origem) && <p className="wa-quick-description">Preparar um formulário gera um link e substitui o anterior.</p>}
       <div className="wa-quick-list">{visiveis.map(r => <article className="wa-quick-card" key={r.usoId}><strong>{r.titulo}</strong><p className="wa-quick-description">{r.descricao}</p><Button variant="secondary" size="sm" disabled={carregando || Boolean(r.origem && preparando)} onClick={() => r.origem ? formulario(r.origem) : selecionar(r.id)}>{r.origem ? "Preparar formulário" : "Usar no chat"}</Button></article>)}</div>
-      {!carregando && !erro && !visiveis.length && <p>Nenhuma mensagem encontrada. Tente outra palavra ou escolha Todas.</p>}
-      {!carregando && !erro && !orientacoes.length && <p>Não há textos aprovados. Em Gerenciar biblioteca compartilhada, carregue os modelos iniciais, revise e aprove para disponibilizá-los aqui.</p>}
+      {!carregando && !erro && !visiveis.length && <p role="status">{busca || orientacoes.length || filtro === "FORMULARIOS" ? 'Nenhuma mensagem encontrada. Tente outra palavra ou escolha Todas.' : 'Não há textos aprovados na biblioteca compartilhada.'}</p>}
+      {!carregando && !erro && !orientacoes.length && visiveis.length > 0 && <p className="wa-quick-description">Não há textos aprovados na biblioteca compartilhada.</p>}
       </>}
       {id && [["nome", "Nome do destinatário"], ["cnpj", "CNPJ"], ["servico", "Serviço"]].filter(([k]) => recursos.find(r => r.id === id)?.texto?.includes("{{"+k+"}}")).map(([k,rotulo]) => <label key={k}>{rotulo}<input value={vars[k]} onChange={e => { invalidarPrevia(); setVars({ ...vars, [k]: e.target.value }); }} /></label>)}
       {id && !previa && !preparando && <Button type="button" size="sm" variant="secondary" disabled={carregando} onClick={() => selecionar(id)}>Conferir mensagem</Button>}

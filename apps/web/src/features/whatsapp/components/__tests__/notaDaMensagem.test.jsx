@@ -1,5 +1,14 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { FioDaConversa } from '../FioDaConversa';
+import { NotaDaMensagem } from '../NotaDaMensagem';
+
+test('nota com capacidade negada explica o bloqueio e não chama gravação', () => {
+  const salvarNota = jest.fn();
+  render(<NotaDaMensagem conversa={{ id: 'c', capacidades: { notaInterna: false } }} mensagem={{ corpo: 'Mensagem' }} hook={{ salvarNota }} aoFechar={() => {}} />);
+  expect(screen.getByRole('status')).toHaveTextContent('Você não tem permissão');
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar nota interna' }));
+  expect(salvarNota).not.toHaveBeenCalled();
+});
 
 jest.mock('../CompositorConversa', () => ({ CompositorConversa: () => <div>Compositor de mensagens</div> }));
 const origem = { id: 'mensagem-1', direcao: 'in', tipo: 'text', corpo: 'Preciso conferir minha guia.', registradaEm: '2026-09-21T12:00:00Z', canal: { chave: 'Comercial' } };

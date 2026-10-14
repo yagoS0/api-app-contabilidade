@@ -74,14 +74,21 @@ export function PendenciasSuporte({ api, onAbrir, companyId = null }) {
 
 export function ConsumoIaDetalhado({ api }) {
   const [consumo, setConsumo] = useState(null), [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(false);
+  const emCurso = useRef(false);
   if (!api.getConsumoIaDetalhado) return null;
-  async function carregar(e) {
-    if (!e.currentTarget.open) return;
-    try { const r = await api.getConsumoIaDetalhado(); if (!r?.ok) throw new Error(); setConsumo(r.consumo); setErro(''); }
+  async function carregar() {
+    if (emCurso.current) return;
+    emCurso.current = true; setCarregando(true); setErro('');
+    try { const r = await api.getConsumoIaDetalhado(); if (!r?.ok || !r.consumo || !Array.isArray(r.consumo.itens)) throw new Error(); setConsumo(r.consumo); }
     catch { setErro('Consumo indisponível.'); }
+    finally { emCurso.current = false; setCarregando(false); }
   }
   const usd = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(v);
-  return <details className="wa-cost-breakdown" onToggle={carregar}><summary>Custos por área</summary>{erro && <p role="alert">{erro}</p>}{consumo && <>
+  return <details className="wa-cost-breakdown" onToggle={e => { if (e.currentTarget.open) carregar(); }}><summary>Custos por área</summary>
+    {carregando && <p role="status">Carregando consumo…</p>}
+    {erro && <div><p role="alert">{erro}{consumo ? ' Os valores abaixo são da última leitura disponível.' : ''}</p><Button size="sm" variant="secondary" onClick={carregar}>Tentar novamente</Button></div>}
+    {consumo && <>
     <p>Estimativa do mês: {usd(consumo.custoUsd)}</p><p>Reservado: {usd(consumo.reservaUsd)}</p>
     {['Suporte', 'Comercial', 'Outros'].map(area => {
       const itens = consumo.itens.filter(i => i.area === area);
