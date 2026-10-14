@@ -80,3 +80,10 @@ Validação dirigida cobre isolamento de empresa/competência, PDFs ausentes, re
 Reforços solicitados pelo usuário: entrega comprovada na Receita sem número de transmissão interno aparece separadamente da apuração interna, inclusive quando aberta. Diferença entre número interno e número recuperado pede conferência dos recibos, sem inferir qual é mais recente ou quem transmitiu. Empresas já apuradas com extrato, recibo e DAS completos continuam sendo ignoradas pela rotina antes da consulta de procuração; abrir o histórico também não consulta. Apenas a ação explícita de conferência busca eventual mudança posterior.
 
 Validacao final desta etapa: 38 testes dirigidos de API e 45 de interface aprovados; suite ampliada fiscal/fechamento com 808 testes aprovada (sobreposta aos dirigidos); build web concluido e layout desktop/celular verificado.
+
+
+## Apurada por fora no painel
+
+A carteira usa o número de declaração PGDAS-D salvo para a empresa/competência, sem transmissão interna registrada, para apresentar “Apurada por fora”. A projeção resolve as etapas de apuração/transmissão e o filtro Não apurados; mantém obrigações adicionais, guias, contabilização e importação independentes. Nenhum snapshot, fechamento ou lançamento é alterado e a leitura não consulta o SERPRO. Guia manual isolada não comprova entrega. Transmissão interna registrada não é reclassificada como externa.
+
+O mesmo rótulo aparece na lista de Apuração com o estado interno separado. A prévia do lote da carteira exclui as entregas externas comprovadas. Testes: 38 de API e 81 de interface, incluindo escopo empresa/competência, prova ausente, origem interna, preservação contábil e seleção. Componentes conferidos em 1440 e 390 px, sem overflow global.

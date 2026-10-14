@@ -101,3 +101,34 @@ test('evidência opcional conserva texto legado sem aceitar tipos inválidos',()
   expect(validarEdicaoTarefa({versao:0,acao:'concluir',hash:'atual',evidencia:' Recibo 123 '},tarefa('transmitir'),{}).conclusao.evidencia).toBe('Recibo 123');
   expect(()=>validarEdicaoTarefa({versao:0,acao:'concluir',evidencia:{}},tarefa('transmitir'),{})).toThrow('Evidência inválida');
 });
+
+
+test('PGDAS oficial retira apuração externa das pendências sem fechar contabilização', () => {
+  const c = empresa({ apuracao: { estado: 'aberta', numeroDeclaracaoRfb: '123' } });
+  const f = projetarFluxoCarteira(c, contexto({ obrigacoes: [{ verificador: 'APURACAO_TRANSMITIDA', concluida: false }] }));
+  expect(f.apuracao).toMatchObject({ rotulo: 'Apurada por fora', porFora: true, apurada: true, transmitida: true });
+  expect(f.tarefas.find(t => t.chave === 'apurar').concluida).toBe(true);
+  expect(f.tarefas.find(t => t.chave === 'transmitir').concluida).toBe(true);
+  expect(f.obrigacoes[0].concluida).toBe(true);
+  expect(f.contabilizacao.chave).toBe('aberto');
+  expect(f.tarefas.find(t => t.chave === 'contabilizar').concluida).toBe(false);
+  expect(c.apuracao.estado).toBe('aberta');
+  expect(f.status.chave).toBe('guias');
+});
+
+test('guia manual sem número oficial não prova apuração externa', () => {
+  expect(projetarFluxoCarteira(empresa({ guideCompliance: { das: { required: true, state: 'gerada', source: 'UPLOAD' } } }), contexto()).apuracao.apurada).toBe(false);
+});
+
+test.each([
+  { estado: 'transmitida', numeroDeclaracao: '123', numeroDeclaracaoRfb: '123' },
+  { estado: 'confirmada', numeroDeclaracao: '123', numeroDeclaracaoRfb: '456' },
+  { estado: 'aberta', numeroDeclaracao: '123', numeroDeclaracaoRfb: '456' },
+])('não atribui transmissão interna a origem externa: %j', apuracao => {
+  expect(projetarFluxoCarteira(empresa({ apuracao }), contexto()).apuracao.porFora).not.toBe(true);
+});
+
+test('comprovação PGDAS não resolve declarações de outro regime', () => {
+  const c = empresa({ legacyCompany: { regimeTributario: 'LUCRO_PRESUMIDO' }, apuracao: { numeroDeclaracaoRfb: '123' } });
+  expect(projetarFluxoCarteira(c, contexto()).apuracao.apurada).toBe(false);
+});

@@ -19,3 +19,12 @@ test('nome e seleção continuam independentes',()=>{
   fireEvent.click(screen.getByRole('checkbox',{name:'Selecionar Empresa Teste'}));
   expect(onOpenCompany).not.toHaveBeenCalled();expect(onAlternarSelecao).toHaveBeenCalledWith('a');
 });
+
+
+test('entrega recuperada aparece apurada por fora e contabilização continua aberta', () => {
+ const externa = { ...company, apuracao: { estado: 'aberta', numeroDeclaracaoRfb: '123' }, fechamentoContabil: { fechado: false } };
+ render(<CompaniesTable companies={[{ ...externa, fluxoCarteira: projetarFluxoCarteira(externa) }]} competencia="2026-09" />);
+ expect(screen.getByText('Apurada por fora')).toBeInTheDocument();
+ expect(screen.getByText('Aberto')).toBeInTheDocument();
+ expect(screen.queryByText('A apurar')).not.toBeInTheDocument();
+});

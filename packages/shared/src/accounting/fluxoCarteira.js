@@ -16,8 +16,21 @@ export function regimeCarteira(company) {
   return r.includes('PRESUMIDO') ? 'Presumido' : r.includes('SIMPLES') ? 'Simples' : 'Outros';
 }
 
+// Evidência oficial do mesmo período; guia manual ou afirmação isolada não comprovam entrega.
+export function apuradaPorFora({ numeroDeclaracaoRfb, numeroDeclaracaoPortal, estado } = {}) {
+  return Boolean(String(numeroDeclaracaoRfb || '').trim())
+    && !String(numeroDeclaracaoPortal || '').trim()
+    && !['transmitida', 'confirmada'].includes(estado);
+}
+
 export function apuracaoCarteira(company) {
   const estado = company?.apuracao?.estado;
+  const porFora = regimeCarteira(company) === 'Simples' && apuradaPorFora({
+    numeroDeclaracaoRfb: company?.apuracao?.numeroDeclaracaoRfb,
+    numeroDeclaracaoPortal: company?.apuracao?.numeroDeclaracao,
+    estado,
+  });
+  if (porFora) return { chave: 'apurado', rotulo: 'Apurada por fora', apurada: true, transmitida: true, porFora: true, origem: 'Receita Federal', estadoInterno: estado || null };
   const transmitida = ['transmitida', 'confirmada'].includes(estado);
   const apurada = transmitida || ['calculada', 'fechada', 'revisada'].includes(estado);
   return { chave: transmitida ? 'transmitido' : apurada ? 'apurado' : 'a_apurar', rotulo: transmitida ? 'Transmitido' : apurada ? 'Apurado' : 'A apurar', apurada, transmitida };
@@ -32,8 +45,8 @@ export function projetarFluxoCarteira(company, contexto = {}) {
     const p = reg(chave)?.dados?.conclusao;
     return Boolean(p?.em && p.hash && p.hash === contexto.hashes?.[chave]);
   };
-  if (prova('apurar')) Object.assign(apuracao, { apurada: true, chave: 'apurado', rotulo: 'Apurado', origem: 'Conferência registrada' });
-  if (apuracao.transmitida || prova('transmitir')) Object.assign(apuracao, { apurada: true, transmitida: true, chave: 'transmitido', rotulo: 'Transmitido' });
+  if (!apuracao.porFora && prova('apurar')) Object.assign(apuracao, { apurada: true, chave: 'apurado', rotulo: 'Apurado', origem: 'Conferência registrada' });
+  if (!apuracao.porFora && (apuracao.transmitida || prova('transmitir'))) Object.assign(apuracao, { apurada: true, transmitida: true, chave: 'transmitido', rotulo: 'Transmitido' });
   const guias = Object.values(company.guideCompliance || {}).filter(g => g && typeof g === 'object' && g.required);
   const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro;
   const disponiveis = guiasConhecidas && guias.every(g => ['gerada', 'enviada', 'falhou', 'vazio', 'present'].includes(g.state));

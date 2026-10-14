@@ -1,6 +1,6 @@
 jest.mock('../../../infrastructure/db/prisma.js',()=>({prisma:{}}));
 jest.mock('../../guides/guideCompliance.js',()=>({computeGuideComplianceMap:jest.fn(async()=>new Map([['a',{das:{required:true,state:'gerada'}}]]))}));
-import { reconciliarObrigacoesCarteira } from '../FluxoCarteiraService.js';
+import { reconciliarObrigacoesCarteira, contextosCarteira } from '../FluxoCarteiraService.js';
 import { normalizarEntrada } from '../../obrigacoes/ObrigacoesService.js';
 import { MODELOS_OBRIGACOES_CARTEIRA } from '../../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 
@@ -46,4 +46,28 @@ test('mede consultas da reconciliação para treze competências versus uma comp
  const leituras=db=>Object.values(db).reduce((n,t)=>n+(t.findMany?.mock.calls.length || 0),0);
  expect(leituras(todos)).toBe(80);
  expect(leituras(periodo)).toBe(8);
+});
+
+
+test('leitura local carrega prova por empresa e competência, mantendo snapshot e fechamento', async () => {
+  const db = banco({ fechado: false });
+  db.apuracaoSnapshot.findMany.mockResolvedValue([{ portalClientId: 'a', estado: 'aberta' }]);
+  db.companyMonthlyCircular.findMany.mockResolvedValue([{ portalClientId: 'a', pgdasNumeroDeclaracao: '123', fechadoContabilEm: null }]);
+  const companies = ['a', 'b'].map(companyId => ({ companyId, legacyCompany: { regimeTributario: 'SIMPLES' } }));
+  const mapa = await contextosCarteira(companies, '2026-09', db);
+  expect(mapa.get('a').fluxo.apuracao.rotulo).toBe('Apurada por fora');
+  expect(mapa.get('a').company.apuracao.estado).toBe('aberta');
+  expect(mapa.get('a').fluxo.contabilizacao.chave).toBe('aberto');
+  expect(mapa.get('b').fluxo.apuracao.apurada).toBe(false);
+  expect(db.companyMonthlyCircular.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: { in: ['a', 'b'] }, competencia: '2026-09' } }));
+  expect(db.ocorrenciaObrigacao.updateMany).not.toHaveBeenCalled();
+});
+
+test('nova leitura do número interno preserva hashes das confirmações existentes', async () => {
+ const db = banco();
+ const companies = [{ companyId: 'a', legacyCompany: { regimeTributario: 'SIMPLES' } }];
+ const antes = await contextosCarteira(companies, '2026-09', db);
+ db.apuracaoSnapshot.findMany.mockResolvedValue([{ portalClientId: 'a', estado: 'calculada', numeroDeclaracao: null }]);
+ const depois = await contextosCarteira(companies, '2026-09', db);
+ expect(depois.get('a').contexto.hashes).toEqual(antes.get('a').contexto.hashes);
 });

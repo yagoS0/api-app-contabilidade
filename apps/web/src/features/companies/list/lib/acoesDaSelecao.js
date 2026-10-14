@@ -170,7 +170,7 @@ export function planoDaSelecao({ empresas = [], competencia = null, agora = Date
       if (regime !== "SIMPLES") return "Lucro Presumido/Real — o portal ainda não apura este regime";
       // `apurada: true` quer dizer PGDAS-D já transmitido nesta competência. Reapurar seria
       // retificadora, que é decisão do contador dentro da empresa, não de um lote.
-      if (c?.apuracao?.apurada) return "já apurada nesta competência — reapurar geraria retificadora";
+      if (c?.apuracao?.apurada || c?.fluxoCarteira?.apuracao?.porFora) return "já apurada nesta competência — reapurar geraria retificadora";
       return null;
     },
     () => "o servidor só aceita quem já está com a apuração fechada",

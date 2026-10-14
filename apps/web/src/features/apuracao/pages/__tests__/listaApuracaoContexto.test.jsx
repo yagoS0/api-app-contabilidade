@@ -50,7 +50,7 @@ test('erro de carregamento não afirma carteira vazia', async () => {
 test('declaração externa aparece sem inventar fechamento interno', async () => {
   const api = { listApuracao: jest.fn(async () => ({ items: [{ portalClientId: 'externa', razao: 'Empresa externa', estado: 'aberta', entregaPgdas: { numeroDeclaracaoRfb: '123', extratoStatus: 'SUCCESS' } }] })) };
   render(<Tela api={api} />);
-  await screen.findByText('Entrega na Receita · sem transmissão registrada aqui');
-  expect(screen.getByText('aberta')).toBeInTheDocument();
+  await screen.findByText('Apurada por fora');
+  expect(screen.getByText('Fechamento interno: aberta')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Apurar em lote/ })).toBeDisabled();
 });

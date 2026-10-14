@@ -11266,5 +11266,5 @@ export function createMockApi() {
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
     ...mockRelatorios,
-  }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null })),id=>mockEntriesByCompany.get(id) || []);
+  }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null, numeroDeclaracaoRfb: getCircularRecord(id, comp)?.pgdasNumeroDeclaracao || null })),id=>mockEntriesByCompany.get(id) || []);
 }
