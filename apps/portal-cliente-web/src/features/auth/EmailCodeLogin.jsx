@@ -9,7 +9,7 @@ export function EmailCodeLogin({ voltar }) {
   const alive=useRef(true), flight=useRef(false), input=useRef(null);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   useEffect(()=>{if(!until)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[until]);
-  useEffect(()=>{if(challenge)input.current?.focus();},[challenge]);
+  useEffect(()=>{input.current?.focus();},[challenge]);
   const seconds=Math.max(0,Math.ceil((until-now)/1000));
   function message(err) {
     return err?.code==='too_many_requests'?'Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.':err?.code==='invalid_login_code'?'Código inválido ou expirado. Confira o código ou solicite outro.':'Não foi possível concluir. Tente novamente em instantes ou entre com sua senha.';
@@ -35,7 +35,7 @@ export function EmailCodeLogin({ voltar }) {
     <h2>{challenge?'Confira seu e-mail':'Entre sem senha'}</h2>
     <p className="sub">{challenge?`Se ${email} tiver acesso ativo, você receberá um código válido por 10 minutos. Confira também o spam.`:'Use o e-mail do seu acesso cadastrado no escritório. Enviaremos um código para você entrar.'}</p>
     {error&&<div className="alerta alerta-erro" role="alert">{error}</div>}
-    {challenge?<label htmlFor="email-login-code">Código de 8 dígitos<input ref={input} id="email-login-code" disabled={busy} type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} pattern="[0-9]{8}" required value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,''))}/></label>:<label htmlFor="email-login-address">E-mail<input id="email-login-address" disabled={busy} type="email" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} required value={email} onChange={e=>setEmail(e.target.value)}/></label>}
+    {challenge?<label htmlFor="email-login-code">Código de 8 dígitos<input ref={input} id="email-login-code" disabled={busy} type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} pattern="[0-9]{8}" required value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,''))}/></label>:<label htmlFor="email-login-address">E-mail<input ref={input} id="email-login-address" disabled={busy} type="email" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} required value={email} onChange={e=>setEmail(e.target.value)}/></label>}
     <button className="btn btn-primary btn-block" disabled={busy}>{busy?'Aguarde…':challenge?'Confirmar código e entrar':'Receber código'}</button>
     {challenge&&<><button type="button" className="btn btn-block stack-gap" disabled={busy||seconds>0} onClick={solicitar}>{seconds>0?`Reenviar em ${seconds}s`:'Reenviar código'}</button><button type="button" className="btn btn-block stack-gap" disabled={busy} onClick={()=>{setChallenge(null);setCode('');setError('');setUntil(0);}}>Alterar e-mail</button></>}
     <button type="button" className="btn btn-block stack-gap" disabled={busy} onClick={voltar}>Entrar com senha</button>

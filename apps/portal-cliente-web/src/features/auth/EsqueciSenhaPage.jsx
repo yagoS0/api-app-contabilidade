@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { mensagemDeErro } from "../../lib/mensagens";
 
@@ -20,6 +20,8 @@ export function EsqueciSenhaPage({ aoVoltar }) {
   const [erro, setErro] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [pedido, setPedido] = useState(false);
+  const resultadoRef = useRef(null);
+  useEffect(() => { if (pedido) resultadoRef.current?.focus(); }, [pedido]);
 
   const demonstracao = api.mode === "mock";
 
@@ -44,7 +46,7 @@ export function EsqueciSenhaPage({ aoVoltar }) {
     return (
       <div className="login-wrap">
         <div className="login-card">
-          <h1>Verifique seu e-mail</h1>
+          <h1 ref={resultadoRef} tabIndex={-1}>Verifique seu e-mail</h1>
 
           {/* ⚠ `alerta-info`, não um "sucesso" verde: a tela NÃO está confirmando que o e-mail
               saiu — está enunciando uma condição. A cor precisa contar a mesma história que o

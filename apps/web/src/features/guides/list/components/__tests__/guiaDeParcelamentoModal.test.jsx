@@ -88,3 +88,28 @@ test("competência inicial vem da linha, não preenche vencimento e não muda ap
   rerender(<GuiaDeParcelamentoModal competenciaInicial="2026-10" />);
   expect(screen.getByLabelText("Competência (AAAA-MM)")).toHaveValue("2026-08");
 });
+
+test('confirmação de duplicidade suspende formulário e devolve foco ao voltar', async () => {
+  const salvar=jest.fn(), fechar=jest.fn();
+  const gatilho=document.createElement('button');document.body.appendChild(gatilho);gatilho.focus();
+  const tela=render(<GuiaDeParcelamentoModal onSalvar={salvar} onClose={fechar} parcelamentosAtivos={[contrato]}
+    guiaExistente={{id:'nova',tipo:'SIMPLES',competencia:'2026-09',numeroParcela:1}}
+    guias={[{id:'anterior',parcelamentoId:'p',numeroParcela:1,competencia:'2026-09'}]}/>);
+  const vincular=screen.getByRole('button',{name:'Vincular parcela'});vincular.focus();fireEvent.click(vincular);
+  const confirmacao=await screen.findByRole('dialog',{name:'Conferir possível duplicidade'});
+  expect(confirmacao).toContainElement(document.activeElement);
+  expect(screen.queryByRole('dialog',{name:'Vincular parcela'})).not.toBeInTheDocument();
+  expect(salvar).not.toHaveBeenCalled();fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByRole('dialog',{name:'Conferir possível duplicidade'})).not.toBeInTheDocument();
+  expect(vincular).toHaveFocus();expect(fechar).not.toHaveBeenCalled();
+  tela.unmount();expect(gatilho).toHaveFocus();gatilho.remove();
+});
+
+test('ação de contabilizar depende do callback e gravação prende foco sem permitir edição',()=>{
+  const fechar=jest.fn();const tela=render(<GuiaDeParcelamentoModal onSalvar={jest.fn()} onClose={fechar}/>);
+  expect(screen.queryByRole('button',{name:'Contabilizar agora'})).not.toBeInTheDocument();
+  tela.rerender(<GuiaDeParcelamentoModal onSalvar={jest.fn()} onClose={fechar} saving/>);
+  expect(screen.getByLabelText('Como deseja continuar?')).toBeDisabled();
+  fireEvent.keyDown(document,{key:'Escape'});expect(fechar).not.toHaveBeenCalled();
+  fireEvent.keyDown(document,{key:'Tab'});expect(screen.getByRole('dialog')).toContainElement(document.activeElement);
+});

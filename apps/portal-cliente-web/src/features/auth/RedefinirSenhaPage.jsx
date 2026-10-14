@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { mensagemDeErro } from "../../lib/mensagens";
 
@@ -36,6 +36,8 @@ export function RedefinirSenhaPage({ token, aoConcluir, aoPedirNovoLink }) {
   const [erroEhLocal, setErroEhLocal] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [pronto, setPronto] = useState(false);
+  const resultadoRef = useRef(null);
+  useEffect(() => { if (pronto) resultadoRef.current?.focus(); }, [pronto]);
 
   async function aoEnviar(evento) {
     evento.preventDefault();
@@ -90,7 +92,7 @@ export function RedefinirSenhaPage({ token, aoConcluir, aoPedirNovoLink }) {
     return (
       <div className="login-wrap">
         <div className="login-card">
-          <h1>Senha alterada</h1>
+          <h1 ref={resultadoRef} tabIndex={-1}>Senha alterada</h1>
           <div className="alerta alerta-info" role="status">
             <p>
               <strong>Pronto.</strong> Sua senha foi alterada.

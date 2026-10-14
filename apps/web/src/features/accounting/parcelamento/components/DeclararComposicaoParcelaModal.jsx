@@ -1,3 +1,5 @@
+import { Modal } from "../../../../components/ui/Modal";
+import { Button } from "../../../../components/ui/Button";
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // F2.6 — INFORMAR A COMPOSIÇÃO DE UMA PARCELA QUE **TEM GUIA** E NÃO TRAZ A DECOMPOSIÇÃO.
 //
@@ -36,7 +38,7 @@ import {
   textoDaConfirmacaoDaComposicao, explicarRecusaComposicao, codigoDaRecusa,
 } from "../lib/baixaManualParcela";
 
-const PANEL = { text: "#F8F8F2", muted: "#A7B0C0", border: "#44475A", surface: "#21222C", field: "#282A36" };
+const PANEL = { text: "var(--text)", muted: "var(--text-muted)", border: "var(--border)", surface: "var(--bg-surface)", field: "var(--bg-subtle)" };
 
 function hojeISO() {
   const d = new Date();
@@ -62,7 +64,7 @@ const inputStyle = {
   background: PANEL.field, border: `1px solid ${PANEL.border}`, color: PANEL.text,
   fontSize: "0.85rem", fontFamily: "monospace",
 };
-const labelStyle = { display: "block", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 };
+const labelStyle = { display: "block", fontSize: "0.8125rem", color: PANEL.muted, fontWeight: 600, marginBottom: 3 };
 
 export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
@@ -118,42 +120,19 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
   const n = linha.numeroParcela ?? "?";
 
   return (
-    <div
-      role="dialog"
-      aria-label="Informar a composição da parcela"
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex",
-        alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", zIndex: 60, overflowY: "auto",
-      }}
-    >
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, width: "min(620px, 100%)", padding: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div>
-            <strong style={{ color: PANEL.text, fontSize: "1rem" }}>
-              Informar a composição da parcela {n}
-            </strong>
-            <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 2 }}>
-              {linha.competencia ? `competência ${linha.competencia} · ` : ""}
-              guia de {formatarMoeda(linha.valor)}
-            </div>
-          </div>
-          <button
-            type="button" onClick={onClose} disabled={enviando} aria-label="Fechar composição" title="Fechar sem lançar nada"
-            style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.1rem" }}
-          >
-            ✕
-          </button>
-        </div>
-
+    <>
+      <Modal titulo={`Informar a composição da parcela ${n}`} tamanho="md" ocupado={enviando} suspenso={Boolean(confirmacao)} aoFechar={onClose} fecharAoClicarFundo={false} rodape={<><Button variant="secondary" disabled={enviando} onClick={onClose}>Cancelar</Button><Button onClick={confirmar} disabled={Boolean(bloqueio) || enviando} title={bloqueio || undefined}>{enviando ? "Lançando…" : "Informar a composição e dar baixa"}</Button></>}>
+      <fieldset disabled={enviando} style={{border:0,padding:0,margin:0,minWidth:0}}>
+        <p>{linha.competencia ? `Competência ${linha.competencia} · ` : ""}Guia de {formatarMoeda(linha.valor)}</p>
         {/* ⚠ O QUE É PROVA E O QUE É DECLARAÇÃO — dito no topo, não num rodapé, e SEPARADO. Chamar o
             conjunto de "declaração" afirmaria menos evidência do que existe (o pagamento está
             comprovado pela guia); calar sobre a decomposição apagaria a única parte que o contador
             está afirmando. É essa fronteira que precisa sobreviver para quem auditar depois. */}
         <div style={{
-          marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.76rem",
+          marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.8125rem",
           color: PANEL.muted, background: "var(--accent-purple-surface)", border: "1px solid var(--accent-purple-border)",
         }}>
-          <div style={{ color: "var(--accent-purple)", fontWeight: 700, marginBottom: 2 }}>
+          <div style={{ color: "var(--accent-purple)", fontWeight: 600, marginBottom: 2 }}>
             O pagamento está comprovado; a COMPOSIÇÃO é sua declaração
           </div>
           A guia desta parcela está paga — isso é documento. O que ela <strong>não</strong> traz é a
@@ -164,7 +143,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
           provar.
         </div>
 
-        <div style={{ marginTop: 14, fontSize: "0.7rem", color: "var(--accent-purple)", fontWeight: 700, textTransform: "uppercase" }}>
+        <div style={{ marginTop: 14, fontSize: "0.8125rem", color: "var(--accent-purple)", fontWeight: 600 }}>
           A composição, como está no DAS
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 6 }}>
@@ -176,12 +155,12 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
               title="O principal do DAS. É ele que amortiza o passivo do parcelamento."
             />
             {decomposicao.erroPrincipal && (
-              <div style={{ fontSize: "0.68rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroPrincipal}</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroPrincipal}</div>
             )}
             {/* ⚠ O QUE ESTE CAMPO É — e o que ele NÃO é. Aqui digitar NÃO altera o contrato: o
                 número vai só para este lançamento. Quem altera o valor contratado da prestação é a
                 outra tela, a da prestação sem guia. */}
-            <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
               É o que <strong>amortiza o passivo</strong> do parcelamento. Este valor vale para{" "}
               <strong>este lançamento</strong> — ele não altera o contrato.
             </div>
@@ -193,7 +172,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
               onChange={(e) => setTextoJuros(e.target.value)} placeholder="0,00" style={inputStyle}
             />
             {decomposicao.erroJuros && (
-              <div style={{ fontSize: "0.68rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroJuros}</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroJuros}</div>
             )}
           </div>
           <div>
@@ -203,7 +182,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
               onChange={(e) => setTextoMulta(e.target.value)} placeholder="0,00" style={inputStyle}
             />
             {decomposicao.erroMulta && (
-              <div style={{ fontSize: "0.68rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroMulta}</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--state-danger)", marginTop: 3 }}>{decomposicao.erroMulta}</div>
             )}
           </div>
           <div>
@@ -214,7 +193,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             />
             {/* ⚠ MÊS FECHADO RECUSA — e a tela diz o que fazer ANTES do clique, não só depois da
                 recusa. É a trava que fica (`isMonthClosed`/`MES_FECHADO`). */}
-            <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
               É ela que decide a competência do lançamento. <strong>Mês fechado recusa</strong> — se
               acontecer, reabra a competência na aba Fechamento contábil e lance de novo.
             </div>
@@ -228,10 +207,10 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             contador, com o DAS na mão. */}
         {decomposicao.ok && decomposicao.divergeDoDocumento && (
           <div role="status" style={{
-            marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.75rem",
+            marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.8125rem",
             color: PANEL.muted, background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
           }}>
-            <div style={{ color: "var(--state-warn)", fontWeight: 700, marginBottom: 2 }}>
+            <div style={{ color: "var(--state-warn)", fontWeight: 600, marginBottom: 2 }}>
               A soma não bate com o valor da guia
             </div>
             A guia diz{" "}
@@ -253,7 +232,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
           marginTop: 14, padding: "10px 12px", borderRadius: 8,
           background: PANEL.field, border: `1px solid ${PANEL.border}`,
         }}>
-          <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>
+          <div style={{ fontSize: "0.8125rem", color: PANEL.muted, fontWeight: 600, marginBottom: 6 }}>
             O que vai ser lançado
           </div>
           {linhasPrevistas.length ? (
@@ -261,10 +240,9 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
               <tbody>
                 {linhasPrevistas.map((l) => (
                   <tr key={l.papel} style={{ borderTop: `1px solid ${PANEL.border}` }}>
-                    <td style={{ padding: "4px 6px", fontFamily: "monospace", color: PANEL.muted, fontSize: "0.75rem", width: 28 }}>{l.lado}</td>
-                    <td style={{ padding: "4px 6px", color: PANEL.text, fontSize: "0.8rem" }}>{l.o_que}</td>
-                    <td style={{ padding: "4px 6px", color: PANEL.muted, fontSize: "0.7rem" }}>{l.efeito}</td>
-                    <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: "monospace", color: PANEL.text, fontSize: "0.8rem" }}>
+                    <td style={{ padding: "4px 6px", fontFamily: "monospace", color: PANEL.muted, fontSize: "0.8125rem", width: 28 }}>{l.lado}</td>
+                    <td style={{ padding: "4px 6px", color: PANEL.text, fontSize: "0.8125rem" }}>{l.o_que}<div style={{color:PANEL.muted,marginTop:4}}>{l.efeito}</div></td>
+                    <td style={{ padding: "4px 6px", width: "30%", textAlign: "right", fontFamily: "monospace", color: PANEL.text, fontSize: "0.8125rem" }}>
                       {formatarMoeda(l.valor)}
                     </td>
                   </tr>
@@ -273,7 +251,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             </table>
           ) : (
             /* ⚠ AUSÊNCIA NUNCA É RESPOSTA: a prévia vazia DIZ por que está vazia. */
-            <div style={{ fontSize: "0.75rem", color: PANEL.muted, lineHeight: 1.4 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.4 }}>
               {decomposicao.mensagem || "Informe principal, juros e multa para ver o que será gravado."}
             </div>
           )}
@@ -281,19 +259,19 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             marginTop: 8, paddingTop: 8, borderTop: `1px solid ${PANEL.border}`,
           }}>
-            <span style={{ color: PANEL.muted, fontSize: "0.74rem" }}>
+            <span style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>
               Total conferido = principal + juros + multa
             </span>
             <strong style={{ color: PANEL.text, fontFamily: "monospace", fontSize: "0.95rem" }}>
               {formatarMoeda(decomposicao.total)}
             </strong>
           </div>
-          <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.4 }}>
+          <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.4 }}>
             O total é <strong>derivado</strong> dos três campos acima — por isso ele não se digita:
             o servidor refaz esta soma e <strong>recusa</strong> se ela não bater, e ele não deduz
             juros e multa por subtração. Para mudar o total, mude a origem dele.
           </div>
-          <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.4 }}>
+          <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.4 }}>
             As <strong>contas</strong> de cada linha não se escolhem aqui: vêm da configuração deste
             parcelamento e da memória do escritório. Elas são editáveis na aba{" "}
             <strong>Lançamentos</strong>, depois de lançada a baixa — e o sistema aprende o que você
@@ -303,46 +281,18 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
 
         {recusa && (
           <div role="status" style={{
-            marginTop: 12, padding: "8px 10px", borderRadius: 6, lineHeight: 1.4, fontSize: "0.74rem",
+            marginTop: 12, padding: "8px 10px", borderRadius: 6, lineHeight: 1.4, fontSize: "0.8125rem",
             color: PANEL.muted, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
           }}>
-            <div style={{ color: "var(--state-danger)", fontWeight: 700, marginBottom: 2 }}>Nada foi lançado</div>
+            <div style={{ color: "var(--state-danger)", fontWeight: 600, marginBottom: 2 }}>Nada foi lançado</div>
             {recusa}
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
-          {bloqueio && (
-            <span style={{ color: "var(--state-warn)", fontSize: "0.72rem", flex: "1 1 240px", lineHeight: 1.4 }}>
-              {bloqueio}
-            </span>
-          )}
-          <button
-            type="button" onClick={onClose} disabled={enviando}
-            style={{ padding: "5px 12px", borderRadius: 6, background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, cursor: "pointer", fontSize: "0.8rem" }}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={confirmar}
-            disabled={Boolean(bloqueio) || enviando}
-            // ⚠ Desabilitado SEM explicação é proibido: o motivo já está ao lado, e repete no title.
-            title={bloqueio || (enviando ? "Lançando…" : "Confirma repetindo os dados antes de gravar.")}
-            style={{
-              padding: "5px 14px", borderRadius: 6, cursor: bloqueio || enviando ? "not-allowed" : "pointer",
-              background: "transparent",
-              // ⚠ Ação primária é o ACCENT. Verde é "concluído" neste projeto — nunca "faça isto".
-              border: `1px solid ${bloqueio || enviando ? PANEL.border : "var(--accent-purple)"}`,
-              color: bloqueio || enviando ? PANEL.muted : "var(--accent-purple)",
-              fontSize: "0.8rem", fontWeight: 700,
-            }}
-          >
-            {enviando ? "Lançando…" : "Informar a composição e dar baixa"}
-          </button>
-        </div>
-      </div>
+        {bloqueio && <p style={{color:"var(--state-warn)",fontSize:"0.8125rem"}}>{bloqueio}</p>}
+      </fieldset>
+      </Modal>
       {confirmacao}
-    </div>
+    </>
   );
 }

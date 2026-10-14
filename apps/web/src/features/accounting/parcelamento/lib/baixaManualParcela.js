@@ -1,3 +1,4 @@
+import { recusaDeAcesso } from "./recusaDeAcesso.js";
 // A REGRA DE TELA DA BAIXA POR DECLARAÇÃO — a prestação SEM GUIA (débito automático).
 //
 // ⚠ AS DUAS FILAS RESPONDEM PERGUNTAS DIFERENTES, e este arquivo existe para que a diferença não
@@ -259,6 +260,8 @@ export const MOTIVOS_COMPOSICAO_DECLARADA = Object.freeze({
 });
 
 export function explicarRecusaComposicao(codigo, mensagemDoServidor) {
+  const acesso = recusaDeAcesso(codigo);
+  if (acesso) return acesso;
   const conhecido = MOTIVOS_COMPOSICAO_DECLARADA[codigo];
   if (conhecido) return conhecido;
   const texto = String(mensagemDoServidor || "").trim();
@@ -400,6 +403,8 @@ export const MOTIVOS_CORRECAO_VALOR = Object.freeze({
 });
 
 export function explicarRecusaCorrecao(codigo, mensagemDoServidor) {
+  const acesso = recusaDeAcesso(codigo);
+  if (acesso) return acesso;
   const conhecido = MOTIVOS_CORRECAO_VALOR[codigo];
   if (conhecido) return conhecido;
   const texto = String(mensagemDoServidor || "").trim();
@@ -408,6 +413,8 @@ export function explicarRecusaCorrecao(codigo, mensagemDoServidor) {
 }
 
 export function explicarRecusa(codigo, mensagemDoServidor) {
+  const acesso = recusaDeAcesso(codigo);
+  if (acesso) return acesso;
   const conhecido = MOTIVOS_BAIXA_MANUAL[codigo];
   if (conhecido) return conhecido;
   // ⚠ Mensagem do servidor só quando ela é FRASE. Vários códigos do projeto chegam com a mensagem

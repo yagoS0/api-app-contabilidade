@@ -21,3 +21,12 @@ it("falha do PDF não inventa remoção do arquivo e oferece leitura sem SERPRO"
   expect(recarregarPdf).toHaveBeenCalledTimes(1);
   expect(consultar).not.toHaveBeenCalled();
 });
+
+it('recusa de acesso aos registros manuais não afirma ausência de cadastro', () => {
+  const { PendenciasFiscaisTabelas } = require('../PendenciasFiscaisTabelas');
+  render(<PendenciasFiscaisTabelas podeEditar manuais={{disponivel:true,itens:[],error:'Acesso negado',reload:jest.fn()}}/>);
+  expect(screen.queryByText('Nenhum lançamento cadastrado.')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Não foi possível conferir todos os registros desta origem.').length).toBeGreaterThan(0);
+  screen.getAllByRole('button',{name:'Adicionar'}).forEach(botao=>expect(botao).toBeDisabled());
+  expect(screen.getByRole('button',{name:'Exportar PDF'})).toBeDisabled();
+});

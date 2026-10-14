@@ -6,7 +6,7 @@ import { SitfisTab } from '../renderSitfisTab';
 
 function Tela({ api, companyId = 'a' }) {
   const manuais = usePendenciasManuais({ api, companyId });
-  return <PendenciasFiscaisTabelas key={companyId} relatorio={null} manuais={manuais} />;
+  return <PendenciasFiscaisTabelas podeEditar key={companyId} relatorio={null} manuais={manuais} />;
 }
 beforeEach(() => { localStorage.clear(); Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'd7d592d7-c4b3-4fd1-8670-b25cd43923bb' }); });
 test('cria ISS sem SITFIS, mantém após remount, edita e exclui apenas na empresa escolhida', async () => {
@@ -47,7 +47,7 @@ test('cria ISS sem SITFIS, mantém após remount, edita e exclui apenas na empre
 });
 test('aba sem consulta permite cadastro manual e erro de gravação mantém formulário', async () => {
   const salvar = jest.fn().mockRejectedValue(new Error('Sem conexão'));
-  render(<SitfisTab companyId="a" sitfisPanel={{ status: null, manuais: { disponivel: true, itens: [], salvar } }} />);
+  render(<SitfisTab empresa={{myRole:"ACCOUNTANT"}} companyId="a" sitfisPanel={{ status: null, manuais: { disponivel: true, itens: [], salvar } }} />);
   fireEvent.click(within(screen.getByRole('region', { name: 'Municipal — ISS e taxas' })).getByRole('button', { name: 'Adicionar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Salvar pendência' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
@@ -56,7 +56,7 @@ test('aba sem consulta permite cadastro manual e erro de gravação mantém form
 });
 test('total vazio não vira zero e valor negativo não é enviado', async () => {
   const salvar = jest.fn().mockResolvedValue({});
-  render(<PendenciasFiscaisTabelas manuais={{ disponivel: true, itens: [], salvar }} />);
+  render(<PendenciasFiscaisTabelas podeEditar manuais={{ disponivel: true, itens: [], salvar }} />);
   fireEvent.click(within(screen.getByRole('region', { name: 'Municipal — ISS e taxas' })).getByRole('button', { name: 'Adicionar' }));
   fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '-1,00' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar pendência' }));
@@ -65,4 +65,16 @@ test('total vazio não vira zero e valor negativo não é enviado', async () => 
   fireEvent.change(screen.getByLabelText('Valor (R$)'), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar pendência' }));
   await waitFor(() => expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ dados: expect.objectContaining({ total: '' }) })));
+});
+
+test.each(['VIEWER','ACCOUNTANT','FIRM_ADMIN',undefined])('SITFIS respeita ações manuais do papel %s', async papel => {
+  const item={id:'m1',versao:1,dados:{fonte:'MUNICIPAL',tipo:'DEBITO',estado:'ABERTO',tributo:'ISS',total:123400,competencia:'09/2026',dataReferencia:'2026-10-14'}};
+  const salvar=jest.fn(),excluir=jest.fn();
+  render(<SitfisTab companyId="a" empresa={{myRole:papel}} sitfisPanel={{status:null,manuais:{disponivel:true,itens:[item],salvar,excluir}}}/>);
+  const edita=['ACCOUNTANT','FIRM_ADMIN'].includes(papel);
+  expect(screen.queryAllByRole('button',{name:'Adicionar'}).length>0).toBe(edita);
+  fireEvent.click(screen.getByRole('button',{name:'Detalhes'}));
+  expect(Boolean(screen.queryByRole('button',{name:'Editar'}))).toBe(edita);
+  expect(Boolean(screen.queryByRole('button',{name:'Excluir',exact:true}))).toBe(edita);
+  expect(salvar).not.toHaveBeenCalled();expect(excluir).not.toHaveBeenCalled();
 });

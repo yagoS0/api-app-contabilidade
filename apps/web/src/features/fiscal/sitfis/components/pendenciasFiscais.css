@@ -8,7 +8,8 @@
 .pf-info summary, .pf-reading summary, .pf-form summary { cursor: pointer; }
 .pf-info p { max-width: 85ch; margin-bottom: 0; }
 .pf-source { margin-block: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); overflow: hidden; }
-.pf-source-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; }
+.pf-source-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; }
+.pf-source-header > button { flex-shrink: 0; }
 .pf-source-header > div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .pf-source-header h3 { margin: 0; font-size: .875rem; font-weight: 600; }
 .pf-count { color: var(--text-muted); background: var(--bg-subtle); border-radius: 4px; padding: 1px 7px; font-size: .75rem; }

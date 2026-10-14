@@ -142,6 +142,7 @@ describe("a senha nova aparece UMA VEZ", () => {
     });
 
     expect(await screen.findByTestId("valor-senha-nova")).toHaveTextContent(SENHA_GERADA);
+    expect(screen.getByTestId("senha-nova-portal")).toHaveFocus();
     expect(screen.getByTestId("senha-nova-portal")).toHaveTextContent(/única vez/i);
   });
 
@@ -264,4 +265,50 @@ describe("papel insuficiente e falha de carga", () => {
     expect(screen.getByRole("button", { name: /tentar de novo/i })).toBeInTheDocument();
     expect(feedback.notifyError).toHaveBeenCalled();
   });
+});
+
+
+describe("confirmação e permissões acessíveis", () => {
+  test("Escape cancela e devolve foco sem definir senha", async () => {
+    const { api } = await montar();
+    const gatilho = screen.getByRole("button", { name: /^definir uma senha nova$/i });
+    gatilho.focus();
+    fireEvent.click(gatilho);
+    expect(screen.getByRole("dialog")).toContainElement(document.activeElement);
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(gatilho).toHaveFocus();
+    expect(api.resetPortalUserPassword).not.toHaveBeenCalled();
+  });
+  test("permissão insuficiente tem motivo visível e não abre confirmação", () => {
+    const definirSenha = jest.fn();
+    render(<AcessoPortalCliente acesso={{usuarios:[MARIA], podeDefinirSenha:false, definirSenha}}/>);
+    const botao = screen.getByRole("button", { name: /^definir uma senha nova$/i });
+    expect(botao).toHaveAccessibleDescription(/ACCOUNTANT/);
+    fireEvent.click(botao);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(definirSenha).not.toHaveBeenCalled();
+  });
+  test("falha de recarga mantém usuários e apresenta retentativa", () => {
+    const recarregar = jest.fn();
+    render(<AcessoPortalCliente acesso={{usuarios:[MARIA], erro:{status:403}, podeDefinirSenha:false, recarregar}}/>);
+    expect(screen.getByTestId("usuario-portal-u1")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/dados anteriores foram mantidos/);
+    fireEvent.click(screen.getByRole("button", {name:/Tentar de novo/}));
+    expect(recarregar).toHaveBeenCalledTimes(1);
+  });
+});
+
+test("permissão revogada com confirmação aberta desabilita a ação", () => {
+  const definirSenha = jest.fn();
+  const acesso = {usuarios:[MARIA], podeDefinirSenha:true, definirSenha};
+  const { rerender } = render(<AcessoPortalCliente acesso={acesso}/>);
+  fireEvent.click(screen.getByRole("button", {name:/^Definir uma senha nova$/i}));
+  rerender(<AcessoPortalCliente acesso={{...acesso,podeDefinirSenha:false}}/>);
+  const confirmar = screen.getByRole("button", {name:/Sim, definir uma senha nova/i});
+  expect(confirmar).toBeDisabled();
+  fireEvent.click(confirmar);
+  expect(definirSenha).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {name:"Cancelar"}));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

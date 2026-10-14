@@ -1,3 +1,5 @@
+import { Modal } from "../../../../components/ui/Modal";
+import { Button } from "../../../../components/ui/Button";
 // EXCLUIR O CONTRATO · DESFAZER A RESCISÃO — a confirmação que REPETE OS DADOS.
 //
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -24,14 +26,14 @@
 // peso aparece em vermelho, com o número, e a decisão continua sendo dele. Ele sabe se aquele
 // dinheiro saiu de verdade; o sistema não.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MOTIVO_MIN, motivoCurto, linhasDoQueVaiAcontecer, linhasDoDesfazerRescisao,
   explicarRecusaAto, formatarMoeda, formatarCompetencia,
 } from "../lib/exclusaoParcelamento";
 
-const PANEL = { surface: "#21222C", field: "#282A36", border: "#44475A", text: "#F8F8F2", muted: "#aeb6d3" };
-const CAIXA = { padding: "9px 11px", borderRadius: 6, fontSize: "0.78rem", lineHeight: 1.45 };
+const PANEL = { text: "var(--text)", muted: "var(--text-muted)", border: "var(--border)", surface: "var(--bg-surface)", field: "var(--bg-subtle)" };
+const CAIXA = { padding: "9px 11px", borderRadius: 6, fontSize: "0.8125rem", lineHeight: 1.45 };
 
 /**
  * O modal dos dois atos. Um componente só, porque a FORMA é a mesma — prévia → consequências com
@@ -52,6 +54,8 @@ function ModalDeAto({
   const [erroExecucao, setErroExecucao] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const trava = useRef(false);
+  const fechar = () => { if (!trava.current) onClose?.(); };
 
   useEffect(() => {
     let vivo = true;
@@ -69,11 +73,7 @@ function ModalDeAto({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parcelamento?.id]);
 
-  useEffect(() => {
-    function onKey(e) { if (e.key === "Escape" && !salvando) onClose?.(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, salvando]);
+
 
   // ⚠ O gate é sobre o texto APARADO: campo obrigatório que aceita cinco espaços não é obrigatório,
   // e o banco recusaria depois, com o contador já achando que tinha excluído.
@@ -82,9 +82,9 @@ function ModalDeAto({
   const podeConfirmar = Boolean(preview) && !bloqueios.length && !curto && !salvando;
 
   async function confirmar() {
-    if (!podeConfirmar) return;
+    if (!podeConfirmar || trava.current) return;
     setErroExecucao(null);
-    setSalvando(true);
+    trava.current = true; setSalvando(true);
     try {
       await onConfirm({
         motivo: motivo.trim(),
@@ -95,7 +95,7 @@ function ModalDeAto({
     } catch (err) {
       setErroExecucao(explicarRecusaAto(err?.code || err?.error, err?.message));
     } finally {
-      setSalvando(false);
+      trava.current = false; setSalvando(false);
     }
   }
 
@@ -103,30 +103,8 @@ function ModalDeAto({
   const linhas = preview ? montarLinhas(preview) : [];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={titulo}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1800,
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-      }}
-    >
-      <div style={{
-        background: PANEL.surface, border: `1px solid ${destrutivo ? "var(--state-danger)" : PANEL.border}`,
-        borderRadius: 10, padding: 20, width: "min(96vw, 640px)", maxHeight: "92vh",
-        overflowY: "auto", color: PANEL.text,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700 }}>{titulo}</h3>
-          <button
-            type="button" onClick={onClose} disabled={salvando} aria-label="Fechar"
-            style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.3rem", lineHeight: 1 }}
-          >
-            ×
-          </button>
-        </div>
-        <p style={{ margin: "0 0 12px", fontSize: "0.78rem", color: PANEL.muted, lineHeight: 1.45 }}>
+    <Modal titulo={titulo} tamanho="md" ocupado={salvando} aoFechar={fechar} fecharAoClicarFundo={false} rodape={<><Button variant="secondary" onClick={fechar} disabled={salvando}>Cancelar</Button><Button variant={destrutivo ? "danger" : "primary"} onClick={confirmar} disabled={!podeConfirmar} title={bloqueios[0]?.message || (curto ? `Escreva o motivo (mínimo ${MOTIVO_MIN} caracteres).` : undefined)}>{salvando ? verboEmVoo : verbo}</Button></>}>
+        <p style={{ margin: "0 0 12px", fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.45 }}>
           {parcelamento?.label ? <strong style={{ color: PANEL.text }}>{parcelamento.label}</strong> : null}
           {parcelamento?.numeroParcelamento ? ` · nº ${parcelamento.numeroParcelamento}` : ""}
           <br />
@@ -134,7 +112,7 @@ function ModalDeAto({
         </p>
 
         {carregando && (
-          <div style={{ padding: "16px 0", fontSize: "0.85rem", color: PANEL.muted }}>
+          <div role="status" style={{ padding: "16px 0", fontSize: "0.85rem", color: PANEL.muted }}>
             Carregando o que vai acontecer…
           </div>
         )}
@@ -142,14 +120,14 @@ function ModalDeAto({
         {/* Recusa da PRÉVIA: não há o que confirmar, então nem o campo de motivo aparece. Mas a
             razão aparece — some o fluxo, nunca a explicação. */}
         {!carregando && erroPrevia && (
-          <div role="status" style={{ ...CAIXA, color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
+          <div role="alert" style={{ ...CAIXA, color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
             {erroPrevia}
           </div>
         )}
 
         {!carregando && preview && (
           <>
-            <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, letterSpacing: "0.04em", marginBottom: 6 }}>
               O que vai acontecer
             </div>
             <ul style={{ listStyle: "none", margin: "0 0 12px", padding: 0, display: "grid", gap: 6 }}>
@@ -172,16 +150,16 @@ function ModalDeAto({
                 muitos, e o resumo acima já basta para decidir. Quem quer conferir, confere. */}
             {Boolean(preview.lancamentos?.lista?.length) && (
               <details style={{ marginBottom: 12, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: "8px 10px" }}>
-                <summary style={{ cursor: "pointer", fontSize: "0.76rem", color: PANEL.text, fontWeight: 700 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.8125rem", color: PANEL.text, fontWeight: 600 }}>
                   Ver os {preview.lancamentos.lista.length} lançamentos ({formatarMoeda(preview.totalDesfeito)})
                 </summary>
-                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6, fontSize: "0.74rem" }}>
+                <div style={{ overflowX: "auto", minWidth: 0 }}><table style={{ width: "100%", minWidth: 0, borderCollapse: "collapse", marginTop: 6, fontSize: "0.8125rem" }}>
                   <tbody>
                     {preview.lancamentos.lista.map((e) => (
                       <tr key={e.id} style={{ borderTop: `1px solid ${PANEL.border}` }}>
                         <td style={{ padding: "4px 2px", color: PANEL.text }}>
                           {e.historico}
-                          <div style={{ color: PANEL.muted, fontSize: "0.68rem" }}>
+                          <div style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>
                             {formatarCompetencia(e.competencia)}
                             {e.tipoLinha ? ` · ${e.tipoLinha}` : ""}
                             {e.mesFechado ? " · mês fechado (vira contra-lançamento)" : ""}
@@ -193,7 +171,7 @@ function ModalDeAto({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </details>
             )}
 
@@ -208,13 +186,13 @@ function ModalDeAto({
               </div>
             ))}
 
-            <label style={{ display: "grid", gap: 4, fontSize: "0.76rem", color: PANEL.muted, marginBottom: 4 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted, marginBottom: 4 }}>
               Motivo (obrigatório)
               <textarea
                 rows={3}
-                autoFocus
+                data-modal-autofocus
                 value={motivo}
-                disabled={Boolean(bloqueios.length)}
+                disabled={salvando || Boolean(bloqueios.length)}
                 onChange={(e) => { setMotivo(e.target.value); setErroExecucao(null); }}
                 placeholder="Ex.: parcelamento lançado errado — a dívida certa é o nº 0211.00012…"
                 style={{
@@ -223,7 +201,7 @@ function ModalDeAto({
                 }}
               />
             </label>
-            <div style={{ fontSize: "0.7rem", color: curto ? "var(--state-warn)" : PANEL.muted, marginBottom: 12 }}>
+            <div style={{ fontSize: "0.8125rem", color: curto ? "var(--state-warn)" : PANEL.muted, marginBottom: 12 }}>
               {curto
                 ? `Mínimo de ${MOTIVO_MIN} caracteres — faltam ${Math.max(0, MOTIVO_MIN - motivo.trim().length)}.`
                 : "Fica gravado com o seu nome e a data, e sobrevive à exclusão."}
@@ -233,46 +211,12 @@ function ModalDeAto({
 
         {/* Recusa da EXECUÇÃO — o 409 chega aqui, com o motivo, ao lado do campo que o resolve. */}
         {erroExecucao && (
-          <div role="status" style={{ ...CAIXA, marginBottom: 10, color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
+          <div role="alert" style={{ ...CAIXA, marginBottom: 10, color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
             {erroExecucao}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button" onClick={onClose} disabled={salvando}
-            style={{
-              padding: "8px 16px", borderRadius: 6, border: `1px solid ${PANEL.border}`,
-              background: "transparent", color: PANEL.text, cursor: salvando ? "default" : "pointer", fontSize: "0.85rem",
-            }}
-          >
-            Cancelar
-          </button>
-          {/* ⚠ NUNCA VERDE. Verde significa CONCLUÍDO no vocabulário deste app; ação primária é o
-              accent, e ação destrutiva é o vermelho de estado. Desabilitado NOMEIA o motivo. */}
-          <button
-            type="button"
-            onClick={confirmar}
-            disabled={!podeConfirmar}
-            title={!preview
-              ? "Carregando o que vai acontecer…"
-              : (bloqueios.length
-                ? bloqueios[0].message
-                : (curto ? `Escreva o motivo (mínimo ${MOTIVO_MIN} caracteres).` : "Grava o ato com motivo, autor e data."))}
-            style={{
-              padding: "8px 16px", borderRadius: 6, border: "none", fontWeight: 700, fontSize: "0.85rem",
-              background: podeConfirmar
-                ? (destrutivo ? "var(--state-danger)" : "var(--accent-purple)")
-                : PANEL.border,
-              color: podeConfirmar ? "#12131A" : PANEL.muted,
-              cursor: podeConfirmar ? "pointer" : "not-allowed",
-            }}
-          >
-            {salvando ? verboEmVoo : verbo}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

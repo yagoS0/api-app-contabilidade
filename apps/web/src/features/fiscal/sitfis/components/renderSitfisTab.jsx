@@ -114,7 +114,7 @@ export function SitfisTab({ sitfisPanel, guidesPanel, feedback, companyId, empre
           <span>Esta tentativa lê o arquivo salvo e não faz uma nova consulta ao SERPRO.</span>
         </div>
       ) : <p className="sitfis-meta">Carregando o PDF…</p>)}
-      <PendenciasFiscaisTabelas key={`${companyId || ""}:${status?.ultimoRelatorioEm || ""}:${JSON.stringify(status?.relatorio)}`} relatorio={status?.relatorio} manuais={sitfisPanel?.manuais} contabeis={sitfisPanel?.contabeis} empresa={empresa} />
+      <PendenciasFiscaisTabelas podeEditar={["ACCOUNTANT", "FIRM_ADMIN"].includes(String(empresa?.myRole || "").toUpperCase())} key={`${companyId || ""}:${status?.ultimoRelatorioEm || ""}:${JSON.stringify(status?.relatorio)}`} relatorio={status?.relatorio} manuais={sitfisPanel?.manuais} contabeis={sitfisPanel?.contabeis} empresa={empresa} />
 
       {guidesPanel && <div ref={areaRecalculo}><RecalcularGuiasSitfis guidesPanel={guidesPanel} feedback={feedback} /></div>}
     </div>

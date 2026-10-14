@@ -12,7 +12,9 @@
 // Cores por `var(--…)` de `tokens.css`. Verde é CONCLUÍDO, nunca ação primária; a ação primária
 // aqui é o accent roxo. Botão desabilitado NOMEIA o motivo (`title`), sempre.
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Button } from "../../../../components/ui/Button";
+import { Modal } from "../../../../components/ui/Modal";
 import {
   TITULO,
   estadoDaLista,
@@ -22,14 +24,6 @@ import {
   fraseDeConfirmacao,
   motivoDoBloqueio,
 } from "../../../../lib/portal/senhaDoPortal";
-
-const btn = (cor = "var(--border)") => ({
-  padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
-  background: "transparent", color: "var(--text)", fontSize: "0.78rem",
-  cursor: "pointer", fontFamily: "inherit",
-});
-
-const btnDesabilitado = { ...btn(), opacity: 0.45, cursor: "not-allowed" };
 
 /**
  * A senha nova, em claro, na tela — e o aviso de que é a única vez.
@@ -41,16 +35,21 @@ const btnDesabilitado = { ...btn(), opacity: 0.45, cursor: "not-allowed" };
  * que ninguém tenha pedido.
  */
 function SenhaExibidaUmaVez({ senha, usuario, onEsconder }) {
+  const resultadoRef = useRef(null);
+  useEffect(() => { resultadoRef.current?.focus(); }, [senha]);
   return (
     <div
       data-testid="senha-nova-portal"
+      ref={resultadoRef}
+      tabIndex={-1}
+      aria-label="Nova senha do cliente"
       style={{
         marginTop: "var(--space-2)", padding: "12px 14px",
         borderRadius: "var(--radius-sm)",
         border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)",
       }}
     >
-      <div style={{ fontSize: "0.78rem", color: "var(--text)", marginBottom: 8, lineHeight: 1.45 }}>
+      <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 8, lineHeight: 1.45 }}>
         <strong>Esta é a única vez que esta senha aparece.</strong>{" "}
         Ela não fica guardada em lugar nenhum — se sair desta tela sem repassá-la a{" "}
         {identificarUsuario(usuario)}, será preciso definir outra.
@@ -68,14 +67,14 @@ function SenhaExibidaUmaVez({ senha, usuario, onEsconder }) {
       >
         {senha || "(o servidor não devolveu a senha)"}
       </code>
-      <button
+      <Button
         type="button"
-        style={{ ...btn(), marginTop: 8 }}
+        variant="secondary" size="sm" style={{ marginTop: 8 }}
         onClick={onEsconder}
         title="Some com a senha desta tela. Não há como trazê-la de volta."
       >
         Já repassei — esconder
-      </button>
+      </Button>
     </div>
   );
 }
@@ -90,6 +89,7 @@ function LinhaUsuario({
   usuario, ultimaSenha, podeDefinirSenha, papelMinimo, salvando, razaoSocial, onDefinir, onEsconder,
 }) {
   const [confirmando, setConfirmando] = useState(false);
+  const motivoId = useId();
   const bloqueio = motivoDoBloqueio({ podeDefinirSenha, salvando, usuario });
 
   async function confirmar() {
@@ -102,7 +102,7 @@ function LinhaUsuario({
       data-testid={`usuario-portal-${usuario.userId}`}
       style={{
         padding: "12px 14px", borderRadius: "var(--radius-sm)", marginBottom: 8,
-        border: "1px solid var(--border)", background: "var(--bg-subtle)",
+        border: "1px solid var(--border)", background: "var(--bg-subtle)", overflowWrap: "anywhere",
       }}
     >
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "baseline", flexWrap: "wrap" }}>
@@ -113,7 +113,7 @@ function LinhaUsuario({
           {usuario.email || "(sem e-mail cadastrado)"}
         </span>
         <span style={{
-          marginLeft: "auto", fontSize: "0.72rem", color: "var(--text-muted)",
+          marginLeft: "auto", fontSize: 13, color: "var(--text-muted)",
           border: "1px solid var(--border)", borderRadius: 999, padding: "1px 8px",
         }}>
           {nomeDoPapel(usuario.papel)}
@@ -124,54 +124,43 @@ function LinhaUsuario({
           (é uma senha só); o que ele precisa refletir é quando ela mudou e por qual caminho. */}
       <div
         data-testid={`estado-senha-${usuario.userId}`}
-        style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 6, lineHeight: 1.45 }}
+        style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.45 }}
       >
         {linhaDeEstado(usuario.ultimaTroca)}
       </div>
 
-      {!confirmando && (
-        <button
+      <Button
           type="button"
-          style={bloqueio ? btnDesabilitado : { ...btn("var(--accent-purple)"), marginTop: 10 }}
+          variant="secondary" size="sm" style={{ marginTop: 10 }}
+          aria-describedby={bloqueio ? motivoId : undefined}
           disabled={Boolean(bloqueio)}
           onClick={() => setConfirmando(true)}
           title={bloqueio || `Definir uma senha nova para ${identificarUsuario(usuario)}`}
         >
           {salvando ? "Definindo…" : "Definir uma senha nova"}
-        </button>
-      )}
+      </Button>
 
       {/* ⚠ A CONFIRMAÇÃO REPETE OS DADOS DO ATO, nunca "tem certeza?": de quem é a senha, o que
           acontece com as sessões abertas, e que a senha nova aparece uma vez só. O primeiro clique
           só ARMA — nada é enviado. Mesma disciplina de `LiberacaoEmissaoCliente`. */}
       {confirmando && (
-        <div
-          role="alertdialog"
-          aria-label={`Definir uma senha nova para ${identificarUsuario(usuario)}`}
-          data-testid={`confirmacao-senha-${usuario.userId}`}
-          style={{
-            marginTop: 10, padding: "12px 14px", borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)",
-          }}
+        <Modal
+          titulo="Definir uma senha nova"
+          aoFechar={() => setConfirmando(false)}
+          ocupado={salvando}
+          fecharAoClicarFundo={false}
+          tamanho="md"
+          rodape={<div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Button type="button" variant="secondary" disabled={salvando} onClick={() => setConfirmando(false)}>Cancelar</Button>
+            <Button type="button" onClick={confirmar} disabled={Boolean(bloqueio)}>Sim, definir uma senha nova</Button>
+          </div>}
         >
-          <div style={{ fontSize: "0.8rem", color: "var(--text)", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+          <div data-testid={`confirmacao-senha-${usuario.userId}`} style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
             {fraseDeConfirmacao({ usuario, razaoSocial })}
           </div>
-          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              style={btn("var(--accent-purple)")}
-              onClick={confirmar}
-              disabled={salvando}
-            >
-              Sim, definir uma senha nova
-            </button>
-            <button type="button" style={btn()} onClick={() => setConfirmando(false)}>
-              Cancelar
-            </button>
-          </div>
-        </div>
+        </Modal>
       )}
+      {bloqueio ? <p id={motivoId} role={salvando ? "status" : undefined} style={{ fontSize: 13, color: "var(--text-muted)", margin: "8px 0 0" }}>{bloqueio}</p> : null}
 
       {ultimaSenha ? (
         <SenhaExibidaUmaVez senha={ultimaSenha} usuario={usuario} onEsconder={onEsconder} />
@@ -191,8 +180,8 @@ export function AcessoPortalCliente({ acesso, razaoSocial }) {
   return (
     <section style={{ marginBottom: "var(--space-6)" }}>
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "baseline", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "var(--text)" }}>{TITULO}</h3>
-        <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
+        <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600, color: "var(--text)" }}>{TITULO}</h3>
+        <span role="status" style={{ fontSize: 13, color: "var(--text-muted)" }}>
           {carregando ? "carregando…" : null}
         </span>
       </div>
@@ -204,22 +193,22 @@ export function AcessoPortalCliente({ acesso, razaoSocial }) {
         display: "flex", gap: 10, alignItems: "flex-start",
         padding: "10px 12px", borderRadius: "var(--radius-sm)",
         border: "1px solid var(--state-closed)", background: "var(--state-closed-surface)",
-        fontSize: "0.8rem", lineHeight: 1.45, marginBottom: "var(--space-3)",
+        fontSize: 13, lineHeight: 1.45, marginBottom: "var(--space-3)",
       }}>
-        <span aria-hidden="true" style={{ color: "var(--state-closed)", fontWeight: 700 }}>🔒</span>
+        <span aria-hidden="true" style={{ color: "var(--state-closed)", fontWeight: 600 }}>🔒</span>
         <span style={{ color: "var(--text)" }}>
-          Esta é a senha com que o cliente entra no portal dele — a mesma que ele troca pelo próprio
-          perfil ou pela recuperação por e-mail. Ela é guardada cifrada de forma irreversível:{" "}
-          <strong>não existe mostrar a senha atual</strong>, aqui nem em lugar nenhum. O que dá para
-          fazer é definir uma senha nova, que aparece uma única vez para você repassar.
+          Por segurança, <strong>não existe mostrar a senha atual</strong>. Uma nova senha aparece
+          uma única vez para você repassar ao cliente, que também pode trocá-la pelo perfil ou
+          pela recuperação por e-mail.
         </span>
       </div>
 
       {lista.aviso ? (
         <p
           data-testid="aviso-usuarios-portal"
+          role={erro ? "alert" : "status"}
           style={{
-            fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.45,
+            fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45,
             marginTop: 0, marginBottom: "var(--space-2)",
           }}
         >
@@ -227,14 +216,18 @@ export function AcessoPortalCliente({ acesso, razaoSocial }) {
           {erro && !usuarios?.length ? (
             <>
               {" "}
-              <button type="button" style={{ ...btn(), marginLeft: 6 }} onClick={recarregar}>
+              <Button type="button" variant="secondary" size="sm" style={{ marginLeft: 6 }} onClick={recarregar}>
                 Tentar de novo
-              </button>
+              </Button>
             </>
           ) : null}
         </p>
       ) : null}
 
+      {erro && usuarios?.length ? <div role="alert" style={{ marginBottom: 12, fontSize: 13 }}>
+        Não foi possível atualizar os usuários. Os dados anteriores foram mantidos.{" "}
+        <Button type="button" variant="secondary" size="sm" disabled={carregando} onClick={recarregar}>Tentar de novo</Button>
+      </div> : null}
       {lista.usuarios.map((u) => (
         <LinhaUsuario
           key={u.userId}

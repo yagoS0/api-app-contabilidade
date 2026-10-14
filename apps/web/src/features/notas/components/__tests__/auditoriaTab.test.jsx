@@ -254,3 +254,13 @@ describe("a aba Auditoria", () => {
     expect(screen.getByText(/1 sem como conferir/)).toBeInTheDocument();
   });
 });
+
+test('consulta mantém detalhe da nota sem oferecer tratamento fiscal mesmo com API de escrita', async () => {
+  const api={...apiCom(AUDITORIA),reabrirCompetencia:jest.fn(),resolverPendenciaPosFechamento:jest.fn()};
+  render(<AuditoriaTab companyId="A" competencia="2026-07" api={api} podeEditar={false}/>);
+  await screen.findByText(/Pendências pós-fechamento/);
+  expect(screen.queryByRole('button',{name:'Reabrir competência'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Marcar como conferida'})).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button',{name:'Abrir nota'}).length).toBeGreaterThan(0);
+  expect(api.reabrirCompetencia).not.toHaveBeenCalled();expect(api.resolverPendenciaPosFechamento).not.toHaveBeenCalled();
+});
