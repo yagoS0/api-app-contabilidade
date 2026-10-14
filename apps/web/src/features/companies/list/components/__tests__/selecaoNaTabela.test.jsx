@@ -395,3 +395,15 @@ test("falha de atualização da lista não apaga o resultado nem repete a libera
   expect(screen.getByText(/a lista de empresas não atualizou/)).toBeInTheDocument();
   expect(api.liberarGuiasLote).toHaveBeenCalledTimes(1);
 });
+
+test('prévia começa nos avisos e Escape devolve o foco ao botão da barra', async () => {
+  await montarBarra();
+  const botao = screen.getByRole('button', { name: /Apurar e transmitir/ });
+  botao.focus();
+  fireEvent.click(botao);
+  const dialogo = screen.getByRole('dialog');
+  expect(dialogo.querySelector('.company-selection-preview')).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(botao).toHaveFocus();
+});

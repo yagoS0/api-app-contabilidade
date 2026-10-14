@@ -17,8 +17,8 @@ import {
 
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
-  background: "transparent", color: "var(--text)", fontSize: "0.78rem",
-  cursor: "pointer", fontFamily: "inherit", minHeight: 36,
+  background: "transparent", color: "var(--text)", fontSize: "0.875rem",
+  cursor: "pointer", fontFamily: "inherit", minHeight: 40,
 });
 
 const btnDesabilitado = {
@@ -63,7 +63,7 @@ function LinhaDeProtecao({ nivel, texto }) {
   return (
     <p style={{
       display: "flex", gap: 8, alignItems: "flex-start", margin: "0 0 var(--space-4)",
-      fontSize: "0.76rem", lineHeight: 1.45, color: "var(--text-muted)",
+      fontSize: "0.875rem", lineHeight: 1.45, color: "var(--text-muted)",
     }}>
       <span aria-hidden="true" style={{ color: c.cor, fontWeight: 700 }}>{c.icone}</span>
       <span>{texto}</span>
@@ -135,7 +135,7 @@ function LinhaCredencial({ credencial, revelada, podeRevelar, papelMinimoRevelar
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>{credencial.rotulo}</strong>
         {credencial.login && (
-          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
             usuário: <code style={{ fontFamily: "ui-monospace, monospace" }}>{credencial.login}</code>
           </span>
         )}
@@ -154,7 +154,7 @@ function LinhaCredencial({ credencial, revelada, podeRevelar, papelMinimoRevelar
       {/* A senha. Fora do estado `REVELADA`, o que está aqui é máscara de comprimento FIXO — nem o
           tamanho do valor sai do servidor. */}
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.75rem", color: "var(--text-faint)", minWidth: 52 }}>senha</span>
+        <span style={{ fontSize: "0.875rem", color: "var(--text-faint)", minWidth: 52 }}>senha</span>
 
         {estado === ESTADOS.SEM_SENHA && (
           <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontStyle: "italic" }}>
@@ -199,7 +199,7 @@ function LinhaCredencial({ credencial, revelada, podeRevelar, papelMinimoRevelar
 
         {/* O rastro fica à vista de quem guarda, não escondido num relatório: é o que torna a
             auditoria um fato conhecido, e não uma surpresa depois de um incidente. */}
-        <span style={{ marginLeft: "auto", fontSize: "0.72rem", color: "var(--text-faint)" }}>
+        <span style={{ marginLeft: "auto", fontSize: "0.875rem", color: "var(--text-faint)" }}>
           {trocadaEm ? `senha trocada em ${trocadaEm}` : "senha nunca trocada"}
           {credencial.vezesRevelada > 0 && ` · vista ${credencial.vezesRevelada}×`}
         </span>
@@ -240,7 +240,7 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
       border: "1px solid var(--border)", background: "var(--bg-surface)",
     }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-2)" }}>
-        <label style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+        <label style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Onde <span style={{ color: "var(--danger)" }}>*</span>
           <input
             style={{ ...campo, marginTop: 4 }}
@@ -249,7 +249,7 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
             placeholder="gov.br, Prefeitura, banco…"
           />
         </label>
-        <label style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+        <label style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Usuário / login
           <input
             style={{ ...campo, marginTop: 4 }}
@@ -259,7 +259,7 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
             autoComplete="off"
           />
         </label>
-        <label style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+        <label style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Senha
           {/* `type=password` + `autoComplete="new-password"`: sem isso o gerenciador do navegador
               oferece salvar a senha DO CLIENTE no perfil de quem digitou, e ela passa a existir
@@ -274,7 +274,7 @@ function FormNovaCredencial({ onCriar, onFechar = null }) {
         </label>
       </div>
       <div style={{ marginTop: "var(--space-3)" }}>
-        <label style={{ display: "block", fontSize: "0.74rem", color: "var(--text-muted)" }}>
+        <label style={{ display: "block", fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Observação (não é cifrada)
           <input
             style={{ ...campo, marginTop: 4 }}
@@ -335,7 +335,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
     <section style={{ marginTop: "var(--space-6)", paddingTop: "var(--space-5)", borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "baseline", marginBottom: "var(--space-2)" }}>
         <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "var(--text)" }}>Outras informações</h3>
-        <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
+        <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
           {carregando
             ? "carregando…"
             : (erro && !informacoes.length ? "não foi possível contar" : `${informacoes.length} registro(s)`)}
@@ -349,7 +349,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
           ⚠ O ícone mantém a cor de atenção: o peso do texto caiu, a distinção não. */}
       <p style={{
         display: "flex", gap: 8, alignItems: "flex-start", margin: "0 0 var(--space-2)",
-        fontSize: "0.76rem", lineHeight: 1.45, color: "var(--text-muted)",
+        fontSize: "0.875rem", lineHeight: 1.45, color: "var(--text-muted)",
       }}>
         <span aria-hidden="true" style={{ color: "var(--state-warn)", fontWeight: 700 }}>⚠</span>
         <span>
@@ -359,7 +359,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
       </p>
 
       <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap", alignItems: "flex-end" }}>
-        <label style={{ flex: "1 1 180px", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+        <label style={{ flex: "1 1 180px", fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Rótulo
         <input
           style={{ ...campo, marginTop: 4 }}
@@ -368,7 +368,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
           placeholder="Ex.: contador anterior"
         />
         </label>
-        <label style={{ flex: "2 1 240px", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+        <label style={{ flex: "2 1 240px", fontSize: "0.875rem", color: "var(--text-muted)" }}>
           Valor
         <input
           style={{ ...campo, marginTop: 4 }}
@@ -394,7 +394,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
           padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 6,
           border: "1px solid var(--border)", background: "var(--bg-subtle)",
         }}>
-          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", minWidth: 140 }}>{i.rotulo}</span>
+          <span style={{ fontSize: "0.875rem", color: "var(--text-muted)", minWidth: 140 }}>{i.rotulo}</span>
           <span style={{ fontSize: "0.86rem", color: "var(--text)", wordBreak: "break-word" }}>{i.valor}</span>
           <button
             type="button"
@@ -463,13 +463,13 @@ export function CompanyCredentialsTab({ vault, razaoSocial }) {
     /* ⚠ A LARGURA NÃO MORA MAIS AQUI (era `maxWidth: 900` + padding próprio): quem decide é o
        `CompanyTabLayout`, com `largura="leitura"`. As três abas do grupo Empresa tinham três
        larguras diferentes e o conteúdo saltava a cada troca de sub-aba. */
-    <div style={{ color: "var(--text)" }}>
+    <div style={{ color: "var(--text)", minWidth: 0, overflowWrap: "anywhere" }}>
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "baseline", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Senhas e acessos externos</h2>
+        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Senhas e acessos externos</h2>
         {/* ⚠ A CONTAGEM NÃO É DITA QUANDO A LEITURA FALHOU. "0 credencial(is)" é uma afirmação
             sobre a empresa; depois de uma chamada que não voltou, o que se tem é a ausência da
             resposta, não a ausência de credencial. */}
-        <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
+        <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
           {carregando
             ? "carregando…"
             : (erro && !credenciais.length ? "não foi possível contar" : `${credenciais.length} credencial(is)`)}

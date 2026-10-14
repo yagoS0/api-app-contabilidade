@@ -20,6 +20,7 @@ const api = createMockApi();
 const pendencias = [{ id: 'suporte-demo-1', conversaId: 'mock-cv-1', estado: 'AGUARDANDO', empresa: 'Empresa de demonstração', motivo: 'Conferir o tomador antes da emissão', resumo: 'Cliente pediu uma nota de R$ 11.000,00 para Gusmed. A equipe precisa conferir o cadastro.' }];
 api.getPendenciasSuporte = async () => ({ ok: true, total: pendencias.filter(p => p.estado !== 'RESOLVIDO').length, itens: pendencias.filter(p => p.estado !== 'RESOLVIDO').map(p => ({ ...p })) });
 api.resolverSuporte = async id => { const p = pendencias.find(p => p.conversaId === id); if (p) p.estado = 'RESOLVIDO'; return { ok: true }; };
+api.excluirDemandaSuporte = async (conversaId, pendenciaId) => { const p = pendencias.find(p => p.id === pendenciaId && p.conversaId === conversaId); if (!p) throw new Error('Demanda não encontrada.'); p.estado = 'RESOLVIDO'; return { ok: true }; };
 const assumirOriginal = api.assumirConversaWhatsapp, devolverOriginal = api.devolverConversaWhatsapp;
 api.assumirConversaWhatsapp = async id => { const r = await assumirOriginal(id); const p = pendencias.find(p => p.conversaId === id); if (p) p.estado = 'EM_ATENDIMENTO'; return r; };
 api.devolverConversaWhatsapp = async id => { const r = await devolverOriginal(id); await api.resolverSuporte(id); return r; };

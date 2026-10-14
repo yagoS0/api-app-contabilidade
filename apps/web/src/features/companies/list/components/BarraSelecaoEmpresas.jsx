@@ -28,18 +28,14 @@ import { ExportarLancamentosLoteModal } from "./ExportarLancamentosLoteModal";
 
 import { useCallback, useEffect, useState, useRef } from "react";
 import { deslocarCompetencia } from "../../../../lib/competencia";
+import "./barraSelecaoEmpresas.css";
+import { Modal } from "../../../../components/ui/Modal";
 import { Button } from "../../../../components/ui/Button";
 import { BatchProgressModal } from "../../../apuracao/components/BatchProgressModal";
 import {
   ORDEM_ACOES, acaoDoPlano, planoDaSelecao, resumoEnvioDoRelatorio,
   fraseDeConfirmacao, formatarCompetencia,
 } from "../lib/acoesDaSelecao";
-
-const CAIXA = {
-  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-  padding: "10px 14px", marginBottom: 12, borderRadius: 10,
-  background: "var(--bg-surface)", border: "1px solid var(--accent-purple)",
-};
 
 const LISTA = { margin: "6px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 3, fontSize: "0.78rem" };
 
@@ -121,25 +117,8 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
     : fora;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={acao.rotulo}
-      style={{
-        position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.7)",
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      }}
-      onClick={onCancelar}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 12,
-          padding: 20, width: "min(94vw, 640px)", maxHeight: "88vh", overflowY: "auto",
-          display: "flex", flexDirection: "column", gap: 12, color: "var(--text)",
-        }}
-      >
-        <h2 style={{ margin: 0, fontSize: "1.02rem" }}>{acao.rotulo}</h2>
+    <Modal titulo={acao.rotulo} tamanho="md" ocupado={executando} aoFechar={onCancelar}>
+      <div className="company-selection-preview" tabIndex={-1} data-modal-autofocus>
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>{usaRelatorio ? "Envio das guias com vencimento no mês escolhido. A competência original de cada documento é preservada." : acao.descricao}</p>
         {usaRelatorio && <p>Vencimentos de <strong>{formatarCompetencia(mesVencimento)}</strong> · mês seguinte à competência do cabeçalho.</p>}
         {usaRelatorio && <a href="/guides/batch-email">Abrir painel de guias por vencimento, com e-mail e WhatsApp</a>}
@@ -174,11 +153,11 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
              parece um defeito de contagem. Quando a prévia resolve para zero alvos, o certo é
              afirmar o desfecho (não há o que fazer) e apontar os motivos, que já estão listados
              logo abaixo, empresa por empresa. */
-          <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>
+          <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>
             Nada a fazer com esta seleção — nenhuma das {acao.alvos.length + acao.fora.length} empresas se aplica.
           </p>
         ) : (
-          <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>
+          <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>
             {usaRelatorio ? `Liberar ${guiasNaAcao} ${guiasNaAcao === 1 ? "guia" : "guias"} de ${empresasNaAcao} ${empresasNaAcao === 1 ? "empresa" : "empresas"}, com vencimento em ${formatarCompetencia(mesVencimento)}?` : fraseDeConfirmacao(acao.chave, {
               empresas: empresasNaAcao,
               guias: guiasNaAcao,
@@ -217,7 +196,7 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
         {usaRelatorio && (previaEnvio?.foraDoMes || 0) > 0 && <p>{previaEnvio.foraDoMes} documento(s) anterior(es) ou sem vencimento ficam fora deste lote. Confira na aba Guias da empresa.</p>}
         {!usaRelatorio && linhasVisiveis.length > 0 && (
           <div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-muted)" }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-muted)" }}>
               Entram ({linhasVisiveis.length})
             </div>
             <ul style={LISTA}>
@@ -235,7 +214,7 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
             mandou para todo mundo — e é exatamente esse o defeito que a seleção existe para matar. */}
         {forasVisiveis.length > 0 && (
           <div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-muted)" }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-muted)" }}>
               Ficam de fora ({forasVisiveis.length})
             </div>
             <ul style={LISTA}>
@@ -249,7 +228,7 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
           <Button type="button" variant="secondary" onClick={onCancelar} disabled={executando}>
             Cancelar
           </Button>
@@ -264,7 +243,7 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -398,7 +377,9 @@ export function BarraSelecaoEmpresas({
   return (
     <>
       {csvAberto && <ExportarLancamentosLoteModal api={api} companies={empresasSelecionadas.map(c => ({ ...c, id: c.id || c.companyId }))} competencia={competencia} onClose={() => setCsvAberto(false)} />}
-      {empresasSelecionadas.length > 0 && <div role="region" aria-label="Ações sobre as empresas selecionadas" style={CAIXA}>
+      {empresasSelecionadas.length > 0 && <div role="region" aria-label="Ações sobre as empresas selecionadas" className="company-selection">
+        <div className="company-selection__header">
+        <div className="company-selection__summary">
         <strong style={{ fontSize: "0.86rem" }}>
           {plano.total} empresa{plano.total === 1 ? "" : "s"} selecionada{plano.total === 1 ? "" : "s"}
         </strong>
@@ -407,9 +388,13 @@ export function BarraSelecaoEmpresas({
           competência {formatarCompetencia(competencia)}
         </span>
 
-        <span style={{ display: "flex", gap: 6, flexWrap: "wrap", marginLeft: "auto" }}>
-          <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={() => setCsvAberto(true)}>Exportar lançamentos CSV</Button>
-          {ORDEM_ACOES.map((chave) => {
+        </div>
+        <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={onLimparSelecao}>Limpar seleção</Button>
+        </div>
+        <div className="company-selection__actions">
+        {[{ nome: "Operações", chaves: ORDEM_ACOES.filter(c => !c.startsWith("baixar")) }, { nome: "Arquivos", chaves: ORDEM_ACOES.filter(c => c.startsWith("baixar")) }].map(grupo => <div className="company-selection__group" role="group" aria-label={grupo.nome} key={grupo.nome}>
+          {grupo.nome === "Arquivos" && <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={() => setCsvAberto(true)}>Exportar lançamentos CSV</Button>}
+          {grupo.chaves.map((chave) => {
             const a = acaoDoPlano(plano, chave);
             if (!a) return null;
             return (
@@ -417,9 +402,8 @@ export function BarraSelecaoEmpresas({
                 key={chave}
                 type="button"
                 size="sm"
-                /* ⚠ Irreversível é `danger`, nunca accent: enviar ao cliente e transmitir à Receita
-                   não podem ter o mesmo peso visual de baixar um ZIP. */
-                variant={a.irreversivel ? "danger" : "secondary"}
+                /* A barra abre a prévia; o perigo fica na confirmação, antes da execução. */
+                variant="secondary"
                 disabled={!a.disponivel || executando}
                 onClick={() => { setResultado(null); setAberta(chave); }}
                 title={a.disponivel ? a.descricao : `Indisponível: ${a.motivo}`}
@@ -436,10 +420,8 @@ export function BarraSelecaoEmpresas({
               </Button>
             );
           })}
-          <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={onLimparSelecao}>
-            Limpar seleção
-          </Button>
-        </span>
+        </div>)}
+        </div>
 
         {/* ⚠ DESABILITADO SEM EXPLICAÇÃO É PROIBIDO — e `title` não conta: ele não é descobrível,
             some ao mover o mouse e não existe no toque. O motivo vai em TEXTO, aqui. */}

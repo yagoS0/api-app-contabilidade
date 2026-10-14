@@ -188,6 +188,31 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     } catch (err) { return falhar(res, err, { operacao: 'resolver-suporte' }); }
   });
 
+  // Excluir da fila arquiva somente a demanda indicada; não altera conversa, pausa ou mensagens.
+  router.post('/whatsapp/conversas/:conversaId/suporte/:pendenciaId/excluir', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
+      const visiveis = await empresasVisiveis(req);
+      if (!conversa || conversa.excluidaEm || !visiveis.includes(conversa.portalClientId)) return res.status(404).json({ ok: false, error: 'demanda_nao_encontrada' });
+      const responsavelId = String(req.auth.user.id);
+      if (conversa.atendidaPor && conversa.atendidaPor !== responsavelId) return res.status(409).json({ ok: false, error: 'ATENDIMENTO_OCUPADO', message: 'Outro atendente assumiu esta demanda. Combine a revisão antes de excluí-la.' });
+      const pendencia = await client.encaminhamentoSuporte.findFirst({ where: { id: String(req.params.pendenciaId), conversaId: conversa.id } });
+      if (!pendencia) return res.status(404).json({ ok: false, error: 'demanda_nao_encontrada' });
+      if (pendencia.estado === 'RESOLVIDO') return res.json({ ok: true });
+      const resultado = await client.encaminhamentoSuporte.updateMany({
+        where: { id: pendencia.id, conversaId: conversa.id, estado: { not: 'RESOLVIDO' },
+          conversa: { excluidaEm: null, portalClientId: { in: visiveis }, OR: [{ atendidaPor: null }, { atendidaPor: responsavelId }] } },
+        data: { estado: 'RESOLVIDO', responsavelId, resolvidoEm: new Date() },
+      });
+      if (!resultado.count) {
+        const atual = await client.encaminhamentoSuporte.findFirst({ where: { id: pendencia.id, conversaId: conversa.id, estado: 'RESOLVIDO' } });
+        if (!atual) return res.status(409).json({ ok: false, error: 'DEMANDA_ALTERADA', message: 'A demanda mudou. Atualize a fila antes de continuar.' });
+      }
+      return res.json({ ok: true });
+    } catch (err) { return falhar(res, err, { operacao: 'excluir-demanda-suporte' }); }
+  });
+
   router.get("/whatsapp/resumo", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     try {
