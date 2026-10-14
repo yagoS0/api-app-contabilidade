@@ -5,7 +5,7 @@ const dataCivil = value => {
 
 // Aceitação da Meta não é entrega. O recibo pertence a uma tentativa e ao
 // documento enviado, não apenas à empresa ou ao último estado do canal.
-export async function conferirEntregaGuiaWhatsapp(db, guia, telefone) {
+export async function conferirEntregaGuiaWhatsapp(db, guia, telefone, vinculoNumeroId = null) {
   const tentativas = await db.envioGuiaTentativa.findMany({
     where: {
       envioGuia: { guideId: guia.id, canal: 'WHATSAPP', destino: telefone },
@@ -18,6 +18,7 @@ export async function conferirEntregaGuiaWhatsapp(db, guia, telefone) {
     const s = t.snapshot;
     return t.arquivoSha256 === guia.hash && s?.guideId === guia.id
       && s.portalClientId === guia.portalClientId && s.telefone === telefone
+      && (!vinculoNumeroId || s.vinculoNumeroId === vinculoNumeroId)
       && s.competencia === guia.competencia
       && Number(s.valor) === Number(guia.valor)
       && dataCivil(s.vencimento) === dataCivil(guia.vencimento);
