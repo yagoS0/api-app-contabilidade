@@ -4,7 +4,8 @@ import { previaFiscalDoContador } from '../previaFiscalDoContador.js';
 const historico = [{ regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2026-01-15' },
   { regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2026-01-16', vigenciaFim: null }];
 function preparar(company = {}, extras = {}) {
-  const db = { portalClient: { findUnique: jest.fn(async () => ({ companyId: 'legado' })) },
+  const db = { companyMonthlyCircular: { findFirst: jest.fn(async () => null) }, apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) }, portalClient: { findUnique: jest.fn(async () => ({ companyId: 'legado' })) },
     company: { findUnique: jest.fn(async () => ({ regimeTributario: 'LUCRO_REAL', regimeHistorico: historico,
       codigoMunicipioIbge: '3304557', codigoServicoNacional: '170601', ...company })) } };
   const deps = { db, perfisHabilitados: false, ibscbsLigado: false, ambiente: 'homolog', ...extras };

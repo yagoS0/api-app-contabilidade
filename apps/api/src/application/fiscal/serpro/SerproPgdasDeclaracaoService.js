@@ -1,3 +1,5 @@
+import { SerproProcurationService } from "./SerproProcurationService.js";
+import { procuracaoPermitePgdas } from "./pgdasDocumentos.js";
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { parseTributosPgdas, tributosPorTributoParaColuna } from "./parseTributosPgdas.js";
@@ -535,8 +537,8 @@ async function findOrCreateCircular({ portalClientId, competencia }) {
   });
 }
 
-export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar = false, indiceExistente = null }) {
-  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar, indiceExistente }));
+export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar = false, indiceExistente = null, somenteDocumentos = false }) {
+  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar, indiceExistente, somenteDocumentos }));
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const competenciaStorage = normalizeCompetencia(competencia);
   const competenciaAaaamm = validateCompetenciaAaaamm(normalizeCompetenciaAaaamm(competencia));
@@ -573,7 +575,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
   if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "NOT_FOUND" && !salva.dasNumeroDocumento && Date.now() - new Date(salva.serproLastSyncAt).getTime() < 60 * 60 * 1000) {
     return { company, circular: salva, guide: null, reutilizado: true, accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex };
   }
-  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasDeclaracaoFileId) {
+  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasNumeroDeclaracao && salva.pgdasDeclaracaoFileId && salva.pgdasReciboFileId) {
     const guide = await prisma.guide.findFirst({ where: { portalClientId: company.id, competencia: competenciaStorage, tipo: "SIMPLES", source: "SERPRO", parcelamentoId: null, status: "PROCESSED" }, orderBy: { updatedAt: "desc" } });
     if (guide?.pdfBytes?.length || !salva.dasNumeroDocumento) return { company, circular: salva, guide, reutilizado: true,
       accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex,
@@ -590,6 +592,10 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       throw err;
     }
 
+    if (somenteDocumentos) {
+      const procuracao = await new SerproProcurationService().checkCompanyProcuration({ portalClientId: company.id, contratanteCnpj: procuradorCnpj, reutilizar: true });
+      if (!procuracaoPermitePgdas(procuracao)) throw Object.assign(new Error("Procuração sem autorização vigente para PGDAS-D."), { code: "SERPRO_PGDAS_PROCURACAO_INSUFICIENTE" });
+    }
     const pgdasService = new SerproPgdasdService();
     const declarationIndexResponse = indiceExistente ?? await pgdasService.consultarDeclaracaoIndice({
       contratanteCnpj: procuradorCnpj,
@@ -634,7 +640,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
           },
         },
       });
-      const guideResult = dasIndex?.numeroDocumento
+      const guideResult = !somenteDocumentos && dasIndex?.numeroDocumento
         ? await tryEnsureDasGuideRecord({
             portalClientId: company.id,
             competencia: competenciaStorage,
@@ -652,9 +658,8 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       const updated = await prisma.companyMonthlyCircular.update({
         where: { id: circular.id },
         data: {
-          receitaStatus: "NOT_FOUND",
-          dasStatus: "NOT_FOUND",
-          serproSyncStatus: "NOT_FOUND",
+          ...(dados?.numeroDeclaracao ? { pgdasNumeroDeclaracao: String(dados.numeroDeclaracao) } : {}),
+          serproSyncStatus: "INCOMPLETE",
           serproLastSyncAt: new Date(),
           metadata: {
             ...(circular.metadata && typeof circular.metadata === "object" ? circular.metadata : {}),
@@ -747,13 +752,13 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       },
     });
 
-    await gravarTributosNoSnapshot({
+    if (!somenteDocumentos) await gravarTributosNoSnapshot({
       portalClientId: company.id,
       competencia: competenciaStorage,
       tributosPorTributo: parsedPgdas.tributosPorTributo,
     });
 
-    const guideResult = dasIndex?.numeroDocumento
+    const guideResult = !somenteDocumentos && dasIndex?.numeroDocumento
       ? await tryEnsureDasGuideRecord({
           portalClientId: company.id,
           competencia: competenciaStorage,
@@ -779,7 +784,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     // ele é a verdade declarada à Receita: as linhas do lançamento têm de acompanhar. Sem isto a
     // guarda de recálculo do `AccountingEntryGeneratorService` congelava o imposto no valor
     // anterior enquanto a receita — que não passa pela guarda — era atualizada.
-    const accounting = await generateEntriesFromCircular({
+    const accounting = somenteDocumentos ? { ok: true, generatedEntries: [], somenteDocumentos: true } : await generateEntriesFromCircular({
       portalClientId: company.id,
       competencia: competenciaStorage,
       now: new Date(),
@@ -800,7 +805,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     // não passa por aqui de propósito — ali não existe declaração, e não há o que afirmar.
     const declaracaoZerada = !(Number(receitaBruta) > 0) && !(Number(dasTotal) > 0);
     let semFaturamento = null;
-    if (declaracaoZerada) {
+    if (declaracaoZerada && !somenteDocumentos) {
       // A recusa é RETORNO, não exceção: se houver nota emitida, a marcação não acontece e a
       // captura segue normal. O chip de guia já tem o estado `conflito` para essa situação — a tela
       // avisa, o sistema não afirma.

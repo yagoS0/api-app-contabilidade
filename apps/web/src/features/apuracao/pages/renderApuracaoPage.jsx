@@ -11,6 +11,7 @@ import { Feedback } from "../../../components/ui/Feedback";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { BatchProgressModal } from "../components/BatchProgressModal";
 import "./apuracao-lista.css";
+import { estadoEntregaPgdas, CORES_TOM } from "../lib/entregaPgdas";
 
 const ESTADO_BADGE = {
   aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
@@ -147,7 +148,15 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                       <button type="button" className="apuracao-lista-empresa" onClick={() => onOpenCompanyNotas?.(it.portalClientId)}>{it.razao}</button>
                       <div style={{ fontSize: 13, color: PANEL.muted, fontFamily: "monospace" }}>{it.cnpj}</div>
                     </td>
-                    <td style={td}><EstadoBadge estado={it.estado} /></td>
+                    <td style={td}>
+                      <EstadoBadge estado={it.estado} />
+                      {it.entregaPgdas && (() => {
+                        const entrega = estadoEntregaPgdas({ ...it.entregaPgdas, estadoApuracao: it.estado, numeroDeclaracaoPortal: it.numeroDeclaracao });
+                        return <div title={entrega.detalhe} style={{ marginTop: 4, fontSize: "0.72rem", maxWidth: 230, color: CORES_TOM[entrega.tom].cor }}>
+                          {entrega.chave === "capturada_da_rfb" ? "Entrega confirmada na Receita" : entrega.rotulo}
+                        </div>;
+                      })()}
+                    </td>
                     <td style={{ ...td, textAlign: "right" }}>{it.totalNotas}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(it.receitaEmitida)}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{it.rbt12 != null ? fmtMoney(it.rbt12) : "—"}</td>

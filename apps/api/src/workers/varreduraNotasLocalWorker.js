@@ -1,3 +1,5 @@
+import { recuperarAvisosDeEmissao } from "../application/notas/pendenciasDoPeriodo.js";
+import { prisma } from "../infrastructure/db/prisma.js";
 import { varrerEmpresasComVarreduraAutomatica } from "../application/declarados/VarreduraDeNotasService.js";
 import { log } from "../config.js";
 
@@ -9,7 +11,7 @@ let emCurso = null;
 
 export function executarVarreduraNotasLocal() {
   if (emCurso) return emCurso;
-  emCurso = Promise.resolve().then(() => varrerEmpresasComVarreduraAutomatica())
+  emCurso = Promise.resolve().then(() => recuperarAvisosDeEmissao(prisma, log).catch(error => log.error({ erro: error.message }, 'Fila de avisos indisponível; será retomada no próximo ciclo'))).then(() => varrerEmpresasComVarreduraAutomatica())
     .finally(() => { emCurso = null; });
   return emCurso;
 }

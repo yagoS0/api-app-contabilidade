@@ -36,22 +36,12 @@ import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // legado seja aposentado, e é por isso que ele está nomeado aqui em vez de esquecido.
 
 import { log } from "../../config.js";
-import { ESTADOS } from "./CompetenciaStateMachine.js";
+import { situacaoDoPeriodo, registrarPendenciaDoPeriodo } from "./pendenciasDoPeriodo.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
 import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
 
 // ─── Competência fechada → vira pendência (mesmo padrão Dfe) ───────────────
 
-async function isCompetenciaFechada(tx, { portalClientId, competenciaDate }) {
-  if (!competenciaDate) return false;
-  const d = new Date(competenciaDate);
-  const comp = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const row = await tx.companyMonthlyCircular.findFirst({
-    where: { portalClientId, competencia: comp },
-    select: { estado: true },
-  });
-  return row && [ESTADOS.FECHADO, ESTADOS.CALCULADO, ESTADOS.REVISADO, ESTADOS.TRANSMITIDO, ESTADOS.CONFIRMADO].includes(row.estado);
-}
 
 /**
  * Persiste UMA NFS-e (nota, não evento) em `PortalInvoice` + `NotaItem`.
@@ -121,7 +111,8 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
   }
 
   const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
-  const fechada = await isCompetenciaFechada(tx, { portalClientId, competenciaDate });
+  const periodo = metadata.competencia ? await situacaoDoPeriodo(tx, { portalClientId, competencia: metadata.competencia }) : null;
+  const fechada = periodo?.exigeRevisao || false;
   const canceladaNoXml = metadata.situacao === "CANCELADA" || metadata.situacao === "2";
 
   // Dedup: por chaveAcesso quando houver; senão por idNfse (numeroNfse). idNfse só é escrito no
@@ -131,7 +122,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     : { clientId_idNfse: { clientId: portalClientId, idNfse } };
 
   // Preserva o cancelamento numa re-captura: nunca rebaixa "cancelada" → "autorizada".
-  const existing = await tx.portalInvoice.findUnique({ where, select: { id: true, statusEfetivo: true } }).catch(() => null);
+  const existing = await tx.portalInvoice.findUnique({ where, select: { id: true, statusEfetivo: true } });
   const statusEfetivo = existing?.statusEfetivo === "cancelada" || canceladaNoXml ? "cancelada" : "autorizada";
 
   const dataToWrite = {
@@ -180,6 +171,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
   };
 
   if (fechada) {
+    const mudou = !existing || existing.statusEfetivo !== statusEfetivo;
     // ⚠ O `update` daqui continua estreito de propósito — competência fechada não é reescrita. Os
     // campos fiscais entram no `create` (nota nova nasce com eles) e NÃO no `update`, pela mesma
     // razão que o `xmlRaw` também não entra: as colunas derivadas descrevem o XML que está na linha,
@@ -188,19 +180,14 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     const created = await tx.portalInvoice.upsert({
       where,
       create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo },
+      update: { ...(mudou ? { competenciaPosFechamento: true } : {}), statusEfetivo },
     });
-    const comp = competenciaDate
-      ? `${new Date(competenciaDate).getUTCFullYear()}-${String(new Date(competenciaDate).getUTCMonth() + 1).padStart(2, "0")}`
-      : "?";
-    await tx.pendenciaPosFechamento.create({
-      data: {
-        portalClientId, competencia: comp, notaId: created.id,
-        motivo: "nota_retroativa",
-        observacoes: `NFS-e ${chaveAcesso || idNfse} chegou para ${comp} (competência já fechada).`,
-      },
-    }).catch(() => null);
-    return { created: created.id, notaId: created.id, existia: Boolean(existing), status: "pendencia_criada" };
+    if (mudou) {
+      await registrarPendenciaDoPeriodo(tx, { portalClientId, competencia: metadata.competencia,
+        chaveAcesso, notaId: created.id, papel, valor: metadata.valorServicos, situacao: periodo,
+        evento: existing ? 'evento_retroativo' : 'nota_retroativa' });
+    }
+    return { created: created.id, notaId: created.id, existia: Boolean(existing), status: mudou ? "pendencia_criada" : "upserted" };
   }
 
   const upserted = await tx.portalInvoice.upsert({

@@ -13,7 +13,7 @@
 //   • import ZIP   → titularidade (`nota_nao_pertence`), papel medido, contagem por arquivo.
 // O que os dois compartilham é ISTO: a linha em `PortalInvoice` e os itens.
 
-import { ESTADOS } from "./CompetenciaStateMachine.js";
+import { situacaoDoPeriodo, registrarPendenciaDoPeriodo } from "./pendenciasDoPeriodo.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
 
 /**
@@ -22,14 +22,7 @@ import { substituirItensPreservandoClassificacao } from "./notaItens.js";
  */
 export async function isCompetenciaFechada(tx, { portalClientId, competenciaDate }) {
   if (!competenciaDate) return false;
-  const d = new Date(competenciaDate);
-  const comp = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const row = await tx.companyMonthlyCircular.findFirst({
-    where: { portalClientId, competencia: comp },
-    select: { estado: true },
-  });
-  if (!row) return false;
-  return [ESTADOS.FECHADO, ESTADOS.CALCULADO, ESTADOS.REVISADO, ESTADOS.TRANSMITIDO, ESTADOS.CONFIRMADO].includes(row.estado);
+  return (await situacaoDoPeriodo(tx, { portalClientId, competencia: competenciaDate })).exigeRevisao;
 }
 
 /**
@@ -55,7 +48,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   // statusEfetivo="cancelada"). O resumo/nota da NF-e traz statusEfetivo hardcoded "autorizada";
   // sem isso, uma re-captura da nota reverteria o cancelamento.
   const wKey = { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } };
-  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { id: true, statusEfetivo: true } }).catch(() => null);
+  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { id: true, statusEfetivo: true } });
   const existia = Boolean(existente);
   const statusEfetivo = existente?.statusEfetivo === "cancelada" ? "cancelada" : (parsed.statusEfetivo || null);
 
@@ -79,21 +72,19 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   };
 
   if (fechada) {
+    const mudou = !existente || existente.statusEfetivo !== statusEfetivo;
     // Não atualiza base — cria a nota mas só registra a pendência.
     const created = await tx.portalInvoice.upsert({
       where: wKey,
       create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo },
+      update: { ...(mudou ? { competenciaPosFechamento: true } : {}), statusEfetivo },
     });
-    const comp = `${new Date(parsed.competencia).getUTCFullYear()}-${String(new Date(parsed.competencia).getUTCMonth() + 1).padStart(2, "0")}`;
-    await tx.pendenciaPosFechamento.create({
-      data: {
-        portalClientId, competencia: comp,
-        notaId: created.id, motivo: "nota_retroativa",
-        observacoes: `Nota ${parsed.chaveAcesso} chegou para ${comp} (competência já fechada).`,
-      },
-    }).catch(() => null); // pode duplicar se rodar 2x; ignorar é OK
-    return { created: created.id, notaId: created.id, existia, status: "pendencia_criada" };
+    if (mudou) {
+      await registrarPendenciaDoPeriodo(tx, { portalClientId, competencia: parsed.competencia,
+        chaveAcesso: parsed.chaveAcesso, notaId: created.id, papel: parsed.papel, valor: parsed.total,
+        evento: existente ? 'evento_retroativo' : 'nota_retroativa' });
+    }
+    return { created: created.id, notaId: created.id, existia, status: mudou ? "pendencia_criada" : "upserted" };
   }
 
   const nota = await tx.portalInvoice.upsert({

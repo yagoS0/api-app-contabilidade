@@ -5582,6 +5582,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       select: {
         portalClientId: true, estado: true, lockedAt: true,
         rb12: true, fs12Manual: true, fatorR: true,
+        pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true, pgdasReciboFileId: true,
+        serproSyncStatus: true, serproLastSyncAt: true,
       },
     });
     const byPc = new Map(circulars.map((c) => [c.portalClientId, c]));
@@ -5643,6 +5645,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         dasSimulado: snap?.dasSimuladoSerpro != null ? Number(snap.dasSimuladoSerpro) : null,
         dasTransmitido: snap?.dasRetornadoSerpro != null ? Number(snap.dasRetornadoSerpro) : null,
         numeroDeclaracao: snap?.numeroDeclaracao || null,
+        entregaPgdas: {
+          numeroDeclaracaoRfb: circ?.pgdasNumeroDeclaracao || null,
+          temPdfDaDeclaracao: Boolean(circ?.pgdasDeclaracaoFileId),
+          temRecibo: Boolean(circ?.pgdasReciboFileId),
+          extratoStatus: circ?.serproSyncStatus || null,
+          extratoConsultadoEm: circ?.serproLastSyncAt || null,
+        },
         fechadaEm: snap?.fechadaEm || null,
         rbt12: snap?.rbt12 != null ? Number(snap.rbt12) : (circ?.rb12 ? Number(circ.rb12) : null),
         fatorR: snap?.fatorR != null ? Number(snap.fatorR) : (circ?.fatorR ? Number(circ.fatorR) : null),

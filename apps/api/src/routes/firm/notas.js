@@ -100,6 +100,8 @@ function serializePendencia(p) {
     competencia: p.competencia,
     notaId: p.notaId,
     motivo: p.motivo,
+    origem: p.origem, situacaoPeriodo: p.situacaoPeriodo, valor: p.valor,
+    serviceInvoiceId: p.serviceInvoiceId, resolucaoMotivo: p.resolucaoMotivo,
     observacoes: p.observacoes,
     resolvida: p.resolvida,
     resolvidaAt: p.resolvidaAt,
@@ -322,8 +324,10 @@ export function createNotasRouter({ log }) {
   router.get("/pendencias-pos-fechamento", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const onlyOpen = String(req.query.onlyOpen || "true").toLowerCase() !== "false";
+    const competencia = req.query.competencia;
+    if (competencia != null && (typeof competencia !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia))) return bad(res, 400, 'competencia_invalida', 'Competência inválida.');
     const pendencias = await prisma.pendenciaPosFechamento.findMany({
-      where: { portalClientId, ...(onlyOpen ? { resolvida: false } : {}) },
+      where: { portalClientId, ...(competencia ? { competencia } : {}), ...(onlyOpen ? { resolvida: false } : {}) },
       orderBy: [{ createdAt: "desc" }],
       take: 100,
     });
@@ -337,14 +341,19 @@ export function createNotasRouter({ log }) {
     if (!pend || pend.portalClientId !== portalClientId) {
       return bad(res, 404, "pendencia_not_found", "Pendência não encontrada");
     }
-    const updated = await prisma.pendenciaPosFechamento.update({
-      where: { id: pendId },
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+    if (motivo.length < 5 || motivo.length > 2000) return bad(res, 400, 'motivo_obrigatorio', 'Descreva a conclusão da revisão (5 a 2000 caracteres).');
+    if (pend.resolvida) return res.json({ ok: true, pendencia: serializePendencia(pend) });
+    await prisma.pendenciaPosFechamento.updateMany({
+      where: { id: pendId, portalClientId, resolvida: false },
       data: {
         resolvida: true,
+        resolucaoMotivo: motivo,
         resolvidaAt: new Date(),
         resolvidaByUserId: req.auth?.user?.id || null,
       },
     });
+    const updated = await prisma.pendenciaPosFechamento.findUnique({ where: { id: pendId } });
     return res.json({ ok: true, pendencia: serializePendencia(updated) });
   });
 

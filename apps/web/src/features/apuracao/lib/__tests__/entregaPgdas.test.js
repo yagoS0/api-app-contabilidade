@@ -161,3 +161,13 @@ describe("entregaPgdasDoFechamento — lê o payload real do getFechamento", () 
     expect(r.detalhe).toContain(NUM_PORTAL);
   });
 });
+
+
+test.each(["ERROR", "RUNNING", "INCOMPLETE", "SUCCESS"])("%s sem evidência não prova ausência", extratoStatus => {
+  const resultado = estadoEntregaPgdas({ extratoStatus, extratoConsultadoEm: "2026-10-14T10:00:00Z" });
+  expect(resultado.chave).toBe("consulta_inconclusiva");
+  expect(resultado.tom).toBe(TOM_ENTREGA.desconhecido);
+});
+test("falha posterior não apaga entrega comprovada", () => {
+  expect(estadoEntregaPgdas({ numeroDeclaracaoRfb: "123", extratoStatus: "ERROR" }).provada).toBe(true);
+});

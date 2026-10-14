@@ -1,0 +1,56 @@
+/* Apenas o assistente do contador; não altera os demais modais ou regras fiscais. */
+.emissor-contador-modal .modal-caixa { max-width: 1140px !important; }
+.emissor-contador { min-width: 0; overflow-wrap: anywhere; }
+.emissor-contador .emissor-etapas { display: flex; gap: 8px; margin: 0 0 20px; flex-wrap: wrap; }
+.emissor-contador .emissor-etapas span { padding: 8px 14px !important; font-size: .82rem !important; }
+.emissor-contador .emissor-bloco { gap: 16px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-page); }
+.emissor-contador .emissor-bloco h4 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text); }
+.emissor-contador label { min-width: 0; }
+.emissor-contador input:not([type=checkbox]):not([type=radio]),
+.emissor-contador select, .emissor-contador textarea {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px;
+  padding: 10px 12px !important; border: 1px solid var(--border); border-radius: 8px !important;
+  background: var(--bg-page); color: var(--text); font-family: inherit; font-size: .9rem !important; font-weight: 400;
+}
+.emissor-contador textarea { line-height: 1.6; min-height: 104px; }
+.emissor-contador input:focus-visible, .emissor-contador select:focus-visible,
+.emissor-contador textarea:focus-visible, .emissor-contador summary:focus-visible {
+  outline: 2px solid var(--accent-cyan); outline-offset: 2px;
+}
+.emissor-contador .emissor-campos { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; align-items: start; }
+.emissor-contador .emissor-consulta { display: flex; align-items: flex-end; gap: 10px; }
+.emissor-contador .emissor-consulta > label { flex: 1; }
+.emissor-contador .emissor-consulta > .btn { min-height: 44px; flex-shrink: 0; }
+.emissor-contador .emissor-endereco { border-top: 1px solid var(--border); padding-top: 8px; }
+.emissor-contador summary { min-height: 40px; padding: 10px 0; cursor: pointer; line-height: 1.5; }
+.emissor-contador .emissor-endereco > summary { font-weight: 600; }
+.emissor-contador .emissor-previa { border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
+.emissor-contador .emissor-previa h3 { margin: 0 0 4px; font-size: .9rem; font-weight: 600; }
+.emissor-contador .emissor-previa summary { font-size: .84rem; }
+.emissor-contador .emissor-previa small { display: block; color: var(--text-muted); font-size: .75rem; line-height: 1.5; }
+.emissor-contador .emissor-previa ul { padding-left: 20px; font-size: .84rem; line-height: 1.65; }
+.emissor-contador .emitir-nfse-corpo { gap: 24px; grid-template-columns: minmax(0,1fr) minmax(0,320px); }
+.emissor-contador .emitir-nfse-corpo--conferir { grid-template-columns: minmax(0,1fr); }
+.emissor-contador .emitir-nfse-painel { padding: 20px !important; border-radius: 12px !important; gap: 16px !important; }
+.emissor-contador .emissor-linha-previa { display: grid !important; gap: 4px !important; padding-bottom: 8px; }
+.emissor-contador .emissor-linha-previa > span:first-child { font-size: .74rem; }
+.emissor-contador .emissor-linha-previa > span:last-child { text-align: left !important; line-height: 1.5; font-weight: 400 !important; }
+.emissor-contador .emissor-linha-previa--destaque > span:last-child { font-weight: 600 !important; }
+.emissor-contador .emissor-periodo { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.emissor-contador .emissor-periodo small { font-weight: 400; color: var(--text-muted); line-height: 1.5; }
+.emissor-contador fieldset { min-width: 0; padding: 16px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 14px; }
+.emissor-contador #nfse-operacao label { display: grid; gap: 6px; font-size: .85rem; }
+.emissor-contador .emissor-pendencias { padding: 14px 18px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 10px; }
+.emissor-contador .emissor-acoes { display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.emissor-contador .emissor-acoes > .btn { min-height: 44px; }
+@media(max-width: 900px) {
+  .emissor-contador .emitir-nfse-corpo { grid-template-columns: minmax(0,1fr); }
+}
+@media(max-width: 600px) {
+  .emissor-contador .emissor-bloco, .emissor-contador .emitir-nfse-painel { padding: 14px !important; }
+  .emissor-contador .emissor-campos { grid-template-columns: minmax(0,1fr); }
+  .emissor-contador .emissor-campos > * { grid-column: auto !important; }
+  .emissor-contador .emissor-consulta { flex-wrap: wrap; }
+  .emissor-contador .emissor-consulta > label { flex-basis: 100%; }
+  .emissor-contador input:not([type=checkbox]):not([type=radio]), .emissor-contador select, .emissor-contador textarea { font-size: 16px !important; }
+}

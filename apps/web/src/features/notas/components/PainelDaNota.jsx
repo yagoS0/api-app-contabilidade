@@ -22,7 +22,7 @@ function Linha({ rotulo, valor, forte, separadorAntes }) {
   return (
     <>
       {separadorAntes && <div style={{ borderTop: `1px solid ${PANEL.border}`, margin: "4px 0" }} />}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+      <div className={`emissor-linha-previa${forte ? ' emissor-linha-previa--destaque' : ''}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
         <span style={{ color: PANEL.muted, flex: "0 0 auto" }}>{rotulo}</span>
         <span style={{ textAlign: "right", fontWeight: forte ? 800 : 500, minWidth: 0, wordBreak: "break-word" }}>
           {valor}

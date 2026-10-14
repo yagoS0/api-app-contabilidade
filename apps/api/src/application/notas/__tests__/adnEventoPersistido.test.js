@@ -33,8 +33,10 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       create: jest.fn(async ({ data }) => { estado.eventos.push(data); return data; }),
     },
     notaItem: { deleteMany: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
+    apuracao: { findUnique: jest.fn(async () => null) },
+    apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
     companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
-    pendenciaPosFechamento: { create: jest.fn(async () => ({})) },
+    pendenciaPosFechamento: { upsert: jest.fn(async ({ create }) => create), create: jest.fn(async () => ({})) },
   };
   return {
     __estado: estado,

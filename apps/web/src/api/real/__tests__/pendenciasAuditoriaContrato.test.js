@@ -5,8 +5,8 @@ beforeEach(() => { anterior = global.fetch; global.fetch = jest.fn(async () => (
 afterEach(() => { global.fetch = anterior; });
 
 test("concluir pendência pós-fechamento não chama a resolução de classificação", async () => {
-  await createRealApi().resolverPendenciaPosFechamento("empresa", "pendencia");
-  expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/firm\/companies\/empresa\/pendencias-pos-fechamento\/pendencia\/resolver$/), expect.objectContaining({ method: "POST" }));
+  await createRealApi().resolverPendenciaPosFechamento("empresa", "pendencia", "Receita já considerada");
+  expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/firm\/companies\/empresa\/pendencias-pos-fechamento\/pendencia\/resolver$/), expect.objectContaining({ method: "POST", body: JSON.stringify({ motivo: "Receita já considerada" }) }));
 });
 
 test("HTTP 200 sem lista não anuncia ausência de pendências", async () => {

@@ -56,7 +56,7 @@ export function createApiClient() {
       const fnReal = real[chave];
       const fnMock = mock[chave];
       envolvido[chave] =
-        !["login", "logout", "solicitarCodigoAcesso", "confirmarCodigoAcesso", "solicitarRedefinicao", "redefinirSenha", "getInvoiceDetail", "getFechamentosRelatorio", "getAnalisePlanejamento", "getAnaliseClientes"].includes(chave) && typeof fnReal === "function" && typeof fnMock === "function"
+        !["getSituacaoPeriodo", "login", "logout", "solicitarCodigoAcesso", "confirmarCodigoAcesso", "solicitarRedefinicao", "redefinirSenha", "getInvoiceDetail", "getFechamentosRelatorio", "getAnalisePlanejamento", "getAnaliseClientes"].includes(chave) && typeof fnReal === "function" && typeof fnMock === "function"
           ? async (...args) => {
               try {
                 return await fnReal(...args);

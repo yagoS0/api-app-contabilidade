@@ -59,6 +59,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const tx = { serviceInvoice, $queryRaw: jest.fn(async () => [{ rpsNumero: "42" }]) };
   return {
     prisma: {
+      companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
+      apuracaoSnapshot: { findUnique: jest.fn(async () => null) },
+      apuracao: { findUnique: jest.fn(async () => null) },
       company: { findUnique: jest.fn() },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
       portalInvoice: { findMany: jest.fn(async () => []) },
