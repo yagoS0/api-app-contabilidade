@@ -29,3 +29,7 @@ it.each(['13/2026', '2026-00', 'janeiro e agosto', 'agosto a janeiro de 2026', '
 it.each([['2', 2], ['a primeira', 1], ['quero a segunda', 2], ['opção 3', 3], ['meu telefone é 2', null], ['720,00', null]])('escolha %s é contextual', (t, n) => expect(numeroDaOpcao(t)).toBe(n));
 it.each(['[Mensagem alcance]', '[resposta]', '[Insira o texto]'])('rejeita marcador do modelo %s', t => expect(respostaComMarcador(t)).toBe(true));
 it('preserva uma resposta normal e nomes entre colchetes', () => expect(respostaComMarcador('Seu arquivo [Guia de agosto] está disponível.')).toBe(false));
+
+it.each(['não envie documentos', 'CNPJ do tomador: 11222333000181', 'emitir nota para o CNPJ', 'qual o CNPJ do cliente?', 'descrição: documentos para cadastro'])('documentos e CNPJ não interceptam negativa nem dados de emissão: %s', texto => {
+  expect(pedidoDeConsulta(texto, agora)).toBeNull();
+});

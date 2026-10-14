@@ -45,7 +45,7 @@ function casa(row, where) {
 }
 
 function banco() {
-  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [] };
+  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [], encaminhamentoSuporte: [], eventoPushAtendimento: [] };
   const hooks = {};
   let sequencia = 0;
   const defaults = name => name === "conversaWhatsapp" ? { portalClientId: null, atendimentoId: null, atendidaPor: null, atendidaDesde: null, excluidaEm: null, automacaoInvalidadaEm: null }
@@ -691,4 +691,94 @@ test('empresa única segue automaticamente após seleção antiga pendente', asy
   jest.setSystemTime(new Date(Date.now() + 1000)); f.cloud.enviarLista.mockClear();
   expect(await f.rodar(await f.novo('mande a guia'))).toMatchObject({ processado: true, empresa: EMPRESAS[0].portalClientId, texto: 'mande a guia' });
   expect(f.cloud.enviarLista).not.toHaveBeenCalled();
+});
+
+async function fixtureDocumentos(quantidade = 2, permissoes = ['DOCUMENTOS_EMPRESA']) {
+  const f = await fixtureComMenu(permissoes, [], false);
+  f.client.portalClient = { findUnique: jest.fn(async ({ where }) => EMPRESAS.find(e => e.portalClientId === where.id)) };
+  const documentos = Array.from({ length: quantidade }, (_, i) => ({ documentId: 'doc-' + (i + 1), nome: 'Documento ' + (i + 1) + '.pdf', tipoDescricao: 'Contrato social' }));
+  f.executar.mockImplementation(async (nome, input, ctx) => {
+    if (nome === 'listar_documentos') return { ok: true, documentos: documentos.slice(((input.pagina || 1) - 1) * 30, (input.pagina || 1) * 30), proximaPagina: (input.pagina || 1) * 30 < quantidade ? (input.pagina || 1) + 1 : null };
+    if (nome === 'enviar_documento_da_empresa') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF synthetic'), nomeArquivo: input.documentId + '.pdf', mimeType: 'application/pdf' }); return { ok: true, enviado: true }; }
+    throw new Error('Ferramenta inesperada: ' + nome);
+  });
+  return f;
+}
+
+test.each(['2', 'Documento 2.pdf', 'clique'])('documentos: escolha %s envia arquivo da empresa selecionada sem GPT', async escolha => {
+  const f = await fixtureDocumentos();
+  await f.selecionar('documentos', 'lente');
+  const op = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[1];
+  const entrada = escolha === 'clique' ? (await f.clicar(op)).entrada : await dizerNaJornada(f, escolha);
+  expect(f.executar).toHaveBeenLastCalledWith('enviar_documento_da_empresa', { documentId: 'doc-2' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  await f.rodar(entrada); expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  await f.clicar(op); expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+});
+
+test('documentos: paginação chega além dos 30 primeiros sem trocar empresa', async () => {
+  const f = await fixtureDocumentos(35); await f.selecionar('documentos', 'lente');
+  for (let i = 0; i < 4; i++) await f.clicar(f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.titulo === 'Ver mais documentos'));
+  expect(f.executar).toHaveBeenCalledWith('listar_documentos', { pagina: 2 }, expect.anything());
+  await dizerNaJornada(f, '3'); expect(f.cloud.enviarDocumento.mock.calls.at(-1)[0].nomeArquivo).toBe('doc-35.pdf');
+});
+
+test('documentos: permissão revogada depois da lista impede baixar e enviar', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  const op = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  f.client.contatoWhatsapp.findMany.mockResolvedValue([{ id: 'contato', userId: 'liz', permissoesAssistente: [] }]);
+  await f.clicar(op); expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.executar.mock.calls.some(([n]) => n === 'enviar_documento_da_empresa')).toBe(false);
+});
+
+test('documentos: lista expirada não envia arquivo', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  const op = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  jest.setSystemTime(new Date(Date.now() + 31 * 60 * 1000)); await f.clicar(op);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+});
+
+test('documentos: clique de outra empresa não envia arquivo', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  const op = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  await dizerNaJornada(f, 'trocar para klaus'); await f.clicar(op);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+});
+
+test.each(['cnpj', 'qual o CNPJ da minha empresa?', 'me manda só o número do CNPJ'])('CNPJ: %s entrega cadastro autorizado sem ferramenta ou GPT', async pedido => {
+  const f = await fixtureDocumentos(0, []); await f.selecionar(pedido, 'lente');
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('CNPJ para copiar:\n11444777000161');
+  expect(f.client.portalClient.findUnique).toHaveBeenLastCalledWith({ where: { id: 'lente' }, select: { cnpj: true } });
+  expect(f.executar).not.toHaveBeenCalled();
+});
+
+test.each(['DOCUMENTO_NAO_ENCONTRADO', 'DOCUMENTO_INDISPONIVEL'])('documentos: %s gera aviso persistente e pausa para equipe', async motivo => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  f.executar.mockResolvedValue({ ok: false, motivo });
+  await f.clicar(f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0]);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.client.rows.encaminhamentoSuporte).toHaveLength(1);
+  expect(f.client.rows.eventoPushAtendimento).toHaveLength(1);
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('Avisei a equipe');
+  expect(f.atendimento().atendidaDesde).not.toBeNull();
+});
+test('documentos: imagem cadastrada usa envio de imagem e consome escolha', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  f.cloud.enviarImagem = jest.fn(async () => ({ wamid: 'imagem-documento' }));
+  f.executar.mockImplementation(async (n, input, ctx) => { await ctx.enviarDocumento({ conteudo: Buffer.from('synthetic'), nomeArquivo: 'cadastro.png', mimeType: 'image/png' }); return { ok: true, enviado: true }; });
+  await dizerNaJornada(f, '1');
+  expect(f.cloud.enviarImagem).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+});
+test('CNPJ: pedido com nome de outra empresa usa a empresa explicitamente escolhida', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  await dizerNaJornada(f, 'qual o CNPJ da Klaus');
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('CNPJ para copiar:\n11222333000181');
+});
+test('CNPJ: opção do menu dispensa permissão de documentos', async () => {
+  const f = await fixtureDocumentos(0, []); await f.selecionar('outras', 'lente');
+  const menu = f.cloud.enviarBotoes.mock.calls.at(-1)?.[0].botoes || f.cloud.enviarLista.mock.calls.at(-1)[0].linhas;
+  await f.clicar(menu.find(o => o.titulo === 'CNPJ da empresa'));
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('11444777000161');
+  expect(f.executar).not.toHaveBeenCalled();
 });

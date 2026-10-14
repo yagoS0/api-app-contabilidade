@@ -99,7 +99,7 @@ function mencoesExplicitas(empresas, texto) {
     { tipo: 'TROCA', re: /^(?:(?:quero|preciso|vamos)\s+)?(?:trocar|mudar)(?:\s+(?:a|de)\s+empresa)?\s+para\s+(?:(?:a\s+)?empresa\s+|a\s+)?/iu },
     { tipo: 'ESCOLHA', re: /^(?:escolho|seleciono|selecionar|continuar\s+(?:com|na)|(?:empresa(?:\s+emissora)?|emissora?)\s*[:=])\s*(?:(?:a\s+)?empresa\s+|a\s+)?/iu },
     { tipo: 'EMISSOR', re: /\b(?:pela|pelo|em\s+nome\s+(?:da|de))\s+(?:(?:a\s+)?empresa\s+)?/giu },
-    { tipo: 'CONSULTA', re: /\b(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\s+(?:da|do|de|na|no)\s+(?:(?:a\s+)?empresa\s+)?/giu },
+    { tipo: 'CONSULTA', re: /\b(?:cnpj|guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\s+(?:da|do|de|na|no)\s+(?:(?:a\s+)?empresa\s+)?/giu },
   ];
   for (const { tipo, re } of padroes) {
     const encontrados = re.global ? [...texto.matchAll(re)] : [re.exec(texto)].filter(Boolean);
@@ -119,7 +119,7 @@ function mencoesExplicitas(empresas, texto) {
       const escolha = empresaNoTrecho(empresas, texto.slice(inicio));
       if (tipo === 'CONSULTA' && !escolha.empresas.length && (/^(?:minha empresa|nossa empresa|empresa atual|empresa selecionada)$/.test(periodo)
         || /^(?:das|simples(?: nacional)?|inss|fgts|darf)(?:\s+(?:de|do|da|referente a)\s+(?:mes(?: atual|passado|anterior)?|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|\d{2}\/\d{4}|\d{4}-\d{2})(?:\s+(?:de\s+)?\d{4})?)?$/.test(periodo))) continue;
-      const objeto = tipo === 'CONSULTA' ? /^(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\b/iu.exec(m[0])?.[0] || '' : '';
+      const objeto = tipo === 'CONSULTA' ? /^(?:cnpj|guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\b/iu.exec(m[0])?.[0] || '' : '';
       mencoes.push({ tipo, ...escolha, inicio: m.index + objeto.length, fim: inicio + escolha.tamanho });
     }
   }
@@ -129,7 +129,7 @@ function mencoesExplicitas(empresas, texto) {
 function ehConsultaExplicita(texto) {
   const t = normalizar(texto);
   if (/(?:descricao|servico|tomador|cliente|documento|valor|competencia)\s*[:=]/.test(t)) return false;
-  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:pode |quero |preciso |gostaria |me |manda |mande |envie |enviar |consultar |ver |mostre |listar |qual |quais |quanto |tenho |duvida |essa |esta |a |as |o |os |por favor )[^;\n]*)?(?:guias?|das|documentos?|notas?|saldo|debitos|faturamento|faturamemto|faturei|faturou|receita bruta)\b/.test(t);
+  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:pode |quero |preciso |gostaria |me |manda |mande |envie |enviar |consultar |ver |mostre |listar |qual |quais |quanto |tenho |duvida |essa |esta |a |as |o |os |por favor )[^;\n]*)?(?:cnpj|guias?|das|documentos?|notas?|saldo|debitos|faturamento|faturamemto|faturei|faturou|receita bruta)\b/.test(t);
 }
 
 function consultaDeTodas(texto) {

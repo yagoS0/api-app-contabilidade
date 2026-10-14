@@ -174,7 +174,7 @@ describe("menus por perfil e permissão", () => {
     const sessao = { ok: true, papel: "CLIENT_ADMIN", permissoesAssistente: ["GUIAS", "RECALCULO_GUIA"] };
     expect(opcoesIniciaisDoCliente(sessao).map((b) => b.id)).toEqual([IDS_MENU_WHATSAPP.CLIENTE_GUIAS_ABERTO, IDS_MENU_WHATSAPP.CLIENTE_MAIS]);
     expect(linhasDoCliente(sessao).map((l) => l.id)).toEqual([
-      IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO, IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, IDS_MENU_WHATSAPP.CLIENTE_EQUIPE,
+      IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO, IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, IDS_MENU_WHATSAPP.CLIENTE_CNPJ, IDS_MENU_WHATSAPP.CLIENTE_EQUIPE,
     ]);
   });
 

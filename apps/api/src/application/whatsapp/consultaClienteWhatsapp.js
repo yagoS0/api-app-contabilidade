@@ -45,6 +45,8 @@ export function pedidoDeConsulta(texto, agora) {
   if (/\b(?:faturamento|faturamemto|faturamnto|faturameto|faturei|faturou|faturamos|receita bruta)\b/.test(t)) return { acao: 'FATURAMENTO', periodo: periodoDaConsulta(t, agora) };
   if (/\b(?:recalcular|recalcule|atualizar|atualize)\b/.test(t) && /\b(?:guia|boleto|imposto|das)\b/.test(t)) return { acao: 'GUIAS', recalculo: true, periodo: periodoDaConsulta(t, agora) };
   if (/\b(?:cancelar|cancelamento|emitir|emissao|gerar|errad[ao]|incorret[ao]|discordo)\b/.test(t)) return null;
+  if (/^(?:(?:me |pode |por favor |manda |mande |envia |envie |enviar |quero |preciso |ver |consultar |os |meus |da minha empresa )*)documentos?(?: da (?:minha )?empresa)?[.!?]*$/.test(t)) return { acao: 'DOCUMENTOS' };
+  if (/^(?:(?:me |pode |por favor |manda |mande |envia |envie |enviar |quero |preciso |qual |e |o |so |apenas |numero |do |meu )*)cnpj(?: da (?:minha )?empresa)?[.!?]*$/.test(t)) return { acao: 'CNPJ' };
   if (/\b(?:guias?|boletos?|das|simples nacional|inss|fgts|darf)\b/.test(t)) {
     const tipo = /\b(?:simples(?: nacional)?|das)\b/.test(t) ? 'SIMPLES' : /\binss\b/.test(t) ? 'INSS' : /\bfgts\b/.test(t) ? 'FGTS' : /\bdarf\b/.test(t) ? 'DARF' : null;
     return { acao: 'GUIAS', periodo: periodoDaConsulta(t, agora), tipo,
