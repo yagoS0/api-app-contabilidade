@@ -1,0 +1,13 @@
+.classificacao-notas-scroll { min-width:0; max-width:100%; }
+.classificacao-notas-tabela th { font-size:.875rem; font-weight:500; text-transform:none; letter-spacing:normal; }
+.classificacao-notas-tabela td { vertical-align:top; }
+@media(max-width:560px) {
+ .classificacao-notas-modal .btn,.classificacao-notas-modal select { min-height:44px !important; }
+ .classificacao-notas-tabela { min-width:0 !important; }
+ .classificacao-notas-tabela thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .classificacao-notas-tabela tbody,.classificacao-notas-tabela td { display:block; }
+ .classificacao-notas-tabela tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:12px 0; }
+ .classificacao-notas-tabela td { min-width:0 !important; border:0; text-align:left !important; overflow-wrap:anywhere; }
+ .classificacao-notas-tabela td:nth-child(n+4) { grid-column:1 / -1; }
+ .classificacao-notas-tabela td::before { content:attr(data-label); display:block; font:500 .875rem/1.5 var(--font-sans, sans-serif); color:var(--text-muted); margin-bottom:4px; }
+}

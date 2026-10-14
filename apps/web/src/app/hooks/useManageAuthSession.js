@@ -16,7 +16,6 @@ const PAGE_TO_PATH = {
   companies: "/companies",
   createCompany: "/companies/new",
   companyDetail: null, // depende de selectedCompanyId — tratado abaixo
-  guideUpload: "/guides/upload",
   pendingReport: "/guides/pending",
   batchEmail: "/guides/batch-email",
   guideSettings: "/firm-settings/guides",
@@ -61,7 +60,6 @@ export function pathToPageName(pathname) {
     const seg = pathname.split("/")[2] || "";
     return seg && seg !== "new" ? "companyDetail" : "companies";
   }
-  if (pathname === "/guides/upload") return "guideUpload";
   if (pathname === "/guides/pending") return "pendingReport";
   if (pathname === "/guides/batch-email") return "batchEmail";
   if (pathname === "/firm-settings/guides") return "guideSettings";

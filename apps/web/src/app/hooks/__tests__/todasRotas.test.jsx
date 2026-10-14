@@ -41,13 +41,18 @@ test('todas as abas canônicas abrem e alternam no app completo para Simples e P
       expect(screen.queryByText('Empresa não encontrada ou sem acesso.')).not.toBeInTheDocument();
     }
   }
-  const rotas = ['/companies/new', '/guides/upload', '/guides/pending', '/guides/batch-email', '/firm-settings/guides', '/firm-settings/chart', '/apuracao', '/rotinas', '/laboratorio', '/planejamento', '/obrigacoes', '/suporte', '/comercial', '/comercial/oportunidades', '/comercial/conversas', '/onboardings', '/biblioteca', '/whatsapp/comunicados', '/configuracoes', '/configuracoes/cbs-ibs', '/funcoes-serpro'];
+  const rotas = ['/companies/new', '/guides/pending', '/guides/batch-email', '/firm-settings/guides', '/firm-settings/chart', '/apuracao', '/rotinas', '/laboratorio', '/planejamento', '/obrigacoes', '/suporte', '/comercial', '/comercial/oportunidades', '/comercial/conversas', '/onboardings', '/biblioteca', '/whatsapp/comunicados', '/configuracoes', '/configuracoes/cbs-ibs', '/funcoes-serpro'];
   for (const destino of rotas) {
     await act(async () => { navigate(destino); });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 650)); });
     expect(screen.queryByText(/Erro de runtime no componente/)).not.toBeInTheDocument();
     expect(screen.queryByText('Não foi possível carregar esta tela')).not.toBeInTheDocument();
     expect(document.body.textContent.length).toBeGreaterThan(100);
+  }
+  for (const legado of ['/guides/upload', '/guides/upload/']) {
+    await act(async () => { navigate(legado); });
+    await waitFor(() => expect(screen.getByTestId('caminho').textContent).toBe('/companies'));
+    expect(screen.queryByRole('link', { name: 'Guias não identificadas' })).not.toBeInTheDocument();
   }
   const falhas = erros.mock.calls.flat().filter(x => x instanceof Error);
   erros.mockRestore();

@@ -20,3 +20,13 @@ it('recuar da confirmação preserva o cálculo e não transmite', async () => {
   expect(screen.getByLabelText('Receita interna da atividade 1')).toHaveValue(100);
   expect(api.transmitirFechamento).not.toHaveBeenCalled();
 });
+it('falha de leitura do lote é anunciada sem afirmar conclusão nem transmitir',async()=>{
+ const api={getApuracaoBatch:jest.fn(async()=>{throw Error('Você não tem acesso a este lote.');})};render(<BatchProgressModal api={api} jobId="1" onClose={()=>{}}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Você não tem acesso a este lote.');expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();expect(screen.queryByText('✓ concluído')).not.toBeInTheDocument();expect(api.getApuracaoBatch).toHaveBeenCalledTimes(1);
+});
+it('carregamento inicial não afirma zero processado',()=>{
+ render(<BatchProgressModal api={{getApuracaoBatch:()=>new Promise(()=>{})}} jobId="1" onClose={()=>{}}/>);expect(screen.getByRole('status')).toHaveTextContent('Carregando acompanhamento');expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
+it('traduz recusa técnica preservando mensagem humana',async()=>{
+ render(<BatchProgressModal api={{getApuracaoBatch:async()=>{throw Error('forbidden');}}} jobId="1" onClose={()=>{}}/>);expect(await screen.findByRole('alert')).toHaveTextContent('Você não tem acesso ativo a esta empresa.');expect(screen.getByRole('alert')).not.toHaveTextContent('forbidden');
+});

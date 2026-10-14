@@ -1,3 +1,4 @@
+import "./classificacao-notas.css";
 import { useEffect, useState } from "react";
 import { TIPOS_CLASSIFICACAO } from "../lib/tiposClassificacao";
 import { PANEL, fmtDate } from "../../notas/components/notasStyles";
@@ -34,6 +35,7 @@ export function SugestaoModal({
   }
   return (
     <Modal
+      className="classificacao-notas-modal"
       titulo={`Classificação das notas — ${competencia}`}
       aoFechar={onClose}
       tamanho="lg"
@@ -45,7 +47,7 @@ export function SugestaoModal({
           <Button variant="secondary" onClick={sugerir} disabled={sugLoading || classificando}>
             {sugLoading ? "Carregando…" : "Sugerir"}
           </Button>
-          <Button onClick={() => Promise.resolve(classificar()).catch(e => setErroAplicacao(e?.message || "Falha ao classificar."))} disabled={classificando}>
+          <Button variant="secondary" onClick={() => Promise.resolve(classificar()).catch(e => setErroAplicacao(e?.message || "Falha ao classificar."))} disabled={classificando}>
             {classificando ? "Classificando…" : "Classificar competência"}
           </Button>
         </div>
@@ -98,7 +100,7 @@ export function SugestaoModal({
                     )}
                   </div>
                   {p.tipo === "ITEM_SEM_REGRA" && (
-                    <Button size="sm" variant="secondary" onClick={() => onClassificarPendencia(p)} style={{ flex: "none" }}>
+                    <Button size="sm" variant="secondary" disabled={classificando} onClick={() => onClassificarPendencia(p)} style={{ flex: "none" }}>
                       Classificar
                     </Button>
                   )}
@@ -115,7 +117,7 @@ export function SugestaoModal({
         {sugData && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Sugestão de anexo por nota</div>
-            <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Escolha o anexo das notas desta competência. A seleção só é gravada ao aplicar; o cadastro da empresa e as declarações anteriores permanecem preservados. Atividades sujeitas ao fator R usam III ou V conforme a folha.</p>
+            <p style={{ margin: 0, color: PANEL.muted, fontSize: "0.875rem" }}>Aplicar altera somente as notas desta competência. Fator R: anexo III ou V conforme a folha.</p>
             {sugData.notas?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end" }}>
               <label style={{ display: "grid", gap: 6, flex: "1 1 240px", minWidth: 0 }}>Anexo para as notas da competência
                 <select value={tipoLote} onChange={e => setTipoLote(e.target.value)} disabled={classificando} style={{ minHeight: 40, width: "100%", color: PANEL.text, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: 8 }}>

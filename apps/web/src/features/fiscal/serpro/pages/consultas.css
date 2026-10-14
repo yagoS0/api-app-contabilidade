@@ -1,0 +1,5 @@
+.consultas-content { min-width: 0; }
+.consultas-content input[type="month"], .consultas-content select { min-height:44px; min-width:0; max-width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-subtle); color:var(--text); font:inherit; }
+.consultas-content input[type="month"]:disabled { color:var(--text-muted); }
+.consultas-content [role="region"]:focus-visible { outline:2px solid var(--border-focus); outline-offset:2px; }
+@media(max-width:600px) { .consultas-content .btn { min-height:44px; } }

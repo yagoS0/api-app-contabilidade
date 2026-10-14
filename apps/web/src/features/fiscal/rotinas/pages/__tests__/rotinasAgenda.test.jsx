@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RotinasPage } from "../renderRotinasPage.jsx";
 
@@ -52,3 +52,6 @@ test("falha mostra ação do contador e não promete retry antigo", async () => 
   expect(screen.getByText("Sem nova tentativa automática. A próxima consulta seguirá a agenda salva.")).toBeInTheDocument();
   expect(screen.queryByText(/Nova tentativa a partir/)).not.toBeInTheDocument();
 });
+
+test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Salvar rotinas'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
+test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar rotinas'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar'})).toBeDisabled();await act(async()=>concluir({}));});

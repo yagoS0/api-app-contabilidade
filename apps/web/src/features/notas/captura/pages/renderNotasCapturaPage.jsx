@@ -1,3 +1,5 @@
+import "../../../fiscal/serpro/pages/consultas.css";
+import { lerFalhaDeCarga } from '../../../../lib/falhaDeCarga';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 
@@ -50,6 +52,8 @@ export function NotasCapturaContent({ api, companies }) {
   const [criando, setCriando] = useState(false);
   const [aviso, setAviso] = useState(null); // { tipo: "error"|"info", texto }
   const [recentes, setRecentes] = useState([]);
+  const [erroRecentes, setErroRecentes] = useState('');
+  const [lendoRecentes, setLendoRecentes] = useState(false);
   const timer = useRef(null);
 
   const lista = useMemo(() => (Array.isArray(companies) ? companies : []), [companies]);
@@ -76,10 +80,16 @@ export function NotasCapturaContent({ api, companies }) {
   }
 
   async function carregarRecentes() {
+    setLendoRecentes(true); setErroRecentes('');
     try {
       const out = await api.listNotasCapturas?.();
-      setRecentes(out?.jobs || []);
-    } catch { /* silencioso: a lista de recentes não pode derrubar a tela */ }
+      if (!Array.isArray(out?.jobs)) throw new Error('Não foi possível ler as consultas recentes.');
+      setRecentes(out.jobs);
+    } catch (erro) {
+      const falha = lerFalhaDeCarga(erro, { assunto: 'as consultas recentes' });
+      setErroRecentes(falha ? `${falha.titulo}. ${falha.motivo}` : 'Não foi possível ler as consultas recentes.');
+    }
+    finally { setLendoRecentes(false); }
   }
   useEffect(() => { carregarRecentes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
@@ -128,22 +138,19 @@ export function NotasCapturaContent({ api, companies }) {
   const resumo = itens.reduce((acc, i) => { acc[i.status] = (acc[i.status] || 0) + 1; return acc; }, {});
 
   return (
-    <div>
+    <div className="consultas-content">
       <section className="serpro-settings-card">
         <div className="serpro-settings-card__head">
-          <h1 className="serpro-settings-card__title">Consultar notas em lote</h1>
+          <h2 className="serpro-settings-card__title">Consultar notas em lote</h2>
         </div>
 
         <p style={{ margin: "0 0 14px", fontSize: "0.84rem", color: "var(--text-muted)", maxWidth: 760 }}>
-          Busca notas novas no ADN (NFS-e) e na SEFAZ (NF-e) para as empresas marcadas — é a mesma
-          consulta do botão dentro de cada empresa, feita de uma vez.{" "}
-          <strong>Toda empresa selecionada aparece no resultado</strong>, inclusive as que não
-          puderam ser consultadas, com o motivo.
+          Busca notas novas no ADN (NFS-e) e na SEFAZ (NF-e). Empresas não consultadas aparecem no resultado com o motivo.
         </p>
 
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            <span style={{ fontSize: "0.875rem", color: "var(--text-muted)", fontWeight: 600 }}>
               O que buscar
             </span>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -161,16 +168,10 @@ export function NotasCapturaContent({ api, companies }) {
             </div>
           </div>
 
-          <Button type="button" variant="primary" disabled={criando || rodando || !algumaMarcada} onClick={consultar}>
-            {criando ? "Iniciando…" : "🔄 Consultar notas"}
-          </Button>
-          <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>
-            {selecionadas.size} empresa(s) selecionada(s)
-          </span>
         </div>
 
         {aviso && (
-          <div style={{
+          <div role={aviso.tipo === "error" ? "alert" : "status"} style={{
             margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
             background: aviso.tipo === "error" ? "var(--state-danger-surface)" : "var(--state-ok-surface)",
             border: `1px solid ${aviso.tipo === "error" ? "var(--state-danger)" : "var(--state-ok)"}`,
@@ -294,8 +295,19 @@ export function NotasCapturaContent({ api, companies }) {
           </table>
         </div>
 
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 16 }}>
+          <Button type="button" variant="primary" disabled={criando || rodando || !algumaMarcada} onClick={consultar}>
+            {criando ? "Iniciando…" : "Consultar notas"}
+          </Button>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>
+            {selecionadas.size} empresa(s) selecionada(s)
+          </span>
+        </div>
+
         {/* Consultas recentes: sair da aba e voltar não pode perder o resultado — senão o contador
             dispara tudo de novo, e cada disparo é chamada externa. */}
+        {lendoRecentes && <p role="status">Lendo consultas recentes…</p>}
+        {erroRecentes && <div role="alert"><p>{erroRecentes} Confira o histórico antes de iniciar outra consulta.{recentes.length > 0 ? ' Os registros abaixo são da última leitura disponível.' : ''}</p><Button variant="secondary" disabled={lendoRecentes} onClick={carregarRecentes}>Reler histórico</Button></div>}
         {recentes.length > 0 && (
           <div style={{ marginTop: 18 }}>
             <h2 style={{ fontSize: "0.9rem", margin: "0 0 8px", color: "var(--text)" }}>Consultas recentes</h2>

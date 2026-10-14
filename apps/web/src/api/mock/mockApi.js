@@ -708,7 +708,6 @@ function comRecalculoGuiaMock(companyId, entry) {
   const registro = guia && mockRecalculosGuias.get(guiaId);
   return registro ? { ...entry, sourceGuide: { ...entry.sourceGuide, ...guia }, recalculoGuia: { ...registro } } : entry;
 }
-const mockUnidentifiedGuides = [];
 
 // ── Obrigações ────────────────────────────────────────────────────────────────────────────────
 // Gera a janela de 12 meses com as MESMAS regras do backend (clamp do dia 31, fim de semana,
@@ -5365,118 +5364,6 @@ export function createMockApi() {
           ok: true,
           summary: { totalCompanies: 4, captured: 2, failed: 0, skippedByProcuration: 1, durationMs: 198 },
         },
-      };
-    },
-    async uploadGuides(files) {
-      await delay(700);
-      const normalizedFiles = Array.isArray(files) ? files : [];
-      const items = normalizedFiles.map((file) => {
-        const fileName = String(file?.name || "guia.pdf");
-        const identified = faker.datatype.boolean({ probability: 0.7 });
-        if (!identified) {
-          const pending = {
-            guideId: faker.string.uuid(),
-            fileName,
-            hash: faker.string.hexadecimal({ length: 24, prefix: "" }),
-            cnpj: faker.helpers.replaceSymbols("##############"),
-            competencia: `2026-${String(faker.number.int({ min: 1, max: 12 })).padStart(2, "0")}`,
-            tipo: faker.helpers.arrayElement(["SIMPLES", "INSS", "FGTS", "OUTRA"]),
-            valor: Number(faker.finance.amount({ min: 120, max: 9500, dec: 2 })),
-            vencimento: new Date().toISOString(),
-            status: "ERROR",
-            code: "GUIDE_NOT_PROCESSED",
-            reason: "company_not_found_by_cnpj",
-            message: "Não encontramos uma empresa cadastrada para o CNPJ extraído desta guia.",
-            rawTextSample: faker.lorem.paragraph(),
-            fields: {},
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          mockUnidentifiedGuides.unshift(pending);
-          return {
-            status: "ERROR",
-            guideId: pending.guideId,
-            fileName,
-            code: pending.code,
-            reason: pending.reason,
-            message: pending.message,
-            extracted: {
-              cnpj: pending.cnpj,
-              competencia: pending.competencia,
-              tipo: pending.tipo,
-              valor: pending.valor,
-              vencimento: pending.vencimento,
-            },
-          };
-        }
-
-        const company = faker.helpers.arrayElement(mockCompanies);
-        const guideId = faker.string.uuid();
-        const emailSent = faker.datatype.boolean({ probability: 0.8 });
-        const guide = {
-          id: guideId,
-          portalClientId: company.companyId,
-          tipo: faker.helpers.arrayElement(["SIMPLES", "INSS", "FGTS"]),
-          competencia: `2026-${String(faker.number.int({ min: 1, max: 12 })).padStart(2, "0")}`,
-          valor: faker.finance.amount({ min: 120, max: 9500, dec: 2 }),
-          status: "PROCESSED",
-          emailStatus: emailSent ? "SENT" : "ERROR",
-          emailLastError: emailSent ? null : "smtp_mock_error",
-        };
-        const list = mockGuidesByCompany.get(company.companyId) || [];
-        list.unshift(guide);
-        mockGuidesByCompany.set(company.companyId, list);
-
-        return {
-          status: "PROCESSED",
-          guideId,
-          companyId: company.companyId,
-          fileName,
-          message: "Guia processada e salva com sucesso.",
-          extracted: {
-            cnpj: company.cnpj,
-            competencia: guide.competencia,
-            tipo: guide.tipo,
-            valor: Number(guide.valor),
-          },
-          email: emailSent
-            ? {
-                status: "SENT",
-                message: "Guia processada e e-mail enviado com sucesso.",
-              }
-            : {
-                status: "ERROR",
-                message: "A guia foi processada, mas o e-mail não pôde ser enviado.",
-              },
-        };
-      });
-
-      return {
-        ok: true,
-        result: {
-          total: normalizedFiles.length,
-          processed: items.filter((item) => item.status === "PROCESSED").length,
-          errors: items.filter((item) => item.status === "ERROR").length,
-          skipped: items.filter((item) => item.status === "SKIPPED").length,
-          sent: items.filter((item) => item.email?.status === "SENT").length,
-          failedToSend: items.filter((item) => item.email?.status === "ERROR").length,
-          emailDispatch: {
-            attempted: true,
-            skipped: false,
-            reason: null,
-            message: null,
-          },
-          items,
-        },
-      };
-    },
-    async getUnidentifiedGuides() {
-      await delay(250);
-      return {
-        data: [...mockUnidentifiedGuides],
-        page: 1,
-        limit: mockUnidentifiedGuides.length || 25,
-        total: mockUnidentifiedGuides.length,
       };
     },
     async getPendingGuidesReport() {

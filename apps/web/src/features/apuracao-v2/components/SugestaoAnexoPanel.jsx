@@ -1,3 +1,4 @@
+import "./classificacao-notas.css";
 import { Button } from "../../../components/ui/Button";
 import { TIPOS_CLASSIFICACAO } from "../lib/tiposClassificacao";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
@@ -32,8 +33,8 @@ export function SugestaoAnexoTabela({ data, selecoes = {}, onSelecionar, disable
           Nenhuma nota EMIT autorizada nesta competência.
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem", minWidth: 720 }}>
+        <div className="classificacao-notas-scroll" role="region" aria-label="Classificação por nota" tabIndex={0} style={{ overflowX: "auto" }}>
+          <table className="classificacao-notas-tabela" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem", minWidth: 720 }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
                 <th style={{ padding: 8 }}>Nota</th>
@@ -50,16 +51,16 @@ export function SugestaoAnexoTabela({ data, selecoes = {}, onSelecionar, disable
                 const c = CONF[n.confianca] || CONF.media;
                 return (
                   <tr key={n.notaId} style={{ borderTop: `1px solid ${PANEL.border}` }}>
-                    <td style={{ padding: 8, fontFamily: "monospace" }}>{n.numero || n.notaId.slice(0, 8)}</td>
-                    <td style={{ padding: 8 }}>{n.tipo === "NFSE" ? "NFS-e" : "NF-e"}</td>
-                    <td style={{ padding: 8, textAlign: "right" }}>{fmtMoney(n.total)}</td>
-                    <td style={{ padding: 8, fontWeight: 600 }}>
+                    <td data-label="Nota" style={{ padding: 8, fontFamily: "monospace" }}>{n.numero || n.notaId.slice(0, 8)}</td>
+                    <td data-label="Tipo" style={{ padding: 8 }}>{n.tipo === "NFSE" ? "NFS-e" : "NF-e"}</td>
+                    <td data-label="Valor" style={{ padding: 8, textAlign: "right" }}>{fmtMoney(n.total)}</td>
+                    <td data-label="Anexo sugerido" style={{ padding: 8, fontWeight: 600 }}>
                       {TIPOS_CLASSIFICACAO.find(([tipo]) => tipo === n.tipoReceitaSugerido)?.[1] || n.anexoDominante}
                       {n.anexos.length > 1 && <span style={{ color: PANEL.muted, fontWeight: 400 }}> (+{n.anexos.length - 1})</span>}
                     </td>
-                    <td style={{ padding: 8, color: c.cor, fontWeight: 600 }}>{c.label}</td>
-                    <td style={{ padding: 8, color: PANEL.muted }}>{n.motivo}</td>
-                    {onSelecionar && <td style={{ padding: 8, minWidth: 250 }}>
+                    <td data-label="Confiança" style={{ padding: 8, color: c.cor, fontWeight: 600 }}>{c.label}</td>
+                    <td data-label="Justificativa" style={{ padding: 8, color: PANEL.muted }}>{n.motivo}</td>
+                    {onSelecionar && <td data-label="Classificação escolhida" style={{ padding: 8, minWidth: 250 }}>
                       <select aria-label={`Anexo da nota ${n.numero || n.notaId}`} value={selecoes[n.notaId] || ""} disabled={disabled || !n.itens}
                         onChange={e => onSelecionar(n.notaId, e.target.value)}
                         style={{ width: "100%", minHeight: 40, color: PANEL.text, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, padding: 8 }}>
