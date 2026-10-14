@@ -474,7 +474,11 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
   const merged = {
     tipo: String(metadata?.tipo || parsedData?.tipo || "").trim().toUpperCase() || null,
     competencia: String(metadata?.competencia || parsedData?.competencia || "").trim() || null,
-    valor: metadata?.valor != null ? Number(metadata.valor) : (parsedData?.valor ?? null),
+    // O total lido do documento prevalece sobre o formulário: um valor informado
+    // sem centavos não pode apagar os centavos comprovados pelo PDF.
+    valor: parsedData?.valor != null && Number.isFinite(Number(parsedData.valor)) && Number(parsedData.valor) > 0
+      ? Number(parsedData.valor)
+      : (metadata?.valor != null ? Number(metadata.valor) : null),
     vencimento: metadata?.vencimento || parsedData?.vencimento || null,
   };
 
@@ -566,3 +570,4 @@ export async function listUnidentifiedGuides({ page = 1, limit = 25 }) {
     limit: take,
   };
 }
+
