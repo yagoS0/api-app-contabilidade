@@ -17,4 +17,4 @@
 .notas-ferramentas-modal .recorrencias-aviso { padding: 12px 16px; border-left: 3px solid var(--state-warn); background: var(--state-warn-surface); border-radius: var(--radius-sm); }
 .notas-ferramentas-modal .recorrencias-vazio { padding: 24px 16px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius-sm); }
 
-.notas-ferramentas-contador, .notas-ferramentas-alerta { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--state-warning-surface); color: var(--state-warning); }
+.notas-ferramentas-contador, .notas-ferramentas-alerta { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--state-warn-surface); color: var(--state-warn); }
