@@ -54,7 +54,7 @@ try {
   for (const [nome, app, padrao] of [
     ['api', 'api', 'application/tomador|consultaCnpjHttp|publicOnboarding'],
     ['contador', 'web', 'consultaCnpj|onboarding/lib/__tests__'],
-    ['portal', 'portal-cliente-web', 'consultaCnpjCentral|reaproveitarNaTela.ligacao'],
+    ['portal', 'portal-cliente-web', 'consultaCnpjCentral|reaproveitarNaTela.ligacao|emitirNotaPage.ligacao'],
   ]) {
     await executar(nome, ['node_modules/jest/bin/jest.js', '--config', `apps/${app}/jest.config.js`,
       '--runInBand', '--testPathPatterns', padrao, '--json', '--outputFile', path.join(evidencia, `${nome}.json`)]);
