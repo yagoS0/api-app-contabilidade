@@ -55,7 +55,7 @@ test('leitura local carrega prova por empresa e competência, mantendo snapshot 
   db.companyMonthlyCircular.findMany.mockResolvedValue([{ portalClientId: 'a', pgdasNumeroDeclaracao: '123', fechadoContabilEm: null }]);
   const companies = ['a', 'b'].map(companyId => ({ companyId, legacyCompany: { regimeTributario: 'SIMPLES' } }));
   const mapa = await contextosCarteira(companies, '2026-09', db);
-  expect(mapa.get('a').fluxo.apuracao.rotulo).toBe('Apurada por fora');
+  expect(mapa.get('a').fluxo.apuracao.rotulo).toBe('Apurado');
   expect(mapa.get('a').company.apuracao.estado).toBe('aberta');
   expect(mapa.get('a').fluxo.contabilizacao.chave).toBe('aberto');
   expect(mapa.get('b').fluxo.apuracao.apurada).toBe(false);

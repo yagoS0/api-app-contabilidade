@@ -380,9 +380,10 @@ export async function capturePgdasGuideForCompany({
   dataConsolidacao,
   emailStatusOverride, // "PRESERVE" | "PENDING" | undefined (default = comportamento legado)
   atualizar = false,
+  somenteDocumentos = false,
 }) {
   if ((atualizar || existingGuideId || dataConsolidacao) && !contextoSerproAtual().atualizar) {
-    return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj, existingGuideId, serviceId, dataConsolidacao, emailStatusOverride, atualizar }));
+    return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj, existingGuideId, serviceId, dataConsolidacao, emailStatusOverride, atualizar, somenteDocumentos }));
   }
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
@@ -521,7 +522,9 @@ export async function capturePgdasGuideForCompany({
     },
   });
 
-  const circular = await prisma.companyMonthlyCircular.upsert({
+  const circular = somenteDocumentos
+    ? await prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: portalClient.id, competencia: normalizedCompetencia } } })
+    : await prisma.companyMonthlyCircular.upsert({
     where: {
       portalClientId_competencia: {
         portalClientId: portalClient.id,
@@ -568,7 +571,7 @@ export async function capturePgdasGuideForCompany({
   // Guarda de sanidade: só grava se o total parseado bate com o total do DAS (layout do PDF não
   // validado no offline — se não bater, não grava e a provisão segue no total/dasTotal).
   try {
-    if (mapped.pdfBuffer?.length && mapped.parsed.valor != null) {
+    if (!somenteDocumentos && mapped.pdfBuffer?.length && mapped.parsed.valor != null) {
       const pdfParse = (await import("pdf-parse")).default;
       const txt = String((await pdfParse(mapped.pdfBuffer))?.text || "");
       const comp = parseArrecadacaoComposicao(txt);
@@ -590,7 +593,7 @@ export async function capturePgdasGuideForCompany({
     // recálculo do `AccountingEntryGeneratorService` existe para proteger: a provisão continua
     // valendo o principal, e o valor novo fica só sinalizado no lançamento e na circular.
     // (É o default do serviço; explícito porque é aqui que a guarda PRECISA morder.)
-    accounting = await generateEntriesFromCircular({
+    accounting = somenteDocumentos ? { skipped: true, somenteDocumentos: true } : await generateEntriesFromCircular({
       portalClientId: portalClient.id,
       competencia: normalizedCompetencia,
       now,
@@ -620,7 +623,7 @@ export async function capturePgdasGuideForCompany({
   // É a mesma regra que `guideCompliance` e o rótulo da guia já aplicam: **decide o VÍNCULO, nunca o
   // tipo**. `WHERE_GUIA_SEM_PARCELAMENTO` é a forma compartilhada dessa pergunta — usada aqui para
   // não virar a quarta cópia local dela.
-  await prisma.guide.deleteMany({
+  if (!somenteDocumentos) await prisma.guide.deleteMany({
     where: {
       portalClientId: portalClient.id,
       competencia: normalizedCompetencia,

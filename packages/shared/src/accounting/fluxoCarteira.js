@@ -30,7 +30,7 @@ export function apuracaoCarteira(company) {
     numeroDeclaracaoPortal: company?.apuracao?.numeroDeclaracao,
     estado,
   });
-  if (porFora) return { chave: 'apurado', rotulo: 'Apurada por fora', apurada: true, transmitida: true, porFora: true, origem: 'Receita Federal', estadoInterno: estado || null };
+  if (porFora) return { chave: 'apurado', rotulo: 'Apurado', apurada: true, transmitida: true, porFora: true, origem: 'Receita Federal', estadoInterno: estado || null };
   const transmitida = ['transmitida', 'confirmada'].includes(estado);
   const apurada = transmitida || ['calculada', 'fechada', 'revisada'].includes(estado);
   return { chave: transmitida ? 'transmitido' : apurada ? 'apurado' : 'a_apurar', rotulo: transmitida ? 'Transmitido' : apurada ? 'Apurado' : 'A apurar', apurada, transmitida };

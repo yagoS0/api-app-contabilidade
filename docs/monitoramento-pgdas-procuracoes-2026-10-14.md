@@ -87,3 +87,12 @@ Validacao final desta etapa: 38 testes dirigidos de API e 45 de interface aprova
 A carteira usa o número de declaração PGDAS-D salvo para a empresa/competência, sem transmissão interna registrada, para apresentar “Apurada por fora”. A projeção resolve as etapas de apuração/transmissão e o filtro Não apurados; mantém obrigações adicionais, guias, contabilização e importação independentes. Nenhum snapshot, fechamento ou lançamento é alterado e a leitura não consulta o SERPRO. Guia manual isolada não comprova entrega. Transmissão interna registrada não é reclassificada como externa.
 
 O mesmo rótulo aparece na lista de Apuração com o estado interno separado. A prévia do lote da carteira exclui as entregas externas comprovadas. Testes: 38 de API e 81 de interface, incluindo escopo empresa/competência, prova ausente, origem interna, preservação contábil e seleção. Componentes conferidos em 1440 e 390 px, sem overflow global.
+
+
+## Continuidade automática e rótulo Apurado
+
+Por solicitação posterior, o rótulo visível das entregas externas comprovadas passa a ser apenas “Apurado”. A origem oficial e o estado interno seguem separados nos dados/histórico. A rotina mensal continua usando a competência anterior no fuso America/Sao_Paulo e as empresas/agendas habilitadas. Documentos completos dispensam inclusive procuração; faltantes exigem procuração vigente e poder PGDAS-D. Ausência confirmada de declaração aguarda conferência explícita, sem consultas repetidas.
+
+O worker agora passa somenteDocumentos tanto na captura de DAS quanto na sincronização do extrato. Neste modo, capturar DAS salva a guia sem atualizar a circular, gerar lançamentos ou excluir guias; a sincronização documental preserva snapshots e fechamento. A captura explícita legada mantém seu comportamento. Agendas de envio existentes permanecem independentes.
+
+Auditoria de produção: integração e worker habilitados, DAS/extrato mensais dia 9 às 14h de São Paulo, 26 empresas habilitadas em cada rotina. Não foi executado lote fiscal para testar. Validação local: 103 testes API e 42 testes web aprovados.

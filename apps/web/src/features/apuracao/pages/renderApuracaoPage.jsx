@@ -16,7 +16,7 @@ import { estadoEntregaPgdas, CORES_TOM } from "../lib/entregaPgdas";
 import { AlertasMonitoramento } from "../components/AlertasMonitoramento";
 
 const ESTADO_BADGE = {
-  apurada_fora: { c: "var(--state-ok)", s: "var(--state-ok-surface)", l: "Apurada por fora" },
+  apurada_fora: { c: "var(--state-ok)", s: "var(--state-ok-surface)", l: "Apurado" },
   aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
   configurando:  { c: "var(--accent-cyan)",    s: "rgba(139, 233, 253, 0.13)",   l: "configurando" },
   calculada:     { c: "var(--accent-purple)",  s: "var(--accent-purple-surface)", l: "calculada" },

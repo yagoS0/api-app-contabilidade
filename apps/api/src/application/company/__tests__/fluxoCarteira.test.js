@@ -106,7 +106,7 @@ test('evidência opcional conserva texto legado sem aceitar tipos inválidos',()
 test('PGDAS oficial retira apuração externa das pendências sem fechar contabilização', () => {
   const c = empresa({ apuracao: { estado: 'aberta', numeroDeclaracaoRfb: '123' } });
   const f = projetarFluxoCarteira(c, contexto({ obrigacoes: [{ verificador: 'APURACAO_TRANSMITIDA', concluida: false }] }));
-  expect(f.apuracao).toMatchObject({ rotulo: 'Apurada por fora', porFora: true, apurada: true, transmitida: true });
+  expect(f.apuracao).toMatchObject({ rotulo: 'Apurado', porFora: true, apurada: true, transmitida: true });
   expect(f.tarefas.find(t => t.chave === 'apurar').concluida).toBe(true);
   expect(f.tarefas.find(t => t.chave === 'transmitir').concluida).toBe(true);
   expect(f.obrigacoes[0].concluida).toBe(true);
