@@ -15,6 +15,7 @@ import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExe
 import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
 import { runRoutineLoop } from "./runRoutineLoop.js";
 import { previousCompetencia } from "./routineSchedule.js";
+import { documentosPgdas, procuracaoPermitePgdas } from "../application/fiscal/serpro/pgdasDocumentos.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
@@ -108,8 +109,31 @@ async function executarPgdasd(options = {}) {
       if (![["das", idsDas], ["extrato", idsExtrato], ["presumido", idsPresumido], ["parcelamento", idsParcelamento]]
         .some(([key, ids]) => janelaAberta(key) && ids.has(company.id))) continue;
       try {
+        let documentos = null;
+        let consultaNegativa = false;
+        if (company.regimeTributario === "SIMPLES") {
+          const [circular, guide] = await Promise.all([
+            prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: company.id, competencia } } }),
+            prisma.guide.findFirst({ where: { portalClientId: company.id, competencia, tipo: "SIMPLES", source: "SERPRO", status: "PROCESSED", parcelamentoId: null, NOT: { sourceFileId: { startsWith: "PARC-" } } }, orderBy: { updatedAt: "desc" }, select: { id: true, pdfBytes: true } }),
+          ]);
+          documentos = documentosPgdas(circular, guide);
+          // Retorno fiscal negativo exige uma nova consulta explícita do contador.
+          // Falha técnica/documento incompleto não entra nesta condição.
+          if (circular?.serproSyncStatus === "NOT_FOUND" && !documentos.declaracao) {
+            consultaNegativa = true;
+            extratoResults.push({ companyId: company.id, competencia, status: "declaracao_nao_localizada", requerAcao: true });
+          }
+          const faltaDas = !consultaNegativa && janelaAberta("das") && idsDas.has(company.id) && !documentos.das;
+          const faltaExtrato = !consultaNegativa && janelaAberta("extrato") && idsExtrato.has(company.id) && !documentos.extrato;
+          const temParcelamento = INTEGRACAO_SERPRO_PARCELAMENTO && janelaAberta("parcelamento") && idsParcelamento.has(company.id);
+          if (!faltaDas && !faltaExtrato && !temParcelamento) {
+            results.push({ companyId: company.id, competencia, status: consultaNegativa ? "aguardando_conferencia" : "documentos_ja_recuperados" });
+            if (!consultaNegativa && janelaAberta("extrato") && idsExtrato.has(company.id)) extratoResults.push({ companyId: company.id, competencia, status: "extrato_ja_sincronizado" });
+            continue;
+          }
+        }
         // eslint-disable-next-line no-await-in-loop
-        const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id });
+        const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id, reutilizar: true });
         if (procuration.status !== "ATIVA") {
           results.push({
             companyId: company.id,
@@ -183,6 +207,11 @@ async function executarPgdasd(options = {}) {
         }
 
         if (company.regimeTributario !== "SIMPLES") continue;
+        if (consultaNegativa) continue;
+        if (!procuracaoPermitePgdas(procuration)) {
+          results.push({ companyId: company.id, competencia, status: "skipped_procuration_inactive", procurationStatus: "SEM_PODER_PGDASD" });
+          continue;
+        }
 
         // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)
         // eslint-disable-next-line no-await-in-loop
@@ -196,10 +225,10 @@ async function executarPgdasd(options = {}) {
             competencia,
             status: "PROCESSED",
           },
-          select: { id: true },
+          select: { id: true, pdfBytes: true },
         });
 
-        if (janelaAberta("das") && idsDas.has(company.id) && !existingForCompetencia) {
+        if (janelaAberta("das") && idsDas.has(company.id) && !documentos?.das && !existingForCompetencia?.pdfBytes?.length) {
           try {
             // eslint-disable-next-line no-await-in-loop
             lease.assertActive(); options.assertActive?.();
@@ -236,15 +265,15 @@ async function executarPgdasd(options = {}) {
           // eslint-disable-next-line no-await-in-loop
           const circ = await prisma.companyMonthlyCircular.findUnique({
             where: { portalClientId_competencia: { portalClientId: company.id, competencia } },
-            select: { serproSyncStatus: true },
           });
-          if (circ?.serproSyncStatus !== "SUCCESS") {
+          if (!documentosPgdas(circ, null).extrato) {
             try {
               // eslint-disable-next-line no-await-in-loop
               lease.assertActive(); options.assertActive?.();
-                await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
+                const sincronizada = await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
               extratoResults.push({
-                companyId: company.id, razao: company.razao, competencia, status: "extrato_ok",
+                companyId: company.id, razao: company.razao, competencia,
+                status: documentosPgdas(sincronizada?.circular, null).extrato ? "extrato_ok" : "extrato_incompleto",
               });
             } catch (err) {
               extratoResults.push({
@@ -286,6 +315,8 @@ async function executarPgdasd(options = {}) {
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
       extratoOk: extratoResults.filter((item) => item.status === "extrato_ok").length,
       extratoErro: extratoResults.filter((item) => item.status === "extrato_erro").length,
+      extratoIncompleto: extratoResults.filter((item) => item.status === "extrato_incompleto").length,
+      declaracaoNaoLocalizada: extratoResults.filter((item) => item.status === "declaracao_nao_localizada").length,
       extratoJaSincronizado: extratoResults.filter((item) => item.status === "extrato_ja_sincronizado").length,
       // Q22: parcelas trazidas (flatten dos resultados por parcelamento).
       parcelasOk: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => String(x.status).startsWith("ok")).length, 0),

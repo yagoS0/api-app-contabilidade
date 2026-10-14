@@ -1,4 +1,4 @@
-jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: { portalClient: { findUnique: jest.fn(), create: jest.fn() }, appSetting: { upsert: jest.fn() } } }));
+jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: { portalClient: { findUnique: jest.fn(), create: jest.fn() }, appSetting: { findUnique: jest.fn(), upsert: jest.fn() } } }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { document: "12345678000199" } })) }));
 jest.mock("../SerproHttpClient.js", () => ({ SerproHttpClient: jest.fn() }));
 import { prisma } from "../../../../infrastructure/db/prisma.js";
@@ -26,4 +26,35 @@ it.each(["REVOGADA", "INATIVA", "CANCELADA"])("%s prevalece sobre validade futur
 });
 it("validade isolada em objeto não canônico não autoriza", () => {
   expect(summarizeProcurationResponse({ validade: "2099-12-31", sistemas: ["SITFIS"] }).status).toBe("AUSENTE");
+});
+
+const empresa = { id: "empresa", cnpj: "11222333000181" };
+function cache(status = "ATIVA") {
+  return { value: { cnpj: empresa.cnpj, procuradorCnpj: "12345678000199", status, systems: ["00146"], validUntil: "2099-12-31", checkedAt: new Date().toISOString() } };
+}
+it.each(["ATIVA", "AUSENTE"])("reutiliza %s recente sem chamada fiscal", async status => {
+  prisma.portalClient.findUnique.mockResolvedValue(empresa);
+  prisma.appSetting.findUnique.mockResolvedValue(cache(status));
+  const post = jest.fn();
+  const r = await new SerproProcurationService({ client: { post } }).checkCompanyProcuration({ portalClientId: empresa.id, reutilizar: true });
+  expect(r.reutilizado).toBe(true); expect(post).not.toHaveBeenCalled();
+});
+it.each(["expirada", "procurador", "cnpj", "antiga"])("cache %s não autoriza consulta", async caso => {
+  const salvo = cache();
+  if (caso === "expirada") salvo.value.validUntil = "2000-01-01";
+  if (caso === "procurador") salvo.value.procuradorCnpj = "99999999000100";
+  if (caso === "cnpj") salvo.value.cnpj = "99999999000100";
+  if (caso === "antiga") salvo.value.checkedAt = "2000-01-01";
+  prisma.portalClient.findUnique.mockResolvedValue(empresa);
+  prisma.appSetting.findUnique.mockResolvedValue(salvo);
+  const post = jest.fn(async () => ({ status: 200, dados: "[]" }));
+  await new SerproProcurationService({ client: { post } }).checkCompanyProcuration({ portalClientId: empresa.id, reutilizar: true });
+  expect(post).toHaveBeenCalledTimes(1);
+});
+it("resposta inconclusiva não sobrescreve a última procuração", async () => {
+  prisma.appSetting.upsert.mockClear();
+  prisma.portalClient.findUnique.mockResolvedValue(empresa);
+  const post = jest.fn(async () => ({ status: 503 }));
+  await expect(new SerproProcurationService({ client: { post } }).checkCompanyProcuration({ portalClientId: empresa.id })).rejects.toMatchObject({ code: "SERPRO_PROCURACAO_INCONCLUSIVA" });
+  expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
 });

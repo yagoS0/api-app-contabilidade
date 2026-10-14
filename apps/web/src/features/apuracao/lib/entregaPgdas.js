@@ -124,6 +124,16 @@ export function estadoEntregaPgdas({
     };
   }
   // 4. Ninguém perguntou à Receita. Ausência de consulta NÃO é ausência de entrega.
+  if (extratoFoiConsultado(extratoStatus, extratoConsultadoEm) && extratoStatus !== "NOT_FOUND") {
+    return {
+      chave: "consulta_inconclusiva",
+      rotulo: "Entrega a confirmar — consulta inconclusiva",
+      detalhe: "A última consulta não confirmou a entrega nem a ausência de declaração. Confira a autorização e recupere os documentos faltantes.",
+      tom: TOM_ENTREGA.desconhecido,
+      provada: false,
+      origem: "nenhuma",
+    };
+  }
   if (!extratoFoiConsultado(extratoStatus, extratoConsultadoEm)) {
     return {
       chave: "sem_informacao",
