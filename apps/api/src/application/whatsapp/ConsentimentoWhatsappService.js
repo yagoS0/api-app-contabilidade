@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { normalizarE164 } from './telefone.js';
+import { BOTOES_CONSENTIMENTO } from './templateConsentimentoWhatsapp.js';
 
 const normalizar = texto => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[.!?,;:]+/g, ' ').replace(/\s+/g, ' ').trim();
 export const chaveConsentimento = telefone => 'whatsapp_consentimento:' + createHash('sha256').update(telefone).digest('hex');
@@ -37,12 +38,14 @@ export async function conferirEnvioConsentido(telefone, client=prisma) {
  if((await lerConsentimentoWhatsapp(telefone,client))?.status==='REVOGADO')throw falha();
 }
 
-export async function processarConsentimentoWhatsapp({conversa,mensagem}, {client=prisma}={}) {
- if(!conversa?.telefoneE164 || !mensagem?.id || mensagem.direcao!=='in' || mensagem.tipo!=='text')return null;
+export async function processarConsentimentoWhatsapp({conversa,mensagem,interacao}, {client=prisma}={}) {
+ if(!conversa?.telefoneE164 || !mensagem?.id || mensagem.direcao!=='in')return null;
+ const botao=['button','interactive'].includes(mensagem.tipo) ? BOTOES_CONSENTIMENTO.find(b=>b.id===interacao?.id) : null;
+ if(mensagem.tipo!=='text'&&!botao)return null;
  const texto=normalizar(mensagem.corpo);
- let acao=interpretarConsentimento(texto);
+ let acao=botao?null:interpretarConsentimento(texto);
  const curta=/^(?:nao|nao obrigado|nao obrigada|nao quero|nao quero receber|nao tenho interesse|nao autorizo|prefiro nao|sim|sim autorizo|autorizo|sim pode|pode enviar|podem enviar)$/.test(texto);
- if(!acao&&!curta)return null;
+ if(!acao&&!curta&&!botao)return null;
  const numero=await destino(conversa.telefoneE164,client);
  const registrada=new Date(mensagem.registradaEm);
  const ocorrida=new Date(mensagem.ocorridaEmProvedor || mensagem.registradaEm);
@@ -52,7 +55,7 @@ export async function processarConsentimentoWhatsapp({conversa,mensagem}, {clien
   // "Não paguei" e respostas a outros fluxos nunca viram recusa de comunicação.
   const anterior=await client.mensagemWhatsapp.findFirst({where:{conversa:{telefoneE164:conversa.telefoneE164,canalId:conversa.canalId},registradaEm:{lt:registrada,gte:new Date(registrada.getTime()-7*86400000)},...(mensagem.respostaAProviderMessageId?{direcao:'out',providerMessageId:mensagem.respostaAProviderMessageId}:{})},orderBy:{registradaEm:'desc'}});
   const pergunta=anterior?.direcao==='out' && anterior.tipo==='template' && anterior.statusEnvio!=='falhou' && /Podemos enviar por este número\?/.test(anterior.corpo||'');
-  acao=interpretarConsentimento(texto,pergunta);if(!acao)return null;
+  acao=botao?(pergunta?botao.status:null):interpretarConsentimento(texto,pergunta);if(!acao)return null;
  }
  const key=chaveConsentimento(numero),audit='whatsapp_consentimento_evento:'+mensagem.id;
  for(let attempt=0;attempt<3;attempt++){

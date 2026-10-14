@@ -221,7 +221,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
   // Apenas metadados validados do canal, sem token. Não confiar em finalidade enviada pelo lead.
   if (r) r.canal = canal;
   // Consentimento é do número e precede seleção de empresa, IA, piloto e atendimento humano.
-  const consentimento = r && await processarConsentimentoWhatsapp(r);
+  const consentimento = r && await processarConsentimentoWhatsapp({ ...r, interacao: item.interacao });
   if (consentimento) {
     if (consentimento.status === 'AUTORIZADO' && consentimento.aplicado) {
       const { confirmarConsentimentoWhatsapp } = await import('./ConfirmarConsentimentoWhatsappService.js');
