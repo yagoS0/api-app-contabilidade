@@ -13,9 +13,21 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { destinatarioWhatsapp, canaisParaEnvio } from "../ContatoWhatsappService.js";
+import { destinatarioWhatsapp, canaisParaEnvio, destinatariosDeEnvio } from "../ContatoWhatsappService.js";
 
 beforeEach(() => jest.clearAllMocks());
+
+it("preserva o vínculo do destinatário para conferir a titularidade da entrega", async () => {
+  prisma.contatoWhatsapp.findMany.mockResolvedValue([{
+    id: "c1", nome: "Maria", telefoneE164: "5521999998888", optInEm: new Date(),
+    vinculoNumeroId: "vinculo-atual",
+    vinculoNumero: { encerrouEm: null, interlocutor: { estado: "ATIVO" } },
+  }]);
+  expect((await destinatariosDeEnvio("p1")).telefones[0].vinculoNumeroId).toBe("vinculo-atual");
+  expect(prisma.contatoWhatsapp.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    select: expect.objectContaining({ vinculoNumeroId: true }),
+  }));
+});
 
 describe("destinatarioWhatsapp", () => {
   it("sem contato: diz que falta CADASTRAR", async () => {
