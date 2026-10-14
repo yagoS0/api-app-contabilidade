@@ -104,7 +104,8 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           </div>
         )}
 
-        <div style={{ overflowX: "auto", background: PANEL.surface, borderRadius: 6 }}>
+        {items.length === 0 && listaPronta && <p role="status" style={{ color: PANEL.muted }}>Nenhuma empresa encontrada.</p>}
+        {items.length > 0 && <div role="region" aria-label="Empresas para apuração" tabIndex={0} style={{ overflowX: "auto", background: PANEL.surface, borderRadius: 6 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
@@ -169,12 +170,9 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                   </tr>
                 );
               })}
-              {items.length === 0 && listaPronta && (
-                <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>Nenhuma empresa encontrada.</td></tr>
-              )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </section>
 
       {batchJobId && apuracaoApi && (
