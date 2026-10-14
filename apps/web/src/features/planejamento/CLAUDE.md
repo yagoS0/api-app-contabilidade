@@ -1,5 +1,10 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+## Organização solicitada em 14/10/2026
+
+Planejamento abre diretamente no simulador tributário. Relatórios gerenciais ficam em Contábil → Relatórios; apenas o relatório tributário aparece também no Planejamento, usando `AnaliseEmpresa` com `somenteTributario`. Não remontar a navegação geral da análise nessa aba. A comparação tributária e a distância para o Fator R aparecem também na Apuração, sem salvar premissas na declaração. A leitura de RBT12 no planejamento recompõe os 12 meses anteriores com `persistir:false`, sem gravar cache ou alterar snapshots.
+
+
 ## Classificação automática autorizada — 16/09/2026
 
 O usuário aprovou maximizar automação gerencial. Esta regra substitui a proibição anterior de sugestões pelo nome: shared/analise/classificacao.js combina código completo, categoria da DRE e identificação exata normalizada. Tributos específicos sobre faturamento em deduções têm classificação automática revisável; aluguel, comissões e pró-labore recebem sugestão para confirmação. Não inferir por recorrência, conta genérica, parcela ou multa. Classificações confirmadas da empresa prevalecem. Não gravar ao consultar. Relatório, impressão e Laboratório compartilham a regra e indicam a origem automática. Alterar receita escala custos variáveis proporcionalmente à referência, inclusive custos com tributos embutidos, mantendo alíquota adicional zero. Nenhuma chamada de IA ou serviço fiscal nesta etapa.

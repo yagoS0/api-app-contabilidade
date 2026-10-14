@@ -6,8 +6,7 @@
 //  • não escreve NADA. Nem cache, nem log, nem snapshot. Abrir um planejamento não pode mudar o
 //    estado fiscal da empresa — é a mesma razão pela qual `FatorRService.decidirFatorR` foi
 //    extraída sem persistência para o relatório de faturamento poder consumi-la.
-//    ⚠ É por isso que aqui NÃO se chama `RbtExtratoService.getRbt12`: no caminho de fallback ela
-//    faz `upsertCache` e GRAVA uma linha de `RbtExtratoCache`. Aqui o cache é apenas LIDO.
+//    A leitura do RBT12 usa `persistir:false`: nem o cache é atualizado nesta consulta.
 //  • não decide regime, não recomenda nada e não calcula imposto. Quem compara é o motor local da
 //    tela (`apps/web/src/features/planejamento/lib/`), com as tabelas citando a lei.
 //  • não inventa. Campo sem fonte volta `apurado: false` com o motivo — ver `lib/campoComOrigem.js`.
@@ -19,6 +18,7 @@
 // legado (`CalculoFiscal`) grava zeros fabricados em `fs12Manual`.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { getRbt12 } from "../notas/apuracao/v2/RbtExtratoService.js";
 import { competenciasDe12Meses, derivarFolha12m } from "../notas/apuracao/v2/FolhaDerivadaService.js";
 import { whereFaturamentoEmit } from "../notas/apuracao/v2/FechamentoService.js";
 import {
@@ -142,8 +142,10 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
     : ausente(`Não foi possível apurar a receita: nenhuma nota emitida autorizada em ${janelaRotulo}.`);
 
   // ── RBT12 ─────────────────────────────────────────────────────────────────────────────────────
-  // Ordem de autoridade: o que já foi usado num fechamento > o cache de extrato > a circular.
+  // Recompõe a janela de referência antes das fotos antigas, sem alterar o fechamento.
+  const rbtAtual = await getRbt12({ portalClientId: portal.id, competencia: referencia, persistir: false }).catch(() => null);
   let rbt12 = primeiraFonteQueResponde([
+    valorMonetario(rbtAtual?.rbt12, rbtAtual ? `12 meses anteriores a ${competenciaBr(referencia)} · origem ${rbtAtual.origem}` : null, "sem receita na janela"),
     valorMonetario(
       snapshot?.rbt12,
       snapshot ? `apuração de ${competenciaBr(snapshot.competencia)}${snapshot.estado ? ` (${snapshot.estado})` : ""}` : null,

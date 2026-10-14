@@ -127,17 +127,17 @@ function Campo({ id, rotuloTexto, children, abaixo = null, estilo = null }) {
 }
 
 export function PlanejamentoPage(props) {
-  const [area, setArea] = useState('analise');
+  const [verTributario, setVerTributario] = useState(false);
   const [conferirFator, setConferirFator] = useState(false);
   const [referenciaFator, setReferenciaFator] = useState(()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7));
   if (!props.empresaFixa) return <SimulacaoTributariaPage {...props} />;
   return <div style={{ minWidth: 0 }}>
-    <nav className="bi-areas" aria-label="Áreas do planejamento" style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-      <button type="button" aria-pressed={area === 'analise'} onClick={() => setArea('analise')}>Análise da empresa</button>
-      <button type="button" aria-pressed={area === 'simulacao'} onClick={() => setArea('simulacao')}>Simulação tributária</button>
-    </nav>
-    <div hidden={area !== 'analise'}><AnaliseEmpresa key={props.empresa?.id} api={props.api} empresaId={props.empresa?.id} empresaNome={props.empresa?.razaoSocial} empresaCnpj={props.empresa?.cnpj} /></div>
-    <div hidden={area !== 'simulacao'}><SimulacaoTributariaPage {...props} /><section className="analise-empresa"><details className="bi-card" onToggle={e=>setConferirFator(e.currentTarget.open)}><summary>Conferir base fiscal do Fator R</summary><p>Ferramenta operacional de simulação: usa a janela fiscal de 12 meses anteriores, inclusive competências ainda abertas. Não integra o relatório de meses fechados.</p><label>Competência de referência <input type="month" value={referenciaFator} onChange={e=>setReferenciaFator(e.target.value)}/></label>{conferirFator && referenciaFator && area === 'simulacao' && <BaseTributaria key={props.empresa?.id+referenciaFator} api={props.api} empresaId={props.empresa?.id} referencia={referenciaFator}/>}</details></section></div>
+    <SimulacaoTributariaPage {...props} />
+    <details className="analise-empresa bi-card" onToggle={e => setVerTributario(e.currentTarget.open)}>
+      <summary>Relatório tributário</summary>
+      {verTributario && <AnaliseEmpresa key={props.empresa?.id} somenteTributario api={props.api} empresaId={props.empresa?.id} empresaNome={props.empresa?.razaoSocial} empresaCnpj={props.empresa?.cnpj} />}
+    </details>
+    <section className="analise-empresa"><details className="bi-card" onToggle={e=>setConferirFator(e.currentTarget.open)}><summary>Conferir base fiscal do Fator R</summary><p>Ferramenta operacional de simulação: usa a janela fiscal de 12 meses anteriores, inclusive competências ainda abertas. Não integra o relatório de meses fechados.</p><label>Competência de referência <input type="month" value={referenciaFator} onChange={e=>setReferenciaFator(e.target.value)}/></label>{conferirFator && referenciaFator && <BaseTributaria key={props.empresa?.id+referenciaFator} api={props.api} empresaId={props.empresa?.id} referencia={referenciaFator}/>}</details></section>
   </div>;
 }
 

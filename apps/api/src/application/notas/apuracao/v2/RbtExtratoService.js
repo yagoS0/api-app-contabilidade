@@ -1,21 +1,12 @@
 // Q15.4 — RBT12 (receita bruta dos 12 meses anteriores) + receitasBrutasAnteriores.
 //
-// Custo SERPRO por requisição → cache é REQUISITO (não otimização). TTL longo:
-// declaração transmitida não muda salvo retificadora.
-//
-// Fontes (em ordem de preferência):
-//   1. cache RbtExtratoCache (se não forçar refresh)
-//   2. SIMULAÇÃO — o retorno do TRANSDECLARACAO11 (indicadorTransmissao:false) já
-//      traz o RBT12 oficial que a RFB usou. Quando disponível, é a fonte mais barata
-//      e fiel (uma chamada que já fazemos no [Calcular]).
-//   3. fallback local — soma das notas EMIT/autorizada por mês (origem PARCIAL_LOCAL),
-//      sinaliza que pode divergir do oficial.
-//
-// ⚠ Passo 0 (validar no trial): confirmar se CONSDECLARACAO13 traz receita no índice
-// ou só metadados; se CONSULTIMADECREC14 retorna JSON ou PDF. Enquanto não validado,
-// usamos simulação (fonte 2) + fallback local (fonte 3).
+// Sem chamadas externas: usa os extratos PGDAS já salvos e, nos meses sem
+// extrato legível, as notas locais. Cada mês entra uma vez; o PA atual fica fora.
+// Recompõe caches parciais para incorporar importações e retificações posteriores.
+// A origem SIMULACAO é compatibilidade legada; a resposta atual da RFB não traz RBT12.
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
+import { receitasDoExtrato } from "./receitasDoExtrato.js";
 
 function paFromCompetencia(comp) { return String(comp || "").replace("-", ""); }
 function round2(n) { return +Number(n || 0).toFixed(2); }
@@ -75,11 +66,26 @@ async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
       bucket.valorInterno += total;
     }
   }
+  // Extratos do mesmo cliente, incluindo os do ano anterior. O mais recente
+  // prevalece por mês (retificadoras); nunca somar extrato e notas do mesmo PA.
+  const extratos = await prisma.companyMonthlyCircular.findMany({
+    where: { portalClientId, competencia: { gte: primeiro, lte: competencia }, pgdasDeclaracaoFileId: { not: null } },
+    orderBy: [{ competencia: "desc" }, { serproLastSyncAt: "desc" }],
+    select: { metadata: true },
+  });
+  const oficiais = new Set();
+  for (const extrato of extratos) {
+    for (const mes of receitasDoExtrato(extrato.metadata?.parsedPgdas?.rawText)) {
+      if (!porMes.has(mes.pa) || oficiais.has(mes.pa)) continue;
+      porMes.set(mes.pa, mes);
+      oficiais.add(mes.pa);
+    }
+  }
   const detalhe = [...porMes.values()].map((b) => ({
     pa: b.pa, valorInterno: round2(b.valorInterno), valorExterno: round2(b.valorExterno),
   }));
   const rbt12 = round2(detalhe.reduce((s, b) => s + b.valorInterno + b.valorExterno, 0));
-  return { rbt12, detalhe };
+  return { rbt12, detalhe, origem: oficiais.size === 12 ? "EXTRATO_PGDAS" : "PARCIAL_LOCAL" };
 }
 
 /**
@@ -88,12 +94,13 @@ async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
  *
  * @returns {Promise<{rbt12, detalhePorMes, origem, capturadoEm}>}
  */
-export async function getRbt12({ portalClientId, competencia, forceRefresh = false }) {
+export async function getRbt12({ portalClientId, competencia, forceRefresh = false, persistir = true }) {
   if (!forceRefresh) {
     const cached = await prisma.rbtExtratoCache.findUnique({
       where: { portalClientId_competencia: { portalClientId, competencia } },
     });
-    if (cached) {
+    // Totais locais envelhecem quando chegam notas/extratos retroativos.
+    if (cached?.origem === "SIMULACAO") {
       return {
         rbt12: Number(cached.rbt12),
         detalhePorMes: cached.detalhePorMes,
@@ -103,8 +110,9 @@ export async function getRbt12({ portalClientId, competencia, forceRefresh = fal
     }
   }
   // fallback local
-  const { rbt12, detalhe } = await somarReceitaLocalPorMes({ portalClientId, competencia });
-  const saved = await upsertCache({ portalClientId, competencia, rbt12, detalhePorMes: detalhe, origem: "PARCIAL_LOCAL" });
+  const { rbt12, detalhe, origem } = await somarReceitaLocalPorMes({ portalClientId, competencia });
+  if (!persistir) return { rbt12, detalhePorMes: detalhe, origem, capturadoEm: null };
+  const saved = await upsertCache({ portalClientId, competencia, rbt12, detalhePorMes: detalhe, origem });
   return { rbt12: Number(saved.rbt12), detalhePorMes: saved.detalhePorMes, origem: saved.origem, capturadoEm: saved.capturadoEm };
 }
 
