@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { ConsultaResultadoNfse } from '@contabilidade/shared/nfse-conciliacao';
 import { TIPO } from "./lib/desfechoEmissao";
 import { mensagemDeErro } from "../../lib/mensagens";
@@ -61,7 +62,18 @@ function LinhaDado({ rotulo, valor }) {
  */
 const NADA_FOI_ENVIADO = "Nada foi enviado e nenhum número de nota foi consumido — tentar de novo é seguro.";
 
-export function DesfechoEmissao({ companyId, consultarResultado, aoRecuperar, desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
+export function DesfechoEmissao(props) {
+  const resultadoRef = useRef(null);
+  useEffect(() => {
+    if (props.desfecho) resultadoRef.current?.focus();
+  }, [props.desfecho]);
+  if (!props.desfecho) return null;
+  return <section ref={resultadoRef} tabIndex={-1} aria-label="Resultado da emissão">
+    <ConteudoDesfechoEmissao {...props} />
+  </section>;
+}
+
+function ConteudoDesfechoEmissao({ companyId, consultarResultado, aoRecuperar, desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
   if (!desfecho) return null;
 
   const consulta = <ConsultaResultadoNfse key={companyId + ":" + desfecho.extra?.nfse?.id} companyId={companyId} invoiceId={desfecho.extra?.nfse?.id} consultar={consultarResultado} aoRecuperar={aoRecuperar} />;

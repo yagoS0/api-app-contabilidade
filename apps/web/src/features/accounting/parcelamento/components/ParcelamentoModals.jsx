@@ -1,3 +1,4 @@
+import { Modal } from "../../../../components/ui/Modal";
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // Modais do parcelamento (escopo acoplado, padrão usado em Q6):
 //   - ParcelamentoConfigModal:   contas de provisão/pagamento de um parcelamento
@@ -26,16 +27,6 @@ import { baseDaRescisao, valorPorPapelDaRescisao, somasDaRescisao } from "../lib
 // Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
 // Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
 // esses modais são formulários longos (linhas de provisão/pagamento). Saída = ✕, Cancelar ou ESC.
-function useEscapeToClose(onClose, ocupado = false) {
-  useEffect(() => {
-    if (!onClose || ocupado) return undefined;
-    function onKeyDown(event) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, ocupado]);
-}
 
 const PANEL = {
   surface: "var(--bg-surface)", field: "var(--bg-subtle)", border: "var(--border)",
@@ -48,7 +39,7 @@ const FIELD_STYLE = {
   borderRadius: 6,
   padding: "6px 10px",
   fontSize: "0.85rem",
-  width: "100%",
+  width: "100%", boxSizing: "border-box", minWidth: 0,
 };
 
 function fmtMoney(n) {
@@ -107,12 +98,14 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
   const [pag, setPag] = useState([]);
   const [obs, setObs] = useState(""); // Q31: descrição (competências parceladas)
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
-  useEscapeToClose(onClose, busy);
 
   useEffect(() => {
     let cancel = false;
+    setLoading(true); setLoadFailed(false); setErro("");
     (async () => {
       try {
         const p = await getConfig(parcId);
@@ -120,11 +113,11 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
         setProv(Array.isArray(p?.configProvisao) && p.configProvisao.length ? p.configProvisao.map(normCfgRow) : CFG_PROV_PADRAO.map((r) => ({ ...r })));
         setPag(Array.isArray(p?.configPagamento) && p.configPagamento.length ? p.configPagamento.map(normCfgRow) : CFG_PAG_PADRAO.map((r) => ({ ...r })));
         setObs(p?.observacoes || "");
-      } catch (e) { if (!cancel) setErro(e?.message || "Falha ao carregar config."); }
+      } catch (e) { if (!cancel) { setLoadFailed(true); setErro(e?.message || "Falha ao carregar config."); } }
       finally { if (!cancel) setLoading(false); }
     })();
     return () => { cancel = true; };
-  }, [parcId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [parcId, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ROLES = Object.keys(ROLE_LABEL);
   const setRow = (which, i, k, v) => (which === "prov" ? setProv : setPag)((p) => p.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)));
@@ -141,9 +134,9 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
     finally { setBusy(false); }
   }
 
-  const lbl = { fontSize: "0.72rem", color: PANEL.muted, display: "block", marginBottom: 4 };
+  const lbl = { fontSize: "0.8125rem", color: PANEL.muted, display: "block", marginBottom: 4 };
   const tbl = (which, rows) => (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+    <div style={{ overflowX: "auto", minWidth: 0 }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
       <thead><tr style={{ color: PANEL.muted }}>
         <th style={{ textAlign: "left", padding: 3 }}>Papel</th>
         <th style={{ padding: 3, width: 56 }}>D/C</th>
@@ -177,17 +170,13 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 860px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", overflowWrap: "anywhere", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <strong style={{ fontSize: "1.0rem" }}>Configuração de lançamento — {label}</strong>
-          <button type="button" aria-label="Fechar configuração" onClick={onClose} disabled={busy} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
-        </div>
-        {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
+    <Modal titulo={"Configuração de lançamento" + (label ? " — " + label : "")} tamanho="lg" ocupado={busy} aoFechar={onClose} fecharAoClicarFundo={false}>
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        {loading ? <div role="status" style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : loadFailed ? <div><p role="alert">{erro}</p><Button variant="secondary" onClick={() => setReload(n => n + 1)}>Tentar novamente</Button></div> : (
           <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={lbl}>Provisão (adesão)</span>
@@ -205,15 +194,15 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
                 placeholder="Ex.: DAS de SET/OUT/NOV/2024 e MAR..NOV/2025"
                 style={{ ...FIELD_STYLE, resize: "vertical" }} />
             </div>
-            {erro && <div style={{ color: "var(--state-danger)", fontSize: "0.8rem" }}>{erro}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+            {erro && <div role="alert" style={{ color: "var(--state-danger)", fontSize: "0.8rem" }}>{erro}</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={onClose} disabled={busy} style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
               <Button variant="primary" onClick={save} disabled={busy}>{busy ? "Salvando…" : "Salvar config"}</Button>
             </div>
           </>
         )}
-      </div>
-    </div>
+      </fieldset>
+    </Modal>
   );
 }
 
@@ -228,7 +217,6 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   const [erro, setErro] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmando, setConfirmando] = useState(null); // 2ª etapa da confirmação
-  useEscapeToClose(confirmando ? () => setConfirmando(null) : onClose, saving || busy);
 
   // ⚠ A REGRA (E A RECUSA) MORAM NA LIB, com teste próprio. O que o `|| 0` de antes fazia era
   // transformar "não sei quanto falta" em "não falta nada" — R$ 0,00 pré-preenchido num lançamento
@@ -328,15 +316,12 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
     finally { setBusy(false); }
   }
 
-  const lbl = { fontSize: "0.72rem", color: PANEL.muted, display: "block", marginBottom: 2 };
+  const lbl = { fontSize: "0.8125rem", color: PANEL.muted, display: "block", marginBottom: 2 };
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1700, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 900px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", overflowWrap: "anywhere", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <strong style={{ fontSize: "1.0rem" }}>Rescindir — {parc?.label}</strong>
-          <button type="button" aria-label="Fechar rescisão" onClick={onClose} disabled={saving || busy} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
-        </div>
+    <>
+    <Modal titulo={"Rescindir — " + parc?.label} tamanho="lg" ocupado={saving || busy} suspenso={Boolean(confirmando)} aoFechar={onClose} fecharAoClicarFundo={false}>
+      <fieldset disabled={saving || busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
             {/* ⚠ A RECUSA APARECE NO LUGAR DO NÚMERO, e é o ponto desta mudança. Antes, contrato sem
@@ -345,7 +330,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
             {!rescisao.podePrePreencher && (
               <div
                 data-testid="rescisao-recusa"
-                style={{ fontSize: "0.78rem", color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
+                style={{ fontSize: "0.8125rem", color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
               >
                 <strong>Não dá para sugerir os valores desta rescisão.</strong><br />
                 {rescisao.motivo}
@@ -354,7 +339,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
             {rescisao.avisoDivergencia && (
               <div
                 data-testid="rescisao-divergencia"
-                style={{ fontSize: "0.78rem", color: "var(--state-warn)", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
+                style={{ fontSize: "0.8125rem", color: "var(--state-warn)", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
               >
                 {rescisao.avisoDivergencia}
               </div>
@@ -363,10 +348,10 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
               <input type="date" value={dataRescisao} onChange={(e) => setDataRescisao(e.target.value)} style={{ ...FIELD_STYLE, colorScheme: "dark" }} />
             </label>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
-              <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Linhas da rescisão</div>
+              <div style={{ fontSize: "0.8125rem", color: PANEL.muted }}>Linhas da rescisão</div>
               <button onClick={addLine} title="Adicionar linha" style={iconBtn}>+</button>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+            <div style={{ overflowX: "auto", minWidth: 0 }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
               <thead><tr style={{ color: PANEL.muted }}>
                 <th style={{ textAlign: "left", padding: 3 }}>Papel</th>
                 <th style={{ padding: 3, width: 56 }}>D/C</th>
@@ -413,7 +398,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
                       {!somas.leituras[i]?.vazio && (
                         <div
                           data-testid={`rescisao-previa-${i}`}
-                          style={{ fontSize: "0.7rem", marginTop: 2, textAlign: "right", color: somas.leituras[i]?.ok ? PANEL.muted : "var(--state-danger)" }}
+                          style={{ fontSize: "0.8125rem", marginTop: 2, textAlign: "right", color: somas.leituras[i]?.ok ? PANEL.muted : "var(--state-danger)" }}
                         >
                           {somas.leituras[i]?.ok ? `= ${fmtMoney(somas.leituras[i].valor)}` : somas.leituras[i]?.mensagem}
                         </div>
@@ -423,19 +408,19 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {/* ⚠ COM CAMPO ILEGÍVEL NÃO SE CARIMBA "✓". As somas descrevem só as linhas que deram
                 para ler — um "D = C ✓" por cima de uma linha ilegível é número certo ao lado de
                 soma incompleta, com selo de conferido (o mesmo defeito do rodapé da aba
                 Lançamentos quando ela paginava sem dizer). */}
-            <div style={{ textAlign: "right", fontSize: "0.78rem", color: (desbalanceado || ilegiveis > 0) ? "var(--state-danger)" : PANEL.muted }}>
+            <div style={{ textAlign: "right", fontSize: "0.8125rem", color: (desbalanceado || ilegiveis > 0) ? "var(--state-danger)" : PANEL.muted }}>
               Σ Débito: <strong style={{ color: PANEL.text }}>{fmtMoney(somaD)}</strong> · Σ Crédito: <strong style={{ color: PANEL.text }}>{fmtMoney(somaC)}</strong>
               {ilegiveis > 0
                 ? `  ⚠ ${ilegiveis} ${ilegiveis === 1 ? "valor ilegível" : "valores ilegíveis"} — a soma está incompleta`
                 : (desbalanceado ? "  ⚠ D ≠ C — bloqueia" : " ✓")}
             </div>
-            {erro && <div style={{ color: "var(--state-danger)", fontSize: "0.8rem" }}>{erro}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+            {erro && <div role="alert" style={{ color: "var(--state-danger)", fontSize: "0.8rem" }}>{erro}</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button type="button" onClick={onClose} disabled={saving || busy} style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
               <Button
                 variant="danger" type="button" onClick={submit} disabled={saving || busy || desbalanceado || semValor || ilegiveis > 0}
@@ -452,14 +437,14 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
             </div>
           </>
         )}
-      </div>
+      </fieldset>
+    </Modal>
 
       {/* ⚠ CONFIRMAÇÃO EM DUAS ETAPAS, repetindo os dados. */}
       {confirmando && (
-        <div role="dialog" aria-label="Confirmar rescisão contábil" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1800, padding: 16 }}>
-          <div style={{ background: PANEL.surface, border: "1px solid var(--state-danger)", borderRadius: 10, padding: 18, width: "min(94vw, 520px)", color: PANEL.text, display: "flex", flexDirection: "column", gap: 10 }}>
+        <Modal titulo="Confirmar rescisão contábil" tamanho="md" ocupado={saving || busy} aoFechar={() => setConfirmando(null)} fecharAoClicarFundo={false}>
             <strong style={{ fontSize: "0.95rem", color: "var(--state-danger)" }}>Rescindir {parc?.label}?</strong>
-            <div style={{ fontSize: "0.78rem", color: PANEL.muted, lineHeight: 1.5 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, lineHeight: 1.5 }}>
               Registra a rescisão no aplicativo, grava os lançamentos abaixo e retira as prestações sem guia da fila.
               Esta ação não rescinde o acordo perante a Receita nem envia valores à Dívida Ativa.
               Um registro feito por engano pode ser revisado em “Desfazer rescisão”.
@@ -470,14 +455,13 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
               somando <strong style={{ color: PANEL.text }}>R$ {fmtMoney(somaD)}</strong> em débitos
               e <strong style={{ color: PANEL.text }}>R$ {fmtMoney(somaC)}</strong> em créditos.
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="secondary" type="button" onClick={() => setConfirmando(null)}>Voltar</Button>
               <Button variant="danger" type="button" onClick={confirmarDeVerdade}>Confirmar rescisão</Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
@@ -492,7 +476,6 @@ export function ParcelamentoCreateModal({
   sourceGuide = null,
   defaultLinkGuideAsParcelaNum = 1,
 }) {
-  useEscapeToClose(onClose);
   const [kind, setKind] = useState("SIMPLES");
   const [label, setLabel] = useState(sourceGuide ? `Parcelamento ${sourceGuide.tipo || ""} ${new Date().toLocaleDateString("pt-BR")}` : "");
   const [templateOpeningId, setTemplateOpeningId] = useState("");
@@ -580,24 +563,11 @@ export function ParcelamentoCreateModal({
   }
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1600,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-    }}>
-      <div style={{
-        background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 20, width: "100%", maxWidth: 760, maxHeight: "92vh", overflowY: "auto", overflowX: "hidden",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0, color: PANEL.text }}>
-            Novo Parcelamento {sourceGuide ? "(a partir de guia)" : ""}
-          </h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.4rem" }}>×</button>
-        </div>
-
+    <Modal titulo={"Novo parcelamento"} tamanho="lg" ocupado={saving} aoFechar={onClose} fecharAoClicarFundo={false}>
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: PANEL.muted }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Tipo
               <select value={kind} onChange={(e) => setKind(e.target.value)} style={FIELD_STYLE}>
                 <option value="SIMPLES">SIMPLES NACIONAL</option>
@@ -606,37 +576,37 @@ export function ParcelamentoCreateModal({
                 <option value="OUTRO">OUTRO</option>
               </select>
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Label
               <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex.: RE-PARCELAMENTO SIMPLES NACIONAL DE SET/2024..." style={FIELD_STYLE} />
             </label>
           </div>
 
           <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 10 }}>
-            <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
+            <div style={{ fontSize: "0.8125rem", color: PANEL.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
               Templates (funções globais)
             </div>
             {openingTemplates.length === 0 && (
-              <div style={{ marginBottom: 8, padding: "6px 10px", fontSize: "0.72rem", color: "#FFB347", background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", borderRadius: 6 }}>
+              <div style={{ marginBottom: 8, padding: "6px 10px", fontSize: "0.8125rem", color: "#FFB347", background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", borderRadius: 6 }}>
                 ⚠ Nenhum template de abertura disponível. Configure as funções de parcelamento antes de criar.
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 8 }}>
+              <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
                 Abertura *
                 <select value={templateOpeningId} onChange={(e) => setTemplateOpeningId(e.target.value)} style={FIELD_STYLE}>
                   <option value="">— selecione —</option>
                   {openingTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+              <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
                 Pagamento *
                 <select value={templatePaymentId} onChange={(e) => setTemplatePaymentId(e.target.value)} style={FIELD_STYLE}>
                   <option value="">— selecione —</option>
                   {paymentTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+              <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
                 Rescisão (opcional)
                 <select value={templateRescisionId} onChange={(e) => setTemplateRescisionId(e.target.value)} style={FIELD_STYLE}>
                   <option value="">— sem rescisão —</option>
@@ -647,49 +617,49 @@ export function ParcelamentoCreateModal({
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Nº parcelas total
               <input type="number" min="1" value={numParcelas} onChange={(e) => setNumParcelas(e.target.value)} style={FIELD_STYLE} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Entradas (das primeiras)
               <input type="number" min="0" value={numEntradas} onChange={(e) => setNumEntradas(e.target.value)} style={FIELD_STYLE} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Valor por parcela
               <input type="number" step="0.01" min="0" value={principalPerParcela} onChange={(e) => setPrincipalPerParcela(e.target.value)} style={FIELD_STYLE} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Dia pagamento
               <input type="number" min="1" max="31" value={diaPagamento} onChange={(e) => setDiaPagamento(e.target.value)} style={FIELD_STYLE} />
             </label>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Principal total RFB
               <input type="number" step="0.01" min="0" value={principalTotal} onChange={(e) => setPrincipalTotal(e.target.value)} placeholder="ex: 13.454,69" style={FIELD_STYLE} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Juros total RFB
               <input type="number" step="0.01" min="0" value={jurosTotal} onChange={(e) => setJurosTotal(e.target.value)} placeholder="ex: 3.600,89" style={FIELD_STYLE} />
             </label>
             <div style={{ alignSelf: "end", padding: "6px 10px", background: PANEL.field, borderRadius: 6, fontSize: "0.85rem", color: PANEL.text, textAlign: "right" }}>
-              <span style={{ color: PANEL.muted, fontSize: "0.7rem" }}>Total: </span>
+              <span style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>Total: </span>
               <strong>R$ {fmtMoney(totalCalc)}</strong>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 8 }}>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Data abertura
               <input type="date" value={dataAbertura} onChange={(e) => setDataAbertura(e.target.value)} style={{ ...FIELD_STYLE, colorScheme: "dark" }} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Competência da 1ª parcela
               <input type="month" value={competenciaInicial} onChange={(e) => setCompetenciaInicial(e.target.value)} style={{ ...FIELD_STYLE, colorScheme: "dark" }} />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem", color: PANEL.muted }}>
               Períodos referenciados
               <input value={periodosReferenciados} onChange={(e) => setPeriodosReferenciados(e.target.value)} placeholder="SET/OUT/NOV/2024 E MAR/.../NOV/2025" style={FIELD_STYLE} />
             </label>
@@ -697,13 +667,13 @@ export function ParcelamentoCreateModal({
 
           {sourceGuide && (
             <div style={{ background: "rgba(189,147,249,0.10)", border: "1px solid #BD93F9", borderRadius: 8, padding: 10 }}>
-              <div style={{ fontSize: "0.75rem", color: "#BD93F9", fontWeight: 700, marginBottom: 4 }}>
+              <div style={{ fontSize: "0.8125rem", color: "#BD93F9", fontWeight: 700, marginBottom: 4 }}>
                 📎 Esta guia será vinculada como uma parcela
               </div>
-              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.75rem", color: PANEL.muted }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.8125rem", color: PANEL.muted }}>
                 Vincular como parcela número:
                 <input type="number" min="1" max={numParcelas} value={linkGuideAsParcelaNum} onChange={(e) => setLinkGuideAsParcelaNum(e.target.value)} style={{ ...FIELD_STYLE, width: 80 }} />
-                <span style={{ color: PANEL.muted, fontSize: "0.7rem" }}>(1 = entrada/1ª parcela; pode ser qualquer outra)</span>
+                <span style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>(1 = entrada/1ª parcela; pode ser qualquer outra)</span>
               </label>
             </div>
           )}
@@ -713,7 +683,7 @@ export function ParcelamentoCreateModal({
               <summary style={{ cursor: "pointer", color: PANEL.text, fontSize: "0.8rem", fontWeight: 700 }}>
                 Preview ({preview.length} parcelas)
               </summary>
-              <div style={{ maxHeight: 200, overflowY: "auto", overflowX: "hidden", marginTop: 8, fontSize: "0.75rem", color: PANEL.text }}>
+              <div style={{ maxHeight: 200, overflowY: "auto", overflowX: "hidden", marginTop: 8, fontSize: "0.8125rem", color: PANEL.text }}>
                 {preview.map((p) => (
                   <div key={p.numero} style={{ display: "grid", gridTemplateColumns: "60px 100px 100px 1fr", gap: 8, padding: "2px 0", borderBottom: `1px solid ${PANEL.border}` }}>
                     <span style={{ color: PANEL.muted }}>{p.label}</span>
@@ -731,15 +701,15 @@ export function ParcelamentoCreateModal({
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
             <Button variant="primary" onClick={handleCreate} disabled={saving}>
               {saving ? "Criando…" : "Criar parcelamento"}
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+      </fieldset>
+    </Modal>
   );
 }
 

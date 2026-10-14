@@ -389,6 +389,7 @@ describe("⚠⚠ o botão de emitir — existe, e só depois de confirmar", () =
     // ⚠⚠ A prova de que o ato não aconteceu: a API de emissão não foi chamada.
     expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
     expect(screen.getByText(/A emissão é definitiva/i)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Confirmar emissão do lote" })).toHaveFocus();
   });
 
   test("⚠ dá para desistir na confirmação, e nada é emitido", async () => {
@@ -397,6 +398,7 @@ describe("⚠⚠ o botão de emitir — existe, e só depois de confirmar", () =
     fireEvent.click(await screen.findByRole("button", { name: /emitir \d+ nota/i }));
     fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
     expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /emitir \d+ nota/i })).toHaveFocus();
   });
 
   /**

@@ -1,5 +1,7 @@
 // Q14.2.e — Modal pra resolver uma pendência (ITEM_SEM_REGRA por enquanto).
-import { useState } from "react";
+import { useId, useState } from "react";
+import { Modal } from "../../../components/ui/Modal";
+import { Button } from "../../../components/ui/Button";
 import { PANEL } from "../../notas/components/notasStyles";
 import { Aviso } from "../../../components/ui/Aviso";
 import {
@@ -20,6 +22,7 @@ const CONF_COLOR = { alta: "var(--success)", media: "#FFB347", baixa: "#8BE9FD" 
 const CONF_LABEL = { alta: "alta", media: "média", baixa: "baixa" };
 
 export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving, myRole }) {
+  const formId = useId();
   const detalhes = pendencia.detalhes || {};
   const codigo = detalhes.codigo || "?";
   const tipoCodigo = detalhes.tipoCodigo || "?";
@@ -44,7 +47,7 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!tipoReceita) return;
+    if (saving || !tipoReceita) return;
     await onResolver({
       tipoReceita,
       criarRegra,
@@ -56,13 +59,12 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
   }
 
   return (
-    <div onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}>
-      <form onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}
-        style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 22, width: "min(92vw, 560px)", display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
-        <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
-          📋 Classificar pendência
-        </div>
+    <Modal titulo="Classificar pendência" tamanho="md" ocupado={saving} aoFechar={onClose} fecharAoClicarFundo={false} rodape={<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+      <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+      <Button type="submit" form={formId} disabled={saving || !tipoReceita}>{saving ? "Resolvendo…" : "Resolver pendência"}</Button>
+    </div>}>
+      <form id={formId} onSubmit={handleSubmit} style={{ color: PANEL.text, overflowWrap: "anywhere" }}>
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 16 }}>
         <div style={{ background: PANEL.field, padding: 12, borderRadius: 6, fontSize: "0.85rem" }}>
           <div><strong>Código:</strong> <code style={{ color: "#8BE9FD" }}>{tipoCodigo}:{codigo}</code></div>
           <div><strong>Ocorrências:</strong> {ocorrencias} nota(s) com esse código</div>
@@ -72,9 +74,9 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
         {/* Q20: recomendação (atividade SERPRO via CNAE) + confiança */}
         {rec && (
           <div style={{ background: "rgba(139,233,253,0.08)", border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, padding: 12, borderRadius: 6, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
               <strong>Recomendação</strong>
-              <span style={{ fontSize: "0.68rem", fontWeight: 700, color: CONF_COLOR[rec.confianca] || PANEL.muted, border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, borderRadius: 999, padding: "1px 8px" }}>
+              <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: CONF_COLOR[rec.confianca] || PANEL.muted, border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, borderRadius: 999, padding: "1px 8px" }}>
                 confiança {CONF_LABEL[rec.confianca] || rec.confianca}
               </span>
             </div>
@@ -83,20 +85,20 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
             ) : rec.ambiguo ? (
               <div style={{ color: PANEL.muted }}>Candidatos: {(rec.candidatos || []).join(", ") || "—"}</div>
             ) : null}
-            <div style={{ color: PANEL.muted, fontSize: "0.72rem" }}>{rec.motivo}</div>
+            <div style={{ color: PANEL.muted, fontSize: "0.8125rem" }}>{rec.motivo}</div>
           </div>
         )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
           Tipo de Receita:
           <select value={tipoReceita} onChange={(e) => setTipoReceita(e.target.value)} required
-            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px" }}>
+            style={{ minWidth: 0, width: "100%", boxSizing: "border-box", background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px" }}>
             <option value="">— Escolha —</option>
             {TIPOS_RECEITA.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
-          <span style={{ fontSize: "0.7rem", color: PANEL.muted }}>
+          <span style={{ fontSize: "0.8125rem", color: PANEL.muted }}>
             ★ Fator R = serviços intelectuais; sistema decide III ou V mensalmente conforme folha/RBT12
           </span>
         </label>
@@ -111,11 +113,11 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
         {criarRegra && (
           <fieldset
             style={{
-              border: `1px solid var(--border)`, borderRadius: 8, padding: "10px 12px",
+              minWidth: 0, border: `1px solid var(--border)`, borderRadius: 8, padding: "10px 12px",
               display: "flex", flexDirection: "column", gap: 8, margin: 0,
             }}
           >
-            <legend style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", padding: "0 4px" }}>
+            <legend style={{ fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 500, padding: "0 4px" }}>
               Para quem esta regra vale
             </legend>
 
@@ -143,18 +145,18 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
                   />
                   <span>
                     <strong>{t.rotulo}</strong>
-                    <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.76rem", marginTop: 2 }}>
+                    <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.8125rem", marginTop: 2 }}>
                       {t.consequencia}
                     </span>
                     {/* ⚠ O GANHO é frase separada e só existe quando o número veio. Ausente ⇒ nada
                         é dito: a tela não afirma sobre o banco a partir de um campo que não chegou. */}
                     {ehGlobal && t.ganho && (
-                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.76rem", marginTop: 2 }}>
+                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.8125rem", marginTop: 2 }}>
                         {t.ganho}
                       </span>
                     )}
                     {bloqueado && (
-                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.72rem", marginTop: 2 }}>
+                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.8125rem", marginTop: 2 }}>
                         {global.motivo}
                       </span>
                     )}
@@ -177,20 +179,11 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving,
           Nome do produto/serviço (opcional, cria entrada nomeada no catálogo):
           <input type="text" value={nomeProduto} onChange={(e) => setNomeProduto(e.target.value)}
             placeholder="ex: Confecção de páginas web"
-            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px" }} />
+            style={{ minWidth: 0, width: "100%", boxSizing: "border-box", background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px" }} />
         </label>
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" onClick={onClose} disabled={saving}
-            style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.85rem" }}>
-            Cancelar
-          </button>
-          <button type="submit" disabled={saving || !tipoReceita}
-            style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: tipoReceita ? "#BD93F9" : PANEL.border, color: "#000", cursor: tipoReceita ? "pointer" : "not-allowed", fontSize: "0.85rem", fontWeight: 600 }}>
-            {saving ? "Resolvendo…" : "✓ Resolver pendência"}
-          </button>
-        </div>
+      </fieldset>
       </form>
-    </div>
+    </Modal>
   );
 }

@@ -1,3 +1,4 @@
+import { Modal } from "../../../../components/ui/Modal";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
@@ -9,22 +10,11 @@ const PANEL = {
   field: "#1A1B26",
   border: "#44475A",
   text: "#F8F8F2",
-  muted: "#6272A4",
+  muted: "var(--text-muted)",
   accent: "#BD93F9",
   success: "var(--success)",
   warning: "#FFB347",
   danger: "var(--danger)",
-};
-
-const overlay = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100,
-  display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-};
-
-const modalBox = {
-  background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-  padding: 22, width: 1280, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto",
-  color: PANEL.text, boxSizing: "border-box",
 };
 
 const inputStyle = {
@@ -114,17 +104,21 @@ export function ImportOFXModal({
 
   // Matriz de refs por linha (rowIdx → { hist, d, c })
   const rowRefs = useRef([]);
+  const trava = useRef(false);
+  const ocupado = loading || saving;
+  const fechar = () => { if (!trava.current) onClose(); };
 
   async function handlePreview() {
+    if (trava.current) return;
     if (!file) { setError("Selecione um arquivo OFX."); return; }
     setError("");
-    setLoading(true);
+    trava.current = true; setLoading(true);
     try {
       const res = await onPreview(file);
       const list = Array.isArray(res?.transactions) ? res.transactions : [];
       if (list.length === 0) {
         setError("Nenhuma transação encontrada no arquivo.");
-        setLoading(false);
+        trava.current = false; setLoading(false);
         return;
       }
       const hydrated = list.map((t) => ({
@@ -142,10 +136,10 @@ export function ImportOFXModal({
       // preso em "Lendo…" é um defeito bem pior que um render a mais.
       setTransactions(hydrated);
       setStep("review");
-      setLoading(false);
+      trava.current = false; setLoading(false);
     } catch (err) {
       setError(err?.message || "Falha ao ler o arquivo OFX.");
-      setLoading(false);
+      trava.current = false; setLoading(false);
     }
   }
 
@@ -219,6 +213,7 @@ export function ImportOFXModal({
   }, [transactions, filterMode]);
 
   async function handleCommit() {
+    if (trava.current) return;
     setError("");
     const toSend = transactions
       .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && t.historico && sinteticasDaLinha(t).length === 0)
@@ -236,7 +231,7 @@ export function ImportOFXModal({
       setError("Nenhum lançamento pronto para importar.");
       return;
     }
-    setSaving(true);
+    trava.current = true; setSaving(true);
     try {
       const res = await onImport(toSend);
       if (res?.ok) {
@@ -248,7 +243,7 @@ export function ImportOFXModal({
     } catch (err) {
       setError(err?.message || "Falha ao importar.");
     } finally {
-      setSaving(false);
+      trava.current = false; setSaving(false);
     }
   }
 
@@ -295,13 +290,8 @@ export function ImportOFXModal({
   }
 
   return (
-    <div style={overlay}>
-      <div style={modalBox}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Importar OFX</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
-        </div>
-
+    <Modal titulo="Importar OFX" tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} fecharAoEscape={false}>
+      <fieldset disabled={ocupado} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {step === "upload" && (
           <div>
             <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
@@ -312,7 +302,7 @@ export function ImportOFXModal({
             </p>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               {initialFile ? <p>Arquivo recebido pelo WhatsApp: <strong>{initialFile.name}</strong>. Confira a prévia antes de importar.</p> : <input
-                type="file"
+                aria-label="Extrato OFX ou QFX" type="file"
                 accept=".ofx,.qfx"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 style={{ ...inputStyle, padding: "8px 10px", flex: "1 1 320px" }}
@@ -322,7 +312,7 @@ export function ImportOFXModal({
               </Button>
             </div>
             {error && (
-              <div style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+              <div role="alert" style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
                 {error}
               </div>
             )}
@@ -382,8 +372,8 @@ export function ImportOFXModal({
               💡 <strong>Atalhos:</strong> ↑↓+Enter no Histórico para escolher sugestão (preserva o texto digitado, só preenche D/C) · Enter pula para próximo campo / próxima pendente · <kbd>Ctrl+Enter</kbd> importa
             </div>
 
-            {/* overflow visible vertical para deixar dropdowns aparecerem; X scroll fica no modalBox */}
-            <div style={{ borderRadius: 8, border: `1px solid ${PANEL.border}`, marginBottom: 12, overflow: "visible" }}>
+            {/* A tabela rola localmente; sugestões usam posição fixa. */}
+            <div style={{ borderRadius: 8, border: `1px solid ${PANEL.border}`, marginBottom: 12, overflowX: "auto", minWidth: 0 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr>
@@ -533,6 +523,7 @@ export function ImportOFXModal({
             {pendingRows > 0 && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", padding: 10, background: PANEL.field, borderRadius: 6, marginBottom: 12, flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>Aplicar a todas pendentes:</span>
+                <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem" }}>Histórico
                 <input
                   type="text"
                   value={bulkH}
@@ -540,6 +531,8 @@ export function ImportOFXModal({
                   placeholder="Histórico"
                   style={{ ...inputStyle, width: 200, color: bulkH ? PANEL.text : PANEL.muted }}
                 />
+                </label>
+                <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem" }}>Débito
                 <input
                   type="text"
                   list="ofx-bulk-d"
@@ -548,6 +541,8 @@ export function ImportOFXModal({
                   placeholder="Débito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkD ? "#8BE9FD" : PANEL.muted, textAlign: "center" }}
                 />
+                </label>
+                <label style={{ display: "grid", gap: 4, fontSize: "0.8125rem" }}>Crédito
                 <input
                   type="text"
                   list="ofx-bulk-c"
@@ -556,6 +551,7 @@ export function ImportOFXModal({
                   placeholder="Crédito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? PANEL.success : PANEL.muted, textAlign: "center" }}
                 />
+                </label>
                 <ListaDeContas id="ofx-bulk-d" accounts={accounts} />
                 <ListaDeContas id="ofx-bulk-c" accounts={accounts} />
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC && !bulkH}>
@@ -565,14 +561,14 @@ export function ImportOFXModal({
             )}
 
             {error && (
-              <div style={{ marginBottom: 10, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+              <div role="alert" style={{ marginBottom: 10, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
                 {error}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="secondary" onClick={() => { setStep("upload"); setTransactions([]); rowRefs.current = []; setError(""); }}>Voltar</Button>
-              <Button variant="secondary" onClick={onClose}>{saving ? "Continuar em segundo plano" : "Cancelar"}</Button>
+              {!saving && <Button variant="secondary" onClick={fechar}>Cancelar</Button>}
               <Button variant="primary" onClick={handleCommit} disabled={!canCommit} title="Ctrl+Enter">
                 {saving ? "Importando..." : `Importar ${completeRows} ${completeRows === 1 ? "linha" : "linhas"}`}
               </Button>
@@ -596,7 +592,8 @@ export function ImportOFXModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </fieldset>
+      {saving && <Button variant="secondary" onClick={onClose}>Continuar em segundo plano</Button>}
+    </Modal>
   );
 }

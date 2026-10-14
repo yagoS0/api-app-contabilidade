@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Modal } from "../../../../components/ui/Modal";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CONTA_JUROS, CONTA_MULTA, conferirPrincipalContraSaldo } from "../lib/principalDaBaixa";
 import { diaCivil } from '../../../../lib/dataCivil';
@@ -28,6 +29,7 @@ function fmtMoney(val) {
 }
 
 const INPUT = {
+  boxSizing: "border-box", minWidth: 0,
   height: 32,
   border: "1px solid var(--border)",
   borderRadius: "var(--radius-sm)",
@@ -59,7 +61,7 @@ function NomeDaConta({ codigo, accounts }) {
   const achada = accounts.find((a) => String(a.codigo) === cod);
   return (
     <div style={{
-      fontSize: "0.7rem", marginTop: 2, lineHeight: 1.3,
+      fontSize: "0.8125rem", marginTop: 2, lineHeight: 1.3,
       color: achada ? "var(--text-muted)" : "var(--state-warn)",
     }}>
       {achada ? achada.nome : "não está no plano de contas desta empresa"}
@@ -91,12 +93,12 @@ function LineEditor({ lines, onChange, accounts }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
         <thead>
           <tr style={{ background: "var(--bg-subtle)" }}>
-            <th style={{ padding: "4px 6px", width: 52, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>D/C</th>
+            <th style={{ padding: "4px 6px", width: 52, textAlign: "left", fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 700 }}>D/C</th>
             {/* O papel é o que decide se a baixa sai em um lançamento ou em três. Ficava invisível:
                 só o pré-preenchimento sabia marcá-lo, e linha digitada à mão ia sem nada. */}
-            <th style={{ padding: "4px 6px", width: 104, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Papel</th>
-            <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Conta</th>
-            <th style={{ padding: "4px 6px", width: 120, textAlign: "right", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Valor (R$)</th>
+            <th style={{ padding: "4px 6px", width: 104, textAlign: "left", fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 700 }}>Papel</th>
+            <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 700 }}>Conta</th>
+            <th style={{ padding: "4px 6px", width: 120, textAlign: "right", fontSize: "0.8125rem", color: "var(--text-muted)", fontWeight: 700 }}>Valor (R$)</th>
             <th style={{ padding: "4px 6px", width: 28 }} />
           </tr>
         </thead>
@@ -131,7 +133,7 @@ function LineEditor({ lines, onChange, accounts }) {
                      e as duas partidas da MESMA baixa não se liam como uma tabela. */
                   <span style={{
                     display: "inline-flex", alignItems: "center", height: 32,
-                    fontSize: "0.7rem", color: "var(--text-faint)",
+                    fontSize: "0.8125rem", color: "var(--text-faint)",
                   }}>
                     contrapartida
                   </span>
@@ -192,11 +194,11 @@ function LineEditor({ lines, onChange, accounts }) {
                     crédito, isso é token novo em `tokens.css` — não é emprestar dois que já têm
                     dono. */}
                 <button onClick={() => addLine("D")}
-                  style={{ fontSize: "0.7rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.8125rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Débito
                 </button>
                 <button onClick={() => addLine("C")}
-                  style={{ fontSize: "0.7rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.8125rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Crédito
                 </button>
               </div>
@@ -254,6 +256,10 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   ]);
   const [loadingTemplate, setLoadingTemplate] = useState(Boolean(onLoadBaixaTemplate && entry?.id));
   const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const trava = useRef(false);
+  const ocupado = saving || enviando;
+  const fechar = () => { if (!saving && !trava.current) onClose(); };
   const [templateApplied, setTemplateApplied] = useState(null); // "COMPANY" | "GLOBAL" | null
   const [acrescimo, setAcrescimo] = useState(null); // { juros, multa, total, conta } — guia recalculada (item 2)
   const [saldoInfo, setSaldoInfo] = useState(null); // { principal, abatido, saldo, quotasPagas } — baixa parcial
@@ -329,7 +335,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const debitosBaixa = lines.filter((l) => l.tipo === "D");
   const papeisPreenchidos = debitosBaixa.every((l) => ["PRINCIPAL", "JUROS", "MULTA"].includes(l.papel));
   const creditoUnico = lines.filter((l) => l.tipo === "C").length === 1;
-  const canSave = !mesIncorreto && data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !saving && !loadingTemplate;
+  const canSave = !mesIncorreto && data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !ocupado && !loadingTemplate;
   const motivoNaoSalva = mesIncorreto ? `Informe a data real do pagamento no mês ${competenciaPagamento}, ou abra esse mês em Lançamentos.` : loadingTemplate
     ? "Carregando contas e saldo da provisão."
     : !papeisPreenchidos
@@ -349,8 +355,9 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           : "";
 
   async function handleSave() {
-    if (!canSave) return;
+    if (!canSave || trava.current) return;
     setError("");
+    trava.current = true; setEnviando(true);
     try {
       await onSave({
         data,
@@ -361,39 +368,14 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
       });
     } catch (err) {
       setError(err?.message || "Falha ao registrar baixa.");
-    }
+    } finally { trava.current = false; setEnviando(false); }
   }
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--space-4)",
-    }}>
-      <div style={{
-        background: "var(--bg-surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)",
-        // Largura suficiente pra tabela de partidas caber SEM scroll lateral (era 560px).
-        boxShadow: "0 8px 32px rgba(0,0,0,0.16)", width: "min(96vw, 860px)",
-        // overflow:"auto" valia para os DOIS eixos: a tabela de partidas (colunas fixas) estourava
-        // e o modal inteiro rolava lateralmente. Agora só o eixo Y rola no modal; quem rola em X é
-        // o wrapper da tabela (abaixo). Mesmo tratamento do CircularEntryEditModal.
-        maxHeight: "90vh", overflowY: "auto", overflowX: "hidden",
-        padding: "var(--space-5)", boxSizing: "border-box",
-        // Sem isso, um texto longo sem espaços (código, mensagem do SERPRO) empurra a largura
-        // e reintroduz a barra horizontal mesmo com o modal largo.
-        overflowWrap: "anywhere",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{title}</h2>
-            {templateApplied && (
-              <span style={{ fontSize: "0.7rem", color: "#16a34a", display: "inline-block", marginTop: 4 }}>
-                ✓ Pré-preenchido com regra {templateApplied === "COMPANY" ? "da empresa" : "global"}
-              </span>
-            )}
-          </div>
-          <Button size="sm" variant="secondary" onClick={onClose}>Fechar</Button>
-        </div>
-
+    <Modal titulo={title} tamanho="lg" ocupado={ocupado} aoFechar={fechar} fecharAoClicarFundo={false} rodape={<><Button variant="secondary" onClick={fechar} disabled={ocupado}>Cancelar</Button><Button onClick={handleSave} disabled={!canSave} title={motivoNaoSalva || undefined}>{ocupado ? "Registrando..." : "Confirmar Baixa"}</Button></>}>
+      <fieldset disabled={ocupado || loadingTemplate} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        {loadingTemplate && <p role="status">Carregando regra…</p>}
+        {templateApplied && <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>Pré-preenchido com regra {templateApplied === "COMPANY" ? "da empresa" : "global"}</p>}
         {/* Baixa parcial por quota: mostra saldo restante quando a provisão já teve quotas pagas */}
         {["IRPJ", "CSLL"].includes(String(entry.subtipo || "").trim().toUpperCase()) && saldoInfo && saldoInfo.abatido > 0.009 && saldoInfo.saldo > 0.009 && (
           <div style={{ background: "rgba(120,170,255,0.12)", border: "1px solid #6EA8FF", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem" }}>
@@ -439,9 +421,9 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           </div>
         )}
 
-        {error && <p style={{ color: "var(--danger)", margin: "0 0 12px", fontSize: "0.875rem" }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--danger)", margin: "0 0 12px", fontSize: "0.875rem" }}>{error}</p>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, marginBottom: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 12, marginBottom: 8 }}>
           <label style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-muted)", display: "grid", gap: 4 }}>
             Data do pagamento
             <input
@@ -470,14 +452,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           Serão gerados {debitosBaixa.length} lançamentos individuais, cada um com um débito e um crédito no caixa/banco. Principal, juros e multa não serão agrupados.
         </p>
 
-        <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          {/* O botão desabilitado NOMEIA o motivo — nascer mudo é o que faz "não faz nada". */}
-          <Button variant="primary" onClick={handleSave} disabled={!canSave} title={motivoNaoSalva || undefined}>
-            {saving ? "Registrando..." : "Confirmar Baixa"}
-          </Button>
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-        </div>
-      </div>
-    </div>
+      </fieldset>
+    </Modal>
   );
 }

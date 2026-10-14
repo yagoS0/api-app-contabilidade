@@ -36,7 +36,7 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
     <section style={{
       background: "var(--state-warn-surface)",
       border: "1px solid var(--state-warn)",
-      borderRadius: 8, padding: 16, marginBottom: 16,
+      borderRadius: 8, padding: 16, marginBottom: 16, minWidth: 0,
     }}>
       <h3 style={{ margin: 0, marginBottom: 4, fontSize: "0.95rem", color: "var(--state-warn)" }}>
         ⚠ {titulo || "Pendências pós-fechamento"} ({open.length})
@@ -46,6 +46,7 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
       <div style={{ color: PANEL.muted, fontSize: "0.8rem", marginBottom: 12 }}>
         {rodape || "Nota que chegou depois de a competência ter sido fechada."}
       </div>
+      <div style={{ maxWidth: "100%", overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
         <thead>
           <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
@@ -90,6 +91,7 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

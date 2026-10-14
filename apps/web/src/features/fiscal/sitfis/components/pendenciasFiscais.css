@@ -49,6 +49,11 @@
 .pf-pdf-row > span:nth-child(2) { flex: 1; min-width: 0; }
 .pf-pdf-row small { display: block; color: var(--text-muted); }
 .pf-pdf-row > span:last-child { white-space: nowrap; }
+.pf-pdf-row > span:nth-child(2) { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .pf-pdf-row { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .pf-pdf-row > span:last-child { grid-column: 2; white-space: normal; }
+}
 
 .sitfis-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .sitfis-heading h2 { margin: 0; font-size: 1.25rem; color: var(--text); }

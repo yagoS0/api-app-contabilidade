@@ -1547,6 +1547,8 @@ export function AccountingEntriesTab({
       {/* Q6: Funções de Lançamento */}
       {showFunctionsList && accountingFunctions && (
         <FunctionListModal
+          suspenso={Boolean(confirmacao)}
+          saving={accountingFunctions.saving}
           functions={accountingFunctions.functions}
           loading={accountingFunctions.loading}
           /* ⚠ O ERRO SOBE PARA A TELA. `useAccountingFunctions` sempre gravou o motivo e ninguém o

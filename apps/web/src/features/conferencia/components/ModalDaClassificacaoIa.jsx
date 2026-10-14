@@ -130,6 +130,8 @@ export function ModalDaClassificacaoIa({ companyId, competencia, candidatas = 0,
               </div>
             ) : null}
           </div>
+        ) : !candidatas ? (
+          <p role="status" style={{ margin: 0 }}>Nenhuma linha precisa de sugestão de conta. As linhas com regra ou histórico já têm classificação.</p>
         ) : (
           <>
             <div>

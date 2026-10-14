@@ -172,3 +172,5 @@ it('ignora campos desabilitados pelo fieldset no foco inicial e Tab', () => {
   fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
   expect(document.activeElement).toBe(caixa);
 });
+
+it('pode preservar fechamento explícito sem Escape', () => { const fechar=jest.fn(); abrir({aoFechar:fechar,fecharAoEscape:false}); fireEvent.keyDown(document,{key:'Escape'}); expect(fechar).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button',{name:'Fechar'})); expect(fechar).toHaveBeenCalledTimes(1); });

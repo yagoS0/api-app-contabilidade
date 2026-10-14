@@ -42,7 +42,7 @@ function Campo({ rotulo, valor, mono = false, quebra = false }) {
   const vazio = valor == null || valor === "";
   return (
     <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+      <span style={{ fontSize: "0.875rem", color: PANEL.muted, fontWeight: 500 }}>
         {rotulo}
       </span>
       <span
@@ -51,8 +51,7 @@ function Campo({ rotulo, valor, mono = false, quebra = false }) {
           fontSize: "0.82rem", color: PANEL.text,
           fontFamily: mono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit",
           wordBreak: quebra ? "break-all" : "normal",
-          overflow: quebra ? "visible" : "hidden",
-          textOverflow: "ellipsis", whiteSpace: quebra ? "normal" : "nowrap",
+          overflowWrap: "anywhere", whiteSpace: "normal",
         }}
       >
         {vazio ? <SemDado /> : String(valor)}
@@ -65,8 +64,7 @@ function Secao({ titulo, children, aviso }) {
   return (
     <section style={{ marginBottom: 18 }}>
       <h4 style={{
-        margin: "0 0 8px", fontSize: "0.72rem", fontWeight: 700, color: PANEL.muted,
-        textTransform: "uppercase", letterSpacing: "0.06em",
+        margin: "0 0 8px", fontSize: "0.875rem", fontWeight: 600, color: PANEL.muted,
         borderBottom: `1px solid ${PANEL.border}`, paddingBottom: 5,
       }}>
         {titulo}
@@ -81,7 +79,7 @@ function Secao({ titulo, children, aviso }) {
   );
 }
 
-const GRADE = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px 18px" };
+const GRADE = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: "10px 18px" };
 
 // ⚠ O MAPA DE COR DAQUI ESTAVA MORTO, E O PORQUÊ IMPORTA — SENÃO ALGUÉM O "CONSERTA" DE VOLTA.
 //
@@ -576,13 +574,13 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
         </div>
 
         {loading && (
-          <div style={{ padding: 32, textAlign: "center", color: PANEL.muted, fontSize: "0.85rem" }}>
+          <div role="status" style={{ padding: 32, textAlign: "center", color: PANEL.muted, fontSize: "0.85rem" }}>
             Carregando a nota…
           </div>
         )}
 
         {!loading && error && (
-          <div style={{
+          <div role="alert" style={{
             padding: 12, borderRadius: 6, marginBottom: 12,
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
             color: "var(--state-danger)", fontSize: "0.82rem",

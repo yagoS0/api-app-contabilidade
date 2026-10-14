@@ -80,7 +80,7 @@ describe("Escape fecha a lista de sugestões antes de fechar o modal", () => {
     render(<ParcelamentoConfigModal parcId="p1" getConfig={async () => ({})} saveConfig={() => new Promise((ok) => { resolve = ok; })} onClose={onClose} />);
     await act(async () => {});
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Salvar config" })); });
-    expect(screen.getByRole("button", { name: "Fechar configuração" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Fechar" })).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     await act(async () => { resolve({ ok: true }); });

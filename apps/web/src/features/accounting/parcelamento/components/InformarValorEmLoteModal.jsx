@@ -1,3 +1,4 @@
+import { Modal } from "../../../../components/ui/Modal";
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // INFORMAR O VALOR CONTRATADO DE VÁRIAS PRESTAÇÕES DO MESMO CONTRATO — a ação em lote do banner.
 //
@@ -22,7 +23,7 @@ import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // o contador de reescrever um contrato a partir de um "antes" que ele nunca viu. Aqui cada linha
 // tem o seu desfecho, e a que recusar diz por quê.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   planoDoLoteDeValor, textoDaConfirmacaoDoLote, formatarMoeda,
   explicarRecusaCorrecao, codigoDaRecusa,
@@ -58,11 +59,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
 
   // ESC fecha; clicar fora NÃO — este é um formulário, e o backdrop apagaria o preenchimento sem
   // confirmação. Mesma regra dos modais irmãos (`useEscapeToClose` em `ParcelamentoModals`).
-  useEffect(() => {
-    function onKeyDown(e) { if (e.key === "Escape" && !enviando) fechar(); }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  });
+
 
   // ⚠ AS JÁ GRAVADAS SAEM DO PLANO. Sem isso, um lote parcialmente aplicado (três gravadas, uma
   // recusada) reenviaria as três na segunda tentativa — e a rota recusaria TODAS por conferência
@@ -77,6 +74,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
   );
 
   function fechar() {
+    if (enviando) return;
     if (gravadas > 0) onConcluido?.();
     onClose?.();
   }
@@ -114,43 +112,21 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
   }
 
   if (!grupo) return null;
-  const th = { padding: "5px 8px", textAlign: "left", fontSize: "0.62rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" };
-  const td = { padding: "5px 8px", fontSize: "0.78rem", color: PANEL.text, verticalAlign: "top" };
+  const th = { padding: "5px 8px", textAlign: "left", fontSize: "0.8125rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" };
+  const td = { padding: "5px 8px", fontSize: "0.8125rem", color: PANEL.text, verticalAlign: "top" };
   const nRestantes = plano.validas.length;
   // Tudo gravado: não há mais lista sobre a qual pedir valor nenhum.
   const nadaAFazer = pendentes.length === 0;
 
   return (
-    <div
-      role="dialog"
-      aria-label="Informar o valor contratado das prestações"
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex",
-        alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", zIndex: 60, overflowY: "auto",
-      }}
-    >
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, width: "min(660px, 100%)", padding: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div>
-            <strong style={{ color: PANEL.text, fontSize: "1rem" }}>
-              Informar o valor contratado de {grupo.quantidade}{" "}
-              {grupo.quantidade === 1 ? "prestação" : "prestações"}
-            </strong>
-            <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 2 }}>{grupo.label || "contrato"}</div>
-          </div>
-          <button
-            type="button" onClick={fechar} title="Fechar"
-            style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.1rem", minHeight: 40, minWidth: 40 }}
-          >
-            ✕
-          </button>
-        </div>
-
+    <>
+      <Modal titulo="Informar o valor contratado das prestações" tamanho="lg" ocupado={enviando} suspenso={Boolean(confirmacao)} aoFechar={fechar} fecharAoClicarFundo={false}>
+        <p>{grupo.label || "Contrato"} · {grupo.quantidade} prestações</p>
         {/* ⚠ O TEXTO DE APOIO FICA NO TOPO DO GRUPO, UMA VEZ — não repetido por linha. Ele responde
             as duas perguntas que o lote levanta: o que este número é (o contrato, não o pagamento) e
             o que este botão NÃO faz (baixa). */}
         <div style={{
-          marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.76rem",
+          marginTop: 12, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45, fontSize: "0.8125rem",
           color: PANEL.muted, background: "var(--accent-purple-surface)", border: "1px solid var(--accent-purple-border)",
         }}>
           Este é o valor que o <strong>acordo</strong> diz que cada prestação vale — é ele que a baixa
@@ -162,7 +138,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
         <div style={{ marginTop: 14, maxWidth: 260 }}>
           <label
             htmlFor="lote-valor-padrao"
-            style={{ display: "block", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}
+            style={{ display: "block", fontSize: "0.8125rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}
           >
             Valor de todas
           </label>
@@ -171,7 +147,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
             onChange={(e) => setTextoPadrao(e.target.value)} placeholder="0,00" style={inputStyle}
             disabled={enviando}
           />
-          <div style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
+          <div style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 3, lineHeight: 1.35 }}>
             Vale para as prestações abaixo. Qualquer uma pode receber outro valor na própria linha.
           </div>
         </div>
@@ -202,7 +178,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
                     <td style={{ ...td, textAlign: "right", color: PANEL.muted, fontFamily: "monospace" }}>{anterior}</td>
                     <td style={{ ...td, textAlign: "right" }}>
                       {desfecho?.tom === "ok" ? (
-                        <span style={{ color: "var(--state-ok)", fontSize: "0.74rem", fontWeight: 700 }}>
+                        <span style={{ color: "var(--state-ok)", fontSize: "0.8125rem", fontWeight: 700 }}>
                           {desfecho.texto}
                         </span>
                       ) : (
@@ -223,12 +199,12 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
                               repetição, a parede de parágrafos idênticos. O motivo do campo vazio
                               é do GRUPO, e sai uma vez, ao lado do botão desabilitado. */}
                           {linha?.erro && linha.origem === "individual" && (
-                            <div style={{ fontSize: "0.66rem", color: "var(--state-warn)", marginTop: 3, lineHeight: 1.35, textAlign: "left" }}>
+                            <div style={{ fontSize: "0.8125rem", color: "var(--state-warn)", marginTop: 3, lineHeight: 1.35, textAlign: "left" }}>
                               {linha.erro}
                             </div>
                           )}
                           {desfecho?.tom === "erro" && (
-                            <div role="status" style={{ fontSize: "0.66rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.35, textAlign: "left" }}>
+                            <div role="status" style={{ fontSize: "0.8125rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.35, textAlign: "left" }}>
                               <strong style={{ color: "var(--state-warn)" }}>Nada foi gravado nesta: </strong>
                               {desfecho.texto}
                             </div>
@@ -245,7 +221,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
 
         {gravadas > 0 && (
           <div role="status" style={{
-            marginTop: 12, padding: "8px 10px", borderRadius: 6, fontSize: "0.75rem", lineHeight: 1.4,
+            marginTop: 12, padding: "8px 10px", borderRadius: 6, fontSize: "0.8125rem", lineHeight: 1.4,
             color: PANEL.muted, background: "var(--state-ok-surface)", border: "1px solid var(--state-ok)",
           }}>
             <strong style={{ color: "var(--state-ok)" }}>
@@ -300,8 +276,8 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
           </button>
           )}
         </div>
-      </div>
+      </Modal>
       {confirmacao}
-    </div>
+    </>
   );
 }
