@@ -12,5 +12,5 @@ export async function solicitarPagamentosWhatsapp({ portalClientId=null, schedul
  for(const g of guias){await assertActive();if(!faseAvisoGuia(g.vencimento,agora,feriados,g.portalClient?.municipio))continue;
  try{resultados.push({guideId:g.id,...await avisar({guideId:g.id,scheduledAt,assertActive,agora},{db,feriados})});}catch{await assertActive();resultados.push({guideId:g.id,status:'PENDENTE',motivo:'FALHA_SOLICITACAO'});}}
  if(guias.length<100)break;cursor=guias.at(-1).id;}
- return {total:resultados.length,avisosPendentes:resultados.filter(r=>r.status==='PENDENTE').length,resultados};
+ return {total:resultados.length,avisosPendentes:resultados.filter(r=>r.status==='PENDENTE').length,resultados,results:resultados};
 }

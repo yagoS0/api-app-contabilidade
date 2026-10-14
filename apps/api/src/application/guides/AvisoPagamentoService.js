@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { faseAvisoGuia, calendarioAvisosGuia } from './calendarioAvisosGuia.js';
 import { templateOperacional } from '../whatsapp/TemplateOperacionalWhatsapp.js';
+import { conferirEntregaGuiaWhatsapp } from './EntregaGuiaWhatsappService.js';
 
 const erro = (code, message) => Object.assign(new Error(message), { code });
 
@@ -43,9 +44,10 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     const p = parcelaId ? await db.parcela.findUnique({ where: { id: parcelaId }, include: { guia: true, parcelamento: true } }) : null;
     const g = p?.guia || (guideId ? await db.guide.findUnique({ where: { id: guideId } }) : null);
     if (!p && !g) throw erro("DOCUMENTO_NAO_ENCONTRADO", "Documento não encontrado.");
-    if (p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO" || g?.baixada || g?.paymentStatus === "PAID" || g?.clienteConfirmouEm) throw erro("PAGAMENTO_JA_CONFIRMADO", "Pagamento já confirmado; aviso cancelado.");
+    if (p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO" || g?.baixada || g?.paymentStatus === "PAID" || g?.clienteConfirmouEm || g?.paymentConfirmedAt) throw erro("PAGAMENTO_JA_CONFIRMADO", "Pagamento já confirmado; aviso cancelado.");
     if (p?.pagamentoErro || p?.pagamentoStatus === "DIVERGENTE") throw erro("CONSULTA_NAO_CONCLUIDA", "Pagamento precisa de conferência pelo contador.");
     if (!g?.liberadaCliente) throw erro("GUIA_NAO_LIBERADA", "Obtenha e libere a guia no portal antes de avisar o cliente.");
+    if (g.status !== 'PROCESSED') throw erro('GUIA_NAO_PROCESSADA', 'A guia precisa de revisão antes de avisar o cliente.');
     const companyId = p?.portalClientId || g.portalClientId;
     const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true, municipio: true } });
     const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio);
@@ -55,7 +57,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   let doc;
   try { await assertActive(); doc = await carregar(); }
   catch (e) {
-    if (!["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "CONSULTA_NAO_CONCLUIDA"].includes(e.code)) throw e;
+    if (!["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA"].includes(e.code)) throw e;
     return { status: ["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO"].includes(e.code) ? "IGNORADO" : "PENDENTE", motivo: e.code, mensagem: e.message };
   }
   const { p, g, companyId, company, fase } = doc;
@@ -74,6 +76,14 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const texto = `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
   const resultados = [];
   for (const target of targets) {
+    // Verificar antes da reserva permite nova avaliação após o escritório entregar
+    // a guia. O resultado da rotina preserva a pendência, sem consumir o aviso.
+    try { await conferirEntregaGuiaWhatsapp(db, g, target.destino); }
+    catch (e) {
+      if (e.code !== 'GUIA_WHATSAPP_NAO_ENTREGUE') throw e;
+      resultados.push({ status: 'PENDENTE', motivo: e.code, mensagem: e.message, canal: target.canal });
+      continue;
+    }
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
     const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
     try { await db.appSetting.create({ data: { key, value } }); }
@@ -89,6 +99,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
         || String(atual.g.vencimento) !== String(g.vencimento) || atual.fase !== fase) throw erro('GUIA_ALTERADA', 'A guia mudou durante a preparação do aviso.');
       const cadastro = await transporte.destinatarios(companyId);
       if (!cadastro.telefones.some(c => c.id === target.contato.id && c.telefoneE164 === target.destino)) throw erro("DESTINATARIO_ALTERADO", "Configuração de envio mudou; aviso pendente.");
+      await conferirEntregaGuiaWhatsapp(db, atual.g, target.destino);
     };
     try {
       await conferir();
@@ -108,11 +119,11 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
       resultados.push({ status: "ENVIADO", canal: target.canal });
     } catch (e) {
       const motivo = e.code || e.codigo || "AVISO_ENVIO_NAO_CONFIRMADO";
-      const status = motivo === "PAGAMENTO_JA_CONFIRMADO" ? "CANCELADO" : iniciou && !["WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
+      const status = motivo === "PAGAMENTO_JA_CONFIRMADO" ? "CANCELADO" : iniciou && !["WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA", "GUIA_WHATSAPP_NAO_ENTREGUE", "GUIA_NAO_PROCESSADA"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
       const mensagem = e.code || e.codigo ? e.message : "Não foi possível confirmar o envio. Confira o histórico antes de reenviar.";
       await db.appSetting.update({ where: { key }, data: { value: { ...value, status, motivo, mensagem, concluidoEm: new Date().toISOString() } } });
       resultados.push({ status, motivo, mensagem, canal: target.canal });
     }
   }
-  return { status: resultados.every(r => r.status === "JA_ENVIADO") ? "JA_ENVIADO" : resultados.every(r => ["ENVIADO", "JA_ENVIADO"].includes(r.status)) ? "ENVIADO" : "PENDENTE", companyId, guideId: g?.id || null, parcelaId: p?.id || null, resultados };
+  return { status: resultados.every(r => r.status === "JA_ENVIADO") ? "JA_ENVIADO" : resultados.every(r => ["ENVIADO", "JA_ENVIADO"].includes(r.status)) ? "ENVIADO" : "PENDENTE", companyId, razao: company?.razao, competencia: g.competencia, tipo: g.tipo, mensagem: resultados.filter(r => r.status === 'PENDENTE').map(r => r.mensagem).filter(Boolean).join(' ') || undefined, guideId: g?.id || null, parcelaId: p?.id || null, resultados };
 }
