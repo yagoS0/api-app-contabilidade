@@ -114,3 +114,17 @@ test("DAS por upload encerra rotina sem procuração ou captura", async () => {
   expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
   expect(SerproProcurationService.mock.results.at(-1).value.checkCompanyProcuration).not.toHaveBeenCalled();
 });
+
+
+test('monitoramento da próxima competência só recupera documentos, sem pedir contabilidade', async () => {
+  await runSerproPgdasdWorkerOnce({ routines: ['das', 'extrato'], competencia: '2026-10' });
+  expect(capturePgdasGuideForCompany).toHaveBeenCalledWith({ portalClientId: 'empresa', competencia: '2026-10', somenteDocumentos: true });
+  expect(syncPgdasByCompetencia).toHaveBeenCalledWith({ portalClientId: 'empresa', competencia: '2026-10', somenteDocumentos: true });
+});
+
+test('procuração ausente bloqueia DAS e extrato na competência seguinte', async () => {
+  SerproProcurationService.mockImplementationOnce(() => ({ checkCompanyProcuration: jest.fn(async () => ({ status: 'AUSENTE' })) }));
+  await runSerproPgdasdWorkerOnce({ routines: ['das', 'extrato'], competencia: '2026-10' });
+  expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+  expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
+});

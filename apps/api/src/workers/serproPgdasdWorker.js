@@ -227,7 +227,7 @@ async function executarPgdasd(options = {}) {
                 const capture = await capturePgdasGuideForCompany({
               portalClientId: company.id,
               competencia,
-              // emailStatusOverride padrão = PENDING (envia email da captura inicial)
+              somenteDocumentos: true,
             });
             results.push({
               companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
@@ -249,10 +249,8 @@ async function executarPgdasd(options = {}) {
           }
         }
 
-        // Stage 3 (Q17): extrato/declaração PGDAS-D → gera os lançamentos contábeis.
-        // syncPgdasByCompetencia baixa o extrato e chama generateEntriesFromCircular.
-        // Idempotente: só busca se a competência ainda não foi sincronizada com SUCESSO
-        // (evita re-hit pago no SERPRO a cada ciclo). Isolado: falha não derruba o ciclo.
+        // Monitoramento documental: recupera somente o que falta, sem gerar lançamentos
+        // ou alterar o fechamento interno. A entrega pode ter ocorrido em outro sistema.
         if (janelaAberta("extrato") && idsExtrato.has(company.id)) {
           // eslint-disable-next-line no-await-in-loop
           const circ = await prisma.companyMonthlyCircular.findUnique({
@@ -262,7 +260,7 @@ async function executarPgdasd(options = {}) {
             try {
               // eslint-disable-next-line no-await-in-loop
               lease.assertActive(); options.assertActive?.();
-                const sincronizada = await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
+                const sincronizada = await syncPgdasByCompetencia({ portalClientId: company.id, competencia, somenteDocumentos: true });
               extratoResults.push({
                 companyId: company.id, razao: company.razao, competencia,
                 status: documentosPgdas(sincronizada?.circular, null).extrato ? "extrato_ok" : "extrato_incompleto",
