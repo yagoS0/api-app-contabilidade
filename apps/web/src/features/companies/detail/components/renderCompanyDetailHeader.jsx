@@ -1,4 +1,5 @@
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
+import { TaskCenterSlot } from "../../../tasks/TaskCenterPlacement";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { Tabs } from "../../../../components/ui/Tabs";
@@ -273,7 +274,7 @@ export function CompanySectionHeader({
 
       <div className="config-topbar-actions">{mostraCompetencia && (
         <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
-      )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}</div>
+      )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}<TaskCenterSlot /></div>
 
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}

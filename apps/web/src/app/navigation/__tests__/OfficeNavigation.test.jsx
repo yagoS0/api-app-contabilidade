@@ -27,7 +27,6 @@ test('suporte mantém aviso humano mesmo sem mensagens não lidas', () => {
 });
 
 test.each([
-  ["/companies/123/notas?competencia=2026-09", "Operação", "Empresas"],
   ["/download-notas", "Operação", "Consultas"],
   ["/onboardings/abc/editar", "Comercial", "Onboarding"],
   ["/whatsapp/comunicados", "Suporte", "Comunicados"],
@@ -46,7 +45,7 @@ test.each([
 });
 
 test("destinos são links reais e a mudança de área mantém o histórico e a visão da carteira", () => {
-  setup("/companies/123/notas?competencia=2026-09");
+  setup("/companies");
   fireEvent.click(screen.getByText("Escolher tabela"));
   fireEvent.click(screen.getByRole("link", { name: "Suporte" }));
   expect(screen.getByLabelText("rota")).toHaveTextContent("/suporte");
@@ -54,7 +53,7 @@ test("destinos são links reais e a mudança de área mantém o histórico e a v
   expect(screen.queryByRole("link", { name: "Onboarding" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Pendências de e-mail" })).toHaveAttribute("href", "/guides/pending");
   fireEvent.click(screen.getByText("Voltar no escritório"));
-  expect(screen.getByLabelText("rota")).toHaveTextContent("/companies/123/notas?competencia=2026-09");
+  expect(screen.getByLabelText("rota")).toHaveTextContent("/companies");
   fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   fireEvent.click(screen.getByRole("link", { name: "Empresas" }));
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
@@ -68,11 +67,11 @@ test.each(["/companies", "/whatsapp"])("mensagens não lidas continuam acessíve
 });
 
 test("a área atual preserva a empresa, competência e âncora", () => {
-  setup("/companies/123/notas?competencia=2026-09#conferencia");
+  setup("/companies#conferencia");
   const currentArea = screen.getByRole("link", { name: "Operação" });
-  expect(currentArea).toHaveAttribute("href", "/companies/123/notas?competencia=2026-09#conferencia");
+  expect(currentArea).toHaveAttribute("href", "/companies#conferencia");
   fireEvent.click(currentArea);
-  expect(screen.getByLabelText("rota")).toHaveTextContent("/companies/123/notas?competencia=2026-09#conferencia");
+  expect(screen.getByLabelText("rota")).toHaveTextContent("/companies#conferencia");
 });
 
 test("links modificados não são interceptados pela navegação interna", () => {
@@ -81,8 +80,8 @@ test("links modificados não são interceptados pela navegação interna", () =>
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
 });
 
-test("empresa recolhe destinos globais, abre pelo teclado e devolve o foco ao fechar", () => {
-  setup("/companies/123/documentos");
+test("página principal recolhe destinos globais, abre pelo teclado e devolve o foco ao fechar", () => {
+  setup("/companies");
   const trigger = screen.getByRole("button", { name: "Navegar" });
   expect(trigger).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByRole("navigation", { name: "Navegação de Operação" })).not.toBeInTheDocument();
@@ -96,7 +95,7 @@ test("empresa recolhe destinos globais, abre pelo teclado e devolve o foco ao fe
 });
 
 test("menu fecha ao clicar ou mover foco para fora e ao navegar para outra área", () => {
-  setup("/companies/123/documentos");
+  setup("/companies");
   const trigger = screen.getByRole("button", { name: "Navegar" });
   fireEvent.click(trigger);
   fireEvent.pointerDown(document.body);
@@ -111,12 +110,12 @@ test("menu fecha ao clicar ou mover foco para fora e ao navegar para outra área
 });
 
 test("destinos recolhidos continuam sendo links reais e preservam Ctrl+clique", () => {
-  setup("/companies/123/documentos");
+  setup("/companies");
   fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   const destination = screen.getByRole("link", { name: "Consultas" });
   expect(destination).toHaveAttribute("href", "/funcoes-serpro");
   fireEvent.click(destination, { ctrlKey: true });
-  expect(screen.getByLabelText("rota").textContent).toBe("/companies/123/documentos");
+  expect(screen.getByLabelText("rota").textContent).toBe("/companies");
   fireEvent.click(destination);
   expect(screen.getByLabelText("rota").textContent).toBe("/funcoes-serpro");
 });
@@ -138,4 +137,10 @@ test.each(["/login", "/onboarding/publico", "/proposta/publica"])("não cria nav
   if (screen.queryByRole("button", { name: "Navegar" })) fireEvent.click(screen.getByRole("button", { name: "Navegar" }));
   expect(screen.queryByRole("link", { name: "Guias não identificadas" })).not.toBeInTheDocument();
   expect(document.querySelector('a[href="/guides/upload"]')).toBeNull();
+});
+
+ test.each(["/companies/123", "/companies/123/lancamentos", "/companies/123/circular", "/companies/123/ajustes"])("empresa não exibe faixa global: %s", (route) => {
+  setup(route);
+  expect(screen.queryByRole("link", { name: "Altan — página principal" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
 });

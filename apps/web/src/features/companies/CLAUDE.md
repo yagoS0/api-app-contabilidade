@@ -1,5 +1,9 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Cabeçalho interno — 15/10/2026
+
+Por decisão do usuário, as rotas internas das empresas não exibem a faixa global com logo e áreas do escritório. A seta do cabeçalho retorna diretamente a /companies, preservando a visão da carteira no contexto. A página principal mantém a faixa. Esta decisão substitui a orientação anterior de retorno pelo histórico e faixa global dentro da empresa.
+
 ## Fluxo mensal da carteira — 06/10/2026
 
 A tabela agora separa Status, Apuração, Guias, Contabilização e Situação fiscal; Empresa e Ações permanecem. Status abre as tarefas e vem de `@contabilidade/shared/fluxo-carteira`. Não deduzir apuração pelo fechamento nem importação ERP pelo download de CSV. Parcelamento é informação secundária e não substitui a situação fiscal. As etapas usam obrigações recorrentes na agenda existente, com modelos por regime e prazo definido pelo contador. Não reintroduzir botão separado de rotinas ou os seletores adicionais de Status e Contabilização. Evidências e histórico permanecem em CarteiraTarefa. Regras atuais e validação: `docs/fluxo-carteira-2026-10-06.md` na raiz. Essas regras substituem descrições históricas das colunas e do grupo Fechadas abaixo; agora só o fluxo concluído pode entrar no grupo Concluídas.
