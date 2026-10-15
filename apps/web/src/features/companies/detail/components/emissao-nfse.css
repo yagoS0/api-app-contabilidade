@@ -1,4 +1,12 @@
 .nfse-settings { min-width: 0; }
+.nfse-suggestion-content, .nfse-release { padding: 16px; }
+.nfse-suggestion-content { display: grid; gap: 12px; }
+.nfse-suggestion-content p { margin: 0; color: var(--text-muted); font-size: .875rem; overflow-wrap: anywhere; }
+.nfse-suggestion-content label { font-weight: 500; }
+.nfse-suggestion-content textarea { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; resize: vertical; }
+.nfse-suggestion-content textarea:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+.nfse-suggestion-content .btn { justify-self: start; max-width: 100%; white-space: normal; min-height: 44px; }
+.nfse-suggestion-content [role=status] { display: grid; gap: 12px; }
 .nfse-emission-title { margin: 0 0 16px; }
 .nfse-profile-heading { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .nfse-profile-heading h2 { margin: 0; }

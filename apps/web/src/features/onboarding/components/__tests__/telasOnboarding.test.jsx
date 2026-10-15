@@ -112,7 +112,7 @@ describe("ChecklistEtapas — efeito colateral exige empresa", () => {
   test("sem portalClientId os botões de SITFIS e A1 ficam desabilitados COM o motivo", () => {
     render(<ChecklistEtapas etapas={etapas} portalClientId={null} onAlternar={() => {}} onObservacao={() => {}} />);
 
-    const botaoA1 = screen.getByRole("button", { name: "Ir para o certificado A1" });
+    const botaoA1 = screen.getByRole("button", { name: "Configurar certificado" });
     const botaoSitfis = screen.getByRole("button", { name: "Consultar situação fiscal" });
     expect(botaoA1).toBeDisabled();
     expect(botaoSitfis).toBeDisabled();
@@ -124,7 +124,7 @@ describe("ChecklistEtapas — efeito colateral exige empresa", () => {
 
   test("com portalClientId os botões habilitam", () => {
     render(<ChecklistEtapas etapas={etapas} portalClientId="portal-1" onAlternar={() => {}} onObservacao={() => {}} />);
-    expect(screen.getByRole("button", { name: "Ir para o certificado A1" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Configurar certificado" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Consultar situação fiscal" })).toBeEnabled();
   });
 

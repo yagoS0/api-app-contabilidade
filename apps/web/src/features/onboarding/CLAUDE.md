@@ -1,5 +1,20 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Interface concisa — 15/10/2026 (local)
+
+Remover explicações genéricas e repetições no detalhe, coleta e implantação. Orientações extensas da jornada ficam recolhidas em Orientações da etapa, sem desmontar formulários. Ações usam Button compartilhado; links de navegação que são ações usam btn. Preservar avisos de consequência, autorização, dados ausentes, validade do link, erros, envio incerto e confirmações contratuais. A ficha convertida mantém a checklist da empresa e o histórico. Prévia local com dados fictícios em .local/onboarding-limpo.html.
+
+
+## Implantação permanece ativa após a conversão — 15/10/2026 (local)
+
+Após vincular a empresa, a área Implantação mostra a checklist permanente da empresa, editável conforme acesso retornado pela API. A checklist original continua histórica; não remover `recusarSeConvertido`. Etapas, observações e conclusões são reaproveitadas pela projeção de implantação, excluindo o ato de conversão já realizado. As tarefas padrão de certificado, procuração e documentos reutilizam as etapas de mesma chave; demais etapas mantêm identidade pela origem. A empresa também recebe configuração de notas, liberação, comunicação, apuração, obrigações e contabilidade para conferência.
+
+O aviso da ficha leva à mesma implantação na empresa. A preparação específica de emissão fica consultiva e recolhível na área. Proteção de edição e reconciliação preservam rascunhos; trocar área não desmonta o formulário. Não reutilizar status CONVERTIDO como prova de implantação concluída nem criar tarefas repetidas por competência.
+
+## Continuidade da emissão após conversão — 15/10/2026 (local)
+
+Fichas empresariais vinculadas à carteira mostram PreparacaoEmissao fora das áreas recolhíveis, inclusive após conversão. A leitura usa os perfis e a autorização salvos da empresa; atualiza ao retornar à janela ou por ação explícita. Respostas antigas de outra empresa são descartadas. Falha não significa ausência de perfil ou liberação revogada. O link abre a configuração existente de NFS-e. Esta preparação não conclui etapas manualmente, não autoriza emissão e não afirma prontidão fiscal por existir perfil ou acesso liberado. Pessoa física fica fora desse acompanhamento.
+
 ## Coleta alinhada entre escritório, link e IA — 13/10/2026
 
 Preservar as duas entradas: preenchimento manual e link individual do cliente. `@contabilidade/shared/onboarding-dados` valida respostas preenchidas e normaliza quantidades/moeda; ausência continua permitida em rascunhos. `NAO_SEI` e `NAO_APLICAVEL` são declarações distintas de zero/false, não autorizam preço ou conclusão fiscal. Campos de notas emitidas/recebidas, faturamento mensal e transição do contador alimentam a mesma ficha. Receita de 12 meses permanece informação própria: não multiplicar automaticamente a média mensal por 12.

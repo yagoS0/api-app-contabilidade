@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SugestaoPerfilIa } from './SugestaoPerfilIa';
 import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../lib/nfse/perfilEmissao";
 import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
@@ -27,7 +28,7 @@ export function corpoDoPerfil(form, campos) {
   return corpo;
 }
 
-export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
+export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, salvando }) {
   const [form, setForm] = useState(null);
   const [erro, setErro] = useState("");
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
@@ -36,10 +37,12 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   useEdicaoPendente(Boolean(form && (form._buscaMunicipio?.trim() || JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos)))));
   const servico = dados?.sugestoes?.porServico?.find((s) => s.codigo === form?.codigoServicoNacional);
   const mudar = (id, valor) => setForm((anterior) => ({ ...anterior, [id]: valor,
+    ...(anterior._revisarIa !== undefined && !id.startsWith('_') ? { _revisarIa: true } : {}),
     ...(id === 'codigoServicoNacional' && valor !== anterior.codigoServicoNacional ? { _revisarServico: true } : {}) }));
   async function salvar(e) {
     e.preventDefault();
     setErro("");
+    if (form._revisarIa) { setErro('Confira a sugestão da IA e confirme a revisão antes de salvar.'); return; }
     const normalizado = { ...form };
     for (const [id, itens] of Object.entries(catalogos)) {
       const valor = String(form[id] ?? '').trim();
@@ -78,6 +81,11 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
     {dados.integracaoLigada === false && <p role="status">Os perfis estão desativados neste ambiente. Salvar um perfil não altera a nota até a integração ser habilitada.</p>}
     {dados.ibscbsLigado === false && <p role="status">O envio de IBS/CBS está desativado. Operações que já exigem essas informações serão bloqueadas antes da emissão.</p>}
     {!form ? <>
+      <SugestaoPerfilIa onSugerir={onSugerir} onAplicar={campos => {
+        setErro('');
+        setForm({ ...dados.derivadoDoCadastro, ...campos, ativo: true, padrao: false, _revisarIa: true,
+          _revisarServico: Boolean(dados.derivadoDoCadastro?.codigoServicoNacional && dados.derivadoDoCadastro.codigoServicoNacional !== campos.codigoServicoNacional) });
+      }} />
       {!dados.perfis?.length && <p className="nfse-empty">Nenhum perfil cadastrado. Crie um perfil para organizar os parâmetros de cada serviço.</p>}
       <ul className="nfse-profile-list">{(dados.perfis || []).map((p) => <li key={p.id}>
         <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span>
@@ -88,6 +96,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
       <fieldset disabled={salvando} style={{ border: 0, padding: 0 }}>
         <legend>{form.id ? "Editar perfil" : "Novo perfil de emissão"}</legend>
         <p className="nfse-profile-status">{completudePerfilEmissao(form)}</p>
+        {form._revisarIa !== undefined && <label><input type="checkbox" checked={!form._revisarIa} onChange={e => mudar('_revisarIa', !e.target.checked)} />Conferi o serviço, o NBS e os demais parâmetros fiscais deste rascunho sugerido pela IA.</label>}
         {form._revisarServico && <label><input type="checkbox" checked={false} onChange={() => mudar('_revisarServico', false)} />Revisei complemento municipal, NBS, tributação e IBS/CBS para o novo serviço. Os valores anteriores foram preservados para conferência.</label>}
         {String(form.tribISSQN) === '3' && <p role="status">Este perfil está marcado como exportação. A emissão dessa operação ainda deve ser feita no Emissor Nacional; o sistema bloqueará a transmissão.</p>}
         <label className="nfse-profile-name">Nome do perfil<input autoFocus required maxLength={60} value={form.nome || ""} onChange={(e) => mudar("nome", e.target.value)} /></label>

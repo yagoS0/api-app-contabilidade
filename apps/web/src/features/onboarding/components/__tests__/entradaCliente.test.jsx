@@ -86,7 +86,7 @@ test("alternar comercial, dados e implantação preserva link, proposta e observ
   fireEvent.click(screen.getByRole("button",{name:"Implantação"}));
   expect(screen.queryByRole("button",{name:"Gerar link de preenchimento"})).not.toBeInTheDocument();
   expect(screen.getByText("Próxima pendência da checklist")).toBeVisible();
-  fireEvent.click(screen.getByRole("button",{name:"+ observação"}));
+  fireEvent.click(screen.getByRole("button",{name:"Adicionar observação"}));
   fireEvent.change(screen.getByLabelText("Observação de Conferir endereço"),{target:{value:"Aguardando revisão"}});
   fireEvent.click(screen.getByRole("button",{name:"Dados do cliente"}));
   expect(screen.getByRole("region",{name:"Dados do cliente"})).toBeVisible();
@@ -114,12 +114,13 @@ test("lista inicia nos atendimentos ativos e conserva avulsos, desistências e c
   expect(api.listarOnboardings).toHaveBeenCalledTimes(1);
 });
 
-test("ficha na carteira abre implantação como histórico e oferece os documentos da empresa", async () => {
+test("ficha na carteira abre implantação da empresa e oferece os documentos", async () => {
   const abrir=jest.fn(), api={getOnboarding:jest.fn().mockResolvedValue({onboarding:{id:"a",origem:"ABERTURA",status:"CONVERTIDO",portalClientId:"portal-a",dados:{},etapas:[{id:"e",titulo:"Documento arquivado",obrigatoria:true,concluidaEm:null}]}})};
+  api.getImplantacao=jest.fn().mockResolvedValue({implantacao:{podeEditar:true,tarefas:[{chave:"documentos",titulo:"Conferir documentos",status:"A_FAZER",versao:0}],resumo:{pendentes:1,atrasadas:0,semResponsavel:1,concluidas:0}}});
   render(<OnboardingDetailPage api={api} onboardingId="a" onAbrirEmpresa={abrir} />);
   const implantacao=await screen.findByRole("region",{name:"Implantação"});
-  expect(within(implantacao).getByRole("checkbox")).toBeDisabled();
-  expect(within(implantacao).getByRole("button",{name:"+ observação"})).toBeDisabled();
+  expect(within(implantacao).queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(await within(implantacao).findByRole("button",{name:/Atualizar tarefa/})).toBeEnabled();
   expect(screen.queryByText("Próxima pendência da checklist")).not.toBeInTheDocument();
   fireEvent.click(within(implantacao).getByRole("button",{name:"Documentos da empresa"}));
   expect(abrir).toHaveBeenCalledWith("portal-a","documentos");

@@ -25,8 +25,8 @@ function corDaRegua(etapa) {
 function rotuloDaAcao(acao) {
   switch (acao) {
     case "SITFIS": return "Consultar situação fiscal";
-    case "CERTIFICADO_A1": return "Ir para o certificado A1";
-    case "DOCUMENTOS": return "Ir para documentos";
+    case "CERTIFICADO_A1": return "Configurar certificado";
+    case "DOCUMENTOS": return "Abrir documentos";
     case "CONVERSAO": return "Criar a empresa";
     default: return null;
   }
@@ -95,12 +95,6 @@ export function CardEtapa({
             )}
           </label>
 
-          {etapa.descricao && (
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              {etapa.descricao}
-            </p>
-          )}
-
           {/* ⚠ A frase por extenso, não só a régua colorida: a consequência do A1 ausente é
               invisível (a empresa aparece "sem nota"), e cor nenhuma comunica isso. */}
           {etapa.acao === "CERTIFICADO_A1" && !etapa.concluidaEm && (
@@ -126,6 +120,7 @@ export function CardEtapa({
             </p>
           )}
 
+          {etapa.observacao && !editandoObs && <p className="onboarding-help">{etapa.observacao}</p>}
           {editandoObs ? (
             <div style={{ marginTop: "var(--space-2)", display: "grid", gap: "var(--space-2)" }}>
               <textarea
@@ -160,18 +155,9 @@ export function CardEtapa({
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled={ocupada}
-              onClick={() => setEditandoObs(true)}
-              style={{
-                marginTop: 6, background: "none", border: "none", padding: 0, cursor: "pointer",
-                color: etapa.observacao ? "var(--text)" : "var(--text-faint)",
-                fontSize: 12, textAlign: "left",
-              }}
-            >
-              {etapa.observacao || "+ observação"}
-            </button>
+            <Button variant="secondary" size="sm" type="button" disabled={ocupada} onClick={() => setEditandoObs(true)}>
+              {etapa.observacao ? "Editar observação" : "Adicionar observação"}
+            </Button>
           )}
         </div>
 

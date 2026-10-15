@@ -1,4 +1,5 @@
 import { AcessoPortalCliente } from "../../credentials/components/AcessoPortalCliente";
+import { ChecklistImplantacao } from '../../../implantacao/ChecklistImplantacao';
 import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 import { ConfiguracoesLayout } from "../../../configuracoes/Configuracoes";
 import { ProtecaoEdicao, useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao';
@@ -1428,6 +1429,7 @@ export function CompanyDetailPage(props) {
 
 function CompanyDetailComConfiguracoes(props) {
  const confirmarSaida = useConfirmarSaida();
+ const [implantacaoApi] = useState(() => createApiClient());
  const c=props.company; const atual=c.companyDetailTab; const secao=secaoEmpresa(atual);
  if(atual!=='configuracoesEmpresa' && !secao && atual!=='comunicacao') return <CompanyDetailContent {...props}/>;
  const id=c.selectedCompany?.companyId;
@@ -1441,6 +1443,7 @@ function CompanyDetailComConfiguracoes(props) {
  const itens=CONFIG_EMPRESA.filter(i=>i.id!=='perfilFiscal' || mostraApuracaoDoSimples(c.selectedCompany)).map(i=>({...i,href:companyTabPath(id,i.tab)}));
  return <div style={{minHeight:'100vh',background:'var(--bg-page)'}}><CompanySectionHeader company={c.selectedCompany} activeTab="configuracoesEmpresa" onBack={()=>confirmarSaida(c.onBack)} onTabChange={navegar} canEditCompany={c.canEditCompany}/>
  <ConfiguracoesLayout titulo="Configurações da empresa" subtitulo={c.selectedCompany.razao+' · '+c.selectedCompany.cnpj} itens={itens} atual={secao?.id} onNavigate={i=>navegar(i.tab)} voltar={null}>
- {atual==='certificado' ? <><h2>Certificado A1 da empresa</h2>{c.canEditCompany && props.certPanel?.api ? <Suspense fallback={<TabLoadingFallback/>}><CompanyCertificatePanel api={props.certPanel.api} companyId={id} feedback={props.certPanel.feedback}/></Suspense> : <p>Apenas admin ou contador pode gerenciar certificados.</p>}</> : atual==='comunicacao' ? <><h2>Contatos, acessos e envios</h2><p>Destinatários autorizados, canais de envio e permissões de cada número.</p>{c.canEditCompany ? <ConfiguracaoDeEnvioWrapper key={id} companyId={id} feedback={props.feedback} razaoSocial={c.selectedCompany.razao}/> : <p>Apenas admin ou contador pode gerenciar contatos, acessos e permissões de envio.</p>}<Feedback message={props.feedback?.message} error={props.feedback?.error}/></> : secao ? <div className="config-embedded"><CompanyDetailContent {...props}/></div> : null}
+
+ {atual==='implantacao' ? <ChecklistImplantacao key={id} api={implantacaoApi} companyId={id} podeEditar={c.canEditCompany} /> : atual==='certificado' ? <><h2>Certificado A1 da empresa</h2>{c.canEditCompany && props.certPanel?.api ? <Suspense fallback={<TabLoadingFallback/>}><CompanyCertificatePanel api={props.certPanel.api} companyId={id} feedback={props.certPanel.feedback}/></Suspense> : <p>Apenas admin ou contador pode gerenciar certificados.</p>}</> : atual==='comunicacao' ? <><h2>Contatos, acessos e envios</h2><p>Destinatários autorizados, canais de envio e permissões de cada número.</p>{c.canEditCompany ? <ConfiguracaoDeEnvioWrapper key={id} companyId={id} feedback={props.feedback} razaoSocial={c.selectedCompany.razao}/> : <p>Apenas admin ou contador pode gerenciar contatos, acessos e permissões de envio.</p>}<Feedback message={props.feedback?.message} error={props.feedback?.error}/></> : secao && atual !== 'implantacao' ? <div className="config-embedded"><CompanyDetailContent {...props}/></div> : null}
  </ConfiguracoesLayout></div>;
 }

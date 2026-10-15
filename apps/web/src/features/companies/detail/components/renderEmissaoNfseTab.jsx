@@ -1,4 +1,5 @@
 import { GuiaEmissaoLink } from './GuiaEmissaoLink';
+import { LiberacaoEmissaoCliente } from '../../form/components/LiberacaoEmissaoCliente';
 // A ABA PRÓPRIA DA CONFIGURAÇÃO DE EMISSÃO DE NFS-e — decisão do dono, 19/08/2026:
 //
 // > *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela em uma
@@ -173,6 +174,7 @@ export function EmissaoNfseTab({
         podeEditar={podeEditar}
         salvando={salvandoPerfil}
         onSalvar={salvarPerfil}
+        onSugerir={api.sugerirPerfilEmissao ? descricao => api.sugerirPerfilEmissao(portalClientId, descricao) : undefined}
       />
       <details className="nfse-section nfse-municipal-disclosure"><summary>Consultar parâmetros municipais de ISS</summary><ParametrosMunicipais key={`municipais-${portalClientId}`} companyId={portalClientId} api={api} podeConsultar={podeEditar} /></details>
 
@@ -214,13 +216,18 @@ export function EmissaoNfseTab({
                 </span>
               </div>
             }
-            emissaoCliente={emissaoCliente}
-            razaoSocial={company?.razao || company?.legacyCompany?.razaoSocial || null}
-            onSetEmissaoCliente={onSetEmissaoCliente}
-            emissaoClienteSaving={emissaoClienteSaving}
           />
         </form></details>
       )}
+      {podeEditar && <section className="nfse-section nfse-release" aria-label="Liberação da emissão para o cliente">
+        <h2>Acesso do cliente à emissão</h2>
+        <p>Confira os serviços, o cadastro fiscal e o certificado da empresa antes de liberar. A liberação permite o acesso; cada nota continua sujeita às validações fiscais.</p>
+        {alterado && <p role="status">Há configurações ainda não salvas. Salve e confira os dados antes de liberar.</p>}
+        {typeof emissaoCliente?.liberada !== 'boolean' && <p role="status">O estado da liberação não está disponível. Atualize a empresa para conferir.</p>}
+        <LiberacaoEmissaoCliente key={portalClientId} emissaoCliente={emissaoCliente}
+          razaoSocial={company?.razao || company?.legacyCompany?.razaoSocial || null}
+          onSetEmissaoCliente={onSetEmissaoCliente} saving={emissaoClienteSaving || (alterado && !emissaoCliente?.liberada)} />
+      </section>}
       </div>
     </section>
   );

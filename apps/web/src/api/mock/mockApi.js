@@ -9623,6 +9623,7 @@ export function createMockApi() {
     },
 
     async getPerfisEmissao(companyId) {
+      // O modo de demonstração não comprova uma liberação real.
       await delay();
       const perfis = this._perfisEmissao[companyId] || [];
       const escolhido = perfis.find((p) => p.padrao && p.ativo) || (perfis.length === 1 ? perfis[0] : null);
@@ -9670,6 +9671,15 @@ export function createMockApi() {
       };
     },
 
+    async sugerirPerfilEmissao() {
+      throw new Error('Sugestões com IA estão disponíveis somente no ambiente conectado.');
+    },
+    async getImplantacao() {
+      throw new Error('O acompanhamento da implantação está disponível no ambiente conectado.');
+    },
+    async salvarImplantacao() {
+      throw new Error('O acompanhamento da implantação está disponível no ambiente conectado.');
+    },
     async criarPerfilEmissao(companyId, corpo) {
       await delay();
       const lista = this._perfisEmissao[companyId] || (this._perfisEmissao[companyId] = []);

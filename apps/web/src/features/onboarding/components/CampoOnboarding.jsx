@@ -1,3 +1,4 @@
+import { Button } from "../../../components/ui/Button";
 import { permiteRespostaEspecial, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
 // Um campo do formulário, renderizado A PARTIR DO DESCRITOR.
 //
@@ -85,32 +86,23 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
               />
             </label>
           ))}
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={() => onChange(linhas.filter((_, i) => i !== indice))}
             aria-label={`Remover linha ${indice + 1}`}
             className="onboarding-field-row__remove"
-            style={{
-              border: "1px solid var(--border)", background: "transparent",
-              color: "var(--text-muted)", borderRadius: "var(--radius-sm)",
-              padding: "6px 10px", cursor: "pointer",
-            }}
           >
             remover
-          </button>
+          </Button>
         </div>
       ))}
-      <button
+      <Button variant="secondary" size="sm"
         type="button"
         onClick={() => onChange([...linhas, {}])}
         className="onboarding-field-row__add"
-        style={{
-          justifySelf: "start", border: "1px solid var(--border)", background: "transparent",
-          color: "var(--text)", borderRadius: "var(--radius-sm)", padding: "6px 12px", cursor: "pointer",
-        }}
       >
         + adicionar
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 export const CONFIG_EMPRESA = [
+  { id: 'implantacao', grupo: 'Empresa', titulo: 'Implantação', descricao: 'Checklist, responsáveis, prazos e pendências após a entrada na carteira.', tab: 'implantacao', termos: 'onboarding acompanhamento implantação tarefas' },
   { id: 'cadastro', grupo: 'Empresa', titulo: 'Dados cadastrais', descricao: 'Identificação, endereço, responsáveis e regime.', tab: 'cadastro', tabs: ['cadastro','edit'], termos: 'cnpj socios razão social' },
   { id: 'perfilFiscal', grupo: 'Fiscal', titulo: 'Atividades e tributação', descricao: 'Atividades permitidas, anexos e parâmetros de ISS.', tab: 'perfilFiscal', termos: 'cnae fator r simples' },
   { id: 'emissaoNfse', grupo: 'Fiscal', titulo: 'Emissão de notas', descricao: 'Perfis por serviço, NBS, códigos tributários e liberação de emissão.', tab: 'emissaoNfse', termos: 'nfse ibs cbs aliquota ctrib' },

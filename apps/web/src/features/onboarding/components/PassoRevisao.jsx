@@ -1,3 +1,4 @@
+import { Button } from "../../../components/ui/Button";
 // Revisão — a ficha inteira relida, PERCORRENDO A MESMA SPEC do wizard.
 //
 // É a garantia de que o que a tela mostra é exatamente o que foi perguntado, na ordem em que foi
@@ -112,16 +113,12 @@ export function PassoRevisao({ origem, dados, origemPreenchimento, onIrPara }) {
           <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>
             {problemas.map((p) => (
               <li key={`${p.passo}-${p.campo}`} style={{ fontSize: 13 }}>
-                <button
+                <Button variant="secondary" size="sm"
                   type="button"
                   onClick={() => onIrPara?.(p.passo)}
-                  style={{
-                    background: "none", border: "none", padding: 0, cursor: "pointer",
-                    color: "var(--accent-purple)", textDecoration: "underline", fontSize: 13,
-                  }}
                 >
                   {p.rotulo}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

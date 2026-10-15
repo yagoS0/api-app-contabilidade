@@ -1,4 +1,7 @@
 import { PainelComercial } from "../components/PainelComercial";
+import { PreparacaoEmissao } from '../components/PreparacaoEmissao';
+import { ChecklistImplantacao } from '../../implantacao/ChecklistImplantacao';
+import { ProtecaoEdicao, useConfirmarSaida } from '../../configuracoes/ProtecaoEdicao';
 import { OnboardingWizardPage } from "./renderOnboardingWizardPage";
 import { NovaDemanda } from "../components/NovaDemanda";
 import { AcompanhamentoComercial } from '../../comercial/AcompanhamentoComercial';
@@ -18,7 +21,11 @@ function tituloDaOrigem(origem) {
   return ONBOARDING_ORIGENS.find((o) => o.chave === origem)?.titulo || origem || "—";
 }
 
-export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, onAbrirConversa, preenchimentoInicial = false }) {
+export function OnboardingDetailPage(props) {
+  return <ProtecaoEdicao><OnboardingDetailContent {...props} /></ProtecaoEdicao>;
+}
+function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, onAbrirConversa, preenchimentoInicial = false }) {
+  const confirmarSaida = useConfirmarSaida();
   const [onboarding, setOnboarding] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -48,7 +55,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
     saidaEmCurso.current = true;
     try {
       if (editando) await salvarAntesDeSair.current?.();
-      destino?.();
+      confirmarSaida(() => destino?.());
     } catch (e) { setAviso(`Não foi possível salvar. Seus dados continuam nesta tela. ${e.message}`); }
     finally { saidaEmCurso.current = false; }
   }
@@ -253,9 +260,9 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
               </Button>}
             </>
           )}
-          {!editando && <NovaDemanda api={api} onboarding={onboarding} onAbrir={onAbrirAtendimento} />}
+          {!editando && <NovaDemanda api={api} onboarding={onboarding} onAbrir={id => sair(() => onAbrirAtendimento?.(id))} />}
           {convertido && onboarding.portalClientId && (
-            <Button type="button" size="sm" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId)}>
+            <Button type="button" size="sm" onClick={() => sair(() => onAbrirEmpresa?.(onboarding.portalClientId))}>
               Abrir a empresa
             </Button>
           )}
@@ -282,10 +289,11 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
 
       {convertido && (
         <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 0 }}>
-          Empresa adicionada à carteira. Esta ficha preserva o histórico; atualizações e documentos ficam no cadastro da empresa.
+          Empresa na carteira · histórico do atendimento.
         </p>
       )}
 
+      {onboarding.origem !== 'PESSOA_FISICA' && onboarding.portalClientId && <div className="onboarding-panel"><div className="onboarding-actions"><Button variant="secondary" onClick={() => setAreaEscolhida({ id: onboarding.id, area: 'implantacao' })}>Acompanhar implantação</Button><a className="btn btn-secondary btn-md" href={`/companies/${encodeURIComponent(onboarding.portalClientId)}/implantacao`}>Abrir implantação na empresa</a></div></div>}
       <div id="onboarding-area-comercial" className="onboarding-area" hidden={area !== "comercial"}>
         {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} continuar={continuacao} />}
       </div>
@@ -296,15 +304,14 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
             dados={onboarding.dados || {}}
             origemPreenchimento={onboarding.origemPreenchimento}
           />
-          {onboarding.portalClientId && <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos")}>Documentos da empresa</Button>}
+          {onboarding.portalClientId && <Button variant="secondary" onClick={() => sair(() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos"))}>Documentos da empresa</Button>}
       </section>
 
       <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label={onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}>
-          <h2>{onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Preparação e implantação"}</h2>
-          <p className="onboarding-help">Checklist do escritório para este serviço. Contratação, assinatura e pagamento são conferidos no atendimento comercial.</p>
+          {!onboarding.portalClientId && <h2>{onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}</h2>}
           {proximaEtapa && !encerrado && <div className="onboarding-next-step"><small>Próxima pendência da checklist</small><strong>{proximaEtapa.titulo}</strong><span>{pendentes.length} {pendentes.length === 1 ? "etapa pendente" : "etapas pendentes"}</span></div>}
-          {!onboarding.etapas?.length && <p className="onboarding-help">As etapas serão criadas quando a ficha for enviada. Enquanto isso, prepare o link e acompanhe o preenchimento.</p>}
-          {onboarding.etapas?.length > 0 && <ChecklistEtapas
+          {!onboarding.etapas?.length && <p className="onboarding-help">Envie a ficha para criar as etapas.</p>}
+          {!onboarding.portalClientId && onboarding.etapas?.length > 0 && <ChecklistEtapas
             etapas={onboarding.etapas || []}
             portalClientId={onboarding.portalClientId}
             certificado={certificado}
@@ -313,9 +320,11 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
             onObservacao={salvarObservacao}
             onAcao={executarAcao}
           />}
+          {onboarding.portalClientId && <ChecklistImplantacao key={onboarding.portalClientId} api={api} companyId={onboarding.portalClientId} />}
+          {onboarding.portalClientId && <details className="onboarding-panel"><summary>Emissão de notas</summary><PreparacaoEmissao key={onboarding.portalClientId} api={api} portalClientId={onboarding.portalClientId} /></details>}
           {onboarding.portalClientId && <div className="onboarding-actions">
-            <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "cadastro")}>Cadastro da empresa</Button>
-            <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos")}>Documentos da empresa</Button>
+            <Button variant="secondary" onClick={() => sair(() => onAbrirEmpresa?.(onboarding.portalClientId, "cadastro"))}>Cadastro da empresa</Button>
+            <Button variant="secondary" onClick={() => sair(() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos"))}>Documentos da empresa</Button>
           </div>}
       </section>
 

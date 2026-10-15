@@ -2570,6 +2570,17 @@ export function createRealApi() {
     async getPerfisEmissao(companyId) {
       return request(`/firm/companies/${companyId}/perfis-emissao`);
     },
+    async getImplantacao(companyId) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/implantacao`);
+    },
+    async salvarImplantacao(companyId, chave, corpo) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/implantacao/${encodeURIComponent(chave)}`, { method: 'PATCH', body: JSON.stringify(corpo) });
+    },
+    async sugerirPerfilEmissao(companyId, descricao) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/perfis-emissao/sugestao`, {
+        method: 'POST', body: JSON.stringify({ descricao }),
+      });
+    },
     async previaEmissaoNfse(companyId, payload) {
       return request(`/firm/companies/${encodeURIComponent(companyId)}/previa-emissao`, { method: 'POST', body: JSON.stringify(payload) });
     },
