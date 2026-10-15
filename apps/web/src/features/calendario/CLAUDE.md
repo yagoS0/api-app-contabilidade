@@ -10,7 +10,7 @@ Decisão aprovada pelo usuário: o calendário principal passa a trabalhar exclu
 - Vencimento mensal guarda o dia nominal 1–31. Dia 31 vira o último dia em meses curtos, voltando a 31 no mês seguinte. Fim de intervalo, vencimento e fim da repetição são conceitos diferentes.
 - D−1/D são projeções da mesma ocorrência pendente, vermelhas, com rótulo e prioridade visual sobre a cor manual. Não duplicar a tarefa ou seu contador; concluir/reabrir atualiza todas as projeções.
 - Empresas são selecionadas explicitamente, inclusive todas/todas do filtro; novos cadastros não são incluídos silenciosamente. Subtarefas têm IDs estáveis. Cada empresa é concluída quando seu checklist termina.
-- A migration aditiva guarda snapshots e desativa obrigações fiscais/regras antigas sem apagar documentos. Tarefas pessoais simples são migradas; históricos manuais incompatíveis continuam acessíveis em “Tarefas anteriores”, com fontes fiscais bloqueadas no adaptador.
+- Decisão expressa posterior do usuário: excluir calendário antigo, todas as obrigações e tarefas legadas, inclusive as importadas. Não manter botão, adaptador nem caminho de acesso a tarefas anteriores. A limpeza do banco remove o legado; documentos, guias, pagamentos e as tarefas criadas no novo calendário permanecem independentes. A migration aditiva inicial foi sucedida pela limpeza definitiva do legado.
 
 Esta decisão substitui regras anteriores incompatíveis (tipo Obrigação na criação, ausência de cor automática por vencimento e conclusão independente por dia de intervalo). Detalhes de implantação/validação em `docs/calendario-unificado-20261015.md` na raiz.
 
