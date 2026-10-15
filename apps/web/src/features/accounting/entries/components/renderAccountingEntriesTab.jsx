@@ -750,6 +750,7 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
 
 export function AccountingEntriesTab({
   companyId,
+  competencia,
   entries,
   total,
   loading,
@@ -846,14 +847,18 @@ export function AccountingEntriesTab({
    * existe.
    */
   const [pendencias, setPendencias] = useState(null);
+  const now = new Date();
+  const defaultComp = competencia || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const activeComp = filters.competencia || defaultComp;
   useEffect(() => {
     let alive = true;
+    setPendencias(null);
     if (!companyId || typeof fechamentoApi.getConferenciaPendencias !== "function") return undefined;
-    fechamentoApi.getConferenciaPendencias(companyId)
-      .then((r) => { if (alive) setPendencias(r || null); })
+    fechamentoApi.getConferenciaPendencias(companyId, { competencia: activeComp })
+      .then((r) => { if (alive) setPendencias(r?.declaradosNaCompetencia == null ? null : { aLancar: r.declaradosNaCompetencia }); })
       .catch(() => { if (alive) setPendencias(null); });
     return () => { alive = false; };
-  }, [companyId]);
+  }, [companyId, activeComp]);
 
 
   const visibleIds = useMemo(() => entries.map((e) => e.id).filter(Boolean), [entries]);
@@ -903,9 +908,6 @@ export function AccountingEntriesTab({
     if (result?.ok || result?.succeeded > 0) clearSelection();
   }
 
-  const now = new Date();
-  const defaultComp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const activeComp = filters.competencia || defaultComp;
   const pagamentosPendentes = usePagamentosPendentes(fechamentoApi, companyId, activeComp, entries);
 
   /**

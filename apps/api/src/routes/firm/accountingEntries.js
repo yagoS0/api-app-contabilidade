@@ -1,6 +1,7 @@
 import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, exigirBaixaForaDaComposicao, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
 import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
 import { Router } from "express";
+import { periodoLancamentos } from "../../application/accounting/lib/periodoLancamentos.js";
 import { sinalizarRecalculosNosLancamentos } from "../../application/guides/RegistroRecalculoGuia.js";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -1871,7 +1872,7 @@ export function createAccountingEntriesRouter({ log }) {
           const result = await selecaoConferida(req, tx);
           if (result.erros.length) throw Object.assign(new Error('A seleção contém erros contábeis. Confira novamente.'), { status: 400 });
           const { count } = await tx.accountingEntry.updateMany({
-            where: { portalClientId, competencia: String(competenciaInicio), id: { in: req.body.entryIds }, tipo: { not: 'PARCELA' }, status: 'CONFIRMADO' },
+            where: { portalClientId, data: periodoLancamentos(String(competenciaInicio)), id: { in: req.body.entryIds }, tipo: { not: 'PARCELA' }, status: 'CONFIRMADO' },
             data: { status: 'EXPORTADO' },
           });
           if (count !== result.entries.filter(e => e.status === 'CONFIRMADO').length) throw Object.assign(new Error('A seleção mudou durante a confirmação.'), { status: 409 });
@@ -2102,7 +2103,11 @@ export function createAccountingEntriesRouter({ log }) {
     const { competencia, tipo, subtipo, origem, status, statusPagamento, page = "1", limit = "50" } = req.query || {};
 
     const where = { portalClientId };
-    if (competencia) where.competencia = String(competencia);
+    if (competencia) {
+      const periodo = periodoLancamentos(String(competencia));
+      if (!periodo) return res.status(400).json({ error: "competencia_invalida" });
+      where.data = periodo;
+    }
     if (tipo) where.tipo = String(tipo).toUpperCase();
     else where.tipo = { not: "PARCELA" }; // Q16: rastreio de parcela fora da lista de lançamentos
     if (subtipo) where.subtipo = String(subtipo).toUpperCase();

@@ -35,7 +35,7 @@ jest.mock("../../../../../api/client", () => {
   const api = {
     getFechamentoContabil: jest.fn().mockResolvedValue({ fechado: false, checklist: {} }),
     getVerificacaoLancamentos: jest.fn().mockResolvedValue({ ok: true, resumo: {}, porRegra: [] }),
-    getConferenciaPendencias: jest.fn().mockResolvedValue({ ok: true, total: 4, declarados: 2, series: 1, saidas: 1 }),
+    getConferenciaPendencias: jest.fn().mockResolvedValue({ ok: true, total: 4, declarados: 2, declaradosNaCompetencia: 2, series: 1, saidas: 1 }),
   };
   return { createApiClient: () => api, __api: api };
 });
