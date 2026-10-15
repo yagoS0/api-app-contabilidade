@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SugestaoPerfilIa } from './SugestaoPerfilIa';
 import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../lib/nfse/perfilEmissao";
@@ -31,6 +31,13 @@ export function corpoDoPerfil(form, campos) {
 export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, salvando }) {
   const [form, setForm] = useState(null);
   const [erro, setErro] = useState("");
+  const novoRef = useRef(null), editoresRef = useRef(new Map()), retornoRef = useRef(null);
+  function fecharFormulario() { retornoRef.current = form.id || 'novo'; setForm(null); }
+  useEffect(() => {
+    if (form || !retornoRef.current) return;
+    (editoresRef.current.get(retornoRef.current) || novoRef.current)?.focus();
+    retornoRef.current = null;
+  }, [form]);
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
   const catalogos = catalogosDoPerfil(dados, campos);
   const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
@@ -66,7 +73,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
     }
     try {
       await onSalvar(form.id || null, corpoDoPerfil(normalizado, campos));
-      setForm(null);
+      fecharFormulario();
     } catch (err) {
       const detalhes = err?.payload?.erros?.map((e) => e.motivo).filter(Boolean).join(" ");
       setErro(detalhes || err?.message || "Não foi possível salvar o perfil.");
@@ -76,7 +83,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
   return <section className="nfse-profile-editor nfse-settings" aria-label="Editar perfis de emissão">
     <div className="nfse-profile-heading">
       <h2>Perfis de emissão</h2>
-      {!form && <Button type="button" onClick={() => { setErro(""); setForm({ ...dados.derivadoDoCadastro, nome: "", ativo: true, padrao: false }); }}>Novo perfil</Button>}
+      {!form && <Button ref={novoRef} type="button" onClick={() => { setErro(""); setForm({ ...dados.derivadoDoCadastro, nome: "", ativo: true, padrao: false }); }}>Novo perfil</Button>}
     </div>
     {dados.integracaoLigada === false && <p role="status">Os perfis estão desativados neste ambiente. Salvar um perfil não altera a nota até a integração ser habilitada.</p>}
     {dados.ibscbsLigado === false && <p role="status">O envio de IBS/CBS está desativado. Operações que já exigem essas informações serão bloqueadas antes da emissão.</p>}
@@ -90,7 +97,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
       <ul className="nfse-profile-list">{(dados.perfis || []).map((p) => <li key={p.id}>
         <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span>
           <small>{dados.sugestoes?.porServico?.find(s => s.codigo === p.codigoServicoNacional)?.descricao}</small><p>{completudePerfilEmissao(p)}</p></div>
-        <Button type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setForm({ ...p }); }}>Editar</Button>
+        <Button ref={el => { if (el) editoresRef.current.set(p.id, el); else editoresRef.current.delete(p.id); }} type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setForm({ ...p }); }}>Editar</Button>
       </li>)}</ul>
     </> : <form onSubmit={salvar} className="nfse-profile-form" onInvalidCapture={e => { const secao = e.target.closest("details"); if (secao) secao.open = true; }}>
       <fieldset disabled={salvando} style={{ border: 0, padding: 0 }}>
@@ -155,7 +162,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
         </div></details>)}
         {erro && <p role="alert">{erro}</p>}
         <div className="nfse-profile-actions">
-          <Button type="button" variant="secondary" disabled={salvando} onClick={() => setForm(null)}>Cancelar edição</Button>
+          <Button type="button" variant="secondary" disabled={salvando} onClick={fecharFormulario}>Cancelar edição</Button>
           <Button variant="primary" type="submit" disabled={salvando}>{salvando ? "Salvando…" : "Salvar perfil"}</Button>
         </div>
       </fieldset>

@@ -136,3 +136,10 @@ it("reabre a seção de um campo obrigatório inválido para permitir a correç�
   fireEvent.invalid(campo);
   expect(campo.closest("details").open).toBe(true);
 });
+
+it.each(['Novo perfil','Editar Contabilidade'])('foco entra no nome e retorna ao cancelar %s', gatilho => {
+ render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn()}/>);fireEvent.click(screen.getByRole('button',{name:gatilho}));expect(screen.getByLabelText('Nome do perfil')).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar edição'}));expect(screen.getByRole('button',{name:gatilho})).toHaveFocus();
+});
+it('salvar edição devolve foco ao perfil editado',async()=>{
+ render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn(async()=>{})}/>);fireEvent.click(screen.getByRole('button',{name:'Editar Contabilidade'}));fireEvent.click(screen.getByRole('button',{name:'Salvar perfil'}));await waitFor(()=>expect(screen.getByRole('button',{name:'Editar Contabilidade'})).toHaveFocus());
+});
