@@ -173,7 +173,7 @@ jobs:
       - run: npm run prisma:generate -w @contabilidade/api
       - name: Apply complete migration history to disposable PostgreSQL
         run: npm run prisma:migrate:deploy -w @contabilidade/api
-      - name: Verify SERPRO reservations and calendar exceptions in PostgreSQL
+      - name: Verify SERPRO reservations, unified calendar and legacy retirement in PostgreSQL
         working-directory: apps/api
         run: |
           node scripts/verify-serpro-reservations-postgres.js --url "$DATABASE_URL"
