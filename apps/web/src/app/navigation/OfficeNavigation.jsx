@@ -86,7 +86,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
     };
   }, [destinationsOpen]);
 
-  if (!activeArea) return null;
+  if (!activeArea || inCompany) return null;
   const currentDestination = `${location.pathname}${location.search}${location.hash}`;
   const unread = resumoWhatsapp?.selo;
   const suportePendente = resumoWhatsapp?.pendenciasSuporte > 0 ? <span className="office-navigation__badge" aria-label={`${resumoWhatsapp.pendenciasSuporte} atendimentos precisam da equipe`}>{Math.min(99, resumoWhatsapp.pendenciasSuporte)}{resumoWhatsapp.pendenciasSuporte > 99 ? '+' : ''}</span> : null;

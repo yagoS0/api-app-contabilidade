@@ -424,7 +424,7 @@ function AppInterno({ session, feedback }) {
           loadingCompany: ["idle", "loading"].includes(companiesWorkspace.companiesLoadStatus),
           companyError: companiesWorkspace.companiesLoadError,
           onRetryCompany: () => companiesWorkspace.loadCompanies(),
-          onBack: () => session.goBack(),
+          onBack: () => session.setPage("companies"),
           companyDetailTab: companiesWorkspace.companyDetailTab,
           setCompanyDetailTab: companiesWorkspace.setCompanyDetailTab,
           canEditCompany,
