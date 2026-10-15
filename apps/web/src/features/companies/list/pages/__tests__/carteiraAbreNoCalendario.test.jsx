@@ -1,4 +1,4 @@
-// A carteira continua abrindo no calendário; a nova agenda abre na semana.
+// A carteira abre no calendário unificado, com visão mensal e tarefas por empresa.
 import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { CompaniesHomePage } from "../renderCompaniesHomePage.jsx";
 
@@ -28,6 +28,7 @@ function anual(ano = 2026) {
 
 function api(extra = {}) {
   return {
+    listarTarefasCalendario: jest.fn(async()=>({ok:true,tarefas:[],itens:[]})),
     listObrigacoes: jest.fn(async()=>({ok:true,obrigacoes:[]})),
     listRegrasObrigacao: jest.fn(async()=>({ok:true,regras:[]})),
     getTarefasAgenda: jest.fn(async()=>({ok:true,tarefas:[],itens:[],ocultos:[]})),
@@ -69,15 +70,15 @@ beforeEach(() => {
 describe("⚠⚠ a visão em Cards saiu do produto", () => {
   test("não há botão `Cards` na barra de visões — sobraram DUAS", () => {
     montar();
-    expect(visoes()).toEqual(["Agenda", "Empresas"]);
+    expect(visoes()).toEqual(["Calendario", "Empresas"]);
   });
 
-  test("calendário abre na semana e oferece dia, mês e lista", () => {
+  test("calendário abre no mês e oferece semana, dia e lista", () => {
     montar();
-    const seletor=screen.getByLabelText('Visualização do calendário');
-    expect(seletor).toHaveValue('semana');
-    expect(within(seletor).getAllByRole('option').map(o=>o.textContent)).toEqual(['Semana','Dia','Mês']);
-    expect(screen.getByRole('button',{name:'Lista'})).toBeInTheDocument();
+    const seletor=screen.getByLabelText('Visualização');
+    expect(seletor).toHaveValue('mes');
+    expect(within(seletor).getAllByRole('option').map(o=>o.textContent)).toEqual(['Mês','Semana','Dia','Lista']);
+    expect(within(seletor).getByRole('option',{name:'Lista'})).toBeInTheDocument();
     expect(screen.queryByText('Filtros e legenda')).not.toBeInTheDocument();
   });
 });
@@ -85,7 +86,7 @@ describe("⚠⚠ a visão em Cards saiu do produto", () => {
 describe("⚠⚠ a carteira abre no Calendário, e a escolha NÃO é lembrada", () => {
   test("ao montar, a visão acesa é o Calendário", () => {
     montar();
-    expect(visaoAtiva()).toEqual(["Agenda"]);
+    expect(visaoAtiva()).toEqual(["Calendario"]);
   });
 
   test("Tabela é selecionável", () => {
@@ -105,7 +106,7 @@ describe("⚠⚠ a carteira abre no Calendário, e a escolha NÃO é lembrada", 
 
     unmount();
     montar();
-    expect(visaoAtiva()).toEqual(["Agenda"]);
+    expect(visaoAtiva()).toEqual(["Calendario"]);
   });
 
   test("⚠⚠ com `cards` GRAVADO no navegador, a tela abre no Calendário — e com a aba ACESA", () => {
@@ -116,7 +117,7 @@ describe("⚠⚠ a carteira abre no Calendário, e a escolha NÃO é lembrada", 
     // `"cards"` sozinha em qualquer tela menor que 1024px, sem ninguém escolher nada.
     localStorage.setItem("dashboard:modoVisao", "cards");
     montar();
-    expect(visaoAtiva()).toEqual(["Agenda"]);
+    expect(visaoAtiva()).toEqual(["Calendario"]);
     expect(visaoAtiva()).toHaveLength(1); // ⚠ exatamente uma, nunca zero
   });
 });
@@ -126,7 +127,7 @@ describe("ferramentas acompanham o contexto da tela inicial", () => {
     const onChangeCompetencia = jest.fn();
     const onRefreshCompanies = jest.fn();
     montar({ onChangeCompetencia, onRefreshCompanies });
-    expect(screen.getByRole("heading", { level: 1, name: "Agenda" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Calendario" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Adicionar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Imprimir" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Competência da carteira" })).not.toBeInTheDocument();

@@ -2,7 +2,8 @@ import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js
 import { ALTURA_HORA } from './escalaAgenda';
 export const CORES_PRIORIDADE = { '': '#475569', BAIXA: '#856000', MEDIA: '#a83b08', ALTA: '#7133bd', URGENTE: '#b91c3c' };
 export const COR_OBRIGACAO = '#1351b4';
-export const corAtividade = item => item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || ''];
+const CORES_TAREFA = { '':'var(--accent-cyan)', BAIXA:'var(--accent-cyan)', MEDIA:'var(--accent-purple)', ALTA:'var(--accent-orange)', URGENTE:'var(--state-danger)' };
+export const corAtividade = item => item.alertaVencimento ? 'var(--state-danger)' : item.cor || item.config?.cor || (item.unificada ? CORES_TAREFA[item.prioridade || ''] : item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || '']);
 export const RECORRENCIAS = { AVULSA: 'Não repetir', DIARIA: 'Todos os dias', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', TRIMESTRAL: 'A cada 3 meses', SEMESTRAL: 'A cada 6 meses', ANUAL: 'Todo ano' };
 export const dataLocal = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export const dataBR = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
@@ -73,7 +74,7 @@ export function faixasDoPeriodo(itens, dias) {
 export const minutos = hora => hora.split(':').reduce((h, m) => Number(h) * 60 + Number(m));
 // Horário fixo reserva somente espaço visual para leitura; não cria duração persistida.
 export const fimVisual = item => item.horaFim ? minutos(item.horaFim) : Math.min(1440, minutos(item.horaInicio) + 30);
-export const horarioAtividade = item => item.horaInicio ? item.horaFim ? `${item.horaInicio}–${item.horaFim}` : item.horaInicio : '';
+export const horarioAtividade = item => item.horarioModo === 'ATE' && item.horaLimite ? `Até ${item.horaLimite}` : item.horaInicio ? item.horaFim ? `${item.horaInicio}–${item.horaFim}` : item.horaInicio : '';
 /** Eventos simultâneos recebem colunas próprias, sem encobrir os anteriores. */
 export function posicionarHorarios(itens) {
   const ordenados = [...itens].sort((a,b) => minutos(a.horaInicio) - minutos(b.horaInicio) || a.id.localeCompare(b.id));

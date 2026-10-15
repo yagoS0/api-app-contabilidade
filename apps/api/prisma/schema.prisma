@@ -6128,3 +6128,30 @@ model ApuracaoCbsArquivo {
   coleta ApuracaoCbsColeta @relation(fields: [coletaId, contribuinteId, ambiente], references: [id, contribuinteId, ambiente], onDelete: Restrict)
   @@index([contribuinteId, ambiente, sha256], map: "cbs_arquivo_hash_idx")
 }
+
+/// Calendário unificado: uma identidade por tarefa, com progresso por ciclo/empresa.
+model TarefaCalendario {
+  id String @id @default(uuid())
+  userId String
+  titulo String
+  descricao String?
+  config Json
+  empresasIds String[] @default([])
+  subtarefas Json @default("[]")
+  versoes Json @default("[]")
+  estados Json @default("{}")
+  excluidaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, excluidaEm])
+  @@map("tarefas_calendario")
+}
+
+/// Backup imutável dos cadastros desativados na transição do calendário.
+model CalendarioLegadoSnapshot {
+  id String @id
+  tipo String
+  dados Json
+  createdAt DateTime @default(now())
+  @@map("calendario_legado_snapshots")
+}

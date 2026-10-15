@@ -850,6 +850,15 @@ export function createRealApi() {
       if (companyId) q.set("companyId", companyId);
       return request(`/firm/calendario?${q.toString()}`);
     },
+    async listarTarefasCalendario({ inicio, fim, companyId } = {}) {
+      return request(`/firm/agenda/unificada?${new URLSearchParams({ inicio, fim, ...(companyId ? { companyId } : {}) })}`);
+    },
+    async criarTarefaCalendario(dados) {
+      return request('/firm/agenda/unificada', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async acaoTarefaCalendario(id, dados) {
+      return request(`/firm/agenda/unificada/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
     async getTarefasAgenda(inicio, fim) {
       return request(`/firm/agenda/tarefas?${new URLSearchParams({ inicio, fim })}`);
     },

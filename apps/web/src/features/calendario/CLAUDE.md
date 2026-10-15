@@ -1,3 +1,17 @@
+# Calendário unificado — 15/10/2026
+
+Decisão aprovada pelo usuário: o calendário principal passa a trabalhar exclusivamente com tarefas. `CalendarioAgenda` usa `/firm/agenda/unificada`, `ModalTarefaCalendario` e `PainelTarefaCalendario`; não consulta obrigações, modelos fiscais, marcos ou fluxo automático da carteira. Dia, semana, mês e lista continuam disponíveis; mês é a entrada padrão.
+
+- Um clique no calendário do editor define um dia válido; um segundo clique opcional define intervalo inclusivo. Não abrir outro seletor nativo para escolher entrada/saída. A data clicada na grade inicia o formulário.
+- Horário fica à esquerda da data, com opções sem horário, fixo ou limite “Até”. Título/descrição ficam visíveis; empresas, subtarefas, prioridade e configurações usam painéis recolhidos.
+- `TarefaCalendario` é entidade única, com empresas e modelo de subtarefas. Progresso é por ocorrência, empresa e subtarefa. Editar usa o mesmo formulário; mudanças futuras preservam ocorrências que já têm progresso.
+- Vencimento mensal guarda o dia nominal 1–31. Dia 31 vira o último dia em meses curtos, voltando a 31 no mês seguinte. Fim de intervalo, vencimento e fim da repetição são conceitos diferentes.
+- D−1/D são projeções da mesma ocorrência pendente, vermelhas, com rótulo e prioridade visual sobre a cor manual. Não duplicar a tarefa ou seu contador; concluir/reabrir atualiza todas as projeções.
+- Empresas são selecionadas explicitamente, inclusive todas/todas do filtro; novos cadastros não são incluídos silenciosamente. Subtarefas têm IDs estáveis. Cada empresa é concluída quando seu checklist termina.
+- A migration aditiva guarda snapshots e desativa obrigações fiscais/regras antigas sem apagar documentos. Tarefas pessoais simples são migradas; históricos manuais incompatíveis continuam acessíveis em “Tarefas anteriores”, com fontes fiscais bloqueadas no adaptador.
+
+Esta decisão substitui regras anteriores incompatíveis (tipo Obrigação na criação, ausência de cor automática por vencimento e conclusão independente por dia de intervalo). Detalhes de implantação/validação em `docs/calendario-unificado-20261015.md` na raiz.
+
 # Calendário — janelas e exclusões recorrentes (08/09/2026)
 
 ## Antecipação para dias úteis — 29/09/2026 (desenvolvimento)

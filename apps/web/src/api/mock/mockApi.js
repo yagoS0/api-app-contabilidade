@@ -17,6 +17,7 @@ import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDi
 import { createPendenciasManuaisMock } from './pendenciasManuaisMock';
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
+import { criarMockTarefasCalendario } from './tarefasCalendarioMock';
 import { expandirAgenda, normalizarAgenda, somarDiasAgenda, diasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
 import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
@@ -3836,6 +3837,7 @@ export function createMockApi() {
     ...createPendenciasManuaisMock(),
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock, prepararConversa: prepararConversaComercialMock }),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
+    ...criarMockTarefasCalendario(mockCompanies),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();

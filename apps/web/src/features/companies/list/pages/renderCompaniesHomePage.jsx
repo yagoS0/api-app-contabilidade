@@ -563,7 +563,7 @@ export function CompaniesHomePage({
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <h1 className="dashboard-home__title dashboard-home__title--accessible">
-              {modoVisao === "tabela" ? "Empresas" : "Agenda"}
+              {modoVisao === "tabela" ? "Empresas" : "Calendario"}
             </h1>
             <div className="dashboard-home__views">
               <Tabs
@@ -572,7 +572,7 @@ export function CompaniesHomePage({
                 pill={false}
                 size="lg"
                 items={[
-                  { key: "calendario", label: "Agenda" },
+                  { key: "calendario", label: "Calendario" },
                   { key: "tabela", label: "Empresas" },
                 ]}
                 active={modoVisao}

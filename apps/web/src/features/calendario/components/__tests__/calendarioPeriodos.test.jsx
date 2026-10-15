@@ -1,5 +1,6 @@
 import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { CalendarioGrid } from '../renderCalendarioGrid';
+// Historical interactions target the preserved implementation, not the new task API.
+import { CalendarioAgenda as CalendarioGrid } from '../CalendarioAgendaLegado';
 import { criarMockAgenda } from '../../../../api/mock/agendaMock';
 import { ALTURA_HORA, HORA_INICIAL } from '../../lib/escalaAgenda';
 const yHorario = (hora, minuto = 0) => (hora + minuto / 60 - HORA_INICIAL) * ALTURA_HORA;
@@ -8,10 +9,10 @@ configure({asyncUtilTimeout:5000});
 const empresas = [{companyId:'a',razao:'Clínica Alfa',cnpj:'11.222.333/0001-81'},{companyId:'b',razao:'Consultoria Beta',cnpj:'22333444000181'}];
 const config = {dataInicio:'2026-09-10',dataFim:'2026-09-15',recorrencia:'MENSAL',prioridade:'ALTA'};
 const obrigacoes = () => empresas.map(e=>({obrigacaoId:`ob-${e.companyId}`,companyId:e.companyId,empresa:e.razao,cnpj:e.cnpj,nome:'EFD-Contribuições',tipo:'OBRIGACAO',regraId:'regra-efd',periodicidade:'MENSAL',ativa:true,agendaConfig:config,ocorrencias:[{ocorrenciaId:`oc-${e.companyId}`,cicloChave:'2026-09',dataInicio:config.dataInicio,dataFim:config.dataFim,dataVencimento:'2026-09-21',situacao:'PENDENTE',status:'PENDENTE'}]}));
-function montar({visao='semana',referencia='2026-09-10',obs=[],extras={}}={}) {
+function montar({visao='semana',referencia='2026-09-10',obs=[],extras={},onNovaTarefa=jest.fn()}={}) {
   const api={...criarMockAgenda(obs,[]),getCalendario:jest.fn(async()=>({ok:true,dias:[]})),listObrigacoes:jest.fn(async()=>({ok:true,obrigacoes:obs.map(o=>({...o,ocorrencias:o.ocorrencias.filter(oc=>!oc.canceladaEm)})).filter(o=>o.ativa!==false),opcoes:{}})),listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[]})),previewEscopoRegra:jest.fn(async()=>({ok:true,total:2,empresas})),createRegraObrigacao:jest.fn(async()=>({ok:true})),...extras};
   jest.spyOn(api,'excluirOcorrenciasAgenda');jest.spyOn(api,'excluirSerieAgenda');jest.spyOn(api,'salvarTarefaAgenda');
-  return {api,...render(<CalendarioGrid api={api} empresas={empresas} initialContext={{visao,referencia}}/>)};
+  return {api,onNovaTarefa,...render(<CalendarioGrid onNovaTarefa={onNovaTarefa} api={api} empresas={empresas} initialContext={{visao,referencia}}/>)};
 }
 
 test('excluir cartão de um dia conserva os demais dias e empresas do ciclo',async()=>{
@@ -32,23 +33,13 @@ test('excluir cartão de um dia conserva os demais dias e empresas do ciclo',asy
   expect(obs.every(o=>!o.ocorrencias[0].canceladaEm)).toBe(true);
 });
 
-test('etapa da carteira é configurada como obrigação recorrente, sem rotina separada',async()=>{
+test('histórico não gera modelos de obrigações ou rotinas automáticas',async()=>{
   const {api}=montar({visao:'lista'});
-  fireEvent.click(await screen.findByRole('button',{name:/Apurar e conferir · Simples Nacional/}));
+  await screen.findByText('Nenhuma atividade encontrada.');
+  expect(screen.queryByRole('button',{name:/Apurar e conferir · Simples Nacional/})).not.toBeInTheDocument();
   expect(screen.queryByRole('button',{name:'Rotinas do mês'})).not.toBeInTheDocument();
-  expect(screen.getByLabelText('Tipo')).toHaveValue('OBRIGACAO');
-  expect(screen.getByLabelText('Recorrência')).toHaveValue('MENSAL');
+  expect(screen.queryByRole('button',{name:'Configurar obrigação'})).not.toBeInTheDocument();
   expect(api.createRegraObrigacao).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText('De'),{target:{value:'2026-10-01'}});
-  fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-10-15'}});
-  fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
-  expect(screen.getByLabelText('Conclusão')).toHaveValue('CARTEIRA_APURAR');
-  expect(screen.getByLabelText('Simples Nacional')).toBeChecked();
-  expect(screen.getByLabelText('Lucro Presumido')).not.toBeChecked();
-  fireEvent.change(screen.getByLabelText('Dia do prazo interno'),{target:{value:'15'}});
-  await screen.findByText('2 empresas');
-  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
-  await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({tipo:'OBRIGACAO',periodicidade:'MENSAL',verificador:'CARTEIRA_APURAR',filtros:{regimes:['SIMPLES'],temFolha:null}})));
 });
 
 test.each([false,true])('conclusão direta por empresa mantém a lista aberta; falha=%s',async(falha)=>{
@@ -88,23 +79,24 @@ test('semana limpa: horários à direita, sem botão de adicionar nem seletor de
   expect(screen.getByLabelText('Visualização do calendário')).toHaveValue('semana');expect(container.querySelector('.agenda-time-columns').lastElementChild).toHaveClass('agenda-hours');
   expect(screen.queryByText('Tarefas e obrigações')).not.toBeInTheDocument();expect(screen.queryByLabelText('Empresa')).not.toBeInTheDocument();expect(screen.queryByText(/Filtros e legenda/)).not.toBeInTheDocument();
 });
-test('clique no horário cria tarefa sem empresa com recorrência e cor',async()=>{
-  const {api}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
-  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferir NFS-e'}});expect(screen.getByLabelText('Horário inicial')).toHaveValue('09:00');
-  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'SEMANAL'}});fireEvent.click(screen.getByRole('button',{name:'Alta'}));fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
-  await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({titulo:'Conferir NFS-e',config:expect.objectContaining({recorrencia:'SEMANAL',prioridade:'ALTA',horaInicio:'09:00'})})));
-  expect(await screen.findByRole('button',{name:'Conferir NFS-e'})).toBeInTheDocument();
+test('clique no horário encaminha criação para o calendário unificado',async()=>{
+  const {api,onNovaTarefa}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  expect(onNovaTarefa).toHaveBeenCalledWith({dataInicio:'2026-09-10',dataFim:'2026-09-10',companyId:null,horarioModo:'FIXO',horaInicio:'09:00',horaFim:'10:00'});
+  expect(api.salvarTarefaAgenda).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
 test('tarefa permite horário fixo, editar para intervalo e remover horário',async()=>{
-  const {api}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
-  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
-  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisar notas'}});
+  const store=criarMockAgenda([],[]);
+  await store.salvarTarefaAgenda({titulo:'Revisar notas',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'}});
+  const {api}=montar({extras:store});jest.spyOn(api,'acaoTarefaAgenda');
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
   fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'FIXO'}});
   fireEvent.change(screen.getByLabelText('Às'),{target:{value:'09:30'}});
   expect(screen.queryByLabelText('Horário final')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
-  await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({config:expect.objectContaining({horaInicio:'09:30',horaFim:null})})));
+  await waitFor(()=>expect(api.acaoTarefaAgenda).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({acao:'EDITAR',alteracoes:expect.objectContaining({horaInicio:'09:30',horaFim:null})})));
   fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
   expect(screen.getByLabelText('Horário',{exact:true})).toHaveValue('FIXO');
   fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'INTERVALO'}});
@@ -120,19 +112,18 @@ test('tarefa permite horário fixo, editar para intervalo e remover horário',as
   fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
   expect(screen.getByLabelText('De')).toHaveValue('2026-09-10');
 });
-test('segundo passo aplica regime e separa janela e vencimento fiscal',async()=>{
-  const {api}=montar();fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026'));fireEvent.change(screen.getByLabelText('Título'),{target:{value:'EFD-Contribuições'}});fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
-  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'MENSAL'}});fireEvent.change(screen.getByLabelText('Tipo'),{target:{value:'OBRIGACAO'}});fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
-  fireEvent.change(screen.getByLabelText('Dia do vencimento fiscal'),{target:{value:'21'}});fireEvent.change(screen.getByLabelText('Aplicar a'),{target:{value:'POR_FILTRO'}});fireEvent.click(screen.getByLabelText('Lucro Presumido'));
-  await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({diaVencimento:21,agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'}),filtros:{regimes:['LUCRO_PRESUMIDO'],temFolha:null}})));
+test('clique sem horário encaminha data e não abre criador fiscal',async()=>{
+  const {api,onNovaTarefa}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026'));
+  expect(onNovaTarefa).toHaveBeenCalledWith({dataInicio:'2026-09-10',dataFim:'2026-09-10',companyId:null});
+  expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText('Tipo')).not.toBeInTheDocument();
 });
 
 test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas semanas',async()=>{
-  montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
-  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
-  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência de notas'}});
-  fireEvent.change(screen.getByLabelText('Horário final'),{target:{value:'11:00'}});
-  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  const store=criarMockAgenda([],[]);
+  await store.salvarTarefaAgenda({titulo:'Conferência de notas',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'11:00'}});
+  montar({extras:store});
   fireEvent.click(await screen.findByRole('button',{name:'Conferência de notas'}));
   fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
   fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
@@ -157,8 +148,8 @@ test('excluir faixa cancela só este ciclo inclusive concluída, preservando his
   const obs=obrigacoes();obs[0].ocorrencias[0].status='CONCLUIDA';const {api}=montar({obs});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
   await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'], 'ESTA'));expect(api.excluirSerieAgenda).not.toHaveBeenCalled();expect(obs[0].ocorrencias[0].status).toBe('CONCLUIDA');expect(obs[0].ocorrencias[0].canceladaEm).toBeTruthy();
 });
-test('lista filtra obrigações e permite excluir a série completa',async()=>{
-  const {api}=montar({obs:obrigacoes()});await screen.findByRole('button',{name:/EFD-Contribuições/});fireEvent.click(screen.getByRole('button',{name:'Lista'}));fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'obrigacao'}});fireEvent.click(await screen.findByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+test('lista histórica remove filtro fiscal e conserva exclusão de série legada',async()=>{
+  const {api}=montar({obs:obrigacoes()});await screen.findByRole('button',{name:/EFD-Contribuições/});fireEvent.click(screen.getByRole('button',{name:'Lista'}));expect(screen.queryByRole('option',{name:'Obrigações'})).not.toBeInTheDocument();fireEvent.click(await screen.findByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
   await waitFor(()=>expect(api.excluirSerieAgenda).toHaveBeenCalledWith({regraId:'regra-efd'}));expect(api.excluirOcorrenciasAgenda).not.toHaveBeenCalled();
 });
 test('mês divide intervalo entre semanas e lista conta uma série',async()=>{
@@ -470,8 +461,8 @@ test('tarefa sem horário pode ser levada para a grade e ajustada pelo teclado',
   } finally {restaurar();}
 });
 
-test('desenhar intervalo abre um único modal central com título focado e horário selecionado',async()=>{
-  const {container}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+test('desenhar intervalo encaminha período ao novo editor sem abrir modal antigo',async()=>{
+  const {container,onNovaTarefa}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
   const restaurar=prepararPonteiro(container),slot=screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00');
   try {
     fireEvent.pointerDown(slot,{pointerId:1,button:0,clientX:350,clientY:yHorario(9,15)});
@@ -479,11 +470,9 @@ test('desenhar intervalo abre um único modal central com título focado e horá
     await waitFor(()=>expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('09:15–10:45'));
     expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('90 min');
     fireEvent.pointerUp(slot,{pointerId:1,clientX:350,clientY:yHorario(10,45)});fireEvent.click(slot);
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(screen.getByRole('dialog')).not.toHaveClass('modal-fundo--lateral');
-    expect(screen.getByLabelText('Título')).toHaveFocus();
-    expect(screen.getByLabelText('Horário inicial')).toHaveValue('09:15');
-    expect(screen.getByLabelText('Horário final')).toHaveValue('10:45');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onNovaTarefa).toHaveBeenCalledTimes(1);
+    expect(onNovaTarefa).toHaveBeenCalledWith(expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:15',horaFim:'10:45'}));
   } finally {restaurar();}
 });
 
@@ -529,7 +518,7 @@ test('tarefa agrupada abre empresas, conclui somente uma e edita o período do g
  await waitFor(()=>expect(screen.getByRole('button',{name:'Editar',exact:true})).toBeEnabled());
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
  expect(screen.queryByRole('button',{name:'Concluir',exact:true})).not.toBeInTheDocument();
- expect(screen.getByLabelText('Tipo')).toBeDisabled();expect(screen.getByLabelText('Recorrência')).toBeDisabled();
+ expect(screen.queryByLabelText('Tipo')).not.toBeInTheDocument();expect(screen.getByLabelText('Recorrência')).toBeDisabled();
  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência revisada'}});
  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
  await waitFor(()=>expect(api.editarOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b'],expect.objectContaining({titulo:'Conferência revisada'})));
@@ -545,19 +534,13 @@ test('lista reúne tarefa por grupo e exclui a série de todas as empresas',asyn
 });
 
 
-test('pausa uma obrigação e permite retomá-la sem excluir a série',async()=>{
-  let regra={regraId:'r',nome:'Fechamento antigo',ativa:true,periodicidade:'MENSAL',verificador:'MES_FECHADO',escopo:'TODAS'};
-  const updateRegraObrigacao=jest.fn(async(id,patch)=>{regra={...regra,...patch};return {ok:true};});
-  const {api}=montar({visao:'lista',extras:{listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[regra]})),updateRegraObrigacao}});
-  fireEvent.click(await screen.findByRole('button',{name:'Pausar obrigação'}));
-  await waitFor(()=>expect(screen.queryByRole('button',{name:/Fechamento antigo/})).not.toBeInTheDocument());
-  fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'PAUSADAS'}});
-  expect(await screen.findByText('Pausada · histórico preservado')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'Retomar obrigação'}));
-  await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenLastCalledWith('r',{ativa:true}));
+test('histórico não oferece filtro de obrigações pausadas',async()=>{
+  const {api}=montar({visao:'lista'});
+  await screen.findByText('Nenhuma atividade encontrada.');
+  expect(screen.queryByRole('option',{name:'Obrigações pausadas'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Retomar obrigação'})).not.toBeInTheDocument();
   expect(api.excluirSerieAgenda).not.toHaveBeenCalled();
 });
-
 
 test('cadastro manual com nome e abrangência do modelo substitui a sugestão sem mudar sua conclusão',async()=>{
   const regra={regraId:'importar',nome:'Importar lançamentos no ERP',ativa:true,periodicidade:'MENSAL',verificador:null,escopo:'TODAS'};
