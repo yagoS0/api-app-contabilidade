@@ -1,6 +1,10 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
-## Operações independente do Calendário — 15/10/2026
+## Revisão de Operações — 15/10/2026, decisão posterior do usuário
+
+A página usa quadros clicáveis para indicadores e notas para revisão, uma caixa compacta de empresas com rotinas habilitadas/não habilitadas e o Calendário real em modo dia para tarefas. Esta decisão substitui a lista própria de tarefas e a conferência/programação aberta na página. Configuração continua na empresa; confirmar/liberar fica sob ação explícita em modal. A visualização diária não autoriza execução fiscal e não altera a configuração de visão do Calendário principal. Preservar estados de apuração, procuração, idempotência e reaproveitamento documental. Evidência de DAS isolado não vira transmissão comprovada.
+
+## Operações independente do Calendário — 15/10/2026 (histórico, substituído acima)
 
 Operações (`/companies?visao=operacoes`) fica ao lado da Agenda apenas na navegação. Usa os mesmos status da tabela Empresas (`fluxoDaEmpresa`); não consulta, cria ou programa tarefas/obrigações do Calendário. A futura programação diária será própria do fluxo operacional, com horários explícitos. Preservar os componentes do Calendário, em alteração paralela. Ativação de consultas fica em Configurações → Automação de cada empresa (`/companies/:id/automacao`), reutilizando CompanyRotina; salvar não dispara consulta. Esta decisão substitui qualquer proposta de alimentar Operações pela agenda. Não alterar a projeção legada da tabela nesta entrega. Ver `docs/central-operacoes-etapa-1-2026-10-15.md`.
 ## Nome do calendário — 15/10/2026

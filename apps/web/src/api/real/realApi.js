@@ -808,6 +808,7 @@ export function createRealApi() {
       return request(`/firm/rotinas`);
     },
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
+    getOperationRoutines: () => request('/firm/operacoes/rotinas'),
     getCompanyOperation: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`),
     getOperationAlerts: () => request('/firm/operacoes/avisos'),
     executeCompanyOperation: (companyId, competencia, expectedRevision) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/executar`, { method: 'POST', body: JSON.stringify({ expectedRevision, confirmCompetencia: competencia }) }),
