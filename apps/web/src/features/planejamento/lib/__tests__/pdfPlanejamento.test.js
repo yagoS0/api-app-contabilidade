@@ -37,3 +37,28 @@ test("excluir IBS/CBS não imprime estimativa salva; falta de folha não vira ze
   expect(pdf.text).not.toContain("Quanto falta de folha em 12 meses");
   expect(pdf.text).not.toContain("Crédito transferido ao comprador");
 }, 20000);
+
+test("procedência maior que uma página conserva texto e repete cabeçalho sem glifo de seta", async () => {
+  const longo = Array.from({length:350},(_,i)=>`Registro${i} documentação parcial preservada.`).join(' ');
+  const blob = await gerarRelatorioPlanejamento({...args,procedencias:[{rotulo:'Origem extensa',texto:longo}]}, PDFDocument);
+  const pdf = await parse(Buffer.from(await blob.arrayBuffer()));
+  for (const value of ['Registro0','Registro175','Registro349','documentação parcial preservada.','-> 2ª faixa']) expect(pdf.text).toContain(value);
+  for (let i=0;i<350;i++) expect(pdf.text).toMatch(new RegExp(`Registro${i}\\b`));
+  expect(pdf.text.match(/Procedência/g).length).toBeGreaterThan(1);
+  expect(pdf.numpages).toBeLessThan(20);
+},20000);
+
+test("linha extensa após linhas curtas nunca desenha fora da área útil", async () => {
+  const limites = [];
+  class PdfComLimites extends PDFDocument {
+    lineTo(x,y) { if (y !== 797) limites.push(y); return super.lineTo(x,y); }
+  }
+  const texto = Array.from({length:350},(_,i)=>`Trecho${i} fonte documental preservada.`).join(' ');
+  for (const quantidade of [22,23,24,25,26,27,28]) {
+    const procedencias = [...Array.from({length:quantidade},(_,i)=>({rotulo:`Curta ${i}`,texto:'Origem salva.'})),{rotulo:'Extensa',texto}];
+    const blob = await gerarRelatorioPlanejamento({...args,procedencias},PdfComLimites);
+    const pdf = await parse(Buffer.from(await blob.arrayBuffer()));
+    for(let i=0;i<350;i++) expect(pdf.text).toMatch(new RegExp(`Trecho${i}\\b`));
+  }
+  expect(Math.max(...limites)).toBeLessThanOrEqual(776);
+},30000);

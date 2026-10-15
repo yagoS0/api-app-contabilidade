@@ -12,3 +12,8 @@
   #relatorio-gerencial-impressao tr { break-inside:avoid; }
   #relatorio-gerencial-impressao thead { display:table-header-group; }
 }
+@media print {
+  #relatorio-gerencial-impressao .gerencial-clientes td { vertical-align:top; }
+  #relatorio-gerencial-impressao footer { break-inside:avoid; }
+  #relatorio-gerencial-impressao h1,#relatorio-gerencial-impressao h2,#relatorio-gerencial-impressao th { font-weight:600; }
+}

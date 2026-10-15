@@ -41,3 +41,20 @@ test("associação busca pessoa e exige seleção e as duas versões", async () 
  fireEvent.click(screen.getByRole("button", { name: "Confirmar registro da identificação" }));
  await waitFor(() => expect(api.conferirIdentificacaoWhatsapp).toHaveBeenCalledWith("cv1", expect.objectContaining({ acao: "ASSOCIAR_NUMERO", versao: 3, destinoConversaId: "cv2", versaoDestino: 7 })));
 });
+
+test.each([false, undefined])('sem capacidade não oferece identificação (%s)', capacidade => {
+ const api=apiBase();render(<ConferirIdentificacao conversa={{...conversa,capacidades:{conferirIdentidade:capacidade}}} api={api}/>);expect(screen.queryByRole('button',{name:'Conferir identificação'})).not.toBeInTheDocument();expect(api.conferirIdentificacaoWhatsapp).not.toHaveBeenCalled();
+});
+test('prévia recebe foco e cancelar retorna ao gatilho',()=>{
+ render(<ConferirIdentificacao conversa={conversa} api={apiBase()}/>);iniciar();expect(screen.getByLabelText('Resultado')).toHaveFocus();expect(screen.getByLabelText('Evidência da conferência')).toHaveAccessibleDescription(/mínimo de 10/);fireEvent.change(screen.getByLabelText('Evidência da conferência'),{target:{value:'Documento conferido pessoalmente'}});fireEvent.click(screen.getByRole('button',{name:'Revisar identificação'}));expect(screen.getByRole('heading',{name:'Confira a consequência'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Conferir identificação'})).toHaveFocus();
+});
+test('salvamento ocupado anuncia progresso e impede duplo registro',async()=>{
+ const api=apiBase();let reject;api.conferirIdentificacaoWhatsapp.mockImplementation(()=>new Promise((_,r)=>{reject=r}));render(<ConferirIdentificacao conversa={conversa} api={api}/>);iniciar();fireEvent.change(screen.getByLabelText('Evidência da conferência'),{target:{value:'Documento conferido pessoalmente'}});fireEvent.click(screen.getByRole('button',{name:'Revisar identificação'}));fireEvent.click(screen.getByRole('button',{name:'Confirmar registro da identificação'}));expect(screen.getByRole('status')).toHaveTextContent('Registrando');expect(screen.getByRole('button',{name:'Cancelar'})).toBeDisabled();expect(screen.getByLabelText('Resultado')).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'Registrando…'}));expect(api.conferirIdentificacaoWhatsapp).toHaveBeenCalledTimes(1);reject(Object.assign(Error('IDENTIDADE_ALTERADA'),{code:'IDENTIDADE_ALTERADA'}));expect(await screen.findByRole('alert')).toHaveTextContent('Feche e prepare');expect(screen.getByLabelText('Evidência da conferência')).toHaveValue('Documento conferido pessoalmente');
+});
+test('busca recusada traduz acesso e não oferece associação',async()=>{
+ const api=apiBase();api.listarConversasWhatsapp.mockRejectedValue(Error('forbidden'));render(<ConferirIdentificacao conversa={conversa} api={api}/>);iniciar();fireEvent.change(screen.getByLabelText('Resultado'),{target:{value:'ASSOCIAR_NUMERO'}});fireEvent.change(screen.getByLabelText('Buscar contato já conhecido'),{target:{value:'Maria'}});expect(await screen.findByRole('alert')).toHaveTextContent('Seu acesso');expect(screen.getByRole('button',{name:'Revisar identificação'})).toBeDisabled();expect(api.conferirIdentificacaoWhatsapp).not.toHaveBeenCalled();
+});
+
+test('editar a evidência após prévia mantém foco no campo e exige nova revisão',()=>{
+ render(<ConferirIdentificacao conversa={conversa} api={apiBase()}/>);iniciar();const campo=screen.getByLabelText('Evidência da conferência');fireEvent.change(campo,{target:{value:'Documento conferido pessoalmente'}});fireEvent.click(screen.getByRole('button',{name:'Revisar identificação'}));campo.focus();fireEvent.change(campo,{target:{value:'Documento conferido pessoalmente e revisado'}});expect(campo).toHaveFocus();expect(screen.queryByRole('button',{name:'Confirmar registro da identificação'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Revisar identificação'})).toBeEnabled();
+});
