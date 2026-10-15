@@ -68,9 +68,9 @@ beforeEach(() => {
 });
 
 describe("⚠⚠ a visão em Cards saiu do produto", () => {
-  test("não há botão `Cards` na barra de visões — sobraram DUAS", () => {
+  test("não há botão `Cards`; Operações fica ao lado do Calendario", () => {
     montar();
-    expect(visoes()).toEqual(["Calendario", "Empresas"]);
+    expect(visoes()).toEqual(["Calendario", "Operações", "Empresas"]);
   });
 
   test("calendário abre no mês e oferece semana, dia e lista", () => {
@@ -153,3 +153,4 @@ describe("ferramentas acompanham o contexto da tela inicial", () => {
     expect(screen.getByRole("alert")).toHaveFocus();
   });
 });
+

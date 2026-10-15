@@ -1,5 +1,8 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Operações independente do Calendário — 15/10/2026
+
+Operações (`/companies?visao=operacoes`) fica ao lado da Agenda apenas na navegação. Usa os mesmos status da tabela Empresas (`fluxoDaEmpresa`); não consulta, cria ou programa tarefas/obrigações do Calendário. A futura programação diária será própria do fluxo operacional, com horários explícitos. Preservar os componentes do Calendário, em alteração paralela. Ativação de consultas fica em Configurações → Automação de cada empresa (`/companies/:id/automacao`), reutilizando CompanyRotina; salvar não dispara consulta. Esta decisão substitui qualquer proposta de alimentar Operações pela agenda. Não alterar a projeção legada da tabela nesta entrega. Ver `docs/central-operacoes-etapa-1-2026-10-15.md`.
 ## Nome do calendário — 15/10/2026
 
 Por solicitação do usuário, o título e a aba da página inicial exibem “Calendario” em lugar de “Agenda”. A chave interna `calendario` permanece igual. Esta decisão substitui o nome indicado na hierarquia histórica abaixo.

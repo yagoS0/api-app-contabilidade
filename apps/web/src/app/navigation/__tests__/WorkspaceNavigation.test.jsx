@@ -22,6 +22,14 @@ function setup(route = "/companies") {
   return render(<MemoryRouter initialEntries={[route]}><WorkspaceNavigationProvider><Screen /></WorkspaceNavigationProvider></MemoryRouter>);
 }
 
+test('link direto de Operações mantém a visão sem desmontar a navegação', () => {
+  setup('/companies?visao=operacoes');
+  expect(screen.getByLabelText('visão')).toHaveTextContent('operacoes');
+  fireEvent.click(screen.getByText('Notas'));
+  fireEvent.click(screen.getByText('Voltar'));
+  expect(screen.getByLabelText('visão')).toHaveTextContent('operacoes');
+});
+
 test('entrar e sair de empresas conserva a sessão montada e o trabalho em memória', () => {
   const montar = jest.fn(), desmontar = jest.fn();
   function Sessao() {

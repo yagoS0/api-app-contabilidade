@@ -1,0 +1,15 @@
+# Operações: execução liberada e avisos após apuração
+
+Esta entrega substitui a limitação anterior de liberação apenas informativa. A confirmação permanece local. A prévia de liberação exige a competência digitada e informa transmissão e busca de documentos faltantes. A liberação aceita segue para o executor existente de fechamento, acompanhada na central Tarefas. A programação diária continua sendo tarefa de conferência, não um agendamento fiscal automático.
+
+Antes de aceitar e imediatamente antes de transmitir, conferir acesso, fingerprint fiscal e pendências retroativas. Exigir procuração PGDAS-D salva, vigente, conferida nas últimas 24 horas e correspondente ao contribuinte/procurador atual. Ausência bloqueia sem consultar procuração automaticamente. Não retificar automaticamente. Reutilizar o cálculo confirmado, a reserva da transmissão e as guardas SERPRO existentes.
+
+Tentativa por liberação é persistida em AppSetting, sob trava por empresa/competência e transação serializável. A chave inclui empresa, competência e releaseId. Registro RUNNING/ATTENTION não pode ser limpo por confirmação/revisão comum; o usuário confere Tarefas/central de apuração. Reinício, leitura de andamento e resposta perdida não repetem a tentativa. Liberações antigas sem releaseId não são executadas. A execução concluída informa documentos ausentes sem desfazer a declaração. Falha parcial do lote interrompe os próximos itens.
+
+Entrega já comprovada localmente dispensa nova transmissão e consulta de índice. Extrato/recibo completos e DAS (inclusive upload manual processado) dispensam captura. Somente documentos faltantes passam aos serviços documentais existentes; sem escrituração nem liberação automática de envio. Após transmissão nova, esta variante também não força atualização de documentos existentes. Retificações explícitas conservam o fluxo anterior, que precisa buscar a versão retificada.
+
+GET `/firm/operacoes/avisos` lista pendências não resolvidas de todas as competências e empresas visíveis ao usuário, limitado aos 200 avisos mais recentes com total explícito. A interface atualiza apenas esse registro local a cada minuto e ao retornar à janela. O aviso permanece até a resolução com motivo/ator/data na auditoria existente; abrir não dá baixa. Nota da CDA com emissão 03/10/2026 e competência fiscal 09/2026 permanece um aviso de setembro, mesmo ao visualizar outubro. A captura/emissão precisa primeiro registrar a nota; não há varredura histórica ou consulta fiscal ao abrir o painel.
+
+Calendário não foi alterado por esta entrega. Mudanças paralelas da main devem ser preservadas durante integração. Não há migração de schema nesta versão.
+
+Validação pré-publicação: 59 testes dirigidos API e 47 web; PostgreSQL descartável com duas execuções simultâneas da mesma liberação (somente uma aceita), replay bloqueado, pendência retroativa invalidando estado e provedor simulado. Interface 1440/390 px com prévia explícita, aviso de outra competência e sem overflow/erros JS. Testes não emitiram/transmitiram nem consultaram documentos fiscais reais.
