@@ -51,6 +51,13 @@ export function getFriendlyGuideMessage({ code, reason }) {
   const normalizedCode = String(code || "").trim().toUpperCase();
   const normalizedReason = String(reason || "").trim().toLowerCase();
 
+  if (normalizedCode === "MES_FECHADO") {
+    return "Esta operação altera um período contábil fechado. Reabra o período para alterar a contabilidade.";
+  }
+  if (normalizedCode === "GUIDE_CNPJ_MISMATCH") {
+    return "O CNPJ desta guia não corresponde à empresa selecionada. Abra a empresa indicada no documento para enviá-lo.";
+  }
+
   if (normalizedCode === "GUIDE_DUPLICATE_HASH" || normalizedReason === "duplicate_hash") {
     return "Esta guia já foi enviada anteriormente e foi identificada como duplicada.";
   }
@@ -87,7 +94,7 @@ export function getFriendlyGuideMessage({ code, reason }) {
   if (normalizedCode === "GUIDE_PROCESSING_ERROR") {
     return "Não foi possível concluir o processamento desta guia neste momento.";
   }
-  return "Não foi possível identificar esta guia automaticamente.";
+  return "Não foi possível salvar esta guia. Tente novamente.";
 }
 
 function getExtractedHash(extracted) {
@@ -585,23 +592,25 @@ export async function createOrUpdateGuideFromProcessing({
   //   - undefined (default): comportamento legado — sempre PENDING para PROCESSED, null caso contrário.
   emailStatusOverride,
 }) {
-  // Q18: bloqueia upload/registro MANUAL de guia em mês fechado (fechamento contábil).
-  // Não afeta a captura automática do SERPRO (source="SERPRO").
-  const _compGuard = normalizeCompetencia(parsed?.competencia);
-  if (
-    String(source || "").toUpperCase() !== "SERPRO"
-    && portalClientId && _compGuard
-    && (await isMonthClosed(portalClientId, _compGuard))
-  ) {
-    const err = new Error("Mês fechado — reabra a empresa para subir guias desta competência.");
-    err.code = "MES_FECHADO";
-    throw err;
-  }
-
+  // Guardar o PDF é uma operação documental, permitida mesmo no mês fechado.
+  // Nesse caso, não executar o hook de provisão: o fechamento contábil permanece intacto.
   const hasDbPdf =
     pdfBytesInput !== undefined &&
     Buffer.isBuffer(pdfBytesInput) &&
     pdfBytesInput.length > 0;
+  const origem = String(source || "UPLOAD").toUpperCase();
+  const _compGuard = normalizeCompetencia(parsed?.competencia);
+  const periodoFechado = Boolean(
+    origem !== "SERPRO"
+    && portalClientId && _compGuard
+    && (await isMonthClosed(portalClientId, _compGuard))
+  );
+  const uploadDocumental = origem === "UPLOAD" && hasDbPdf;
+  if (periodoFechado && !uploadDocumental) {
+    const err = new Error("Mês fechado — reabra a empresa para subir guias desta competência.");
+    err.code = "MES_FECHADO";
+    throw err;
+  }
 
   // Se "PRESERVE", busca o emailStatus atual da guia para manter o estado de envio
   let preservedEmail = null;
@@ -727,7 +736,7 @@ export async function createOrUpdateGuideFromProcessing({
 
   // Hook Q5: toda guia PROCESSED gera AccountingEntry tipo=PROVISAO (best-effort, não bloqueante).
   // INSS e SIMPLES são pulados pelo service (decisões do usuário).
-  if (savedGuide?.status === "PROCESSED" && savedGuide?.portalClientId) {
+  if (savedGuide?.status === "PROCESSED" && savedGuide?.portalClientId && !periodoFechado) {
     try {
       const { generateProvisionsFromGuide } = await import("../accounting/GuideToProvisionService.js");
       await generateProvisionsFromGuide({ guideId: savedGuide.id });
