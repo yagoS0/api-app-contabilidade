@@ -1,0 +1,37 @@
+import { render,screen,fireEvent,waitFor } from '@testing-library/react';
+import { CalendarioAgenda } from '../CalendarioAgenda';
+import { criarMockTarefasCalendario } from '../../../../api/mock/tarefasCalendarioMock';
+const empresas=[{companyId:'a',razaoSocial:'Aurora',regime:'LUCRO_PRESUMIDO'},{companyId:'b',razaoSocial:'Horizonte',regime:'LUCRO_PRESUMIDO'}];
+beforeAll(()=>{if(!global.crypto.randomUUID)global.crypto.randomUUID=()=>`t-${Math.random().toString(36).slice(2)}`;});
+test('calendário usa apenas tarefas unificadas e abre o editor compacto a partir do dia',async()=>{
+ const api={...criarMockTarefasCalendario(empresas),listObrigacoes:jest.fn()};
+ render(<CalendarioAgenda api={api} empresas={empresas} initialContext={{referencia:'2026-10-15',visao:'mes'}}/>);
+ await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+ fireEvent.click(screen.getByRole('button',{name:'Criar tarefa em 15/10/2026'}));
+ expect(screen.getByRole('dialog')).toHaveTextContent('Nova tarefa');
+ expect(screen.getByRole('button',{name:'Data e repetição'})).toHaveTextContent('15');
+ expect(api.listObrigacoes).not.toHaveBeenCalled();
+});
+test('checklist por empresa salva, risca empresa, e não conclui o próximo mês',async()=>{
+ const api=criarMockTarefasCalendario(empresas);
+ await api.criarTarefaCalendario({titulo:'Apuração',empresasIds:['a','b'],subtarefas:[{id:'mit',titulo:'MIT'},{id:'efd',titulo:'EFD'}],config:{dataInicio:'2026-10-15',dataFim:'2026-10-15',recorrencia:'MENSAL',diaVencimento:31}});
+ render(<CalendarioAgenda api={api} empresas={empresas} initialContext={{referencia:'2026-10-15',visao:'mes'}}/>);
+ await waitFor(()=>expect(screen.getAllByRole('button',{name:'Apuração'}).length).toBeGreaterThan(0));
+ fireEvent.click(screen.getAllByRole('button',{name:'Apuração'})[0]);
+ fireEvent.click(screen.getAllByRole('checkbox',{name:'MIT'})[0]);
+ await waitFor(()=>expect(screen.getAllByRole('checkbox',{name:'MIT'})[0]).toBeEnabled());
+ fireEvent.click(screen.getAllByRole('checkbox',{name:'EFD'})[0]);
+ await waitFor(()=>expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument());
+ expect(screen.getByRole('region',{name:'Aurora'})).toHaveClass('is-complete');
+ const novembro=await api.listarTarefasCalendario({inicio:'2026-11-01',fim:'2026-11-30'});
+ expect(novembro.itens[0].empresas.every(e=>!e.concluida)).toBe(true);
+});
+test('aba de uma empresa carrega a carteira e já vincula a empresa da página',async()=>{
+ const api={...criarMockTarefasCalendario(empresas),listCompanies:jest.fn().mockResolvedValue(empresas)};
+ render(<CalendarioAgenda api={api} companyIdFixo="a" initialContext={{referencia:'2026-10-15',visao:'mes'}}/>);
+ await waitFor(()=>expect(api.listCompanies).toHaveBeenCalledTimes(1));
+ fireEvent.click(screen.getByRole('button',{name:'Criar tarefa em 15/10/2026'}));
+ fireEvent.click(screen.getByRole('button',{name:'Empresas 1'}));
+ expect(screen.getByRole('checkbox',{name:/Aurora/})).toBeChecked();
+ expect(screen.getByRole('checkbox',{name:/Horizonte/})).not.toBeChecked();
+});

@@ -1,5 +1,9 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Nome do calendário — 15/10/2026
+
+Por solicitação do usuário, o título e a aba da página inicial exibem “Calendario” em lugar de “Agenda”. A chave interna `calendario` permanece igual. Esta decisão substitui o nome indicado na hierarquia histórica abaixo.
+
 ## Cabeçalho interno — 15/10/2026
 
 Por decisão do usuário, as rotas internas das empresas não exibem a faixa global com logo e áreas do escritório. A seta do cabeçalho retorna diretamente a /companies, preservando a visão da carteira no contexto. A página principal mantém a faixa. Esta decisão substitui a orientação anterior de retorno pelo histórico e faixa global dentro da empresa.

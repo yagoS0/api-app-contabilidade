@@ -1,3 +1,4 @@
+import { createTarefasUnificadasRouter } from './tarefasUnificadas.js';
 import { Router } from 'express';
 import { listarAgendaCarteira } from '../../application/company/FluxoCarteiraService.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
@@ -10,6 +11,7 @@ import { listarExcluidas, restaurarOcorrencias } from '../../application/obrigac
 
 export function createAgendaRouter({ log } = {}) {
   const router = Router();
+  router.use(createTarefasUnificadasRouter({ log }));
   const rota = fn => async (req, res) => {
     try {
       const userId = req.auth?.user?.id;
