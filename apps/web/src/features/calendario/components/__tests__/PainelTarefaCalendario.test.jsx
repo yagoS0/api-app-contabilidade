@@ -50,3 +50,31 @@ test('cartão unificado abre checklist sem conclusão coletiva e sinaliza prazo 
  expect(container.querySelector('.agenda-event')).toHaveClass('is-urgent');
  expect(screen.getByText('Vence amanhã')).toBeInTheDocument(); expect(screen.getByText('Até 18:00')).toBeInTheDocument();
 });
+
+
+test('pendentes mantém linha e foco durante gravação e só mostra conclusão após confirmar', async () => {
+ let terminar;
+ const api={acaoTarefaCalendario:jest.fn(()=>new Promise(resolve=>{terminar=resolve;}))};
+ montar({api,item:{...item,empresas:[{companyId:'a',nome:'Empresa A',subtarefas:[]}]}});
+ fireEvent.click(screen.getByRole('button',{name:'Pendentes'}));
+ const checkbox=screen.getByRole('checkbox',{name:'Concluir empresa'});
+ checkbox.focus(); fireEvent.click(checkbox);
+ expect(screen.getByRole('region',{name:'Empresa A'})).toBeInTheDocument();
+ expect(screen.getByRole('status')).toHaveTextContent('Salvando');
+ expect(screen.queryByText('Todas as empresas concluídas.')).not.toBeInTheDocument();
+ await act(async()=>{terminar({ok:true});});
+ expect(screen.queryByRole('region',{name:'Empresa A'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Pendentes'})).toHaveFocus();
+ expect(screen.getByText('Todas as empresas concluídas.')).toBeInTheDocument();
+});
+test('falha mantém empresa pendente e apresenta mensagem humana em vez do código', async () => {
+ let terminar;
+ const api={acaoTarefaCalendario:jest.fn(()=>new Promise(resolve=>{terminar=resolve;}))};
+ montar({api,item:{...item,empresas:[{companyId:'a',nome:'Empresa A',subtarefas:[]}]}});
+ fireEvent.click(screen.getByRole('button',{name:'Pendentes'}));
+ fireEvent.click(screen.getByRole('checkbox',{name:'Concluir empresa'}));
+ await act(async()=>{terminar({ok:false,error:'FORBIDDEN',message:'Sem permissão para concluir esta tarefa.'});});
+ expect(screen.getByRole('checkbox',{name:'Concluir empresa'})).not.toBeChecked();
+ expect(screen.getByRole('alert')).toHaveTextContent('Sem permissão para concluir esta tarefa.');
+ expect(screen.queryByText('Todas as empresas concluídas.')).not.toBeInTheDocument();
+});

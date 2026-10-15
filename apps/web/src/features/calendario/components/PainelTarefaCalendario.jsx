@@ -30,6 +30,8 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
   const [pendentes, setPendentes] = useState(false);
   const [salvando, setSalvando] = useState(new Set());
   const locks = useRef(new Set());
+  const filtros = useRef(null);
+  const linhas = useRef(new Map());
   const [erros, setErros] = useState({});
   useEffect(() => { if (!locks.current.size) { confirmado.current = original; setAtual(original); } }, [original]);
   const empresas = linhasDe(atual);
@@ -46,31 +48,37 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
     setAtual(a => atualizar(a, companyId, subtarefa?.id, valor));
     try {
       const resposta = await api.acaoTarefaCalendario(atual.tarefaId || atual.id, { acao:subtarefa ? 'SUBTAREFA' : valor ? 'CONCLUIR' : 'REABRIR', cicloChave:atual.cicloChave, companyId, ...(subtarefa ? { subtarefaId:subtarefa.id, concluida:valor } : {}) });
-      if (resposta?.ok === false) throw new Error(resposta.error || resposta.message || 'Não foi possível salvar.');
+      if (resposta?.ok === false) throw new Error(resposta.message || 'Não foi possível salvar. Tente novamente.');
       confirmado.current = atualizar(confirmado.current, companyId, subtarefa?.id, valor);
       onChanged?.(confirmado.current);
     } catch (erro) {
       const anterior = linhasDe(confirmado.current).find(e => (e.companyId ?? null) === companyId);
       setAtual(a => atualizar(a, companyId, subtarefa?.id, subtarefa ? Boolean(anterior?.subtarefas?.find(s => s.id === subtarefa.id)?.concluida) : empresaConcluida(anterior || {})));
       setErros(e => ({ ...e, [chave]:erro.message || 'Não foi possível salvar. Tente novamente.' }));
-    } finally { locks.current.delete(chave); setSalvando(new Set(locks.current)); }
+    } finally {
+      const filtroPendente = filtros.current?.querySelector('[data-filter="pending"][aria-pressed="true"]');
+      const linha = linhas.current.get(chave);
+      const empresaConfirmada = linhasDe(confirmado.current).find(e => (e.companyId ?? null) === companyId);
+      if (filtroPendente && empresaConcluida(empresaConfirmada || {}) && linha?.contains(document.activeElement)) filtroPendente.focus();
+      locks.current.delete(chave); setSalvando(new Set(locks.current));
+    }
   }
   return <Modal titulo={atual.titulo} aoFechar={onFechar} lateral ocupado={salvando.size > 0} className="agenda-task-panel" rodape={<div className="agenda-task-panel-actions">{onExcluir && <Button variant="secondary" disabled={salvando.size > 0} onClick={() => onExcluir(atual)}>Excluir</Button>}{onEditar && <Button variant="secondary" disabled={salvando.size > 0} onClick={() => onEditar(atual)}>Editar tarefa</Button>}</div>}>
     <p className="agenda-task-panel-period">{dataBR(atual.dataInicio)}{atual.dataFim && atual.dataFim !== atual.dataInicio ? ` – ${dataBR(atual.dataFim)}` : ''}{hora && ` · ${hora}`}</p>
     {atual.descricao && <p className="agenda-task-panel-description">{atual.descricao}</p>}
     {atual.dataVencimento && concluidas < empresas.length && <p className={`agenda-task-deadline${alerta ? ' is-urgent' : ''}`}><span aria-hidden="true">⚑</span>{alerta ? `${alerta} · ` : 'Vencimento · '}{dataBR(atual.dataVencimento)}</p>}
     <div className="agenda-task-progress"><div><strong>{pessoal ? 'Andamento' : 'Empresas'}</strong><span aria-live="polite">{concluidas} de {empresas.length} concluída{empresas.length > 1 ? 's' : ''}</span></div><progress value={concluidas} max={empresas.length} aria-label="Progresso da tarefa" /></div>
-    {!pessoal && <div className="agenda-task-filters" aria-label="Filtrar empresas"><Button variant="secondary" size="sm" aria-pressed={!pendentes} onClick={() => setPendentes(false)}>Todas</Button><Button variant="secondary" size="sm" aria-pressed={pendentes} onClick={() => setPendentes(true)}>Pendentes</Button></div>}
-    <div className="agenda-task-companies">{empresas.filter(e => !pendentes || !empresaConcluida(e)).map(empresa => {
+    {!pessoal && <div className="agenda-task-filters" ref={filtros} aria-label="Filtrar empresas"><Button variant="secondary" size="sm" aria-pressed={!pendentes} onClick={() => setPendentes(false)}>Todas</Button><Button variant="secondary" size="sm" data-filter="pending" aria-pressed={pendentes} onClick={() => setPendentes(true)}>Pendentes</Button></div>}
+    <div className="agenda-task-companies">{empresas.filter(e => !pendentes || !empresaConcluida(e) || salvando.has(e.companyId || 'pessoal')).map(empresa => {
       const chave = empresa.companyId || 'pessoal';
       const completa = empresaConcluida(empresa);
       const subtarefas = empresa.subtarefas || [];
-      return <section key={chave} className={`agenda-task-company${completa ? ' is-complete' : ''}`} aria-label={empresa.nome || empresa.companyId || 'Tarefa'} aria-busy={salvando.has(chave)}>
+      return <section key={chave} ref={elemento => { if (elemento) linhas.current.set(chave, elemento); else linhas.current.delete(chave); }} className={`agenda-task-company${completa ? ' is-complete' : ''}`} aria-label={empresa.nome || empresa.companyId || 'Tarefa'} aria-busy={salvando.has(chave)}>
         <div className="agenda-task-company-heading"><strong>{empresa.nome || empresa.companyId || 'Tarefa'}</strong><span>{subtarefas.length ? `${subtarefas.filter(s => s.concluida).length}/${subtarefas.length}` : completa ? 'Concluída' : 'Pendente'}</span></div>
         {subtarefas.length ? subtarefas.map(s => <label className="agenda-task-check" key={s.id}><input type="checkbox" checked={Boolean(s.concluida)} disabled={salvando.has(chave)} onChange={e => marcar(empresa, s, e.target.checked)} /><span>{s.titulo}</span></label>) : <label className="agenda-task-check"><input type="checkbox" checked={completa} disabled={salvando.has(chave)} onChange={e => marcar(empresa, null, e.target.checked)} /><span>{completa ? 'Reabrir' : 'Concluir'} {pessoal ? 'tarefa' : 'empresa'}</span></label>}
         {salvando.has(chave) && <small role="status">Salvando…</small>}{erros[chave] && <p className="agenda-error" role="alert">{erros[chave]}</p>}
         {empresa.companyId && onOpenCompany && <Button variant="secondary" size="sm" onClick={() => onOpenCompany(empresa.companyId)}>Abrir empresa</Button>}
       </section>;
-    })}{pendentes && concluidas === empresas.length && <p className="agenda-empty">Todas as empresas concluídas.</p>}</div>
+    })}{pendentes && !salvando.size && concluidas === empresas.length && <p className="agenda-empty">Todas as empresas concluídas.</p>}</div>
   </Modal>;
 }
