@@ -61,13 +61,13 @@ export async function listarAgendaCarteira(portalIds, inicio, fim, db = prisma) 
   const agendadas = await db.carteiraTarefa.findMany({ where: { portalClientId: { in: portalIds }, dataInicio: { lte: ate }, dataFim: { gte: de } } });
   if (!agendadas.length) return [];
   const ids = [...new Set(agendadas.map(t => t.portalClientId))];
-  const portals = await db.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true, companyId: true, razao: true, hasProlabore: true } });
+  const portals = await db.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true, companyId: true, razao: true, hasProlabore: true, empresaZerada: true } });
   const legacies = await db.company.findMany({ where: { id: { in: portals.map(p => p.companyId).filter(Boolean) } } });
   const itens = [];
   for (const competencia of [...new Set(agendadas.map(t => t.competencia))]) {
     const tarefas = agendadas.filter(t => t.competencia === competencia);
-    const companies = portals.filter(p => tarefas.some(t => t.portalClientId === p.id)).map(p => ({ companyId: p.id, razao: p.razao, hasProlabore: p.hasProlabore, legacyCompany: legacies.find(l => l.id === p.companyId) || null }));
-    const guias = await computeGuideComplianceMap(companies.map(c => ({ portalId: c.companyId, hasProlabore: c.hasProlabore, legacy: c.legacyCompany })), competencia);
+    const companies = portals.filter(p => tarefas.some(t => t.portalClientId === p.id)).map(p => ({ companyId: p.id, razao: p.razao, hasProlabore: p.hasProlabore, empresaZerada: p.empresaZerada, legacyCompany: legacies.find(l => l.id === p.companyId) || null }));
+    const guias = await computeGuideComplianceMap(companies.map(c => ({ portalId: c.companyId, hasProlabore: c.hasProlabore, empresaZerada: c.empresaZerada, legacy: c.legacyCompany })), competencia);
     for (const c of companies) c.guideCompliance = guias.get(c.companyId);
     const mapa = await contextosCarteira(companies, competencia, db);
     for (const r of tarefas) {
@@ -84,9 +84,9 @@ export async function lerFluxoEmpresa(id, competencia, db = prisma) {
   const portal = await db.portalClient.findUnique({ where: { id } });
   if (!portal) throw erro('Empresa não encontrada.', 404);
   const legacy = portal.companyId ? await db.company.findUnique({ where: { id: portal.companyId } }) : null;
-  const company = { companyId: id, razao: portal.razao, hasProlabore: portal.hasProlabore, legacyCompany: legacy };
+  const company = { companyId: id, razao: portal.razao, hasProlabore: portal.hasProlabore, empresaZerada: portal.empresaZerada, legacyCompany: legacy };
   // Este serviço consulta somente documentos e configurações locais.
-  const compliance = await computeGuideComplianceMap([{ portalId: id, hasProlabore: Boolean(portal.hasProlabore), legacy }], competencia);
+  const compliance = await computeGuideComplianceMap([{ portalId: id, hasProlabore: Boolean(portal.hasProlabore), empresaZerada: portal.empresaZerada, legacy }], competencia);
   company.guideCompliance = compliance.get(id) || null;
   return (await contextosCarteira([company], competencia, db)).get(id);
 }
@@ -119,13 +119,13 @@ export async function salvarFluxoTarefa(id, competencia, chave, corpo, userId, d
 // Obrigações nativas observam a mesma evidência da carteira, inclusive sua invalidação.
 export async function reconciliarObrigacoesCarteira(ocorrencias, db = prisma) {
   const ids = [...new Set(ocorrencias.map(o => o.obrigacao.portalClientId))];
-  const portals = await db.portalClient.findMany({where:{id:{in:ids}},select:{id:true,companyId:true,razao:true,hasProlabore:true}});
+  const portals = await db.portalClient.findMany({where:{id:{in:ids}},select:{id:true,companyId:true,razao:true,hasProlabore:true,empresaZerada:true}});
   const legacies = await db.company.findMany({where:{id:{in:portals.map(p=>p.companyId).filter(Boolean)}}});
   let concluidas = 0;
   for (const competencia of [...new Set(ocorrencias.map(o=>o.competenciaRef))]) {
     const grupo = ocorrencias.filter(o=>o.competenciaRef===competencia);
-    const companies = portals.filter(p=>grupo.some(o=>o.obrigacao.portalClientId===p.id)).map(p=>({companyId:p.id,razao:p.razao,hasProlabore:p.hasProlabore,legacyCompany:legacies.find(l=>l.id===p.companyId)}));
-    const guias = await computeGuideComplianceMap(companies.map(c=>({portalId:c.companyId,hasProlabore:c.hasProlabore,legacy:c.legacyCompany})),competencia);
+    const companies = portals.filter(p=>grupo.some(o=>o.obrigacao.portalClientId===p.id)).map(p=>({companyId:p.id,razao:p.razao,hasProlabore:p.hasProlabore,empresaZerada:p.empresaZerada,legacyCompany:legacies.find(l=>l.id===p.companyId)}));
+    const guias = await computeGuideComplianceMap(companies.map(c=>({portalId:c.companyId,hasProlabore:c.hasProlabore,empresaZerada:c.empresaZerada,legacy:c.legacyCompany})),competencia);
     for(const c of companies)c.guideCompliance=guias.get(c.companyId);
     const mapa = await contextosCarteira(companies,competencia,db);
     for(const oc of grupo){

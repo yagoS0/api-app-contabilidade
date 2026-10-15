@@ -1,6 +1,7 @@
 import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, exigirBaixaForaDaComposicao, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
 import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
 import { Router } from "express";
+import { listarGuiasPendentesContabilizacao, contabilizarGuiaPendente } from "../../application/accounting/GuiasPendentesContabilizacaoService.js";
 import { periodoLancamentos } from "../../application/accounting/lib/periodoLancamentos.js";
 import { sinalizarRecalculosNosLancamentos } from "../../application/guides/RegistroRecalculoGuia.js";
 import multer from "multer";
@@ -555,6 +556,17 @@ const SELECT_ENVIO_DA_GUIA = Object.freeze({
 
 export function createAccountingEntriesRouter({ log }) {
   const router = Router({ mergeParams: true });
+  router.get("/guias-pendentes-contabilizacao/:competencia", requireFirmCompanyAccess(), async (req, res) => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(req.params.competencia)) return res.status(400).json({ error: "competencia_invalida" });
+    try {
+      return res.json({ itens: await listarGuiasPendentesContabilizacao({ portalClientId: String(req.params.companyId), competencia: req.params.competencia }) });
+    } catch (err) { log.error({ err }, "Falha ao listar guias pendentes de contabilização"); return res.status(500).json({ message: "Não foi possível consultar as guias pendentes de contabilização." }); }
+  });
+  router.post("/guias-pendentes-contabilizacao/:guideId/contabilizar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      return res.json(await contabilizarGuiaPendente({ portalClientId: String(req.params.companyId), guideId: String(req.params.guideId), updatedAt: req.body?.updatedAt }));
+    } catch (err) { log.error({ err }, "Falha ao contabilizar guia pendente"); return res.status(err.status || 500).json({ error: err.code || "internal_error", message: err.status ? err.message : "Não foi possível contabilizar a guia. Atualize a lista antes de tentar novamente." }); }
+  });
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },

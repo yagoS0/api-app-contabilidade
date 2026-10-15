@@ -1,4 +1,5 @@
 import { usePagamentosPendentes } from './usePagamentosPendentes';
+import { GuiasPendentesContabilizacao } from './GuiasPendentesContabilizacao';
 import { PagamentosProvisionadosModal } from './PagamentosProvisionadosModal';
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -217,7 +218,7 @@ export function DivergenciaDeFonte({ divergencias }) {
 // Exportado para o teste da LIGAÇÃO (o campo do payload chegando à tela). Sem isso o detector teria
 // só teste de regra — e regra verde com fio solto é exatamente como `hasAccountingDivergence`
 // passou meses sendo gravado sem ninguém ver.
-export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo, onVerificacao }) {
+export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo, onVerificacao, onLoad }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [fechado, setFechado] = useState(false);
   const [fechadoEm, setFechadoEm] = useState(null);
@@ -430,6 +431,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
           fazer. Mês fechado com valor divergente é o caso em que o número já foi reportado. */}
       <VerificacaoDeLancamentos verificacao={verificacao} />
       <DivergenciaDeFonte divergencias={divergenciasFonte} />
+      <GuiasPendentesContabilizacao key={`${companyId}:${competencia}`} companyId={companyId} competencia={competencia} fechado={fechado} aoContabilizar={onLoad} />
 
       {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,
           isto afirma que algo NÃO EXISTIU. Misturar os dois faria parecer um sexto item de
@@ -1437,6 +1439,7 @@ export function AccountingEntriesTab({
             onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
             onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
             onVerificacao={setVerificacaoDasLinhas}
+              onLoad={onLoad}
             filtroAtivo={Boolean(filters.tipo || filters.origem || filters.status)}
           />
         </div>

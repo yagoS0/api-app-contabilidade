@@ -29,6 +29,7 @@ jest.mock("../../notas/apuracao/v2/FechamentoService.js", () => ({
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { computeGuideComplianceMap } from "../guideCompliance.js";
+import { faturamentoEmitPorEmpresa } from "../../notas/apuracao/v2/FechamentoService.js";
 
 const COMP = "2026-05";
 const PORTAL = "pc-erisangela";
@@ -48,6 +49,7 @@ function mockGuides({ parcelas = [], normais = [] } = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  faturamentoEmitPorEmpresa.mockImplementation(async () => new Map());
   prisma.accountingEntry.findMany.mockResolvedValue([]);
   prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);
   // Sem envio registrado = guia gerada e ainda não enviada, que é o estado da maioria dos casos
@@ -137,7 +139,7 @@ describe("parcela de parcelamento × DAS", () => {
   });
 
   it("mês sem faturamento NÃO zera a parcela — receita zero não suspende parcelamento", async () => {
-    prisma.companyMonthlyCircular.findMany.mockResolvedValue([{ portalClientId: PORTAL }]);
+    prisma.companyMonthlyCircular.findMany.mockResolvedValue([{ portalClientId: PORTAL, competencia: COMP }]);
     mockGuides({ parcelas: [{ portalClientId: PORTAL, id: "g-parc", emailStatus: null, emailSentAt: null, numeroParcela: 1, quantidadeParcelas: 12, parcelamento: null }] });
 
     const c = map(await computeGuideComplianceMap([linhaSimples], COMP));
@@ -186,3 +188,44 @@ describe("parcela de parcelamento × DAS", () => {
 function map(m) {
   return m.get(PORTAL) || m.values().next().value;
 }
+
+describe('guias sobre faturamento', () => {
+  const presumido = { portalId: PORTAL, hasProlabore: true, legacy: { regimeTributario: 'LUCRO_PRESUMIDO' } };
+  const marcar = meses => prisma.companyMonthlyCircular.findMany.mockResolvedValue(meses.map(competencia => ({ portalClientId: PORTAL, competencia })));
+  it('mês confirmado sem receita dispensa PIS/COFINS e ISS, preservando INSS e trimestre desconhecido', async () => {
+    marcar([COMP]);
+    const c = (await computeGuideComplianceMap([presumido], COMP)).get(PORTAL);
+    expect(c.pisCofins.state).toBe('vazio'); expect(c.iss.state).toBe('vazio');
+    expect(c.inss.state).toBe('missing'); expect(c.irpj.state).toBe('missing'); expect(c.csll.state).toBe('missing');
+  });
+  it('trimestre inteiro confirmado sem receita dispensa IRPJ e CSLL', async () => {
+    marcar(['2026-04', COMP, '2026-06']);
+    const c = (await computeGuideComplianceMap([presumido], COMP)).get(PORTAL);
+    expect(c.irpj.state).toBe('vazio'); expect(c.csll.state).toBe('vazio');
+  });
+  it('receita de outro mês do trimestre mantém IRPJ e CSLL pendentes', async () => {
+    marcar(['2026-04', COMP, '2026-06']);
+    faturamentoEmitPorEmpresa.mockImplementation(async ({ competencia }) => new Map(competencia === '2026-04' ? [[PORTAL, 1000]] : []));
+    const c = (await computeGuideComplianceMap([presumido], COMP)).get(PORTAL);
+    expect(c.pisCofins.state).toBe('vazio'); expect(c.irpj.state).toBe('missing');
+  });
+  it('empresa cadastrada zerada não pede guia sobre faturamento, mas mantém pró-labore', async () => {
+    const c = (await computeGuideComplianceMap([{ ...presumido, empresaZerada: true }], COMP)).get(PORTAL);
+    for (const key of ['irpj', 'csll', 'pisCofins', 'iss']) expect(c[key].state).toBe('vazio');
+    expect(c.inss.state).toBe('missing');
+  });
+  it('ausência de notas não é confirmação de receita zero', async () => {
+    const c = (await computeGuideComplianceMap([presumido], COMP)).get(PORTAL);
+    expect(c.pisCofins.state).toBe('missing'); expect(c.iss.state).toBe('missing');
+  });
+  it('guia real vence a declaração de empresa zerada', async () => {
+    mockGuides({ normais: [{ portalClientId: PORTAL, id: 'iss', tipo: 'ISS', status: 'PROCESSED' }] });
+    const c = (await computeGuideComplianceMap([{ ...presumido, empresaZerada: true }], COMP)).get(PORTAL);
+    expect(c.iss.state).toBe('gerada');
+  });
+  it('falha ao consultar receita não apaga pendências', async () => {
+    faturamentoEmitPorEmpresa.mockRejectedValue(new Error('db indisponível'));
+    const c = (await computeGuideComplianceMap([{ ...presumido, empresaZerada: true }], COMP)).get(PORTAL);
+    expect(c.iss.state).toBe('missing'); expect(c.irpj.state).toBe('missing');
+  });
+});

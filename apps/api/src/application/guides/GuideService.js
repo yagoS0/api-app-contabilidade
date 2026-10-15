@@ -666,6 +666,14 @@ export async function createOrUpdateGuideFromProcessing({
     serproService: serproService || null,
   };
 
+  if (periodoFechado && uploadDocumental && status === "PROCESSED"
+    && !parcelamentoId && !["SIMPLES", "INSS"].includes(data.tipo)
+    && (data.valor > 0 || data.extracted?.composicao?.some(item => Number(item.total) > 0))) {
+    data.extracted = { ...data.extracted, contabilizacaoPendente: {
+      motivo: "MES_FECHADO", em: new Date().toISOString(),
+    } };
+  }
+
   if (pdfBytesInput !== undefined) {
     data.pdfBytes = hasDbPdf ? pdfBytesInput : null;
     if (hasDbPdf) {
@@ -720,6 +728,7 @@ export async function createOrUpdateGuideFromProcessing({
       ...data,
       extracted: {
         ...data.extracted,
+        ...(anterior.extracted?.contabilizacaoPendente ? { contabilizacaoPendente: anterior.extracted.contabilizacaoPendente } : {}),
         ...(anterior.extracted?.recalculoGuia ? { recalculoGuia: anterior.extracted.recalculoGuia } : {}),
         ...(anterior.extracted?.comprovante ? { comprovante: anterior.extracted.comprovante } : {}),
       },
@@ -736,7 +745,7 @@ export async function createOrUpdateGuideFromProcessing({
 
   // Hook Q5: toda guia PROCESSED gera AccountingEntry tipo=PROVISAO (best-effort, não bloqueante).
   // INSS e SIMPLES são pulados pelo service (decisões do usuário).
-  if (savedGuide?.status === "PROCESSED" && savedGuide?.portalClientId && !periodoFechado) {
+  if (savedGuide?.status === "PROCESSED" && savedGuide?.portalClientId && !periodoFechado && !savedGuide.extracted?.contabilizacaoPendente) {
     try {
       const { generateProvisionsFromGuide } = await import("../accounting/GuideToProvisionService.js");
       await generateProvisionsFromGuide({ guideId: savedGuide.id });

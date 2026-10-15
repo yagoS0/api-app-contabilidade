@@ -176,6 +176,10 @@ function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo }) {
 export async function computeGuideComplianceMap(rows, competencia) {
   const map = new Map();
   const needQuery = [];
+  const [ano, mes] = String(competencia).split("-").map(Number);
+  const inicioTrimestre = Math.floor((mes - 1) / 3) * 3 + 1;
+  const mesesTrimestre = [0, 1, 2].map(offset => `${ano}-${String(inicioTrimestre + offset).padStart(2, "0")}`);
+  const zeradas = new Set(rows.filter(row => row.empresaZerada === true).map(row => row.portalId));
 
   // Pre-query: a empresa tem PARCELA nesta competência? A fonte é UMA — a GUIA da parcela.
   // É assim que o caminho de hoje (SERPRO/V2) materializa a parcela do mês:
@@ -261,12 +265,14 @@ export async function computeGuideComplianceMap(rows, competencia) {
   // Pre-query simétrica à de cima: meses declarados SEM FATURAMENTO. Uma query para a carteira
   // inteira, não uma por empresa — mesmo molde do `GET /companies/annual`.
   let semFaturamentoSet = new Set();
+  let mesesSemFaturamento = new Set();
   if (allPortalIds.length > 0) {
     const semFat = await prisma.companyMonthlyCircular.findMany({
-      where: { portalClientId: { in: allPortalIds }, competencia, semFaturamento: true },
-      select: { portalClientId: true },
+      where: { portalClientId: { in: allPortalIds }, competencia: { in: mesesTrimestre }, semFaturamento: true },
+      select: { portalClientId: true, competencia: true },
     });
-    semFaturamentoSet = new Set(semFat.map((c) => c.portalClientId));
+    semFaturamentoSet = new Set(semFat.filter(c => c.competencia === competencia).map(c => c.portalClientId));
+    mesesSemFaturamento = new Set(semFat.map(c => `${c.portalClientId}:${c.competencia}`));
   }
 
   for (const row of rows) {
@@ -361,7 +367,17 @@ export async function computeGuideComplianceMap(rows, competencia) {
   // marcação de "sem movimento" que envelheceu: nota emitida depois da marcação devolve o chip ao
   // vermelho. Mesma definição de faturamento da apuração — importada, não copiada.
   const faturamentoPorEmpresa = await faturamentoEmitPorEmpresa({ portalIds, competencia })
-    .catch(() => new Map());
+    .catch(() => null);
+  // IRPJ/CSLL não desaparecem por um único mês zerado em um trimestre com receita.
+  const candidatosTrimestre = rows.filter(row => isRegimePresumido(normalizeRegimeFromLegacy(row.legacy))
+    && (zeradas.has(row.portalId) || mesesTrimestre.every(comp => mesesSemFaturamento.has(`${row.portalId}:${comp}`))))
+    .map(row => row.portalId);
+  const faturamentoTrimestre = new Map([[competencia, faturamentoPorEmpresa]]);
+  if (candidatosTrimestre.length) {
+    await Promise.all(mesesTrimestre.filter(comp => comp !== competencia).map(async comp => {
+      faturamentoTrimestre.set(comp, await faturamentoEmitPorEmpresa({ portalIds: candidatosTrimestre, competencia: comp }).catch(() => null));
+    }));
+  }
 
   // ⚠ PIS E COFINS FICAM AGRUPADOS AQUI — E ISSO NÃO É INCONSISTÊNCIA COM A CIRCULAR.
   //
@@ -449,20 +465,22 @@ export async function computeGuideComplianceMap(rows, competencia) {
     if (!current) continue;
     const pres = presentByPortal.get(portalId) || new Map();
     const vaz = vazioByPortal.get(portalId) || new Map();
-    // "Mês sem faturamento" vale SÓ para o DAS: ele afirma ausência de receita, e receita é o que
-    // gera o DAS. Folha, ISS e parcelas seguem exigidas.
-    const semFat = semFaturamentoSet.has(portalId);
-    const faturamento = faturamentoPorEmpresa.get(portalId) || 0;
+    // Ausência de notas sozinha não comprova receita zero. Exige afirmação do mês
+    // ou cadastro de empresa zerada, sem contradição com receita conhecida.
+    const semFat = faturamentoPorEmpresa !== null && (semFaturamentoSet.has(portalId) || zeradas.has(portalId));
+    const faturamento = faturamentoPorEmpresa?.get(portalId) || 0;
+    const trimestreSemReceita = candidatosTrimestre.includes(portalId)
+      && mesesTrimestre.every(comp => faturamentoTrimestre.get(comp) != null
+        && !(faturamentoTrimestre.get(comp).get(portalId) > 0));
 
     const inss = resolveNode(current.inss, pres.get("INSS"), vaz.get("INSS"), { faturamento });
     const das = resolveNode(current.das, pres.get("SIMPLES"), vaz.get("SIMPLES"), { semFaturamento: semFat, faturamento });
-    const irpj = resolveNode(current.irpj, pres.get("IRPJ"), vaz.get("IRPJ"), { faturamento });
-    const csll = resolveNode(current.csll, pres.get("CSLL"), vaz.get("CSLL"), { faturamento });
-    const pisCofins = resolveNode(current.pisCofins, pres.get("PIS_COFINS"), vaz.get("PIS_COFINS"), { faturamento });
-    const iss = resolveNode(current.iss, pres.get("ISS"), vaz.get("ISS"), { faturamento });
+    const irpj = resolveNode(current.irpj, pres.get("IRPJ"), vaz.get("IRPJ"), { semFaturamento: trimestreSemReceita, faturamento });
+    const csll = resolveNode(current.csll, pres.get("CSLL"), vaz.get("CSLL"), { semFaturamento: trimestreSemReceita, faturamento });
+    const pisCofins = resolveNode(current.pisCofins, pres.get("PIS_COFINS"), vaz.get("PIS_COFINS"), { semFaturamento: semFat, faturamento });
+    const iss = resolveNode(current.iss, pres.get("ISS"), vaz.get("ISS"), { semFaturamento: semFat, faturamento });
     // Parcela NÃO tem marcador VAZIO (não se declara ausência de parcela contratada) e
-    // `semFaturamento` não vale aqui: mês sem receita não suspende parcelamento — mesma regra já
-    // escrita acima ("folha, ISS e parcelas seguem exigidas"). Por isso os dois últimos argumentos
+    // `semFaturamento` não vale aqui: mês sem receita não suspende parcelamento. Os últimos argumentos
     // ficam vazios de propósito.
     const parcGuia = parcGuiaByPortal.get(portalId);
     const legacyParcDas = {
