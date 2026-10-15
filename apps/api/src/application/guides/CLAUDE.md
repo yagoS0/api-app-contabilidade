@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## Upload em período fechado — 15/10/2026
+
+O fechamento contábil não impede guardar uma guia por upload com PDF. Esse upload conserva o período fechado e não executa a geração automática de provisões. Operações sem documento continuam sujeitas à trava anterior, assim como a validação de CNPJ no upload por empresa. Reupload preserva pagamento e comprovantes pelo fluxo existente. Erros contábeis e técnicos não devem ser apresentados como falha de identificação. Regressão: `uploadMesFechado.test.js`.
+
 ## Identificação dos envios por empresa — 14/10/2026
 
 Liberação pela página inicial e lote de WhatsApp mantêm ordem estável por empresa/tipo/competência/parcela/id. Cada empresa reinicia a sequência `Guia N de T` dos documentos selecionados; não é contador de entregas. A segunda variável identifica empresa, sequência e tipo. O nome curto do arquivo começa com PDF e inclui empresa, tipo, competência e sequência. Envios avulsos e recálculos identificam a empresa sem inventar tamanho de lote; a confirmação após recálculo repete empresa/guia/competência e preserva o token vinculado à guia.
