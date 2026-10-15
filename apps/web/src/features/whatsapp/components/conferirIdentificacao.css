@@ -1,0 +1,17 @@
+.wa-identity-review { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.wa-identity-review fieldset { margin: 0; }
+.wa-identity-review legend { font-weight: 600; }
+.wa-identity-review p { color: var(--text-muted); line-height: 1.5; }
+.wa-identity-review .wa-identity-hint { margin: -4px 0 16px; font-size: 13px; }
+.wa-identity-review .wa-identity-preview { margin-top: 16px; padding: 16px; border: 1px solid var(--border); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+.wa-identity-review .wa-identity-preview h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.wa-identity-review .wa-identity-evidence { padding-top: 12px; border-top: 1px solid var(--border); white-space: pre-wrap; color: var(--text); }
+.wa-identity-review .wa-identity-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.wa-identity-review .btn { margin: 0; white-space: normal; max-width: 100%; }
+.wa-identity-review [role="alert"] { color: var(--danger); }
+.wa-identity-review :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .wa-identity-review button, .wa-identity-review input, .wa-identity-review select, .wa-identity-trigger { min-height: 44px; }
+}
+
+

@@ -41,9 +41,10 @@ export async function gerarPdfPendencias({ empresa, fontes, emitidoEm, escopo = 
       return saida;
     }
     function paragrafo(t, tamanho = 9) {
+      const entrelinha = Math.max(13, Math.ceil(tamanho * 1.3));
       for (const linha of linhas(t, largura, tamanho)) {
-        if (y + 14 > limite) novaPagina();
-        escrever(linha, margem, y, tamanho); y += 13;
+        if (y + entrelinha > limite) novaPagina();
+        escrever(linha, margem, y, tamanho); y += entrelinha;
       }
       y += 6;
     }
@@ -59,6 +60,7 @@ export async function gerarPdfPendencias({ empresa, fontes, emitidoEm, escopo = 
     paragrafo(empresa.razao || empresa.nome || 'Empresa não informada', 14);
     paragrafo(`CNPJ: ${empresa.cnpj || 'Não informado'}  |  Emitido em ${agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, 9);
     paragrafo(`${escopo}${emitidoEm ? `  |  Relatório fiscal de ${emitidoEm}` : ''}`, 8);
+    paragrafo('Valores de referência, sujeitos a atualização. Registros da contabilidade, manuais e SITFIS podem representar o mesmo débito e têm subtotais separados. Acordos não são somados aos débitos. Este documento não é certidão nem guia de pagamento.',8);
     for (const fonte of fontes) {
       if (!fonte.linhas.length) {
         if (y + 46 > limite) novaPagina();
@@ -96,7 +98,6 @@ export async function gerarPdfPendencias({ empresa, fontes, emitidoEm, escopo = 
       if (fonte.avisos?.length) paragrafo('Há informações com leitura incompleta nesta fonte. Conferir o relatório original.',8);
       y += 12;
     }
-    paragrafo('Valores de referência, sujeitos a atualização. Registros da contabilidade, manuais e SITFIS podem representar o mesmo débito e têm subtotais separados. Acordos não são somados aos débitos. Este documento não é certidão nem guia de pagamento.',8);
     const range = doc.bufferedPageRange();
     for(let i=0;i<range.count;i++) { doc.switchToPage(i); doc.page.margins.bottom=0; escrever(`Altan | Pendências fiscais | ${i+1}/${range.count}`,margem,doc.page.height-26,8); }
     doc.end();

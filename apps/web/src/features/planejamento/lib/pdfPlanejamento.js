@@ -6,7 +6,7 @@ import { ATIVIDADES_PRESUMIDO } from "./lucroPresumido";
 
 const money = v => v == null || !Number.isFinite(v) ? "Não informado" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = v => v == null || !Number.isFinite(v) ? "Não informado" : `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
-const clean = s => String(s ?? "Não informado").replace(/[–—−]/g, "-").replace(/[\u26a0\ufe0f]/g, "");
+const clean = s => String(s ?? "Não informado").replace(/[–—−]/g, "-").replace(/→/g, "->").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/[\u26a0\ufe0f]/g, "");
 const available = c => !c.indisponivel && c.elegivel !== false && Number.isFinite(c.total);
 
 // Snapshot of the displayed scenario. No company reads or recalculation of taxes.
@@ -50,8 +50,41 @@ export async function gerarRelatorioPlanejamento(args, Construtor = null) {
         values.forEach((v, i) => { doc.fillColor(header ? "#FFFFFF" : colors.ink).text(clean(v), x + 7, y + 8, { width: widthsPx[i] - 14, lineGap: 2 }); x += widthsPx[i]; });
         doc.moveTo(42, y + h).lineTo(42 + W, y + h).lineWidth(0.5).strokeColor(colors.line).stroke(); doc.y = y + h;
       };
-      doc.font("Helvetica").fontSize(8); room(height(headers) + (rows.length ? height(rows[0]) : 0)); row(headers, true);
-      rows.forEach((values, i) => { doc.font("Helvetica").fontSize(8); if (doc.y + height(values) > bottom) { page(); row(headers, true); } row(values, false, highlight(i)); });
+      doc.font("Helvetica-Bold").fontSize(8);
+      const headerHeight = height(headers);
+      doc.font("Helvetica");
+      const firstHeight = rows.length ? height(rows[0]) : 0;
+      room(headerHeight + (firstHeight <= bottom - 48 - headerHeight ? firstHeight : 120)); row(headers, true);
+      rows.forEach((values, i) => {
+        doc.font("Helvetica").fontSize(8);
+        doc.font("Helvetica-Bold");
+        const maxHeight = bottom - 48 - height(headers);
+        doc.font("Helvetica");
+        let pending = values.map(clean);
+        while (height(pending) > maxHeight) {
+          doc.font("Helvetica");
+          if (bottom - doc.y < height(pending.map(value => value ? "M" : ""))) { page(); row(headers, true); }
+          const remainingHeight = bottom - doc.y;
+          doc.font("Helvetica");
+          const part = pending.map((value, column) => {
+            let low = 0, high = value.length;
+            while (low < high) {
+              const mid = Math.ceil((low + high) / 2);
+              if (doc.heightOfString(value.slice(0, mid), { width: widthsPx[column] - 14, lineGap: 2 }) + 16 <= remainingHeight) low = mid;
+              else high = mid - 1;
+            }
+            const space = value.lastIndexOf(" ", low);
+            const end = low < value.length && space > 0 ? space : low;
+            return value.slice(0, Math.max(1, end));
+          });
+          row(part, false, highlight(i));
+          pending = pending.map((value, column) => value.slice(part[column].length).trimStart());
+          page(); row(headers, true);
+        }
+        doc.font("Helvetica").fontSize(8);
+        if (doc.y + height(pending) > bottom) { page(); row(headers, true); }
+        row(pending, false, highlight(i));
+      });
       doc.y += 14;
     };
     doc.rect(0, 0, doc.page.width, 12).fill(colors.purple);
