@@ -346,4 +346,8 @@ As prévias enviadas com botões eram explicitamente visuais e não executavam r
 
 ## Lembretes exigem entrega — 14/10/2026
 
+## Guias sem faturamento — 15/10/2026
+
+Empresa zerada ou mês explicitamente sem faturamento dispensa pendência documental de DAS, PIS/COFINS e ISS quando não há receita conhecida. IRPJ/CSLL exigem essa evidência para os três meses do trimestre. Guia existente prevalece; receita conhecida ou falha na consulta impede a dispensa. Apenas ausência de notas não comprova mês zerado. INSS e parcelas permanecem independentes da receita.
+
 `EntregaGuiaWhatsappService` exige recibo entregue/lido da tentativa de WhatsApp destinada ao mesmo telefone, com hash do PDF e snapshot compatíveis com a guia atual. Aceitação, envio por e-mail, outro destinatário ou PDF anterior não liberam lembrete. A guarda roda antes de reservar e novamente antes do transporte. Sem prova, retorna pendência ao escritório; `results` e `resultados` preservam os detalhes no resultado da rotina. Ausência de entrega não consome a reserva do aviso. Confirmação de pagamento, inclusive `paymentConfirmedAt`, cancela; guia fora de PROCESSED exige revisão. Não há retentativa automática de saída incerta nem envio de guia por esta rotina.

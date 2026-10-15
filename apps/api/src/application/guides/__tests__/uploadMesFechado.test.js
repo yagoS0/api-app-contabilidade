@@ -36,12 +36,14 @@ test("upload na empresa salva PDF e composição no mês fechado sem escrever pr
   const result = await upload();
   expect(result).toMatchObject({ needsMetadata: false, guide: { status: "PROCESSED", portalClientId: "empresa", valor: 217.58, competencia: "2026-09", pdfBytes: pdf, extracted: { composicao: parsed.fields.composicao } } });
   expect(generateProvisionsFromGuide).not.toHaveBeenCalled();
+  expect(result.guide.extracted.contabilizacaoPendente).toMatchObject({ motivo: "MES_FECHADO" });
 });
 
 test("mês aberto continua gerando as provisões da guia", async () => {
   isMonthClosed.mockResolvedValue(false);
-  await upload();
+  const result = await upload();
   expect(generateProvisionsFromGuide).toHaveBeenCalledWith({ guideId: "guia" });
+  expect(result.guide.extracted).not.toHaveProperty("contabilizacaoPendente");
 });
 
 test("reupload em mês fechado preserva confirmação e comprovante sem atualizar contabilidade", async () => {
@@ -60,6 +62,16 @@ test("CNPJ divergente continua recusado antes de salvar", async () => {
   GuideParserClient.create.mockReturnValue({ parsePdf: async () => ({ ...parsed, cnpj: "99999999000199" }) });
   await expect(upload()).rejects.toMatchObject({ code: "GUIDE_CNPJ_MISMATCH" });
   expect(prisma.guide.create).not.toHaveBeenCalled();
+});
+
+test("reupload após reabrir conserva pendência para contabilização explícita", async () => {
+  isMonthClosed.mockResolvedValue(false);
+  const anterior = { id: "guia", portalClientId: "empresa", status: "PROCESSED", updatedAt: new Date(), extracted: { contabilizacaoPendente: { motivo: "MES_FECHADO" } } };
+  prisma.guide.findFirst.mockResolvedValue(anterior);
+  prisma.guide.findUnique.mockResolvedValue(anterior);
+  await upload();
+  expect(prisma.guide.updateMany.mock.calls[0][0].data.extracted.contabilizacaoPendente).toEqual(anterior.extracted.contabilizacaoPendente);
+  expect(generateProvisionsFromGuide).not.toHaveBeenCalled();
 });
 
 test("falha do leitor não impede guardar a guia com dados informados, mesmo no mês fechado", async () => {

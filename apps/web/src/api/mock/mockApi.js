@@ -4438,6 +4438,8 @@ export function createMockApi() {
         porLancamento: [],
       };
     },
+    async getGuiasPendentesContabilizacao() { return { itens: [] }; },
+    async contabilizarGuiaPendente() { throw new Error("Nenhuma guia pendente de contabilização nesta demonstração."); },
     async getFechamentoContabil(companyId, competencia) {
       await delay();
       // O estado das buscas vem do MESMO estado que os mocks de busca escrevem — é isso que

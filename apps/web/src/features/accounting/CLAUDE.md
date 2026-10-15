@@ -710,6 +710,8 @@ nunca tinha aparecido na tela.
 
 ## Fechamento contábil (Q17)
 
+Guias enviadas após fechamento aparecem em Lançamentos como pendentes de contabilização, inclusive com mês fechado. Após reabrir, “Contabilizar guia” gera as provisões, atualiza a lista de lançamentos e retira a pendência somente após confirmação do servidor. O upload não reabre nem altera lançamentos do mês fechado.
+
 API: `getFechamentoContabil`, `fecharFechamentoContabil`, `reabrirFechamentoContabil`
 (em `realApi`/`mockApi`). Backend valida por lançamento; o painel também pré-valida no
 cliente para feedback imediato. Empresa fechada reflete no card do dashboard (cor inteira).
