@@ -6,7 +6,7 @@
 
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { limitesDoMes, montarCalendarioDoMes } from "../../application/calendario/CalendarioFiscalService.js";
+import { calendarioLegadoRemovido } from './calendarioLegadoRemovido.js';
 import { empresasVisiveis } from "./empresasVisiveis.js";
 
 const IMPORTANCIAS = new Set(["ALTA", "MEDIA", "BAIXA"]);
@@ -19,30 +19,7 @@ export function createCalendarioRouter({ log } = {}) {
     return res.status(500).json({ ok: false, error: "erro_interno" });
   }
 
-  router.get("/calendario", async (req, res) => {
-    const competencia = String(req.query?.mes || "").trim();
-    if (!limitesDoMes(competencia)) {
-      return res.status(400).json({ ok: false, error: "mes_invalido", message: "Informe o mês como YYYY-MM." });
-    }
-    try {
-      const portalIds = await empresasVisiveis(req);
-      const companyId = String(req.query?.companyId || "").trim() || null;
-      const out = await montarCalendarioDoMes({ portalIds, competencia, companyId });
-      return res.json(out);
-    } catch (err) { return falhar(res, err, { competencia }); }
-  });
-
-  // ── Marcos marcados à mão ──────────────────────────────────────────────────────────────────
-  router.get("/marcos-fiscais", async (req, res) => {
-    try {
-      const portalIds = await empresasVisiveis(req);
-      const marcos = await prisma.marcoFiscal.findMany({
-        where: { OR: [{ portalClientId: null }, { portalClientId: { in: portalIds } }] },
-        orderBy: { data: "asc" },
-      });
-      return res.json({ ok: true, marcos });
-    } catch (err) { return falhar(res, err, {}); }
-  });
+  router.use('/calendario', calendarioLegadoRemovido);
 
   router.post("/marcos-fiscais", async (req, res) => {
     const titulo = String(req.body?.titulo || "").trim();
