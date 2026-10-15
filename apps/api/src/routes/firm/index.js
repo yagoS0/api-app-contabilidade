@@ -1,6 +1,6 @@
 import { createPgdasHistoricoRouter } from "./pgdasHistorico.js";
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
-import { anexarAlertasMonitoramento } from "../../application/fiscal/serpro/alertasMonitoramento.js";
+import { anexarAlertasMonitoramento, anexarDocumentosMonitoramento } from "../../application/fiscal/serpro/alertasMonitoramento.js";
 import { anexarFluxoCarteira } from "../../application/company/FluxoCarteiraService.js";
 import { createFluxoCarteiraRouter } from "./fluxoCarteira.js";
 import { createReformaFiscalRouter } from "./reformaFiscal.js";
@@ -5589,7 +5589,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       select: {
         portalClientId: true, estado: true, lockedAt: true,
         rb12: true, fs12Manual: true, fatorR: true,
-        pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true, pgdasReciboFileId: true,
+        pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true, pgdasReciboFileId: true, dasTotal: true, dasNumeroDocumento: true,
         serproSyncStatus: true, serproLastSyncAt: true,
       },
     });
@@ -5657,6 +5657,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           numeroDeclaracaoRfb: circ?.pgdasNumeroDeclaracao || null,
           temPdfDaDeclaracao: Boolean(circ?.pgdasDeclaracaoFileId),
           temRecibo: Boolean(circ?.pgdasReciboFileId),
+          dasDispensado: Boolean(circ?.pgdasNumeroDeclaracao && circ?.pgdasDeclaracaoFileId && circ?.pgdasReciboFileId && circ.dasTotal != null && Number(circ.dasTotal) === 0 && !circ.dasNumeroDocumento),
           extratoStatus: circ?.serproSyncStatus || null,
           extratoConsultadoEm: circ?.serproLastSyncAt || null,
         },
@@ -5674,7 +5675,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       };
     });
 
-    const monitorados = await anexarAlertasMonitoramento(items, attachSerproStatusToCompaniesList, competencia);
+    const documentados = await anexarDocumentosMonitoramento(items, prisma, competencia);
+    const monitorados = await anexarAlertasMonitoramento(documentados, attachSerproStatusToCompaniesList, competencia);
     return res.json({ ok: true, competencia, items: monitorados });
   });
 

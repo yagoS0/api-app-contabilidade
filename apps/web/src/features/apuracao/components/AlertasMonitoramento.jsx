@@ -6,7 +6,7 @@ export function AlertasMonitoramento({ items, competencia, onOpenCompany }) {
   const [erroExportacao, setErroExportacao] = useState("");
   const [categoria, setCategoria] = useState("todos");
   const alertas = items.flatMap(item => (item.alertasFiscais || []).map(alerta => ({ ...alerta, empresa: item.razao, cnpj: item.cnpj, estado: item.estado, numeroDeclaracao: item.entregaPgdas?.numeroDeclaracaoRfb, portalClientId: item.portalClientId })));
-  const exibidos = alertas.filter(a => categoria === "todos" || a.categoria === categoria);
+  const exibidos = alertas.filter(a => categoria === "todos" || a.categoria === categoria || (categoria === "sem_extrato" && ["PGDAS_EXTRATO_AUSENTE", "PGDAS_DOCUMENTOS_INCOMPLETOS"].includes(a.codigo)) || (categoria === "sem_das" && a.codigo === "PGDAS_DAS_AUSENTE"));
   const monitorado = items.length > 0 && items.every(item => Array.isArray(item.alertasFiscais));
   if (items.some(item => item.monitoramentoErro)) return <p role="alert" className="apuracao-alertas-erro">Não foi possível carregar os alertas do monitoramento. Atualize a lista para tentar novamente. A apuração continua disponível.</p>;
   if (!monitorado) return null;
@@ -16,9 +16,11 @@ export function AlertasMonitoramento({ items, competencia, onOpenCompany }) {
     {alertas.length > 0 ? <>
       <div className="apuracao-alertas-acoes"><label>Mostrar alertas <select value={categoria} onChange={e => setCategoria(e.target.value)}>
         <option value="todos">Todos ({alertas.length})</option>
-        <option value="procuracao">Procurações ({alertas.filter(a => a.categoria === "procuracao").length})</option>
+        <option value="procuracao">Sem procuração válida confirmada ({alertas.filter(a => a.categoria === "procuracao").length})</option>
         <option value="declaracao">Declarações ({alertas.filter(a => a.categoria === "declaracao").length})</option>
         <option value="documentos">Documentos ({alertas.filter(a => a.categoria === "documentos").length})</option>
+        <option value="sem_extrato">Sem extrato / recibo ({alertas.filter(a => ["PGDAS_EXTRATO_AUSENTE", "PGDAS_DOCUMENTOS_INCOMPLETOS"].includes(a.codigo)).length})</option>
+        <option value="sem_das">Sem DAS ({alertas.filter(a => a.codigo === "PGDAS_DAS_AUSENTE").length})</option>
       </select></label>
       <Button variant="secondary" disabled={!exibidos.length} onClick={() => {
         setErroExportacao("");

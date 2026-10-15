@@ -96,3 +96,10 @@ Por solicitação posterior, o rótulo visível das entregas externas comprovada
 O worker agora passa somenteDocumentos tanto na captura de DAS quanto na sincronização do extrato. Neste modo, capturar DAS salva a guia sem atualizar a circular, gerar lançamentos ou excluir guias; a sincronização documental preserva snapshots e fechamento. A captura explícita legada mantém seu comportamento. Agendas de envio existentes permanecem independentes.
 
 Auditoria de produção: integração e worker habilitados, DAS/extrato mensais dia 9 às 14h de São Paulo, 26 empresas habilitadas em cada rotina. Não foi executado lote fiscal para testar. Validação local: 103 testes API e 42 testes web aprovados.
+
+
+## Pendências por documento — 15/10/2026
+
+O painel Apuração > Alertas do monitoramento separa procuração não confirmada (incluindo falta de poder PGDAS-D), extrato/recibo não salvo e DAS não salvo. A lista e o CSV respeitam o filtro, a empresa e a competência. A leitura de DAS usa PDF não vazio e guia processada, aceita uploads, exclui parcelas e não transfere os PDFs para a listagem. Declaração zerada com extrato/recibo completos dispensa DAS. Falha de leitura não vira ausência documental; não presumir dívida, falta de pagamento ou atraso.
+
+Auditoria local de produção, competência 09/2026: 26 empresas, 21 sem extrato completo, 14 sem DAS e 23 sem procuração válida confirmada. Nenhuma empresa com documentos faltantes tinha procuração válida confirmada. Não houve novas consultas fiscais ou alteração de fechamento. Validação: 46 testes API, 12 testes web e oito capturas desktop/celular dos filtros, sem overflow global.

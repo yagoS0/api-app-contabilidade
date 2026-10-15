@@ -1,4 +1,22 @@
+import { whereDasSalvo, procuracaoPermitePgdas } from "./pgdasDocumentos.js";
+
 // Projeção dos registros locais: nunca consulta o provedor, agenda tarefas ou altera apurações.
+export async function anexarDocumentosMonitoramento(items, db, competencia) {
+  if (!items.length) return items;
+  try {
+    const guias = await db.guide.findMany({
+      where: { ...whereDasSalvo(null, competencia), portalClientId: { in: items.map(i => i.portalClientId) } },
+      select: { portalClientId: true }, distinct: ['portalClientId'],
+    });
+    const comDas = new Set(guias.map(g => g.portalClientId));
+    return items.map(item => ({ ...item, entregaPgdas: { ...item.entregaPgdas,
+      documentosVerificados: true, temDasSalvo: comDas.has(item.portalClientId),
+    } }));
+  } catch {
+    return items.map(item => ({ ...item, monitoramentoErro: true }));
+  }
+}
+
 export async function anexarAlertasMonitoramento(items, consultarSituacoesSalvas, competencia, agora = new Date()) {
   if (!items.length) return items;
   try {
@@ -28,18 +46,25 @@ export function alertasMonitoramento(item, procuracao = {}, competencia, agora =
     adicionar("PROCURACAO_AUSENTE", "procuracao", "Sem procuração ativa", "A última consulta confirmou ausência de autorização para o procurador configurado. Regularize e atualize a verificação.");
   } else if (!vinculada || !recente || !(validade > instante) || procuracao.procurationStatus !== "ATIVA") {
     adicionar("PROCURACAO_REVALIDAR", "procuracao", "Procuração a verificar", "A autorização atual não está confirmada nos registros locais. Confira em Consultas; este alerta não dispara consulta fiscal.");
+  } else if (!procuracaoPermitePgdas({ status: procuracao.procurationStatus, systems: procuracao.systems })) {
+    adicionar("PROCURACAO_SEM_PODER", "procuracao", "Procuração sem permissão PGDAS-D", "A autorização salva não inclui PGDAS-D. Regularize os poderes antes da conciliação; nenhuma consulta será feita por este painel.");
   }
 
   const entrega = item.entregaPgdas || {};
   const comprovada = Boolean(entrega.numeroDeclaracaoRfb || (item.estado === "transmitida" && item.numeroDeclaracao));
-  if (comprovada) {
-    if (!entrega.temPdfDaDeclaracao || !entrega.temRecibo) adicionar("PGDAS_DOCUMENTOS_INCOMPLETOS", "documentos", "Entrega confirmada; documentos incompletos", "Falta extrato ou recibo salvo. Use a conciliação documental para recuperar o que falta, sem transmitir novamente.");
-    return alertas;
-  }
-  // Sem calendário legal nesta projeção: não inventar prazo ou atraso. Só meses já encerrados.
   const partes = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(new Date(agora)).map(p => [p.type, p.value]));
   const mesAtual = `${partes.year}-${partes.month}`;
-  if (item.regime !== "SIMPLES" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) || competencia >= mesAtual || (item.inicioMonitoramentoPgdas && competencia < item.inicioMonitoramentoPgdas)) return alertas;
+  const aplicavel = item.regime === "SIMPLES" && /^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) && competencia < mesAtual && (!item.inicioMonitoramentoPgdas || competencia >= item.inicioMonitoramentoPgdas);
+  if (entrega.documentosVerificados && (comprovada || aplicavel)) {
+    if (!entrega.temPdfDaDeclaracao || !entrega.temRecibo) adicionar("PGDAS_EXTRATO_AUSENTE", "documentos", "Extrato ou recibo não salvo", "Faltam documentos locais desta competência. A conciliação busca apenas o que falta, com procuração válida, sem alterar o fechamento interno.");
+    if (!entrega.temDasSalvo && !entrega.dasDispensado) adicionar("PGDAS_DAS_AUSENTE", "documentos", "DAS não salvo", "Não há PDF de DAS salvo para esta competência. Isso não comprova imposto devido ou falta de pagamento; guias manuais processadas também são consideradas.");
+  }
+  if (comprovada) {
+    if (!entrega.documentosVerificados && (!entrega.temPdfDaDeclaracao || !entrega.temRecibo)) adicionar("PGDAS_DOCUMENTOS_INCOMPLETOS", "documentos", "Entrega confirmada; documentos incompletos", "Falta extrato ou recibo salvo. Use a conciliação documental para recuperar o que falta, sem transmitir novamente.");
+    return alertas;
+  }
+  // Sem calendário legal: documento ausente não equivale a atraso.
+  if (!aplicavel) return alertas;
   if (entrega.extratoStatus === "NOT_FOUND") {
     adicionar("PGDAS_NAO_LOCALIZADO", "declaracao", "Declaração não localizada", "A última consulta não localizou a declaração desta competência. Confira a entrega antes de solicitar nova consulta; não há repetição automática.");
   } else if (["ERROR", "INCOMPLETE", "RUNNING"].includes(entrega.extratoStatus)) {
