@@ -44,3 +44,21 @@ test('falha de download é visível e mantém pendências',()=>{
  expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível baixar');
  expect(screen.getByText('Entrega pendente de comprovação')).toBeInTheDocument();
 });
+
+
+test('separa extrato e DAS e exporta somente as empresas do filtro', () => {
+ const docs = [
+  {portalClientId:'a',razao:'Empresa A',alertasFiscais:[{id:'a:extrato',codigo:'PGDAS_EXTRATO_AUSENTE',categoria:'documentos',titulo:'Extrato ou recibo não salvo'}]},
+  {portalClientId:'b',razao:'Empresa B',alertasFiscais:[{id:'b:das',codigo:'PGDAS_DAS_AUSENTE',categoria:'documentos',titulo:'DAS não salvo'}]},
+ ];
+ render(<AlertasMonitoramento items={docs} competencia="2026-09"/>);
+ fireEvent.click(screen.getByText('Alertas do monitoramento · 2'));
+ fireEvent.change(screen.getByLabelText('Mostrar alertas'),{target:{value:'sem_extrato'}});
+ expect(screen.getByText('Extrato ou recibo não salvo')).toBeInTheDocument();
+ expect(screen.queryByText('DAS não salvo')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Baixar pendências (CSV)'}));
+ expect(baixarRelatorioMonitoramento).toHaveBeenLastCalledWith([expect.objectContaining({portalClientId:'a'})],'2026-09');
+ fireEvent.change(screen.getByLabelText('Mostrar alertas'),{target:{value:'sem_das'}});
+ expect(screen.queryByText('Extrato ou recibo não salvo')).not.toBeInTheDocument();
+ expect(screen.getByText('DAS não salvo')).toBeInTheDocument();
+});

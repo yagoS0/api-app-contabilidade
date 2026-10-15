@@ -1,7 +1,7 @@
-import { alertasMonitoramento, anexarAlertasMonitoramento } from '../alertasMonitoramento';
+import { alertasMonitoramento, anexarAlertasMonitoramento, anexarDocumentosMonitoramento } from '../alertasMonitoramento';
 const agora = new Date('2026-10-14T18:00:00Z');
 const empresa = {portalClientId:'a',cnpj:'123',regime:'SIMPLES',estado:'aberta'};
-const ativa = {procurationStatus:'ATIVA',checkedAt:'2026-10-14T17:00:00Z',validUntil:'2030-12-31',vinculoConfirmado:true};
+const ativa = {systems:['00146'],procurationStatus:'ATIVA',checkedAt:'2026-10-14T17:00:00Z',validUntil:'2030-12-31',vinculoConfirmado:true};
 const codigos = (item=empresa, proc=ativa, mes='2026-09') => alertasMonitoramento(item,proc,mes,agora).map(a=>a.codigo);
 test('alerta vencimento e ausência sem inferir atraso de declaração',()=>{
  expect(codigos(empresa,{...ativa,validUntil:'2026-10-13'})).toEqual(['PROCURACAO_VENCIDA','PGDAS_COMPROVACAO_PENDENTE']);
@@ -45,4 +45,28 @@ test('falha de leitura não impede fluxo original nem afirma zero alertas',async
 test('não exige comprovante anterior à abertura/opção conhecidas',()=>{
  expect(codigos({...empresa,inicioMonitoramentoPgdas:'2026-10'})).toEqual([]);
  expect(codigos({...empresa,inicioMonitoramentoPgdas:'2026-09'})).toEqual(['PGDAS_COMPROVACAO_PENDENTE']);
+});
+
+
+test('permissão de outro serviço não autoriza conciliação PGDAS', () => {
+ expect(codigos(empresa,{...ativa,systems:['00103']})).toContain('PROCURACAO_SEM_PODER');
+});
+test('documentos faltantes aparecem mesmo sem prova de entrega; DAS dispensado não vira pendência', () => {
+ const entregaPgdas = {documentosVerificados:true,temDasSalvo:false,temPdfDaDeclaracao:false,temRecibo:false};
+ expect(codigos({...empresa,entregaPgdas})).toEqual(['PGDAS_EXTRATO_AUSENTE','PGDAS_DAS_AUSENTE','PGDAS_COMPROVACAO_PENDENTE']);
+ expect(codigos({...empresa,entregaPgdas:{...entregaPgdas,numeroDeclaracaoRfb:'123',temPdfDaDeclaracao:true,temRecibo:true,dasDispensado:true}})).toEqual([]);
+ expect(codigos({...empresa,entregaPgdas},ativa,'2026-10')).toEqual([]);
+});
+test('leitura de DAS considera upload sem carregar PDFs, isolando empresa e competência', async () => {
+ const db={guide:{findMany:jest.fn(async()=>[{portalClientId:'a'}])}};
+ const items=await anexarDocumentosMonitoramento([empresa,{...empresa,portalClientId:'b'}],db,'2026-09');
+ expect(items[0].entregaPgdas.temDasSalvo).toBe(true);expect(items[1].entregaPgdas.temDasSalvo).toBe(false);
+ const query=db.guide.findMany.mock.calls[0][0];
+ expect(query.where).toMatchObject({portalClientId:{in:['a','b']},competencia:'2026-09',tipo:'SIMPLES',status:'PROCESSED',parcelamentoId:null});
+ expect(query.where.source).toBeUndefined();expect(query.select).toEqual({portalClientId:true});
+ expect(empresa.entregaPgdas).toBeUndefined();
+});
+test('falha de leitura documental não afirma ausência de DAS', async () => {
+ const r=await anexarDocumentosMonitoramento([empresa],{guide:{findMany:async()=>{throw Error('DB');}}},'2026-09');
+ expect(r[0].monitoramentoErro).toBe(true);expect(r[0].entregaPgdas).toBeUndefined();
 });
