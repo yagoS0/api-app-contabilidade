@@ -31,3 +31,9 @@
 @media (max-width: 700px) { .implantacao-campos { grid-template-columns: minmax(0,1fr); } .implantacao-lista > li { padding: 14px; } }
 
 @media (max-width: 700px) { .implantacao-linha .implantacao-acoes { width: 100%; justify-content: flex-start; align-items: stretch; } .implantacao-linha .btn { flex: 1 1 140px; } }
+
+.implantacao-resumo-tarefa { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 14px 0 0; font-size: .875rem; }
+.implantacao-resumo-tarefa > div { min-width: 0; }
+.implantacao-resumo-tarefa dt { color: var(--text-muted); }
+.implantacao-resumo-tarefa dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.implantacao-observacao { margin: 12px 0 0; font-size: .875rem; }

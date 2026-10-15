@@ -15,7 +15,8 @@ function EditorTarefa({ tarefa, api, companyId, onSalvar, onFechar }) {
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [remoto, setRemoto] = useState(null);
-  const vivo = useRef(true);
+  const vivo = useRef(true), situacaoRef = useRef(null);
+  useEffect(() => { situacaoRef.current?.focus(); }, []);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
   useEdicaoPendente(JSON.stringify(form) !== JSON.stringify(base));
   const mudar = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -43,7 +44,7 @@ function EditorTarefa({ tarefa, api, companyId, onSalvar, onFechar }) {
     <fieldset disabled={ocupado}>
       <legend>Atualizar tarefa</legend>
       <div className="implantacao-campos">
-        <label>Situação<select value={form.status} onChange={e => mudar('status', e.target.value)}>{Object.entries(SITUACOES).map(([v, texto]) => <option key={v} value={v}>{texto}</option>)}</select></label>
+        <label>Situação<select ref={situacaoRef} value={form.status} onChange={e => mudar('status', e.target.value)}>{Object.entries(SITUACOES).map(([v, texto]) => <option key={v} value={v}>{texto}</option>)}</select></label>
         <label>Responsável<input maxLength={120} value={form.responsavel} required={form.status === 'AGENDADO'} onChange={e => mudar('responsavel', e.target.value)} placeholder="Nome da pessoa ou equipe" /></label>
         <label>Prazo<input type="date" value={form.prazo} required={form.status === 'AGENDADO'} onChange={e => mudar('prazo', e.target.value)} /></label>
         <label className="implantacao-pendencia">Pendência ou observação<textarea rows={3} maxLength={3000} value={form.pendencia} required={['AGUARDANDO_CLIENTE', 'NAO_SE_APLICA'].includes(form.status)} onChange={e => mudar('pendencia', e.target.value)} /></label>
@@ -64,7 +65,13 @@ function EditorTarefa({ tarefa, api, companyId, onSalvar, onFechar }) {
 export function ChecklistImplantacao({ api, companyId, podeEditar = true }) {
   const [estado, setEstado] = useState(null), [erro, setErro] = useState(''), [carregando, setCarregando] = useState(true);
   const [editando, setEditando] = useState(null), [filtro, setFiltro] = useState('pendentes');
-  const pedido = useRef(0);
+  const pedido = useRef(0), filtroRef = useRef(null), gatilhos = useRef(new Map()), retorno = useRef(null);
+  function encerrarEdicao() { retorno.current = editando; setEditando(null); }
+  useEffect(() => {
+    if (editando || !retorno.current) return;
+    (gatilhos.current.get(retorno.current) || filtroRef.current)?.focus();
+    retorno.current = null;
+  }, [editando]);
   async function carregar() {
     const seq = ++pedido.current;
     setCarregando(true); setErro('');
@@ -82,19 +89,25 @@ export function ChecklistImplantacao({ api, companyId, podeEditar = true }) {
     <div className="implantacao-cabecalho"><h2>Implantação da empresa</h2><Button type="button" variant="secondary" disabled={carregando || Boolean(editando)} onClick={carregar}>Atualizar checklist</Button></div>
     {carregando ? <p role="status">Carregando implantação…</p> : erro ? <p role="alert">{erro}</p> : dados && <>
       <p role="status">Pendentes: {dados.resumo.pendentes} · Atrasadas: {dados.resumo.atrasadas} · Sem responsável: {dados.resumo.semResponsavel} · Concluídas: {dados.resumo.concluidas}</p>
-      <label className="implantacao-filtro">Mostrar<select value={filtro} disabled={Boolean(editando)} onChange={e => setFiltro(e.target.value)}><option value="pendentes">Pendentes</option><option value="atrasadas">Atrasadas</option><option value="aguardando">Aguardando cliente</option><option value="todas">Todas, incluindo concluídas</option></select></label>
+      <label className="implantacao-filtro">Mostrar<select ref={filtroRef} value={filtro} disabled={Boolean(editando)} onChange={e => setFiltro(e.target.value)}><option value="pendentes">Pendentes</option><option value="atrasadas">Atrasadas</option><option value="aguardando">Aguardando cliente</option><option value="todas">Todas, incluindo concluídas</option></select></label>
       {!tarefas.length && <p>Nenhuma tarefa neste filtro.</p>}
       <ul className="implantacao-lista">{tarefas.map(t => <li key={t.chave}>
         <div className="implantacao-linha"><h3>{titulo(t)}</h3>
           <div className="implantacao-acoes">
-            {t.destino && <a className="btn btn-primary btn-md" href={`/companies/${encodeURIComponent(companyId)}/${t.destino}`}>Abrir configuração</a>}
-            {editando !== t.chave && podeEditar && dados.podeEditar !== false && <Button type="button" variant="secondary" disabled={Boolean(editando)} onClick={() => setEditando(t.chave)}>Atualizar tarefa<span className="sr-only">: {titulo(t)}</span></Button>}
+            {t.destino && <a className="btn btn-secondary btn-md" href={`/companies/${encodeURIComponent(companyId)}/${t.destino}`}>Abrir configuração</a>}
+            {editando !== t.chave && podeEditar && dados.podeEditar !== false && <Button ref={el => { if (el) gatilhos.current.set(t.chave, el); else gatilhos.current.delete(t.chave); }} type="button" variant="secondary" disabled={Boolean(editando)} onClick={() => setEditando(t.chave)}>Atualizar tarefa<span className="sr-only">: {titulo(t)}</span></Button>}
           </div>
         </div>
+        <dl className="implantacao-resumo-tarefa">
+          <div><dt>Situação</dt><dd>{SITUACOES[t.status] || t.status}</dd></div>
+          <div><dt>Responsável</dt><dd>{t.responsavel || 'Sem responsável'}</dd></div>
+          <div><dt>Prazo</dt><dd className={t.atrasada ? 'implantacao-atrasada' : undefined}>{data(t.prazo)}{t.atrasada ? ' · Atrasada' : ''}</dd></div>
+        </dl>
+        {t.pendencia && <p className="implantacao-observacao">{t.pendencia}</p>}
         {editando === t.chave && <>
         {t.origem && <details><summary>Registro aproveitado do onboarding</summary><p>{t.origem.titulo} · {t.origem.concluidaEm ? `Conclusão registrada em ${data(t.origem.concluidaEm)}` : 'Pendente na conversão'}</p>{t.origem.observacao && <p>{t.origem.observacao}</p>}</details>}
         {t.historico?.length > 0 && <details><summary>Histórico de acompanhamento</summary><ul>{[...t.historico].reverse().map((h, i) => <li key={i}>{data(h.em)} · {SITUACOES[h.depois.status]} · {h.depois.responsavel || 'Sem responsável'} · {data(h.depois.prazo)}{h.depois.pendencia ? ` · ${h.depois.pendencia}` : ''}</li>)}</ul></details>}
-        <EditorTarefa key={`${companyId}:${t.chave}`} tarefa={t} api={api} companyId={companyId} onFechar={() => setEditando(null)} onSalvar={d => { setEstado({ id: companyId, dados: d }); setEditando(null); }} />
+        <EditorTarefa key={`${companyId}:${t.chave}`} tarefa={t} api={api} companyId={companyId} onFechar={encerrarEdicao} onSalvar={d => { setEstado({ id: companyId, dados: d }); encerrarEdicao(); }} />
         </>}
 
       </li>)}</ul>

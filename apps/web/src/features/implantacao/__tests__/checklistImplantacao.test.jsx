@@ -60,3 +60,15 @@ test('resposta de outra empresa não substitui a empresa atual', async () => {
   await act(async () => resolver({ implantacao: lista(tarefa) }));
   expect(screen.queryByText('Configurar certificado')).not.toBeInTheDocument();
 });
+
+test('leitura sem edição mostra situação responsável prazo e pendência por tarefa', async () => {
+ const t={...tarefa,status:'AGENDADO',responsavel:'Ana',prazo:'2026-10-20'};const api={getImplantacao:jest.fn(async()=>({implantacao:{...lista(t),podeEditar:false}}))};
+ render(<ChecklistImplantacao api={api} companyId="p1"/>);
+ expect(await screen.findByText('Agendado')).toBeVisible();expect(screen.getByText('Ana')).toBeVisible();expect(screen.getByText('20/10/2026')).toBeVisible();expect(screen.getByText('Cliente vai enviar')).toBeVisible();expect(screen.queryByRole('button',{name:/Atualizar tarefa/})).not.toBeInTheDocument();expect(screen.getByRole('link',{name:'Abrir configuração'})).toHaveClass('btn-secondary');
+});
+test('foco entra no editor e retorna ao gatilho ao cancelar', async()=>{
+ const api={getImplantacao:jest.fn(async()=>({implantacao:lista(tarefa)}))};preparar(api);fireEvent.click(await screen.findByRole('button',{name:/Atualizar tarefa/}));expect(screen.getByLabelText('Situação')).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar edição'}));expect(screen.getByRole('button',{name:/Atualizar tarefa/})).toHaveFocus();
+});
+test('salvar devolve foco ao filtro quando conclusão remove a linha pendente', async()=>{
+ const api={getImplantacao:jest.fn(async()=>({implantacao:lista(tarefa)})),salvarImplantacao:jest.fn(async()=>({implantacao:lista({...tarefa,status:'CONCLUIDO'})}))};preparar(api);fireEvent.click(await screen.findByRole('button',{name:/Atualizar tarefa/}));fireEvent.change(screen.getByLabelText('Situação'),{target:{value:'CONCLUIDO'}});fireEvent.click(screen.getByRole('button',{name:'Salvar tarefa'}));await waitFor(()=>expect(screen.getByLabelText('Mostrar')).toHaveFocus());expect(screen.queryByRole('button',{name:/Atualizar tarefa/})).not.toBeInTheDocument();
+});

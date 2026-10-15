@@ -103,3 +103,23 @@ test('Escape fecha a configuração antes do editor e filtro aceita regime da ca
   expect(screen.getByLabelText('Título')).toBeInTheDocument();
   expect(onFechar).not.toHaveBeenCalled();
 });
+
+test('fechar painel devolve foco ao gatilho e descarte permite Escape sem perder rascunho', () => {
+ const {onFechar}=montar();
+ fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Rascunho protegido'}});
+ const empresas=screen.getByRole('button',{name:'Empresas 0'});
+ fireEvent.click(empresas);
+ expect(screen.getByRole('region',{name:'Empresas da tarefa'})).toHaveFocus();
+ fireEvent.keyDown(screen.getByLabelText('Buscar empresas'),{key:'Escape'});
+ expect(empresas).toHaveFocus();
+ fireEvent.click(empresas);
+ fireEvent.click(screen.getByRole('button',{name:'Fechar'}));
+ expect(screen.getByRole('button',{name:'Continuar editando'})).toHaveFocus();
+ fireEvent.keyDown(document,{key:'Escape'});
+ expect(screen.queryByRole('button',{name:'Descartar'})).not.toBeInTheDocument();
+ expect(screen.getByLabelText('Título')).toHaveValue('Rascunho protegido');
+ expect(screen.getByLabelText('Título')).toHaveFocus();
+ expect(onFechar).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Concluir'}));
+ expect(screen.getByLabelText('Título')).toHaveFocus();
+});

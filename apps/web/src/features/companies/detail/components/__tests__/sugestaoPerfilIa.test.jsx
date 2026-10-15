@@ -30,3 +30,7 @@ it('indisponibilidade mantém o caminho manual e não inventa sucesso', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Novo perfil' }));
   expect(screen.getByLabelText('Nome do perfil')).toHaveValue('');
 });
+
+it('aplicar IA foca nome e cancelar devolve foco a Novo perfil',async()=>{
+ render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn()} onSugerir={async()=>sugestao}/>);fireEvent.click(screen.getByText('Pré-preencher um novo perfil com IA'));fireEvent.change(screen.getByLabelText('Descreva o serviço prestado'),{target:{value:'Contabilidade'}});fireEvent.click(screen.getByRole('button',{name:'Sugerir preenchimento com IA'}));fireEvent.click(await screen.findByRole('button',{name:'Usar no rascunho e revisar'}));expect(screen.getByLabelText('Nome do perfil')).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar edição'}));expect(screen.getByRole('button',{name:'Novo perfil'})).toHaveFocus();
+});

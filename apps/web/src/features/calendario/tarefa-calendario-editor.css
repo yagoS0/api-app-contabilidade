@@ -25,7 +25,7 @@
 .tce-days button { padding: 0; min-height: 36px; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
 .tce-days button:hover { background: var(--bg-surface); }
 .tce-days .tce-in-range { background: var(--accent-purple-surface); }
-.tce-days .tce-range-edge { background: var(--accent-purple); color: var(--bg-page); font-weight: 600; }
+.tce-days .tce-range-edge, .tce-days .tce-range-edge:hover { background: var(--accent-purple); color: var(--bg-page); font-weight: 600; }
 .tce-calendar { margin-bottom: 14px; }
 .tce-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
 .tce-dot-BAIXA { background: var(--accent-cyan); }
@@ -51,9 +51,9 @@
 @media (max-width: 480px) {
   .tarefa-calendario-editor .modal-corpo { padding-inline: 14px; }
   .tarefa-calendario-editor .modal-topo { padding-inline: 14px; }
-  .tce-meta .btn, .tce-footer .btn, .tce-panel .btn { min-height: 40px; }
+  .tarefa-calendario-editor button, .tce-panel input:not([type=checkbox]), .tce-panel select, .tce-scope select { min-height: 44px; }
   .tce-panel { padding: 10px; }
   .tce-month-nav { grid-template-columns: 32px minmax(0, 1fr) 68px 32px; }
   .tce-days { gap: 2px; }
-  .tce-days button { min-height: 38px; }
+  .tce-days button { min-height: 44px; }
 }

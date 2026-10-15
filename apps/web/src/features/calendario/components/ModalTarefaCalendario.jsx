@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { CalendarioPeriodoTarefa } from './CalendarioPeriodoTarefa';
@@ -31,12 +31,24 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
   const [erro, setErro] = useState('');
   const [descartar, setDescartar] = useState(false);
   const [alterado, setAlterado] = useState(false);
+  const tituloRef = useRef(null), painelRef = useRef(null), gatilhoPainel = useRef(null), continuarRef = useRef(null);
+  const painelAnterior = useRef(''), descarteAnterior = useRef(false);
+  useEffect(() => {
+    if (descartar) continuarRef.current?.focus();
+    else if (descarteAnterior.current) tituloRef.current?.focus();
+    descarteAnterior.current = descartar;
+  }, [descartar]);
+  useEffect(() => {
+    if (painel) painelRef.current?.focus();
+    else if (painelAnterior.current) (gatilhoPainel.current?.isConnected ? gatilhoPainel.current : tituloRef.current)?.focus();
+    painelAnterior.current = painel;
+  }, [painel]);
   const c = dados.config;
   const recorrenteOriginal = (inicial.config?.recorrencia || inicial.recorrencia || 'AVULSA') !== 'AVULSA';
   const set = (chave, value) => { setAlterado(true); setDados(d => ({ ...d, [chave]: value })); };
   const config = patch => { setAlterado(true); if (edicao && ['recorrencia', 'repetirAte', 'repetirQuantidade'].some(k => k in patch)) setAlcance('ESTA_E_PROXIMAS'); setDados(d => ({ ...d, config: { ...d.config, ...patch } })); };
-  const abrir = nome => setPainel(p => p === nome ? '' : nome);
-  const fechar = () => alterado ? setDescartar(true) : onFechar();
+  const abrir = (nome, event) => { gatilhoPainel.current = event.currentTarget; setPainel(p => p === nome ? '' : nome); };
+  const fechar = () => descartar ? setDescartar(false) : alterado ? setDescartar(true) : onFechar();
   const filtradas = empresas.filter(e => (!regime || regimeEmpresa(e) === regime) && `${nomeEmpresa(e)} ${e.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')));
   const regimes = [...new Set(empresas.map(regimeEmpresa).filter(Boolean))].sort();
   const horarioTexto = c.horarioModo === 'ATE' ? `Até ${c.horaLimite || '…'}` : c.horarioModo === 'FIXO' ? `Às ${c.horaInicio || '…'}` : 'Sem horário';
@@ -74,18 +86,18 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
     finally { setOcupado(false); }
   }
 
-  return <Modal titulo={edicao ? 'Editar tarefa' : 'Nova tarefa'} tamanho="sm" className="tarefa-calendario-editor" aoFechar={fechar} ocupado={ocupado} fecharAoClicarFundo={!alterado} fecharAoEscape={!painel}>
-    {descartar ? <div className="tce-discard"><p>Descartar as alterações desta tarefa?</p><div className="tce-actions"><Button variant="secondary" onClick={() => setDescartar(false)}>Continuar editando</Button><Button variant="danger" onClick={onFechar}>Descartar</Button></div></div> : <form onSubmit={salvar} onKeyDown={e => { if (e.key === 'Escape' && painel && !ocupado) { e.stopPropagation(); setPainel(''); } }}>
+  return <Modal titulo={edicao ? 'Editar tarefa' : 'Nova tarefa'} tamanho="sm" className="tarefa-calendario-editor" aoFechar={fechar} ocupado={ocupado} fecharAoClicarFundo={!alterado} fecharAoEscape={descartar || !painel}>
+    {descartar ? <div className="tce-discard"><p>Descartar as alterações desta tarefa?</p><div className="tce-actions"><Button ref={continuarRef} variant="secondary" onClick={() => setDescartar(false)}>Continuar editando</Button><Button variant="danger" onClick={onFechar}>Descartar</Button></div></div> : <form onSubmit={salvar} onKeyDown={e => { if (e.key === 'Escape' && painel && !ocupado) { e.stopPropagation(); setPainel(''); } }}>
       <fieldset disabled={ocupado} className="tce-fields">
         <div className="tce-meta">
-          <Button type="button" variant="secondary" size="sm" onClick={() => abrir('data')} aria-expanded={painel === 'data'}>{horarioTexto}</Button>
-          <Button type="button" variant="secondary" size="sm" onClick={() => abrir('data')} aria-expanded={painel === 'data'} aria-label="Data e repetição">{dataCurta(c.dataInicio)}{c.dataFim && c.dataFim !== c.dataInicio ? ` – ${dataCurta(c.dataFim)}` : ''}</Button>
-          <Button type="button" variant="secondary" size="sm" className="tce-priority" aria-label={`Prioridade: ${PRIORIDADES.find(p => p[0] === c.prioridade)?.[1] || 'Sem prioridade'}`} onClick={() => abrir('prioridade')} aria-expanded={painel === 'prioridade'}><span aria-hidden="true">⚑</span><span className={`tce-dot tce-dot-${c.prioridade || 'SEM'}`} /></Button>
+          <Button type="button" variant="secondary" size="sm" onClick={event => abrir('data', event)} aria-expanded={painel === 'data'}>{horarioTexto}</Button>
+          <Button type="button" variant="secondary" size="sm" onClick={event => abrir('data', event)} aria-expanded={painel === 'data'} aria-label="Data e repetição">{dataCurta(c.dataInicio)}{c.dataFim && c.dataFim !== c.dataInicio ? ` – ${dataCurta(c.dataFim)}` : ''}</Button>
+          <Button type="button" variant="secondary" size="sm" className="tce-priority" aria-label={`Prioridade: ${PRIORIDADES.find(p => p[0] === c.prioridade)?.[1] || 'Sem prioridade'}`} onClick={event => abrir('prioridade', event)} aria-expanded={painel === 'prioridade'}><span aria-hidden="true">⚑</span><span className={`tce-dot tce-dot-${c.prioridade || 'SEM'}`} /></Button>
         </div>
-        <label className="tce-title-label">Título<input className="tce-title" value={dados.titulo} onChange={e => set('titulo', e.target.value)} maxLength={200} placeholder="O que precisa ser feito?" required data-modal-autofocus /></label>
+        <label className="tce-title-label">Título<input ref={tituloRef} className="tce-title" value={dados.titulo} onChange={e => set('titulo', e.target.value)} maxLength={200} placeholder="O que precisa ser feito?" required data-modal-autofocus /></label>
         <label className="tce-description-label">Descrição<textarea value={dados.descricao} onChange={e => set('descricao', e.target.value)} placeholder="Adicionar observações…" rows={2} /></label>
-        <Button type="button" variant="secondary" size="sm" className="tce-repeat-summary" onClick={() => abrir('data')}>{FREQUENCIAS.find(f => f[0] === c.recorrencia)?.[1]}{c.recorrencia === 'MENSAL' && c.diaVencimento ? ` · vence dia ${c.diaVencimento}` : ''}</Button>
-        {painel && <section className="tce-panel" aria-label={{ data: 'Data e repetição', prioridade: 'Prioridade', empresas: 'Empresas da tarefa', subtarefas: 'Subtarefas da tarefa' }[painel]}>
+        <Button type="button" variant="secondary" size="sm" className="tce-repeat-summary" onClick={event => abrir('data', event)}>{FREQUENCIAS.find(f => f[0] === c.recorrencia)?.[1]}{c.recorrencia === 'MENSAL' && c.diaVencimento ? ` · vence dia ${c.diaVencimento}` : ''}</Button>
+        {painel && <section ref={painelRef} tabIndex={-1} className="tce-panel" aria-label={{ data: 'Data e repetição', prioridade: 'Prioridade', empresas: 'Empresas da tarefa', subtarefas: 'Subtarefas da tarefa' }[painel]}>
           <div className="tce-panel-heading"><span>{{ data: 'Data e repetição', prioridade: 'Prioridade', empresas: 'Empresas', subtarefas: 'Subtarefas' }[painel]}</span><Button type="button" size="sm" variant="secondary" onClick={() => setPainel('')}>Concluir</Button></div>
           {painel === 'data' && <>
             <CalendarioPeriodoTarefa inicio={c.dataInicio} fim={c.dataFim} onChange={(dataInicio, dataFim) => config({ dataInicio, dataFim })} />
@@ -109,7 +121,7 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
         </section>}
         {edicao && (recorrenteOriginal || c.recorrencia !== 'AVULSA') && <label className="tce-scope">Aplicar alterações<select value={alcance} onChange={e => setAlcance(e.target.value)}><option value="ESTA">Somente esta ocorrência</option><option value="ESTA_E_PROXIMAS">Esta e as próximas</option></select></label>}
         {erro && <p role="alert" className="tce-error">{erro}</p>}
-        <footer className="tce-footer"><div><Button type="button" variant="secondary" size="sm" onClick={() => abrir('empresas')} aria-expanded={painel === 'empresas'}>Empresas <span className="tce-count">{dados.empresasIds.length}</span></Button><Button type="button" variant="secondary" size="sm" onClick={() => abrir('subtarefas')} aria-expanded={painel === 'subtarefas'}>Subtarefas <span className="tce-count">{dados.subtarefas.length}</span></Button></div><Button type="submit" size="sm" disabled={ocupado}>{ocupado ? 'Salvando…' : edicao ? 'Salvar' : 'Criar tarefa'}</Button></footer>
+        <footer className="tce-footer"><div><Button type="button" variant="secondary" size="sm" onClick={event => abrir('empresas', event)} aria-expanded={painel === 'empresas'}>Empresas <span className="tce-count">{dados.empresasIds.length}</span></Button><Button type="button" variant="secondary" size="sm" onClick={event => abrir('subtarefas', event)} aria-expanded={painel === 'subtarefas'}>Subtarefas <span className="tce-count">{dados.subtarefas.length}</span></Button></div><Button type="submit" size="sm" disabled={ocupado}>{ocupado ? 'Salvando…' : edicao ? 'Salvar' : 'Criar tarefa'}</Button></footer>
       </fieldset>
       {ocupado && <p role="status" className="tce-hint">Salvando tarefa…</p>}
     </form>}
