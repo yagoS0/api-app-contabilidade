@@ -5349,6 +5349,12 @@ export function createMockApi() {
       await delay();
       return mockCarregarRotinas(mockCompanies);
     },
+    async getOperationRoutines() {
+      await delay();
+      const data = mockCarregarRotinas(mockCompanies);
+      return { routines: data.rotinas, items: data.empresas.map(c => ({ companyId: c.companyId,
+        enabledKeys: Object.entries(c.rotinas).filter(([, enabled]) => enabled === true).map(([key]) => key) })) };
+    },
     async saveRotinas(input = {}) {
       await delay(400);
       return mockSalvarRotinas(input);

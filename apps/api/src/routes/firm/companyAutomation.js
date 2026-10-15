@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../../application/fiscal/serpro/CompanyAutomationService.js';
+import { empresasVisiveis } from './empresasVisiveis.js';
+import { listarRotinasOperacoes } from '../../application/operacoes/OperationsRoutines.js';
 
 export function createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess }) {
   const router = Router();
@@ -13,6 +15,7 @@ export function createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess
     }
   };
   const base = '/companies/:companyId/automacao';
+  router.get('/operacoes/rotinas', run(async req => listarRotinasOperacoes(prisma, await empresasVisiveis(req))));
   router.get(base, requireFirmCompanyAccess(), run(req => lerAutomacaoEmpresa(prisma, req.params.companyId)));
   router.put(base, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarAutomacaoEmpresa(prisma, req.params.companyId, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));
   return router;

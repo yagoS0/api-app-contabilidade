@@ -20,8 +20,8 @@
 .operacoes-programacao { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
 .operacoes-programacao label { display: grid; gap: 8px; min-width: 0; }
 .operacoes-programacao input { min-height: 44px; max-width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px; color-scheme: dark; }
-.operacoes-indicadores span { color: var(--text-muted); }
-.operacoes-indicadores strong { display: block; font-size: 28px; font-weight: 600; margin-top: 8px; }
+.operacoes-quadro > span { color: var(--text-muted); }
+.operacoes-quadro > strong { display: block; font-size: 28px; font-weight: 600; margin-top: 8px; }
 .operacoes-tarefas { padding: 0; list-style: none; }
 .operacoes-tarefas li { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .operacoes strong { font-weight: 500; }
@@ -32,3 +32,29 @@
 .operacoes-acoes { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .operacoes-nota { margin-top: 24px; }
 @media(max-width:760px) { .operacoes-indicadores { grid-template-columns: repeat(2,minmax(0,1fr)); } .operacoes-resumo { padding: 12px; } .operacoes-quadro { padding: 12px; } .operacoes-tarefas li { grid-template-columns: minmax(0,1fr) auto; gap: 4px 12px; } .operacoes-tarefas li>span { grid-column: 1; font-size: .8rem; } .operacoes-tarefas li>button { grid-column: 2; grid-row: 1/3; } .operacoes button,.operacoes-tarefas a { min-height: 44px; } }
+
+/* Operações: indicadores, participação nas rotinas e um único calendário diário. */
+.operacoes > .operacoes-resumo { margin-bottom: 16px; }
+.operacoes-indicadores { grid-template-columns: repeat(5,minmax(0,1fr)); margin-bottom: 0; }
+.operacoes-avisos { min-width: 0; display: flex; }
+.operacoes-avisos > .operacoes-quadro { width: 100%; }
+.operacoes-quadro { min-height: 132px; transition: border-color .15s; }
+.operacoes-quadro:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.operacoes .operacoes-rotinas-resumo { padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; }
+.operacoes-rotinas-resumo > .operacoes-cabecalho h3 { margin: 0; font-size: 1rem; }
+.operacoes-rotinas-contadores { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.operacoes-rotinas-contadores button { flex: 1 1 180px; min-height: 48px; }
+.operacoes-rotinas-filtros { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-block: 12px; }
+.operacoes-rotinas-filtros label { display: grid; gap: 6px; flex: 1 1 180px; }
+.operacoes-rotinas-filtros input,.operacoes-rotinas-filtros select,.operacoes-rotinas-resumo select { max-width: 100%; min-height: 44px; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit; }
+.operacoes-calendario { min-width: 0; }
+.operacoes-calendario > h3 { margin: 0 0 16px; font-size: 1.05rem; }
+.operacoes-dialogo details { margin-block: 12px; }
+.operacoes-dialogo summary { cursor: pointer; min-height: 32px; }
+.operacoes-dialogo .operacoes-tarefas { max-height: 55vh; overflow-y: auto; }
+@media(max-width:1000px) { .operacoes-indicadores { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media(max-width:600px) { .operacoes-indicadores { grid-template-columns: repeat(2,minmax(0,1fr)); } .operacoes-avisos { grid-column: 1 / -1; } .operacoes-quadro { min-height: 116px; } .operacoes .operacoes-rotinas-resumo { padding: 16px 12px; } .operacoes-cabecalho { gap: 12px; } }
+.operacoes-rotinas-contadores .operacoes-quadro { display:flex; justify-content:space-between; align-items:center; gap:16px; } .operacoes-rotinas-contadores strong { font-size:1.25rem; }
+
+.operacoes-dialogo a { color: var(--text); text-decoration: underline; }
+.operacoes-dialogo label.operacoes-rotinas-filtros { display:grid; grid-template-columns:1fr; gap:8px; }

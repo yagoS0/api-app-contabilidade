@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { OperationsApproval } from '../OperationsApproval';
 
-const rows = [{ company: { companyId: 'a', razao: 'CDA' } }];
+const rows = [{ company: { companyId: 'a', razao: 'CDA', myRole: 'ACCOUNTANT' } }];
 function fixture(overrides = {}) {
   let state = { companyId: 'a', competencia: '2026-09', revision: 'r1', status: 'PENDING', pending: [], schedule: null, calculation: { dasValor: 100 }, ...overrides };
   return { getCompanyOperation: jest.fn(async () => state), saveCompanyOperation: jest.fn(async (id, comp, input) => {
@@ -48,4 +48,29 @@ test('programação salva reaparece após remontar; timeout não reenvia', async
   await screen.findByRole('alert');
   expect(api.saveCompanyOperation).toHaveBeenCalledTimes(2);
   expect(screen.getByRole('button', { name: 'Conferir' })).toBeDisabled();
+});
+
+test.each(['STAFF', 'VIEWER', undefined])('papel %s mantém leitura sem ações de escrita', async myRole => {
+  const api = fixture({ status: 'CONFIRMED' });
+  render(<OperationsApproval api={api} rows={[{ company: { ...rows[0].company, myRole } }]} competencia="2026-09" />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled());
+  expect(screen.queryByRole('button', { name: /Liberar confirmadas/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir' }));
+  expect(screen.getByRole('link', { name: 'Revisar notas da competência' })).toBeInTheDocument();
+  expect(screen.getByText('Seu acesso permite somente consultar esta apuração.')).toBeInTheDocument();
+  for (const name of ['Confirmar apuração', 'Marcar para revisão', 'Salvar programação']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+});
+
+test('permissão retirada com prévia aberta bloqueia execução', async () => {
+  const api = fixture({ status: 'CONFIRMED' }); api.executeCompanyOperation = jest.fn();
+  const view = render(<OperationsApproval api={api} rows={rows} competencia="2026-09" />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Liberar confirmadas (1)' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar confirmadas (1)' }));
+  fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'), { target: { value: '2026-09' } });
+  view.rerender(<OperationsApproval api={api} rows={[{ company: { ...rows[0].company, myRole: 'STAFF' } }]} competencia="2026-09" />);
+  expect(screen.getByRole('button', { name: 'Liberar e executar' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar e executar' }));
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });

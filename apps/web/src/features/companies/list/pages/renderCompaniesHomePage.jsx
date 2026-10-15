@@ -1014,7 +1014,7 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            modoVisao === 'operacoes' ? <OperationsPage api={api} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+            modoVisao === 'operacoes' ? <OperationsPage api={api} onOpenCompany={onOpenCompany} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
               onOpenObligations={onOpenObrigacoes}
               initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}
