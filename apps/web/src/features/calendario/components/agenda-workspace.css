@@ -296,7 +296,13 @@
 /* Unified calendar: task colour is secondary to the pending deadline. */
 .agenda-unified .agenda-toolbar { padding:20px 0; gap:16px; }
 .agenda-unified .agenda-period-nav h2 { font-size:21px; font-weight:600; }
-.agenda-unified .agenda-month { background:var(--bg-surface); border-radius:14px; grid-template-rows:38px repeat(6,minmax(90px,auto)); }
+.agenda-unified .agenda-month,.agenda-unified .agenda-time-view { background:var(--bg-surface); border-radius:14px; }
+.agenda-unified .agenda-month { grid-template-rows:38px repeat(6,minmax(90px,auto)); }
+.agenda-unified .agenda-time-scroll { scrollbar-color:var(--border) var(--bg-surface); }
+.agenda-unified .agenda-time-day.is-today { background:transparent; }
+.agenda-unified .agenda-time-slot,.agenda-unified .agenda-hours span { border-top-color:var(--border); }
+.agenda-unified .agenda-time-day .agenda-event { font-size:12px!important; padding:5px 6px; }
+.agenda-unified .agenda-unified-all-day .agenda-event { min-height:34px; padding:5px 6px; margin-inline:4px; }
 .agenda-unified .agenda-month-week { min-height:90px; }
 .agenda-unified .agenda-month-dates button { margin:6px auto 3px 8px; }
 .agenda-unified .agenda-month-dates .is-today { background:var(--accent-cyan); color:var(--bg-page); }
@@ -374,8 +380,9 @@
 .agenda-unified-all-day .agenda-event-open { flex-wrap:wrap; }
 .agenda-unified-all-day .agenda-event-title { flex:1 0 100%; }
 .agenda-unified-all-day .agenda-event-meta { width:100%; justify-content:space-between; }
-.agenda-unified .agenda-day-head { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:3px; padding:10px 4px; border:0; border-right:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
-.agenda-unified .agenda-day-head strong { display:flex; align-items:center; justify-content:center; width:32px; height:32px; font-size:21px; font-weight:500; color:var(--text); }
+.agenda-unified .agenda-day-head { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 4px 8px; border:0; border-right:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
+.agenda-unified .agenda-day-head small { font-size:12px; font-weight:400; line-height:18px; }
+.agenda-unified .agenda-day-head strong { display:flex; align-items:center; justify-content:center; width:28px; height:28px; font-size:13px; font-weight:400; font-variant-numeric:tabular-nums; color:var(--text); }
 .agenda-unified .agenda-day-head.is-today strong { border-radius:50%; background:var(--accent-cyan); color:var(--bg-page); }
 .agenda-unified-legend { display:flex; gap:22px; flex-wrap:wrap; padding:16px 4px; color:var(--text-muted); font-size:12px; }
 .agenda-unified-legend>span { display:flex; gap:7px; align-items:center; }
@@ -396,6 +403,9 @@
  .agenda-unified .agenda-toolbar-actions .btn { flex-shrink:0; min-height:40px; }
  .agenda-unified-month-cell { gap:3px; }
  .agenda-unified .agenda-month .agenda-event-meta { flex-wrap:wrap; gap:2px; }
+ .agenda-unified .agenda-day-head small { font-size:11px; }
+ .agenda-unified .agenda-unified-all-day .agenda-event { margin-inline:2px; padding:4px 3px; }
+ .agenda-unified .agenda-time-day .agenda-event { padding-inline:3px; }
  .agenda-unified .agenda-month .agenda-event-time,.agenda-unified .agenda-month .agenda-event-deadline { font-size:10px; white-space:normal; }
  .agenda-unified-legend { gap:10px; font-size:11px; }
  .agenda-unified .agenda-list-filter { flex-wrap:wrap; }
