@@ -50,6 +50,7 @@ import { createRecorrenciaRouter } from "./recorrencia.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createPerfisEmissaoRouter } from "./perfisEmissao.js";
+import { createImplantacaoRouter } from './implantacao.js';
 import { createParametrosMunicipaisRouter } from './parametrosMunicipais.js';
 import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
@@ -5476,6 +5477,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Perfis de emissão de NFS-e — a configuração que o contador faz uma vez pelo cliente.
   // ⚠ Nasce com a integração DESLIGADA: o GET serve o painel; nada muda no XML.
   router.use("/companies/:companyId", createPerfisEmissaoRouter({ log }));
+  router.use('/companies/:companyId', createImplantacaoRouter());
   router.use("/companies/:companyId", createFluxoCarteiraRouter());
   router.use('/companies/:companyId', createParametrosMunicipaisRouter({ log }));
 

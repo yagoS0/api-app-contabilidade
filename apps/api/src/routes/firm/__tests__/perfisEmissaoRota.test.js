@@ -55,6 +55,8 @@ jest.mock("../../../application/guides/guideCompliance.js", () => {
 });
 
 import { createFirmPortalRouter } from "../index.js";
+jest.mock('../../../application/nfse/perfilEmissao/sugerirPerfilIa.js', () => ({ sugerirPerfilIa: jest.fn() }));
+import { sugerirPerfilIa } from '../../../application/nfse/perfilEmissao/sugerirPerfilIa.js';
 import { prisma as prismaMock } from "../../../infrastructure/db/prisma.js";
 
 const PORTAL_ID = "portal-1";
@@ -84,6 +86,31 @@ function montarApp(user = CONTADOR) {
 }
 
 const URL = `/firm/companies/${PORTAL_ID}/perfis-emissao`;
+describe('sugestão de preenchimento com IA', () => {
+  it('usa empresa autorizada da URL, sem gravar perfil ou liberação', async () => {
+    sugerirPerfilIa.mockResolvedValue({ ok: true, campos: { nome: 'Contabilidade' } });
+    const r = await request(app).post(`${URL}/sugestao`).send({ descricao: 'Contabilidade' });
+    expect(r.status).toBe(200);
+    expect(sugerirPerfilIa).toHaveBeenCalledWith({ portalClientId: PORTAL_ID, company: COMPANY, descricao: 'Contabilidade' });
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+    expect(prismaMock.portalClient.update).not.toHaveBeenCalled();
+  });
+  it.each([{ descricao: '' }, { descricao: 'a'.repeat(2001) }, { descricao: 'teste', companyId: 'outra' }])('recusa pedido inválido sem chamar IA', async corpo => {
+    expect((await request(app).post(`${URL}/sugestao`).send(corpo)).status).toBe(400);
+    expect(sugerirPerfilIa).not.toHaveBeenCalled();
+  });
+  it('cliente não pode solicitar sugestão do escritório', async () => {
+    const r = await request(montarApp({ id: 'cliente', role: 'client', accountType: 'CLIENT' })).post(`${URL}/sugestao`).send({ descricao: 'teste' });
+    expect([401, 403]).toContain(r.status);
+    expect(sugerirPerfilIa).not.toHaveBeenCalled();
+  });
+  it('retorna a liberação salva para acompanhamento no onboarding', async () => {
+    prismaMock.portalClient.findUnique.mockResolvedValue({ id: PORTAL_ID, companyId: COMPANY_LEGACY_ID, emissaoClienteLiberada: true });
+    const r = await request(app).get(URL);
+    expect(r.body.emissaoCliente).toEqual({ liberada: true });
+    expect(r.body.perfisDisponiveis).toBe(true);
+  });
+});
 
 describe('atividade do Simples no perfil do contador', () => {
   it('oferece catálogo, grava código com zero inicial e devolve na leitura', async () => {

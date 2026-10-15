@@ -12,8 +12,7 @@ export function PassoOrigem({ origem, onEscolher }) {
   return (
     <div style={{ display: "grid", gap: "var(--space-3)" }}>
       <p style={{ color: "var(--text-muted)", margin: 0 }}>
-        De onde vem este cliente? A resposta define o que perguntamos a seguir e a trilha do
-        escritório.
+        Qual é o tipo de atendimento?
       </p>
 
       {ONBOARDING_ORIGENS.map((op) => {
@@ -46,9 +45,6 @@ export function PassoOrigem({ origem, onEscolher }) {
             <strong style={{ color: selecionada ? acento : "var(--text)", fontSize: 15 }}>
               {op.titulo}
             </strong>
-            <span style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.5 }}>
-              {op.subtitulo}
-            </span>
           </button>
         );
       })}

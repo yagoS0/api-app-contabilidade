@@ -32,6 +32,7 @@ import {
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from "../../config.js";
 import { CATEGORIAS_IBSCBS } from '../../application/nfse/obrigacaoIbscbs.js';
 import { sugestoesDoPerfil, validarCatalogoPerfil } from "../../application/nfse/perfilEmissao/catalogoPerfil.js";
+import { sugerirPerfilIa } from '../../application/nfse/perfilEmissao/sugerirPerfilIa.js';
 
 /** O que a rota aceita — os seis campos fiscais mais os de identidade/forma. */
 const CAMPOS_DE_IDENTIDADE = ["nome", "ativo", "padrao", "habilitaObra", "habilitaExportacao"];
@@ -143,7 +144,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
   /** Resolve o `PortalClient` e a `Company` legada — as duas são necessárias. */
   async function carregarEmpresa(portalClientId, res) {
     const portal = await prisma.portalClient
-      .findUnique({ where: { id: portalClientId }, select: { id: true, companyId: true } })
+      .findUnique({ where: { id: portalClientId }, select: { id: true, companyId: true, emissaoClienteLiberada: true } })
       .catch(() => null);
     if (!portal?.id) { bad(res, 404, "portal_company_not_found", "Empresa não encontrada."); return null; }
     // ⚠ SEM LINHA LEGADA NÃO HÁ CADASTRO DE ONDE DERIVAR, e a resposta DIZ ISSO. Responder 200 aqui
@@ -200,6 +201,23 @@ export function createPerfisEmissaoRouter({ log } = {}) {
     });
   }
 
+  router.post('/perfis-emissao/sugestao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    const descricao = req.body?.descricao;
+    if (typeof descricao !== 'string' || !descricao.trim() || descricao.length > 2000
+      || Object.keys(req.body).some(k => k !== 'descricao')) {
+      return bad(res, 400, 'descricao_invalida', 'Descreva o serviço em até 2.000 caracteres.');
+    }
+    try {
+      const portalClientId = String(req.params.companyId || '').trim();
+      const ctx = await carregarEmpresa(portalClientId, res);
+      if (!ctx) return;
+      const resultado = await sugerirPerfilIa({ portalClientId, company: ctx.company, descricao: descricao.trim() });
+      return res.status(resultado.ok ? 200 : 422).json(resultado);
+    } catch {
+      return bad(res, 503, 'sugestao_indisponivel', 'Não foi possível preparar a sugestão. Continue pelo preenchimento manual.');
+    }
+  });
+
   // ─── GET: a lista, e o que a próxima DPS vai levar ─────────────────────────────────────────
   router.get(
     "/perfis-emissao",
@@ -211,6 +229,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
         if (!ctx) return undefined;
 
         let perfis = [];
+        let perfisDisponiveis = true;
         try {
           perfis = await prisma.perfilEmissaoNfse.findMany({
             where: { portalClientId },
@@ -220,17 +239,20 @@ export function createPerfisEmissaoRouter({ log } = {}) {
           // ⚠ Migration não aplicada não pode derrubar a tela. Ela AVISA, e continua servindo o
           // painel a partir do cadastro — que é a resposta honesta: "não há perfil nenhum ainda".
           log?.warn?.({ err: err?.message, portalClientId }, "perfis de emissão: tabela indisponível");
+          perfisDisponiveis = false;
         }
 
         const resolvido = await resolverPerfilDeEmissao({ portalClientId });
 
         return res.json({
           ok: true,
+          emissaoCliente: typeof ctx.portal.emissaoClienteLiberada === 'boolean' ? { liberada: ctx.portal.emissaoClienteLiberada } : null,
           // ⚠⚠ A FLAG VIAJA, e é ela que a tela usa para NÃO prometer efeito que não existe. Com
           // ela desligada o painel é informativo: diz o que MUDARIA, não o que muda.
           integracaoLigada: INTEGRACAO_PERFIL_EMISSAO_NFSE,
           ibscbsLigado: INTEGRACAO_NFSE_IBSCBS,
           perfis,
+          perfisDisponiveis,
           sugestoes: sugestoesDoPerfil(ctx.company),
           // O ponto de partida que a tela oferece — calculado, nunca gravado.
           derivadoDoCadastro: perfilDerivadoDoCadastro(ctx.company),

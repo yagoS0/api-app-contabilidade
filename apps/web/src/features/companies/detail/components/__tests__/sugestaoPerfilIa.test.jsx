@@ -1,0 +1,32 @@
+import { render, screen, fireEvent } from '@testing-library/react';
+import { EditorPerfilEmissao } from '../EditorPerfilEmissao';
+const sugestao = { ok: true, campos: { nome: 'Contabilidade', codigoServicoNacional: '171901' }, justificativa: 'Conferir o serviço.', fonte: 'IA' };
+const dados = { campos: [{ id: 'codigoServicoNacional', rotulo: 'Serviço', obrigatorio: true }], perfis: [], derivadoDoCadastro: {}, sugestoes: { porServico: [{ codigo: '171901', descricao: 'Contabilidade', nbs: [] }] } };
+it('IA não salva: aplicação cria rascunho que exige revisão explícita', async () => {
+  const onSalvar = jest.fn(async () => {}), onSugerir = jest.fn(async () => sugestao);
+  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} onSugerir={onSugerir} />);
+  fireEvent.click(screen.getByText('Pré-preencher um novo perfil com IA'));
+  fireEvent.change(screen.getByLabelText('Descreva o serviço prestado'), { target: { value: 'Escrituração contábil' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sugerir preenchimento com IA' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Usar no rascunho e revisar' }));
+  expect(onSugerir).toHaveBeenCalledWith('Escrituração contábil');
+  expect(onSalvar).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('confirme a revisão');
+  const revisao = screen.getByLabelText(/Conferi o serviço/);
+  fireEvent.click(revisao);
+  fireEvent.change(screen.getByLabelText('Nome do perfil'), { target: { value: 'Serviço contábil' } });
+  expect(revisao).not.toBeChecked();
+  fireEvent.click(revisao);
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  expect(onSalvar).toHaveBeenCalledWith(null, { nome: 'Serviço contábil', ativo: true, padrao: false, codigoServicoNacional: '171901' });
+});
+it('indisponibilidade mantém o caminho manual e não inventa sucesso', async () => {
+  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn()} onSugerir={async () => { throw new Error('IA indisponível'); }} />);
+  fireEvent.click(screen.getByText('Pré-preencher um novo perfil com IA'));
+  fireEvent.change(screen.getByLabelText('Descreva o serviço prestado'), { target: { value: 'Contabilidade' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sugerir preenchimento com IA' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('IA indisponível');
+  fireEvent.click(screen.getByRole('button', { name: 'Novo perfil' }));
+  expect(screen.getByLabelText('Nome do perfil')).toHaveValue('');
+});

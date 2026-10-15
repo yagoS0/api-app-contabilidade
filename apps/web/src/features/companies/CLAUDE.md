@@ -7,6 +7,19 @@ Por solicitação do usuário, o título e a aba da página inicial exibem “Ca
 ## Cabeçalho interno — 15/10/2026
 
 Por decisão do usuário, as rotas internas das empresas não exibem a faixa global com logo e áreas do escritório. A seta do cabeçalho retorna diretamente a /companies, preservando a visão da carteira no contexto. A página principal mantém a faixa. Esta decisão substitui a orientação anterior de retorno pelo histórico e faixa global dentro da empresa.
+## Checklist de implantação da empresa — 15/10/2026 (local)
+
+Configurações → Implantação (`/companies/:id/implantacao`) usa a mesma ChecklistImplantacao da ficha convertida. Não depende de competência nem edita o onboarding histórico. GET projeta tarefas ainda não personalizadas a partir das etapas salvas e do catálogo; PATCH grava somente a tarefa da empresa. Conclusões e observações herdadas permanecem identificadas. Registros personalizados prevalecem sobre a origem, inclusive quando reabertos.
+
+Estados: A fazer, Aguardando cliente, Agendado, Concluído e Não se aplica. Responsável é nome de pessoa/equipe; agendamento exige responsável/prazo, espera e dispensa exigem justificativa. Prazos civis e atrasos usam São Paulo. Versão, ator, data e antes/depois preservam auditoria e recusam gravação concorrente. Falha preserva edição; a reconciliação exige escolha explícita entre dados atuais e locais. Leitura requer vínculo com a empresa; edição requer ACCOUNTANT/FIRM_ADMIN. Checklist registra trabalho administrativo, sem liberar emissão, afirmar validade do certificado ou executar consultas fiscais.
+
+Aplicar `20261015130000_implantacao_empresa` e gerar Prisma antes da API. `scripts/run-implantacao-postgres.mjs <pgBin>` verifica banco descartável com cliente gerado isoladamente. O mock informa indisponibilidade em vez de simular persistência. Verificações visuais usam dados sintéticos locais.
+
+## Preparação assistida de NFS-e — 15/10/2026 (local)
+
+Novo perfil pode partir de sugestão de IA, solicitada pelo contador com descrição do serviço. A API limita serviço/NBS aos candidatos habilitados e correlacionados do catálogo local, usa a guarda de consumo existente e registra a finalidade `preenchimento_perfil_nfse`. Não grava perfil nem liberação. Aplicar monta rascunho; salvar exige revisão explícita, invalidada por edição dos campos. Falha mantém o preenchimento manual; mock informa indisponibilidade. Não sugerir alíquotas, retenções ou autorização por inferência da IA.
+
+A liberação fica visível em seção própria após as configurações, fora do formulário recolhível, mantendo confirmação, rota, papéis e auditoria existentes. Alterações não salvas na configuração geral impedem iniciar uma liberação; revogação continua disponível. A consulta de perfis informa a liberação salva e distingue falha de leitura de lista vazia. Verificações locais em `test-evidence/emissao-onboarding/`; não constituem publicação ou chamada real ao modelo.
 
 ## Fluxo mensal da carteira — 06/10/2026
 

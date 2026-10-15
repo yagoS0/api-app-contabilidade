@@ -939,6 +939,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  implantacaoTarefas ImplantacaoTarefa[]
   reformaRevisoes ReformaFiscalRevisao[]
   reformaVerificacoes ReformaNfseVerificacao[]
   apuracaoConsumoEstabelecimento ApuracaoConsumoEstabelecimento?
@@ -5900,6 +5901,31 @@ model CarteiraTarefa {
   @@index([competencia])
   @@index([dataInicio, dataFim])
   @@map("carteira_tarefas")
+}
+
+/// Implantação permanente da empresa, independente da competência e da ficha comercial.
+model ImplantacaoTarefa {
+  id String @id @default(uuid())
+  portalClientId String
+  chave String
+  titulo String
+  descricao String?
+  destino String?
+  status String @default("A_FAZER")
+  responsavel String?
+  prazo DateTime? @db.Date
+  pendencia String?
+  origem Json?
+  historico Json @default("[]")
+  concluidaEm DateTime?
+  concluidaPorId String?
+  versao Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  @@unique([portalClientId, chave])
+  @@index([status, prazo])
+  @@map("implantacao_tarefas")
 }
 
 // Composição do acordo; separada da propriedade dos lançamentos de abertura/prestações.
