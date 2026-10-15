@@ -3,7 +3,6 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { ModalTarefaCalendario } from './ModalTarefaCalendario';
 import { PainelTarefaCalendario } from './PainelTarefaCalendario';
-import { TarefasAnterioresCalendario } from './TarefasAnterioresCalendario';
 import { AtividadeAgenda as Atividade } from './AtividadeAgenda';
 import { LinhaHorarioAtual, useRelogioAgenda } from './LinhaHorarioAtual';
 import { useGestosAgenda } from './useGestosAgenda';
@@ -22,7 +21,6 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
   const [referencia,setReferencia]=useState(initialContext?.referencia||dataLocal());
   const [visao,setVisao]=useState(somenteDia?'dia':['mes','semana','dia','lista'].includes(initialContext?.visao)?initialContext.visao:'mes');
   const [itens,setItens]=useState([]),[carregando,setCarregando]=useState(true),[erro,setErro]=useState(''),[revisao,setRevisao]=useState(0);
-  const [idsMigrados,setIdsMigrados]=useState([]),[anteriores,setAnteriores]=useState(false);
   const [empresasCarregadas,setEmpresasCarregadas]=useState(EMPRESAS_VAZIAS);
   const [scrollbar,setScrollbar]=useState(0);
   const carteira=empresas.length?empresas:empresasCarregadas;
@@ -45,7 +43,7 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
     setCarregando(true);setErro('');
     Promise.resolve().then(()=>api.listarTarefasCalendario({inicio,fim,companyId:companyIdFixo})).then(conferir).then(out=>{
       if(!ativo||leitura!==leituraRef.current)return;
-      const proximos=prepararTarefasCalendario(out.itens||[],carteira);setItens(proximos);setIdsMigrados((out.tarefas||[]).map(t=>t.id));
+      const proximos=prepararTarefasCalendario(out.itens||[],carteira);setItens(proximos);
       setDetalhe(atual=>atual?proximos.find(i=>i.tarefaId===atual.tarefaId&&i.cicloChave===atual.cicloChave)||null:null);
     }).catch(e=>{if(ativo)setErro(e.message);}).finally(()=>{if(ativo)setCarregando(false);});
     return()=>{ativo=false;};
@@ -59,7 +57,7 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
     if(typeof ResizeObserver==='undefined')return;
     const observer=new ResizeObserver(medir);observer.observe(scroll);
     return()=>observer.disconnect();
-  },[visao,anteriores]);
+  },[visao]);
   useEffect(()=>{const c=initialContext?.obrigacoesModal;if(!contextoAplicado.current&&c?.criar){contextoAplicado.current=true;const data=c.dataInicio||referencia;setCriacao({dataInicio:data,dataFim:c.dataFim||data,companyId:c.companyId||companyIdFixo});}},[initialContext,referencia,companyIdFixo]);
   const filtrados=useMemo(()=>itens.filter(i=>(mostrarConcluidas||!i.resolvido)&&i.titulo.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR'))),[itens,busca,mostrarConcluidas]);
   const blocos=useMemo(()=>projetarTarefasCalendario(filtrados,inicio,fim,dataLocal()),[filtrados,inicio,fim,agora.data]);
@@ -85,7 +83,6 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
   function mudouPainel(atual){if(atual)setDetalhe(atual);recarregar();}
   async function excluir(){try{await executar(exclusao.item,{acao:exclusao.serie?'EXCLUIR_SERIE':'EXCLUIR'});setExclusao(null);setDetalhe(null);}catch{/* confirmação preservada */}}
   const tituloPeriodo=visao==='mes'||visao==='lista'?new Date(`${referencia}T12:00:00Z`).toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}):visao==='dia'?dataBR(referencia):`${dataBR(inicio)} – ${dataBR(fim)}`;
-  if(anteriores)return <TarefasAnterioresCalendario api={api} idsMigrados={idsMigrados} empresas={carteira} onVoltar={()=>setAnteriores(false)} onNovaTarefa={dados=>{setAnteriores(false);setCriacao(dados);}} onOpenCompany={onOpenCompany} companyIdFixo={companyIdFixo} initialContext={{referencia,visao}}/>;
   return <section className="agenda-workspace agenda-unified" aria-label="Calendário de tarefas" style={{'--days':dias.length,'--agenda-hour-height':`${ALTURA_HORA}px`,'--agenda-scrollbar':`${scrollbar}px`}}>
     <div className="agenda-toolbar"><div className="agenda-navigation"><Button variant="secondary" size="sm" aria-label="Período anterior" onClick={()=>navegar(-1)}>‹</Button><Button variant="secondary" size="sm" aria-label="Próximo período" onClick={()=>navegar(1)}>›</Button><h2>{tituloPeriodo}</h2><Button variant="secondary" size="sm" onClick={()=>setReferencia(dataLocal())}>Hoje</Button></div><div className="agenda-toolbar-actions">{!somenteDia&&<label>Visualização <select value={visao} onChange={e=>setVisao(e.target.value)}><option value="mes">Mês</option><option value="semana">Semana</option><option value="dia">Dia</option><option value="lista">Lista</option></select></label>}<Button size="sm" onClick={()=>criar(referencia)}>+ Nova tarefa</Button></div></div>
     {erro&&<div className="agenda-error" role="alert">{erro} <button type="button" onClick={recarregar}>Tentar novamente</button></div>}
@@ -101,7 +98,7 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
         {Array.from({length:24},(_,hora)=><button type="button" key={hora} className="agenda-time-slot" aria-label={`Criar tarefa em ${dataBR(d)} às ${String(hora).padStart(2,'0')}:00`} onPointerDown={e=>gestos.iniciarCriacao(e,d)} onPointerMove={gestos.mover} onPointerUp={gestos.terminar} onPointerCancel={gestos.cancelar} onLostPointerCapture={gestos.cancelar} onClick={e=>gestos.clicarHorario(e,d,hora)}/>)}
         {horarios[d].map(({item,coluna,colunas,extensao=1})=><Atividade key={item.id} item={item} abrir={abrir} gestos={gestos} onConcluir={concluirNaGrade} mostrarHorario style={{position:'absolute',top:minutos(item.horaInicio)/60*ALTURA_HORA,height:Math.max(28,(fimVisual(item)-minutos(item.horaInicio))/60*ALTURA_HORA-2),width:`calc(${100*extensao/colunas}% - 5px)`,left:`calc(${coluna*100/colunas}% + 2px)`}}/>)}</div>)}<LinhaHorarioAtual dias={dias} agora={agora}/><div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h)=><span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div>
     </div>}
-    {!somenteDia&&<div className="agenda-unified-legend"><span>Tarefas por empresa</span><span className="agenda-deadline-legend">Véspera e vencimento em destaque</span><Button variant="secondary" size="sm" onClick={()=>setAnteriores(true)}>Tarefas anteriores</Button></div>}
+    {!somenteDia&&<div className="agenda-unified-legend"><span>Tarefas por empresa</span><span className="agenda-deadline-legend">Véspera e vencimento em destaque</span></div>}
     {criacao&&<ModalTarefaCalendario inicial={criacao} empresas={carteira} api={api} onRascunho={atualizarRascunho} onFechar={()=>setCriacao(null)} onSalvo={()=>{setCriacao(null);recarregar();}}/>}
     {detalhe&&!criacao&&!exclusao&&<PainelTarefaCalendario item={detalhe} api={api} onFechar={()=>setDetalhe(null)} onChanged={mudouPainel} onEditar={()=>{setCriacao({...detalhe,config:{...detalhe.config,dataInicio:detalhe.dataInicio,dataFim:detalhe.dataFim}});setDetalhe(null);}} onExcluir={()=>setExclusao({item:detalhe,serie:false})} onOpenCompany={onOpenCompany}/>}
     {exclusao&&<Modal titulo={exclusao.serie?'Excluir série?':'Excluir ocorrência?'} aoFechar={()=>setExclusao(null)} ocupado={ocupado} tamanho="sm" rodape={<><Button variant="secondary" disabled={ocupado} onClick={()=>setExclusao(null)}>Cancelar</Button><Button variant="danger" disabled={ocupado} onClick={excluir}>{ocupado?'Excluindo…':'Excluir'}</Button></>}><p>{exclusao.item.titulo}</p><p>{exclusao.serie?'Todas as ocorrências serão retiradas do calendário. O histórico será preservado.':'A ocorrência será retirada para todas as empresas vinculadas. As outras repetições serão mantidas.'}</p>{erro&&<p className="agenda-error" role="alert">{erro}</p>}</Modal>}

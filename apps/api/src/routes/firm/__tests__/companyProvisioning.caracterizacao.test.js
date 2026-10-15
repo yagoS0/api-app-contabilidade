@@ -175,8 +175,7 @@ describe("POST /firm/companies — caracterização do provisionamento de empres
     prismaMock.portalClient.findMany.mockResolvedValue([{ id: "portal-existente" }]);
   });
 
-  // 1 — o CORPO da resposta é contrato: o front lê `regrasAplicadas` para dizer ao contador se as
-  // obrigações nasceram junto (elas são best-effort e podem não ter nascido).
+  // Campo mantido no contrato, sempre nulo após remoção do calendário antigo.
   test("201 devolve exatamente { ok, portalId, companyId, ownerUserId, regrasAplicadas }", async () => {
     const res = await request(app).post("/firm/companies").send(payloadValido());
 
@@ -187,7 +186,8 @@ describe("POST /firm/companies — caracterização do provisionamento de empres
     expect(res.body.ok).toBe(true);
     expect(res.body.portalId).toBe("portal-1");
     expect(res.body.ownerUserId).toBe("user-owner-novo");
-    expect(res.body.regrasAplicadas).toEqual({ regrasAvaliadas: 2, obrigacoesCriadas: 5 });
+    expect(res.body.regrasAplicadas).toBeNull();
+    expect(aplicarRegrasAEmpresaNova).not.toHaveBeenCalled();
   });
 
   // 2 — armadilha nº 3 do plano: `companyId` da resposta é o id do PortalClient, NÃO o da Company
@@ -277,9 +277,8 @@ describe("POST /firm/companies — caracterização do provisionamento de empres
     expect(prismaMock.user.create).not.toHaveBeenCalled();
   });
 
-  // 8 — a empresa JÁ está criada quando o pós-criação roda. Falha ali não pode desfazer cadastro
-  // nem virar 500: no pior caso a obrigação entra na próxima vez que a regra for salva.
-  test("aplicarRegrasAEmpresaNova lançando NÃO derruba o 201", async () => {
+  // A antiga propagação não é executada, mesmo se uma implementação legada falhasse.
+  test("calendário removido não propaga regras ao cadastrar empresa", async () => {
     aplicarRegrasAEmpresaNova.mockRejectedValue(new Error("propagação explodiu"));
 
     const res = await request(app).post("/firm/companies").send(payloadValido());

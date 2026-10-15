@@ -23,7 +23,6 @@ import {
 } from "../validators/companySchemas.js";
 import { mesclarAtividades } from "../company/atividadesDaEmpresa.js";
 import { getGlobalChartStatus } from "../accounting/globalChartStatus.js";
-import { aplicarRegrasAEmpresaNova } from "../obrigacoes/RegrasObrigacaoService.js";
 
 /**
  * Erro de provisionamento com resposta HTTP pronta. A rota só repassa `status` e `body` — assim as
@@ -386,17 +385,8 @@ function traduzirErroDeProvisionamento(err) {
  * @returns {Promise<{regrasAplicadas: object|null, rotinasCriadas: object|null}>}
  */
 export async function aplicarPosCriacao({ portalClientId, portalIds = [], regime = null, log = null } = {}) {
-  // Regras do escritório com "aplicar a novas empresas": a empresa recém-criada já nasce com as
-  // obrigações que se encaixam no filtro dela.
-  let regrasAplicadas = null;
-  try {
-    regrasAplicadas = await aplicarRegrasAEmpresaNova({ portalClientId, portalIds });
-  } catch (err) {
-    log?.warn?.(
-      { err: err?.message || err, companyId: portalClientId },
-      "Regras de obrigação não aplicadas à empresa nova"
-    );
-  }
+  // O calendário unificado recebe apenas tarefas criadas explicitamente.
+  const regrasAplicadas = null;
 
   // Cadastro não autoriza consultas pagas. Ausência de escolha permanece desligada
   // na página Rotinas; apenas o salvamento explícito pode habilitar a empresa.

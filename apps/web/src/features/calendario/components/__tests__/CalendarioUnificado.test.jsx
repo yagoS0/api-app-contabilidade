@@ -4,13 +4,16 @@ import { criarMockTarefasCalendario } from '../../../../api/mock/tarefasCalendar
 const empresas=[{companyId:'a',razaoSocial:'Aurora',regime:'LUCRO_PRESUMIDO'},{companyId:'b',razaoSocial:'Horizonte',regime:'LUCRO_PRESUMIDO'}];
 beforeAll(()=>{if(!global.crypto.randomUUID)global.crypto.randomUUID=()=>`t-${Math.random().toString(36).slice(2)}`;});
 test('calendário usa apenas tarefas unificadas e abre o editor compacto a partir do dia',async()=>{
- const api={...criarMockTarefasCalendario(empresas),listObrigacoes:jest.fn()};
+ const api={...criarMockTarefasCalendario(empresas),listObrigacoes:jest.fn(),getTarefasAgenda:jest.fn(),listRegrasObrigacao:jest.fn()};
  render(<CalendarioAgenda api={api} empresas={empresas} initialContext={{referencia:'2026-10-15',visao:'mes'}}/>);
  await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+ expect(screen.queryByRole('button',{name:'Tarefas anteriores'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Criar tarefa em 15/10/2026'}));
  expect(screen.getByRole('dialog')).toHaveTextContent('Nova tarefa');
  expect(screen.getByRole('button',{name:'Data e repetição'})).toHaveTextContent('15');
  expect(api.listObrigacoes).not.toHaveBeenCalled();
+ expect(api.getTarefasAgenda).not.toHaveBeenCalled();
+ expect(api.listRegrasObrigacao).not.toHaveBeenCalled();
 });
 test('checklist por empresa salva, risca empresa, e não conclui o próximo mês',async()=>{
  const api=criarMockTarefasCalendario(empresas);

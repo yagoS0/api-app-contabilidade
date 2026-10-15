@@ -1823,4 +1823,8 @@ O recálculo de DAS/DARF e a atualização explícita do INSS registram `Guide.e
 O aviso não altera linhas, valores, baixas, exportação nem fechamento contábil. INSS permanece sintético na Circular, sem inventar provisão. Os campos `recalculated*` antigos continuam disponíveis. A evidência é preservada ao recapturar a guia/declaração; falha ao gravar o DARF deixa de ser engolida para não afirmar recálculo sobre documento antigo. Testes locais com banco e serviços substituídos, sem consulta fiscal real. Não publicado nesta etapa.
 # Prioridade do plano específico — decisão de 24/09/2026
 
+## Guia salva após fechamento — 15/10/2026
+
+Upload documental em mês fechado salva o PDF e marca `extracted.contabilizacaoPendente` nas guias com provisão própria; não reabre o mês nem escreve lançamentos. A lista é por empresa/competência. Após reabertura, a ação explícita gera provisões e remove a pendência na mesma transação serializável, com conferência de versão da guia; lançamentos exportados impedem a atualização. Reupload preserva a pendência até essa ação. DAS/INSS mantêm o fluxo próprio da circular e parcelas mantêm o fluxo de parcelamento.
+
 Conta da empresa prevalece por código reduzido em todos os campos, inclusive código completo e status ERP. Esta decisão substitui a antiga propagação de código completo do import global: cada import altera somente o escopo selecionado. A conferência da exportação usa resolverPlanoPorCodigo e lê portalClientId para não depender da ordem do banco. Contas fora do arquivo permanecem; não há migração ou alteração retroativa de contas.

@@ -25,7 +25,6 @@ import { ComunicadosWhatsappPage } from "./features/whatsapp/pages/ComunicadosWh
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
-import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
 import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
 
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";

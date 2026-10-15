@@ -628,6 +628,12 @@ export function createRealApi() {
     async getFechamentoContabil(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}`);
     },
+    async getGuiasPendentesContabilizacao(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/guias-pendentes-contabilizacao/${competencia}`);
+    },
+    async contabilizarGuiaPendente(companyId, guideId, updatedAt) {
+      return request(`/firm/companies/${companyId}/guias-pendentes-contabilizacao/${guideId}/contabilizar`, { method: "POST", body: JSON.stringify({ updatedAt }) });
+    },
     async fecharFechamentoContabil(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/fechar`, { method: "POST" });
     },

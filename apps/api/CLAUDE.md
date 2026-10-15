@@ -1,3 +1,7 @@
+## Calendário legado removido — 15/10/2026
+
+Decisão posterior do usuário: excluir o calendário anterior e todas as suas obrigações e tarefas; não oferecer acesso de compatibilidade. A migration `20261015220000_remove_legacy_calendar` apaga obrigações, ocorrências, regras/exceções, tarefas pessoais antigas, ocultações, snapshots operacionais e imports `legado:`. Mantém tarefas criadas no modelo unificado e documentos/guias/pagamentos. Tabelas legadas permanecem vazias apenas para compatibilidade do schema; triggers recusam INSERT/UPDATE inclusive por versões antigas durante publicação. Rotas legadas respondem 410 após autenticação; cadastro de empresa não propaga regras. Backup externo antes de aplicar. Ensaio isolado em `scripts/verify-calendario-migration.mjs` verifica exclusão, rollback, bloqueio de recriação e preservação financeira/novas tarefas.
+
 # CLAUDE.md — API (apps/api)
 
 ## Retomada no telefone — 28/09/2026
