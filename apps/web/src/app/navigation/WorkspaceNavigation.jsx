@@ -24,7 +24,19 @@ export function WorkspaceNavigationProvider({ children }) {
   const navigate = useNavigate();
   const companyRoute = /^\/companies\/[^/]+\/.+/.test(location.pathname);
   const history = useRef({ entries: [], index: -1 });
-  const [modoVisao, setModoVisao] = useState("calendario");
+  const [modoVisao, guardarModoVisao] = useState("calendario");
+  useLayoutEffect(() => {
+    const modo = new URLSearchParams(location.search).get('visao');
+    if (location.pathname === '/companies' && ['calendario', 'operacoes', 'tabela'].includes(modo)) guardarModoVisao(modo);
+  }, [location.pathname, location.search]);
+  const setModoVisao = useCallback(modo => {
+    if (!['calendario', 'operacoes', 'tabela'].includes(modo)) return;
+    guardarModoVisao(modo);
+    if (location.pathname === '/companies') {
+      const q = new URLSearchParams(location.search); q.set('visao', modo);
+      navigate(`/companies?${q.toString()}`);
+    }
+  }, [location.pathname, location.search, navigate]);
   useLayoutEffect(() => {
     const stack = history.current;
     if (location.pathname === "/login") {
@@ -46,7 +58,7 @@ export function WorkspaceNavigationProvider({ children }) {
   }, [navigate]);
   const resetSession = useCallback(() => {
     history.current = { entries: [], index: -1 };
-    setModoVisao("calendario");
+    guardarModoVisao("calendario");
   }, []);
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
     {/* A estrutura precisa permanecer a mesma: inserir/remover este div desmontava a sessão,

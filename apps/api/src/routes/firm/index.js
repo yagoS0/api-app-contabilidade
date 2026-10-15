@@ -23,6 +23,8 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
+import { createCompanyAutomationRouter } from './companyAutomation.js';
+import { createOperationsRouter } from './operacoes.js';
 import {
   COMPANY_DB_CERT_STORAGE_KEY,
   deleteCompanyPfx,
@@ -593,6 +595,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use(createParcelamentosAcompanhamentoRouter({ log }));
   router.use(createPendenciasManuaisRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createPgdasHistoricoRouter({ prisma, requireFirmCompanyAccess }));
+  router.use(createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess }));
+  router.use(createOperationsRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createExportacaoLoteRouter());
   router.use(createLaboratorioRouter());
   // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.

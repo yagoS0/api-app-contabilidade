@@ -17,6 +17,7 @@ import { getComplianceTags } from "../components/renderCompanyCard";
 import { CompaniesTable } from "../components/renderCompaniesTable";
 import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
+import { OperationsPage } from '../../../operacoes/OperationsPage';
 import { estadoCertificado } from "../lib/certificado";
 
 import {
@@ -563,7 +564,7 @@ export function CompaniesHomePage({
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <h1 className="dashboard-home__title dashboard-home__title--accessible">
-              {modoVisao === "tabela" ? "Empresas" : "Calendario"}
+              {modoVisao === "tabela" ? "Empresas" : modoVisao === 'operacoes' ? 'Operações' : "Calendario"}
             </h1>
             <div className="dashboard-home__views">
               <Tabs
@@ -573,6 +574,7 @@ export function CompaniesHomePage({
                 size="lg"
                 items={[
                   { key: "calendario", label: "Calendario" },
+                  { key: "operacoes", label: "Operações" },
                   { key: "tabela", label: "Empresas" },
                 ]}
                 active={modoVisao}
@@ -1012,7 +1014,7 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+            modoVisao === 'operacoes' ? <OperationsPage api={api} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
               onOpenObligations={onOpenObrigacoes}
               initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}

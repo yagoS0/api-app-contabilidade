@@ -18,6 +18,7 @@ test.each([
   [null, { dasCalculadoLocal: 0 }, 'APURADA'], [null, { dasSimuladoSerpro: 12 }, 'APURADA'],
   [null, { estado: 'transmitida' }, 'FECHADA'],
   [{ estado: 'aberto' }, { numeroDeclaracao: 'recibo' }, 'TRANSMITIDA'],
+  [{ estado: 'aberto', pgdasNumeroDeclaracao: 'entrega-externa' }, null, 'TRANSMITIDA'],
 ])('classifica sem confundir cálculo, fechamento e transmissão %#', async (c, a, estado) => {
   const db = banco(c, a); const r = await situacaoDoPeriodo(db, nota);
   expect(r.estado).toBe(estado); expect(r.provaTransmissao).toBe(estado === 'TRANSMITIDA');

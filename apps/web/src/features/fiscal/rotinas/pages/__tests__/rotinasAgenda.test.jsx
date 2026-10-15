@@ -2,6 +2,17 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import { RotinasPage } from "../renderRotinasPage.jsx";
 
+test('ativação fica dentro da empresa; salvar horários não sobrescreve escolhas de consultas', async () => {
+  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: 'das', label: 'DAS' }], agenda: { das: { enabled: true, day: 5, hour: 7 } }, empresas: [{ companyId: 'empresa-a', razao: 'Empresa A', rotinas: { das: true } }] })), saveRotinas: jest.fn(async () => ({})) };
+  render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
+  fireEvent.click(screen.getByRole('tab', { name: 'Configuração' }));
+  expect(await screen.findByRole('link', { name: 'Empresa A' })).toHaveAttribute('href', '/companies/empresa-a/automacao');
+  expect(screen.queryByLabelText('DAS para Empresa A')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar horários' }));
+  await waitFor(() => expect(api.saveRotinas).toHaveBeenCalled());
+  expect(api.saveRotinas.mock.calls[0][0]).not.toHaveProperty('empresas');
+});
+
 test('histórico mostra empresa, competência e diagnóstico sem confundir erro com não pagamento', async () => {
   const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: 'pagamento', label: 'Pagamento' }], agenda: {}, empresas: [],
     executions: [{ routine: 'pagamento', enabled: true, alive: true, lastRun: { status: 'FAILED', result: { results: [
@@ -29,7 +40,7 @@ test("horário meia-noite e frequência diária são conservados ao salvar", asy
   fireEvent.change(await screen.findByLabelText("Horário de Pagamento"), { target: { value: "00:00" } });
   fireEvent.change(screen.getByLabelText("Frequência da consulta de pagamentos"), { target: { value: "DAILY" } });
   expect(screen.getByLabelText("Dia de Pagamento")).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Salvar rotinas" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar horários" }));
   await waitFor(() => expect(api.saveRotinas).toHaveBeenCalledWith(expect.objectContaining({
     agenda: { pagamento: { enabled: true, day: 20, hour: 0, frequency: "DAILY" } },
   })));
@@ -54,5 +65,5 @@ test("falha mostra ação do contador e não promete retry antigo", async () => 
   expect(screen.queryByText(/Nova tentativa a partir/)).not.toBeInTheDocument();
 });
 
-test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));expect(screen.getByRole('button',{name:'Salvar rotinas'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
-test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar rotinas'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar'})).toBeDisabled();await act(async()=>concluir({}));});
+test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));expect(screen.getByRole('button',{name:'Salvar horários'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
+test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar horários'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar alterações de horário'})).toBeDisabled();await act(async()=>concluir({}));});

@@ -11,14 +11,14 @@ export async function situacaoDoPeriodo(db, { portalClientId, competencia }) {
   const mes = mesFiscal(competencia);
   if (!mes) throw new Error('Competência inválida para conferir o período.');
   const [circular, apuracao, legado] = await Promise.all([
-    db.companyMonthlyCircular.findFirst({ where: { portalClientId, competencia: mes }, select: { estado: true, lockedAt: true } }),
+    db.companyMonthlyCircular.findFirst({ where: { portalClientId, competencia: mes }, select: { estado: true, lockedAt: true, pgdasNumeroDeclaracao: true } }),
     db.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia: mes } },
       select: { estado: true, numeroDeclaracao: true, reciboNumero: true, transmitidoEm: true, fechadaEm: true,
         dasCalculadoLocal: true, dasSimuladoSerpro: true } }),
     db.apuracao.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia: mes } },
       select: { estado: true, numeroDeclaracao: true, reciboNumero: true, transmitidoEm: true, dasValor: true } }),
   ]);
-  const transmitida = Boolean(apuracao?.numeroDeclaracao || apuracao?.reciboNumero || legado?.numeroDeclaracao || legado?.reciboNumero);
+  const transmitida = Boolean(apuracao?.numeroDeclaracao || apuracao?.reciboNumero || legado?.numeroDeclaracao || legado?.reciboNumero || circular?.pgdasNumeroDeclaracao);
   const calculada = legado?.dasValor != null || ['calculada', 'revisada'].includes(legado?.estado) || apuracao?.dasCalculadoLocal != null || apuracao?.dasSimuladoSerpro != null
     || ['calculada', 'revisada'].includes(apuracao?.estado) || ['calculado', 'revisado'].includes(circular?.estado);
   const fechada = ['transmitida', 'confirmada'].includes(legado?.estado) || Boolean(apuracao?.fechadaEm) || ['fechada', 'transmitida', 'confirmada'].includes(apuracao?.estado)

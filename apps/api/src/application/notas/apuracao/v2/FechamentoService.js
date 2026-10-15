@@ -982,7 +982,11 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
  * @param {boolean} liberarReenvio  só na RETIFICAÇÃO: zera os flags de e-mail da guia DAS para
  *   ela poder ser reenviada ao cliente (numa transmissão normal a guia já nasce PENDING).
  */
-async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false, indiceExistente = null, atualizar = false }) {
+async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false, indiceExistente = null, atualizar = false, somenteDocumentosFaltantes = false }) {
+  if (somenteDocumentosFaltantes) {
+    const { completarDocumentosOperacao } = await import('../../../operacoes/OperationsDocuments.js');
+    return completarDocumentosOperacao(prisma, { portalClientId, competencia, indiceExistente });
+  }
   if (atualizar && !contextoSerproAtual().reconsultarAposTransmissao) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true, reconsultarAposTransmissao: true }, () => sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio, indiceExistente, atualizar }));
   const out = { extrato: null, guia: null };
   let guiaSincronizada = null;
@@ -1041,7 +1045,8 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
   return out;
 }
 
-export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false, calculoId }) {
+export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false, calculoId, antesDeTransmitir, somenteDocumentosFaltantes = false }) {
+  await antesDeTransmitir?.();
   const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   exigirEstadoLivre(snapshot);
   const vinculo = validarCalculoConfirmado(snapshot, { portalClientId, competencia, calculoId });
@@ -1051,7 +1056,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   if (reserva.count !== 1) throw erroCalculoObsoleto();
   let envioIniciado = false;
   try {
-    return await transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar, snapshot, vinculo, iniciarEnvio: () => { envioIniciado = true; } });
+    return await transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar, snapshot, vinculo, antesDeTransmitir, somenteDocumentosFaltantes, iniciarEnvio: () => { envioIniciado = true; } });
   } catch (err) {
     const recusaConhecida = ['SERPRO_BUSINESS_ERROR', 'RECEITAS_ANTERIORES_NAO_CONVERGIU'].includes(err?.code);
     const incerto = envioIniciado && !recusaConhecida;
@@ -1061,7 +1066,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   }
 }
 
-async function transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar = false, snapshot, vinculo, iniciarEnvio }) {
+async function transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar = false, snapshot, vinculo, iniciarEnvio, antesDeTransmitir, somenteDocumentosFaltantes }) {
   // Q55: retificar permite reprocessar uma competência já "transmitida".
   const estadosOk = retificar ? ["fechada", "calculada", "transmitida"] : ["fechada", "calculada"];
   if (!estadosOk.includes(snapshot.estado)) {
@@ -1104,7 +1109,7 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
     });
     // C12: mesmo sem retransmitir, traz extrato + guia — é justamente o caso em que o contador
     // mais precisava rodar a busca na mão (a declaração existe, mas a guia podia não estar aqui).
-    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, indiceExistente: indice });
+    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, indiceExistente: indice, somenteDocumentosFaltantes });
     return {
       ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
       mensagem: "PA já declarado — não retransmitido (evita retificadora acidental).",
@@ -1119,7 +1124,7 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
     // desnecessário" ocorre ANTES de a declaração ser aceita, então re-tentar com a lista corrigida
     // é seguro. O cache já convergido pelo Calcular torna o retry raro.
     const exec = await executarComAjusteDePeriodos(
-      (p) => { iniciarEnvio(); return sim.transmitir(p); },
+      async (p) => { await antesDeTransmitir?.(); iniciarEnvio(); return sim.transmitir(p); },
       {
         contratanteCnpj, contribuinteCnpj, competencia,
         regimeApuracao: vinculo.formulario.regimeApuracao,
@@ -1142,7 +1147,7 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
         where: { id: snapshot.id },
         data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
       });
-      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, atualizar: true });
+      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, atualizar: true, somenteDocumentosFaltantes });
       return {
         ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
         mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora).",
@@ -1163,7 +1168,7 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
   });
   // C12: toda transmissão (não só a retificação) já devolve extrato + guia — o contador não
   // precisa mais rodar uma busca depois. Só a retificação libera a guia pra reenvio.
-  const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio: retificar, atualizar: true });
+  const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio: retificar, atualizar: true, somenteDocumentosFaltantes });
 
   return {
     ok: true,

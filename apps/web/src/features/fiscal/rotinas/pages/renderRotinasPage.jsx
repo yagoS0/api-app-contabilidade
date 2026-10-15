@@ -65,7 +65,7 @@ export function RotinasPage({
   const [agenda, setAgenda] = useState({});
   const [executionStatus, setExecutionStatus] = useState([]);
   const [empresas, setEmpresas] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [runningPayment, setRunningPayment] = useState(false);
@@ -120,35 +120,6 @@ export function RotinasPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const allSelected = empresas.length > 0 && empresas.every((e) => selectedIds.has(e.companyId));
-  const someSelected = empresas.some((e) => selectedIds.has(e.companyId));
-
-  function toggleOne(companyId) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(companyId)) next.delete(companyId);
-      else next.add(companyId);
-      return next;
-    });
-  }
-  function toggleAll() {
-    setSelectedIds(() => (allSelected ? new Set() : new Set(empresas.map((e) => e.companyId))));
-  }
-
-  function setRotinaEmpresa(companyId, key, value) {
-    setEmpresas((prev) => prev.map((e) => (
-      e.companyId === companyId ? { ...e, rotinas: { ...e.rotinas, [key]: value } } : e
-    )));
-  }
-
-  // Ação em lote: aplica a rotina nas empresas selecionadas de uma vez.
-  function aplicarEmLote(key, value) {
-    if (!someSelected) return;
-    setEmpresas((prev) => prev.map((e) => (
-      selectedIds.has(e.companyId) ? { ...e, rotinas: { ...e.rotinas, [key]: value } } : e
-    )));
-  }
-
   function setAgendaCampo(key, campo, value) {
     setAgenda((prev) => ({ ...prev, [key]: { ...prev[key], [campo]: value } }));
   }
@@ -168,7 +139,7 @@ export function RotinasPage({
         };
       }
       const out = await api.saveRotinas({
-        empresas: empresas.map((e) => ({ companyId: e.companyId, rotinas: e.rotinas })),
+
         agenda: payloadAgenda,
       });
       if (out?.agenda) setAgenda(out.agenda);
@@ -368,112 +339,13 @@ export function RotinasPage({
             )}
           </section>
 
-          {/* ── Tabela empresa × rotina ── */}
           <section className="serpro-settings-card">
-            <div className="serpro-settings-card__head">
-              <h2 className="serpro-settings-card__title">Empresas</h2>
-              <p className="serpro-settings-card__description">
-                Marque o que cada empresa captura. Selecione várias e use os botões do cabeçalho
-                para aplicar em lote.
-              </p>
-            </div>
-
-
-
-            <div role="region" aria-label="Rotinas por empresa" tabIndex={0} style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", minWidth: 820 }}>
-                <thead>
-                  <tr style={{ background: "var(--bg-subtle)" }}>
-                    <th style={{ ...th, width: 36 }}>
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                        onChange={toggleAll}
-                        aria-label="Selecionar todas"
-                        disabled={loading}
-                      />
-                    </th>
-                    <th style={{ ...th, textAlign: "left" }}>Empresa</th>
-                    <th style={{ ...th, textAlign: "left" }}>Regime</th>
-                    {rotinas.map((r) => (
-                      <th key={r.key} style={th} title={ROTINA_HINT[r.key]}>
-                        <div>{r.label}</div>
-                        {someSelected && (
-                          <div style={{ display: "flex", gap: 3, justifyContent: "center", marginTop: 3 }}>
-                            {/* ⚠⚠ OS DOIS SÃO NEUTROS, e o ✕ era `--state-danger` até 24/08/2026.
-                                Marcar e desmarcar uma rotina em lote são o MESMO gesto em dois
-                                sentidos — nenhum dos dois é sucesso, e nenhum bloqueia nada. Nesta
-                                casa `--state-danger` significa *"bloqueia o fechamento"* e
-                                `--state-ok` significa *"concluído"*; gastá-los num par de
-                                alternância é como se treina o olho a ignorar o vermelho que importa.
-                                ⚠ Quem carrega o significado é o `title`, que já dizia qual é qual. */}
-                            <button
-                              type="button"
-                              onClick={() => aplicarEmLote(r.key, true)}
-                              aria-label={`Marcar ${r.label} nas selecionadas`} title={`Marcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.875rem", minWidth: 32, minHeight: 32, cursor: "pointer", padding: "0 4px" }}
-                            >✓</button>
-                            <button
-                              type="button"
-                              onClick={() => aplicarEmLote(r.key, false)}
-                              aria-label={`Desmarcar ${r.label} nas selecionadas`} title={`Desmarcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.875rem", minWidth: 32, minHeight: 32, cursor: "pointer", padding: "0 4px" }}
-                            >✕</button>
-                          </div>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && (
-                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
-                  )}
-                  {!loading && notice?.type !== "error" && empresas.length === 0 && (
-                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
-                  )}
-                  {empresas.map((e) => {
-                    const checked = selectedIds.has(e.companyId);
-                    const suspensa = e.status === "SUSPENSA";
-                    return (
-                      <tr key={e.companyId} style={{ borderTop: "1px solid var(--border)", background: checked ? "rgba(139,233,253,0.06)" : "transparent", opacity: suspensa ? 0.5 : 1 }}>
-                        <td style={td}>
-                          <input type="checkbox" checked={checked} onChange={() => toggleOne(e.companyId)} aria-label={`Selecionar ${e.razao}`} />
-                        </td>
-                        <td style={{ padding: "6px", color: "var(--text)" }}>
-                          {e.razao}
-                          {suspensa && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "var(--state-warn)" }}>suspensa</span>}
-                          <div style={{ fontSize: "0.8125rem", color: "var(--text-faint)" }}>{e.cnpj}</div>
-                        </td>
-                        <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                          {e.regime === "LUCRO_PRESUMIDO" ? "Presumido" : e.regime === "SIMPLES" ? "Simples" : "—"}
-                        </td>
-                        {rotinas.map((r) => (
-                          <td key={r.key} style={td}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(e.rotinas?.[r.key])}
-                              onChange={(ev) => setRotinaEmpresa(e.companyId, r.key, ev.target.checked)}
-                              style={{ width: 15, height: 15, cursor: "pointer" }}
-                              aria-label={`${r.label} para ${e.razao}`}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="serpro-settings-form__actions" style={{ marginTop: 16 }}>
-              <Button type="button" variant="secondary" disabled={loading} onClick={load}>
-                Descartar
-              </Button>
-              <Button type="button" variant="primary" disabled={saving || loading || !rotinas.length} onClick={handleSave}>
-                {saving ? "Salvando..." : "Salvar rotinas"}
-              </Button>
+            <h2>Consultas por empresa</h2>
+            <p>A ativação fica em Configurações → Automação dentro de cada empresa. Os horários acima continuam compartilhados pelas rotinas.</p>
+            <ul>{empresas.map(e => <li key={e.companyId}><a href={`/companies/${encodeURIComponent(e.companyId)}/automacao`}>{e.razao}</a></li>)}</ul>
+            <div className="serpro-settings-form__actions">
+              <Button variant="secondary" disabled={loading || saving} onClick={load}>Descartar alterações de horário</Button>
+              <Button disabled={saving || loading || !rotinas.length} onClick={handleSave}>{saving ? 'Salvando…' : 'Salvar horários'}</Button>
             </div>
           </section>
 
