@@ -1,6 +1,7 @@
 // Contrato único usado na exportação individual e em lote.
 import { dataCivilBR } from '../../../utils/dataCivil.js';
 import { createHash } from 'node:crypto';
+import { periodoLancamentos } from '../lib/periodoLancamentos.js';
 import { resolverPlanoPorCodigo } from '../lib/gateContaSintetica.js';
 import { computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS } from '../fechamentoBlockers.js';
 function dedupePorTexto(itens) {
@@ -74,7 +75,7 @@ export function validarSelecaoExportacao(entryIds) {
 export async function preflightExportacao(prisma, portalClientId, competencia, incluirLancamentos = false, entryIds = null) {
       if (entryIds) validarSelecaoExportacao(entryIds);
       const entries = await prisma.accountingEntry.findMany({
-        where: { portalClientId, competencia, tipo: { not: "PARCELA" }, ...(entryIds ? { id: { in: entryIds } } : {}) },
+        where: { portalClientId, ...(entryIds ? { data: periodoLancamentos(competencia), id: { in: entryIds } } : { competencia }), tipo: { not: "PARCELA" } },
         orderBy: [{ data: "asc" }, { createdAt: "asc" }, { id: "asc" }],
         ...(incluirLancamentos ? { include: { lines: { orderBy: { ordem: "asc" } } } } : { select: { ...SELECT_PARA_BLOQUEIOS, id: true, historico: true, competencia: true, status: true } }),
       });

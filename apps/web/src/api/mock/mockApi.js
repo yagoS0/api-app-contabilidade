@@ -5639,7 +5639,7 @@ export function createMockApi() {
       await delay();
       prepararInssPagoMock(companyId);
       let list = mockEntriesByCompany.get(companyId) || [];
-      if (params.competencia) list = list.filter((e) => e.competencia === params.competencia);
+      if (params.competencia) list = list.filter((e) => String(e.data || '').slice(0, 7) === params.competencia);
       if (params.tipo) list = list.filter((e) => e.tipo === params.tipo);
       if (params.subtipo) list = list.filter((e) => e.subtipo === params.subtipo);
       if (params.origem) list = list.filter((e) => e.origem === params.origem);

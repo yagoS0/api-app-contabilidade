@@ -30,8 +30,20 @@ test('prévia e CSV usam somente IDs da empresa e confirmar marca somente a sele
   expect(prisma.accountingEntry.updateMany).not.toHaveBeenCalled();
   const c = await request(app).post(`${path}/confirmar`).send({ ...body, preflightHash });
   expect(c.status).toBe(200);
-  expect(prisma.accountingEntry.updateMany).toHaveBeenCalledWith({ where: { portalClientId: 'company-a', competencia: '2026-08', id: { in: ['a'] }, tipo: { not: 'PARCELA' }, status: 'CONFIRMADO' }, data: { status: 'EXPORTADO' } });
+  expect(prisma.accountingEntry.updateMany).toHaveBeenCalledWith({ where: { portalClientId: 'company-a', data: { gte: new Date('2026-08-01T00:00:00Z'), lt: new Date('2026-09-01T00:00:00Z') }, id: { in: ['a'] }, tipo: { not: 'PARCELA' }, status: 'CONFIRMADO' }, data: { status: 'EXPORTADO' } });
   expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'Serializable' });
+});
+
+test('seleção respeita data do pagamento mesmo com competência de origem anterior', async () => {
+  prisma.accountingEntry.findMany.mockImplementation(async ({ where }) => {
+    const e = { ...entry('a'), competencia: '2026-07', data: '2026-08-05' };
+    return (!where.competencia || where.competencia === e.competencia)
+      && new Date(e.data) >= where.data.gte && new Date(e.data) < where.data.lt ? [e] : [];
+  });
+  const preflightHash = await preview();
+  const r = await request(app).post(`${path}/csv`).send({ ...body, preflightHash });
+  expect(r.status).toBe(200);
+  expect(r.text).toContain('05/08/2026');
 });
 test.each([[], ['inexistente'], ['a', 'a']].map(entryIds => ({ entryIds })))('recusa seleção inválida %j', async ({ entryIds }) => {
   const r = await request(app).post(`${path}/preflight`).send({ ...body, entryIds }); expect(r.status).toBe(400);
