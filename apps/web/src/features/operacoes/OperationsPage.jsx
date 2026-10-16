@@ -51,7 +51,7 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
         <span>{label}</span><strong className={key === 'erros' && groups[key].length ? 'operacoes-erro' : ''}>{unavailable ? '—' : groups[key].length}</strong><small>{key === 'erros' || key === 'pendencias' ? 'Ver e resolver' : 'Ver empresas'} ↗</small>
       </button>)}<OperationsAlerts api={api} /></div>
     </div>
-    <OperationsRoutineCompanies api={api} companies={companies} loading={loading} error={error} />
+    <OperationsRoutineCompanies api={api} companies={companies} loading={loading} error={error} onRefreshCompanies={onRefresh} />
     <OperationsDailyCalendar api={api} empresas={companies} onOpenCompany={onOpenCompany} />
     {approvalOpen && <Modal titulo="Conferir e liberar apurações" tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
       {!unavailable ? <OperationsApproval embedded key={competencia} api={api} rows={rows} competencia={competencia} onChanged={onRefresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
