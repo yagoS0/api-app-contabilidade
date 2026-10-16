@@ -69,7 +69,7 @@ describe("reenvio confirmado pela aba Guias", () => {
     let envio;
     await act(async () => { envio = result.current.handleResendGuide("g-klaus"); });
     await waitFor(() => expect(terminarRecarga).toBeDefined());
-    expect(api.resendGuideEmail).toHaveBeenCalledWith("g-klaus");
+    expect(api.resendGuideEmail).not.toHaveBeenCalled();
     expect(api.liberarGuiaCliente).not.toHaveBeenCalled();
     expect(api.listarContatosWhatsapp).toHaveBeenCalledWith("pc-klaus");
     expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ describe("reenvio confirmado pela aba Guias", () => {
 
     await act(async () => { terminarRecarga(guias); await envio; });
     expect(api.getCompanyGuides).toHaveBeenLastCalledWith("pc-klaus");
-    expect(visivel.mensagem.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
+    expect(visivel.mensagem.texto).toMatch(/e-mail não reenviado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
     expect(visivel.erro).toBe("");
     expect(feedback.setError).not.toHaveBeenCalled();
     expect(result.current.guidesState.resendingGuideId).toBe("");

@@ -1,5 +1,8 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Reenvio pelo WhatsApp — 16/10/2026
+Quando o reenvio inclui WhatsApp, não repetir e-mail: aplicar tanto na tarefa do servidor quanto no helper de envio. Mostrar “e-mail não reenviado” e o resultado do WhatsApp; nunca atribuir sucesso de um canal ao outro. A liberação inicial e o reenvio exclusivamente por e-mail mantêm seus caminhos próprios.
+
 ## Correção de competência — 13/10/2026 (desenvolvimento)
 
 Selecionar uma guia processada oferece “Corrigir competência”. Modal compacto com mês/ano, prévia e confirmação; a alteração é apenas cadastral, preserva PDF, valor e vencimento. Depois de salvar, recarrega a lista e os indicadores, limpando a seleção. A API protege empresa/autoria, revisões concorrentes, duplicidade no destino e competências fechadas. Guias pagas, liberadas/enviadas, de parcelamento ou com lançamentos/documentos fiscais vinculados exigem revisão e não são movidas automaticamente. Não exclui/reimporta, não consulta SERPRO e não envia ao cliente. A correção deixa auditoria em AppSetting. O mock explica que precisa do servidor real; testes usam fixtures isoladas.

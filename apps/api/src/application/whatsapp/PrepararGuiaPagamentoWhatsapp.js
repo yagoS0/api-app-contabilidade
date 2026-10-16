@@ -1,5 +1,5 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { lerLinhaDigitavelDoPdf } from '../guides/lerLinhaDigitavelDoPdf.js';
+import { lerLinhaDigitavelDoPdf, MOTIVOS_LEITURA } from '../guides/lerLinhaDigitavelDoPdf.js';
 import { parametrosPagamentoGuia } from './GuiaPagamentoWhatsapp.js';
 import { janelaDaConversa } from './ConversaWhatsappService.js';
 import { identificarGuiaWhatsapp } from './IdentificacaoGuiaWhatsapp.js';
@@ -11,11 +11,13 @@ export const TEMPLATE_GUIA_SEM_CODIGO = 'guia_documento_sem_codigo_v1';
 export async function prepararGuiaPagamentoWhatsapp({ guide, identificacao, conteudoPdf, referencia, conversa, conferir = async () => {}, templateOnly = false },
   { client = prisma, ler = lerLinhaDigitavelDoPdf, janela = janelaDaConversa } = {}) {
   const recusarCodigo = () => Object.assign(new Error('Não foi possível conferir o código de barras. Confira a guia antes de enviar.'), { code: 'LINHA_DIGITAVEL_INDISPONIVEL' });
-  if (guide.linhaDigitavelLidaEm && guide.linhaDigitavelMotivo && guide.linhaDigitavelMotivo !== MOTIVOS.NAO_ENCONTRADA) throw recusarCodigo();
+  const relerMotivos = [MOTIVOS.NAO_ENCONTRADA, MOTIVOS_LEITURA.PDF_ILEGIVEL, MOTIVOS_LEITURA.PDF_SEM_TEXTO];
+  if (guide.linhaDigitavelLidaEm && guide.linhaDigitavelMotivo && !relerMotivos.includes(guide.linhaDigitavelMotivo)) throw recusarCodigo();
   // Ausência legada pode esconder candidato inválido: relê o PDF antes de permitir envio sem botão.
   const leitura = guide.linhaDigitavelLidaEm && guide.linhaDigitavel ? guide
     : await ler(conteudoPdf, { valorTotal: guide.valor, vencimento: guide.vencimento }, { distinguirAusencia: true });
-  const somenteDocumento = !leitura.linhaDigitavel && Boolean(leitura.linhaDigitavelLidaEm) && leitura.linhaDigitavelMotivo === MOTIVOS.NAO_ENCONTRADA;
+  const somenteDocumento = !leitura.linhaDigitavel && Boolean(leitura.linhaDigitavelLidaEm)
+    && [MOTIVOS.NAO_ENCONTRADA, MOTIVOS_LEITURA.PDF_SEM_TEXTO].includes(leitura.linhaDigitavelMotivo);
   if (!somenteDocumento && (!leitura.linhaDigitavel || leitura.linhaDigitavelMotivo)) throw recusarCodigo();
   if (!identificacao) {
     const empresa = guide.portalClient || await client.portalClient.findUnique({ where: { id: guide.portalClientId }, select: { razao: true } });

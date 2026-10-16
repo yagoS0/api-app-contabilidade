@@ -56,6 +56,7 @@ export function situacaoDaLinhaDigitavel(item) {
 export const MOTIVOS_LEITURA = {
   SEM_PDF: "sem_pdf_guardado",
   PDF_ILEGIVEL: "pdf_ilegivel",
+  PDF_SEM_TEXTO: "pdf_sem_texto_extraivel",
   SEM_VALOR_PARA_CONFERIR: "sem_valor_na_guia_para_conferir",
 };
 
@@ -121,7 +122,7 @@ export async function lerLinhaDigitavelDoPdf(pdfBuffer, referencia = {}, opcoes 
   const lida = extrairLinhaDigitavelDoTexto(texto);
   // O envio sem botão só é permitido após uma leitura que distingue ausência de código inválido.
   // O modo legado continua preservado para os consumidores que gravam as quatro colunas.
-  if (opcoes.distinguirAusencia && !texto.trim()) return recusa(MOTIVOS_LEITURA.PDF_ILEGIVEL, agora);
+  if (opcoes.distinguirAusencia && !texto.trim()) return recusa(MOTIVOS_LEITURA.PDF_SEM_TEXTO, agora);
   if (opcoes.distinguirAusencia && !lida.ok && lida.candidatos > 0) return recusa(lida.detalhe?.motivo || 'codigo_divergente_no_documento', agora);
   if (!lida.ok) return recusa(lida.motivo, agora);
 

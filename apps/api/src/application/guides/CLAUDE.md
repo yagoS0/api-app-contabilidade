@@ -1,5 +1,8 @@
 # CLAUDE.md — Guias (apps/api/src/application/guides)
 
+## PDF como imagem e reenvio por canal — 16/10/2026
+PDF aberto pelo parser sem texto extraível pode ser enviado como documento pelo WhatsApp, sem código copiável. Falha ao abrir o PDF continua bloqueada, assim como código ambíguo, inválido ou divergente. O motivo `pdf_sem_texto_extraivel` distingue imagem de arquivo corrompido; recusas antigas de leitura são verificadas novamente antes do envio. No reenvio com WhatsApp solicitado, a tarefa preserva o e-mail e tenta somente WhatsApp. Os resultados identificam cada canal; aceite da Meta continua distinto de entrega.
+
 ## Upload em período fechado — 15/10/2026
 
 O fechamento contábil não impede guardar uma guia por upload com PDF. Esse upload conserva o período fechado e não executa a geração automática de provisões. Operações sem documento continuam sujeitas à trava anterior, assim como a validação de CNPJ no upload por empresa. Reupload preserva pagamento e comprovantes pelo fluxo existente. Erros contábeis e técnicos não devem ser apresentados como falha de identificação. Regressão: `uploadMesFechado.test.js`.

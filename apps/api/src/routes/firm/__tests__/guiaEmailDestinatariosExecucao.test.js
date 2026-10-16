@@ -25,6 +25,13 @@ import { getGuidePdfBuffer } from "../../../application/guides/GuideService.js";
 import { sendLatestGuidesEmailByCompany, sendCompanyGuidesEmail } from "../../../application/guides/GuideCompanyEmailService.js";
 import { runGuideEmailWorkerSelected } from "../../../workers/guideEmailWorker.js";
 import { createFirmPortalRouter } from "../index.js";
+import { manualTasks } from "../../../application/tasks/ManualTaskService.js";
+
+jest.mock('../whatsappGuias.js', () => ({
+  ...jest.requireActual('../whatsappGuias.js'),
+  createIndividualGuideHandler: () => async (req, res) => res.json(await mockWhatsapp(req.body)),
+}));
+const mockWhatsapp = jest.fn();
 
 const mockSend = jest.fn();
 const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
@@ -67,6 +74,28 @@ beforeEach(() => {
   const ensureAuthorized = async (req) => { req.auth = { user: { id: "u1", role: "admin", accountType: "FIRM" } }; return true; };
   app.locals.ensureAuthorized = ensureAuthorized;
   app.use("/firm", createFirmPortalRouter({ ensureAuthorized, log }));
+});
+
+test.each([true, false])('reenvio com WhatsApp (%s) não repete e-mail já enviado', async aceito => {
+  guias = [{ ...guia(), emailStatus: 'SENT' }];
+  contatos = [contato('cliente@example.com')];
+  mockWhatsapp.mockResolvedValue({ ok: aceito, message: aceito ? null : 'Falha no WhatsApp' });
+  let executar;
+  const start = jest.spyOn(manualTasks, 'start').mockImplementation(async (_d, run) => {
+    executar = run; return { id: 'task-test', newlyStarted: true };
+  });
+  try {
+    const response = await request(app).post('/firm/companies/emp1/guides/send-task')
+      .set('Prefer', 'respond-async').send({ items: [{ guideId: 'g1', reenviarConfirmado: true }], whatsappRequested: true });
+    expect(response.status).toBe(202);
+    const result = await executar(jest.fn());
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockWhatsapp).toHaveBeenCalledWith({ reenviar: true });
+    expect(guias[0].emailStatus).toBe('SENT');
+    expect(result.body.resultados[0]).toMatchObject({ ok: aceito, tom: aceito ? 'pendente' : 'erro' });
+    expect(result.body.resultados[0].texto).toContain('E-mail não reenviado');
+    expect(result.body.resultados[0].texto).not.toContain('reenviada com sucesso');
+  } finally { start.mockRestore(); }
 });
 afterEach(() => { globalThis.fetch = fetchOriginal; });
 

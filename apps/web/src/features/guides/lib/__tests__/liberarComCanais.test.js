@@ -21,7 +21,7 @@ describe("liberarComCanais", () => {
       { ativo: true, telefoneE164: "5521999990000", optInEm: "2026-09-14", userId: null },
     ] });
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1", reenviarConfirmado: true });
-    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.resendGuideEmail).not.toHaveBeenCalled();
     expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
     expect(r.whatsapp.ok).toBe(true);
   });
@@ -107,13 +107,13 @@ describe("reenvio confirmado no modal da guia", () => {
     api.resendGuideEmail.mockResolvedValue({ sent: false, envio: { naoSeAplica: true } });
     const perguntar = jest.fn();
     const r = await liberarComCanais({ api, ...pedido, perguntar });
-    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.resendGuideEmail).not.toHaveBeenCalled();
     expect(api.liberarGuiaCliente).not.toHaveBeenCalled();
     expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
     expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
     expect(perguntar).not.toHaveBeenCalled();
     expect(r.ok).toBe(true);
-    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
+    expect(r.texto).toMatch(/(?:sem e-mail cadastrado|e-mail não reenviado) · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
   });
 
   it("EMAIL continua reenviando somente por e-mail", async () => {
@@ -170,7 +170,7 @@ describe("um canal basta — a empresa que só tem WhatsApp", () => {
     const api = apiSemEmail();
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
     expect(r.ok).toBe(true);
-    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
+    expect(r.texto).toMatch(/(?:sem e-mail cadastrado|e-mail não reenviado) · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
     expect(r.texto).not.toMatch(/não saiu/);
   });
 

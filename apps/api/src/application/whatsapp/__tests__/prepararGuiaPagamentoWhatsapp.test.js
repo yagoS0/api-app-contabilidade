@@ -25,10 +25,10 @@ test('guia sem leitura passa pela validação do PDF e valor antes de montar pag
   expect(f.deps.ler).toHaveBeenCalledWith(f.args.conteudoPdf, expect.objectContaining({ valorTotal: 10 }), { distinguirAusencia: true });
 });
 
-test('ausência legada é relida: modelo só de PDF não oferece copiar código', async () => {
+test.each([MOTIVOS.NAO_ENCONTRADA, 'pdf_sem_texto_extraivel'])('PDF sem código copiável (%s) não oferece botão de pagamento', async motivo => {
   const f = cenario(); f.args.templateOnly = true;
   Object.assign(f.args.guide, { linhaDigitavel: null, linhaDigitavelMotivo: MOTIVOS.NAO_ENCONTRADA });
-  f.deps.ler.mockResolvedValue({ linhaDigitavel: null, linhaDigitavelLidaEm: new Date(), linhaDigitavelMotivo: MOTIVOS.NAO_ENCONTRADA });
+  f.deps.ler.mockResolvedValue({ linhaDigitavel: null, linhaDigitavelLidaEm: new Date(), linhaDigitavelMotivo: motivo });
   f.deps.client.templateWhatsapp.findUnique.mockImplementation(async ({ where }) => ({ nomeMeta: where.chave, temDocumento: true, statusAprovacao: 'APROVADO' }));
   const p = await f.run();
   expect(p).toMatchObject({ somenteDocumento: true, template: TEMPLATE_GUIA_SEM_CODIGO });
