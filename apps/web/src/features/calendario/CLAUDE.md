@@ -2,6 +2,8 @@
 
 Semana e dia compartilham o acabamento do mês: superfície, raio de 14 px, bordas, tipografia das datas e cartões, destaque circular de hoje. A grade de horários, sua escala e a compensação da barra de rolagem permanecem próprias dessas visões. Conferir sempre mês/semana/dia em desktop e celular ao alterar o acabamento.
 
+Refinamento solicitado do modal: título e descrição têm caixas discretas, com superfície sutil, borda suave e foco visível. Título digitado em 18 px/peso 500; rótulos e cabeçalhos dos painéis em 500; descrição e valores auxiliares em 400. Manter rótulos persistentes, largura compacta, alvos móveis e o mesmo formulário na criação e edição. A aparência não muda datas, recorrência, vencimento ou conclusão por empresa.
+
 Decisão aprovada pelo usuário: o calendário principal passa a trabalhar exclusivamente com tarefas. `CalendarioAgenda` usa `/firm/agenda/unificada`, `ModalTarefaCalendario` e `PainelTarefaCalendario`; não consulta obrigações, modelos fiscais, marcos ou fluxo automático da carteira. Dia, semana, mês e lista continuam disponíveis; mês é a entrada padrão.
 
 - Um clique no calendário do editor define um dia válido; um segundo clique opcional define intervalo inclusivo. Não abrir outro seletor nativo para escolher entrada/saída. A data clicada na grade inicia o formulário.
