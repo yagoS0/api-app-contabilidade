@@ -79,3 +79,6 @@ apps/api/*-service-account.json
 # É artefato operacional, não código: entra no histórico do git para sempre e não serve a
 # ninguém que clone o repo. O script a escreve no CWD; guarde-a FORA da árvore.
 desfazer-classificacao-*.json
+
+# Private orchestration state, prompts and local review logs
+.altan-governance/

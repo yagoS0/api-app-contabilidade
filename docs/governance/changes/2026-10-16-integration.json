@@ -1,0 +1,30 @@
+{
+  "summary": "Preparar integração da governança com identidade Git verificada, referência operacional versionada e proteções remotas por PR/checks.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Nenhuma alteração de comportamento do produto. Cópia idêntica da referência operacional para clones; propostas pendentes não homologadas.",
+  "tests": [
+    "37 testes de governança executados e aprovados por revisor independente, incluindo hash e fallback em clone.",
+    "Aceitação real anterior: oito sessões, dois domínios, rejeição/correção e juízo sistêmico aprovados."
+  ],
+  "rollback": "Reverter somente os arquivos deste incremento na branch; restaurar blocos de entrada usando backups bootstrap após comparar mudanças posteriores. Preservar alterações do usuário. Não há migração nem dado de produção a reverter.",
+  "humanDecisions": [
+    "Usuário escolheu aprovação humana pelo Orquestrador, sem segunda conta GitHub; integração da governança autorizada.",
+    "V01–V08 e publicação da entrega funcional permanecem fora deste escopo."
+  ]
+}
