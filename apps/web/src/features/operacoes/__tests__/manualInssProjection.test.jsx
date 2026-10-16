@@ -48,7 +48,7 @@ test('manual INSS opens existing guide modal with compact summary and configurat
   render(<OperationsPage api={api} companies={[{ ...company, razao: 'Empresa exemplo', guideCompliance: { competencia: '2026-09', inss: { required: true, state: 'missing', ok: false } } }]} competencia="2026-09" />);
   fireEvent.click(await screen.findByRole('button', { name: /Pendências de guias 1/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes' }));
-  expect(await screen.findByText(/Responsável: Equipe fiscal/)).toBeInTheDocument();
+  expect(await screen.findByText('Equipe fiscal')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Configurar INSS manual' })).toHaveAttribute('href', '/companies/a/automacao?competencia=2026-09');
   expect(screen.queryByRole('textbox', { name: 'Responsável' })).not.toBeInTheDocument();
   expect(api.getCompanyManualInss).toHaveBeenCalledTimes(1);

@@ -61,3 +61,19 @@
 .operacoes-inss-manual > p { margin: 0; }
 .operacoes-inss-manual > button { justify-self: start; }
 .operacoes-inss-manual > a { color: var(--text); text-decoration: underline; padding-block: 8px; overflow-wrap: anywhere; }
+.operacoes-inss-contexto { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.operacoes-inss-contexto > p { margin: 0 0 16px; color: var(--text); font-weight: 500; }
+.operacoes-inss-contexto > p span { color: var(--text-muted); font-weight: 400; }
+.operacoes-inss-dados { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin: 0; }
+.operacoes-inss-dados dt,.operacoes-inss-label { display: block; color: var(--text-muted); font-size: .8rem; margin-bottom: 6px; }
+.operacoes-inss-dados dd { margin: 0; color: var(--text); }
+.operacoes-inss-detalhe { display: grid; gap: 20px; }
+.operacoes-inss-detalhe p { margin: 0; line-height: 1.5; }
+.operacoes-inss-situacao { border-left: 3px solid var(--border); padding-left: 12px; display: grid; gap: 6px; }
+.operacoes-inss-situacao .operacoes-inss-label { margin: 0; }
+.operacoes-inss-situacao strong { font-size: 1.05rem; color: var(--text); }
+.operacoes-inss-observacoes { display: grid; gap: 6px; }
+.operacoes-inss-detalhe .operacoes-inss-origem { font-size: .8rem; color: var(--text-muted); }
+.operacoes-inss-rodape { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; width: 100%; }
+.operacoes-dialogo .operacoes-inss-rodape a.btn { text-decoration: none; }
+@media(max-width:600px) { .operacoes-inss-rodape > .operacoes-acoes { width: 100%; } .operacoes-inss-rodape .operacoes-acoes > a { flex: 1 1 140px; text-align: center; } }
