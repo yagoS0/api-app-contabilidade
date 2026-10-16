@@ -19,3 +19,6 @@ apps/api/src/application/tomador/dados/municipios-tom.csv binary
 *.pdf  binary
 *.woff2 binary
 *.png  binary
+
+# Snapshot operacional validado por SHA-256: preservar bytes entre plataformas.
+REGRAS_OPERACIONAIS.md -text

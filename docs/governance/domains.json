@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "domains": {
+    "governance": {
+      "prefixes": [
+        "AGENTS.md",
+        ".codex/",
+        "docs/governance/",
+        "scripts/governance/",
+        ".gitignore",
+        "REGRAS_OPERACIONAIS.md",
+        ".gitattributes"
+      ],
+      "reviewers": [
+        "altan_system_reviewer"
+      ],
+      "risk": "high",
+      "consumers": []
+    },
+    "ci": {
+      "prefixes": [
+        ".github/",
+        ".githooks/",
+        "infra/",
+        ".do/",
+        "Dockerfile",
+        "railway.toml",
+        "package.json",
+        "package-lock.json"
+      ],
+      "reviewers": [
+        "altan_backend_reviewer",
+        "altan_system_reviewer"
+      ],
+      "risk": "high",
+      "consumers": []
+    },
+    "web": {
+      "prefixes": [
+        "apps/web/"
+      ],
+      "reviewers": [
+        "altan_ui_reviewer",
+        "altan_ux_reviewer"
+      ],
+      "risk": "medium",
+      "consumers": []
+    },
+    "portal": {
+      "prefixes": [
+        "apps/portal-cliente-web/"
+      ],
+      "reviewers": [
+        "altan_ui_reviewer",
+        "altan_ux_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "medium",
+      "consumers": []
+    },
+    "api": {
+      "prefixes": [
+        "apps/api/"
+      ],
+      "reviewers": [
+        "altan_backend_reviewer"
+      ],
+      "risk": "medium",
+      "consumers": [
+        "web",
+        "portal"
+      ]
+    },
+    "data": {
+      "prefixes": [
+        "apps/api/prisma/"
+      ],
+      "reviewers": [
+        "altan_data_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "api",
+        "accounting",
+        "fiscal",
+        "guides",
+        "communication",
+        "commercial",
+        "operations"
+      ]
+    },
+    "shared": {
+      "prefixes": [
+        "packages/shared/"
+      ],
+      "reviewers": [
+        "altan_system_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "api",
+        "web",
+        "portal",
+        "accounting",
+        "fiscal",
+        "guides",
+        "operations",
+        "commercial"
+      ]
+    },
+    "accounting": {
+      "prefixes": [
+        "apps/api/src/application/accounting/",
+        "apps/api/src/application/declarados/",
+        "apps/api/src/application/dre/",
+        "apps/api/src/application/fluxo/",
+        "apps/api/src/application/planejamento/",
+        "apps/api/src/routes/firm/accounting*",
+        "apps/web/src/features/accounting/",
+        "apps/web/src/features/conferencia/",
+        "packages/shared/src/accounting/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "guides",
+        "operations",
+        "web",
+        "portal"
+      ]
+    },
+    "fiscal": {
+      "prefixes": [
+        "apps/api/src/application/fiscal/",
+        "apps/api/src/application/notas/",
+        "apps/api/src/application/nfse/",
+        "apps/api/src/application/obrigacoes/",
+        "apps/api/src/routes/firm/apuracao*",
+        "apps/web/src/features/apuracao*",
+        "apps/web/src/features/fiscal/",
+        "apps/web/src/features/notas/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "accounting",
+        "guides",
+        "operations"
+      ]
+    },
+    "guides": {
+      "prefixes": [
+        "apps/api/src/application/guides/",
+        "apps/web/src/features/guides/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "accounting",
+        "communication",
+        "operations"
+      ]
+    },
+    "communication": {
+      "prefixes": [
+        "apps/api/src/application/whatsapp/",
+        "apps/api/src/application/assistente/",
+        "apps/web/src/features/whatsapp/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "guides",
+        "commercial"
+      ]
+    },
+    "commercial": {
+      "prefixes": [
+        "apps/api/src/application/onboarding/",
+        "apps/web/src/features/onboarding/",
+        "apps/web/src/features/comercial/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_ux_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "operations",
+        "communication"
+      ]
+    },
+    "operations": {
+      "prefixes": [
+        "apps/api/src/workers/",
+        "apps/api/src/application/operacoes/",
+        "apps/api/src/application/company/",
+        "apps/api/src/application/companies/",
+        "apps/api/src/application/calendario/",
+        "apps/api/src/application/tasks/",
+        "apps/web/src/features/operacoes/",
+        "apps/web/src/features/companies/",
+        "apps/web/src/features/calendario/"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer",
+        "altan_backend_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "web",
+        "portal"
+      ]
+    },
+    "security": {
+      "prefixes": [
+        "apps/api/src/application/auth/",
+        "apps/api/src/application/security/",
+        "apps/api/src/middlewares/",
+        "apps/api/src/routes/middlewares/",
+        "apps/api/src/routes/auth.js",
+        "apps/api/src/infrastructure/security/"
+      ],
+      "reviewers": [
+        "altan_backend_reviewer",
+        "altan_system_reviewer"
+      ],
+      "risk": "high",
+      "consumers": [
+        "api",
+        "web",
+        "portal"
+      ]
+    },
+    "documentation": {
+      "prefixes": [
+        "docs/",
+        "README.md",
+        "CLAUDE.md"
+      ],
+      "reviewers": [
+        "altan_domain_reviewer"
+      ],
+      "risk": "low",
+      "consumers": []
+    }
+  }
+}

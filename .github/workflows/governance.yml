@@ -1,0 +1,62 @@
+name: Altan governance
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test governance and parse agent profiles
+        run: |
+          node --test scripts/governance/check.test.mjs scripts/governance/orchestrate.test.mjs scripts/governance/bootstrap.test.mjs scripts/governance/data-gate.test.mjs
+          python3 -c "import pathlib,tomllib; [tomllib.loads(p.read_text(encoding='utf-8')) for p in pathlib.Path('.codex').rglob('*.toml')]"
+      - name: Check PR impact
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/governance/check.mjs check --base "$BASE_SHA" --head "$HEAD_SHA"
+      - name: Check push impact
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: node scripts/governance/check.mjs check --base "$BASE_SHA" --head "$HEAD_SHA" --comparison trees
+
+  accounting-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: America/Sao_Paulo
+      NODE_ENV: test
+      INTEGRACAO_IA_COMERCIAL: "0"
+      INTEGRACAO_FISCAL_LEADS: "0"
+      INTEGRACAO_WHATSAPP: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Accounting services, ledger routes and closing contracts
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/accounting/|accountingEntries|fechamentoContabil'

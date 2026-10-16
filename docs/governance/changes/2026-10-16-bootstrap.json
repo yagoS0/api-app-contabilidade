@@ -1,0 +1,21 @@
+{
+  "summary": "Adicionar governança multiagente incremental: instruções, perfis, mapa, política, gate de impacto e regressão contábil, preservando código funcional e CI existentes.",
+  "risk": "high",
+  "domains": ["accounting", "api", "ci", "commercial", "communication", "data", "documentation", "fiscal", "governance", "guides", "operations", "portal", "shared", "web"],
+  "operationalImpact": "Nenhuma mudança de regra operacional, código funcional, esquema, dado ou serviço em produção. Referência canônica consultada integralmente; V01–V08 não aprovadas por esta entrega. AGENTS por domínio explicam contratos existentes.",
+  "tests": [
+    "node --test scripts/governance/check.test.mjs: 13 testes aprovados, incluindo renomeação, exclusão, reversão e ausência de baseline.",
+    "Python tomllib: nove arquivos TOML analisados sem erro de sintaxe; descoberta automática no Codex instalado ainda não ensaiada.",
+    "npm ci e npm run prisma:generate -w @contabilidade/api: concluídos na árvore isolada.",
+    "Jest API --runInBand --silent --testPathPatterns='application/accounting/|accountingEntries|fechamentoContabil': 50 suítes e 725 testes aprovados.",
+    "git diff --check: sem erros. Gate sem registro de entrega rejeitou a alteração conforme esperado.",
+    "CI remoto, suite completa dos portais, build e ensaios PostgreSQL não executados neste incremento de governança. Não há alteração funcional do aplicativo."
+  ],
+  "rollback": "Remover somente os arquivos adicionados neste incremento e restaurar o AGENTS.md da base ef939e54; não há migração ou dado a reverter. Preservar mudanças posteriores. Se os checks forem tornados obrigatórios remotamente, coordenar a remoção do requisito antes de retirar o workflow.",
+  "humanDecisions": [
+    "Revisar e autorizar integração/publicação da branch; nenhuma realizada nesta entrega.",
+    "Escolher responsáveis GitHub reais e ativar rulesets/checks obrigatórios, revisão humana e proteção de workflows/produção.",
+    "Conciliar e integrar a referência REGRAS_OPERACIONAIS.md na branch compartilhada, sem criar cópia divergente.",
+    "Confirmar a descoberta dos perfis em nova sessão do Codex; permissões são herdadas da sessão."
+  ]
+}

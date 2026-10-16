@@ -18,6 +18,9 @@
     "prisma:generate": "npm run prisma:generate -w @contabilidade/api",
     "prisma:seed": "npm run prisma:seed -w @contabilidade/api",
     "portal:migrate": "npm run portal:migrate -w @contabilidade/api",
-    "progress:update": "node docs/progress/update-current.mjs"
+    "progress:update": "node docs/progress/update-current.mjs",
+    "governance:run": "node scripts/governance/orchestrate.mjs",
+    "governance:test": "node --test scripts/governance/check.test.mjs scripts/governance/orchestrate.test.mjs scripts/governance/bootstrap.test.mjs scripts/governance/data-gate.test.mjs",
+    "governance:acceptance": "node scripts/governance/acceptance.mjs"
   }
 }

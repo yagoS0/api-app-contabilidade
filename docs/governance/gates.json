@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "gates": [
+    {
+      "id": "governance-engine",
+      "domains": [
+        "*"
+      ],
+      "command": [
+        "node",
+        "--test",
+        "{governanceRoot}/scripts/governance/check.test.mjs",
+        "{governanceRoot}/scripts/governance/orchestrate.test.mjs",
+        "{governanceRoot}/scripts/governance/bootstrap.test.mjs",
+        "{governanceRoot}/scripts/governance/data-gate.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000
+    },
+    {
+      "id": "api-regression",
+      "domains": [
+        "api",
+        "accounting",
+        "fiscal",
+        "guides",
+        "operations",
+        "commercial",
+        "communication",
+        "security",
+        "data",
+        "shared"
+      ],
+      "command": [
+        "node",
+        "../../node_modules/jest/bin/jest.js",
+        "--runInBand",
+        "--silent"
+      ],
+      "cwd": "apps/api",
+      "timeoutMs": 1200000
+    },
+    {
+      "id": "web-regression",
+      "domains": [
+        "web",
+        "shared"
+      ],
+      "command": [
+        "node",
+        "../../node_modules/jest/bin/jest.js",
+        "--runInBand",
+        "--silent"
+      ],
+      "cwd": "apps/web",
+      "timeoutMs": 1200000
+    },
+    {
+      "id": "portal-regression",
+      "domains": [
+        "portal",
+        "shared"
+      ],
+      "command": [
+        "node",
+        "../../node_modules/jest/bin/jest.js",
+        "--runInBand",
+        "--silent"
+      ],
+      "cwd": "apps/portal-cliente-web",
+      "timeoutMs": 1200000
+    },
+    {
+      "id": "web-build",
+      "domains": [
+        "web",
+        "shared"
+      ],
+      "command": [
+        "node",
+        "../../node_modules/vite/bin/vite.js",
+        "build"
+      ],
+      "cwd": "apps/web",
+      "timeoutMs": 300000
+    },
+    {
+      "id": "portal-build",
+      "domains": [
+        "portal",
+        "shared"
+      ],
+      "command": [
+        "node",
+        "../../node_modules/vite/bin/vite.js",
+        "build"
+      ],
+      "cwd": "apps/portal-cliente-web",
+      "timeoutMs": 300000
+    },
+    {
+      "id": "data-postgres",
+      "domains": [
+        "data"
+      ],
+      "command": [
+        "node",
+        "{governanceRoot}/scripts/governance/data-gate.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 600000
+    }
+  ]
+}
