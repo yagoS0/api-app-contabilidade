@@ -1,0 +1,33 @@
+{
+  "summary": "Implantar controlador funcional e entrada permanente do Orquestrador Principal, testes, gates e ensaio real de rejeição/correção entre domínios.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Nenhuma mudança de regra operacional, código funcional, esquema, dado ou serviço em produção. Referência canônica consultada integralmente; V01–V08 não aprovadas por esta entrega. AGENTS por domínio explicam contratos existentes.",
+  "tests": [
+    "31 testes automatizados de governança aprovados.",
+    "Aceitação real final: 8 sessões independentes, 2 domínios, 2 rodadas, reprovação e correção, gates e juiz sistêmico aprovados; run 2026-10-16T17-56-41-379Z-813aa200",
+    "Revisão independente do runtime aprovada após correções.",
+    "725 testes contábeis aprovados na etapa anterior; CI remoto/builds/PostgreSQL real não executados neste incremento."
+  ],
+  "rollback": "Reverter somente os arquivos deste incremento na branch; restaurar blocos de entrada usando backups bootstrap após comparar mudanças posteriores. Preservar alterações do usuário. Não há migração nem dado de produção a reverter.",
+  "humanDecisions": [
+    "Definir autoria Git e integrar a branch revisada.",
+    "Definir responsáveis humanos e proteções obrigatórias no GitHub.",
+    "Conciliar referência operacional para novos clones; V01–V08 permanecem pendentes."
+  ]
+}

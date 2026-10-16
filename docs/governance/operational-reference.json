@@ -1,0 +1,7 @@
+{
+  "canonical": "../altan-regras-operacionais/REGRAS_OPERACIONAIS.md",
+  "repositoryFallback": "REGRAS_OPERACIONAIS.md",
+  "status": "versioned-snapshot-reconciled-2026-10-16",
+  "instructions": "No workspace Altan, ler a fonte canônica e reconciliar diferenças com a cópia versionada antes de mudar comportamento. Em clones independentes, ler REGRAS_OPERACIONAIS.md versionado. Propostas V01–V08 continuam pendentes. Novas decisões atualizam referência e testes no mesmo incremento.",
+  "snapshotSha256": "81410a229eebbcc99e254be03055235fb7fe6a3f21e09dcbbcdd5baa18d05e7a"
+}
