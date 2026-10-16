@@ -3,6 +3,7 @@ import { lerOperacao, salvarOperacao } from '../../application/operacoes/Operati
 import { executarOperacao } from '../../application/operacoes/OperationsExecution.js';
 import { backgroundRoute } from '../../application/tasks/ManualTaskService.js';
 import { empresasVisiveis } from './empresasVisiveis.js';
+import { lerInssManual, listarInssManual, salvarInssManual } from '../../application/operacoes/OperationsManualInss.js';
 
 export function createOperationsRouter({ prisma, requireFirmCompanyAccess }) {
   const router = Router();
@@ -15,6 +16,12 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess }) {
     }
   };
   const base = '/companies/:companyId/operacoes/:competencia';
+  router.get('/operacoes/inss-manual', run(async req => {
+    const ids = await empresasVisiveis(req);
+    return prisma.$transaction(tx => listarInssManual(tx, ids, req.query.competencia), { isolationLevel: 'RepeatableRead', timeout: 20000 });
+  }));
+  router.get(`${base}/inss-manual`, requireFirmCompanyAccess(), run(req => prisma.$transaction(tx => lerInssManual(tx, req.params.companyId, req.params.competencia), { isolationLevel: 'RepeatableRead', timeout: 20000 })));
+  router.put(`${base}/inss-manual`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarInssManual(prisma, req.params.companyId, req.params.competencia, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));
   router.get('/operacoes/avisos', run(async req => {
     const ids = await empresasVisiveis(req);
     const where = { portalClientId: { in: ids }, resolvida: false };

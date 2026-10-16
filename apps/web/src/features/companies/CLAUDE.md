@@ -1,5 +1,9 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## INSS manual — 16/10/2026
+
+Automação mantém seção recolhida para controle mensal de INSS: pró-labore cadastrado como referência, exceção justificada, responsável e prazo operacional. Operações reaproveita quadro/modal de pendências com resumo compacto; upload continua em Guias. Não habilitar consultas por esse controle nem alterar apuração, fechamento, Calendário ou estados das guias. Documento disponível não significa transmissão, envio ou pagamento; dispensa conflitante com guia exige revisão. Detalhes e limites em docs/operacoes-continuidade-2026-10-15.md.
+
 ## Automação por regime e pausa SERPRO — 15/10/2026
 
 Usuário reforçou que Simples e Lucro Presumido têm rotinas diferentes. Automação mostra somente opções aplicáveis ao regime cadastrado; a caixa de Operações exclui não aplicáveis das contagens, sem alterar o layout. Regime desconhecido é pendência de cadastro, não empresa desabilitada. Preservar seleções salvas, sem ativar por inferência. Pausa SERPRO fica dentro da empresa, com motivo, prévia e revisão; bloqueia novas consultas e transmissões pelo client integrado, preservando documentos locais. Salvar/retomar não executa chamadas. Não representa pausa de outros conectores ou mensagens.

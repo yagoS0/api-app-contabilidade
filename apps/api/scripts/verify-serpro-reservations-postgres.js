@@ -22,6 +22,7 @@ Object.assign(process.env, {
 });
 const { autorizarChamada, autorizarDespacho, concluirChamada, consumoDoMes } = await import("../src/application/fiscal/serpro/SerproCallGuard.js");
 const { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } = await import('../src/application/fiscal/serpro/CompanyAutomationService.js');
+const { lerInssManual, listarInssManual, salvarInssManual } = await import('../src/application/operacoes/OperationsManualInss.js');
 const { comContextoSerpro } = await import("../src/application/fiscal/serpro/serproCallContext.js");
 const { guardarResposta, lerResposta, chaveResposta } = await import("../src/application/fiscal/serpro/SerproRespostaCache.js");
 const { prisma: singleton } = await import("../src/infrastructure/db/prisma.js");
@@ -150,16 +151,42 @@ try {
     assert.equal(dispatch, null); assert.equal(raced.status, 'abortada_politica');
   }
   ok('concorrência PostgreSQL pausa/despacho produz ordem única e preserva reserva incerta');
+  const comp = '2026-09';
+  await client.portalClient.update({ where: { id: company.id }, data: { hasProlabore: true } });
+  const initialInss = await lerInssManual(client, company.id, comp);
+  assert.equal(initialInss.status, 'PENDING_DOCUMENT');
+  const inssInput = { expectedRevision: initialInss.revision, requestId: randomUUID(), state: { ...initialInss.state, responsible: 'Responsável do ensaio', dueDate: '2026-10-19' } };
+  const inssRace = await Promise.allSettled([
+    salvarInssManual(client, company.id, comp, origem, inssInput, { isAdmin: true }),
+    salvarInssManual(client, company.id, comp, origem, { ...inssInput, requestId: randomUUID(), state: { ...inssInput.state, responsible: 'Outro responsável' } }, { isAdmin: true }),
+  ]);
+  assert.equal(inssRace.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(inssRace.filter(r => r.status === 'rejected').length, 1);
+  const guide = await client.guide.create({ data: { portalClientId: company.id, competencia: comp, tipo: 'INSS', status: 'PROCESSED', source: 'LOCAL', pdfBytes: Buffer.from('%PDF-1.4 fixture'), valor: '100.00', sourceFileId: `${origem}:inss` } });
+  assert.equal((await lerInssManual(client, company.id, comp)).status, 'DOCUMENT_AVAILABLE');
+  assert.equal((await lerInssManual(client, company.id, '2026-10')).status, 'PENDING_DOCUMENT');
+  const savedGuide = await client.guide.findUnique({ where: { id: guide.id } });
+  assert.equal(savedGuide.paymentStatus, 'OPEN');
+  const scoped = await listarInssManual(client, [companies[0].id], comp);
+  assert.equal(scoped.items.length, 1); assert.equal(scoped.items[0].guides.length, 0);
+  const inssCurrent = await lerInssManual(client, company.id, comp);
+  const retryInput = { expectedRevision: inssCurrent.revision, requestId: randomUUID(), state: { ...inssCurrent.state, note: 'Conferência local' } };
+  const firstSave = await salvarInssManual(client, company.id, comp, origem, retryInput, { isAdmin: true });
+  assert.deepEqual(await salvarInssManual(client, company.id, comp, origem, retryInput, { isAdmin: true }), firstSave);
+  ok('INSS manual: disputa preserva revisão, upload local satisfaz documento, replay único e isolamento por competência/empresa');
   console.log(`PASS: ${checks} verificações SERPRO em PostgreSQL real, sem HTTP.`);
 } finally {
   const reservations = await client.serproChamada.findMany({ where: { origem }, select: { id: true } });
   await client.appSetting.deleteMany({ where: { OR: [
     { key: { in: companies.map(c => `company_serpro_policy:${c.id}`) } },
     { key: { startsWith: `company_automation_request:${origem}:` } },
+    { key: { startsWith: `operations_manual_inss_request:${origem}:` } },
+    { key: { in: companies.map(c => `operations_manual_inss:v1:${c.id}:2026-09`) } },
     { key: { in: reservations.map(r => `serpro_dispatch:${r.id}`) } },
   ] } });
   await client.serproRespostaCache.deleteMany({ where: { chave: chaveResposta(documento, "/Emitir") } });
   await client.serproChamada.deleteMany({ where: { origem } });
+  await client.guide.deleteMany({ where: { sourceFileId: `${origem}:inss` } });
   await client.portalClient.deleteMany({ where: { id: { in: companies.map(c => c.id) } } });
   await Promise.all([client.$disconnect(), singleton.$disconnect()]);
 }

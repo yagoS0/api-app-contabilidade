@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao';
 import './operacoes.css';
+import { CompanyManualInss } from './OperationsManualInss';
 
 export function CompanyAutomation({ api, companyId, canEdit }) {
   const [data, setData] = useState(null), [values, setValues] = useState({});
@@ -84,5 +85,6 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         <Button variant="secondary" disabled={busy || !!pending.current} onClick={() => setPreview(false)}>Voltar à edição</Button>
       </div> : <Button disabled={busy || reloadRequired || !hasChanges || (policyChanged && !reason.trim())} onClick={() => setPreview(true)}>Conferir alterações</Button>}
     </>}
+    <CompanyManualInss key={companyId} api={api} companyId={companyId} canEdit={canEdit} />
   </section>;
 }
