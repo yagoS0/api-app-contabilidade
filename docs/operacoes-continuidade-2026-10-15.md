@@ -11,7 +11,7 @@ Base da revisão: produção `4eb64b8b` (PR #215), comparada com a especificaç�
 | Aprovação e notas retroativas | Confirmação/liberação com revisão fiscal, tentativa persistida e avisos para revisão; sem retificação automática. | Preservar aprovações, histórico e bloqueios, sem alterar fechamento. |
 | Pausa por empresa | Seleção de rotina não era uma barreira comum para botões e chamadas compostas. | **Fatia atual:** pausa de operações SERPRO, revisão/auditoria e autorização final antes do transporte. |
 | Políticas por competência/etapa | Seleções existentes são por empresa/rotina. | Exceções por competência, origem efetiva e modos manual/externo/não aplicável; não reinterpretar seleções existentes. |
-| Pró-labore e INSS manual | Ingestão e classificação de guia existem. | Aplicabilidade mensal, responsável/prazo, tarefa externa e documento validado; sem presumir folha transmitida. |
+| Pró-labore e INSS manual | Controle mensal local implementado: cadastro de pró-labore, exceção justificada, responsável, prazo operacional, observação e conferência dos PDFs já armazenados. Usa os modais e upload existentes. | Validar rotina operacional com a equipe; eventual comunicação de cobrança e folha transmitida seguem separadas. |
 | Guia lógica e revisões | Guide, hash, ingestão e recálculo restrito existem. | Substituições/complementares, identidade da obrigação e invalidação de intenções antigas. |
 | Informação de pagamento | Fluxos existentes recebem informação/comprovante e consultam pagamento. | Separar informado/em conferência/confirmado e revisar todos os consumidores antes de migrar. |
 | Comunicação | Transportes, tentativas, callbacks e avisos existentes. | Pausa de mensagens, intenção por revisão e suspensão humana comum; não abrangidos pela pausa SERPRO. |
@@ -40,6 +40,16 @@ Testes cobrem salvamento/revisão/idempotência/acesso; pausa antes da reserva e
 Esta fatia contribui para A01, A03–A05, A07, A21, A25 e A28 **somente no escopo SERPRO descrito**. Não certifica A02 (exceções), A06 (posse entre todos os executores), A24 (tarifa monetária) nem os critérios de revisões/comunicação/pagamento. Resultados de testes e publicação devem ser registrados após execução, sem inferi-los do código.
 
 ## Implantação e reversão
+
+### Continuação em 16/10/2026 — INSS manual
+
+GET/PUT `/firm/companies/:companyId/operacoes/:competencia/inss-manual` e GET `/firm/operacoes/inss-manual?competencia=YYYY-MM` usam exclusivamente o banco. Estado mensal em AppSetting, auditoria por solicitação, revisão dos documentos e cadastro, revalidação do acesso dentro da transação e idempotência. Prazo é interno definido pelo contador, nunca vencimento legal inferido. Responsável é identificação operacional, não concessão de acesso.
+
+A configuração fica recolhida em Automação da empresa. Pendências entram no quadro de Guias existente, com resumo compacto e links para configuração/Guias. Não há tabela nova, alteração do Calendário, ativação automática de rotina, emissão, consulta SERPRO, envio ou baixa de pagamento. INSS pode ser acompanhado em ambos os regimes; DAS/extrato/rotina Presumido conservam sua aplicabilidade anterior.
+
+Sem exceção mensal, a indicação atual de pró-labore serve como referência e fica identificada na tela; não é reconstrução histórica da folha. Exceção exige motivo, inclusive ao voltar ao cadastro. Guia existente contradizendo uma dispensa permanece em revisão. PDF processado no banco é documento disponível, não prova de transmissão, entrega ao cliente ou pagamento. Registro VAZIO não satisfaz documento necessário. Guia de parcelamento não satisfaz INSS mensal. Ponteiro de armazenamento legado sem PDF no banco exige conferir disponibilidade em Guias, sem download automático ou nova captura fiscal.
+
+Testes locais: 39 testes de backend (serviço/rotas/Operações), 62 de interface/mock antes dos dois cenários adicionais de integração, depois os 6 testes de projeção/integração passaram. Conjuntos se sobrepõem. Ensaio de formulário em computador e 390px, com dados fictícios, sem rolagem horizontal. CI inclui ensaio PostgreSQL de concorrência, idempotência, documento local e isolamento empresa/competência. Resultado de implantação deve ser conferido após o CI.
 
 Persistência aditiva em AppSetting e ledger existentes; nenhuma migração destrutiva ou reclassificação em massa. Nenhuma empresa recebe pausa por padrão. Publicar API e UI compatíveis, verificando CI e saúde antes de testar somente leituras em produção. Não alterar configurações de clientes para demonstrar o recurso.
 

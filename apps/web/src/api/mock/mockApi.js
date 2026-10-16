@@ -18,6 +18,7 @@ import { createPendenciasManuaisMock } from './pendenciasManuaisMock';
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
 import { criarCompanyAutomationMock, aplicabilidadeRotinasMock } from './companyAutomationMock';
+import { criarManualInssMock } from './manualInssMock';
 import { criarMockTarefasCalendario } from './tarefasCalendarioMock';
 import { expandirAgenda, normalizarAgenda, somarDiasAgenda, diasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
@@ -3831,6 +3832,7 @@ export function createMockApi() {
 
   return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
     ...criarCompanyAutomationMock(mockCompanies),
+    ...criarManualInssMock(mockCompanies, mockGuidesByCompany),
     ...atendimentoMovel,
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,

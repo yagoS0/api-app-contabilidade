@@ -58,3 +58,6 @@
 
 .operacoes-dialogo a { color: var(--text); text-decoration: underline; }
 .operacoes-dialogo label.operacoes-rotinas-filtros { display:grid; grid-template-columns:1fr; gap:8px; }
+.operacoes-inss-manual > p { margin: 0; }
+.operacoes-inss-manual > button { justify-self: start; }
+.operacoes-inss-manual > a { color: var(--text); text-decoration: underline; padding-block: 8px; overflow-wrap: anywhere; }
