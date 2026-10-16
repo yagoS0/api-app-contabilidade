@@ -123,3 +123,23 @@ test('fechar painel devolve foco ao gatilho e descarte permite Escape sem perder
  fireEvent.click(screen.getByRole('button',{name:'Concluir'}));
  expect(screen.getByLabelText('Título')).toHaveFocus();
 });
+
+
+test('edição preserva duração de bloco previamente redimensionado', async () => {
+  const {api}=montar({inicial:{...inicial,titulo:'Revisão',tarefaId:'t',cicloChave:'2026-10-15',config:{...inicial,horarioModo:'FIXO',horaInicio:'09:00',horaFim:'11:30'}}});
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisão final'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.acaoTarefaCalendario).toHaveBeenCalledWith('t',expect.objectContaining({alteracoes:expect.objectContaining({config:expect.objectContaining({horaInicio:'09:00',horaFim:'11:30'})})})));
+});
+
+test('término fixo inválido mantém formulário e permite correção', async () => {
+  const {api}=montar({inicial:{...inicial,titulo:'Revisão',horarioModo:'FIXO',horaInicio:'09:00'}});
+  fireEvent.click(screen.getByRole('button',{name:'Data e repetição'}));
+  fireEvent.change(screen.getByLabelText('Término (opcional)'),{target:{value:'08:00'}});
+  fireEvent.submit(screen.getByRole('button',{name:'Criar tarefa'}).closest('form'));
+  expect(screen.getByRole('alert')).toHaveTextContent('posterior ao horário de início');
+  expect(api.criarTarefaCalendario).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Término (opcional)'),{target:{value:'10:30'}});
+  fireEvent.submit(screen.getByRole('button',{name:'Criar tarefa'}).closest('form'));
+  await waitFor(()=>expect(api.criarTarefaCalendario).toHaveBeenCalledWith(expect.objectContaining({config:expect.objectContaining({horaFim:'10:30'})})));
+});

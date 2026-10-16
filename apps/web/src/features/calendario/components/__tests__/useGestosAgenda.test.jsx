@@ -98,7 +98,7 @@ test('all-day obligation receives the measured target date and time', () => {
   const { result, evento, salvar } = preparar();
   const obrigacao = { ...item, tipo: 'obrigacao', tarefaId: null, ocorrenciaId: 'irrf', horaInicio: null, horaFim: null };
   act(() => { result.current.iniciar(evento(90, -20), obrigacao); result.current.terminar(evento(355, 180)); });
-  expect(salvar).toHaveBeenCalledWith(obrigacao, { dataInicio: dias[1], dataFim: dias[1], horaInicio: '10:00', horaFim: null });
+  expect(salvar).toHaveBeenCalledWith(obrigacao, { dataInicio: dias[1], dataFim: dias[1], horaInicio: '10:00', horaFim: null, tipoGesto: 'mover', somenteDatas: false, periodoCompleto: false });
 });
 
 test('touch body preserves native scrolling, explicit handle still moves', () => {
@@ -128,4 +128,23 @@ test('selection clamps at the end of the day and speed rises only near visible e
   expect(velocidadeRolagemAgenda(250, { top: 0, bottom: 500 })).toBe(0);
   expect(velocidadeRolagemAgenda(501, { top: 0, bottom: 500 })).toBe(0);
   expect(velocidadeRolagemAgenda(499, { top: 0, bottom: 500 })).toBeGreaterThan(velocidadeRolagemAgenda(475, { top: 0, bottom: 500 }));
+});
+
+
+test('arraste de criação suprime só o clique seguinte e permite clicar noutra célula', () => {
+  const { result, evento, criar } = preparar();
+  act(() => { result.current.iniciarCriacao(evento(90, 135), dias[0]); result.current.terminar(evento(90, 225)); });
+  act(() => result.current.clicarHorario(evento(90, 225), dias[0], 10));
+  expect(criar).toHaveBeenCalledTimes(1);
+  act(() => result.current.clicarHorario(evento(210, 135), dias[1], 9));
+  expect(criar).toHaveBeenCalledTimes(2);
+  expect(criar).toHaveBeenLastCalledWith(expect.objectContaining({ dataInicio: dias[1], horaInicio: '09:00' }));
+});
+
+test('novo ponteiro libera clique depois de cancelar sem click sintetizado', () => {
+  const { result, evento, criar } = preparar();
+  act(() => { result.current.iniciarCriacao(evento(90, 135), dias[0]); result.current.terminar(evento(90, 225)); });
+  act(() => document.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+  act(() => result.current.clicarHorario(evento(210, 135), dias[1], 9));
+  expect(criar).toHaveBeenCalledTimes(2);
 });

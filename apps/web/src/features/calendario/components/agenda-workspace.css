@@ -44,6 +44,12 @@
 .agenda-event:hover .agenda-resize::after,.agenda-event:focus-within .agenda-resize::after { opacity:.6; }
 .agenda-event.is-short .agenda-resize { width:22px; max-width:45%; height:5px; }
 .agenda-event .agenda-move-handle { display:none; }
+.agenda-event.has-date-handles .agenda-resize { top:0; bottom:0; height:auto; width:8px; max-width:none; transform:none; cursor:ew-resize; }
+.agenda-event.has-date-handles .agenda-resize-start { left:0; right:auto; }
+.agenda-event.has-date-handles .agenda-resize-end { left:auto; right:0; }
+.agenda-event.has-date-handles .agenda-resize::after { width:2px; height:14px; }
+.agenda-event.has-date-handles .agenda-move-handle { right:9px; }
+.agenda-date-preview { z-index:20; background:color-mix(in srgb,var(--accent-purple) 18%,var(--bg-surface)); border-color:var(--accent-purple); }
 .agenda-drag-preview { position:absolute; left:0; width:0; pointer-events:none; z-index:5; box-sizing:border-box; border:1px solid var(--event-color,var(--text-muted)); border-left-width:3px; border-radius:4px; background:var(--bg-surface); box-shadow:0 3px 12px #0004; padding:3px 6px; color:var(--text); font-size:12px; line-height:1.35; overflow:hidden; }
 .agenda-drag-preview strong,.agenda-drag-preview span { display:block; }
 .agenda-drag-preview strong { font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }

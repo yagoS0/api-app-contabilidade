@@ -1,3 +1,7 @@
+# Gestos do calendário — 16/10/2026
+
+Pedido aprovado: clique na célula semanal/diária cria naquela data/hora; arraste move a ocorrência e alças alteram duração/período. Preservar identidade, empresas, progresso e vencimento mensal. Sem horário permanece sem horário ao mover no mês/faixa. Avisos adicionais de vencimento não são editáveis. Término opcional persiste no JSON; sem migration. Referência operacional única: `../altan-regras-operacionais/REGRAS_OPERACIONAIS.md` a partir da raiz deste worktree, R19/R20/R22/R24 e cenários T16–T21. Impacto limitado à interação/duração de tarefas, sem mudança fiscal/financeira.
+
 # Calendário unificado — 15/10/2026
 
 Semana e dia compartilham o acabamento do mês: superfície, raio de 14 px, bordas, tipografia das datas e cartões, destaque circular de hoje. A grade de horários, sua escala e a compensação da barra de rolagem permanecem próprias dessas visões. Conferir sempre mês/semana/dia em desktop e celular ao alterar o acabamento.

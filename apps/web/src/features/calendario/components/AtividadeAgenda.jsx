@@ -28,8 +28,9 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
     try { await onConcluir(item); }
     finally { concluindoRef.current = false; setConcluindo(false); }
   }
-  const abrirDetalhe = e => { e.stopPropagation(); abrir(item); };
-  return <div className={`agenda-event${item.unificada ? ' is-unified' : ''}${alerta ? ' is-urgent' : ''}${temHorario ? ' has-time' : ''}${completa ? ' is-complete' : ''}${editavel ? ' is-draggable' : ''}${item.salvando ? ' is-saving' : ''}${style?.height < 36 ? ' is-short' : ''}${gestos?.previa?.item.id === item.id ? ' is-dragging' : ''}`}
+  const abrirDetalhe = e => { e.stopPropagation(); if (gestos?.clicar?.(e) !== false) abrir(item); };
+  const horizontal = gestos?.horizontal || !item.horaInicio;
+  return <div className={`agenda-event${item.unificada ? ' is-unified' : ''}${alerta ? ' is-urgent' : ''}${temHorario ? ' has-time' : ''}${completa ? ' is-complete' : ''}${editavel ? ' is-draggable' : ''}${editavel && horizontal ? ' has-date-handles' : ''}${item.salvando ? ' is-saving' : ''}${style?.height < 36 ? ' is-short' : ''}${gestos?.previa?.item.id === item.id ? ' is-dragging' : ''}`}
     style={{ '--event-color': corAtividade(item), ...style }}
     onPointerDown={editavel ? e => gestos.iniciar(e,item) : undefined}
     onPointerMove={gestos?.mover} onPointerUp={gestos?.terminar} onPointerCancel={gestos?.cancelar} onLostPointerCapture={gestos?.cancelar}
@@ -48,7 +49,7 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
       {temHorario && <span className="agenda-event-meta"><small className="agenda-event-time">{horario}</small>{itens.length > 1 && <small className="agenda-event-progress" aria-label={progresso}>{concluidas}/{itens.length}</small>}</span>}
       {alerta && <small className="agenda-event-deadline"><span aria-hidden="true">⚑ </span>{alerta}</small>}
     </button>
-    {editavel && gestos.permiteRedimensionar !== false && item.horaInicio && <><span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/><span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/></>}
+    {editavel && gestos.permiteRedimensionar !== false && <><span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/><span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/></>}
     {editavel && <span className="agenda-move-handle" data-agenda-move-handle="" aria-hidden="true"/>}
   </div>;
 }

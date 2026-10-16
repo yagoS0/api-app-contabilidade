@@ -38,3 +38,29 @@ test('aba de uma empresa carrega a carteira e já vincula a empresa da página',
  expect(screen.getByRole('checkbox',{name:/Aurora/})).toBeChecked();
  expect(screen.getByRole('checkbox',{name:/Horizonte/})).not.toBeChecked();
 });
+
+test('célula semanal cria com data, início e término da hora escolhida',async()=>{
+ const api=criarMockTarefasCalendario(empresas);
+ render(<CalendarioAgenda api={api} empresas={empresas} initialContext={{referencia:'2026-10-15',visao:'semana'}}/>);
+ await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+ fireEvent.click(screen.getByRole('button',{name:'Criar tarefa em 16/10/2026 às 10:00'}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Título'}),{target:{value:'Criada pela célula'}});
+ fireEvent.click(screen.getByRole('button',{name:'Criar tarefa',exact:true}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+ const out=await api.listarTarefasCalendario({inicio:'2026-10-16',fim:'2026-10-16'});
+ expect(out.itens[0].config).toMatchObject({horaInicio:'10:00',horaFim:'11:00',horarioModo:'FIXO'});
+ expect(out.itens[0].dataInicio).toBe('2026-10-16');
+});
+
+test('redimensiona e move a ocorrência mantendo prazo e empresas',async()=>{
+ const api=criarMockTarefasCalendario(empresas);
+ await api.criarTarefaCalendario({titulo:'Bloco',empresasIds:['a','b'],subtarefas:[{id:'mit',titulo:'MIT'}],config:{dataInicio:'2026-10-15',dataFim:'2026-10-16',horarioModo:'FIXO',horaInicio:'09:00',horaFim:'10:00',recorrencia:'MENSAL',diaVencimento:31}});
+ render(<CalendarioAgenda api={api} empresas={empresas} initialContext={{referencia:'2026-10-15',visao:'semana'}}/>);
+ await screen.findAllByRole('button',{name:'Bloco',exact:true});
+ fireEvent.keyDown(screen.getAllByRole('button',{name:'Bloco',exact:true})[0],{key:'ArrowDown',altKey:true,shiftKey:true});
+ await waitFor(async()=>{const out=await api.listarTarefasCalendario({inicio:'2026-10-12',fim:'2026-10-18'});expect(out.itens[0].config.horaFim).toBe('10:15');});
+ await waitFor(()=>expect(screen.getAllByRole('button',{name:'Bloco',exact:true})[0]).toHaveAttribute('title',expect.stringContaining('10:15')));
+ fireEvent.keyDown(screen.getAllByRole('button',{name:'Bloco',exact:true})[0],{key:'ArrowRight',altKey:true});
+ await waitFor(async()=>{const out=await api.listarTarefasCalendario({inicio:'2026-10-12',fim:'2026-10-18'});expect(out.itens[0]).toMatchObject({dataInicio:'2026-10-16',dataFim:'2026-10-17'});expect(out.itens[0].config).toMatchObject({horaInicio:'09:00',horaFim:'10:15',diaVencimento:31});expect(out.itens[0].empresas).toHaveLength(2);});
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
