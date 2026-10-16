@@ -74,3 +74,10 @@ test('permissão retirada com prévia aberta bloqueia execução', async () => {
   expect(api.saveCompanyOperation).not.toHaveBeenCalled();
   expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
+
+test('detalhe embutido direciona foco e retorna à empresa sem criar modal extra',async()=>{
+ render(<OperationsApproval embedded api={fixture()} rows={rows} competencia="2026-09"/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Conferir'}));expect(screen.getByRole('heading',{name:'Conferir CDA'})).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));expect(screen.getByRole('button',{name:'Conferir'})).toHaveFocus();
+});
+test('lote embutido recebe foco e cancelar retorna ao acionador',async()=>{
+ render(<OperationsApproval embedded api={fixture({status:'CONFIRMED'})} rows={rows} competencia="2026-09"/>);const btn=await screen.findByRole('button',{name:'Liberar confirmadas (1)'});await waitFor(()=>expect(btn).toBeEnabled());fireEvent.click(btn);expect(screen.getByRole('heading',{name:'Liberar apurações confirmadas'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Liberar confirmadas (1)'})).toHaveFocus();
+});

@@ -37,7 +37,7 @@ test('a conferência da empresa usa uma só camada de diálogo e não executa ao
   fireEvent.click(screen.getByRole('button', { name: 'Conferir' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(screen.getByRole('region', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
-  fireEvent.click(within(screen.getByRole('region', { name: 'Conferir CDA' })).getByRole('button', { name: 'Fechar' }));
+  fireEvent.click(within(screen.getByRole('region', { name: 'Conferir CDA' })).getByRole('button', { name: 'Voltar' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled();
   fireEvent.keyDown(document, { key: 'Escape' });
