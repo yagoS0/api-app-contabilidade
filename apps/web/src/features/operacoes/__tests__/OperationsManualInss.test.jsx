@@ -81,7 +81,7 @@ test('resumo compacto mostra pendência e motivo sem formulário ou mensagem de 
   setup({ getCompanyManualInss: jest.fn().mockResolvedValue({ ...initial, status: 'DOCUMENT_REVIEW', state: { ...initial.state, responsible: 'Equipe B', dueDate: '2020-09-18' }, guides: [{ id: 'g1', reviewReason: 'Arquivo não disponível' }] }) }, { compact: true, canEdit: false });
   expect(await screen.findByText('Arquivo não disponível')).toBeInTheDocument();
   expect(screen.getByText(/Prazo operacional vencido/)).toBeInTheDocument();
-  expect(screen.getByText(/Responsável: Equipe B/)).toBeInTheDocument();
+  expect(screen.getByText('Equipe B')).toBeInTheDocument();
   expect(screen.queryByLabelText('Responsável')).not.toBeInTheDocument();
   expect(screen.queryByText(/Seu acesso permite/)).not.toBeInTheDocument();
 });

@@ -27,6 +27,7 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
   const unavailable = loading || Boolean(error);
   const active = selection?.competencia === competencia && !unavailable ? selection : null;
   const selected = active?.id ? [...tasks, ...groups.concluidas].find(t => t.id === active.id) : null;
+  const inssDetail = Boolean(selected && (selected.manualInss || selected.tag?.key === 'inss'));
   const open = (group, id = null) => { setSelection({ group, id, competencia }); setPreview(false); setResult(null); };
   const close = () => { if (!busy) { setSelection(null); setPreview(false); setResult(null); } };
   const link = (company, tab) => `${companyTabPath(company.companyId, tab)}?competencia=${encodeURIComponent(competencia || '')}`;
@@ -60,12 +61,12 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
     {approvalOpen && <Modal titulo="Conferir e liberar apurações" tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
       {!unavailable ? <OperationsApproval embedded key={competencia} api={api} rows={rows} competencia={competencia} onChanged={onRefresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
     </Modal>}
-    {active && <Modal titulo={selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={close} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={<Button variant="secondary" disabled={busy} onClick={close}>Fechar</Button>}>
+    {active && <Modal titulo={inssDetail ? nome(selected.company) : selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={close} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={inssDetail ? <div className="operacoes-inss-rodape"><Button variant="secondary" disabled={busy} onClick={close}>Fechar</Button>{!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-md" href={link(selected.company, 'automacao')}>Configurar INSS manual</InternalLink><InternalLink className="btn btn-primary btn-md" href={link(selected.company, 'guides')}>Abrir Guias</InternalLink></div>}</div> : <Button variant="secondary" disabled={busy} onClick={close}>Fechar</Button>}>
       <div className="operacoes">
-        <p>Competência {competencia}</p>
+        {inssDetail ? <div className="operacoes-inss-contexto"><p>INSS <span>· Competência {competencia?.split('-').reverse().join('/')}</span></p><dl className="operacoes-inss-dados"><div><dt>Apuração</dt><dd>{selected.fluxo.apuracao.rotulo}</dd></div><div><dt>Contabilidade</dt><dd>{selected.fluxo.contabilizacao.rotulo}</dd></div></dl></div> : <p>Competência {competencia}</p>}
         {result && <p role={result.error ? 'alert' : 'status'}>{result.message}</p>}
         {active.id && !selected ? <p role="status">Este item não está mais pendente na lista atualizada.</p> : selected ? <>
-          <p>Apuração: <strong>{selected.fluxo.apuracao.rotulo}</strong> · Contabilidade: {selected.fluxo.contabilizacao.rotulo}</p>
+          {!inssDetail && <p>Apuração: <strong>{selected.fluxo.apuracao.rotulo}</strong> · Contabilidade: {selected.fluxo.contabilizacao.rotulo}</p>}
           {selected.tipo === 'erros' && <>
             <p className="operacoes-erro">{selected.tag.envioErro || selected.tag.emailLastError || 'O envio falhou. O provedor não informou o motivo.'}</p>
             <p>{whatsapp ? 'WhatsApp' : 'Envio pelos canais cadastrados'} · A guia já existe. A falha de envio não desfaz a apuração.</p>
@@ -73,9 +74,9 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
             {preview ? <div className="operacoes-previa"><h3>Conferir novo envio</h3><p>{selected.tag.label} de {nome(selected.company)} · {competencia}</p><p>{whatsapp ? 'Somente WhatsApp, para os destinos com falha.' : 'Liberar a guia e enviar pelos canais cadastrados, conforme o fluxo atual.'} Será usado o documento salvo, sem buscar outro DAS ou extrato.</p><div className="operacoes-acoes"><Button disabled={busy} onClick={enviar}>{busy ? 'Enviando…' : 'Confirmar envio'}</Button><Button variant="secondary" disabled={busy} onClick={() => setPreview(false)}>Cancelar</Button></div></div>
               : !result && send && selected.tag.guideId && <Button disabled={whatsapp && !offer.habilitado} onClick={() => setPreview(sendIdentity)}>Conferir novo envio</Button>}
           </>}
-          {selected.tipo === 'pendencias' && <p>{selected.tag?.state === 'missing' ? 'Confira ou anexe o documento na aba Guias. A ausência do arquivo não comprova falta de apuração.' : selected.tag?.state === 'gerada' ? 'Documento disponível. Confira o destino e a liberação na aba Guias.' : 'Confira o detalhe desta pendência na empresa.'}</p>}
+          {selected.tipo === 'pendencias' && !inssDetail && <p>{selected.tag?.state === 'missing' ? 'Confira ou anexe o documento na aba Guias. A ausência do arquivo não comprova falta de apuração.' : selected.tag?.state === 'gerada' ? 'Documento disponível. Confira o destino e a liberação na aba Guias.' : 'Confira o detalhe desta pendência na empresa.'}</p>}
           {(selected.manualInss || selected.tag?.key === 'inss') && api?.getCompanyManualInss && <OperationsManualInss compact key={`${selected.company.companyId}:${competencia}`} api={api} companyId={selected.company.companyId} competencia={competencia} canEdit={false} />}
-          {!busy && <div className="operacoes-acoes operacoes-destinos">
+          {!busy && !inssDetail && <div className="operacoes-acoes operacoes-destinos">
             <InternalLink href={link(selected.company, selected.tipo === 'apuracoes' ? 'cadastroFiscal' : 'guides')}>{selected.tipo === 'apuracoes' ? 'Abrir apuração' : 'Abrir Guias e corrigir'}</InternalLink>
             <InternalLink href={link(selected.company, 'automacao')}>{selected.manualInss || selected.tag?.key === 'inss' ? 'Configurar INSS manual' : 'Configurar consultas'}</InternalLink>
           </div>}

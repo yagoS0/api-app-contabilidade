@@ -59,6 +59,27 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
   function edit(key, value) { setSaved(''); setForm(v => ({ ...v, [key]: value })); }
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const overdue = data?.state.dueDate && data.state.dueDate < today && ['PENDING_DOCUMENT', 'DOCUMENT_REVIEW'].includes(data.status);
+  if (compact) return <section className="operacoes-inss-detalhe" aria-label="Controle de INSS manual">
+    {busy && !data && <p role="status">Carregando controle de INSS…</p>}
+    {error && <div role="alert"><p>{error}</p><Button variant="secondary" disabled={busy} onClick={load}>Recarregar controle</Button></div>}
+    {data && <>
+      <div className="operacoes-inss-situacao">
+        <span className="operacoes-inss-label">Documento</span>
+        <strong role="status">{statuses[data.status]}</strong>
+        {data.status === 'DOCUMENT_REVIEW' && <p role="alert">Confira a classificação e o documento antes de liberar ao cliente.</p>}
+        {[...new Set((data.guides || []).map(g => g.reviewReason).filter(Boolean))].map(reason => <p key={reason}>{reason}</p>)}
+      </div>
+      <dl className="operacoes-inss-dados">
+        <div><dt>Responsável</dt><dd>{data.state.responsible || 'Não definido'}</dd></div>
+        <div><dt>Prazo operacional</dt><dd>{dataCivilBR(data.state.dueDate) || 'Não definido'}</dd>{overdue && <span className="operacoes-erro" role="alert">Prazo operacional vencido</span>}</div>
+      </dl>
+      {(data.state.note || data.state.reason) && <div className="operacoes-inss-observacoes">
+        {data.state.note && <><span className="operacoes-inss-label">Observação</span><p>{data.state.note}</p></>}
+        {data.state.reason && <><span className="operacoes-inss-label">Motivo da exceção</span><p>{data.state.reason}</p></>}
+      </div>}
+      <p className="operacoes-inss-origem">{data.applicabilitySource === 'month' ? 'Aplicação definida para esta competência.' : `Conforme cadastro da empresa · ${data.hasProlabore ? 'com' : 'sem'} pró-labore.`}</p>
+    </>}
+  </section>;
   return <section className="operacoes operacoes-inss-manual" aria-label="Controle de INSS manual" style={{ display: 'grid', gap: 12, maxWidth: 640 }}>
     {busy && !data && <p role="status">Carregando controle de INSS…</p>}
     {error && <div role="alert"><p>{error}</p>{(!pending.current || reloadRequired) && <Button variant="secondary" disabled={busy} onClick={load}>Recarregar controle</Button>}</div>}
