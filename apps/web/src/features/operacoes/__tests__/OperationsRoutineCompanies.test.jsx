@@ -52,6 +52,23 @@ test('resposta de sessão antiga não substitui leitura atual', async () => {
   expect(screen.getByRole('button', { name: 'Não habilitadas 2' })).toBeInTheDocument();
 });
 
+test('DAS não conta presumido como desabilitado nem regime desconhecido como elegível', async () => {
+  const data = { ...response, items: [
+    { companyId: 'a', enabledKeys: [], applicableKeys: ['das', 'inss'], regime: 'SIMPLES' },
+    { companyId: 'b', enabledKeys: ['presumido'], applicableKeys: ['presumido', 'inss'], regime: 'LUCRO_PRESUMIDO' },
+    { companyId: 'c', enabledKeys: [], applicableKeys: [], regime: null, unavailableReason: 'Regime não confirmado' },
+  ] };
+  render(<OperationsRoutineCompanies api={{ getOperationRoutines: async () => data }} companies={[...companies, { companyId: 'c', razao: 'Sem regime' }]} />);
+  await screen.findByRole('button', { name: 'Habilitadas 1' });
+  expect(screen.getByRole('button', { name: 'Não habilitadas 1' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Rotina' }), { target: { value: 'das' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Não habilitadas 1' }));
+  expect(screen.getByRole('link', { name: 'Empresa Alfa' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Empresa Beta' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Sem regime' })).not.toBeInTheDocument();
+});
+
+
 
 test('erro da carteira dentro do modal recarrega empresas e rotinas sem executar operações', async () => {
  const api={getOperationRoutines:jest.fn(async()=>response),executeCompanyOperation:jest.fn()};
@@ -66,4 +83,5 @@ test('erro da carteira dentro do modal recarrega empresas e rotinas sem executar
  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
  view.rerender(<OperationsRoutineCompanies api={api} companies={companies} onRefreshCompanies={refresh}/>);
  expect(dialog.getByRole('link',{name:'Empresa Alfa'})).toBeInTheDocument();
+
 });

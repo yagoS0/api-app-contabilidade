@@ -8,7 +8,8 @@ function banco() {
     ? v.in ? v.in.includes(r[k]) : v.gte ? new Date(r[k]) >= v.gte : false : r[k] === v);
   const client = {
     rows,
-    portalClient: { count: jest.fn(async () => 10), findFirst: jest.fn(async () => ({ id: "empresa" })) },
+    portalClient: { count: jest.fn(async () => 10), findMany: jest.fn(async () => [{ id: "empresa" }]) },
+    appSetting: { findUnique: jest.fn(async () => null) },
     serproChamada: {
       findFirst: jest.fn(async ({where}) => rows.filter((r) => match(r,where)).at(-1) || null),
       count: jest.fn(async ({where}) => rows.filter((r) => match(r,where)).length),
@@ -49,7 +50,7 @@ test("duas tentativas concorrentes idênticas reservam somente uma operação", 
   expect(resultados.map(r=>r.status).sort()).toEqual(["fulfilled","rejected"]);
   expect(client.rows.filter(r=>r.status === "reservada")).toHaveLength(1);
   expect(resultados.find(r=>r.status === "rejected").reason.code).toBe("SERPRO_CHAMADA_EM_ANDAMENTO");
-  expect(client.$queryRaw).toHaveBeenCalledTimes(2);
+  expect(client.$queryRaw).toHaveBeenCalledTimes(4);
 });
 test("chamadas diferentes concorrentes respeitam a última vaga do teto", async () => {
   const client = banco();

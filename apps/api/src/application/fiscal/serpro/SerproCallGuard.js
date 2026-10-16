@@ -4,6 +4,7 @@ import { SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRE
   SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA, SERPRO_TETO_MENSAL_MINIMO, SERPRO_TETO_MENSAL_ABSOLUTO, SERPRO_ALERTA_FRACAO } from "../../../config.js";
 import { contextoSerproAtual } from "./serproCallContext.js";
 import { chaveResposta } from "./SerproRespostaCache.js";
+import { empresaDaChamada, conferirPoliticaSerpro, bloquearPoliticaEmpresa } from './CompanySerproPolicy.js';
 
 // Ledger/contrato global desta instalação: modelo atual não tem firmId. Lock só durante reserva.
 // Reserva órfã continua contando e bloqueia assinatura; ausência de resposta não prova ausência de consumo.
@@ -70,8 +71,21 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
   try {
     desfecho = await client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(73517001)`;
-      const empresa = id.cnpj ? await tx.portalClient.findFirst({ where: { cnpj: { contains: id.cnpj } }, select: { id: true } }) : null;
-      base.portalClientId = empresa?.id || null;
+      let politicaRecusa = null;
+      try {
+        base.portalClientId = await empresaDaChamada(tx, payload);
+        if (base.portalClientId) {
+          await bloquearPoliticaEmpresa(tx, base.portalClientId);
+          await conferirPoliticaSerpro(tx, base.portalClientId);
+        }
+      } catch (error) {
+        if (!error.code?.startsWith('SERPRO_')) throw error;
+        politicaRecusa = new SerproGuardError(error.code, error.message, error.detalhe);
+      }
+      if (politicaRecusa) {
+        await tx.serproChamada.create({ data: { ...base, status: 'recusada_politica', erroCodigo: politicaRecusa.code } });
+        return { recusa: politicaRecusa };
+      }
       // Em voo/incerta não é ignorada por forcar nem pelo desligamento dos tetos.
       const assinaturaLegada = crypto.createHash("sha256").update(`${rota}|${JSON.stringify(payload ?? null)}`).digest("hex");
       const pendente = await tx.serproChamada.findFirst({ where: { assinatura: { in: [id.assinatura, assinaturaLegada] }, status: { in: ["reservada", "incerta"] } }, orderBy: { createdAt: "desc" } });
@@ -105,6 +119,32 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
   } catch (e) { if (e instanceof SerproGuardError) throw e; throw medicaoIndisponivel(); }
   if (desfecho.recusa) throw desfecho.recusa;
   return desfecho.autorizacao;
+}
+// Linearização da autorização de despacho e da pausa usam o mesmo lock de empresa.
+// A transação termina antes de HTTP. Pausa posterior não cancela transporte já autorizado.
+export async function autorizarDespacho(autorizacao, client = prisma) {
+  if (!autorizacao?.id) throw medicaoIndisponivel();
+  let desfecho;
+  try {
+    desfecho = await client.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(73517001)`;
+      const reserva = await tx.serproChamada.findUnique({ where: { id: autorizacao.id } });
+      if (!reserva || reserva.status !== 'reservada') throw new SerproGuardError('SERPRO_REGISTRO_INDETERMINADO', 'A reserva SERPRO não está disponível para despacho. Confira o registro antes de repetir.');
+      if (reserva.portalClientId) await bloquearPoliticaEmpresa(tx, reserva.portalClientId);
+      const key = `serpro_dispatch:${reserva.id}`;
+      if (await tx.appSetting.findUnique({ where: { key } })) throw new SerproGuardError('SERPRO_CHAMADA_EM_ANDAMENTO', 'Esta reserva já foi autorizada para envio. Não será enviada novamente.');
+      try { await conferirPoliticaSerpro(tx, reserva.portalClientId); }
+      catch (error) {
+        if (!error.code?.startsWith('SERPRO_')) throw error;
+        const abortada = await tx.serproChamada.updateMany({ where: { id: reserva.id, status: 'reservada' }, data: { status: 'abortada_politica', erroCodigo: error.code, erroMensagem: error.message.slice(0, 300), duracaoMs: Date.now() - autorizacao.inicio } });
+        if (abortada.count !== 1) throw new SerproGuardError('SERPRO_REGISTRO_INDETERMINADO', 'Não foi possível confirmar o cancelamento antes do despacho. Confira o registro; nenhuma nova operação foi enviada.');
+        return { recusa: new SerproGuardError(error.code, error.message, error.detalhe) };
+      }
+      await tx.appSetting.create({ data: { key, value: { reservaId: reserva.id, companyId: reserva.portalClientId, authorizedAt: new Date().toISOString() } } });
+      return {};
+    }, { maxWait: 10000, timeout: 15000, isolationLevel: 'ReadCommitted' });
+  } catch (error) { if (error instanceof SerproGuardError) throw error; throw medicaoIndisponivel(); }
+  if (desfecho.recusa) throw desfecho.recusa;
 }
 export async function concluirChamada(autorizacao, { httpStatus = null, erroCodigo = null, erroMensagem = null, abortadaAuth = false } = {}, client = prisma) {
   if (!autorizacao?.id) throw medicaoIndisponivel();

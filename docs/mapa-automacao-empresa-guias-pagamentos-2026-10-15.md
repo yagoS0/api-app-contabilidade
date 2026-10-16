@@ -2,6 +2,8 @@
 
 Data: 15/10/2026.
 
+Atualização após a PR #215: o usuário aprovou tarefas apresentadas pelo Calendário real em modo dia dentro de Operações. Isso substitui a restrição de apresentação abaixo; autorização fiscal continua independente. O estado das lacunas e a próxima fatia estão em [Continuidade de Operações](operacoes-continuidade-2026-10-15.md).
+
 Complemento após revisão independente de três agentes: [Plano de implementação da Central de Operações](plano-executavel-central-operacoes-2026-10-15.md). Ele define rotas, telas, dados, consultas, erros, concorrência e entregas e prevalece sobre propostas preliminares deste mapa. Operações fica ao lado do Calendário apenas na navegação; sua rotina é independente e usa os status da tabela Empresas. Não reutilizar tarefas/obrigações do Calendário. Ativação de consultas fica exclusivamente dentro de cada empresa.
 
 A Altan já possui serviços para conciliação do PGDAS-D, procurações, documentos, envio de guias, acompanhamento de pagamento e reservas contra repetição. A evolução deve conectar essas bases por uma política comum de execução, acrescentando revisão de documentos e distinção entre pagamento informado e confirmado. Não é necessário substituir as telas, o fechamento ou os serviços fiscais existentes.

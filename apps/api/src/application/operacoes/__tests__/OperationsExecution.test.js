@@ -54,3 +54,46 @@ test('extrato salvo e DAS ausente busca somente DAS; guia manual não é substit
   await completarDocumentosOperacao(db, { portalClientId: 'a', competencia: '2026-09' }, { sync, capture });
   expect(capture).toHaveBeenCalledTimes(1);
 });
+
+test('pausa durante extrato interrompe a operação composta e preserva DAS manual', async () => {
+  const { db } = setup();
+  db.guide.findFirst.mockResolvedValue({ pdfBytes: Buffer.from('manual') });
+  const sync = jest.fn(async () => { throw Object.assign(new Error('interno'), { code: 'SERPRO_EMPRESA_PAUSADA' }); });
+  const capture = jest.fn();
+  const out = await completarDocumentosOperacao(db, { portalClientId: 'a', competencia: '2026-09' }, { sync, capture });
+  expect(out.extrato).toMatchObject({ ok: false, skipped: true, code: 'SERPRO_EMPRESA_PAUSADA', reason: expect.stringContaining('Automação') });
+  expect(out.guia).toEqual({ ok: true, reutilizado: true });
+  expect(capture).not.toHaveBeenCalled();
+});
+
+test.each(['SERPRO_EMPRESA_PAUSADA', 'SERPRO_REGISTRO_INDETERMINADO', 'SERPRO_MEDICAO_INDISPONIVEL', 'SERPRO_CHAMADA_REPETIDA'])('%s não dispara segunda consulta documental', async code => {
+  const { db } = setup();
+  const sync = jest.fn(async () => { throw Object.assign(new Error('texto sensível'), { code }); });
+  const capture = jest.fn();
+  const out = await completarDocumentosOperacao(db, { portalClientId: 'a', competencia: '2026-09' }, { sync, capture });
+  expect(out.extrato.code).toBe(code); expect(out.guia.code).toBe(code);
+  expect(JSON.stringify(out)).not.toContain('texto sensível');
+  expect(capture).not.toHaveBeenCalled();
+});
+
+test('documentos completos não chegam aos conectores mesmo quando eles recusariam por pausa', async () => {
+  const { db } = setup();
+  db.companyMonthlyCircular.findUnique.mockResolvedValue({ pgdasNumeroDeclaracao: 'n', pgdasDeclaracaoFileId: 'd', pgdasReciboFileId: 'r' });
+  db.guide.findFirst.mockResolvedValue({ pdfBytes: Buffer.from('pdf') });
+  const forbidden = jest.fn(async () => { throw Error('Nenhuma chamada é permitida'); });
+  expect(await completarDocumentosOperacao(db, { portalClientId: 'a', competencia: '2026-09' }, { sync: forbidden, capture: forbidden }))
+    .toEqual({ extrato: { ok: true, reutilizado: true }, guia: { ok: true, reutilizado: true } });
+  expect(forbidden).not.toHaveBeenCalled();
+});
+
+test('motivo da pausa documental persiste na conferência sem rebaixar entrega comprovada', async () => {
+  const { db, values, args, deps, transmit } = setup();
+  db.companyMonthlyCircular.findUnique.mockResolvedValue({ pgdasNumeroDeclaracao: 'n' });
+  deps.documents = { sync: jest.fn(async () => { throw Object.assign(new Error('pausada'), { code: 'SERPRO_EMPRESA_PAUSADA' }); }), capture: jest.fn() };
+  const result = await executarOperacao(db, args, deps);
+  expect(result.jaDeclarado).toBe(true); expect(transmit).not.toHaveBeenCalled();
+  const execution = values.get('operations_execution:a:2026-09:release');
+  expect(execution.message).toContain('pausadas');
+  expect(execution.documentos.guia.code).toBe('SERPRO_EMPRESA_PAUSADA');
+  expect(deps.documents.capture).not.toHaveBeenCalled();
+});

@@ -2,7 +2,7 @@ import { contextoOrigemCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.j
 import { lerOperacao } from './OperationsService.js';
 import { procuracaoPermitePgdas } from '../fiscal/serpro/pgdasDocumentos.js';
 import { comContextoSerpro } from '../fiscal/serpro/serproCallContext.js';
-import { completarDocumentosOperacao } from './OperationsDocuments.js';
+import { completarDocumentosOperacao, motivosBloqueioDocumental } from './OperationsDocuments.js';
 
 const fail = message => Object.assign(new Error(message), { status: 409 });
 const digits = value => String(value || '').replace(/\D/g, '');
@@ -50,10 +50,11 @@ export async function executarOperacao(db, args, deps = {}) {
         calculoId: claim.calculoId, somenteDocumentosFaltantes: true, antesDeTransmitir: () => conferirExecucao(db, claim.guardArgs, procurador) });
     });
     const missing = Object.values(result.posTransmissao || {}).some(r => r?.skipped || r?.ok === false);
-    await db.appSetting.update({ where: { key: claim.key }, data: { value: { ...claim.value, status: 'DONE', finishedAt: new Date().toISOString(), documentos: result.posTransmissao || null, message: missing ? 'Apuração processada, mas há documentos faltantes. Confira Tarefas e Guias; não será feita nova consulta automaticamente.' : null } } });
+    const blockingReason = Object.values(result.posTransmissao || {}).map(r => motivosBloqueioDocumental[r?.code]).find(Boolean);
+    await db.appSetting.update({ where: { key: claim.key }, data: { value: { ...claim.value, status: 'DONE', finishedAt: new Date().toISOString(), documentos: result.posTransmissao || null, message: blockingReason || (missing ? 'Apuração processada, mas há documentos faltantes. Confira Tarefas e Guias; não será feita nova consulta automaticamente.' : null) } } });
     return result;
   } catch (error) {
-    await db.appSetting.update({ where: { key: claim.key }, data: { value: { ...claim.value, status: 'ATTENTION', finishedAt: new Date().toISOString(), message: 'Confira o resultado e os documentos antes de nova ação. A tentativa não será repetida automaticamente.' } } }).catch(() => {});
+    await db.appSetting.update({ where: { key: claim.key }, data: { value: { ...claim.value, status: 'ATTENTION', finishedAt: new Date().toISOString(), message: motivosBloqueioDocumental[error?.code] || 'Confira o resultado e os documentos antes de nova ação. A tentativa não será repetida automaticamente.' } } }).catch(() => {});
     throw error;
   }
 }
