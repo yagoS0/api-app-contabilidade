@@ -97,3 +97,14 @@ test('evento aproveita colunas livres quando os vizinhos terminam', () => {
   expect(positions.find(p=>p.item.id==='d')).toMatchObject({coluna:1,colunas:3,extensao:2});
   expect(positions.find(p=>p.item.id==='a')).toMatchObject({coluna:0,colunas:3,extensao:1});
 });
+
+
+test('clique sintetizado do arraste não abre tarefa, próximo clique abre', () => {
+  const abrir = jest.fn(), clicar = jest.fn().mockReturnValueOnce(false).mockReturnValue(true);
+  render(<AtividadeAgenda item={tarefa} abrir={abrir} gestos={{ habilitada: () => true, clicar }} />);
+  const button = screen.getByRole('button', { name: tarefa.titulo });
+  fireEvent.click(button);
+  expect(abrir).not.toHaveBeenCalled();
+  fireEvent.click(button);
+  expect(abrir).toHaveBeenCalledTimes(1);
+});

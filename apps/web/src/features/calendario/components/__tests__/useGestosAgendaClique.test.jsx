@@ -82,7 +82,7 @@ describe('arraste mensal',()=>{
   const faixa={...item,dataInicio:'2026-09-10',dataFim:'2026-09-12',horaInicio,horaFim};
   // Pega na sexta, dentro de uma faixa que começou na quinta; solta na quarta seguinte.
   act(()=>{result.current.iniciar(evento(450,50),faixa);result.current.terminar(evento(250,150));});
-  expect(salvar).toHaveBeenCalledWith(faixa,{dataInicio:'2026-09-15',dataFim:'2026-09-17',horaInicio,horaFim});
+  expect(salvar).toHaveBeenCalledWith(faixa,{dataInicio:'2026-09-15',dataFim:'2026-09-17',horaInicio,horaFim,tipoGesto:'mover',somenteDatas:true,periodoCompleto:true});
   const clique={preventDefault:jest.fn(),stopPropagation:jest.fn()};act(()=>result.current.clicar(clique));
   expect(clique.stopPropagation).toHaveBeenCalledTimes(1);
  });
@@ -98,4 +98,30 @@ describe('arraste mensal',()=>{
   act(()=>result.current.teclado({altKey:true,key:'ArrowDown',preventDefault:jest.fn(),stopPropagation:jest.fn()},item));
   expect(salvar).toHaveBeenCalledWith(item,expect.objectContaining({dataInicio:'2026-09-17',horaInicio:'09:00',horaFim:'10:00'}));
  });
+});
+
+
+describe('faixa semanal sem horário', () => {
+  function faixa() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div data-agenda-all-day="2026-09-10"><button></button><span data-agenda-resize="fim"></span></div><div data-agenda-all-day="2026-09-11"></div>';
+    [...root.children].forEach((el, n) => { el.getBoundingClientRect = () => ({ left: n * 100, right: (n + 1) * 100, top: 0, bottom: 80, width: 100, height: 80 }); });
+    const salvar = jest.fn();
+    const evento = (x, target = root.querySelector('button')) => ({ button: 0, pointerId: 1, clientX: x, clientY: 40, pointerType: 'mouse', target, currentTarget: root.firstChild });
+    const hook = renderHook(() => useGestosAgenda({ dias, horasRef: { current: null }, faixaRef: { current: root }, salvar, bloqueado: false }));
+    return { ...hook, salvar, evento, root };
+  }
+  test('arrastar horizontal preserva horário ausente e todo intervalo original', () => {
+    const { result, salvar, evento } = faixa();
+    const original = { ...item, dataFim: dias[1], horaInicio: null, horaFim: null };
+    const cartao = { ...original, dataFim: dias[0], atividadeOriginal: original };
+    act(() => { result.current.iniciar(evento(40), cartao); result.current.terminar(evento(140)); });
+    expect(salvar).toHaveBeenCalledWith(cartao, { dataInicio: dias[1], dataFim: '2026-09-12', horaInicio: null, horaFim: null, tipoGesto: 'mover', somenteDatas: true, periodoCompleto: true });
+  });
+  test('alça estende período sem inventar horário', () => {
+    const { result, salvar, evento, root } = faixa();
+    const cartao = { ...item, horaInicio: null, horaFim: null };
+    act(() => { result.current.iniciar(evento(40, root.querySelector('span')), cartao); result.current.terminar(evento(140)); });
+    expect(salvar).toHaveBeenCalledWith(cartao, expect.objectContaining({ dataInicio: dias[0], dataFim: dias[1], horaInicio: null, horaFim: null, tipoGesto: 'fim', periodoCompleto: true }));
+  });
 });

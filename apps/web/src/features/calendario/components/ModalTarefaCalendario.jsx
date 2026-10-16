@@ -51,13 +51,14 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
   const fechar = () => descartar ? setDescartar(false) : alterado ? setDescartar(true) : onFechar();
   const filtradas = empresas.filter(e => (!regime || regimeEmpresa(e) === regime) && `${nomeEmpresa(e)} ${e.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')));
   const regimes = [...new Set(empresas.map(regimeEmpresa).filter(Boolean))].sort();
-  const horarioTexto = c.horarioModo === 'ATE' ? `Até ${c.horaLimite || '…'}` : c.horarioModo === 'FIXO' ? `Às ${c.horaInicio || '…'}` : 'Sem horário';
+  const horarioTexto = c.horarioModo === 'ATE' ? `Até ${c.horaLimite || '…'}` : c.horarioModo === 'FIXO' ? `${c.horaFim ? '' : 'Às '}${c.horaInicio || '…'}${c.horaFim ? `–${c.horaFim}` : ''}` : 'Sem horário';
   useEffect(() => { onRascunho?.({ ...dados.config, titulo: dados.titulo, descricao: dados.descricao, tipo: 'tarefa', empresasIds: dados.empresasIds }); }, [dados, onRascunho]);
 
   async function salvar(event) {
     event.preventDefault(); setErro('');
     if (!dados.titulo.trim()) { setErro('Informe o título da tarefa.'); return; }
     if (c.horarioModo === 'FIXO' && !c.horaInicio || c.horarioModo === 'ATE' && !c.horaLimite) { setPainel('data'); setErro('Escolha o horário da tarefa.'); return; }
+    if (c.horarioModo === 'FIXO' && c.horaFim && c.horaFim <= c.horaInicio) { setPainel('data'); setErro('O término deve ser posterior ao horário de início, no mesmo dia.'); return; }
     if (c.recorrencia !== 'AVULSA' && fimRepeticao === 'DATA' && (!c.repetirAte || c.repetirAte < c.dataInicio)) { setPainel('data'); setErro('O fim da repetição deve ser igual ou posterior ao início.'); return; }
     if (c.recorrencia !== 'AVULSA' && fimRepeticao === 'QUANTIDADE' && (!Number.isInteger(Number(c.repetirQuantidade)) || Number(c.repetirQuantidade) < 1)) { setPainel('data'); setErro('Informe ao menos uma ocorrência.'); return; }
     const payload = {
@@ -67,6 +68,7 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
         dataInicio: c.dataInicio, dataFim: c.dataFim || c.dataInicio,
         recorrencia: c.recorrencia, horarioModo: c.horarioModo,
         horaInicio: c.horarioModo === 'FIXO' ? c.horaInicio : null,
+        horaFim: c.horarioModo === 'FIXO' ? c.horaFim || null : null,
         horaLimite: c.horarioModo === 'ATE' ? c.horaLimite : null,
         prioridade: c.prioridade,
         repetirAte: c.recorrencia !== 'AVULSA' && fimRepeticao === 'DATA' ? c.repetirAte : null,
@@ -102,6 +104,7 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
           {painel === 'data' && <>
             <CalendarioPeriodoTarefa inicio={c.dataInicio} fim={c.dataFim} onChange={(dataInicio, dataFim) => config({ dataInicio, dataFim })} />
             <div className="tce-row"><label>Horário<select value={c.horarioModo} onChange={e => config({ horarioModo: e.target.value })}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo · às</option><option value="ATE">Horário limite · até</option></select></label>{c.horarioModo !== 'SEM' && <label>Hora<input type="time" value={(c.horarioModo === 'FIXO' ? c.horaInicio : c.horaLimite) || ''} onChange={e => config({ [c.horarioModo === 'FIXO' ? 'horaInicio' : 'horaLimite']: e.target.value })} /></label>}</div>
+            {c.horarioModo === 'FIXO' && <label>Término (opcional)<input type="time" value={c.horaFim || ''} min={c.horaInicio || undefined} onChange={e => config({ horaFim: e.target.value })} /></label>}
             <div className="tce-row"><label>Repetição<select value={c.recorrencia} onChange={e => config({ recorrencia: e.target.value })}>{FREQUENCIAS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>{c.recorrencia !== 'AVULSA' && <label>Termina<select value={fimRepeticao} onChange={e => { setFimRepeticao(e.target.value); setAlterado(true); if (edicao) setAlcance('ESTA_E_PROXIMAS'); }}><option value="NUNCA">Nunca</option><option value="DATA">Em uma data</option><option value="QUANTIDADE">Após ocorrências</option></select></label>}</div>
             {c.recorrencia !== 'AVULSA' && fimRepeticao === 'DATA' && <label>Última data de repetição<input type="date" value={c.repetirAte || ''} min={c.dataInicio} onChange={e => config({ repetirAte: e.target.value })} /></label>}
             {c.recorrencia !== 'AVULSA' && fimRepeticao === 'QUANTIDADE' && <label>Número de ocorrências<input type="number" min="1" max="1000" value={c.repetirQuantidade || ''} onChange={e => config({ repetirQuantidade: e.target.value })} /></label>}

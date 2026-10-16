@@ -14,6 +14,8 @@ export function normalizarTarefaCalendario(dados = {}) {
   if (!['SEM', 'FIXO', 'ATE'].includes(horarioModo)) throw new Error('Selecione o tipo de horário.');
   const hora = horarioModo === 'FIXO' ? c.horaInicio : c.horaLimite;
   if (horarioModo !== 'SEM' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora || '')) throw new Error('Informe um horário válido.');
+  const horaFim = horarioModo === 'FIXO' && c.horaFim ? c.horaFim : null;
+  if (horaFim && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaFim) || horaFim <= hora)) throw new Error('O término deve ser posterior ao horário de início, no mesmo dia.');
   const diaVencimento = c.diaVencimento == null || c.diaVencimento === '' ? null : Number(c.diaVencimento);
   if (diaVencimento !== null && (!Number.isInteger(diaVencimento) || diaVencimento < 1 || diaVencimento > 31)) throw new Error('Escolha o dia de vencimento entre 1 e 31.');
   const repetirQuantidade = c.repetirQuantidade == null || c.repetirQuantidade === '' ? null : Number(c.repetirQuantidade);
@@ -22,7 +24,7 @@ export function normalizarTarefaCalendario(dados = {}) {
   if (!Array.isArray(dados.subtarefas || []) || (dados.subtarefas || []).length > 100) throw new Error('Informe até 100 subtarefas.');
   const subtarefas = (dados.subtarefas || []).map(s => ({ id: String(s.id || ''), titulo: String(s.titulo || '').trim() }));
   if (subtarefas.some(s => !/^[\w-]{1,100}$/.test(s.id) || ['__proto__', 'constructor', 'prototype'].includes(s.id) || !s.titulo || s.titulo.length > 200) || new Set(subtarefas.map(s => s.id)).size !== subtarefas.length) throw new Error('Informe subtarefas com identificadores únicos e títulos de até 200 caracteres.');
-  return { titulo, descricao: String(dados.descricao || '').slice(0, 10000), empresasIds: [...new Set(dados.empresasIds || [])], subtarefas, config: { ...base, horarioModo, horaInicio: horarioModo === 'FIXO' ? hora : null, horaLimite: horarioModo === 'ATE' ? hora : null, diaVencimento, repetirQuantidade, dataVencimento: c.dataVencimento ? dataAgenda(c.dataVencimento) : null, cor: /^#[0-9a-f]{6}$/i.test(c.cor || '') ? c.cor : null } };
+  return { titulo, descricao: String(dados.descricao || '').slice(0, 10000), empresasIds: [...new Set(dados.empresasIds || [])], subtarefas, config: { ...base, horarioModo, horaFim, horaInicio: horarioModo === 'FIXO' ? hora : null, horaLimite: horarioModo === 'ATE' ? hora : null, diaVencimento, repetirQuantidade, dataVencimento: c.dataVencimento ? dataAgenda(c.dataVencimento) : null, cor: /^#[0-9a-f]{6}$/i.test(c.cor || '') ? c.cor : null } };
 }
 function ciclos(c, inicio, fim) {
   const result = [], duration = (+new Date(c.dataFim) - +new Date(c.dataInicio)) / DAY;

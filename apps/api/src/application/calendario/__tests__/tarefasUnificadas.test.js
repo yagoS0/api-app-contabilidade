@@ -102,3 +102,23 @@ test('January due first appears on previous year December 31 with the same ident
   const t=tarefa({dataInicio:'2027-01-15',diaVencimento:1});
   expect(list(t,'2026-12-31','2026-12-31')[0]).toMatchObject({id:'t:2027-01',diasAlerta:['2026-12-31','2027-01-01']});
 });
+
+
+test('fixed duration persists and rejects invalid or inverted end times', () => {
+  expect(tarefa({horarioModo:'FIXO',horaInicio:'09:00',horaFim:'11:15'}).config).toMatchObject({horaInicio:'09:00',horaFim:'11:15'});
+  expect(tarefa({horarioModo:'FIXO',horaInicio:'09:00'}).config.horaFim).toBeNull();
+  for (const horaFim of ['09:00','08:45','25:00','abc']) expect(()=>tarefa({horarioModo:'FIXO',horaInicio:'09:00',horaFim})).toThrow(/término/);
+  expect(tarefa({horarioModo:'ATE',horaLimite:'18:00',horaFim:'19:00'}).config.horaFim).toBeNull();
+  expect(tarefa({horarioModo:'SEM',horaFim:'19:00'}).config.horaFim).toBeNull();
+});
+
+test('resizing one occurrence preserves monthly due and company checklist progress', () => {
+  let t=tarefa({horarioModo:'FIXO',horaInicio:'09:00',horaFim:'10:00'});
+  t=act(t,{acao:'SUBTAREFA',companyId:'a',subtarefaId:'mit',concluida:true});
+  t=act(t,{acao:'EDITAR',alteracoes:{config:{horaFim:'11:30'}}});
+  const [jan,feb]=list(t);
+  expect(jan).toMatchObject({horaInicio:'09:00',horaFim:'11:30',dataVencimento:'2026-01-31',diasAlerta:['2026-01-30','2026-01-31']});
+  expect(jan.empresas[0].subtarefas[0].concluida).toBe(true);
+  expect(jan.empresas[1].subtarefas[0].concluida).toBe(false);
+  expect(feb).toMatchObject({horaFim:'10:00',dataVencimento:'2026-02-28'});
+});
