@@ -51,6 +51,7 @@ test('resposta de sessão antiga não substitui leitura atual', async () => {
   await act(async () => completeOld(response));
   expect(screen.getByRole('button', { name: 'Não habilitadas 2' })).toBeInTheDocument();
 });
+
 test('DAS não conta presumido como desabilitado nem regime desconhecido como elegível', async () => {
   const data = { ...response, items: [
     { companyId: 'a', enabledKeys: [], applicableKeys: ['das', 'inss'], regime: 'SIMPLES' },
@@ -65,4 +66,22 @@ test('DAS não conta presumido como desabilitado nem regime desconhecido como el
   expect(screen.getByRole('link', { name: 'Empresa Alfa' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Empresa Beta' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Sem regime' })).not.toBeInTheDocument();
+});
+
+
+
+test('erro da carteira dentro do modal recarrega empresas e rotinas sem executar operações', async () => {
+ const api={getOperationRoutines:jest.fn(async()=>response),executeCompanyOperation:jest.fn()};
+ const refresh=jest.fn(async()=>{});
+ const view=render(<OperationsRoutineCompanies api={api} companies={companies} onRefreshCompanies={refresh}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Habilitadas 1'}));
+ view.rerender(<OperationsRoutineCompanies api={api} companies={companies} error="Falha na carteira" onRefreshCompanies={refresh}/>);
+ const dialog=within(screen.getByRole('dialog'));
+ expect(dialog.getByRole('alert')).toHaveTextContent('Falha na carteira');
+ await act(async()=>fireEvent.click(dialog.getByRole('button',{name:'Tentar novamente'})));
+ expect(refresh).toHaveBeenCalledTimes(1);expect(api.getOperationRoutines).toHaveBeenCalledTimes(2);
+ expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+ view.rerender(<OperationsRoutineCompanies api={api} companies={companies} onRefreshCompanies={refresh}/>);
+ expect(dialog.getByRole('link',{name:'Empresa Alfa'})).toBeInTheDocument();
+
 });

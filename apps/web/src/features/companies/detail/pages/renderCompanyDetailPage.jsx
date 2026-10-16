@@ -464,6 +464,7 @@ function CompanyDetailContent({
           <Suspense fallback={<TabLoadingFallback />}>
           <AccountingEntriesTab
             companyId={companyId}
+            myRole={selectedCompany?.myRole}
             entries={accountingPanel.entries}
             total={accountingPanel.total}
             loading={accountingPanel.loading}
