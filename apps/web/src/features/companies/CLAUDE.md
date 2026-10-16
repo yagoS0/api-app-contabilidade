@@ -1,5 +1,9 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Automação por regime e pausa SERPRO — 15/10/2026
+
+Usuário reforçou que Simples e Lucro Presumido têm rotinas diferentes. Automação mostra somente opções aplicáveis ao regime cadastrado; a caixa de Operações exclui não aplicáveis das contagens, sem alterar o layout. Regime desconhecido é pendência de cadastro, não empresa desabilitada. Preservar seleções salvas, sem ativar por inferência. Pausa SERPRO fica dentro da empresa, com motivo, prévia e revisão; bloqueia novas consultas e transmissões pelo client integrado, preservando documentos locais. Salvar/retomar não executa chamadas. Não representa pausa de outros conectores ou mensagens.
+
 ## Revisão de Operações — 15/10/2026, decisão posterior do usuário
 
 A página usa quadros clicáveis para indicadores e notas para revisão, uma caixa compacta de empresas com rotinas habilitadas/não habilitadas e o Calendário real em modo dia para tarefas. Esta decisão substitui a lista própria de tarefas e a conferência/programação aberta na página. Configuração continua na empresa; confirmar/liberar fica sob ação explícita em modal. A visualização diária não autoriza execução fiscal e não altera a configuração de visão do Calendário principal. Preservar estados de apuração, procuração, idempotência e reaproveitamento documental. Evidência de DAS isolado não vira transmissão comprovada.

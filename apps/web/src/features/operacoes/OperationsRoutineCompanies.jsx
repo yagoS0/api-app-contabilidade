@@ -30,11 +30,13 @@ export function OperationsRoutineCompanies({ api, companies = [], loading = fals
   const unavailable = pending || loading || Boolean(error || companyError) || !data;
   const indexed = new Map((data?.items || []).map(c => [c.companyId, c]));
   const rows = [...new Map(companies.filter(c => c.companyId && String(c.status || '').toUpperCase() !== 'INATIVA').map(c => [c.companyId, c])).values()]
-    .map(c => ({ ...c, keys: indexed.get(c.companyId)?.enabledKeys, known: indexed.has(c.companyId) }))
+    .map(c => ({ ...c, keys: indexed.get(c.companyId)?.enabledKeys, applicableKeys: indexed.get(c.companyId)?.applicableKeys,
+      unavailableReason: indexed.get(c.companyId)?.unavailableReason, known: indexed.has(c.companyId) }))
     .sort((a, b) => name(a).localeCompare(name(b), 'pt-BR'));
   const enabled = c => routine ? c.keys?.includes(routine) : c.keys?.length > 0;
-  const count = state => rows.filter(c => c.known && enabled(c) === state).length;
-  const visible = rows.filter(c => c.known && enabled(c) === (group === 'enabled') && `${name(c)} ${c.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const applicable = c => c.known && !c.unavailableReason && (c.applicableKeys ? (routine ? c.applicableKeys.includes(routine) : c.applicableKeys.length > 0) : true);
+  const count = state => rows.filter(c => applicable(c) && enabled(c) === state).length;
+  const visible = rows.filter(c => applicable(c) && enabled(c) === (group === 'enabled') && `${name(c)} ${c.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const open = state => { setGroup(state); setQuery(''); };
   return <section className="operacoes-rotinas-resumo" aria-label="Empresas nas rotinas">
     <div className="operacoes-cabecalho"><h3>Empresas nas rotinas</h3><label>Rotina <select value={routine} onChange={e => setRoutine(e.target.value)} disabled={unavailable}>
@@ -47,6 +49,7 @@ export function OperationsRoutineCompanies({ api, companies = [], loading = fals
     {pending && <p role="status">Carregando rotinas…</p>}
     {(error || companyError) && <p role="alert">{error || companyError} <Button size="sm" variant="secondary" onClick={load} disabled={pending}>Tentar novamente</Button></p>}
     {!unavailable && rows.some(c => !c.known) && <p role="status">Algumas empresas não têm configuração disponível nesta leitura.</p>}
+    {!unavailable && rows.some(c => c.unavailableReason) && <p role="status">Empresas com regime não confirmado ficam fora das contagens. Confira o regime no cadastro dessas empresas.</p>}
     {group && <Modal titulo={group === 'enabled' ? 'Empresas habilitadas' : 'Empresas não habilitadas'} aoFechar={() => setGroup(null)} tamanho="md" className="operacoes-dialogo" rodape={<Button variant="secondary" onClick={() => setGroup(null)}>Fechar</Button>}>
       <div className="operacoes"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
         {unavailable ? <p role="status">Configuração indisponível. Atualize as rotinas para conferir as empresas.</p> : <ul className="operacoes-lista-modal">{visible.map(c => <li key={c.companyId}>

@@ -17,6 +17,7 @@ import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDi
 import { createPendenciasManuaisMock } from './pendenciasManuaisMock';
 import { criarMockComercial } from './comercialMock';
 import { criarMockAgenda } from './agendaMock';
+import { criarCompanyAutomationMock, aplicabilidadeRotinasMock } from './companyAutomationMock';
 import { criarMockTarefasCalendario } from './tarefasCalendarioMock';
 import { expandirAgenda, normalizarAgenda, somarDiasAgenda, diasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
@@ -3829,6 +3830,7 @@ export function createMockApi() {
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
   return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
+    ...criarCompanyAutomationMock(mockCompanies),
     ...atendimentoMovel,
     ...criarRecorrenciasMock(),
     ...acompanhamentoMock,
@@ -5352,8 +5354,11 @@ export function createMockApi() {
     async getOperationRoutines() {
       await delay();
       const data = mockCarregarRotinas(mockCompanies);
-      return { routines: data.rotinas, items: data.empresas.map(c => ({ companyId: c.companyId,
-        enabledKeys: Object.entries(c.rotinas).filter(([, enabled]) => enabled === true).map(([key]) => key) })) };
+      return { routines: data.rotinas.map(r => ({ ...r, label: r.key === 'parcelamento' ? 'Parcelamento do Simples' : r.label })), items: data.empresas.map(c => {
+        const applicability = aplicabilidadeRotinasMock(mockCompanies.find(company => company.companyId === c.companyId));
+        const storedEnabledKeys = Object.entries(c.rotinas).filter(([, enabled]) => enabled === true).map(([key]) => key);
+        return { companyId: c.companyId, ...applicability, storedEnabledKeys, enabledKeys: storedEnabledKeys.filter(key => applicability.applicableKeys.includes(key)) };
+      }) };
     },
     async saveRotinas(input = {}) {
       await delay(400);

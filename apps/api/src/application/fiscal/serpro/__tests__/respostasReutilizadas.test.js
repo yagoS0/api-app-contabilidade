@@ -6,7 +6,7 @@ import { comContextoSerpro } from "../serproCallContext.js";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { autorizarChamada, concluirChamada } from "../SerproCallGuard.js";
 jest.mock("axios", () => ({ request: jest.fn(), isAxiosError: () => false }));
-jest.mock("../SerproCallGuard.js", () => ({ autorizarChamada: jest.fn(async () => ({ id: "r1" })), concluirChamada: jest.fn() }));
+jest.mock("../SerproCallGuard.js", () => ({ autorizarDespacho: jest.fn(), autorizarChamada: jest.fn(async () => ({ id: "r1" })), concluirChamada: jest.fn() }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: async () => ({ baseUrl: "https://invalid.test", timeoutMs: 10 }) }));
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: { serproChamada: { findFirst: jest.fn() }, serproRespostaCache: { findUnique: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() } } }));
 const payload = { contribuinte: { numero: "12345678000199" }, pedidoDados: { idServico: "GERARDAS12", dados: '{"periodoApuracao":"202608","campo":1}' } };
@@ -23,6 +23,18 @@ test("resposta persistida permite repetir processamento em outro client sem novo
   expect(await cliente().post("/Emitir", payload)).toEqual(primeira);
   expect(axios.request).toHaveBeenCalledTimes(1);
   expect(autorizarChamada).toHaveBeenCalledTimes(1);
+});
+
+test('documento em cache continua disponível sob pausa, sem autenticar ou reservar', async () => {
+  prisma.serproRespostaCache.findUnique.mockResolvedValue({ resposta: { pdf: 'salvo' }, expiraEm: new Date(Date.now() + 60000) });
+  autorizarChamada.mockRejectedValue(Object.assign(new Error('Empresa pausada'), { code: 'SERPRO_EMPRESA_PAUSADA' }));
+  const auth = { authenticate: jest.fn(), buildHttpsAgent: jest.fn() };
+  try {
+    expect(await new SerproHttpClient({ authService: auth }).post('/Emitir', payload)).toEqual({ pdf: 'salvo' });
+    expect(autorizarChamada).not.toHaveBeenCalled();
+    expect(auth.authenticate).not.toHaveBeenCalled();
+    expect(axios.request).not.toHaveBeenCalled();
+  } finally { autorizarChamada.mockResolvedValue({ id: 'r1' }); }
 });
 test("atualização explícita invalida a resposta e faz nova tentativa", async () => {
   prisma.serproRespostaCache.findUnique.mockResolvedValue({ resposta: { antiga: true }, expiraEm: new Date(Date.now() + 60000) });

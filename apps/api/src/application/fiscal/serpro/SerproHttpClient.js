@@ -2,7 +2,7 @@ import axios from "axios";
 import { mapSerproError } from "./SerproErrorMapper.js";
 import { SerproAuthService } from "./SerproAuthService.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
-import { autorizarChamada, concluirChamada } from "./SerproCallGuard.js";
+import { autorizarChamada, autorizarDespacho, concluirChamada } from "./SerproCallGuard.js";
 import { lerResposta, guardarResposta } from "./SerproRespostaCache.js";
 
 export class SerproHttpClient {
@@ -37,6 +37,8 @@ export class SerproHttpClient {
       await concluirChamada(autorizacao, { abortadaAuth: true, erroCodigo: error?.code || "SERPRO_AUTH_ERROR", erroMensagem: "Autenticação ou certificado indisponível antes do envio da operação." });
       throw mapSerproError(error);
     }
+    // Não está no catch HTTP: bloqueio antes da rede não é resultado fiscal incerto.
+    await autorizarDespacho(autorizacao);
     let response;
     try {
       response = await axios.request({

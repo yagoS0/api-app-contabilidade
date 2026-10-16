@@ -20,12 +20,14 @@ Object.assign(process.env, {
   SERPRO_TETO_DIARIO_EMPRESA: "2", SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA: "0",
   SERPRO_TETO_MENSAL_MINIMO: "3", SERPRO_TETO_MENSAL_ABSOLUTO: "3",
 });
-const { autorizarChamada, concluirChamada, consumoDoMes } = await import("../src/application/fiscal/serpro/SerproCallGuard.js");
+const { autorizarChamada, autorizarDespacho, concluirChamada, consumoDoMes } = await import("../src/application/fiscal/serpro/SerproCallGuard.js");
+const { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } = await import('../src/application/fiscal/serpro/CompanyAutomationService.js');
 const { comContextoSerpro } = await import("../src/application/fiscal/serpro/serproCallContext.js");
 const { guardarResposta, lerResposta, chaveResposta } = await import("../src/application/fiscal/serpro/SerproRespostaCache.js");
 const { prisma: singleton } = await import("../src/infrastructure/db/prisma.js");
 const client = new PrismaClient({ datasources: { db: { url: url.href } } });
 const origem = `test:serpro:${randomUUID()}`;
+const companies = Array.from({ length: 50 }, (_, i) => ({ id: randomUUID(), razao: `${origem} empresa ${i}`, cnpj: `99000000${String(i).padStart(6, '0')}` }));
 const documento = { ...inputDocumento(), fixture: origem };
 function inputDocumento() { return { contribuinte: { numero: "00000000000001" }, pedidoDados: { idServico: "GERARDAS12", dados: '{"periodoApuracao":"202608"}' } }; }
 let checks = 0;
@@ -95,9 +97,69 @@ try {
   await comContextoSerpro({ atualizar: true }, async () => assert.equal(await lerResposta(documento, "/Emitir", client), null));
   assert.equal(await client.serproRespostaCache.count({ where: { chave: chaveResposta(documento, "/Emitir") } }), 0);
   ok("expiração e atualização explícita impedem reaproveitar documento antigo");
+  await client.portalClient.createMany({ data: companies });
+  for (const [i, company] of companies.entries()) {
+    const current = await lerAutomacaoEmpresa(client, company.id);
+    assert(current.rotinas.every(r => !r.enabled), 'Empresa nova não autoriza rotinas');
+    if (i % 2 === 0) await salvarAutomacaoEmpresa(client, company.id, origem, {
+      expectedRevision: current.revision, requestId: randomUUID(), serproPolicy: { paused: true, reason: 'Ensaio isolado' },
+    }, { isAdmin: true });
+  }
+  for (const [i, company] of companies.entries()) {
+    const pedido = input(company.cnpj, 'POLICY');
+    if (i % 2 === 0) await rejeitada(pedido, 'SERPRO_EMPRESA_PAUSADA', { forcar: true, userId: origem });
+    else {
+      const auth = await reservar(pedido, { forcar: true, userId: origem });
+      await autorizarDespacho(auth, client);
+      await assert.rejects(() => autorizarDespacho(auth, client), e => e.code === 'SERPRO_CHAMADA_EM_ANDAMENTO');
+      await concluirChamada(auth, { abortadaAuth: true }, client); // transporte simulado, nenhum HTTP
+    }
+  }
+  assert.equal(await client.companyRotina.count({ where: { portalClientId: { in: companies.map(c => c.id) } } }), 0);
+  assert.equal(await client.serproChamada.count({ where: { origem, status: 'recusada_politica' } }), 25);
+  assert.equal((await consumoDoMes(client)).usadas, 3);
+  ok('50 empresas: pausadas recusam até override, demais despacham uma vez sem habilitar rotinas');
+
+  const company = companies[1];
+  const before = await lerAutomacaoEmpresa(client, company.id);
+  const reserved = await reservar(input(company.cnpj, 'PAUSE_DURING_AUTH'), { forcar: true, userId: origem });
+  const paused = await salvarAutomacaoEmpresa(client, company.id, origem, {
+    expectedRevision: before.revision, requestId: randomUUID(), serproPolicy: { paused: true, reason: 'Pausa entre reserva e despacho' },
+  }, { isAdmin: true });
+  await assert.rejects(() => autorizarDespacho(reserved, client), e => e.code === 'SERPRO_EMPRESA_PAUSADA');
+  assert.equal((await client.serproChamada.findUnique({ where: { id: reserved.id } })).status, 'abortada_politica');
+  assert.equal((await consumoDoMes(client)).usadas, 3);
+  await salvarAutomacaoEmpresa(client, company.id, origem, { expectedRevision: paused.revision, requestId: randomUUID(), serproPolicy: { paused: false, reason: 'Retomada do ensaio' } }, { isAdmin: true });
+  ok('pausa entre autenticação e transporte cancela reserva sem consumo; retomada não executa consulta');
+
+  const raceReserve = await reservar(input(company.cnpj, 'RACE'), { forcar: true, userId: origem });
+  const raceBefore = await lerAutomacaoEmpresa(client, company.id);
+  const race = await Promise.allSettled([
+    salvarAutomacaoEmpresa(client, company.id, origem, { expectedRevision: raceBefore.revision, requestId: randomUUID(), serproPolicy: { paused: true, reason: 'Disputa real pausa/despacho' } }, { isAdmin: true }),
+    autorizarDespacho(raceReserve, client),
+  ]);
+  assert.equal(race[0].status, 'fulfilled');
+  const dispatch = await client.appSetting.findUnique({ where: { key: `serpro_dispatch:${raceReserve.id}` } });
+  const raced = await client.serproChamada.findUnique({ where: { id: raceReserve.id } });
+  if (race[1].status === 'fulfilled') {
+    assert(dispatch); assert.equal(raced.status, 'reservada');
+    await concluirChamada(raceReserve, { erroCodigo: 'SIMULATED_UNKNOWN' }, client);
+    await assert.rejects(() => autorizarDespacho(raceReserve, client), e => e.code === 'SERPRO_REGISTRO_INDETERMINADO');
+  } else {
+    assert.equal(race[1].reason.code, 'SERPRO_EMPRESA_PAUSADA');
+    assert.equal(dispatch, null); assert.equal(raced.status, 'abortada_politica');
+  }
+  ok('concorrência PostgreSQL pausa/despacho produz ordem única e preserva reserva incerta');
   console.log(`PASS: ${checks} verificações SERPRO em PostgreSQL real, sem HTTP.`);
 } finally {
+  const reservations = await client.serproChamada.findMany({ where: { origem }, select: { id: true } });
+  await client.appSetting.deleteMany({ where: { OR: [
+    { key: { in: companies.map(c => `company_serpro_policy:${c.id}`) } },
+    { key: { startsWith: `company_automation_request:${origem}:` } },
+    { key: { in: reservations.map(r => `serpro_dispatch:${r.id}`) } },
+  ] } });
   await client.serproRespostaCache.deleteMany({ where: { chave: chaveResposta(documento, "/Emitir") } });
   await client.serproChamada.deleteMany({ where: { origem } });
+  await client.portalClient.deleteMany({ where: { id: { in: companies.map(c => c.id) } } });
   await Promise.all([client.$disconnect(), singleton.$disconnect()]);
 }
