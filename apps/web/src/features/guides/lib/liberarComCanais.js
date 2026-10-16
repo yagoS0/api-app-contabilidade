@@ -14,7 +14,9 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar, ree
   let email;
   let bloqueado = false;
   try {
-    email = reenviarConfirmado ? await api.resendGuideEmail(guideId) : await api.liberarGuiaCliente(guideId);
+    email = reenviarConfirmado && querWhatsapp
+      ? { sent: false, envio: { naoSeAplica: true, preservado: true }, message: "E-mail não reenviado; reenvio somente por WhatsApp." }
+      : reenviarConfirmado ? await api.resendGuideEmail(guideId) : await api.liberarGuiaCliente(guideId);
   } catch (err) {
     // Recusa de acesso/dados bloqueia a ação. Transporte incerto não repete o e-mail.
     // O endpoint WhatsApp verifica acesso, guia e elegibilidade independentemente.
@@ -22,7 +24,7 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar, ree
     email = { sent: false, incerto: !bloqueado, message: bloqueado ? (err?.message || "A liberação foi recusada.")
       : "Não foi possível confirmar a liberação e o e-mail. Confira o histórico antes de repetir esse canal." };
   }
-  const emailDesfecho = { feito: Boolean(email?.sent), naoSeAplica: email?.envio?.naoSeAplica === true, message: email?.message || null };
+  const emailDesfecho = { feito: Boolean(email?.sent), naoSeAplica: email?.envio?.naoSeAplica === true, preservado: email?.envio?.preservado === true, message: email?.message || null };
   let whatsapp = null;
   if (querWhatsapp && !bloqueado) {
     try {

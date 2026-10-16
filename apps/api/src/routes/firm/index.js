@@ -4391,7 +4391,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         try {
           const scopedReq = { auth: req.auth, params: { companyId, guideId: item.guideId },
             body: item.reenviarConfirmado ? { reenviar: true } : { complementar: true } };
-          const output = await captureTaskResponse(r => (item.reenviarConfirmado ? resendGuideHandler : releaseGuideHandler)(scopedReq, r));
+          const output = item.reenviarConfirmado && whatsappRequested
+            ? { statusCode: 200, body: { sent: false, envio: { naoSeAplica: true, preservado: true }, message: "E-mail não reenviado; reenvio somente por WhatsApp." } }
+            : await captureTaskResponse(r => (item.reenviarConfirmado ? resendGuideHandler : releaseGuideHandler)(scopedReq, r));
           email = output.body;
           // Uma recusa de autorização/dados encerra o item; nunca atravessa para outro canal.
           if (whatsappRequested && output.statusCode < 400) {
@@ -4399,8 +4401,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           }
           const emailOk = email?.sent === true || email?.envio?.naoSeAplica === true;
           const ok = output.statusCode < 400 && emailOk && Boolean(email?.sent || whatsapp?.ok) && (!whatsappRequested || whatsapp?.ok === true && !whatsapp?.parcial);
-          const texto = [email?.message || email?.reason || "Confira o resultado do e-mail.",
-            whatsapp ? whatsapp.ok ? "WhatsApp: solicitação aceita; entrega depende da confirmação do provedor." : whatsapp.message || "WhatsApp não enviado. Confira o histórico antes de repetir." : null].filter(Boolean).join(" ");
+          const texto = [`E-mail: ${email?.message || email?.reason || "confira o resultado deste canal."}`,
+            whatsapp ? whatsapp.ok ? "WhatsApp: solicitação aceita; entrega depende da confirmação do provedor." : `WhatsApp não enviado: ${whatsapp.message || "confira o histórico antes de repetir."}` : null].filter(Boolean).join(" ");
           resultados.push({ ...item, ok, tom: !ok ? "erro" : whatsapp ? "pendente" : "ok", texto, email, whatsapp });
         } catch {
           resultados.push({ ...item, ok: false, tom: "erro", texto: "Não foi possível confirmar este envio. Confira o histórico antes de repetir.", email, whatsapp });

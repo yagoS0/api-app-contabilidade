@@ -16,7 +16,7 @@ it("usa os canais cadastrados, pergunta uma vez e distingue envio de reenvio", a
   ] });
   expect(perguntar).toHaveBeenCalledTimes(1);
   expect(api.liberarGuiaCliente).toHaveBeenCalledWith("nova");
-  expect(api.resendGuideEmail).toHaveBeenCalledWith("antiga");
+  expect(api.resendGuideEmail).not.toHaveBeenCalled();
   expect(api.enviarGuiaWhatsapp.mock.calls).toEqual([["c1", "nova", { complementar: true }], ["c1", "antiga", { reenviar: true }]]);
   expect(resultados.map((r) => r.tom)).toEqual(["pendente", "pendente"]);
 });

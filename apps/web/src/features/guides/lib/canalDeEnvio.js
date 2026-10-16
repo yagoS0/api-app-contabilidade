@@ -73,7 +73,7 @@ export function resumirDesfechoDosCanais({ email, whatsapp } = {}) {
   const partes = [];
   const emailOk = Boolean(email?.feito);
   const emailAusente = !emailOk && email?.naoSeAplica === true;
-  partes.push(emailOk ? "e-mail enviado" : emailAusente ? "sem e-mail cadastrado" : (email?.message || "o e-mail não saiu"));
+  partes.push(email?.preservado ? "e-mail não reenviado" : emailOk ? "e-mail enviado" : emailAusente ? "sem e-mail cadastrado" : (email?.message || "o e-mail não saiu"));
   const zap = whatsapp?.tentado ? resumirWhatsapp(whatsapp) : null;
   if (zap) partes.push(zap.texto);
   const falhou = (!emailOk && !emailAusente) || zap?.tom === "erro";
