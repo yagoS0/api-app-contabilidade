@@ -2,6 +2,43 @@ import { pedidoDeConsulta, periodoDaConsulta, numeroDaOpcao } from '../consultaC
 import { respostaComMarcador } from '../../assistente/validacaoResposta.js';
 const agora = new Date('2026-09-10T15:00:00Z');
 
+it.each([
+  'Pode me explicar, de forma simples, a diferença entre competência e vencimento de uma guia? Não consulte valores nem emita documentos.',
+  'Pode me explicar a diferença entre competência e vencimento de uma guia?',
+  'Quero entender como funciona o Simples Nacional',
+  'Pode explicar como consultar uma guia?',
+  'Como faço para enviar o DAS?',
+  'Como posso consultar minhas guias?',
+  'Me ensina a consultar o faturamento?',
+  'Como eu consigo acessar os documentos da empresa?',
+  'Como consultar o faturamento?',
+  'Pode me ensinar a consultar minhas guias?',
+  'Qual o significado de competência da guia?',
+  'Não consulte minhas guias',
+  'Sem consultar valores, explique o faturamento',
+  'Não emita documentos nem consulte o DAS',
+])('deixa explicação e negativa para o assistente, sem consulta automática: %s', texto => {
+  expect(pedidoDeConsulta(texto, agora)).toBeNull();
+});
+
+it.each([
+  ['Envie minha guia e explique o vencimento', null],
+  ['Quero minha guia de forma simples', null],
+  ['Me envie a guia em linguagem simples', null],
+  ['Guia do Simples', 'SIMPLES'],
+  ['Guias do Simples', 'SIMPLES'],
+  ['Guia do Simples Nacional', 'SIMPLES'],
+  ['Simples Nacional 2026-08', 'SIMPLES'],
+  ['Preciso do DAS', 'SIMPLES'],
+  ['Pode me enviar o DAS?', 'SIMPLES'],
+  ['Me mande as guias do Simples', 'SIMPLES'],
+  ['Me envie o DAS e ensine a consultar minhas guias', 'SIMPLES'],
+  ['Como posso consultar minhas guias? Me envie a guia INSS.', 'INSS'],
+  ['Envie a guia INSS de forma simples', 'INSS'],
+])('preserva pedido positivo e distingue regime de linguagem: %s', (texto, tipo) => {
+  expect(pedidoDeConsulta(texto, agora)).toMatchObject({ acao: 'GUIAS', tipo });
+});
+
 it.each(['quero minha guia', 'me manda o boleto', 'guias do mês', 'pode me enviar a guia?', 'preciso do DAS', 'guia do simples nacional', 'Simples nacional 2026-08'])('entende pedido de arquivo sem exigir campos técnicos: %s', texto => {
   expect(pedidoDeConsulta(texto, agora)?.acao).toBe('GUIAS');
 });

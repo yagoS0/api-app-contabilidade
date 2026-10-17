@@ -1,4 +1,4 @@
-import { normalizarConsulta, pedidoDeConsulta, periodoDaConsulta, numeroDaOpcao, mesAtualConsulta, deslocarMes, rotuloMesConsulta } from './consultaClienteWhatsapp.js';
+import { normalizarConsulta, pedidoDeConsulta, motivoSemConsultaAutomatica, periodoDaConsulta, numeroDaOpcao, mesAtualConsulta, deslocarMes, rotuloMesConsulta } from './consultaClienteWhatsapp.js';
 import { criarPendencia } from '../assistente/AcoesPendentesService.js';
 import { filtroAtendimentoAtivo } from './AtendimentoResponsavelWhatsappService.js';
 
@@ -20,6 +20,9 @@ export async function resolverConsultaCliente({ texto, interacao, acaoMenu, regi
     const [token, ...resto] = id.slice(PREFIXO.length).split('.');
     return valida && token === anterior.token ? { acao: 'OPCAO', opcao: resto.join('.'), anterior } : { acao: 'EXPIRADA' };
   }
+  // Contexto anterior não transforma explicação/recusa em escolha de mês ou arquivo.
+  // Botões são decisões pelo ID validado, não pelo título recebido.
+  if (!id && motivoSemConsultaAutomatica(texto)) return null;
   // Atalho inicial lista todas as guias liberadas em aberto, sem limitar o vencimento ao mês.
   if (acaoMenu === 'DOCUMENTOS' || acaoMenu === 'CNPJ') return { acao: acaoMenu };
   if (acaoMenu === 'GUIAS_ABERTO') return { acao: 'GUIAS', todas: true };

@@ -29,4 +29,15 @@ test("contexto informa retorno sem suspender a IA", () => {
   const contexto = contextoDoTurno({ hoje: new Date("2026-09-07T15:00:00Z") });
   expect(contexto).toContain("08/09/2026, às 9h");
   expect(contexto).toContain("A IA continua disponível");
+  expect(contexto).not.toContain("automação fica pausada");
+});
+
+test.each(["2026-09-08T15:00:00Z", "2026-09-04T20:00:00Z"])("handoff informa pausa sem alterar o expediente: %s", instante => {
+  const agora = new Date(instante);
+  const geral = expedienteDoEscritorio(agora);
+  const handoff = expedienteDoEscritorio(agora, { encaminhamentoHumano: true });
+  expect(handoff).toMatchObject({ aberto: geral.aberto, feriado: geral.feriado, proximaAbertura: geral.proximaAbertura });
+  expect(handoff.mensagem).toContain("A equipe assume este atendimento e a automação fica pausada até a liberação pela equipe.");
+  expect(handoff.mensagem).not.toContain("A IA continua disponível");
+  if (!geral.aberto) expect(handoff.mensagem).toContain("08/09/2026, às 9h");
 });

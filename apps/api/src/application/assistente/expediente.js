@@ -27,7 +27,7 @@ export function feriadoDoEscritorio(dataIso) {
   }
   return null;
 }
-export function expedienteDoEscritorio(agora = new Date()) {
+export function expedienteDoEscritorio(agora = new Date(), { encaminhamentoHumano = false } = {}) {
   const partes = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: FUSO_EXPEDIENTE, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
@@ -44,8 +44,11 @@ export function expedienteDoEscritorio(agora = new Date()) {
   const retorno = iso(proximo).split("-").reverse().join("/");
   return { aberto, feriado: feriadoDoEscritorio(dataIso),
     proximaAbertura: aberto ? null : `${iso(proximo)}T09:00:00-03:00`,
-    mensagem: aberto
+    mensagem: (aberto
       ? "O escritório está no horário de atendimento humano, de segunda a sexta, das 9h às 17h. O encaminhamento não garante resposta imediata."
-      : `O escritório está fora do horário de atendimento humano. O próximo expediente começa em ${retorno}, às 9h, no horário do Rio de Janeiro. A IA continua disponível para as funções autorizadas.`,
+      : `O escritório está fora do horário de atendimento humano. O próximo expediente começa em ${retorno}, às 9h, no horário do Rio de Janeiro.`)
+      + (encaminhamentoHumano
+        ? " A equipe assume este atendimento e a automação fica pausada até a liberação pela equipe."
+        : aberto ? "" : " A IA continua disponível para as funções autorizadas."),
   };
 }
