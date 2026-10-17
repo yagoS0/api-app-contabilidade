@@ -91,7 +91,11 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
       data.proposta = p;
     }
     return db.$transaction(async (tx) => {
-      const atualizado = await tx.onboarding.update({ where: { id }, data });
+      // A leitura de escopo precede a transação; revalidar a ficha na própria
+      // escrita impede uma edição atrasada de atingir um atendimento encerrado.
+      // Fase/anotação comercial não incrementa a versão material da proposta.
+      const atualizado = await tx.onboarding.update({ where: { id: r.id, versao: r.versao, status: r.status }, data })
+        .catch(e => { if (e.code === "P2025") throw erro("formulario_alterado", "A ficha mudou. Recarregue antes de salvar os dados comerciais.", 409); throw e; });
       await evento(tx, id, "COMERCIAL_ATUALIZADO", user.id, data);
       return { faseComercial: atualizado.faseComercial, proposta: atualizado.proposta };
     });

@@ -12,7 +12,8 @@
         "{governanceRoot}/scripts/governance/check.test.mjs",
         "{governanceRoot}/scripts/governance/orchestrate.test.mjs",
         "{governanceRoot}/scripts/governance/bootstrap.test.mjs",
-        "{governanceRoot}/scripts/governance/data-gate.test.mjs"
+        "{governanceRoot}/scripts/governance/data-gate.test.mjs",
+        "{governanceRoot}/scripts/governance/run-jest-batches.test.mjs"
       ],
       "cwd": ".",
       "timeoutMs": 120000
@@ -33,9 +34,7 @@
       ],
       "command": [
         "node",
-        "../../node_modules/jest/bin/jest.js",
-        "--runInBand",
-        "--silent"
+        "{governanceRoot}/scripts/governance/run-jest-batches.mjs"
       ],
       "cwd": "apps/api",
       "timeoutMs": 1200000
@@ -48,9 +47,7 @@
       ],
       "command": [
         "node",
-        "../../node_modules/jest/bin/jest.js",
-        "--runInBand",
-        "--silent"
+        "{governanceRoot}/scripts/governance/run-jest-batches.mjs"
       ],
       "cwd": "apps/web",
       "timeoutMs": 1200000
@@ -63,9 +60,7 @@
       ],
       "command": [
         "node",
-        "../../node_modules/jest/bin/jest.js",
-        "--runInBand",
-        "--silent"
+        "{governanceRoot}/scripts/governance/run-jest-batches.mjs"
       ],
       "cwd": "apps/portal-cliente-web",
       "timeoutMs": 1200000

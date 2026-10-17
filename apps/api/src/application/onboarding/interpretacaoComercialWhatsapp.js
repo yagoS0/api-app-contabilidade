@@ -54,7 +54,9 @@ export function identificarOrigemComercial(texto, interacao = null) {
   const botoes = { "altan.comercial.abertura.v1": "ABERTURA", "altan.comercial.transferencia.v1": "TRANSFERENCIA", "altan.comercial.inativa.v1": "INATIVA" };
   if (botoes[id]) return botoes[id];
   const t = normalizar(texto), tipos = [];
-  if (afirmado(t, /\b(?:abrir|abri|abrem|constituir|registrar|formalizar)\b.{0,45}\b(?:empresa|cnpj|consultorio|mei|negocio)\b|\babertura\b|\b(?:preciso|quero|necessito)\s+(?:de\s+)?(?:um\s+)?(?:novo\s+)?cnpj\b|\b(?:tirar|criar|fazer)\s+(?:um\s+)?(?:novo\s+)?cnpj\b/)) tipos.push("ABERTURA");
+  // Parar no primeiro objeto: "abrir empresa, ainda não tenho CNPJ" afirma
+  // abertura; a negação cadastral da oração seguinte não nega esse pedido.
+  if (afirmado(t, /\b(?:abrir|abri|abrem|constituir|registrar|formalizar)\b.{0,45}?\b(?:empresa|cnpj|consultorio|mei|negocio)\b|\babertura\b|\b(?:preciso|quero|necessito)\s+(?:de\s+)?(?:um\s+)?(?:novo\s+)?cnpj\b|\b(?:tirar|criar|fazer)\s+(?:um\s+)?(?:novo\s+)?cnpj\b/)) tipos.push("ABERTURA");
   if (afirmado(t, /\b(?:trocar|mudar|transferir)\b.{0,30}\b(?:contador|contadora|contabilidade)\b|\btransferir\b.{0,30}\bempresa\b|\btransferencia\b/)) tipos.push("TRANSFERENCIA");
   if (afirmado(t, /\b(?:empresa|cnpj|mei)\b.{0,35}\b(?:parad[ao]|inativ[ao]|inapt[ao]|irregular|suspens[ao]|baixad[ao]|regularizar|sem (?:movimento|movimentacao|atividade))\b|\b(?:regularizar|reativar)\b.{0,30}\b(?:empresa|cnpj|mei)\b|\b(?:dar baixa|encerrar|fechar)\b.{0,20}\b(?:empresa|cnpj|mei)\b/)
     || afirmado(t, /\bativar\s+(?:a |o )?(?:minha |meu |uma |um )?(?:empresa|cnpj|mei)\b/)

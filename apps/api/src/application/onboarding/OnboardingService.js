@@ -194,7 +194,7 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
     }
   }
   const atualizado = await prisma.$transaction(async tx => {
-    const salvo = await tx.onboarding.update({ where: { id: atual.id, versao: patch.versao }, data }).catch((e) => { if (e.code === "P2025") throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de salvar.", 409); throw e; });
+    const salvo = await tx.onboarding.update({ where: { id: atual.id, versao: patch.versao, status: atual.status }, data }).catch((e) => { if (e.code === "P2025") throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de salvar.", 409); throw e; });
     if (data.dados && salvo.cnpj !== atual.cnpj) await tx.atendimentoLead.updateMany({ where: { onboardingId: id }, data: { autorizacao: {}, representanteVerificadoEm: null, representanteVerificadoPor: null, evidenciaRepresentante: null } });
     return salvo;
   });
@@ -254,13 +254,20 @@ export async function concluirEtapa(id, etapaId, { concluida, observacao, atorId
     data.observacao = observacao ? String(observacao) : null;
   }
 
-  const atualizada = await prisma.onboardingEtapa.update({ where: { id: etapa.id }, data });
-
-  if (concluida === true && registro.status === "RECEBIDO") {
-    await prisma.onboarding.update({ where: { id: registro.id }, data: { status: "EM_TRILHA" } });
-  }
-
-  return { etapa: atualizada, onboarding: await carregar(registro.id, { comEtapas: true }) };
+  return prisma.$transaction(async tx => {
+    // Serializa com conversão/desistência antes de alterar a etapa. Falha na
+    // etapa ou auditoria desfaz também a reserva e a promoção do estado.
+    const reserva = await tx.onboarding.updateMany({
+      where: { id: registro.id, versao: registro.versao, status: registro.status },
+      // Checklist/observação não altera o conteúdo material da proposta. O UPDATE
+      // mantém o lock até o commit sem invalidar sua fichaVersao.
+      data: { updatedAt: new Date(), ...(concluida === true && registro.status === "RECEBIDO" ? { status: "EM_TRILHA" } : {}) },
+    });
+    if (reserva.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de alterar a etapa.", 409);
+    const atualizada = await tx.onboardingEtapa.update({ where: { id: etapa.id }, data });
+    await tx.onboardingEvento.create({ data: { onboardingId: registro.id, tipo: "ETAPA_ATUALIZADA", atorId, dados: { etapaId: etapa.id, ...data, ...(data.concluidaEm ? { concluidaEm: data.concluidaEm.toISOString() } : {}) } } });
+    return { etapa: atualizada, onboarding: await tx.onboarding.findUnique({ where: { id: registro.id }, include: { etapas: { orderBy: { ordem: "asc" } } } }) };
+  });
 }
 
 /**
@@ -299,7 +306,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
   const comercial = await conferirContratoDeConversao(prisma, id);
   let arquivo;
   const concluir = async (tx, criada, { recuperacao = false } = {}) => {
-    const reserva = await tx.onboarding.updateMany({ where: { id, versao: registro.versao, status: registro.status, portalClientId: null }, data: { updatedAt: new Date() } });
+    const reserva = await tx.onboarding.updateMany({ where: { id, versao: registro.versao, status: registro.status, portalClientId: null }, data: { versao: registro.versao + 1 } });
     if (reserva.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou durante a conversão. Recarregue antes de continuar.", 409);
     const atual = await conferirContratoDeConversao(tx, id);
     if (atual.contrato?.id !== comercial.contrato?.id || atual.proposta?.id !== comercial.proposta?.id) throw new OnboardingError("contrato_alterado", "A contratação mudou. Recarregue antes de converter.", 409);
@@ -433,15 +440,16 @@ export async function desistir(id, { motivo = null, atorId = null } = {}) {
   const registro = await carregar(id);
   recusarSeConvertido(registro);
   await prisma.onboarding.update({
-    where: { id: registro.id },
+    where: { id: registro.id, versao: registro.versao, status: registro.status },
     data: {
+      versao: { increment: 1 },
       status: "DESISTIU",
       desistiuEm: new Date(),
       motivoDesistencia: motivo ? String(motivo).slice(0, 500) : null,
       convertidoPorId: registro.convertidoPorId,
+      eventos: { create: { tipo: "DESISTIU", atorId, dados: { motivo: motivo ? String(motivo).slice(0, 500) : null } } },
     },
-  });
-  void atorId;
+  }).catch(e => { if (e.code === "P2025") throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de desistir.", 409); throw e; });
   return carregar(registro.id, { comEtapas: true });
 }
 

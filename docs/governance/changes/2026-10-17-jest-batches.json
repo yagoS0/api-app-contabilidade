@@ -1,0 +1,16 @@
+{
+  "summary": "Executar a mesma descoberta completa de testes Jest em processos pequenos após OOM local, sem omitir suítes ou aceitar execuções parciais.",
+  "risk": "high",
+  "domains": ["documentation", "governance"],
+  "operationalImpact": "Nenhuma alteração operacional. Governança local revisada separadamente do produto; critérios, domínio, ambiente, skips existentes e timeout externo preservados. Sem aprovação de negócio ou publicação.",
+  "tests": [
+    "Principal executou 63/63 testes de governança, incluindo os 37 existentes e 26 do runner; .altan-governance/principal-full-unit.log.",
+    "Revisor independente executou 26/26 testes finais; reprovou UTF-8 fragmentado, autor corrigiu, regressão passou.",
+    "Principal reprovou incompatibilidade real de suite focused com skip/todo; autor corrigiu e revisor repetiu Jest real: 27 suites em lotes 25+2, 27 testes passados, 1 ignorado e 1 todo, sem perder suites; evidence real-jest-smoke-hOSzky.",
+    "Fonte runner revisada F4098D72459D9A082C24A2B70A7C8254F1EFFEEC9DC3A36B5A90A2416DB7F34B. Revisão independente governance_memory_review e sistêmica pelo Principal; parecer anterior suspenso substituído após correção.",
+    "A bateria completa do produto será executada no incremento funcional a partir deste commit local; este registro não a declara aprovada."
+  ],
+  "rollback": "Restaurar os três comandos Jest anteriores e remover runner/unit do catálogo. Não há dados ou migrações. Execução monolítica pode reproduzir OOM; preservar evidências e não tratar interrupção como aprovação.",
+  "humanDecisions": ["Preparação e validação local autorizadas. Integração/publicação do conjunto final depende da aprovação humana aplicável; nenhuma publicação realizada."],
+  "limitations": ["SIGKILL direto pode impedir limpeza de filhos; manifesto incompleto não aprova.", "Configurações globais incompatíveis bloqueiam até revisão explícita.", "Cobertura conferida é de arquivos e asserções reportadas, não cobertura de linhas."]
+}

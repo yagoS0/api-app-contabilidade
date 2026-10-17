@@ -1,0 +1,173 @@
+{
+  "summary": "Validar mensagens automáticas, coordenação de IA/humano e onboarding com agentes fictícios; corrigir intenção, perda de rascunho e concorrência comercial. Consolida governança de testes previamente revisada.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Sem mudança de regras operacionais. Preservados R02, R19–R23 e R25; nenhuma proposta de negócio pendente implementada. Sem dados reais, envios, atos fiscais ou publicação.",
+  "status": "technically_reviewed_via_manual_recovery",
+  "originalRunId": "2026-10-17T14-27-05-395Z-f7764747",
+  "originalRunStatus": "escalated",
+  "recoveryReason": "EPERM: operation not permitted, rename 'C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\runs\\2026-10-17T14-27-05-395Z-f7764747\\state.json.tmp' -> 'C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\runs\\2026-10-17T14-27-05-395Z-f7764747\\state.json'",
+  "recoveryMethod": "Principal preservou o journal original; revalidou snapshot integral, catálogo, mapa, referência, seleção e códigos dos gates, dez pareceres e hashes de 99 evidências. UI/UX e sistêmica foram concluídas por agentes independentes em journal suplementar. Não houve alteração do estado original, replay sintético, chamada finalizeRun ou declaração ready_for_human.",
+  "productSourceFingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18",
+  "productSourcePaths": [
+    "apps/api/scripts/verify-mensagens-onboarding-postgres.mjs",
+    "apps/api/src/application/onboarding/ComercialService.js",
+    "apps/api/src/application/onboarding/OnboardingService.js",
+    "apps/api/src/application/onboarding/__tests__/comercialService.test.js",
+    "apps/api/src/application/onboarding/__tests__/interpretacaoComercialWhatsapp.test.js",
+    "apps/api/src/application/onboarding/__tests__/onboardingService.test.js",
+    "apps/api/src/application/onboarding/interpretacaoComercialWhatsapp.js",
+    "apps/api/src/application/whatsapp/__tests__/mensagensOnboardingIntegrado.test.js",
+    "apps/web/src/features/whatsapp/components/CompositorConversa.jsx",
+    "apps/web/src/features/whatsapp/components/__tests__/descarteRascunhoConcorrencia.test.jsx",
+    "apps/web/src/features/whatsapp/hooks/useRascunhoServidor.js",
+    "docs/revisao-mensagens-onboarding-20261017.md"
+  ],
+  "tests": [
+    "governance-engine: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "api-regression: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "web-regression: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "portal-regression: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "web-build: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "portal-build: exit 0, sem timeout, fingerprint f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18; evidências do run 2026-10-17T14-27-05-395Z-f7764747",
+    "API: 598 suítes/10483 testes; web: 494/5519; portal: 99/1580; nenhum skip/todo nessas baterias. Governança: 63 testes. Dois builds aprovados com avisos de tamanho/imports.",
+    "PostgreSQL descartável: 11 checks em current-pg-1792247457448; jornada completa com 45 verificações em onboarding-alinhamento-1792247457459; hashes atuais confirmados.",
+    "Diálogo adaptativo de agentes independentes reexecutado: cinco turnos, comparação aprovada, fontes estáveis, zero rede externa/modelo. dialogue-1792247574989.",
+    "UI desktop/mobile com perfil Chrome temporário; lint web aprovado; compositor/hook/teste iguais por hash à versão inspecionada. Revisão UI/UX suplementar confirmou capturas.",
+    "Governança de lotes: commit local 8496d659a, revisão independente e testes negativos/reais documentados em 2026-10-17-jest-batches.json; a bateria integral posterior acima resolve sua pendência histórica."
+  ],
+  "reviews": {
+    "original": [
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "accounting"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "api"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "commercial"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "communication"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "documentation"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "guides"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "operations"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "portal"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "web"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      },
+      {
+        "role": "altan_backend_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "documentation",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "verdict": "approved",
+        "fingerprint": "f1aa50fea2c724c372d26a3eabaee4ef7f66f257ad23eaa4eeec69a90597fa18"
+      }
+    ],
+    "supplemental": [
+      {
+        "path": ".altan-governance/principal-recovery/ui-ux-review.json",
+        "sha256": "88775988cc4bbf5ac4c4ffafdb547f9e11571fee23d0b9fe011701b1528a4ad5",
+        "reviewer": "/root/final_ui_ux",
+        "role": [
+          "UI",
+          "UX"
+        ],
+        "verdict": "approved"
+      },
+      {
+        "path": ".altan-governance/principal-recovery/system-review.json",
+        "sha256": "6200a8a38bc23db3d3b2697ac85ce887d67d1c4450b37460b86fbd8c3b676490",
+        "reviewer": "/root/final_system",
+        "role": "altan_system_reviewer",
+        "verdict": "approved"
+      }
+    ],
+    "governance": "Mudança separada: docs/governance/changes/2026-10-17-jest-batches.json; recuperação: .altan-governance/principal-recovery/recovery-review.json"
+  },
+  "historicalDocumentation": "As menções a validações pendentes em docs/revisao-mensagens-onboarding-20261017.md descrevem a preparação do executor. Este fechamento consolida os resultados posteriores sem apagar falhas 409/400, OOM, reprovações de produto ou EPERM do journal.",
+  "rollback": "Reverter somente os 12 deltas de produto usando baseline-sources preservados, após revisão; não apagar documentos, eventos, vínculos nem reduzir versões persistidas. Sem migração nova. Reversão da governança de lotes é separada conforme seu registro; pode reintroduzir OOM.",
+  "humanDecisions": [
+    "Aprovação humana aplicável e CI do diff final antes de integração/publicação. Nenhuma nova decisão de negócio bloqueia a conclusão local."
+  ],
+  "limitations": [
+    "Modelos/transportes externos substituídos; sem homologação de qualidade do LLM produtivo ou entrega Meta/e-mail.",
+    "Recomendação não bloqueante: incluir documento na parametrização de exclusão compartilhada do hook; consumidores foram inspecionados.",
+    "Edições operacionais simultâneas no mesmo estado/versão conservam ordem de gravação.",
+    "Runtime original continua escalated. Recuperação automática não implementada; este registro é derivado pelo Principal de recuperação manual auditada."
+  ]
+}

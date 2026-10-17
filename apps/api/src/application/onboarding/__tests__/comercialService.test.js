@@ -152,3 +152,43 @@ it("normaliza respostas públicas para o diagnóstico e preserva desconhecimento
   const t = setup(); await t.servico.publico("a".repeat(43), { versao: 1, dados: { qtdFuncionarios: "2", notasEmitidasMes: "20", faturamentoMensal: "10.500,50", temDebitos: "NAO_SEI" } });
   expect(t.db.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dados: { qtdFuncionarios: 2, notasEmitidasMes: 20, faturamentoMensal: 10500.50, temDebitos: "NAO_SEI" } }) }));
 });
+
+it.each(["CONVERTIDO", "DESISTIU", "versao"])("edição comercial atrasada recusa alteração concorrente %s sem evento", async alteracao => {
+  const t = setup(); let liberar, chegou;
+  const lida = new Promise(resolve => { chegou = resolve; });
+  const continuar = new Promise(resolve => { liberar = resolve; });
+  t.ficha.faseComercial = "ANALISE";
+  t.db.onboarding.findUnique.mockImplementation(async () => { const copia = { ...t.ficha }; chegou(); await continuar; return copia; });
+  t.db.onboarding.update.mockImplementation(async ({ where, data }) => {
+    if (Object.entries(where).some(([k, v]) => t.ficha[k] !== v)) throw Object.assign(new Error("Conflito"), { code: "P2025" });
+    return Object.assign(t.ficha, data);
+  });
+  const pendente = t.servico.comercial("lead", user, { faseComercial: "PROPOSTA", proposta: { texto: "Texto fictício" } });
+  const rejeitada = expect(pendente).rejects.toMatchObject({ status: 409, code: "formulario_alterado" });
+  await lida;
+  if (alteracao === "versao") t.ficha.versao++;
+  else t.ficha.status = alteracao; // Exercita CAS de estado independentemente da versão.
+  liberar(); await rejeitada;
+  expect(t.ficha.faseComercial).toBe("ANALISE");
+  expect(t.ficha.proposta).toBeUndefined();
+  expect(t.db.onboardingEvento.create).not.toHaveBeenCalled();
+});
+
+it("edição operacional preserva versão material e retorna valores persistidos", async () => {
+  const t = setup();
+  expect(await t.servico.comercial("lead", user, { faseComercial: "ANALISE" })).toMatchObject({ faseComercial: "ANALISE" });
+  expect(t.db.onboarding.update).toHaveBeenCalledWith({ where: { id: "lead", versao: 1, status: "RASCUNHO" }, data: { faseComercial: "ANALISE" } });
+  expect(t.db.onboardingEvento.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ tipo: "COMERCIAL_ATUALIZADO" }) }));
+});
+
+it("falha de auditoria reverte escrita comercial na mesma transação", async () => {
+  const t = setup(); t.ficha.faseComercial = "LEAD";
+  t.db.onboarding.update.mockImplementation(async ({ data }) => Object.assign(t.ficha, data));
+  t.db.$transaction.mockImplementation(async fn => {
+    const antes = structuredClone(t.ficha);
+    try { return await fn(t.db); } catch (e) { Object.assign(t.ficha, antes); throw e; }
+  });
+  t.db.onboardingEvento.create.mockRejectedValue(new Error("Auditoria indisponível"));
+  await expect(t.servico.comercial("lead", user, { faseComercial: "ANALISE" })).rejects.toThrow("Auditoria indisponível");
+  expect(t.ficha.faseComercial).toBe("LEAD");
+});
