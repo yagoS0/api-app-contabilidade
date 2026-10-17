@@ -33,10 +33,14 @@ import {
   converter,
   criar,
   descartar,
+  desistir,
   extrairColunas,
   listar,
 } from "../OnboardingService.js";
 import { etapasDaOrigem, ETAPAS_POR_ORIGEM } from "../etapasTemplate.js";
+import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
+
+const barreira = () => { let liberar; const promessa = new Promise(resolve => { liberar = resolve; }); return { promessa, liberar }; };
 
 function fichaSalva(over = {}) {
   return {
@@ -65,6 +69,38 @@ beforeEach(() => {
   prisma.onboardingEtapa.createMany.mockResolvedValue({ count: 0 });
   prisma.documentoOnboarding.findMany.mockResolvedValue([]);
   prisma.onboarding.updateMany.mockResolvedValue({ count: 1 });
+});
+
+describe("escritas atrasadas depois de conversão", () => {
+  test.each(["etapa", "desistencia", "atualizacao"])("%s não altera ficha convertida entre leitura e escrita", async acao => {
+    let estado = fichaSalva({ status: "RECEBIDO" });
+    const chegou = barreira(), continuar = barreira();
+    prisma.onboarding.findUnique.mockImplementation(async () => {
+      const lida = structuredClone(estado);
+      chegou.liberar(); await continuar.promessa; return lida;
+    });
+    prisma.onboardingEtapa.findUnique.mockResolvedValue({ id: "et-1", onboardingId: "onb-1" });
+    const corresponde = where => where.id === estado.id && where.versao === estado.versao && where.status === estado.status;
+    prisma.onboarding.updateMany.mockImplementation(async ({ where }) => ({ count: corresponde(where) ? 1 : 0 }));
+    prisma.onboarding.update.mockImplementation(async ({ where, data }) => {
+      if (!corresponde(where)) throw Object.assign(new Error("Registro alterado"), { code: "P2025" });
+      return Object.assign(estado, data);
+    });
+    const operacao = acao === "etapa" ? concluirEtapa("onb-1", "et-1", { concluida: true })
+      : acao === "desistencia" ? desistir("onb-1", { motivo: "Desisti" }) : atualizar("onb-1", { versao: 0, ultimoPasso: "dados" });
+    const rejeitada = expect(operacao).rejects.toMatchObject({ code: "formulario_alterado", status: 409 });
+    await chegou.promessa;
+    // Simula o COMMIT concorrente; o ensaio PostgreSQL executa converter real.
+    estado = { ...estado, status: "CONVERTIDO", versao: 1, portalClientId: "portal-1" };
+    continuar.liberar(); await rejeitada;
+    expect(estado).toMatchObject({ status: "CONVERTIDO", versao: 1, portalClientId: "portal-1" });
+    expect(prisma.onboardingEtapa.update).not.toHaveBeenCalled();
+    expect(prisma.onboardingEvento.create).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    prisma.onboarding.findUnique.mockReset(); prisma.onboarding.update.mockReset(); prisma.onboarding.updateMany.mockReset();
+  });
 });
 
 test("recuperação da conversão não consulta nem vincula empresa fora do escopo", async () => {
@@ -237,9 +273,9 @@ describe("concluirEtapa", () => {
 
     await concluirEtapa("onb-1", "et-1", { concluida: true, atorId: "user-1" });
 
-    expect(prisma.onboarding.update).toHaveBeenCalledWith({
-      where: { id: "onb-1" },
-      data: { status: "EM_TRILHA" },
+    expect(prisma.onboarding.updateMany).toHaveBeenCalledWith({
+      where: { id: "onb-1", versao: 0, status: "RECEBIDO" },
+      data: { status: "EM_TRILHA", updatedAt: expect.any(Date) },
     });
   });
 
@@ -327,6 +363,10 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
     expect(prisma.portalClient.create).not.toHaveBeenCalled();
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     expect(data).toMatchObject({ portalClientId: "portal-7", status: "CONVERTIDO", convertidoPorId: "u1" });
+    expect(prisma.onboarding.updateMany).toHaveBeenCalledWith({
+      where: { id: "onb-1", versao: 0, status: "EM_TRILHA", portalClientId: null },
+      data: { versao: 1 },
+    });
   });
 
   test("empresa já vinculada a OUTRA ficha → 409, para não haver dois onboardings da mesma empresa", async () => {
@@ -416,4 +456,37 @@ test("descarte recusa versão alterada antes de apagar ou consultar vínculos", 
   await expect(descartar("onb-1")).rejects.toMatchObject({ code: "formulario_alterado" });
   expect(prisma.onboardingEvento.findFirst).not.toHaveBeenCalled();
   expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+});
+
+describe("checklist preserva proposta enviada", () => {
+  test.each([{ observacao: "Aguardando retorno" }, { concluida: true }])("consulta e aceite continuam válidos após %j", async patch => {
+    const ficha = fichaSalva({ origem: "ABERTURA", status: "RECEBIDO", versao: 3 });
+    const proposta = { id: "p", onboardingId: ficha.id, status: "ENVIADA", fichaVersao: 3, versao: 1,
+      snapshot: { politicaComercial: { versao: 1, origem: "ABERTURA", encerramentoEmpresa: false, regularizacaoMinimaCentavos: 0 },
+        opcoes: [{ chave: "AVULSO", unicoCentavos: 10000, mensalCentavos: 0 }] } };
+    prisma.onboarding.findUnique.mockImplementation(async () => ({ ...ficha }));
+    prisma.onboardingEtapa.findUnique.mockResolvedValue({ id: "et-1", onboardingId: ficha.id });
+    prisma.onboardingEtapa.update.mockImplementation(async ({ data }) => ({ id: "et-1", ...data }));
+    prisma.onboarding.updateMany.mockImplementation(async ({ where, data }) => {
+      const statusCorreto = typeof where.status === "string" ? where.status === ficha.status : !where.status.notIn.includes(ficha.status);
+      if (where.id !== ficha.id || where.versao !== ficha.versao || !statusCorreto) return { count: 0 };
+      ficha.versao += data.versao?.increment || 0;
+      if (data.status) ficha.status = data.status;
+      return { count: 1 };
+    });
+    prisma.propostaComercial.findFirst.mockImplementation(async () => ({ ...proposta }));
+    prisma.propostaComercial.updateMany.mockImplementation(async ({ data }) => { Object.assign(proposta, data); return { count: 1 }; });
+    const propostas = criarPropostasComerciais({ db: prisma });
+    const token = "a".repeat(43);
+    expect((await propostas.publico(token)).proposta.status).toBe("ENVIADA");
+    await concluirEtapa(ficha.id, "et-1", patch);
+    expect(ficha.versao).toBe(3);
+    expect((await propostas.publico(token)).proposta.status).toBe("ENVIADA");
+    expect((await propostas.publico(token, { confirmado: true, versao: 1, opcao: "AVULSO" })).proposta.status).toBe("ACEITA");
+    expect(proposta.status).toBe("ACEITA");
+  });
+  afterEach(() => {
+    prisma.onboarding.findUnique.mockReset(); prisma.onboarding.updateMany.mockReset();
+    prisma.onboardingEtapa.update.mockReset(); prisma.propostaComercial.findFirst.mockReset(); prisma.propostaComercial.updateMany.mockReset();
+  });
 });

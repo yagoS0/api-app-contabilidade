@@ -20,6 +20,36 @@ test("clique usa ID estável, sem acreditar no título", () => {
 });
 
 test.each([
+  ["Olá, quero abrir uma empresa, ainda não tenho CNPJ", "ABERTURA"],
+  ["Quero abrir uma empresa mas não tenho CNPJ", "ABERTURA"],
+  ["Quero abrir uma empresa, sem CNPJ ainda", "ABERTURA"],
+  ["Quero abrir uma empresa, não sei o CNPJ", "ABERTURA"],
+  ["Quero abrir uma empresa. Ainda não sei o endereço", "ABERTURA"],
+  ["Quero abrir uma empresa mas não regularizar outra empresa", "ABERTURA"],
+  ["Não quero trocar de contador, quero abrir uma empresa", "ABERTURA"],
+  ["Quero abrir uma empresa, mas não quero trocar de contador", "ABERTURA"],
+  ["Não quero abrir uma empresa", null],
+  ["Não pretendo abrir uma empresa", null],
+  ["Não quero abrir empresa nem trocar de contador", null],
+  ["Quero abrir uma empresa e trocar de contador", "MULTIPLOS"],
+  ["Quero abrir uma empresa e regularizar outra empresa", "MULTIPLOS"],
+  ["Não quero mais abrir uma empresa; na verdade quero trocar de contador", "TRANSFERENCIA"],
+  ["Não quero trocar de contador; corrigindo, quero abrir uma empresa", "ABERTURA"],
+  // Sem negação explícita da primeira escolha, manter a ambiguidade existente.
+  ["Quero abrir uma empresa; na verdade quero trocar de contador", "MULTIPLOS"],
+])("negação de outra oração não apaga intenção afirmada: %s", (texto, esperado) => {
+  expect(identificarOrigemComercial(texto)).toBe(esperado);
+});
+
+test("assunto de terceiro continua classificação, sem declaração de identidade ou autorização", () => {
+  const texto = "Meu amigo quer abrir uma empresa, ainda não tem CNPJ";
+  expect(identificarOrigemComercial(texto)).toBe("ABERTURA");
+  expect(dados(ler(texto)).responsavelNome).toBeUndefined();
+  expect(dados(ler(texto)).cnpj).toBeUndefined();
+  expect(identificarOrigemComercial(texto, { button_reply: { id: "altan.comercial.transferencia.v1" } })).toBe("TRANSFERENCIA");
+});
+
+test.each([
   ["só abertura", "AVULSO"], ["avulso", "AVULSO"], ["só o serviço", "AVULSO"], ["serviço pontual", "AVULSO"],
   ["mensal", "RECORRENTE"], ["abertura e contabilidade", "RECORRENTE"], ["com contabilidade", "RECORRENTE"],
   ["as duas opções", "COMPARAR"], ["os dois", "COMPARAR"], ["quero comparar", "COMPARAR"],

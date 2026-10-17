@@ -45,11 +45,15 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const [rascunho, setRascunho] = useState(inicial);
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [descartando, setDescartando] = useState(false);
   const [consultandoEnvio, setConsultandoEnvio] = useState(false);
   const [previa, setPrevia] = useState(false);
   const [descartado, setDescartado] = useState(null);
   const [versaoRemota, setVersaoRemota] = useState(null);
-  const remoto = useRascunhoServidor({ api: hook.api, conversaId: destino, onRestaurar: valor => { hook.rascunhosRef?.current.set(chave, valor); if (chaveRef.current === chave) setRascunho(valor); } });
+  const remoto = useRascunhoServidor({ api: hook.api, conversaId: destino, onRestaurar: valor => {
+    const preparado = { ...valor, destinoPreparado: valor.destinoPreparado || destinoAtual };
+    hook.rascunhosRef?.current.set(chave, preparado); if (chaveRef.current === chave) setRascunho(preparado);
+  } });
   const incerto = Boolean(rascunho?.envioIncerto);
   const textoRef = useRef(null);
   const trava = useRef(false);
@@ -89,23 +93,34 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     setErro(""); setPrevia(false); setDescartado(null); setVersaoRemota(null);
   }, [chave, hook.rascunhosRef]);
   function salvarDraft(valor) {
+    if (trava.current || !remoto.pronto) return;
     const preparado = { ...(typeof valor === "string" ? { texto: valor } : valor), destinoPreparado: valor?.destinoPreparado || destinoPreparado || destinoAtual };
     hook.rascunhosRef?.current.set(chave, preparado);
     setRascunho(preparado); remoto.salvar(preparado); setPrevia(false); setDescartado(null);
   }
   function mudarTexto(valor) { salvarDraft(orientacao ? { texto: valor, orientacao } : valor); }
   async function descartar() {
-    if (trava.current || hook.ocupado || incerto) return;
-    if (hook.api?.excluirRascunhoWhatsapp && !(await remoto.excluir())) return;
-    setDescartado({ chave, rascunho });
-    hook.rascunhosRef?.current.delete(chave);
-    // O texto legado não pode reaparecer ao remontar este mesmo contato.
-    if (!conversa.interlocutorId) hook.rascunhosRef?.current.delete(conversa.id);
-    setRascunho(""); setErro(""); setPrevia(false);
-    textoRef.current?.focus();
+    if (trava.current || hook.ocupado || incerto || !remoto.pronto) return;
+    trava.current = true; setDescartando(true);
+    const original = hook.rascunhosRef?.current.get(chave);
+    try {
+      if (hook.api?.excluirRascunhoWhatsapp && !(await remoto.excluir())) return;
+      // A resposta pertence ao rascunho capturado, mesmo após A → B → A.
+      const atual = hook.rascunhosRef?.current.get(chave);
+      // O hook também comunica o tombstone aos componentes remontados/listeners.
+      if (atual !== original && atual?.texto !== "") return;
+      hook.rascunhosRef?.current.delete(chave);
+      if (!conversa.interlocutorId) hook.rascunhosRef?.current.delete(conversa.id);
+      if (chaveRef.current !== chave) return;
+      setDescartado({ chave, rascunho });
+      setRascunho(""); setErro(""); setPrevia(false);
+      textoRef.current?.focus();
+    } catch (e) {
+      if (chaveRef.current === chave) setErro(e.message || "Não foi possível descartar. Seu texto foi preservado.");
+    } finally { trava.current = false; setDescartando(false); }
   }
   function desfazerDescarte() {
-    if (!descartado || descartado.chave !== chave || trava.current || hook.ocupado) return;
+    if (!descartado || descartado.chave !== chave || trava.current || hook.ocupado || !remoto.pronto) return;
     hook.rascunhosRef?.current.set(chave, descartado.rascunho);
     setRascunho(descartado.rascunho); remoto.salvar(descartado.rascunho); setDescartado(null);
     textoRef.current?.focus();
@@ -160,7 +175,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     } catch (e) { setErro(e.message || "Não foi possível conferir o envio. A mensagem foi preservada."); }
     finally { setOcupado(false); setConsultandoEnvio(false); }
   }
-  const bloqueado = ocupado || hook.ocupado || destinoMudou || !resposta.pode || !remoto.pronto || incerto;
+  const bloqueado = ocupado || descartando || hook.ocupado || destinoMudou || !resposta.pode || !remoto.pronto || incerto;
   // Preparation is an explicit event, not a reaction to text or polling updates.
   const prepararResposta = useRef(null);
   prepararResposta.current = () => {
@@ -182,7 +197,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const seletorCanal = !comercialObrigatorio && canais.length > 1 && <label className="wa-compose-channel">Enviar pelo WhatsApp<select aria-label="Canal da mensagem" value={canalId || ""} disabled={ocupado || hook.ocupado} onChange={e => setCanalId(e.target.value)}>
     {!canal && <option value="">Selecione o canal</option>}{canais.map(c => <option key={c.id} value={c.id}>{c.nome || c.chave || c.finalidade || "Principal"}</option>)}
   </select></label>;
-  const dicas = (!mobile || texto || orientacao) && <div className="wa-composer-hint">{!mobile && <span>Ctrl + Enter para enviar</span>}{(texto || orientacao) && <button type="button" disabled={ocupado || hook.ocupado || incerto} onClick={descartar}>Descartar rascunho</button>}</div>;
+  const dicas = (!mobile || texto || orientacao) && <div className="wa-composer-hint">{!mobile && <span>Ctrl + Enter para enviar</span>}{(texto || orientacao) && <button type="button" disabled={ocupado || descartando || hook.ocupado || incerto || !remoto.pronto} onClick={descartar}>Descartar rascunho</button>}</div>;
   return <div className="wa-composer">
     <div className="wa-composer-row">
       <Button ref={abrirFerramentasRef} variant="secondary" className="wa-composer-plus" aria-label="Ações da mensagem e arquivos" aria-expanded={acoesAbertas} onClick={acoesAbertas ? fecharFerramentas : abrirFerramentas}>{acoesAbertas ? "×" : "+"}</Button>
@@ -211,6 +226,7 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     {remoto.estado === "salvo" && <p role="status" className="wa-visually-hidden">Rascunho salvo</p>}
     {remoto.erro && <div role="alert" className="wa-draft-preview"><p>{remoto.erro}</p><Button variant="secondary" onClick={async () => { try { const valor = await remoto.conferir(); if (chaveRef.current === chave) setVersaoRemota(valor); } catch (e) { setErro(e.message); } }}>Ver versão salva</Button>{remoto.estado !== "conflito" && <Button variant="secondary" onClick={remoto.tentarSalvar}>Tentar salvar</Button>}</div>}
     {versaoRemota && <div className="wa-draft-preview"><strong>Texto salvo no servidor</strong><p>{versaoRemota.texto || "Sem texto salvo"}</p><p>Compare os textos. A versão de outro aparelho não foi sobrescrita.</p><Button variant="secondary" onClick={async () => { await remoto.resolverConflito(); setVersaoRemota(null); }}>Usar versão salva</Button><Button variant="secondary" onClick={async () => { await remoto.resolverConflito(typeof rascunho === "string" ? { texto: rascunho, destinoPreparado: destinoAtual } : rascunho); setVersaoRemota(null); }}>Conferi: salvar meu texto</Button><Button variant="secondary" onClick={() => setVersaoRemota(null)}>Fechar comparação</Button></div>}
+    {(descartando || remoto.estado === "excluindo") && <p role="status" className="wa-list-note">Descartando rascunho…</p>}
     {ocupado && <p role="status" className="wa-list-note">{consultandoEnvio ? "Conferindo envio…" : "Enviando…"}</p>}
     {incerto && !ocupado && <div role="status" className="wa-draft-preview"><p>Envio sem confirmação. Seu texto está preservado e não será reenviado automaticamente.</p>{hook.api?.getIntencaoWhatsapp && <Button variant="secondary" onClick={conferirEnvio}>Conferir resultado do envio</Button>}</div>}
     {!resposta.pode && destino && <RetomarConversa key={`retomar-${destino}`} api={hook.api} conversa={conversaCanal} onEnviado={() => hook.atualizarConversa(conversa.id)} />}
