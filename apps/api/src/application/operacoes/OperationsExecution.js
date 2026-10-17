@@ -49,6 +49,7 @@ export async function executarOperacao(db, args, deps = {}) {
       return transmit({ portalClientId: companyId, competencia, userId,
         calculoId: claim.calculoId, somenteDocumentosFaltantes: true, antesDeTransmitir: () => conferirExecucao(db, claim.guardArgs, procurador) });
     });
+    if (result?.ok !== true) throw fail('A execução não confirmou o resultado. Confira a apuração antes de uma nova ação.');
     const missing = Object.values(result.posTransmissao || {}).some(r => r?.skipped || r?.ok === false);
     const blockingReason = Object.values(result.posTransmissao || {}).map(r => motivosBloqueioDocumental[r?.code]).find(Boolean);
     await db.appSetting.update({ where: { key: claim.key }, data: { value: { ...claim.value, status: 'DONE', finishedAt: new Date().toISOString(), documentos: result.posTransmissao || null, message: blockingReason || (missing ? 'Apuração processada, mas há documentos faltantes. Confira Tarefas e Guias; não será feita nova consulta automaticamente.' : null) } } });

@@ -66,7 +66,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
     } finally {
       setCarregando(false);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   const carregarInfos = useCallback(async () => {
     if (!api || !companyId) return;
@@ -81,7 +81,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
     } finally {
       setCarregandoInfos(false);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarInfos(); }, [carregarInfos]);
@@ -97,7 +97,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao guardar a credencial.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const atualizar = useCallback(async (credentialId, patch) => {
     if (!api || !companyId) return false;
@@ -109,7 +109,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao atualizar a credencial.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const excluir = useCallback(async (credentialId) => {
     if (!api || !companyId) return false;
@@ -121,7 +121,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir a credencial.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   /**
    * ⚠ Revelar é ATO DE CONSEQUÊNCIA, e o hook não o dispara sozinho.
@@ -144,7 +144,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao revelar a senha.");
       return null;
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   const esconder = useCallback((credentialId) => {
     setReveladas((atual) => {
@@ -164,7 +164,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao guardar a informação.");
       return false;
     }
-  }, [api, companyId, carregarInfos]);
+  }, [feedbackRef, api, companyId, carregarInfos]);
 
   const excluirInfo = useCallback(async (infoId) => {
     if (!api || !companyId) return false;
@@ -176,7 +176,7 @@ export function useCompanyCredentials({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir a informação.");
       return false;
     }
-  }, [api, companyId, carregarInfos]);
+  }, [feedbackRef, api, companyId, carregarInfos]);
 
   return {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,

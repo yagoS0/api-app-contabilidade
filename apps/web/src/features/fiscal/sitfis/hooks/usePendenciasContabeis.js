@@ -16,6 +16,6 @@ export function usePendenciasContabeis({ api, companyId }) {
       if (origem === contexto.current && pedido === sequencia.current) setEstado({ contexto: origem, itens: [], loading: false, error: e.message || 'Falha ao ler pendências da contabilidade.' });
     }
   }, [api, companyId]);
-  useEffect(() => { reload(); return () => { ++sequencia.current; }; }, [reload]);
+  useEffect(() => { const contador = sequencia; reload(); return () => { ++contador.current; }; }, [reload]);
   return { ...(estado.contexto === contexto.current ? estado : { itens: [], loading: disponivel, error: null }), disponivel, reload };
 }

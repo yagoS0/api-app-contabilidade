@@ -29,7 +29,8 @@
 // `faltasParaEmitir` (espelho de `buildMissingFields`), no passo 1. Aqui é conferência.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import {
   carregarServicosNacionais,
   formatarCodigoServicoNacional,

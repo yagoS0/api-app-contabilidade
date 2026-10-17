@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { LinhaHorarioAtual, useRelogioAgenda } from '../LinhaHorarioAtual';
+import { LinhaHorarioAtual } from '../LinhaHorarioAtual';
+import { useRelogioAgenda } from '../LinhaHorarioAtual.shared.js';
 import { ALTURA_HORA } from '../../lib/escalaAgenda';
 
 function Relogio({ dias }) {

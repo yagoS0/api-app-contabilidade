@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 

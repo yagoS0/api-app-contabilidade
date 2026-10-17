@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { AcompanhamentoParcelamentos, filtrarAcompanhamento } from "../AcompanhamentoParcelamentos";
+import { AcompanhamentoParcelamentos } from "../AcompanhamentoParcelamentos";
+import { filtrarAcompanhamento } from "../AcompanhamentoParcelamentos.shared.js";
 
 const dados = () => ({ contratos: [], indicacoes: [{ id: "ind-1", origem: "SITFIS", parcelasEmAtraso: 3, descricao: "Simples em parcelamento" }], mesOperacional: "2026-09", itens: [{ id: "indicacao:ind-1", estado: "IDENTIFICAR", tipo: "PARCSN" }], resumo: { pendentes: 1 } });
 test("indício sem contrato é visível e não exige contabilização", async () => {

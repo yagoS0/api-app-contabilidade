@@ -12,7 +12,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const FONTE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const FONTE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8").replace(/\r\n/g, "\n");
 
 /** O bloco da rota, isolado — as asserções são sobre ele, não sobre o arquivo inteiro. */
 function blocoDaRota() {

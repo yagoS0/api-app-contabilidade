@@ -1,7 +1,8 @@
+import { numeroInformado } from "./AjustesPlanejamento.shared.js";
 import { useId } from "react";
 import { SecaoPlanejamento } from "./SecaoPlanejamento";
 
-export const numeroInformado = v => v == null || v === "" || !Number.isFinite(Number(v)) || Number(v) < 0 ? null : Number(v);
+
 export function CampoNumero({ label, value, onChange, ...props }) {
   const id = useId();
   const invalido = value != null && value !== "" && numeroInformado(value) == null;

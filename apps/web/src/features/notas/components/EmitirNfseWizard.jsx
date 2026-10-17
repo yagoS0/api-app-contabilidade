@@ -3,7 +3,8 @@ import './emissor-contador.css';
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { ConfigurarRecorrencia } from '@contabilidade/shared/nfse-recorrencias';
 import { usePreviaFiscal } from '../hooks/usePreviaFiscal';
-import { PreviaFiscal, linhasDaPreviaFiscal } from './PreviaFiscal';
+import { PreviaFiscal } from "./PreviaFiscal";
+import { linhasDaPreviaFiscal } from "./PreviaFiscal.shared.js";
 import { MunicipioDoPerfil } from '../../companies/detail/components/MunicipioDoPerfil';
 import { buscarCatalogo } from '../../../lib/nfse/buscaCatalogo';
 // EMISSÃO DE NFS-e — o assistente.
@@ -80,7 +81,8 @@ import { buscarCatalogo } from '../../../lib/nfse/buscaCatalogo';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { Button } from "../../../components/ui/Button";
 import {
   regimeDeclaradoNaNota,
@@ -706,9 +708,9 @@ export function EmitirNfseWizard({
       // CURTA — a explicação inteira está no bloco do regime, na mesma tela.
       regime.bloqueiaEmissao && { texto: regime.motivoCurto, campo: null, grave: true },
     ].filter(Boolean);
-  }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial, endereco, consultaCep?.estado,
-    servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
-    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, buscaPerfil, retencoesComplementares, obra, destinatario, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao]);
+  }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial, consultaCep?.estado,
+    servico.descricao, servico.valorServicos, valor, servico.issRetido,
+    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, buscaPerfil, previaFiscal.bloqueada, previaFiscal.carregando, buscaLocalPrestacao, servico.cLocPrestacao, aliquotaParaRetencao, conferenciaOperacao.erros, faltasEndereco]);
 
   const prontoParaEmitir = problemasDaNota.length === 0;
   const camposDoTomador = new Set([CAMPO.DOC, CAMPO.NOME, CAMPO.EMAIL, ...CAMPOS_DO_ENDERECO]);

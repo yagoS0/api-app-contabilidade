@@ -48,7 +48,9 @@ jest.mock("../../../application/accounting/fechamentoContabil.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const tx = {
+    appSetting: { findUnique: jest.fn(async () => null) },
     accountingEntry: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
       create: jest.fn(),
       update: jest.fn(async () => ({ id: "prov1", lines: [], baixas: [] })),
       findUnique: jest.fn(async () => ({ id: "b1", lines: [] })),
@@ -137,6 +139,8 @@ function p2002(target) {
 }
 
 beforeEach(() => {
+  // A releitura dentro da transação observa a mesma provisão/lançamento do cenário.
+  __tx.accountingEntry.findFirst = prisma.accountingEntry.findFirst;
   jest.clearAllMocks();
   prisma.accountingEntry.findFirst.mockResolvedValue(provisaoDeFevereiro);
   __tx.accountingEntry.create.mockResolvedValue({ id: "b1" });

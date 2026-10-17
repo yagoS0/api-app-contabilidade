@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { WorkspaceNavigationProvider, WorkspaceHomeLink, useWorkspaceNavigation } from "../WorkspaceNavigation";
+import { WorkspaceNavigationProvider, WorkspaceHomeLink } from "../WorkspaceNavigation";
+import { useWorkspaceNavigation } from "../WorkspaceNavigation.shared";
 
 function Screen() {
   const nav = useWorkspaceNavigation();

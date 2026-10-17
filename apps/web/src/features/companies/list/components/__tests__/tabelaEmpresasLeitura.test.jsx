@@ -161,7 +161,10 @@ describe("⚠ TRÊS EIXOS INDEPENDENTES — o caso PHAOS", () => {
     const linha = screen.getByRole("row", { name: /PHAOS CONSULTORIA/ });
     expect(within(linha).getByText('A apurar')).toBeInTheDocument();
     expect(within(linha).getByText('Pendente')).toBeInTheDocument();
-    expect(within(linha).getByRole('button', {name: 'DAS: enviada ao cliente'})).toBeInTheDocument();
+    expect(within(linha).queryByText('1 enviada')).not.toBeInTheDocument();
+    expect(within(linha).getByRole('button', { name: /Guias de PHAOS.*1 enviada/ })).toBeInTheDocument();
+    fireEvent.click(within(linha).getByRole('button', { name: /Guias de PHAOS/ }));
+    expect(screen.getByRole('button', { name: 'DAS: enviada ao cliente' })).toBeInTheDocument();
   });
 
   test("cada coluna diz QUAL pergunta responde — é o que separa os eixos na leitura", () => {
@@ -209,15 +212,17 @@ describe("canais de envio na tabela principal", () => {
     [["EMAIL"], "E-mail"],
     [["WHATSAPP"], "WhatsApp"],
     [["EMAIL", "WHATSAPP"], "E-mail e WhatsApp"],
-  ])("guias concluídas mostram %s diretamente na coluna", (canais, rotulo) => {
+  ])("guias concluídas mostram %s no detalhe da cobertura", (canais, rotulo) => {
     montar({ companies: [empresa({ guideCompliance: { das: enviada(canais) } })] });
-    const linha = screen.getByRole("row", { name: /ACME LTDA/ });
+    fireEvent.click(screen.getByRole("button", { name: /Guias de ACME LTDA/ }));
+    const linha = screen.getByRole("region", { name: "Guias de ACME LTDA" });
     expect(within(linha).getByText(rotulo)).toBeInTheDocument();
     expect(within(linha).queryByText("Sem envios pendentes")).not.toBeInTheDocument();
   });
 
   test("canais diferentes entre tributos permanecem identificados por guia", () => {
     montar({ companies: [empresa({ guideCompliance: { das: enviada(["EMAIL"]), inss: enviada(["WHATSAPP"]) } })] });
+    fireEvent.click(screen.getByRole("button", { name: /Guias de ACME LTDA/ }));
     expect(screen.getByRole("button", { name: "DAS: enviada por E-mail" })).toHaveTextContent("E-mail");
     expect(screen.getByRole("button", { name: "INSS: enviada por WhatsApp" })).toHaveTextContent("WhatsApp");
     expect(screen.queryByText("E-mail e WhatsApp")).not.toBeInTheDocument();
@@ -225,12 +230,14 @@ describe("canais de envio na tabela principal", () => {
 
   test("o canal também aparece na guia enviada quando outra ainda está pendente", () => {
     montar({ companies: [empresa({ guideCompliance: { das: enviada(["EMAIL", "WHATSAPP"]), inss: { required: true, state: "missing" } } })] });
+    fireEvent.click(screen.getByRole("button", { name: /Guias de ACME LTDA/ }));
     expect(screen.getByRole("button", { name: "DAS: enviada por E-mail e WhatsApp" })).toHaveTextContent("E-mail e WhatsApp");
     expect(screen.getByRole("button", { name: /INSS: falta gerar/ })).toBeInTheDocument();
   });
 
   test("uma tentativa falha no outro canal não aparece como envio por ambos", () => {
     montar({ companies: [empresa({ guideCompliance: { das: { ...enviada(["EMAIL"]), canalEnvio: "WHATSAPP", envioStatus: "falhou" } } })] });
+    fireEvent.click(screen.getByRole("button", { name: /Guias de ACME LTDA/ }));
     expect(screen.getByText("E-mail")).toBeInTheDocument();
     expect(screen.queryByText("E-mail e WhatsApp")).not.toBeInTheDocument();
   });
@@ -263,10 +270,10 @@ test('presumido resume tributos, preserva detalhes e separa parcelamentos', () =
     guideCompliance: { irpj: { required: true, state: 'missing' }, csll: { required: true, state: 'gerada' },
       parcDas: { required: true, state: 'missing', quantidade: 2, atrasada: true,
         itens: [{ id: 'p1', tipo: 'PARCSN', numeroParcela: 3 }, { id: 'p2', tipo: 'PERT', numeroParcela: 8 }] } } })] });
-  const resumo = screen.getByRole('button', { name: '2 guias: IRPJ, CSLL' });
-  expect(resumo).toHaveTextContent('2 guias');
-  expect(resumo.title).toContain('IRPJ: falta gerar');
-  expect(resumo.title).toContain('CSLL: gerada, falta enviar');
+  const resumo = screen.getByRole('button', { name: /Guias de ACME LTDA: 1\/2 disponíveis/ });
+  expect(resumo).toHaveTextContent('1/2 disponíveis');
+
+
   const parc = screen.getByRole('button', { name: /Parcelamento:/ });
   expect(parc).toHaveTextContent('PARC · 2 guia(s)');
   expect(parc.title).toContain('PARCSN · parcela 3');

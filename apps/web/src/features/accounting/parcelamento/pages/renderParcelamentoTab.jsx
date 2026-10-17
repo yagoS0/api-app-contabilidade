@@ -134,9 +134,7 @@ const MOTIVOS_RECUSA = {
  * habilita o botão de declarar — oferecê-lo nas demais prometeria uma ação que não resolve nada.
  * É a mesma fronteira que `corrigivelNaTela` desenha na fila de baixo.
  */
-function composicaoDeclaravel(motivo) {
-  return motivo === "sem_composicao";
-}
+
 
 /**
  * ⚠ AUSÊNCIA NUNCA É RESPOSTA. Este painel fazia `if (!carregando && parcelas.length === 0) return
@@ -181,7 +179,8 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     try {
       const out = await parcelaApi.listParcelasPendentesBaixa(companyId);
       if (version !== request.current || !mounted.current) return;
-      setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
+      if (out?.ok === false || !Array.isArray(out?.parcelas)) throw new Error(out?.message || "A consulta não retornou a fila de parcelas. Tente novamente.");
+      setParcelas(out.parcelas);
     } catch (err) {
       if (version !== request.current || !mounted.current) return;
       // ⚠ O `catch` NÃO zera mais a lista em silêncio: ele guarda o motivo e a tela o mostra.
@@ -663,7 +662,8 @@ function ParcelasSemGuiaPendentes({
     try {
       const out = await parcelaApi.listParcelasSemGuiaPendentes(companyId);
       if (version !== request.current) return;
-      setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
+      if (out?.ok === false || !Array.isArray(out?.parcelas)) throw new Error(out?.message || "A consulta não retornou a fila de parcelas. Tente novamente.");
+      setParcelas(out.parcelas);
       // ⚠ A REGRA CONTINUA A MESMA (`avisoForaDaFila`): `null` quando não há nada escondido — aviso
       // que aparece sempre é aviso que ninguém lê. O que mudou é ONDE ele é desenhado.
       const aviso = avisoForaDaFila(out?.foraDaFila);
@@ -799,7 +799,7 @@ function ParcelasSemGuiaPendentes({
                     {p.vencimento ? fmtDataCivil(p.vencimento) : "—"}
                   </td>
                   <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
-                    {formatarMoeda(p.valorPrevisto)}
+                    {Number.isFinite(Number(p.valorPrevisto)) && Number(p.valorPrevisto) > 0 ? formatarMoeda(p.valorPrevisto) : "Não informado"}
                   </td>
                   {/* ⚠ ESTADO É BADGE CURTO, NÃO PARÁGRAFO. Eram até três textos empilhados na
                       linha (situação colorida + motivo do bloqueio + aviso do "sem valor"); agora
@@ -926,11 +926,10 @@ function ParcelasSemGuiaPendentes({
         </div>
         {/* ⚠ A FRASE QUE SEPARA AS DUAS FILAS. Sem ela, a segunda tabela parece "mais do mesmo".
             ⚠ E ela é UM texto de apoio, no topo do grupo — não um aviso repetido linha a linha. */}
-        <div style={{ color: PANEL.muted, fontSize: "0.78rem", lineHeight: 1.45, marginTop: 2 }}>
-          Débito automático não gera guia: aqui <strong>não há documento nenhum</strong>. O sistema só
-          sabe que a prestação venceu; quem afirma que o dinheiro saiu é <strong>você</strong>, e a
-          baixa fica registrada como declarada por você.
-        </div>
+        <details style={{ color: PANEL.muted, fontSize: "0.8125rem", lineHeight: 1.45, marginTop: 2 }}>
+          <summary style={{ cursor: "pointer" }}>Como conferir parcelas sem guia</summary>
+          <p>O vencimento não confirma pagamento. Confira o débito antes de declarar a baixa; a declaração registra sua autoria.</p>
+        </details>
       </div>
 
       {/* ⚠ O MOTIVO UMA VEZ, PARA O GRUPO — e, quando há saída, a SAÍDA EM LOTE junto dele.
@@ -1265,7 +1264,7 @@ function ParcelamentoTabContent({
   // deixariam os dois abertos ao mesmo tempo se alguém clicasse rápido — e são atos opostos sobre o
   // MESMO contrato.
   const [ato, setAto] = useState(null);
-  const contratos = parcelamentos?.parcelamentos || [];
+  const contratos = useMemo(() => parcelamentos?.parcelamentos || [], [parcelamentos?.parcelamentos]);
   const abrirDesfazerPorId = useCallback((parcelamentoId) => {
     const alvo = contratos.find((p) => p.id === parcelamentoId);
     // O aviso da fila manda só o id; sem o contrato na lista, o modal ainda funciona (a prévia vem

@@ -3,7 +3,8 @@ import './comparacao-tributaria.css';
 import { custoAnualSimples, folhaParaFatorR } from '../../planejamento/lib/simplesNacional';
 import { custoAnualPresumido, ATIVIDADES_PRESUMIDO } from '../../planejamento/lib/lucroPresumido';
 import { FATOR_R_LIMITE } from '../../planejamento/lib/tabelasFiscais';
-import { PANEL, fmtMoney } from '../../notas/components/notasStyles';
+
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles.shared.js";
 import { anexosDaEmpresa } from '../lib/anexoDaEmpresa';
 
 const numero = v => v == null || String(v).trim() === '' || !Number.isFinite(Number(v)) || Number(v) < 0 ? null : Number(v);
@@ -47,8 +48,7 @@ export function ComparacaoTributaria({ competencia, rbt12, origem, receitaMensal
     {origem === 'PARCIAL_LOCAL' && <p role="status" className="comparacao-tributaria-alerta">RBT12 parcial: comparação com base incompleta.</p>}
     <div style={{ padding: 16, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, display: 'grid', gap: 12 }}>
       <strong>Quanto falta para atingir 28%</strong>
-      <progress aria-label="Progresso para atingir o Fator R de 28%" max={28} value={fator?.fatorR == null ? undefined : Math.min(28, fator.fatorR * 100)} style={{ width: '100%', height: 12, accentColor: 'var(--accent-cyan)' }} />
-      {fator?.fatorR == null && <span style={{ color: PANEL.muted }}>Progresso indisponível sem folha e receita válidas.</span>}
+      {fator?.fatorR != null && <progress aria-label="Progresso para atingir o Fator R de 28%" max={28} value={Math.min(28, fator.fatorR * 100)} style={{ width: '100%', height: 12, accentColor: 'var(--accent-cyan)' }} />}
       <p style={{ margin: 0 }}>{sujeita ? 'Meta: 28% para o Anexo III.' : 'O Fator R não altera o anexo das atividades atuais.'}</p>
       <label style={campo}>Folha elegível dos 12 meses anteriores (R$)
         <input aria-label="Folha elegível dos 12 meses anteriores (R$)" type="number" min="0" step="0.01" style={input} value={folhaEditada === null ? folha12m ?? '' : folhaEditada} onChange={e => setFolha(e.target.value)} />

@@ -14,7 +14,8 @@
 // conferência; este painel é leitura contínua, não a porta. A garantia de que ninguém emite sem ver
 // a declaração fica mais forte com ele, não mais fraca.
 
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { linhasDoEspelho } from "../lib/declaracaoNfse";
 import { AVISO_ESTIMATIVA, calcularTributosDaNota, dinheiroOuTraco } from "../lib/tributosDaNota";
 

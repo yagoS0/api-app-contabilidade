@@ -22,6 +22,7 @@ test('folha ausente não vira zero; atividade sem Fator R mantém explicação',
   render(<ComparacaoTributaria {...base} atividades={[{anexoImplicito:'III'}]}/>);
   abrirComparacao();
   expect(screen.getByText('Informe a folha elegível')).toBeInTheDocument();
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   expect(screen.getByText(/não altera o anexo das atividades atuais/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Folha elegível dos 12 meses anteriores (R$)'), {target:{value:'0'}});
   expect(screen.queryByText('Informe a folha elegível')).not.toBeInTheDocument();

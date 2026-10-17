@@ -1,3 +1,4 @@
+import { TRIBUTO_TIPO, rotuloCanaisEnviados, ESTADO } from './renderGuiaChip.shared.js';
 // O chip de guia — o ciclo de vida de uma obrigação, na listagem.
 //
 //                       ┌─→ ✈ gerada ─→ ✓ enviada        (terminais bons)
@@ -24,49 +25,13 @@ import { companyTabPath } from "../../detail/lib/rotasDaEmpresa";
 import { ofertaDeRetentativa } from "../../../guides/lib/canalDeEnvio";
 
 // Chave do compliance → tipo de Guide. Mesmo de-para do backend; PIS representa o grupo PIS/COFINS.
-export const TRIBUTO_TIPO = {
-  das: "SIMPLES", inss: "INSS", irpj: "IRPJ", csll: "CSLL", pisCofins: "PIS", iss: "ISS",
-};
+
 
 const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 
-export function rotuloCanaisEnviados(tag) {
-  if (tag.state !== "enviada") return "";
-  const canais = Array.isArray(tag.canaisEnviados) ? tag.canaisEnviados
-    : tag.canalEnvio ? [tag.canalEnvio] : tag.emailStatus === "SENT" ? ["EMAIL"] : [];
-  return ["EMAIL", "WHATSAPP"].filter(c => canais.includes(c))
-    .map(c => c === "EMAIL" ? "E-mail" : "WhatsApp").join(" e ");
-}
 
 /** Canais diferentes entre guias precisam continuar visíveis por tributo. */
-export function resumoCanaisEnviados(tags) {
-  const rotulos = new Set(tags.filter(t => t.state === "enviada").map(rotuloCanaisEnviados));
-  return rotulos.size > 1 ? null : [...rotulos][0] || "";
-}
 
-const ESTADO = {
-  missing:  { icone: "○", cor: "var(--state-neutral)", fundo: "transparent",  rotulo: "falta gerar" },
-  gerada:   { icone: "●", cor: "var(--state-ok)", fundo: "var(--state-ok-surface)",    rotulo: "gerada, falta enviar" },
-  // ⚠ ESTE ESTADO EXISTIA NO BANCO E NÃO EXISTIA NA TELA. A guia cujo envio falhou tem
-  // `emailStatus:"ERROR"` + `emailLastError` + `emailNextRetryAt` — e **nada drena esse retry**
-  // (o laço automático saiu na Q55). Ela ficava âmbar "gerada, falta enviar", exatamente igual à
-  // guia que nunca foi tentada, e por isso ninguém era avisado de nada: a falha só saía do banco
-  // se alguém, por acaso, clicasse de novo.
-  //
-  // Vermelho e não âmbar: âmbar é "há trabalho de rotina a fazer", e no fim do mês metade da
-  // carteira está em âmbar. Isto aqui é uma tentativa que já foi feita e falhou — a mesma urgência
-  // de "falta gerar", com ícone próprio (a regra de aceite pede que um screenshot dessaturado
-  // continue legível, e ✖ ≠ ⚠ ≠ ✈).
-  falhou:   { icone: "✖", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "o envio FALHOU — ninguém tentará de novo" },
-  enviada:  { icone: "✓", cor: "var(--state-ok)",      fundo: "var(--state-ok-surface)",      rotulo: "enviada ao cliente" },
-  vazio:    { icone: "⊘", cor: "var(--state-neutral)", fundo: "var(--state-neutral-surface)", rotulo: "sem movimento (confirmado)" },
-  conflito: { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "marcada sem movimento, mas há faturamento" },
-};
-
-export function resumoDaGuia(tag) {
-  const estado = rotuloCanaisEnviados(tag) ? `enviada por ${rotuloCanaisEnviados(tag)}` : (ESTADO[tag.state] || ESTADO.missing).rotulo;
-  return `${tag.label}: ${estado}`;
-}
 
 const fmtData = (iso) => {
   if (!iso) return null;
@@ -394,10 +359,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
 }
 
 /** Todas as guias em estado TERMINAL (enviada ou vazio)? É o que autoriza condensar. */
-export function todasConcluidas(tags) {
-  const exigidas = (tags || []).filter((t) => t.state !== "na");
-  return exigidas.length > 0 && exigidas.every((t) => !t.pendenciaOperacional && (t.state === "enviada" || t.state === "vazio"));
-}
+
 
 /**
  * A PARCELA fica de fora das agregações e sempre tem chip próprio.
@@ -405,7 +367,7 @@ export function todasConcluidas(tags) {
  * Ela não vem de apurar: vem de capturar o parcelamento. Juntá-la num "N guias · falta apurar"
  * mandaria o contador para a ação errada.
  */
-export const ehParcela = (t) => t.key === "parcDas";
+
 
 /**
  * Todas as guias de TRIBUTO ainda por gerar? Aí um chip só basta.
@@ -418,7 +380,3 @@ export const ehParcela = (t) => t.key === "parcDas";
  * carrega informação: são quatro maneiras de dizer a mesma coisa. Assim que os estados divergem
  * (PIS enviado, IRPJ pendente), aí sim o detalhe importa e os chips voltam.
  */
-export function todasPorGerar(tags) {
-  const tributos = (tags || []).filter((t) => t.state !== "na" && !ehParcela(t));
-  return tributos.length > 1 && tributos.every((t) => t.state === "missing");
-}

@@ -1,0 +1,30 @@
+.resumo-guias { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); max-width: 100%; }
+button.resumo-guias__controle { min-height: 32px; max-width: 100%; justify-content: space-between; gap: var(--space-2); }
+.resumo-guias__controle > span { font-weight: 500; }
+.resumo-guias__seta { flex-shrink: 0; }
+.resumo-guias__controle[aria-expanded="true"] .resumo-guias__seta { transform: rotate(90deg); }
+.company-guides-detail > td { padding: 0; border-bottom: 1px solid var(--border); }
+.resumo-guias__detalhe { padding: var(--space-4); background: var(--bg-surface); }
+.resumo-guias__detalhe p { margin: 0 0 var(--space-3); color: var(--text-muted); font-size: .82rem; }
+.resumo-guias__contexto { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.resumo-guias__contexto strong { font-weight: 500; color: var(--text); }
+.resumo-guias__contexto > span { font-size: .74rem; }
+.resumo-guias__estado { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.resumo-guias__rotulo-movel { display: none; }
+.resumo-guias__acoes button.carteira-tag { min-height: 32px; }
+.resumo-guias__item,.resumo-guias__cabecalho { display: grid; grid-template-columns: 1fr 1fr 1fr minmax(200px,1.5fr); gap: var(--space-3); align-items: center; padding-block: var(--space-2); }
+.resumo-guias__item { border-top: 1px solid var(--border); }
+.resumo-guias__item > strong { font-weight: 500; }
+.resumo-guias__cabecalho { color: var(--text-muted); font-size: .78rem; }
+@media screen and (max-width: 760px) {
+  .resumo-guias { align-items: flex-end; }
+  button.resumo-guias__controle { min-height: 44px; }
+  .company-guides-detail,.company-guides-detail > td { display: block; width: 100%; box-sizing: border-box; }
+  .resumo-guias__detalhe { border-radius: var(--radius); margin-bottom: var(--space-3); }
+  .resumo-guias__cabecalho { display: none; }
+  .resumo-guias__item { grid-template-columns: 1fr 1fr; overflow-wrap: anywhere; }
+  .resumo-guias__obrigacao { grid-column: 1 / -1; }
+  .resumo-guias__rotulo-movel { display: block; color: var(--text-muted); font-size: .74rem; }
+  .resumo-guias__acoes button.carteira-tag { min-height: 44px; }
+  .resumo-guias__item > :last-child { grid-column: 1 / -1; }
+}

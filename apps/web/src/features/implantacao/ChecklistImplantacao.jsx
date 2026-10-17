@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { SITUACOES } from './ChecklistImplantacao.shared.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
-import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao';
+import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import './implantacao.css';
 
-export const SITUACOES = { A_FAZER: 'A fazer', AGUARDANDO_CLIENTE: 'Aguardando cliente', AGENDADO: 'Agendado', CONCLUIDO: 'Concluído', NAO_SE_APLICA: 'Não se aplica' };
+
 const titulo = t => t.titulo === 'Configurar certificado A1' ? 'Configurar certificado' : t.titulo;
 const encerrada = t => ['CONCLUIDO', 'NAO_SE_APLICA'].includes(t.status);
 const campos = t => ({ status: t.status, responsavel: t.responsavel || '', prazo: t.prazo || '', pendencia: t.pendencia || '', versao: t.versao });
@@ -72,7 +73,7 @@ export function ChecklistImplantacao({ api, companyId, podeEditar = true }) {
     (gatilhos.current.get(retorno.current) || filtroRef.current)?.focus();
     retorno.current = null;
   }, [editando]);
-  async function carregar() {
+  const carregar = useCallback(async () => {
     const seq = ++pedido.current;
     setCarregando(true); setErro('');
     try {
@@ -81,8 +82,8 @@ export function ChecklistImplantacao({ api, companyId, podeEditar = true }) {
       if (seq === pedido.current) setEstado({ id: companyId, dados: r.implantacao });
     } catch (e) { if (seq === pedido.current) { setEstado(null); setErro(e.message || 'Não foi possível consultar a implantação.'); } }
     finally { if (seq === pedido.current) setCarregando(false); }
-  }
-  useEffect(() => { setEditando(null); carregar(); return () => { pedido.current++; }; }, [api, companyId]);
+  }, [api, companyId]);
+  useEffect(() => { const pedidoDaExecucao = pedido; setEditando(null); carregar(); return () => { pedidoDaExecucao.current++; }; }, [carregar, api, companyId]);
   const dados = estado?.id === companyId ? estado.dados : null;
   const tarefas = (dados?.tarefas || []).filter(t => t.chave === editando || filtro === 'todas' || (filtro === 'atrasadas' ? t.atrasada : filtro === 'aguardando' ? t.status === 'AGUARDANDO_CLIENTE' : !encerrada(t)));
   return <section className="implantacao" aria-label="Checklist de implantação">

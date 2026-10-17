@@ -361,10 +361,10 @@ export function createRealApi() {
      * mês e o dia da linha. ⚠ Formato "AAAA-MM-DD" (o valor cru de um `<input type="date">`);
      * quem valida é o servidor, com recusa NOMEADA.
      */
-    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm } = {}) {
+    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm, versaoPagamento, reconfirmaConfirmacaoId } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/confirmar-pagamento`,
-        { method: "POST", body: { pagoEm } }
+        { method: "POST", body: { pagoEm, versaoPagamento, ...(reconfirmaConfirmacaoId ? { reconfirmaConfirmacaoId } : {}) } }
       );
     },
 

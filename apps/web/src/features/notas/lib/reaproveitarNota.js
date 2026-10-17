@@ -47,7 +47,7 @@ import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // grafia e ler outra — que é a classe de defeito que `valorDaNota.js` existe para fechar.
 import { formatarValorParaCampo } from "./valorDaNota";
 
-const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
+
 
 /**
  * O valor como o campo do assistente o entende.

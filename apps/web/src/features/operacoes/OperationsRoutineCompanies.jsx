@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
@@ -10,7 +10,7 @@ export function OperationsRoutineCompanies({ api, companies = [], loading = fals
   const [data, setData] = useState(null), [error, setError] = useState(''), [pending, setPending] = useState(true);
   const [group, setGroup] = useState(null), [query, setQuery] = useState(''), [routine, setRoutine] = useState('');
   const generation = useRef(0);
-  async function load() {
+  const load = useCallback(async () => {
     const current = ++generation.current;
     setPending(true); setError('');
     try {
@@ -20,13 +20,13 @@ export function OperationsRoutineCompanies({ api, companies = [], loading = fals
       if (current === generation.current) setData(response);
     } catch (e) { if (current === generation.current) { setData(null); setError(e.message || 'Não foi possível carregar as rotinas.'); } }
     finally { if (current === generation.current) setPending(false); }
-  }
-  useEffect(() => {
+  }, [api]);
+  useEffect(() => { const generationDaExecucao = generation;
     load();
     const focus = () => load();
     window.addEventListener('focus', focus);
-    return () => { generation.current++; window.removeEventListener('focus', focus); };
-  }, [api]);
+    return () => { generationDaExecucao.current++; window.removeEventListener('focus', focus); };
+  }, [load, api]);
   async function retry() {
     try {
       if (companyError) await onRefreshCompanies?.();

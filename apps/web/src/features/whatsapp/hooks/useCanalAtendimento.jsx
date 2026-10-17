@@ -8,10 +8,11 @@ export function useCanalAtendimento(hook, { mensagemBiblioteca = null, onMensage
   const [preparado, setPreparado] = useState(null);
   const [pedidoCanal, setPedidoCanal] = useState(null);
   const conversa = hook.aberta?.conversa;
+  const atualizarConversa = hook.atualizarConversa;
   const registrarCanal = useCallback(c => setPreparado(anterior => JSON.stringify(anterior) === JSON.stringify(c) ? anterior : c), []);
   const atualizacaoComercial = useMemo(() => ({ revisao, mensagemBiblioteca, onMensagemBibliotecaAberta,
-    atualizar: () => { setRevisao(v => v + 1); return hook.atualizarConversa(conversa?.id); },
-  }), [revisao, mensagemBiblioteca, onMensagemBibliotecaAberta, hook.atualizarConversa, conversa?.id]);
+    atualizar: () => { setRevisao(v => v + 1); return atualizarConversa(conversa?.id); },
+  }), [revisao, mensagemBiblioteca, onMensagemBibliotecaAberta, atualizarConversa, conversa?.id]);
   const canalPreparado = preparado?.interlocutorId === (conversa?.interlocutorId || conversa?.id) ? preparado : null;
   const canal = conversa ? canaisDaConversa(conversa).find(c => c.id === (relacionamentoDaConversa(conversa).tipo === "LEAD"
     ? canalInicialDaConversa(conversa) : canalPreparado?.canalId || canalInicialDaConversa(conversa))) : null;

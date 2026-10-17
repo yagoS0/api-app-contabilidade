@@ -531,12 +531,13 @@ export function createRealApi() {
     async getCompanyGuides(companyId) {
       const items = [];
       let page = 1;
-      while (true) {
+      let hasNextPage = true;
+      while (hasNextPage) {
         const payload = await request(`/firm/companies/${companyId}/guides?page=${page}&limit=50`);
         const batch = Array.isArray(payload?.data) ? payload.data : [];
         items.push(...batch);
-        if (!batch.length || !Number.isFinite(payload?.total) || items.length >= payload.total) break;
-        page += 1;
+        hasNextPage = batch.length > 0 && Number.isFinite(payload?.total) && items.length < payload.total;
+        if (hasNextPage) page += 1;
       }
       return items;
     },
@@ -625,6 +626,11 @@ export function createRealApi() {
       const qs = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
       return request(`/firm/companies/${companyId}/lancamentos/verificacao${qs}`);
     },
+    async getAvisosContabeis(companyId, { competencia } = {}) {
+      return request(`/firm/companies/${companyId}/avisos-contabeis${competencia ? `?competencia=${encodeURIComponent(competencia)}` : ""}`);
+    },
+    async retomarBaixaCliente(companyId, id) { return request(`/firm/companies/${companyId}/confirmacoes-pagamento/${id}/retomar`, { method: "POST" }); },
+    async getConfirmacaoPagamentoCliente(companyId, id) { return request(`/firm/companies/${companyId}/confirmacoes-pagamento/${id}`); },
     async getFechamentoContabil(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}`);
     },
@@ -634,11 +640,11 @@ export function createRealApi() {
     async contabilizarGuiaPendente(companyId, guideId, updatedAt) {
       return request(`/firm/companies/${companyId}/guias-pendentes-contabilizacao/${guideId}/contabilizar`, { method: "POST", body: JSON.stringify({ updatedAt }) });
     },
-    async fecharFechamentoContabil(companyId, competencia) {
-      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/fechar`, { method: "POST" });
+    async fecharFechamentoContabil(companyId, competencia, dados = {}) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/fechar`, { method: "POST", body: JSON.stringify(dados) });
     },
-    async reabrirFechamentoContabil(companyId, competencia) {
-      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/reabrir`, { method: "POST" });
+    async reabrirFechamentoContabil(companyId, competencia, dados = {}) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/reabrir`, { method: "POST", body: JSON.stringify(dados) });
     },
     // Q47: marca/desmarca "Folha/Pró-labore lançada" (pré-requisito do fechamento).
     async setFolhaProlabore(companyId, competencia, ok) {
@@ -733,10 +739,10 @@ export function createRealApi() {
         body: JSON.stringify({ ok: Boolean(ok) }),
       });
     },
-    async setChecklistFechamento(companyId, competencia, item, ok) {
+    async setChecklistFechamento(companyId, competencia, item, ok, versao) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/checklist/${item}`, {
         method: "POST",
-        body: JSON.stringify({ ok: Boolean(ok) }),
+        body: JSON.stringify({ ok: Boolean(ok), versao }),
       });
     },
     async getGuideSettings() {
@@ -2783,8 +2789,8 @@ export function createRealApi() {
       });
     },
     // Q55 — retificação: reabrir uma apuração transmitida + retransmitir como retificadora.
-    async reabrirFechamento(companyId, competencia) {
-      return request(`/firm/companies/${companyId}/fechamento/${competencia}/reabrir`, { method: "POST" });
+    async reabrirFechamento(companyId, competencia, motivo) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/reabrir`, { method: "POST", body: JSON.stringify({ motivo }) });
     },
     async retificarFechamento(companyId, competencia, confirmCompetencia, calculoId) {
       return background.request(`/firm/companies/${companyId}/fechamento/${competencia}/retificar`, {

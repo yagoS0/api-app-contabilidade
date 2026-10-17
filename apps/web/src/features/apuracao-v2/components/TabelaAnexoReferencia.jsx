@@ -17,8 +17,9 @@
 // arquivo só desenha — inclusive os casos em que a resposta é "não dá para afirmar".
 
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
-import { VIGENCIA_ATUAL, FONTES_VERIFICADAS_EM } from "../../planejamento/lib/tabelasFiscais";
+
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles.shared.js";
+import { VIGENCIA_ATUAL } from "../../planejamento/lib/tabelasFiscais";
 import {
   anexosDaEmpresa,
   tabelaDoAnexo,

@@ -2,13 +2,14 @@ import { AcessoPortalCliente } from "../../credentials/components/AcessoPortalCl
 import { ChecklistImplantacao } from '../../../implantacao/ChecklistImplantacao';
 import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 import { ConfiguracoesLayout } from "../../../configuracoes/Configuracoes";
-import { ProtecaoEdicao, useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao';
+import { ProtecaoEdicao } from '../../../configuracoes/ProtecaoEdicao';
+import { useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao.shared.js';
 import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { CompanyAutomation } from '../../../operacoes/CompanyAutomation';
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
-import { Modal } from "../../../../components/ui/Modal";
+import '../../../../components/ui/Modal';
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
 import { CompanyTabLayout, CompanyTabLoading } from "../components/CompanyTabLayout";
 // A URL das abas da empresa — a MESMA fonte que a navegação por clique usa. Ver `rotasDaEmpresa`.
@@ -393,7 +394,7 @@ function SitfisTabWrapper({ companyId, guidesPanel, feedback, empresa }) {
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
 
 function CompanyDetailContent({
-  usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
+  usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o

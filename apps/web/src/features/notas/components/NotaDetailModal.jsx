@@ -15,7 +15,8 @@
 // `PANEL` de `notasStyles`, `Button` de `components/ui`). Cores só por `var(--…)`.
 
 import { useState } from "react";
-import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
+
+import { PANEL, fmtMoney, fmtDate } from "./notasStyles.shared.js";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota, temHistoria } from "../lib/cicloNotaTela";

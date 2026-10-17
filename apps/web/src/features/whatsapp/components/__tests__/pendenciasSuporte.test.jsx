@@ -1,5 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PendenciasSuporte, ConsumoIaDetalhado } from '../PendenciasSuporte';
+
+test('fila indisponível oferece recuperação explícita sem criar ou enviar demanda', async () => {
+  const api = { getPendenciasSuporte: jest.fn().mockRejectedValueOnce(new Error('Offline')).mockResolvedValue({ ok: true, total: 0, itens: [] }) };
+  render(<PendenciasSuporte api={api} companyId="pc1" onAbrir={jest.fn()} />);
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+  expect(await screen.findByText('Nenhum atendimento pendente.')).toBeVisible();
+  expect(api.getPendenciasSuporte).toHaveBeenCalledTimes(2);
+});
 test('pendência lida permanece até ação explícita, assumindo antes de resolver', async () => {
   const item = { id: 'p1', conversaId: 'cv1', estado: 'AGUARDANDO', empresa: 'Empresa teste', motivo: 'Ajuda', resumo: 'Emitir para Gusmed' };
   const api = { getPendenciasSuporte: jest.fn(async () => ({ ok: true, total: 1, itens: [item] })),

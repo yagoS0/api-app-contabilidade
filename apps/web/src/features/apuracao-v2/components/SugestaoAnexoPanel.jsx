@@ -1,7 +1,8 @@
 import "./classificacao-notas.css";
 import { Button } from "../../../components/ui/Button";
 import { TIPOS_CLASSIFICACAO } from "../lib/tiposClassificacao";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles.shared.js";
 
 const CONF = {
   alta: { cor: "var(--state-ok)", label: "alta" },

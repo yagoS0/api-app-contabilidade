@@ -1,7 +1,8 @@
 // Q12.C.1: tabela de notas da janela ativa (NF-e OU NFS-e) — enxuta, sem resumo/stats.
 
 import { useEffect, useRef, useState } from "react";
-import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
+
+import { PANEL, fmtMoney, fmtDate } from "./notasStyles.shared.js";
 import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota } from "../lib/cicloNotaTela";

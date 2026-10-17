@@ -1,7 +1,8 @@
 import "./classificacao-notas.css";
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { TIPOS_CLASSIFICACAO } from "../lib/tiposClassificacao";
-import { PANEL, fmtDate } from "../../notas/components/notasStyles";
+
+import { PANEL, fmtDate } from "../../notas/components/notasStyles.shared.js";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { CORES_TOM_RELATORIO } from "../lib/relatorioFaturamento";
@@ -9,6 +10,7 @@ import { leituraDaPendencia } from "../lib/pendenciaTela";
 
 export function SugestaoModal({
   competencia,
+  SugestaoAnexoTabela,
   pendencias,
   classificacao,
   sugerir,
@@ -19,7 +21,6 @@ export function SugestaoModal({
   sugData,
   onClassificarPendencia,
   onClose,
-  SugestaoAnexoTabela,
 }) {
   const [selecoes, setSelecoes] = useState({});
   const [tipoLote, setTipoLote] = useState("");
@@ -127,7 +128,7 @@ export function SugestaoModal({
               </label>
               <Button variant="secondary" disabled={!tipoLote || classificando} onClick={() => setSelecoes(Object.fromEntries(sugData.notas.filter(n => n.itens > 0).map(n => [n.notaId, tipoLote])))}>Selecionar para todas</Button>
             </div>}
-            <SugestaoAnexoTabela data={sugData} selecoes={selecoes} onSelecionar={(id, tipo) => setSelecoes(s => ({ ...s, [id]: tipo }))} disabled={classificando} />
+            {createElement(SugestaoAnexoTabela, { data: sugData, selecoes, onSelecionar: (id, tipo) => setSelecoes(s => ({ ...s, [id]: tipo })), disabled: classificando })}
             {selecionadas.length > 0 && <div style={{ display: "grid", gap: 10 }}>
               <p style={{ margin: 0, fontSize: "0.875rem", color: PANEL.muted }}>{selecionadas.length} nota(s) selecionada(s). Todos os itens dessas notas receberão o tipo escolhido. Recalcule o DAS depois de aplicar.</p>
               <Button disabled={classificando} onClick={aplicar}>Aplicar classificação selecionada</Button>

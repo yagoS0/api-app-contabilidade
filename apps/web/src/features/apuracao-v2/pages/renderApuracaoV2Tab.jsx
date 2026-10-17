@@ -18,9 +18,10 @@ import { HistoricoPgdas } from "../components/HistoricoPgdas";
 // O fluxo de calcular/fechar/transmitir/retificar reaproveita o FechamentoModal (o MESMO da tela de
 // lote), aberto por um botão — então a lógica validada não muda. A tela de lote (renderApuracaoPage)
 // virou só "selecionar as fechadas e apurar em lote".
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { rotuloEstadoApuracao, RBT12_NOME } from "../../../lib/vocabulario";
-import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
+
+import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles.shared.js";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { SugestaoModal } from "../components/SugestaoModal";
@@ -79,7 +80,7 @@ function Kpi({ label, value, cor, title }) {
 
 export function ApuracaoV2Tab({
   panel, api, companyId, feedback, razao, myRole,
-  competencia: competenciaGlobal, onCompetenciaChange,
+  competencia: competenciaGlobal,
   // ⚠ Quem navega é a PÁGINA (ela tem o `switchTab`); esta aba só sabe para onde. Sem o retorno
   // de chamada o `<a href>` continua funcionando — só recarrega a página inteira em vez de navegar
   // por dentro do app.
@@ -96,17 +97,28 @@ export function ApuracaoV2Tab({
   // por causa de dois seletores discordando é o erro mais caro que esta tela pode produzir.
   // O fallback local cobre a aba montada fora da página de detalhe (não há chamador assim hoje).
   const competencia = competenciaGlobal || competenciaAnterior();
-  const setCompetencia = onCompetenciaChange || (() => {});
-  const contexto = `${companyId}:${competencia}`;
+
+  const contexto = useMemo(() => ({ companyId, competencia }), [companyId, competencia]);
   const contextoAtual = useRef(contexto);
   contextoAtual.current = contexto;
+  useEffect(() => {
+    contextoAtual.current = contexto;
+    return () => { if (contextoAtual.current === contexto) contextoAtual.current = null; };
+  }, [contexto]);
 
   // ── Apuração (fechamento) ─────────────────────────────────────────────
   const [fechDados, setFechDados] = useState(null);
   const [fechLoading, setFechLoading] = useState(false);
   const [fechErro, setFechErro] = useState(null);
+  const leituraApuracao = useRef(0);
   const [snap, setSnap] = useState(null);
   const [fechando, setFechando] = useState(null); // { retificar } → abre o FechamentoModal
+  const [confirmarRetificacao, setConfirmarRetificacao] = useState(false);
+  const [motivoRetificacao, setMotivoRetificacao] = useState('');
+  const [reabrindo, setReabrindo] = useState(false);
+  const reaberturaEmCurso = useRef(false);
+  const reaberturaConfirmada = useRef(null);
+  const [aguardandoReleitura, setAguardandoReleitura] = useState(false);
   // Extrato do Simples (o que realmente foi pra Receita) — botão explícito (bate no SERPRO).
   const [extrato, setExtrato] = useState(null);
   const [historicoAberto, setHistoricoAberto] = useState(false);
@@ -119,19 +131,32 @@ export function ApuracaoV2Tab({
 
   const carregarApuracao = useCallback(async () => {
     if (!api || !companyId || !/^\d{4}-\d{2}$/.test(competencia)) return;
+    const leitura = ++leituraApuracao.current;
     setFechLoading(true);
     try {
+      if (typeof api.getFechamento !== 'function') throw new Error('Leitura da apuração indisponível.');
       const [fech, snapshot] = await Promise.all([
-        api.getFechamento?.(companyId, competencia),
+        api.getFechamento(companyId, competencia),
         api.getApuracaoSnapshot?.(companyId, competencia).catch(() => null),
       ]);
-      if (contextoAtual.current !== contexto) return;
-      setFechDados(fech?.dados || fech || null);
+      if (contextoAtual.current !== contexto || leitura !== leituraApuracao.current) return;
+      if (!fech || fech.ok === false) throw new Error(fech?.message || fech?.error || 'Resposta da apuração indisponível.');
+      const dados = fech?.dados || fech;
+      if (reaberturaConfirmada.current === contexto && dados?.estado !== 'aberta') {
+        throw new Error('A leitura ainda não confirma a competência aberta.');
+      }
+      setFechDados(dados);
       setExtrato((fech?.dados || fech)?.entregaPgdas?.extratoSalvo || null);
       setSnap(snapshot?.snapshot || snapshot || null);
       setFechErro(null);
+      if (reaberturaConfirmada.current === contexto) {
+        reaberturaConfirmada.current = null;
+        setAguardandoReleitura(false);
+        feedback?.notifySuccess?.("Apuração reaberta para retificação.");
+        setFechando({ retificar: true });
+      }
     } catch (err) {
-      if (contextoAtual.current !== contexto) return;
+      if (contextoAtual.current !== contexto || leitura !== leituraApuracao.current) return;
       // ⚠ FALHA DE BACKEND NÃO PODE SE PARECER COM "EMPRESA SEM FATURAMENTO".
       //
       // Era `catch { setFechDados(null); }`: sem `notifyError`, sem log, sem estado de erro. Os
@@ -141,12 +166,14 @@ export function ApuracaoV2Tab({
       // diz POR QUE ele sumiu.
       setFechDados(null);
       setSnap(null);
-      setFechErro(err?.message || "Falha ao carregar a apuração desta competência.");
+      setFechErro(reaberturaConfirmada.current === contexto
+        ? `Reabertura confirmada; falta conferir o estado atualizado. ${err?.message || 'Falha de leitura.'}`
+        : err?.message || "Falha ao carregar a apuração desta competência.");
       feedback?.notifyError?.(err?.message || "Falha ao carregar a apuração desta competência.");
       // eslint-disable-next-line no-console
       console.error("[apuracao-v2] falha ao carregar a apuração", { companyId, competencia, err });
     } finally {
-      if (contextoAtual.current === contexto) setFechLoading(false);
+      if (contextoAtual.current === contexto && leitura === leituraApuracao.current) setFechLoading(false);
     }
   }, [api, companyId, competencia, contexto, feedback]);
 
@@ -214,7 +241,10 @@ export function ApuracaoV2Tab({
     carregarRelatorio();
   }, [carregarRelatorio]);
 
-  useEffect(() => { setFechando(null); setRelatorioAberto(false); setHistoricoAberto(false); }, [contexto]);
+  useEffect(() => {
+    reaberturaEmCurso.current = false; reaberturaConfirmada.current = null;
+    setReabrindo(false); setAguardandoReleitura(false); setConferindoEnvio(false);
+    setFechando(null); setConfirmarRetificacao(false); setRelatorioAberto(false); setHistoricoAberto(false); }, [contexto]);
   const [conferindoEnvio, setConferindoEnvio] = useState(false);
   async function conferirEnvio() {
     if (conferindoEnvio) return;
@@ -227,20 +257,29 @@ export function ApuracaoV2Tab({
       else feedback?.notifyError?.(out.result?.mensagem || 'Entrega ainda não confirmada.');
       await carregarApuracao();
     } catch (err) { if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || 'Falha ao conferir envio'); }
-    finally { setConferindoEnvio(false); }
+    finally { if (contextoAtual.current === contexto) setConferindoEnvio(false); }
   }
 
   async function abrirRetificar() {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Reabrir a apuração de ${razao || "esta empresa"} (${competencia}) para RETIFICAR?\n\nVocê corrige os valores e retransmite uma declaração RETIFICADORA (substitui a anterior).`)) return;
+    if (reaberturaEmCurso.current || reaberturaConfirmada.current === contexto || !motivoRetificacao.trim()) return;
+    reaberturaEmCurso.current = true;
+    setReabrindo(true);
     try {
-      const r = await api.reabrirFechamento?.(companyId, competencia);
+      if (typeof api?.reabrirFechamento !== 'function') throw new Error('Reabertura indisponível. Atualize a página e tente novamente.');
+      const r = await api.reabrirFechamento(companyId, competencia, motivoRetificacao.trim());
       if (contextoAtual.current !== contexto) return;
-      if (r?.ok === false) throw new Error(r?.message || r?.error || "Falha ao reabrir");
-      feedback?.notifySuccess?.("Apuração reaberta — corrija e clique em Transmitir/Retificar dentro do modal.");
-      setFechando({ retificar: true });
+      if (r?.ok !== true || r?.result?.snapshot?.estado !== 'aberta') throw new Error(r?.message || r?.error || "Não foi possível confirmar a reabertura. Confira o estado antes de tentar novamente.");
+      reaberturaConfirmada.current = contexto;
+      setAguardandoReleitura(true);
+      setConfirmarRetificacao(false);
+      await carregarApuracao();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao reabrir para retificar");
+      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "Falha ao reabrir para retificar");
+    } finally {
+      if (contextoAtual.current === contexto) {
+        reaberturaEmCurso.current = false;
+        setReabrindo(false);
+      }
     }
   }
 
@@ -300,12 +339,11 @@ export function ApuracaoV2Tab({
       if (contextoAtual.current !== contexto) return;
       await Promise.all([carregarApuracao(), gerarRelatorio()]);
       if (contextoAtual.current === contexto && sugData) await sugerir();
-    } catch (err) { throw err; }
-    finally { if (contextoAtual.current === contexto) setClassificando(false); }
+    } finally { if (contextoAtual.current === contexto) setClassificando(false); }
   }
 
   const pendencias = panel.pendencias || [];
-  const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", fontSize: "0.85rem", colorScheme: "dark" };
+
   /* `btnPrimary`/`btnGhost` foram removidos: eram o `Button` redesenhado à mão com raio 6 e
      altura 31 — a mesma dupla primário/secundário, dois pixels fora. */
 
@@ -352,15 +390,15 @@ export function ApuracaoV2Tab({
               {extrato?.files?.declaracaoFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>}
               {extrato?.files?.reciboFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>}
               <Button variant="secondary" onClick={() => setHistoricoAberto(true)} disabled={extratoLoading}>Histórico PGDAS-D</Button>
-              {historicoAberto && <HistoricoPgdas key={contexto} api={api} companyId={companyId} competencia={competencia} onClose={() => setHistoricoAberto(false)} onAtualizado={setExtrato} bloqueado={extratoLoading || ['transmitindo', 'erro_transmissao'].includes(estado)} />}
+              {historicoAberto && <HistoricoPgdas key={`${companyId}:${competencia}`} api={api} companyId={companyId} competencia={competencia} onClose={() => setHistoricoAberto(false)} onAtualizado={setExtrato} bloqueado={extratoLoading || ['transmitindo', 'erro_transmissao'].includes(estado)} />}
               <Button variant="secondary" onClick={() => setRelatorioAberto(true)}>Relatório de faturamento</Button>
-            <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || ['transmitindo', 'erro_transmissao'].includes(estado)}>
+            <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || aguardandoReleitura || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
             {estado === 'erro_transmissao' && <Button variant="secondary" onClick={conferirEnvio} disabled={conferindoEnvio}>Conferir envio na Receita</Button>}
             {estado === "transmitida" && (
-              <Button variant="secondary" onClick={abrirRetificar} title="Reabrir para corrigir e retransmitir como retificadora.">
-                🔄 Retificar
+              <Button variant="secondary" onClick={() => { setMotivoRetificacao(''); setConfirmarRetificacao(true); }} disabled={reabrindo || fechLoading || aguardandoReleitura} title="Reabrir apuração para retificar">
+                Retificar
               </Button>
             )}
             </div>
@@ -462,7 +500,7 @@ export function ApuracaoV2Tab({
               A recuperação validada fornece atividades, RBT12 e folha da mesma simulação.
               Ausência de folha continua nula; não converter lista vazia em zero. */}
           <TabelaAnexoReferencia compacta {...baseTabelaAnexo(fechDados, snap)} onClassificar={() => setSugestaoAberta(true)} classificacao={classificacao} />
-          <ComparacaoTributaria key={contexto} competencia={competencia}
+          <ComparacaoTributaria key={`${companyId}:${competencia}`} competencia={competencia}
             {...baseTabelaAnexo(fechDados, snap)}
             origem={fechDados?.rbt12Origem} receitaMensal={fat.interno}
             receitaExterna={fat.externo} />
@@ -501,6 +539,11 @@ export function ApuracaoV2Tab({
         />
       )}
 
+      {confirmarRetificacao && <Modal titulo="Reabrir apuração para retificar" tamanho="sm" ocupado={reabrindo} aoFechar={() => setConfirmarRetificacao(false)} rodape={<><Button variant="secondary" disabled={reabrindo} onClick={() => setConfirmarRetificacao(false)}>Cancelar</Button><Button disabled={reabrindo || !motivoRetificacao.trim()} onClick={abrirRetificar}>{reabrindo ? 'Reabrindo…' : 'Reabrir apuração'}</Button></>}>
+        <p><strong>{razao || 'Empresa'}</strong> · {competencia}</p>
+        <p>A declaração anterior permanece no histórico. Revise os valores antes de transmitir a retificadora.</p>
+        <label style={{ display: 'grid', gap: 6 }}>Motivo<textarea value={motivoRetificacao} onChange={e => setMotivoRetificacao(e.target.value)} disabled={reabrindo} rows={3} maxLength={2000} /></label>
+      </Modal>}
       {/* Modal de fechamento reusado (calcular/fechar/transmitir/retificar). */}
       {fechando && api && (
         <FechamentoModal

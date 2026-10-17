@@ -11,6 +11,7 @@ export function useSitfis({ api, companyId }) {
   const contexto = useRef({ api, companyId });
   if (contexto.current.api !== api || contexto.current.companyId !== companyId) contexto.current = { api, companyId };
   const leitura = useRef(0);
+  const consultaEmCurso = useRef(false);
   const expiracaoLida = useRef(null);
   const [status, setStatus] = useState(null); // { situacao, protocolo, relatorioPdfFileId, texto, checkedAt }
   const [loading, setLoading] = useState(false);
@@ -34,6 +35,7 @@ export function useSitfis({ api, companyId }) {
     try {
       const res = await api.getStoredSitfis(companyId);
       if (!vigente()) return;
+      if (!res || res.ok === false || !Object.prototype.hasOwnProperty.call(res, 'status')) throw new Error(res?.message || 'Resposta do relatório salvo indisponível.');
       setStatus(res?.status || null);
     } catch (err) {
       if (!vigente()) return;
@@ -45,7 +47,8 @@ export function useSitfis({ api, companyId }) {
   }, [api, companyId]);
 
   const consultar = useCallback(async () => {
-    if (!api || !companyId || consulting) return;
+    if (!api || !companyId || consultaEmCurso.current) return;
+    consultaEmCurso.current = true;
     const origem = contexto.current;
     setConsulting(true);
     setError(null);
@@ -53,6 +56,7 @@ export function useSitfis({ api, companyId }) {
     try {
       const res = await api.getSitfis(companyId);
       if (contexto.current !== origem) return;
+      if (res?.ok !== true) throw new Error(res?.message || 'Não foi possível confirmar o resultado da consulta.');
       if (res?.throttled) {
         // C11: dentro da janela de 4h o backend não chama o SERPRO — devolve o relatório salvo.
         setNotice(res?.mensagem || "Situação fiscal consultada há pouco — mostrando o último relatório salvo.");
@@ -70,9 +74,10 @@ SERPRO: ${res.mensagemSerpro}` : base);
       if (contexto.current !== origem) return;
       setError(err?.reason || err?.message || "Falha ao consultar a situação fiscal no SERPRO.");
     } finally {
+      consultaEmCurso.current = false;
       if (contexto.current === origem) setConsulting(false);
     }
-  }, [api, companyId, consulting, reload]);
+  }, [api, companyId, reload]);
 
   useEffect(() => {
     setStatus(null); setNotice(null); setConsulting(false);

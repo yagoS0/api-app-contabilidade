@@ -1,3 +1,4 @@
+import { CAMPOS_VAZIOS } from "./FormularioDeRegra.shared.js";
 // O FORMULÁRIO DE UMA REGRA DO FORNECEDOR — extraído de `PainelDeRegras.jsx` em 02/09/2026.
 //
 // ⚠⚠ POR QUE ELE SAIU DO PAINEL: o dono pediu que a LINHA da fila ofereça «Criar regra»
@@ -25,26 +26,14 @@ import {
 
 const regrasApi = createApiClient();
 
-export const CAMPOS_VAZIOS = Object.freeze({
-  cnpjFornecedor: "",
-  padraoDescricao: "",
-  valorMin: "",
-  valorMax: "",
-  contaDestino: "",
-  contaCredito: "",
-  lancaSozinha: false,
-  diaDoLancamento: "",
-});
+
 
 
 function mensagemDoErro(e) {
   return e?.body?.message || e?.message || "Não foi possível concluir.";
 }
 
-const brl = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—";
-};
+
 
 /**
  * ⚠ Os valores iniciais que a LINHA da fila oferece ao formulário — uma função só, para o painel e
@@ -53,21 +42,7 @@ const brl = (v) => {
  * @param {object} item a linha da fila (o declarado serializado)
  * @param {{contaDestino?: string|null, contaCredito?: string|null}} contas o que está digitado nela
  */
-export function iniciaisDaLinha(item, { contaDestino = null, contaCredito = null } = {}) {
-  const valor = item?.valorAjustado ?? item?.valor;
-  const n = Number(valor);
-  const valorTexto = Number.isFinite(n) && n > 0 ? String(n) : "";
-  return {
-    ...CAMPOS_VAZIOS,
-    cnpjFornecedor: String(item?.cnpjFornecedor || "").replace(/\D+/g, ""),
-    // ⚠ A descrição ORIGINAL, não a normalizada: o contador lê e apara; a normalização é do motor.
-    padraoDescricao: item?.cnpjFornecedor ? "" : String(item?.descricaoOriginal || ""),
-    valorMin: valorTexto,
-    valorMax: valorTexto,
-    contaDestino: contaDestino || "",
-    contaCredito: contaCredito || "",
-  };
-}
+
 
 /**
  * @param {string}   companyId
@@ -254,4 +229,4 @@ export function FormularioDeRegra({
   );
 }
 
-export { brl };
+

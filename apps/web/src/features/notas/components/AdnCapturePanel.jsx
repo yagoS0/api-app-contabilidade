@@ -1,7 +1,8 @@
 // Q12.B+: captura manual de NFS-e (ADN / Emissor Nacional) — versão enxuta (só o botão de consultar).
 
 import { mensagemCapturaAdn } from "../lib/mensagemCapturaAdn";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { Button } from "../../../components/ui/Button";
 
 // "há 20 minutos" / "há 3 dias" — a idade importa mais que o timestamp exato: é ela que separa

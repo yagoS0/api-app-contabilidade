@@ -1,7 +1,8 @@
 // Q14.2.e — Form do Cadastro Fiscal (regime, CNAEs, sublimite).
 import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
-import { PANEL } from "../../notas/components/notasStyles";
+
+import { PANEL } from "../../notas/components/notasStyles.shared.js";
 
 const REGIMES = [
   { value: "SIMPLES_NACIONAL", label: "Simples Nacional" },

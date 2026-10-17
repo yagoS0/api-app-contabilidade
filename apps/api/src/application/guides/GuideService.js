@@ -1,3 +1,4 @@
+import { reconfirmacaoPagamentoTx, listarConfirmacoesPagamento, resumoConfirmacaoPagamento, versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import crypto from "node:crypto";
 import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -234,6 +235,7 @@ export async function listGuidesByCompany({
     });
     circularByComp = new Map(circulars.map((c) => [c.competencia, c]));
   }
+  for (const g of rawItems) g.versaoPagamento = versaoPagamentoGuia(g);
   const items = rawItems.map((g) => {
     // ⚠⚠ A PARCELA SAI AQUI, antes de qualquer conta. O valor dela é o dela.
     if (!ehDasDoMes(g)) return g;
@@ -275,9 +277,14 @@ export async function listGuidesByCompany({
     select: { id: true, comprovanteGuiaId: true, nomeArquivo: true, estado: true, dataPagamentoDeclarada: true },
     orderBy: [{ recebidoEm: "desc" }, { id: "desc" }],
   }) : [];
-  const itensComEnvio = items.map((g) => ({ ...g, envios: enviosPorId.get(g.id) || [],
+  const confirmacoes = items.some(g => g.paymentStatusSource === 'CLIENTE')
+    ? await listarConfirmacoesPagamento(prisma, String(portalClientId)) : [];
+  confirmacoes.sort((a, b) => String(b.confirmadoEm).localeCompare(String(a.confirmadoEm)));
+  const itensComEnvio = await Promise.all(items.map(async (g) => ({ ...g,
+    reconfirmacaoPagamento: await reconfirmacaoPagamentoTx(prisma, g, confirmacoes),
+    confirmacaoCliente: resumoConfirmacaoPagamento(confirmacoes.find(c => c.guideId === g.id && c.estadoBaixa !== 'SUBSTITUIDA')), envios: enviosPorId.get(g.id) || [],
     comprovantesCliente: comprovantes.filter(a => a.comprovanteGuiaId === g.id),
-  }));
+  })));
 
   return { items: itensComEnvio, total, page: pageNum, limit: take };
 }
@@ -358,6 +365,9 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
   const now = new Date();
   return {
     guideId: item.id,
+    versaoPagamento: item.versaoPagamento || versaoPagamentoGuia(item),
+    confirmacaoCliente: item.confirmacaoCliente || null,
+    reconfirmacaoPagamento: item.reconfirmacaoPagamento || null,
     companyId: item.portalClientId,
     competencia: item.competencia || null,
     tipo: item.tipo,

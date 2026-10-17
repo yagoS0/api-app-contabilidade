@@ -17,7 +17,6 @@ const PANEL = {
 };
 
 const CORES_IMPORTANCIA = { ALTA: "var(--state-danger)", MEDIA: "var(--state-warn)", BAIXA: "var(--accent-cyan)" };
-const ROTULO_IMPORTANCIA = { ALTA: "Alta", MEDIA: "Média", BAIXA: "Baixa" };
 
 const btn = (cor = PANEL.border) => ({
   padding: "6px 10px", borderRadius: 8, border: `1px solid ${cor}`,
@@ -42,15 +41,12 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
     }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
         {destaque && <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--state-warn)" }}>📌 FIXADA</span>}
-        <span style={{ fontSize: "0.72rem", fontWeight: 700, color: cor }}>
-          {ROTULO_IMPORTANCIA[nota.importancia] || nota.importancia}
-        </span>
         <span style={{ fontSize: "0.72rem", color: PANEL.muted }}>{fmtData(nota.createdAt)}</span>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 6 }}>
           <select
             value={nota.importancia}
             onChange={(e) => onMudarImportancia(e.target.value)}
-            style={{ ...btn(), background: PANEL.field }}
+            style={{ ...btn(), background: PANEL.field, color: cor }}
             aria-label="Importância"
           >
             <option value="ALTA">Alta</option>
@@ -58,9 +54,9 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
             <option value="BAIXA">Baixa</option>
           </select>
           {destaque
-            ? <button type="button" style={btn()} onClick={onDesfixar}>Desafixar</button>
-            : <button type="button" style={btn("var(--state-warn)")} onClick={onFixar}>Fixar</button>}
-          <button type="button" style={btn()} onClick={onExcluir}>Excluir</button>
+            ? <Button size="sm" variant="secondary" onClick={onDesfixar}>Desafixar</Button>
+            : <Button size="sm" variant="secondary" onClick={onFixar}>Fixar</Button>}
+          <Button size="sm" variant="secondary" onClick={onExcluir}>Excluir</Button>
         </div>
       </div>
       <p style={{ margin: 0, fontSize: "0.86rem", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{nota.texto}</p>
@@ -72,6 +68,7 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
   const { fixada, demais, ordenarPor, setOrdenarPor, carregando, erro, recarregar, criar, atualizar, excluir } = notes;
   const [confirmarExclusao, setConfirmarExclusao] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState(null);
   const [texto, setTexto] = useState("");
   const [importancia, setImportancia] = useState("MEDIA");
   const [salvando, setSalvando] = useState(false);
@@ -108,7 +105,7 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
     destaque,
     onFixar: () => atualizar(n.id, { fixada: true }),
     onDesfixar: () => atualizar(n.id, { fixada: false }),
-    onExcluir: () => setConfirmarExclusao(n),
+    onExcluir: () => { setErroExclusao(null); setConfirmarExclusao(n); },
     onMudarImportancia: (v) => atualizar(n.id, { importancia: v }),
   });
 
@@ -122,7 +119,7 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Anotações</h2>
         <span role={carregando ? "status" : undefined} style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
-          {carregando ? "carregando…" : `${(fixada ? 1 : 0) + demais.length} anotação(ões)`}
+          {carregando ? "carregando…" : erro && !fixada && !demais.length ? '—' : `${(fixada ? 1 : 0) + demais.length} anotação(ões)`}
         </span>
         <label style={{ marginLeft: "auto", fontSize: "0.78rem", color: PANEL.muted, display: "flex", gap: 6, alignItems: "center" }}>
           Ordenar por
@@ -162,14 +159,14 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
             <option value="MEDIA">Média</option>
             <option value="BAIXA">Baixa</option>
           </select>
-          <button
-            type="button"
-            style={{ ...btn("var(--accent-purple)"), marginLeft: "auto" }}
+          <Button
+            size="sm"
+            style={{ marginLeft: "auto" }}
             disabled={salvando || !texto.trim()}
             onClick={aoCriar}
           >
             {salvando ? "Salvando…" : "Adicionar"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -181,11 +178,10 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
       {erro && <div role="alert"><p>Não foi possível ler as anotações desta empresa. {erro}</p><Button onClick={recarregar}>Tentar novamente</Button></div>}
       {!carregando && !erro && !fixada && !demais.length && (
         <p style={{ color: PANEL.muted, fontSize: "0.85rem" }}>
-          Nenhuma anotação ainda. Registre aqui o que costuma ficar só na memória de quem atende
-          esta empresa.
+          Nenhuma anotação.
         </p>
       )}
-      {confirmarExclusao && <Modal titulo="Excluir anotação" tamanho="sm" ocupado={excluindo} aoFechar={() => setConfirmarExclusao(null)} rodape={<><Button variant="secondary" disabled={excluindo} onClick={() => setConfirmarExclusao(null)}>Cancelar</Button><Button variant="danger" disabled={excluindo} onClick={async () => { setExcluindo(true); try { await excluir(confirmarExclusao.id); setConfirmarExclusao(null); } finally { setExcluindo(false); } }}>Excluir anotação</Button></>}><p>Esta anotação será excluída:</p><blockquote style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{confirmarExclusao.texto}</blockquote></Modal>}
+      {confirmarExclusao && <Modal titulo="Excluir anotação" tamanho="sm" ocupado={excluindo} aoFechar={() => setConfirmarExclusao(null)} rodape={<><Button variant="secondary" disabled={excluindo} onClick={() => setConfirmarExclusao(null)}>Cancelar</Button><Button variant="danger" disabled={excluindo} onClick={async () => { setExcluindo(true); try { if (await excluir(confirmarExclusao.id)) setConfirmarExclusao(null); else setErroExclusao("Não foi possível excluir a anotação. Tente novamente."); } finally { setExcluindo(false); } }}>Excluir anotação</Button></>}>{erroExclusao && <p role="alert">{erroExclusao}</p>}<p>Esta anotação será excluída:</p><blockquote style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{confirmarExclusao.texto}</blockquote></Modal>}
     </div>
   );
 }

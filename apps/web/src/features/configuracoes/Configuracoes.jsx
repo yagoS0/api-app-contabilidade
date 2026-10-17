@@ -1,4 +1,4 @@
-import { useWorkspaceNavigation } from "../../app/navigation/WorkspaceNavigation";
+import { useWorkspaceNavigation } from '../../app/navigation/WorkspaceNavigation.shared.js';
 import { useState } from 'react';
 import { buscarConfiguracoes, CONFIG_GERAIS } from './catalogo';
 export function Engrenagem({ href, onClick, label }) {

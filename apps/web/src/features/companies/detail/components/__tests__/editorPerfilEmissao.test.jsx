@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { EditorPerfilEmissao, corpoDoPerfil } from "../EditorPerfilEmissao";
+import { EditorPerfilEmissao } from '../EditorPerfilEmissao';
+import { corpoDoPerfil } from '../EditorPerfilEmissao.shared.js';
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../../lib/nfse/perfilEmissao";
 
 const dados = {

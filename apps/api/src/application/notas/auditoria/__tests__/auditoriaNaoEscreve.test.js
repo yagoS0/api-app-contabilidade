@@ -222,7 +222,7 @@ describe("⚠ a auditoria não escreve", () => {
     const fs = require("node:fs");
     const path = require("node:path");
     const fonte = fs.readFileSync(path.join(__dirname, "..", "AuditoriaNotasService.js"), "utf8");
-    const codigo = fonte.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    const codigo = fonte.split(/\r?\n/).filter((l) => !l.trim().startsWith("//")).join("\n");
     for (const proibido of [".create(", ".createMany(", ".update(", ".updateMany(", ".upsert(", ".delete(", ".deleteMany(", "$transaction", "$executeRaw"]) {
       expect(codigo).not.toContain(proibido);
     }
@@ -232,7 +232,7 @@ describe("⚠ a auditoria não escreve", () => {
     const fs = require("node:fs");
     const path = require("node:path");
     const ler = (arquivo) => fs.readFileSync(path.join(__dirname, "..", arquivo), "utf8")
-      .split("\n").filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*")).join("\n");
+      .split(/\r?\n/).filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*")).join("\n");
     for (const arquivo of ["AuditoriaNotasService.js", "auditoriaNotas.js"]) {
       const codigo = ler(arquivo);
       for (const proibido of ["fetch(", "axios", "https.request", "Adn", "Serpro", "Sefaz"]) {
@@ -247,7 +247,7 @@ describe("⚠ a auditoria não escreve", () => {
     const fonte = fs.readFileSync(path.join(__dirname, "..", "auditoriaNotas.js"), "utf8");
     expect(fonte).not.toContain("infrastructure/db/prisma");
     // O único import é a leitura de data civil do projeto — que também é pura.
-    const imports = fonte.split("\n").filter((l) => l.startsWith("import "));
+    const imports = fonte.split(/\r?\n/).filter((l) => l.startsWith("import "));
     expect(imports).toEqual(['import { dataCivilISO } from "../../../utils/dataCivil.js";']);
   });
 });

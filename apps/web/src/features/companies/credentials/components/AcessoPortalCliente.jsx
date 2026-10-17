@@ -86,7 +86,7 @@ function SenhaExibidaUmaVez({ senha, usuario, onEsconder }) {
  * no dia do segundo usuário, troca a senha de alguém por engano.
  */
 function LinhaUsuario({
-  usuario, ultimaSenha, podeDefinirSenha, papelMinimo, salvando, razaoSocial, onDefinir, onEsconder,
+  usuario, ultimaSenha, podeDefinirSenha, salvando, razaoSocial, onDefinir, onEsconder,
 }) {
   const [confirmando, setConfirmando] = useState(false);
   const motivoId = useId();

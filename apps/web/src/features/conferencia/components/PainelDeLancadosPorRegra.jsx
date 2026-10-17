@@ -10,7 +10,7 @@
 // confirmou À MÃO sobre uma nota com regra também tem `regraId`, e oferecer "desfazer" sobre o
 // trabalho dele seria o oposto do que este extrato existe para fazer.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 
@@ -56,7 +56,7 @@ export function PainelDeLancadosPorRegra({
   const [enviando, setEnviando] = useState(false);
   const [relatorio, setRelatorio] = useState(null);
 
-  function carregar() {
+  const carregar = useCallback(() => {
     if (!companyId || !competencia || typeof extratoApi.getLancadosPorRegra !== "function") {
       setEstado({ carregando: false, dados: null, indisponivel: true, erro: null });
       return;
@@ -71,9 +71,9 @@ export function PainelDeLancadosPorRegra({
         erro: null,
       }))
       .catch((e) => setEstado({ carregando: false, dados: null, indisponivel: false, erro: e }));
-  }
+  }, [companyId, competencia]);
 
-  useEffect(() => { carregar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyId, competencia]);
+  useEffect(() => { carregar(); }, [carregar]);
 
   const linhas = Array.isArray(estado.dados?.linhas) ? estado.dados.linhas : [];
 

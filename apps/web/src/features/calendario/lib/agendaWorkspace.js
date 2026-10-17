@@ -9,7 +9,7 @@ export const dataLocal = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Ame
 export const dataBR = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
 export const dataExtenso = d => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 export function diasDoPeriodo(referencia, visao) {
-  const d = new Date(`${referencia}T12:00:00Z`);
+
   let inicio = referencia, tamanho = 1;
   if (visao === 'mes' || visao === 'lista') { inicio = `${referencia.slice(0,7)}-01`; tamanho = 42; }
   if (visao !== 'dia') {

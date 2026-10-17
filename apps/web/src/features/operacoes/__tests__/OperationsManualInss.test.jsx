@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { CompanyManualInss, OperationsManualInss, previousInssMonth } from '../OperationsManualInss';
+import { CompanyManualInss, OperationsManualInss } from '../OperationsManualInss';
+import { previousInssMonth } from '../OperationsManualInss.shared.js';
 
 const initial = { companyId: 'a', competencia: '2026-09', revision: 'r1', hasProlabore: true, applicable: true, applicabilitySource: 'company', regime: 'SIMPLES', state: { applicable: null, responsible: '', dueDate: null, note: '', reason: '' }, guides: [], status: 'PENDING_DOCUMENT' };
 function setup(overrides = {}, props = {}) {

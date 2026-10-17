@@ -25,9 +25,11 @@ export function mockExecucoesRotinas() {
 
 export function mockCarregarRotinas(companies) {
   return { ok: true, rotinas: keys.map((key, i) => ({ key, label: labels[i] })), agenda: structuredClone(agenda),
-    executions: mockExecucoesRotinas(), empresas: companies.map((c, i) => ({ companyId: c.companyId, razao: c.razao, cnpj: c.cnpj,
-      status: "ATIVA", regime: i % 3 === 0 ? "LUCRO_PRESUMIDO" : "SIMPLES",
-      rotinas: savedCompanies?.find(e => e.companyId === c.companyId)?.rotinas || { das: i % 3 !== 0, inss: true, extrato: i % 3 !== 0, presumido: i % 3 === 0, parcelamento: true, pagamento: true, conferencia: true } })) };
+    executions: mockExecucoesRotinas(), empresas: companies.map(c => {
+      const regime = c.regimeTributario || c.tipoTributario || c.legacyCompany?.regimeTributario || null;
+      return { companyId: c.companyId, razao: c.razao, cnpj: c.cnpj,
+      status: "ATIVA", regime,
+      rotinas: savedCompanies?.find(e => e.companyId === c.companyId)?.rotinas || { das: regime === 'SIMPLES', inss: true, extrato: regime === 'SIMPLES', presumido: regime === 'LUCRO_PRESUMIDO', parcelamento: regime === 'SIMPLES', pagamento: true, conferencia: true } }; }) };
 }
 
 export function mockSalvarRotinas(input) {

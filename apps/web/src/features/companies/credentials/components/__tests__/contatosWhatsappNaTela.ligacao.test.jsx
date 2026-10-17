@@ -14,7 +14,7 @@
 //   4. trocar o canal chama o PATCH e, recusado, o select VOLTA ao valor anterior;
 //   5. erro de carga NÃO zera a lista que já estava na tela.
 
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import "@testing-library/jest-dom";
 import { ContatosWhatsapp } from "../ContatosWhatsapp";
 import { useContatosWhatsapp } from "../../hooks/useContatosWhatsapp";
@@ -30,15 +30,6 @@ const SEM_OPT_IN = {
   optInEm: null, optInOrigem: null, ativo: true, userId: null,
 };
 
-function vaultFalso() {
-  return {
-    credenciais: [], cofre: null, podeRevelar: false, papelMinimoRevelar: "FIRM_ADMIN",
-    carregando: false, erro: null, informacoes: [], carregandoInfos: false, erroInfos: null,
-    reveladas: new Map(), revelar: jest.fn(), esconder: jest.fn(),
-    criar: jest.fn(), excluir: jest.fn(), criarInfo: jest.fn(), excluirInfo: jest.fn(),
-    recarregar: jest.fn(), recarregarInfos: jest.fn(),
-  };
-}
 
 // O `acesso` é um estado pronto (não o hook): esta suíte é sobre a seção de WhatsApp, e a lista de
 // usuários do portal é o único dado que ela consome de lá.

@@ -15,7 +15,7 @@ try {
  page.setDefaultTimeout(45000);
  page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
- async function capture(name) {
+ const capture = async (name) => {
   for(const width of [1440,390]) {
    await page.setViewportSize({width,height:1000});
    const metrics=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth+1,controlsOutside:[...document.querySelectorAll('input:not([type=hidden]),select,textarea')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.left< -1||r.right>innerWidth+1);}).map(el=>el.outerHTML.slice(0,120))}));
@@ -93,8 +93,5 @@ try {
  assert.ok(results.every(r=>!r.overflow&&!r.controlsOutside.length),'Confira capturas e results.json');
 } catch(e) { if(page) { await page.screenshot({path:`${dir}/failure.png`,fullPage:true}); await writeFile(`${dir}/failure.html`,await page.content()); } await writeFile(`${dir}/results.json`,JSON.stringify({results,errors,failure:e.message},null,2));throw e;}
 finally {await browser.close();}
-
-
-
 
 

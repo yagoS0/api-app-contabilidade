@@ -35,12 +35,12 @@ export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCamp
     }
   }
 
-  useEffect(() => {
+  useEffect(() => { const sequenciaDaExecucao = sequencia;
     ++sequencia.current;
     setConsulta(null); setCarregando(false);
-    if (!permitido || dados.cadastroCnpj?.cnpj === cnpj) return () => { ++sequencia.current; };
+    if (!permitido || dados.cadastroCnpj?.cnpj === cnpj) return () => { ++sequenciaDaExecucao.current; };
     timerRef.current = setTimeout(consultar, 500);
-    return () => { clearTimeout(timerRef.current); ++sequencia.current; };
+    return () => { clearTimeout(timerRef.current); ++sequenciaDaExecucao.current; };
     // Edições em outros campos não repetem nem cancelam a consulta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contexto, origem, cnpj, habilitado]);

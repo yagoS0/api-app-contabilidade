@@ -4,7 +4,7 @@
 // a LIGAÇÃO: que a tela renderiza o que a regra decide, que ela não afirma o que a regra recusa, e
 // que o botão de classificação — a única porta que sobrou para as pendências — aparece SEMPRE.
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import fs from "node:fs";
 import path from "node:path";

@@ -1,4 +1,6 @@
-import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, exigirBaixaForaDaComposicao, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
+import { corrigirMesFechado, estadoCorrecaoTx, concluirCorrecaoTx, listarCorrecoesContabeis, registrarAlteracaoTx, registrarConferenciaTx, CorrecaoContabilError } from '../../application/accounting/CorrecaoMesContabilService.js';
+import { listarConfirmacoesPagamento, lerConfirmacaoPagamento, tentarBaixaConfirmacao, resumoConfirmacaoPagamento } from '../../application/guides/ConfirmacaoPagamentoClienteService.js';
+import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
 import { sinalizarPendenciaFechamento, projetarPendenciasContabeis, pagamentosDisponiveis } from '@contabilidade/shared/pendencias-contabeis';
 import { Router } from "express";
 import { listarGuiasPendentesContabilizacao, contabilizarGuiaPendente } from "../../application/accounting/GuiasPendentesContabilizacaoService.js";
@@ -22,6 +24,7 @@ import {
   ERRO_CONTA_SINTETICA, resolverPlanoPorCodigo, codigosDasLinhas,
   sinteticasIntroduzidas, filhasDiretas, mensagemRecusa,
 } from "../../application/accounting/lib/gateContaSintetica.js";
+import { executarBaixaProvisaoTx } from '../../application/accounting/BaixaProvisaoService.js';
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
@@ -261,27 +264,6 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 //
 // O papel vem MARCADO do modal (não é deduzido da conta — o contador pode trocá-la). Linha sem
 // papel conta como principal, que é o comportamento seguro para lançamentos montados à mão.
-const SUFIXO_PAPEL = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
-function separarLinhasPorPapel(linhas) {
-  const debitos = linhas.filter((l) => String(l.tipo || "").toUpperCase() === "D");
-  const credito = linhas.find((l) => String(l.tipo || "").toUpperCase() === "C");
-  const contaCaixa = String(credito?.conta || "").trim();
-  const grupos = [];
-  for (const papel of ["PRINCIPAL", "JUROS", "MULTA"]) {
-    const doGrupo = debitos.filter((l) => {
-      const p = String(l.papel || "").trim().toUpperCase();
-      return papel === "PRINCIPAL" ? (!p || p === "PRINCIPAL") : p === papel;
-    });
-    // Mesmo papel não autoriza consolidar partidas: cada débito é um lançamento 1D/1C.
-    for (const debito of doGrupo) {
-      const total = r2(parseFloat(String(debito.valor).replace(",", ".")) || 0);
-      if (total > 0) grupos.push({ papel, debitos: [debito], total, contaCaixa });
-    }
-  }
-  return grupos;
-}
-
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1227,6 +1209,16 @@ export function createAccountingEntriesRouter({ log }) {
       acrescimos: acrescimosByMonth,
       extrato: extratoByMonth,
     };
+    const confirmacoes = await listarConfirmacoesPagamento(prisma,portalClientId);
+    const porGuia = new Map(confirmacoes.filter(c=>c.estadoBaixa !== 'SUBSTITUIDA').map(c=>[c.guideId,resumoConfirmacaoPagamento(c)]));
+    for (const item of resultado.provisoes) {
+      const guiaId = item.sourceGuide?.id || item.sourceGuideId;
+      const confirmacaoCliente = porGuia.get(guiaId);
+      if (confirmacaoCliente) {
+        item.confirmacaoCliente = confirmacaoCliente;
+        if (item.sourceGuide) item.sourceGuide = {...item.sourceGuide,confirmacaoCliente};
+      }
+    }
     const comOrigens=await enriquecerOrigens(prisma,portalClientId,resultado.provisoes);
     return { ...resultado, fechamentos, provisoes: comOrigens.map(e => sinalizarPendenciaFechamento(e, fechamentos)) };
   }
@@ -1557,6 +1549,27 @@ export function createAccountingEntriesRouter({ log }) {
     return { extrato, presumido };
   }
 
+  router.get('/avisos-contabeis', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const companyId = String(req.params.companyId);
+      const competencia = req.query.competencia ? String(req.query.competencia) : null;
+      const { correcoes, historico } = await listarCorrecoesContabeis(prisma, companyId, competencia);
+      const pagamentos = (await listarConfirmacoesPagamento(prisma, companyId)).filter(p => p.estadoBaixa === 'PENDENTE' && (!competencia || p.competenciaPagamento === competencia));
+      return res.json({ ok: true, total: correcoes.length + pagamentos.length, correcoes, pagamentos, historico });
+    } catch (err) { return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message}); }
+  });
+  router.get('/confirmacoes-pagamento/:id', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const confirmacao = await lerConfirmacaoPagamento(prisma, String(req.params.companyId), String(req.params.id));
+      if (!confirmacao) return res.status(404).json({ok:false,error:'confirmacao_nao_encontrada'});
+      return res.json({ok:true,confirmacao});
+    } catch (err) { return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message}); }
+  });
+  router.post('/confirmacoes-pagamento/:id/retomar', requireFirmCompanyAccess({minRole:'ACCOUNTANT'}), async (req, res) => {
+    try { return res.json(await tentarBaixaConfirmacao({companyId:String(req.params.companyId),confirmacaoId:String(req.params.id),actor:{id:req.auth.user.id,userId:req.auth.user.id,origem:'CONTADOR'}},prisma)); }
+    catch (err) { return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message}); }
+  });
+
   // Q17: FECHAMENTO CONTÁBIL do mês ─────────────────────────────────────────
   // GET estado + bloqueios (lançamentos em branco / desbalanceados).
   router.get("/fechamento-contabil/:competencia", requireFirmCompanyAccess(), async (req, res) => {
@@ -1618,9 +1631,12 @@ export function createAccountingEntriesRouter({ log }) {
           .catch(() => null)
         : null;
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
-      const pendentes = checklistPendentes(circular, validation.checklistAutomatico);
+      const correcaoEstado = await estadoCorrecaoTx(prisma, portalClientId, competencia);
+      const automatico = correcaoEstado.correcao ? {} : validation.checklistAutomatico;
+      const flagsEfetivas = correcaoEstado.correcao ? correcaoEstado.conferencia.campos : circular;
+      const pendentes = checklistPendentes(flagsEfetivas, automatico);
       const checklist = Object.fromEntries(
-        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, circular?.[c.campo] === true || validation.checklistAutomatico[chave]]),
+        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, flagsEfetivas?.[c.campo] === true || Boolean(automatico[chave])]),
       );
       return res.json({
         ok: true,
@@ -1632,7 +1648,10 @@ export function createAccountingEntriesRouter({ log }) {
         // Mantido no payload: a UI antiga (e o gate do fechamento) já liam este nome.
         folhaProlaboreOk: checklist.folhaProlabore,
         checklist,
-        checklistAutomatico: validation.checklistAutomatico,
+        checklistAutomatico: automatico,
+        versao: correcaoEstado.versao,
+        correcao: correcaoEstado.correcao,
+        conferenciaDesatualizada: Boolean(correcaoEstado.correcao && !correcaoEstado.conferencia.valida),
         checklistPendentes: pendentes,
         podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,
@@ -1661,42 +1680,23 @@ export function createAccountingEntriesRouter({ log }) {
     const competencia = String(req.params.competencia || "").trim();
     if (!competencia) return res.status(400).json({ error: "competencia_required" });
     try {
-      const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
-      if (!validation.ok) {
-        return res.status(400).json({ ok: false, error: "fechamento_bloqueado", blockers: validation.blockers });
-      }
-      // Só fecha com TODO o checklist de conferência marcado (folha/pró-labore, despesas,
-      // receitas, provisões, pagamentos).
-      const flags = await prisma.companyMonthlyCircular.findUnique({
-        where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: CHECKLIST_SELECT,
-      });
-      const pendentes = checklistPendentes(flags, validation.checklistAutomatico);
-      if (pendentes.length > 0) {
-        return res.status(400).json({
-          ok: false,
-          // Substitui folha_prolabore_pendente (que ninguém consumia por código — o front usa
-          // `message`), agora que a trava é o checklist inteiro e não só a folha.
-          error: "checklist_pendente",
-          checklistPendentes: pendentes,
-          message: `Confirme antes de fechar: ${pendentes.map((p) => p.label).join(", ")}.`,
-        });
-      }
-      // Garante a linha da circular (cria se não existir) e marca o fechamento contábil.
-      const existing = await prisma.companyMonthlyCircular.findUnique({
-        where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { id: true },
-      });
-      const data = { fechadoContabilEm: new Date(), fechadoContabilPor: req.auth?.user?.id || null };
-      if (existing) {
-        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data });
-      } else {
-        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, ...data } });
-      }
-      return res.json({ ok: true, competencia, fechado: true });
+      const resultado = await prisma.$transaction(async tx => {
+        const estado = await estadoCorrecaoTx(tx, portalClientId, competencia);
+        if ((estado.correcao || req.body?.versao) && req.body?.versao !== estado.versao) throw new CorrecaoContabilError('VERSAO_ALTERADA','Os lançamentos mudaram. Atualize e confira novamente.');
+        const validation = await validateFechamentoContabil(tx, {portalClientId,competencia});
+        if (!validation.ok) throw Object.assign(new CorrecaoContabilError('fechamento_bloqueado','Há lançamentos pendentes.',400), {blockers:validation.blockers});
+        if (estado.correcao && !estado.conferencia.valida) throw new CorrecaoContabilError('CONFERENCIA_DESATUALIZADA','Os lançamentos mudaram. Confira novamente os itens antes de fechar.');
+        const pendentes = checklistPendentes(estado.correcao ? estado.conferencia.campos : estado.atual.circular, estado.correcao ? {} : validation.checklistAutomatico);
+        if (pendentes.length) throw Object.assign(new CorrecaoContabilError('checklist_pendente','Confirme os itens da conferência antes de fechar.',400),{checklistPendentes:pendentes});
+        const data = {fechadoContabilEm:new Date(),fechadoContabilPor:req.auth?.user?.id || null};
+        if (estado.atual.circular?.id) await tx.companyMonthlyCircular.update({where:{id:estado.atual.circular.id},data});
+        else await tx.companyMonthlyCircular.create({data:{portalClientId,competencia,...data}});
+        await concluirCorrecaoTx(tx,{companyId:portalClientId,competencia,versao:req.body?.versao,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},snapshotAntes:estado.atual});
+        return {ok:true,competencia,fechado:true,versao:(await estadoCorrecaoTx(tx,portalClientId,competencia)).versao};
+      }, {isolationLevel:'Serializable'});
+      return res.json(resultado);
     } catch (err) {
-      log.error({ err }, "Falha ao fechar empresa (contábil)");
-      return res.status(500).json({ ok: false, error: "internal_error" });
+      return res.status(err.status || (['P2034','P2002'].includes(err.code)?409:500)).json({ok:false,error:err.code || 'internal_error',message:err.message,blockers:err.blockers,checklistPendentes:err.checklistPendentes});
     }
   });
 
@@ -1706,14 +1706,9 @@ export function createAccountingEntriesRouter({ log }) {
     const competencia = String(req.params.competencia || "").trim();
     if (!competencia) return res.status(400).json({ error: "competencia_required" });
     try {
-      await prisma.companyMonthlyCircular.updateMany({
-        where: { portalClientId, competencia },
-        data: { fechadoContabilEm: null, fechadoContabilPor: null },
-      });
-      return res.json({ ok: true, competencia, fechado: false });
+      return res.json(await corrigirMesFechado({companyId:portalClientId,competencia,motivo:req.body?.motivo,versao:req.body?.versao,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null}},prisma));
     } catch (err) {
-      log.error({ err }, "Falha ao reabrir empresa (contábil)");
-      return res.status(500).json({ ok: false, error: "internal_error" });
+      return res.status(err.status || (['P2034','P2002'].includes(err.code)?409:500)).json({ok:false,error:err.code || 'internal_error',message:err.message});
     }
   });
 
@@ -1727,21 +1722,19 @@ export function createAccountingEntriesRouter({ log }) {
     if (!def) return res.status(400).json({ error: "item_invalido", itens: Object.keys(CHECKLIST_FECHAMENTO) });
     const ok = req.body?.ok === true;
     try {
-      // Upsert por (empresa, competência) — garante a linha da circular como no fechar.
-      const existing = await prisma.companyMonthlyCircular.findUnique({
-        where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { id: true },
-      });
-      if (existing) {
-        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: { [def.campo]: ok } });
-      } else {
-        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, [def.campo]: ok } });
-      }
-      return res.json({ ok: true, competencia, item: itemChave, valor: ok });
-    } catch (err) {
-      log.error({ err, item: itemChave }, "Falha ao marcar item do checklist de fechamento");
-      return res.status(500).json({ ok: false, error: "internal_error" });
-    }
+      const resultado = await prisma.$transaction(async tx => {
+        const estado = await estadoCorrecaoTx(tx,portalClientId,competencia);
+        if (estado.correcao && req.body?.versao !== estado.versao) throw new CorrecaoContabilError('VERSAO_ALTERADA','Atualize a conferência antes de confirmar este item.');
+        if (estado.atual.circular?.fechadoContabilEm) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado antes de alterar a conferência.');
+        if (estado.atual.circular?.id) await tx.companyMonthlyCircular.update({where:{id:estado.atual.circular.id},data:{[def.campo]:ok}});
+        else await tx.companyMonthlyCircular.create({data:{portalClientId,competencia,[def.campo]:ok}});
+        const depoisChecklist = await estadoCorrecaoTx(tx,portalClientId,competencia);
+        if (estado.correcao) await registrarConferenciaTx(tx,{companyId:portalClientId,competencia,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},antes:estado.atual.circular,depois:depoisChecklist.atual.circular,item:itemChave});
+        const depois = await estadoCorrecaoTx(tx,portalClientId,competencia);
+        return {ok:true,competencia,item:itemChave,valor:ok,versao:depois.versao};
+      },{isolationLevel:'Serializable'});
+      return res.json(resultado);
+    } catch (err) { return res.status(err.status || (['P2034','P2002'].includes(err.code)?409:500)).json({ok:false,error:err.code || 'internal_error',message:err.message}); }
   }
 
   // Rota antiga (Q47) preservada — clientes já publicados continuam funcionando.
@@ -2608,6 +2601,8 @@ export function createAccountingEntriesRouter({ log }) {
 
     try {
       const entry = await prisma.$transaction(async (tx) => {
+        if (await isMonthClosed(portalClientId,competencia,tx)) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado antes de alterar.');
+        if (await isMonthClosed(portalClientId,competencia,tx)) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado antes de alterar.');
         const created = await tx.accountingEntry.create({
           data: {
             portalClientId,
@@ -2646,11 +2641,13 @@ export function createAccountingEntriesRouter({ log }) {
           });
         }
 
-        return tx.accountingEntry.findUnique({
+        const fullCreated = await tx.accountingEntry.findUnique({
           where: { id: created.id },
           include: { lines: { orderBy: { ordem: "asc" } } },
         });
-      });
+        await registrarAlteracaoTx(tx,{companyId:portalClientId,competencia,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},antes:null,depois:fullCreated});
+        return fullCreated;
+      },{isolationLevel:'Serializable'});
 
       // Auto-save do histórico (fora da transaction principal — não é crítico).
       // Para entries automáticos (que vieram do gerador), o body inclui `eventType` —
@@ -2677,7 +2674,7 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(201).json({ ok: true, entry: entryToResponse(entry) });
     } catch (err) {
       log.error({ err }, "Erro ao criar lançamento");
-      return res.status(500).json({ error: "internal_error" });
+      return res.status(err.status || (err.code === "P2034" ? 409 : 500)).json({ error: err.code || "internal_error", message:err.message });
     }
   });
 
@@ -2842,7 +2839,10 @@ export function createAccountingEntriesRouter({ log }) {
 
     try {
       const updated = await prisma.$transaction(async (tx) => {
-        const entry = await tx.accountingEntry.update({
+        const antes = await tx.accountingEntry.findFirst({where:{id:entryId,portalClientId},include:{lines:{orderBy:{ordem:'asc'}}}});
+        if (!antes || (existing.updatedAt && String(antes.updatedAt)!==String(existing.updatedAt))) throw new CorrecaoContabilError('VERSAO_ALTERADA','O lançamento mudou. Atualize antes de salvar.');
+        for (const comp of new Set([antes.competencia,data.competencia].filter(Boolean))) if (await isMonthClosed(portalClientId,comp,tx)) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado antes de alterar.');
+        await tx.accountingEntry.update({
           where: { id: entryId },
           data,
         });
@@ -2859,11 +2859,13 @@ export function createAccountingEntriesRouter({ log }) {
             })),
           });
         }
-        return tx.accountingEntry.findUnique({
+        const depois = await tx.accountingEntry.findUnique({
           where: { id: entryId },
           include: { lines: { orderBy: { ordem: "asc" } } },
         });
-      });
+        for (const comp of new Set([antes.competencia,depois.competencia])) await registrarAlteracaoTx(tx,{companyId:portalClientId,competencia:comp,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},antes,depois});
+        return depois;
+      },{isolationLevel:'Serializable'});
 
       // Auto-save do histórico (mesma lógica do POST). Para entries automáticos editados pelo
       // contador, gravamos `eventType` para que sync seguinte da mesma empresa auto-preencha D/C.
@@ -2947,7 +2949,7 @@ export function createAccountingEntriesRouter({ log }) {
     } catch (err) {
       log.error({ err }, "Erro ao atualizar lançamento");
       if(responderOrigemProtegida(res,err))return;
-      return res.status(500).json({ error: "internal_error" });
+      return res.status(err.status || (err.code === "P2034" ? 409 : 500)).json({ error: err.code || "internal_error", message:err.message });
     }
   });
 
@@ -2964,11 +2966,17 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(400).json({ error: "lancamento_ja_exportado" });
     }
 
-    const updated = await prisma.accountingEntry.update({
-      where: { id: entryId },
-      data: { status: "CONFIRMADO" },
-      include: { lines: { orderBy: { ordem: "asc" } } },
-    });
+    let updated;
+    try {
+      updated = await prisma.$transaction(async tx => {
+        const antes = await tx.accountingEntry.findFirst({where:{id:entryId,portalClientId},include:{lines:true}});
+        if (!antes || antes.status === 'EXPORTADO') throw new CorrecaoContabilError('VERSAO_ALTERADA','O lançamento mudou.');
+        if (await isMonthClosed(portalClientId,antes.competencia,tx)) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado.');
+        const depois = await tx.accountingEntry.update({where:{id:entryId},data:{status:'CONFIRMADO'},include:{lines:{orderBy:{ordem:'asc'}}}});
+        await registrarAlteracaoTx(tx,{companyId:portalClientId,competencia:antes.competencia,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},antes,depois});
+        return depois;
+      },{isolationLevel:'Serializable'});
+    } catch(err) { return res.status(err.status || 500).json({ok:false,error:err.code || 'internal_error',message:err.message}); }
 
     return res.json({ ok: true, entry: entryToResponse(updated) });
   });
@@ -3041,8 +3049,14 @@ export function createAccountingEntriesRouter({ log }) {
     // de desfazer baixa (reabrir a guia, devolver o passivo, mover o estado da parcela) saiu deste
     // arquivo e virou `EstornoBaixaService`, com motivo e auditoria — ver a recusa `USE_ESTORNO`
     // acima.
-    try { await prisma.accountingEntry.delete({ where: { id: entryId } }); }
-    catch (err) { if(responderOrigemProtegida(res,err))return; log.error({err},'Falha ao excluir lançamento'); return res.status(500).json({error:'internal_error'}); }
+    try { await prisma.$transaction(async tx => {
+      const antes = await tx.accountingEntry.findFirst({where:{id:entryId,portalClientId},include:{lines:{orderBy:{ordem:'asc'}}}});
+      if (!antes || (existing.updatedAt && String(antes.updatedAt)!==String(existing.updatedAt))) throw new CorrecaoContabilError('VERSAO_ALTERADA','O lançamento mudou.');
+      if (await isMonthClosed(portalClientId,antes.competencia,tx)) throw new CorrecaoContabilError('MES_FECHADO','Use Corrigir mês fechado.');
+      await tx.accountingEntry.delete({where:{id:entryId}});
+      await registrarAlteracaoTx(tx,{companyId:portalClientId,competencia:antes.competencia,autor:{id:req.auth?.user?.id,nome:req.auth?.user?.name || req.auth?.user?.email || null},antes,depois:null});
+    },{isolationLevel:'Serializable'}); }
+    catch (err) { if(responderOrigemProtegida(res,err))return; log.error({err},'Falha ao excluir lançamento'); return res.status(err.status || (err.code === 'P2034' ? 409 : 500)).json({error:err.code || 'internal_error',message:err.message}); }
     return res.json({ ok: true });
   });
 
@@ -3301,81 +3315,8 @@ export function createAccountingEntriesRouter({ log }) {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        if(composicaoHabilitada())await exigirBaixaForaDaComposicao(tx,portalClientId,entryId,openEntry.sourceGuideId);
-        // PRINCIPAL, JUROS e MULTA viram lançamentos INDEPENDENTES (regra do projeto), cada um
-        // balanceado contra o caixa. Um lançamento único misturando os três (3D/1C) some no
-        // dropdown e esconde que juros/multa são DESPESA do mês, não amortização do passivo.
-        // Componente zerado não gera lançamento.
-        const grupos = separarLinhasPorPapel(lines);
-        const criados = [];
-        for (const g of grupos) {
-          const entry = await tx.accountingEntry.create({
-            data: {
-              portalClientId,
-              data,
-              competencia,
-              historico: `${historico}${SUFIXO_PAPEL[g.papel] || ""}`,
-              tipo: "BAIXA",
-              subtipo: subtipoDaProvisao(openEntry),
-              // Q61: papel no cabeçalho — obrigatório em toda baixa (CHECK `chk_baixa_tipo_linha`).
-              // Aqui não há guia (`sourceGuideId` nulo), então estas linhas ficam fora do índice
-              // único; o papel entra pelo mesmo motivo que o sufixo do histórico entra: é o que
-              // distingue principal de juros e multa no lote.
-              tipoLinha: g.papel,
-              // Q37: o eventType alimenta a memória de contas, e SÓ o lançamento do principal o
-              // carrega. Isso NÃO mudou com o índice parcial — mudou só a razão de ser.
-              //
-              // ⚠ Antes havia DUAS razões e uma delas era o unique de competência (repetir o
-              // evento nos três lançamentos do lote violava a constraint e derrubava a baixa
-              // inteira). Essa razão caiu: desde
-              // `20260818160000_unique_competencia_nao_morde_baixa` o índice é parcial em
-              // `tipo <> 'BAIXA'` e não alcança mais nenhuma destas linhas.
-              //
-              // ⚠ A OUTRA RAZÃO CONTINUA DE PÉ E É A QUE MANDA: a memória D/C
-              // (`AccountingHistorico`) é do par do TRIBUTO, não de juros/multa. Marcar os três
-              // com o mesmo evento faria a conta de juros (501) e a de multa (506) sobrescreverem
-              // a conta memorizada do tributo, e a próxima baixa viria pré-preenchida com a conta
-              // errada. Não afrouxe isto "porque a constraint saiu" — é forma de lançamento, e
-              // mudá-la exige pedido explícito do dono.
-              eventType: g.papel === "PRINCIPAL" ? deriveBaixaEventType(openEntry) : null,
-              // Todos apontam para a MESMA provisão: o cálculo de saldo soma as três (e juros/multa
-              // não entram no principal abatido, por conta de CONTAS_ACRESCIMO).
-              openEntryId: entryId,
-              origem: "MANUAL",
-              statusPagamento: "NA",
-              status: "CONFIRMADO",
-            },
-          });
-          await tx.accountingEntryLine.createMany({
-            data: [
-              ...g.debitos.map((l, idx) => ({
-                entryId: entry.id,
-                conta: String(l.conta).trim(),
-                tipo: "D",
-                valor: r2(parseFloat(String(l.valor).replace(",", "."))),
-                ordem: idx,
-              })),
-              { entryId: entry.id, conta: g.contaCaixa, tipo: "C", valor: g.total, ordem: g.debitos.length },
-            ],
-          });
-          criados.push(entry);
-        }
-        // A baixa "principal" é a referência devolvida ao cliente (é a que amortiza o passivo).
-        const baixa = criados[0];
-        const updatedOpen = await tx.accountingEntry.update({
-          where: { id: entryId },
-          data: { statusPagamento: novoStatus },
-          include: {
-            lines: { orderBy: { ordem: "asc" } },
-            baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
-          },
-        });
-        const fullBaixa = await tx.accountingEntry.findUnique({
-          where: { id: baixa.id },
-          include: { lines: { orderBy: { ordem: "asc" } } },
-        });
-        return { entry: fullBaixa, openEntry: updatedOpen };
-      });
+        return executarBaixaProvisaoTx(tx, { portalClientId, entryId, dataPagamento: data, lines, historico, userId: req.auth?.user?.id });
+      },{isolationLevel:"Serializable"});
       /**
        * ⚠⚠ A BAIXA FECHA O CÍRCULO: ela devolve o estado À GUIA (30/08/2026).
        *
@@ -3483,6 +3424,7 @@ export function createAccountingEntriesRouter({ log }) {
             + "automática de pagamento.",
         });
       }
+      if (err.status || err.code === 'P2034') return res.status(err.status || 409).json({ok:false,error:err.code,message:err.message,competencia:err.competencia});
       log.error({ err }, "Erro ao criar baixa");
       return res.status(500).json({ error: "internal_error" });
     }

@@ -32,7 +32,7 @@ function Acompanhamento({ api, companyId, ambiente }) {
   const vivo = useRef(false), sequencia = useRef(0), executando = useRef(false), intencoes = useRef(new Map());
   const leituraAtual = useRef(null);
   const apiAtual = useRef(api); apiAtual.current = api;
-  useEffect(() => { vivo.current = true; return () => { vivo.current = false; sequencia.current++; }; }, []);
+  useEffect(() => { const sequenciaDaExecucao = sequencia; vivo.current = true; return () => { vivo.current = false; sequenciaDaExecucao.current++; }; }, []);
   const carregar = useCallback(async () => {
     const vez = ++sequencia.current;
     const vigente = () => vivo.current && apiAtual.current === api && sequencia.current === vez;
@@ -46,7 +46,7 @@ function Acompanhamento({ api, companyId, ambiente }) {
     } catch (e) { if (vigente()) setErroLeitura(e.message || 'Não foi possível ler o acompanhamento local.'); }
     finally { if (vigente()) setCarregando(false); }
   }, [api, companyId, ambiente]);
-  useEffect(() => { carregar(); return () => { sequencia.current++; }; }, [carregar]);
+  useEffect(() => { const sequenciaDaExecucao = sequencia; carregar(); return () => { sequenciaDaExecucao.current++; }; }, [carregar]);
   const atual = dados?.api === api ? dados.valor : null;
   const lista = atual?.coletas || [];
   const pronta = Boolean(atual && !carregando && !erroLeitura && !atual.demonstracao);

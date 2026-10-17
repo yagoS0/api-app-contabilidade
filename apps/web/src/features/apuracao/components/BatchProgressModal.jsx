@@ -4,7 +4,7 @@ import { recusaDeAcesso } from "../../accounting/parcelamento/lib/recusaDeAcesso
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+import { PANEL, fmtMoney } from '../../notas/components/notasStyles.shared.js';
 
 const STATUS_COR = { ok: "var(--success)", erro: "var(--danger)", pendente: PANEL.muted, processando: "var(--accent-cyan)" };
 

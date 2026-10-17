@@ -1,8 +1,9 @@
+import { corpoDoPerfil } from './EditorPerfilEmissao.shared.js';
 import { useEffect, useRef, useState } from "react";
 import { SugestaoPerfilIa } from './SugestaoPerfilIa';
 import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../lib/nfse/perfilEmissao";
-import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
+import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao.shared.js';
 import { MunicipioDoPerfil } from "./MunicipioDoPerfil";
 import { completudePerfilEmissao } from './completudePerfilEmissao';
 import { CampoCatalogo } from '../../../notas/components/CampoCatalogo';
@@ -16,17 +17,6 @@ const GRUPOS = [
   ["Tributação federal", ["retencaoFederalArt30", "cstPisCofins"]],
 ];
 
-export function corpoDoPerfil(form, campos) {
-  const corpo = { nome: form.nome?.trim(), ativo: form.ativo !== false, padrao: form.ativo !== false && form.padrao === true };
-  if (Object.prototype.hasOwnProperty.call(form, 'categoriaObrigacaoIbscbs')) corpo.categoriaObrigacaoIbscbs = form.categoriaObrigacaoIbscbs || null;
-  for (const { id } of campos) {
-    const valor = form[id];
-    corpo[id] = valor == null || valor === "" ? null
-      : id === "retencaoFederalArt30" ? String(valor) === "true"
-        : id === "pAliq" ? String(valor).replace(",", ".") : String(valor).trim();
-  }
-  return corpo;
-}
 
 export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, salvando }) {
   const [form, setForm] = useState(null);

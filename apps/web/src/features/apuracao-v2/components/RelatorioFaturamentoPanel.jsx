@@ -18,7 +18,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { Aviso } from "../../../components/ui/Aviso";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles.shared.js";
 import {
   avisosDoRelatorio,
   procedenciaDoDas,

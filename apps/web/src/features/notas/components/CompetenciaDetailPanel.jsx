@@ -17,7 +17,8 @@
 // `apps/web/CLAUDE.md`, seção "OS CINCO ÓRFÃOS".
 
 import { Button } from "../../../components/ui/Button";
-import { PANEL, StateBadge, fmtMoney, fmtDate } from "./notasStyles";
+import { StateBadge } from "./notasStyles";
+import { PANEL, fmtMoney, fmtDate } from "./notasStyles.shared.js";
 
 function Field({ label, value, mono }) {
   return (

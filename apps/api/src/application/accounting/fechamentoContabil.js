@@ -3,9 +3,9 @@
 // Mês fechado bloqueia novos lançamentos e upload/registro de guias naquele mês.
 import { prisma } from "../../infrastructure/db/prisma.js";
 
-export async function isMonthClosed(portalClientId, competencia) {
+export async function isMonthClosed(portalClientId, competencia, client = prisma) {
   if (!portalClientId || !competencia) return false;
-  const circ = await prisma.companyMonthlyCircular.findUnique({
+  const circ = await client.companyMonthlyCircular.findUnique({
     where: { portalClientId_competencia: { portalClientId: String(portalClientId), competencia: String(competencia) } },
     select: { fechadoContabilEm: true },
   });

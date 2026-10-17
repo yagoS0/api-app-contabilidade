@@ -8,7 +8,7 @@ function Verificador({ api, companyId, competencia, onAbrirNota, className = '',
   const [ocupado, setOcupado] = useState(false), [filtro, setFiltro] = useState('PENDENTES'), [pagina, setPagina] = useState(0);
   useEffect(() => { onOcupado?.(ocupado); }, [ocupado, onOcupado]);
   const vivo = useRef(true), seq = useRef(0), executando = useRef(false);
-  useEffect(() => { vivo.current = true; return () => { vivo.current = false; seq.current++; }; }, []);
+  useEffect(() => { const seqDaExecucao = seq; vivo.current = true; return () => { vivo.current = false; seqDaExecucao.current++; }; }, []);
   const aceitar = r => { if (!r?.ok || !Object.hasOwn(r, 'verificacao')) throw new Error('Resposta de conferência inválida.'); return r; };
   useEffect(() => {
     if (!aberto || !competencia) return;

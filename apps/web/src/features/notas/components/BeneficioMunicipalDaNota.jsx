@@ -14,7 +14,8 @@
 // nenhum (33 de 33 empresas da carteira, hoje) seria ruído — e ruído numa caixa âmbar treina o
 // olho a ignorar a cor que significa "olhe aqui".
 
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import {
   ONDE_CONFIGURA_EMISSAO,
   BENEFICIO_NAO_VAI_NO_XML,

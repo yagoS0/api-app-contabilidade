@@ -38,6 +38,12 @@ Não alterar esta política para aprovar a própria entrega. Mudanças de govern
 recebem revisão sistêmica e precisam da mesma revisão humana da integração.
 Nenhuma regra operacional do produto é modificada pela adoção desta governança.
 
+## Direção da revisão do produto — 16/10/2026
+
+Antes de alterar o produto, leia LEIA_ME_PRIMEIRO.md, PLANO_MESTRE_CODEX.md, DESIGN_SYSTEM.md, UX_RULES.md e REGRAS_OPERACIONAIS.md. Os quatro primeiros foram fornecidos pelo usuário; docs/revisao-produto-2026-10 complementa o plano com tokens reais, testes e referências. A fonte operacional viva do workspace continua ../altan-regras-operacionais/REGRAS_OPERACIONAIS.md; reconciliar atualizações com a cópia desta árvore.
+
+O usuário autorizou neste chat a implementação em desenvolvimento até a conclusão, com validação visual e funcional contínua, começando por Empresas e Operações. Essa autorização dispensa repetir o gate genérico de aprovação de cada wireframe dos documentos; diagnóstico, proposta e evidências continuam obrigatórios. Não equivale à aprovação de alíquotas, matriz fiscal nova ou decisões de negócio explicitamente pendentes. Registrar divergências e preservar funcionalidades e trabalhos concorrentes. Não publicar em produção neste escopo de desenvolvimento.
+
 <!-- ALTAN-PRINCIPAL-ORCHESTRATOR:START -->
 ## Orquestrador Principal — fluxo permanente autorizado
 

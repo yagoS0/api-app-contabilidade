@@ -43,7 +43,7 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     } finally {
       setCarregando(false);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -67,7 +67,7 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     } finally {
       setSalvando(false);
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const remover = useCallback(async (contatoId) => {
     if (!api || !companyId) return false;
@@ -79,7 +79,7 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao remover o contato de WhatsApp.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const salvarPermissoes = useCallback(async (contatoId, permissoesAssistente) => {
     if (!api || !companyId) return false;
@@ -95,7 +95,7 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     } finally {
       setSalvando(false);
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const definirCanal = useCallback(async (canal) => {
     if (!api || !companyId) return false;
@@ -112,7 +112,7 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao definir o canal de envio.");
       return false;
     }
-  }, [api, companyId, canalPadraoEnvio]);
+  }, [feedbackRef, api, companyId, canalPadraoEnvio]);
 
   return { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, salvarPermissoes, remover, definirCanal, recarregar: carregar };
 }

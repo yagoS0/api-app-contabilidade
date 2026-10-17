@@ -19,7 +19,9 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const tx = {
+    appSetting: { findUnique: jest.fn(async () => null) },
     accountingEntry: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
       create: jest.fn(async () => ({ id: "e1" })),
       update: jest.fn(async () => ({ id: "e1" })),
       findUnique: jest.fn(async () => ({ id: "e1", tipo: "DESPESA", lines: [] })),
@@ -112,6 +114,8 @@ const NOVO = (contaD, contaC) => ({
 });
 
 beforeEach(() => {
+  // A releitura dentro da transação observa a mesma provisão/lançamento do cenário.
+  __tx.accountingEntry.findFirst = prisma.accountingEntry.findFirst;
   jest.clearAllMocks();
   planoRespondendoPorWhere();
   __tx.accountingEntry.findUnique.mockResolvedValue({ id: "e1", tipo: "DESPESA", lines: [] });

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
-import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao';
+import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import './operacoes.css';
 import { CompanyManualInss } from './OperationsManualInss';
 
@@ -16,7 +16,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const hasChanges = changes.length > 0 || policyChanged;
   const locked = !canEdit || busy || preview || !!pending.current || reloadRequired;
   useEdicaoPendente(hasChanges);
-  async function load() {
+  const load = useCallback(async () => {
     const current = ++generation.current;
     setBusy(true); setError(''); setPreview(false); setData(null); setReloadRequired(false);
     try {
@@ -27,8 +27,8 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
       setPaused(r.serproPolicy?.paused === true); setReason('');
     } catch (e) { if (generation.current === current) setError(e.message || 'Não foi possível carregar a configuração.'); }
     finally { if (generation.current === current) setBusy(false); }
-  }
-  useEffect(() => { setData(null); setSaved(''); load(); return () => { generation.current++; }; }, [companyId, api]);
+  }, [api, companyId]);
+  useEffect(() => { const generationDaExecucao = generation; setData(null); setSaved(''); load(); return () => { generationDaExecucao.current++; }; }, [load, companyId, api]);
   async function save() {
     if (!canEdit || busy || reloadRequired || !preview || !hasChanges || (policyChanged && !reason.trim())) return;
     const current = generation.current;

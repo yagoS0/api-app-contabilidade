@@ -33,3 +33,11 @@ test("guia aberta não herda confirmação antiga", () => {
   expect(screen.getByText("Em aberto")).toBeInTheDocument();
   expect(screen.queryByText("20/09/2026")).toBeNull();
 });
+
+test("confirmação nova mostra baixa pendente e registro auditável", async () => {
+ const confirmacao = { id: "c1", estadoBaixa: "PENDENTE", motivo: "Mês fechado", canal: "PORTAL", confirmadoEm: "2026-09-20T12:00:00Z", pagoEm: "2026-09-19" };
+ const api = { getConfirmacaoPagamentoCliente: jest.fn(async () => ({ ok: true, confirmacao })) };
+ render(<PagamentoGuia guide={{ ...guia, confirmacaoCliente: confirmacao }} companyId="A" api={api} />);
+ expect(screen.getByText("Baixa pendente · cliente")).toBeInTheDocument(); fireEvent.click(screen.getByText("Ver registro da confirmação"));
+ expect(await screen.findByText(/Data do pagamento:/)).toHaveTextContent("19/09/2026"); expect(api.getConfirmacaoPagamentoCliente).toHaveBeenCalledWith("A", "c1");
+});

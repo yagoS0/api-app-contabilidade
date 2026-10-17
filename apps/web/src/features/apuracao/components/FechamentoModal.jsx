@@ -9,7 +9,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { Feedback } from "../../../components/ui/Feedback";
 import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
 import { RelatorioFaturamentoPanel } from "../../apuracao-v2/components/RelatorioFaturamentoPanel";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+import { PANEL, fmtMoney } from '../../notas/components/notasStyles.shared.js';
 import { EmpresaZeradaPanel } from "./EmpresaZeradaPanel";
 import "./fechamento-modal.css";
 
@@ -146,7 +146,13 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (vigente()) { setErroCarga(true); avisarErro(err, "Falha ao carregar fechamento"); }
     } finally { if (vigente()) setLoading(false); }
   }
-  useEffect(() => { load(); return () => { pedidoAtual.current += 1; revisao.current += 1; }; /* eslint-disable-next-line */ }, [portalClientId, competencia]);
+  // Recarregar apenas ao trocar o contexto; feedback novo não descarta edição.
+  const carregarContexto = useRef(load); carregarContexto.current = load;
+  useEffect(() => {
+    const pedidos = pedidoAtual, revisoes = revisao;
+    carregarContexto.current();
+    return () => { pedidos.current += 1; revisoes.current += 1; };
+  }, [portalClientId, competencia]);
 
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
   const folhaSerie = formularioRecuperado?.folhaMensal12 ?? pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));

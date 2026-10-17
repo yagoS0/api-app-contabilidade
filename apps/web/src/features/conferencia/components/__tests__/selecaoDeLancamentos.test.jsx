@@ -8,7 +8,7 @@
 // linha sem regra nem histórico; a linha desenha a proposta da IA com chip PRÓPRIO e a justificativa
 // VISÍVEL; e regra VENCE IA no desenho — o campo nasce com a conta da regra, não com a do modelo.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const mockGetFila = jest.fn();
@@ -80,17 +80,19 @@ beforeEach(() => {
   });
 });
 
-const montar = async () => {
-  render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
-  // ⚠ `findAllByText`: a descrição sai no cabeçalho do grupo E na linha.
-  await screen.findAllByText("GOOGLE CLOUD BRASIL");
-};
-const botao = () => screen.queryByRole("button", { name: "Sugerir contas com IA" });
+
+
 
 
 describe("seleção e lançamento em lote", () => {
   const pronta = (id, extra={}) => ({ ...LINHA, id, descricaoOriginal: id, contaSugeridaIa: "411030012", creditoSugeridoIa: "111020001", ...extra });
-  async function abrir(itens) { fila(itens); render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />); await waitFor(() => expect(screen.getByLabelText("Selecionar um")).toBeEnabled()); }
+  async function abrir(itens) {
+    fila(itens);
+    await act(async () => {
+      render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
+    });
+    await waitFor(() => expect(screen.getByLabelText("Selecionar um")).toBeEnabled());
+  }
   it("envia apenas selecionadas, com débito/crédito editados e sem alterar prova de pagamento", async () => {
     await abrir([pronta("um"),pronta("dois")]);
     fireEvent.change(screen.getByLabelText(/Conta contábil de um/), {target:{value:"401"}});

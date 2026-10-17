@@ -1,0 +1,21 @@
+{
+  "summary": "Retomar entrega dev corrigindo carregamento da configuração ESLint com as dependências declaradas do workspace web.",
+  "risk": "high",
+  "domains": [
+    "web",
+    "ci",
+    "governance"
+  ],
+  "operationalImpact": "Nenhum efeito operacional ou mudança de produto. Nenhuma aprovação implícita de V01–V08.",
+  "tests": [
+    "Executor e revisor independente executaram fixtures: JSX válido aceito, cinco regras detectadas e dist ignorado.",
+    "npm run lint -w @contabilidade/web completa análise: 1047 arquivos, 21094 erros, 105 avisos, 0 fatal. Exit 1: lint NÃO aprovado.",
+    "Motor declarado ESLint8 suportado; execução direta com ESLint9 da raiz incompatível com hooks4.",
+    "Principal reabriu dev mock e conferiu expansão de Guias; não repetiu todos os testes da entrega anterior."
+  ],
+  "rollback": "Reverter somente o delta de apps/web/eslint.config.js desta retomada, preservando as alterações anteriores da entrega dev.",
+  "humanDecisions": [
+    "Validação visual final e V01–V08 continuam pendentes. Publicação do produto não autorizada neste incremento."
+  ],
+  "review": "Execução por resume_altan_audit e revisão independente por integration_review; configuração protegida tratada pelo Principal no fluxo especial, sem alterar gates para obter aprovação."
+}

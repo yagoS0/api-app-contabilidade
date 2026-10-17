@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { AtualizacaoAtendimento } from './AtendimentoComercial.shared.js';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Button } from "../../../components/ui/Button";
 import { canalComercialDaConversa } from "../lib/identidadeAtendimento";
 import { FluxoComercial } from "../../onboarding/components/FluxoComercial";
@@ -6,7 +7,7 @@ import { AbrirBiblioteca } from "../../onboarding/components/AbrirBiblioteca";
 import { ResumoPreatendimento } from "./ResumoPreatendimento";
 import { descricaoMensagem, lerUsosMensagens, normalizarBuscaMensagem, registrarUsoMensagem, ultimasOrientacoes } from "../lib/mensagensRapidas";
 
-export const AtualizacaoAtendimento = createContext({ revisao: 0, atualizar: () => {} });
+
 
 // Remontar por conversa impede exibir dados ou uma prévia do destinatário anterior.
 export function AtendimentoComercial(props) {
@@ -20,12 +21,14 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
   const [lead, setLead] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [origem, setOrigem] = useState(""), [carregando, setCarregando] = useState(true), [recarga, setRecarga] = useState(0);
   const vivo = useRef(true), trava = useRef(false);
   const path = `/conversas/${encodeURIComponent(conversa.id)}`;
+  const onEstadoRef = useRef(onEstado);
+  onEstadoRef.current = onEstado;
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
   useEffect(() => {
     let atual = true;
     setErro(""); setCarregando(true);
     if (!api.comercial) { setCarregando(false); return; }
-    api.comercial(path).then(r => { if (atual) { setLead(r.atendimento); setAnteriores(r.anteriores || []); onEstado?.(Boolean(r.atendimento?.onboardingId || r.atendimento?.triagem?.preatendimento)); } }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
+    api.comercial(path).then(r => { if (atual) { setLead(r.atendimento); setAnteriores(r.anteriores || []); onEstadoRef.current?.(Boolean(r.atendimento?.onboardingId || r.atendimento?.triagem?.preatendimento)); } }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
     return () => { atual = false; };
   }, [api, path, recarga, revisao]);
   async function iniciar(body) {
@@ -68,6 +71,8 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
   const vivo = useRef(true), versaoPrevia = useRef(0), trava = useRef(false);
   const solicitadaRef = useRef(mensagemBiblioteca), varsRef = useRef(vars);
   varsRef.current = vars;
+  const selecionarRef = useRef(selecionar);
+  selecionarRef.current = selecionar;
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; versaoPrevia.current += 1; }; }, []);
   useEffect(() => {
     if (!mensagemBiblioteca) return;
@@ -90,7 +95,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
           const escolhida = lista.find(recurso => recurso.id === solicitadaRef.current.id && recurso.tipo === "ORIENTACAO" && recurso.aprovadoEm);
           solicitadaRef.current = null;
           if (!escolhida) throw new Error("Esta mensagem não está disponível. Escolha uma mensagem aprovada na lista.");
-          await selecionar(escolhida.id, { lista, variaveis, atendimentoLeadId });
+          await selecionarRef.current(escolhida.id, { lista, variaveis, atendimentoLeadId });
         }
       }
       catch(e) { if (atual && n === pedido) setErro(e.message); }
@@ -99,7 +104,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
     const aoVoltar = () => { if (document.visibilityState !== "hidden" && !trava.current) carregar(); };
     carregar(); window.addEventListener("focus", aoVoltar); document.addEventListener("visibilitychange", aoVoltar);
     return () => { atual = false; window.removeEventListener("focus", aoVoltar); document.removeEventListener("visibilitychange", aoVoltar); };
-  }, [aberto, api]);
+  }, [aberto, api, conversa.id, conversa.empresa?.cnpj]);
   function invalidarPrevia() { versaoPrevia.current += 1; setPrevia(null); setPreparando(false); }
   async function selecionar(value, { lista = recursos, variaveis = { ...vars }, atendimentoLeadId = casoId } = {}) {
     if (trava.current) return;
@@ -152,7 +157,10 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado
   function usarMensagem() {
     if (!previa || disabled || ocupado || preparando || !onPreparado) return;
     try {
-      const { usoId, titulo, ...mensagem } = previa;
+      const usoId = previa.usoId;
+      const mensagem = { ...previa };
+      delete mensagem.usoId;
+      delete mensagem.titulo;
       onPreparado(mensagem);
       setUsos(registrarUsoMensagem(usuarioId, usoId, usos));
       fechar();

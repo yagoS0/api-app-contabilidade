@@ -141,36 +141,23 @@ export function avisoDosAcrescimos(acrescimos) {
   };
 }
 
-/**
- * ⚠⚠ CONFIRMAR QUE PAGOU — e o que essa confirmação NÃO faz.
- *
- * Decisão do dono (27/08/2026): *"o cliente confirmar deve ser como a confirmação da consulta de
- * pagamento"* — marca a guia e **para aí**. Quem lança a baixa contábil continua sendo o contador.
- *
- * ⚠ SEM COMPROVANTE (decisão do dono): ele confirma sem anexar nada. A prova continua vindo da
- * Receita quando a consulta de pagamento rodar.
- *
- * ⚠ `canConfirmPayment` vem do servidor; ausência do campo NÃO oferece o botão.
- */
+// R25: confirmação explícita autoriza baixa automática, mantendo origem CLIENTE.
+// A elegibilidade de uma reconfirmação é fornecida exclusivamente pelo servidor.
 export function podeConfirmarPagamento(guia) {
-  // ⚠ Idem: a rota de confirmação tem `liberadaCliente: true` no `where` e devolve 404.
-  return liberadaAoCliente(guia) && guia?.canConfirmPayment === true;
+  return liberadaAoCliente(guia) && (guia?.canConfirmPayment === true || Boolean(guia?.reconfirmacaoPagamento?.confirmacaoAnteriorId && guia?.reconfirmacaoPagamento?.versaoPagamento));
 }
-
-/**
- * ⚠⚠ A CONFIRMAÇÃO REPETE O QUE ELA FAZ **E O QUE NÃO FAZ**.
- *
- * Um "confirmar pagamento?" seco faria o cliente achar que o assunto está encerrado dos dois lados
- * — e ele não está: o contador ainda vai conferir o comprovante e lançar a baixa. Dizer só metade
- * é o que produz o telefonema de "mas eu já confirmei lá".
- */
 export function avisoAntesDeConfirmar(guia) {
   if (!podeConfirmarPagamento(guia)) return null;
+  if (guia.reconfirmacaoPagamento) return {
+    titulo: "Reconfirmar guia corrigida",
+    texto: "A guia foi corrigida após sua declaração anterior. Confira os dados e o valor atual. Reconfirme somente se o pagamento que você já realizou corresponde a esta guia corrigida. Não é um pedido para pagar novamente nem uma confirmação de recebimento. A declaração anterior será preservada no histórico; esta nova declaração autoriza a tentativa de baixa contábil.",
+    rotuloConfirmar: "Meu pagamento corresponde à guia corrigida",
+  };
   return {
     titulo: "Confirmar que você pagou esta guia",
-    texto: "Isto registra, para o seu contador, que você já pagou. Não é preciso anexar comprovante: "
-      + "ele confere o pagamento direto na Receita. ⚠ A baixa na contabilidade continua sendo feita "
-      + "por ele — sua confirmação não a lança.",
+    texto: "Sua confirmação registra que você pagou esta guia e autoriza a baixa automática na contabilidade. "
+      + "Não é preciso anexar comprovante. Guardaremos sua declaração, a data informada e a identificação desta guia. Esse registro não é comprovante bancário. "
+      + "Se faltar algum dado contábil ou o mês estiver fechado, o contador verá a pendência para concluir a baixa.",
     rotuloConfirmar: "Já paguei esta guia",
   };
 }

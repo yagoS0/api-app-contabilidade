@@ -13,7 +13,7 @@ import { OperationsDailyCalendar } from './OperationsDailyCalendar';
 import { OperationsManualInss } from './OperationsManualInss';
 import { incorporarInssManual, useManualInss } from './useManualInss';
 
-const quadros = [['concluidas', 'Empresas concluídas'], ['apuracoes', 'Apurações pendentes'], ['pendencias', 'Pendências de guias'], ['erros', 'Erros de envio de guias']];
+const quadros = [['apuracoes', 'Apurações pendentes', 'empresas'], ['faltantes', 'Guias faltantes', 'obrigações'], ['envios', 'Envios pendentes', 'obrigações'], ['erros', 'Erros de envio de guias', 'itens'], ['revisoes', 'Revisões pendentes', 'itens'], ['concluidas', 'Empresas concluídas', 'empresas']];
 const nome = c => c.razao || c.razaoSocial || c.nome || c.cnpj;
 
 export function OperationsPage({ api, companies = [], competencia, loading = false, error, onRefresh, onChangeCompetencia, onOpenCompany, acoesGuia = {} }) {
@@ -25,7 +25,9 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
   const [preview, setPreview] = useState(false), [busy, setBusy] = useState(false), [result, setResult] = useState(null);
   const sending = useRef(false);
   const unavailable = loading || Boolean(error);
-  const active = selection?.competencia === competencia && !unavailable ? selection : null;
+  const manualUnavailable = manualInss.loading || Boolean(manualInss.error);
+  const selectedGroupUnavailable = ['concluidas', 'faltantes', 'revisoes'].includes(selection?.group) && manualUnavailable;
+  const active = selection?.competencia === competencia && !unavailable && !selectedGroupUnavailable ? selection : null;
   const selected = active?.id ? [...tasks, ...groups.concluidas].find(t => t.id === active.id) : null;
   const inssDetail = Boolean(selected && (selected.manualInss || selected.tag?.key === 'inss'));
   const open = (group, id = null) => { setSelection({ group, id, competencia }); setPreview(false); setResult(null); };
@@ -35,6 +37,9 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
   const offer = ofertaDeRetentativa(selected?.tag);
   const send = whatsapp ? acoesGuia.onEnviarWhatsapp : acoesGuia.onEnviar;
   const sendIdentity = JSON.stringify([competencia, selected?.company.companyId, selected?.tag?.guideId, whatsapp, selected?.tag?.envioErro, selected?.tag?.emailLastError]);
+  const resultContext = JSON.stringify([competencia, active?.group, active?.id]);
+  const currentResultContext = useRef(resultContext);
+  currentResultContext.current = resultContext;
   async function enviar() {
     if (sending.current || !preview || !selected?.tag?.guideId || !send || (whatsapp && !offer.habilitado)) return;
     if (preview !== sendIdentity) { setPreview(false); setResult({ error: true, message: 'A guia ou o resultado mudou. Confira os dados atualizados em Guias antes de enviar.' }); return; }
@@ -42,8 +47,9 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
     setBusy(true); setResult(null);
     try {
       const out = await send(selected.tag.guideId, selected.company);
+      if (currentResultContext.current !== resultContext) return;
       setResult({ error: out?.ok !== true, message: out?.message || 'Confira o resultado na aba Guias antes de uma nova ação.' });
-    } catch { setResult({ error: true, message: 'Não foi possível confirmar o envio. Confira o histórico em Guias antes de repetir.' }); }
+    } catch { if (currentResultContext.current === resultContext) setResult({ error: true, message: 'Não foi possível confirmar o envio. Confira o histórico em Guias antes de repetir.' }); }
     finally { sending.current = false; setBusy(false); setPreview(false); }
   }
   return <section className="operacoes" aria-label="Central de Operações">
@@ -52,16 +58,24 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
       <div className="operacoes-cabecalho"><label>Competência <input type="month" value={competencia || ''} disabled={busy} onChange={e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) onChangeCompetencia?.(e.target.value); }} /></label><Button variant="secondary" onClick={onRefresh} disabled={loading || busy}>Atualizar empresas</Button></div>
       {error && <p role="alert">{error} Os indicadores ficam indisponíveis até a atualização.</p>}
       {manualInss.error && <p role="alert">{manualInss.error} <Button variant="secondary" onClick={manualInss.reload}>Tentar novamente</Button></p>}
-      <div className="operacoes-indicadores">{quadros.map(([key, label]) => <button type="button" className="operacoes-quadro" key={key} disabled={unavailable || (['concluidas', 'pendencias'].includes(key) && (manualInss.loading || !!manualInss.error))} aria-haspopup="dialog" onClick={() => open(key)}>
-        <span>{label}</span><strong className={key === 'erros' && groups[key].length ? 'operacoes-erro' : ''}>{unavailable || (['concluidas', 'pendencias'].includes(key) && (manualInss.loading || manualInss.error)) ? '—' : groups[key].length}</strong><small>{key === 'erros' || key === 'pendencias' ? 'Ver e resolver' : 'Ver empresas'} ↗</small>
+      <div className="operacoes-indicadores">{quadros.map(([key, label, unit]) => <button type="button" className="operacoes-quadro" key={key} disabled={unavailable || (['concluidas', 'faltantes', 'revisoes'].includes(key) && (manualInss.loading || !!manualInss.error))} aria-pressed={active?.group === key} aria-controls="operacoes-fila" onClick={() => open(key)}>
+        <span>{label}</span><strong className={key === 'erros' && groups[key].length ? 'operacoes-erro' : ''}>{unavailable || (['concluidas', 'faltantes', 'revisoes'].includes(key) && (manualInss.loading || manualInss.error)) ? '—' : groups[key].length}</strong><small>{unit}</small>
       </button>)}<OperationsAlerts api={api} /></div>
     </div>
+    {active && <section id="operacoes-fila" className="operacoes-fila" aria-label="Fila de trabalho">
+      <div className="operacoes-cabecalho"><h3>{quadros.find(([key]) => key === active.group)?.[1]} <span>· {groups[active.group].length}</span></h3><Button variant="secondary" disabled={busy} onClick={close}>Limpar filtro</Button></div>
+      <p className="operacoes-fila-contexto">Competência {competencia?.split('-').reverse().join('/')}</p>
+      <ul className="operacoes-tarefas">{groups[active.group].map(t => <li key={t.id}><div><strong>{nome(t.company)}</strong><small>{t.titulo}</small></div><span>{t.tag?.envioErro || t.tag?.emailLastError || ''}</span><Button size="sm" variant="secondary" onClick={() => open(active.group, t.id)}>Ver detalhes</Button></li>)}</ul>
+      {!groups[active.group].length && <p role="status">Nenhum item nesta categoria.</p>}
+    </section>}
+    <h3>Automações</h3>
     <OperationsRoutineCompanies api={api} companies={companies} loading={loading} error={error} onRefreshCompanies={onRefresh} />
+    <h3>Em acompanhamento</h3>
     <OperationsDailyCalendar api={api} empresas={companies} onOpenCompany={onOpenCompany} />
     {approvalOpen && <Modal titulo="Conferir e liberar apurações" tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
       {!unavailable ? <OperationsApproval embedded key={competencia} api={api} rows={rows} competencia={competencia} onChanged={onRefresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
     </Modal>}
-    {active && <Modal titulo={inssDetail ? nome(selected.company) : selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={close} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={inssDetail ? <div className="operacoes-inss-rodape"><Button variant="secondary" disabled={busy} onClick={close}>Fechar</Button>{!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-md" href={link(selected.company, 'automacao')}>Configurar INSS manual</InternalLink><InternalLink className="btn btn-primary btn-md" href={link(selected.company, 'guides')}>Abrir Guias</InternalLink></div>}</div> : <Button variant="secondary" disabled={busy} onClick={close}>Fechar</Button>}>
+    {active?.id && <Modal titulo={inssDetail ? nome(selected.company) : selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={() => !busy && open(active.group)} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={inssDetail ? <div className="operacoes-inss-rodape"><Button variant="secondary" disabled={busy} onClick={() => open(active.group)}>Fechar</Button>{!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-md" href={link(selected.company, 'automacao')}>Configurar INSS manual</InternalLink><InternalLink className="btn btn-primary btn-md" href={link(selected.company, 'guides')}>Abrir Guias</InternalLink></div>}</div> : <Button variant="secondary" disabled={busy} onClick={() => open(active.group)}>Fechar</Button>}>
       <div className="operacoes">
         {inssDetail ? <div className="operacoes-inss-contexto"><p>INSS <span>· Competência {competencia?.split('-').reverse().join('/')}</span></p><dl className="operacoes-inss-dados"><div><dt>Apuração</dt><dd>{selected.fluxo.apuracao.rotulo}</dd></div><div><dt>Contabilidade</dt><dd>{selected.fluxo.contabilizacao.rotulo}</dd></div></dl></div> : <p>Competência {competencia}</p>}
         {result && <p role={result.error ? 'alert' : 'status'}>{result.message}</p>}

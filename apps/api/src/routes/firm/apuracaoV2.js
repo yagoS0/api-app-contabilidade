@@ -807,7 +807,7 @@ export function createApuracaoV2Router({ log } = {}) {
     } catch (err) { return bad(res, err?.code === 'ESTADO_INVALIDO' ? 409 : statusForFechamentoErr(err), err?.code || 'conferencia_transmissao_failed', err?.message || 'Erro ao conferir transmissão'); }
   }, "Conferir transmissão da apuração"));
 
-  // Q55 — Reabrir uma apuração "transmitida" para retificar (rebaixa p/ "calculada").
+  // Q55 — Reabrir uma apuração "transmitida" para retificar (estado local "aberta").
   router.post(
     "/fechamento/:competencia/reabrir",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
@@ -815,7 +815,7 @@ export function createApuracaoV2Router({ log } = {}) {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
       try {
-        const result = await reabrirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id });
+        const result = await reabrirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, motivo: req.body?.motivo });
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha reabrirFechamento");

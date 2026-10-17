@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RegimeHistoricoEditor } from '../renderCompanyForm';
-import { linhasDaPreviaFiscal } from '../../../../notas/components/PreviaFiscal';
+import { linhasDaPreviaFiscal } from '../../../../notas/components/PreviaFiscal.shared.js';
 test('editor permite escolher híbrido no período e solicita referência', () => {
  const onChange = jest.fn();
  const linha = { regime: 'SIMPLES', vigenciaInicio: '2027-01-01', vigenciaFim: '', impostos: '', apuracaoIbsCbs: '' };

@@ -49,7 +49,11 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
     for (const c of DADOS_ANALISE) if (c.campoFicha && inicial.dados[c.chave] == null && onboarding.dados?.[c.campoFicha] != null) inicial.dados[c.chave] = onboarding.dados[c.campoFicha];
     return inicial;
   });
-  useEffect(() => { setRoteiro(v => ({ ...v, dados: dadosAnaliseDaFicha(onboarding, v.dados) })); }, [onboarding.dados?.qtdFuncionarios, onboarding.dados?.notasRecebidasMes, onboarding.dados?.notasEmitidasMes, onboarding.dados?.faturamentoMensal]);
+  const { qtdFuncionarios, notasRecebidasMes, notasEmitidasMes, faturamentoMensal } = onboarding.dados || {};
+  useEffect(() => {
+    const ficha = { dados: { qtdFuncionarios, notasRecebidasMes, notasEmitidasMes, faturamentoMensal } };
+    setRoteiro(v => ({ ...v, dados: dadosAnaliseDaFicha(ficha, v.dados) }));
+  }, [qtdFuncionarios, notasRecebidasMes, notasEmitidasMes, faturamentoMensal]);
   const fiscal = jornada?.analises?.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
   const diagnosticoBaseId = jornada?.diagnostico?.id || jornada?.diagnosticoAnteriorId || null;
   const contexto = JSON.stringify([onboarding.id, onboarding.versao, onboarding.cnpj, fiscal?.id, diagnosticoBaseId]);

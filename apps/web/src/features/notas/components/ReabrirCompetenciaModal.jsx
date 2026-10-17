@@ -18,7 +18,8 @@
 
 import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 
 export function ReabrirCompetenciaModal({ competencia, saving, onConfirm, onClose }) {
   const [reason, setReason] = useState("");

@@ -64,7 +64,7 @@ export function useAcessoPortalCliente({ api, companyId, feedback }) {
     } finally {
       setCarregando(false);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -98,7 +98,7 @@ export function useAcessoPortalCliente({ api, companyId, feedback }) {
     } finally {
       setSalvandoPara(null);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   /** Some com a senha em claro da tela. Não há como trazê-la de volta — é isso que ela promete. */
   const esconderSenha = useCallback(() => setSenhaNova(null), []);

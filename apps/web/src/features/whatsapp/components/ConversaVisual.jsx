@@ -4,7 +4,7 @@ import { Button } from "../../../components/ui/Button";
 import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
 import { soDigitosCnpj } from "../../onboarding/lib/brasilApi";
 import { identidadeDaConversa, rotuloDaSituacao, estadoDaResposta } from "../lib/conversasTela";
-import { relacionamentoDaConversa, nomeDaSolicitacao } from "../lib/identidadeAtendimento";
+import { relacionamentoDaConversa } from '../lib/identidadeAtendimento';
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 
 export function WhatsappIcon({ nome = "chat", size = 20 }) {

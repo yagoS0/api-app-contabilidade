@@ -1,6 +1,7 @@
+import { contasDesconhecidas, hasDuplicateAccountAcrossSides } from "./renderAccountingEntriesParts.shared.js";
 import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { valorUtilizavel } from "../lib/valorFormula";
@@ -9,7 +10,6 @@ import { selosDaConta } from "../lib/tipoDaConta";
 import {
   ACCOUNTING_PANEL,
   COL_COUNT,
-  INPUT,
   ORIGEM_LABELS,
   PANEL_FIELD_STYLE,
   PANEL_ICON_BUTTON_STYLE,
@@ -344,15 +344,7 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
  * Sem plano carregado (`accounts` vazio) NÃO acusa nada: ausência de dado não é prova de conta
  * inexistente, e travar o lançamento porque a lista ainda não chegou seria pior que o erro tardio.
  */
-export function contasDesconhecidas(lines, accounts) {
-  if (!accounts?.length) return [];
-  const conhecidas = new Set(accounts.map((a) => String(a.codigo)));
-  return [...new Set(
-    (lines || [])
-      .map((l) => String(l?.conta || "").trim())
-      .filter((c) => c && !conhecidas.has(c)),
-  )];
-}
+
 
 export function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) { onChange(lines.map((l, i) => i === idx ? { ...l, [field]: val } : l)); }
@@ -596,20 +588,7 @@ function detectTipoFromAccounts(contaD, contaC, accounts) {
   return { tipo: "DESPESA", subtipo: null };
 }
 
-export function hasDuplicateAccountAcrossSides(lines) {
-  const debitAccounts = new Set(
-    (Array.isArray(lines) ? lines : [])
-      .filter((line) => String(line.tipo || "").toUpperCase() === "D")
-      .map((line) => String(line.conta || "").trim())
-      .filter(Boolean)
-  );
 
-  return (Array.isArray(lines) ? lines : []).some((line) => {
-    if (String(line.tipo || "").toUpperCase() !== "C") return false;
-    const accountCode = String(line.conta || "").trim();
-    return accountCode && debitAccounts.has(accountCode);
-  });
-}
 
 export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onGetHistoricosByCode, onSelectHistorico, placeholder, inputRef, competencia = null, onSearchHistoricos = null }) {
   const [open, setOpen] = useState(false);
@@ -672,7 +651,7 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
         //
         // Abrir agora é decisão de quem digita: `onChange` do input, `onFocus` com sugestão
         // pronta e ↓. Chegar resultado só REABASTECE a lista; se ela estiver aberta, aparece.
-      } catch {}
+      } catch { /* A busca de sugestões é opcional; preserve o texto digitado se falhar. */ }
     }, 300);
     return () => clearTimeout(debounceRef.current);
   }, [value, onGetHistoricosByCode, onSearchHistoricos, isKeyword]);
@@ -797,7 +776,7 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
   useEffect(() => {
     if (!onSearchHistoricos || value.trim().length < 2) { setHistoricosRaw([]); return; }
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => { try { const results = await onSearchHistoricos(value.trim()); setHistoricosRaw(Array.isArray(results) ? results : []); } catch {} }, 250);
+    debounceRef.current = setTimeout(async () => { try { const results = await onSearchHistoricos(value.trim()); setHistoricosRaw(Array.isArray(results) ? results : []); } catch { /* A busca de sugestões é opcional; preserve o texto digitado se falhar. */ } }, 250);
     return () => clearTimeout(debounceRef.current);
   }, [value, onSearchHistoricos]);
 
@@ -1327,7 +1306,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const cLine = lines.find((l) => l.tipo === "C");
   const dA = dLine ? accounts.find((a) => a.codigo === dLine.conta) : null;
   const cA = cLine ? accounts.find((a) => a.codigo === cLine.conta) : null;
-  const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
+
   const incompleteRowStyle = isIncompleteSides ? { outline: "2px solid #8BE9FD", outlineOffset: "-2px" } : null;
 
   function startEdit() {

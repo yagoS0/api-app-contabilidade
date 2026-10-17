@@ -6,7 +6,7 @@ import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaC
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
@@ -53,7 +53,8 @@ function App() {
 }
 
 function AtendimentoMovel({ session, feedback }) {
-  useEffect(() => { api.setUnauthorizedHandler?.(() => session.clearSession()); return () => api.setUnauthorizedHandler?.(null); }, [session.clearSession]);
+  const { clearSession } = session;
+  useEffect(() => { api.setUnauthorizedHandler?.(() => clearSession()); return () => api.setUnauthorizedHandler?.(null); }, [clearSession]);
   return <WhatsappPage api={api} usuarioId={session.user?.id} onSair={session.clearSession} error={feedback.error} onBack={() => session.setPage("companies")} />;
 }
 function AppInterno({ session, feedback }) {
@@ -166,7 +167,7 @@ function AppInterno({ session, feedback }) {
   // adota essa empresa. Também garante "voltar" preserva contexto.
   const location = useLocation();
   useEffect(() => {
-    const match = location.pathname.match(/^\/companies\/([^\/]+)(\/|$)/);
+    const match = location.pathname.match(/^\/companies\/([^/]+)(\/|$)/);
     if (match && match[1] !== "new") {
       const companyIdFromUrl = decodeURIComponent(match[1]);
       if (companyIdFromUrl !== companiesWorkspace.companiesState.selectedCompanyId) {

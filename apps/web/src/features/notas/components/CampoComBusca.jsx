@@ -17,7 +17,8 @@
 // fecha antes de o clique chegar.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 
 const campoBase = {
   background: "var(--bg-page)", border: `1px solid ${PANEL.border}`, borderRadius: 6,

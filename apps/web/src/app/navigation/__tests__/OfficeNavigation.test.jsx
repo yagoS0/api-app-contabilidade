@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { OfficeNavigation } from "../OfficeNavigation";
-import { WorkspaceNavigationProvider, useWorkspaceNavigation } from "../WorkspaceNavigation";
+import { WorkspaceNavigationProvider } from "../WorkspaceNavigation";
+import { useWorkspaceNavigation } from "../WorkspaceNavigation.shared";
 
 function Context() {
   const location = useLocation();

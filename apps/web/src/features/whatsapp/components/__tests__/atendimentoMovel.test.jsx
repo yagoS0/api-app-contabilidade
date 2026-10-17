@@ -5,7 +5,7 @@ import { BuscaMensagens } from "../BuscaMensagens";
 import { RetomarConversa } from "../RetomarConversa";
 import { AnexoDaConversa } from "../AnexoDaConversa";
 import { FioDaConversa } from "../FioDaConversa";
-import { useRascunhoServidor, haRascunhoPendente, limparRascunhosDaSessao } from "../../hooks/useRascunhoServidor";
+import { useRascunhoServidor, limparRascunhosDaSessao } from '../../hooks/useRascunhoServidor';
 import { criarAtendimentoMovelMock } from "../../../../api/mock/atendimentoMovelMock";
 import { destinoInternoSeguro } from "../../lib/atendimentoPwa";
 

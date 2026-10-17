@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 
 export function RelatorioFiscalDoLead({ api, onboarding, conversaId, onAtualizar }) {
@@ -7,18 +7,18 @@ export function RelatorioFiscalDoLead({ api, onboarding, conversaId, onAtualizar
   atual.current = contexto;
   const [base, setBase] = useState(null), [aberto, setAberto] = useState(null), [envioLocal, setEnvioLocal] = useState(null);
   const [ocupado, setOcupado] = useState(false), [erro, setErro] = useState("");
-  const valido = chave => vivo.current && atual.current === chave;
-  async function carregar(chave = contexto) {
+  const valido = useCallback(chave => vivo.current && atual.current === chave, []);
+  const carregar = useCallback(async (chave = contexto) => {
     const versao = ++leitura.current;
     const dados = await api.comercial(`/onboardings/${onboarding.id}/fiscal`);
     if (valido(chave) && versao === leitura.current) setBase({ contexto: chave, dados });
     return dados;
-  }
+  }, [api, contexto, onboarding.id, valido]);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
   useEffect(() => {
     setErro("");
     carregar().catch(e => { if (valido(contexto)) setErro(e.message); });
-  }, [api, contexto, onboarding]);
+  }, [carregar, contexto, valido, onboarding]);
   const dados = base?.contexto === contexto ? base.dados : null;
   const ultimo = (dados?.relatorios || []).filter(r => r.cnpj === onboarding.cnpj).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
   const relatorio = ultimo?.status === 'CONCLUIDA' && ultimo.tabelaDisponivel ? ultimo : null;

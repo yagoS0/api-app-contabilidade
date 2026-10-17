@@ -1,3 +1,4 @@
+import { arquivoDoConteudo } from "./PainelArquivosWhatsapp.shared.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { ArquivosWhatsappNaoVinculados } from "./ArquivosWhatsappNaoVinculados";
@@ -5,11 +6,7 @@ import { ImportOFXModal } from "../../accounting/ofx-import/components/renderImp
 
 const ESTADO = { PENDENTE: "Aguardando arquivo", BAIXANDO: "Baixando arquivo", DISPONIVEL: "Disponível para conferência", FALHOU: "Não foi possível baixar", NAO_SUPORTADO: "Tipo de arquivo não suportado", EXPIRADO: "Original expirado" };
 function data(iso) { return iso ? new Date(iso).toLocaleDateString("pt-BR") : "não informada"; }
-export function arquivoDoConteudo(r) {
-  if (!r?.nomeArquivo || typeof r.base64 !== "string" || !r.base64) throw new Error("O servidor não devolveu o conteúdo do arquivo.");
-  const bytes = Uint8Array.from(atob(r.base64), c => c.charCodeAt(0));
-  return new File([bytes], r.nomeArquivo, { type: ["application/pdf", "image/png", "image/jpeg"].includes(r.mimeType) ? r.mimeType : "text/plain" });
-}
+
 
 export function PainelArquivosWhatsapp({ api, companyId, contas = [], podeEscrever = false, aoImportar }) {
   const [arquivos, setArquivos] = useState([]);
@@ -25,8 +22,10 @@ export function PainelArquivosWhatsapp({ api, companyId, contas = [], podeEscrev
   const urls = useRef(new Set());
   const importacoesIncertas = useRef(new Set());
   useEffect(() => {
+    const contador = versao;
+    const arquivosLocais = urls.current;
     setArquivos([]); setCursor(null); setErro(null); setAviso(null); setOfx(null); setAberto(null); setOcupado(null);
-    return () => { versao.current++; for (const url of urls.current) URL.revokeObjectURL(url); urls.current.clear(); };
+    return () => { contador.current++; for (const url of arquivosLocais) URL.revokeObjectURL(url); arquivosLocais.clear(); };
   }, [api, companyId]);
   const carregar = useCallback(async (mais = null) => {
     const v = ++versao.current; setCarregando(true); setErro(null);

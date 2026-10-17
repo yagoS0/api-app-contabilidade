@@ -1,3 +1,4 @@
+import { montarCorpo } from "./renderConferenciaTab.shared.js";
 // A ABA CONFERÊNCIA — a nota recebida vira despesa, o extrato vira o pagamento dela.
 //
 // ⚠ ONDE ELA VIVE, E POR QUÊ: dentro da EMPRESA, no grupo **Contabilidade**, logo depois de
@@ -28,12 +29,13 @@ import { PainelArquivosWhatsapp } from "./PainelArquivosWhatsapp";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
 // ⚠ O MESMO formulário do painel «Regras», aberto pela LINHA — um formulário, duas portas.
-import { FormularioDeRegra, iniciaisDaLinha } from "./FormularioDeRegra";
+import { FormularioDeRegra } from "./FormularioDeRegra";
+import { iniciaisDaLinha } from "./FormularioDeRegra.shared.js";
 import { NATUREZA, SECAO, origemDaLinha, veioDeExtrato } from "../lib/naturezaDaConferencia";
 // ⚠ Import entre features, deliberado: a URL da aba da empresa tem UMA fonte
 // (`companyTabPath`), e reconstruí-la aqui faria o link levar a um lugar e o clique a outro.
-import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
-import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
+
+
 import { debitosQueCasamComNota, FRASE_DO_FORA_DO_LOTE } from "../lib/contabilizacaoEmLote";
 // ⚠ REUSADA, não reescrita: é a MESMA lista que o seletor de crédito da regra do fornecedor
 // oferece, e ela filtra por PREFIXO do `codigoCompleto` (a cópia declarada da regra da api).
@@ -44,13 +46,11 @@ import {
   podeSugerirComIa,
   ACAO,
   COMPETENCIA_AUSENTE,
-  ORIGEM_PAGAMENTO,
   acaoPedeData,
   acoesDaLinha,
   agruparPorFornecedor,
   cabecalhoDoGrupo,
   cnpjFormatado,
-  contaQueSeraUsada,
   contaQueSeraUsadaComIa,
   creditoQueSeraUsado,
   fonteDaConta,
@@ -223,44 +223,7 @@ function DataComProcedencia({ item }) {
  *    verdade do ato: a tela só pergunta a data quando ninguém a provou, e o que a pessoa digita é
  *    declaração, não prova. Deixar o servidor adivinhar é o que produziu o defeito.
  */
-export function montarCorpo({
-  acao, item, data, motivo, valor, cfg, contaCompleta = null,
-  /**
-   * ⚠⚠ O CRÉDITO ESCOLHIDO (01/09/2026) — dono: *"aqueles que viram lançamento contábil devem ter
-   * opção de colocar débito e crédito"*.
-   *
-   * ⚠⚠ SÃO DOIS PARÂMETROS, e não um, porque *"não escolhi"* e *"apaguei a escolha"* são atos
-   * OPOSTOS. Mandar `contaCredito: null` sempre que o campo estivesse vazio APAGARIA o crédito que
-   * a regra do fornecedor escolheu, a cada confirmação — inclusive as do botão «Lançar» da linha,
-   * que não tem campo de crédito nenhum. O servidor distingue ausente de nulo; a tela tem de
-   * respeitar a distinção do lado de cá.
-   */
-  creditoCompleto = null,
-  creditoTocado = false,
-}) {
-  const corpo = {};
-  if (acaoPedeData(acao, item) && data) {
-    corpo.dataPagamento = data;
-    corpo.origemPagamento = ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR;
-  }
-  if (cfg?.pedeMotivo && motivo) corpo.motivoRecusa = motivo;
-  if (cfg?.pedeValor && valor) corpo.valorAjustado = valor;
-  // ⚠⚠ A CONTA QUE O CONTADOR ESCOLHEU — em `codigoCompleto`, já traduzida pelo modal.
-  //
-  // Ela vence a sugestão porque é o ato dele; sem escolha, cai na sugestão derivada, que é o
-  // comportamento de antes do seletor. ⚠ NUNCA string vazia: `""` cairia em `sem_conta` no servidor
-  // e a tela descobriria a regra pelo erro — por isso `completoDoReduzido` devolve `null` + motivo.
-  if (cfg?.criaLancamento) {
-    const conta = contaCompleta || item?.sugestao?.conta || null;
-    if (conta) corpo.contaAplicada = conta;
 
-    // ⚠ Escolha nova ⇒ manda a conta. Campo LIMPO por quem tinha uma ⇒ manda `null`, que é o
-    // servidor voltando ao caixa cravado. Nada disso ⇒ a chave não viaja, e o que estava fica.
-    if (creditoCompleto) corpo.contaCredito = creditoCompleto;
-    else if (creditoTocado && item?.contaCredito) corpo.contaCredito = null;
-  }
-  return corpo;
-}
 
 /** ⚠ O modal pergunta o que a ação precisa ANTES de enviar — a tela não descobre a regra pelo erro. */
 function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFechar, onConfirmar }) {
@@ -308,7 +271,7 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   }, [doCredito.valor]);
 
   const pedeConta = Boolean(cfg?.criaLancamento);
-  const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
+
   const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas, estadoDoPlano), [contas, estadoDoPlano]);
   const caixaTorto = useMemo(
     () => (estadoDoPlano === ESTADO_DO_PLANO.OK ? problemaDoCaixa(contas) : null),

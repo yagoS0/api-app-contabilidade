@@ -12,7 +12,7 @@ export function BibliotecaComercialPage({ api, onBack, onUsarMensagem }) {
     catch(e) { if (vivo.current && atual === sequencia.current) setErro(e.message); }
     finally { if (vivo.current && atual === sequencia.current) setCarregando(false); }
   }, [api]);
-  useEffect(() => { vivo.current = true; carregar(); return () => { vivo.current = false; sequencia.current++; }; }, [carregar]);
+  useEffect(() => { const sequenciaDaExecucao = sequencia; vivo.current = true; carregar(); return () => { vivo.current = false; sequenciaDaExecucao.current++; }; }, [carregar]);
   return <PageShell title="Biblioteca compartilhada" subtitle="Mensagens rápidas, dados do escritório, honorários e contratos" onBack={onBack} actions={<Button variant="secondary" onClick={carregar} disabled={carregando}>Atualizar biblioteca</Button>} contentStyle={{ maxWidth: "var(--content-max)", width: "100%", margin: "0 auto", padding: 24 }}>
     {erro && <p role="alert">{erro}</p>}{carregando && <p role="status">Carregando biblioteca…</p>}
     <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} onUsarMensagem={onUsarMensagem} inicialmenteAberto />

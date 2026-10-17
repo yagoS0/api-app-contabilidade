@@ -1,7 +1,7 @@
 import { mockCarregarRotinas, mockSalvarRotinas } from './rotinasMock';
 
 export function aplicabilidadeRotinasMock(company) {
-  const regime = String(company?.regimeTributario || company?.tipoTributario || '').trim().toUpperCase();
+  const regime = String(company?.regimeTributario || company?.tipoTributario || company?.legacyCompany?.regimeTributario || company?.legacyCompany?.tipoTributario || '').trim().toUpperCase();
   const keys = { SIMPLES: ['das', 'extrato', 'parcelamento'], LUCRO_PRESUMIDO: ['presumido'], LUCRO_REAL: [] };
   return Object.hasOwn(keys, regime) ? { regime, applicableKeys: [...keys[regime], 'inss', 'pagamento', 'conferencia'], unavailableReason: null }
     : { regime: null, applicableKeys: [], unavailableReason: 'Regime tributário não confirmado no cadastro da empresa.' };

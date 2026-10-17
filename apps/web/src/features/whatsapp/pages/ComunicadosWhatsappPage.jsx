@@ -19,9 +19,9 @@ export function ComunicadosWhatsappPage({ api, companies = [], onBack }) {
     const r = await api.comunicadosWhatsapp(proximo ? `?cursor=${encodeURIComponent(proximo)}` : '');
     if (vivo.current) { setItens(antes => proximo ? [...antes, ...r.itens] : r.itens); setCursor(r.proximoCursor); setCarregando(false); }
   }, [api, disponivel]);
-  useEffect(() => {
+  useEffect(() => { const sequenciaDaExecucao = sequencia;
     vivo.current = true; listar().catch(e => { if (vivo.current) { setErro(e.message); setCarregando(false); } });
-    return () => { vivo.current = false; sequencia.current++; };
+    return () => { vivo.current = false; sequenciaDaExecucao.current++; };
   }, [listar]);
   const abrir = async id => {
     const s = ++sequencia.current; setErro(''); setOcupado(true); setRevisar(false); setForm(null);
@@ -49,7 +49,7 @@ export function ComunicadosWhatsappPage({ api, companies = [], onBack }) {
     catch (e) {
       if (vivo.current && s === sequencia.current) {
         setErro(e.message); setRevisar(false);
-        if (id) { try { const atual = await api.comunicadosWhatsapp(`/${id}`); if (vivo.current && s === sequencia.current) setSelecionado(atual); } catch {} }
+        if (id) { try { const atual = await api.comunicadosWhatsapp(`/${id}`); if (vivo.current && s === sequencia.current) setSelecionado(atual); } catch { /* A falha de releitura não confirma nem repete o envio. */ } }
       }
     } finally { if (vivo.current && s === sequencia.current) setOcupado(false); }
   };

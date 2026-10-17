@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SecaoPlanejamento } from "./SecaoPlanejamento";
 import { carregarCarteira, resumirCenario, nomeCenario, dataCenario, moedaCenario } from "../lib/cenariosSalvos";
 
@@ -7,7 +7,10 @@ function PainelCarteira({ api, empresas, onAbrirEmpresa }) {
   const [estado, setEstado] = useState({ itens: [], total: 0, carregando: true });
   const [filtro, setFiltro] = useState("todos");
   const escopo = JSON.stringify(empresas.map(e => [e.companyId || e.id, e.razao]));
+  const empresasAtuais = useRef(empresas);
+  empresasAtuais.current = empresas;
   useEffect(() => {
+    const empresas = empresasAtuais.current;
     let cancelado = false;
     setEstado({ itens: [], total: new Set(empresas.map(e => e.companyId || e.id).filter(Boolean)).size, carregando: true });
     carregarCarteira({ empresas, api, cancelado: () => cancelado,

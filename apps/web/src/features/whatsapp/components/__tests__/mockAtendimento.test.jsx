@@ -2,6 +2,7 @@ import { createMockApi } from "../../../../api/mock/mockApi";
 beforeEach(() => { sessionStorage.clear(); localStorage.clear(); window.history.replaceState({}, "", "/"); });
 afterEach(() => { jest.useRealTimers(); });
 test("mock mantém histórico excluído, recusa ações e restaura sem apagar mensagens", async () => {
+  expect.assertions(8);
   jest.useFakeTimers(); const api = createMockApi();
   const executar = async promessa => { await jest.runAllTimersAsync(); return promessa; };
   const antes = await executar(api.getMensagensWhatsapp("mock-cv-1"));
@@ -16,17 +17,27 @@ test("mock mantém histórico excluído, recusa ações e restaura sem apagar me
   expect((await executar(api.getMensagensWhatsapp("mock-cv-1"))).mensagens).toEqual(antes.mensagens);
 });
 test("rascunho mock sobrevive ao link que recarrega a página", async () => {
+  expect.assertions(1);
   jest.useFakeTimers();
   const api = createMockApi();
   const criacao = api.criarOnboarding("ABERTURA"); await jest.runAllTimersAsync(); const { onboarding } = await criacao;
   const salvar = api.salvarOnboarding(onboarding.id, { dados: { responsavelNome: "Carlos", responsavelTelefone: "+5511977776666" } });
   await jest.runAllTimersAsync(); await salvar;
+  // Reload business state and read sessionStorage again. Keep only the real external
+  // Faker module: importing its locale graph costs seconds; mockApi still seeds it anew.
+  const fakerModule = jest.requireActual("@faker-js/faker");
   jest.resetModules();
-  const aposReload = require("../../../../api/mock/mockApi").createMockApi();
-  const leitura = aposReload.getOnboarding(onboarding.id); await jest.runAllTimersAsync();
-  expect((await leitura).onboarding.dados.responsavelNome).toBe("Carlos");
+  jest.doMock("@faker-js/faker", () => fakerModule);
+  try {
+    const aposReload = require("../../../../api/mock/mockApi").createMockApi();
+    const leitura = aposReload.getOnboarding(onboarding.id); await jest.runAllTimersAsync();
+    expect((await leitura).onboarding.dados.responsavelNome).toBe("Carlos");
+  } finally {
+    jest.dontMock("@faker-js/faker");
+  }
 });
 test("falha do resumo mock é erro; GET não marca leitura e reconhecimento explícito diminui o contador", async () => {
+  expect.assertions(3);
   jest.useFakeTimers(); const api = createMockApi();
   const antesPromise = api.getResumoWhatsapp(); await jest.runAllTimersAsync(); const antes = await antesPromise;
   const fio = api.getMensagensWhatsapp("mock-cv-3"); await jest.runAllTimersAsync(); const aberto = await fio;

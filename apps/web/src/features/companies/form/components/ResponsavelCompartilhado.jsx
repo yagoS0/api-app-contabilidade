@@ -20,17 +20,7 @@
 // bloqueia: grupo de empresas com o mesmo dono é legítimo, e a troca confirmada é trabalho normal.
 
 import { useEffect, useRef } from "react";
-import {
-  MODO,
-  ONDE_DEFINIR_SENHA,
-  TITULO_CONFIRMACAO,
-  tituloDaConfirmacao,
-  avisoDeAcessoNovo,
-  estadoDoResponsavel,
-  avisoDeVinculoCriado,
-  avisoDeEmailCompartilhado,
-  fraseDeConfirmacao,
-} from "../../../../lib/portal/responsavelCompartilhado";
+import { MODO, ONDE_DEFINIR_SENHA, tituloDaConfirmacao, avisoDeAcessoNovo, avisoDeVinculoCriado, avisoDeEmailCompartilhado, fraseDeConfirmacao } from '../../../../lib/portal/responsavelCompartilhado';
 
 const BOTAO_BASE = {
   border: "1px solid",

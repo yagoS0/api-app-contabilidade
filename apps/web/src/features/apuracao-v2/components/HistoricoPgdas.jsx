@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import "./historicoPgdas.css";
@@ -38,7 +38,7 @@ export function HistoricoPgdas({ api, companyId, competencia, onClose, onAtualiz
   const voltarRef = useRef(null);
   useEffect(() => { if (confirmando) voltarRef.current?.focus(); }, [confirmando]);
   function voltar() { setConfirmando(false); requestAnimationFrame(() => conferirRef.current?.focus()); }
-  async function carregar() {
+  const carregar = useCallback(async () => {
     setLoading(true); setErro("");
     try {
       if (!api.getPgdasHistorico) throw Error("Histórico indisponível nesta conexão.");
@@ -47,8 +47,8 @@ export function HistoricoPgdas({ api, companyId, competencia, onClose, onAtualiz
       if (ativo.current) { setHistorico(result); setLeituraFalhou(false); }
     } catch (e) { if (ativo.current) { setLeituraFalhou(true); setErro(mensagemErro(e, "Não foi possível carregar o histórico.")); } }
     finally { if (ativo.current) setLoading(false); }
-  }
-  useEffect(() => { ativo.current = true; carregar(); return () => { ativo.current = false; }; }, []);
+  }, [api, companyId, competencia]);
+  useEffect(() => { ativo.current = true; carregar(); return () => { ativo.current = false; }; }, [carregar]);
   async function conferir() {
     if (operacao.current || bloqueado || !confirmando) return;
     operacao.current = true;

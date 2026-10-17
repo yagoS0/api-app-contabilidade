@@ -16,6 +16,7 @@ it('simulação salva, transmite uma vez e reabertura exige novo cálculo', asyn
   expect((await api.gerarRelatorioFaturamento(company, mes)).relatorio.dados.preApurado.oficial.dasSimuladoSerpro).toBe(result.dasValor);
   expect((await api.salvarFechamento(company, mes, { ...form, calculoId: result.calculoId })).ok).toBe(true);
   expect((await api.getFechamento(company, mes)).dados.estado).toBe('fechada');
+  expect((await api.getFechamento(company, mes)).dados.calculoRecuperavel).toMatchObject({ calculoId: result.calculoId, formulario: form });
   expect((await api.salvarFechamento(company, mes, { ...form, atividades: [], calculoId: result.calculoId })).ok).toBe(false);
   expect((await api.transmitirFechamento('outro', mes, mes, result.calculoId)).ok).toBe(false);
   const envio = api.transmitirFechamento(company, mes, mes, result.calculoId);
@@ -23,6 +24,7 @@ it('simulação salva, transmite uma vez e reabertura exige novo cálculo', asyn
   expect((await envio).ok).toBe(true);
   expect((await api.getFechamento(company, mes)).dados.estado).toBe('transmitida');
   await api.reabrirFechamento(company, mes, 'Conferir receita');
+  expect((await api.getFechamento(company, mes)).dados.calculoRecuperavel).toBeNull();
   expect((await api.transmitirFechamento(company, mes, mes, result.calculoId)).ok).toBe(false);
   const novo = await api.calcularFechamento(company, mes, form);
   expect(novo.result.calculoId).not.toBe(result.calculoId);

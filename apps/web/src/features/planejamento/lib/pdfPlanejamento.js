@@ -6,7 +6,7 @@ import { ATIVIDADES_PRESUMIDO } from "./lucroPresumido";
 
 const money = v => v == null || !Number.isFinite(v) ? "Não informado" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = v => v == null || !Number.isFinite(v) ? "Não informado" : `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
-const clean = s => String(s ?? "Não informado").replace(/[–—−]/g, "-").replace(/→/g, "->").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/[\u26a0\ufe0f]/g, "");
+const clean = s => String(s ?? "Não informado").replace(/[–—−]/g, "-").replace(/→/g, "->").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/\u26a0|\ufe0f/g, "");
 const available = c => !c.indisponivel && c.elegivel !== false && Number.isFinite(c.total);
 
 // Snapshot of the displayed scenario. No company reads or recalculation of taxes.

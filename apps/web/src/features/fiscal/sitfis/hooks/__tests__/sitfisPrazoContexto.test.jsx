@@ -20,3 +20,21 @@ it('relatório tardio de A não substitui B', async () => {
   await act(async () => resolver({ status: { situacao: 'COM_PENDENCIA' } }));
   expect(result.current.status.situacao).toBe('REGULAR');
 });
+it('resposta vazia de leitura é falha, não ausência de consulta', async () => {
+  const api = { getStoredSitfis: jest.fn(async () => undefined) };
+  const { result } = renderHook(() => useSitfis({ api, companyId: 'A' }));
+  await act(async () => {});
+  expect(result.current.error).toMatch(/indisponível/);
+});
+it('duplo clique consulta uma vez e resposta inválida não anuncia sucesso', async () => {
+  let resolver;
+  const api = { getStoredSitfis: jest.fn(async () => ({ status: null })), getSitfis: jest.fn(() => new Promise(r => { resolver = r; })) };
+  const { result } = renderHook(() => useSitfis({ api, companyId: 'A' }));
+  await act(async () => {});
+  act(() => { result.current.consultar(); result.current.consultar(); });
+  expect(api.getSitfis).toHaveBeenCalledTimes(1);
+  await act(async () => resolver(undefined));
+  expect(result.current.error).toMatch(/confirmar/);
+  expect(result.current.notice).toBeNull();
+  expect(result.current.consulting).toBe(false);
+});

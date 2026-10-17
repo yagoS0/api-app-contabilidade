@@ -21,7 +21,24 @@ import { generateEntriesFromCircular } from "../../../accounting/AccountingEntry
 import { marcarSemFaturamento } from "../../../accounting/semFaturamento.js";
 import { capturePgdasGuideForCompany } from "../CaptureSerproGuidesService.js";
 import { markGuidePaidBySerpro } from "../../../guides/GuidePaymentStatusService.js";
+import pdfParse from 'pdf-parse';
 beforeEach(() => jest.clearAllMocks());
+
+test.each([
+ ['PDF sem valores extraíveis', false],
+ ['Receita Bruta Informada: R$ 0,00', false],
+ ['Valor Total do Documento 0,00', false],
+ ['Receita Bruta Informada: R$ 0,00\nValor Total do Documento 0,00', true],
+ ['Receita Bruta Informada: R$ 100,00\nValor Total do Documento 0,00', false],
+])('sincronização não transforma leitura incompleta em mês sem receita: %s', async (text, zeroConfirmado) => {
+ pdfParse.mockResolvedValueOnce({ text });
+ generateEntriesFromCircular.mockResolvedValueOnce({ ok: true, generatedEntries: [] });
+ marcarSemFaturamento.mockResolvedValueOnce({ ok: true });
+ const result = await syncPgdasByCompetencia({ portalClientId: 'c', competencia: '2026-09', atualizar: true });
+ expect(generateEntriesFromCircular).toHaveBeenCalledWith(expect.objectContaining({ portalClientId: 'c', competencia: '2026-09', fonteValor: 'EXTRATO' }));
+ expect(marcarSemFaturamento).toHaveBeenCalledTimes(zeroConfirmado ? 1 : 0);
+ expect(result.semFaturamento).toEqual(zeroConfirmado ? { ok: true } : null);
+});
 test("recupera documentos sem contabilizar, emitir guia ou mudar pagamento", async () => {
  const r=await syncPgdasByCompetencia({portalClientId:"c",competencia:"2026-09",somenteDocumentos:true});
  expect(r.circular.pgdasNumeroDeclaracao).toBe("123");

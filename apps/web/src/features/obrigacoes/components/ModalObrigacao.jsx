@@ -33,7 +33,7 @@ export function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, 
     return atualizado;
   }); };
   const avulsa = form.periodicidade === "AVULSA";
-  const previa = useMemo(() => calcularPreviaVencimentos(form, new Date()), [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil]);
+  const previa = useMemo(() => calcularPreviaVencimentos(form, new Date()), [form]);
   const podeMarcarVencido = !editando && !avulsa && Boolean(previa.jaVencida);
   const titulo = unica ? "Editar somente esta ocorrência" : editando ? "Editar tarefa ou obrigação" : "Nova tarefa ou obrigação";
   if (alcance === "ESTA_E_PROXIMAS") {

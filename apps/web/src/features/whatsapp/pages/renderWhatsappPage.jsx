@@ -27,10 +27,11 @@ import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { useResumoWhatsapp } from "../hooks/useResumoWhatsapp";
-import { AtualizacaoAtendimento } from "../components/AtendimentoComercial";
+import { AtualizacaoAtendimento } from '../components/AtendimentoComercial.shared.js';
 import { useCanalAtendimento, leituraDoCaso } from "../hooks/useCanalAtendimento";
 import { FormOnboarding } from "../components/FormOnboarding";
-import { FioDaConversa, campo } from "../components/FioDaConversa";
+import { FioDaConversa } from '../components/FioDaConversa';
+import { campo } from '../components/FioDaConversa.shared.js';
 // ⚠ A MESMA fonte da URL que a navegação por clique usa — nunca uma segunda construção do caminho.
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, fraseDoConsumo, ordenarConversas, identidadeDaConversa, frasePaginacao } from "../lib/conversasTela";
@@ -155,12 +156,13 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const lista = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const fila = lista.filter((c) => c.relacionamento ? relacionamentoDaConversa(c).tipo === "A_IDENTIFICAR" : situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
   const avisoDaLista = frasePaginacao(hook.temMais);
+  const setConsulta = hook.setConsulta;
   // A classificação e o caso comercial chegam na própria página; nunca carregar a carteira de fichas.
   useEffect(() => {
     if (!api?.whatsappContratoV2) return;
-    const timer = setTimeout(() => hook.setConsulta({ q: busca.trim(), relacionamento, naoLidas: soNaoLidas }), 250);
+    const timer = setTimeout(() => setConsulta({ q: busca.trim(), relacionamento, naoLidas: soNaoLidas }), 250);
     return () => clearTimeout(timer);
-  }, [api, busca, relacionamento, soNaoLidas, hook.setConsulta]);
+  }, [api, busca, relacionamento, soNaoLidas, setConsulta]);
   const normalizar = valor => String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const termo = normalizar(busca).trim();
   const visiveis = hook.buscaServidor ? lista : lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresas || []).flatMap(e => [e.razao, e.cnpj, ...(e.apelidosWhatsapp || [])]), c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
@@ -216,7 +218,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
             {hook.aberta ? <FioDaConversa visivel={(!pequena || verChat || listaOculta) && !detalhes} key={chaveDoInterlocutor(hook.aberta.conversa)} fio={hook.aberta} hook={hook} temMais={hook.temMaisNoFio}
               hrefDaEmpresa={id => companyTabPath(id, "anotacoes")} onVoltar={voltar} onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes} onCanalSelecionado={registrarCanal} pedidoCanal={pedidoCanal} atualizacaoComercialExterna={atualizacaoComercial}
               slotVincular={painelComercial} usuarioId={usuarioId}
-            /> : <div className="wa-empty"><div className="wa-empty-symbol"><WhatsappIcon size={34} /></div><h2>{hook.carregandoFio ? "Abrindo conversa…" : "Seu atendimento, em um só lugar"}</h2><p>{hook.carregandoFio ? "Carregando o histórico deste contato." : "Escolha uma conversa à esquerda. Consulte o histórico, acompanhe a entrega e responda aos seus clientes."}</p>{verChat ? <Button variant="secondary" className="wa-mobile-back" onClick={voltar}>Voltar para conversas</Button> : null}</div>}
+            /> : <div className="wa-empty"><div className="wa-empty-symbol"><WhatsappIcon size={34} /></div><h2>{hook.carregandoFio ? "Abrindo conversa…" : "Selecione uma conversa"}</h2>{verChat ? <Button variant="secondary" className="wa-mobile-back" onClick={voltar}>Voltar para conversas</Button> : null}</div>}
           </section>
           {hook.aberta ? <AtualizacaoAtendimento.Provider value={atualizacaoComercial}><DetalhesConversa key={chaveDoInterlocutor(hook.aberta.conversa)} aberto={detalhes} conversa={hook.aberta.conversa} atendimento={painelComercial} api={api} onConferido={() => hook.atualizarConversa(hook.aberta.conversa.id)} onFechar={() => setDetalhes(false)} /></AtualizacaoAtendimento.Provider> : null}
         </div>

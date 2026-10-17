@@ -1,3 +1,4 @@
+import { versaoPagamentoGuia } from '../ConfirmacaoPagamentoClienteService.js';
 import { avisarPagamentoNaoConfirmado } from "../AvisoPagamentoService.js";
 beforeEach(() => jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z")));
 afterEach(() => jest.useRealTimers());
@@ -116,3 +117,5 @@ test('recibo deixa de valer durante preparação: não chega ao transporte', asy
 test.each([{status:'ERROR'},{status:'VAZIO'},{paymentConfirmedAt:new Date()}])('estado inelegível %j não envia',async patch=>{
  const f=setup();Object.assign(f.guide,patch);await f.run();expect(f.transporte.whatsapp).not.toHaveBeenCalled();
 });
+
+test('emissão persiste versão integral e recusa mudança na composição antes da rede',async()=>{const f=setup();await f.run();const token=f.records.get(f.transporte.whatsapp.mock.calls[0][0].botaoId).value;expect(token.versaoPagamento).toBe(versaoPagamentoGuia(f.guide));const outro=setup();let enviado=false;outro.transporte.whatsapp.mockImplementation(async({conferir})=>{outro.guide.extracted={fields:{principal:90,juros:5,multa:5,total:100}};await conferir();enviado=true;});const r=await outro.run();expect(enviado).toBe(false);expect(r.resultados[0].motivo).toBe('GUIA_ALTERADA');});

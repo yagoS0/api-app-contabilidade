@@ -72,7 +72,6 @@ import {
   traduzirRecusaParaCliente,
   markGuideOpenBySerpro,
   markGuidePaidByCliente,
-  canGuideConfirmPayment,
 } from "../../application/guides/GuidePaymentStatusService.js";
 import {
   FRASE_DA_RECUSA,
@@ -1361,44 +1360,18 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     }
   );
 
-  /**
-   * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU (decisão do dono, 27/08/2026).
-   *
-   * *"O cliente confirmar deve ser como a confirmação da consulta de pagamento"*: marca a guia e
-   * **para aí**. Quem faz a baixa contábil continua sendo o contador, pela Circular.
-   *
-   * ⚠⚠ A GUARDA QUE ISSO EXIGE NÃO ESTÁ AQUI — está em `GuideToProvisionService`, via
-   * `pagamentoAlcancaOContabil`: uma confirmação de procedência `CLIENTE` NÃO grava
-   * `statusPagamento: "PAGO"` na provisão contábil. Sem ela, esta rota deixaria o cliente marcar
-   * lançamento contábil como pago, sem baixa lançada.
-   *
-   * ⚠ SEM COMPROVANTE (decisão do dono): ele confirma sem anexar. A prova continua vindo do SERPRO
-   * quando a consulta de pagamento rodar — e aí a procedência é PROMOVIDA, sem apagar a afirmação
-   * dele (colunas próprias, `clienteConfirmouEm`/`clienteConfirmouPorUserId`).
-   *
-   * ⚠ ZERO CHAMADA EXTERNA e ZERO CUSTO: isto é uma escrita local. Nada a ver com o Recalcular.
-   */
+  // R25: declaração autenticada e baixa real auditada; nenhum serviço externo é acionado.
   router.post(
     "/companies/:companyId/guides/:guideId/confirmar-pagamento",
     requireClientCompanyAccess(),
     async (req, res) => {
+      if (req.visitaDoEscritorio) return res.status(403).json({ error: 'visita_somente_leitura' });
       const { companyId, guideId } = req.params || {};
       const guide = await prisma.guide.findFirst({
         // ⚠ Só guia LIBERADA, como o download e o recálculo. O gate não se afrouxa.
         where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true },
       });
       if (!guide) return res.status(404).json({ error: "not_found" });
-
-      if (!canGuideConfirmPayment(guide)) {
-        // ⚠ Já paga não é ERRO — é o estado desejado. A resposta diz isso em vez de recusar seco:
-        // um cliente que clica duas vezes não fez nada errado.
-        return res.status(409).json({
-          ok: false,
-          error: "guia_ja_confirmada",
-          message: "Esta guia já consta como paga.",
-          guide: toGuideResponse(guide, { publico: PUBLICO.CLIENTE }),
-        });
-      }
 
       /**
        * ⚠⚠ A DATA DO PAGAMENTO É INFORMADA PELO CLIENTE (30/08/2026).
@@ -1416,17 +1389,17 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ ok: false, error: recusa, message: FRASE_DA_RECUSA[recusa] });
       }
 
-      const atualizada = await markGuidePaidByCliente({
-        guideId: guide.id, userId: req.auth?.user?.id, pagoEm,
-      });
-      return res.json({
-        ok: true,
-        guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),
-        // ⚠ A tela precisa dizer o que a confirmação FAZ e o que ela NÃO faz — senão o cliente
-        // acha que o assunto está encerrado dos dois lados.
-        aviso: "Registramos que você pagou. Seu contador vai conferir o comprovante na Receita e "
-          + "lançar a baixa na contabilidade.",
-      });
+      try {
+        const resultado = await markGuidePaidByCliente({
+          guideId: guide.id, companyId: String(companyId), userId: req.auth?.user?.id, pagoEm,
+          reconfirmaConfirmacaoId: req.body?.reconfirmaConfirmacaoId, expectedVersion: req.body?.versaoPagamento, eventId: String(req.body?.eventoId || `portal:${req.auth?.user?.id}:${guide.id}:${req.body?.versaoPagamento}`),
+        });
+        return res.json({ ...resultado, guide: toGuideResponse(resultado.guide, { publico: PUBLICO.CLIENTE }) });
+      } catch (err) {
+        const codigos = ['RECONFIRMACAO_INDISPONIVEL', 'CONFIRMACAO_SUBSTITUIDA', 'ACESSO_REVOGADO', 'GUIA_ALTERADA', 'GUIA_JA_CONFIRMADA', 'GUIA_INDISPONIVEL', 'CONFIRMACAO_INVALIDA'];
+        return res.status(codigos.includes(err.code) ? 409 : 500).json({ ok: false, error: err.code || 'confirmacao_indisponivel',
+          message: codigos.includes(err.code) ? err.message : 'Não foi possível concluir o registro. Atualize a guia antes de tentar novamente.' });
+      }
     }
   );
 

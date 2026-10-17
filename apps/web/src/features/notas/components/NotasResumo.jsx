@@ -31,7 +31,8 @@
 // desta faixa é o da JANELA — população diferente — e é clicável, então dá para inspecioná-las. Duas
 // caixas "Canceladas" lado a lado, de populações diferentes, seriam pior que uma.
 
-import { PANEL, fmtMoney } from "./notasStyles";
+
+import { PANEL, fmtMoney } from "./notasStyles.shared.js";
 
 // `onClick` transforma a caixa em seletor: Emitidas/Recebidas filtram a tabela por papel.
 // A caixa ativa fica com a borda na cor do próprio indicador, pra ficar claro o que a tabela mostra.

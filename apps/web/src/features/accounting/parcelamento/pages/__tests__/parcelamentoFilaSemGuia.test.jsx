@@ -73,9 +73,9 @@ describe("as duas filas coexistem e a diferença é DITA", () => {
     await act(async () => { montar({ semGuia: [linhaSemGuia()] }); });
 
     const painel = painelSemGuia();
-    expect(within(painel).getByText(/não há documento nenhum/i)).toBeTruthy();
+    expect(within(painel).getByText(/O vencimento não confirma pagamento/i)).toBeTruthy();
     // ⚠ A frase que impede as duas filas de virarem "mais do mesmo".
-    expect(within(painel).getByText(/quem afirma que o dinheiro/i)).toBeTruthy();
+    expect(within(painel).getByText(/a declaração registra sua autoria/i)).toBeTruthy();
   });
 
   // ⚠ A afirmação antiga do painel de cima virou MENTIRA no instante em que esta fila passou a
@@ -122,7 +122,7 @@ describe("ausência nunca é resposta", () => {
     expect(screen.getByText(/Prestações vencidas sem guia/i)).toBeTruthy();
     // ⚠ A frase que carrega a distinção cara: ausência de guia NÃO é prova de não-pagamento, e
     // quem afirma que o dinheiro saiu é o contador.
-    expect(screen.getByText(/não há documento nenhum/i)).toBeTruthy();
+    expect(screen.getByText(/O vencimento não confirma pagamento/i)).toBeTruthy();
   });
 
   // Falha e vazio são o mesmo pixel e significam o oposto — o defeito que derrubou três painéis.
@@ -223,7 +223,7 @@ describe("o ato de consequência", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Declarar e lançar a baixa/ }));
     });
-    const confirmacao = screen.getByRole("dialog", { name: "Confirmar declaração de pagamento" }).textContent;
+    screen.getByRole("dialog", { name: "Confirmar declaração de pagamento" }).textContent;
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar pagamento declarado" })); });
 
     expect(screen.getByText(/A baixa não foi concluída/)).toBeTruthy();
@@ -251,5 +251,28 @@ describe("nenhuma linha nasce dizendo que está lançando", () => {
 
     expect(screen.queryByText("Lançando…")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Dar baixa" }).length).toBeGreaterThan(0);
+  });
+});
+
+
+describe("principal da prestação sem guia preserva ausência", () => {
+  it.each([null, undefined, "", 0, "0", NaN, Infinity, -1])("não inventa zero para principal %s", async (valorPrevisto) => {
+    await act(async () => { montar({ semGuia: [linhaSemGuia({ valorPrevisto, motivoBloqueio: "sem_valor_previsto" })] }); });
+    const linha = within(painelSemGuia()).getByText("2026-07").closest("tr");
+    expect(within(linha).getByText("Não informado")).toBeTruthy();
+    expect(linha.cells[4].textContent).not.toMatch(/0,00/);
+  });
+  it.each([633.96, "633.96"])("mantém principal positivo %s", async (valorPrevisto) => {
+    await act(async () => { montar({ semGuia: [linhaSemGuia({ valorPrevisto })] }); });
+    const linha = within(painelSemGuia()).getByText("2026-07").closest("tr");
+    expect(linha.cells[4].textContent).toMatch(/633,96/);
+  });
+  it("ausência não remove bloqueio de provisão inexistente", async () => {
+    const parcela = linhaSemGuia({ valorPrevisto: null, podeBaixar: false, motivoBloqueio: "provisao_inexistente" });
+    await act(async () => { montar({ semGuia: [parcela] }); });
+    const linha = within(painelSemGuia()).getByText("2026-07").closest("tr");
+    expect(within(linha).getByText("Não informado")).toBeTruthy();
+    expect(within(linha).getByRole("button", { name: /declarar/i }).disabled).toBe(true);
+    expect(mockBaixaManual).not.toHaveBeenCalled();
   });
 });

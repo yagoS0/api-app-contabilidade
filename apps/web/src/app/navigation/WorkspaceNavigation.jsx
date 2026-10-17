@@ -1,9 +1,8 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { LogoAltan } from "../../components/ui/LogoAltan";
 
-const WorkspaceNavigation = createContext(null);
-export const useWorkspaceNavigation = () => useContext(WorkspaceNavigation);
+import { WorkspaceNavigation, useWorkspaceNavigation } from "./WorkspaceNavigation.shared";
 
 export function WorkspaceHomeLink() {
   const navigation = useWorkspaceNavigation();

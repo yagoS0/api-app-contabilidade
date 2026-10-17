@@ -24,6 +24,7 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const tx = {
+    appSetting: { findUnique: jest.fn(async () => null) },
     accountingEntry: {
       create: jest.fn(async () => ({ id: "espelho1", historico: "ESTORNO x", competencia: "2026-09" })),
       delete: jest.fn(async () => ({})),
@@ -458,10 +459,13 @@ describe("DELETE /entries/:entryId", () => {
 
   it("lançamento comum em mês aberto segue apagando direto", async () => {
     prisma.accountingEntry.findFirst.mockResolvedValue(DESPESA);
+    __tx.accountingEntry.findFirst.mockResolvedValue(DESPESA);
     const res = await request(makeApp()).delete("/firm/companies/p1/entries/x1");
     expect(res.status).toBe(200);
-    expect(prisma.accountingEntry.delete).toHaveBeenCalledWith({ where: { id: "x1" } });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(__tx.accountingEntry.delete).toHaveBeenCalledWith({ where: { id: "x1" } });
+    // R26: exclusão e auditoria agora compartilham a mesma transação.
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+    expect(prisma.accountingEntry.delete).not.toHaveBeenCalled();
   });
 
   it("⚠ mês fechado bloqueia o DELETE de QUALQUER tipo — não só de baixa, e é decisão do dono", async () => {

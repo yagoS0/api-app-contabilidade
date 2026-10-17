@@ -13,7 +13,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
-import { FioDaConversa, NomeDaPessoa, campo } from "./FioDaConversa";
+import { FioDaConversa, NomeDaPessoa } from './FioDaConversa';
+import { campo } from './FioDaConversa.shared.js';
 import { AcoesRapidas } from "./AcoesRapidas";
 import { WhatsappIcon, DetalhesConversa } from "./ConversaVisual";
 import { identidadeDaConversa, ordenarConversas } from "../lib/conversasTela";
@@ -21,7 +22,7 @@ import { ESCOLHA_DO_FIO, FRASE_SEM_FIO, escolhaDoFio } from "../lib/fiosDaEmpres
 
 import { Button } from "../../../components/ui/Button";
 import { chaveDoInterlocutor, podeAtendimentoComercial } from "../lib/identidadeAtendimento";
-import { AtualizacaoAtendimento } from "./AtendimentoComercial";
+import { AtualizacaoAtendimento } from './AtendimentoComercial.shared.js';
 import { FormOnboarding } from "./FormOnboarding";
 import { useCanalAtendimento, leituraDoCaso } from "../hooks/useCanalAtendimento";
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
@@ -47,14 +48,16 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
   // `aberta` não muda e o efeito rodaria de novo para sempre — o mesmo id não é tentado duas vezes.
   const tentado = useRef(null);
   const abrir = hook.abrir;
+  const fioId = fio?.id;
+  const interlocutorDoFio = chaveDoInterlocutor(fio);
   useEffect(() => { setEscolhido(null); tentado.current = null; }, [api, companyId]);
   useEffect(() => {
     // A lista pode mudar de ordem sem trocar o destinatário ou descartar o rascunho.
-    if (fio?.id && escolhido !== chaveDoInterlocutor(fio)) setEscolhido(chaveDoInterlocutor(fio));
-    if (!fio?.id || aberto || tentado.current === fio.id) return;
-    tentado.current = fio.id;
-    abrir(fio.id);
-  }, [fio?.id, escolhido, aberto, abrir]);
+    if (fioId && escolhido !== interlocutorDoFio) setEscolhido(interlocutorDoFio);
+    if (!fioId || aberto || tentado.current === fioId) return;
+    tentado.current = fioId;
+    abrir(fioId);
+  }, [fioId, interlocutorDoFio, escolhido, aberto, abrir]);
 
   return (
     <section data-testid="chat-da-empresa" className="wa-company-chat">

@@ -9,7 +9,8 @@
 // leria o número achando que está conferido. É a mesma disciplina da autoverificação do comprovante
 // de arrecadação — só mostra quando fecha.
 
-import { parseValorBR, totalDoBloco } from "../SitfisRelatorioTabela";
+
+import { parseValorBR, totalDoBloco } from "../SitfisRelatorioTabela.shared.js";
 
 const COL = ["Receita", "Sdo. Dev. Cons."];
 const reg = (...valores) => valores.map((v) => ({ "Receita": "x", "Sdo. Dev. Cons.": v }));

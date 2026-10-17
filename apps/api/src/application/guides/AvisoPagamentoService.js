@@ -1,3 +1,4 @@
+import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { faseAvisoGuia, calendarioAvisosGuia } from './calendarioAvisosGuia.js';
@@ -95,7 +96,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     let iniciou = false;
     const conferir = async () => {
       await assertActive(); const atual = await carregar();
-      if ((atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
+      if (versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
         || String(atual.g.vencimento) !== String(g.vencimento) || atual.fase !== fase) throw erro('GUIA_ALTERADA', 'A guia mudou durante a preparação do aviso.');
       const cadastro = await transporte.destinatarios(companyId);
       const contatoAtual = cadastro.telefones.find(c => c.id === target.contato.id && c.telefoneE164 === target.destino);
@@ -107,7 +108,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
       // Transporte repete as guardas imediatamente antes da rede; a reserva nunca é reenviada após timeout.
       const checarTransporte = async () => { await conferir(); iniciou = true; };
       const botaoId = 'altan.payment.confirm.' + randomUUID();
-      const token = { companyId, guideId: g.id, competencia: g.competencia || null, hash: g.hash || null, contatoId: target.contato.id, telefone: target.destino, expiraEm: new Date(agora.getTime()+7*86400000).toISOString() };
+      const token = { versaoPagamento: versaoPagamentoGuia(g), companyId, guideId: g.id, competencia: g.competencia || null, hash: g.hash || null, contatoId: target.contato.id, telefone: target.destino, expiraEm: new Date(agora.getTime()+7*86400000).toISOString() };
       await db.appSetting.create({ data: { key: botaoId, value: token } });
       const botoesAcoes = [];
       for (const acao of acoes) {

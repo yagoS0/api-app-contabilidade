@@ -551,7 +551,6 @@ export function CompanyGuidesTable({
   // `ingest`, que é quem vincula a guia à prestação).
   parcelamentos,
   // Leva à criação do contrato (o wizard, na aba Parcelamentos) a partir do "＋ Criar novo…".
-  onCriarParcelamento,
   // Sugestão de contas nos campos D/C — mesmo autocomplete usado em Lançamentos, Circular e OFX.
   accounts = [],
   onSearchHistoricos,
@@ -1477,9 +1476,9 @@ export function CompanyGuidesTable({
                         aria-label={`Selecionar guia ${rotuloTipoGuia(guide)} ${guide.competencia}`}
                       />
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={tituloTipoGuia(guide)}>
+                    <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={`${tituloTipoGuia(guide)} · ${status.label}`}>
                       <span className="guides-grid__name">{rotuloTipoGuia(guide)}</span>
-                      <span className={`guides-grid__processing guides-grid__tone--${status.tone}`} title="Processamento do documento">{status.label}</span>
+                      {guide.status !== 'PROCESSED' && <span className={`guides-grid__processing guides-grid__tone--${status.tone}`} title="Processamento do documento">{status.label}</span>}
                     </span>
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell" data-label="Competência">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell" data-label="Valor">
@@ -1493,10 +1492,10 @@ export function CompanyGuidesTable({
                           SERPRO" sobre um documento que nunca foi recalculado. */}
                       {guide.valorRecalculado != null && (
                         <span
-                          style={{ marginLeft: 6, fontSize: "0.7rem", color: "#92400e", fontWeight: 700 }}
+                          style={{ display: 'block', fontSize: "0.75rem", color: "var(--state-warn)", fontWeight: 500 }}
                           title={`Guia recalculada pelo SERPRO. Valor do extrato (apuração): ${fmtMoney(guide.valor)}. Valor atual da guia: ${fmtMoney(guide.valorRecalculado)}.`}
                         >
-                          ↻ {fmtMoney(guide.valorRecalculado)}
+                          Recalculada {fmtMoney(guide.valorRecalculado)}
                         </span>
                       )}
                     </span>

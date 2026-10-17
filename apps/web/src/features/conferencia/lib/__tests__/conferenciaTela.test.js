@@ -427,7 +427,7 @@ describe("⚠ o tom vira `variant` do Button — num mapa nomeado, não numa tra
 
 describe("⚠⚠ O CASAMENTO — o sistema NUNCA escolhe entre notas", () => {
   const {
-    SEM_CASAMENTO, leituraDoCasamento, podeCasar, podeAbsorver, fraseDaDivergencia, ordenarCasamentos,
+    SEM_CASAMENTO, leituraDoCasamento, podeCasar, podeAbsorver, ordenarCasamentos,
   } = require("../conferenciaTela.js");
 
   const comSugestao = { debito: { id: "o-1" }, sugestao: { nota: { id: "n-1" } }, candidatos: [{}], motivo: null };

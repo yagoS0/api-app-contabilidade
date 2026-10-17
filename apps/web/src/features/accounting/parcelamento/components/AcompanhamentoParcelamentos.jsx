@@ -1,3 +1,4 @@
+import { filtrarAcompanhamento } from "./AcompanhamentoParcelamentos.shared.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { Modal } from "../../../../components/ui/Modal";
@@ -11,9 +12,7 @@ const money = (n) => n == null || n === "" ? "Valor não informado" : Number(n).
 const dateTime = (v) => v && !Number.isNaN(new Date(v).getTime()) ? new Date(v).toLocaleString("pt-BR") : "Ainda não consultado";
 const labels = { IDENTIFICAR: "Identificação pendente", CONFERIR_PARCELA: "Conferência pendente", CONFERIR_DOCUMENTO: "Documento a conferir", CONSULTA_FALHOU: "Consulta não concluída", OBTER_GUIA: "Guia pendente", ENVIAR: "Pronta para enviar", CONSULTAR_PAGAMENTO: "Pagamento a confirmar", CONTABILIZAR: "Pagamento confirmado · falta contabilizar", DIVERGENCIA: "Conferir divergência", RESOLVIDA: "Concluída" };
 
-export function filtrarAcompanhamento(itens, filtro, mes) {
-  return (itens || []).filter((i) => filtro === "todos" || (filtro === "anteriores" ? i.anterior : filtro === "mes" ? (i.vencimento?.slice(0, 7) || i.referencia) === mes || (!i.referencia && !i.vencimento) : i.estado !== "RESOLVIDA"));
-}
+
 
 function CadastroFiscal({ api, companyId, contrato = null, onClose, onSaved }) {
   const [form, setForm] = useState({ tipo: contrato?.tipo || "PARCSN", numeroParcelamento: contrato?.numeroParcelamento || "", label: contrato?.label || "", formaPagamento: contrato?.formaPagamento || "" });

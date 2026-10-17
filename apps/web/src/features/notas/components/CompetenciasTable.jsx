@@ -1,5 +1,6 @@
 import { Button } from "../../../components/ui/Button";
-import { PANEL, StateBadge, fmtMoney } from "./notasStyles";
+import { StateBadge } from "./notasStyles";
+import { PANEL, fmtMoney } from "./notasStyles.shared.js";
 
 const MES_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 

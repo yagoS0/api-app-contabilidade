@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { FormularioPublico } from '../../pages/FormularioPublico';
-import { formatarValor } from '../PassoRevisao';
+import { formatarValor } from '../PassoRevisao.shared.js';
 import { validarDadosOnboarding, reconciliarDados, proximaPerguntaOnboarding } from '@contabilidade/shared/onboarding-dados';
 
 function iniciar(dados = {}, passo = 'situacao', origem = 'TRANSFERENCIA') {

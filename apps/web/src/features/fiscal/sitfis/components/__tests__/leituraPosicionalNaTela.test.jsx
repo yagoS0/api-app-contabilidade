@@ -15,7 +15,8 @@
 // para sempre. (`3551-IRPJ` e `8109-02 - PIS` são códigos de receita, tabela pública.)
 
 import { render, screen } from "@testing-library/react";
-import { SitfisRelatorioTabela, anotacoesComRotulo } from "../SitfisRelatorioTabela.jsx";
+import { SitfisRelatorioTabela } from "../SitfisRelatorioTabela.jsx";
+import { anotacoesComRotulo } from "../SitfisRelatorioTabela.shared.js";
 
 const COLUNAS_SIDA = ["Inscrição", "Receita", "Inscrito em", "Ajuizado em", "Processo", "Tipo de Devedor"];
 

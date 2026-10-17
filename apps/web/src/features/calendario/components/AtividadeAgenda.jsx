@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { corAtividade, dataBR, horarioAtividade } from '../lib/agendaWorkspace';
-import { empresaConcluida, textoAlertaTarefa } from './PainelTarefaCalendario';
+import { empresaConcluida, textoAlertaTarefa } from './PainelTarefaCalendario.shared.js';
 
 const ICONE = <svg aria-hidden="true" width="12" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
 
