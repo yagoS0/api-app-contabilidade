@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { confirmarPagamentoWhatsapp, chaveFluxoPagamento } from '../src/application/guides/ConfirmarPagamentoWhatsappService.js';
+import { PREFIXO_CONFIRMACAO, PREFIXO_ESTADO, versaoPagamentoGuia } from '../src/application/guides/ConfirmacaoPagamentoClienteService.js';
 
 const pos = process.argv.indexOf('--url');
 const url = new URL(pos >= 0 ? process.argv[pos + 1] : 'invalid:');
@@ -20,8 +21,9 @@ const expiraEm = new Date('2026-10-01T12:00:00Z');
 const companyIds = [], guideIds = [], conversationIds = [], settingKeys = new Set();
 let checks = 0;
 const ok = message => console.log(`OK ${++checks}: ${message}`);
+const prefixosContabeis = companyId => [PREFIXO_CONFIRMACAO, PREFIXO_ESTADO, 'contabil:cliente:evento:'].map(p => ({ key: { startsWith: `${p}${companyId}:` } }));
 
-async function fixture() {
+async function fixture({ tokenLegado = false } = {}) {
   const companyId = prefix + '-' + companyIds.length;
   await client.portalClient.create({ data: { id: companyId, cnpj: companyId, razao: 'Empresa sintética descartável' } });
   companyIds.push(companyId);
@@ -34,7 +36,7 @@ async function fixture() {
   const token = 'altan.payment.confirm.' + randomUUID();
   settingKeys.add(token);
   settingKeys.add(chaveFluxoPagamento(conversa));
-  await client.appSetting.create({ data: { key: token, value: { companyId, guideId: guia.id, contatoId: contato.id, telefone: telefoneE164, competencia: guia.competencia, hash: guia.hash, expiraEm: expiraEm.toISOString() } } });
+  await client.appSetting.create({ data: { key: token, value: { companyId, guideId: guia.id, contatoId: contato.id, telefone: telefoneE164, competencia: guia.competencia, hash: guia.hash, expiraEm: expiraEm.toISOString(), ...(tokenLegado ? {} : { versaoPagamento: versaoPagamentoGuia(guia) }) } } });
   async function message(corpo, extra = {}) {
     return client.mensagemWhatsapp.create({ data: { conversaId: conversa.id, direcao: 'in', tipo: 'text', corpo, providerMessageId: prefix + randomUUID(), ...extra } });
   }
@@ -69,14 +71,42 @@ try {
   const respostas = await Promise.all([f.run(declaracao), f.run(declaracao)]);
   assert.deepEqual(respostas[0], respostas[1]);
   assert.match(respostas[0].texto, /20\/09\/2026/);
+  assert.equal(respostas[0].confirmacao.estadoBaixa, 'PENDENTE');
+  assert.equal(respostas[0].confirmacao.motivo, 'COMPOSICAO_A_CONFERIR');
+  const chaveDeclaracao = `${PREFIXO_CONFIRMACAO}${f.companyId}:${respostas[0].confirmacaoId}`;
+  const logDeclaracao = await client.appSetting.findUniqueOrThrow({ where: { key: chaveDeclaracao } });
+  assert.equal(logDeclaracao.value.origem, 'CLIENTE');
+  assert.equal(logDeclaracao.value.canal, 'WHATSAPP');
+  assert.equal(logDeclaracao.value.eventId, declaracao.id);
+  assert.equal(logDeclaracao.value.autor.contatoId, f.contato.id);
+  assert.equal(logDeclaracao.value.guideId, f.guia.id);
+  assert.equal(logDeclaracao.value.versaoGuia, versaoPagamentoGuia(f.guia));
+  assert.equal(logDeclaracao.value.pagoEm, '2026-09-20T00:00:00.000Z');
   assert.deepEqual(await f.run(declaracao), respostas[0]);
+  assert.deepEqual(await client.appSetting.findUniqueOrThrow({ where: { key: chaveDeclaracao } }), logDeclaracao);
+  assert.equal(await client.appSetting.count({ where: { key: { startsWith: `${PREFIXO_CONFIRMACAO}${f.companyId}:` } } }), 1);
+  assert.equal(await client.accountingEntry.count({ where: { portalClientId: f.companyId, tipo: 'BAIXA' } }), 0);
   const pago = await f.read();
   assert.equal(pago.paymentStatus, 'PAID');
   assert.equal(pago.paymentStatusSource, 'CLIENTE');
   assert.equal(pago.paymentConfirmedAt.toISOString(), '2026-09-20T00:00:00.000Z');
   assert.equal(pago.clienteConfirmouEm.toISOString(), agora.toISOString());
   assert.equal(pago.baixada, false);
-  ok('data declarada difere do clique; repetição concorrente não duplica nem gera baixa');
+  ok('R25: declaração e log preservados no replay; falta de composição mantém baixa pendente sem lançamento');
+
+  const legado = await fixture({ tokenLegado: true });
+  const guiaLegadaAntes = await legado.read();
+  const tokenLegadoAntes = await client.appSetting.findUniqueOrThrow({ where: { key: legado.token } });
+  const cliqueLegado = await legado.message('', { tipo: 'interactive' });
+  assert.match((await legado.run(cliqueLegado, legado.token)).texto, /Não foi possível confirmar por este botão/);
+  assert.deepEqual(await legado.read(), guiaLegadaAntes);
+  assert.deepEqual(await client.appSetting.findUniqueOrThrow({ where: { key: legado.token } }), tokenLegadoAntes);
+  assert.equal(await client.appSetting.count({ where: { OR: [
+    ...prefixosContabeis(legado.companyId),
+    { key: chaveFluxoPagamento(legado.conversa) }, { key: 'pagamento_resposta:' + cliqueLegado.id },
+  ] } }), 0);
+  assert.equal(await client.accountingEntry.count({ where: { portalClientId: legado.companyId } }), 0);
+  ok('token legado sem versão é recusado sem confirmação, fluxo, recibo ou efeito contábil');
 
   const media = await f.message('', { tipo: 'document', midiaProvedorId: 'sintetico' });
   const arquivo = await client.arquivoWhatsapp.create({ data: { mensagemId: media.id, portalClientId: f.companyId, midiaProvedorId: 'sintetico', mimeType: 'application/pdf', expiraEm, conteudo: Buffer.from('comprovante sintético sem download') } });
@@ -108,6 +138,7 @@ try {
   ok('cancelamento e acesso revogado não alteram pagamento');
   console.log(`PASS: ${checks} verificações de confirmação de guias em PostgreSQL real; zero mensagens, e-mails ou consultas externas.`);
 } finally {
+  if (companyIds.length) await client.appSetting.deleteMany({ where: { OR: companyIds.flatMap(prefixosContabeis) } });
   await client.appSetting.deleteMany({ where: { key: { in: [...settingKeys] } } });
   await client.arquivoWhatsapp.deleteMany({ where: { mensagem: { conversaId: { in: conversationIds } } } });
   await client.mensagemWhatsapp.deleteMany({ where: { conversaId: { in: conversationIds } } });

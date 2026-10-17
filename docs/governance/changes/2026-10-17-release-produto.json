@@ -20,7 +20,8 @@
     "Snapshot pré-integração: 17527 testes de produto, 16 cenários PostgreSQL descartável e 13 revisões aprovadas no run 2026-10-17T03-56-27-990Z-647f593c.",
     "Integração: 37 testes locais de governança aprovados; lint oficial do escritório em 1083 arquivos, zero erros/avisos.",
     "Revisão independente release_readiness aprovou resolução dos conflitos AGENTS/regras/useGestosAgenda e preservação de CI/runtime/calendário. CI do SHA final obrigatório antes de merge; testes anteriores não certificam integração.",
-    "Calendário da integração: 23 suítes e 144 testes aprovados localmente. Dependências reutilizadas localmente; CI fará instalação limpa no SHA final."
+    "Calendário da integração: 23 suítes e 144 testes aprovados localmente. Dependências reutilizadas localmente; CI fará instalação limpa no SHA final.",
+    "CI inicial reteve publicação: fixture verify-guia-pagamento-whatsapp-postgres omitida versaoPagamento. Corrigida somente fixture, preservadas guardas produtivas; sete verificações passaram em PostgreSQL novo com histórico completo de migrations (payment-pg-1792241675486), incluindo legado recusado e log imutável. Revisão independente integration_review aprovada; CI final novamente obrigatório."
   ],
   "rollback": "Reverter via PR o commit de integração, preservando registros de declaração/baixa/auditoria; sem apagar dados. Railway deve regressar API/escritório/portal em conjunto ao SHA anterior 87179718934652627f652ab0ba10dd850feac066. Não há migração deste incremento.",
   "humanDecisions": [
