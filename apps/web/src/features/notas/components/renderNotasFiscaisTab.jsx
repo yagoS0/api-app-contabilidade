@@ -43,7 +43,8 @@ import { PendenciasPeriodoBanner } from "./PendenciasPeriodoBanner";
 
 import { useEffect, useState } from "react";
 import { FerramentasNfse } from './FerramentasNfse';
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";

@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { PainelArquivosWhatsapp, arquivoDoConteudo } from "../PainelArquivosWhatsapp";
+import { PainelArquivosWhatsapp } from "../PainelArquivosWhatsapp";
+import { arquivoDoConteudo } from "../PainelArquivosWhatsapp.shared.js";
 const arquivo={id:"a1",nomeArquivo:"extrato.ofx",mimeType:"application/x-ofx",estado:"DISPONIVEL",podeAbrir:true,podeImportarOfx:true,recebidoEm:"2026-09-07",expiraEm:"2026-12-06"};
 const contas=[{codigo:"111",nome:"Caixa",tipo:"ATIVO"},{codigo:"412",nome:"Tarifas",tipo:"DESPESA"}];
 const criarApi=(over={})=>({

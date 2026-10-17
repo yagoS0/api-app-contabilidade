@@ -73,7 +73,8 @@
     },
     "data": {
       "prefixes": [
-        "apps/api/prisma/"
+        "apps/api/prisma/",
+        "scripts/run-revisao-produto-postgres.mjs"
       ],
       "reviewers": [
         "altan_data_reviewer"
@@ -248,7 +249,11 @@
       "prefixes": [
         "docs/",
         "README.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "DESIGN_SYSTEM.md",
+        "LEIA_ME_PRIMEIRO.md",
+        "PLANO_MESTRE_CODEX.md",
+        "UX_RULES.md"
       ],
       "reviewers": [
         "altan_domain_reviewer"

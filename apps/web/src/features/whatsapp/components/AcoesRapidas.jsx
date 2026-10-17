@@ -11,7 +11,7 @@ import { useRascunhoServidor } from "../hooks/useRascunhoServidor";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CnpjDaConversa } from "./ConversaVisual";
-import { campo } from "./FioDaConversa";
+import { campo } from './FioDaConversa.shared.js';
 import { ACAO, acoesDisponiveis, rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { fmtDataHora, identidadeDaConversa } from "../lib/conversasTela";
 import { desfechoWhatsapp, resumirWhatsapp } from "../../guides/lib/canalDeEnvio";
@@ -54,12 +54,12 @@ function AcoesRapidasContexto({
   const empresa = conversa.empresas?.find(e => e.id === companyId) || (conversa.portalClientId === companyId ? conversa.empresa || { id: companyId } : null);
   const versao = useRef(0);
   const envioEmCurso = useRef(null);
-  useEffect(() => {
+  useEffect(() => { const versaoDaExecucao = versao;
     versao.current++;
     envioEmCurso.current = null;
     setAberta(null); setItens([]); setEscolhido(""); setDestinatarios([]);
     setRecusa(null); setResultado(null); setReenvio(false); setCarregando(false); setOcupado(false);
-    return () => { versao.current++; };
+    return () => { versaoDaExecucao.current++; };
   }, [companyId, conversa.id]);
   const recebem = r => {
     if (!Array.isArray(r?.contatos)) throw new Error("Não foi possível conferir os destinatários.");

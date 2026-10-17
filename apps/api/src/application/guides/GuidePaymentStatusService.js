@@ -1,3 +1,4 @@
+import { confirmarPagamentoCliente } from './ConfirmacaoPagamentoClienteService.js';
 import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { SELECT_PARCELAMENTO_DA_GUIA } from "./guideContract.js";
@@ -79,47 +80,10 @@ export async function markGuidePaidManual({ guideId, userId, pagoEm = null, comp
   return updateGuidePaymentStatus(guideId, data);
 }
 
-/**
- * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU (decisão do dono, 27/08/2026).
- *
- * *"O cliente confirmar deve ser como a confirmação da consulta de pagamento"* — ou seja: marca a
- * guia e **para aí**. Quem faz a baixa contábil continua sendo o contador, pela Circular. A guarda
- * que garante isso é `pagamentoAlcancaOContabil`, em `GuideToProvisionService`.
- *
- * ⚠⚠ A AFIRMAÇÃO DO CLIENTE VAI EM COLUNAS PRÓPRIAS (`clienteConfirmouEm` /
- * `clienteConfirmouPorUserId`), e não nas de confirmação manual. Quando o SERPRO depois localizar o
- * comprovante, `markGuidePaidBySerpro` **zera** `paymentConfirmedAt`/`paymentConfirmedByUserId` —
- * corretamente, porque lá elas descrevem uma confirmação MANUAL que deixou de valer. Guardar a
- * afirmação do cliente ali a apagaria, e com ela o registro de quem disse o quê.
- *
- * ⚠ SEM COMPROVANTE (decisão do dono): o cliente confirma sem anexar. `comprovantePdfFileId` NÃO é
- * tocado — a prova continua vindo do SERPRO quando a consulta de pagamento rodar.
- */
-/**
- * ⚠⚠ DOIS FATOS, DUAS DATAS — e eles estavam colapsados num só até 30/08/2026.
- *
- *  - `clienteConfirmouEm` é **quando ele clicou**. Continua sendo `agora`, e está certo.
- *  - `paymentConfirmedAt` é **quando o dinheiro saiu**, e só o cliente sabe. Vem por `pagoEm`.
- *
- * ⚠ O comentário antigo justificava o carimbo assim: *"deixá-lo nulo faria a linha aparecer paga
- * sem data"*. Era verdade e era o defeito — preencher um campo para ele não ficar vazio é fabricar
- * um fato, e este aqui decide em que dia o dinheiro aparece no fluxo do cliente.
- *
- * @param {{guideId: string, userId: string, pagoEm: Date}} p
- */
-export async function markGuidePaidByCliente({ guideId, userId, pagoEm }) {
-  const agora = new Date();
-  return updateGuidePaymentStatus(guideId, {
-    paymentStatus: "PAID",
-    paymentStatusSource: "CLIENTE",
-    clienteConfirmouEm: agora,
-    clienteConfirmouPorUserId: userId ? String(userId) : null,
-    // ⚠⚠ A DATA DO PAGAMENTO É A INFORMADA, NUNCA `agora`. O que distingue esta confirmação de
-    // uma prova continua sendo a PROCEDÊNCIA (`paymentStatusSource: "CLIENTE"`), e não a data.
-    paymentConfirmedAt: pagoEm instanceof Date ? pagoEm : null,
-    paymentConfirmedByUserId: userId ? String(userId) : null,
-    serproLastCheckResult: "CLIENTE_CONFIRMOU",
-  });
+// R25: o relato e a baixa real ficam vinculados; PAID sozinho não converte legados.
+export async function markGuidePaidByCliente({ guideId, companyId, userId, pagoEm, expectedVersion, eventId, reconfirmaConfirmacaoId }) {
+  return confirmarPagamentoCliente({ guideId, companyId, pagoEm, expectedVersion, reconfirmaConfirmacaoId,
+    eventId, canal: 'PORTAL', autor: { userId } }, prisma);
 }
 
 export async function markGuidePaidBySerpro({ guideId }) {

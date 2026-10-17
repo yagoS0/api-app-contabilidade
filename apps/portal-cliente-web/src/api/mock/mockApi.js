@@ -2033,7 +2033,7 @@ export function createMockApi() {
       const total = filtradas.length;
       const inicio = (pageNum - 1) * take;
       return {
-        data: filtradas.slice(inicio, inicio + take).map(({ _clientId, ...rest }) => rest),
+        data: filtradas.slice(inicio, inicio + take).map(({ _clientId, ...rest }) => ({ ...rest, versaoPagamento: `mock:${rest.guideId}:${rest.valor}:${rest.vencimento}` })),
         page: pageNum,
         limit: take,
         total,
@@ -2102,15 +2102,19 @@ export function createMockApi() {
 
     /**
      * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU — e o mock grava `paymentStatusSource: "CLIENTE"`, que é o
-     * valor que faz a Circular do CONTADOR mostrar "⏳ cliente" e o razão NÃO ser marcado.
+     * valor que preserva a origem da declaração. R25 distingue baixa CONCLUIDA de PENDENTE.
      * Gravar "MANUAL" aqui esconderia justamente a distinção que a entrega existe para criar.
      */
-    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm } = {}) {
+    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm, versaoPagamento, reconfirmaConfirmacaoId } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const guia = estado.guias.find((g) => g._clientId === id && g.guideId === String(guideId));
       if (!guia || !guia.liberadaCliente) throw new ApiError(404, "not_found");
-      if (guia.paymentStatus === "PAID") {
+      if (versaoPagamento !== `mock:${guia.guideId}:${guia.valor}:${guia.vencimento}`) throw new ApiError(409, "GUIA_ALTERADA", "Atualize a guia antes de confirmar.");
+      const reconfirmacao = guia.reconfirmacaoPagamento;
+      const reconfirmando = Boolean(reconfirmacao && reconfirmacao.confirmacaoAnteriorId === reconfirmaConfirmacaoId && reconfirmacao.versaoPagamento === versaoPagamento && guia.confirmacaoCliente?.estadoBaixa === "PENDENTE");
+      if (reconfirmaConfirmacaoId && !reconfirmando) throw new ApiError(409, "GUIA_ALTERADA", "Esta guia não está disponível para reconfirmação.");
+      if (guia.paymentStatus === "PAID" && !reconfirmando) {
         throw new ApiError(409, "guia_ja_confirmada", "Esta guia já consta como paga.", {
           message: "Esta guia já consta como paga.",
         });
@@ -2154,11 +2158,15 @@ export function createMockApi() {
       guia.vencida = false;
       guia.canRecalculate = false;
       guia.avisoDeRecalculo = null;
+      const confirmacao = { id: `mock-confirmacao-${guideId}-${Date.now()}`, guideId, companyId, origem: "CLIENTE", canal: "PORTAL", confirmadoEm: agora, pagoEm: bruto, competenciaPagamento: bruto.slice(0, 7), estadoBaixa: "PENDENTE", motivo: "Demonstração: confira a conta para baixa em Lançamentos.", entryIds: [], versaoGuia: versaoPagamento };
+      if (reconfirmando) guia.historicoConfirmacoes = [...(guia.historicoConfirmacoes || []), { ...guia.confirmacaoCliente, estadoBaixa: "SUBSTITUIDA" }];
+      guia.confirmacaoCliente = confirmacao;
+      guia.reconfirmacaoPagamento = null;
       return {
         ok: true,
+        confirmacao,
         guide: { ...guia },
-        aviso: "Registramos que você pagou. Seu contador vai conferir o comprovante na Receita e "
-          + "lançar a baixa na contabilidade.",
+        aviso: "Sua confirmação foi registrada. A baixa está pendente de ajuste pelo contador. O registro preserva sua declaração, não um comprovante bancário.",
       };
     },
 

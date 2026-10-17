@@ -1,3 +1,4 @@
+import { campoComercial } from './FluxoComercial.shared.js';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
@@ -6,19 +7,8 @@ import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { AutorizacaoDoLead } from "./AutorizacaoDoLead";
 import { AnaliseDoLead } from "./AnaliseDoLead";
 import { FormularioContrato } from "./FormularioContrato";
-export const campoComercial = {
-  width: "100%",
-  padding: 8,
-  marginBlock: 5,
-  background: "var(--bg-subtle)",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 5
-};
-export const reais = c => c == null ? "A confirmar" : (c / 100).toLocaleString("pt-BR", {
-  style: "currency",
-  currency: "BRL"
-});
+
+
 import { ApresentacaoProposta as OpcoesProposta } from "./ApresentacaoProposta";
 export { ApresentacaoProposta as OpcoesProposta } from "./ApresentacaoProposta";
 
@@ -47,10 +37,10 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
       if (vivo.current && n === pedido.current) { setEstado(e); setRecursos(r.recursos || []); }
     } finally { if (n === pedido.current) carregando.current = false; }
   }, [api, base]);
-  useEffect(() => {
+  useEffect(() => { const pedidoDaExecucao = pedido;
     vivo.current = true; setEstado(null); setPassoEscolhido(null);
     carregar().catch(e => { if (vivo.current) setErro(e.message); });
-    return () => { vivo.current = false; pedido.current++; };
+    return () => { vivo.current = false; pedidoDaExecucao.current++; };
   }, [carregar]);
   useEffect(() => {
     if (revisao) carregar().catch(e => { if (vivo.current) setErro(e.message); });

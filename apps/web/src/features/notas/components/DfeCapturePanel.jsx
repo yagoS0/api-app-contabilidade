@@ -15,7 +15,8 @@
 // ela é da SEFAZ e quem a consome é o NOSSO worker. Sem dizer isso, o contador acha que a culpa é
 // dele — ou que o sistema está quebrado.
 
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { Button } from "../../../components/ui/Button";
 
 function horaCurta(value) {

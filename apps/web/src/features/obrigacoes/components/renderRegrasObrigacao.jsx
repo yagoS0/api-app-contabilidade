@@ -130,7 +130,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   // (`sincronizarOcorrencias`); a data que passou é dita à parte, como informação, não como prazo.
   const previaDatas = useMemo(
     () => calcularPreviaVencimentos(form, new Date()),
-    [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil],
+    [form],
   );
 
   const podeAvancar = passo === 0 ? Boolean(form.nome.trim()) : Number.isInteger(Number(form.diasPreparacao)) && Number(form.diasPreparacao) >= 0 && Number(form.diasPreparacao) <= 365;

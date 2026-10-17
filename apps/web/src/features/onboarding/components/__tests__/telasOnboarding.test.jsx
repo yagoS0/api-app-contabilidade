@@ -6,7 +6,8 @@
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ChecklistEtapas } from "../ChecklistEtapas";
-import { SeloDeclarado, textoDoSelo } from "../SeloDeclarado";
+import { SeloDeclarado } from '../SeloDeclarado';
+import { textoDoSelo } from '../SeloDeclarado.shared.js';
 import { FichaDeclarada } from "../PassoRevisao";
 import { OnboardingWizardPage } from "../../pages/renderOnboardingWizardPage";
 

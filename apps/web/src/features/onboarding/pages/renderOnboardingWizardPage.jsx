@@ -35,7 +35,7 @@ const ROTULO_SALVAMENTO = {
 export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetalhe, embedded = false, onRegistrarSaida }) {
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const rascunho = useOnboardingRascunho({ api, onboardingId });
-  const { onboarding, dados, estadoSalvamento } = rascunho;
+  const { onboarding, dados, estadoSalvamento, salvarAgora } = rascunho;
   const origem = onboarding?.origem || null;
 
   const [passo, setPasso] = useState("origem");
@@ -44,9 +44,9 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const [finalizando, setFinalizando] = useState(false);
   const [navegando, setNavegando] = useState(false);
   useEffect(() => {
-    onRegistrarSaida?.(() => rascunho.salvarAgora({ ultimoPasso: passo }));
+    onRegistrarSaida?.(() => salvarAgora({ ultimoPasso: passo }));
     return () => onRegistrarSaida?.(null);
-  }, [onRegistrarSaida, rascunho.salvarAgora, passo]);
+  }, [onRegistrarSaida, salvarAgora, passo]);
 
   // Reabre onde o preenchimento parou — é para isso que `ultimoPasso` existe.
   useEffect(() => {

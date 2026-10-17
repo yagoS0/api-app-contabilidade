@@ -5,7 +5,7 @@ import '../index.css';
 import '../App.css';
 const vazio = () => {};
 const resumo = { ano: 2026, totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0, countNfe: 0, countNfse: 0, countCanceladas: 0 } };
-function Previa() {
+export function Previa() {
   const [filtros, setFiltros] = useState({ papel: 'EMIT', type: 'NFSE', competencia: '2026-09', limit: 100, offset: 0 });
   return <main>
     <header style={{ width: 'var(--content-wide)', margin: '24px auto 0' }}>

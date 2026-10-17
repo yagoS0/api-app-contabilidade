@@ -57,7 +57,7 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => {
 jest.mock("../../fechamentoContabil.js", () => ({ isMonthClosed: jest.fn(async () => false) }));
 
 import { prisma, __tx, __criados } from "../../../../infrastructure/db/prisma.js";
-import { gerarPagamentoParcelaFromGuide } from "../ParcelamentoV2Service.js";
+import { gerarPagamentoParcelaFromGuide, gerarPagamentoParcelaFromGuideTx } from "../ParcelamentoV2Service.js";
 
 const GUIA = {
   id: "g1",
@@ -243,4 +243,36 @@ describe("a chave composta separa o lote legítimo e repete na duplicada", () =>
     const segundoLote = __criados.slice(primeiroLote.length).map(chaveDoIndice);
     expect(segundoLote).toEqual(primeiroLote);
   });
+});
+
+function clientTx() {
+  return { ...prisma, ...__tx, guide: { ...prisma.guide, ...__tx.guide }, accountingEntry: { ...prisma.accountingEntry, ...__tx.accountingEntry } };
+}
+test('R25 usa transação única e conserva componentes da parcela', async () => {
+  __tx.mapaContaTributo.findFirst.mockImplementation(async ({ where }) => ({ contaId: where.tipoLinha === 'CAIXA' ? '5' : '123' }));
+  const r = await gerarPagamentoParcelaFromGuideTx(clientTx(), { portalClientId: 'p1', guideId: 'g1', dataPagamento: new Date('2026-07-18') });
+  expect(r.ok).toBe(true); expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(__criados.map(e => e.tipoLinha)).toEqual(expect.arrayContaining(['PARC', 'JUROS', 'MULTA', 'CAIXA']));
+});
+test('R25 propaga conflito de prestação para desfazer reserva da guia na transação externa', async () => {
+  __tx.parcela.findFirst.mockResolvedValue({ id: 'prestacao1' }); __tx.parcela.updateMany.mockResolvedValue({ count: 0 });
+  await expect(gerarPagamentoParcelaFromGuideTx(clientTx(), { portalClientId: 'p1', guideId: 'g1', dataPagamento: new Date('2026-07-18') }))
+    .rejects.toMatchObject({ code: 'PARCELA_BAIXA_CONCORRENTE' });
+  expect(__criados).toHaveLength(0); expect(prisma.$transaction).not.toHaveBeenCalled();
+});
+
+test.each([
+ [100,0,0,100,false], [115,0,0,115,false], [100,10,5,115,true],
+])('R25 confronta adaptador REAL com documento: %s/%s/%s/%s',async(principal,juros,multa,total,ok)=>{
+ const { executarBaixaClienteTx }=await import('../../BaixaPagamentoClienteService.js');
+ const guia={...GUIA,portalClientId:'p1',paymentStatus:'PAID',tipo:'SIMPLES',valor:115,baixada:false,extracted:{fields:{principal:100,juros:10,multa:5,total:115}}};
+ prisma.guide.findFirst.mockResolvedValue(guia);prisma.tributoParcela.findMany.mockResolvedValue([{codigoTributo:'DAS',principal,juros,multa,total}]);
+ __tx.mapaContaTributo.findFirst.mockImplementation(async({where})=>({contaId:where.tipoLinha==='CAIXA'?'5':'123'}));
+ const client=clientTx();client.companyMonthlyCircular={findUnique:jest.fn(async()=>null)};client.appSetting={findUnique:jest.fn(async()=>null)};
+ client.accountingEntry.findMany=jest.fn(async()=>__criados.map(e=>({...e,lines:e.lines})));
+ client.chartOfAccount={findMany:jest.fn(async({where})=>where.codigo.in.map(codigo=>({codigo,analitica:true,portalClientId:'p1'})))};
+ const call=()=>executarBaixaClienteTx(client,{guide:guia,confirmacao:{companyId:'p1',pagoEm:'2026-07-18T00:00:00.000Z',autor:{userId:'cliente'}},userId:'cliente'});
+ if(ok){expect((await call()).total).toBe(115);expect(__criados.every(e=>e.origem==='CLIENTE')).toBe(true);}
+ else await expect(call()).rejects.toMatchObject({pendencia:'COMPOSICAO_A_CONFERIR'});
+ expect(prisma.$transaction).not.toHaveBeenCalled();
 });

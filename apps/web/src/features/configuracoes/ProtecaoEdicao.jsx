@@ -1,8 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { ContextoEdicao } from './ProtecaoEdicao.shared.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 
-const ContextoEdicao = createContext(null);
 
 // Cada editor informa sua própria diferença em relação ao último valor salvo.
 // Abrir uma tela ou receber uma atualização da API não marca o cadastro como alterado.
@@ -50,18 +50,4 @@ export function ProtecaoEdicao({ children }) {
       <Button variant="secondary" onClick={descartar}>Descartar e sair</Button>
     </Modal>}
   </ContextoEdicao.Provider>;
-}
-
-export function useEdicaoPendente(pendente) {
-  const contexto = useContext(ContextoEdicao);
-  const id = useId();
-  const registrar = contexto?.registrar;
-  useEffect(() => {
-    registrar?.(id, Boolean(pendente));
-    return () => registrar?.(id, false);
-  }, [registrar, id, pendente]);
-}
-
-export function useConfirmarSaida() {
-  return useContext(ContextoEdicao)?.confirmarSaida || ((continuar) => continuar());
 }

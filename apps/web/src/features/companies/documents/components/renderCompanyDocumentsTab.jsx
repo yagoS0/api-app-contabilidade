@@ -76,6 +76,10 @@ export function CompanyDocumentsTab({ docs }) {
   const [erroUpload, setErroUpload] = useState(null);
   const [resumoExclusao, setResumoExclusao] = useState(null);
   const [destinatario, setDestinatario] = useState("");
+  const [busca, setBusca] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const documentosVisiveis = documentos.filter(d => (!filtroTipo || d.tipo === filtroTipo) &&
+    `${d.nome || ""} ${tipoLabels[d.tipo] || d.tipo || ""}`.toLocaleLowerCase("pt-BR").includes(busca.trim().toLocaleLowerCase("pt-BR")));
   const emailValido = validarEmail(destinatario.trim());
 
   const selecionadosDocs = documentos.filter((d) => selecionados.has(d.id));
@@ -181,7 +185,7 @@ export function CompanyDocumentsTab({ docs }) {
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Documentos</h2>
         <span role={carregando ? "status" : undefined} style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
-          {carregando ? "carregando…" : `${documentos.length} documento(s)`}
+          {carregando ? "carregando…" : erro && !documentos.length ? '—' : `${documentosVisiveis.length} documento(s)`}
         </span>
         {/* ⚠ SEMPRE no cabeçalho. Ele chegou a ser condicional (`documentos.length > 0`), com a
             segunda cópia dentro do estado vazio — e enquanto a carga estava em curso, com a lista
@@ -190,6 +194,15 @@ export function CompanyDocumentsTab({ docs }) {
           {barraDeAdicionar}
         </div>
       </div>
+
+      {documentos.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+        <input aria-label="Buscar documento" placeholder="Buscar documento" value={busca} onChange={e => setBusca(e.target.value)} style={{ ...campo, flex: "1 1 220px", width: "auto" }} />
+        <select aria-label="Tipo de documento" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ ...campo, flex: "0 1 240px", width: "auto" }}>
+          <option value="">Todos os tipos</option>
+          {[...new Set(documentos.map(d => d.tipo).filter(Boolean))].map(tipo => <option key={tipo} value={tipo}>{tipoLabels[tipo] || tipo}</option>)}
+        </select>
+        {(busca || filtroTipo) && <Button size="sm" variant="secondary" onClick={() => { setBusca(""); setFiltroTipo(""); }}>Limpar filtros</Button>}
+      </div>}
 
       {/* Ações neutras da seleção; a confirmação concentra o destaque destrutivo. */}
       {totalSelecionado > 0 && (
@@ -230,8 +243,7 @@ export function CompanyDocumentsTab({ docs }) {
           ) : null}
         >
           <span style={{ color: "var(--text)" }}>
-            {erro} Isto NÃO quer dizer que a empresa está sem documento — quer dizer que a leitura
-            não voltou.
+            {erro}
           </span>
         </Aviso>
       ) : null}
@@ -245,10 +257,8 @@ export function CompanyDocumentsTab({ docs }) {
           display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-3)",
         }}>
           <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.85rem", maxWidth: 520 }}>
-            Nenhum documento guardado. Suba o contrato social, o cartão CNPJ e as inscrições para
-            tê-los à mão quando o cliente pedir.
+            Nenhum documento guardado.
           </p>
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>{barraDeAdicionar}</div>
         </div>
       ) : erro && !documentos.length ? null : (
         <div className="table-wrap" role="region" aria-label="Documentos da empresa" tabIndex={0}>
@@ -260,12 +270,13 @@ export function CompanyDocumentsTab({ docs }) {
                 <th>Nome</th>
                 <th>Tamanho</th>
                 {temValidade ? <th>Validade</th> : null}
-                <th>Enviado em</th>
+                <th>Adicionado em</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {documentos.map((d) => (
+              {!carregando && documentos.length > 0 && documentosVisiveis.length === 0 && <tr><td colSpan={temValidade ? 7 : 6}>Nenhum documento para estes filtros.</td></tr>}
+              {documentosVisiveis.map((d) => (
                 <tr key={d.id}>
                   <td>
                     <input
@@ -279,8 +290,9 @@ export function CompanyDocumentsTab({ docs }) {
                   <td>{d.nome}</td>
                   <td style={{ color: "var(--text-muted)" }}>{fmtBytes(d.bytes)}</td>
                   {temValidade ? (
-                    <td style={{ color: d.validade ? "var(--state-warn)" : "var(--text-muted)" }}>
+                    <td style={{ color: d.validade && String(d.validade).slice(0, 10) < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) ? "var(--state-warn)" : "var(--text-muted)" }}>
                       {fmtData(d.validade)}
+                      {d.validade && String(d.validade).slice(0, 10) < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) ? ' · Vencido' : ''}
                     </td>
                   ) : null}
                   <td style={{ color: "var(--text-muted)" }}>{fmtData(d.createdAt)}</td>

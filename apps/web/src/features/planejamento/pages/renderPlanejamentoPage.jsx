@@ -46,7 +46,8 @@ import {
 import { CardRegime } from "../components/CardRegime";
 import { ComparacaoCenarios } from "../components/ComparacaoCenarios";
 import { ordenarCenarios } from "../lib/cenariosSalvos";
-import { AjustesPlanejamento, numeroInformado } from "../components/AjustesPlanejamento";
+import { AjustesPlanejamento } from "../components/AjustesPlanejamento";
+import { numeroInformado } from "../components/AjustesPlanejamento.shared.js";
 import { RealDetalhado } from "../components/RealDetalhado";
 import { ReceitasPorAtividade } from "../components/ReceitasPorAtividade";
 import { baixarPdfEstudos } from "../lib/pdfEstudos";
@@ -584,16 +585,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     atividadePresumido: atividade,
   }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, issLido.valor, atividade]);
   const procedencias = cenarioSalvo === assinaturaCenario && procedenciasSalvas ? procedenciasSalvas : procedenciasAtuais;
-  const valorImpresso = (linha) => {
-    if (linha.valor === null || linha.valor === undefined || linha.valor === "") return "—";
-    if (linha.tipo === "brl") return brl(linha.valor);
-    if (linha.tipo === "percentual") return `${(Number(linha.valor) * 100).toFixed(2).replace(".", ",")}%`;
-    if (linha.tipo === "booleano") return linha.valor ? "sim" : "não";
-    if (linha.chave === "regimeAtual") return ROTULO_REGIME[linha.valor] || String(linha.valor);
-    if (linha.chave === "atividadePresumido") return ATIVIDADES_PRESUMIDO[linha.valor]?.rotulo || String(linha.valor);
-    if (linha.chave === "anexo") return ANEXOS[linha.valor]?.nome || `Anexo ${linha.valor}`;
-    return String(linha.valor);
-  };
+
 
 
 
@@ -836,6 +828,10 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               abaixo={<>
                 {prefill.presumido?.sugestao && !categoriaConfirmada && <small style={{ color: C.muted }}>CNAE sugerido</small>}
                 {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
+                {prefill.presumido?.excecoes?.length > 0 && !categoriaConfirmada && <details style={{ color: C.alerta, fontSize: '0.8rem' }}>
+                  <summary>Conferir enquadramento</summary>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>{[...new Set(prefill.presumido.excecoes)].map(e => <li key={e}>{e}</li>)}</ul>
+                </details>}
               </>}
             >
               {(a) => (
@@ -930,7 +926,6 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             </Campo>
           </div>
 
-          {prefill.presumido?.excecoes?.length > 0 && !categoriaConfirmada && <ul style={{ color: C.alerta, fontSize: "0.8rem", margin: 0 }}>{prefill.presumido.excecoes.map(e => <li key={e}>{e}</li>)}</ul>}
           {prefill.fatorR?.divergencia && <p role="status" style={{ color: C.alerta, margin: 0 }}>{prefill.fatorR.divergencia.frase}</p>}
           {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
               está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}

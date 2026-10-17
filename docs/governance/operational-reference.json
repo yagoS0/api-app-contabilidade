@@ -2,6 +2,6 @@
   "canonical": "../altan-regras-operacionais/REGRAS_OPERACIONAIS.md",
   "repositoryFallback": "REGRAS_OPERACIONAIS.md",
   "status": "versioned-snapshot-reconciled-2026-10-16",
-  "instructions": "No workspace Altan, ler a fonte canônica e reconciliar diferenças com a cópia versionada antes de mudar comportamento. Em clones independentes, ler REGRAS_OPERACIONAIS.md versionado. Propostas V01–V08 continuam pendentes. Novas decisões atualizam referência e testes no mesmo incremento.",
-  "snapshotSha256": "81410a229eebbcc99e254be03055235fb7fe6a3f21e09dcbbcdd5baa18d05e7a"
+  "instructions": "No workspace Altan, ler a fonte canônica e reconciliar diferenças com a cópia versionada antes de mudar comportamento. Em clones independentes, ler REGRAS_OPERACIONAIS.md versionado. A seção21 aprova R25 (baixa direta após confirmação do cliente com log) e R26 (correção contábil auditada), substituindo a proposta V04 e concretizando a reabertura contábil. Demais decisões pendentes não são aprovadas por consequência. Novas decisões atualizam referência e testes no mesmo incremento.",
+  "snapshotSha256": "c24fdc32afdafd83f7ec7702ae08f21d710ad4419f43befadae5ff2641ffd96f"
 }

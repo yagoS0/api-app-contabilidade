@@ -20,7 +20,7 @@ export function useApuracao({ api, feedback, enabled = true }) {
   const [selecao, setSelecao] = useState(null);
   const [batch, setBatch] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => { vivo.current = true; return () => { vivo.current = false; pedidoAtual.current++; listaApta.current = null; }; }, []);
+  useEffect(() => { const pedidoAtualDaExecucao = pedidoAtual; vivo.current = true; return () => { vivo.current = false; pedidoAtualDaExecucao.current++; listaApta.current = null; }; }, []);
 
   function invalidar() { pedidoAtual.current++; listaApta.current = null; setSelecao(null); }
   function setCompetencia(valor) { if (valor !== competencia) { invalidar(); mudarCompetencia(valor); } }
@@ -46,7 +46,7 @@ export function useApuracao({ api, feedback, enabled = true }) {
     }
   }, [api, competencia, search, enabled, contexto]);
 
-  useEffect(() => { load(); return () => { pedidoAtual.current++; listaApta.current = null; }; }, [load]);
+  useEffect(() => { const pedidoAtualDaExecucao = pedidoAtual; load(); return () => { pedidoAtualDaExecucao.current++; listaApta.current = null; }; }, [load]);
 
   const visivel = enabled && api && lista?.contexto === contexto;
   const loading = Boolean(enabled && api && (!visivel || lista.loading));

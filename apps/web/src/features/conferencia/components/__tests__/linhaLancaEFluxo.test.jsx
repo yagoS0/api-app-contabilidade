@@ -12,7 +12,7 @@
 //   3. a linha não voltar a ter dois botões para o mesmo ato;
 //   4. o botão «Fluxo» não voltar — a regra de 01/09/2026 o tornou sem sentido.
 
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const mockGetFila = jest.fn();
@@ -419,7 +419,7 @@ describe("⚠⚠ o CRÉDITO na própria linha — o «Contas…» saiu, o campo 
 });
 
 describe("⚠⚠ o CRÉDITO no corpo do ato — `montarCorpo`", () => {
-  const { montarCorpo } = require("../renderConferenciaTab");
+  const { montarCorpo } = require("../renderConferenciaTab.shared.js");
   const { ACAO } = require("../../lib/conferenciaTela");
 
   const cfg = ACAO.confirmar;

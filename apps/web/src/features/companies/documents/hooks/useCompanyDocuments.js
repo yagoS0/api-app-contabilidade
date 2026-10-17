@@ -31,13 +31,19 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   const [erro, setErro] = useState(null);
   // Seleção múltipla: é o que permite baixar/enviar vários de uma vez.
   const [selecionados, setSelecionados] = useState(() => new Set());
+  const leitura = useRef(0);
+  const empresaAtual = useRef(companyId);
+  empresaAtual.current = companyId;
 
   const carregar = useCallback(async () => {
-    if (!api || !companyId) return;
+    if (!api || !companyId || empresaAtual.current !== companyId) return;
+    const revisao = ++leitura.current;
     setCarregando(true);
     setErro(null);
     try {
       const r = await api.listCompanyDocuments(companyId);
+      if (revisao !== leitura.current) return;
+      if (!Array.isArray(r?.documentos)) throw new Error("Resposta de documentos indisponível.");
       setDocumentos(r?.documentos || []);
       setTipos(r?.tipos || []);
       setTipoLabels(r?.tipoLabels || {});
@@ -47,15 +53,16 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
         return new Set([...atual].filter((id) => validos.has(id)));
       });
     } catch (err) {
+      if (revisao !== leitura.current) return;
       const mensagem = err?.message || "Falha ao carregar os documentos.";
       setErro(mensagem);
       feedbackRef.current?.notifyError?.(mensagem);
     } finally {
-      setCarregando(false);
+      if (revisao === leitura.current) setCarregando(false);
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { setDocumentos([]); setSelecionados(new Set()); carregar(); return () => { leitura.current += 1; }; }, [carregar]);
 
   const alternarSelecao = useCallback((id) => {
     setSelecionados((atual) => {
@@ -70,7 +77,8 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   const enviarArquivo = useCallback(async ({ arquivo, tipo, nome, validade }) => {
     if (!api || !companyId) return false;
     try {
-      await api.uploadCompanyDocument(companyId, { arquivo, tipo, nome, validade });
+      const resposta = await api.uploadCompanyDocument(companyId, { arquivo, tipo, nome, validade });
+      if (resposta?.ok !== true || !resposta.documento?.id) throw new Error("Não foi possível confirmar o documento. Confira a lista antes de repetir.");
       feedbackRef.current?.notifySuccess?.("Documento enviado.");
       await carregar();
       return true;
@@ -78,7 +86,7 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao enviar o documento.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   // O download precisa passar pelo fetch com token (um <a href> não leva o Bearer), então o
   // arquivo vem como Blob e é entregue por um link temporário.
@@ -97,7 +105,7 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
     } catch (err) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao baixar o documento.");
     }
-  }, [api, companyId]);
+  }, [feedbackRef, api, companyId]);
 
   const baixarSelecionados = useCallback(async () => {
     const alvos = documentos.filter((d) => selecionados.has(d.id));
@@ -110,7 +118,8 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   const excluir = useCallback(async (doc) => {
     if (!api || !companyId) return false;
     try {
-      await api.deleteCompanyDocument(companyId, doc.id);
+      const resposta = await api.deleteCompanyDocument(companyId, doc.id);
+      if (resposta?.ok !== true) throw new Error("Não foi possível confirmar a exclusão do documento.");
       feedbackRef.current?.notifySuccess?.("Documento excluído.");
       await carregar();
       return true;
@@ -118,13 +127,14 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir o documento.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const enviarPorEmail = useCallback(async (destinatario) => {
     if (!api || !companyId || !selecionados.size) return;
     setEnviando(true);
     try {
       const r = await api.sendCompanyDocuments(companyId, [...selecionados], destinatario);
+      if (r?.ok !== true || !Number.isInteger(r.enviados)) throw new Error("Não foi possível confirmar o envio. Confira a tentativa antes de repetir.");
       // Diz o que saiu e para quem — "enviado" sozinho não deixa conferir nada.
       feedbackRef.current?.notifySuccess?.(
         `${r?.enviados || 0} documento(s) enviado(s) para ${r?.destinatario || "o cliente"}.`,
@@ -135,7 +145,7 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
     } finally {
       setEnviando(false);
     }
-  }, [api, companyId, selecionados, limparSelecao]);
+  }, [feedbackRef, api, companyId, selecionados, limparSelecao]);
 
   return {
     documentos, tipos, tipoLabels, carregando, enviando, erro,
@@ -150,55 +160,67 @@ export function useCompanyNotes({ api, companyId, feedback }) {
   const [ordenarPor, setOrdenarPor] = useState("data");
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
+  const leitura = useRef(0);
+  const empresaAtual = useRef(companyId);
+  empresaAtual.current = companyId;
 
   const carregar = useCallback(async () => {
-    if (!api || !companyId) return;
+    if (!api || !companyId || empresaAtual.current !== companyId) return;
+    const revisao = ++leitura.current;
     setCarregando(true);
     setErro(null);
     try {
       const r = await api.listCompanyNotes(companyId, ordenarPor);
+      if (revisao !== leitura.current) return;
+      if (!Array.isArray(r?.anotacoes)) throw new Error("Resposta de anotações indisponível.");
       setAnotacoes(r?.anotacoes || []);
     } catch (err) {
+      if (revisao !== leitura.current) return;
       setErro(err?.message || "Falha ao carregar as anotações.");
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao carregar as anotações.");
     } finally {
-      setCarregando(false);
+      if (revisao === leitura.current) setCarregando(false);
     }
-  }, [api, companyId, ordenarPor]);
+  }, [feedbackRef, api, companyId, ordenarPor]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { setAnotacoes([]); carregar(); return () => { leitura.current += 1; }; }, [carregar]);
 
   const criar = useCallback(async ({ texto, importancia, fixada }) => {
     if (!api || !companyId) return false;
     try {
-      await api.createCompanyNote(companyId, { texto, importancia, fixada });
+      const resposta = await api.createCompanyNote(companyId, { texto, importancia, fixada });
+      if (resposta?.ok !== true || !resposta.anotacao?.id) throw new Error("Não foi possível confirmar a anotação. Confira a lista antes de repetir.");
       await carregar();
       return true;
     } catch (err) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao criar a anotação.");
       return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const atualizar = useCallback(async (noteId, patch) => {
     if (!api || !companyId) return;
     try {
-      await api.updateCompanyNote(companyId, noteId, patch);
+      const resposta = await api.updateCompanyNote(companyId, noteId, patch);
+      if (resposta?.ok !== true) throw new Error("Não foi possível confirmar a alteração da anotação.");
       await carregar();
     } catch (err) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao atualizar a anotação.");
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   const excluir = useCallback(async (noteId) => {
-    if (!api || !companyId) return;
+    if (!api || !companyId) return false;
     try {
-      await api.deleteCompanyNote(companyId, noteId);
+      const resposta = await api.deleteCompanyNote(companyId, noteId);
+      if (resposta?.ok !== true) throw new Error("Não foi possível confirmar a exclusão da anotação.");
       await carregar();
+      return true;
     } catch (err) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir a anotação.");
+      return false;
     }
-  }, [api, companyId, carregar]);
+  }, [feedbackRef, api, companyId, carregar]);
 
   // A fixada é destacada fora da lista; as demais seguem a ordenação escolhida. O backend já
   // devolve a fixada em primeiro, então isto é só a separação visual.

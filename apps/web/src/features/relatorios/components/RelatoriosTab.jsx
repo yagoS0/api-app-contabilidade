@@ -35,7 +35,7 @@ const DESTAQUES = [
 ];
 
 export function RelatoriosTab({ api = relatoriosApi, ...props }) {
-  return <div className="relatorios-page"><AnaliseEmpresa key={props.companyId} api={api} empresaId={props.companyId} empresaNome={props.razaoSocial} empresaCnpj={props.cnpj} /></div>;
+  return <div className="relatorios-page"><AnaliseEmpresa key={props.companyId} api={api} empresaId={props.companyId} empresaNome={props.razaoSocial} empresaCnpj={props.cnpj} contextoVisivel={false} /></div>;
 }
 
 // Resumo legado preservado para consumidores explícitos; Relatórios agora abre fluxo de leitura.
@@ -55,7 +55,7 @@ export function RelatorioLancamentosTab({ companyId, competenciaReferencia, raza
   // buscou. A regra (mesmo tamanho, imediatamente antes) vive em `lib/periodoRelatorio.js`.
   const comparado = useMemo(
     () => (escolhido ? periodoAnterior(escolhido.de, escolhido.ate) : null),
-    [escolhido?.de, escolhido?.ate],
+    [escolhido],
   );
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export function RelatorioLancamentosTab({ companyId, competenciaReferencia, raza
       })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
-  }, [companyId, escolhido?.de, escolhido?.ate, comparado]);
+  }, [companyId, escolhido, comparado]);
 
   useEffect(() => {
     if (!imprimindo) return undefined;

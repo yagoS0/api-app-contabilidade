@@ -1,19 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { previousInssMonth } from './OperationsManualInss.shared.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
-import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao';
+import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import { dataCivilBR } from '../../lib/dataCivil';
 
 const statuses = { NOT_APPLICABLE: 'Não se aplica nesta competência', PENDING_DOCUMENT: 'Aguardando guia manual', DOCUMENT_REVIEW: 'Guia precisa de revisão', DOCUMENT_AVAILABLE: 'Guia disponível' };
 const empty = { applicable: null, responsible: '', dueDate: null, note: '', reason: '' };
 const fieldStyle = { display: 'grid', gap: 6, minWidth: 0 };
 const controlStyle = { width: '100%', boxSizing: 'border-box', minHeight: 40, font: 'inherit', color: 'var(--text)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 8 };
-export function previousInssMonth(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(now);
-  const year = Number(parts.find(p => p.type === 'year').value), month = Number(parts.find(p => p.type === 'month').value);
-  return `${month === 1 ? year - 1 : year}-${String(month === 1 ? 12 : month - 1).padStart(2, '0')}`;
-}
+
 
 // Only local records: mounting this editor never queries or generates a fiscal document.
 export function OperationsManualInss({ api, companyId, competencia, canEdit = false, onPendingChange, compact = false }) {
@@ -26,7 +23,7 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
   useEffect(() => { onPendingChange?.(dirty || busy); return () => onPendingChange?.(false); }, [dirty, busy, onPendingChange]);
   const reasonRequired = form.applicable !== null || (data?.state.applicable != null && form.applicable !== data.state.applicable);
   const locked = !canEdit || busy || preview || reloadRequired || Boolean(pending.current);
-  async function load() {
+  const load = useCallback(async () => {
     if (saving.current) return;
     const current = ++generation.current;
     setBusy(true); setData(null); setError(''); setSaved(''); setPreview(false); setReloadRequired(false); pending.current = null;
@@ -38,8 +35,8 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
       setData(result); setForm({ ...result.state });
     } catch (e) { if (current === generation.current) setError(e.message || 'Não foi possível carregar o controle de INSS.'); }
     finally { if (current === generation.current) setBusy(false); }
-  }
-  useEffect(() => { saving.current = false; load(); return () => { generation.current++; }; }, [api, companyId, competencia]);
+  }, [api, companyId, competencia]);
+  useEffect(() => { const generationDaExecucao = generation; saving.current = false; load(); return () => { generationDaExecucao.current++; }; }, [load, api, companyId, competencia]);
   async function save() {
     if (!canEdit || busy || saving.current || reloadRequired || !preview || !dirty || (reasonRequired && !form.reason.trim())) return;
     const current = generation.current;

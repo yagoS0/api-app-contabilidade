@@ -2,11 +2,13 @@ import './circularFechamento.css';
 import { Link } from 'react-router-dom';
 import { CircularMonthTags } from './CircularMonthTags';
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
-import { informacaoRecalculo, DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
+import { DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
+import { informacaoRecalculo } from "../../components/RecalculoGuiaAviso.shared.js";
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { EstornoBaixaModal } from "./EstornoBaixaModal";
-import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
+import { SmartHistoricoInput, LineEditor } from "../../entries/components/renderAccountingEntriesParts";
+import { hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts.shared.js";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 // Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
 // auto-contido de FechamentoContabilPanel/ExpectedGuidesPanel).
@@ -508,7 +510,7 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
   // lançamentos órfãos com a guia reaberta, então o cancelamento leva a lista inteira.
   const baixaId = entry.baixas?.[0]?.id ?? null;
   const baixaIds = (entry.baixas || []).map((b) => b.id).filter(Boolean);
-  const saldo = Number(entry.saldo);
+
 
   // ⚠ A COR SAI DE `estadoDaGuia`, e ela olha o VENCIMENTO.
   // Antes toda guia em aberto era vermelha: a que vence daqui a duas semanas com a mesma força da
@@ -649,6 +651,7 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
               rótulo e cabem. Na célula ficam o número, o ícone de pagamento e o aviso discreto
               “Recalculada” quando houver registro; data e valores do recálculo ficam no detalhe. */}
           <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
+          {entry.sourceGuide?.confirmacaoCliente?.id && <div style={{ padding: 8, fontSize: "0.8125rem", whiteSpace: "normal", color: "var(--text)" }}><strong>Confirmado pelo cliente</strong><p>{leituraDoPagamento(entry.sourceGuide)?.detalhe || "Declaração do cliente preservada no histórico da guia."}</p><p>Consulte o registro da confirmação na aba Guias.</p></div>}
           {entry.parcelamentoOrigem && companyId && (
             <Link style={menuBtn} to={`/companies/${encodeURIComponent(companyId)}/parcelamento?composicao=${encodeURIComponent(entry.parcelamentoOrigem.parcelamentoId)}`}>Ver parcelamento</Link>
           )}
@@ -890,7 +893,6 @@ export function CircularTab({
   loading,
   year,
   competencia,
-  onCompetenciaChange,
   onYearChange,
   onLoad,
   accounts,
@@ -903,7 +905,6 @@ export function CircularTab({
   message,
   onUpdateEntry,
   onSearchHistoricos,
-  onGetHistoricosByCode, // sugestão de contas por código no config de parcelamento
   // ESTORNO DA BAIXA — duas chamadas, e as duas são necessárias. A prévia é o que se CONFERE
   // (o lote com valores, o modo, a competência do contra-lançamento); a execução exige o motivo.
   // O `onCancelBaixa` que existia aqui ia no `DELETE /entries/:id`, que hoje responde
@@ -912,7 +913,6 @@ export function CircularTab({
   onEstornarBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, ingest, rescindir, conferência)
   onSaveCircular, // Frente B: salva acrescimos (principal/juros/multa) da circular
-  savingCircular,
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
   // Busca o comprovante no SERPRO (custo por chamada → só sob clique). NÃO lança nada: marca a

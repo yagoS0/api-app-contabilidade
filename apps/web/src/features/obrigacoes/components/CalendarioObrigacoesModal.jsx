@@ -26,7 +26,7 @@ export function CalendarioObrigacoesModal({ api, empresas = [], contexto = {}, o
     try { const out = conferir(await api.listObrigacoes({ companyId: empresa || undefined })); if (id === cargaId.current) setDados(out); }
     catch (e) { if (id === cargaId.current) setErro(e.message); }
   }, [api, empresa]);
-  useEffect(() => { carregar(); return () => { cargaId.current++; }; }, [carregar]);
+  useEffect(() => { const cargaIdDaExecucao = cargaId; carregar(); return () => { cargaIdDaExecucao.current++; }; }, [carregar]);
   async function acao(executar) {
     setOcupado(true); setErro(null);
     try { const out = conferir(await executar()); await carregar(); onChanged?.(); return out; }

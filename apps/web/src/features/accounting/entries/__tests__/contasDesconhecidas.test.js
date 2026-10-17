@@ -8,7 +8,8 @@
 // acusar. Travar o lançamento porque a lista não chegou trocaria um erro raro e tardio por um
 // bloqueio sistemático no primeiro segundo de cada tela.
 
-import { contasDesconhecidas } from "../components/renderAccountingEntriesParts";
+
+import { contasDesconhecidas } from "../components/renderAccountingEntriesParts.shared.js";
 
 const PLANO = [
   { codigo: "265", nome: "DAS - Simples Nacional" },

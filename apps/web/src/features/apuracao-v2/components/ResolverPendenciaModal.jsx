@@ -2,7 +2,8 @@
 import { useId, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
-import { PANEL } from "../../notas/components/notasStyles";
+
+import { PANEL } from "../../notas/components/notasStyles.shared.js";
 import { Aviso } from "../../../components/ui/Aviso";
 import {
   ESCOPO_DA_RESOLUCAO, podeResolverGlobalmente, consequenciaDoEscopo, avisoDeAlcance,

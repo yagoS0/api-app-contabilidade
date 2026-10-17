@@ -147,7 +147,7 @@ export function formatarValorParaCampo(numero) {
 export function lerValorColado(bruto) {
   const original = String(bruto ?? "");
   // Espaço comum, espaço fino e NBSP saem; "R$" sai. Nada disso muda a leitura do número.
-  const t = original.replace(/[\s  ]/g, "").replace(/^R\$/i, "");
+  const t = original.replace(/[\s \u202f]/g, "").replace(/^R\$/i, "");
 
   if (!t) return { ok: false, motivo: RECUSA_COLAGEM.ILEGIVEL, texto: original };
 

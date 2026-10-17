@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function useParcelamentos({ api, companyId, status = null }) {
-  const scope = useMemo(() => ({}), [api, companyId, status]);
+  const scope = useMemo(() => ({ api, companyId, status }), [api, companyId, status]);
   const currentScope = useRef(scope);
   currentScope.current = scope;
   const request = useRef(0);

@@ -10,7 +10,7 @@ export function modoAtendimento(location = window.location) {
   return ['/whatsapp', '/suporte'].includes(location.pathname) && (new URLSearchParams(location.search).get("app") === "atendimento" || window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
 }
 export function destinoInternoSeguro(raw, fallback = "/companies") {
-  if (!raw || typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f]/.test(raw)) return fallback;
+  if (!raw || typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//") || Array.from(raw).some(char => char === '\\' || char.charCodeAt(0) < 32)) return fallback;
   try {
     const url = new URL(raw, "https://altan.invalid");
     if (url.origin !== "https://altan.invalid" || !/^\/(whatsapp(?:\/comunicados)?|suporte|comercial(?:\/(?:conversas|oportunidades))?|companies(?:\/[^/]+(?:\/[^/]+)?)?|onboardings(?:\/[^/]+(?:\/editar)?)?|biblioteca|configuracoes(?:\/atendimento)?|rotinas|obrigacoes|guides\/[^/]+|firm-settings\/[^/]+|apuracao|planejamento|funcoes-serpro|laboratorio)\/?$/.test(url.pathname)) return fallback;

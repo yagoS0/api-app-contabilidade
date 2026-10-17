@@ -988,11 +988,11 @@ function lerComposicaoDeclarada(raw) {
  * @returns {Promise<{ ok?, pagamentoId?, skipped?, reason? }>}
  * @throws {Error} code "MES_FECHADO" · "CONFERENCIA_OBRIGATORIA" · "CONFERENCIA_DIVERGENTE"
  */
-export async function gerarPagamentoParcelaFromGuide({
+async function gerarPagamentoParcela({
   portalClientId, guideId, dataPagamento, userId, classificacaoComprovante = null,
-  composicaoDeclarada = null,
-}) {
-  const guide = await prisma.guide.findFirst({
+  composicaoDeclarada = null, origem = "MANUAL", exigirContas = false,
+}, client, transaction) {
+  const guide = await client.guide.findFirst({
     where: { id: String(guideId), portalClientId },
     // `valor` e `extracted` entram para a composição LIDA DO DOCUMENTO (`lerComposicaoDoDocumento`):
     // o primeiro é o total contra o qual a soma dos tributos é conferida; o segundo carrega a
@@ -1007,12 +1007,12 @@ export async function gerarPagamentoParcelaFromGuide({
   if (guide.lancamentoId) return { skipped: true, reason: "ja_baixada" };
 
   // Idempotência reforçada: já existe BAIXA dessa guia?
-  const baixaExistente = await prisma.accountingEntry.findFirst({
+  const baixaExistente = await client.accountingEntry.findFirst({
     where: { sourceGuideId: guide.id, tipo: "BAIXA" }, select: { id: true },
   });
   if (baixaExistente) return { skipped: true, reason: "ja_baixada" };
 
-  const parcelamento = await prisma.parcelamento.findUnique({
+  const parcelamento = await client.parcelamento.findUnique({
     where: { id: guide.parcelamentoId },
     select: { id: true, tipo: true, kind: true, numParcelas: true, aberturaEntryId: true, configPagamento: true },
   });
@@ -1043,7 +1043,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // `TributoParcela` nenhum e morreriam aqui em `sem_composicao`.
   const tributosParcela = usaComprovante || pagamentoFiscal
     ? []
-    : await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
+    : await client.tributoParcela.findMany({ where: { guideId: guide.id } });
 
   // ⚠ TERCEIRA FONTE **DOCUMENTAL**, e ela vem DEPOIS das duas anteriores por precedência, não por
   // acaso: comprovante SERPRO > `TributoParcela` (já persistida na ingestão) > composição lida do
@@ -1083,7 +1083,7 @@ export async function gerarPagamentoParcelaFromGuide({
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
   if (Number.isNaN(data.getTime())) return { skipped: true, reason: "data_invalida" };
   const competencia = competenciaFromDate(data);
-  if (await isMonthClosed(portalClientId, competencia)) {
+  if (await isMonthClosed(portalClientId, competencia, client)) {
     const err = new Error(`Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
     err.code = "MES_FECHADO";
     throw err;
@@ -1124,7 +1124,7 @@ export async function gerarPagamentoParcelaFromGuide({
   // Q28: contas por papel vindas da config do parcelamento (definida no modal de entrada).
   const { contaPorPapel, historicoPorPapel } = mapasDaConfigPagamento(parcelamento.configPagamento);
 
-  return prisma.$transaction(async (tx) => {
+  return transaction(async (tx) => {
     // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
     //
     // As duas verificações lá em cima (`guide.lancamentoId` e `baixaExistente`) são
@@ -1181,12 +1181,13 @@ export async function gerarPagamentoParcelaFromGuide({
     const pagLines = usaComprovante
       ? await linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao: classificacaoComprovante, contaPorPapel, historicoPorPapel })
       : await linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel, historicoPorPapel });
+    if (exigirContas && pagLines.some(l => !String(l.conta || '').trim())) throw Object.assign(new Error('Contas da parcela incompletas.'), { pendencia: 'CONTAS_AUSENTES' });
     // Q24: cada componente vira um lançamento individual (1 perna). Balanço fecha no conjunto.
     const entries = await criarLancamentosIndividuais(tx, {
       portalClientId, parcelamentoId: parcelamento.id, linhas: pagLines,
       data, competencia,
       tipo: "BAIXA", subtipo: `PARC_${tipoParcelamento}`,
-      origem: "MANUAL",
+      origem,
       lote: `PARCV2-${parcelamento.id.slice(0, 8)}-PAG-${guide.numeroParcela || "x"}`,
       // ⚠ SINAL PERSISTIDO Nº 1 — em TEXTO, no razão, para quem nunca vai abrir uma coluna.
       // "(composição declarada)" e não "(declarado)": o PAGAMENTO desta prestação é provado (a guia
@@ -1217,12 +1218,15 @@ export async function gerarPagamentoParcelaFromGuide({
       ...(declarada ? { composicaoDeclarada: declarada } : {}),
     };
   }).catch((erro) => {
-    if (erro?.code === "PARCELA_BAIXA_CONCORRENTE") {
+    if (!exigirContas && erro?.code === "PARCELA_BAIXA_CONCORRENTE") {
       return { skipped: true, reason: "parcela_ja_baixada" };
     }
     throw erro;
   });
 }
+
+export function gerarPagamentoParcelaFromGuide(args) { return gerarPagamentoParcela(args, prisma, fn => prisma.$transaction(fn)); }
+export function gerarPagamentoParcelaFromGuideTx(tx, args) { return gerarPagamentoParcela({ ...args, exigirContas: true }, tx, fn => fn(tx)); }
 
 /**
  * F2.2 — BAIXA DA PARCELA **SEM GUIA**, ancorada na PARCELA e por DECLARAÇÃO do contador.

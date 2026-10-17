@@ -1,12 +1,14 @@
 import { useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+const CONTEXTO_VAZIO = Object.freeze({});
+
 // O histórico guarda só contexto de navegação; dados e conclusão continuam na API.
 export function useCalendarioNavigation() {
   const location = useLocation();
   const navigate = useNavigate();
   const ultimaVisao = useRef(null);
-  const contexto = location.state?.obrigacoesContext || {};
+  const contexto = location.state?.obrigacoesContext || CONTEXTO_VAZIO;
   const onContextChange = useCallback((valor) => { ultimaVisao.current = valor; }, []);
   const abrir = useCallback((opcoes = {}) => {
     const origem = /^\/companies(?:\/[^/]+\/obrigacoes)?$/.test(location.pathname) ? location.pathname : "/companies";

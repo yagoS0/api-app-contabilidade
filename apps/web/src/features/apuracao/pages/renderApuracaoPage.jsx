@@ -9,7 +9,7 @@ import { AppShell } from "../../../components/layout/AppShell";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+import { PANEL, fmtMoney } from '../../notas/components/notasStyles.shared.js';
 import { BatchProgressModal } from "../components/BatchProgressModal";
 import "./apuracao-lista.css";
 import { estadoEntregaPgdas, CORES_TOM } from "../lib/entregaPgdas";

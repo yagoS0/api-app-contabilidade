@@ -1,4 +1,5 @@
-import { linhasDaConferenciaMunicipal } from '../PreviaFiscal';
+
+import { linhasDaConferenciaMunicipal } from "../PreviaFiscal.shared.js";
 test('alíquota municipal é referência, sem substituir Simples', () => {
  const linhas = linhasDaConferenciaMunicipal({ estado: 'HISTORICO_LOCALIZADO', aliquotaIss: 0, vigenciaInicio: '2026-01-01' });
  expect(linhas[0]).toContain('0%'); expect(linhas[1]).toContain('não substitui a alíquota do Simples');

@@ -1,3 +1,4 @@
+import { reconfirmacaoPagamentoTx, lerConfirmacaoPagamento, registrarConfirmacaoTx, tentarBaixaConfirmacao, versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lerDataDoPagamentoInformada, FRASE_DA_RECUSA } from './lib/dataDoPagamento.js';
 import { calendarioAvisosGuia } from './calendarioAvisosGuia.js';
@@ -37,7 +38,7 @@ export async function confirmarPagamentoWhatsapp({ id, conversa, mensagem, clien
  if(!clique&&(!fluxo||fluxo.companyId!==conversa.portalClientId)) return cliqueResposta?{texto:RECUSA}:null;
  await conferirAcesso();
  for(let tentativa=0;tentativa<3;tentativa++){
-  try{return await client.$transaction(async tx=>{
+  try{const resultado = await client.$transaction(async tx=>{
    const reciboKey='pagamento_resposta:'+mensagem.id;
    const recibo=await tx.appSetting.findUnique({where:{key:reciboKey}});
    if(recibo?.value?.companyId===conversa.portalClientId&&recibo.value.conversaId===conversa.id) return recibo.value.resultado;
@@ -52,14 +53,29 @@ export async function confirmarPagamentoWhatsapp({ id, conversa, mensagem, clien
    const contato=await tx.contatoWhatsapp.findFirst({where:{id:v.contatoId,portalClientId:v.companyId,telefoneE164:v.telefone,ativo:true,optInEm:{not:null}}});
    if(!contato)return {texto:RECUSA};
    const guia=await tx.guide.findFirst({where:{id:v.guideId,portalClientId:v.companyId,liberadaCliente:true,status:'PROCESSED'}});
-   if(!guia||(guia.competencia||null)!==(v.competencia||null)||(guia.hash||null)!==(v.hash||null))return {texto:RECUSA};
+   if(!v.versaoPagamento||!guia)return {texto:RECUSA};
+   if(v.versaoPagamento!==versaoPagamentoGuia(guia)) {
+    const elegivel=clique?await reconfirmacaoPagamentoTx(tx,guia):null;
+    const anterior=elegivel?await lerConfirmacaoPagamento(tx,v.companyId,elegivel.confirmacaoAnteriorId):null;
+    if(!elegivel||anterior.versaoGuia!==v.versaoPagamento)return {texto:RECUSA};
+    const novo=PREFIXO_PAGAMENTO+randomUUID();
+    await tx.appSetting.create({data:{key:novo,value:{...v,confirmadoEm:null,dataInformada:null,mensagemId:null,
+      competencia:guia.competencia||null,hash:guia.hash||null,versaoPagamento:elegivel.versaoPagamento,
+      reconfirmaConfirmacaoId:elegivel.confirmacaoAnteriorId}}});
+    return {texto:`O escritório corrigiu esta guia ${guia.tipo} (${guia.competencia}). Valor atual: R$ ${Number(guia.valor).toFixed(2)}. Seu relato anterior foi preservado; não pague novamente. Confira a guia corrigida e, se corresponde ao pagamento realizado, toque abaixo para informar novamente a data.`,
+      botoes:[{id:novo,titulo:'Reconfirmar guia'}]};
+   }
+   if((guia.competencia||null)!==(v.competencia||null)||(guia.hash||null)!==(v.hash||null))return {texto:RECUSA};
+   const reconfirmacao=v.reconfirmaConfirmacaoId?await reconfirmacaoPagamentoTx(tx,guia):null;
+   const podeReconfirmar=reconfirmacao?.confirmacaoAnteriorId===v.reconfirmaConfirmacaoId && Boolean(v.reconfirmaConfirmacaoId);
+   if(v.reconfirmaConfirmacaoId&&!podeReconfirmar&&!v.confirmadoEm)return {texto:'Esta confirmação já mudou. Consulte o registro atual da guia; não é necessário pagar novamente.'};
    let etapaAtual=ativo;
-   const salvarFluxo=async etapa=>{const value={token,companyId:v.companyId,etapa,nonce:randomUUID(),conversaId:conversa.id,expiraEm:v.expiraEm};await tx.appSetting.upsert({where:{key:fluxoKey},create:{key:fluxoKey,value},update:{value}});etapaAtual=value;};
-   const responder=async (texto,botoes=botoesDoFluxo(etapaAtual))=>{const resultado={texto,...(botoes.length?{botoes}:{})};await tx.appSetting.create({data:{key:reciboKey,value:{companyId:v.companyId,conversaId:conversa.id,resultado}}});return resultado;};
+   const salvarFluxo=async etapa=>{const value={token,companyId:v.companyId,etapa,nonce:randomUUID(),conversaId:conversa.id,expiraEm:v.expiraEm,versaoGuia:v.versaoPagamento};await tx.appSetting.upsert({where:{key:fluxoKey},create:{key:fluxoKey,value},update:{value}});etapaAtual=value;};
+   const responder=async (texto,botoes=botoesDoFluxo(etapaAtual),confirmacaoId=null)=>{const resultado={texto,...(botoes.length?{botoes}:{}),...(confirmacaoId?{confirmacaoId}:{})};await tx.appSetting.create({data:{key:reciboKey,value:{companyId:v.companyId,conversaId:conversa.id,resultado}}});return resultado;};
    await conferirAcesso();
    if(clique){
     if(v.confirmadoEm){await salvarFluxo('COMPROVANTE');return responder('O pagamento já foi informado. Envie o comprovante em PDF ou foto, ou toque em Sem comprovante.');}
-    if(guia.paymentStatus==='PAID'||guia.baixada||guia.clienteConfirmouEm)return responder('O pagamento desta guia já está registrado.');
+    if(!podeReconfirmar&&(guia.paymentStatus==='PAID'||guia.baixada||guia.clienteConfirmouEm))return responder('O pagamento desta guia já está registrado.');
     await salvarFluxo('DATA');
     return responder('Em que data você pagou '+guia.tipo+' ('+guia.competencia+')? Escolha abaixo. Data de vencimento considera o dia útil. Para desistir, escreva cancelar pagamento.');
    }
@@ -76,12 +92,15 @@ export async function confirmarPagamentoWhatsapp({ id, conversa, mensagem, clien
     }
     const leitura=lerDataWhatsapp(dataTexto,agora);
     if(leitura.recusa)return responder(FRASE_DA_RECUSA[leitura.recusa]+' Exemplo: 15/09/2026.');
-    if(guia.paymentStatus==='PAID'||guia.baixada||guia.clienteConfirmouEm){await salvarFluxo(null);return responder('O pagamento desta guia já foi registrado; mantive os dados existentes.');}
-    const r=await tx.guide.updateMany({where:{id:guia.id,portalClientId:v.companyId,updatedAt:guia.updatedAt,liberadaCliente:true,status:'PROCESSED',baixada:false,clienteConfirmouEm:null,OR:[{paymentStatus:null},{paymentStatus:{not:'PAID'}}]},data:{paymentStatus:'PAID',paymentStatusSource:'CLIENTE',clienteConfirmouEm:agora,clienteConfirmouPorUserId:contato.userId||null,paymentConfirmedAt:leitura.data,paymentConfirmedByUserId:contato.userId||null,serproLastCheckResult:'CLIENTE_CONFIRMOU'}});
-    if(r.count!==1)throw Object.assign(Error('Guia alterada'),{code:'P2034'});
+    if(!podeReconfirmar&&(guia.paymentStatus==='PAID'||guia.baixada||guia.clienteConfirmouEm)){await salvarFluxo(null);return responder('O pagamento desta guia já foi registrado; mantive os dados existentes.');}
+    const confirmacao = await registrarConfirmacaoTx(tx, { companyId: v.companyId, guideId: guia.id,
+      pagoEm: leitura.data, canal: 'WHATSAPP', autor: { userId: contato.userId || null, contatoId: contato.id,
+        telefone: conversa.telefoneE164, conversaId: conversa.id, mensagemId: mensagem.id },
+      reconfirmaConfirmacaoId: v.reconfirmaConfirmacaoId, eventId: mensagem.id, expectedVersion: ativo.versaoGuia, agora });
     await tx.appSetting.update({where:{key:token},data:{value:{...v,confirmadoEm:agora.toISOString(),dataInformada:leitura.data.toISOString(),mensagemId:mensagem.id,conversaId:conversa.id}}});
     await salvarFluxo('COMPROVANTE');
-    return responder('Pagamento informado em '+leitura.data.toISOString().slice(0,10).split('-').reverse().join('/')+'. Se tiver o comprovante, envie agora um PDF ou foto desta guia. É opcional: para concluir sem anexo, toque em Sem comprovante.');
+    const retorno = await responder('Pagamento confirmado em '+leitura.data.toISOString().slice(0,10).split('-').reverse().join('/')+'. Se tiver o comprovante, envie agora um PDF ou foto desta guia. É opcional: para concluir sem anexo, toque em Sem comprovante.', botoesDoFluxo(etapaAtual), confirmacao.confirmacaoId);
+    return retorno;
    }
    if(resposta?.[2]==='no_proof'||/^sem comprovante[.!]?$/i.test(texto)){await salvarFluxo(null);return responder('Pagamento registrado com a data informada. Obrigado!');}
    if(['image','document'].includes(mensagem.tipo)&&mensagem.midiaProvedorId){
@@ -96,6 +115,13 @@ export async function confirmarPagamentoWhatsapp({ id, conversa, mensagem, clien
     return responder('Comprovante recebido para esta guia. O escritório conferirá o documento e a data; seu pagamento continua registrado como informado por você.');
    }
    return responder('Envie o comprovante em PDF ou foto, ou toque em Sem comprovante para concluir.');
-  },{isolationLevel:'Serializable',timeout:15000});}catch(e){if(!['P2034','P2002'].includes(e.code)||tentativa===2)throw e;}
+  },{isolationLevel:'Serializable',timeout:15000});
+  if (resultado?.confirmacaoId) {
+    const baixa = await tentarBaixaConfirmacao({ companyId: conversa.portalClientId, confirmacaoId: resultado.confirmacaoId,
+      actor: { canal: 'WHATSAPP', conversaId: conversa.id, mensagemId: mensagem.id } }, client);
+    return { ...resultado, texto: resultado.texto + ' ' + baixa.aviso, confirmacao: baixa.confirmacao };
+  }
+  return resultado;
+  }catch(e){if(['RECONFIRMACAO_INDISPONIVEL','CONFIRMACAO_SUBSTITUIDA','GUIA_ALTERADA','GUIA_JA_CONFIRMADA'].includes(e.code))return {texto:RECUSA};if(!['P2034','P2002'].includes(e.code)||tentativa===2)throw e;}
  }
 }

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChecklistImplantacao } from '../ChecklistImplantacao';
 import { ProtecaoEdicao } from '../../configuracoes/ProtecaoEdicao';
 const tarefa = { chave: 'certificado_a1', titulo: 'Configurar certificado A1', descricao: 'Confira validade', destino: 'certificado', status: 'A_FAZER', responsavel: null, prazo: null, pendencia: 'Cliente vai enviar', versao: 0, origem: { titulo: 'A1', observacao: 'Cliente vai enviar' }, historico: [] };

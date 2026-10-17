@@ -122,6 +122,8 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
  */
 export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, linkGuia = null, aoEncerrarLink }) {
   const companyId = empresa.companyId;
+  const contextoPagamento = useRef(null);
+
   const guiaDoAviso = linkGuia?.companyId === companyId ? linkGuia.guideId : null;
   const linkProcessado = useRef(null);
   const [avisoDoLink, setAvisoDoLink] = useState(null);
@@ -138,6 +140,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   // 08/2026, sobre a mesma empresa, com o mês escrito no vazio de cada uma.
   // ⚠ O "Todas" daqui é o mesmo de Notas (string vazia) — as duas são listas.
   const competencia = competenciaDaCasca ?? competenciaPadrao();
+  useEffect(() => { const token = {}; contextoPagamento.current = token; return () => { if (contextoPagamento.current === token) contextoPagamento.current = null; }; }, [companyId, competencia]);
   const setCompetencia = aoTrocarCompetencia || (() => {});
   const [pagina, setPagina] = useState(1);
   const [baixandoId, setBaixandoId] = useState(null);
@@ -178,6 +181,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [pagoEm, setPagoEm] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [avisoConfirmacao, setAvisoConfirmacao] = useState(null);
+  const [baixaPendente, setBaixaPendente] = useState(false);
   useEffect(() => {
     if (confirmacao?.aviso) {
       retornoConfirmacaoRef.current = { companyId, guiaId: confirmacao.guia.guideId };
@@ -197,9 +201,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const paginaAtual = resposta?.page ?? pagina;
 
   useEffect(() => {
-    setPedido(null); setConfirmacao(null); setPagoEm(""); setRecusa(null); setAvisoDoLink(null);
+    setPedido(null); setConfirmacao(null); setConfirmando(false); setPagoEm(""); setRecusa(null); setAvisoDoLink(null); setAvisoConfirmacao(null);
     linkProcessado.current = null;
-  }, [companyId, guiaDoAviso]);
+  }, [companyId, guiaDoAviso, competencia]);
   useEffect(() => {
     if (!guiaDoAviso || query.carregando || !resposta) return;
     const chave = `${companyId}:${guiaDoAviso}:${linkGuia?.acao || "ver"}`;
@@ -207,7 +211,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     linkProcessado.current = chave;
     const guia = guias[0];
     if (!guia) { setAvisoDoLink("A guia deste aviso não está disponível para seu acesso. Ela pode ter sido substituída ou ainda precisar de liberação. Fale com seu contador."); return; }
-    if (guia.paymentStatus === "PAID") { setAvisoDoLink("O pagamento desta guia já está registrado."); return; }
+    if (guia.paymentStatus === "PAID" && !guia.reconfirmacaoPagamento) { setAvisoDoLink("O pagamento desta guia já está registrado."); return; }
     if (linkGuia.acao === "confirmar") {
       const aviso = avisoAntesDeConfirmar(guia);
       if (aviso) { setConfirmacao({ guia, aviso }); setPagoEm(""); }
@@ -247,26 +251,28 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     }
   }
 
-  // ⚠⚠ CONFIRMAR QUE PAGOU — e isto NÃO lança a baixa contábil. É a mesma forma da confirmação por
-  // consulta de pagamento: marca a guia e para aí. A guarda que garante isso está no SERVIDOR
-  // (`pagamentoAlcancaOContabil`), não aqui — regra que só mora na tela não protege o razão.
-  // ⚠ ZERO CUSTO: é escrita local, sem chamada externa. Nada a ver com o "Pedir guia atualizada".
+  // R25: confirmação persistida autoriza a tentativa de baixa; o retorno distingue conclusão e pendência.
   async function confirmarPagamento() {
     const guia = confirmacao?.guia;
     if (!guia || confirmando) return;
+    const token = contextoPagamento.current;
     setConfirmando(true);
     setRecusa(null);
     try {
-      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId, { pagoEm });
+      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId, { pagoEm, versaoPagamento: guia.reconfirmacaoPagamento?.versaoPagamento || guia.versaoPagamento, ...(guia.reconfirmacaoPagamento ? { reconfirmaConfirmacaoId: guia.reconfirmacaoPagamento.confirmacaoAnteriorId } : {}) });
+      if (contextoPagamento.current !== token) return;
+      if (r?.ok !== true || !r.confirmacao?.id || !["CONCLUIDA", "PENDENTE"].includes(r.confirmacao.estadoBaixa)) throw Object.assign(Error("Resultado não confirmado"), { corpo: { message: "Não foi possível confirmar o resultado. Atualize a lista antes de tentar novamente." } });
       if (retornoConfirmacaoRef.current) retornoConfirmacaoRef.current.aguardandoResposta = query.dados;
       setConfirmacao(null);
       setPagoEm("");
-      setAvisoConfirmacao(r?.aviso || null);
+      setBaixaPendente(r.confirmacao.estadoBaixa === "PENDENTE");
+      setAvisoConfirmacao(r.aviso || (r.confirmacao.estadoBaixa === "CONCLUIDA" ? "Sua confirmação foi registrada e a baixa contábil foi concluída." : "Sua confirmação foi registrada. A baixa está pendente de ajuste pelo contador."));
       await query.recarregar();
     } catch (err) {
+      if (contextoPagamento.current !== token) return;
       setRecusa(leituraDaRecusa(err?.corpo || { message: mensagemDeErro(err, "Não foi possível registrar o pagamento.") }));
     } finally {
-      setConfirmando(false);
+      if (contextoPagamento.current === token) setConfirmando(false);
     }
   }
 
@@ -337,24 +343,21 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         </div>
       ) : null}
 
-      {/* ⚠ O que a confirmação FEZ e o que ela NÃO fez — dito depois, não só antes. Sem isso o
-          cliente conclui que o assunto está encerrado dos dois lados, e liga perguntando por quê a
-          contabilidade ainda não mostra o pagamento. */}
+      {/* O resultado persistido distingue baixa concluída de pendência contábil. */}
       {avisoConfirmacao ? (
-        <div className="alerta alerta-sucesso" role="status">
+        <div className={`alerta ${baixaPendente ? "alerta-atencao" : "alerta-sucesso"}`} role="status">
           <p>{avisoConfirmacao}</p>
           <button type="button" className="btn" onClick={() => setAvisoConfirmacao(null)}>Entendi</button>
         </div>
       ) : null}
 
-      {/* ⚠⚠ A CONFIRMAÇÃO REPETE O QUE ELA FAZ **E O QUE NÃO FAZ**. Um "confirmar pagamento?" seco
-          faria o cliente achar que a baixa contábil também aconteceu. */}
+      {/* Identidade e valor atual precedem a declaração explícita de pagamento. */}
       {confirmacao?.aviso ? (
         <div className="alerta alerta-atencao" role="alertdialog" aria-label={confirmacao.aviso.titulo}>
           <p><strong>{confirmacao.aviso.titulo}</strong></p>
           <p>{confirmacao.aviso.texto}</p>
           <p className="meta">
-            Guia {rotuloDaGuia(confirmacao.guia)} · {fmtCompetencia(confirmacao.guia.competencia)}
+            Guia {rotuloDaGuia(confirmacao.guia)} · {fmtCompetencia(confirmacao.guia.competencia)} · Valor atual: {(confirmacao.guia.valorRecalculado ?? confirmacao.guia.valor) == null ? "Não informado" : brl(confirmacao.guia.valorRecalculado ?? confirmacao.guia.valor)}
           </p>
           {/* ⚠⚠ A DATA É DIGITADA, NÃO DEDUZIDA. É ela que vai para `paymentConfirmedAt`, o campo de
               onde o fluxo tira o MÊS e o DIA em que o dinheiro saiu — e só o cliente sabe qual é.
@@ -492,6 +495,8 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       <td>{fmtDateBr(guia.vencimento)}</td>
                       <td>
                         <Chip status={chip.status}>{chip.rotulo}</Chip>
+                        {guia.reconfirmacaoPagamento && <span className="meta meta--bloco">Pagamento informado; guia corrigida requer nova confirmação.</span>}
+                        {guia.confirmacaoCliente?.id && <span className="meta meta--bloco">Confirmado por você · {guia.confirmacaoCliente.estadoBaixa === "CONCLUIDA" ? "baixa contábil concluída" : "baixa em ajuste com o contador"}</span>}
                         {guia.paymentConfirmedAt ? (
                           <span className="meta meta--bloco">
                             em {fmtDateBr(guia.paymentConfirmedAt)}
@@ -548,7 +553,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             ref={elemento => { if (elemento) botoesPagamentoRef.current.set(guia.guideId, elemento); else botoesPagamentoRef.current.delete(guia.guideId); }}
                             onClick={() => { setRecusa(null); setPagoEm(""); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
                           >
-                            Já paguei
+                            {guia.reconfirmacaoPagamento ? "Reconfirmar guia corrigida" : "Já paguei"}
                           </button>
                         ) : null}
                         {podePedirGuiaAtualizada(guia) ? (

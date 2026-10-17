@@ -1,4 +1,4 @@
-import { aplicarConsultaEmpresaPreservandoEdicoes } from '../renderCompanyForm';
+import { aplicarConsultaEmpresaPreservandoEdicoes } from '../renderCompanyForm.shared.js';
 test('retorno cadastral não sobrescreve edição feita durante a consulta nem apaga campo por ausência',()=>{
   const onChange=jest.fn();
   aplicarConsultaEmpresaPreservandoEdicoes({razao_social:'DA CONSULTA',logradouro:'RUA NOVA'},

@@ -14,18 +14,7 @@
 // O projeto já pagou por isso duas vezes — `renderApuracaoV2Tab.jsx` ("'✓ Nenhuma pendência
 // aberta' EM VERDE CONCLUÍA O QUE NÃO FOI FEITO") e o 0×0 acima. Verde é conclusão: só sai quando
 // quem chama pediu verde com todas as letras.
-const TONS = {
-  ok: { cor: "var(--state-ok)", fundo: "var(--state-ok-surface)" },
-  atencao: { cor: "var(--state-warn)", fundo: "var(--state-warn-surface)" },
-  erro: { cor: "var(--state-danger)", fundo: "var(--state-danger-surface)" },
-  neutro: { cor: "var(--text-muted)", fundo: "var(--state-neutral-surface)" },
-};
-
-export const TONS_VALIDOS = Object.freeze(Object.keys(TONS));
-
-export function tomDoAviso(tom) {
-  return Object.prototype.hasOwnProperty.call(TONS, tom) ? tom : "neutro";
-}
+import { TONS, tomDoAviso } from "./Aviso.shared";
 
 /**
  * @param {"ok"|"atencao"|"erro"|"neutro"} tom  Obrigatório. Inválido/ausente vira `neutro`.

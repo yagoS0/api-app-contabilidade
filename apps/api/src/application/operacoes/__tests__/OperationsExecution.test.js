@@ -24,6 +24,15 @@ test('liberação executa uma vez e a tentativa não é reexecutada após respos
   expect(transmit).toHaveBeenCalledTimes(1);
   expect(transmit.mock.calls[0][0]).toMatchObject({ somenteDocumentosFaltantes: true, calculoId: 'calc' });
 });
+
+test.each([null, {}, { ok: false }])('resposta sem confirmação não grava execução concluída: %j', async result => {
+  const { db, values, transmit, args, deps } = setup();
+  transmit.mockResolvedValue(result);
+  await expect(executarOperacao(db, args, deps)).rejects.toThrow('não confirmou');
+  expect(values.get('operations_execution:a:2026-09:release').status).toBe('ATTENTION');
+  await expect(executarOperacao(db, args, deps)).rejects.toThrow('já teve uma tentativa');
+  expect(transmit).toHaveBeenCalledTimes(1);
+});
 test('procuração ausente ou vencida bloqueia antes da execução; não a consulta automaticamente', async () => {
   const { db, values, transmit, args, deps } = setup();
   values.delete('serpro_procuration_status:a');

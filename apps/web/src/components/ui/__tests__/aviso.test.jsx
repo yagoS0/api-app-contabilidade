@@ -9,7 +9,8 @@
 // é conclusão: só sai quando quem chama pediu verde com todas as letras.
 
 import { render, screen } from "@testing-library/react";
-import { Aviso, TONS_VALIDOS, tomDoAviso } from "../Aviso.jsx";
+import { Aviso } from "../Aviso.jsx";
+import { TONS_VALIDOS, tomDoAviso } from "../Aviso.shared";
 
 describe("tomDoAviso — a trava", () => {
   it.each(TONS_VALIDOS)("mantém o tom válido %s", (tom) => {

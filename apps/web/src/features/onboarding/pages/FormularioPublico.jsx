@@ -1,7 +1,8 @@
 import { validarDadosOnboarding, reconciliarDados } from "@contabilidade/shared/onboarding-dados";
 import { useEffect, useRef, useState } from "react";
 import { CampoOnboarding } from "../components/CampoOnboarding";
-import { FichaDeclarada, formatarValor } from "../components/PassoRevisao";
+import { FichaDeclarada } from '../components/PassoRevisao';
+import { formatarValor } from '../components/PassoRevisao.shared.js';
 import { camposDoPasso, passosVisiveis, podarInvisiveis, descritorDe } from "../lib/onboardingSpec";
 import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
 import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import './imprimirRelatorio.css';
 const brl=v=>v==null?'Sem base':Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-export function ImprimirRelatorio({api,empresaId,empresaNome,empresaCnpj,dados,de,ate,comparar}) {
+export function ImprimirRelatorio({api,empresaId,empresaNome,empresaCnpj,de,ate,comparar}) {
   const ativo=useRef(true);
   useEffect(()=>{ativo.current=true;return()=>{ativo.current=false;};},[]);
   const [foto,setFoto]=useState(null),[erro,setErro]=useState(''),[ocupado,setOcupado]=useState(false);

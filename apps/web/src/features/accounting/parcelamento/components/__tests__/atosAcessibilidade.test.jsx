@@ -1,4 +1,4 @@
-import {act,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,fireEvent,render,screen} from '@testing-library/react';
 import {ExclusaoParcelamentoModal,DesfazerRescisaoModal} from '../AtoParcelamentoModal';
 import {DeclararComposicaoParcelaModal} from '../DeclararComposicaoParcelaModal';
 import {explicarRecusa,explicarRecusaComposicao,explicarRecusaCorrecao} from '../../lib/baixaManualParcela';

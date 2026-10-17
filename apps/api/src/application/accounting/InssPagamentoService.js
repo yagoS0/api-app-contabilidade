@@ -36,8 +36,8 @@ function competenciaLabel(competencia) {
 // Acha a conta "INSS a Recolher" creditada na folha/pró-labore da competência (linha C cujo
 // histórico cita INSS — o template grava "VR REF INSS S/..."). Fallback: nome da conta no plano
 // de contas batendo com os accountHints de INSS do payrollTemplate. "" se não achar.
-export async function resolveInssAccountFromFolha(portalClientId, competencia) {
-  const folhas = await prisma.accountingEntry.findMany({
+export async function resolveInssAccountFromFolha(portalClientId, competencia, client = prisma) {
+  const folhas = await client.accountingEntry.findMany({
     where: { portalClientId, competencia: String(competencia), tipo: "FOLHA" },
     select: { lines: { select: { conta: true, tipo: true, historico: true } } },
     orderBy: { createdAt: "desc" },
@@ -51,18 +51,18 @@ export async function resolveInssAccountFromFolha(portalClientId, competencia) {
   }
   // Fallback: plano de contas por nome (hints de INSS do template de folha).
   const hints = (PAYROLL_TEMPLATES.FOLHA.lines.find((x) => x.role === "inss")?.accountHints || []).map(norm);
-  return matchAccountByHints(portalClientId, hints);
+  return matchAccountByHints(portalClientId, hints, client);
 }
 
 // Caixa da baixa: resolve pelos creditAccountHints (caixa/banco) do template de folha. "" se não achar.
-export async function resolveCaixaAccount(portalClientId) {
+export async function resolveCaixaAccount(portalClientId, client = prisma) {
   const hints = (PAYROLL_TEMPLATES.FOLHA.baixa?.creditAccountHints || []).map(norm);
-  return matchAccountByHints(portalClientId, hints);
+  return matchAccountByHints(portalClientId, hints, client);
 }
 
-async function matchAccountByHints(portalClientId, normalizedHints) {
+async function matchAccountByHints(portalClientId, normalizedHints, client = prisma) {
   if (!normalizedHints.length) return "";
-  const raw = await prisma.chartOfAccount.findMany({
+  const raw = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
     select: { codigo: true, nome: true, portalClientId: true },
   });
@@ -107,9 +107,9 @@ async function matchAccountByHints(portalClientId, normalizedHints) {
  * consultado com uma guia reemitida depois do vencimento, já com juros e multa.
  * Sem evidência suficiente, deixa a contabilização para conferência na Circular.
  */
-export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, historico, lines, rateio, userId }) {
+async function gerarPagamentoInss({ portalClientId, guideId, dataPagamento, historico, lines, rateio, userId, origem = "MANUAL", exigirContas = false }, client, transaction) {
   void userId; // reservado p/ auditoria futura
-  const guide = await prisma.guide.findFirst({
+  const guide = await client.guide.findFirst({
     where: { id: String(guideId), portalClientId },
     select: {
       id: true, tipo: true, competencia: true, valor: true, lancamentoId: true, baixada: true,
@@ -120,7 +120,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   if (String(guide.tipo || "").toUpperCase() !== "INSS") return { skipped: true, reason: "nao_e_inss" };
   if (guide.lancamentoId || guide.baixada) return { skipped: true, reason: "ja_baixada" };
 
-  const baixaExistente = await prisma.accountingEntry.findFirst({
+  const baixaExistente = await client.accountingEntry.findFirst({
     where: { sourceGuideId: guide.id, tipo: "BAIXA" }, select: { id: true },
   });
   if (baixaExistente) return { skipped: true, reason: "ja_baixada" };
@@ -128,7 +128,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   const data = dataDoComprovante({ dataArrecadacao: dataPagamento });
   if (!data || !Number.isFinite(data.getTime())) return { skipped: true, reason: "data_pagamento_ausente" };
   const competenciaPag = competenciaFromDate(data);
-  if (await isMonthClosed(portalClientId, competenciaPag)) {
+  if (await isMonthClosed(portalClientId, competenciaPag, client)) {
     const err = new Error(`Mês ${competenciaPag} fechado — reabra antes de baixar o INSS.`);
     err.code = "MES_FECHADO";
     throw err;
@@ -192,8 +192,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   } else {
     // Caminho automático com composição comprovada (encargos podem ser zero).
     // `separarPorPapel` fazer o resto. Nenhuma lógica de separação nova.
-    contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
-    contaCaixa = await resolveCaixaAccount(portalClientId);
+    contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia, client);
+    contaCaixa = await resolveCaixaAccount(portalClientId, client);
     entryLines = [
       { conta: contaInss || "", tipo: "D", valor: round2(rateio.principal), papel: "PRINCIPAL", ordem: 0 },
       { conta: CONTA_JUROS, tipo: "D", valor: round2(rateio.juros), papel: "JUROS", ordem: 1 },
@@ -218,7 +218,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
 
   const SUFIXO_HISTORICO = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
 
-  return prisma.$transaction(async (tx) => {
+  if (exigirContas && entryLines.some(l => !String(l.conta || '').trim())) throw Object.assign(new Error('Contas do pagamento incompletas.'), { pendencia: 'CONTAS_AUSENTES' });
+  return transaction(async (tx) => {
     if(composicaoHabilitada())await exigirBaixaForaDaComposicao(tx,portalClientId,null,String(guideId));
     // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
     //
@@ -250,7 +251,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
       competencia: competenciaPag,
       tipo: "BAIXA",
       subtipo: "INSS",
-      origem: "MANUAL",
+      origem,
       loteImportacao: `INSS-PAG-${guide.id.slice(0, 8)}`,
       status: "RASCUNHO",
       statusPagamento: "PAGO",
@@ -316,3 +317,6 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     };
   });
 }
+
+export function gerarPagamentoInssFromGuide(args) { return gerarPagamentoInss(args, prisma, fn => prisma.$transaction(fn)); }
+export function gerarPagamentoInssFromGuideTx(tx, args) { return gerarPagamentoInss({ ...args, exigirContas: true }, tx, fn => fn(tx)); }

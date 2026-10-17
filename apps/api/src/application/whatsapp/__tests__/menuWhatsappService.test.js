@@ -1,3 +1,4 @@
+import { versaoPagamentoGuia } from '../../guides/ConfirmacaoPagamentoClienteService.js';
 import { responderMenuWhatsapp, opcoesIniciaisDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
 import { executarFerramenta } from "../../assistente/ferramentas/index.js";
 import { montarPayloadLista } from "../WhatsappCloudClient.js";
@@ -459,9 +460,10 @@ describe("situação fiscal pelo botão; texto livre permanece no assistente", (
 it('botão de pagamento executa diretamente, sem portal nem modelo',async()=>{
  const entrada=registro({cliente:true});const client=banco({cliente:true});const cloud=nuvem();const executar=jest.fn();const coleta=jest.fn();
  const id='altan.payment.confirm.11111111-1111-4111-8111-111111111111';
- client.appSetting={findUnique:jest.fn(async({where})=>where.key===id?({value:{companyId:'pc1',guideId:'g1',contatoId:'ct1',telefone:entrada.conversa.telefoneE164,expiraEm:'2026-10-01'}}):null),update:jest.fn(),upsert:jest.fn(),create:jest.fn()};
+ const guiaPagamento={id:'g1',paymentStatus:'OPEN',baixada:false,updatedAt:AGORA};
+ client.appSetting={findUnique:jest.fn(async({where})=>where.key===id?({value:{versaoPagamento:versaoPagamentoGuia(guiaPagamento),companyId:'pc1',guideId:'g1',contatoId:'ct1',telefone:entrada.conversa.telefoneE164,expiraEm:'2026-10-01'}}):null),update:jest.fn(),upsert:jest.fn(),create:jest.fn()};
  client.contatoWhatsapp.findFirst=jest.fn(async()=>({id:'ct1',userId:'u1'}));
- client.guide={findFirst:jest.fn(async()=>({id:'g1',paymentStatus:'OPEN',baixada:false,updatedAt:AGORA})),updateMany:jest.fn(async()=>({count:1}))};
+ client.guide={findFirst:jest.fn(async()=>guiaPagamento),updateMany:jest.fn(async()=>({count:1}))};
  client.$transaction=fn=>fn(client);
  const r=await responderMenuWhatsapp({registro:entrada,interacao:{id},agora:AGORA,client,cloud,executar,coleta,resolverVinculo:resolverCliente,conferirJanela:janelaAberta,logger:log});
  expect(r).toMatchObject({tratado:true,acao:'CONFIRMAR_PAGAMENTO'});expect(client.guide.updateMany).not.toHaveBeenCalled();expect(cloud.enviarBotoes).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Em que data'),botoes:expect.arrayContaining([expect.objectContaining({titulo:'Hoje'}),expect.objectContaining({titulo:'Data de vencimento'}),expect.objectContaining({titulo:'Digitar uma data'})])}));expect(executar).not.toHaveBeenCalled();expect(coleta).not.toHaveBeenCalled();

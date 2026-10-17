@@ -1,4 +1,4 @@
-import {act,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {fireEvent,render,screen} from '@testing-library/react';
 import {DividasCircular} from '../DividasCircular';
 const itens=[{chave:'a',tributo:'PIS',competencia:'2026-01',saldo:100,elegivel:true},{chave:'b',tributo:'COFINS',competencia:'2026-01',saldo:200,elegivel:false,motivo:'Já incluído em outro acordo.'}];
 test('seleção de tabela considera só elegíveis e não grava antes da confirmação',async()=>{

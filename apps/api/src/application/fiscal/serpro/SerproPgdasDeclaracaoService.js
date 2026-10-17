@@ -817,7 +817,8 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     //
     // ⚠ Só vale para o zerado TRANSMITIDO. O caminho `NOT_FOUND` (nenhuma declaração no período)
     // não passa por aqui de propósito — ali não existe declaração, e não há o que afirmar.
-    const declaracaoZerada = !(Number(receitaBruta) > 0) && !(Number(dasTotal) > 0);
+    // Ausência de extração não comprova zero: ambos os valores precisam estar presentes.
+    const declaracaoZerada = receitaBruta === 0 && dasTotal === 0;
     let semFaturamento = null;
     if (declaracaoZerada && !somenteDocumentos) {
       // A recusa é RETORNO, não exceção: se houver nota emitida, a marcação não acontece e a

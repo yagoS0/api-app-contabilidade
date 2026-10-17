@@ -13,7 +13,8 @@
 // continua ali (o envio manual alcança guia em ERROR — `whereGuiaPendenteDeEnvio()` sem janela de
 // retry, no backend).
 import { render, screen, fireEvent } from "@testing-library/react";
-import { GuiaChip, todasConcluidas } from "../renderGuiaChip.jsx";
+import { GuiaChip } from '../renderGuiaChip.jsx';
+import { todasConcluidas } from '../renderGuiaChip.shared.js';
 
 test("parcela com pagamento a confirmar não afirma envio nem permite condensar pendência", () => {
   const tag = { key: "parcDas", label: "Parcelamento", state: "enviada", pendenciaOperacional: true, pendencias: 1, itens: [{ id: "p", estado: "CONSULTAR_PAGAMENTO" }] };

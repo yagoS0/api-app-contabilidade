@@ -1,3 +1,4 @@
+import { versaoPagamentoGuia } from '../ConfirmacaoPagamentoClienteService.js';
 import { recalcularGuiaWhatsapp } from '../RecalcularGuiaWhatsappService.js';
 
 const ID = 'altan.payment.recalculate.11111111-1111-4111-8111-111111111111';
@@ -30,6 +31,7 @@ test('clique envia aguarde, recalcula e entrega PDF e código em sequência, sem
   expect(f.cloud.enviarBotoes.mock.calls[0][0].texto).toContain('EMPRESA A — SIMPLES — 2026-09');
   expect(f.cloud.enviarTexto.mock.calls.some(([a]) => /https?:|portal/i.test(a.texto))).toBe(false);
   const tokenNovo = f.records.get(f.cloud.enviarBotoes.mock.calls[0][0].botoes[0].id).value;
+  expect(tokenNovo.versaoPagamento).toBe(versaoPagamentoGuia(f.guia));
   expect(tokenNovo).toMatchObject({ hash: 'original', guideId: 'g', companyId: 'c' });
 });
 test('dois cliques concorrentes executam um único recálculo e envio', async () => {
@@ -90,3 +92,5 @@ test('não afirma encaminhamento quando o registro falha', async () => {
  f.args.encaminhar = jest.fn(async () => { throw Error('db'); });
  await f.run(); expect(f.ordem.join(' ')).not.toContain('Solicitei ao contador'); expect(f.deps.recalcular).not.toHaveBeenCalled();
 });
+
+test('botão após recálculo preserva composição nova e bloqueia alteração durante entrega',async()=>{const f=cenario();f.deps.recalcular.mockImplementation(async()=>{f.guia.extracted={fields:{principal:100,juros:10,multa:5,total:115}};return {...f.guia};});await f.run();const token=f.records.get(f.cloud.enviarBotoes.mock.calls[0][0].botoes[0].id).value;expect(token.versaoPagamento).toBe(versaoPagamentoGuia(f.guia));const g=cenario();g.deps.carregarPdf.mockImplementation(async()=>{g.guia.extracted={fields:{principal:99}};return Buffer.from('PDF');});await g.run();expect(g.cloud.enviarBotoes).not.toHaveBeenCalled();expect(g.cloud.enviarGuiaComPagamento).not.toHaveBeenCalled();});

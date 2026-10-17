@@ -1,7 +1,7 @@
 import "./historicos-modal.css";
 import { Modal } from "../../../../components/ui/Modal";
 import { Button } from "../../../../components/ui/Button";
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 const PANEL = {
   page: "var(--bg-page)",
   surface: "var(--bg-surface)",
@@ -56,26 +56,27 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
   const [deletingId, setDeletingId] = useState(null);
   const [promotingId, setPromotingId] = useState(null);
   const [error, setError] = useState("");
+  const onLoadAllRef = useRef(onLoadAll);
+  onLoadAllRef.current = onLoadAll;
   const trava = useRef(false);
   const ocupado = saving || deletingId !== null;
   const fechar = () => { if (!trava.current) onClose(); };
 
-  useEffect(() => {
-    load();
-  }, []);
 
-  async function load() {
+
+  const load = useCallback(async () => {
     setError("");
     setLoading(true);
     try {
-      const result = await onLoadAll();
+      const result = await onLoadAllRef.current();
       setItems(Array.isArray(result) ? result : []);
     } catch {
       setError("Erro ao carregar históricos.");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   function startEdit(item) {
     setEditingId(item.id);

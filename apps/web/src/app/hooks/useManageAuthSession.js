@@ -1,6 +1,6 @@
 import { limparRascunhosDaSessao } from "../../features/whatsapp/hooks/useRascunhoServidor";
 import { destinoInternoSeguro, desligarNotificacoesLocais } from "../../features/whatsapp/lib/atendimentoPwa";
-import { useWorkspaceNavigation } from "../navigation/WorkspaceNavigation";
+import { useWorkspaceNavigation } from "../navigation/WorkspaceNavigation.shared";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 

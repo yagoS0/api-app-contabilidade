@@ -13,7 +13,8 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 import { MemoryRouter } from "react-router-dom";
-import { informacaoRecalculo } from "../../../components/RecalculoGuiaAviso";
+
+import { informacaoRecalculo } from "../../../components/RecalculoGuiaAviso.shared.js";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: ({ entry }) => <div data-testid="baixa-aberta">{entry.id}</div>,

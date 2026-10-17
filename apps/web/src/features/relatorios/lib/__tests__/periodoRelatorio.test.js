@@ -5,9 +5,7 @@
 // variação sobre base zero não pode virar percentual (senão a linha mais chamativa do relatório
 // nasce de uma divisão por zero).
 
-import {
-  parse, deslocar, meses, intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
-} from "../periodoRelatorio";
+import { deslocar, meses, intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal } from '../periodoRelatorio';
 
 describe("deslocar", () => {
   it("anda meses para frente e para trás", () => {

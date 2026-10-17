@@ -16,7 +16,7 @@ import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/
 // município e do de serviço nacional. E o que é preenchido continua editável: quem manda no que vai
 // na nota é quem emite.
 
-const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
+
 
 /**
  * Consolida a lista de notas em tomadores únicos.

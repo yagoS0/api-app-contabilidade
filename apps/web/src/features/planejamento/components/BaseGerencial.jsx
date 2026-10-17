@@ -3,7 +3,7 @@ import { calcularGestao, contasGerenciais } from '../../../../../../packages/sha
 const brl=v=>v==null?'Classificação pendente':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 export function BaseGerencial({api,empresaId,dre}) {
   const geracao=useRef(0);
-  useEffect(()=>{geracao.current++;setSalvando(false);return()=>{geracao.current++;};},[api,empresaId]);
+  useEffect(()=>{const contador=geracao;contador.current++;setSalvando(false);return()=>{contador.current++;};},[api,empresaId]);
   const [base,setBase]=useState(null),[editando,setEditando]=useState(false),[rascunho,setRascunho]=useState({}),[erro,setErro]=useState(''),[salvando,setSalvando]=useState(false),[tentativa,setTentativa]=useState(0);
   useEffect(()=>{let vivo=true;setBase(null);setErro('');setEditando(false);Promise.resolve().then(()=>api.getClassificacaoGerencial(empresaId)).then(r=>{if(r.ok===false)throw Error(r.message);if(vivo){setBase(r);setRascunho(r.contas);}}).catch(e=>{if(vivo)setErro('Não foi possível carregar a classificação gerencial. '+e.message);});return()=>{vivo=false;};},[api,empresaId,tentativa]);
   const [selecionadas,setSelecionadas]=useState([]),[filtro,setFiltro]=useState('todas');

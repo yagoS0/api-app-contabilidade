@@ -81,7 +81,8 @@ describe("a coluna existe e substitui a de e-mail", () => {
     montar([guia(zap("entregue"))]);
     expect(screen.getAllByRole("columnheader")).toHaveLength(8);
     expect(screen.getByRole("columnheader", { name: "Pagamento" })).toBeInTheDocument();
-    expect(screen.getByText("Processada").closest('[role="cell"]')).toHaveClass("guides-grid__cell--type");
+    expect(screen.queryByText("Processada")).not.toBeInTheDocument();
+    expect(screen.getByTitle(/· Processada$/)).toHaveClass("guides-grid__cell--type");
   });
 });
 

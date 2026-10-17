@@ -152,12 +152,12 @@ describe("⚠⚠ CONFIRMAR QUE PAGOU — e o que a confirmação NÃO faz", () =
     }
   });
 
-  it("⚠⚠ a confirmação diz que a BAIXA CONTÁBIL continua com o contador", () => {
+  it("⚠⚠ a confirmação diz que a confirmação autoriza baixa automática com log da declaração", () => {
     // Um "confirmar pagamento?" seco faria o cliente achar que o assunto está encerrado dos dois
     // lados — e não está.
     const a = avisoAntesDeConfirmar(PAGAVEL);
-    expect(a.texto).toMatch(/baixa na contabilidade continua sendo feita por ele/i);
-    expect(a.texto).toMatch(/sua confirmação não a lança/i);
+    expect(a.texto).toMatch(/autoriza a baixa automática na contabilidade/i);
+    expect(a.texto).toMatch(/não é comprovante bancário/i);
   });
 
   it("⚠ e diz que NÃO precisa anexar comprovante (decisão do dono)", () => {

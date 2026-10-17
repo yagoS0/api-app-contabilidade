@@ -43,7 +43,7 @@ function deriveCompanyIdFromPath(pathname) {
 
 function deriveCompanyDetailTab(pathname) {
   // Q17: Lançamentos é a aba default ao abrir uma empresa.
-  const match = pathname.match(/^\/companies\/[^\/]+\/([^\/]+)/);
+  const match = pathname.match(/^\/companies\/[^/]+\/([^/]+)/);
   // Default = Anotações: se a empresa tem alguma particularidade, ela precisa ser lida ANTES de
   // mexer em qualquer número. Antes o default era Lançamentos, e a anotação só era vista por quem
   // fosse procurá-la.

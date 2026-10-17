@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ProtecaoEdicao, useEdicaoPendente, useConfirmarSaida } from '../ProtecaoEdicao';
+import { ProtecaoEdicao } from '../ProtecaoEdicao';
+import { useEdicaoPendente, useConfirmarSaida } from '../ProtecaoEdicao.shared.js';
 
 function Editor({ navegar }) {
   const [valor, setValor] = useState('salvo');

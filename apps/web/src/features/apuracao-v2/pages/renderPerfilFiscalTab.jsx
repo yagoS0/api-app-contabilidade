@@ -9,7 +9,8 @@
 // mudou foi o endereço. Uma segunda leitura das atividades faria as duas telas discordarem sobre a
 // mesma empresa — é o defeito que este projeto já pagou com `legacyCompanySelect`.
 
-import { PANEL } from "../../notas/components/notasStyles";
+
+import { PANEL } from "../../notas/components/notasStyles.shared.js";
 import { CadastroReforma } from '../../reforma/CadastroReforma';
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { ServicosTributacao } from "../components/ServicosTributacao";

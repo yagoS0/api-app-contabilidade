@@ -91,7 +91,6 @@ export function criarMockAcompanhamentoParcelamentos({ empresas = [], guias = ne
     async localizarParcelamentos(id, { modalidades = ["PARCSN", "PARCMEI"] } = {}) {
       const s = state(id);
       if (s.cenario === "erro") throw new Error("Não foi possível consultar a Receita. Verifique a procuração e tente novamente.");
-      const pendentes = s.indicacoes.filter(i => i.status === "PENDENTE");
       for (const tipo of modalidades) {
         if (tipo === "PARCMEI" && s.indicacoes.length) continue;
         const c = criar(id, { tipo, numeroParcelamento: tipo === "PARCSN" ? "990001" : "990002", formaPagamento: "GUIA_MENSAL" });

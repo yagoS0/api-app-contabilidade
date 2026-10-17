@@ -77,3 +77,15 @@
 .operacoes-inss-rodape { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; width: 100%; }
 .operacoes-dialogo .operacoes-inss-rodape a.btn { text-decoration: none; }
 @media(max-width:600px) { .operacoes-inss-rodape > .operacoes-acoes { width: 100%; } .operacoes-inss-rodape .operacoes-acoes > a { flex: 1 1 140px; text-align: center; } }
+
+/* Shared work queue: counts and rows are taken from the same projection. */
+.operacoes-fila { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: var(--space-5); background: var(--bg-page); }
+.operacoes-fila h3 { margin: 0; font-size: 1rem; }
+.operacoes-fila h3 span,.operacoes-fila-contexto { color: var(--text-muted); font-weight: 400; }
+.operacoes-fila-contexto { margin: var(--space-2) 0; font-size: .85rem; }
+.operacoes-quadro[aria-pressed=true] { border-color: var(--accent-purple); background: var(--accent-purple-surface); }
+.operacoes-indicadores { grid-template-columns: repeat(auto-fit,minmax(155px,1fr)); gap: var(--space-3); }
+.operacoes-quadro { border-radius: var(--radius); min-height: 110px; }
+.operacoes-resumo { border-radius: var(--radius); padding: var(--space-4); }
+.operacoes > h3 { font-size: 1rem; margin: var(--space-5) 0 var(--space-3); }
+@media(max-width:600px) { .operacoes-indicadores { grid-template-columns: repeat(2,minmax(0,1fr)); } .operacoes-fila { padding: var(--space-3); } }

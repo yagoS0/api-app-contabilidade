@@ -1,10 +1,10 @@
+import { textoAlertaTarefa, empresaConcluida } from './PainelTarefaCalendario.shared.js';
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { dataBR } from '../lib/agendaWorkspace';
 
-export const textoAlertaTarefa = alerta => ({ AMANHA:'Vence amanhã', HOJE:'Vence hoje', ATRASADA:'Atrasada' }[alerta] || '');
-export const empresaConcluida = empresa => empresa.subtarefas?.length ? empresa.subtarefas.every(s => s.concluida) : Boolean(empresa.concluida || empresa.concluidaEm);
+
 function alertaAtual(vencimento) {
   if (!vencimento) return '';
   const hoje = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());

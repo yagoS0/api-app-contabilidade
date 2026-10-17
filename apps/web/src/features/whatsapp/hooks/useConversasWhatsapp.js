@@ -39,7 +39,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const contexto = contextoAtual.current;
   const montado = useRef(false);
   const contextoVigente = useCallback(() => montado.current && contextoAtual.current === contexto, [contexto]);
-  useEffect(() => {
+  useEffect(() => { const versaoListaDaExecucao = versaoLista, versaoFioDaExecucao = versaoFio;
     montado.current = true;
     rascunhosRef.current.clear();
     lidas.current.clear();
@@ -48,7 +48,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     empresaHistoricoRef.current = null; setEmpresaHistorico(null);
     paginas.current = { lista: false, fio: false, filtro: null };
     setCarregandoFio(false); setOcupado(false); setTemMais(null); setTemMaisNoFio(null); setConsumoIa(null);
-    return () => { montado.current = false; versaoLista.current++; versaoFio.current++; selecionada.current = null; };
+    return () => { montado.current = false; versaoListaDaExecucao.current++; versaoFioDaExecucao.current++; selecionada.current = null; };
   }, [api, empresa]);
 
   const carregar = useCallback(async (f = filtro, silencioso = false, cursor = null) => {
@@ -60,7 +60,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     if (cursor) setCarregandoMais(true);
     else if (!silencioso) setCarregando(true);
     try {
-      const r = await api.listarConversasWhatsapp(f, { empresa, ...(api.whatsappContratoV2 ? consulta : {}), ...(cursor ? { cursor } : {}) });
+      const r = await api.listarConversasWhatsapp(f, { empresa, ...(api.whatsappContratoV2 ? JSON.parse(consultaChave) : {}), ...(cursor ? { cursor } : {}) });
       if (versao !== versaoLista.current) return;
       if (!Array.isArray(r?.conversas)) throw new Error("Resposta inválida ao ler conversas.");
       setBuscaServidor(r.buscaConfigurada === true || r.versaoContrato === 2);
@@ -120,7 +120,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     } finally {
       if (versao === versaoFio.current) { setCarregandoFio(false); setCarregandoAnteriores(false); }
     }
-  }, [api, empresa, contextoVigente]);
+  }, [api, contextoVigente]);
 
   // Um ciclo por vez; aba oculta não consulta. Respostas antigas não trocam o contato selecionado.
   const polling = useRef({ carregar, abrir, filtro, ocupado });

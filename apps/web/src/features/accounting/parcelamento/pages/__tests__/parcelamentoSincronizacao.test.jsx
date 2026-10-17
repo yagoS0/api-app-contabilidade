@@ -15,6 +15,14 @@ const parcela = (id, numero) => ({ guideId: id, numeroParcela: numero, parcelame
 const hook = () => ({ parcelamentos: [contrato], loading: false, load: jest.fn(), listConferencia: jest.fn().mockResolvedValue([]) });
 beforeEach(() => { jest.clearAllMocks(); mockListSemGuia.mockResolvedValue({ parcelas: [] }); Element.prototype.scrollIntoView = jest.fn(); });
 
+it('resposta sem parcelas não se apresenta como fila vazia', async () => {
+  mockListPendentes.mockResolvedValue({ ok: true });
+  mockListSemGuia.mockResolvedValue({ ok: false, message: 'Consulta recusada' });
+  render(<ParcelamentoTab companyId="A" parcelamentos={hook()} />);
+  expect(await screen.findByText(/A consulta não retornou a fila/)).toBeInTheDocument();
+  expect(await screen.findByText(/Consulta recusada/)).toBeInTheDocument();
+});
+
 it("baixa com guia mantém confirmação visível e atualiza cards, filas e conferência", async () => {
   const state = hook();
   mockListPendentes.mockResolvedValueOnce({ parcelas: [parcela("g1", 1)] }).mockResolvedValue({ parcelas: [] });

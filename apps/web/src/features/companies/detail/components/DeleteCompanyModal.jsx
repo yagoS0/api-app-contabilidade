@@ -26,7 +26,7 @@ export function DeleteCompanyModal({ company, saving, onConfirm, onClose }) {
   const [confirmInput, setConfirmInput] = useState("");
   const [err, setErr] = useState(null);
 
-  const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
+
   const isMatch = normalizarDocumento(confirmInput) === normalizarDocumento(company?.cnpj);
   const [excluindo, setExcluindo] = useState(false);
   const trava = useRef(false);

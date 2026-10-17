@@ -15,13 +15,15 @@ export function FichaAvulsa({ api, onboarding, onSalvo, somenteLeitura = false }
   const [ficha, setFicha] = useState(null), [dados, setDados] = useState(null), [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false), [conferido, setConferido] = useState(false), [sujo, setSujo] = useState(false);
   const versao = useRef(onboarding.versao), trava = useRef(false);
+  const fichaAtual = useRef(onboarding); fichaAtual.current = onboarding;
   useEffect(() => {
+    const fichaInicial = fichaAtual.current;
     let vivo = true;
     api.comercial(`/onboardings/${encodeURIComponent(onboarding.id)}/ficha-avulsa`).then(r => {
       if (!vivo) return;
       setFicha(r.fichaAvulsa || null);
-      setDados(r.fichaAvulsa?.dados || prepararFicha(onboarding));
-      versao.current = onboarding.versao;
+      setDados(r.fichaAvulsa?.dados || prepararFicha(fichaInicial));
+      versao.current = fichaInicial.versao;
     }).catch(e => { if (vivo) setErro(e.message); });
     return () => { vivo = false; };
   }, [api, onboarding.id]);

@@ -56,7 +56,7 @@ function apiFalso(over = {}) {
   };
 }
 
-function Ponte({ api, competenciaInicial }) {
+function Ponte({ api }) {
   const whatsapp = useLoteWhatsapp({ api, feedback: { notifyError: jest.fn() } });
   return (
     <BatchEmailPage report={REPORT} loading={false} sending={false} onBack={() => {}} onLoad={jest.fn()} onSend={jest.fn()} whatsapp={whatsapp} />

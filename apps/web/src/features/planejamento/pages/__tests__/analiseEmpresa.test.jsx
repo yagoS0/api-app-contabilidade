@@ -73,7 +73,10 @@ test('comparação aberta mantém o atual sem inventar crescimento ou pontos per
  render(<AnaliseEmpresa api={a} empresaId={id}/>);
  await screen.findByText(/Comparação indisponível/);
  const card=screen.getByRole('button',{name:/Margem líquida/});
- expect(card).toHaveTextContent('Anterior: Sem dados');
+ expect(card).not.toHaveTextContent('Anterior:');
+ expect(card).not.toHaveTextContent('Sem base comparável');
+ fireEvent.click(screen.getByRole('link', { name: 'Conferir cobertura' }));
+ expect(screen.getByText('Cobertura e origem dos dados').closest('details')).toHaveAttribute('open');
  expect(card).not.toHaveTextContent('p.p.');
  expect(screen.getByRole('button',{name:/Faturamento documental/})).toBeInTheDocument();
 });

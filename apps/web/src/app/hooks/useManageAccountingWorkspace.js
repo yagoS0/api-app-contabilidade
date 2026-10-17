@@ -3,7 +3,7 @@ import { useAccountingEntries } from "../../features/accounting/hooks/useManageA
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
 import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
 
-export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab, feedback }) {
+export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab }) {
   const accountingEntriesState = useAccountingEntries();
   const chartOfAccountsState = useChartOfAccounts();
   const entriesRequest = useRef(0);

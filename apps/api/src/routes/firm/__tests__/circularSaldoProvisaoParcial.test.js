@@ -36,6 +36,8 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    // Nenhuma confirmação R25 neste cenário legado; consulta real permanece exercitada.
+    appSetting: { findMany: jest.fn(async () => []) },
     accountingEntry: { findMany: jest.fn(async () => []) },
     guide: { findMany: jest.fn(async () => []) },
     companyMonthlyCircular: { findMany: jest.fn(async () => []) },

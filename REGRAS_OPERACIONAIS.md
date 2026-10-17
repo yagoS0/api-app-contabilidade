@@ -1,6 +1,6 @@
 # Regras operacionais do Altan
 
-Versão 0.3 — 16/10/2026. Base inspecionada: `eee63f21` (`origin/main` local).
+Versão 0.4 — 16/10/2026. Base inspecionada inicial: `eee63f21` (`origin/main` local). Decisões posteriores na seção 21.
 
 ## Consulta obrigatória em qualquer alteração
 
@@ -343,7 +343,7 @@ Em configuração, `Forma de pagamento` pede parcela/data inicial de vigência e
 
 Efeito real: essas parcelas saem das pendências de obter/enviar guia quando dispensadas, mas permanecem no acompanhamento financeiro. Exceção válida por guia volta a gerar a expectativa documental daquela parcela. Adesão e exceções ficam registradas com autor e motivo.
 
-### 18.6 Informação e confirmação de pagamento — V04
+### 18.6 Informação e confirmação de pagamento — V04 (proposta histórica substituída pela seção 21)
 
 No documento e acompanhamento financeiro, usar rótulos com origem:
 
@@ -396,3 +396,27 @@ Execução autorizada pelo usuário em `altan-revisao-produto-dev`, com revisão
 
 Cenários de regressão: extração ausente versus zero explícito; auditoria e reabertura com concorrência; resposta negativa/vazia de transmissão; troca de competência durante envio; erro versus fila vazia; fechar/reabrir e recarregar; documentos/notas de empresas distintas; pagamento informado pelo cliente sem baixa automática. Evidências e limites detalhados em `altan-revisao-produto-dev/docs/revisao-produto-2026-10/ENTREGA_DEV.md`. Este registro não certifica integrações externas.
 
+
+## 21. Baixa pelo cliente e correção contábil — decisões aprovadas em 16/10/2026
+
+Decisão expressa do usuário: “Baixa direta apos o cliente confirmar, salvando o log para caso necessite de prova. correção do mes fechado pode seguir como falou”. Esta seção substitui a proposta V04 das seções 5, 15 e 18.6 e a restrição histórica de baixa pelo cliente citada na seção 20 e nos documentos de design. A implementação ainda depende dos gates e revisões; este registro não declara entrega concluída.
+
+**R25 — confirmação do cliente com baixa direta.** Uma confirmação explícita e autenticada do cliente para a guia e revisão correspondentes autoriza a baixa automática, sem segunda aprovação do contador. Mensagem genérica, entrega, leitura ou clique em documento não confirmam pagamento. Persistir origem CLIENTE, canal, identidade do autor/remetente, instante, data de pagamento informada, empresa, guia/revisão, valores e referência do evento de confirmação, com vínculo à baixa. O log é evidência da declaração do cliente, não comprovante bancário nem confirmação oficial. Manter essa origem visível. Preservar eventos anteriores; não converter confirmações legadas em massa.
+
+A baixa deve ser idempotente, não duplicar principal ou encargos, não atingir outras guias e preservar composição de principal/juros/multa. Falta de dados contábeis necessários ou falha de persistência deve ficar como pendência visível e retomável, sem inventar conta, valores ou anunciar baixa concluída. Confirmação válida suspende lembretes daquela guia. A correção posterior preserva a confirmação original e a trilha de auditoria.
+
+**R26 — corrigir mês fechado.** A ação explícita “Corrigir mês fechado” exige permissão contábil e motivo, registra autor, instante, fechamento anterior e alterações antes/depois, e reabre somente a contabilidade. Preservar declarações transmitidas, documentos, recibos, envios e pagamentos. Não retificar nem retransmitir por consequência da reabertura. Manter ocorrência e contador em Contabilidade/Lançamentos até nova conferência, com texto além de cor e histórico consultável após resolução. Validar empresa/competência/versão no servidor; gravação e auditoria são atômicas e repetição não duplica efeitos. A automação de baixa não deve apagar silenciosamente um fechamento: se o mês afetado estiver fechado, conservar a confirmação e indicar a correção contábil necessária pelo fluxo explícito acima.
+
+**Impacto operacional:** altera R12/V04 e concretiza R04–R06, R19–R22 no fechamento contábil. Não aprova outras propostas V02/V03/V05–V08 nem autoriza operações em produção, publicação ou chamadas externas nesta implementação.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T22 | Cliente autorizado confirma guia vigente | Confirmação e baixa vinculadas, origem CLIENTE visível, log persistido e lembretes suspensos |
+| T23 | Evento repetido, concorrente, guia de outra empresa ou revisão antiga | Não duplicar baixa; rejeitar identidade/revisão inválida sem efeito financeiro |
+| T24 | Falha contábil ou dados insuficientes após confirmação | Não anunciar baixa concluída; pendência recuperável com confirmação preservada |
+| T25 | Guia recalculada confirmada entre várias guias | Baixar somente a selecionada, principal/juros/multa separados e sem duplicação |
+| T26 | Correção de mês fechado | Motivo/autor/antes/depois persistidos; apenas contabilidade reaberta; contador de revisão visível após recarga |
+| T27 | Auditoria falha, acesso negado, versão antiga ou duplo clique | Sem transição parcial nem duplicação; mensagem coerente |
+| T28 | Nova conferência após correção | Ocorrência resolvida e contador atualizado; histórico e declaração fiscal preservados |
+| T29 | Confirmação antiga do cliente sem novo evento | Não gerar baixa retroativa em massa |
+| T30 | Cliente confirma pagamento afetando mês fechado | Confirmação preservada e pendência contábil visível até correção explícita, sem alterar fechamento silenciosamente |

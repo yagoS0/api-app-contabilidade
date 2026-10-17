@@ -22,6 +22,7 @@ const EMPRESA = { companyId: "pc-001", razao: "ACME SERVICOS LTDA", cnpj: "11222
 const GUIA_EM_ABERTO = {
   liberadaCliente: true,
   guideId: "g1",
+  versaoPagamento: "documento-revisao-1",
   tipo: "SIMPLES",
   competencia: "2026-06",
   valor: 3422,
@@ -46,7 +47,7 @@ afterEach(() => {
 
 async function montar() {
   api.getGuides = jest.fn(async () => ({ data: [GUIA_EM_ABERTO], page: 1, limit: 25, total: 1 }));
-  api.confirmarPagamentoDaGuia = jest.fn(async () => ({ ok: true, aviso: "Registramos que você pagou." }));
+  api.confirmarPagamentoDaGuia = jest.fn(async () => ({ ok: true, confirmacao: { id: "confirmacao-1", estadoBaixa: "CONCLUIDA" }, aviso: "Registramos que você pagou." }));
   render(<GuiasPage empresa={EMPRESA} competencia="2026-06" aoTrocarCompetencia={() => {}} />);
   await waitFor(() => expect(api.getGuides).toHaveBeenCalled());
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Já paguei" })); });
@@ -94,7 +95,7 @@ describe("⚠⚠ confirmar pagamento pede o DIA em que pagou", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Já paguei esta guia/i }));
     });
-    expect(api.confirmarPagamentoDaGuia).toHaveBeenCalledWith("pc-001", "g1", { pagoEm: "2026-07-14" });
+    expect(api.confirmarPagamentoDaGuia).toHaveBeenCalledWith("pc-001", "g1", { pagoEm: "2026-07-14", versaoPagamento: "documento-revisao-1" });
   });
 
   it("⚠⚠ o `max` é o dia LOCAL, não o UTC — o teste antigo codificava o próprio defeito", async () => {

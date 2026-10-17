@@ -13,14 +13,15 @@ import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // Os cards continuam existindo e são o padrão no celular — a grade de 6 colunas não sobrevive a
 // 375px de largura.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, Popover, resumoDaGuia } from "./renderGuiaChip";
-import { empresaSemObrigacoes } from "../lib/estadoDominante";
+import { GuiaChip } from "./renderGuiaChip";
+import { resumirGuias } from "../lib/resumoGuias";
+import { ResumoGuias, DetalheGuias } from "./ResumoGuias";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
-import { corRegime, descricaoDoRegime, regimeDe } from "../lib/abaRegime";
+import { corRegime, descricaoDoRegime } from "../lib/abaRegime";
 import { estadoCertificado } from "../lib/certificado";
 import { lerFalhaDeCarga } from "../../../../lib/falhaDeCarga";
 // ⚠ REUSO, NÃO CÓPIA. Já existiam DOIS formatadores de CNPJ no projeto
@@ -49,7 +50,7 @@ import { formatarCnpj, soDigitosCnpj } from "../../../onboarding/lib/brasilApi";
  * Sem esta guarda ela subia ao topo como se tivesse guia atrasada.
  */
 function severidadeGuias(company) {
-  if (empresaSemObrigacoes(company)) return 3;
+  if (resumirGuias(company.guideCompliance).falhas) return 0;
   const tags = getComplianceTags(company.guideCompliance);
   if (!tags.length) return 3;
   // ⚠ `falhou` entra no degrau 0, junto de `missing`. Ele não é "gerada, falta enviar" (degrau 1,
@@ -132,30 +133,11 @@ function PopoverConfig({ company, onFechar }) {
  * parcelamento.
  */
 
-function GuiasResumidas({ tags, company, competencia, acoes }) {
-  const [aberto, setAberto] = useState(false);
-  const tom = tags.some(t => ['falhou', 'conflito'].includes(t.state)) ? 'perigo'
-    : tags.some(t => t.state === 'missing') ? 'pendente'
-      : tags.every(t => ['enviada', 'vazio'].includes(t.state)) ? 'ok' : 'info';
-  const rotulo = `${tags.length} ${tags.length === 1 ? 'guia' : 'guias'}`;
-  return <span style={{ position: 'relative', display: 'inline-block' }}>
-    <button type="button" className={`carteira-tag carteira-tag--${tom}`} aria-expanded={aberto}
-      aria-label={`${rotulo}: ${tags.map(t => t.label).join(', ')}`}
-      title={tags.map(resumoDaGuia).join('\n')}
-      onClick={() => setAberto(v => !v)}>
-      <span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{rotulo}
-    </button>
-    {aberto && <Popover onFechar={() => setAberto(false)}>
-      <strong>Guias · {competencia}</strong>
-      {tags.map(tag => <div key={tag.id || tag.key || tag.label} style={{ marginTop: 10 }}>
-        <GuiaChip tag={tag} empresa={company} competencia={competencia} acoes={acoes}/>
-      </div>)}
-    </Popover>}
-  </span>;
-}
-
-function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
+function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
   const [config, setConfig] = useState(false);
+  const [guiasAbertas, setGuiasAbertas] = useState(false);
+  const detalheGuiasId = useId();
+  useEffect(() => setGuiasAbertas(false), [competencia]);
   const [consultando, setConsultando] = useState(false);
   const fluxo = fluxoDaEmpresa(company);
   const apuracao = fluxo.apuracao;
@@ -163,8 +145,8 @@ function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, aco
   const tags = getComplianceTags(company.guideCompliance);
   const fiscal = situacaoFiscalDaLinha(company);
   const rotuloFiscal = fiscal.estado.chave === 'pendencia' ? 'Pendente' : fiscal.rotulo;
-  const resumirGuias = regimeDe(company) === 'LUCRO_PRESUMIDO';
-  const tributos = tags.filter(tag => tag.key !== 'parcDas');
+
+
   const cert = estadoCertificado(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
 
@@ -208,7 +190,7 @@ function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, aco
        botão de enviar e-mail na mesma linha isso virava navegação por acidente. Só o botão
        "Acessar" abre — no mouse e no teclado. As setas ↑↓ continuam movendo o foco entre linhas,
        porque isso é leitura, não ação. */
-    <tr
+    <><tr
       tabIndex={0}
       data-linha-empresa={company.companyId}
       style={{ opacity: fechada && !temPendenciaParcelamento(company) ? 0.55 : 1, outlineOffset: -2 }}
@@ -283,7 +265,7 @@ function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, aco
               por quê é a ausência de novo, um nível acima. A leitura é a mesma de `abaRegime.js`,
               que é quem decide a aba. */}
           <span style={{ color: corRegime(regime) }}>{descricaoDoRegime(company)}</span>
-          {company.empresaZerada && <small title="Sem movimento confirmado na competência">Zerada</small>}
+          {company.empresaZerada && <small title="Cadastro de empresa zerada; confira as obrigações da competência">Zerada</small>}
           <span aria-hidden="true">·</span>
           {/* ⚠ COM MÁSCARA NA TELA, SEM MÁSCARA NA ÁREA DE TRANSFERÊNCIA. `00.000.000/0001-00` é a
               forma que o olho confere contra o contrato social; os 14 dígitos crus são a forma que
@@ -312,9 +294,8 @@ function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, aco
       </td>
       <td data-label="Guias" style={CELULA}>
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {resumirGuias && tributos.length > 0 && <GuiasResumidas tags={tributos} company={company} competencia={competencia} acoes={acoesGuia || {}}/>}
-          {(resumirGuias ? tags.filter(tag => tag.key === 'parcDas') : tags).map(tag => <GuiaChip compacto key={tag.id || tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
-          {!tags.length && <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{company.guideCompliance ? 'Sem guias previstas' : 'Não disponível'}</span>}
+          <ResumoGuias company={company} aberto={guiasAbertas} detailId={detalheGuiasId} onToggle={() => setGuiasAbertas(value => !value)} />
+          {tags.filter(tag => tag.key === 'parcDas').map(tag => <GuiaChip compacto key={tag.id || tag.key || tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />)}
         </span>
       </td>
       <td data-label="Contabilização" style={CELULA}>
@@ -372,6 +353,9 @@ function Linha({ pendencias = 0, company, trava, competencia, onOpenCompany, aco
         </Button>
       </td>
     </tr>
+    {guiasAbertas && <tr className="company-guides-detail"><td colSpan={onAlternarSelecao ? 8 : 7}>
+      <DetalheGuias id={detalheGuiasId} company={company} competencia={competencia} acoes={acoesGuia || {}} />
+    </td></tr>}</>
   );
 }
 
@@ -489,7 +473,7 @@ export function CompaniesTable({ api,
       abertas: ordenar((companies || []).filter((c) => !ehFechada(c))),
       fechadas: ordenar((companies || []).filter(ehFechada)),
     };
-  }, [companies, travas, ordem]);
+  }, [companies, ordem]);
 
   function alternarOrdem(campo) {
     setOrdem((o) => (o.campo === campo ? { campo, asc: !o.asc } : { campo, asc: true }));
@@ -574,6 +558,7 @@ export function CompaniesTable({ api,
   return (
     <>
       <div data-print-tabela className="companies-table-scroll">
+      {falha && companies.length > 0 && <p role="alert">{falha.titulo}. Os dados exibidos são da última leitura disponível.</p>}
       {/* ⚠ `minWidth` — em tela estreita a coluna Guias era ESMAGADA: os chips (que já embrulham em
           várias linhas) viravam uma pilha vertical de uma letra por linha, e a linha da empresa
           crescia até três vezes a altura. Com um mínimo, o contêiner rola na horizontal — que é

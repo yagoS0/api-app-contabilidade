@@ -1,6 +1,6 @@
 import { fluxoDaEmpresa } from "@contabilidade/shared/fluxo-carteira";
 import { FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
-import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
+import { useWorkspaceNavigation } from '../../../../app/navigation/WorkspaceNavigation.shared.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { situacaoFiscalDaLinha } from '../lib/situacaoFiscal';
@@ -74,36 +74,20 @@ export function CompaniesHomePage({
   companies,
   loadingCompanies,
   onCreateCompany,
-  onOpenGuideSettings,
   onOpenChartGlobal,
   onRefreshCompanies,
-  onOpenPendingReport,
-  // ⚠ SEM CONSUMIDOR desde 18/08/2026: o botão "Envio de e-mails em lote" saiu da barra a pedido
-  // do dono, e ele era o único uso desta prop nesta página. O `App.jsx` continua fornecendo-a
-  // (`onOpenBatchEmail={() => session.setPage("batchEmail")}`) e a rota `/guides/batch-email`
-  // continua de pé. Apagar a prop e o handler é decisão à parte — está relatado, não escondido.
-  onOpenBatchEmail, // eslint-disable-line no-unused-vars
-  onOpenApuracao,
-  onOpenRotinas,
-  onOpenPlanejamento,
-  onOpenLaboratorio,
-  onOpenSerproFuncoes,
-  // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
-  onOpenWhatsapp,
   onOpenObrigacoes,
   calendarioContext,
   onCalendarioContextChange,
-  onOpenOnboardings,
-  onOpenConfiguracoes,
   onLogout,
   onOpenCompany,
-  globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
-  dashboardCompetencia, // Q17: competência do filtro (default mês anterior)
+  globalChartStatus, // Pré-requisito para criar empresa.
+  dashboardCompetencia, // Competência do filtro.
   onChangeCompetencia,
-  backgroundJobs, // C9: { total, processadas, empresas } — processos rodando em segundo plano
-  api, // C8: usado pela visão anual (busca própria, não reusa a lista de cards)
+  backgroundJobs, // Processos rodando em segundo plano.
+  api, // Visão anual faz sua própria busca.
   message,
-  error,
+  error
 }) {
   // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
   const navigation = useWorkspaceNavigation();
@@ -236,15 +220,6 @@ export function CompaniesHomePage({
     },
   }), [api, dashboardCompetencia, onOpenCompany, onRefreshCompanies]);
 
-  const contagemTravas = useMemo(() => {
-    if (!travas) return null;
-    const linhas = [...travas.values()];
-    return {
-      total: linhas.length,
-      prontas: linhas.filter((l) => l.podeFechar).length,
-      fechadas: linhas.filter((l) => l.fechado).length,
-    };
-  }, [travas]);
 
   /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.

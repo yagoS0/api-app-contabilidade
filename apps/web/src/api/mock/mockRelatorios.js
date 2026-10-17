@@ -3,7 +3,7 @@ import { validarBaseSocios, resumirSocios } from "../../../../../packages/shared
 import { calcularCenario, validarPremissas, VERSAO_GESTAO } from '../../../../../packages/shared/src/analise/gestao.js';
 const memoria = new Map();
 const ler = key => {try{return JSON.parse(localStorage.getItem('dev-gerencial:'+key)||'null')??memoria.get(key);}catch{return memoria.get(key);}};
-const gravar = (key,value) => {memoria.set(key,structuredClone(value));try{localStorage.setItem('dev-gerencial:'+key,JSON.stringify(value));}catch{}};
+const gravar = (key,value) => {memoria.set(key,structuredClone(value));try{localStorage.setItem('dev-gerencial:'+key,JSON.stringify(value));}catch{/* Storage may be unavailable; the in-memory copy remains usable. */}};
 import { fluxoDeCaixaDoMock } from './fluxoRelatoriosFixture';
 import { analisePlanejamentoMock } from './analisePlanejamentoMock';
 import { clientesAnaliseMock } from './clientesAnaliseMock';

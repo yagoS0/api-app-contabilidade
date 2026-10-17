@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { OperationsPage } from '../OperationsPage';
 import { CompanyAutomation } from '../CompanyAutomation';
 import { projetarOperacoesEmpresas } from '../operacoes';
@@ -16,7 +16,7 @@ test('reutiliza o status da tabela Empresas, sem duplicar ou misturar competênc
 test('quadros abrem detalhes locais e links preservam empresa e competência', () => {
   const onRefresh = jest.fn(), onChangeCompetencia = jest.fn();
   render(<OperationsPage companies={[company]} competencia="2026-09" onRefresh={onRefresh} onChangeCompetencia={onChangeCompetencia} />);
-  fireEvent.click(screen.getByRole('button', { name: /Pendências de guias/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Revisões pendentes/ }));
   fireEvent.click(screen.getByText('Ver detalhes'));
   expect(screen.getByText('Apurado')).toBeInTheDocument();
   expect(screen.getByText('Abrir Guias e corrigir')).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
@@ -38,7 +38,7 @@ test('erro usa o mesmo estado das guias; abrir não envia e novo envio exige con
   render(<OperationsPage companies={[failed]} competencia="2026-09" acoesGuia={{onEnviarWhatsapp: send}} />);
   fireEvent.click(screen.getByRole('button', { name: /Erros de envio de guias/ }));
   fireEvent.click(screen.getByText('Ver detalhes'));
-  expect(screen.getByText('Destino inválido')).toBeInTheDocument();
+  expect(screen.getAllByText('Destino inválido')).toHaveLength(2);
   expect(screen.getByText('Apurado')).toBeInTheDocument();
   expect(send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Conferir novo envio'));
@@ -57,6 +57,22 @@ test('recusa de reenvio é respeitada e troca de competência fecha detalhes ant
   expect(screen.getByText('Conferir novo envio')).toBeDisabled();
   view.rerender(<OperationsPage companies={[]} competencia="2026-10" />);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('resultado tardio de envio não contamina o detalhe da competência seguinte', async () => {
+  let concluir;
+  const send = jest.fn(() => new Promise(resolve => { concluir = resolve; }));
+  const view = render(<OperationsPage companies={[failed]} competencia="2026-09" acoesGuia={{onEnviarWhatsapp: send}} />);
+  fireEvent.click(screen.getByRole('button', { name: /Erros de envio de guias/ }));
+  fireEvent.click(screen.getByText('Ver detalhes'));
+  fireEvent.click(screen.getByText('Conferir novo envio'));
+  fireEvent.click(screen.getByText('Confirmar envio'));
+  view.rerender(<OperationsPage companies={[{...failed, apuracao: {competencia:'2026-10'}}]} competencia="2026-10" acoesGuia={{onEnviarWhatsapp: send}} />);
+  fireEvent.click(screen.getByRole('button', { name: /Erros de envio de guias/ }));
+  fireEvent.click(screen.getByText('Ver detalhes'));
+  await act(async () => concluir({ok:true, message:'Envio confirmado em setembro'}));
+  expect(screen.queryByText('Envio confirmado em setembro')).not.toBeInTheDocument();
+  expect(send).toHaveBeenCalledTimes(1);
 });
 test('envio concluído por outro canal não fica como erro nem documento faltante', () => {
   const delivered = { ...failed, guideCompliance: { das: { ...failed.guideCompliance.das, state: 'enviada', emailLastError: 'falha antiga' } } };

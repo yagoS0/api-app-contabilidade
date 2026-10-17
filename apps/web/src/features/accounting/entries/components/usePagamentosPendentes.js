@@ -13,6 +13,6 @@ export function usePagamentosPendentes(api, companyId, competencia, revisao) {
       if (pedido === sequencia.current) setEstado({ contexto, itens: [], loading: false, error: e.message || 'Não foi possível carregar os pagamentos.' });
     }
   }, [api, companyId, competencia, contexto]);
-  useEffect(() => { reload(); return () => { ++sequencia.current; }; }, [reload, revisao]);
+  useEffect(() => { const contador = sequencia; reload(); return () => { ++contador.current; }; }, [reload, revisao]);
   return { ...(estado.contexto === contexto ? estado : { itens: [], loading: true, error: "" }), reload };
 }

@@ -1,12 +1,10 @@
+import { SERVICOS_CONSUMO } from './CredenciaisConsumo.shared.js';
 import { useEffect, useRef, useState } from 'react';
 import { ConfiguracoesGeraisLayout } from './Configuracoes';
-import { ProtecaoEdicao, useConfirmarSaida, useEdicaoPendente } from './ProtecaoEdicao';
+import { ProtecaoEdicao } from './ProtecaoEdicao';
+import { useConfirmarSaida, useEdicaoPendente } from './ProtecaoEdicao.shared.js';
 import './credenciais-consumo.css';
 
-export const SERVICOS_CONSUMO = [
-  { id: 'CBS', rotulo: 'CBS — Receita Integra', url: 'https://consumo.tributos.gov.br', portal: 'Abrir portal da CBS' },
-  { id: 'IBS', rotulo: 'IBS — Apuração Assistida', url: 'https://www.servicos.cgibs.gov.br/', portal: 'Abrir portal do IBS' },
-];
 
 export function CredenciaisConsumoPage({ api }) {
   return <ProtecaoEdicao><ConfiguracoesGeraisLayout atual="consumo"><SelecionarEmpresa api={api}/></ConfiguracoesGeraisLayout></ProtecaoEdicao>;

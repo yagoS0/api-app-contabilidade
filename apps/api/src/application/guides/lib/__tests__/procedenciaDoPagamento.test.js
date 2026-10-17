@@ -76,11 +76,11 @@ describe("⚠⚠ A LEITURA DA TELA — e só UMA das três é PROVA", () => {
     expect(leituraDoPagamento(paga("CLIENTE")).ehProva).toBe(false);
   });
 
-  it("⚠⚠ a do CLIENTE diz as DUAS coisas: é afirmação, e NÃO lançou baixa", () => {
+  it("⚠⚠ CLIENTE legado preserva declaração sem afirmar baixa", () => {
     // Sem isso o contador lê "pago" e fecha o mês.
     const l = leituraDoPagamento(paga("CLIENTE"));
     expect(l.rotulo).toBe("o cliente confirmou");
-    expect(l.detalhe).toMatch(/afirmação dele, não um comprovante/i);
+    expect(l.detalhe).toMatch(/declaração dele, não um comprovante/i);
     expect(l.detalhe).toMatch(/não lançou a baixa contábil/i);
     expect(l.alcancaOContabil).toBe(false);
   });
@@ -105,4 +105,13 @@ describe("⚠⚠ A LEITURA DA TELA — e só UMA das três é PROVA", () => {
     expect(leituraDoPagamento({ paymentStatus: "OPEN" })).toBeNull();
     expect(leituraDoPagamento()).toBeNull();
   });
+});
+
+test('nova confirmação mostra baixa real ou pendência sem chamar declaração de prova', () => {
+  const base = { paymentStatus: 'PAID', paymentStatusSource: 'CLIENTE' };
+  const concluida = leituraDoPagamento({ ...base, confirmacaoCliente: { estadoBaixa: 'CONCLUIDA' } });
+  expect(concluida).toMatchObject({ alcancaOContabil: true, ehProva: false });
+  expect(concluida.detalhe).toMatch(/baixa contábil foi registrada/);
+  expect(leituraDoPagamento({ ...base, confirmacaoCliente: { estadoBaixa: 'PENDENTE' } }).detalhe).toMatch(/pendência/);
+  expect(pagamentoAlcancaOContabil(base)).toBe(false);
 });

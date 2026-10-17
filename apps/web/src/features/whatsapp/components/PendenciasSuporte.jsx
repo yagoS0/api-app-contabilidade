@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { notificarDemandaSuporteAtualizada } from '../lib/leituraConfirmada';
@@ -6,13 +6,14 @@ import { notificarDemandaSuporteAtualizada } from '../lib/leituraConfirmada';
 export function PendenciasSuporte({ api, onAbrir, companyId = null }) {
   const [fila, setFila] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
   const [excluir, setExcluir] = useState(null), [aviso, setAviso] = useState('');
+  const [recarregar, setRecarregar] = useState(0);
   const trava = useRef(false), geracao = useRef(0), leitura = useRef(0);
-  const carregar = async () => {
+  const carregar = useCallback(async () => {
     const r = await api.getPendenciasSuporte(companyId);
     if (!r?.ok || !Array.isArray(r.itens)) throw new Error('Não foi possível ler os atendimentos da equipe.');
     return r;
-  };
-  useEffect(() => {
+  }, [api, companyId]);
+  useEffect(() => { const geracaoDaExecucao = geracao;
     const atual = ++geracao.current;
     trava.current = false; setOcupado(false); setExcluir(null); setAviso(''); setFila(null); setErro('');
     if (!api.getPendenciasSuporte) return;
@@ -23,8 +24,8 @@ export function PendenciasSuporte({ api, onAbrir, companyId = null }) {
       catch { if (geracao.current === atual && pedido === leitura.current && !trava.current) setErro('Fila de suporte indisponível.'); }
     };
     atualizar(); const timer = setInterval(atualizar, 30000);
-    return () => { geracao.current++; clearInterval(timer); };
-  }, [api, companyId]);
+    return () => { geracaoDaExecucao.current++; clearInterval(timer); };
+  }, [api, companyId, recarregar, carregar]);
   async function agir(item, acao) {
     if (trava.current) return;
     const atual = geracao.current;
@@ -50,12 +51,12 @@ export function PendenciasSuporte({ api, onAbrir, companyId = null }) {
   if (!api.getPendenciasSuporte) return null;
   return <><details className="wa-support-queue" open={companyId ? true : undefined}>
     <summary>{companyId ? 'Pedidos ao contador' : 'Equipe'}{fila ? ' · ' + fila.total : ''}</summary>
-    {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
+    {erro && <div role="alert"><p>{erro}</p><Button size="sm" variant="secondary" disabled={ocupado} onClick={() => setRecarregar(n => n + 1)}>Tentar novamente</Button></div>}{aviso && <p role="status">{aviso}</p>}
     {fila === null && !erro && <p role="status">Carregando demandas…</p>}
     {fila?.total === 0 && <p>Nenhum atendimento pendente.</p>}
     {fila?.itens.map(item => <article key={item.id}>
       <Button variant="secondary" type="button" onClick={() => onAbrir(item.conversaId)}><strong>{item.empresa || 'Atendimento'}</strong></Button>
-      <p>{item.motivo}</p>{item.resumo && <p>{item.resumo}</p>}
+      <p>{item.motivo}</p>{item.resumo && item.resumo !== item.motivo && <p>{item.resumo}</p>}
       <div>
         {item.estado === 'AGUARDANDO' ? <Button disabled={ocupado || !api.assumirConversaWhatsapp} onClick={() => agir(item, 'aceitar')}>Aceitar</Button> : <Button variant="secondary" disabled={ocupado || !api.resolverSuporte} onClick={() => agir(item, 'resolver')}>Resolver</Button>}
         <Button variant="secondary" disabled={ocupado || !api.excluirDemandaSuporte} onClick={() => { setErro(''); setExcluir(item); }}>Excluir demanda</Button>

@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { CredenciaisConsumoPage, SERVICOS_CONSUMO } from '../CredenciaisConsumo';
+import { CredenciaisConsumoPage } from '../CredenciaisConsumo';
+import { SERVICOS_CONSUMO } from '../CredenciaisConsumo.shared.js';
 
 const empresas = [{ companyId: 'A', razao: 'Prisma', cnpj: '111' }, { companyId: 'B', razao: 'Educação', cnpj: '222' }];
 const registro = (id = 'c1', login = 'client-antigo') => ({ id, login, rotulo: SERVICOS_CONSUMO[0].rotulo, temSenha: true });

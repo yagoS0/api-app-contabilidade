@@ -22,7 +22,7 @@
 // só para o que a Receita confirma — nunca para o que nós resolvemos aqui dentro.
 import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
+import { PANEL, fmtDate, fmtMoney } from '../../notas/components/notasStyles.shared.js';
 import { entregaPgdasDoFechamento, CORES_TOM } from "../lib/entregaPgdas";
 
 const ZERADA = { cor: "var(--state-neutral)", fundo: "var(--state-neutral-surface)" };

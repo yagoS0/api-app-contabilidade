@@ -1,5 +1,5 @@
 // A carteira abre no calendário unificado, com visão mensal e tarefas por empresa.
-import { render, screen, fireEvent, within, act } from "@testing-library/react";
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CompaniesHomePage } from "../renderCompaniesHomePage.jsx";
 
 const CARTEIRA = [

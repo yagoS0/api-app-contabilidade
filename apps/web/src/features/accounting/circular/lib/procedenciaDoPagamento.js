@@ -68,6 +68,12 @@ export function leituraDoPagamento(guia) {
     };
   }
 
+  const confirmacao = guia?.confirmacaoCliente;
+  if (p === "CLIENTE" && confirmacao?.id) {
+    const concluida = confirmacao.estadoBaixa === "CONCLUIDA";
+    return { procedencia: p, ...conhecida, alcancaOContabil: concluida,
+      detalhe: `Declaração do cliente, não comprovante bancário. ${concluida ? "Baixa contábil concluída." : `Baixa contábil pendente: ${motivoDaBaixaPendente(confirmacao.motivo)}.`}` };
+  }
   return {
     procedencia: p,
     ...conhecida,
@@ -91,4 +97,17 @@ export function tituloDoPagamento(guia, { dataFormatada = null } = {}) {
     l.detalhe,
     guia?.comprovantePdfFileId ? "Comprovante de arrecadação disponível." : null,
   ].filter(Boolean).join(" ");
+}
+
+export function motivoDaBaixaPendente(motivo) {
+  const mensagens = {
+    MES_FECHADO: "A última tentativa encontrou o mês do pagamento fechado. Se ainda estiver fechado, use Corrigir mês fechado. Depois, retome a baixa, confira os lançamentos e feche o mês.",
+    COMPOSICAO_A_CONFERIR: "Confira a composição da guia: principal, juros e multa devem estar identificados.",
+    FALHA_CONTABIL: "Não foi possível gravar a baixa. Confira os lançamentos e tente retomar a baixa.",
+    PROVISAO_NAO_ENCONTRADA: "A provisão deste imposto ainda não foi identificada. Confira os lançamentos.",
+    CONTAS_A_CONFERIR: "Confira as contas contábeis necessárias para este pagamento.",
+  };
+  if (!motivo) return "Confira os dados contábeis necessários para concluir a baixa.";
+  if (mensagens[motivo]) return mensagens[motivo];
+  return /^[A-Z_0-9]+$/.test(motivo) ? "A baixa precisa de revisão contábil. Confira a guia e os lançamentos antes de retomar." : motivo;
 }

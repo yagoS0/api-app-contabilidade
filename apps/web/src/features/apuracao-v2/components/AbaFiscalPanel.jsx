@@ -7,7 +7,8 @@
 // (MotorPanel), que já calcula faixa/alíquota efetiva/Fator R por competência.
 
 import { useEffect, useState } from "react";
-import { PANEL } from "../../notas/components/notasStyles";
+
+import { PANEL } from "../../notas/components/notasStyles.shared.js";
 import { Button } from "../../../components/ui/Button";
 import { origemDoPerfil, avisoDoFatorR, COLUNAS_SEM_LEITOR, COLUNAS_COM_LEITOR } from "../lib/perfilFiscalTela";
 

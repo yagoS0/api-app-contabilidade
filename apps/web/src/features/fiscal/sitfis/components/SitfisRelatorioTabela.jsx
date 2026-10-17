@@ -1,3 +1,4 @@
+import { COLUNA_TOTAL, totalDoBloco, anotacoesComRotulo } from "./SitfisRelatorioTabela.shared.js";
 // ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
 //
 //   `apps/portal-cliente-web/src/features/fiscal/RelatorioSitfis.jsx`
@@ -70,16 +71,10 @@ const COLUNAS_VALOR = new Set([
 // são quase sempre idênticas), todas com o mesmo peso visual. A que importa — quanto a empresa
 // deve HOJE, já com multa e juros — é o saldo consolidado. Sem destacá-la, achar o número certo
 // exigia ler o cabeçalho de cinco colunas a cada linha.
-const COLUNA_TOTAL = "Sdo. Dev. Cons.";
+
 
 /** "15.510,72" → 15510.72. `null` quando não é um número reconhecível — nunca 0. */
-export function parseValorBR(v) {
-  const t = String(v ?? "").trim();
-  if (!t) return null;
-  if (!/^-?[\d.]+,\d{2}$/.test(t)) return null;
-  const n = Number(t.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
+
 
 /**
  * A soma do saldo consolidado do bloco — ou `null`.
@@ -91,17 +86,7 @@ export function parseValorBR(v) {
  *
  * Com uma linha só não há total — a soma seria o próprio valor, repetido logo abaixo dele.
  */
-export function totalDoBloco(colunas, registros, coluna = COLUNA_TOTAL) {
-  if (!colunas?.includes(coluna) || !registros || registros.length < 2) return null;
-  let soma = 0;
-  for (const r of registros) {
-    const v = parseValorBR(r[coluna]);
-    if (v === null) return null;
-    soma += v;
-  }
-  // Centavos: somar float acumula erro (0,1+0,2). O arredondamento é de APRESENTAÇÃO.
-  return Math.round(soma * 100) / 100;
-}
+
 
 const fmtBRL = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -125,36 +110,11 @@ const fmtBRL = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "
  *
  * @returns {{rotulo: string, valores: string[]}[] | null}
  */
-export function anotacoesComRotulo(anotacoes = [], porRegistro = []) {
-  if (!Array.isArray(porRegistro) || !porRegistro.length) return null;
-  const pares = [];
-  for (const r of porRegistro) {
-    if (!r || typeof r !== "object" || Array.isArray(r)) return null;
-    for (const [rotulo, valor] of Object.entries(r)) pares.push([rotulo, valor]);
-  }
-  if (pares.length !== anotacoes.length) return null;
 
-  const restante = new Map();
-  for (const v of anotacoes) restante.set(v, (restante.get(v) || 0) + 1);
-  for (const [, valor] of pares) {
-    const n = restante.get(valor);
-    if (!n) return null;
-    restante.set(valor, n - 1);
-  }
-
-  const grupos = [];
-  for (const [rotulo, valor] of pares) {
-    const g = grupos.find((x) => x.rotulo === rotulo);
-    if (g) g.valores.push(valor);
-    else grupos.push({ rotulo, valores: [valor] });
-  }
-  return grupos;
-}
 
 function Bloco({ bloco }) {
   const {
-    titulo, descricao = [], colunas = [], registros = [], anotacoes = [], naoInterpretado = [],
-    anotacoesPorRegistro = [], aviso = null,
+    titulo, descricao = [], colunas = [], registros = [], anotacoes = [], anotacoesPorRegistro = [],
   } = bloco;
   const gruposDeAnotacao = anotacoesComRotulo(anotacoes, anotacoesPorRegistro);
 
@@ -332,7 +292,7 @@ function Bloco({ bloco }) {
 
 export function SitfisRelatorioTabela({ relatorio }) {
   if (!relatorio) return null;
-  const { diagnosticos = [], naoInterpretado = [] } = relatorio;
+  const { diagnosticos = [] } = relatorio;
 
   return (
     <div>

@@ -39,8 +39,8 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
 
 jest.mock("../fechamentoContabil.js", () => ({ isMonthClosed: jest.fn(async () => false) }));
 
-import { prisma, __criados } from "../../../infrastructure/db/prisma.js";
-import { gerarPagamentoInssFromGuide } from "../InssPagamentoService.js";
+import { prisma, __criados, __tx } from "../../../infrastructure/db/prisma.js";
+import { gerarPagamentoInssFromGuide, gerarPagamentoInssFromGuideTx } from "../InssPagamentoService.js";
 
 const VENCIMENTO = new Date("2026-07-20T00:00:00Z");
 const EM_DIA = new Date("2026-07-18T00:00:00Z");
@@ -192,4 +192,15 @@ describe("baixa automática a partir do comprovante", () => {
     expect(r.reason).toBe("data_pagamento_ausente");
     expect(__criados).toHaveLength(0);
   });
+});
+
+test('R25 usa a transação recebida sem abrir transação interna e conserva três partidas', async () => {
+  const tx = { ...prisma, ...__tx, guide: { ...prisma.guide, ...__tx.guide }, accountingEntry: { ...prisma.accountingEntry, ...__tx.accountingEntry } };
+  const r = await gerarPagamentoInssFromGuideTx(tx, { origem: 'CLIENTE', portalClientId: 'p1', guideId: 'g1', dataPagamento: EM_ATRASO,
+    lines: [{ conta: '211', tipo: 'D', valor: 100, papel: 'PRINCIPAL' }, { conta: '501', tipo: 'D', valor: 10, papel: 'JUROS' },
+      { conta: '506', tipo: 'D', valor: 5, papel: 'MULTA' }, { conta: '111', tipo: 'C', valor: 115 }] });
+  expect(r.ok).toBe(true); expect(__criados).toHaveLength(3);
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(__criados.map(e => e.tipoLinha)).toEqual(['PRINCIPAL', 'JUROS', 'MULTA']);
+  expect(__criados.every(e=>e.origem==='CLIENTE')).toBe(true);
 });

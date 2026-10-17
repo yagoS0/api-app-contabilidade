@@ -3,7 +3,7 @@
 // arquivo prende é o que só a tela pode errar: o número aparecer, a ressalva do RBT12 vir JUNTO, e
 // o aviso do sublimite não virar decoração permanente.
 
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { TabelaAnexoReferencia } from "../TabelaAnexoReferencia";
 
 /** Uma atividade de Anexo III resolvida, sem depender do Fator R. */

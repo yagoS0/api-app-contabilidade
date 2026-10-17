@@ -24,14 +24,19 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const comercialId = canalComercialDaConversa(conversa)?.id;
   const [canalId, setCanalId] = useState(() => canalInicialDaConversa(conversa));
   useEffect(() => { if (comercialObrigatorio) setCanalId(comercialId); }, [comercialObrigatorio, comercialId]);
-  useEffect(() => {
+  // Explicit channel requests use current context once; polling must not replay them.
+  const aplicarPedidoCanal = useRef(null);
+  aplicarPedidoCanal.current = () => {
     if (pedidoCanal?.interlocutorId === (conversa.interlocutorId || conversa.id) && (!comercialObrigatorio || pedidoCanal.canalId === comercialId) && canais.some(c => c.id === pedidoCanal.canalId)) setCanalId(pedidoCanal.canalId);
-  }, [pedidoCanal]);
+  };
+  useEffect(() => { aplicarPedidoCanal.current(); }, [pedidoCanal]);
 
   // Nunca seguir silenciosamente o canal de uma nova mensagem recebida.
   const canal = canais.find(c => c.id === canalId);
   const destino = canal?.conversaId || (canais.length === 1 ? conversa.id : null);
   const destinoAtual = { conversaId: destino, vinculoNumeroId: canal?.vinculoNumeroId || null };
+  const destinoAtualRef = useRef(destinoAtual);
+  destinoAtualRef.current = destinoAtual;
   const conversaCanal = { ...conversa, id: destino, canalId, canalNome: canal?.nome || canal?.chave || canal?.finalidade, podeResponder: canal?.podeResponder, telefoneMascarado: canal?.telefoneMascarado || conversa.telefoneMascarado, janela: canal?.janela || (canais.length === 1 ? conversa.janela : null) };
   const resposta = canal?.podeResponder === false ? { pode: false, motivo: canal?.janela?.situacao === "ABERTA" ? "Este canal está indisponível para responder. Selecione um canal ativo e confira a mensagem." : estadoDaResposta(conversaCanal).motivo } : canal ? estadoDaResposta(conversaCanal) : { pode: false, motivo: "O canal preparado não está mais disponível. Selecione um canal e confira a mensagem." };
   const chave = chaveDoRascunho(conversa, { canalId });
@@ -68,14 +73,17 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const editada = Boolean(orientacao?.orientacaoId && texto !== orientacao.texto);
   const destinoPreparado = typeof rascunho === "object" ? rascunho.destinoPreparado : null;
   const destinoMudou = Boolean(texto.trim() && destinoPreparado && JSON.stringify(destinoPreparado) !== JSON.stringify(destinoAtual));
-  useEffect(() => { if (canal && destino && !destinoMudou) onCanalSelecionado?.({ interlocutorId: conversa.interlocutorId || conversa.id, canalId, conversaId: destino, nome: canal.nome || canal.chave || canal.finalidade || "Principal" }); }, [canalId, destino, destinoMudou, conversa.interlocutorId, onCanalSelecionado]);
+  const interlocutorId = conversa.interlocutorId || conversa.id;
+  const canalDisponivel = Boolean(canal);
+  const nomeCanal = canal?.nome || canal?.chave || canal?.finalidade || "Principal";
+  useEffect(() => { if (canalDisponivel && destino && !destinoMudou) onCanalSelecionado?.({ interlocutorId, canalId, conversaId: destino, nome: nomeCanal }); }, [canalDisponivel, canalId, destino, destinoMudou, interlocutorId, nomeCanal, onCanalSelecionado]);
   useEffect(() => {
     chaveRef.current = chave;
     const salvo = hook.rascunhosRef?.current.get(chave) || "";
     // Migração do rascunho legado em memória. O destino fica salvo junto do texto,
     // inclusive ao sair deste contato e retornar depois de outro polling.
     const preparado = salvo && !salvo.destinoPreparado
-      ? { ...(typeof salvo === "string" ? { texto: salvo } : salvo), destinoPreparado: destinoAtual } : salvo;
+      ? { ...(typeof salvo === "string" ? { texto: salvo } : salvo), destinoPreparado: destinoAtualRef.current } : salvo;
     if (preparado !== salvo) hook.rascunhosRef?.current.set(chave, preparado);
     setRascunho(preparado);
     setErro(""); setPrevia(false); setDescartado(null); setVersaoRemota(null);
@@ -153,7 +161,9 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     finally { setOcupado(false); setConsultandoEnvio(false); }
   }
   const bloqueado = ocupado || hook.ocupado || destinoMudou || !resposta.pode || !remoto.pronto || incerto;
-  useEffect(() => {
+  // Preparation is an explicit event, not a reaction to text or polling updates.
+  const prepararResposta = useRef(null);
+  prepararResposta.current = () => {
     if (!pedidoResposta || !remoto.pronto || ultimoPedidoResposta.current === pedidoResposta) return;
     ultimoPedidoResposta.current = pedidoResposta;
     aoConsumirPedidoResposta?.();
@@ -165,7 +175,8 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     if (texto.trim() || orientacao) { setErro("Você já tem um rascunho. Envie ou descarte esse texto antes de preparar o pedido de reenvio."); return; }
     setErro(""); salvarDraft(pedidoResposta.texto); setAcoesAbertas(false); textoRef.current?.focus();
     // Pedido explícito de preparação, consumido uma vez. Polling nunca reinsere o texto.
-  }, [pedidoResposta, remoto.pronto]);
+  };
+  useEffect(() => { prepararResposta.current(); }, [pedidoResposta, remoto.pronto]);
   const assumir = !conversa.atendidaPor && !conversa.atendidaDesde;
   const nomeEnviar = editada ? previa ? "Conferi: enviar adaptação" : "Conferir adaptação" : assumir ? "Assumir e responder" : "Responder";
   const seletorCanal = !comercialObrigatorio && canais.length > 1 && <label className="wa-compose-channel">Enviar pelo WhatsApp<select aria-label="Canal da mensagem" value={canalId || ""} disabled={ocupado || hook.ocupado} onChange={e => setCanalId(e.target.value)}>

@@ -120,6 +120,8 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
   }, [itens, colunas]);
 
   const rascunhos = useMemo(() => itens.filter((i) => i.status === "RASCUNHO"), [itens]);
+  const totalVisivel = [...porStatus.values()].reduce((total, lista) => total + lista.length, 0) +
+    (mostrarRascunhos && visao !== 'encerrados' ? rascunhos.length : 0);
 
   function alternarBandeja() {
     const proximo = !mostrarRascunhos;
@@ -141,7 +143,6 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
   return (
     <PageShell
       title="Entrada de clientes"
-      subtitle="Atendimento comercial e implantação de clientes"
       onBack={onVoltar}
       actions={<Button type="button" onClick={() => setNovoAberto(true)}>Novo atendimento</Button>}
       contentClassName="onboarding-workspace"
@@ -155,7 +156,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
       <nav className="onboarding-sections" aria-label="Situação dos atendimentos">
         {[["ativos", "Em andamento"], ["encerrados", "Encerrados"], ["todos", "Todos"]].map(([valor, rotulo]) =>
           <button key={valor} type="button" aria-pressed={visao === valor} onClick={() => setVisao(valor)}>
-            {rotulo} <span>{itens.filter(i => valor === "todos" || encerrados.includes(i.status) === (valor === "encerrados")).length}</span>
+            {rotulo} <span>{carregando || erro ? '—' : itens.filter(i => valor === "todos" || encerrados.includes(i.status) === (valor === "encerrados")).length}</span>
           </button>)}
       </nav>
       <div className="onboarding-list-filters" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
@@ -188,10 +189,11 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
         </Button>}
       </div>
 
-      {erro && <p style={{ color: "var(--state-warn)" }}>{erro.message}</p>}
+      {erro && <div role="alert" style={{ color: "var(--state-warn)", display: "flex", gap: "var(--space-2)", alignItems: "center" }}><p>{erro.message}</p><Button size="sm" variant="secondary" onClick={() => recarregar()}>Tentar novamente</Button></div>}
       {carregando && <p style={{ color: "var(--text-muted)" }}>Carregando…</p>}
 
-      {!carregando && !erro && <>
+      {!carregando && !erro && totalVisivel === 0 && <p style={{ color: 'var(--text-muted)' }}>Nenhum atendimento neste filtro.</p>}
+      {!carregando && !erro && totalVisivel > 0 && <>
       {mostrarRascunhos && visao !== "encerrados" && (
         <section style={{ marginBottom: "var(--space-5)" }}>
           <h2 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-faint)" }}>

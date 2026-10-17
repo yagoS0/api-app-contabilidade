@@ -43,8 +43,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
     updateMany: jest.fn(async () => ({ count: 1 })),
     update: jest.fn(async (args) => ({ id: "existente", ...(args?.data || {}) })),
   });
-  return {
-    prisma: {
+  const prisma = {
       portalClient: model(),
       portalInvoice: model(),
       apuracaoSnapshot: model(),
@@ -55,8 +54,10 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
       aliquotaSimplesNacional: model(),
       relatorioFaturamento: model(),
       company: model(),
-    },
+      appSetting: model(),
   };
+  prisma.$transaction = jest.fn(fn => fn(prisma));
+  return { prisma };
 });
 
 const mockSimular = jest.fn();
@@ -336,6 +337,24 @@ describe('Vínculo entre simulação e fechamento', () => {
     const out = await reabrirFechamento(BASE);
     expect(out.snapshot.estado).toBe('aberta');
     expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({estado:'aberta',idempotencyKey:expect.stringMatching(/^reaberta:/)})}));
+    expect(prisma.appSetting.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ value: expect.objectContaining({ evento: 'APURACAO_REABERTA', estadoAnterior: 'transmitida', estadoAtual: 'aberta', motivo: null }) }) }));
+  });
+  it('reabertura registra motivo e autoria na mesma transação', async () => {
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ id: 's1', estado: 'transmitida', idempotencyKey: 'anterior', numeroDeclaracao: 'declaracao-1' });
+    await reabrirFechamento({ ...BASE, userId: 'contador-1', motivo: '  Receita posterior  ' });
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.appSetting.create).toHaveBeenCalledWith({ data: expect.objectContaining({ value: expect.objectContaining({ userId: 'contador-1', motivo: 'Receita posterior', revisaoAnterior: 'anterior', numeroDeclaracaoAnterior: 'declaracao-1' }) }) });
+  });
+  it('conflito de revisão impede auditoria e segunda transição', async () => {
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ id: 's1', estado: 'transmitida', idempotencyKey: 'anterior' });
+    prisma.apuracaoSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(reabrirFechamento(BASE)).rejects.toMatchObject({ code: 'CALCULO_DESATUALIZADO' });
+    expect(prisma.appSetting.create).not.toHaveBeenCalled();
+  });
+  it('falha da auditoria rejeita a transação, sem anunciar reabertura', async () => {
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ id: 's1', estado: 'transmitida', idempotencyKey: 'anterior' });
+    prisma.appSetting.create.mockRejectedValueOnce(new Error('auditoria indisponível'));
+    await expect(reabrirFechamento(BASE)).rejects.toThrow('auditoria indisponível');
   });
   it('transmissão reutiliza listas vazias aceitas, sem consultar RBT novamente', async () => {
     lerPeriodosAceitos.mockResolvedValueOnce({receitas:[],folhas:[]});

@@ -1,3 +1,5 @@
+import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
+import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
 import { exigirDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
@@ -51,7 +53,7 @@ const MOCK_TRIBUTO_TIPO = {
  * Cada empresa cai num cenário diferente de propósito (pelo índice): sem isso a tela só mostraria
  * um estado e os outros quatro nunca seriam vistos antes de produção.
  */
-function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTributario, competencia = "2026-02", faturamento = 0 }) {
+function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTributario, competencia = "2026-02" }) {
   const regime = String(regimeTributario || "SIMPLES").toUpperCase();
   const presumido = regime === "LUCRO_PRESUMIDO" || regime === "LUCRO_REAL";
   const requeridos = {
@@ -988,18 +990,19 @@ const MOCK_TIPO_DOC_LABELS = {
   INSCRICAO_ESTADUAL: "Inscrição estadual", INSCRICAO_MUNICIPAL: "Inscrição municipal",
   ALVARA: "Alvará", PROCURACAO: "Procuração", OUTRO: "Outro",
 };
-let mockDocumentos = [
+const mockDocumentos = [
   { id: "mock-doc-1", tipo: "CONTRATO_SOCIAL", nome: "Contrato social.pdf", mimeType: "application/pdf", bytes: 184320, validade: null, createdAt: "2026-03-10T12:00:00.000Z" },
   { id: "mock-doc-2", tipo: "CARTAO_CNPJ", nome: "Cartão CNPJ.pdf", mimeType: "application/pdf", bytes: 51200, validade: null, createdAt: "2026-05-02T12:00:00.000Z" },
   { id: "mock-doc-3", tipo: "ALVARA", nome: "Alvará de funcionamento.pdf", mimeType: "application/pdf", bytes: 92160, validade: "2026-12-31T00:00:00.000Z", createdAt: "2026-01-15T12:00:00.000Z" },
 ];
 // A fixada é de propósito a MENOS importante e a MAIS antiga: é o caso que revela um orderBy
 // ingênuo — nas duas ordenações ela tem que continuar em primeiro.
-let mockAnotacoes = [
+const mockAnotacoes = [
   { id: "mock-nota-1", texto: "Cliente prefere receber as guias até o dia 5.", importancia: "BAIXA", fixada: true, createdAt: "2026-02-01T12:00:00.000Z" },
   { id: "mock-nota-2", texto: "Sócio entrou em 04/2026 — conferir pró-labore.", importancia: "ALTA", fixada: false, createdAt: "2026-07-20T12:00:00.000Z" },
   { id: "mock-nota-3", texto: "Enviar balancete trimestral ao contador do grupo.", importancia: "MEDIA", fixada: false, createdAt: "2026-06-11T12:00:00.000Z" },
 ];
+const documentosEmpresaMock = criarDocumentosEmpresaMock({ documentos: mockDocumentos, anotacoes: mockAnotacoes, tipos: MOCK_TIPOS_DOC, tipoLabels: MOCK_TIPO_DOC_LABELS });
 // ── Cofre de senhas (mock com estado em memória) ─────────────────────────────────────────────
 //
 // ⚠ NENHUMA SENHA AQUI PARECE REAL, E ISSO É REGRA, NÃO ESTILO. Fixture entra no histórico do git
@@ -1773,7 +1776,7 @@ function normalizarTextoMatch(s) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[\s\-_\/.,;:!?()[\]{}]+/g, " ")
+    .replace(/[\s\-_/.,;:!?()[\]{}]+/g, " ")
     .trim();
 }
 
@@ -4444,11 +4447,15 @@ export function createMockApi() {
     },
     async getGuiasPendentesContabilizacao() { return { itens: [] }; },
     async contabilizarGuiaPendente() { throw new Error("Nenhuma guia pendente de contabilização nesta demonstração."); },
+    async getAvisosContabeis(companyId, opcoes) { return avisosMock(companyId, opcoes); },
+    async retomarBaixaCliente(companyId, id) { return retomarMock(companyId, id); },
+    async getConfirmacaoPagamentoCliente(companyId, id) { const r = avisosMock(companyId); const confirmacao = [...r.pagamentos, ...r.historico].find(p => p.id === id); if (!confirmacao) throw Error("Confirmação não encontrada."); return { ok: true, confirmacao }; },
     async getFechamentoContabil(companyId, competencia) {
       await delay();
       // O estado das buscas vem do MESMO estado que os mocks de busca escrevem — é isso que
       // permite exercitar offline a confirmação "já buscado em <data>" no segundo clique.
-      const circular = getCircularRecord(companyId, competencia);
+      const circular = estadoFechamentoMock(companyId, competencia) || getCircularRecord(companyId, competencia);
+      if (circular) mockMonthlyCirculars.set(makeCircularKey(companyId, competencia), circular);
       const status = String(circular?.serproSyncStatus || "").toUpperCase();
       const lpEm = mockBuscasLp.get(`${companyId}|${competencia}`) || null;
       // ⚠ `fechado` sai do REGISTRO, não de um literal. Era `false` fixo: `fecharFechamentoContabil`
@@ -4467,7 +4474,8 @@ export function createMockApi() {
         folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false,
         ...(circular?.checklist || {}),
       };
-      const checklistAutomatico = checklistDosLancamentos((mockEntriesByCompany.get(companyId) || []).filter(e => e.competencia === competencia));
+      const correcao = avisosMock(companyId, { competencia }).correcoes[0] || null;
+      const checklistAutomatico = correcao ? {} : checklistDosLancamentos((mockEntriesByCompany.get(companyId) || []).filter(e => e.competencia === competencia));
       for (const [chave, valor] of Object.entries(checklistAutomatico)) if (valor) checklist[chave] = true;
       const ROTULOS_CHECKLIST = {
         folhaProlabore: "Folha/Pró-labore lançados", despesas: "Despesas lançadas",
@@ -4477,7 +4485,7 @@ export function createMockApi() {
         .filter(([, ok]) => !ok)
         .map(([chave]) => ({ chave, label: ROTULOS_CHECKLIST[chave] || chave }));
       return {
-        ok: true, competencia,
+        ok: true, competencia, versao: revisaoMock(companyId, competencia), correcao,
         fechado: Boolean(fechadoEm),
         fechadoEm,
         fechadoPor: circular?.fechadoContabilPor || null,
@@ -4852,8 +4860,9 @@ export function createMockApi() {
       mockPagamentosLocalizados.set(id, { ...comprovante, competencia: "2026-07" });
       return { ok: true, encontrado: true, comprovante };
     },
-    async setChecklistFechamento(companyId, competencia, item, ok) {
+    async setChecklistFechamento(companyId, competencia, item, ok, versao) {
       await delay();
+      if (avisosMock(companyId, { competencia }).correcoes.length && versao !== revisaoMock(companyId, competencia)) throw Error("A revisão mudou. Atualize a conferência.");
       // ⚠ GRAVA. Era um retorno de sucesso que não escrevia nada: a caixa marcava na tela, o
       // próximo GET devolvia o literal de novo, e o cadeado nunca destravava.
       const chave = makeCircularKey(companyId, competencia);
@@ -4863,24 +4872,30 @@ export function createMockApi() {
         ...atual,
         checklist: { ...(atual.checklist || {}), [item]: Boolean(ok) },
       });
-      return { ok: true, competencia, item, valor: Boolean(ok) };
+      salvarFechamentoMock(companyId, competencia, mockMonthlyCirculars.get(chave));
+      return { ok: true, competencia, item, valor: Boolean(ok), versao: revisaoMock(companyId, competencia) };
     },
     // Fechar/reabrir GRAVAM na circular do mock. Sem isso o fechamento em lote "dava certo" e a
     // barra "Prontas para fechar" continuava com o mesmo número — ou seja, o único efeito
     // observável da funcionalidade era invisível offline.
-    async fecharFechamentoContabil(companyId, competencia) {
+    async fecharFechamentoContabil(companyId, competencia, { versao } = {}) {
       await delay();
       const chave = makeCircularKey(companyId, competencia);
       const atual = mockMonthlyCirculars.get(chave) || { id: `mock-circular-${companyId}-${competencia}`, portalClientId: companyId, competencia };
+      conferirMock(companyId, competencia, versao, { circular: atual, entries: (mockEntriesByCompany.get(companyId) || []).filter(e => e.competencia === competencia) });
       mockMonthlyCirculars.set(chave, { ...atual, fechadoContabilEm: new Date().toISOString(), fechadoContabilPor: "Usuario Mock" });
+      salvarFechamentoMock(companyId, competencia, mockMonthlyCirculars.get(chave));
       return { ok: true, competencia, fechado: true };
     },
-    async reabrirFechamentoContabil(companyId, competencia) {
+    async reabrirFechamentoContabil(companyId, competencia, dados = {}) {
       await delay();
       const chave = makeCircularKey(companyId, competencia);
       const atual = mockMonthlyCirculars.get(chave);
-      if (atual) mockMonthlyCirculars.set(chave, { ...atual, fechadoContabilEm: null, fechadoContabilPor: null });
-      return { ok: true, competencia, fechado: false };
+      if (!atual?.fechadoContabilEm) throw Error("O mês não está fechado.");
+      const correcao = corrigirMock(companyId, competencia, dados, { circular: atual, entries: (mockEntriesByCompany.get(companyId) || []).filter(e => e.competencia === competencia) });
+      mockMonthlyCirculars.set(chave, { ...atual, fechadoContabilEm: null, fechadoContabilPor: null, checklist: { folhaProlabore: false, despesas: false, receitas: false, provisoes: false, pagamentos: false } });
+      salvarFechamentoMock(companyId, competencia, mockMonthlyCirculars.get(chave));
+      return { ok: true, competencia, fechado: false, correcao, versao: revisaoMock(companyId, competencia) };
     },
     async getGuideSettings() {
       await delay();
@@ -5361,6 +5376,16 @@ export function createMockApi() {
         const storedEnabledKeys = Object.entries(c.rotinas).filter(([, enabled]) => enabled === true).map(([key]) => key);
         return { companyId: c.companyId, ...applicability, storedEnabledKeys, enabledKeys: storedEnabledKeys.filter(key => applicability.applicableKeys.includes(key)) };
       }) };
+    },
+    async getOperationAlerts() {
+      // Same synthetic evidence as listPendenciasPosFechamento, including recognition.
+      const items = mockCompanies.filter(company => !pendenciasConferidas.has(`${company.companyId}|mock-pend-1`)).map(company => ({
+        id: `${company.companyId}:mock-pend-1`, portalClientId: company.companyId,
+        portalClient: { razao: company.razao }, competencia: '2026-05',
+        situacaoPeriodo: 'FECHADA', createdAt: '2026-08-14T11:20:00.000Z',
+        observacoes: 'NFS-e 33045572255387580000103000000013006 chegou para 2026-05 (competência já fechada).',
+      }));
+      return { ok: true, total: items.length, items };
     },
     async saveRotinas(input = {}) {
       await delay(400);
@@ -6272,7 +6297,7 @@ export function createMockApi() {
       mockUltimaPreviaWhatsapp = previa;
       return { ok: true, ...previa };
     },
-    async executarLoteWhatsapp({ competencia, mesVencimento, assinatura, guideIds, portalClientIds, conferencia, enviarPorEmail = true } = {}) {
+    async executarLoteWhatsapp({ competencia, mesVencimento, assinatura, guideIds, conferencia, enviarPorEmail = true } = {}) {
       await delay(600);
       if (mesVencimento && (mockUltimaPreviaWhatsapp?.assinatura !== assinatura || assinatura !== JSON.stringify(guideIds))) throw Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE" });
       // ⚠ Sem `this`: no modo `real_with_mock_fallback` a função é chamada solta, e `this` seria
@@ -6863,7 +6888,7 @@ export function createMockApi() {
         const valor = Number(d?.valor || c?.valor || 0).toFixed(2).replace(".", ",");
         linhas.push([e.data || "", d?.conta || "", c?.conta || "", String(e.historico || "").replace(/;/g, ","), valor].join(";"));
       }
-      return `data:text/csv;charset=utf-8,${encodeURIComponent(`﻿${linhas.join("\n")}`)}`;
+      return `data:text/csv;charset=utf-8,${encodeURIComponent(`\uFEFF${linhas.join("\n")}`)}`;
     },
 
     /**
@@ -7278,7 +7303,7 @@ export function createMockApi() {
     async clearAdnError() { await delay(40); return { ok: true }; },
     importInvoicesXml: importarNotasMock,
     // Q48: download de notas em lote — job fake que "conclui" no primeiro poll.
-    async createNotasDownload(payload = {}) {
+    async createNotasDownload() {
       await delay(80);
       return { ok: true, jobId: `mock-notas-dl-${Date.now()}` };
     },
@@ -7666,78 +7691,7 @@ export function createMockApi() {
     // ── Documentos e anotações (mock com estado em memória) ────────────────────────────────
     // Estado de verdade, não retorno fixo: as duas features têm REGRAS que só dá pra conferir
     // mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria por elas.
-    async listCompanyDocuments() {
-      await delay(60);
-      return { ok: true, documentos: mockDocumentos, tipos: MOCK_TIPOS_DOC, tipoLabels: MOCK_TIPO_DOC_LABELS };
-    },
-    async uploadCompanyDocument(_companyId, { arquivo, tipo, nome }) {
-      await delay(120);
-      const doc = {
-        id: `mock-doc-${mockDocumentos.length + 1}`,
-        tipo: tipo || "OUTRO",
-        nome: nome || arquivo?.name || "documento.pdf",
-        mimeType: arquivo?.type || "application/pdf",
-        bytes: arquivo?.size || 1024,
-        validade: null,
-        createdAt: "2026-07-28T12:00:00.000Z",
-      };
-      mockDocumentos = [doc, ...mockDocumentos];
-      return { ok: true, documento: doc };
-    },
-    async fetchCompanyDocumentBlob() {
-      await delay(60);
-      return new Blob(["mock"], { type: "application/pdf" });
-    },
-    async deleteCompanyDocument(_companyId, documentId) {
-      await delay(60);
-      mockDocumentos = mockDocumentos.filter((d) => d.id !== documentId);
-      return { ok: true, removido: { id: documentId } };
-    },
-    async sendCompanyDocuments(_companyId, documentIds) {
-      await delay(150);
-      const docs = mockDocumentos.filter((d) => documentIds.includes(d.id));
-      return {
-        ok: true, enviados: docs.length, destinatario: "cliente@exemplo.com.br",
-        documentos: docs.map((d) => ({ id: d.id, nome: d.nome, tipo: d.tipo })),
-      };
-    },
-    async listCompanyNotes(_companyId, ordenarPor = "data") {
-      await delay(60);
-      const PESO = { ALTA: 0, MEDIA: 1, BAIXA: 2 };
-      const porData = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
-      const criterio = ordenarPor === "importancia"
-        ? (a, b) => ((PESO[a.importancia] ?? 9) - (PESO[b.importancia] ?? 9)) || porData(a, b)
-        : porData;
-      // Espelha a regra do backend: fixada sempre no topo, em qualquer ordenação.
-      const anotacoes = [...mockAnotacoes].sort((a, b) => {
-        if (a.fixada !== b.fixada) return a.fixada ? -1 : 1;
-        return criterio(a, b);
-      });
-      return { ok: true, anotacoes, importancias: ["ALTA", "MEDIA", "BAIXA"] };
-    },
-    async createCompanyNote(_companyId, { texto, importancia, fixada }) {
-      await delay(80);
-      if (fixada) mockAnotacoes = mockAnotacoes.map((n) => ({ ...n, fixada: false }));
-      const nota = {
-        id: `mock-nota-${mockAnotacoes.length + 1}`, texto,
-        importancia: importancia || "MEDIA", fixada: Boolean(fixada),
-        createdAt: new Date().toISOString(),
-      };
-      mockAnotacoes = [nota, ...mockAnotacoes];
-      return { ok: true, anotacao: nota };
-    },
-    async updateCompanyNote(_companyId, noteId, patch) {
-      await delay(80);
-      // Fixação EXCLUSIVA, igual ao backend — é o que a tela precisa exercitar.
-      if (patch.fixada === true) mockAnotacoes = mockAnotacoes.map((n) => ({ ...n, fixada: false }));
-      mockAnotacoes = mockAnotacoes.map((n) => (n.id === noteId ? { ...n, ...patch } : n));
-      return { ok: true, anotacao: mockAnotacoes.find((n) => n.id === noteId) };
-    },
-    async deleteCompanyNote(_companyId, noteId) {
-      await delay(60);
-      mockAnotacoes = mockAnotacoes.filter((n) => n.id !== noteId);
-      return { ok: true, removida: { id: noteId } };
-    },
+    ...documentosEmpresaMock,
     // ── Cofre de senhas (mock) ─────────────────────────────────────────────────────────────
     // ⚠ Espelha a invariante do backend: a listagem NUNCA carrega a senha. `_senhaFalsa` é retirada
     // aqui, num `map` explícito, e não por `delete` sobre o objeto — o `delete` mutaria a fixture e
@@ -7979,7 +7933,7 @@ export function createMockApi() {
     },
     async listarArquivosWhatsappNaoVinculados() { return { arquivos: [], temMais: false }; },
     async vincularArquivoWhatsapp() { throw new Error("Vincular um arquivo recebido exige o serviço real de WhatsApp."); },
-    async listarArquivosWhatsapp(_companyId) {
+    async listarArquivosWhatsapp() {
       await delay(80);
       // Nenhum recebimento real é inferido no demo; os componentes têm fixtures próprias de OFX/PDF.
       return { arquivos: [], proximoCursor: null };
@@ -8063,7 +8017,8 @@ export function createMockApi() {
         e.payload = { error: "FORA_DA_JANELA", message: e.message, reabrirConversa: { chave: "reabrir_conversa", statusAprovacao: "DECLARADO", disponivel: false } };
         throw e;
       }
-      const doc = mockDocumentos.find((d) => d.id === String(documentId));
+      const { documentos } = await documentosEmpresaMock.listCompanyDocuments(c.portalClientId);
+      const doc = documentos.find((d) => d.id === String(documentId));
       if (!doc) { const e = new Error("Documento não encontrado."); e.status = 404; e.code = "documento_nao_encontrado"; throw e; }
       const corpo = String(legenda || "").trim() || doc.nome;
       const m = { id: `mock-msg-${Date.now()}`, direcao: "out", tipo: "document", corpo, autor: "HUMANO", providerMessageId: `wamid.mock.${Date.now()}`, ocorridaEmProvedor: null, registradaEm: new Date().toISOString() };
@@ -8119,7 +8074,7 @@ export function createMockApi() {
       await delay(80);
       const fios = mockConversasWhatsapp.filter(c => c.portalClientId === portalClientId);
       if (!fios.length) { const e = new Error("Empresa não encontrada."); e.status = 404; throw e; }
-      if (!Array.isArray(apelidos) || apelidos.length > 5 || apelidos.some(v => typeof v !== "string" || v.trim().length < 2 || v.trim().length > 60 || /[\r\n\x00-\x1f]/.test(v))) { const e = new Error("Informe até cinco nomes curtos, cada um com 2 a 60 caracteres."); e.status = 400; throw e; }
+      if (!Array.isArray(apelidos) || apelidos.length > 5 || apelidos.some(v => typeof v !== "string" || v.trim().length < 2 || v.trim().length > 60 || Array.from(v).some(character => character.charCodeAt(0) < 32))) { const e = new Error("Informe até cinco nomes curtos, cada um com 2 a 60 caracteres."); e.status = 400; throw e; }
       const nomes = [...new Map(apelidos.map(v => [v.trim().toLocaleLowerCase("pt-BR"), v.trim()])).values()];
       for (const c of fios) c.empresa = { ...c.empresa, apelidosWhatsapp: nomes };
       return { ok: true, empresa: { id: portalClientId, apelidosWhatsapp: nomes } };
@@ -8279,7 +8234,7 @@ export function createMockApi() {
       mockCapturas = [job, ...mockCapturas].slice(0, 10);
       return { ok: true, job };
     },
-    async listNotasCapturas() { await delay(60); return { ok: true, jobs: mockCapturas.map(({ itens, ...j }) => j) }; },
+    async listNotasCapturas() { await delay(60); return { ok: true, jobs: mockCapturas.map(job => { const resumo = { ...job }; delete resumo.itens; return resumo; }) }; },
     async getNotasCaptura(jobId) {
       await delay(60);
       const job = mockCapturas.find((j) => j.jobId === jobId);
@@ -8576,7 +8531,7 @@ export function createMockApi() {
      * migration não foi aplicada" é exercido pelo teste da rota, e um mock que o simulasse por
      * padrão treinaria a tela a esperar falha.
      */
-    async getConferenciaSaidasDoCliente(_companyId) {
+    async getConferenciaSaidasDoCliente() {
       await delay(60);
       return {
         ok: true,
@@ -8595,7 +8550,7 @@ export function createMockApi() {
      * desenhos diferentes (o primeiro tem ANTES e DEPOIS, o segundo não tem depois nenhum).
      * ⚠ O `diaEstimado` da primeira são os dias reais da SPO em produção — 20, 2, 4 → mediana 4.
      */
-    async getConferenciaMexidasDoCliente(_companyId) {
+    async getConferenciaMexidasDoCliente() {
       await delay(60);
       if (mexidasDesfeitas.size) {
         return { ok: true, indisponivel: false, mexidas: MEXIDAS_DO_MOCK.filter((m) => !mexidasDesfeitas.has(m.id)) };
@@ -9021,11 +8976,11 @@ export function createMockApi() {
       // tela offline aceitar o que a de produção recusa.
       return { ok: true, serie: { id: "s-novo", ...corpo } };
     },
-    async postSaidaSugerida(_companyId, _serieId) {
+    async postSaidaSugerida() {
       await delay(90);
       return { ok: true, marcadas: 1 };
     },
-    async getConferenciaCasamentos(_companyId) {
+    async getConferenciaCasamentos() {
       await delay(90);
       return {
         ok: true,
@@ -9238,7 +9193,7 @@ export function createMockApi() {
      * ⚠ `ultimaTentativaEm` é DEPOIS de `ultimoResultadoEm` de propósito: é o caso normal (olhei
      * hoje, não veio nada; a última que veio foi anteontem) e o único em que a distinção aparece.
      */
-    async getVarreduraAutomatica(_companyId) {
+    async getVarreduraAutomatica() {
       await delay(60);
       if (!varreduraAutomaticaDoMock) {
         return { ok: true, ligada: false, indisponivel: false, desde: null };
@@ -9267,12 +9222,12 @@ export function createMockApi() {
         ],
       };
     },
-    async deleteVarreduraAutomatica(_companyId) {
+    async deleteVarreduraAutomatica() {
       await delay(80);
       varreduraAutomaticaDoMock = null;
       return { ok: true, ligada: false, desligadas: 1 };
     },
-    async getConferenciaVarredura(_companyId) {
+    async getConferenciaVarredura() {
       await delay(60);
       // ⚠ Base saudável no mock: as quatro invariantes vazias. Quem quiser ver o desenho de achado
       // troca aqui — mas o estado normal é este, e fingir problema permanente treinaria o olho a
@@ -9292,7 +9247,7 @@ export function createMockApi() {
      * ⚠ Os valores NÃO são redondos: o mock deste projeto já escondeu dois ramos inteiros por usar
      * só múltiplos de 100.
      */
-    async getConferenciaRegras(_companyId) {
+    async getConferenciaRegras() {
       await delay(60);
       return {
         ok: true,
@@ -10491,7 +10446,9 @@ export function createMockApi() {
           folhaMensal12: pas.map((pa) => ({ pa, valor: 5000 })),
           ...(fechamentosSalvos.has(chaveFechamento(companyId, competencia)) ? (() => {
             const salvo = fechamentosSalvos.get(chaveFechamento(companyId, competencia));
-            return { ...copiar(salvo.formulario), estado: salvo.estado, calculoId: salvo.calculoId, snapshot: copiar(salvo), simulacaoSerpro: copiar(salvo.resultado), numeroDeclaracao: salvo.numeroDeclaracao || null };
+            const calculoRecuperavel = ['calculada', 'fechada'].includes(salvo.estado) && salvo.calculoId
+              ? { ...copiar(salvo.resultado), calculoId: salvo.calculoId, formulario: copiar(salvo.formulario) } : null;
+            return { ...copiar(salvo.formulario), estado: salvo.estado, calculoId: salvo.calculoId, calculoRecuperavel, snapshot: copiar(salvo), simulacaoSerpro: copiar(salvo.resultado), numeroDeclaracao: salvo.numeroDeclaracao || null };
           })() : {}),
           folhaDerivada: {
             disponivel: true,
@@ -11009,7 +10966,7 @@ export function createMockApi() {
     // ── Onboarding (funil pré-cadastro) ─────────────────────────────────
     async getOnboardingComercial(id) {
       const o = mockOnboardings.get(id); if (!o) throw new Error("Ficha não encontrada.");
-      return { ok: true, faseComercial: o.faseComercial || "LEAD", proposta: o.proposta || null, analises: o.analises || [], eventos: o.eventos || [], links: [...mockLinksComerciais.values()].filter(l=>l.onboardingId===id).map(({token,...l})=>l) };
+      return { ok: true, faseComercial: o.faseComercial || "LEAD", proposta: o.proposta || null, analises: o.analises || [], eventos: o.eventos || [], links: [...mockLinksComerciais.values()].filter(l=>l.onboardingId===id).map(link => { const publico = { ...link }; delete publico.token; return publico; }) };
     },
     async salvarOnboardingComercial(id, patch) {
       const o=mockOnboardings.get(id);if(!o||o.status==="CONVERTIDO")throw new Error("Ficha indisponível para edição.");

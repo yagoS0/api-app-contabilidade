@@ -13,7 +13,7 @@ export function LaboratorioEmpresa({api,empresas=[],onVoltar,onTributario}) {
   const [acao,setAcao]=useState('ganhar'),[impacto,setImpacto]=useState('');
   const contexto=useRef(0), baseEdicao=useRef({});
   const ra=avaliar(a),rb=avaliar(b),objetivo=rb.dados&&meta!==''?calcularMeta(b,Number(meta)):null;
-  useEffect(()=>{let vivo=true;api.listarCenariosLaboratorio().then(r=>{if(r.ok===false)throw Error(r.message);if(vivo)setSalvos(r.cenarios);}).catch(e=>{if(vivo)setMensagem(e.message)});return()=>{vivo=false;contexto.current++;};},[api]);
+  useEffect(()=>{const contador=contexto;let vivo=true;api.listarCenariosLaboratorio().then(r=>{if(r.ok===false)throw Error(r.message);if(vivo)setSalvos(r.cenarios);}).catch(e=>{if(vivo)setMensagem(e.message)});return()=>{vivo=false;contador.current++;};},[api]);
   function trocar(id){contexto.current++;setCompanyId(id);setA({...vazio});setB({...vazio});setMensagem('');setFonte('Premissas manuais.');setApresentar(false);}
   async function carregar(){const versao=++contexto.current;setOcupado(true);setMensagem('');try{
     const snapshot=await api.getRelatorioGerencialSnapshot(companyId,{de:periodo,ate:periodo,comparar:'anterior'});

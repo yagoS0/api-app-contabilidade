@@ -19,7 +19,7 @@ function Painel({ api, companyId, tributo, ambiente, competencia }) {
   const [erro, setErro] = useState(''), [aviso, setAviso] = useState('');
   const vivo = useRef(false), sequencia = useRef(0), bloqueio = useRef(false), atual = useRef(null), intencoes = useRef(new Map());
   const apiAtual = useRef(api); apiAtual.current = api;
-  useEffect(() => { vivo.current = true; return () => { vivo.current = false; atual.current = null; sequencia.current++; }; }, []);
+  useEffect(() => { const sequenciaDaExecucao = sequencia; vivo.current = true; return () => { vivo.current = false; atual.current = null; sequenciaDaExecucao.current++; }; }, []);
   const carregar = useCallback(async () => {
     const vez = ++sequencia.current;
     const vigente = () => vivo.current && apiAtual.current === api && sequencia.current === vez;
@@ -33,7 +33,7 @@ function Painel({ api, companyId, tributo, ambiente, competencia }) {
     } catch (e) { if (vigente()) setErro(e.message || 'Não foi possível ler a competência.'); }
     finally { if (vigente()) setCarregando(false); }
   }, [api, companyId, tributo, ambiente, competencia]);
-  useEffect(() => { carregar(); return () => { sequencia.current++; }; }, [carregar]);
+  useEffect(() => { const sequenciaDaExecucao = sequencia; carregar(); return () => { sequenciaDaExecucao.current++; }; }, [carregar]);
   const r = registro?.api === api ? registro.valor : null;
   const podeEditar = Boolean(r && atual.current === r && !carregando && !ocupado && !r.demonstracao && r.capacidades?.editar === true);
   async function executar(acao, dados) {
@@ -82,7 +82,7 @@ function Painel({ api, companyId, tributo, ambiente, competencia }) {
 function Evidencia({ value, onChange, prefixo }) {
   const [calculando, setCalculando] = useState(false), [erroHash, setErroHash] = useState('');
   const vigente = useRef(0), montado = useRef(false);
-  useEffect(() => { montado.current = true; return () => { montado.current = false; vigente.current++; }; }, []);
+  useEffect(() => { const vigenteDaExecucao = vigente; montado.current = true; return () => { montado.current = false; vigenteDaExecucao.current++; }; }, []);
   async function calcular(file) {
     const vez = ++vigente.current; setErroHash('');
     if (!file) { setCalculando(false); return; }
@@ -171,10 +171,12 @@ function Alocacao({ registro: r, disabled, executar }) {
   </fieldset></form>;
 }
 const ACOES = { REGISTRAR_BASE: 'Base declarada revisada', RESOLVER_PENDENCIA: 'Pendência resolvida', CONFERIR_LOCAL: 'Conferência local registrada', REGISTRAR_GUIA: 'Guia declarada registrada', REGISTRAR_PAGAMENTO: 'Pagamento ou extinção declarado', ALOCAR: 'Valor alocado localmente', ESTORNAR_ALOCACAO: 'Alocação estornada', CANCELAR_GUIA: 'Guia cancelada localmente', CANCELAR_PAGAMENTO: 'Pagamento cancelado localmente' };
-function HistoricoMensal({ api, companyId, contexto }) {
+function HistoricoMensal({ api, companyId, contexto: contextoRecebido }) {
+  const { tributo, ambiente, competencia } = contextoRecebido;
   const [aberto, setAberto] = useState(false), [lista, setLista] = useState(null), [erro, setErro] = useState('');
   useEffect(() => {
     if (!aberto) return;
+    const contexto = { tributo, ambiente, competencia };
     let cancelado = false;
     setLista(null); setErro('');
     Promise.resolve().then(() => api.getHistoricoMensalConsumo(companyId, contexto)).then(r => {
@@ -183,7 +185,7 @@ function HistoricoMensal({ api, companyId, contexto }) {
       setLista(r);
     }).catch(e => { if (!cancelado) setErro(e.message || 'Não foi possível ler o histórico.'); });
     return () => { cancelado = true; };
-  }, [aberto, api, companyId, contexto.tributo, contexto.ambiente, contexto.competencia]);
+  }, [aberto, api, companyId, tributo, ambiente, competencia]);
   return <details onToggle={e => setAberto(e.currentTarget.open)}><summary>Histórico auditável da competência</summary>{aberto && <>
     {erro && <p role="alert">{erro}</p>}{!lista && !erro && <p>Lendo histórico local…</p>}
     {lista && <>{lista.truncado && <p>Exibindo as 100 revisões mais recentes.</p>}{lista.historico.map(h => <article className="reforma-finding" key={h.id}><p>Versão {h.versao} · {ACOES[h.acao] || 'Revisão local'} · {new Date(h.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>{h.comando?.dados?.motivo && <p>{h.comando.dados.motivo}</p>}{h.comando?.dados?.resolucao && <p>{h.comando.dados.resolucao}</p>}</article>)}{!lista.historico.length && <p>Nenhuma revisão local registrada.</p>}</>}

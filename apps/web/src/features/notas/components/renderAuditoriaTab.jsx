@@ -35,7 +35,8 @@ import { NotaDetailModal } from "./NotaDetailModal";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { createApiClient } from "../../../api/client";
-import { PANEL } from "./notasStyles";
+
+import { PANEL } from "./notasStyles.shared.js";
 import { PendenciasList } from "./PendenciasList";
 import {
   leituraDaPergunta,
@@ -226,7 +227,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeE
     } finally {
       if (atual()) setCarregando(false);
     }
-  }, [api, companyId, competencia]);
+  }, [api, companyId, competencia, escopo]);
 
   // ⚠ CHAMADA SEPARADA, DE PROPÓSITO — e ela NÃO depende da competência.
   //

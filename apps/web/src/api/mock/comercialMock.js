@@ -227,10 +227,7 @@ export function criarMockComercial({
           devolutiva: { partes: [], concluida: Boolean(diagnosticoAtual(o) && o.apresentacaoDemonstracao?.diagnosticoId === diagnosticoAtual(o).id), incerta: false } },
         propostas: [...propostas.values()].filter(p => p.onboardingId === o.id).reverse(),
         contratos: [...contratos.values()].filter(c => c.onboardingId === o.id),
-        documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(({
-          file,
-          ...d
-        }) => d),
+        documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(documento => { const dados = { ...documento }; delete dados.file; return dados; }),
         trabalhos: [],
         marcos: o.marcosComerciais || []
       };
@@ -416,7 +413,7 @@ export function criarMockComercial({
       const d = body.dados;
       if (!/^\d{14}$/.test(d?.cnpj || "") || !d.razaoSocial || !d.cnaePrincipal || !["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(d.regimeTributario) || ["rua", "numero", "bairro", "cidade", "uf", "cep"].some(k => !d.endereco?.[k])) throw Error("Preencha CNPJ, razão social, CNAE, regime e endereço conferidos.");
       const anterior = fichasAvulsas.get(id);
-      const f = { id: anterior?.id || uid(), onboardingId: id, cnpj: d.cnpj, dados: d, versao: (anterior?.versao || 0) + 1, documentos: [...docs.values()].filter(x => x.onboardingId === id).map(({ file, ...doc }) => doc), modalidade: "AVULSO", contabilidadeAtiva: false, portalHabilitado: false };
+      const f = { id: anterior?.id || uid(), onboardingId: id, cnpj: d.cnpj, dados: d, versao: (anterior?.versao || 0) + 1, documentos: [...docs.values()].filter(x => x.onboardingId === id).map(documento => { const dados = { ...documento }; delete dados.file; return dados; }), modalidade: "AVULSO", contabilidadeAtiva: false, portalHabilitado: false };
       fichasAvulsas.set(id, f); o.versao++; persistir(); return { ok: true, fichaAvulsa: f };
     },
     async baixarDocumentoFichaAvulsa(id, documentoId) {

@@ -412,7 +412,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   );
 }
 
-export function CompanyCredentialsTab({ vault, razaoSocial }) {
+export function CompanyCredentialsTab({ vault }) {
   const {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,
     informacoes, carregandoInfos, erroInfos,

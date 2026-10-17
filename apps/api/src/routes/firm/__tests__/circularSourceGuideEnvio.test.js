@@ -27,6 +27,8 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    // Nenhuma confirmação R25 neste cenário legado; consulta real permanece exercitada.
+    appSetting: { findMany: jest.fn(async () => []) },
     accountingEntry: { findMany: jest.fn(async () => []) },
     guide: { findMany: jest.fn(async () => []) },
     companyMonthlyCircular: { findMany: jest.fn(async () => []) },
@@ -242,14 +244,44 @@ describe("A tolerância NÃO é o único caminho — envio registrado em `envios
 });
 
 describe("O QUE O ENRIQUECIMENTO NÃO PODE MUDAR (era o assunto conhecido, e continua sendo)", () => {
-  it("`enrichDasProvisao` segue corrigindo valor/totalD pelo `circular.dasTotal` e NÃO toca em `saldo`", async () => {
+  it("`enrichDasProvisao` preserva o principal das linhas mesmo com `circular.dasTotal` diferente", async () => {
     prisma.companyMonthlyCircular.findMany.mockResolvedValue([
       { competencia: COMP, dasTotal: 1234.56, acrescimos: null, pgdasDeclaracaoFileId: null, pgdasReciboFileId: null, semFaturamento: false },
     ]);
     const { das } = await carregarCircular();
-    expect(das.valor).toBe(1234.56);
-    expect(das.totalD).toBe(1234.56);
+    expect(das.valor).toBe(1000);
+    expect(das.totalD).toBe(1000);
+    expect(das.totalC).toBe(1000);
     // `saldo` vem de `entryToResponse`/`computeSaldoProvisao`, das LINHAS — 1000, não 1234,56.
     expect(das.saldo).toBe(1000);
+  });
+});
+
+
+describe("recálculo documental não reescreve principal contabilizado", () => {
+  it("atualiza metadados do recálculo e conserva valores, saldo, vencimento e envio", async () => {
+    const antes = (await carregarCircular()).das;
+    const recalculadaEm = new Date("2026-07-21T10:00:00.000Z");
+    const guiaRecalculada = guiaEnviadaPorEmail({ valor: 1123.45, updatedAt: recalculadaEm });
+    prisma.guide.findMany.mockImplementation(async (args) => {
+      if (args?.where?.tipo === "SIMPLES") return [guiaRecalculada];
+      if (args?.where?.tipo === "INSS") return [guiaInss];
+      return [];
+    });
+
+    const { das } = await carregarCircular();
+    for (const campo of ["valor", "totalD", "totalC", "saldo"]) {
+      expect(antes[campo]).toBe(1000);
+      expect(das[campo]).toBe(antes[campo]);
+    }
+    expect(das.recalculatedAt).toBe(recalculadaEm.toISOString());
+    expect(das.recalculatedFromValor).toBe(1000);
+    expect(das.recalculatedToValor).toBe(1123.45);
+    expect(das.recalculatedNotes).toBe("Guia atualizada pelo SERPRO");
+    expect(das.sourceGuide.vencimento).toBe(VENCIMENTO.toISOString());
+    expect(das.sourceGuide.emailStatus).toBe("SENT");
+    expect(das.sourceGuide.envios).toEqual([]);
+    expect(foiEnviadaComLegado(das.sourceGuide.envios, das.sourceGuide)).toBe(true);
+    expect(das.pagamentoLocalizado).toBe(false);
   });
 });

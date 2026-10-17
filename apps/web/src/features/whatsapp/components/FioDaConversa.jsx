@@ -1,3 +1,4 @@
+import { campo } from './FioDaConversa.shared.js';
 // O FIO ABERTO — cabeçalho, balões e compositor. Extraído de `pages/renderWhatsappPage.jsx` em
 // 06/09/2026 porque ganhou um SEGUNDO consumidor concreto: a mesma conversa dentro da empresa,
 // ao lado das Anotações (F2). Extrair antes do segundo consumidor seria abstração sem caso.
@@ -20,7 +21,7 @@ import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota } fro
 import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { NotaDaMensagem } from "./NotaDaMensagem";
 import { PainelAtendimento } from "./PainelAtendimento";
-import { AtualizacaoAtendimento } from "./AtendimentoComercial";
+import { AtualizacaoAtendimento } from './AtendimentoComercial.shared.js';
 import { ContingenciaIa } from "./ContingenciaIa";
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
 import { AvatarConversa, SituacaoConversa, SituacaoIdentificacao, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
@@ -37,11 +38,8 @@ import {
   estadoDaMensagem,
 } from "../lib/conversasTela";
 
-export const campo = {
-  background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--text)",
-  padding: "8px 10px", fontSize: "0.86rem", fontFamily: "inherit", boxSizing: "border-box", width: "100%",
-};
-export const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)" };
+
+
 const PEDIDOS_PENDENTES = { EMITIR_NFSE: "Emissão de nota", CANCELAR_NFSE: "Cancelamento de nota", RECALCULAR_GUIA: "Atualização de guia" };
 
 /**
@@ -124,9 +122,11 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
     }
   }
 
+  const temVoltar = Boolean(onVoltar);
+  const marcarLida = hook.marcarLida;
   useLayoutEffect(() => {
-    if (onVoltar && window.matchMedia?.("(max-width: 760px)").matches) fioRef.current?.focus();
-  }, [conversa.id]);
+    if (temVoltar && window.matchMedia?.("(max-width: 760px)").matches) fioRef.current?.focus();
+  }, [conversa.id, temVoltar]);
 
   useEffect(() => {
     const el = historicoRef.current;
@@ -178,7 +178,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
     const reconhecer = () => {
       if (!ativo || document.visibilityState === "hidden" || document.querySelector('[aria-modal="true"], .wa-quick-drawer:not([hidden]), .wa-lead-panel:not([hidden]), .wa-compose-sheet:not([hidden])')) return;
       const ultima = fio.mensagens.filter(m => m.direcao === "in" && visiveis.has(m.id)).at(-1);
-      if (ultima) hook.marcarLida?.(conversa.id, ultima.id);
+      if (ultima) marcarLida?.(conversa.id, ultima.id);
     };
     const observer = new IntersectionObserver(entradas => {
       for (const entrada of entradas) {
@@ -190,7 +190,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
     el.querySelectorAll('[data-mensagem-entrada="true"]').forEach(m => observer.observe(m));
     document.addEventListener("visibilitychange", reconhecer);
     return () => { ativo = false; observer.disconnect(); document.removeEventListener("visibilitychange", reconhecer); };
-  }, [conversa.id, fio.mensagens, hook.marcarLida, detalhesAbertos, visivel, sobreposta, buscando, escolherEmpresa, confirmarExclusao, fonteDaNota]);
+  }, [conversa.id, fio.mensagens, marcarLida, detalhesAbertos, visivel, sobreposta, buscando, escolherEmpresa, confirmarExclusao, fonteDaNota]);
 
   useEffect(() => {
     const verificar = () => setSobreposta(Boolean(document.querySelector('[aria-modal="true"], .wa-quick-drawer:not([hidden]), .wa-lead-panel:not([hidden]), .wa-compose-sheet:not([hidden])')));

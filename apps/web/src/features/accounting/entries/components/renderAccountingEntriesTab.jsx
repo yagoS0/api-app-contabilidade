@@ -1,3 +1,5 @@
+import { CorrecaoMesContabilModal } from "./CorrecaoMesContabilModal";
+import { AvisosContabeis } from "./AvisosContabeis";
 import { usePagamentosPendentes } from './usePagamentosPendentes';
 import { GuiasPendentesContabilizacao } from './GuiasPendentesContabilizacao';
 import { PagamentosProvisionadosModal } from './PagamentosProvisionadosModal';
@@ -9,7 +11,7 @@ import { HistoricosModal } from "../../historicos/components/renderHistoricosMod
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
 import { AccountRow, DraftEntryRow } from "./renderAccountingEntriesParts";
-import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtValor, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
+import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, fmtValor, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
@@ -164,14 +166,15 @@ export function VerificacaoDeLancamentos({ verificacao }) {
   if (!grupos.length || !resumo) return null;
   const foraDoAlcance = naoAvaliados(verificacao?.resumo);
   return (
-    <div
+    <details
       style={{
         display: "grid", gap: 3, padding: "5px 6px", borderRadius: 8,
         border: "1px solid #FFB347", background: ACCOUNTING_PANEL.field,
-        fontSize: "0.72rem", color: "#FFB347", fontWeight: 600,
+        fontSize: "0.8125rem", color: "#FFB347", fontWeight: 600,
       }}
     >
-      <span>⚠ Conferir antes de importar · {resumo}</span>
+      <summary style={{ cursor: "pointer" }}>⚠ Conferir antes de importar · {resumo}</summary>
+      <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
       {grupos.map((g) => (
         <span
           key={g.regraId}
@@ -186,7 +189,8 @@ export function VerificacaoDeLancamentos({ verificacao }) {
           {foraDoAlcance} lançamento(s) não puderam ser conferidos (conta em branco ou fora do plano).
         </span>
       )}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -219,11 +223,23 @@ export function DivergenciaDeFonte({ divergencias }) {
 // só teste de regra — e regra verde com fio solto é exatamente como `hasAccountingDivergence`
 // passou meses sendo gravado sem ninguém ver.
 export function FechamentoCadeado({ companyId, myRole, competencia, entries, onState, onFechamentoData, filtroAtivo, onVerificacao, onLoad }) {
-  const { pedir, dialogo: confirmacao } = useConfirmacao();
+  const [correcaoAberta, setCorrecaoAberta] = useState(false);
+  const [versao, setVersao] = useState(null);
+  const contexto = useMemo(() => ({ companyId, competencia }), [companyId, competencia]);
+  const contextoAtual = useRef(contexto);
+  contextoAtual.current = contexto;
+  useEffect(() => {
+    contextoAtual.current = contexto;
+    setBusy(false); setCheckBusy(null); setSemFatBusy(false); setCorrecaoAberta(false); setVersao(null);
+    return () => { if (contextoAtual.current === contexto) contextoAtual.current = null; };
+  }, [contexto]);
   const [fechado, setFechado] = useState(false);
   const [fechadoEm, setFechadoEm] = useState(null);
   const [fechadoPorNome, setFechadoPorNome] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [falhaFechamento, setFalhaFechamento] = useState(null);
+  const [consultaFechamento, setConsultaFechamento] = useState(0);
+  const [carregandoFechamento, setCarregandoFechamento] = useState(true);
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
   const [checklist, setChecklist] = useState({});
   const [automatico, setAutomatico] = useState({});
@@ -271,11 +287,15 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
   useEffect(() => {
     let alive = true;
     setVerificacao(null);
+    setFalhaFechamento(null);
+    setCarregandoFechamento(true);
     onVerificacao?.(null);
     if (!companyId || !competencia) return undefined;
     fechamentoApi.getFechamentoContabil(companyId, competencia)
       .then((r) => {
         if (!alive) return;
+        if (!r || r.ok === false || typeof r.fechado !== "boolean") throw new Error(r?.message || "Não foi possível consultar o fechamento contábil.");
+        setVersao(r.versao ?? null);
         setFechado(Boolean(r?.fechado));
         setFechadoEm(r?.fechadoEm || null);
         setFechadoPorNome(r?.fechadoPorNome || null);
@@ -293,10 +313,11 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
         // Callback separado de propósito: `onState` também é chamado pelo `toggle()`, sem payload.
         onFechamentoData?.(r || null);
       })
-      .catch(() => {});
+      .catch((e) => { if (alive) setFalhaFechamento(e?.message || "Não foi possível consultar o fechamento contábil."); })
+      .finally(() => { if (alive) setCarregandoFechamento(false); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, competencia, entries]);
+  }, [companyId, competencia, entries, consultaFechamento]);
 
   // ⚠ CHAMADA PRÓPRIA, e não um campo do fechamento: ela varre TODOS os lançamentos da competência
   // e o fechamento é outra pergunta. ⚠ E ela FALHA ABERTO — a aba não pode quebrar porque a
@@ -316,34 +337,40 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
   }, [companyId, competencia, entries, onVerificacao]);
 
   async function toggle() {
-    if (busy) return;
-    if (fechado) {
-      // ⚠ Reabrir passa por confirmação. Reabrir é o que destrava a escrita num mês já entregue —
-      // as buscas do SERPRO e o "+ Adicionar" respondem a este estado — e não tinha nem um "tem
-      // certeza?", enquanto EXCLUIR um lançamento tinha. O peso estava invertido.
-      const quando = fechadoEm ? ` (fechado em ${fmtDataCurta(fechadoEm)})` : "";
-      if (!await pedir({ titulo: "Reabrir competência", acao: "Reabrir mês", texto: `Reabrir ${competencia}${quando}?\n\nO mês volta a aceitar lançamentos e buscas no SERPRO.` })) return;
-      setBusy(true);
-      try {
-        await fechamentoApi.reabrirFechamentoContabil(companyId, competencia);
-        setFechado(false); setFechadoEm(null); setFechadoPorNome(null); onState?.(false);
-      } catch (e) { window.alert(e?.message || "Falha ao reabrir."); }
-      finally { setBusy(false); }
-      return;
-    }
+    if (busy || carregandoFechamento || falhaFechamento) return;
+    if (fechado) { setCorrecaoAberta(true); return; }
     // ⚠ Os dois alertas que ficavam aqui SUMIRAM. O motivo do bloqueio agora está no painel ANTES
     // do clique (`FaltaParaFechar` + o botão desabilitado que nomeia o que falta): alerta é a
     // resposta chegando depois da tentativa, para quem já suspeitava. O botão nem chega a chamar.
     if (problemas.length > 0 || pendentes.length > 0) return;
     setBusy(true);
     try {
-      const r = await fechamentoApi.fecharFechamentoContabil(companyId, competencia);
+      const r = await fechamentoApi.fecharFechamentoContabil(companyId, competencia, { versao });
+      if (contextoAtual.current !== contexto) return;
+      if (r?.ok !== true || r.fechado !== true) throw new Error(r?.message || "O fechamento não foi confirmado. Atualize o fechamento antes de tentar novamente.");
       setFechado(true);
-      setFechadoEm(r?.fechadoEm || new Date().toISOString());
+      setFechadoEm(r?.fechadoEm || null);
       setFechadoPorNome(r?.fechadoPorNome || null);
       onState?.(true);
-    } catch (e) { window.alert(e?.message || "Falha ao fechar."); }
-    finally { setBusy(false); }
+      window.dispatchEvent(new Event("altan:avisos-contabeis"));
+      setFalhaFechamento(null);
+      onLoad?.();
+    } catch (e) { if (contextoAtual.current === contexto) setFalhaFechamento(e?.message || "Falha ao fechar."); }
+    finally { if (contextoAtual.current === contexto) setBusy(false); }
+  }
+
+  async function corrigir(motivo) {
+    if (busy || !versao || !["ACCOUNTANT", "FIRM_ADMIN"].includes(myRole)) return;
+    setBusy(true); setFalhaFechamento(null);
+    try {
+      const r = await fechamentoApi.reabrirFechamentoContabil(companyId, competencia, { motivo, versao });
+      if (contextoAtual.current !== contexto) return;
+      if (r?.ok !== true || r.fechado !== false || !r.correcao?.id) throw Error(r?.message || "A correção não foi confirmada. Atualize o fechamento para conferir o resultado.");
+      setCorrecaoAberta(false); setFechado(false); setChecklist({}); onState?.(false);
+      setConsultaFechamento(v => v + 1); onLoad?.();
+      window.dispatchEvent(new Event("altan:avisos-contabeis"));
+    } catch (e) { if (contextoAtual.current === contexto) setFalhaFechamento(e.message || "Não foi possível corrigir o mês."); }
+    finally { if (contextoAtual.current === contexto) setBusy(false); }
   }
 
   async function toggleItem(chave) {
@@ -351,10 +378,13 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
     const next = !checklist[chave];
     setCheckBusy(chave);
     try {
-      await fechamentoApi.setChecklistFechamento(companyId, competencia, chave, next);
+      const r = await fechamentoApi.setChecklistFechamento(companyId, competencia, chave, next, versao);
+      if (contextoAtual.current !== contexto) return;
+      if (r?.ok !== true) throw Error(r?.message || "A conferência não foi salva.");
+      if (r.versao) setVersao(r.versao);
       setChecklist((prev) => ({ ...prev, [chave]: next }));
-    } catch (e) { window.alert(e?.message || "Falha ao salvar a conferência."); }
-    finally { setCheckBusy(null); }
+    } catch (e) { if (contextoAtual.current === contexto) window.alert(e?.message || "Falha ao salvar a conferência."); }
+    finally { if (contextoAtual.current === contexto) setCheckBusy(null); }
   }
 
   async function toggleSemFaturamento() {
@@ -363,12 +393,13 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
     setSemFatBusy(true);
     try {
       const r = await fechamentoApi.setSemFaturamento(companyId, competencia, next);
+      if (contextoAtual.current !== contexto) return;
       // A recusa vem do servidor (409 / ok:false) e traz o valor — mostrar o número é o que faz o
       // contador entender que não é capricho da tela.
       if (r?.ok === false) { window.alert(r.message || "Não foi possível marcar."); return; }
       setSemFaturamento(next);
-    } catch (e) { window.alert(e?.message || "Não foi possível marcar."); }
-    finally { setSemFatBusy(false); }
+    } catch (e) { if (contextoAtual.current === contexto) window.alert(e?.message || "Não foi possível marcar."); }
+    finally { if (contextoAtual.current === contexto) setSemFatBusy(false); }
   }
 
   const temFaturamento = Number(faturamentoEmit || 0) > 0;
@@ -394,7 +425,7 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
       : pendentes.length > 0
         ? `Faltam: ${pendentes.map((p) => p.label).join(", ")}`
         : null;
-  const btnDisabled = busy || Boolean(motivoBloqueio);
+  const btnDisabled = busy || carregandoFechamento || Boolean(motivoBloqueio) || Boolean(falhaFechamento) || (fechado && !["ACCOUNTANT", "FIRM_ADMIN"].includes(myRole));
   const title = fechado
     ? `Mês fechado. Clique para reabrir — o mês volta a aceitar lançamentos.`
     : motivoBloqueio
@@ -426,6 +457,9 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
       <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
         Fechamento
       </span>
+      {falhaFechamento && <div role="alert" style={{ color: "var(--danger)", fontSize: "0.8125rem" }}>{falhaFechamento}<Button variant="secondary" size="sm" onClick={() => setConsultaFechamento(n => n + 1)}>Atualizar fechamento</Button></div>}
+      {fechado && !["ACCOUNTANT", "FIRM_ADMIN"].includes(myRole) && <small>Somente contador ou administrador pode corrigir este mês.</small>}
+      {carregandoFechamento && <span role="status" style={{ fontSize: "0.8125rem" }}>Consultando fechamento…</span>}
 
       {/* ⚠ NO TOPO E SEM O GATE `!fechado`: é evidência sobre um NÚMERO, não sobre o que falta
           fazer. Mês fechado com valor divergente é o caso em que o número já foi reportado. */}
@@ -461,7 +495,7 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
             checked={semFaturamento}
             // Divergência desabilita como o faturamento desabilita: nos dois casos há EVIDÊNCIA
             // contra a afirmação, e a recusa viria do servidor de qualquer jeito.
-            disabled={semFatBusy || ((temFaturamento || conferenciaDivergente) && !semFaturamento)}
+            disabled={carregandoFechamento || busy || Boolean(falhaFechamento) || semFatBusy || ((temFaturamento || conferenciaDivergente) && !semFaturamento)}
             onChange={toggleSemFaturamento}
             style={{ width: 13, height: 13, flex: "0 0 auto", marginTop: 1, cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
           />
@@ -510,7 +544,7 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
                 <input
                   type="checkbox"
                   checked={marcado}
-                  disabled={Boolean(checkBusy) || automatico[item.chave] === true}
+                  disabled={carregandoFechamento || busy || Boolean(falhaFechamento) || Boolean(checkBusy) || automatico[item.chave] === true}
                   onChange={() => toggleItem(item.chave)}
                   /* 13px: o padrão do browser (~16px) somava 3px de largura por linha num painel
                      de 152px — e a caixa continua confortável de acertar com o mouse. */
@@ -559,13 +593,13 @@ export function FechamentoCadeado({ companyId, myRole, competencia, entries, onS
           }}
         >
           <span style={{ fontSize: "0.9rem" }}>{fechado ? "🔒" : "🔓"}</span>
-          {fechado ? "Reabrir" : "Fechar mês"}
+          {fechado ? "Corrigir mês fechado" : "Fechar mês"}
         </button>
         {/* Lançamento com problema NÃO sai: ele não está visível em lugar nenhum do painel, e cada
             item leva até a linha da tabela. É informação que só existe aqui. */}
         {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
       </div>
-      {confirmacao}
+      {correcaoAberta && <CorrecaoMesContabilModal key={`${companyId}:${competencia}`} competencia={competencia} ocupado={busy} erro={falhaFechamento || (!versao ? "Atualize o fechamento para obter a revisão atual." : null)} aoConfirmar={corrigir} aoFechar={() => setCorrecaoAberta(false)} />}
     </div>
   );
 }
@@ -770,10 +804,6 @@ export function AccountingEntriesTab({
   onPreviewOFX,
   accounts,
   onLoadAccounts,
-  onCreateAccount,
-  onUpdateAccount,
-  onDeleteAccount,
-  onImportAccountsFile,
   savingEntry,
   onExportCsv,
   message,
@@ -865,8 +895,8 @@ export function AccountingEntriesTab({
 
 
   const visibleIds = useMemo(() => entries.map((e) => e.id).filter(Boolean), [entries]);
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
-  const someSelected = visibleIds.some((id) => selectedIds.has(id));
+
+
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
   useEffect(() => {
     setSelectedIds(new Set());
@@ -874,14 +904,7 @@ export function AccountingEntriesTab({
     setExportSelection(null);
   }, [companyId, filters.competencia, filters.tipo, filters.origem, filters.status]);
 
-  function toggleAll() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allSelected) visibleIds.forEach((id) => next.delete(id));
-      else visibleIds.forEach((id) => next.add(id));
-      return next;
-    });
-  }
+
   function toggleOne(id) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1041,6 +1064,7 @@ export function AccountingEntriesTab({
        manter em sincronia, e um teto fixo que deixava ~900px em branco num monitor de 2560. Com o
        padding no contêiner, cada bloco interno é simplesmente `width: 100%` e acompanha sozinho. */
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--content-gutter)", boxSizing: "border-box" }}>
+      <AvisosContabeis companyId={companyId} competencia={activeComp} myRole={myRole} aoConcluirBaixa={onLoad} />
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1312,10 +1336,10 @@ export function AccountingEntriesTab({
           +
         </Button>
         </div>
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
-          <colgroup>
+        <table style={{ width: "100%", minWidth: !entries.length && !adding ? 0 : undefined, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
+          {(entries.length > 0 || adding) && <colgroup>
             {COLS.map((col, index) => <col key={index} style={{ width: col.width }} />)}
-          </colgroup>
+          </colgroup>}
           {/* Q32.1: cabeçalho de colunas não fica mais global — é repetido embaixo do título de cada tipo. */}
           <tbody>
             {adding && (

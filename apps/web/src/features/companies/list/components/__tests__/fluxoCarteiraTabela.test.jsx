@@ -1,5 +1,5 @@
-import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CompaniesTable } from '../renderCompaniesTable';
 import { projetarFluxoCarteira } from '@contabilidade/shared/fluxo-carteira';
 const company={companyId:'a',razao:'Empresa Teste',cnpj:'12345678000190',legacyCompany:{regimeTributario:'SIMPLES_NACIONAL'},apuracao:{estado:'transmitida'},fechamentoContabil:{fechado:true},guideCompliance:{das:{required:true,state:'gerada',guideId:'guia'},parcDas:{required:true,state:'missing',quantidade:1}},fiscalSituacao:'COM_PENDENCIA',temParcelamento:true};

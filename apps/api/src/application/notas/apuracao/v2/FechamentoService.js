@@ -1183,25 +1183,41 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
 }
 
 /**
- * Q55 — [Reabrir para retificar] rebaixa uma apuração "transmitida" → "calculada",
+ * Q55 — [Reabrir para retificar] muda uma apuração "transmitida" → "aberta",
  * para o contador corrigir os valores (modal → calcular → fechar) e retransmitir como retificadora.
  * Não toca na RFB; só muda o estado local.
  */
-export async function reabrirFechamento({ portalClientId, competencia, userId }) {
-  void userId;
-  const snapshot = await prisma.apuracaoSnapshot.findUnique({
+export async function reabrirFechamento({ portalClientId, competencia, userId, motivo }) {
+  const motivoInformado = typeof motivo === 'string' ? motivo.trim() : null;
+  if (motivoInformado?.length > 2000) throw new FechamentoError('MOTIVO_INVALIDO', 'Informe um motivo com até 2000 caracteres.');
+  return prisma.$transaction(async tx => {
+  const snapshot = await tx.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
   if (!snapshot) throw new FechamentoError("NAO_CALCULADA", "Apuração não encontrada.");
   if (snapshot.estado !== "transmitida") {
     throw new FechamentoError("ESTADO_INVALIDO", `Só uma apuração 'transmitida' pode ser reaberta para retificar (estado atual: ${snapshot.estado}).`);
   }
-  const updated = await prisma.apuracaoSnapshot.updateMany({
+  const novaRevisao = `reaberta:${randomUUID()}`;
+  const updated = await tx.apuracaoSnapshot.updateMany({
     where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: "transmitida" },
-    data: { estado: "aberta", idempotencyKey: `reaberta:${randomUUID()}`, erroMensagem: null },
+    data: { estado: "aberta", idempotencyKey: novaRevisao, erroMensagem: null },
   });
   if (updated.count !== 1) throw erroCalculoObsoleto();
+  await tx.appSetting.create({ data: {
+    key: `apuracao_reabertura:${randomUUID()}`,
+    value: {
+      evento: 'APURACAO_REABERTA', dominio: 'APURACAO', portalClientId, competencia,
+      userId: userId || null, motivo: motivoInformado || null, ocorridoEm: new Date().toISOString(),
+      snapshotId: snapshot.id, estadoAnterior: snapshot.estado, estadoAtual: 'aberta',
+      snapshotAnterior: JSON.parse(JSON.stringify(snapshot)),
+      revisaoAnterior: snapshot.idempotencyKey || null, novaRevisao,
+      numeroDeclaracaoAnterior: snapshot.numeroDeclaracao || null,
+      transmitidoEmAnterior: snapshot.transmitidoEm ? new Date(snapshot.transmitidoEm).toISOString() : null,
+    },
+  } });
   return { ok: true, snapshot: { ...snapshot, estado: "aberta", idempotencyKey: null } };
+  });
 }
 
 // Reconciliação explícita: ausência temporária no índice NÃO prova que um envio incerto falhou.

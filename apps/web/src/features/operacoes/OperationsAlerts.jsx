@@ -8,11 +8,17 @@ import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 export function OperationsAlerts({ api }) {
   const [data, setData] = useState(null), [error, setError] = useState(false), [open, setOpen] = useState(false);
   useEffect(() => {
+    setData(null); setError(false);
     if (!api?.getOperationAlerts) return;
-    let active = true;
+    let active = true, generation = 0;
     const read = async () => {
-      try { const next = await api.getOperationAlerts(); if (active) { setData(next); setError(false); } }
-      catch { if (active) setError(true); }
+      const current = ++generation;
+      try {
+        const next = await api.getOperationAlerts();
+        if (!Array.isArray(next?.items) || !Number.isInteger(next?.total) || next.total < next.items.length) throw Error('Resposta inválida');
+        if (active && current === generation) { setData(next); setError(false); }
+      }
+      catch { if (active && current === generation) setError(true); }
     };
     read(); const timer = setInterval(read, 60000);
     window.addEventListener('focus', read);
@@ -20,7 +26,7 @@ export function OperationsAlerts({ api }) {
   }, [api]);
   return <div className="operacoes-avisos">
     <button type="button" className="operacoes-quadro" aria-haspopup="dialog" onClick={() => setOpen(true)}>
-      <span>Notas para revisão</span><strong className={data?.total ? 'operacoes-erro' : ''}>{error || !data ? '—' : data.total}</strong><small>{error ? 'Leitura indisponível' : !data ? 'Carregando' : 'Ver empresas'} ↗</small>
+      <span>Notas para revisão</span><strong className={data?.total ? 'operacoes-erro' : ''}>{error || !data ? '—' : data.total}</strong><small>{error ? 'Leitura indisponível' : !data ? (api?.getOperationAlerts ? 'Carregando' : 'Indisponível') : 'Avisos · todas as competências'} ↗</small>
     </button>
     {open && <Modal className="operacoes-dialogo" titulo="Notas para revisão" aoFechar={() => setOpen(false)} rodape={<Button variant="secondary" onClick={() => setOpen(false)}>Fechar</Button>}>
       <p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>

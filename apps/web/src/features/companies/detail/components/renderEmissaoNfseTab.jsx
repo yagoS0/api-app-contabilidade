@@ -28,7 +28,7 @@ import { EditorPerfilEmissao } from "./EditorPerfilEmissao";
 import { ParametrosMunicipais } from './ParametrosMunicipais';
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
-import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
+import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao.shared.js';
 
 // ⚠ Mesmo caminho de `renderCircularTab.jsx`: **não existe `src/api/index.js` neste app** — o
 // objeto da API sai de `createApiClient()`. O `CLAUDE.md` de `apps/web` ainda descreve um

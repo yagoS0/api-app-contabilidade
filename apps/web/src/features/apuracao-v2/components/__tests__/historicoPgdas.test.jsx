@@ -58,7 +58,7 @@ test.each(['forbidden','unauthorized'])('PDF com recusa %s não é tratado como 
 });
 
 test('troca de key do consumidor ignora leitura antiga e carrega empresa atual',async()=>{
- const api=cliente();let antigo;api.getPgdasHistorico.mockImplementationOnce(()=>new Promise(r=>{antigo=r;})).mockResolvedValue({ok:true,versoes:[]});const view=render(<HistoricoPgdas api={api} key="a:2026-09" companyId="a" competencia="2026-09" onClose={()=>{}}/>);view.rerender(<HistoricoPgdas api={api} key="b:2026-10" companyId="b" competencia="2026-10" onClose={()=>{}}/>);await waitFor(()=>expect(api.getPgdasHistorico).toHaveBeenCalledWith('b','2026-10'));await act(async()=>antigo(historico));expect(screen.queryByText(/Declaração 123/)).not.toBeInTheDocument();expect(screen.getByText(/Nenhuma declaração registrada/)).toBeVisible();
+ const api=cliente();let antigo;api.getPgdasHistorico.mockImplementationOnce(()=>new Promise(r=>{antigo=r;})).mockResolvedValue({ok:true,versoes:[]});const view=render(<HistoricoPgdas api={api} key="a:2026-09" companyId="a" competencia="2026-09" onClose={()=>{}}/>);view.rerender(<HistoricoPgdas api={api} key="b:2026-10" companyId="b" competencia="2026-10" onClose={()=>{}}/>);await waitFor(()=>expect(api.getPgdasHistorico).toHaveBeenCalledWith('b','2026-10'));await screen.findByText(/Nenhuma declaração registrada/);await act(async()=>antigo(historico));expect(screen.queryByText(/Declaração 123/)).not.toBeInTheDocument();expect(screen.getByText(/Nenhuma declaração registrada/)).toBeVisible();
 });
 
 test.each(['insufficient_role','MES_FECHADO'])('recusa %s mantém versões e não repete consulta',async code=>{

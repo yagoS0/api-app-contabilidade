@@ -24,9 +24,9 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
   const montado = useRef(true);
   useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
   const [ano, setAno] = useState(() => new Date().getUTCFullYear());
-  const [competencias, setCompetencias] = useState([]);
-  const [procuracoes, setProcuracoes] = useState([]);
-  const [pendencias, setPendencias] = useState([]);
+  const [competencias] = useState([]);
+  const [procuracoes] = useState([]);
+  const [pendencias] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);

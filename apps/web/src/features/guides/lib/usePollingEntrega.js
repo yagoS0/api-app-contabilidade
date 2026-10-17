@@ -18,14 +18,15 @@ export function usePollingEntrega(guias, atualizar, escopo) {
     document.addEventListener("visibilitychange", mudou);
     return () => document.removeEventListener("visibilitychange", mudou);
   }, []);
+  const precisaPolir = devePolir(guias, ciclos);
   useEffect(() => {
-    if (!visivel || !atualizarRef.current || !devePolir(guias, ciclos)) return undefined;
+    if (!visivel || !atualizarRef.current || !precisaPolir) return undefined;
     let viva = true;
     const t = setTimeout(async () => {
       try { await atualizarRef.current({ background: true }); } catch { /* Apenas releitura local; nunca reenvia a guia. */ }
       if (viva) setEspera({ chave, ciclos: ciclos + 1 });
     }, 2500);
     return () => { viva = false; clearTimeout(t); };
-  }, [chave, ciclos, visivel]);
+  }, [chave, ciclos, visivel, precisaPolir]);
   return { esgotou: ciclos >= 24 && devePolir(guias, 0), ciclos };
 }

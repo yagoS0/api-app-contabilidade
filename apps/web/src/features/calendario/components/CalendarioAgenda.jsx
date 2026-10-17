@@ -4,7 +4,8 @@ import { Button } from '../../../components/ui/Button';
 import { ModalTarefaCalendario } from './ModalTarefaCalendario';
 import { PainelTarefaCalendario } from './PainelTarefaCalendario';
 import { AtividadeAgenda as Atividade } from './AtividadeAgenda';
-import { LinhaHorarioAtual, useRelogioAgenda } from './LinhaHorarioAtual';
+import { LinhaHorarioAtual } from './LinhaHorarioAtual';
+import { useRelogioAgenda } from './LinhaHorarioAtual.shared.js';
 import { useGestosAgenda } from './useGestosAgenda';
 import { ALTURA_HORA, HORA_INICIAL } from '../lib/escalaAgenda';
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
@@ -61,7 +62,7 @@ export function CalendarioAgenda({api,empresas=EMPRESAS_VAZIAS,onOpenCompany,com
   },[visao]);
   useEffect(()=>{const c=initialContext?.obrigacoesModal;if(!contextoAplicado.current&&c?.criar){contextoAplicado.current=true;const data=c.dataInicio||referencia;setCriacao({dataInicio:data,dataFim:c.dataFim||data,companyId:c.companyId||companyIdFixo});}},[initialContext,referencia,companyIdFixo]);
   const filtrados=useMemo(()=>itens.filter(i=>(mostrarConcluidas||!i.resolvido)&&i.titulo.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR'))),[itens,busca,mostrarConcluidas]);
-  const blocos=useMemo(()=>projetarTarefasCalendario(filtrados,inicio,fim,dataLocal()),[filtrados,inicio,fim,agora.data]);
+  const blocos=useMemo(()=>projetarTarefasCalendario(filtrados,inicio,fim,agora.data),[filtrados,inicio,fim,agora.data]);
   const horarios=useMemo(()=>Object.fromEntries(dias.map(d=>[d,posicionarHorarios(blocos.filter(i=>!faixa(i)&&i.dataInicio===d))])),[blocos,dias]);
   const criar=useCallback((data,hora)=>{setErro('');setCriacao({dataInicio:data,dataFim:data,companyId:companyIdFixo,...(hora==null?{}:{horarioModo:'FIXO',horaInicio:`${String(hora).padStart(2,'0')}:00`})});},[companyIdFixo]);
   const criarPeriodo=useCallback(patch=>setCriacao({...patch,horarioModo:patch.horaInicio?'FIXO':'SEM',companyId:companyIdFixo}),[companyIdFixo]);

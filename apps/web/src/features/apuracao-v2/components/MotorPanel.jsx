@@ -2,7 +2,8 @@
 // Permite contador escolher competência + apurar + ver DAS calculado por anexo.
 import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles.shared.js";
 
 function defaultCompetencia() {
   const d = new Date();

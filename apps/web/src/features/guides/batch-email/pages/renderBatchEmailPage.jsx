@@ -432,8 +432,8 @@ export function BatchEmailPage({
     setSelectedKeys(new Set());
   }
 
-  const simples = report?.simples || [];
-  const presumidos = report?.presumidos || [];
+  const simples = useMemo(() => report?.simples || [], [report?.simples]);
+  const presumidos = useMemo(() => report?.presumidos || [], [report?.presumidos]);
 
   /**
    * Quem FALHOU, contado uma vez por linha (empresa × competência).

@@ -22,7 +22,7 @@ const sugestoes = { fonte: 'Catálogos versionados — demonstração local',
   tabelasRtc: { ...TABELAS_RTC, classificacoes: TABELAS_RTC.classificacoes.filter(c => c.nfse) },
   porServico: [{ codigo: '170601', descricao: 'Propaganda e publicidade, planejamento de campanhas publicitárias', nbs: NBS.filter(n => n.codigo === '1.1406.11.00'), combinacoes: [] }] };
 const semConsultaExterna = async () => ({ ok: false, status: 404 });
-function Verificacao() {
+export function Verificacao() {
   const [perfil, setPerfil] = useState(perfilInicial);
   const [emitindo, setEmitindo] = useState(false);
   const api = useMemo(() => ({

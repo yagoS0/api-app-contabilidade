@@ -7,7 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { PROCEDENCIA_PAGAMENTO, leituraDoPagamento, tituloDoPagamento } from "../procedenciaDoPagamento";
+import { PROCEDENCIA_PAGAMENTO, leituraDoPagamento, tituloDoPagamento, motivoDaBaixaPendente } from "../procedenciaDoPagamento";
 
 const paga = (source) => ({ paymentStatus: "PAID", paymentStatusSource: source });
 
@@ -106,4 +106,17 @@ describe("⚠⚠ O ESPELHO DO BACKEND ESTÁ AMARRADO", () => {
     const texto = fs.readFileSync(FONTE, "utf-8");
     expect(texto).toMatch(/return procedenciaDoPagamento\(guide\) !== PROCEDENCIA_PAGAMENTO\.CLIENTE;/);
   });
+});
+
+test("baixa pelo cliente mantém origem e distingue resultado contábil", () => {
+ const base = { paymentStatus: "PAID", paymentStatusSource: "CLIENTE", confirmacaoCliente: { id: "c", estadoBaixa: "CONCLUIDA" } };
+ expect(leituraDoPagamento(base)).toMatchObject({ procedencia: "CLIENTE", ehProva: false, alcancaOContabil: true });
+ expect(leituraDoPagamento(base).detalhe).toMatch(/não comprovante bancário/);
+ expect(leituraDoPagamento({ ...base, confirmacaoCliente: { id: "c", estadoBaixa: "PENDENTE", motivo: "Mês fechado" } })).toMatchObject({ alcancaOContabil: false });
+});
+
+test("orienta reabrir antes da baixa e fechar somente depois", () => {
+ const texto = motivoDaBaixaPendente("MES_FECHADO");
+ expect(texto.indexOf("Corrigir mês fechado")).toBeLessThan(texto.indexOf("retome a baixa"));
+ expect(texto.indexOf("retome a baixa")).toBeLessThan(texto.indexOf("feche o mês"));
 });

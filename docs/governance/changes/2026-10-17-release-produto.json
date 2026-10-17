@@ -1,0 +1,30 @@
+{
+  "summary": "Integrar revisão de produto validada e R25/R26 sobre main atual preservando calendário e governança; publicação autorizada pelo usuário em 17/10/2026.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementa R25/R26 e correções aprovadas da revisão dev. Não aprova outras propostas pendentes. Referência operacional reconciliada; mapeamento explícito de quatro documentos raiz e runner de banco descartável, sem reduzir gates. Sem schema/migration nova.",
+  "tests": [
+    "Snapshot pré-integração: 17527 testes de produto, 16 cenários PostgreSQL descartável e 13 revisões aprovadas no run 2026-10-17T03-56-27-990Z-647f593c.",
+    "Integração: 37 testes locais de governança aprovados; lint oficial do escritório em 1083 arquivos, zero erros/avisos.",
+    "Revisão independente release_readiness aprovou resolução dos conflitos AGENTS/regras/useGestosAgenda e preservação de CI/runtime/calendário. CI do SHA final obrigatório antes de merge; testes anteriores não certificam integração.",
+    "Calendário da integração: 23 suítes e 144 testes aprovados localmente. Dependências reutilizadas localmente; CI fará instalação limpa no SHA final."
+  ],
+  "rollback": "Reverter via PR o commit de integração, preservando registros de declaração/baixa/auditoria; sem apagar dados. Railway deve regressar API/escritório/portal em conjunto ao SHA anterior 87179718934652627f652ab0ba10dd850feac066. Não há migração deste incremento.",
+  "humanDecisions": [
+    "Usuário autorizou explicitamente publicar em produção e, depois, verificar onboarding e chats.",
+    "Autorização não dispensa CI nem permite bypass; nenhum envio, ato fiscal ou dado de teste em produção autorizado."
+  ]
+}

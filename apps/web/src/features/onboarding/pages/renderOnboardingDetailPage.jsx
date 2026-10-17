@@ -1,7 +1,8 @@
 import { PainelComercial } from "../components/PainelComercial";
 import { PreparacaoEmissao } from '../components/PreparacaoEmissao';
 import { ChecklistImplantacao } from '../../implantacao/ChecklistImplantacao';
-import { ProtecaoEdicao, useConfirmarSaida } from '../../configuracoes/ProtecaoEdicao';
+import { ProtecaoEdicao } from '../../configuracoes/ProtecaoEdicao';
+import { useConfirmarSaida } from '../../configuracoes/ProtecaoEdicao.shared.js';
 import { OnboardingWizardPage } from "./renderOnboardingWizardPage";
 import { NovaDemanda } from "../components/NovaDemanda";
 import { AcompanhamentoComercial } from '../../comercial/AcompanhamentoComercial';

@@ -6,7 +6,7 @@ import { taskTitles, taskStatuses, taskRunning, taskPath } from "./taskLabels";
 import { resultadoImportacao } from "../notas/lib/resultadoImportacao";
 import { mensagemCapturaAdn, avisoCapturaParcial } from "../notas/lib/mensagemCapturaAdn";
 import "./tasks.css";
-import { useTaskCenterTarget } from "./TaskCenterPlacement";
+import { useTaskCenterTarget } from './TaskCenterPlacement.shared.js';
 
 function Resultado({ result, tipo, descricao }) {
   if (!result) return null;

@@ -1,5 +1,5 @@
 import "../../../fiscal/serpro/pages/consultas.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
@@ -81,7 +81,7 @@ export function NotasDownloadContent({ api, companies }) {
   // ⚠ ISTO ERA UM `catch` SILENCIOSO, e o silêncio saía como "Nenhum download ainda." — a tela
   // afirmando que não existe ZIP nenhum quando o que houve foi a listagem falhar. O contador
   // dispara de novo a geração de um ZIP que já está pronto no servidor.
-  async function loadRecentes() {
+  const loadRecentes = useCallback(async () => {
     setCarregandoRecentes(true);
     setFalhaRecentes(null);
     try {
@@ -106,8 +106,8 @@ export function NotasDownloadContent({ api, companies }) {
     } finally {
       setCarregandoRecentes(false);
     }
-  }
-  useEffect(() => { loadRecentes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  }, [api]);
+  useEffect(() => { loadRecentes(); }, [loadRecentes]);
 
   // Polling do job ativo (2.5s — padrão BatchProgressModal). Para quando conclui/erra.
   useEffect(() => {

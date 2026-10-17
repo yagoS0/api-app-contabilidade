@@ -1,6 +1,6 @@
 import "../../../fiscal/serpro/pages/consultas.css";
 import { lerFalhaDeCarga } from '../../../../lib/falhaDeCarga';
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 
 // CONSULTA DE NOTAS EM LOTE — aba de "Consultas".
@@ -79,7 +79,7 @@ export function NotasCapturaContent({ api, companies }) {
     });
   }
 
-  async function carregarRecentes() {
+  const carregarRecentes = useCallback(async () => {
     setLendoRecentes(true); setErroRecentes('');
     try {
       const out = await api.listNotasCapturas?.();
@@ -90,8 +90,8 @@ export function NotasCapturaContent({ api, companies }) {
       setErroRecentes(falha ? `${falha.titulo}. ${falha.motivo}` : 'Não foi possível ler as consultas recentes.');
     }
     finally { setLendoRecentes(false); }
-  }
-  useEffect(() => { carregarRecentes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  }, [api]);
+  useEffect(() => { carregarRecentes(); }, [carregarRecentes]);
 
   // Polling do job em andamento (2,5s — mesmo intervalo das outras telas de lote).
   useEffect(() => {

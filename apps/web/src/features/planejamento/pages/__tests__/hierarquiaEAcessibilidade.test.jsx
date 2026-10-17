@@ -8,7 +8,7 @@
 //
 // Depois: primeiro resultado aos 298px, zero campos sem `id`, nome acessível limpo.
 
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { PlanejamentoPage } from "../renderPlanejamentoPage.jsx";
 

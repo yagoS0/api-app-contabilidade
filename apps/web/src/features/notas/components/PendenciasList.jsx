@@ -1,5 +1,6 @@
 import { Button } from "../../../components/ui/Button";
-import { PANEL, fmtDate, fmtMoney } from "./notasStyles";
+
+import { PANEL, fmtDate, fmtMoney } from "./notasStyles.shared.js";
 import { FRASE_MOTIVO_PENDENCIA } from "../lib/auditoriaTela";
 
 // A LISTA DE PENDÊNCIAS PÓS-FECHAMENTO — "entrou nota depois que eu fechei o mês?"

@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const FONTE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const FONTE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8").replace(/\r\n/g, "\n");
 
 /** O bloco do `router.use` do lote, isolado — as asserções são sobre ele. */
 function blocoDaMontagem() {

@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { Placement } from './TaskCenterPlacement.shared.js';
+import { useContext, useMemo, useState } from 'react';
 
-const Placement = createContext(null);
 
 // O executor e o histórico continuam no App; só o controle visual entra na navegação.
 export function TaskCenterPlacement({ children }) {
@@ -13,5 +13,3 @@ export function TaskCenterSlot() {
   const placement = useContext(Placement);
   return placement ? <span className="task-center-slot" ref={placement.setTarget} /> : null;
 }
-
-export function useTaskCenterTarget() { return useContext(Placement)?.target; }

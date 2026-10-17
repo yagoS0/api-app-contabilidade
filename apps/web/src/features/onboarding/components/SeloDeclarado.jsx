@@ -1,3 +1,4 @@
+import { textoDoSelo } from './SeloDeclarado.shared.js';
 // SELO DO DADO DECLARADO — "isto ainda não foi conferido".
 //
 // ⚠ O TEXTO MUDA COM `origemPreenchimento`, e essa é a razão de o componente existir em vez de uma
@@ -9,11 +10,6 @@
 // ⚠ COR: `--state-warn`, com FUNDO TRANSPARENTE. Pendência, não erro nem conclusão. Vermelho é
 // reservado ao que bloqueia fechamento contábil; verde é conclusão.
 
-export function textoDoSelo(origemPreenchimento) {
-  return String(origemPreenchimento || "").toUpperCase() === "CLIENTE"
-    ? "declarado pelo cliente"
-    : "declarado no atendimento";
-}
 
 export function SeloDeclarado({ origemPreenchimento, titulo }) {
   const texto = textoDoSelo(origemPreenchimento);

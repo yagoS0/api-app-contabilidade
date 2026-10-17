@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { janelaDoGesto, diferencaDias } from '../lib/editarJanela';
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
 import { arredondarMinutosAgenda, janelaCriacaoAgenda, medirGradeAgenda, pontoNaGrade, velocidadeRolagemAgenda } from '../lib/geometriaAgenda';
@@ -12,23 +12,24 @@ export function useGestosAgenda({ dias, horasRef, mesRef, faixaRef, mensal = fal
   const opcoes = useRef(); opcoes.current = { dias, salvar, criar, bloqueado, mensal };
   const habilitada = item => !bloqueado && ['tarefa', 'obrigacao'].includes(item.tipo) && Boolean(item.tarefaId || item.ocorrenciaId);
 
-  function mostrar(valor) {
+  const mostrar = useCallback((valor) => {
     const antes = previaRef.current;
     if (antes === valor || (antes && valor && antes.item.id === valor.item.id && campos.every(k => antes[k] === valor[k]) && ['left','top','width','height'].every(k => antes[k] === valor[k]))) return;
     previaRef.current = valor; setPrevia(valor);
-  }
-  function cancelar() {
+  }, []);
+  const cancelar = useCallback(() => {
     if (quadro.current != null) cancelAnimationFrame(quadro.current);
     quadro.current = null; atual.current = null; mostrar(null);
-  }
+  }, [mostrar]);
   useEffect(() => {
     const novoPonteiro = () => { ignorarClique.current = false; };
     document.addEventListener('pointerdown', novoPonteiro, true);
     const tecla = e => { if (e.key === 'Escape' && atual.current) { e.preventDefault(); ignorarClique.current = true; cancelar(); } };
     window.addEventListener('keydown', tecla);
     return () => { document.removeEventListener('pointerdown', novoPonteiro, true); window.removeEventListener('keydown', tecla); if (quadro.current != null) cancelAnimationFrame(quadro.current); };
-  }, []);
-  useEffect(() => { cancelar(); }, [dias.join('|')]);
+  }, [cancelar]);
+  const diasChave = dias.join('|');
+  useEffect(() => { cancelar(); }, [diasChave, cancelar]);
 
   function diaNoMes(x, y) {
     for (const semana of mesRef?.current?.querySelectorAll('[data-agenda-month-week]') || []) {

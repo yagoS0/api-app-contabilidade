@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { PlanejamentoPage } from "../renderPlanejamentoPage";
 import { ComparacaoCenarios } from "../../components/ComparacaoCenarios";
-import { baixarPdfEstudos } from "../../lib/pdfEstudos";
+
 jest.mock("../../lib/pdfEstudos", () => ({ baixarPdfEstudos: jest.fn(async () => {}) }));
 const campo = valor => ({ valor, apurado: true, origem: "cadastro de teste" });
 const dados = { ok: true, empresa: { id: "e1", razao: "Empresa de teste" }, referencia: { competencia: "2026-09" },

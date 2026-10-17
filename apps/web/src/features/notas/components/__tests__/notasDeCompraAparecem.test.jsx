@@ -181,7 +181,7 @@ describe("as recebidas foram ABSORVIDAS pela faixa única — duas espécies, se
   it("⚠ e ele NÃO é clicável — a tabela mostra UMA espécie, o número afirma DUAS", () => {
     montar();
     const caixas = within(faixa()).getAllByRole("button").map((b) => b.textContent);
-    expect(caixas.some((t) => /^Recebidas/.test(t) && !/NFS-e|NF-e/.test(t))).toBe(false);
+    expect(caixas.some((t) => /^Recebidas\b/.test(t) && !/NFS-e|NF-e/.test(t))).toBe(false);
   });
 
   it("clicar numa espécie abre a janela dela JÁ em Recebidas — é assim que o número se confere", () => {

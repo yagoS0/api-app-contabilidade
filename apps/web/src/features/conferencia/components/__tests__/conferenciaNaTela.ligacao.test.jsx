@@ -583,7 +583,8 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
   });
 
   it("⚠⚠ a lista NÃO oferece sintética nem conta sem codigoCompleto", async () => {
-    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+
     // ⚠ O `datalist` mora na ABA desde 02/09/2026 (um só, para a linha e o modal oferecerem a
     // MESMA lista) — por isso se lê pelo id, no documento.
     const opcoes = Array.from(document.querySelectorAll("#contas-da-conferencia option")).map((o) => o.value);

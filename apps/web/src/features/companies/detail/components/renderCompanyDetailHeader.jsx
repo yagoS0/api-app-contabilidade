@@ -1,3 +1,4 @@
+import { useAvisosContabeis } from "../../../accounting/hooks/useAvisosContabeis";
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { TaskCenterSlot } from "../../../tasks/TaskCenterPlacement";
 import { BackButton } from "../../../../components/ui/BackButton";
@@ -224,6 +225,8 @@ export function CompanySectionHeader({
   // O id da empresa é o mesmo que está na URL (`selectedCompany` é achado por `companyId`), então
   // o `href` de cada aba é literalmente a URL para onde o clique navega.
   const companyId = company?.companyId;
+  const avisos = useAvisosContabeis(companyId, competencia);
+  const avisoLabel = avisos.erro ? " · avisos indisponíveis" : avisos.dados?.total > 0 ? ` · ${avisos.dados.total} aviso${avisos.dados.total === 1 ? "" : "s"}` : "";
   const mostraCompetencia = Boolean(competencia && onCompetenciaChange && TABS_COM_COMPETENCIA.has(activeTab));
   const groups = GROUPS.map((g) => ({
     ...g,
@@ -254,7 +257,7 @@ export function CompanySectionHeader({
           className="company-topbar__nav"
           items={groups.map((group) => ({
             key: group.key,
-            label: group.label,
+            label: group.label + (group.key === "contabilidade" ? avisoLabel : ""),
             disabled: Boolean(group.requiresEdit && !canEditCompany),
             title: group.requiresEdit && !canEditCompany ? "Apenas admin ou contador pode editar." : undefined,
             /* ⚠ O `href` do GRUPO é o da sua 1ª sub-aba — exatamente o destino do `onChange` logo
@@ -283,7 +286,7 @@ export function CompanySectionHeader({
           <Tabs
             /* Cada sub-aba leva a URL da SUA rota — é o que faz o Ctrl+clique abrir aquela aba
                numa guia nova em vez de reabrir a empresa na aba de entrada. */
-            items={subTabs.map((tab) => ({ ...tab, href: companyTabPath(companyId, tab.key) }))}
+            items={subTabs.map((tab) => ({ ...tab, label: tab.label + (tab.key === "lancamentos" ? avisoLabel : ""), href: companyTabPath(companyId, tab.key) }))}
             active={activeTab === "auditoria" ? "notasFiscais" : activeTab}
             onChange={onTabChange}
             ariaLabel={`Seções de ${activeGroup.label}`}

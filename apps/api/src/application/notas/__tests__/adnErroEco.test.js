@@ -56,6 +56,7 @@ jest.mock("../adn-nacional/AdnNacionalClient.js", () => ({
   fetchDfeNFSe: jest.fn(),
 }));
 
+import { gzipSync } from "node:zlib";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { fetchDfeNFSe } from "../adn-nacional/AdnNacionalClient.js";
 import { resolveCertForCompany } from "../CertResolver.js";
@@ -185,18 +186,24 @@ test("rejeição do ADN não expõe JSON do provedor", async () => {
 });
 
 test("50 páginas completas retornam parcial sem repetir nem afirmar sincronização completa", async () => {
+  const compressedXml = gzipSync(Buffer.from("<n/>")).toString("base64");
   const realTimeout = global.setTimeout;
-  const timer = jest.spyOn(global, "setTimeout").mockImplementation((fn, ms, ...args) => realTimeout(fn, ms === 1100 ? 0 : ms, ...args));
+  const timer = jest.spyOn(global, "setTimeout").mockImplementation((fn, ms, ...args) => {
+    if (ms !== 1100) return realTimeout(fn, ms, ...args);
+    queueMicrotask(() => fn(...args));
+    return 0;
+  });
   try {
     let page = 0;
     fetchDfeNFSe.mockImplementation(async () => {
-      const items = lote(50).items.map((item, i) => ({ ...item, NSU: String(11 + (page * 50) + i) }));
+      const items = lote(50).items.map((item, i) => ({ ...item, ArquivoXml: compressedXml, NSU: String(11 + (page * 50) + i) }));
       page++;
       return { status: "DOCUMENTOS_LOCALIZADOS", items };
     });
     const r = await syncAdnNotasForCompany({ portalClientId: "p1" });
     expect(r).toMatchObject({ ok: true, partial: true, reason: "ADN_LIMITE_PAGINACAO", iterations: 50, totalDocs: 2500, newCursor: "2510" });
     expect(fetchDfeNFSe).toHaveBeenCalledTimes(50);
+    expect(timer.mock.calls.filter(([, ms]) => ms === 1100)).toHaveLength(49);
     expect(limpezasDeErro()).toHaveLength(0);
   } finally { timer.mockRestore(); }
 });

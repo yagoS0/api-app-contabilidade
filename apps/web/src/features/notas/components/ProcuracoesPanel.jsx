@@ -17,7 +17,8 @@
 // `apps/web/CLAUDE.md`, seção "OS CINCO ÓRFÃOS".
 
 import { useState } from "react";
-import { PANEL, fmtDate } from "./notasStyles";
+
+import { PANEL, fmtDate } from "./notasStyles.shared.js";
 import { ProcuracaoCreateModal } from "./ProcuracaoCreateModal";
 
 const SERVICO_LABELS = { NFSE: "NFS-e", DFE: "DFe / SEFAZ", ESOCIAL: "eSocial", SN: "PGDAS-D / SN" };

@@ -25,7 +25,7 @@ const assumirOriginal = api.assumirConversaWhatsapp, devolverOriginal = api.devo
 api.assumirConversaWhatsapp = async id => { const r = await assumirOriginal(id); const p = pendencias.find(p => p.conversaId === id); if (p) p.estado = 'EM_ATENDIMENTO'; return r; };
 api.devolverConversaWhatsapp = async id => { const r = await devolverOriginal(id); await api.resolverSuporte(id); return r; };
 api.getConsumoIaDetalhado = async () => ({ ok: true, consumo: { custoUsd: .009, reservaUsd: .05, itens: [{ area: 'Suporte', custoUsd: .0045, chamadas: 2 }, { area: 'Comercial', custoUsd: .0045, chamadas: 1 }] } });
-function Previa() {
+export function Previa() {
   const resumoSuporte = useResumoWhatsapp({ api, area: 'suporte' });
   const { pathname } = useLocation(), navigate = useNavigate();
   const [mensagemBiblioteca, setMensagemBiblioteca] = useState(null);

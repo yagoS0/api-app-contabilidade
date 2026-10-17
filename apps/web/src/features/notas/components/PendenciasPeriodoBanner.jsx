@@ -16,9 +16,8 @@ export function PendenciasPeriodoBanner({ api, companyId, competencia, revisao, 
   if (estado.erro) return <div role="alert" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBlock: 16 }}><span>Não foi possível conferir as pendências.</span><Button variant="secondary" type="button" style={{ minHeight: 44 }} onClick={() => setTentativa(n => n + 1)}>Tentar novamente</Button></div>;
   const abertas = estado.lista.filter(p => !p.resolvida && (!competencia || p.competencia === competencia));
   if (!abertas.length) return null;
-  return <aside role="status" style={{ padding: 14, marginBottom: 16, border: '1px solid var(--state-warn)', borderRadius: 8, background: 'var(--state-warn-surface)' }}>
-    <strong>{abertas.length === 100 ? '100 ou mais' : abertas.length} pendência(s) em períodos fechados ou apurados</strong>
-    <p>Há documentos que precisam de revisão. Confira a receita já considerada antes de recalcular ou retificar.</p>
+  return <aside role="status" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 16px', padding: '10px 12px', marginBottom: 12, border: '1px solid var(--border)', borderLeft: '3px solid var(--state-warn)', borderRadius: 8, color: 'var(--state-warn)' }}>
+    <span title="Documentos em períodos fechados ou apurados. Confira a receita já considerada antes de recalcular ou retificar." style={{ fontWeight: 500 }}>{abertas.length === 100 ? '100 ou mais' : abertas.length} {abertas.length === 1 ? 'pendência' : 'pendências'} pós-fechamento</span>
     {ocupado
       ? <span role="link" aria-disabled="true" title="Aguarde a conclusão da operação para revisar as competências.">Revisar competências</span>
       : <a href={`/companies/${encodeURIComponent(companyId)}/auditoria`}>Revisar competências</a>}

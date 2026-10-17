@@ -11,7 +11,7 @@
 // ⚠ A REGRA NÃO MORA AQUI. Quem valida é `lib/regraDoFornecedor.js` (espelho declarado do servidor),
 // e quem decide de verdade é `application/declarados/RegraService.js` — um `curl` bate lá.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -70,7 +70,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
 
-  function carregar() {
+  const carregar = useCallback(() => {
     if (!companyId || typeof regrasApi.getConferenciaRegras !== "function") {
       setEstado({ carregando: false, regras: [], indisponivel: true, erro: null });
       return;
@@ -84,9 +84,9 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
         erro: null,
       }))
       .catch((e) => setEstado({ carregando: false, regras: [], indisponivel: false, erro: e }));
-  }
+  }, [companyId]);
 
-  useEffect(() => { carregar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyId]);
+  useEffect(() => { carregar(); }, [carregar]);
 
   async function alternarAutomatico(regra) {
     const ligando = regra.lancaSozinha !== true;
