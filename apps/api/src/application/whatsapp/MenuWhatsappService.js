@@ -200,9 +200,9 @@ function mensagemLead(acao, agora) {
     return "Envie o CNPJ e conte, em uma frase, seu objetivo ou dúvida. A equipe fará uma consulta inicial de dados públicos — isso não comprova regularidade fiscal — e continuará o atendimento por aqui.";
   }
   if (acao === "LEAD_CLIENTE") {
-    return `Não localizei este número em uma empresa cliente. Envie o CNPJ da empresa para a equipe conferir o cadastro. ${expedienteDoEscritorio(agora).mensagem}`;
+    return `Não localizei este número em uma empresa cliente. Envie o CNPJ da empresa para a equipe conferir o cadastro. ${expedienteDoEscritorio(agora, { encaminhamentoHumano: true }).mensagem}`;
   }
-  return `Recebi sua mensagem e encaminhei para a equipe. ${expedienteDoEscritorio(agora).mensagem}`;
+  return `Recebi sua mensagem e encaminhei para a equipe. ${expedienteDoEscritorio(agora, { encaminhamentoHumano: true }).mensagem}`;
 }
 
 async function marcarHandoff(conversa, agora, client) {
@@ -381,7 +381,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   // No canal operacional, um contato de empresa sem RBAC segue para conferência.
   // No comercial, qualquer pessoa pode tratar um novo serviço sem acessar dados fiscais.
   if (!comercialPublico && conversa.portalClientId && !cliente) {
-    const corpo = `${fraseSemSessao(sessao.motivo)} ${expedienteDoEscritorio(agora).mensagem}`;
+    const corpo = `${fraseSemSessao(sessao.motivo)} ${expedienteDoEscritorio(agora, { encaminhamentoHumano: true }).mensagem}`;
     await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
@@ -475,7 +475,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     const corpo = rotularEmpresa(`Como posso ajudar? Escolha uma opção ou escreva seu pedido.${avisoRascunho}`, conversa);
     await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, tituloBotao: "Ver opções", tituloSecao: "Atendimento", linhas }) });
   } else if (acao === "EQUIPE") {
-    const corpo = `Encaminhei sua mensagem para a equipe. ${expedienteDoEscritorio(agora).mensagem}`;
+    const corpo = `Encaminhei sua mensagem para a equipe. ${expedienteDoEscritorio(agora, { encaminhamentoHumano: true }).mensagem}`;
     await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
   } else if (["EMISSAO", "CANCELAMENTO"].includes(acao)) {

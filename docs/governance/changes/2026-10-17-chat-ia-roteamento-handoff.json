@@ -1,0 +1,112 @@
+{
+  "summary": "Perguntas explicativas e negativas de consulta seguem para a IA; pedidos legítimos de guias continuam automáticos. Avisos de encaminhamento informam a pausa real da automação, preservando horário e retomada autorizada.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Correção de R20/R22 (intenção e clareza) dentro das regras aprovadas; nenhuma regra operacional nova. Preservados consentimento, identidade, permissões, confirmação, idempotência, R25 e decisões pendentes. Sem migração, backfill, mensagem a cliente real ou ato fiscal nos testes.",
+  "status": "technically_reviewed_via_principal_recovery",
+  "originalRunId": "2026-10-17T23-08-44-304Z-5f8928b6",
+  "originalRunStatusAtInterruption": "testing",
+  "recoveryReason": "Revisor nativo reprovou variações conceituais durante a primeira rodada. Principal encerrou a árvore de processos, preservou estado/journal original e arquivou lock após conferir o PID. O controlador original não concluiu e não recebeu ready_for_human.",
+  "recoveryMethod": "Duas rodadas corretivas por executor nativo; revisão independente de backend/domínios, UX e sistêmica. A segunda reprovação identificou fallback PERIODO ignorando negativa/explicação e interrompeu a primeira repetição dos gates; evidências incompletas preservadas em second-interruption.json. Após corrigir e obter revisão independente, o Principal repetiu os seis gates do catálogo versionado, com comandos/timeouts oficiais e snapshot imutável; três aplicações independentes rodaram em paralelo. Registro derivado de códigos de saída e evidências reais. Nenhum gate, política ou proteção foi afrouxado.",
+  "productSourceFingerprint": "b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938",
+  "productSourcePaths": [
+    "apps/api/src/application/assistente/__tests__/expediente.test.js",
+    "apps/api/src/application/assistente/__tests__/ferramentas.test.js",
+    "apps/api/src/application/assistente/expediente.js",
+    "apps/api/src/application/assistente/ferramentas/index.js",
+    "apps/api/src/application/whatsapp/ConsultasClienteWhatsappService.js",
+    "apps/api/src/application/whatsapp/MenuWhatsappService.js",
+    "apps/api/src/application/whatsapp/__tests__/consultaClienteWhatsapp.test.js",
+    "apps/api/src/application/whatsapp/__tests__/consultasClienteContexto.test.js",
+    "apps/api/src/application/whatsapp/__tests__/menuWhatsappService.test.js",
+    "apps/api/src/application/whatsapp/consultaClienteWhatsapp.js"
+  ],
+  "regressionTotals": {
+    "api-0GUWp3": {
+      "numTotalTestSuites": 599,
+      "numPassedTestSuites": 599,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 10530,
+      "numPassedTests": 10530,
+      "numPendingTests": 0,
+      "numTodoTests": 0
+    },
+    "web-emCOHR": {
+      "numTotalTestSuites": 494,
+      "numPassedTestSuites": 494,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 5519,
+      "numPassedTests": 5519,
+      "numPendingTests": 0,
+      "numTodoTests": 0
+    },
+    "portal-cliente-web-QJeyeO": {
+      "numTotalTestSuites": 99,
+      "numPassedTestSuites": 99,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 1580,
+      "numPassedTests": 1580,
+      "numPendingTests": 0,
+      "numTodoTests": 0
+    }
+  },
+  "tests": [
+    "governance-engine: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\governance-engine",
+    "api-regression: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\api-regression",
+    "web-regression: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\web-regression",
+    "portal-regression: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\portal-regression",
+    "portal-build: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\portal-build",
+    "web-build: passed, exit 0, sem timeout, fonte b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938; C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-mensagens-consolidada-20261017\\.altan-governance\\fix-chat-20261017\\gates-1792279958139\\web-build",
+    "158 testes direcionados aprovados, incluindo 12 novos casos de contexto; inclui perguntas como faço/posso/ensina, pedidos positivos, plural Simples, negativa/explicação com período anterior, botões e mês isolado.",
+    "Aceite comercial: 35 verificações, 14 eventos, nove chamadas reais gpt-5.4-mini; fontes preservadas, PostgreSQL descartável e transporte local.",
+    "Aceite suporte: 19 verificações, cinco chamadas reais gpt-5.4-mini; pergunta original e duas variações após PERIODO respondidas sem consulta/documento/ferramenta; handoff e respostas tardias bloqueadas.",
+    "Modelo real: 29 chamadas neste incremento incluindo reexecuções anteriores; custo estimado US$0.048145 pelo ledger da aplicação, teto US$1. Não equivale à fatura do provedor."
+  ],
+  "reviews": [
+    {
+      "agent": "audit_real_ia_transitions",
+      "role": "backend and affected domains",
+      "verdict": "approved",
+      "scope": "Second corrective patch and final live support; publication conditional on complete gates and commercial acceptance.",
+      "diffSha256": "4d6029a88390fb58b6ce1833fa8a15dcb0cbeac9ccf15e89934327987e2bb6dc",
+      "productSourceFingerprint": "b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938"
+    },
+    {
+      "agent": "release_system_review",
+      "role": "independent system reviewer",
+      "verdict": "approved",
+      "scope": "Second corrective source patch; reproduced original PERIODO rejection and positive controls. Final gates and metadata review pending.",
+      "productSourceFingerprint": "b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938"
+    },
+    {
+      "agent": "live_support_harness",
+      "role": "UX review of actual outputs, not product author",
+      "verdict": "approved",
+      "scope": "Final commercial35 and support19 live checks; product sources preserved; full gates remain required.",
+      "productSourceFingerprint": "b0302a988ae89ddf340a91209e92e8588767278f9a15cf14981c77dedcf65938",
+      "observation": "Minor wording: model defined vencimento correctly as deadline but called it payment date in one example; no fiscal execution or data consultation."
+    }
+  ],
+  "rollback": "Reverter somente o commit desta correção via PR protegido e conferir implantação/health. Nenhuma migração ou transformação de dados precisa ser revertida; preservar conversas e históricos.",
+  "humanDecisions": [],
+  "integrationAuthorization": "Usuário autorizou neste chat corrigir as duas pendências e publicar na main/produção após revisões e testes aprovados. CI obrigatório e conferência do SHA final precedem merge; aprovação de IA não substitui esta autorização.",
+  "limitations": [
+    "Reconhecimento linguístico finito; mensagens mistas com comando explícito conservam prioridade da consulta existente.",
+    "Validação de triagem inicial, não contratação integral/onboarding completo.",
+    "WhatsApp capturado localmente, sem entrega real Meta; nenhum cliente real usado.",
+    "Contexto invalidado sinteticamente, não jornada visual completa de seleção de outra empresa.",
+    "Sem mudança de layout; revisão UX incidiu nos textos e fluxos observados.",
+    "Encaminhamento V2 usa a fila do escritório/atendidaDesde; não gera registro especializado EncaminhamentoSuporte nem seu push."
+  ],
+  "evidenceRoot": ".altan-governance/fix-chat-20261017"
+}

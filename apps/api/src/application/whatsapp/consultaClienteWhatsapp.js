@@ -37,10 +37,24 @@ export function periodoDaConsulta(texto, agora = new Date()) {
   return null;
 }
 
+/** Distingue recusa/explicação de texto sem comando (como um mês isolado). */
+export function motivoSemConsultaAutomatica(texto) {
+  const t = normalizarConsulta(texto);
+  if (/\b(?:nao quero|nao precisa|nao (?:consulte|consultar|busque|buscar|envie|enviar|mande|mandar|emita|emitir|gere|gerar)|sem (?:consultar|buscar|enviar|emitir|gerar))\b/.test(t) || /(?:descricao|servico|tomador|cliente|valor)\s*[:=]/.test(t)) return 'NEGATIVA_OU_DADOS';
+  // Menção a uma guia numa explicação não é autorização para buscar/enviar documentos.
+  // Um pedido explícito de arquivo pode vir acompanhado de uma dúvida.
+  const explicacao = /\b(?:explicar|explique|explica|entender|entenda|diferenca|significa|significado|o que e|o que sao|como funciona|por que)\b/.test(t);
+  // Perguntar como realizar uma ação não é pedir que o sistema a execute.
+  const orientacao = /\bcomo (?:eu )?(?:(?:faco|fazer) para |(?:posso|devo|consigo) )?(?:consultar|enviar|mandar|buscar|ver|acessar|obter)\b/.test(t)
+    || /\b(?:me )?(?:ensina|ensine|ensinar) a (?:consultar|enviar|mandar|buscar|ver|acessar|obter)\b/.test(t);
+  const pedidoDeArquivo = /\b(?:manda|mande|envia|envie|quero|preciso|pode (?:me )?(?:enviar|mandar|consultar))\s+(?:(?:me|a|o|as|os|minha|meu|minhas|meus|uma|um|da|do)\s+)*(?:guias?|boletos?|das|inss|fgts|darf)\b/.test(t);
+  if ((explicacao || orientacao) && !pedidoDeArquivo) return 'EXPLICACAO';
+  return null;
+}
+
 export function pedidoDeConsulta(texto, agora) {
   const t = normalizarConsulta(texto);
-  if (!t || /\b(?:nao quero|nao precisa|nao envie|nao mande)\b/.test(t) || /(?:descricao|servico|tomador|cliente|valor)\s*[:=]/.test(t)) return null;
-  if (/^(?:o que e|como funciona|por que)\b/.test(t)) return null;
+  if (!t || motivoSemConsultaAutomatica(t)) return null;
   // Erro observado no atendimento; vocabulário fechado, sem aproximar nomes de empresas.
   if (/\b(?:faturamento|faturamemto|faturamnto|faturameto|faturei|faturou|faturamos|receita bruta)\b/.test(t)) return { acao: 'FATURAMENTO', periodo: periodoDaConsulta(t, agora) };
   if (/\b(?:recalcular|recalcule|atualizar|atualize)\b/.test(t) && /\b(?:guia|boleto|imposto|das)\b/.test(t)) return { acao: 'GUIAS', recalculo: true, periodo: periodoDaConsulta(t, agora) };
@@ -48,7 +62,7 @@ export function pedidoDeConsulta(texto, agora) {
   if (/^(?:(?:me |pode |por favor |manda |mande |envia |envie |enviar |quero |preciso |ver |consultar |os |meus |da minha empresa )*)documentos?(?: da (?:minha )?empresa)?[.!?]*$/.test(t)) return { acao: 'DOCUMENTOS' };
   if (/^(?:(?:me |pode |por favor |manda |mande |envia |envie |enviar |quero |preciso |qual |e |o |so |apenas |numero |do |meu )*)cnpj(?: da (?:minha )?empresa)?[.!?]*$/.test(t)) return { acao: 'CNPJ' };
   if (/\b(?:guias?|boletos?|das|simples nacional|inss|fgts|darf)\b/.test(t)) {
-    const tipo = /\b(?:simples(?: nacional)?|das)\b/.test(t) ? 'SIMPLES' : /\binss\b/.test(t) ? 'INSS' : /\bfgts\b/.test(t) ? 'FGTS' : /\bdarf\b/.test(t) ? 'DARF' : null;
+    const tipo = /\b(?:simples nacional|(?:guias?|boletos?|impostos?)\s+(?:do\s+)?simples|das)\b/.test(t) ? 'SIMPLES' : /\binss\b/.test(t) ? 'INSS' : /\bfgts\b/.test(t) ? 'FGTS' : /\bdarf\b/.test(t) ? 'DARF' : null;
     return { acao: 'GUIAS', periodo: periodoDaConsulta(t, agora), tipo,
       competencia: /\bcompetencia\b/.test(t), vencidas: /\b(?:venceu|venceram|vencid[ao]s?|atrasad[ao]s?)\b/.test(t),
       pagas: /\b(?:pag[ao]s?|ja paguei)\b/.test(t), todas: /\b(?:todas|todos)\b/.test(t) };

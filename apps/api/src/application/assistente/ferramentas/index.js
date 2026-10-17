@@ -681,7 +681,7 @@ const EXECUTORES = {
 
   async chamar_escritorio(input, ctx) {
     ctx.registrarChamadaAoEscritorio?.({ motivo: String(input.motivo || "").slice(0, 300) });
-    return { ok: true, encaminhado: true, instrucao: `Diga que a mensagem foi encaminhada ao escritório. ${expedienteDoEscritorio(ctx.agora || new Date()).mensagem} Não prometa prazo de resolução.` };
+    return { ok: true, encaminhado: true, instrucao: `Diga que a mensagem foi encaminhada ao escritório. ${expedienteDoEscritorio(ctx.agora || new Date(), { encaminhamentoHumano: Boolean(ctx.registrarChamadaAoEscritorio) }).mensagem} Não prometa prazo de resolução.` };
   },
 };
 

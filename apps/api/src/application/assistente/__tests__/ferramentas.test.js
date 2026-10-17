@@ -11,6 +11,21 @@ import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
+it.each(['2026-09-08T15:00:00Z', '2026-09-04T20:00:00Z'])('chamar escritório orienta pausa do atendimento: %s', async instante => {
+  const registrarChamadaAoEscritorio = jest.fn();
+  const r = await executarFerramenta('chamar_escritorio', { motivo: 'Dúvida para a equipe' },
+    ctx({ agora: new Date(instante), registrarChamadaAoEscritorio }));
+  expect(registrarChamadaAoEscritorio).toHaveBeenCalledWith({ motivo: 'Dúvida para a equipe' });
+  expect(r.instrucao).toContain('automação fica pausada até a liberação pela equipe');
+  expect(r.instrucao).not.toContain('A IA continua disponível');
+  if (instante.includes('09-04')) expect(r.instrucao).toContain('08/09/2026, às 9h');
+});
+
+it('não afirma pausa sem callback de encaminhamento', async () => {
+  const r = await executarFerramenta('chamar_escritorio', {}, ctx({ registrarChamadaAoEscritorio: undefined }));
+  expect(r.instrucao).not.toContain('automação fica pausada');
+});
+
 describe('faturamento completo do período', () => {
   it('agrega todas as notas autorizadas da empresa, sem limite de página', async () => {
     const aggregate = jest.fn(async () => ({ _count: { _all: 25, total: 25 }, _sum: { total: 12500 }, _max: { updatedAt: new Date('2026-09-10T12:00:00Z') } }));

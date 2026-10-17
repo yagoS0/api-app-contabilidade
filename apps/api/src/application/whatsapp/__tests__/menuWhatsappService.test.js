@@ -386,6 +386,8 @@ describe("roteamento sem modelo", () => {
       agora: new Date("2026-09-08T23:00:00.000Z"), client, cloud, conferirJanela: janelaAberta, logger: log,
     });
     expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/fora do horário/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toContain("automação fica pausada até a liberação pela equipe");
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("A IA continua disponível");
     expect(client.conversaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { atendidaDesde: expect.any(Date) } }));
   });
 
@@ -413,6 +415,25 @@ describe("roteamento sem modelo", () => {
       client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log,
     });
     expect(cloud.enviarLista).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("explicações não acionam consultas determinísticas", () => {
+  it.each([
+    'Pode me explicar, de forma simples, a diferença entre competência e vencimento de uma guia? Não consulte valores nem emita documentos.',
+    'Pode me explicar a diferença entre competência e vencimento de uma guia?',
+    'Não consulte minhas guias',
+  ])('devolve o texto ao assistente sem ferramenta nem envio: %s', async texto => {
+    const client = banco({ cliente: true, permissoes: ['GUIAS'], menuRecente: true }), cloud = nuvem(), executar = jest.fn();
+    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto }), texto,
+      agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(r.tratado).toBe(false);
+    expect(executar).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(cloud.enviarLista).not.toHaveBeenCalled();
+    expect(cloud.enviarBotoes).not.toHaveBeenCalled();
+    expect(client.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
   });
 });
 
