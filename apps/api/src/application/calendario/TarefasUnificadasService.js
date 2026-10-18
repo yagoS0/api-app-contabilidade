@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { normalizarTarefaCalendario, expandirTarefaCalendario, aplicarAcaoTarefaCalendario } from '../../../../../packages/shared/src/tarefasCalendario.js';
+import { normalizarTarefaCalendario, expandirTarefaCalendario, aplicarAcaoTarefaCalendario, encontrarTarefaCalendario } from '../../../../../packages/shared/src/tarefasCalendario.js';
 import { dataAgenda } from '../../../../../packages/shared/src/agenda.js';
 export class TarefaCalendarioError extends Error {
-  constructor(message, status = 400) { super(message); this.status = status; }
+  constructor(message, status = 400, code) { super(message); this.status = status; this.code = code; }
 }
 const idsDaTarefa = t => [...new Set([...(t.empresasIds || []), ...(t.versoes || []).flatMap(v=>v.dados?.empresasIds || []), ...Object.values(t.estados || {}).flatMap(s=>s.alteracoes?.empresasIds || [])])];
 export function podeVerTarefa(t, userId, portalIds) {
@@ -39,6 +39,32 @@ export async function acaoTarefaUnificada({ userId, portalIds, id, dados }, db =
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
     const tarefa = await tx.tarefaCalendario.findFirst({ where:{id,excluidaEm:null} });
     if (!tarefa || !podeVerTarefa(tarefa,userId,portalIds)) throw new TarefaCalendarioError('Tarefa não encontrada.',404);
+    if (dados.acao === 'DUPLICAR') {
+      if (!/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(dados.intencaoId || '')) {
+        throw new TarefaCalendarioError('Identifique a tentativa de duplicação.');
+      }
+      // A identidade é derivada no servidor e não depende de campos editáveis da cópia.
+      // O mesmo pedido recupera o resultado mesmo depois de uma resposta perdida.
+      const copiaId = `copia-${createHash('sha256').update(JSON.stringify([userId,id,dados.cicloChave,dados.intencaoId])).digest('hex')}`;
+      const existente = await tx.tarefaCalendario.findUnique({where:{id:copiaId}});
+      if (existente) {
+        if (existente.userId !== userId || !podeVerTarefa(existente,userId,portalIds)) throw new TarefaCalendarioError('Cópia não disponível.',404);
+        if (existente.excluidaEm || Object.values(existente.estados || {}).some(s=>s.canceladaEm)) throw new TarefaCalendarioError('A cópia desta tentativa foi excluída. Você pode iniciar uma nova duplicação; a cópia anterior continuará excluída.',409,'CALENDAR_COPY_DELETED');
+        return existente;
+      }
+      let ocorrencia;
+      try { ocorrencia = encontrarTarefaCalendario(tarefa, dados.cicloChave); }
+      catch(e) { throw new TarefaCalendarioError(e.message); }
+      if (!ocorrencia) throw new TarefaCalendarioError('Ocorrência não encontrada.',404);
+      // Copia somente o modelo efetivo desta ocorrência, nunca estados ou evidências.
+      const copia = entrada({ titulo: `${ocorrencia.titulo.slice(0,192)} (cópia)`, descricao: ocorrencia.descricao,
+        empresasIds: ocorrencia.empresasIds,
+        subtarefas: ocorrencia.subtarefas.map(s=>({id:randomUUID(),titulo:s.titulo})),
+        config: {...ocorrencia.config,recorrencia:'AVULSA',repetirAte:null,repetirQuantidade:null,
+          dataVencimento:ocorrencia.dataVencimento} });
+      validarEmpresas(copia,portalIds);
+      return tx.tarefaCalendario.create({data:{...copia,id:copiaId,userId,estados:{},versoes:[]}});
+    }
     let patch;
     try { patch = aplicarAcaoTarefaCalendario(tarefa,dados); } catch(e) { throw new TarefaCalendarioError(e.message); }
     validarEmpresas({...tarefa,...patch},portalIds);

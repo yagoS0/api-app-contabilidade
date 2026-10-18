@@ -31,7 +31,7 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
   const [erro, setErro] = useState('');
   const [descartar, setDescartar] = useState(false);
   const [alterado, setAlterado] = useState(false);
-  const tituloRef = useRef(null), painelRef = useRef(null), gatilhoPainel = useRef(null), continuarRef = useRef(null);
+  const tituloRef = useRef(null), painelRef = useRef(null), gatilhoPainel = useRef(null), continuarRef = useRef(null), salvandoRef = useRef(false);
   const painelAnterior = useRef(''), descarteAnterior = useRef(false);
   useEffect(() => {
     if (descartar) continuarRef.current?.focus();
@@ -55,7 +55,7 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
   useEffect(() => { onRascunho?.({ ...dados.config, titulo: dados.titulo, descricao: dados.descricao, tipo: 'tarefa', empresasIds: dados.empresasIds }); }, [dados, onRascunho]);
 
   async function salvar(event) {
-    event.preventDefault(); setErro('');
+    event.preventDefault(); if(salvandoRef.current)return; setErro('');
     if (!dados.titulo.trim()) { setErro('Informe o título da tarefa.'); return; }
     if (c.horarioModo === 'FIXO' && !c.horaInicio || c.horarioModo === 'ATE' && !c.horaLimite) { setPainel('data'); setErro('Escolha o horário da tarefa.'); return; }
     if (c.horarioModo === 'FIXO' && c.horaFim && c.horaFim <= c.horaInicio) { setPainel('data'); setErro('O término deve ser posterior ao horário de início, no mesmo dia.'); return; }
@@ -77,15 +77,15 @@ export function ModalTarefaCalendario({ inicial, empresas = [], api, onFechar, o
         dataVencimento: c.recorrencia === 'AVULSA' ? c.dataVencimento || null : null,
       },
     };
-    setOcupado(true);
+    salvandoRef.current=true;setOcupado(true);
     try {
       const resposta = edicao
         ? await api.acaoTarefaCalendario(inicial.tarefaId, { acao: alcance === 'ESTA_E_PROXIMAS' ? 'EDITAR_SERIE' : 'EDITAR', cicloChave: inicial.cicloChave, alteracoes: payload })
         : await api.criarTarefaCalendario(payload);
-      if (resposta?.ok === false) throw new Error(resposta.message || 'Não foi possível salvar a tarefa.');
+      if (!resposta || resposta.ok === false) throw new Error(resposta?.message || 'Não foi possível salvar a tarefa.');
       onSalvo?.({ ...resposta, dataInicio: c.dataInicio });
     } catch (e) { setErro(e.message || 'Não foi possível salvar a tarefa.'); }
-    finally { setOcupado(false); }
+    finally { salvandoRef.current=false;setOcupado(false); }
   }
 
   return <Modal titulo={edicao ? 'Editar tarefa' : 'Nova tarefa'} tamanho="sm" className="tarefa-calendario-editor" aoFechar={fechar} ocupado={ocupado} fecharAoClicarFundo={!alterado} fecharAoEscape={descartar || !painel}>

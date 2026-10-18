@@ -443,3 +443,24 @@ Lista, ficha e conversa devem apresentar a mesma projeção desses fatos persist
 | T36 | Repetição, concorrência e falha de auditoria | Não duplicar empresa/conversão; persistência e auditoria atômicas, erro coerente |
 | T37 | Atualização externa de assinatura/pagamento e recarga | Lista/ficha/conversa concordam; distinguir ganha, implantação e carteira; preservar rascunhos |
 | T38 | Cliente já convertido ou serviço PF/avulso | Preservar histórico e caminhos existentes, sem migração retroativa ou criação obrigatória de empresa |
+
+## 23. Teste isolado de WhatsApp e calendário — decisão de 18/10/2026
+
+Pedido expresso do usuário: preparar teste da IA automática no WhatsApp com seu número já vinculado, sem alterar atendimento real nem empresa; corrigir piscadas do calendário e oferecer Duplicar/Excluir nos cartões.
+
+**R29 — sessão de teste independente.** O número vinculado não autoriza liberar sua automação real. Teste exige sessão administrativa explícita e temporária, destinatário/canal delimitados e identificação inequívoca de cada entrada de teste. Mensagens comuns preservam o atendimento normal. Histórico, contexto, ferramentas, encaminhamento e resultados de teste ficam separados dos registros operacionais. A alternância entre mensagens automáticas, IA e atendimento humano ocorre somente na sessão; ferramentas não leem contexto operacional. Ativação de teste nasce desabilitada no servidor e exige sessão autorizada; revogação impede novas saídas. Expiração, encerramento e repetição não podem transformar evento de teste em evento real. Não criar contratação, empresa, pagamento, transmissão, consulta fiscal ou mensagem a terceiro como efeito do teste. Saídas são identificadas como teste, restritas ao destinatário autorizado; resultado externo incerto não autoriza repetição automática. Ativação e envio reais exigem autorização do escopo concreto; esta entrega prepara o mecanismo em desenvolvimento.
+
+**R30 — calendário contínuo e ações da tarefa.** Alterar tarefa mantém grade, período, filtros, rolagem e foco; resultado persistido atualiza a projeção sem carregar novamente a página ou deslocar a grade. Respostas antigas não sobrescrevem confirmação nova; falha conserva o estado válido e mostra recuperação. Menu acessível oferece duplicação da ocorrência. Como escolha técnica conservadora deste incremento, a cópia é uma tarefa avulsa independente e pendente, sem copiar conclusão ou evidência; origem e série permanecem intactas. Excluir pelo cartão conserva confirmação e alcance da ocorrência, preservando repetições e histórico; exclusão da série permanece ação separada já existente. Mantêm-se R24 e permissões no servidor.
+
+Impacto: R19/R20/R22/R24 e isolamento de comunicação. Não muda regras fiscais, pagamentos, contratação ou decisões pendentes. Registro de decisão não declara testes concluídos nem publicação autorizada.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T39 | Número vinculado e pausado recebe teste e mensagem comum | Teste isolado; mensagem comum conserva fluxo real; vínculo e pausa não mudam |
+| T40 | Sessão inválida, expirada, encerrada ou mensagem repetida | Sem fallback operacional, envio indevido ou duplicação |
+| T41 | IA solicita ação fiscal/financeira ou outro destinatário | Ferramenta bloqueada; nenhum efeito operacional |
+| T42 | Handoff de teste, revogação durante inferência e callback tardio | Somente sessão afetada; saída inválida bloqueada; evidência isolada |
+| T43 | Alterar/mover/concluir com rede lenta ou falha | Grade/scroll estáveis, confirmação coerente e leitura antiga descartada |
+| T44 | Duplicar ocorrência concluída/recorrente com empresas e subtarefas | Nova tarefa avulsa pendente; identidade e progresso da origem preservados |
+| T45 | Excluir pelo menu, cancelar, teclado e celular | Confirmação clara; apenas ocorrência escolhida; navegação e gestos preservados |
+| T46 | Duas entradas simultâneas, crash/retry e timeout de transporte | Turnos preservados, recuperação delimitada e nenhuma repetição de saída incerta |

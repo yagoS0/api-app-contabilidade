@@ -228,6 +228,7 @@ export function lerEventoWebhook(payload, agora = new Date()) {
         const proprios = [...avisosTs];
         if (!st?.id) proprios.push(AVISOS_EVENTO.SEM_IDENTIFICADOR);
         statuses.push({
+          ...(typeof st?.biz_opaque_callback_data === 'string' ? {correlacaoTeste: st.biz_opaque_callback_data} : {}),
           providerMessageId: st?.id ? String(st.id) : null,
           canalProvedorId: typeof value.metadata?.phone_number_id === "string" ? value.metadata.phone_number_id : null,
           wabaProvedorId: typeof entrada.id === "string" ? entrada.id : null,

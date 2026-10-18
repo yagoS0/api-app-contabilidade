@@ -7,6 +7,12 @@ jest.mock("../../../config.js", () => ({
 }));
 jest.mock("../SaidaWhatsappService.js", () => ({ aplicarStatusMensagem: jest.fn() }));
 jest.mock("../ConversaWhatsappService.js", () => ({ registrarMensagemRecebida: jest.fn() }));
+// Namespace vazio em memória: o interceptor continua real, inclusive a leitura
+// obrigatória de classificações antigas quando a ativação está desligada.
+jest.mock('../TesteIaWhatsappRepository.js', () => {
+  const real = jest.requireActual('../TesteIaWhatsappRepository.js');
+  return { ...real, criarRepositorioTesteIa: () => real.criarRepositorioTesteIa({ appSetting: { findUnique: jest.fn(async () => null) } }) };
+});
 jest.mock("../../guides/EnvioGuiaService.js", () => ({ aplicarStatusDoProvedor: jest.fn(), aplicarFalhaDoProvedor: jest.fn() }));
 
 import { processarEventoWhatsapp, decidirRespostaDoMenu } from "../ProcessarEventoWhatsappService.js";

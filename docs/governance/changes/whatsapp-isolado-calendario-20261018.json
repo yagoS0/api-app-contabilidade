@@ -1,0 +1,37 @@
+{
+  "summary": "Sessão administrativa isolada de IA WhatsApp para número vinculado; calendário estável e menu de duplicação/exclusão de ocorrência.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "baseCommit": "d6e58b011ddb65742aab1e8f2e5a3061ec84a322",
+  "sourceFingerprint": "dfbcdfbd5c51c3722940e4f086184e020f347b803b74b5255dcfdb59033739bd",
+  "fingerprintScope": "Snapshot integral congelado na repetição final da API. Depois dos gates, este registro foi atualizado e somente finais de linha/linha vazia final foram normalizados em docs/calendario-estabilidade-20261018.md e apps/api/scripts/verify-calendar-duplicate-postgres.js, sem mudança de conteúdo ou lógica. Fontes de produto são idênticas às do primeiro snapshot 9c09f380cc90bca6649a97b12125a28228b950e78b7cd5e0ee6e69219566c0c0; entre os dois snapshots dos gates mudaram apenas três fixtures API, revisadas independentemente.",
+  "operationalImpact": "Implementa R29/R30 e T39–T46, com referência canônica e snapshot reconciliados. Preserva identidade, vínculo de empresa, pausa humana, contratação, guias, contabilidade e decisões pendentes. Duplicação avulsa pendente é escolha técnica conservadora explicitada na regra. Nenhuma migração, backfill, mensagem real ou chamada paga nesta preparação.",
+  "reviewProcess": "Controlador executável iniciado e interrompido pelo Principal após reprovação independente da implementação inicial. Journal original preservado. Correções delegadas a autores nativos, com revisão independente e catálogo de gates inalterado. Não representa ready_for_human emitido pelo controlador nem autorização de integração.",
+  "tests": [
+    "Catálogo versionado inalterado: governance-engine (63 testes), web-regression (497 suítes/5553 testes), portal-regression (99 suítes/1580 testes), web-build e portal-build passaram em final-gates-1792351731482. Builds mantêm avisos de tamanho de chunks/importação mista, sem erro; não alterados limites ou configurações.",
+    "A primeira API reprovou na fixture inicioLeadSemIa: novo interceptor acessava Prisma real num teste sem DATABASE_URL. Falha preservada. Corrigidas somente três fixtures com repositório real sobre AppSetting vazio; nenhuma assertion removida, interceptor e produto preservados. Revisão independente e 113 testes/10 suítes sem banco/provedores aprovados.",
+    "API integral repetida: final-gates-1792352966775 passou, fontes inalteradas durante execução; 607 suítes/10668 testes aprovados. Uma suíte/teste condicional preexistente de contagem de SELECTs comerciais permaneceu pendente. A primeira execução conjunta não é declarada aprovada: unchanged=false decorre exclusivamente das três fixtures; manifesto de diferenças preservado.",
+    "ESLint completo web: 1088 arquivos, zero erros e zero avisos. git diff --check e gate estrutural/impacto aprovados; nenhum caminho sem domínio.",
+    "WhatsApp: 77 testes dirigidos e PostgreSQL descartável com invariância de 183 tabelas operacionais; contato/empresa/conversa assumida sintéticos, concorrência, replay, callback antes do ACK/índice, citações reais versus teste, revogação e fila. Modelo e transporte explicitamente simulados, rede externa bloqueada. Não certifica IA ou WhatsApp real.",
+    "Calendário: 139 testes web iniciais, depois 11 testes UI afetados pela recuperação; 29 testes API e 11 blocos PostgreSQL finais. Quatro pedidos concorrentes geram uma cópia; cópia excluída não é restaurada; nova intenção exige ação explícita. Suíte web completa final inclui as 11 verificações UI.",
+    "Chrome local temporário/mock em 1440/390: mês, semana, dia e lista; menus, foco, teclado, ponteiro, duplicação, exclusão, falhas e recuperação. Grade/scroll estáveis; sem overflow/pageerror. QA final fingerprint UI 2f8da888253024ee28411aaf255dad64bf1efb7a57c262ce04e44a7bb72a01b1. Foram 24 estados capturados/22 arquivos gerais e quatro capturas adicionais de recuperação.",
+    "Pareceres independentes locais: audit-isolation-final.json, audit-calendar-final.json, audit-operational-decision.json e audit-webhook-fixture-recovery.json. Reprovações de transporte, concorrência, classificação e recuperação corrigidas antes da aprovação técnica. Evidências brutas permanecem ignoradas em .altan-governance; CI remoto e publicação não executados.",
+    "Checagem do diff staged detectou finais de linha mistos na documentação e linha vazia ao final do verificador PG, não vistos pelo diff de arquivos tracked antes do staging. Normalizados somente whitespace, sem alterar conteúdo/lógica; diff integral contra a base e revisão independente renovados."
+  ],
+  "rollback": "Calendário: retirar ações novas sem apagar cópias ou históricos. WhatsApp: desligar flags de ativação/envio e preservar interceptores, índices e classificações de eventos antigos; reversão integral sem tombstones pode transformar teste em evento operacional. Não reativar atendimento nem restaurar dados reais. Saída incerta não deve ser reenviada automaticamente.",
+  "humanDecisions": [
+    "Publicação deste novo incremento ainda não foi autorizada; autorização anterior limitava-se ao PR230.",
+    "Teste real depende de sessão temporária com número/canal autorizados e ativação explícita. Esta entrega não certifica inferência paga ou WhatsApp real nem toda a jornada operacional de onboarding."
+  ]
+}
