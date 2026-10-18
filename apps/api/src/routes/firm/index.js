@@ -60,6 +60,7 @@ import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createPortalAccessRouter } from "./portalAccess.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createAgendaRouter } from "./agenda.js";
+import { createWhatsappTesteIaRouter } from './whatsappTesteIa.js';
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter, createIndividualGuideHandler } from "./whatsappGuias.js";
@@ -5515,6 +5516,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
   router.use("/", createCalendarioRouter({ log }));
   router.use("/", createAgendaRouter({ log }));
+  router.use('/', createWhatsappTesteIaRouter());
 
   // Obrigações — também do ESCRITÓRIO (a pergunta é "o que EU preciso entregar, em toda a
   // carteira"), então monta na raiz de /firm com filtro de empresa opcional.

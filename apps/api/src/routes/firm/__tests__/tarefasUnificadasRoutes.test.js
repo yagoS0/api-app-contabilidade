@@ -39,3 +39,11 @@ test('unauthorized existing task and invalid company checklist cannot write',asy
   expect((await request(app()).post('/agenda/unificada/t/acao').send({acao:'SUBTAREFA',cicloChave:'2026-01',companyId:'secret',subtarefaId:'mit',concluida:true})).status).toBe(400);
   expect(prisma.tarefaCalendario.update).not.toHaveBeenCalled();
 });
+
+test('recusa definitiva da cópia excluída tem código HTTP estável sem escrita',async()=>{
+ prisma.tarefaCalendario.findFirst.mockResolvedValue({...base,id:'t',userId:'u',estados:{},versoes:[]});
+ prisma.tarefaCalendario.findUnique=jest.fn().mockResolvedValue({...base,id:'copia',userId:'u',estados:{'2026-01-15':{canceladaEm:'2026-01-16'}},versoes:[]});
+ const response=await request(app()).post('/agenda/unificada/t/acao').send({acao:'DUPLICAR',cicloChave:'2026-01',intencaoId:'00000000-0000-4000-8000-000000000001'});
+ expect(response.status).toBe(409);expect(response.body).toMatchObject({ok:false,error:'CALENDAR_COPY_DELETED'});
+ expect(prisma.tarefaCalendario.create).not.toHaveBeenCalled();expect(prisma.tarefaCalendario.update).not.toHaveBeenCalled();
+});

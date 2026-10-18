@@ -48,7 +48,7 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
     setAtual(a => atualizar(a, companyId, subtarefa?.id, valor));
     try {
       const resposta = await api.acaoTarefaCalendario(atual.tarefaId || atual.id, { acao:subtarefa ? 'SUBTAREFA' : valor ? 'CONCLUIR' : 'REABRIR', cicloChave:atual.cicloChave, companyId, ...(subtarefa ? { subtarefaId:subtarefa.id, concluida:valor } : {}) });
-      if (resposta?.ok === false) throw new Error(resposta.message || 'Não foi possível salvar. Tente novamente.');
+      if (!resposta || resposta.ok === false) throw new Error(resposta?.message || 'Não foi possível salvar. Tente novamente.');
       confirmado.current = atualizar(confirmado.current, companyId, subtarefa?.id, valor);
       onChanged?.(confirmado.current);
     } catch (erro) {

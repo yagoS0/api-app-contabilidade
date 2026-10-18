@@ -2,6 +2,9 @@ import { INTEGRACAO_WHATSAPP, log } from "../config.js";
 import { processarInboxWhatsappUmaVez } from "../application/whatsapp/WhatsappInboxService.js";
 import { processarTurnosIaUmaVez } from "../application/assistente/TurnoIaWhatsappService.js";
 import { processarContingenciasComerciaisUmaVez } from "../application/onboarding/WatchdogComercialService.js";
+import { criarTesteIaWhatsapp } from '../application/whatsapp/TesteIaWhatsappService.js';
+const testeIa = criarTesteIaWhatsapp();
+let testeIaEmCurso = null;
 
 import { criarFiscalLead } from "../application/onboarding/FiscalLeadService.js";
 import { criarComunicadosWhatsapp } from "../application/whatsapp/ComunicadosWhatsappService.js";
@@ -17,6 +20,9 @@ let proximaContingencia = 0;
 export function iniciarWorkerWhatsappDuravel() {
   if (timer || !INTEGRACAO_WHATSAPP) return;
   const tick = () => {
+    if (!testeIaEmCurso && process.env.WHATSAPP_TESTE_IA_ENABLED === '1') testeIaEmCurso = testeIa.processarUmaVez()
+      .catch(e => log.error({ codigo: e.code }, 'Teste isolado WhatsApp interrompido'))
+      .finally(() => { testeIaEmCurso = null; });
     if (!contingenciaEmCurso && Date.now() >= proximaContingencia) {
       proximaContingencia = Date.now() + 30000;
       contingenciaEmCurso = processarContingenciasComerciaisUmaVez({ log })
@@ -43,5 +49,5 @@ export async function pararWorkerWhatsappDuravel() {
   clearInterval(timer);
   timer = null;
   proximaContingencia = 0;
-  await Promise.allSettled([inboxEmCurso, iaEmCurso, fiscalEmCurso, comunicadoEmCurso, contingenciaEmCurso].filter(Boolean));
+  await Promise.allSettled([inboxEmCurso, iaEmCurso, fiscalEmCurso, comunicadoEmCurso, contingenciaEmCurso, testeIaEmCurso].filter(Boolean));
 }

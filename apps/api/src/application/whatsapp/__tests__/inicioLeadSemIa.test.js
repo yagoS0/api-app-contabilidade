@@ -10,6 +10,12 @@ jest.mock("../../../config.js", () => ({
   INTEGRACAO_IA_COMERCIAL: true,
 }));
 jest.mock("../ConversaWhatsappService.js", () => ({ registrarMensagemRecebida: jest.fn() }));
+// O interceptor real consulta tombstones mesmo com flags OFF. Este cenário
+// operacional sem banco fornece um namespace de teste vazio, sem desativar a guarda.
+jest.mock('../TesteIaWhatsappRepository.js', () => {
+  const real = jest.requireActual('../TesteIaWhatsappRepository.js');
+  return { ...real, criarRepositorioTesteIa: () => real.criarRepositorioTesteIa({ appSetting: { findUnique: jest.fn(async () => null) } }) };
+});
 jest.mock("../RespostaColetaComercialWhatsappService.js", () => ({ responderColetaComercial: jest.fn() }));
 jest.mock("../SaidaWhatsappService.js", () => ({ aplicarStatusMensagem: jest.fn() }));
 jest.mock("../CanalWhatsappService.js", () => ({ resolverCanalEntrada: jest.fn() }));

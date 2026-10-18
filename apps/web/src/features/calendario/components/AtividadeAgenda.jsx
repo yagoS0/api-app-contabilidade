@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { MenuTarefaCalendario } from './MenuTarefaCalendario';
 import { corAtividade, dataBR, horarioAtividade } from '../lib/agendaWorkspace';
 import { empresaConcluida, textoAlertaTarefa } from './PainelTarefaCalendario.shared.js';
 
 const ICONE = <svg aria-hidden="true" width="12" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
 
-export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostrarHorario = false }) {
+export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, onDuplicar, onExcluir, bloqueado = false, mostrarHorario = false }) {
   const check = useRef(null);
   const concluindoRef = useRef(false);
   const [concluindo, setConcluindo] = useState(false);
@@ -23,7 +24,7 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
   useEffect(() => { if (check.current) check.current.indeterminate = parcial; }, [parcial]);
   async function alterarConclusao() {
     if (agrupada) { abrir(item); return; }
-    if (concluindoRef.current || item.salvando || !podeConcluir) return;
+    if (concluindoRef.current || item.salvando || bloqueado || !podeConcluir) return;
     concluindoRef.current = true; setConcluindo(true);
     try { await onConcluir(item); }
     finally { concluindoRef.current = false; setConcluindo(false); }
@@ -37,7 +38,7 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
     aria-busy={item.salvando || concluindo || undefined}>
     {mostrarConclusao && <input ref={check} className="agenda-event-check" type="checkbox" checked={completa} aria-checked={parcial ? 'mixed' : completa}
       aria-label={agrupada ? `${progresso} em ${item.titulo}. Abrir detalhes` : `${completa ? 'Reabrir' : 'Concluir'} ${item.titulo}`}
-      title={agrupada ? progresso : completa ? 'Reabrir tarefa' : 'Concluir tarefa'} disabled={Boolean(item.salvando) || concluindo || (!agrupada && !podeConcluir)}
+      title={agrupada ? progresso : completa ? 'Reabrir tarefa' : 'Concluir tarefa'} disabled={bloqueado || Boolean(item.salvando) || concluindo || (!agrupada && !podeConcluir)}
       onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()} onChange={alterarConclusao} />}
     <button type="button" className="agenda-event-open" aria-label={item.titulo} onClick={abrirDetalhe}
@@ -51,5 +52,6 @@ export function AtividadeAgenda({ item, abrir, style, gestos, onConcluir, mostra
     </button>
     {editavel && gestos.permiteRedimensionar !== false && <><span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/><span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/></>}
     {editavel && <span className="agenda-move-handle" data-agenda-move-handle="" aria-hidden="true"/>}
+    {onDuplicar&&onExcluir&&!item.projecaoAlerta&&<MenuTarefaCalendario item={item} onDuplicar={onDuplicar} onExcluir={onExcluir} disabled={bloqueado||Boolean(item.salvando)||concluindo}/>}
   </div>;
 }

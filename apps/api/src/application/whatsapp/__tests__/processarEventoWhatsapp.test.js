@@ -11,6 +11,12 @@ jest.mock("../../guides/ConfirmarPagamentoWhatsappService.js", () => ({ ...jest.
 jest.mock("../SaidaWhatsappService.js", () => ({ aplicarStatusMensagem: jest.fn(async () => null) }));
 jest.mock("../ArquivoWhatsappService.js", () => ({ enqueueArquivoWhatsapp: jest.fn(async () => null) }));
 jest.mock("../ConversaWhatsappService.js", () => ({ registrarMensagemRecebida: jest.fn() }));
+// A costura inclui agora o namespace persistido dos testes isolados. Fornecer
+// tombstones vazios evita Prisma real sem substituir o interceptor por um bypass.
+jest.mock('../TesteIaWhatsappRepository.js', () => {
+  const real = jest.requireActual('../TesteIaWhatsappRepository.js');
+  return { ...real, criarRepositorioTesteIa: () => real.criarRepositorioTesteIa({ appSetting: { findUnique: jest.fn(async () => null) } }) };
+});
 jest.mock("../../guides/EnvioGuiaService.js", () => ({
   aplicarStatusDoProvedor: jest.fn(),
   aplicarFalhaDoProvedor: jest.fn(),

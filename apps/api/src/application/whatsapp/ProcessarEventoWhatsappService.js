@@ -1,4 +1,5 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { criarTesteIaWhatsapp } from './TesteIaWhatsappService.js';
 import { processarConsentimentoWhatsapp } from './ConsentimentoWhatsappService.js';
 import { suporteNoPiloto } from '../assistente/pilotoSuporte.js';
 import { fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
@@ -361,7 +362,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, responderColeta = undefined, atenderContexto = undefined, ia = undefined, menu = undefined } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, responderColeta = undefined, atenderContexto = undefined, ia = undefined, menu = undefined, testeIa = criarTesteIaWhatsapp() } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -392,6 +393,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   resumo.statuses.total = leitura.statuses.length;
   for (const item of leitura.statuses) {
     try {
+      if ((await testeIa.interceptarStatus?.(item))?.isolado) { resumo.statuses.semMudanca += 1; continue; }
       const r = await processarStatus(item, { logger });
       if (r.desfecho === DESFECHOS.APLICADO) resumo.statuses.aplicados += 1;
       else if (r.desfecho === DESFECHOS.SEM_MUDANCA) resumo.statuses.semMudanca += 1;
@@ -421,6 +423,14 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
     : responderMenu;
   for (const item of leitura.mensagens) {
     try {
+      // Antes de identidade, consentimento, pagamento, handoff e histórico operacionais.
+      // Marcador inválido ou sessão expirada nunca autorizam fallback para a conversa real.
+      const teste = await testeIa.interceptar(item);
+      if (teste.isolado) {
+        if (teste.estado === 'duplicado') resumo.mensagens.duplicadas += 1;
+        else resumo.mensagens.recusadas += 1;
+        continue;
+      }
       const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, responderColeta, atenderContexto, ia, menu, agora });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;

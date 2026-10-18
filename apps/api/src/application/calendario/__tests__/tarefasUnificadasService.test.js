@@ -34,3 +34,40 @@ test('editing cannot insert unauthorized company and list cannot reveal names or
   const db={tarefaCalendario:{findMany:jest.fn(()=>[task])},portalClient:{findMany:jest.fn(()=>[{id:'a',razao:'A'}])}};
   expect(await listarTarefasUnificadas({userId:'u',portalIds:['a'],inicio:'2026-01-01',fim:'2026-01-31'},db)).toEqual({tarefas:[],itens:[]});
 });
+
+const intencao='00000000-0000-4000-8000-000000000001';
+function bancoDuplicacao() {
+ const rows=new Map([[task.id,structuredClone(task)]]);
+ const tx={$queryRaw:jest.fn(),tarefaCalendario:{findFirst:jest.fn(({where})=>rows.get(where.id)),findUnique:jest.fn(({where})=>rows.get(where.id)),create:jest.fn(({data})=>{rows.set(data.id,data);return data;})}};
+ return {rows,tx,db:{$transaction:fn=>fn(tx)}};
+}
+test('duplicação é avulsa pendente, com IDs novos e idempotência por intenção',async()=>{
+ const {rows,tx,db}=bancoDuplicacao();
+ rows.get('t').subtarefas=[{id:'mit',titulo:'MIT'}];
+ rows.get('t').estados={'2026-01-15':{empresas:{a:{concluidaEm:'2026-01-15'},b:{concluidaEm:'2026-01-15'}}}};
+ const input={userId:'u',portalIds:['a','b'],id:'t',dados:{acao:'DUPLICAR',cicloChave:'2026-01-15',intencaoId:intencao}};
+ const first=await acaoTarefaUnificada(input,db),second=await acaoTarefaUnificada(input,db);
+ expect(second.id).toBe(first.id);expect(tx.tarefaCalendario.create).toHaveBeenCalledTimes(1);
+ expect(first).toMatchObject({titulo:'Apuração (cópia)',empresasIds:['a','b'],estados:{},versoes:[],config:{recorrencia:'AVULSA'}});
+ expect(first.subtarefas[0].id).not.toBe('mit');expect(first.subtarefas[0].concluida).toBeUndefined();
+ expect(rows.get('t').estados['2026-01-15'].empresas.a.concluidaEm).toBeTruthy();
+ first.excluidaEm=new Date();await expect(acaoTarefaUnificada(input,db)).rejects.toMatchObject({status:409});
+ expect(tx.tarefaCalendario.create).toHaveBeenCalledTimes(1);
+});
+test('duplicação recusa tentativa sem identidade, ocorrência inválida e escopo alheio',async()=>{
+ const {db,tx}=bancoDuplicacao();
+ const input={userId:'u',portalIds:['a','b'],id:'t',dados:{acao:'DUPLICAR',cicloChave:'2026-01-15',intencaoId:intencao}};
+ await expect(acaoTarefaUnificada({...input,dados:{...input.dados,intencaoId:undefined}},db)).rejects.toMatchObject({status:400});
+ await expect(acaoTarefaUnificada({...input,dados:{...input.dados,cicloChave:'2026-02-15'}},db)).rejects.toMatchObject({status:404});
+ await expect(acaoTarefaUnificada({...input,portalIds:['a']},db)).rejects.toMatchObject({status:404});
+ expect(tx.tarefaCalendario.create).not.toHaveBeenCalled();
+});
+test('recuperar cópia revalida proprietário e acesso atuais mesmo com intenção conhecida',async()=>{
+ const {rows,db}=bancoDuplicacao();
+ const input={userId:'u',portalIds:['a','b'],id:'t',dados:{acao:'DUPLICAR',cicloChave:'2026-01-15',intencaoId:intencao}};
+ const copia=await acaoTarefaUnificada(input,db);
+ rows.get(copia.id).empresasIds.push('secret');
+ await expect(acaoTarefaUnificada(input,db)).rejects.toMatchObject({status:404});
+ rows.get(copia.id).empresasIds=['a','b'];rows.get(copia.id).userId='outro';
+ await expect(acaoTarefaUnificada(input,db)).rejects.toMatchObject({status:404});
+});
