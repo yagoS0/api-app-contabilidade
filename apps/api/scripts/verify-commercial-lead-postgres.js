@@ -129,13 +129,31 @@ try {
   const { gerarContratoPdf } = await import("../src/application/onboarding/ContratoComercialPdf.js");
   const pdfGerado = await gerarContratoPdf(contrato); assert.equal(pdfGerado.subarray(0, 5).toString(), "%PDF-"); assert.ok(pdfGerado.length > 1000); ok("Contrato preenchido gera arquivo PDF local");
   await propostas.aprovarContrato(id, contrato.id, user);
-  await assert.rejects(propostas.conferirAssinatura(id, contrato.id, user, "ausente")); ok("Assinatura exige documento pertencente ao atendimento");
+  const fichaAntesAssinatura = await db.onboarding.findUnique({ where: { id } });
+  await assert.rejects(propostas.conferirAssinatura(id, contrato.id, user, "ausente"));
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id } }), fichaAntesAssinatura);
+  ok("Assinatura exige documento pertencente ao atendimento e não altera a ficha quando recusada");
   const doc = await propostas.salvarDocumento(id, user, { buffer: Buffer.from("%PDF-1.4\nDocumento sintético de teste\n%%EOF"), mimetype: "application/pdf", originalname: "contrato-teste.pdf" });
   const antes = await db.contratoComercial.findUnique({ where: { id: contrato.id } }); assert.equal(antes.status, "AGUARDANDO_ASSINATURA");
   await propostas.conferirAssinatura(id, contrato.id, user, doc.id); ok("Upload não assina; conferência humana registra hash e responsável");
   await assert.rejects(converter(id, {}, { atorId: user.id }), e => e.code === "contrato_recorrente_necessario");
   await jornada.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "Pagamento sintético conferido sem cobrança real." });
-  await criarFichaEmpresaAvulsa({ db, storage: { upload: async () => {} }, preparar: args => prepararArquivoConversao({ ...args, decifrar: async s => s.slice(5) }) }).salvar(id, user, { versao: r.versao, dados: { cnpj: "11222333000181", razaoSocial: "EMPRESA SINTÉTICA AVULSA", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua Teste", numero: "1", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } } });
+  const versaoAntesAssinatura = fichaAntesAssinatura.versao;
+  r = await db.onboarding.findUnique({ where: { id } });
+  assert.equal(r.versao, versaoAntesAssinatura + 1);
+  const fichaAvulsa = criarFichaEmpresaAvulsa({ db, storage: { upload: async () => {} }, preparar: args => prepararArquivoConversao({ ...args, decifrar: async s => s.slice(5) }) });
+  const dadosAvulsos = { cnpj: "11222333000181", razaoSocial: "EMPRESA SINTÉTICA AVULSA", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua Teste", numero: "1", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } };
+  const eventosAntesFicha = await db.onboardingEvento.count({ where: { onboardingId: id } });
+  await assert.rejects(fichaAvulsa.salvar(id, user, { versao: versaoAntesAssinatura, dados: dadosAvulsos }), e => e.code === "formulario_alterado");
+  assert.equal(await db.fichaEmpresaAvulsa.count({ where: { onboardingId: id } }), 0);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: id } }), eventosAntesFicha);
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id } }), r);
+  ok("Assinatura avança a revisão; salvar ficha avulsa com versão antiga é recusado sem efeitos");
+  await fichaAvulsa.salvar(id, user, { versao: r.versao, dados: dadosAvulsos });
+  assert.equal((await db.onboarding.findUnique({ where: { id } })).versao, r.versao + 1);
+  assert.equal(await db.fichaEmpresaAvulsa.count({ where: { onboardingId: id } }), 1);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: id, tipo: "FICHA_EMPRESA_AVULSA_CONFERIDA" } }), 1);
+  ok("Releitura permite salvar a ficha avulsa uma vez com revisão e evento persistidos");
   await propostas.concluirAvulso(id, user, "Serviço concluído e entrega conferida no teste");
   r = await db.onboarding.findUnique({ where: { id } }); assert.equal(r.status, "CONCLUIDO_AVULSO"); assert.equal(await db.portalClient.count(), 0); ok("Avulso conclui sem criar empresa ou mensalidade");
   const nova = await iniciarAtendimento({ conversaId: c.id, origem: "INATIVA", atorId: user.id, client: db }); assert.notEqual(nova.id, a.id); ok("Novo caso preserva histórico do atendimento encerrado");
@@ -161,8 +179,19 @@ try {
   assert.equal((await db.trabalhoFiscalLead.findUnique({ where: { id: trabalhoProc.id } })).status, "CONCLUIDO");
   assert.equal((await db.atendimentoLead.findUnique({ where: { id: nova.id } })).autorizacao.estado, "ATIVA");
   await fiscalLead.verificarRepresentante(r.id, user, "Representação novamente conferida sem apagar procuração.");
-  await fiscalLead.enfileirar(r.id, user, "SITFIS"); await fiscalLead.processarUmaVez();
+  const trabalhoSitfis = await fiscalLead.enfileirar(r.id, user, "SITFIS");
+  // Exercita a guarda do prazo antes de tornar somente este job sintético elegível.
+  await db.trabalhoFiscalLead.update({ where: { id: trabalhoSitfis.id }, data: { proximaTentativaEm: new Date(Date.now() + 86400000) } });
+  await fiscalLead.processarUmaVez();
+  assert.equal(consultasFiscais, 0);
+  const sitfisAguardando = await db.trabalhoFiscalLead.findUnique({ where: { id: trabalhoSitfis.id } });
+  assert.equal(sitfisAguardando.status, "PENDENTE");
+  assert.equal(sitfisAguardando.tentativas, 0);
+  // Não depende da precisão relativa dos relógios Node/PostgreSQL.
+  await db.trabalhoFiscalLead.update({ where: { id: trabalhoSitfis.id }, data: { proximaTentativaEm: new Date(0) } });
+  await fiscalLead.processarUmaVez();
   assert.equal(consultasFiscais, 1);
+  assert.equal((await db.trabalhoFiscalLead.findUnique({ where: { id: trabalhoSitfis.id } })).status, "CONCLUIDO");
   ok("Procuração TODOS percorre a fila real, preserva autorização ao reconferir e libera SITFIS simulado");
   for (const tipo of ["PUBLICA", "SITFIS"]) {
     const analise = await db.onboardingAnalise.create({ data: { onboardingId: r.id, cnpj: r.cnpj, tipo, status: "CONCLUIDA", resultado: tipo === "SITFIS" ? { relatorioDisponivel: true } : { razaoSocial: "EMPRESA SINTÉTICA" }, criadoPorId: user.id } });
