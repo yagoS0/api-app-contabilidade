@@ -7,6 +7,7 @@ const acaoBase = () => ({ id: "a1", conversaId: "c1", portalClientId: "p1", user
 function casa(obj, where) {
   return Object.entries(where || {}).every(([k, v]) => {
     if (k === "OR") return v.some(q => casa(obj, q));
+    if (k === "resultado" && v.path) return v.path.reduce((atual, chave) => atual?.[chave], obj.resultado) === v.equals;
     if (k === "conversa") return casa(obj.conversa, v.is);
     if (k === "mensagens") return v.none ? !obj.mensagens.some(m => casa(m, v.none)) : obj.mensagens.some(m => casa(m, v.some));
     if (v && typeof v === "object" && !(v instanceof Date)) return Object.entries(v).every(([op, valor]) => {
@@ -44,7 +45,7 @@ function ambiente({ acao = {}, mensagens = [entrada()], antesDaReserva } = {}) {
   };
   const executor = jest.fn(async () => ({ texto: "Nota emitida, número 71.", filaHumana: false, resultado: { status: "issued", numero: "71" } }));
   const conferirAcesso = jest.fn(async () => {});
-  const acoesDeps = { autorizarPermissaoDaAcao: jest.fn(async () => ({ ok: true })), autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true })) };
+  const acoesDeps = { resolveLegacyCompanyId: jest.fn(async () => null), autorizarPermissaoDaAcao: jest.fn(async () => ({ ok: true })), autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true })) };
   const processar = (texto = mensagens[0].corpo, extra = {}) => processarConfirmacaoGuiada({ conversa, mensagem: mensagens[0], sessao, texto, agora, client, conferirAcesso, executores: { EMITIR_NFSE: executor }, acoesDeps, log: { warn: jest.fn(), error: jest.fn() }, ...extra });
   return { atual, conversa, sessao, client, mensagens, executor, conferirAcesso, acoesDeps, processar };
 }
@@ -55,6 +56,15 @@ it("confirma pelo código exato, com todas as dimensões de escopo na reserva", 
   expect(a.executor).toHaveBeenCalledTimes(1);
   expect(a.atual).toMatchObject({ status: "executada", mensagemConfirmacaoId: "m1", respostaAoCliente: "Nota emitida, número 71." });
   expect(a.client.acaoPendenteWhatsapp.updateMany.mock.calls[0][0].where).toMatchObject({ conversaId: "c1", portalClientId: "p1", userId: "u1", conversa: { is: { mensagens: { none: { id: { notIn: ["m1"] } } } } } });
+});
+
+it("resultado fiscal inconclusivo bloqueia nova coleta, mesmo com ação executada", async () => {
+  const a = ambiente({ acao: { status: "executada", resultado: { nfseId: "nfse-1", indeterminado: true },
+    respostaAoCliente: "A equipe precisa conferir esta tentativa.", encaminharHumano: true } });
+  const r = await a.processar("Quero emitir outra nota");
+  expect(r).toMatchObject({ tratado: true, filaHumana: true });
+  expect(r.texto).toMatch(/conferir/);
+  expect(a.executor).not.toHaveBeenCalled();
 });
 
 it.each([

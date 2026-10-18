@@ -23,12 +23,18 @@ export async function prepararTomadorDoCliente(input, deps) {
   const companyId = await resolveLegacyCompanyId(input.portalClientId);
   const memoria = await (deps.buscarTomadoresEmitidos || buscarTomadoresEmitidos)({ prisma, companyId, documentos: [doc], log });
   const salvo = memoria.tomadores.get(doc);
+  // O coletor usa string vazia para uma remoção explícita; ausência/null continuam
+  // permitindo completar lacunas. Não recuperar dados que o cliente mandou retirar.
+  const removido = (valor) => typeof valor === "string" && valor.trim() === "";
+  const emailRemovido = removido(input.tomadorEmail);
+  const complementoRemovido = removido(input.endereco?.xCpl);
   const manual = preenchidos(input.endereco);
   if (manual.CEP) manual.CEP = normalizarCep(manual.CEP);
   const origens = {};
   const endereco = {};
   const incluirEndereco = (valores, fonte, sobrescrever = false) => {
     for (const [campo, valor] of Object.entries(preenchidos(valores))) {
+      if (campo === "xCpl" && complementoRemovido) continue;
       if (!sobrescrever && endereco[campo]) continue;
       endereco[campo] = valor;
       origens[`endereco.${campo}`] = fonte;
@@ -45,6 +51,8 @@ export async function prepararTomadorDoCliente(input, deps) {
     return null;
   };
   const tomador = { cnpjCpf: doc, nome: escolher("tomadorNome", input.tomadorNome, salvo?.nome), email: escolher("tomadorEmail", input.tomadorEmail, salvo?.email) };
+  if (emailRemovido) { tomador.email = ""; origens.tomadorEmail = "manual"; }
+  if (complementoRemovido) { endereco.xCpl = ""; origens["endereco.xCpl"] = "manual"; }
   const completarEnderecoConsultado = (dados, fonte) => {
     const recebido = preenchidos(dados);
     if (recebido.CEP) recebido.CEP = normalizarCep(recebido.CEP);
@@ -73,6 +81,7 @@ export async function prepararTomadorDoCliente(input, deps) {
     const consulta = await (deps.consultarCnpj || consultarCnpj)(doc, { municipios: await municipiosOficiais(), log, escopo: `empresa:${input.portalClientId}`, finalidade: 'EMISSOR' });
     if (consulta.ok) {
       for (const [campo, chave] of [["nome", "tomadorNome"], ["email", "tomadorEmail"]]) {
+        if (campo === "email" && emailRemovido) continue;
         if (!tomador[campo] && consulta.tomador?.[campo]) { tomador[campo] = consulta.tomador[campo]; origens[chave] = "cnpj"; }
       }
       const recebido = consulta.tomador?.endereco || camposDeEnderecoDaReceita(consulta.bruto, { municipios });

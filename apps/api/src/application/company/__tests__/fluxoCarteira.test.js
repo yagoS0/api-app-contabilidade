@@ -1,9 +1,37 @@
 import { projetarFluxoCarteira, MODELOS_OBRIGACOES_CARTEIRA } from '../../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 import { validarEdicaoTarefa } from '../../../../../../packages/shared/src/accounting/validarTarefaCarteira.js';
+import { complianceParcelamentos } from '../../accounting/parcelamento/pendenciasParcelamento.js';
 
 const empresa = (patch={}) => ({ companyId:'a', legacyCompany:{regimeTributario:'SIMPLES_NACIONAL'}, guideCompliance:{das:{required:true,state:'missing'}}, ...patch });
 const contexto = (patch={}) => ({competencia:'2026-09',lancamentos:{total:2,importados:0},...patch});
 const tarefa=(chave,patch={})=>({chave,versao:0,hash:'atual',dados:{},...patch});
+
+test.each([
+  ['enviada aguarda pagamento', { enviada: true, estado: 'CONSULTAR_PAGAMENTO' }, true],
+  ['documento faltante', { guideId: null, enviada: false, estado: 'OBTER_GUIA' }, false],
+  ['disponível sem envio', { enviada: false, estado: 'ENVIAR_GUIA' }, false],
+  ['débito automático', { guideId: null, formaPagamento: 'DEBITO_AUTOMATICO', estado: 'CONSULTAR_PAGAMENTO' }, true],
+  ['pagamento aguarda baixa', { pagamentoConfirmado: true, estado: 'CONTABILIZAR' }, true],
+])('envio separado do financeiro: %s', (_nome, patch, concluida) => {
+  const parcDas = complianceParcelamentos([{ guideId: 'parcela', formaPagamento: 'GUIA', pagamentoConfirmado: false, ...patch }]);
+  const c = empresa({ apuracao: { estado: 'transmitida' }, guideCompliance: { das: { required: true, state: 'enviada' }, parcDas } });
+  const antes = JSON.stringify(c);
+  const fluxo = projetarFluxoCarteira(c, contexto());
+  expect(fluxo.tarefas.find(t => t.chave === 'enviar_guias').concluida).toBe(concluida);
+  expect(fluxo.status.chave).toBe(concluida ? 'contabilizacao' : 'guias');
+  expect(parcDas.pendenciaOperacional).toBe(true);
+  expect(JSON.stringify(c)).toBe(antes);
+});
+
+test.each([true, false])('parcelas antiga e atual: envio atual comprovado %s', enviada => {
+  const parcDas = complianceParcelamentos([
+    { guideId: 'setembro', enviada: true, estado: 'CONSULTAR_PAGAMENTO', anterior: true },
+    { guideId: 'outubro', enviada, estado: enviada ? 'CONSULTAR_PAGAMENTO' : 'ENVIAR_GUIA' },
+  ]);
+  const fluxo = projetarFluxoCarteira(empresa({ apuracao: { estado: 'transmitida' }, guideCompliance: { das: { required: true, state: 'enviada' }, parcDas } }), contexto());
+  expect(fluxo.tarefas.find(t => t.chave === 'enviar_guias').concluida).toBe(enviada);
+  expect(parcDas.pendencias).toBe(2);
+});
 test('começa em apuração sem inventar conclusão ou guia',()=>{
   const f=projetarFluxoCarteira(empresa(),contexto());
   expect(f.status.chave).toBe('apuracao');expect(f.apuracao.rotulo).toBe('A apurar');expect(f.contabilizacao.rotulo).toBe('Aberto');

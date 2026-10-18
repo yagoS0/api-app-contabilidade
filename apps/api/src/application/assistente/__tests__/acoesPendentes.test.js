@@ -17,6 +17,7 @@
 import { confirmarEExecutar, criarPendencia, DEPS_PADRAO } from "../AcoesPendentesService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
+import { Prisma } from '@prisma/client';
 
 const AGORA = new Date("2026-09-03T12:00:00.000Z");
 const silencio = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -32,12 +33,16 @@ function clienteFalso({ acoes = [], guide = GUIA } = {}) {
   const tabela = new Map(acoes.map((a) => [a.id, { ...a }]));
   const casa = (a, where) => (
     (!where.id || a.id === where.id)
+    && (!where.OR || where.OR.some(w => casa(a, w)))
+    && (!where.tipo || a.tipo === where.tipo)
+    && (!where.resultado || (where.resultado.path ? where.resultado.path.reduce((v, k) => v?.[k], a.resultado) === where.resultado.equals : where.resultado.equals === Prisma.DbNull ? a.resultado == null : JSON.stringify(a.resultado) === JSON.stringify(where.resultado.equals)))
     && (!where.status || a.status === where.status)
     && (!where.conversaId || a.conversaId === where.conversaId)
     && (!where.portalClientId || a.portalClientId === where.portalClientId)
     && (!where.expiraEm?.gt || a.expiraEm > where.expiraEm.gt)
   );
   return {
+    $transaction: async fn => fn({ $queryRaw: async () => [{ acquired: true, alive: 1 }] }),
     _tabela: tabela,
     acaoPendenteWhatsapp: {
       updateMany: jest.fn(async ({ where, data }) => {
@@ -93,6 +98,65 @@ function pendencia(over = {}) {
 }
 
 describe("a reserva — uma execução, e só uma", () => {
+  it('integração ausente comprovadamente antes do POST permite novo resumo após correção', async () => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE })] });
+    const deps = depsFalsos();
+    deps.NfseService.issue.mockRejectedValueOnce(Object.assign(new Error('configuração ausente'), { code: 'NFSE_NOT_CONFIGURED', antesDoPost: true }));
+    const r = await confirmarEExecutar({ acaoId: 'ap1', conversaId: 'cv1', portalClientId: 'pc-1', agora: AGORA, client, log: silencio, deps });
+    expect(r.resultado).toMatchObject({ indeterminado: false, antesDoPost: true, nfseId: null });
+    await expect(criarPendencia({ conversaId: 'cv1', portalClientId: 'pc-1', tipo: TIPOS.EMITIR_NFSE, client })).resolves.toHaveProperty('acao.id');
+  });
+  it("E0014 inconclusivo preserva a tentativa, não afirma recusa e bloqueia nova preparação", async () => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE })] });
+    const deps = depsFalsos();
+    deps.NfseService.issue.mockResolvedValue({ status: "rejected", codigo: "E0014", nfse: { id: "nfse-1" } });
+    const r = await confirmarEExecutar({ acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio, deps });
+    expect(r.texto).not.toMatch(/Nada foi emitido|RECUSOU/);
+    expect(r.resultado).toMatchObject({ indeterminado: true, nfseId: "nfse-1" });
+    await expect(criarPendencia({ conversaId: "cv1", portalClientId: "pc-1", tipo: TIPOS.EMITIR_NFSE, client })).rejects.toMatchObject({ code: "NFSE_RESULTADO_INDETERMINADO" });
+    expect(client.acaoPendenteWhatsapp.create).not.toHaveBeenCalled();
+  });
+
+  it("vincula a tentativa antes do envio e conserva a referência se o resultado falhar", async () => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE, payload: { fingerprintConfirmacao: "fp" } })] });
+    const deps = depsFalsos();
+    deps.NfseService.issue.mockImplementation(async ({ antesDeEnviar, fingerprintConfirmado, exigirConfirmacao }) => {
+      expect(fingerprintConfirmado).toBe("fp"); expect(exigirConfirmacao).toBe(true);
+      await antesDeEnviar("nfse-1");
+      expect(client._tabela.get("ap1").resultado).toMatchObject({ nfseId: "nfse-1", indeterminado: true });
+      throw new Error("interrupção após envio");
+    });
+    const r = await confirmarEExecutar({ acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio, deps });
+    expect(r.resultado).toMatchObject({ nfseId: "nfse-1", indeterminado: true });
+    expect(deps.autorizarEmissaoDoCliente).toHaveBeenCalledTimes(2);
+  });
+
+  it("revogação durante a montagem impede o envio fiscal", async () => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE })] });
+    const deps = depsFalsos();
+    const enviar = jest.fn();
+    deps.autorizarEmissaoDoCliente.mockResolvedValueOnce({ ok: true }).mockResolvedValue({ ok: false });
+    deps.NfseService.issue.mockImplementation(async ({ antesDeEnviar }) => { await antesDeEnviar("nfse-1"); enviar(); });
+    const r = await confirmarEExecutar({ acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio, deps });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.filaHumana).toBe(true);
+  });
+
+  it("guarda final impede POST se acesso mudar depois do vínculo da tentativa", async () => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE })] });
+    const deps = depsFalsos();
+    const enviar = jest.fn();
+    deps.NfseService.issue.mockImplementation(async ({ antesDeEnviar, autorizarEnvioFinal }) => {
+      await antesDeEnviar("nfse-1");
+      deps.autorizarEmissaoDoCliente.mockResolvedValue({ ok: false });
+      await autorizarEnvioFinal();
+      enviar();
+    });
+    const r = await confirmarEExecutar({ acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio, deps });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.resultado.nfseId).toBe("nfse-1");
+  });
+
   it("⚠ DOIS turnos concorrentes com a MESMA pendência: o executor roda UMA vez", async () => {
     const client = clienteFalso({ acoes: [pendencia()] });
     const executor = jest.fn(async () => ({ texto: "feito", filaHumana: false, resultado: { ok: true } }));
@@ -243,4 +307,41 @@ describe("criarPendencia — uma por fio", () => {
     expect(client._tabela.get("ap1").status).toBe(STATUS.CANCELADA);
     expect(texto).toContain(`CONFIRMAR ${codigo}`);
   });
+});
+
+it.each(['cancelamento', 'finalizacao'])('fencing da ação preserva auditoria nova no ramo %s', async ramo => {
+  const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE, payload: {} })] });
+  const novo = { controleEmissaoToken: 'supervisor-novo', indeterminado: true, supervisoes: [{ id: 'auditoria', estado: 'EM_CONFERENCIA' }] };
+  const substituir = () => { client._tabela.get('ap1').resultado = novo; };
+  const deps = depsFalsos(ramo === 'cancelamento' ? { autorizarEmissaoDoCliente: jest.fn(async () => { substituir(); return { ok: false }; }) }
+    : { NfseService: { issue: jest.fn(async () => { substituir(); return { status: 'issued', nfse: { numeroNfse: '77' } }; }) } });
+  const promise = confirmarEExecutar({ acaoId: 'ap1', conversaId: 'cv1', portalClientId: 'pc-1', agora: AGORA, client, log: silencio, deps });
+  if (ramo === 'cancelamento') await expect(promise).rejects.toMatchObject({ code: 'NFSE_PEDIDO_ALTERADO' });
+  else expect((await promise).executou).toBe(false);
+  expect(client._tabela.get('ap1').resultado).toEqual(novo);
+  expect(client._tabela.get('ap1').status).toBe(STATUS.CONFIRMADA);
+});
+
+it.each([
+  ['autorizada', { status: 'issued', nfse: { id: 'nfse-1', numeroNfse: '77' } }, false],
+  ['resumo alterado', { codigo: 'NFSE_RESUMO_ALTERADO', antesDoPost: true }, false],
+  ['recusa conhecida', { status: 'rejected', codigo: 'E0001', camada: 'RECEITA' }, false],
+  ['validação local', { status: 'falha_envio', camada: 'NOSSA', antesDoPost: true }, false],
+  ['transporte', { status: 'falha_envio', camada: 'TRANSPORTE' }, true],
+  ['E0014', { status: 'rejected', codigo: 'E0014' }, true],
+])('resultado %s após vínculo persiste certeza explícita e conserva fencing', async (_nome, resultado, incerto) => {
+  const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE })] });
+  const deps = depsFalsos();
+  deps.NfseService.issue.mockImplementation(async ({ antesDeEnviar }) => {
+    await antesDeEnviar('nfse-1');
+    expect(client._tabela.get('ap1').resultado.indeterminado).toBe(true);
+    return resultado;
+  });
+  await confirmarEExecutar({ acaoId: 'ap1', conversaId: 'cv1', portalClientId: 'pc-1', agora: AGORA, client, log: silencio, deps });
+  const persistido = client._tabela.get('ap1').resultado;
+  expect(persistido.indeterminado).toBe(incerto); expect(persistido.controleEmissaoToken).toEqual(expect.any(String));
+  expect(persistido.nfseId).toBe('nfse-1'); expect(persistido.tentativaVinculadaEm).toEqual(expect.any(String));
+  const nova = criarPendencia({ conversaId: 'cv1', portalClientId: 'pc-1', tipo: TIPOS.EMITIR_NFSE, client });
+  if (incerto) await expect(nova).rejects.toMatchObject({ code: 'NFSE_RESULTADO_INDETERMINADO' });
+  else await expect(nova).resolves.toHaveProperty('acao.id');
 });

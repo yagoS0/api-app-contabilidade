@@ -55,6 +55,7 @@ import { whatsappPorCanal } from '../../application/whatsapp/CanalWhatsappServic
 import { associarNumeroConferido } from '../../application/whatsapp/AssociacaoNumeroComunicacaoService.js';
 
 import { comIntencaoEnvio, consultarIntencaoEnvio, recuperarIntencaoEnvio, erroAtendimento } from '../../application/whatsapp/IntencaoEnvioAtendimentoService.js';
+import { listarEmissoesInterrompidas, conferirEmissaoInterrompida } from '../../application/whatsapp/ConciliacaoEmissaoWhatsappService.js';
 import { lerRascunhoAtendimento, salvarRascunhoAtendimento, excluirRascunhoAtendimento } from '../../application/whatsapp/RascunhoAtendimentoService.js';
 import { prepararRetomadaAtendimento, solicitarModeloRetomada } from '../../application/whatsapp/RetomadaAtendimentoService.js';
 import { enriquecerMensagensWhatsapp, obterArquivoDaMensagem, salvarArquivoManual } from '../../application/whatsapp/HistoricoArquivoWhatsappService.js';
@@ -145,6 +146,40 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
 export function createWhatsappConversasRouter({ log, client = prisma, cloud = null, chatV2 = WHATSAPP_CHAT_V2, consultarModelo = null, criarModelo = null } = {}) {
   const router = Router({ mergeParams: true });
   router.use((_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
+
+  const segmentosFiscais = async req => {
+    const c = await conversaNoEscopo(req, req.params.conversaId, { client });
+    const visiveis = await empresasVisiveis(req);
+    if (!c || c.excluidaEm) throw Object.assign(new Error('Conversa fiscal não encontrada.'), { status: 404, code: 'CONVERSA_NAO_ENCONTRADA' });
+    const grupo = c.vinculoNumeroId ? await carregarGrupoIdentidade({ conversaId: c.id, visiveis, client })
+      : await grupoNoEscopo({ conversa: c, visiveis, client });
+    return (grupo?.segmentos || [c]).filter(s => s.portalClientId && visiveis.includes(s.portalClientId) && s.escopoVerificado && !s.excluidaEm);
+  };
+  const escopoFiscal = (req, id) => async () => {
+    const c = (await segmentosFiscais(req)).find(s => s.id === id);
+    if (!c) throw Object.assign(new Error('Conversa fiscal não encontrada.'), { status: 404, code: 'CONVERSA_NAO_ENCONTRADA' });
+    return c;
+  };
+  router.get('/whatsapp/conversas/:conversaId/emissoes-interrompidas', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try {
+      const segmentos = await segmentosFiscais(req);
+      const listas = await Promise.all(segmentos.map(c => listarEmissoesInterrompidas({ conversaId: c.id, conferirEscopo: escopoFiscal(req, c.id), client })));
+      return res.json({ itens: listas.flatMap(l => l.itens) });
+    }
+    catch (err) { return res.status(err.status || 500).json({ codigo: err.code || 'CONCILIACAO_FALHOU', message: err.status ? err.message : 'Não foi possível carregar as emissões.' }); }
+  });
+  router.post('/whatsapp/conversas/:conversaId/emissoes-interrompidas/:acaoId/conferir', async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try {
+      const segmentos = await segmentosFiscais(req);
+      const acao = await client.acaoPendenteWhatsapp.findFirst({ where: { id: req.params.acaoId, conversaId: { in: segmentos.map(s => s.id) }, portalClientId: { in: segmentos.map(s => s.portalClientId) }, tipo: 'EMITIR_NFSE' } });
+      if (!acao) return res.status(404).json({ codigo: 'ACAO_NAO_ENCONTRADA', message: 'Emissão não encontrada.' });
+      return res.json(await conferirEmissaoInterrompida({ conversaId: acao.conversaId, acaoId: acao.id,
+        versao: req.body?.versao, motivo: req.body?.motivo, autorId: req.auth?.user?.id, conferirEscopo: escopoFiscal(req, acao.conversaId), client }));
+    }
+    catch (err) { return res.status(err.status || 500).json({ codigo: err.code || 'CONCILIACAO_FALHOU', message: err.status ? err.message : 'Não foi possível conferir a emissão. Atualize o resultado antes de continuar.' }); }
+  });
 
   router.post("/whatsapp/empresas/:portalClientId/apelidos", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;

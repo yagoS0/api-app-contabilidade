@@ -1,5 +1,15 @@
 # Emissão nacional — proteção contra regressões
 
+## Conciliação supervisionada no suporte — 18/10/2026
+
+O pedido do usuário autoriza concluir a recuperação supervisionada, mantendo R19/R20 da referência operacional. Não é autorização para emitir notas fictícias ou repetir uma tentativa incerta. O comando do contador identifica ação, empresa, versão, motivo e autor; consultar não envia mensagens nem reativa IA. Histórico de consultas e respostas tardias precisa sobreviver à concorrência. Uma operação diferente, 404 ou timeout continuam sem autorizar reenvio.
+
+`pending` só pode ser consultado pelo protocolo supervisionado interno, compartilhado com o executor WhatsApp; não aceitar booleano vindo de rota como prova de exclusão. A expiração de uma transação não prova encerramento do HTTP: verificar controle antes de cada chamada e preservar desfecho tardio sem sobrescrever a conciliação. Rotas existentes continuam recusando `pending` sem esse protocolo.
+
+A publicação é em duas fases. `NFSE_CONCILIACAO_SUPERVISIONADA_ENABLED` nasce desligada; o executor já usa o protocolo de exclusão. Só habilitar o comando após comprovar que todas as instâncias anteriores a esse protocolo encerraram. Ao reverter para código antigo, primeiro desligar a supervisão e drenar as instâncias habilitadas. Não confundir essa chave técnica com flags de IA, menu ou audiência de clientes.
+
+Testes usam dados sintéticos e PostgreSQL descartável. Conferência local com serviço fiscal simulado não comprova consulta externa em produção. Evidências, revisão e estado da publicação ficam em `docs/auditoria-guias-emissao-20261018.md`, na raiz.
+
 ## Conciliação de DPS ocupada — 13/10/2026, PR #163
 
 `conciliacaoDps.js` apenas consulta e compara documentos. A decisão de persistir ou reservar outra numeração pertence a `NfseService`. Preservar as três saídas:

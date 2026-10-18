@@ -28,6 +28,37 @@ function contexto(salvo = null, overrides = {}) {
 }
 
 describe("tomador preparado a partir dos dados existentes", () => {
+  it("remoção explícita de e-mail e complemento vence a memória e sobrevive a nova preparação", async () => {
+    const deps = contexto(SALVO);
+    const r = await prepararTomadorDoCliente({ ...BASE, tomadorEmail: "", endereco: { xCpl: "" } }, deps);
+    expect(r.ok).toBe(true);
+    expect(r.tomador.email).toBe("");
+    expect(r.tomador.endereco.xCpl).toBe("");
+    expect(r.tomador.endereco.nro).toBe(SALVO.nro);
+    expect(r.origens).toMatchObject({ tomadorEmail: "manual", "endereco.xCpl": "manual" });
+    const repetida = await prepararTomadorDoCliente({ ...BASE, tomadorEmail: r.tomador.email, endereco: r.tomador.endereco }, deps);
+    expect(repetida.tomador.email).toBe("");
+    expect(repetida.tomador.endereco.xCpl).toBe("");
+  });
+
+  it("consulta de CNPJ não restaura opcionais removidos quando completa campos obrigatórios", async () => {
+    const deps = contexto(null, { consultarCnpj: jest.fn(async () => ({ ok: true, tomador: {
+      nome: "Consultado", email: "consulta@example.invalid", endereco: ENDERECO,
+    } })) });
+    const r = await prepararTomadorDoCliente({ ...BASE, tomadorEmail: " ", endereco: { xCpl: "" } }, deps);
+    expect(r.ok).toBe(true);
+    expect(deps.consultarCnpj).toHaveBeenCalledTimes(1);
+    expect(r.tomador.email).toBe("");
+    expect(r.tomador.endereco.xCpl).toBe("");
+    expect(r.tomador.nome).toBe("Consultado");
+  });
+
+  it("opcionais ausentes ou nulos continuam aproveitando a memória", async () => {
+    const r = await prepararTomadorDoCliente({ ...BASE, tomadorEmail: null, endereco: { xCpl: null } }, contexto(SALVO));
+    expect(r.tomador.email).toBe(SALVO.email);
+    expect(r.tomador.endereco.xCpl).toBe(SALVO.xCpl);
+  });
+
   it("memória usa a Company legada e só o documento solicitado", async () => {
     const deps = contexto(SALVO);
     const r = await prepararTomadorDoCliente(BASE, deps);

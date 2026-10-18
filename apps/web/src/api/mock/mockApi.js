@@ -30,7 +30,7 @@ import { faker } from "@faker-js/faker";
 
 faker.seed(20260127);
 
-function delay(ms = 250) {
+function defaultDelay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -3829,7 +3829,9 @@ const prepararConversaComercialMock = (o, body) => {
       return id;
     };
 
-export function createMockApi() {
+// A latência é apresentação da demonstração, independente da persistência e das regras.
+// Testes de contrato podem injetar uma espera determinística sem substituir os métodos reais.
+export function createMockApi({ delay = defaultDelay } = {}) {
   for (const o of mockOnboardings.values()) {
     if (o.contatoComercialMock) prepararConversaComercialMock(o, o.contatoComercialMock);
   }
@@ -7988,6 +7990,26 @@ export function createMockApi() {
       } };
     },
     whatsappContratoV2: true,
+    async listarEmissoesInterrompidasWhatsapp(conversaId) {
+      const conversa = mockConversasWhatsapp.find(c => c.id === String(conversaId));
+      if (!conversa) throw Object.assign(new Error('Conversa não encontrada.'), { status: 404 });
+      const itens = JSON.parse(localStorage.getItem('mock:whatsapp:emissoes-interrompidas') || '[]');
+      return { ok: true, itens: itens.filter(i => i.conversaId === conversa.id && i.portalClientId === conversa.portalClientId) };
+    },
+    async conferirEmissaoInterrompidaWhatsapp(conversaId, acaoId, { versao, motivo }) {
+      if (typeof motivo !== 'string' || motivo.trim().length < 10 || motivo.trim().length > 1000) throw Object.assign(new Error('Informe o motivo com 10 a 1000 caracteres.'), { status: 400 });
+      const { itens } = await this.listarEmissoesInterrompidasWhatsapp(conversaId);
+      const item = itens.find(i => i.acaoId === acaoId);
+      if (!item) throw Object.assign(new Error('Emissão não encontrada.'), { status: 404 });
+      if (!item.podeConferir || item.versao !== versao) throw Object.assign(new Error('O pedido mudou. Atualize os resultados.'), { status: 409 });
+      // Demonstração local: registra uma análise, sem presumir emissão ou consultar provedor.
+      const atual = { ...item, versao: `${versao}:conferida`, situacao: item.tentativa ? 'INCONCLUSIVA' : 'LEGADO_SEM_TENTATIVA',
+        mensagem: 'Demonstração: resultado permanece pendente de prova. Nenhuma emissão foi realizada.',
+        historico: [...(item.historico || []), { motivo: motivo.trim(), iniciadaEm: new Date().toISOString(), concluidaEm: new Date().toISOString(), estado: 'INCONCLUSIVA' }] };
+      const todos = JSON.parse(localStorage.getItem('mock:whatsapp:emissoes-interrompidas') || '[]');
+      localStorage.setItem('mock:whatsapp:emissoes-interrompidas', JSON.stringify(todos.map(i => i.acaoId === acaoId && i.conversaId === conversaId ? atual : i)));
+      return { ok: true, item: atual, estado: atual.situacao, recuperada: false, message: atual.mensagem };
+    },
     async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50, q = "", relacionamento = "", naoLidas = false, area = "" } = {}) {
       if (!['', 'suporte', 'comercial'].includes(area)) throw new Error('Área de atendimento inválida.');
       await delay(120);

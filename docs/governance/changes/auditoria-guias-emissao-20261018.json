@@ -1,0 +1,57 @@
+{
+  "summary": "Conciliação supervisionada de emissões interrompidas no suporte, correção do timeout do teste de onboarding e correções de confirmação NFS-e/estado de envio/concorrência de guias.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "baseCommit": "d6e7daefbaf94b2be94595bb750438130408636c",
+  "status": "final_validation_in_progress",
+  "operationalImpact": "Adequação a regras existentes R01-R22/R25/R26, preservando R29 e decisões pendentes. Entrega não é pagamento; confirmação deve refletir configuração vigente; incerteza fiscal impede reemissão. Nenhum tributo, permissão, piloto, mensagem, dado real ou regra operacional alterado em produção. Referência canônica e snapshot conciliados.",
+  "reviewProcess": "Controlador iniciado em 2026-10-18T22-03-06-038Z-d8893f7b, interrompido pelo Principal após executor entregar somente onboarding; journal preservado. Continuação com autores e revisores nativos independentes. Reprovações de guardas, fencing, certeza do resultado e UI corrigidas e revistas. Catálogo e gates inalterados; não se declara ready_for_human do controlador. Parecer backend/UI de audit_guides_cycle e sistêmico de audit_isolation_design; guias revisadas por autor independente audit_isolation_design. Configuração/CLAUDE e compatibilidade dos verificadores tratadas pelo Principal com revisão independente.",
+  "tests": [
+    "150 testes dirigidos backend em quatro suítes aprovados; revisor repetiu independentemente 28 casos incluindo certeza pós-vínculo e fencing. PostgreSQL final confirmou exclusão, expiração da transação, CAS e preservação de desfechos tardios, com provedor sintético.",
+    "Onboarding: nove casos mantidos, limite 20 s mantido, recargas e assertions preservadas. Caso de contratação passou em 640 ms, revisões independentes 743/716 ms. Somente latência sintética e recarga da biblioteca Faker foram eliminadas do ensaio.",
+    "UI: 12 testes direcionados aprovados; revisão visual local sintética em 1440/390/360 px, teclado, vazio, legado, processamento e conciliação inconclusiva persistida após recarga; sem chamadas externas.",
+    "Gate de dados aprovado: Prisma validate, auditoria de migrations, 204 migrations sem pendência, sete cenários DRE e fluxo de caixa em PostgreSQL local descartável. Seis URLs inválidas bloqueadas antes de importar Prisma; quatro controles positivos com import interceptado. Alteração limitada à aceitação de sufixo _governance_test pelos verificadores; gate inalterado.",
+    "Governança: 63 testes aprovados. Build web final aprovado; build portal anterior aprovado e fontes portal/shared inalteradas desde o teste anterior. Portal: 99 suítes/1580 testes aprovados no checkpoint preservado.",
+    "Web completo aprovado: 498 suítes/5567 testes, incluindo onboarding 9/9 e contratação/recargas em 2280 ms. Única alteração de fonte web durante a bateria: captura estável da referência no cleanup de EmissoesInterrompidas; seus 12 testes, lint e revisão independente foram renovados, assim como a validação visual. API ainda em execução."
+  ],
+  "rollback": "Desabilitar NFSE_CONCILIACAO_SUPERVISIONADA_ENABLED e drenar instâncias habilitadas antes de restaurar binário anterior. Preservar ações, tentativas, provas e histórico. Publicação inicial com flag ausente/0; habilitar 1 somente após comprovar retirada de TODOS os executores antigos (API/worker/réplicas). Sem migration ou backfill operacional.",
+  "humanDecisions": [
+    "Integração e publicação condicional já autorizadas para este incremento.",
+    "Prova externa fiscal integral depende de caso legítimo autorizado; não emitir documento fictício em produção.",
+    "Matriz fiscal/cadência e liberação geral da IA fora do piloto não são aprovadas por esta correção. Piloto encerrado permanece desligado."
+  ],
+  "remainingWork": [
+    "Concluir gate geral API, consolidar revisão final, CI do PR e integração autorizada.",
+    "Publicar em duas fases, verificar retirada de executores antigos, habilitação e funcionamento produtivo somente leitura.",
+    "Integração externa fiscal não certificada por testes sintéticos; legado sem vínculo permanece em análise auditada."
+  ],
+  "previousCheckpoint": {
+    "status": "partial_not_ready",
+    "sourceFingerprint": "3309b88e432ed760a23fa44cec215afaeef9641aed42946ac96c3003fa6ea9c4",
+    "tests": [
+      "Tomador: 24 testes e revisão independente; assistente/resumo: 64 testes e revisão independente; confirmação/recuperação final: 59 testes.",
+      "Guias finais: 59 testes; PostgreSQL aprovou seis grupos, incluindo CAS de SQL NULL/JSON null e alteração exclusiva de valor com timestamp idêntico. Reprovações independentes corrigidas e reproduzidas novamente pelo revisor, sem alterar gates.",
+      "NFSE: testes dirigidos de fingerprint, emissão, conciliação e autorização passaram; guardas reprovadas foram corrigidas. Gate API inicial falhou em fixtures sem XML autorizado; três fixtures corrigidas preservando assertions, 73 testes passaram.",
+      "PostgreSQL descartável: persistência, isolamento, reserva concorrente, replay, revogação, vínculo antes do envio, bloqueio de resultado incerto e recuperação por prova local passaram. Executor WhatsApp real com serviço fiscal sintético; nenhuma emissão externa.",
+      "PostgreSQL R25/R26: 16 cenários passaram, incluindo baixa seletiva, encargos, revisão antiga, concorrência, mês fechado e rollback de auditoria.",
+      "Governança: 63 testes passaram. Portal: 99 suítes/1580 testes passaram. Builds web e portal passaram, mantendo avisos de chunks preexistentes.",
+      "API ampla: 611 suítes, 610 aprovadas e uma condicional preexistente pendente; 10743 testes passaram e um permaneceu pendente. Durante essa execução houve ajustes finais delimitados em registro de recálculo e preservação de nfseId; portanto não se declara snapshot integral inalterado. Após congelar as fontes, TODOS os 14 arquivos de testes modificados foram repetidos: 411 testes passaram. PostgreSQL guias também repetido e aprovado nas fontes finais.",
+      "Gate web REPROVADO no batch3: funilMock.test.js, contratação após recarga, timeout20000ms. Repetição isolada: 8 passaram/1 falhou. Revisor reproduziu exatamente no checkout limpo54cd81f0, cujos web/shared/package/lock são idênticos ao base d6e7daefb: 8 passaram/1 timeout. Falha preexistente neste ambiente; limite/assertions/gates não alterados. NÃO é gate aprovado, nem certificação de todos os testes web.",
+      "Produção somente leitura: guia DAS/parcela enviadas e lidas, pagamento aberto, etapa Guias divergente. Inspeção de consumidores UI confirmou acompanhamento financeiro na área de parcelamentos; sem nova inspeção visual da versão local."
+    ]
+  },
+  "authorization": "Pedido atual do usuário autoriza integrar na main e publicar em produção após revisões e testes aprovados. Não autoriza emitir nota fictícia, reabrir piloto WhatsApp, reenviar guias ou alterar dados reais como teste."
+}

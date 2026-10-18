@@ -69,9 +69,12 @@ function montarMocks({ flagLigada, perfil, ibscbsLigada = false, regimeDoCadastr
         post: jest.fn(async (_url, body) => {
           // ⚠ O XML sai do corpo REAL enviado — gzip+base64 —, não de um retorno de conveniência.
           // É o único jeito de a comparação ser sobre o que a Receita receberia.
-          const { gunzipSync } = require("node:zlib");
+          const { gunzipSync, gzipSync } = require("node:zlib");
           XML_ENVIADO.push(gunzipSync(Buffer.from(body.dpsXmlGZipB64, "base64")).toString("utf-8"));
-          return { data: { status: "issued", chaveAcesso: "3".repeat(50), numeroNfse: "18" } };
+          const xml = XML_ENVIADO.at(-1);
+          const chaveAcesso = '3'.repeat(50);
+          const oficial = `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS${chaveAcesso}"><nNFSe>18</nNFSe><cStat>100</cStat>${xml.slice(xml.indexOf('<DPS'))}</infNFSe></NFSe>`;
+          return { data: { chaveAcesso, nfseXmlGZipB64: gzipSync(oficial).toString('base64') } };
         }),
         get: jest.fn(async () => ({ status: 200, data: {} })),
         head: jest.fn(async () => ({ status: 200 })),

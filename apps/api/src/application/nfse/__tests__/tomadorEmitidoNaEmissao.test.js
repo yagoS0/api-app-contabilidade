@@ -74,6 +74,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
 });
 
 import axios from "axios";
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
 import { registrarTomadorEmitido } from "../tomadorEmitido.js";
@@ -123,11 +124,13 @@ function montarCenario({ respostaProvedor } = {}) {
   prisma.cadastroFiscal.findUnique.mockResolvedValue(null);
   axios.create.mockReturnValue({
     defaults: { baseURL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional" },
-    post: jest.fn(async () =>
-      respostaProvedor === undefined
-        ? { data: { status: "issued", chaveAcesso: "3".repeat(50), numeroNfse: "18" } }
-        : respostaProvedor()
-    ),
+    post: jest.fn(async (_url, body) => {
+      if (respostaProvedor !== undefined) return respostaProvedor();
+      const xml = gunzipSync(Buffer.from(body.dpsXmlGZipB64, 'base64')).toString('utf8');
+      const chaveAcesso = '3'.repeat(50);
+      const oficial = `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS${chaveAcesso}"><nNFSe>18</nNFSe><cStat>100</cStat>${xml.slice(xml.indexOf('<DPS'))}</infNFSe></NFSe>`;
+      return { data: { chaveAcesso, nfseXmlGZipB64: gzipSync(oficial).toString('base64') } };
+    }),
   });
 }
 

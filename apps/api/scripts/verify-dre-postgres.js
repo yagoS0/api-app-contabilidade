@@ -7,8 +7,8 @@ const arg = process.argv.indexOf("--url");
 const url = new URL((arg >= 0 ? process.argv[arg + 1] : process.env.DATABASE_URL) || "invalid:");
 if (!["postgresql:", "postgres:"].includes(url.protocol)
   || !["127.0.0.1", "localhost"].includes(url.hostname)
-  || !/^\/[a-zA-Z0-9_]+_check$/.test(url.pathname)) {
-  throw new Error("Use somente PostgreSQL descartável local com nome terminado em _check, via --url ou DATABASE_URL.");
+  || !/^\/[a-zA-Z0-9_]+_(?:check|governance_test)$/.test(url.pathname)) {
+  throw new Error("Use somente PostgreSQL descartável local com nome terminado em _check ou _governance_test, via --url ou DATABASE_URL.");
 }
 process.env.DATABASE_URL = url.href;
 globalThis.fetch = async () => { throw new Error("Provedores externos proibidos neste ensaio."); };

@@ -1,4 +1,32 @@
 import { createRealApi } from "../realApi";
+import { createMockApi } from '../../mock/mockApi';
+
+test('mock da conferência preserva escopo, versão e histórico sem simular emissão', async () => {
+ const api = createMockApi({ delay: async () => {} });
+ const { conversas } = await api.listarConversasWhatsapp();
+ const conversa = conversas.find(c => c.portalClientId);
+ expect(conversa).toBeTruthy();
+ const chave = 'mock:whatsapp:emissoes-interrompidas';
+ const item = { conversaId: conversa.id, portalClientId: conversa.portalClientId, acaoId: 'teste-acao', versao: 'v1', podeConferir: true, tentativa: { id: 'nota-ficticia' }, historico: [] };
+ localStorage.setItem(chave, JSON.stringify([item, { ...item, acaoId: 'alheia', portalClientId: 'outra-empresa' }]));
+ try {
+  expect((await api.listarEmissoesInterrompidasWhatsapp(conversa.id)).itens).toEqual([item]);
+  const r = await api.conferirEmissaoInterrompidaWhatsapp(conversa.id, item.acaoId, { versao: 'v1', motivo: 'Conferir teste sintético' });
+  expect(r).toMatchObject({ recuperada: false, item: { situacao: 'INCONCLUSIVA', historico: [{ motivo: 'Conferir teste sintético' }] } });
+  await expect(api.conferirEmissaoInterrompidaWhatsapp(conversa.id, item.acaoId, { versao: 'v1', motivo: 'Conferir teste sintético' })).rejects.toMatchObject({ status: 409 });
+  expect((await api.listarEmissoesInterrompidasWhatsapp(conversa.id)).itens[0].versao).toBe(r.item.versao);
+ } finally { localStorage.removeItem(chave); }
+});
+
+test('conferência supervisionada usa ação e versão, sem caminho de emissão', async () => {
+ const api = createRealApi();
+ await api.listarEmissoesInterrompidasWhatsapp('cv/1');
+ expect(fetch.mock.calls[0][0]).toMatch(/conversas\/cv%2F1\/emissoes-interrompidas$/);
+ await api.conferirEmissaoInterrompidaWhatsapp('cv/1', 'a/2', { versao: 'v1', motivo: 'Conferir resultado fiscal', companyId: 'ignorado' });
+ expect(fetch.mock.calls[1][0]).toMatch(/emissoes-interrompidas\/a%2F2\/conferir$/);
+ expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ versao: 'v1', motivo: 'Conferir resultado fiscal' });
+ expect(fetch.mock.calls[1][1].method).toBe('POST');
+});
 test("seleção de empresa é uma ação; filtro de histórico é somente leitura", async () => {
  const api = createRealApi();
  await api.selecionarEmpresaConversaWhatsapp("cv/1", "pc-2");
