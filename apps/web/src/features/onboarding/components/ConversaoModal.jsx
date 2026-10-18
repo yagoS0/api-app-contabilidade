@@ -61,6 +61,22 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   const [consultando, setConsultando] = useState(false);
   const [avisoConsulta, setAvisoConsulta] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const erroRef = useRef(null);
+  useEffect(() => {
+    if (!erro || enviando) return;
+    // A recusa pode chegar com o usuário no rodapé do formulário longo.
+    // Esperar o envio terminar também cobre uma nova tentativa com o mesmo erro.
+    erroRef.current?.focus({ preventScroll: true });
+    erroRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+  }, [erro, enviando]);
+  const [externa, setExterna] = useState(false);
+  const [revisaoExterna, setRevisaoExterna] = useState(null);
+  const [justificativa, setJustificativa] = useState('');
+  const [evidencia, setEvidencia] = useState('');
+  const excecaoAplicavel = onboarding.conversao?.excecaoAplicavel === true;
+  const externaAtual = externa && revisaoExterna?.id === onboarding.id && revisaoExterna?.versao === onboarding.versao;
+  const autorizacaoComercial = (!externa && onboarding.conversao?.contratoConferido === true) || (excecaoAplicavel && externaAtual && justificativa.trim().length >= 10 && evidencia.trim().length >= 10);
+  const contextoContratacao = () => externaAtual && excecaoAplicavel ? { contratacaoExterna: { confirmada: true, justificativa, evidencia, versao: revisaoExterna.versao } } : {};
 
   const checklistSenha = useMemo(() => passwordChecklist(form.ownerPassword), [form.ownerPassword]);
   const senhaOk = checklistSenha.every((r) => r.ok);
@@ -73,6 +89,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   const camposEndereco = ["rua", "numero", "bairro", "cidade", "uf", "cep"];
   const enderecoCompleto = camposEndereco.every((c) => String(form.endereco[c] || "").trim());
   const podeConverter =
+    autorizacaoComercial &&
     soDigitosCnpj(form.cnpj).length === 14 &&
     String(form.razaoSocial).trim() &&
     REGIMES_ACEITOS.some((r) => r.valor === form.regimeTributario) &&
@@ -118,6 +135,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   }
 
   async function confirmar() {
+    if (!podeConverter || enviando) return;
     // ⚠ Confirmação final repetindo razão social + CNPJ + e-mail do dono. A criação de empresa é
     // irreversível na prática (o CNPJ é imutável depois, e desfazer exige excluir a empresa).
     const resumo =
@@ -127,7 +145,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
 
     setEnviando(true);
     try {
-      await onConverter(payloadConversao(form, { senhaExigida }));
+      await onConverter({ ...payloadConversao(form, { senhaExigida }), ...contextoContratacao() });
     } finally {
       setEnviando(false);
     }
@@ -149,6 +167,24 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
       </div>}
     >
       <div className="onboarding-conversion">
+        <div className="onboarding-panel">
+          <strong>Requisitos e efeitos de adicionar à carteira</strong>
+          <p>Com proposta registrada, o servidor exige proposta aceita, contrato recorrente da opção aceita com assinatura conferida e pagamento desse contrato conferido.</p>
+          <p>Sem contratação confirmada, a entrada normal fica bloqueada. O cadastro definitivo e as permissões são validados ao confirmar.</p>
+          {externa && !excecaoAplicavel && <p role="status">A contratação mudou e a exceção não está mais disponível. Feche este modal e confira a contratação atual antes de continuar.</p>}
+          {excecaoAplicavel && <fieldset disabled={enviando}>
+            <legend>Cliente já contratado externamente</legend>
+            <label><input type="checkbox" checked={externaAtual} onChange={e => { setExterna(e.target.checked); setRevisaoExterna({ id: onboarding.id, versao: onboarding.versao }); setForm(atual => ({ ...atual, cadastroConferido: false })); }} /> Registrar contratação externa ao adicionar à carteira</label>
+            {externa && !externaAtual && <p role="status">A ficha mudou. Confira a versão atual e confirme novamente a contratação externa. Seus textos foram preservados.</p>}
+            {externa && <>
+              <Campo rotulo="Justificativa da exceção" obrigatorio><textarea style={INPUT} rows={3} maxLength={2000} value={justificativa} onChange={e => setJustificativa(e.target.value)} /></Campo>
+              <Campo rotulo="Evidência ou referência da contratação externa" obrigatorio ajuda="Informe de 10 a 2000 caracteres em cada campo. O registro preserva sua autoria e a data; não cria assinatura ou pagamento interno."><textarea style={INPUT} rows={3} maxLength={2000} value={evidencia} onChange={e => setEvidencia(e.target.value)} /></Campo>
+            </>}
+          </fieldset>}
+          {onboarding.conversao?.motivo && <p role="status">{onboarding.conversao.motivo}</p>}
+          {onboarding.conversao?.semProposta && <p>Esta ficha não possui proposta registrada.</p>}
+          <p>A empresa entra na carteira e preserva documentos e histórico. A implantação continua pendente de suas próprias tarefas; adicionar à carteira não a conclui. Serviços avulsos e pessoa física mantêm seus fluxos próprios.</p>
+        </div>
         <p style={{ margin: "0 0 var(--space-4)", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 }}>
           Confira os dados definitivos do registro. Sócios e capital vêm da ficha para sua revisão;
           a consulta pública completa os dados cadastrais. Os PDFs recebidos, a proposta aceita e
@@ -156,7 +192,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         </p>
 
         {conflito && (
-          <div style={avisoStyle("var(--state-warn)")}>
+          <div ref={erroRef} role="alert" aria-atomic="true" tabIndex={-1} style={avisoStyle("var(--state-warn)")}>
             <strong style={{ color: "var(--state-warn)" }}>Este CNPJ já está na carteira.</strong>
             <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
               {conflito.payload?.razao ? `${conflito.payload.razao} — ` : ""}
@@ -165,8 +201,8 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
             <Button
               size="sm"
               type="button"
-              onClick={() => onVincular(conflito.payload?.portalClientId, soDigitosCnpj(form.cnpj))}
-              disabled={!conflito.payload?.portalClientId}
+              onClick={async () => { if (enviando || !autorizacaoComercial) return; setEnviando(true); try { await onVincular(conflito.payload?.portalClientId, soDigitosCnpj(form.cnpj), contextoContratacao()); } finally { setEnviando(false); } }}
+              disabled={!conflito.payload?.portalClientId || !autorizacaoComercial || enviando}
             >
               Vincular ao existente
             </Button>
@@ -174,7 +210,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         )}
 
         {erro && !conflito && (
-          <div style={avisoStyle("var(--state-warn)")}>
+          <div ref={erroRef} role="alert" aria-atomic="true" tabIndex={-1} style={avisoStyle("var(--state-warn)")}>
             <strong style={{ color: "var(--state-warn)" }}>Não foi possível criar a empresa</strong>
             <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{erro.message}</span>
           </div>

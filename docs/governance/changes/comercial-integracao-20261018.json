@@ -1,0 +1,28 @@
+{
+  "summary": "Integrar coerência comercial P0 e contratação R27/R28: oportunidade ganha na assinatura conferida, implantação habilitada, carteira condicionada ao pagamento e exceção externa explícita auditada. Executar confirmation-postgres em todo PR, conforme proteção já obrigatória.",
+  "risk": "high",
+  "domains": ["accounting", "api", "ci", "commercial", "communication", "documentation", "fiscal", "governance", "guides", "operations", "portal", "shared", "web"],
+  "operationalImpact": "R27/R28 aprovadas pelo usuário em 18/10/2026, seção22 e T31-T38 na referência reconciliada SHA256 6bb908ffec9fe153371b2ca2bbb606043d9a00068ce2f4fd74464e4dbc0e1bef. Preserva R19-R23, permissões existentes, PF/avulso e histórico convertido. P0 alinha projeções e preserva implantação/rascunhos. Sem nova regra fiscal, migração ou backfill. Ajuste CI somente remove filtro de caminhos do evento pull_request: job, testes, serviços e proteções inalterados; amplia execução do check obrigatório. Correção posterior de fixtures PostgreSQL comerciais sem impacto operacional: relê a versão persistida após assinatura, testa recusa da revisão antiga sem efeitos e preserva as guardas de prazo da fila; serviços, runtime, gates e regras R19/R20/R27/R28 inalterados.",
+  "tests": [
+    "Runtime bbe24d5f rodada2: seis gates aprovados no snapshot integral 90503561bd7828e1e78521688cf2c65f71f71c153fa528b7921237075827179d: governança63; API10565 aprovados e1 pendente; web5537; portal1580; builds web/portal.",
+    "Lint web ESLint8 aprovado. PostgreSQL descartável:28 verificações de abertura, contratação, auditoria, rollback, concorrência e mensagens sintéticas; cluster encerrado. Fontes de serviços e ensaios inalteradas após sua execução.",
+    "Chrome local sintético1440/390:8 cenários modal, lista/ficha/chat e recarga, teclado Tab/Space/Enter/Escape, erro visível/focado com role alert e rascunhos preservados. Sem chamada a provedor real, envio ou ato fiscal.",
+    "Continuação autorizada commercial-20261018:7 pareceres read-only aprovados, incluindo sistêmico sobre43arquivos desde main711990eff. Revisões independentes adicionais de integração dos11domínios de produto e governança aprovadas. Journal original preservado escalado por limite40; não reclassificado como ready_for_human.",
+    "Correção do fixture após reprovação real de lead-postgres no PR229: verify-commercial-lead-postgres e checks-jornada-canais usam revisão atual após assinatura; versão antiga rejeitada sem ficha/eventos/alteração. Job SITFIS sintético futuro permanece pendente sem tentativas/consulta, job vencido conclui uma vez. Três verificadores completos na sequência do workflow passaram em PostgreSQL descartável sem provedores: comercial, abertura e contingência; cluster encerrado. Evidência local postgres-1792330773683. Checks remotos do novo SHA continuam obrigatórios.",
+    "CI: comparação estrutural js-yaml comprova alteração exclusiva de on.pull_request.paths; jobs e push idênticos. Parecer independente do ajuste aprovado; revisão sistêmica final e checks do SHA do PR são condições de merge, não resultados presumidos neste registro."
+  ],
+  "rollback": "Reverter via PR protegido somente o commit integrado e republicar API, escritório e portal pelo Railway no SHA anterior comprovado. Preservar empresas, documentos, contratos, pagamentos e eventos de auditoria; não restaurar/apagar banco. Não há nova migração. Reversão da guarda comercial pode reintroduzir compatibilidade sem contratação e exige análise explícita desse risco.",
+  "humanDecisions": [
+    "Usuário autorizou explicitamente em18/10/2026 continuar pareceres e revisão sistêmica e, passando tudo, publicar na main em produção. Aprovação condicional pelo Orquestrador; não equivale a dispensar CI, revisão ou proteção de branch.",
+    "V02/V03/V05-V08 continuam pendentes e fora deste incremento. Nenhum teste autoriza mensagem, cobrança, assinatura, pagamento ou ato fiscal real."
+  ],
+  "integrationBase": "711990eff25fae68106a09505f4e4d326dd057cf",
+  "testedProductFingerprint": "90503561bd7828e1e78521688cf2c65f71f71c153fa528b7921237075827179d",
+  "originalRun": "2026-10-18T10-36-41-629Z-bbe24d5f",
+  "continuation": "commercial-20261018",
+  "limitations": [
+    "Desempenho com histórico volumoso e ensaio SQL opcional não homologados; um teste API permanece pendente, não aprovado.",
+    "QA de componentes e mock não certifica jornada autenticada completa, percurso avulso completo, leitor de tela real nem provedores externos.",
+    "Evidências brutas locais permanecem ignoradas para não publicar conteúdo sensível de prompts/logs. Este registro descreve evidências; o gate de estrutura não autentica pareceres."
+  ]
+}

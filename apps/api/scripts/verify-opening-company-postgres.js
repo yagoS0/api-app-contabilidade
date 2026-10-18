@@ -12,7 +12,8 @@ import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixt
 const url = new URL(process.argv[2]);
 const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && ["/lead_flow_check_v2", "/lead_flow_final_20260921"].includes(url.pathname));
 const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
-if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Use somente o PostgreSQL descartável nos alvos explícitos de teste.");
+const descartavel = process.env.ONBOARDING_LOCAL_CHECK === '1' && process.env.NODE_ENV === 'test' && url.hostname === '127.0.0.1' && url.username === 'lead_test' && url.pathname === '/onboarding_alignment_check' && Number(url.port) >= 1024 && Number(url.port) <= 65535;
+if (url.protocol !== "postgresql:" || !(local || ci || descartavel)) throw Error("Use somente o PostgreSQL descartável nos alvos explícitos de teste.");
 const pasta = process.env.OPENING_TEST_OUTPUT || await fs.mkdtemp(path.join(os.tmpdir(), "abertura-completa-"));
 await fs.mkdir(pasta, { recursive: true });
 Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", INTEGRACAO_IA_COMERCIAL: "0", INTEGRACAO_WHATSAPP: "0", INTEGRACAO_FISCAL_LEADS: "0", GUIDE_STORAGE_PROVIDER: "LOCAL", GUIDE_LOCAL_STORAGE_DIR: path.join(pasta, "storage"), CERT_SECRET_KEY: "SOMENTE-TESTE-LOCAL-ABERTURA-SEM-DADOS-REAIS", AWS_KMS_CERT_KEY_ID: "", LOG_LEVEL: "fatal" });
@@ -91,8 +92,14 @@ try {
     const doc = await propostas.salvarDocumento(id, user, { buffer, mimetype: "application/pdf", originalname: nome }); anexos.push({ ...doc, buffer });
   }
   await propostas.conferirAssinatura(id, contrato.id, user, anexos[0].id);
+  const { projetarComercial } = await import('../src/application/onboarding/ProjecaoComercialService.js');
+  const aposAssinatura = await projetarComercial(await db.onboarding.findUnique({ where: { id } }));
+  assert.equal(aposAssinatura.contratacao.ganha, true);
+  assert.equal(aposAssinatura.contratacao.implantacaoPermitida, true);
+  assert.equal(aposAssinatura.contratacao.carteiraPermitida, false);
   await assert.rejects(converter(id, {}, { atorId: user.id }), e => e.code === "pagamento_pendente");
   await jornada.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "SIMULAÇÃO: pagamento conferido manualmente, sem cobrança bancária real." });
+  assert.equal((await projetarComercial(await db.onboarding.findUnique({ where: { id } }))).contratacao.carteiraPermitida, true);
   ok("Contrato preenchido, PDF recebido e conferência manual da assinatura e do pagamento registrados");
   for (const etapa of await db.onboardingEtapa.findMany({ where: { onboardingId: id, acao: null } })) await concluirEtapa(id, etapa.id, { concluida: true, observacao: "SIMULAÇÃO: etapa externa conferida, sem registro real.", atorId: user.id });
   ficha = await db.onboarding.findUnique({ where: { id } });

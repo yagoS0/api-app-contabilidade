@@ -1,3 +1,4 @@
+import { nomeDaOportunidade, resumoRetorno } from '../../comercial/comercialModel';
 // LISTA / QUADRO do funil.
 //
 // ⚠ LARGURA: `--content-wide` — é tela de DADOS (quatro colunas de cartões), não de leitura.
@@ -58,7 +59,7 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
           color: "var(--text)", fontSize: 14, fontWeight: 700,
         }}
       >
-        {item.razaoSocial || item.responsavelNome || `Atendimento ${String(item.id).slice(-6)}`}
+        {nomeDaOportunidade(item)}
       </button>
 
       {item.cnpj && (
@@ -68,7 +69,7 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <Crachá origem={item.origem} />
         <span style={{ ...estiloDoStatus(item.status), padding: "1px 8px", borderRadius: 999, border: "1px solid", fontSize: 11, fontWeight: 600 }}>
-          <span aria-hidden="true">{status.icone}</span> {status.rotulo}
+          <span aria-hidden="true">{status.icone}</span> Ficha: {status.rotulo}
         </span>
       </div>
 
@@ -76,9 +77,11 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{item.responsavelNome}</span>
       )}
 
+      <span className="onboarding-help">Jornada: {item.comercial?.titulo || 'Indisponível'}</span>
+      <span className="onboarding-help">{resumoRetorno(item.retornoComercial)}</span>
       {progresso.total > 0 && (
         <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
-          {progresso.concluidas} de {progresso.total} etapas
+          {progresso.concluidas} de {progresso.total} etapas da checklist
         </span>
       )}
 

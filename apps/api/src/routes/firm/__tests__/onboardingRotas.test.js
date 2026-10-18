@@ -11,6 +11,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const etapas = new Map();
   const portais = new Map();
   const usuarios = new Map();
+  const eventos = new Map();
 
   let seq = 0;
   const novoId = (p) => `${p}-${++seq}`;
@@ -19,6 +20,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   function casa(registro, where) {
     return Object.entries(where || {}).every(([chave, valor]) => {
       if (valor && typeof valor === "object" && !Array.isArray(valor)) {
+        if ('in' in valor) return valor.in.includes(registro[chave]);
+        if ('notIn' in valor) return !valor.notIn.includes(registro[chave]);
+        if ('path' in valor) return valor.path.reduce((v, k) => v?.[k], registro[chave]) === valor.equals;
         if ("not" in valor) return registro[chave] !== valor.not;
         if ("contains" in valor) {
           return String(registro[chave] || "").toLowerCase().includes(String(valor.contains).toLowerCase());
@@ -57,6 +61,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
           .sort((a, b) => a.ordem - b.ordem)
           .map(clone);
       }
+      if (include?.eventos) saida.eventos = [...eventos.values()].filter(e => e.onboardingId === achado.id);
       return saida;
     }),
     findMany: jest.fn(async ({ where, include } = {}) => {
@@ -72,6 +77,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
           item.etapas = [...etapas.values()].filter((e) => e.onboardingId === item.id).map(clone);
         }
       }
+      if (include?.eventos) for (const item of lista) item.eventos = [...eventos.values()].filter(e => e.onboardingId === item.id && e.tipo === 'RETORNO_COMERCIAL').reverse().slice(0, 1);
       return lista;
     }),
     update: jest.fn(async ({ where, data }) => {
@@ -84,7 +90,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     }),
     updateMany: jest.fn(async ({ where, data }) => {
       const encontrados = [...onboardings.values()].filter(o => casa(o, where));
-      for (const atual of encontrados) Object.assign(atual, data);
+      for (const atual of encontrados) Object.assign(atual, data, { versao: data.versao?.increment ? atual.versao + data.versao.increment : atual.versao });
       return { count: encontrados.length };
     }),
     delete: jest.fn(async ({ where }) => {
@@ -144,7 +150,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   };
 
   const user = {
-    findUnique: jest.fn(async ({ where }) => clone([...usuarios.values()].find((u) => u.email === where.email) || null)),
+    findUnique: jest.fn(async ({ where }) => clone([...usuarios.values()].find((u) => where.id ? u.id === where.id : u.email === where.email) || null)),
     create: jest.fn(async ({ data }) => {
       const registro = { id: novoId("user"), ...data };
       usuarios.set(registro.id, registro);
@@ -166,11 +172,18 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     count: jest.fn(async () => 0),
   });
 
-  const fixos = { onboarding, onboardingEtapa, portalClient, user };
+  const lerEventos = ({ where, take } = {}) => [...eventos.values()].filter(e => casa(e, where)).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id)).slice(0, take);
+  const onboardingEvento = {
+    ...generico(),
+    create: jest.fn(async ({ data }) => { const row = { id: novoId('evento'), createdAt: new Date(), ...data }; eventos.set(row.id, row); return clone(row); }),
+    findMany: jest.fn(async args => clone(lerEventos(args))),
+    findFirst: jest.fn(async args => clone(lerEventos(args)[0] || null)),
+  };
+  const fixos = { onboarding, onboardingEtapa, portalClient, user, onboardingEvento };
   const dinamicos = {};
   const raiz = {
     __limpar: () => {
-      onboardings.clear(); etapas.clear(); portais.clear(); usuarios.clear(); seq = 0;
+      onboardings.clear(); etapas.clear(); portais.clear(); usuarios.clear(); usuarios.set("user-firm-1", { id: "user-firm-1", role: "contador", status: "active", accountType: "FIRM" }); eventos.clear(); seq = 0;
     },
     __portais: portais,
   };
@@ -231,6 +244,11 @@ async function patchFicha(id, patch) {
   const { body } = await request(app).get(`/firm/onboardings/${id}`);
   return request(app).patch(`/firm/onboardings/${id}`).send({ versao: body.onboarding?.versao ?? 0, ...patch });
 }
+// R27: fixtures de clientes externos exigem justificativa e versão explícitas.
+async function conversaoExterna(id) {
+  const ficha = await prisma.onboarding.findUnique({ where: { id } });
+  return { ...EMPRESA_VALIDA, contratacaoExterna: { confirmada: true, versao: ficha.versao, justificativa: 'Cliente contratado fora da Altan', evidencia: 'Contrato externo sintético 001' } };
+}
 let app;
 beforeEach(() => {
   prisma.__limpar();
@@ -243,6 +261,50 @@ beforeEach(() => {
 });
 
 describe("percurso completo: criar → PATCH → finalizar → etapa → convert", () => {
+  test('leitura FIRM do próprio caso expõe apenas fatos da contratação, sem conteúdo privado', async () => {
+    usuarioAtual = { id: 'user-staff', role: 'staff', accountType: 'FIRM' };
+    const criada = await request(app).post('/firm/onboardings').send({ origem: 'TRANSFERENCIA' });
+    const id = criada.body.onboarding.id;
+    const propostas = prisma.propostaComercial.findMany.getMockImplementation();
+    const contratos = prisma.contratoComercial.findMany.getMockImplementation();
+    prisma.propostaComercial.findMany.mockResolvedValue([{ id: 'p', onboardingId: id, status: 'ACEITA', opcaoAceita: 'RECORRENTE', tokenHash: 'token-proibido', snapshot: { privado: 'snapshot-proibido' } }]);
+    prisma.contratoComercial.findMany.mockResolvedValue([{ id: 'c', onboardingId: id, propostaId: 'p', status: 'ASSINADO_CONFERIDO', texto: 'contrato-proibido', dados: { opcao: { chave: 'RECORRENTE', recorrente: true } } }]);
+    try {
+      for (const destino of [`/firm/onboardings/${id}`, '/firm/onboardings?incluirRascunhos=1']) {
+        const r = await request(app).get(destino);
+        expect(r.status).toBe(200);
+        expect(JSON.stringify(r.body)).not.toMatch(/token-proibido|snapshot-proibido|contrato-proibido|tokenHash/);
+        expect((r.body.onboarding || r.body.itens.find(i => i.id === id)).comercial.contratacao.ganha).toBe(true);
+      }
+    } finally {
+      prisma.propostaComercial.findMany.mockImplementation(propostas);
+      prisma.contratoComercial.findMany.mockImplementation(contratos);
+    }
+  });
+  test('T31/T35: POST sem contratação, versão antiga e prova vazia são recusados', async () => {
+    const criada = await request(app).post('/firm/onboardings').send({ origem: 'TRANSFERENCIA' });
+    const id = criada.body.onboarding.id;
+    const normal = await request(app).post(`/firm/onboardings/${id}/convert`).send({ ...EMPRESA_VALIDA, faseComercial: 'CONTRATADO', atorId: 'admin-inventado' });
+    expect(normal.status).toBe(409); expect(normal.body.error).toBe('contratacao_necessaria');
+    const valido = await conversaoExterna(id);
+    for (const patch of [{ versao: -1 }, { justificativa: ' ' }, { evidencia: '' }, { confirmada: false }]) {
+      const resposta = await request(app).post(`/firm/onboardings/${id}/convert`).send({ ...valido, contratacaoExterna: { ...valido.contratacaoExterna, ...patch } });
+      expect(resposta.status).toBe(409); expect(resposta.body.error).toBe('contratacao_externa_invalida');
+    }
+    expect((await prisma.onboarding.findUnique({ where: { id } })).portalClientId).toBeNull();
+    expect(prisma.__portais.size).toBe(0);
+  });
+  test('leitura bloqueia entrada normal sem proposta e não promove fase manual', async () => {
+    const criada = await request(app).post('/firm/onboardings').send({ origem: 'TRANSFERENCIA' });
+    const id = criada.body.onboarding.id;
+    await prisma.onboarding.update({ where: { id }, data: { faseComercial: 'CONTRATADO', status: 'EM_TRILHA' } });
+    const detalhe = await request(app).get(`/firm/onboardings/${id}`);
+    expect(detalhe.status).toBe(200);
+    expect(detalhe.body.onboarding.conversao).toMatchObject({ excecaoAplicavel: true, contratoConferido: false });
+    expect(detalhe.body.onboarding.comercial.atual).toBe('publica');
+    const lista = await request(app).get('/firm/onboardings?incluirRascunhos=1');
+    expect(lista.body.itens.find(i => i.id === id).comercial.atual).toBe(detalhe.body.onboarding.comercial.atual);
+  });
   test("cada passo devolve o estado esperado e a conversão fecha a ficha", async () => {
     // 1) criar
     const criada = await request(app).post("/firm/onboardings").send({ origem: "TRANSFERENCIA" });
@@ -293,7 +355,7 @@ describe("percurso completo: criar → PATCH → finalizar → etapa → convert
     expect(etapa.body.etapa.concluidaPorId).toBe("user-firm-1");
 
     // 5) converter
-    const conv = await request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA);
+    const conv = await request(app).post(`/firm/onboardings/${id}/convert`).send(await conversaoExterna(id));
     expect(conv.status).toBe(201);
     expect(conv.body.portalClientId).toBeTruthy();
     expect(conv.body.onboarding.status).toBe("CONVERTIDO");
@@ -323,10 +385,10 @@ describe("idempotência e 409", () => {
 
   test("convert duas vezes → 409 onboarding_convertido com o portalClientId", async () => {
     const id = await fichaFinalizada();
-    const primeira = await request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA);
+    const primeira = await request(app).post(`/firm/onboardings/${id}/convert`).send(await conversaoExterna(id));
     expect(primeira.status).toBe(201);
 
-    const segunda = await request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA);
+    const segunda = await request(app).post(`/firm/onboardings/${id}/convert`).send(await conversaoExterna(id));
     expect(segunda.status).toBe(409);
     expect(segunda.body.error).toBe("onboarding_convertido");
     expect(segunda.body.portalClientId).toBe(primeira.body.portalClientId);
@@ -335,11 +397,11 @@ describe("idempotência e 409", () => {
   test("CNPJ já na carteira → 409 cnpj_ja_na_carteira, com o caminho de recuperação no corpo", async () => {
     // Uma empresa já existe com esse CNPJ (convertida por outra ficha).
     const idA = await fichaFinalizada();
-    const primeira = await request(app).post(`/firm/onboardings/${idA}/convert`).send(EMPRESA_VALIDA);
+    const primeira = await request(app).post(`/firm/onboardings/${idA}/convert`).send(await conversaoExterna(idA));
     expect(primeira.status).toBe(201);
 
     const idB = await fichaFinalizada();
-    const conflito = await request(app).post(`/firm/onboardings/${idB}/convert`).send(EMPRESA_VALIDA);
+    const conflito = await request(app).post(`/firm/onboardings/${idB}/convert`).send(await conversaoExterna(idB));
 
     expect(conflito.status).toBe(409);
     expect(conflito.body.error).toBe("cnpj_ja_na_carteira");
@@ -349,7 +411,7 @@ describe("idempotência e 409", () => {
 
   test("vincularPortalClientId fecha a ficha sem criar empresa nova", async () => {
     const idA = await fichaFinalizada();
-    const primeira = await request(app).post(`/firm/onboardings/${idA}/convert`).send(EMPRESA_VALIDA);
+    const primeira = await request(app).post(`/firm/onboardings/${idA}/convert`).send(await conversaoExterna(idA));
     const portalId = primeira.body.portalClientId;
     // libera o vínculo para simular "a empresa foi criada mas o update da ficha falhou"
     await request(app).get(`/firm/onboardings/${idA}`);
@@ -359,14 +421,14 @@ describe("idempotência e 409", () => {
     // a ficha A ainda ocupa o vínculo → recusa, e é o que impede duas fichas para a mesma empresa
     const recusa = await request(app)
       .post(`/firm/onboardings/${idB}/convert`)
-      .send({ vincularPortalClientId: portalId, cnpjDefinitivo: "11222333000181" });
+      .send({ ...await conversaoExterna(idB), vincularPortalClientId: portalId, cnpjDefinitivo: "11222333000181" });
     expect(recusa.status).toBe(409);
     expect(recusa.body.error).toBe("portal_client_ja_vinculado");
   });
 
   test("ficha convertida é somente leitura: PATCH → 409", async () => {
     const id = await fichaFinalizada();
-    await request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA);
+    await request(app).post(`/firm/onboardings/${id}/convert`).send(await conversaoExterna(id));
     const patch = await patchFicha(id, { dados: { razaoSocial: "X" } });
     expect(patch.status).toBe(409);
     expect(patch.body.error).toBe("onboarding_convertido");
@@ -392,7 +454,7 @@ describe("gates", () => {
     app = montarApp();
 
     for (const chamada of [
-      request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA),
+      request(app).post(`/firm/onboardings/${id}/convert`).send(await conversaoExterna(id)),
       request(app).post(`/firm/onboardings/${id}/desistir`).send({ motivo: "x" }),
       request(app).delete(`/firm/onboardings/${id}`),
     ]) {
@@ -458,4 +520,32 @@ describe("validação do envelope", () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("onboarding_nao_encontrado");
   });
+});
+
+test('conferência salva e recarga concordam em lista, ficha e painel usado na conversa', async () => {
+  const criada = await request(app).post('/firm/onboardings').send({ origem: 'TRANSFERENCIA' });
+  const id = criada.body.onboarding.id;
+  await patchFicha(id, { dados: { cnpj: '11222333000181', responsavelNome: 'Pessoa de teste' }, finalizar: true });
+  async function conferir(atual) {
+    const [lista, ficha, chat] = await Promise.all([
+      request(app).get('/firm/onboardings?incluirRascunhos=1'),
+      request(app).get(`/firm/onboardings/${id}`),
+      request(app).get(`/firm/comercial/onboardings/${id}`),
+    ]);
+    expect([lista.status, ficha.status, chat.status]).toEqual([200, 200, 200]);
+    expect(lista.body.itens.find(i => i.id === id).comercial.atual).toBe(atual);
+    expect(ficha.body.onboarding.comercial.atual).toBe(atual);
+    expect(chat.body.jornada.projecao.atual).toBe(atual);
+    return ficha.body.onboarding;
+  }
+  const antes = await conferir('publica');
+  const salva = await request(app).post(`/firm/comercial/onboardings/${id}/jornada/conferencia`).send({
+    tipo: 'PUBLICA', versao: antes.versao, manual: { fonte: 'Documento sintético', evidencia: 'Dados cadastrais conferidos em documento fictício.' },
+  });
+  expect(salva.status).toBe(200);
+  const depois = await conferir('autorizacao');
+  expect(depois.versao).toBe(antes.versao + 1);
+  // Outra ação persistida não apaga a evidência comercial na recarga.
+  expect((await request(app).patch(`/firm/onboardings/${id}/etapas/${depois.etapas[0].id}`).send({ concluida: true })).status).toBe(200);
+  await conferir('autorizacao');
 });

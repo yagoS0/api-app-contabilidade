@@ -1,10 +1,11 @@
+import { statusDoOnboarding } from '../onboarding/lib/onboardingStatus';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { NovoAtendimentoModal } from '../onboarding/components/NovoAtendimentoModal';
 import { WhatsappPage } from '../whatsapp/pages/renderWhatsappPage';
 import { useResumoWhatsapp } from '../whatsapp/hooks/useResumoWhatsapp';
-import { ETAPAS, etapaDaOportunidade, nomeDaOportunidade, servicoDaOportunidade } from './comercialModel';
+import { ETAPAS, etapaDaOportunidade, nomeDaOportunidade, servicoDaOportunidade, resumoRetorno } from './comercialModel';
 import './comercial.css';
 
 export function ComercialPage({ api, usuarioId, companies = [], mensagemBiblioteca, onMensagemBibliotecaAberta }) {
@@ -34,7 +35,7 @@ export function ComercialPage({ api, usuarioId, companies = [], mensagemBibliote
   const retornos = ativas.filter(i => i.retornoComercial?.dados?.quando && new Date(i.retornoComercial.dados.quando) <= fimDoDia).sort((a, b) => Date.parse(a.retornoComercial.dados.quando) - Date.parse(b.retornoComercial.dados.quando));
   const indicadores = {
     hoje: [retornos.length, 'retornos para hoje ou atrasados'],
-    oportunidades: [ativas.filter(i => etapaDaOportunidade(i) !== 'ONBOARDING').length, 'oportunidades em andamento'],
+    oportunidades: [ativas.length, 'oportunidades em andamento'],
     conversas: [resumoConversas.selo, 'mensagens comerciais não lidas'],
     onboarding: [ativas.filter(i => i.status === 'EM_TRILHA' && i.progresso?.total > i.progresso?.concluidas).length, 'onboardings com etapas pendentes'],
   };
@@ -61,11 +62,11 @@ export function ComercialPage({ api, usuarioId, companies = [], mensagemBibliote
       {erro && <div role="alert" className="commercial-error">{erro} <Button variant="secondary" onClick={() => setRevisao(v => v + 1)}>Tentar novamente</Button></div>}
       {carregando ? <p role="status">Carregando oportunidades…</p> : !erro && <>
         <section className="commercial-metrics" aria-label="Visão comercial">
-          {[['', 'Em andamento', ativas.length], ['ANALISE', 'Em análise', ativas.filter(i => etapaDaOportunidade(i) === 'ANALISE').length], ['PROPOSTA', 'Propostas', ativas.filter(i => etapaDaOportunidade(i) === 'PROPOSTA').length], ['CONTRATADO', 'Contratações', ativas.filter(i => etapaDaOportunidade(i) === 'CONTRATADO').length]].map(([id, titulo, valor]) => <button type="button" key={titulo} aria-pressed={etapa === id} onClick={() => setEtapa(id)}><span>{titulo}</span><strong>{erro ? '—' : valor}</strong></button>)}
+          {[['', 'Em andamento', ativas.length], ['ANALISE', 'Em análise', ativas.filter(i => etapaDaOportunidade(i) === 'ANALISE').length], ['PROPOSTA', 'Propostas', ativas.filter(i => etapaDaOportunidade(i) === 'PROPOSTA').length], ['GANHA', 'Ganhas', ativas.filter(i => etapaDaOportunidade(i) === 'GANHA').length]].map(([id, titulo, valor]) => <button type="button" key={titulo} aria-pressed={etapa === id} onClick={() => setEtapa(id)}><span>{titulo}</span><strong>{erro ? '—' : valor}</strong></button>)}
         </section>
-        {visao === 'hoje' && retornos.length > 0 && <section className="commercial-returns" aria-label="Retornos de hoje"><h2>Retornos de hoje <span>{retornos.length}</span></h2>{retornos.map(item => <Link key={item.id} to={`/onboardings/${encodeURIComponent(item.id)}`}><strong>{nomeDaOportunidade(item)}</strong><span>{item.retornoComercial.dados.acao}</span><time>{new Date(item.retornoComercial.dados.quando).toLocaleString('pt-BR')}</time></Link>)}</section>}
+        {visao === 'hoje' && retornos.length > 0 && <section className="commercial-returns" aria-label="Retornos de hoje"><h2>Retornos de hoje <span>{retornos.length}</span></h2>{retornos.map(item => <Link key={item.id} to={`/onboardings/${encodeURIComponent(item.id)}`}><strong>{nomeDaOportunidade(item)}</strong><span>{resumoRetorno(item.retornoComercial)}</span></Link>)}</section>}
         <section className="commercial-pipeline"><div className="commercial-list-heading"><h2>{visao === 'hoje' ? 'Em acompanhamento' : 'Todas as oportunidades'}</h2><div className="commercial-tools"><input aria-label="Buscar oportunidade" placeholder="Buscar nome ou CNPJ" value={busca} onChange={e => setBusca(e.target.value)} /><select aria-label="Etapa comercial" value={etapa} onChange={e => setEtapa(e.target.value)}><option value="">Todas as etapas</option>{ETAPAS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div></div>
-          {!filtradas.length ? <div className="commercial-empty"><span aria-hidden="true">↗</span><h2>{busca || etapa ? 'Nenhuma oportunidade encontrada' : 'Seu próximo cliente começa aqui'}</h2><p>{busca || etapa ? 'Ajuste a busca ou a etapa.' : 'Crie uma oportunidade para reunir a análise, a proposta e a contratação.'}</p>{!busca && !etapa && <Button onClick={() => setNovo(true)}>Criar oportunidade</Button>}</div> : <div className="commercial-list">{filtradas.map(item => <Link className="commercial-row" key={item.id} to={`/onboardings/${encodeURIComponent(item.id)}`}><span className="commercial-avatar" aria-hidden="true">{nomeDaOportunidade(item).slice(0, 1).toUpperCase()}</span><span className="commercial-client"><strong>{nomeDaOportunidade(item)}</strong><small>{servicoDaOportunidade(item)}</small></span><span className="commercial-stage">{ETAPAS.find(([id]) => id === etapaDaOportunidade(item))?.[1]}</span><span className="commercial-date">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('pt-BR') : ''}</span><span aria-hidden="true">↗</span></Link>)}</div>}
+          {!filtradas.length ? <div className="commercial-empty"><span aria-hidden="true">↗</span><h2>{busca || etapa ? 'Nenhuma oportunidade encontrada' : 'Seu próximo cliente começa aqui'}</h2><p>{busca || etapa ? 'Ajuste a busca ou a etapa.' : 'Crie uma oportunidade para reunir a análise, a proposta e a contratação.'}</p>{!busca && !etapa && <Button onClick={() => setNovo(true)}>Criar oportunidade</Button>}</div> : <div className="commercial-list">{filtradas.map(item => <Link className="commercial-row" key={item.id} to={`/onboardings/${encodeURIComponent(item.id)}`}><span className="commercial-avatar" aria-hidden="true">{nomeDaOportunidade(item).slice(0, 1).toUpperCase()}</span><span className="commercial-client"><strong>{nomeDaOportunidade(item)}</strong><small>{servicoDaOportunidade(item)} · Ficha: {statusDoOnboarding(item.status).rotulo}</small><small>{resumoRetorno(item.retornoComercial)}</small></span><span className="commercial-stage">{item.comercial?.titulo || ETAPAS.find(([id]) => id === etapaDaOportunidade(item))?.[1]}</span><span className="commercial-date">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('pt-BR') : ''}</span><span aria-hidden="true">↗</span></Link>)}</div>}
         </section>
       </>}
     </>}

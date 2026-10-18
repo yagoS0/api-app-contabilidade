@@ -113,7 +113,9 @@ export async function verificarJornadaCanais({ db, user, ok }) {
     await jornada.confirmarPagamento(id, user, pagamento);
     await assert.rejects(propostas.concluirAvulso(id, user, "Entrega sintética conferida"), e => e.code === "ficha_avulsa_pendente");
     const antes = { usuarios: await db.user.count(), empresas: await db.portalClient.count() };
-    const arquivada = await avulsas.salvar(id, user, { versao: ficha.versao, dados: { cnpj: "11222333000181", razaoSocial: "EMPRESA SINTÉTICA DA JORNADA", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua Sintética", numero: "100", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } } });
+    const fichaAtual = await db.onboarding.findUnique({ where: { id } });
+    assert.equal(fichaAtual.versao, ficha.versao + 1);
+    const arquivada = await avulsas.salvar(id, user, { versao: fichaAtual.versao, dados: { cnpj: "11222333000181", razaoSocial: "EMPRESA SINTÉTICA DA JORNADA", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua Sintética", numero: "100", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } } });
     assert.equal(arquivada.documentos.length, 3);
     assert.equal(arquivada.contabilidadeAtiva, false); assert.equal(arquivada.portalHabilitado, false);
     for (const documento of arquivada.documentos) {

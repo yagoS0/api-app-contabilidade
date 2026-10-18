@@ -8,6 +8,22 @@ import { decidirRespostaComercial } from "../../assistente/AssistenteComercialSe
 
 const calcularOpcoes = p => calcularComCatalogo({ catalogo: CATALOGO_SINTETICO, ...p });
 const ficha = dados => ({ origem: "ABERTURA", dados: { modalidadeServico: "COMPARAR", regimePretendido: "SIMPLES", qtdFuncionarios: 2, notasRecebidasMes: 12, ...dados } });
+
+test.each(['opcao', 'revogada', 'nao_aceita'])('R28: conferência de assinatura recusa contrato %s sem gravar assinatura ou checklist', async caso => {
+  const contrato = { id: 'c', dados: { opcao: { chave: 'RECORRENTE' } }, proposta: { status: 'ACEITA', opcaoAceita: 'RECORRENTE' } };
+  if (caso === 'opcao') contrato.proposta.opcaoAceita = 'AVULSO';
+  if (caso === 'revogada') contrato.proposta.revogadaEm = new Date();
+  if (caso === 'nao_aceita') contrato.proposta.status = 'ENVIADA';
+  const db = {
+    onboarding: { findUnique: jest.fn(async () => ({ id: 'o', status: 'RECEBIDO', versao: 1 })), updateMany: jest.fn(async () => ({ count: 1 })) },
+    contratoComercial: { findFirst: jest.fn(async () => contrato), updateMany: jest.fn() },
+    onboardingEtapa: { createMany: jest.fn() },
+  };
+  db.$transaction = async fn => fn(db);
+  await expect(criarPropostasComerciais({ db }).conferirAssinatura('o', 'c', { id: 'u', role: 'contador' }, 'doc')).rejects.toMatchObject({ code: 'contrato_indisponivel' });
+  expect(db.contratoComercial.updateMany).not.toHaveBeenCalled();
+  expect(db.onboardingEtapa.createMany).not.toHaveBeenCalled();
+});
 test("catálogo rejeita divisão por zero, preços negativos e faixas fora de ordem", () => {
   expect(catalogoValido(CATALOGO_SINTETICO)).toBe(true);
   for (const alterar of [c => c.blocoRecebidas.quantidade = 0, c => c.faixas[0].SIMPLES = -1, c => c.faixas.reverse(), c => c.condicoes = 3]) {

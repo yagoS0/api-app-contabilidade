@@ -9,6 +9,7 @@ import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 // manda o rascunho inteiro a cada salvamento.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { projetarComercial, projetarComerciais, etapasComEvidencias } from './ProjecaoComercialService.js';
 import { etapasDaOrigem } from "./etapasTemplate.js";
 import { prepararArquivoConversao, conferirFontesDoArquivo } from "./ArquivoConversaoService.js";
 import { normalizarE164 } from "../whatsapp/telefone.js";
@@ -303,12 +304,13 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     );
   }
 
-  const comercial = await conferirContratoDeConversao(prisma, id);
+  const contexto = { externa: payload.contratacaoExterna, atorId, registro };
+  const comercial = await conferirContratoDeConversao(prisma, id, contexto);
   let arquivo;
   const concluir = async (tx, criada, { recuperacao = false } = {}) => {
     const reserva = await tx.onboarding.updateMany({ where: { id, versao: registro.versao, status: registro.status, portalClientId: null }, data: { versao: registro.versao + 1 } });
     if (reserva.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou durante a conversão. Recarregue antes de continuar.", 409);
-    const atual = await conferirContratoDeConversao(tx, id);
+    const atual = await conferirContratoDeConversao(tx, id, contexto);
     if (atual.contrato?.id !== comercial.contrato?.id || atual.proposta?.id !== comercial.proposta?.id) throw new OnboardingError("contrato_alterado", "A contratação mudou. Recarregue antes de converter.", 409);
     await conferirFontesDoArquivo(tx, id, arquivo);
     if (arquivo.documentos.length) await tx.companyDocument.createMany({ data: arquivo.documentos.map(d => ({ ...d, portalClientId: criada.portalId })) });
@@ -316,7 +318,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     await tx.onboarding.update({ where: { id }, data: {
       portalClientId: criada.portalId, status: "CONVERTIDO", convertidoEm: new Date(), convertidoPorId: atorId,
       emailJaCadastrado: true,
-      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId, documentos: arquivo.documentos.map(d => d.id) } } },
+      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId, documentos: arquivo.documentos.map(d => d.id), contratacao: comercial.externa ? { ...comercial.externa, portalClientId: criada.portalId, registradaEm: new Date().toISOString() } : { origem: "INTERNA", propostaId: comercial.proposta.id, contratoId: comercial.contrato.id } } } },
     } });
     await tx.atendimentoLead.updateMany({ where: { onboardingId: id, encerradoEm: null }, data: { encerradoEm: new Date() } });
     await tx.onboardingEtapa.updateMany({ where: { onboardingId: id, acao: "CONVERSAO" }, data: { concluidaEm: new Date(), concluidaPorId: atorId } });
@@ -409,10 +411,21 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
   };
 }
 
-async function conferirContratoDeConversao(db, onboardingId) {
+async function conferirContratoDeConversao(db, onboardingId, { externa, atorId, registro } = {}) {
   const proposta = await db.propostaComercial.findFirst({ where: { onboardingId, status: "ACEITA", revogadaEm: null }, orderBy: { versao: "desc" } })
     || await db.propostaComercial.findFirst({ where: { onboardingId }, orderBy: { versao: "desc" } });
-  if (!proposta) return {}; // Fichas anteriores ao fluxo comercial continuam válidas.
+  if (externa !== undefined) {
+    if (proposta || await db.contratoComercial.findFirst({ where: { onboardingId } })) throw new OnboardingError("excecao_inaplicavel", "Há contratação interna registrada. Confira a proposta, assinatura e pagamento correspondentes; a exceção externa não substitui essas etapas.", 409);
+    const usuario = atorId && await db.user.findUnique({ where: { id: atorId }, select: { id: true, role: true, status: true, accountType: true } });
+    if (!usuario || !["admin", "contador"].includes(String(usuario.role).toLowerCase()) || usuario.status !== "active" || usuario.accountType !== "FIRM") throw new OnboardingError("forbidden", "Contratação externa exige contador ou administrador ativo do escritório.", 403);
+    const { exigirEscopo } = await import("./ComercialService.js");
+    const { validarContratacaoExterna } = await import("../../../../../packages/shared/src/onboarding/contratacaoComercial.js");
+    await exigirEscopo(onboardingId, usuario, db);
+    const invalida = validarContratacaoExterna(externa, registro.versao);
+    if (invalida) throw new OnboardingError("contratacao_externa_invalida", invalida, 409);
+    return { externa: { origem: "EXTERNA", justificativa: externa.justificativa.trim(), evidencia: externa.evidencia.trim(), atorId: usuario.id, onboardingId, versao: registro.versao } };
+  }
+  if (!proposta) throw new OnboardingError("contratacao_necessaria", "Confirme a contratação antes de adicionar à carteira. Para cliente já contratado fora da Altan, registre a exceção com justificativa e evidência.", 409);
   const contrato = await db.contratoComercial.findFirst({ where: { onboardingId, propostaId: proposta.id, status: "ASSINADO_CONFERIDO" } });
   if (proposta.revogadaEm || proposta.status !== "ACEITA" || !contrato?.dados?.opcao?.recorrente || proposta.opcaoAceita !== contrato.dados.opcao.chave) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente da proposta aceita antes de criar a empresa.", 409);
   const pagamento = await db.onboardingEvento.findFirst({ where: { onboardingId, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: contrato.id } } });
@@ -458,7 +471,7 @@ export async function desistir(id, { motivo = null, atorId = null } = {}) {
  * a ficha no primeiro clique), e um quadro em que a maioria dos cartões nunca foi preenchida deixa
  * de ser lido. A bandeja de rascunhos fica atrás de um toggle, com um DELETE ao lado.
  */
-export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false, escopo = {} } = {}) {
+export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false, escopo = {} } = {}, db = prisma) {
   const where = { ...escopo };
 
   if (origem) where.origem = normalizarOrigem(origem);
@@ -484,24 +497,37 @@ export async function listar({ origem = null, status = null, q = null, incluirRa
     ];
   }
 
-  const itens = await prisma.onboarding.findMany({
+  const itens = await db.onboarding.findMany({
     where,
     orderBy: [{ updatedAt: "desc" }],
-    include: { etapas: { select: { id: true, concluidaEm: true } }, eventos: { where: { tipo: 'RETORNO_COMERCIAL' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 } },
+    include: { etapas: { select: { id: true, chave: true, concluidaEm: true } }, eventos: { where: { tipo: 'RETORNO_COMERCIAL' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 } },
   });
 
-  return itens.map((item) => {
+  const projecoes = await projetarComerciais(itens, db);
+  const saida = [];
+  for (const item of itens) {
     const total = item.etapas.length;
-    const concluidas = item.etapas.filter((e) => e.concluidaEm).length;
     const { etapas, eventos, ...resto } = item;
-    return { ...resto, retornoComercial: eventos?.[0] || null, progresso: { total, concluidas } };
-  });
+    const { evidencias, ...comercial } = projecoes.get(item.id);
+    const concluidas = etapasComEvidencias(etapas, evidencias).filter(e => e.concluidaEm || e.evidencias.some(prova => prova.satisfaz)).length;
+    saida.push({ ...resto, comercial, retornoComercial: eventos?.[0] || null, progresso: { total, concluidas } });
+  }
+  return saida;
 }
 
-export async function obter(id) {
+export async function obter(id, user = null) {
   const registro = await carregar(id, { comEtapas: true });
+  const comercial = await projetarComercial(registro);
+  let conversao;
+  try {
+    const contrato = await conferirContratoDeConversao(prisma, id);
+    conversao = { contratoConferido: true, semProposta: !contrato.proposta };
+  } catch (e) {
+    if (!(e instanceof OnboardingError)) throw e;
+    conversao = { contratoConferido: false, motivo: e.message, excecaoAplicavel: e.code === "contratacao_necessaria" && comercial.contratacao?.excecaoAplicavel === true && ["admin", "contador"].includes(String(user?.role).toLowerCase()) };
+  }
   const vinculos = await prisma.onboardingEvento.findMany({ where: { onboardingId: id, tipo: { in: ["DEMANDA_ORIGEM", "DEMANDA_RELACIONADA_CRIADA"] } }, orderBy: { createdAt: "asc" } });
-  return { ...registro, demandasRelacionadas: (vinculos || []).map(e => ({ id: e.dados.onboardingId, origem: e.dados.origem || null, anterior: e.tipo === "DEMANDA_ORIGEM" })) };
+  return { ...registro, comercial, conversao, etapas: etapasComEvidencias(registro.etapas, comercial.evidencias), demandasRelacionadas: (vinculos || []).map(e => ({ id: e.dados.onboardingId, origem: e.dados.origem || null, anterior: e.tipo === "DEMANDA_ORIGEM" })) };
 }
 
 /** Só RASCUNHO pode ser descartado — o resto é rastro, e rastro não se apaga. */

@@ -79,7 +79,10 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     // enquanto o trabalho já começou.
     expect(marcada.onboarding.status).toBe("EM_TRILHA");
 
-    const convertida = await api.converterOnboarding(id, { company: { cnpj: "11222333000181" } });
+    // R27 substitui a antiga compatibilidade sem proposta por exceção explícita.
+    await expect(api.converterOnboarding(id, { company: { cnpj: "11222333000181" } })).rejects.toMatchObject({ code: 'contratacao_necessaria' });
+    const convertida = await api.converterOnboarding(id, { company: { cnpj: "11222333000181" }, contratacaoExterna: { confirmada: true, versao: marcada.onboarding.versao, justificativa: 'Cliente contratado fora da Altan', evidencia: 'Contrato sintético de demonstração 001' } });
+    expect(convertida.onboarding.comercial.contratacao.externa.origem).toBe('EXTERNA');
     expect(convertida.onboarding.status).toBe("CONVERTIDO");
     expect(convertida.onboarding.portalClientId).toBeTruthy();
 
@@ -87,6 +90,70 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     await expect(api.salvarOnboarding(id, { dados: { razaoSocial: "OUTRA" } })).rejects.toMatchObject({
       code: "onboarding_convertido",
     });
+  });
+
+  test('contratação sobrevive à recarga em cada marco, isolada por ficha e com pagamento idempotente', async () => {
+    async function recarregar() {
+      // Nova avaliação do módulo, sem limpar sessionStorage: reproduz F5,
+      // não apenas outra instância que ainda compartilha os mesmos Maps.
+      jest.resetModules();
+      const { createMockApi } = await import('../../../../api/mock/mockApi');
+      api = createMockApi();
+    }
+    const { onboarding: o } = await api.criarOnboarding('ABERTURA');
+    const { onboarding: outra } = await api.criarOnboarding('ABERTURA');
+    const base = `/onboardings/${o.id}`;
+    const { proposta } = await api.comercial(`${base}/propostas`, {});
+    await recarregar();
+    expect((await api.getOnboarding(o.id)).onboarding.comercial.contratacao.excecaoAplicavel).toBe(false);
+    await api.comercial(`${base}/propostas/${proposta.id}/aprovar`, {});
+    const { token } = await api.comercial(`${base}/propostas/${proposta.id}/link`, {});
+    await recarregar();
+    expect((await api.propostaPublica(token)).proposta.status).toBe('APROVADA');
+    await api.propostaPublica(token, { confirmado: true, versao: proposta.versao, opcao: 'RECORRENTE' });
+    await recarregar();
+    const { contrato } = await api.comercial(`${base}/propostas/${proposta.id}/contrato`, {});
+    await recarregar();
+    await api.comercial(`${base}/contratos/${contrato.id}/aprovar`, {});
+    const { documento: alheio } = await api.documentoComercial(outra.id, new File(['teste'], 'externo.pdf'));
+    await expect(api.comercial(`${base}/contratos/${contrato.id}/assinatura`, { documentoId: alheio.id })).rejects.toThrow(/desta ficha/);
+    expect((await api.getOnboarding(o.id)).onboarding.comercial.contratacao.ganha).toBe(false);
+    const { documento } = await api.documentoComercial(o.id, new File(['teste'], 'assinatura.pdf'));
+    await api.comercial(`${base}/contratos/${contrato.id}/assinatura`, { documentoId: documento.id });
+    async function conferir(permitida) {
+      const detalhe = (await api.getOnboarding(o.id)).onboarding.comercial.contratacao;
+      const lista = (await api.listarOnboardings({ incluirRascunhos: true })).itens.find(i => i.id === o.id).comercial.contratacao;
+      const conversa = (await api.comercial(base)).jornada.projecao.contratacao;
+      expect(detalhe).toMatchObject({ ganha: true, implantacaoPermitida: true, carteiraPermitida: permitida, excecaoAplicavel: false, propostaId: proposta.id, contratoId: contrato.id });
+      expect(lista).toEqual(detalhe); expect(conversa).toEqual(detalhe);
+      expect((await api.getOnboarding(outra.id)).onboarding.comercial.contratacao).toMatchObject({ ganha: false, carteiraPermitida: false, excecaoAplicavel: true });
+    }
+    await conferir(false);
+    await recarregar();
+    await conferir(false);
+    expect((await api.comercial(base)).contratos[0]).toMatchObject({ documentoAssinadoId: documento.id, assinaturaConferidaPor: 'contador-demonstracao' });
+    await expect(api.baixarDocumentoComercial(o.id, documento.id)).rejects.toThrow(/indisponível após recarga/);
+    await expect(api.comercial(`${base}/jornada/pagamento`, { contratoId: contrato.id })).rejects.toThrow(/evidência/);
+    const pagamento = { contratoId: contrato.id, evidencia: 'Pagamento sintético conferido' };
+    await api.comercial(`${base}/jornada/pagamento`, pagamento);
+    await api.comercial(`${base}/jornada/pagamento`, pagamento);
+    await conferir(true);
+    await recarregar();
+    await conferir(true);
+    await api.comercial(`${base}/jornada/pagamento`, pagamento);
+    expect((await api.comercial(base)).marcos.filter(m => m.tipo === 'PAGAMENTO_HONORARIOS_CONFERIDO')).toHaveLength(1);
+  });
+
+  test('snapshot antigo sem contratação conserva rascunho sem fabricar assinatura ou pagamento', async () => {
+    const { onboarding } = await api.criarOnboarding('ABERTURA');
+    const salvo = JSON.parse(sessionStorage.getItem('mock:onboardings:v1'));
+    delete salvo.contratacao;
+    sessionStorage.setItem('mock:onboardings:v1', JSON.stringify(salvo));
+    jest.resetModules();
+    const { createMockApi } = await import('../../../../api/mock/mockApi');
+    api = createMockApi();
+    expect((await api.getOnboarding(onboarding.id)).onboarding.comercial.contratacao).toMatchObject({ ganha: false, carteiraPermitida: false });
+    expect((await api.comercial(`/onboardings/${onboarding.id}`)).marcos).toEqual([]);
   });
 
   // ⚠ A regra que o mock TEM de implementar de verdade: trocar de origem zera `dados`.

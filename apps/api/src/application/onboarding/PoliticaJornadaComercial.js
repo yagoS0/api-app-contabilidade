@@ -1,14 +1,14 @@
 import { OnboardingError } from "./OnboardingService.js";
+import { projetarContratacao, resumirContratacao } from "../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 import { pendenciasDiagnosticoComercial } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 const encerrados = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
 export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendimento, propostas = [], contratos = [], marcos = [] }, agora = new Date()) {
   const abertura = o.origem === "ABERTURA", pessoaFisica = o.origem === "PESSOA_FISICA";
-  const proposta = propostas.find(p => p.status === "ACEITA" && !p.revogadaEm) || propostas.find(p => !p.revogadaEm);
-  const contrato = contratos.find(c => c.propostaId === proposta?.id);
+  const contratacao = projetarContratacao({ onboarding: o, propostas, contratos, marcos });
+  const { proposta, contrato, pagamento } = contratacao;
   const aceita = proposta?.status === "ACEITA";
-  const assinado = aceita && contrato?.status === "ASSINADO_CONFERIDO";
-  const pagamento = assinado && marcos.find(e => e.tipo === "PAGAMENTO_HONORARIOS_CONFERIDO" && e.dados?.contratoId === contrato.id);
+  const assinado = contratacao.ganha;
   const analises = (j.analises || []).filter(a => a.cnpj === o.cnpj);
   const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA");
   const cadastroConferido = j.publicaConferida && (publica || j.publicaConferencia?.modo === "MANUAL" && j.publicaConferencia?.cnpj === o.cnpj);
@@ -37,7 +37,7 @@ export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendim
   passos.forEach((p, i) => { p.anterior = Boolean(aceita && i < inicio && !p.concluido); p.acessivel = indiceAtual < 0 || i <= indiceAtual; });
   const encerrado = encerrados.includes(o.status);
   const finalPermitida = !encerrado && Boolean(diagnosticoConferido && j.devolutiva?.concluida && ((abertura || pessoaFisica) ? !j.dadosPendentes?.length : cadastroConferido && (dispensa || fiscal && j.fiscalConferido)));
-  return { passos, atual: indiceAtual < 0 ? "conclusao" : passos[indiceAtual].id, indiceAtual, abertura, pessoaFisica, nome: { PESSOA_FISICA: "Pessoa física", ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" }[o.origem],
+  return { contratacao: resumirContratacao(contratacao), passos, atual: indiceAtual < 0 ? "conclusao" : passos[indiceAtual].id, indiceAtual, abertura, pessoaFisica, nome: { PESSOA_FISICA: "Pessoa física", ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" }[o.origem],
     proposta, contrato, pagamento, publica, fiscal, encerrado, versao: o.versao, pendencias: indiceAtual < 0 ? [] : passos[indiceAtual].pendencias,
     comandosPermitidos: { diagnosticoLimitado: !encerrado && !abertura && !pessoaFisica && Boolean(cadastroConferido), gerarRascunho: !encerrado, aprovarProposta: finalPermitida && !aceita, enviarProposta: finalPermitida && !aceita, conferirPagamento: !encerrado && Boolean(assinado), concluirAvulso: !encerrado && Boolean(pagamento && contrato?.dados?.opcao?.recorrente === false) } };
 }

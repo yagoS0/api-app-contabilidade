@@ -1,6 +1,6 @@
 # Regras operacionais do Altan
 
-Versão 0.4 — 16/10/2026. Base inspecionada inicial: `eee63f21` (`origin/main` local). Decisões posteriores na seção 21.
+Versão 0.4 — 16/10/2026. Base inspecionada inicial: `eee63f21` (`origin/main` local). Decisões posteriores nas seções 21 e 22.
 
 ## Consulta obrigatória em qualquer alteração
 
@@ -420,3 +420,26 @@ A baixa deve ser idempotente, não duplicar principal ou encargos, não atingir 
 | T28 | Nova conferência após correção | Ocorrência resolvida e contador atualizado; histórico e declaração fiscal preservados |
 | T29 | Confirmação antiga do cliente sem novo evento | Não gerar baixa retroativa em massa |
 | T30 | Cliente confirma pagamento afetando mês fechado | Confirmação preservada e pendência contábil visível até correção explícita, sem alterar fechamento silenciosamente |
+
+## 22. Contratação, oportunidade ganha e carteira — decisões aprovadas em 18/10/2026
+
+Respostas expressas do usuário neste chat: **“Contratação confirmada + exceção justificada”** e **“Ganha na assinatura; implantação pode começar; carteira após pagamento”**. Substituem, para o novo fluxo comercial, a compatibilidade automática que permitia entrada na carteira sem proposta. Este registro aprova o comportamento; não declara implementação, revisão técnica ou publicação concluída.
+
+**R27 — contratação confirmada e exceção externa.** A entrada normal na carteira exige contratação confirmada. A ausência de proposta, uma classificação manual como CONTRATADO, o preenchimento da ficha ou a conclusão de uma checklist não comprovam contratação. Manter entrada manual excepcional para cliente já contratado fora da Altan: ação explícita de usuário autorizado, com justificativa e evidência/referência da contratação externa, autoria, instante e vínculo com a solicitação. Validar permissão e escopo no servidor; não conceder poderes a usuários que não podiam realizar a operação. Não transformar a exceção em opção genérica para ignorar contrato interno incompleto ou pagamento aplicável. Preservar registros já convertidos e histórico, sem conversão ou bloqueio retroativo em massa.
+
+**R28 — assinatura, implantação e pagamento são marcos distintos.** Assinatura conferida do contrato correspondente torna a oportunidade ganha e habilita o início da implantação; não registra automaticamente implantação iniciada ou concluída. A entrada normal na carteira continua dependendo também do pagamento previsto no contrato, segundo os controles existentes. Preservar os controles existentes de pagamento. Ausência de informação sobre pagamento não equivale a dispensa nem a pagamento confirmado. Uma oportunidade pode estar ganha, com implantação em andamento e entrada na carteira pendente de pagamento. Conversão para carteira não conclui a implantação. A exceção por contratação externa registra sua origem sem fabricar assinatura digital, aceite ou pagamento interno.
+
+Lista, ficha e conversa devem apresentar a mesma projeção desses fatos persistidos, com requisitos faltantes e efeitos explícitos. Releituras não gravam marcos. Ações locais, assinaturas verificadas e pagamentos confirmados atualizam projeções sem perder rascunhos; respostas antigas não prevalecem sobre a revisão atual. Aplicam-se R19–R23, autenticação, idempotência e auditoria existentes. Não altera PF/avulso para obrigá-los a criar empresa, nem autoriza envios, cobrança, assinatura, pagamento ou conversão reais como teste.
+
+**Histórico e impacto:** 18/10/2026 — decisão do usuário fecha as duas pendências comerciais do incremento P0. Altera as condições comerciais de entrada na carteira e explicita o marco de ganho/início de implantação. Não aprova V02/V03/V05–V08, não muda governança de desenvolvimento e não autoriza publicação deste incremento.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T31 | Ficha sem proposta, sem exceção autorizada | Entrada normal bloqueada no servidor e motivo visível; fase manual não substitui contratação |
+| T32 | Contrato correspondente com assinatura conferida e pagamento aplicável pendente | Ganha; implantação pode começar; carteira bloqueada pelo pagamento |
+| T33 | Assinatura e pagamento aplicável confirmados | Entrada normal permitida com demais requisitos vigentes, sem concluir implantação |
+| T34 | Contratação externa, usuário autorizado, justificativa e evidência | Exceção explícita auditada, sem fabricar marcos internos; preservar demais requisitos aplicáveis |
+| T35 | Exceção sem permissão, justificativa, evidência, escopo ou versão válidos | Rejeitar sem efeito parcial; tentativa não libera carteira nem altera permissões |
+| T36 | Repetição, concorrência e falha de auditoria | Não duplicar empresa/conversão; persistência e auditoria atômicas, erro coerente |
+| T37 | Atualização externa de assinatura/pagamento e recarga | Lista/ficha/conversa concordam; distinguir ganha, implantação e carteira; preservar rascunhos |
+| T38 | Cliente já convertido ou serviço PF/avulso | Preservar histórico e caminhos existentes, sem migração retroativa ou criação obrigatória de empresa |

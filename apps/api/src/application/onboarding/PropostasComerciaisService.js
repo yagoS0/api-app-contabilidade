@@ -89,13 +89,13 @@ export function criarPropostasComerciais({
         where: {
           onboardingId: id,
           tipo: {
-            in: ["DOCUMENTACAO_CONFERIDA", "PAGAMENTO_HONORARIOS_CONFERIDO", "ANALISE_REVISADA"]
+            in: ["DOCUMENTACAO_CONFERIDA", "PAGAMENTO_HONORARIOS_CONFERIDO", "ANALISE_REVISADA", "CONVERTIDO"]
           }
         },
         orderBy: {
           createdAt: "desc"
         },
-        take: 30
+        // Fatos de contratação não expiram pela quantidade de eventos posteriores.
       })
     };
   }
@@ -467,6 +467,12 @@ export function criarPropostasComerciais({
     exigirGestor(user);
     await exigirEscopo(id, user, db);
     return db.$transaction(async tx => {
+      const atual = await exigirEscopo(id, user, tx);
+      if (encerrado(atual)) throw erro("onboarding_encerrado", "Esta solicitação está encerrada.");
+      const reserva = await tx.onboarding.updateMany({ where: { id, versao: atual.versao, status: atual.status }, data: { versao: { increment: 1 } } });
+      if (reserva.count !== 1) throw erro("formulario_alterado", "A ficha mudou. Recarregue antes de conferir a assinatura.");
+      const correspondente = await tx.contratoComercial.findFirst({ where: { id: contratoId, onboardingId: id }, include: { proposta: true } });
+      if (!correspondente || correspondente.proposta?.status !== "ACEITA" || correspondente.proposta.revogadaEm || correspondente.proposta.opcaoAceita !== correspondente.dados?.opcao?.chave) throw erro("contrato_indisponivel", "Confira o contrato correspondente à opção aceita e vigente.");
       const d = await tx.documentoOnboarding.findFirst({
         where: {
           id: documentoId,
