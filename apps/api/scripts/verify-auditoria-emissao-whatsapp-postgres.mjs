@@ -35,12 +35,14 @@ net.Socket.prototype.connect = deny;
 syncBuiltinESMExports();
 // Prisma usa o engine nativo; somente a URL validada acima é fornecida a ele.
 const { prisma: db } = await import('../src/infrastructure/db/prisma.js');
+const { encerrarPoolEmissaoLocks } = await import('../src/infrastructure/db/prismaEmissaoLocks.js');
+const { PrismaClient } = await import('@prisma/client');
 const prefix = `audit-${randomUUID()}`;
 
 const { autorizarEmissaoDoCliente } = await import('../src/application/nfse/autorizacaoEmissaoDoCliente.js');
 const { criarPendencia, confirmarEExecutar, recuperarEmissaoPersistida, DEPS_PADRAO } = await import('../src/application/assistente/AcoesPendentesService.js');
 const { TIPOS, STATUS } = await import('../src/application/assistente/confirmacaoPendente.js');
-const { comControleEmissao, conferirControleEmissao, persistirDesfechoControlado } = await import('../src/application/whatsapp/ControleEmissaoWhatsapp.js');
+const { comControleEmissao, conferirControleEmissao, persistirDesfechoControlado, execucaoEmissaoAtiva } = await import('../src/application/whatsapp/ControleEmissaoWhatsapp.js');
 const { listarEmissoesInterrompidas, conferirEmissaoInterrompida } = await import('../src/application/whatsapp/ConciliacaoEmissaoWhatsappService.js');
 try {
   const [database] = await db.$queryRaw`SELECT current_database() AS name`;
@@ -168,11 +170,45 @@ try {
   console.log('PASS: CAS JSON preserva escrita concorrente com updatedAt idêntico e histórico tardio.');
   assert.equal((await ler()).situacao, 'RECUPERADA');
   console.log('PASS: supervisão PG com lock ativo, pending interrompido, resultado sintético MESMA, replay, timeout real da transação e resposta tardia preservada sem rebaixamento.');
+  const businessUrl = new URL(url); businessUrl.searchParams.set('connection_limit', '1'); businessUrl.searchParams.set('pool_timeout', '2');
+  const locksUrl = new URL(url); locksUrl.searchParams.set('connection_limit', '2'); locksUrl.searchParams.set('pool_timeout', '2');
+  const business = new PrismaClient({ datasources: { db: { url: businessUrl.toString() } } });
+  const locks = new PrismaClient({ datasources: { db: { url: locksUrl.toString() } } });
+  try {
+    let soltar; const barreira = new Promise(resolve => { soltar = resolve; });
+    let prontas = 0; let avisar; const ambas = new Promise(resolve => { avisar = resolve; });
+    const executar = indice => comControleEmissao({ acaoId: `${prefix}:pool:${indice}`, client: business, lockClient: locks, executar: async controle => {
+      await business.appSetting.create({ data: { key: `${prefix}:duravel:${indice}`, value: { antesDoPost: true } } });
+      prontas++; if (prontas === 2) avisar();
+      await barreira;
+      await conferirControleEmissao(controle);
+    } });
+    const tarefas = [executar(1), executar(2)];
+    try {
+      await ambas;
+      assert.equal(await business.appSetting.count({ where: { key: { startsWith: `${prefix}:duravel:` } } }), 2,
+        'Com pool de dados 1, duas ações conservam locks separados e já persistiram antes do POST.');
+      await assert.rejects(execucaoEmissaoAtiva({ acaoId: `${prefix}:pool:3`, client: business, lockClient: locks }), { code: 'NFSE_CONTROLE_OCUPADO' });
+      await assert.rejects(comControleEmissao({ acaoId: `${prefix}:pool:3`, client: business, lockClient: locks, executar: async () => assert.fail('admissão saturada') }), { code: 'NFSE_CONTROLE_OCUPADO' });
+    } finally { soltar(); await Promise.all(tarefas); }
+    await comControleEmissao({ acaoId: `${prefix}:pool:unica`, client: business, lockClient: locks, executar: async () => {
+      assert.equal(await execucaoEmissaoAtiva({ acaoId: `${prefix}:pool:unica`, client: business, lockClient: locks }), true);
+      await assert.rejects(comControleEmissao({ acaoId: `${prefix}:pool:unica`, client: business, lockClient: locks, executar: async () => assert.fail('lock duplicado') }), { code: 'NFSE_EXECUCAO_ATIVA' });
+    } });
+    assert.equal(await execucaoEmissaoAtiva({ acaoId: `${prefix}:pool:unica`, client: business, lockClient: locks }), false);
+    await assert.rejects(comControleEmissao({ acaoId: `${prefix}:pool:expira`, client: business, lockClient: locks, timeoutMs: 50, executar: async controle => {
+      await new Promise(resolve => setTimeout(resolve, 120));
+      await assert.rejects(conferirControleEmissao(controle));
+    } }));
+    assert.equal(await execucaoEmissaoAtiva({ acaoId: `${prefix}:pool:expira`, client: business, lockClient: locks }), false);
+    console.log('PASS: pool de dados 1 + locks 2, duas ações persistem; admissão/probe saturados falham sem falso estado; mesma ação excluída e timeout libera conexão.');
+  } finally { await Promise.all([business.$disconnect(), locks.$disconnect()]); }
   assert.equal(networkAttempts, 0);
   console.log('PASS: persistência da pendência, isolamento de empresa, reserva concorrente, replay e revogação reconferida.');
   console.log('PASS: executor WhatsApp real com serviço fiscal sintético; vínculo pré-envio durável, resultado incerto bloqueado e recuperação por prova local sem reenvio.');
   console.log('LIMITES: autorizador fiscal sintético; não testa emissão NFS-e, modelos de IA, transporte, DPS, certificado ou webhook real.');
 } finally {
+  await encerrarPoolEmissaoLocks();
   await db.$disconnect();
 }
 // Fixtures são conservadas exclusivamente no banco descartável para inspeção.

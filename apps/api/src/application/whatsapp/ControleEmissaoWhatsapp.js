@@ -1,3 +1,4 @@
+import { comClientEmissaoLocks } from '../../infrastructure/db/prismaEmissaoLocks.js';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
@@ -6,8 +7,8 @@ const erro = () => Object.assign(new Error('A emissão está sendo processada. A
 
 // A conexão PostgreSQL mantém a exclusão, não um prazo presumido no JSON. Os
 // callbacks não podem continuar enviando após a conexão/transação ser encerrada.
-export async function comControleEmissao({ acaoId, client, executar, timeoutMs = 300000 }) {
-  return client.$transaction(async tx => {
+export async function comControleEmissao({ acaoId, client, lockClient, executar, timeoutMs = 300000 }) {
+  return comClientEmissaoLocks({ client, lockClient, executar: locks => locks.$transaction(async tx => {
     const [lock] = await tx.$queryRaw`SELECT pg_try_advisory_xact_lock(hashtextextended(${'nfse-whatsapp:' + acaoId}, 0)) AS acquired`;
     if (!lock?.acquired) throw erro();
     let encerrado = false;
@@ -18,7 +19,7 @@ export async function comControleEmissao({ acaoId, client, executar, timeoutMs =
     controles.add(controle);
     try { return await executar(controle); }
     finally { encerrado = true; controles.delete(controle); }
-  }, { timeout: timeoutMs, maxWait: 5000 });
+  }, { timeout: timeoutMs, maxWait: 5000 }) });
 }
 
 export async function conferirControleEmissao(controle) {
@@ -27,11 +28,11 @@ export async function conferirControleEmissao(controle) {
   await controle.conferirEscopo?.();
 }
 
-export async function execucaoEmissaoAtiva({ acaoId, client }) {
-  return client.$transaction(async tx => {
+export async function execucaoEmissaoAtiva({ acaoId, client, lockClient }) {
+  return comClientEmissaoLocks({ client, lockClient, executar: locks => locks.$transaction(async tx => {
     const [lock] = await tx.$queryRaw`SELECT pg_try_advisory_xact_lock(hashtextextended(${'nfse-whatsapp:' + acaoId}, 0)) AS acquired`;
     return !lock?.acquired;
-  });
+  }, { timeout: 5000, maxWait: 5000 }) });
 }
 
 // Todo desfecho é CAS. Se uma supervisão venceu após perda da conexão, preservar

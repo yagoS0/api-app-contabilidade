@@ -164,7 +164,9 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     if (!somenteAdminOuContador(req, res)) return;
     try {
       const segmentos = await segmentosFiscais(req);
-      const listas = await Promise.all(segmentos.map(c => listarEmissoesInterrompidas({ conversaId: c.id, conferirEscopo: escopoFiscal(req, c.id), client })));
+      const listas = [];
+      // Uma listagem de grupo não deve esgotar sozinha as vagas de controle.
+      for (const c of segmentos) listas.push(await listarEmissoesInterrompidas({ conversaId: c.id, conferirEscopo: escopoFiscal(req, c.id), client }));
       return res.json({ itens: listas.flatMap(l => l.itens) });
     }
     catch (err) { return res.status(err.status || 500).json({ codigo: err.code || 'CONCILIACAO_FALHOU', message: err.status ? err.message : 'Não foi possível carregar as emissões.' }); }

@@ -44,3 +44,20 @@ test('usuário sem papel fiscal não lista nem confere', async () => {
   expect((await request(x).post('/firm/whatsapp/conversas/c1/emissoes-interrompidas/acao2/conferir').send({})).status).toBe(403);
   expect(listarEmissoesInterrompidas).not.toHaveBeenCalled(); expect(conferirEmissaoInterrompida).not.toHaveBeenCalled();
 });
+
+test('grupo com três segmentos não satura controle por paralelismo interno', async () => {
+  const c = { ...a, id: 'c3', portalClientId: 'p3' };
+  empresasVisiveis.mockResolvedValue(['p1', 'p2', 'p3']);
+  carregarGrupoIdentidade.mockResolvedValue({ origem: a, segmentos: [a, b, c], completo: true });
+  let ativos = 0;
+  listarEmissoesInterrompidas.mockImplementation(async ({ conversaId }) => {
+    ativos++;
+    if (ativos > 2) throw Object.assign(Error('controle ocupado'), { status: 503 });
+    await Promise.resolve();
+    ativos--;
+    return { itens: [{ conversaId }] };
+  });
+  const r = await request(app()).get('/firm/whatsapp/conversas/c1/emissoes-interrompidas');
+  expect(r.status).toBe(200);
+  expect(r.body.itens.map(i => i.conversaId)).toEqual(['c1', 'c2', 'c3']);
+});

@@ -154,6 +154,14 @@ export async function tentarBaixaConfirmacao({ companyId, confirmacaoId, actor }
       if (!registro || ['CONCLUIDA', 'SUBSTITUIDA'].includes(registro.estadoBaixa)) return;
       // A falha não substitui nem apaga o relato original; o evento também não expira.
       const motivo = e.pendencia || (['MES_FECHADO', 'GUIA_ALTERADA'].includes(e.code) ? e.code : 'FALHA_CONTABIL');
+      const estadoPersistido = await tx.appSetting.findUnique({ where: { key: estadoKey(companyId, confirmacaoId) } });
+      // Reentregas tentam a baixa novamente, mas uma pendência inalterada não é
+      // outra transição. Após conflito serializável, a releitura vê o vencedor.
+      // Comparar o estado salvo, não a projeção CONCLUIDA -> BAIXA_A_CONCILIAR.
+      const atual = estadoPersistido?.value;
+      if (atual?.estadoBaixa === 'PENDENTE' && atual.motivo === motivo
+        && !atual.entryIds?.length
+        && Boolean(atual.baixaAnteriorConcluida) === Boolean(registro.baixaAnteriorConcluida)) return;
       await tx.appSetting.create({ data: { key: `contabil:cliente:evento:${companyId}:${confirmacaoId}:${eventoId}`, value: json({
         tipo: 'BAIXA_PENDENTE', confirmacaoId, companyId, motivo, actor: actor || null, ocorridoEm: new Date().toISOString(),
       }) } });

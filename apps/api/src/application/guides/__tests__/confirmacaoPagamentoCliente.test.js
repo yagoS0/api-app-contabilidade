@@ -1,5 +1,5 @@
 import { registrarConfirmacaoTx, tentarBaixaConfirmacao, versaoPagamentoGuia, lerConfirmacaoPagamento,
-  PREFIXO_CONFIRMACAO, reconfirmacaoPagamentoTx } from '../ConfirmacaoPagamentoClienteService.js';
+  PREFIXO_CONFIRMACAO, PREFIXO_ESTADO, reconfirmacaoPagamentoTx } from '../ConfirmacaoPagamentoClienteService.js';
 
 function fixture() {
   let rows = new Map();
@@ -54,6 +54,55 @@ test.each(['MES_FECHADO', 'CONTAS_AUSENTES', 'COMPOSICAO_A_CONFERIR'])('pendênc
   expect((await tentarBaixaConfirmacao(input, f.db, baixa)).confirmacao).toMatchObject({ estadoBaixa: 'PENDENTE', motivo });
   expect(f.guide.paymentStatus).toBe('PAID');
   expect((await tentarBaixaConfirmacao(input, f.db, baixa)).confirmacao.estadoBaixa).toBe('CONCLUIDA');
+});
+
+test('reentrega com mesma pendência preserva evento/revisão; mudança de motivo é auditada', async () => {
+  const f = fixture(), r = await f.register();
+  const input = { companyId: 'c', confirmacaoId: r.confirmacaoId };
+  const baixa = jest.fn().mockRejectedValue(Object.assign(Error('pendência'), { pendencia: 'MES_FECHADO' }));
+  await tentarBaixaConfirmacao(input, f.db, baixa);
+  const antes = structuredClone(f.rows());
+  await tentarBaixaConfirmacao(input, f.db, baixa);
+  expect(f.rows()).toEqual(antes);
+  expect(baixa).toHaveBeenCalledTimes(2);
+  baixa.mockRejectedValue(Object.assign(Error('pendência'), { pendencia: 'CONTAS_AUSENTES' }));
+  await tentarBaixaConfirmacao(input, f.db, baixa);
+  const eventos = [...f.rows().values()].filter(v => v.tipo === 'BAIXA_PENDENTE');
+  expect(eventos.map(v => v.motivo)).toEqual(['MES_FECHADO', 'CONTAS_AUSENTES']);
+  expect((await lerConfirmacaoPagamento(f.db, 'c', r.confirmacaoId)).revisao).toBe(2);
+});
+
+test('conflito serializável relê a pendência vencedora sem gerar outro evento', async () => {
+  const f = fixture(), r = await f.register();
+  const transaction = f.db.$transaction.getMockImplementation();
+  const create = f.tx.appSetting.create.getMockImplementation();
+  const evento = { tipo: 'BAIXA_PENDENTE', motivo: 'MES_FECHADO', confirmacaoId: r.confirmacaoId, companyId: 'c' };
+  let conflito = false;
+  f.tx.appSetting.create.mockImplementation(async args => {
+    if (!conflito && args.data.value.tipo === 'BAIXA_PENDENTE') {
+      conflito = true;
+      throw Object.assign(Error('concorrente venceu'), { code: 'P2034' });
+    }
+    return create(args);
+  });
+  f.db.$transaction.mockImplementation(async fn => {
+    try { return await transaction(fn); } catch (e) {
+      if (e.code === 'P2034') {
+        // Commit da outra conexão depois do rollback da perdedora.
+        await create({ data: { key: 'contabil:cliente:evento:c:vencedor', value: evento } });
+        await f.tx.appSetting.update({ where: { key: `${PREFIXO_ESTADO}c:${r.confirmacaoId}` }, data: { value: {
+          estadoBaixa: 'PENDENTE', motivo: 'MES_FECHADO', entryIds: [], baixaAnteriorConcluida: false, revisao: 1,
+        } } });
+      }
+      throw e;
+    }
+  });
+  const baixa = jest.fn().mockRejectedValue(Object.assign(Error('fechado'), { code: 'MES_FECHADO' }));
+  const out = await tentarBaixaConfirmacao({ companyId: 'c', confirmacaoId: r.confirmacaoId }, f.db, baixa);
+  expect(conflito).toBe(true);
+  expect(out.confirmacao).toMatchObject({ estadoBaixa: 'PENDENTE', motivo: 'MES_FECHADO' });
+  expect([...f.rows().values()].filter(v => v.tipo === 'BAIXA_PENDENTE')).toEqual([evento]);
+  expect((await lerConfirmacaoPagamento(f.db, 'c', r.confirmacaoId)).revisao).toBe(1);
 });
 
 test('falha de auditoria reverte efeito financeiro e mantém declaração anterior', async () => {
@@ -117,6 +166,9 @@ test('estorno não recria baixa nem reutiliza sucesso anterior', async () => {
   f.guide.baixada = false; f.guide.lancamentoId = null;
   const out = await tentarBaixaConfirmacao(input, f.db, baixar);
   expect(out.confirmacao).toMatchObject({ estadoBaixa: 'PENDENTE', motivo: 'BAIXA_A_CONCILIAR' });
+  const estado = f.rows().get(`${PREFIXO_ESTADO}c:${r.confirmacaoId}`);
+  expect(estado).toMatchObject({ estadoBaixa: 'PENDENTE', motivo: 'BAIXA_A_CONCILIAR', baixaAnteriorConcluida: true, revisao: 2 });
+  expect([...f.rows().values()].filter(v => v.tipo === 'BAIXA_PENDENTE')).toHaveLength(1);
   expect(baixar).toHaveBeenCalledTimes(1);
 });
 
