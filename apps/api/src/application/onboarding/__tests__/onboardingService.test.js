@@ -66,8 +66,17 @@ function fichaSalva(over = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   prisma.user.findUnique.mockResolvedValue(null);
+  prisma.propostaComercial.findFirst.mockResolvedValue(null);
+  prisma.contratoComercial.findFirst.mockResolvedValue(null);
   prisma.onboardingEtapa.createMany.mockResolvedValue({ count: 0 });
   prisma.documentoOnboarding.findMany.mockResolvedValue([]);
+  prisma.onboardingAnalise.findMany.mockResolvedValue([]);
+  prisma.onboardingEvento.findMany.mockResolvedValue([]);
+  prisma.onboardingEvento.findFirst.mockReset().mockResolvedValue(null);
+  prisma.propostaComercial.findMany.mockResolvedValue([]);
+  prisma.contratoComercial.findMany.mockResolvedValue([]);
+  prisma.atendimentoLead.findFirst.mockResolvedValue(null);
+  prisma.atendimentoLead.findMany.mockResolvedValue([]);
   prisma.onboarding.updateMany.mockResolvedValue({ count: 1 });
 });
 
@@ -105,9 +114,41 @@ describe("escritas atrasadas depois de conversão", () => {
 
 test("recuperação da conversão não consulta nem vincula empresa fora do escopo", async () => {
   prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+  prisma.propostaComercial.findFirst.mockResolvedValue({ id: 'p', status: 'ACEITA', opcaoAceita: 'RECORRENTE' });
+  prisma.contratoComercial.findFirst.mockResolvedValue({ id: 'c', dados: { opcao: { chave: 'RECORRENTE', recorrente: true } } });
+  prisma.onboardingEvento.findFirst.mockResolvedValue({ id: 'pagamento' });
   await expect(converter("onb-1", { vincularPortalClientId: "portal-fora" }, { atorId: "u1", portalIds: ["portal-permitido"] })).rejects.toMatchObject({ code: "portal_client_nao_encontrado", status: 404 });
   expect(prisma.portalClient.findUnique).not.toHaveBeenCalled();
   expect(prisma.onboarding.update).not.toHaveBeenCalled();
+});
+
+describe('R27: entrada exige contratação e exceção não contorna contrato interno', () => {
+  beforeEach(() => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: 'EM_TRILHA', faseComercial: 'CONTRATADO' }));
+    prisma.propostaComercial.findFirst.mockResolvedValue(null);
+    prisma.contratoComercial.findFirst.mockResolvedValue(null);
+    prisma.user.findUnique.mockResolvedValue({ id: 'u', role: 'contador', status: 'active', accountType: 'FIRM' });
+  });
+  const externa = { confirmada: true, versao: 0, justificativa: 'Contrato anterior fora da Altan', evidencia: 'Referência sintética do contrato 001' };
+  test.each([{}, { vincularPortalClientId: 'portal' }])('T31: sem proposta recusa entrada normal e recuperação', async payload => {
+    await expect(converter('onb-1', payload, { atorId: 'u' })).rejects.toMatchObject({ code: 'contratacao_necessaria' });
+    expect(prisma.onboarding.update).not.toHaveBeenCalled();
+  });
+  test.each(['staff', 'cliente'])('T35: papel %s não pode usar exceção', async role => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u', role, status: 'active', accountType: 'FIRM' });
+    await expect(converter('onb-1', { contratacaoExterna: externa }, { atorId: 'u' })).rejects.toMatchObject({ code: 'forbidden' });
+  });
+  test.each([{ versao: 1 }, { justificativa: ' ' }, { evidencia: '' }, { confirmada: false }])('T35: entrada externa inválida %p', async patch => {
+    await expect(converter('onb-1', { contratacaoExterna: { ...externa, ...patch } }, { atorId: 'u' })).rejects.toMatchObject({ code: 'contratacao_externa_invalida' });
+    expect(prisma.onboarding.update).not.toHaveBeenCalled();
+  });
+  test('T35: proposta interna impede bypass mesmo se pagamento está pendente', async () => {
+    prisma.propostaComercial.findFirst.mockResolvedValue({ id: 'p', status: 'ACEITA' });
+    await expect(converter('onb-1', { contratacaoExterna: externa }, { atorId: 'u' })).rejects.toMatchObject({ code: 'excecao_inaplicavel' });
+  });
+  test('T34: exceção válida conserva a guarda de escopo da recuperação', async () => {
+    await expect(converter('onb-1', { contratacaoExterna: externa, vincularPortalClientId: 'fora' }, { atorId: 'u', portalIds: [] })).rejects.toMatchObject({ code: 'portal_client_nao_encontrado' });
+  });
 });
 
 describe("extrairColunas — uma fonte só para coluna e JSON", () => {
@@ -334,12 +375,14 @@ describe("convertido é SOMENTE LEITURA", () => {
 });
 
 describe("converter — pré-check de CNPJ e recuperação por vínculo", () => {
+  const contratacaoExterna = { confirmada: true, versao: 0, justificativa: 'Cliente contratado externamente', evidencia: 'Referência do contrato externo sintético' };
+  beforeEach(() => prisma.user.findUnique.mockResolvedValue({ id: 'u1', role: 'contador', status: 'active', accountType: 'FIRM' }));
   test("CNPJ já na carteira → 409 cnpj_ja_na_carteira com o id e a razão da empresa existente", async () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "EM_TRILHA" }));
     prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", razao: "JA EXISTE LTDA" });
 
     await expect(
-      converter("onb-1", { company: { cnpj: "11.222.333/0001-81" } }, { atorId: "u1" })
+      converter("onb-1", { contratacaoExterna, company: { cnpj: "11.222.333/0001-81" } }, { atorId: "u1" })
     ).rejects.toMatchObject({
       code: "cnpj_ja_na_carteira",
       status: 409,
@@ -348,14 +391,11 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
   });
 
   test("vincularPortalClientId grava o vínculo sem criar empresa nenhuma", async () => {
-    prisma.onboarding.findUnique
-      .mockResolvedValueOnce(fichaSalva({ status: "EM_TRILHA" })) // carregar
-      .mockResolvedValueOnce(null) // nenhum outro onboarding usa esse portal
-      .mockResolvedValue(fichaSalva({ status: "CONVERTIDO", portalClientId: "portal-7" }));
+    prisma.onboarding.findUnique.mockImplementation(async ({ where }) => where.portalClientId ? null : fichaSalva({ status: 'EM_TRILHA' }));
     prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "11222333000181", razao: "R" });
     prisma.onboarding.update.mockResolvedValue({});
 
-    const out = await converter("onb-1", { vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] });
+    const out = await converter("onb-1", { contratacaoExterna, vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] });
 
     expect(out.vinculado).toBe(true);
     expect(out.portalClientId).toBe("portal-7");
@@ -363,6 +403,7 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
     expect(prisma.portalClient.create).not.toHaveBeenCalled();
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     expect(data).toMatchObject({ portalClientId: "portal-7", status: "CONVERTIDO", convertidoPorId: "u1" });
+    expect(data.eventos.create).toMatchObject({ tipo: 'CONVERTIDO', atorId: 'u1', dados: { contratacao: { origem: 'EXTERNA', evidencia: contratacaoExterna.evidencia, versao: 0, onboardingId: 'onb-1', portalClientId: 'portal-7' } } });
     expect(prisma.onboarding.updateMany).toHaveBeenCalledWith({
       where: { id: "onb-1", versao: 0, status: "EM_TRILHA", portalClientId: null },
       data: { versao: 1 },
@@ -370,13 +411,11 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
   });
 
   test("empresa já vinculada a OUTRA ficha → 409, para não haver dois onboardings da mesma empresa", async () => {
-    prisma.onboarding.findUnique
-      .mockResolvedValueOnce(fichaSalva({ status: "EM_TRILHA" }))
-      .mockResolvedValueOnce({ id: "onb-outra" });
+    prisma.onboarding.findUnique.mockImplementation(async ({ where }) => where.portalClientId ? { id: 'onb-outra' } : fichaSalva({ status: 'EM_TRILHA' }));
     prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "11222333000181", razao: "R" });
 
     await expect(
-      converter("onb-1", { vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] })
+      converter("onb-1", { contratacaoExterna, vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] })
     ).rejects.toMatchObject({ code: "portal_client_ja_vinculado", status: 409 });
     expect(prisma.onboarding.update).not.toHaveBeenCalled();
   });
@@ -489,4 +528,22 @@ describe("checklist preserva proposta enviada", () => {
     prisma.onboarding.findUnique.mockReset(); prisma.onboarding.updateMany.mockReset();
     prisma.onboardingEtapa.update.mockReset(); prisma.propostaComercial.findFirst.mockReset(); prisma.propostaComercial.updateMany.mockReset();
   });
+});
+
+test('listagem de 1 e 100 fichas tem número constante de consultas, sem consultas individuais', async () => {
+  const contagens = [];
+  for (const quantidade of [1, 100]) {
+    jest.clearAllMocks();
+    const fichas = Array.from({ length: quantidade }, (_, i) => fichaSalva({ id: `f-${i}`, status: 'EM_TRILHA', criadoPorId: 'autor', etapas: [] }));
+    prisma.onboarding.findMany.mockResolvedValue(fichas);
+    const resultado = await listar({ escopo: { criadoPorId: 'autor' } });
+    expect(resultado).toHaveLength(quantidade);
+    expect(prisma.onboarding.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ criadoPorId: 'autor' }) }));
+    expect(prisma.atendimentoLead.findFirst).not.toHaveBeenCalled();
+    expect(prisma.onboardingEvento.findFirst).not.toHaveBeenCalled();
+    const leitores = [prisma.onboarding.findMany, prisma.onboardingAnalise.findMany, prisma.onboardingEvento.findMany, prisma.propostaComercial.findMany, prisma.contratoComercial.findMany, prisma.atendimentoLead.findMany];
+    contagens.push(leitores.reduce((n, fn) => n + fn.mock.calls.length, 0));
+    expect(prisma.propostaComercial.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { onboardingId: { in: fichas.map(f => f.id) } } }));
+  }
+  expect(contagens).toEqual([9, 9]);
 });

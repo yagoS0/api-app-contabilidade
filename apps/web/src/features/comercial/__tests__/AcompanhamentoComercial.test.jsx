@@ -39,3 +39,22 @@ test('conflito ao agendar mantém os dados e mostra erro para conferência', asy
   expect(screen.getByLabelText('Próxima ação')).toHaveValue('Revisar proposta');
   expect(comercial).toHaveBeenLastCalledWith('/onboardings/f1/retorno', expect.objectContaining({ versao: 4, acao: 'Revisar proposta' }));
 });
+
+test('retorno confirmado permanece visível se a recarga falhar, sem pedir novo salvamento', async () => {
+  let salvo = false;
+  const comercial = jest.fn(async (_, body) => {
+    if (body) { salvo = true; return { versao: 5, retorno: { dados: { acao: body.acao, quando: body.quando, responsavelNome: 'Ana' } } }; }
+    if (salvo) throw new Error('Leitura indisponível');
+    return { versao: 4 };
+  });
+  montar(comercial);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Agendar retorno' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Agendar retorno' }));
+  fireEvent.change(screen.getByLabelText('Próxima ação'), { target: { value: 'Conferir documentação' } });
+  fireEvent.change(screen.getByLabelText('Data e hora'), { target: { value: '2026-10-20T10:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar retorno' }));
+  expect(await screen.findByText(/Conferir documentação.*Ana/)).toBeVisible();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Leitura indisponível');
+  expect(screen.queryByLabelText('Próxima ação')).not.toBeInTheDocument();
+  expect(comercial.mock.calls.filter(([, body]) => body)).toHaveLength(1);
+});

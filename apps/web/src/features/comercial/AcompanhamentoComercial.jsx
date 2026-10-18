@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import './comercial.css';
+import { resumoRetorno } from './comercialModel';
 
 export function AcompanhamentoComercial({ api, onboarding, onAtualizar }) {
   const [estado, setEstado] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
@@ -32,15 +33,17 @@ export function AcompanhamentoComercial({ api, onboarding, onAtualizar }) {
       } else {
         const data = new Date(quando);
         if (!Number.isFinite(data.getTime())) throw new Error('Informe uma data e hora válidas para o retorno.');
-        await api.comercial(`${base}/retorno`, { acao, quando: data.toISOString(), versao: estado?.versao });
-        setRevisao(v => v + 1); onAtualizar?.();
+        const salvo = await api.comercial(`${base}/retorno`, { acao, quando: data.toISOString(), versao: estado?.versao });
+        setEstado(s => ({ ...s, ...salvo }));
+        setRevisao(v => v + 1);
+        try { await onAtualizar?.(); } catch (e) { setErro(`Retorno salvo, mas não foi possível atualizar a ficha. ${e.message}`); }
       }
       setForm(null);
     } catch(e) { setErro(e.message || 'Não foi possível confirmar. Atualize antes de repetir.'); }
     finally { trava.current = false; setOcupado(false); }
   }
   return <section className="commercial-followup" aria-label="Acompanhamento comercial">
-    <div className="commercial-followup-heading"><div><strong>Próximo contato</strong><p>{estado?.retorno ? `${estado.retorno.dados.acao} · ${new Date(estado.retorno.dados.quando).toLocaleString('pt-BR')}` : 'Nenhum retorno agendado'}</p></div><div className="commercial-tools">
+    <div className="commercial-followup-heading"><div><strong>Próximo contato</strong><p>{estado ? resumoRetorno(estado.retorno) : erro ? 'Retorno indisponível' : 'Carregando retorno…'}</p></div><div className="commercial-tools">
       {estado?.conversaId ? <Link className="commercial-chat-link" to={`/comercial/conversas?conversa=${encodeURIComponent(estado.conversaId)}`}>Abrir conversa ↗</Link> : <Button variant="secondary" onClick={abrirContato} disabled={ocupado}>Iniciar contato</Button>}
       <Button variant="secondary" disabled={ocupado || !estado} onClick={() => setForm('retorno')}>Agendar retorno</Button>
     </div></div>

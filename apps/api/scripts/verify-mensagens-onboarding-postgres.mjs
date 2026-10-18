@@ -64,12 +64,20 @@ async function fixture(sufixo) {
   const portal = await db.portalClient.create({ data: { id: `${run}-${sufixo}-portal`, razao: "Empresa fictícia do ensaio", cnpj: String(crypto.randomInt(10000000, 99999999)) + "000199" } });
   const ficha = await db.onboarding.create({ data: { id: `${run}-${sufixo}`, origem: "ABERTURA", status: "RECEBIDO", cnpj: portal.cnpj,
     etapas: { create: { chave: "conferencia", titulo: "Conferência fictícia", ordem: 1 } } }, include: { etapas: true } });
-  return { ficha, portal, converter: () => converter(ficha.id, { vincularPortalClientId: portal.id }, { portalIds: [portal.id] }) };
+  // R27: este ensaio representa clientes contratados externamente, sem proposta interna.
+  return { ficha, portal, converter: () => converter(ficha.id, {
+    vincularPortalClientId: portal.id,
+    contratacaoExterna: { confirmada: true, versao: ficha.versao,
+      justificativa: "Cliente fictício contratado fora da Altan",
+      evidencia: `Contrato externo sintético ${run}-${sufixo}` },
+  }, { atorId: `${run}-contador`, portalIds: [portal.id] }) };
 }
 
 try {
   // Falha antes de qualquer fixture se o alvo não está acessível/migrado.
   await db.$queryRaw`SELECT 1`;
+  await db.user.create({ data: { id: `${run}-contador`, email: `${run}@example.invalid`,
+    passwordHash: "fixture-sem-login", role: "contador", status: "active", accountType: "FIRM" } });
   for (const acao of ["etapa", "desistencia", "atualizacao", "comercial"]) {
     const t = await fixture(acao), chegou = barreira(), continuar = barreira(); let capturar = true;
     db.onboarding.findUnique = async args => {
@@ -91,6 +99,8 @@ try {
     assert.equal(persistida.status, "CONVERTIDO"); assert.equal(persistida.versao, 1);
     assert.equal(persistida.portalClientId, t.portal.id); assert.equal(persistida.etapas[0].concluidaEm, null);
     assert.equal(persistida.eventos.filter(e => e.tipo === "CONVERTIDO").length, 1);
+    assert.equal(persistida.eventos.find(e => e.tipo === "CONVERTIDO").dados.contratacao.origem, "EXTERNA");
+    assert.equal(persistida.eventos.find(e => e.tipo === "CONVERTIDO").dados.contratacao.atorId, `${run}-contador`);
     assert.equal(persistida.eventos.filter(e => ["DESISTIU", "ETAPA_ATUALIZADA", "FICHA_ATUALIZADA", "COMERCIAL_ATUALIZADO"].includes(e.tipo)).length, 0);
     assert.equal(persistida.faseComercial, t.ficha.faseComercial); assert.deepEqual(persistida.proposta, t.ficha.proposta);
     ok(`Conversão real vence ${acao} atrasada sem perder histórico`);

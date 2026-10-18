@@ -1,3 +1,4 @@
+import { EvidenciasDaEtapa } from '../onboarding/components/ChecklistEtapas';
 import { SITUACOES } from './ChecklistImplantacao.shared.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -104,6 +105,8 @@ export function ChecklistImplantacao({ api, companyId, podeEditar = true }) {
           <div><dt>Responsável</dt><dd>{t.responsavel || 'Sem responsável'}</dd></div>
           <div><dt>Prazo</dt><dd className={t.atrasada ? 'implantacao-atrasada' : undefined}>{data(t.prazo)}{t.atrasada ? ' · Atrasada' : ''}</dd></div>
         </dl>
+        <EvidenciasDaEtapa evidencias={t.evidencias} />
+        {t.conclusaoPorEvidencia && <p>Concluída pela evidência do diagnóstico.</p>}
         {t.pendencia && <p className="implantacao-observacao">{t.pendencia}</p>}
         {editando === t.chave && <>
         {t.origem && <details><summary>Registro aproveitado do onboarding</summary><p>{t.origem.titulo} · {t.origem.concluidaEm ? `Conclusão registrada em ${data(t.origem.concluidaEm)}` : 'Pendente na conversão'}</p>{t.origem.observacao && <p>{t.origem.observacao}</p>}</details>}

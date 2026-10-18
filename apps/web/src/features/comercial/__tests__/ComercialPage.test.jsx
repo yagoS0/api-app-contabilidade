@@ -5,7 +5,7 @@ import { etapaDaOportunidade } from '../comercialModel';
 jest.mock('../../whatsapp/pages/renderWhatsappPage', () => ({ WhatsappPage: ({ area }) => <p>Área {area}</p> }));
 test('oportunidades preservam conclusão avulsa e contratação pendente', () => {
   expect(etapaDaOportunidade({ status: 'CONCLUIDO_AVULSO', faseComercial: 'LEAD' })).toBe('CONCLUIDO');
-  expect(etapaDaOportunidade({ status: 'EM_TRILHA', faseComercial: 'CONTRATADO' })).toBe('ONBOARDING');
+  expect(etapaDaOportunidade({ status: 'EM_TRILHA', faseComercial: 'CONTRATADO' })).toBe('INDISPONIVEL');
 });
 test('busca encontra oportunidade e abre a ficha existente', async () => {
   const api = { listarOnboardings: jest.fn(async () => ({ itens: [{ id: 'f1', razaoSocial: 'Clínica teste', origem: 'ABERTURA', faseComercial: 'ANALISE' }, { id: 'f2', responsavelNome: 'Outro contato', status: 'DESISTIU' }] })) };
@@ -38,7 +38,7 @@ test('subabas mostram retornos, oportunidades, mensagens e onboardings pendentes
   render(<MemoryRouter><ComercialPage api={api} /></MemoryRouter>);
   const abas = within(screen.getByRole('navigation', { name: 'Comercial' }));
   expect(await abas.findByLabelText('1 retornos para hoje ou atrasados')).toBeVisible();
-  expect(abas.getByLabelText('1 oportunidades em andamento')).toBeVisible();
+  expect(abas.getByLabelText('2 oportunidades em andamento')).toBeVisible();
   expect(abas.getByLabelText('1 onboardings com etapas pendentes')).toBeVisible();
   expect(await abas.findByLabelText('125 mensagens comerciais não lidas')).toHaveTextContent('99+');
   expect(api.getResumoWhatsapp).toHaveBeenCalledWith({ area: 'comercial' });

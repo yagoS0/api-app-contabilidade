@@ -24,8 +24,8 @@ test.each(["TRANSFERENCIA", "INATIVA"])("%s percorre análise pública, autoriza
   j.devolutiva = { incerta: true }; expect(montarJornada(e).atual).toBe("devolutiva");
   j.devolutiva = { concluida: true }; expect(montarJornada(e).atual).toBe("proposta");
   e.propostas = [{ id: "pr", status: "ENVIADA" }]; expect(montarJornada(e).atual).toBe("proposta");
-  e.propostas[0].status = "ACEITA"; expect(montarJornada(e).atual).toBe("contrato");
-  e.contratos = [{ id: "ct", propostaId: "pr", status: "AGUARDANDO_ASSINATURA" }];
+  e.propostas[0].status = "ACEITA"; e.propostas[0].opcaoAceita = "RECORRENTE"; expect(montarJornada(e).atual).toBe("contrato");
+  e.contratos = [{ id: "ct", propostaId: "pr", status: "AGUARDANDO_ASSINATURA", dados: { opcao: { chave: "RECORRENTE", recorrente: true } } }];
   expect(montarJornada(e).atual).toBe("contrato");
   e.contratos[0].status = "ASSINADO_CONFERIDO"; expect(montarJornada(e).atual).toBe("pagamento");
   e.marcos.push({ tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: "outro" } }); expect(montarJornada(e).atual).toBe("pagamento");

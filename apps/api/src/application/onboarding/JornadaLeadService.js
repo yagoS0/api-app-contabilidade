@@ -54,13 +54,10 @@ function contextoDoDiagnostico(ficha, analiseId, conferencia = null, roteiroVers
   return createHash("sha256").update(JSON.stringify(partes)).digest("hex");
 }
 
-// O progresso nasce de provas salvas; abrir uma aba ou enviar um formulário não conclui análise.
-export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaConversa,
-  comercial = criarServicoComercial({ db }) } = {}) {
-  async function carregar(id, user) {
-    exigirGestor(user);
-    const ficha = await exigirEscopo(id, user, db);
-    const [analises, registros, conferencias] = await Promise.all([
+// Leitura interna: o chamador deve ter autorizado a ficha; não produz efeitos.
+export async function carregarEvidenciasJornada(ficha, db = prisma, leituras = null) {
+  const id = ficha.id;
+    const [analises, registros, conferencias] = leituras ? [leituras.analises, leituras.registros, leituras.conferencias] : await Promise.all([
       db.onboardingAnalise.findMany({ where: { onboardingId: id, cnpj: ficha.cnpj || "" }, orderBy: { createdAt: "desc" }, take: 100,
         select: { id: true, tipo: true, status: true, cnpj: true, resultado: true, createdAt: true } }),
       db.onboardingEvento.findMany({ where: { onboardingId: id, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 }),
@@ -70,13 +67,13 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
     const publicaConferencia = conferenciaPublica(analises, conferencias, ficha);
     const referencia = contextoDoDiagnostico(ficha, ["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem) || registros[0]?.dados?.dispensaConsultaPrivada ? null : fiscal?.id || null, publicaConferencia, registros[0]?.dados?.roteiro?.versao, registros[0]?.dados?.perfilConferido);
     const diagnostico = registros[0]?.dados?.contexto === referencia ? registros[0] : null;
-    const saidas = diagnostico ? await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
-      orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } }) : [];
+    const saidas = diagnostico ? (leituras ? leituras.saidas.filter(s => s.referenciaComercial?.diagnosticoId === diagnostico.id) : await db.mensagemWhatsapp.findMany({ where: { direcao: "out", referenciaComercial: { path: ["diagnosticoId"], equals: diagnostico.id } },
+      orderBy: [{ registradaEm: "desc" }, { id: "desc" }], select: { id: true, statusEnvio: true, referenciaComercial: true, erroEnvioMensagem: true } })) : [];
     const partes = (["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem) || diagnostico?.dados?.dispensaConsultaPrivada ? ["TEXTO"] : ["RELATORIO", "TEXTO"]).map(parte => {
       const saida = saidas.find(s => s.referenciaComercial?.parte === parte);
       return { parte, mensagemId: saida?.id || null, status: saida?.statusEnvio || "nao_enviado", erro: saida?.erroEnvioMensagem || null };
     });
-    const apresentacao = diagnostico ? await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: diagnostico.id } }, orderBy: { createdAt: "desc" } }) : null;
+    const apresentacao = diagnostico ? (leituras ? leituras.apresentacoes.find(e => e.dados?.diagnosticoId === diagnostico.id) || null : await db.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "JORNADA_DEVOLUTIVA_CONFERIDA", dados: { path: ["diagnosticoId"], equals: diagnostico.id } }, orderBy: { createdAt: "desc" } })) : null;
     return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
       diagnosticoPendencias: pendenciasDiagnosticoComercial(diagnostico?.dados, ficha.origem),
       publicaConferida: Boolean(publicaConferencia), publicaConferencia,
@@ -86,6 +83,15 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       diagnosticoAnteriorId: !diagnostico ? registros[0]?.id || null : null,
       devolutiva: { partes, apresentacao, concluida: Boolean(diagnostico) && (Boolean(apresentacao) || partes.every(p => confirmados.has(p.status))),
         incerta: partes.some(p => ["enviando", "indeterminado"].includes(p.status)) } };
+  }
+
+// O progresso nasce de provas salvas; abrir uma aba ou enviar um formulário não conclui análise.
+export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaConversa,
+  comercial = criarServicoComercial({ db }) } = {}) {
+  async function carregar(id, user) {
+    exigirGestor(user);
+    const ficha = await exigirEscopo(id, user, db);
+    return carregarEvidenciasJornada(ficha, db);
   }
 
   async function diagnosticar(id, user, body = {}) {

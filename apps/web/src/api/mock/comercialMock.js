@@ -1,18 +1,21 @@
+import { montarJornada } from '../../features/onboarding/lib/jornadaComercial';
 // Demonstração local, sem consultas fiscais, mensagens externas ou assinatura real.
 import { normalizarDiagnosticoComercial, textoDaDevolutiva } from "../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 export function criarMockComercial({
   onboardings,
   persistir,
+  estadoContratacao = {},
   prepararConversa = null,
   atendimentosIniciais = []
 }) {
   const recursos = [],
     atendimentos = new Map(atendimentosIniciais.map(a => [a.conversaId, JSON.parse(JSON.stringify(a))])),
     historicoAtendimentos = [],
-    propostas = new Map(),
-    contratos = new Map(),
-    links = new Map(),
-    docs = new Map(), fichasAvulsas = new Map();
+    propostas = estadoContratacao.propostas ||= new Map(),
+    contratos = estadoContratacao.contratos ||= new Map(),
+    links = estadoContratacao.links ||= new Map(),
+    docs = estadoContratacao.docs ||= new Map(),
+    fichasAvulsas = estadoContratacao.fichasAvulsas ||= new Map();
   const uid = () => crypto.randomUUID(),
     agora = () => new Date().toISOString();
   const ficha = id => {
@@ -213,7 +216,7 @@ export function criarMockComercial({
         a = [...atendimentos.values()].find(a => a.onboardingId === o.id);
       if (suffix === "/fiscal") return { relatorios: [], consumo: { gpt: { disponivel: false }, serpro: { concluidas: 0, pendentes: 0, erros: 0, custoConfirmado: null } }, bloqueio: { mensagem: "Demonstração: nenhuma consulta fiscal real foi realizada." } };
       if (suffix.startsWith("/fiscal/")) throw Error("Demonstração: não há relatório fiscal real para revisar ou enviar.");
-      if (!suffix) return {
+      if (!suffix) { const estado = {
         ok: true,
         onboarding: {
           ...o
@@ -230,7 +233,7 @@ export function criarMockComercial({
         documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(documento => { const dados = { ...documento }; delete dados.file; return dados; }),
         trabalhos: [],
         marcos: o.marcosComerciais || []
-      };
+      }; estado.jornada.projecao = montarJornada(estado); return estado; }
       if (suffix === "/ficha-avulsa") return { ok: true, fichaAvulsa: fichasAvulsas.get(o.id) || null };
       if (suffix === "/jornada/apresentacao") {
         if (body.versao !== o.versao || !diagnosticoAtual(o) || body.diagnosticoId !== diagnosticoAtual(o).id || body.meio?.trim().length < 3 || body.evidencia?.trim().length < 3) throw Error("Confira a versão, o diagnóstico e a evidência da apresentação.");
@@ -253,7 +256,9 @@ export function criarMockComercial({
       if (suffix === "/jornada/conferencia") throw Error("Demonstração: não há consulta pública ou fiscal real para conferir.");
       if (suffix === "/jornada/pagamento") {
         const c = contratos.get(body.contratoId);
-        if (!c || c.onboardingId !== o.id || c.status !== "ASSINADO_CONFERIDO" || body.evidencia?.trim().length < 10) throw Error("Confira o contrato e a evidência demonstrativa.");
+        const p = propostas.get(c?.propostaId);
+        if (!c || c.onboardingId !== o.id || c.status !== "ASSINADO_CONFERIDO" || p?.status !== "ACEITA" || p.revogadaEm || p.opcaoAceita !== c.dados?.opcao?.chave || typeof body.evidencia !== 'string' || body.evidencia.trim().length < 10) throw Error("Confira o contrato e a evidência demonstrativa.");
+        if (o.marcosComerciais?.some(m => m.tipo === 'PAGAMENTO_HONORARIOS_CONFERIDO' && m.dados?.contratoId === c.id)) return { ok: true };
         o.marcosComerciais = [...(o.marcosComerciais || []), { id: uid(), tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", createdAt: agora(), dados: { contratoId: c.id, evidencia: body.evidencia, origem: "DEMONSTRACAO" } }];
         persistir(); return { ok: true };
       }
@@ -295,6 +300,7 @@ export function criarMockComercial({
           snapshot: snapshot(o)
         };
         propostas.set(p.id, p);
+        persistir();
         return {
           ok: true,
           proposta: p
@@ -304,10 +310,11 @@ export function criarMockComercial({
       if (pm) {
         const p = propostas.get(pm[1]);
         if (!p || p.onboardingId !== o.id) throw Error("Proposta não encontrada.");
-        if (pm[2] === "aprovar") p.status = "APROVADA";
+        if (pm[2] === "aprovar") { p.status = "APROVADA"; persistir(); }
         if (pm[2] === "link") {
           const token = uid();
           links.set(token, p.id);
+          persistir();
           return {
             ok: true,
             token
@@ -327,6 +334,7 @@ export function criarMockComercial({
             }
           };
           contratos.set(c.id, c);
+          persistir();
           return {
             ok: true,
             contrato: c
@@ -340,9 +348,19 @@ export function criarMockComercial({
       const cm = /^\/contratos\/([^/]+)\/(aprovar|assinatura)$/.exec(suffix);
       if (cm) {
         const c = contratos.get(cm[1]);
-        if (!c) throw Error("Contrato não encontrado.");
-        if (cm[2] === "assinatura" && !docs.has(body.documentoId)) throw Error("Selecione o documento demonstrativo.");
+        if (!c || c.onboardingId !== o.id) throw Error("Contrato não encontrado.");
+        const p = propostas.get(c.propostaId);
+        if (p?.status !== 'ACEITA' || p.revogadaEm || p.opcaoAceita !== c.dados?.opcao?.chave) throw Error("Confira o contrato correspondente à opção aceita e vigente.");
+        if (c.status !== (cm[2] === 'aprovar' ? 'MINUTA' : 'AGUARDANDO_ASSINATURA')) throw Error("Contrato fora da etapa esperada.");
+        if (cm[2] === "assinatura" && docs.get(body.documentoId)?.onboardingId !== o.id) throw Error("Selecione o documento demonstrativo desta ficha.");
         c.status = cm[2] === "aprovar" ? "AGUARDANDO_ASSINATURA" : "ASSINADO_CONFERIDO";
+        if (cm[2] === 'assinatura') {
+          c.documentoAssinadoId = body.documentoId;
+          c.assinaturaConferidaEm = agora();
+          c.assinaturaConferidaPor = 'contador-demonstracao';
+          o.versao = (o.versao || 0) + 1;
+        }
+        persistir();
         return {
           ok: true
         };
@@ -375,6 +393,7 @@ export function criarMockComercial({
         if (!aceite.confirmado || aceite.versao !== p.versao || !p.snapshot.opcoes.some(o => o.chave === aceite.opcao)) throw Error("Confira a opção.");
         p.status = "ACEITA";
         p.opcaoAceita = aceite.opcao;
+        persistir();
       }
       return {
         proposta: {
@@ -398,6 +417,7 @@ export function criarMockComercial({
         file
       };
       docs.set(d.id, d);
+      persistir();
       return {
         documento: {
           id: d.id,
@@ -423,7 +443,7 @@ export function criarMockComercial({
     },
     async baixarDocumentoComercial(_id, doc) {
       const d = docs.get(doc);
-      if (!d) throw Error("Documento ausente.");
+      if (!d?.file) throw Error("Arquivo demonstrativo indisponível após recarga. Anexe novamente para baixar.");
       return d.file;
     },
     async baixarContratoComercial() {

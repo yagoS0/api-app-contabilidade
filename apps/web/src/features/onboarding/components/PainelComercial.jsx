@@ -7,7 +7,7 @@ const FASES = { LEAD: "Primeiro contato", ANALISE: "Em análise", PROPOSTA: "Pro
 const data = (v) => v ? new Date(v).toLocaleString("pt-BR") : "—";
 const campoStyle = { display: "block", width: "100%", padding: 8, marginBottom: 12, background: "var(--bg-page)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6 };
 
-export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0, coletaInicial = false, continuar = 0 }) {
+export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0, coletaInicial = false, continuar = 0, onAtualizar }) {
   const { pedir: confirmar, dialogo } = useConfirmacao();
   const [estado, setEstado] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false);
   const [fase, setFase] = useState("LEAD"), [texto, setTexto] = useState(""), [valor, setValor] = useState("");
@@ -63,17 +63,17 @@ export function PainelComercial({ api, onboardingId, convertido = false, revisao
       {link && <div className="onboarding-share"><p>Envio manual: copie o link ou a mensagem.</p><label>Link pessoal<input style={campoStyle} value={link} readOnly /></label><Button onClick={async () => { try { await navigator.clipboard.writeText(link); setAviso("Link copiado."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar link</Button><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(`Olá! Preencha o formulário para iniciarmos seu atendimento: ${link}\nVocê pode salvar por etapas. Ao concluir, envie os dados ao escritório pelo próprio formulário.`); setAviso("Mensagem com link copiada. Cole na conversa com o cliente."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar mensagem com link</Button></div>}
       <ul className="onboarding-links">{(estado.links || []).map((l) => <li key={l.id}>Validade: {data(l.expiresAt)} · {l.revokedAt ? "Revogado" : l.submittedAt ? "Enviado pelo cliente" : new Date(l.expiresAt).getTime() <= Date.now() ? "Expirado" : "Ativo"} {!l.revokedAt && !l.submittedAt && new Date(l.expiresAt).getTime() > Date.now() && !convertido && <Button variant="secondary" disabled={ocupado} onClick={() => executar(async () => { await api.revogarLinkOnboarding(onboardingId, l.id); setLink(""); }, "Link revogado.")}>Revogar link</Button>}</li>)}</ul>
 </details>
-      {api.comercial && <details className="onboarding-panel" open={jornadaAberta} onToggle={e => setJornadaAberta(e.currentTarget.open)}><summary>Jornada comercial e contratação</summary><FluxoComercial api={api} onboardingId={onboardingId} revisao={revisao} /></details>}
+      {api.comercial && <details className="onboarding-panel" open={jornadaAberta} onToggle={e => setJornadaAberta(e.currentTarget.open)}><summary>Jornada comercial e contratação</summary><FluxoComercial api={api} onboardingId={onboardingId} revisao={revisao} onAtualizar={onAtualizar} /></details>}
       <details className="onboarding-panel"><summary>Anotações comerciais e análises</summary>
       <fieldset disabled={ocupado || convertido} style={{ border: 0, padding: 0 }}>
         <legend>Anotações livres do atendimento</legend>
-        <label>Etapa comercial<select style={campoStyle} value={fase} onChange={(e) => setFase(e.target.value)}>{Object.entries(FASES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+        <p>Registro legado: estas anotações não definem a jornada nem comprovam aceite de proposta.</p><label>Classificação manual legada<select style={campoStyle} value={fase} onChange={(e) => setFase(e.target.value)}>{Object.entries(FASES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
         <label>Proposta e condições<textarea style={campoStyle} value={texto} maxLength={10000} onChange={(e) => setTexto(e.target.value)} /></label>
         <label>Honorários mensais (R$)<input style={campoStyle} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} /></label>
         <Button onClick={() => {
           const mensal = valor.trim().replace(",", ".");
           if (mensal && (!/^\d+(\.\d{1,2})?$/.test(mensal) || Number(mensal) < 0)) { setErro("Informe honorários com até duas casas decimais, sem separador de milhar."); return; }
-          executar(() => api.salvarOnboardingComercial(onboardingId, { faseComercial: fase, proposta: { texto, valorMensal: mensal ? Number(mensal) : null } }), "Etapa e proposta salvas.");
+          executar(() => api.salvarOnboardingComercial(onboardingId, { faseComercial: fase, proposta: { texto, valorMensal: mensal ? Number(mensal) : null } }), "Anotações comerciais salvas.");
         }}>Salvar atendimento</Button>
         <h3>Análises</h3>
         <p>A consulta fiscal exige procuração válida.</p>

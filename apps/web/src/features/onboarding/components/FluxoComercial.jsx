@@ -1,3 +1,4 @@
+import { nomeDaOportunidade } from '../../comercial/comercialModel';
 import { campoComercial } from './FluxoComercial.shared.js';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
@@ -21,7 +22,7 @@ import { DevolutivaDoLead } from "./DevolutivaDoLead";
 import { montarJornada } from "../lib/jornadaComercial";
 import { ProgressoDoLead, CamposDaEtapa, DiagnosticoDoLead, MensagemDoPasso, OrientacaoDoPasso } from "./PassosDoLead";
 
-export function FluxoComercial({ api, onboardingId, conversaId: conversaInformada, janela = null, canalDisponivel = true, canalDeEnvio = null, revisao = 0 }) {
+export function FluxoComercial({ api, onboardingId, conversaId: conversaInformada, janela = null, canalDisponivel = true, canalDeEnvio = null, revisao = 0, onAtualizar }) {
   const [estado, setEstado] = useState(null), [recursos, setRecursos] = useState([]), [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false), [passoEscolhido, setPassoEscolhido] = useState(null), [link, setLink] = useState("");
   const [documentoId, setDocumentoId] = useState("");
@@ -29,16 +30,24 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
   const [evidenciaPagamento, setEvidenciaPagamento] = useState(""), [linkPagamento, setLinkPagamento] = useState("");
   const [evidenciaEntrega, setEvidenciaEntrega] = useState("");
   const trava = useRef(false), vivo = useRef(false), pedido = useRef(0), carregando = useRef(false), tituloRef = useRef(null);
+  const contexto = useRef(onboardingId);
+  contexto.current = onboardingId;
+  const atualizarPai = useRef(onAtualizar);
+  atualizarPai.current = onAtualizar;
   const base = "/onboardings/" + encodeURIComponent(onboardingId);
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async ({ propagar = false } = {}) => {
     const n = ++pedido.current; carregando.current = true;
     try {
       const [e, r] = await Promise.all([api.comercial(base), api.comercial("/recursos")]);
-      if (vivo.current && n === pedido.current) { setEstado(e); setRecursos(r.recursos || []); }
+      if (vivo.current && n === pedido.current && contexto.current === onboardingId) {
+        setEstado(atual => atual?.onboarding?.id === e.onboarding?.id && atual?.onboarding?.versao > e.onboarding?.versao ? atual : e);
+        setRecursos(r.recursos || []);
+        if (propagar) await atualizarPai.current?.({ origem: 'polling' });
+      }
     } finally { if (n === pedido.current) carregando.current = false; }
-  }, [api, base]);
+  }, [api, base, onboardingId]);
   useEffect(() => { const pedidoDaExecucao = pedido;
-    vivo.current = true; setEstado(null); setPassoEscolhido(null);
+    vivo.current = true; trava.current = false; setOcupado(false); setEstado(null); setPassoEscolhido(null);
     carregar().catch(e => { if (vivo.current) setErro(e.message); });
     return () => { vivo.current = false; pedidoDaExecucao.current++; };
   }, [carregar]);
@@ -48,19 +57,32 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
   // Somente lê resultados salvos: nenhuma consulta fiscal ou geração de IA no polling.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState !== "hidden" && !trava.current && !carregando.current) carregar().catch(e => { if (vivo.current) setErro(e.message); });
+      if (document.visibilityState !== "hidden" && !trava.current && !carregando.current) carregar({ propagar: true }).catch(e => { if (vivo.current && contexto.current === onboardingId) setErro(e.message); });
     }, 10000);
     return () => clearInterval(timer);
-  }, [carregar]);
+  }, [carregar, onboardingId]);
   async function executar(fn) {
     if (trava.current) return false;
+    const id = onboardingId;
     trava.current = true; setOcupado(true); setErro("");
-    try { await fn(); await carregar(); if (vivo.current) setPassoEscolhido(null); return true; }
-    catch (e) { if (vivo.current) { setErro(e.message); await carregar().catch(() => {}); } return false; }
-    finally { trava.current = false; if (vivo.current) setOcupado(false); }
+    try {
+      await fn();
+      if (!vivo.current || contexto.current !== id) return true;
+      const atualizado = await atualizarAposAcao();
+      if (atualizado && vivo.current && contexto.current === id) setPassoEscolhido(null);
+      return atualizado;
+    } catch (e) { if (vivo.current && contexto.current === id) { setErro(e.message); await carregar().catch(() => {}); } return false; }
+    finally { if (vivo.current && contexto.current === id) { trava.current = false; setOcupado(false); } }
+  }
+  async function atualizarAposAcao() {
+    const id = onboardingId;
+    const resultados = await Promise.allSettled([carregar(), Promise.resolve().then(() => onAtualizar?.())]);
+    const falha = resultados.find(r => r.status === 'rejected');
+    if (falha && vivo.current && contexto.current === id) setErro(`A ação foi salva, mas não foi possível atualizar o atendimento. ${falha.reason.message}`);
+    return !falha;
   }
   const acao = (path, body = {}) => executar(() => api.comercial(base + path, body));
-  const baseJornada = estado ? { ...montarJornada(estado), ...(estado.jornada?.projecao || {}) } : null;
+  const baseJornada = estado ? montarJornada(estado) : null;
   const jornada = baseJornada ? { ...baseJornada, passos: [...baseJornada.passos, { id: "conclusao", titulo: "Execução e conclusão", concluido: baseJornada.encerrado, acessivel: baseJornada.atual === "conclusao", pendencias: [] }] } : null;
   const passo = jornada && (jornada.passos.some(p => p.id === passoEscolhido && p.acessivel) ? passoEscolhido : jornada.atual);
   useEffect(() => { if (passo) tituloRef.current?.focus({ preventScroll: true }); }, [passo]);
@@ -78,14 +100,17 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
   const trabalho = tipo => estado.trabalhos?.find(t => t.tipo === tipo && t.cnpj === o.cnpj);
   const emConsulta = tipo => ["PENDENTE", "PROCESSANDO", "AGUARDANDO"].includes(trabalho(tipo)?.status);
   const camposOrcamento = <CamposDaEtapa sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelEmail", "servicoSolicitado"] : ["responsavelNome", "responsavelEmail", "modalidadeServico", jornada.abertura ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} />;
-  const formulario = <MensagemDoPasso api={api} conversaId={conversaId} disabled={ocupado} onEnviado={carregar} rotulo={"Preparar formulário de " + jornada.nome.toLowerCase()} preparar={async () => {
+  const formulario = <MensagemDoPasso api={api} conversaId={conversaId} disabled={ocupado} onEnviado={atualizarAposAcao} rotulo={"Preparar formulário de " + jornada.nome.toLowerCase()} preparar={async () => {
     const r = await api.criarLinkOnboarding(onboardingId, { diasValidade: 7 });
     if (!r.token) throw new Error("Não foi possível confirmar o link.");
     return { texto: "Para continuarmos com seu atendimento, preencha este formulário: " + window.location.origin + "/onboarding/publico#token=" + encodeURIComponent(r.token) + "\nOs dados chegam diretamente ao nosso atendimento. Se preferir, pode responder por aqui." };
   }} />;
   return <section aria-label="Propostas e contratação" className="lead-journey">
+    <p className="onboarding-help">{nomeDaOportunidade(o)}</p>
+    {jornada.contratacao?.ganha && !jornada.encerrado && <p role="status">Ganha · assinatura conferida. A implantação pode começar; {jornada.contrato?.dados?.opcao?.recorrente === false ? 'o serviço avulso segue seu acompanhamento de execução e entrega.' : jornada.contratacao.carteiraPermitida ? 'a entrada na carteira está disponível após conferir o cadastro definitivo.' : 'a entrada na carteira aguarda a conferência do pagamento deste contrato.'}</p>}
+    {jornada.contratacao?.externa && <details><summary>Contratação externa registrada</summary><p>{jornada.contratacao.externa.justificativa}</p><p>{jornada.contratacao.externa.evidencia}</p><p>Registrada por {jornada.contratacao.externa.atorId} em {jornada.contratacao.externa.registradaEm}</p></details>}
     {erro && <p role="alert">{erro}</p>}
-    {jornada.encerrado ? <><p role="status">Solicitação encerrada. O histórico está preservado; inicie outra solicitação para um novo serviço.</p>{o.status === "CONCLUIDO_AVULSO" && jornada.abertura && <FichaAvulsa api={api} onboarding={o} somenteLeitura />}</> : <>
+    {jornada.encerrado ? <><p role="status">{({ CONVERTIDO: 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[o.status] || 'Solicitação encerrada'}. O histórico está preservado.</p>{o.status === "CONCLUIDO_AVULSO" && jornada.abertura && <FichaAvulsa api={api} onboarding={o} somenteLeitura />}</> : <>
     <ProgressoDoLead jornada={jornada} selecionado={passo} onSelecionar={setPassoEscolhido} ocupado={ocupado} />
     {etapa && passo !== "conclusao" && <header className="lead-current-step">
       <div className="lead-step-meta"><span>{passo === jornada.atual ? "Etapa atual" : etapa.concluido ? "Etapa concluída" : "Histórico do atendimento"}</span><small>Passo {jornada.passos.indexOf(etapa) + 1} de {jornada.passos.length}</small></div>
@@ -96,9 +121,9 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
       <AcoesDaEtapa key={passo + (passo === "proposta" ? ":" + (estado.propostas[0]?.id || "nova") : "")} tituloPrincipal={({ cadastro: "Preencher dados", publica: "Consultar CNPJ", autorizacao: "Verificar procuração", fiscal: "Consultar situação fiscal", proposta: "Dados e proposta", contrato: "Orientar assinatura" })[passo] || "Ação da etapa"} preferirAlternativa={passo === "contrato"}>
       {["autorizacao", "fiscal"].includes(passo) && jornada.comandosPermitidos?.diagnosticoLimitado && <details><summary>Continuar sem consulta automática</summary><p>Use quando o escopo puder ser definido com os dados públicos conferidos. Registre expressamente o que não foi consultado.</p><DiagnosticoDoLead sempreAberto limitado jornada={estado.jornada} onboarding={o} ocupado={ocupado} onSalvarDados={b => acao("/campos", b)} onSalvar={b => acao("/jornada/diagnostico", b)} /></details>}
       {passo === "cadastro" && <><details><summary>Enviar formulário</summary>{formulario}<p>Gerar outro formulário substitui o link anterior. O envio do link não conclui a coleta.</p></details><CamposDaEtapa sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelCpf", "responsavelEmail", "responsavelTelefone", "servicoSolicitado"] : ["responsavelNome", "atividadePretendida", "municipioAtendimento", "enderecoPretendido"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} /></>}
-      {passo === "publica" && <>{cadastroSalvo && <ConferirCadastroSalvo onboarding={o} ocupado={ocupado} acao={acao} />}{cadastroSalvo ? <details><summary>Atualizar consulta cadastral</summary><AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={carregar} tipo="PUBLICA" /></details> : <AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={carregar} tipo="PUBLICA" />}{jornada.publica && <Button onClick={() => acao("/jornada/conferencia", { versao: o.versao, tipo: "PUBLICA", analiseId: jornada.publica.id })}>Conferi os dados do CNPJ: continuar</Button>}<details><summary>Conferir manualmente</summary><ConferenciaPublicaManual onboarding={o} ocupado={ocupado} acao={acao} /></details><details><summary>Enviar formulário complementar</summary>{formulario}</details></>}
-      {passo === "autorizacao" && <AutorizacaoDoLead key={onboardingId + o.cnpj} api={api} recursos={recursos} estado={estado} conversaId={conversaId} ocupado={ocupado} carregar={carregar} acao={acao} trabalho={trabalho("PROCURACAO")} />}
-      {passo === "fiscal" && <>{estado.configuracao?.consultasFiscais === false && <p role="alert">A integração fiscal de leads precisa ser habilitada para continuar.</p>}<Button disabled={emConsulta("SITFIS") || estado.configuracao?.consultasFiscais === false} onClick={() => acao("/consultas", { tipo: "SITFIS" })}>{emConsulta("SITFIS") ? "Aguardando consulta fiscal…" : "Solicitar situação fiscal"}</Button>{trabalho("SITFIS") && <p role="status">{trabalho("SITFIS").status} · {trabalho("SITFIS").resultado?.mensagem}</p>}<AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={async opcoes => { await carregar(); setPassoEscolhido(opcoes?.manterFiscal ? "fiscal" : null); }} conversaId={conversaId} tipo="SITFIS" /></>}
+      {passo === "publica" && <>{cadastroSalvo && <ConferirCadastroSalvo onboarding={o} ocupado={ocupado} acao={acao} />}{cadastroSalvo ? <details><summary>Atualizar consulta cadastral</summary><AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={atualizarAposAcao} tipo="PUBLICA" /></details> : <AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={atualizarAposAcao} tipo="PUBLICA" />}{jornada.publica && <Button onClick={() => acao("/jornada/conferencia", { versao: o.versao, tipo: "PUBLICA", analiseId: jornada.publica.id })}>Conferi os dados do CNPJ: continuar</Button>}<details><summary>Conferir manualmente</summary><ConferenciaPublicaManual onboarding={o} ocupado={ocupado} acao={acao} /></details><details><summary>Enviar formulário complementar</summary>{formulario}</details></>}
+      {passo === "autorizacao" && <AutorizacaoDoLead key={onboardingId + o.cnpj} api={api} recursos={recursos} estado={estado} conversaId={conversaId} ocupado={ocupado} carregar={atualizarAposAcao} acao={acao} trabalho={trabalho("PROCURACAO")} />}
+      {passo === "fiscal" && <>{estado.configuracao?.consultasFiscais === false && <p role="alert">A integração fiscal de leads precisa ser habilitada para continuar.</p>}<Button disabled={emConsulta("SITFIS") || estado.configuracao?.consultasFiscais === false} onClick={() => acao("/consultas", { tipo: "SITFIS" })}>{emConsulta("SITFIS") ? "Aguardando consulta fiscal…" : "Solicitar situação fiscal"}</Button>{trabalho("SITFIS") && <p role="status">{trabalho("SITFIS").status} · {trabalho("SITFIS").resultado?.mensagem}</p>}<AnaliseDoLead key={onboardingId} api={api} onboarding={o} onAtualizar={async opcoes => { await atualizarAposAcao(); if (contexto.current !== onboardingId) return; setPassoEscolhido(opcoes?.manterFiscal ? "fiscal" : null); }} conversaId={conversaId} tipo="SITFIS" /></>}
       {passo === "diagnostico" && <DiagnosticoDoLead sempreAberto key={onboardingId} jornada={estado.jornada} onboarding={o} ocupado={ocupado} onSalvarDados={b => acao("/campos", b)} onSalvar={b => acao("/jornada/diagnostico", b)} />}
       {passo === "devolutiva" && <DevolutivaDoLead key={estado.jornada?.diagnostico?.id} api={api} estado={estado} conversaId={conversaId} janela={janela} canalDisponivel={canalDisponivel} ocupado={ocupado} acao={acao} executar={executar} />}
       {passo === "proposta" && <>
@@ -123,7 +148,7 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
 
       </>}
       {passo === "contrato" && <>
-        <OrientacaoDoPasso api={api} recursos={recursos} chaves={["assinatura-govbr"]} onboarding={o} conversaId={conversaId} onEnviado={carregar} disabled={ocupado} />
+        <OrientacaoDoPasso api={api} recursos={recursos} chaves={["assinatura-govbr"]} onboarding={o} conversaId={conversaId} onEnviado={atualizarAposAcao} disabled={ocupado} />
         <details key={contratosAtuais.map(c => c.id + c.status).join(":")}><summary>{contratosAtuais.length ? "Conferir contrato e assinatura" : "Preparar contrato"}</summary>
         {estado.propostas.filter(p => p.id === jornada.proposta?.id && p.status === "ACEITA" && !p.revogadaEm && !estado.contratos.some(c => c.propostaId === p.id)).map(p => <FormularioContrato key={onboardingId + ":" + p.id} onboarding={o} proposta={p} recursos={recursos} onGerar={body => acao(`/propostas/${p.id}/contrato`, body)} />)}
         {contratosAtuais.map(c => <article key={c.id}><strong>Contrato · {c.status}</strong><pre style={{
@@ -158,7 +183,7 @@ export function FluxoComercial({ api, onboardingId, conversaId: conversaInformad
 
       </>}
       {passo === "pagamento" && <><details><summary>Registrar conferência do pagamento</summary><p>Contrato com assinatura conferida. Registre o pagamento somente depois de verificar o comprovante.</p><label>Evidência do pagamento deste contrato<textarea rows={3} value={evidenciaPagamento} onChange={e => setEvidenciaPagamento(e.target.value)} /></label><Button disabled={evidenciaPagamento.trim().length < 10} onClick={() => acao("/jornada/pagamento", { contratoId: jornada.contrato.id, evidencia: evidenciaPagamento })}>Conferi o pagamento deste contrato</Button></details><details><summary>Enviar um link de cobrança já criada</summary><label>Link da cobrança Asaas<input type="url" value={linkPagamento} onChange={e => setLinkPagamento(e.target.value)} /></label><MensagemDoPasso key={linkPagamento} api={api} conversaId={conversaId} rotulo="Preparar link de pagamento" disabled={!linkPagamento} preparar={async () => { const u = new URL(linkPagamento); if (u.protocol !== "https:" || !(u.hostname === "asaas.com" || u.hostname.endsWith(".asaas.com"))) throw new Error("Informe o link HTTPS da cobrança emitida no Asaas."); return { texto: "Segue o link para pagamento dos serviços contratados: " + u.href }; }} /></details></>}
-      {passo === "conclusao" && <><div role="status"><h4 ref={tituloRef} tabIndex={-1}>Atendimento comercial concluído</h4><p>A proposta foi aceita, a assinatura foi conferida e o pagamento deste contrato foi registrado.</p><a className="btn btn-primary btn-md" href={"/onboardings/" + encodeURIComponent(onboardingId)}>Abrir acompanhamento do serviço</a></div>{jornada.contrato?.dados?.opcao?.recorrente === false && <>{jornada.abertura && <FichaAvulsa api={api} onboarding={o} onSalvo={carregar} />}<details><summary>Encerrar serviço avulso após a entrega</summary><p>Use somente quando o serviço contratado já tiver sido executado e entregue ao cliente.</p><label>Evidência da entrega<textarea maxLength={2000} rows={3} value={evidenciaEntrega} onChange={e => setEvidenciaEntrega(e.target.value)} /></label><Button disabled={evidenciaEntrega.trim().length < 10} onClick={() => acao("/concluir-avulso", { evidencia: evidenciaEntrega })}>Conferi a entrega: concluir serviço avulso</Button></details></>}</>}
+      {passo === "conclusao" && <><div role="status"><h4 ref={tituloRef} tabIndex={-1}>Execução e conclusão</h4><p>A proposta foi aceita, a assinatura foi conferida e o pagamento deste contrato foi registrado. A execução do serviço ainda deve ser acompanhada.</p><a className="btn btn-primary btn-md" href={"/onboardings/" + encodeURIComponent(onboardingId)}>Abrir acompanhamento do serviço</a></div>{jornada.contrato?.dados?.opcao?.recorrente === false && <>{jornada.abertura && <FichaAvulsa api={api} onboarding={o} onSalvo={atualizarAposAcao} />}<details><summary>Encerrar serviço avulso após a entrega</summary><p>Use somente quando o serviço contratado já tiver sido executado e entregue ao cliente.</p><label>Evidência da entrega<textarea maxLength={2000} rows={3} value={evidenciaEntrega} onChange={e => setEvidenciaEntrega(e.target.value)} /></label><Button disabled={evidenciaEntrega.trim().length < 10} onClick={() => acao("/concluir-avulso", { evidencia: evidenciaEntrega })}>Conferi a entrega: concluir serviço avulso</Button></details></>}</>}
       </AcoesDaEtapa>
     </fieldset>
     {etapa && passo !== jornada.atual && <Button variant="secondary" onClick={() => setPassoEscolhido(null)}>Continuar da etapa atual</Button>}

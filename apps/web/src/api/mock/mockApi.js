@@ -1,4 +1,5 @@
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
+import { validarContratacaoExterna } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
 import { exigirDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
@@ -1619,6 +1620,8 @@ function mockNotaDeLista(n) {
 const mockOnboardings = new Map();
 const mockLinksComerciais = new Map();
 const mockOnboardingEtapas = new Map(); // onboardingId -> etapa[]
+// Compartilhado pelas instâncias da API; restauração não fabrica marcos comerciais.
+const mockContratacao = Object.fromEntries(['propostas', 'contratos', 'links', 'docs', 'fichasAvulsas'].map(chave => [chave, new Map()]));
 let mockOnboardingSeq = 0;
 
 // O fluxo WhatsApp abre a ficha por href. A demonstração precisa sobreviver à
@@ -1630,11 +1633,20 @@ try {
     for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id, ficha);
     for (const [id, etapas] of salvo.etapas) mockOnboardingEtapas.set(id, etapas);
     mockOnboardingSeq = Number.isSafeInteger(salvo.seq) ? salvo.seq : 0;
+    for (const [chave, mapa] of Object.entries(mockContratacao)) {
+      for (const [id, registro] of salvo.contratacao?.[chave] || []) mapa.set(id, registro);
+    }
   }
 } catch { /* Navegador sem storage mantém a demonstração em memória. */ }
 function persistirOnboardingsMock() {
   try {
-    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CHAVE_ONBOARDING_MOCK, JSON.stringify({ fichas: [...mockOnboardings], etapas: [...mockOnboardingEtapas], seq: mockOnboardingSeq }));
+    // File não é serializável em sessionStorage. Conservar metadados/vínculos,
+    // sem prometer que o binário demonstrativo continua disponível após F5.
+    const contratacao = Object.fromEntries(Object.entries(mockContratacao).map(([chave, mapa]) => [chave, [...mapa].map(([id, registro]) => {
+      if (chave !== 'docs') return [id, registro];
+      const metadados = { ...registro }; delete metadados.file; return [id, metadados];
+    })]));
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CHAVE_ONBOARDING_MOCK, JSON.stringify({ fichas: [...mockOnboardings], etapas: [...mockOnboardingEtapas], seq: mockOnboardingSeq, contratacao }));
   } catch { /* A indisponibilidade do storage não interfere na API real. */ }
 }
 
@@ -3830,6 +3842,19 @@ export function createMockApi() {
   const formularioCalculo = p => ({ atividades: p.atividades || [], folhaMensal12: p.folhaMensal12 || [], regimeApuracao: p.regimeApuracao || "COMPETENCIA" });
   const obsoleto = () => ({ ok: false, error: "CALCULO_DESATUALIZADO", message: "Calcule novamente e confira o resultado antes de fechar ou transmitir." });
 
+  const comercialMock = criarMockComercial({ onboardings: mockOnboardings, estadoContratacao: mockContratacao, persistir: persistirOnboardingsMock, prepararConversa: prepararConversaComercialMock });
+  // Lista, detalhe e respostas de escrita consultam a mesma jornada da conversa.
+  // A projeção é calculada na leitura, sem persistir outra fonte de etapa.
+  const comProjecaoComercial = async registro => {
+    const estado = await comercialMock.comercial(`/onboardings/${registro.id}`);
+    const p = estado.jornada.projecao;
+    return { ...registro, conversao: { contratoConferido: p.contratacao.carteiraPermitida, excecaoAplicavel: p.contratacao.excecaoAplicavel, motivo: p.contratacao.carteiraPermitida ? null : 'Confira a contratação e o pagamento aplicável antes de adicionar à carteira.' }, comercial: {
+      contratacao: p.contratacao,
+      atual: p.atual,
+      titulo: ({ CONVERTIDO: 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[registro.status]
+        || (p.contratacao.ganha ? 'Ganha · ' + (p.contratacao.carteiraPermitida ? 'entrada na carteira disponível' : p.contrato?.dados?.opcao?.recorrente === false ? 'execução do serviço' : 'carteira pendente de pagamento') : p.passos.find(passo => passo.id === p.atual)?.titulo) || 'Execução e conclusão',
+    } };
+  };
   let accessToken = "";
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
@@ -3842,7 +3867,7 @@ export function createMockApi() {
     ...reformaMock,
     ...criarApuracaoConsumoMock(),
     ...createPendenciasManuaisMock(),
-    ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock, prepararConversa: prepararConversaComercialMock }),
+    ...comercialMock,
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
     ...criarMockTarefasCalendario(mockCompanies),
     setUnauthorizedHandler() {},
@@ -10990,7 +11015,7 @@ export function createMockApi() {
       if (!anterior) throw new Error("Atendimento não encontrado.");
       if (versao != null && versao !== (anterior.versao || 0)) throw new Error("A ficha foi atualizada. Reabra antes de continuar.");
       const repetida = [...mockOnboardings.values()].find(o => chaveSolicitacao && o.demandaOrigemId === id && o.chaveSolicitacao === chaveSolicitacao);
-      if (repetida) return { ok: true, onboarding: { ...repetida, etapas: mockEtapasDe(repetida.id) } };
+      if (repetida) return { ok: true, onboarding: await comProjecaoComercial({ ...repetida, etapas: mockEtapasDe(repetida.id) }) };
       const dados = Object.fromEntries(["responsavelNome", "responsavelEmail", "responsavelTelefone"].map(k => [k, anterior.dados?.[k] || anterior[k] || ""]));
       const registro = { id: `mock-onb-${++mockOnboardingSeq}`, origem, status: "RASCUNHO", dados, ...dados,
         versao: 0, origemPreenchimento: "ESCRITORIO", cnpj: null, razaoSocial: null, portalClientId: null,
@@ -11001,7 +11026,7 @@ export function createMockApi() {
       mockOnboardings.set(registro.id, registro);
       mockOnboardingEtapas.set(registro.id, []);
       persistirOnboardingsMock();
-      return { ok: true, onboarding: { ...registro, etapas: [] } };
+      return { ok: true, onboarding: await comProjecaoComercial({ ...registro, etapas: [] }) };
     },
     async criarOnboarding(origem) {
       await delay(180);
@@ -11021,7 +11046,7 @@ export function createMockApi() {
       mockOnboardings.set(registro.id, registro);
       mockOnboardingEtapas.set(registro.id, []);
       persistirOnboardingsMock();
-      return { ok: true, onboarding: { ...registro, etapas: [] } };
+      return { ok: true, onboarding: await comProjecaoComercial({ ...registro, etapas: [] }) };
     },
 
     async listarOnboardings({ origem, status, q, incluirRascunhos } = {}) {
@@ -11041,7 +11066,7 @@ export function createMockApi() {
           const etapas = mockEtapasDe(o.id);
           return { ...o, progresso: { total: etapas.length, concluidas: etapas.filter((e) => e.concluidaEm).length } };
         });
-      return { ok: true, itens };
+      return { ok: true, itens: await Promise.all(itens.map(comProjecaoComercial)) };
     },
 
     async getOnboarding(id) {
@@ -11053,7 +11078,7 @@ export function createMockApi() {
         err.status = 404;
         throw err;
       }
-      return { ok: true, onboarding: registro };
+      return { ok: true, onboarding: await comProjecaoComercial(registro) };
     },
 
     async salvarOnboarding(id, patch = {}) {
@@ -11094,7 +11119,7 @@ export function createMockApi() {
       atual.updatedAt = new Date().toISOString();
       mockOnboardings.set(atual.id, atual);
       persistirOnboardingsMock();
-      return { ok: true, onboarding: mockOnboardingComEtapas(atual.id) };
+      return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(atual.id)) };
     },
 
     async salvarEtapaOnboarding(id, etapaId, patch = {}) {
@@ -11112,7 +11137,7 @@ export function createMockApi() {
       if (patch.concluida === true && registro.status === "RECEBIDO") registro.status = "EM_TRILHA";
       registro.updatedAt = new Date().toISOString();
       persistirOnboardingsMock();
-      return { ok: true, etapa, onboarding: mockOnboardingComEtapas(id) };
+      return { ok: true, etapa, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
     },
 
     async converterOnboarding(id, payload = {}) {
@@ -11122,7 +11147,18 @@ export function createMockApi() {
       if (registro.status === "CONVERTIDO") {
         throw Object.assign(new Error("Este onboarding já foi convertido."), { code: "onboarding_convertido", status: 409 });
       }
+      if (registro.origem === 'PESSOA_FISICA' || ['DESISTIU', 'CONCLUIDO_AVULSO'].includes(registro.status)) throw Object.assign(new Error('Esta solicitação não permite entrada na carteira.'), { code: 'conversao_indisponivel', status: 409 });
+      const versao = registro.versao || 0;
+      const estado = await comercialMock.comercial(`/onboardings/${id}`);
+      if ((registro.versao || 0) !== versao || registro.status === 'CONVERTIDO') throw Object.assign(new Error('A ficha mudou. Atualize antes de converter.'), { code: 'formulario_alterado', status: 409 });
+      const contratacao = estado.jornada.projecao.contratacao;
+      if (payload.contratacaoExterna !== undefined) {
+        const invalida = validarContratacaoExterna(payload.contratacaoExterna, versao);
+        if (!contratacao.excecaoAplicavel || invalida) throw Object.assign(new Error(invalida || 'A exceção não substitui a contratação interna.'), { code: 'contratacao_externa_invalida', status: 409 });
+      } else if (!contratacao.carteiraPermitida) throw Object.assign(new Error('Confira a contratação e o pagamento deste contrato.'), { code: 'contratacao_necessaria', status: 409 });
       const portalClientId = payload.vincularPortalClientId || `mock-portal-${++mockOnboardingSeq}`;
+      registro.versao = versao + 1;
+      registro.marcosComerciais = [...(registro.marcosComerciais || []), { tipo: 'CONVERTIDO', createdAt: new Date().toISOString(), dados: { contratacao: payload.contratacaoExterna ? { origem: 'EXTERNA', justificativa: payload.contratacaoExterna.justificativa.trim(), evidencia: payload.contratacaoExterna.evidencia.trim(), atorId: 'contador-demonstracao', registradaEm: new Date().toISOString(), onboardingId: id, portalClientId, versao } : { origem: 'INTERNA', propostaId: contratacao.propostaId, contratoId: contratacao.contratoId } } }];
       registro.portalClientId = portalClientId;
       registro.status = "CONVERTIDO";
       registro.convertidoEm = new Date().toISOString();
@@ -11133,7 +11169,7 @@ export function createMockApi() {
         vinculado: Boolean(payload.vincularPortalClientId),
         portalClientId,
         regrasAplicadas: { regrasAvaliadas: 0, obrigacoesCriadas: 0 },
-        onboarding: mockOnboardingComEtapas(id),
+        onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)),
       };
     },
 
@@ -11146,7 +11182,7 @@ export function createMockApi() {
       registro.motivoDesistencia = motivo || null;
       registro.updatedAt = new Date().toISOString();
       persistirOnboardingsMock();
-      return { ok: true, onboarding: mockOnboardingComEtapas(id) };
+      return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
     },
 
     async descartarOnboarding(id) {

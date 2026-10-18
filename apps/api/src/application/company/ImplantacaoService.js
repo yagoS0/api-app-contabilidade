@@ -1,4 +1,6 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
+import { carregarEvidenciasJornada } from '../onboarding/JornadaLeadService.js';
+import { evidenciasDiagnostico, etapasComEvidencias } from '../onboarding/ProjecaoComercialService.js';
 
 export const STATUS_IMPLANTACAO = ['A_FAZER', 'AGUARDANDO_CLIENTE', 'AGENDADO', 'CONCLUIDO', 'NAO_SE_APLICA'];
 export const TAREFAS_IMPLANTACAO = [
@@ -33,10 +35,14 @@ export function projetarImplantacao(onboarding, salvas = [], agora = new Date())
     Object.assign(t, { status: etapa.concluidaEm ? 'CONCLUIDO' : 'A_FAZER', pendencia: etapa.observacao || null,
       concluidaEm: etapa.concluidaEm || null, concluidaPorId: etapa.concluidaPorId || null,
       origem: { onboardingId: onboarding.id, etapaId: etapa.id, titulo: etapa.titulo, concluidaEm: etapa.concluidaEm ? new Date(etapa.concluidaEm).toISOString() : null, concluidaPorId: etapa.concluidaPorId || null, observacao: etapa.observacao || null } });
+    t.evidencias = etapa.evidencias || [];
+    // Evidência somente satisfaz a tarefa específica, nunca acessos amplos.
+    const prova = t.evidencias.find(e => e.satisfaz);
+    if (!etapa.concluidaEm && prova) Object.assign(t, { status: 'CONCLUIDO', concluidaEm: prova.em, conclusaoPorEvidencia: true });
   }
   for (const salva of salvas) {
     const i = tarefas.findIndex(t => t.chave === salva.chave);
-    if (i < 0) tarefas.push(salva); else tarefas[i] = salva;
+    if (i < 0) tarefas.push(salva); else tarefas[i] = { ...salva, evidencias: tarefas[i].evidencias || [] };
   }
   const hoje = hojeSp(agora);
   const itens = tarefas.map(t => ({ ...t, prazo: dia(t.prazo), atrasada: !final(t.status) && Boolean(t.prazo) && dia(t.prazo) < hoje }));
@@ -51,10 +57,15 @@ export async function lerImplantacao(portalClientId, db = prisma, agora = new Da
   const empresa = await db.portalClient.findUnique({ where: { id: portalClientId }, select: { id: true } });
   if (!empresa) throw erro('Empresa não encontrada.', 404);
   const [onboarding, salvas] = await Promise.all([
-    db.onboarding.findUnique({ where: { portalClientId }, select: { id: true, etapas: { orderBy: { ordem: 'asc' } } } }),
+    db.onboarding.findUnique({ where: { portalClientId }, include: { etapas: { orderBy: { ordem: 'asc' } } } }),
     db.implantacaoTarefa.findMany({ where: { portalClientId }, orderBy: { createdAt: 'asc' } }),
   ]);
-  return projetarImplantacao(onboarding, salvas, agora);
+  if (!onboarding) return projetarImplantacao(null, salvas, agora);
+  const [jornada, atendimento] = await Promise.all([
+    carregarEvidenciasJornada(onboarding, db),
+    db.atendimentoLead.findFirst({ where: { onboardingId: onboarding.id }, orderBy: { createdAt: 'desc' } }),
+  ]);
+  return projetarImplantacao({ ...onboarding, etapas: etapasComEvidencias(onboarding.etapas, evidenciasDiagnostico(onboarding, jornada, atendimento)) }, salvas, agora);
 }
 
 export function validarEdicaoImplantacao(corpo) {

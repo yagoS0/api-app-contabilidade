@@ -10,12 +10,22 @@
 
 import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { etapaSatisfeita } from '../lib/jornadaComercial';
 
 const TEXTO_A1 =
   "sem o certificado A1 a captura de NFS-e falha em silêncio — a empresa parece sem nota";
 
+export function EvidenciasDaEtapa({ evidencias = [] }) {
+  return evidencias.length > 0 && <details><summary>Evidências do diagnóstico</summary><ul>{evidencias.map(e => <li key={`${e.chave}:${e.id}`}>
+    {e.escopo} · {e.origem} · {e.em ? formatarData(e.em) : 'Data não informada'}
+    {e.cnpj ? ` · CNPJ ${e.cnpj}` : ''}{e.id ? ` · Referência ${e.id}` : ''}
+    {e.estado ? ` · ${e.estado}` : ''}{e.validade ? ` · Validade: ${formatarData(e.validade)}` : ''}
+    {e.satisfaz ? ' · Evidência aproveitada, sem nova marcação' : ' · Não conclui os demais acessos'}
+  </li>)}</ul></details>;
+}
+
 function corDaRegua(etapa) {
-  if (etapa.concluidaEm) return "var(--state-ok)";
+  if (etapaSatisfeita(etapa)) return "var(--state-ok)";
   // ⚠ O A1 ganha destaque enquanto não concluído — e a PALAVRA faz mais que a cor aqui.
   // Não escalar para `--state-danger`: esse token é reservado a bloqueio de fechamento contábil.
   if (etapa.acao === "CERTIFICADO_A1") return "var(--state-warn)";
@@ -74,8 +84,8 @@ export function CardEtapa({
         <input
           type="checkbox"
           id={`etapa-${etapa.id}`}
-          checked={Boolean(etapa.concluidaEm)}
-          disabled={ocupada}
+          checked={etapaSatisfeita(etapa)}
+          disabled={ocupada || etapa.evidencias?.some(e => e.satisfaz)}
           onChange={(e) => onAlternar(etapa, e.target.checked)}
           style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--state-ok)" }}
         />
@@ -120,6 +130,8 @@ export function CardEtapa({
             </p>
           )}
 
+          <EvidenciasDaEtapa evidencias={etapa.evidencias} />
+          {etapa.evidencias?.some(e => e.satisfaz) && !etapa.concluidaEm && <p className="onboarding-help">Concluída pela evidência do diagnóstico.</p>}
           {etapa.observacao && !editandoObs && <p className="onboarding-help">{etapa.observacao}</p>}
           {editandoObs ? (
             <div style={{ marginTop: "var(--space-2)", display: "grid", gap: "var(--space-2)" }}>
@@ -198,7 +210,7 @@ export function ChecklistEtapas({
       </p>
     );
   }
-  const concluidas = etapas.filter((e) => e.concluidaEm).length;
+  const concluidas = etapas.filter(etapaSatisfeita).length;
 
   return (
     <div>

@@ -131,7 +131,7 @@ export function createOnboardingsRouter({ log } = {}) {
 
   router.get("/onboardings/:id", async (req, res) => {
     try {
-      return res.json({ ok: true, onboarding: await obter(req.params.id) });
+      return res.json({ ok: true, onboarding: await obter(req.params.id, req.auth?.user) });
     } catch (err) {
       return falhar(res, err, { rota: "obter", id: req.params.id });
     }

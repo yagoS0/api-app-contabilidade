@@ -297,7 +297,7 @@ test("onboarding direto não envia à conversa antiga e permite avançar pela co
 });
 
 test("serviço avulso contratado só encerra com evidência explícita de entrega", async () => {
-  const estado = { onboarding: { id: "o", origem: "ABERTURA", dados: {}, versao: 3 }, propostas: [{ id: "p", status: "ACEITA" }], contratos: [{ id: "c", propostaId: "p", status: "ASSINADO_CONFERIDO", dados: { opcao: { recorrente: false } } }], marcos: [{ tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: "c" } }], documentos: [], trabalhos: [] };
+  const estado = { onboarding: { id: "o", origem: "ABERTURA", dados: {}, versao: 3 }, propostas: [{ id: "p", status: "ACEITA", opcaoAceita: "AVULSO" }], contratos: [{ id: "c", propostaId: "p", status: "ASSINADO_CONFERIDO", dados: { opcao: { chave: "AVULSO", recorrente: false } } }], marcos: [{ tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: "c" } }], documentos: [], trabalhos: [] };
   const api = { comercial: jest.fn(async path => path === "/recursos" ? { recursos: [] } : estado) };
   render(<FluxoComercial api={api} onboardingId="o" />);
   fireEvent.click(await screen.findByText("Encerrar serviço avulso após a entrega"));

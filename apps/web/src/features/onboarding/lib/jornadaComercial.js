@@ -1,18 +1,32 @@
 import { pendenciasDiagnosticoComercial } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
+import { projetarContratacao, resumirContratacao } from "../../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 const nomes = { PESSOA_FISICA: "Pessoa física", ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" };
 const existe = v => Boolean(String(v || "").trim());
 
+export const etapaSatisfeita = etapa => Boolean(etapa.concluidaEm || etapa.evidencias?.some(e => e.satisfaz));
+
 export function montarJornada(estado, agora = Date.now()) {
+  if (estado.jornada?.projecao) {
+    const projecao = estado.jornada.projecao;
+    // Completar somente metadados de apresentação de respostas compatíveis.
+    // Etapa, acessibilidade e evidências continuam integralmente do servidor.
+    return {
+      ...projecao,
+      nome: projecao.nome || nomes[estado.onboarding?.origem] || 'Atendimento',
+      abertura: projecao.abertura ?? estado.onboarding?.origem === 'ABERTURA',
+      pessoaFisica: projecao.pessoaFisica ?? estado.onboarding?.origem === 'PESSOA_FISICA',
+    };
+  }
+  // Compatibilidade com respostas anteriores e demonstração; servidor atual é soberano.
   const o = estado.onboarding, d = o.dados || {}, j = estado.jornada || {};
   const abertura = o.origem === "ABERTURA", pessoaFisica = o.origem === "PESSOA_FISICA";
   const analises = (j.analises || []).filter(a => a.cnpj === o.cnpj);
   const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA");
   const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
-  const proposta = (estado.propostas || []).find(p => !p.revogadaEm);
+  const contratacao = projetarContratacao(estado);
+  const { proposta, contrato, pagamento } = contratacao;
   const aceita = proposta?.status === "ACEITA";
-  const contrato = (estado.contratos || []).find(c => c.propostaId === proposta?.id);
-  const assinado = aceita && contrato?.status === "ASSINADO_CONFERIDO";
-  const pagamento = assinado && (estado.marcos || []).find(m => m.tipo === "PAGAMENTO_HONORARIOS_CONFERIDO" && m.dados?.contratoId === contrato.id);
+  const assinado = contratacao.ganha;
   const pendentes = j.dadosPendentes || (pessoaFisica ? [[o.responsavelNome || d.responsavelNome, "Nome"], [d.servicoSolicitado, "Serviço solicitado"]].filter(([v]) => !existe(v)).map(([, n]) => n) : abertura ? [[o.responsavelNome || d.responsavelNome, "Nome do responsável"], [d.atividadePretendida, "Atividade pretendida"], [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]].filter(([v]) => !existe(v)).map(([,n]) => n) : o.cnpj ? [] : ["CNPJ"]);
   const autorizacao = estado.atendimento?.autorizacao;
   const autorizada = Boolean(estado.atendimento?.representanteVerificadoEm && autorizacao?.cnpj === o.cnpj && autorizacao.estado === "ATIVA"
@@ -40,6 +54,6 @@ export function montarJornada(estado, agora = Date.now()) {
   const indiceAtual = passos.findIndex((p, i) => i >= inicio && !p.concluido);
   const atual = indiceAtual < 0 ? "conclusao" : passos[indiceAtual].id;
   passos.forEach((p, i) => { p.acessivel = indiceAtual < 0 || i <= indiceAtual; });
-  return { passos, atual, indiceAtual, publica, fiscal, proposta, contrato, pagamento, abertura, pessoaFisica, nome: nomes[o.origem] || o.origem,
+  return { contratacao: resumirContratacao(contratacao), passos, atual, indiceAtual, publica, fiscal, proposta, contrato, pagamento, abertura, pessoaFisica, nome: nomes[o.origem] || o.origem,
     encerrado: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(o.status) };
 }

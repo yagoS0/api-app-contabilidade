@@ -7,9 +7,27 @@ const onboarding = { id: 'o1', etapas: [
   { id: 'e4', chave: 'conferencia_debitos', titulo: 'Conferir débitos', observacao: 'Cliente deve enviar recibos' },
 ] };
 const corpo = { status: 'AGENDADO', responsavel: 'Equipe fiscal', prazo: '2026-10-20', pendencia: 'Solicitar A1', versao: 0 };
+test('evidência satisfaz SITFIS, preserva acessos e não sobrescreve tarefa operacional editada', () => {
+  const prova = { id: 'a1', chave: 'sitfis', satisfaz: true, em: '2026-10-17', origem: 'Diagnóstico comercial' };
+  const ficha = { id: 'o1', etapas: [
+    { id: 's1', chave: 'sitfis', acao: 'SITFIS', evidencias: [prova] },
+    { id: 'p1', chave: 'procuracao_ecac', evidencias: [{ ...prova, chave: 'procuracao_ecac', satisfaz: false }] },
+  ] };
+  const inicial = projetarImplantacao(ficha, [], agora);
+  expect(inicial.tarefas.find(t => t.chave === 'onboarding:s1')).toMatchObject({ status: 'CONCLUIDO', conclusaoPorEvidencia: true });
+  expect(inicial.tarefas.find(t => t.chave === 'procuracao_ecac').status).toBe('A_FAZER');
+  const salva = { chave: 'onboarding:s1', versao: 2, status: 'AGUARDANDO_CLIENTE', pendencia: 'Conferir nova divergência', historico: [{ em: '2026-10-17' }] };
+  const atual = projetarImplantacao(ficha, [salva], agora).tarefas.find(t => t.chave === salva.chave);
+  expect(atual).toMatchObject(salva);
+  expect(atual.evidencias).toEqual([prova]);
+  expect(atual.conclusaoPorEvidencia).toBeUndefined();
+});
 function banco() {
   const salvas = [];
   const db = {
+    onboardingAnalise: { findMany: jest.fn(async () => []) },
+    onboardingEvento: { findMany: jest.fn(async () => []) },
+    atendimentoLead: { findFirst: jest.fn(async () => null) },
     portalClient: { findUnique: jest.fn(async () => ({ id: 'p1' })) },
     onboarding: { findUnique: jest.fn(async () => onboarding) },
     implantacaoTarefa: {

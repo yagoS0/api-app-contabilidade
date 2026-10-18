@@ -1,3 +1,5 @@
+import { nomeDaOportunidade } from '../../comercial/comercialModel';
+import { etapaSatisfeita } from '../lib/jornadaComercial';
 import { PainelComercial } from "../components/PainelComercial";
 import { PreparacaoEmissao } from '../components/PreparacaoEmissao';
 import { ChecklistImplantacao } from '../../implantacao/ChecklistImplantacao';
@@ -40,6 +42,13 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   const [editando, setEditando] = useState(preenchimentoInicial);
   const [continuacao, setContinuacao] = useState(0);
   const [conversaVinculada, setConversaVinculada] = useState(null);
+  const contexto = useRef(onboardingId), leitura = useRef(0);
+  if (contexto.current !== onboardingId) { contexto.current = onboardingId; leitura.current++; }
+  useEffect(() => {
+    const leituraDaFicha = leitura;
+    contexto.current = onboardingId;
+    return () => { leituraDaFicha.current++; contexto.current = null; };
+  }, [onboardingId]);
   useEffect(() => {
     let atual = true;
     setConversaVinculada(null);
@@ -67,7 +76,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     else window.location.assign(`/comercial/conversas?conversa=${encodeURIComponent(conversaVinculada.id)}`);
   });
 
-  useEffect(() => { setEditando(preenchimentoInicial); setAreaEscolhida(null); }, [onboardingId, preenchimentoInicial]);
+  useEffect(() => { setEditando(preenchimentoInicial); setAreaEscolhida(null); setOcupada(false); setAviso(null); setModalAberto(false); }, [onboardingId, preenchimentoInicial]);
 
   async function continuarAtendimento() {
     try {
@@ -93,16 +102,33 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     finally { setOcupada(false); }
   }
 
+  async function atualizarEvidencias({ origem } = {}) {
+    const id = onboardingId;
+    if (contexto.current !== id) return;
+    const pedido = ++leitura.current;
+    try {
+      const r = await api.getOnboarding(id);
+      if (contexto.current !== id || pedido !== leitura.current) return;
+      setOnboarding(atual => atual?.id === id && r?.onboarding?.versao >= atual.versao ? r.onboarding : atual);
+    } catch (e) {
+      if (contexto.current === id && pedido === leitura.current) setAviso(origem === 'polling'
+        ? `Não foi possível atualizar as evidências. Os dados anteriores foram preservados. ${e.message}`
+        : `A ação foi salva, mas as evidências não puderam ser atualizadas. ${e.message}`);
+    }
+  }
+
   const carregar = useCallback(async () => {
+    const pedido = ++leitura.current;
     setCarregando(true);
     try {
       const r = await api.getOnboarding(onboardingId);
+      if (pedido !== leitura.current || contexto.current !== onboardingId) return;
       setOnboarding(r?.onboarding || r);
       setErro(null);
     } catch (e) {
-      setErro(e);
+      if (pedido === leitura.current) setErro(e);
     } finally {
-      setCarregando(false);
+      if (pedido === leitura.current) setCarregando(false);
     }
   }, [api, onboardingId]);
 
@@ -122,15 +148,29 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     return () => { vivo = false; };
   }, [api, onboarding?.portalClientId]);
 
+  function aplicarEtapaSalva(salva, id) {
+    if (!salva || contexto.current !== id) return;
+    leitura.current++;
+    setOnboarding(atual => atual?.id !== id || salva.versao < atual.versao ? atual : {
+      ...atual, ...salva,
+      // O comando retorna a ficha persistida, sem projeções. Conservar as provas
+      // já exibidas mesmo se a releitura complementar falhar.
+      etapas: (salva.etapas || atual.etapas || []).map(etapa => ({
+        ...etapa, evidencias: etapa.evidencias ?? atual.etapas?.find(e => e.id === etapa.id)?.evidencias,
+      })),
+    });
+  }
+
   async function alternarEtapa(etapa, concluida) {
     setOcupada(true);
     try {
       const r = await api.salvarEtapaOnboarding(onboarding.id, etapa.id, { concluida });
-      setOnboarding(r?.onboarding || onboarding);
+      aplicarEtapaSalva(r?.onboarding, onboarding.id);
+      await atualizarEvidencias();
     } catch (e) {
-      setAviso(e.message);
+      if (contexto.current === onboardingId) setAviso(e.message);
     } finally {
-      setOcupada(false);
+      if (contexto.current === onboardingId) setOcupada(false);
     }
   }
 
@@ -138,11 +178,12 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     setOcupada(true);
     try {
       const r = await api.salvarEtapaOnboarding(onboarding.id, etapa.id, { observacao });
-      setOnboarding(r?.onboarding || onboarding);
+      aplicarEtapaSalva(r?.onboarding, onboarding.id);
+      await atualizarEvidencias();
     } catch (e) {
-      setAviso(e.message);
+      if (contexto.current === onboardingId) setAviso(e.message);
     } finally {
-      setOcupada(false);
+      if (contexto.current === onboardingId) setOcupada(false);
     }
   }
 
@@ -188,11 +229,11 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     }
   }
 
-  async function vincular(portalClientId, cnpjDefinitivo) {
+  async function vincular(portalClientId, cnpjDefinitivo, contratacao = {}) {
     if (!portalClientId) return;
     setErroConversao(null);
     try {
-      await api.converterOnboarding(onboarding.id, { vincularPortalClientId: portalClientId, cnpjDefinitivo });
+      await api.converterOnboarding(onboarding.id, { vincularPortalClientId: portalClientId, cnpjDefinitivo, ...contratacao });
       setModalAberto(false);
       await carregar();
       onAbrirEmpresa?.(portalClientId, "cadastro");
@@ -230,13 +271,14 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   const area = areaEscolhida?.id === onboarding.id ? areaEscolhida.area :
     convertido ? "implantacao" : temComercial ? "comercial" : "dados";
   const areas = [...(temComercial ? [["comercial", "Atendimento comercial"]] : []), ["dados", "Dados do cliente"], ["implantacao", onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"]];
-  const pendentes = (onboarding.etapas || []).filter(etapa => !etapa.concluidaEm);
+  const pendentes = (onboarding.etapas || []).filter(etapa => !etapaSatisfeita(etapa));
   const proximaEtapa = pendentes.find(etapa => etapa.obrigatoria) || pendentes[0];
 
   return (
     <PageShell
-      title={onboarding.razaoSocial || onboarding.responsavelNome || `Atendimento ${String(onboarding.id).slice(-6)}`}
+      title={nomeDaOportunidade(onboarding)}
       subtitle={`${tituloDaOrigem(onboarding.origem)}${onboarding.cnpj ? ` · ${formatarCnpj(onboarding.cnpj)}` : ""}`}
+      headerExtra={<span className="onboarding-help" aria-label="Etapa comercial">Jornada: {onboarding.comercial?.titulo || 'Indisponível'}</span>}
       onBack={voltar}
       backLabel="Entrada de clientes"
       actions={
@@ -246,7 +288,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
           <span
             style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, borderWidth: 1, borderStyle: "solid", fontSize: 12, fontWeight: 600 }}
           >
-            <span aria-hidden="true">{status.icone}</span> {status.rotulo}
+            <span aria-hidden="true">{status.icone}</span> Ficha: {status.rotulo}
           </span>
           {!encerrado && !editando && (
             <>
@@ -274,7 +316,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     >
       {aviso && editando && <p role="alert">{aviso}</p>}
       {(onboarding.demandasRelacionadas || []).length > 0 && <details className="onboarding-panel"><summary>Outros serviços deste contato</summary>{onboarding.demandasRelacionadas.map(d => <p key={d.id}><a href={`/onboardings/${encodeURIComponent(d.id)}`}>{d.anterior ? "Atendimento anterior" : "Serviço relacionado"} · {tituloDaOrigem(d.origem)}</a></p>)}</details>}
-      <div hidden={editando}>{api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarFicha} />}</div>
+      <div hidden={editando}>{api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarEvidencias} />}</div>
       {editando && <OnboardingWizardPage key={onboarding.id} embedded api={api} onboardingId={onboarding.id} onRegistrarSaida={registrarSaida} onVoltar={continuarAtendimento} onAbrirDetalhe={continuarAtendimento} />}
       <div hidden={editando}>
       <nav className="onboarding-sections" aria-label="Áreas do atendimento">
@@ -296,7 +338,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
 
       {onboarding.origem !== 'PESSOA_FISICA' && onboarding.portalClientId && <div className="onboarding-panel"><div className="onboarding-actions"><Button variant="secondary" onClick={() => setAreaEscolhida({ id: onboarding.id, area: 'implantacao' })}>Acompanhar implantação</Button><a className="btn btn-secondary btn-md" href={`/companies/${encodeURIComponent(onboarding.portalClientId)}/implantacao`}>Abrir implantação na empresa</a></div></div>}
       <div id="onboarding-area-comercial" className="onboarding-area" hidden={area !== "comercial"}>
-        {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} continuar={continuacao} />}
+        {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} continuar={continuacao} onAtualizar={atualizarEvidencias} />}
       </div>
       <section id="onboarding-area-dados" className="onboarding-area" hidden={area !== "dados"} aria-label="Dados do cliente">
           <h2>Dados declarados</h2>
@@ -310,6 +352,8 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
 
       <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label={onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}>
           {!onboarding.portalClientId && <h2>{onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}</h2>}
+          {onboarding.comercial?.contratacao?.ganha && !convertido && <p className="onboarding-help">Assinatura conferida: a implantação pode começar. A entrada na carteira tem requisitos próprios e não conclui estas tarefas.</p>}
+          {onboarding.comercial?.contratacao?.externa && <details><summary>Contratação externa registrada</summary><p>{onboarding.comercial.contratacao.externa.justificativa}</p><p>{onboarding.comercial.contratacao.externa.evidencia}</p><p>Registrada por {onboarding.comercial.contratacao.externa.atorId} em {onboarding.comercial.contratacao.externa.registradaEm}</p></details>}
           {proximaEtapa && !encerrado && <div className="onboarding-next-step"><small>Próxima pendência da checklist</small><strong>{proximaEtapa.titulo}</strong><span>{pendentes.length} {pendentes.length === 1 ? "etapa pendente" : "etapas pendentes"}</span></div>}
           {!onboarding.etapas?.length && <p className="onboarding-help">Envie a ficha para criar as etapas.</p>}
           {!onboarding.portalClientId && onboarding.etapas?.length > 0 && <ChecklistEtapas
