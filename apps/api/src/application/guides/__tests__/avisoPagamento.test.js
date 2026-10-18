@@ -1,11 +1,14 @@
 import { versaoPagamentoGuia } from '../ConfirmacaoPagamentoClienteService.js';
+import { revisaoDocumentoGuia } from '../../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
 import { avisarPagamentoNaoConfirmado } from "../AvisoPagamentoService.js";
 beforeEach(() => jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z")));
 afterEach(() => jest.useRealTimers());
-function setup() {
+function setup(patch = {}) {
   const records = new Map();
-  const guide = { status: "PROCESSED", hash: "pdf-atual", valor: 100, id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23" };
-  const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => [{ arquivoSha256: guide.hash, snapshot: {guideId:guide.id,portalClientId:guide.portalClientId,telefone:where.envioGuia.destino,competencia:guide.competencia,tipo:guide.tipo,valor:guide.valor,vencimento:guide.vencimento} }]) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
+  const guide = { status: "PROCESSED", hash: "pdf-atual", valor: 100, id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23", ...patch };
+  // Recibo imutável da entrega anterior: a leitura nunca o reconstrói da guia atual.
+  const entrega = { arquivoSha256: guide.hash, snapshot: { revisaoDocumento: revisaoDocumentoGuia(guide), guideId:guide.id,portalClientId:guide.portalClientId,telefone:'5511000000000',competencia:guide.competencia,tipo:guide.tipo,valor:guide.valor,vencimento:guide.vencimento} };
+  const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => where.envioGuia.destino === entrega.snapshot.telefone ? [entrega] : []) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error("duplicado"), { code: "P2002" }); records.set(data.key, data); return data; }),
       findUnique: jest.fn(async ({ where }) => records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
   const transporte = { canais: jest.fn(async () => ({ escolha: "EMAIL" })), destinatarios: jest.fn(async () => ({ emails: ["fixture@example.invalid"], telefones: [{ id: "contato", telefoneE164: "5511000000000" }] })),
@@ -59,7 +62,7 @@ test("falha de banco não é tratada como aviso ignorado", async () => {
   await expect(f.run()).rejects.toThrow("banco indisponível"); expect(f.transporte.whatsapp).not.toHaveBeenCalled();
 });
 test("guia não liberada fica pendente; guia DAS oferece dois botões sem URL", async () => {
-  const f = setup(); f.guide.liberadaCliente = false;
+  const f = setup({ tipo: 'SIMPLES', source: 'SERPRO' }); f.guide.liberadaCliente = false;
   expect(await f.run()).toMatchObject({ status: "PENDENTE", motivo: "GUIA_NAO_LIBERADA" });
   Object.assign(f.guide, { liberadaCliente: true, source: "SERPRO", tipo: "SIMPLES" }); await f.run();
   const { acoes } = f.transporte.whatsapp.mock.calls[0][0]; expect(acoes).toHaveLength(1);
@@ -76,7 +79,7 @@ test("vínculo posterior da mesma guia não duplica aviso", async () => {
 test('preferência EMAIL não envia e-mail e confirmação não contém link de portal',async()=>{const f=setup();await f.run();expect(f.transporte.email).not.toHaveBeenCalled();const envio=f.transporte.whatsapp.mock.calls[0][0];expect(envio.botaoId).toMatch(/^altan\.payment\.confirm\./);expect(envio.acoes.some(a=>a.acao==='confirmar')).toBe(false);});
 
 test('um aviso em cada fase, sem duplicar na mesma fase e sem recálculo antecipado', async () => {
-  const f = setup(); f.guide.vencimento = '2026-09-25'; f.guide.source = 'SERPRO'; f.guide.tipo = 'SIMPLES';
+  const f = setup({ vencimento: '2026-09-25', source: 'SERPRO', tipo: 'SIMPLES' });
   await f.run(); await f.run();
   expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
   expect(f.transporte.whatsapp.mock.calls[0][0]).toMatchObject({ fase: 'ANTES', acoes: [] });
@@ -119,3 +122,57 @@ test.each([{status:'ERROR'},{status:'VAZIO'},{paymentConfirmedAt:new Date()}])('
 });
 
 test('emissão persiste versão integral e recusa mudança na composição antes da rede',async()=>{const f=setup();await f.run();const token=f.records.get(f.transporte.whatsapp.mock.calls[0][0].botaoId).value;expect(token.versaoPagamento).toBe(versaoPagamentoGuia(f.guide));const outro=setup();let enviado=false;outro.transporte.whatsapp.mockImplementation(async({conferir})=>{outro.guide.extracted={fields:{principal:90,juros:5,multa:5,total:100}};await conferir();enviado=true;});const r=await outro.run();expect(enviado).toBe(false);expect(r.resultados[0].motivo).toBe('GUIA_ALTERADA');});
+
+test.each([
+  [{ pagamentoStatus: 'CONFIRMADO' }, {}, 'IGNORADO', 'PARCELA_PAGA'],
+  [{ origemBaixa: 'CLIENTE' }, {}, 'IGNORADO', 'PARCELA_PAGA'],
+  [{ baixadaEm: new Date() }, {}, 'IGNORADO', 'PARCELA_PAGA'],
+  [{ pagamentoStatus: 'DIVERGENTE' }, {}, 'PENDENTE', 'CONSULTA_NAO_CONCLUIDA'],
+  [{ pagamentoErro: 'falha' }, {}, 'PENDENTE', 'CONSULTA_NAO_CONCLUIDA'],
+  [{}, { formaPagamento: 'DEBITO_AUTOMATICO' }, 'IGNORADO', 'PARCELA_DEBITO_AUTOMATICO'],
+  [{}, { status: 'EXCLUIDO' }, 'IGNORADO', 'PARCELAMENTO_EXCLUIDO'],
+])('guideId resolve parcela real %j %j antes de reservar lembrete', async (parcela, contrato, status, motivo) => {
+  const f = setup(); Object.assign(f.guide, { parcelamentoId: 'acordo', parcela: { portalClientId: 'c', guiaId: 'g', ...parcela }, parcelamento: { id: 'acordo', ...contrato } });
+  expect(await f.run()).toMatchObject({ status, motivo }); expect(f.transporte.whatsapp).not.toHaveBeenCalled(); expect(f.records.size).toBe(0);
+  expect(f.db.guide.findUnique).toHaveBeenCalledWith({ where: { id: 'g' }, include: { parcela: { include: { parcelamento: true } }, parcelamento: true } });
+});
+test('parcela entra em débito automático durante preparação: cancela sem saída', async () => {
+  const f = setup({ parcelamentoId: 'acordo', parcela: { portalClientId: 'c', guiaId: 'g' }, parcelamento: { id: 'acordo', formaPagamento: 'GUIA' } });
+  let enviou = false;
+  f.transporte.whatsapp.mockImplementation(async ({ conferir }) => { f.guide.parcelamento.formaPagamento = 'DEBITO_AUTOMATICO'; await conferir(); enviou = true; });
+  const r = await f.run(); expect(enviou).toBe(false); expect(r.resultados[0]).toMatchObject({ status: 'CANCELADO', motivo: 'PARCELA_DEBITO_AUTOMATICO' });
+});
+test('vínculo de outra empresa fica pendente sem saída', async () => {
+  const f = setup(); f.guide.parcela = { portalClientId: 'outra', guiaId: 'g' };
+  expect(await f.run()).toMatchObject({ status: 'PENDENTE', motivo: 'DOCUMENTO_ESCOPO_DIVERGENTE' }); expect(f.transporte.whatsapp).not.toHaveBeenCalled();
+});
+
+test.each([
+  [{ formaPagamento: 'DEBITO_AUTOMATICO' }, 'IGNORADO', 'PARCELA_DEBITO_AUTOMATICO'],
+  [{ status: 'EXCLUIDO' }, 'IGNORADO', 'PARCELAMENTO_EXCLUIDO'],
+])('contrato alcançado somente pela parcela conserva bloqueio %j', async (contrato, status, motivo) => {
+  const f = setup();
+  f.guide.parcela = { id: 'p', portalClientId: 'c', guiaId: 'g', parcelamentoId: 'acordo',
+    parcelamento: { id: 'acordo', portalClientId: 'c', ...contrato } };
+  expect(await f.run()).toMatchObject({ status, motivo });
+  expect(f.transporte.whatsapp).not.toHaveBeenCalled(); expect(f.records.size).toBe(0);
+});
+
+test('contratos diferentes da mesma empresa não autorizam aviso', async () => {
+  const f = setup(); Object.assign(f.guide, { parcelamentoId: 'a', parcelamento: { id: 'a', portalClientId: 'c' },
+    parcela: { id: 'p', portalClientId: 'c', guiaId: 'g', parcelamentoId: 'b', parcelamento: { id: 'b', portalClientId: 'c' } } });
+  expect(await f.run()).toMatchObject({ status: 'PENDENTE', motivo: 'DOCUMENTO_ESCOPO_DIVERGENTE' });
+  expect(f.transporte.whatsapp).not.toHaveBeenCalled(); expect(f.records.size).toBe(0);
+});
+
+test('vínculo da parcela muda antes da saída: não envia e preserva motivo de conferência', async () => {
+  const f = setup({ parcelamentoId: 'a', parcelamento: { id: 'a', portalClientId: 'c' },
+    parcela: { id: 'p', portalClientId: 'c', guiaId: 'g', parcelamentoId: 'a', parcelamento: { id: 'a', portalClientId: 'c' } } });
+  let enviou = false;
+  f.transporte.whatsapp.mockImplementation(async ({ conferir }) => {
+    f.guide.parcela.parcelamentoId = 'b'; f.guide.parcela.parcelamento = { id: 'b', portalClientId: 'c' };
+    await conferir(); enviou = true;
+  });
+  const r = await f.run(); expect(enviou).toBe(false);
+  expect(r.resultados[0]).toMatchObject({ status: 'PENDENTE', motivo: 'DOCUMENTO_ESCOPO_DIVERGENTE' });
+});

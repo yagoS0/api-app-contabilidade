@@ -3,6 +3,19 @@ import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
 
 const PROCURATION_PREFIX = "serpro_procuration_status:";
+export const PROCURATION_ATTEMPT_PREFIX = "serpro_procuration_attempt:";
+
+// Projeção documental: não concede autorização nem provoca consulta externa.
+export function projetarProcuracaoSalva(evidencia = {}, tentativa = {}, { cnpj, procuradorCnpj } = {}) {
+  const mesmoVinculo = valor => valor.cnpj === onlyDigits(cnpj) && valor.procuradorCnpj === onlyDigits(procuradorCnpj);
+  return {
+    procurationStatus: evidencia.status || 'DESCONHECIDA', checkedAt: evidencia.checkedAt || null,
+    validUntil: evidencia.validUntil || null, systems: Array.isArray(evidencia.systems) ? evidencia.systems : [],
+    vinculoConfirmado: mesmoVinculo(evidencia),
+    ultimaTentativa: tentativa.iniciadaEm ? { status: tentativa.status, iniciadaEm: tentativa.iniciadaEm,
+      concluidaEm: tentativa.concluidaEm || null, codigo: tentativa.codigo || null, vinculoConfirmado: mesmoVinculo(tentativa) } : null,
+  };
+}
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -81,8 +94,8 @@ export function summarizeProcurationResponse(response) {
   return { ...base, status: "ATIVA", validUntil: expira.toISOString(), systems: Array.isArray(alvo.sistemas) ? alvo.sistemas.filter((s) => typeof s === "string") : [] };
 }
 
-export async function getStoredProcurationStatus(portalClientId) {
-  const setting = await prisma.appSetting.findUnique({ where: { key: keyForPortalClient(portalClientId) } });
+export async function getStoredProcurationStatus(portalClientId, client = prisma) {
+  const setting = await client.appSetting.findUnique({ where: { key: keyForPortalClient(portalClientId) } });
   const value = setting?.value && typeof setting.value === "object" ? setting.value : {};
   return {
     companyId: String(portalClientId),
@@ -99,10 +112,12 @@ export async function getStoredProcurationStatus(portalClientId) {
 export class SerproProcurationService {
   constructor(options = {}) {
     this.client = options.client || new SerproHttpClient();
+    this.db = options.db || prisma;
+    this.getCredentials = options.getCredentials || getResolvedSerproCredentials;
   }
 
   async checkCnpjProcuration({ cnpj, contratanteCnpj }) {
-    const runtime = await getResolvedSerproCredentials();
+    const runtime = await this.getCredentials();
     const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
     if (!procuradorCnpj || procuradorCnpj.length !== 14) {
       const err = new Error("serpro_procurador_cnpj_not_configured");
@@ -148,7 +163,7 @@ export class SerproProcurationService {
   }
 
   async checkCompanyProcuration({ portalClientId, contratanteCnpj, reutilizar = false }) {
-    const company = await prisma.portalClient.findUnique({
+    const company = await this.db.portalClient.findUnique({
       where: { id: String(portalClientId) },
       select: { id: true, cnpj: true, razao: true },
     });
@@ -158,10 +173,10 @@ export class SerproProcurationService {
       throw err;
     }
 
-    const runtime = await getResolvedSerproCredentials();
+    const runtime = await this.getCredentials();
     const procuradorAtual = onlyDigits(contratanteCnpj || runtime.certificate.document);
     if (reutilizar) {
-      const salva = await getStoredProcurationStatus(company.id);
+      const salva = await getStoredProcurationStatus(company.id, this.db);
       const idade = Date.now() - new Date(salva.checkedAt).getTime();
       const vigente = salva.status === "ATIVA" && new Date(salva.validUntil).getTime() > Date.now();
       if (salva.cnpj === onlyDigits(company.cnpj) && salva.procuradorCnpj === procuradorAtual
@@ -169,10 +184,35 @@ export class SerproProcurationService {
         return { ...salva, company, reutilizado: true };
       }
     }
-    const summary = await this.checkCnpjProcuration({ cnpj: company.cnpj, contratanteCnpj: procuradorAtual });
+    const tentativaKey = `${PROCURATION_ATTEMPT_PREFIX}${company.id}`;
+    const serializar = fn => this.db.$transaction(async tx => {
+      // Apenas persistência; jamais manter lock/transação durante HTTP.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tentativaKey}))`;
+      return fn(tx);
+    });
+    const tentativa = await serializar(async tx => {
+      const anterior = (await tx.appSetting.findUnique({ where: { key: tentativaKey } }))?.value;
+      const value = { sequencia: (Number(anterior?.sequencia) || 0) + 1, status: 'CONSULTANDO',
+        iniciadaEm: new Date().toISOString(), cnpj: onlyDigits(company.cnpj), procuradorCnpj: procuradorAtual };
+      await tx.appSetting.upsert({ where: { key: tentativaKey }, create: { key: tentativaKey, value }, update: { value } });
+      return value;
+    });
+    let summary;
+    try {
+      summary = await this.checkCnpjProcuration({ cnpj: company.cnpj, contratanteCnpj: procuradorAtual });
+    } catch (error) {
+      await serializar(async tx => {
+        const atual = (await tx.appSetting.findUnique({ where: { key: tentativaKey } }))?.value;
+        if (atual?.sequencia !== tentativa.sequencia) return;
+        const codigo = error?.code === 'SERPRO_PROCURACAO_INCONCLUSIVA' ? 'SERPRO_PROCURACAO_INCONCLUSIVA' : 'FALHA_VERIFICACAO';
+        await tx.appSetting.update({ where: { key: tentativaKey }, data: { value: { ...tentativa, status: 'ERRO', codigo, concluidaEm: new Date().toISOString() } } });
+      });
+      throw error;
+    }
     const { procuradorCnpj, checkedAt } = summary;
-
-    await prisma.appSetting.upsert({
+    await serializar(async tx => {
+      const anterior = (await tx.appSetting.findUnique({ where: { key: keyForPortalClient(company.id) } }))?.value;
+      if ((Number(anterior?.sequenciaConsulta) || 0) <= tentativa.sequencia) await tx.appSetting.upsert({
       where: { key: keyForPortalClient(company.id) },
       create: {
         key: keyForPortalClient(company.id),
@@ -184,6 +224,7 @@ export class SerproProcurationService {
           systems: summary.systems,
           checkedAt,
           payload: summary.rawPayload,
+          sequenciaConsulta: tentativa.sequencia,
         },
       },
       update: {
@@ -195,8 +236,14 @@ export class SerproProcurationService {
           systems: summary.systems,
           checkedAt,
           payload: summary.rawPayload,
+          sequenciaConsulta: tentativa.sequencia,
         },
       },
+      });
+      const atual = (await tx.appSetting.findUnique({ where: { key: tentativaKey } }))?.value;
+      if (atual?.sequencia === tentativa.sequencia) await tx.appSetting.update({ where: { key: tentativaKey }, data: {
+        value: { ...tentativa, status: 'SUCESSO', concluidaEm: checkedAt },
+      } });
     });
 
     return {

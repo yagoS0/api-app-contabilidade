@@ -1,3 +1,4 @@
+import { versaoPagamentoGuia } from '../guides/ConfirmacaoPagamentoClienteService.js';
 import { createHash } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../guides/GuideStorageService.js";
@@ -11,7 +12,7 @@ const dataISO = value => value && Number.isFinite(new Date(value).getTime()) ? n
 const resumoGuia = s => [s.empresa || "Empresa", s.tipo || "Guia", s.competencia, s.valor != null ? `R$ ${Number(s.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null].filter(Boolean).join(" · ");
 
 /** Prepared bytes and template parameters are frozen before the transport can run. */
-export async function prepararHistoricoGuia({ tentativaId, envioGuiaId, guide, conversa, contato, canal, variaveis, nomeArquivo, conteudoPdf, tipoLabel }, { client = prisma, storage = new GuideStorageService() } = {}) {
+export async function prepararHistoricoGuia({ tentativaId, envioGuiaId, guide, conversa, contato, canal, variaveis, nomeArquivo, conteudoPdf, tipoLabel, criarMensagem = true, tipoMensagem = "template", revisaoDocumento = null }, { client = prisma, storage = new GuideStorageService() } = {}) {
   if (!conversa?.id || !tentativaId || !envioGuiaId) throw erro("HISTORICO_SEM_ORIGEM", "Não foi possível preparar o histórico desta guia.");
   const buffer = Buffer.from(conteudoPdf || []);
   if (identificarArquivo(buffer).mimeType !== "application/pdf") throw erro("HISTORICO_PDF_INVALIDO", "O arquivo da guia precisa ser um PDF.");
@@ -25,7 +26,8 @@ export async function prepararHistoricoGuia({ tentativaId, envioGuiaId, guide, c
   const snapshot = { versao: 1, origem: ORIGINAL, guideId: guide.id, portalClientId: guide.portalClientId,
     empresa: empresa.razao, cnpj: String(empresa.cnpj || "").replace(/\D/g, ""), tipo: tipoLabel,
     competencia: guide.competencia, valor: String(guide.valor), vencimento: dataISO(guide.vencimento),
-    template: { ...template, hash: sha(JSON.stringify(template)) },
+    revisaoDocumento: revisaoDocumento || sha(JSON.stringify([versaoPagamentoGuia(guide), dataISO(guide.vencimento)])),
+    tipoMensagem, template: tipoMensagem === "template" ? { ...template, hash: sha(JSON.stringify(template)) } : null,
     arquivo: { nomeArquivo: nomeSeguro(nomeArquivo), mimeType: "application/pdf", tamanho: buffer.length, sha256: arquivoSha256 },
     conversaId: conversa.id, vinculoNumeroId: conversa.vinculoNumeroId || null, canalId: conversa.canalId || "principal",
     telefone: contato.telefoneE164, preparadoEm: new Date().toISOString() };
@@ -35,13 +37,18 @@ export async function prepararHistoricoGuia({ tentativaId, envioGuiaId, guide, c
   if (!anterior.arquivoPdfFileId) {
     await storage.upload({ key: arquivoPdfFileId, buffer, contentType: "application/pdf" });
     const gravada = await client.envioGuiaTentativa.updateMany({ where: { id: tentativaId, envioGuiaId, status: "enviando", arquivoPdfFileId: null },
-      data: { snapshot, arquivoPdfFileId, arquivoSha256 } });
+      data: { snapshot, arquivoPdfFileId, arquivoSha256, canalId: snapshot.canalId } });
     if (gravada.count !== 1) throw erro("HISTORICO_TENTATIVA_ALTERADA", "A tentativa mudou durante a preparação. Nenhuma nova mensagem foi enviada.");
   } else if (anterior.arquivoSha256 !== arquivoSha256 || anterior.snapshot?.conversaId !== conversa.id
-    || anterior.snapshot?.template?.hash !== snapshot.template.hash || anterior.snapshot?.telefone !== contato.telefoneE164) {
+    || anterior.snapshot?.template?.hash !== snapshot.template?.hash || anterior.snapshot?.telefone !== contato.telefoneE164
+    || anterior.snapshot?.revisaoDocumento !== snapshot.revisaoDocumento
+    || (anterior.snapshot?.canalId || 'principal') !== snapshot.canalId
+    || (anterior.snapshot?.vinculoNumeroId || null) !== snapshot.vinculoNumeroId
+    || (anterior.snapshot?.tipoMensagem || 'template') !== snapshot.tipoMensagem) {
     throw erro("HISTORICO_IMUTAVEL", "O conteúdo desta tentativa já foi preparado e não pode ser substituído.");
   }
   const salvo = anterior.snapshot || snapshot;
+  if (!criarMensagem) return { snapshot: salvo };
   return client.mensagemWhatsapp.upsert({ where: { id: `guia-whatsapp-${tentativaId}` }, update: {}, create: {
     id: `guia-whatsapp-${tentativaId}`, conversaId: salvo.conversaId, direcao: "out", tipo: "template", autor: "SISTEMA",
     corpo: resumoGuia(salvo), envioGuiaId, envioGuiaTentativaId: tentativaId,
@@ -64,7 +71,7 @@ export async function reconciliarTentativaGuia(tentativaId, { client = prisma } 
   const data = { providerMessageId: t.providerMessageId, enviadoEm: t.aceitoEm || null };
   try {
     await client.mensagemWhatsapp.upsert({ where: { id }, update: data, create: { id, ...data,
-      conversaId: t.snapshot.conversaId, direcao: "out", tipo: "template", autor: "SISTEMA", corpo: resumoGuia(t.snapshot),
+      conversaId: t.snapshot.conversaId, direcao: "out", tipo: t.snapshot.tipoMensagem || "template", autor: "SISTEMA", corpo: resumoGuia(t.snapshot),
       envioGuiaId: t.envioGuiaId, envioGuiaTentativaId: t.id, registradaEm: t.criadoEm } });
   } catch (e) {
     if (e.code !== "P2002") throw e;

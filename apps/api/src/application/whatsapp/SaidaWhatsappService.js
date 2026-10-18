@@ -3,7 +3,13 @@ import { log } from "../../config.js";
 import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 
 // Uma saída é registrada antes da rede. Timeout nunca dispara reenvio automático.
-export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, aposRegistrar = null, intencaoEnvioId = null, client = prisma }) {
+export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, aposRegistrar = null, intencaoEnvioId = null, documentoGuia = null, vinculoGuia = null, aoAceitar = null, client = prisma }) {
+  if (documentoGuia) {
+    const { enviarDocumentoGuiaWhatsapp } = await import('./EnvioDocumentoGuiaWhatsappService.js');
+    return enviarDocumentoGuiaWhatsapp({ conversa, documento: { ...documentoGuia, tipoMensagem: tipo }, client, antesDeEnviar,
+      registrarSaida: opcoes => enviarMensagemRastreada({ conversa, tipo, corpo, autor, turnoIaId, referenciaComercial,
+        contextoConsulta, enviar, aposRegistrar, intencaoEnvioId, client, ...opcoes }) });
+  }
   const conferirOrigem = async () => {
     if (conversa.vinculoNumeroId) await conferirIdentidadeVigente({ vinculoNumeroId: conversa.vinculoNumeroId, telefone: conversa.telefoneE164, permitirRevisao: autor === "HUMANO", client });
     if (conversa.canalId) {
@@ -15,6 +21,7 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
   if (antesDeEnviar) await antesDeEnviar();
   const mensagem = await client.mensagemWhatsapp.create({ data: {
     conversaId: conversa.id, direcao: "out", tipo, corpo, autor, turnoIaId, referenciaComercial, statusEnvio: "enviando",
+    ...(vinculoGuia ? { ...vinculoGuia, id: `guia-whatsapp-${vinculoGuia.envioGuiaTentativaId}` } : {}),
     ...(intencaoEnvioId ? { intencaoEnvioId } : {}),
     ...(contextoConsulta === undefined ? {} : { contextoConsulta }),
   } });
@@ -30,6 +37,7 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
     aceitou = true;
     wamid = r?.wamid || null;
     if (!wamid) throw Object.assign(new Error("A Meta não devolveu o identificador da mensagem."), { codigo: "SEM_WAMID", indeterminado: true });
+    if (aoAceitar) await aoAceitar(r);
     const salva = await client.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: {
       providerMessageId: wamid, statusEnvio: "enviado", enviadoEm: new Date(),
     } });

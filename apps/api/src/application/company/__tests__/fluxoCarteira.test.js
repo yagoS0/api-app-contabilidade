@@ -132,3 +132,21 @@ test('comprovação PGDAS não resolve declarações de outro regime', () => {
   const c = empresa({ legacyCompany: { regimeTributario: 'LUCRO_PRESUMIDO' }, apuracao: { numeroDeclaracaoRfb: '123' } });
   expect(projetarFluxoCarteira(c, contexto()).apuracao.apurada).toBe(false);
 });
+
+test.each(['gerada', 'enviada', 'falhou'])('DAS mensal %s orienta conferência sem inventar apuração ou transmissão', state => {
+  const c = empresa({ guideCompliance: { competencia: '2026-09', das: { required: true, ok: true, state, guideId: 'das' } } });
+  const f = projetarFluxoCarteira(c, contexto());
+  expect(f.status).toEqual({ chave: 'apuracao', rotulo: 'Conferir apuração' });
+  expect(f.apuracao).toMatchObject({ apurada: false, transmitida: false, documentoDisponivel: true });
+  expect(f.tarefas.find(t => t.chave === 'apurar').concluida).toBe(false);
+  expect(f.tarefas.find(t => t.chave === 'transmitir').concluida).toBe(false);
+  expect(c.apuracao).toBeUndefined();
+});
+test.each([
+  { competencia: '2026-08', das: { ok: true, state: 'gerada', guideId: 'antiga' } },
+  { competencia: '2026-09', parcDas: { ok: true, state: 'gerada', guideId: 'parcela' } },
+  { competencia: '2026-09', das: { ok: true, state: 'vazio', guideId: 'marcador' } },
+  { competencia: '2026-09', erro: true, das: { ok: true, state: 'gerada', guideId: 'das' } },
+])('evidência insuficiente não muda orientação: %j', guideCompliance => {
+  expect(projetarFluxoCarteira(empresa({ guideCompliance }), contexto()).apuracao.rotulo).toBe('A apurar');
+});

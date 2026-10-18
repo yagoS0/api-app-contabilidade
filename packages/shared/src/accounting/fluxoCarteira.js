@@ -39,6 +39,13 @@ export function apuracaoCarteira(company) {
 export function projetarFluxoCarteira(company, contexto = {}) {
   const regime = regimeCarteira(company);
   const apuracao = apuracaoCarteira(company);
+  // O compliance por empresa separa o DAS mensal das parcelas. Documento não prova transmissão.
+  const competencia = contexto.competencia || company.apuracao?.competencia;
+  const compliance = company.guideCompliance;
+  const dasDisponivel = regime === 'Simples' && Boolean(competencia)
+    && compliance?.competencia === competencia && !compliance.erro
+    && Boolean(compliance.das?.guideId) && compliance.das?.ok === true
+    && ['gerada', 'enviada', 'falhou', 'present'].includes(compliance.das?.state);
   const registros = contexto.registros || [];
   const reg = chave => registros.find(r => r.chave === chave);
   const prova = chave => {
@@ -47,6 +54,7 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   };
   if (!apuracao.porFora && prova('apurar')) Object.assign(apuracao, { apurada: true, chave: 'apurado', rotulo: 'Apurado', origem: 'Conferência registrada' });
   if (!apuracao.porFora && (apuracao.transmitida || prova('transmitir'))) Object.assign(apuracao, { apurada: true, transmitida: true, chave: 'transmitido', rotulo: 'Transmitido' });
+  if (!apuracao.apurada && dasDisponivel) Object.assign(apuracao, { rotulo: 'Conferir apuração', documentoDisponivel: true });
   const guias = Object.values(company.guideCompliance || {}).filter(g => g && typeof g === 'object' && g.required);
   const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro;
   const disponiveis = guiasConhecidas && guias.every(g => ['gerada', 'enviada', 'falhou', 'vazio', 'present'].includes(g.state));
@@ -74,7 +82,7 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   }
   // ISS e outras obrigações cadastradas continuam contando, sem uma segunda tarefa de transmissão.
   const etapa = ETAPAS_CARTEIRA.find(e => (e === 'obrigacoes' && fiscais.some(o => !o.concluida)) || tarefas.some(t => t.etapa === e && !t.concluida)) || 'concluido';
-  return { competencia: contexto.competencia || company.apuracao?.competencia, regime, apuracao, contabilizacao, status: { chave: etapa, rotulo: ROTULOS_ETAPA[etapa] }, tarefas, obrigacoes, guiasConhecidas };
+  return { competencia, regime, apuracao, contabilizacao, status: { chave: etapa, rotulo: etapa === 'apuracao' && apuracao.documentoDisponivel ? 'Conferir apuração' : ROTULOS_ETAPA[etapa] }, tarefas, obrigacoes, guiasConhecidas };
 }
 
 export const fluxoDaEmpresa = company => company.fluxoCarteira || projetarFluxoCarteira(company);

@@ -377,12 +377,12 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           });
         },
       }, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
-      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, notaId, documentId, situacaoFiscal = false }) => {
+      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, revisaoDocumento, notaId, documentId, situacaoFiscal = false }) => {
         const chaveDocumento = `${guideId || ""}:${notaId || ""}:${documentId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
         const ehImagem = String(mimeType || "").toLowerCase().startsWith("image/");
         const legendaDoEscopo = textoNoEscopo(legenda || nomeArquivo);
-        const tentativa = enviarMensagemRastreada({ conversa, tipo: ehImagem ? "image" : "document", corpo: legendaDoEscopo, autor: AUTOR.IA, turnoIaId, client,
+        const tentativa = enviarMensagemRastreada({ documentoGuia: guideId ? { guideId, revisao: revisaoDocumento, conteudo, nomeArquivo, mensagemEntradaId: mensagem.id } : null, conversa, tipo: ehImagem ? "image" : "document", corpo: legendaDoEscopo, autor: AUTOR.IA, turnoIaId, client,
           antesDeEnviar: async () => {
             await conferirPortao();
             const atual = await carregarSessaoAtual();

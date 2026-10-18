@@ -188,3 +188,30 @@ test.each(["unsupported", "unknown"])("resumo %s explica indisponibilidade sem i
   expect(resumoMensagemHistorico({ tipo })).toBe("Mensagem indisponível no WhatsApp");
   expect(resumoMensagemHistorico({ tipo, corpo: "Texto preservado" })).toBe("Texto preservado");
 });
+
+test('documento sob demanda preserva snapshot sem inventar template ou balão duplicado', async () => {
+  const c = cenario();
+  await prepararHistoricoGuia({ ...preparo, criarMensagem: false, tipoMensagem: 'document', revisaoDocumento: 'revisao' }, c);
+  expect(c.mensagens.size).toBe(0);
+  expect(c.tentativas.get('t1').snapshot).toMatchObject({ tipoMensagem: 'document', template: null, revisaoDocumento: 'revisao' });
+});
+
+test('canal da tentativa acompanha o snapshot antes do aceite para validar callback sem mensagem correlacionada', async () => {
+  const c = cenario();
+  await prepararHistoricoGuia({ ...preparo, conversa: { ...conversa, canalId: 'canal-secundario' }, criarMensagem: false }, c);
+  expect(c.tentativas.get('t1')).toMatchObject({ canalId: 'canal-secundario', snapshot: { canalId: 'canal-secundario' } });
+  expect(c.mensagens.size).toBe(0);
+});
+
+test.each(['revisao', 'canal', 'vigencia', 'formato'])('preparo não reaproveita tentativa com %s diferente mesmo mantendo PDF', async caso => {
+  const c = cenario(); await prepararHistoricoGuia(preparo, c);
+  const original = JSON.stringify(c.tentativas.get('t1'));
+  const args = { ...preparo };
+  if (caso === 'revisao') args.guide = { ...guide, extracted: { fields: { principal: 120, juros: 3.45 } } };
+  if (caso === 'canal') args.conversa = { ...conversa, canalId: 'outro' };
+  if (caso === 'vigencia') args.conversa = { ...conversa, vinculoNumeroId: 'outra' };
+  if (caso === 'formato') args.tipoMensagem = 'document';
+  await expect(prepararHistoricoGuia(args, c)).rejects.toMatchObject({ code: 'HISTORICO_IMUTAVEL' });
+  expect(JSON.stringify(c.tentativas.get('t1'))).toBe(original);
+  expect(c.storage.upload).toHaveBeenCalledTimes(1);
+});

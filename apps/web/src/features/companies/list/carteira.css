@@ -27,6 +27,10 @@
 .dashboard-home__regimes .app-tab.is-active { border-color: var(--border); border-bottom-color: var(--bg-surface); background: var(--bg-surface); }
 .dashboard-home__regimes + .companies-table-scroll { border-top: 0; border-radius: 0 0 10px 10px; }
 .companies-table-scroll { border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: calc(100vh - 300px); }
+.companies-table .company-row__action .btn { min-width: 76px; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+@media screen and (min-width: 761px) {
+  .companies-table .company-row__action { min-width: 96px; }
+}
 .calendar-workspace__actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .calendar-workspace__navigation { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .calendar-workspace__scope { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
@@ -191,3 +195,11 @@ button.carteira-tag:focus-visible { outline: 2px solid var(--tag-color); outline
 @media print { .carteira-tag { color: inherit; background: none; border-color: currentColor; } }
 
 @media print { .dashboard-home__regimes { display: none !important; } }
+
+.carteira-procuracao { margin-top: 4px; font-size: .75rem; font-weight: 400; white-space: normal; }
+.carteira-procuracao summary { cursor: pointer; padding-block: 6px; font-weight: 500; }
+.carteira-procuracao summary:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+.carteira-procuracao > div { display: grid; gap: 4px; padding-block: 4px; color: var(--text-muted); overflow-wrap: anywhere; }
+@media screen and (max-width: 760px) {
+  .carteira-procuracao summary { min-height: 44px; display: flex; align-items: center; }
+}

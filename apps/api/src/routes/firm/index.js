@@ -183,7 +183,7 @@ import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitir
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED, INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 import { capturarLpDaCompetencia, reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
-import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
+import { getStoredProcurationStatus, SerproProcurationService, PROCURATION_ATTEMPT_PREFIX, projetarProcuracaoSalva } from "../../application/fiscal/serpro/SerproProcurationService.js";
 // Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
@@ -505,7 +505,7 @@ async function attachSerproStatusToCompaniesList(data) {
     Boolean(settings.certificate?.hasCertificate);
 
   const portalIds = data.map((item) => String(item.companyId || "").trim()).filter(Boolean);
-  const procurationKeys = portalIds.map((id) => `serpro_procuration_status:${id}`);
+  const procurationKeys = portalIds.flatMap((id) => [`serpro_procuration_status:${id}`, `${PROCURATION_ATTEMPT_PREFIX}${id}`]);
   const procurationSettings = procurationKeys.length
     ? await prisma.appSetting.findMany({
         where: { key: { in: procurationKeys } },
@@ -515,6 +515,8 @@ async function attachSerproStatusToCompaniesList(data) {
   const procurationByPortalId = new Map(
     procurationSettings.map((item) => [item.key.replace("serpro_procuration_status:", ""), item.value && typeof item.value === "object" ? item.value : {}])
   );
+  const tentativaByPortalId = new Map(procurationSettings.filter(item => item.key.startsWith(PROCURATION_ATTEMPT_PREFIX))
+    .map(item => [item.key.slice(PROCURATION_ATTEMPT_PREFIX.length), item.value || {}]));
 
   return data.map((item) => {
     const cnpj = normalizarDocumento(item.cnpj);
@@ -535,6 +537,7 @@ async function attachSerproStatusToCompaniesList(data) {
     return {
       ...item,
       serproStatus: {
+        ...projetarProcuracaoSalva(procuration, tentativaByPortalId.get(String(item.companyId)), { cnpj, procuradorCnpj: settings.certificate?.document }),
         eligible: runtimeReady && reasons.length === 0,
         status: runtimeReady && reasons.length === 0 ? "APTA" : "NAO_APTA",
         procurationStatus,

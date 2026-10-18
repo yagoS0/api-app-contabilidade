@@ -42,3 +42,14 @@ it("read seguido de failed/sent conserva leitura",async()=>{
  for(const status of ["failed","sent"]) await aplicarStatusMensagem({providerMessageId:"w",status,client});
  expect(client.m.statusEnvio).toBe("lido");
 });
+
+it('correlaciona aceite da guia antes de persistir o recibo da mensagem', async () => {
+  const client = banco(); const aoAceitar = jest.fn(async () => { expect(client.mensagemWhatsapp.update).not.toHaveBeenCalled(); });
+  await enviarMensagemRastreada({ conversa, client, vinculoGuia: { envioGuiaId: 'e', envioGuiaTentativaId: 't' }, aoAceitar, enviar: async () => ({ wamid: 'w' }) });
+  expect(aoAceitar).toHaveBeenCalledWith({ wamid: 'w' }); expect(client.m).toMatchObject({ envioGuiaId: 'e', envioGuiaTentativaId: 't' });
+});
+it('falha ao correlacionar aceite mantém wamid e resultado incerto', async () => {
+  const client = banco();
+  await expect(enviarMensagemRastreada({ conversa, client, aoAceitar: async () => { throw Error('banco'); }, enviar: async () => ({ wamid: 'w' }) })).rejects.toMatchObject({ indeterminado: true });
+  expect(client.m).toMatchObject({ providerMessageId: 'w', statusEnvio: 'indeterminado' });
+});

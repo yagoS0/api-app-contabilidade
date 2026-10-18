@@ -1,3 +1,4 @@
+import { bloqueioEnvioParcela } from './GuiaParcelaEnvioGuard.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -42,24 +43,39 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const db = deps.db || prisma;
   const feriados = deps.feriados ?? await db.feriado.findMany({});
   const carregar = async () => {
-    const p = parcelaId ? await db.parcela.findUnique({ where: { id: parcelaId }, include: { guia: true, parcelamento: true } }) : null;
-    const g = p?.guia || (guideId ? await db.guide.findUnique({ where: { id: guideId } }) : null);
+    const vinculosDaGuia = { parcela: { include: { parcelamento: true } }, parcelamento: true };
+    const informada = parcelaId ? await db.parcela.findUnique({ where: { id: parcelaId }, include: { guia: { include: vinculosDaGuia }, parcelamento: true } }) : null;
+    if (parcelaId && !informada) throw erro('DOCUMENTO_NAO_ENCONTRADO', 'Parcela não encontrada.');
+    const g = informada?.guia || (!parcelaId && guideId ? await db.guide.findUnique({ where: { id: guideId }, include: vinculosDaGuia }) : null);
+    const p = informada || g?.parcela || null;
+    if ((guideId && g && g.id !== guideId) || (p && g && (p.portalClientId !== g.portalClientId || (p.guiaId && p.guiaId !== g.id))))
+      throw erro('DOCUMENTO_ESCOPO_DIVERGENTE', 'O vínculo entre guia e parcela precisa de conferência.');
+    const contrato = p?.parcelamento || g?.parcelamento;
+    if ((p?.parcelamentoId && g?.parcelamentoId && p.parcelamentoId !== g.parcelamentoId)
+      || (p?.parcelamentoId && p?.parcelamento && p.parcelamentoId !== p.parcelamento.id)
+      || (g?.parcelamentoId && g?.parcelamento && g.parcelamentoId !== g.parcelamento.id))
+      throw erro('DOCUMENTO_ESCOPO_DIVERGENTE', 'Guia e parcela estão vinculadas a contratos diferentes. Confira o vínculo antes do aviso.');
+    if (contrato?.portalClientId && contrato.portalClientId !== (g?.portalClientId || p?.portalClientId)) throw erro('DOCUMENTO_ESCOPO_DIVERGENTE', 'O contrato não pertence à empresa da guia.');
+    if ((g?.parcelamentoId || p?.parcelamentoId) && !contrato) throw erro('PARCELA_VINCULO_INCOMPLETO', 'O contrato desta parcela precisa de conferência.');
+    if (p?.pagamentoErro || ['DIVERGENTE', 'ERRO'].includes(p?.pagamentoStatus)) throw erro('CONSULTA_NAO_CONCLUIDA', 'Pagamento precisa de conferência pelo contador.');
+    const bloqueio = bloqueioEnvioParcela({ ...g, parcelamentoId: g?.parcelamentoId || p?.parcelamentoId, parcela: p, parcelamento: contrato });
+    if (bloqueio) throw erro(bloqueio.code, bloqueio.message);
     if (!p && !g) throw erro("DOCUMENTO_NAO_ENCONTRADO", "Documento não encontrado.");
     if (p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO" || g?.baixada || g?.paymentStatus === "PAID" || g?.clienteConfirmouEm || g?.paymentConfirmedAt) throw erro("PAGAMENTO_JA_CONFIRMADO", "Pagamento já confirmado; aviso cancelado.");
-    if (p?.pagamentoErro || p?.pagamentoStatus === "DIVERGENTE") throw erro("CONSULTA_NAO_CONCLUIDA", "Pagamento precisa de conferência pelo contador.");
+
     if (!g?.liberadaCliente) throw erro("GUIA_NAO_LIBERADA", "Obtenha e libere a guia no portal antes de avisar o cliente.");
     if (g.status !== 'PROCESSED') throw erro('GUIA_NAO_PROCESSADA', 'A guia precisa de revisão antes de avisar o cliente.');
     const companyId = p?.portalClientId || g.portalClientId;
     const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true, municipio: true } });
     const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio);
     if (!fase) throw erro('FORA_DO_DIA_DO_AVISO', 'Hoje não é o dia útil anterior ou posterior ao vencimento.');
-    return { p, g, companyId, company, fase };
+    return { p: p ? { ...p, parcelamento: contrato } : null, g, companyId, company, fase };
   };
   let doc;
   try { await assertActive(); doc = await carregar(); }
   catch (e) {
-    if (!["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA"].includes(e.code)) throw e;
-    return { status: ["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO"].includes(e.code) ? "IGNORADO" : "PENDENTE", motivo: e.code, mensagem: e.message };
+    if (!["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE"].includes(e.code)) throw e;
+    return { status: ["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO"].includes(e.code) ? "IGNORADO" : "PENDENTE", motivo: e.code, mensagem: e.message };
   }
   const { p, g, companyId, company, fase } = doc;
   const referencia = p?.anoMesParcela || g?.competencia || p?.competencia;
@@ -96,7 +112,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     let iniciou = false;
     const conferir = async () => {
       await assertActive(); const atual = await carregar();
-      if (versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
+      if ((atual.p?.id || null) !== (p?.id || null) || versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
         || String(atual.g.vencimento) !== String(g.vencimento) || atual.fase !== fase) throw erro('GUIA_ALTERADA', 'A guia mudou durante a preparação do aviso.');
       const cadastro = await transporte.destinatarios(companyId);
       const contatoAtual = cadastro.telefones.find(c => c.id === target.contato.id && c.telefoneE164 === target.destino);
@@ -121,7 +137,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
       resultados.push({ status: "ENVIADO", canal: target.canal });
     } catch (e) {
       const motivo = e.code || e.codigo || "AVISO_ENVIO_NAO_CONFIRMADO";
-      const status = motivo === "PAGAMENTO_JA_CONFIRMADO" ? "CANCELADO" : iniciou && !["WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA", "GUIA_WHATSAPP_NAO_ENTREGUE", "GUIA_NAO_PROCESSADA"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
+      const status = ["PAGAMENTO_JA_CONFIRMADO", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO"].includes(motivo) ? "CANCELADO" : iniciou && !["WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA", "GUIA_WHATSAPP_NAO_ENTREGUE", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE", "GUIA_NAO_LIBERADA", "FORA_DO_DIA_DO_AVISO"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
       const mensagem = e.code || e.codigo ? e.message : "Não foi possível confirmar o envio. Confira o histórico antes de reenviar.";
       await db.appSetting.update({ where: { key }, data: { value: { ...value, status, motivo, mensagem, concluidoEm: new Date().toISOString() } } });
       resultados.push({ status, motivo, mensagem, canal: target.canal });

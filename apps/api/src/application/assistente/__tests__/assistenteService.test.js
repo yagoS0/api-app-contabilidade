@@ -1,3 +1,8 @@
+import { enviarDocumentoGuiaWhatsapp } from '../../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
+jest.mock('../../whatsapp/EnvioDocumentoGuiaWhatsappService.js', () => ({
+  ...jest.requireActual('../../whatsapp/EnvioDocumentoGuiaWhatsappService.js'),
+  enviarDocumentoGuiaWhatsapp: jest.fn(async ({ registrarSaida, antesDeEnviar }) => registrarSaida({ antesDeEnviar })),
+}));
 // O TURNO INTEIRO — com um Prisma em memória, um Cloud client dublê e um modelo dublê.
 //
 // O que fica travado:
@@ -720,4 +725,18 @@ it('guia não recalculável cria aviso e push antes de responder e não repete r
  expect(r.feito).toBe(true);expect(client.encaminhamentoSuporte.create).toHaveBeenCalledTimes(1);expect(client.eventoPushAtendimento.create).toHaveBeenCalledTimes(1);
  expect(client.encaminhamentoSuporte.create.mock.invocationCallOrder[0]).toBeLessThan(cloud.enviarTexto.mock.invocationCallOrder[0]);
  expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({texto:expect.stringContaining('Solicitei ao contador')}));expect(criarPendencia).not.toHaveBeenCalled();
+});
+
+it('ferramenta de guia da IA entrega origem/revisão ao tracking comum e repete as guardas', async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  client.guide.findFirst.mockResolvedValue({ id: 'g1', portalClientId: 'pc-1', tipo: 'SIMPLES', hash: 'hash', competencia: '2026-08', vencimento: '2026-09-20', valor: 100, liberadaCliente: true });
+  const servicos = { getGuidePdfBuffer: jest.fn(async () => Buffer.from('%PDF synthetic')) };
+  const assistente = { responder: jest.fn(async ({ executar }) => {
+    await executar('enviar_pdf_da_guia', { guideId: 'g1' });
+    return { texto: '', usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 1, ferramentasChamadas: ['enviar_pdf_da_guia'], stopReason: 'end_turn', recusou: false };
+  }) };
+  enviarDocumentoGuiaWhatsapp.mockClear();
+  await responderMensagem({ conversaId: 'cv1', mensagemId: 'm1', deps: deps({ client, cloud, servicos, assistente }) });
+  expect(enviarDocumentoGuiaWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ documento: expect.objectContaining({ guideId: 'g1', mensagemEntradaId: 'm1', revisao: expect.stringMatching(/^[a-f0-9]{64}$/) }), antesDeEnviar: expect.any(Function) }));
+  expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
 });

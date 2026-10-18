@@ -5,6 +5,7 @@ import { calendarioAvisosGuia, hojeSaoPaulo } from './calendarioAvisosGuia.js';
 import { prepararGuiaPagamentoWhatsapp } from '../whatsapp/PrepararGuiaPagamentoWhatsapp.js';
 import { identificarGuiaWhatsapp } from '../whatsapp/IdentificacaoGuiaWhatsapp.js';
 import { nomeArquivoDaGuia } from '../whatsapp/WhatsappCloudClient.js';
+import { revisaoDocumentoGuia } from '../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
 
 export const PREFIXO_RECALCULO = 'altan.payment.recalculate.';
 const recusar = () => Object.assign(new Error('Esta opção não está mais disponível. Solicite a atualização ao escritório.'), { code: 'RECALCULO_RECUSADO' });
@@ -55,27 +56,51 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
       if (!g || (versao && versaoPagamentoGuia(g) !== versao) || g.baixada || g.clienteConfirmouEm || g.paymentStatus === 'PAID' || (g.hash || null) !== (hash || null)) throw recusar();
       return g;
     };
-    const guia = await conferirGuia(token.guideId, token.hash);
+    const guia = await conferirGuia(token.guideId, token.hash, token.versaoPagamento);
     guiaDoPedido = guia;
     const company = await client.portalClient.findUnique({ where: { id: token.companyId }, select: { municipio: true, razao: true } });
     const feriados = await client.feriado.findMany({});
     const vencimento = calendarioAvisosGuia(guia.vencimento, feriados, company?.municipio)?.vencimento;
     if (!vencimento || vencimento >= hojeSaoPaulo(agora)) throw recusar();
-    if (!canGuideRecalculate(guia)) {
-      await encaminhar(`Atualizar guia ${guia.tipo} · ${guia.competencia} · ${guia.id}: atualização pelo contador`);
+    const manual = !canGuideRecalculate(guia);
+    const identidade = [token.companyId, guia.id, guia.hash || null, guia.vencimento];
+    const chaveLegada = 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify(identidade)).digest('hex');
+    const key = manual ? 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify([...identidade, versaoPagamentoGuia(guia)])).digest('hex') : chaveLegada;
+    const value = { status: 'RESERVADO', guideId: guia.id, companyId: token.companyId, competencia: guia.competencia, tipo: guia.tipo, versaoPagamento: versaoPagamentoGuia(guia), mensagemId: mensagem.id, criadoEm: agora.toISOString() };
+    if (manual) {
+      const anterior = (await client.appSetting.findUnique({ where: { key } }))?.value;
+      const legado = (await client.appSetting.findUnique({ where: { key: chaveLegada } }))?.value;
+      if (anterior || legado) {
+        const prova = anterior?.status === 'ENCAMINHADO_CONTADOR' && anterior.suporteId
+          ? await client.encaminhamentoSuporte.findFirst({ where: { id: anterior.suporteId, conversaId: conversa.id } }) : null;
+        await texto(prova ? 'O pedido desta versão já está registrado com o contador. Ele retornará por aqui.'
+          : 'Há uma tentativa anterior que precisa de conferência pelo escritório. Não foi possível confirmar um novo encaminhamento.', 'repetido');
+        return { tratado: true, acao: 'ATUALIZAR_GUIA', repetido: true, pendente: !prova };
+      }
+      await conferirGuia(token.guideId, token.hash, token.versaoPagamento || versaoPagamentoGuia(guia));
+      let persistido = false;
+      // A reserva, demanda, aviso e pausa compartilham a transação do Menu.
+      // Uma rejeição/rollback não deixa uma reserva órfã bloqueando o próximo pedido.
+      await encaminhar(`Atualizar guia ${guia.tipo} · ${guia.competencia} · ${guia.id}: atualização pelo contador`, {
+        aoPersistir: async (tx, suporte) => {
+          if (!suporte?.id || suporte.conversaId !== conversa.id) throw Object.assign(new Error('Encaminhamento não comprovado.'), { code: 'ENCAMINHAMENTO_NAO_COMPROVADO' });
+          await tx.appSetting.create({ data: { key, value: { ...value, status: 'ENCAMINHADO_CONTADOR', suporteId: suporte.id } } });
+          persistido = true;
+        },
+      });
+      if (!persistido) throw Object.assign(new Error('Encaminhamento não comprovado.'), { code: 'ENCAMINHAMENTO_NAO_COMPROVADO' });
       await texto('Solicitei ao contador a atualização desta guia. Ele vai conferir e retornar por aqui.', 'contador');
       return { tratado: true, acao: 'ATUALIZAR_GUIA', encaminhado: true };
     }
-    const key = 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify([token.companyId, guia.id, guia.hash || null, guia.vencimento])).digest('hex');
-    const value = { status: 'RESERVADO', guideId: guia.id, companyId: token.companyId, mensagemId: mensagem.id, criadoEm: agora.toISOString() };
     try { await client.appSetting.create({ data: { key, value } }); reserva = { key, value }; }
     catch (e) {
       if (e.code !== 'P2002') throw e;
       await texto('Esta atualização já foi solicitada. Confira as mensagens desta conversa; se a guia ainda não chegou, o escritório verificará o pedido.', 'repetido');
       return { tratado: true, acao: 'RECALCULAR_GUIA', repetido: true };
     }
+    await conferirGuia(token.guideId, token.hash, token.versaoPagamento || versaoPagamentoGuia(guia));
     await texto('Aguarde enquanto atualizamos sua guia.', 'aguarde');
-    await conferirGuia(token.guideId, token.hash);
+    await conferirGuia(token.guideId, token.hash, token.versaoPagamento || versaoPagamentoGuia(guia));
     const contato = await contatoAtual();
     iniciouRecalculo = true;
     const atualizada = await recalcular(guia, contato, client);
@@ -88,6 +113,7 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     await conferirGuia(nova.id, nova.hash, versaoPagamentoGuia(nova));
     const pagamento = await prepararPagamento({ guide: nova, identificacao, conteudoPdf: pdf, conversa, referencia: key, conferir: () => conferirGuia(nova.id, nova.hash, versaoPagamentoGuia(nova)) }, { client });
     await enviar({ tipo: 'interactive', corpo: `Guia atualizada — ${identificacao}, ${nova.competencia}`, idTurno: `${key}:pdf`,
+      documentoGuia: { guideId: nova.id, conteudo: pdf, nomeArquivo, revisao: revisaoDocumentoGuia(nova) },
       chamada: async () => {
         await conferirGuia(nova.id, nova.hash, versaoPagamentoGuia(nova));
         return cloud.enviarGuiaComPagamento({ telefone: conversa.telefoneE164, conteudoPdf: pdf, nomeArquivo, ...pagamento });
