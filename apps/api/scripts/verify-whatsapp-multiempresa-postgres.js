@@ -1,7 +1,10 @@
 // Banco descartável real; contatos, transportes, ferramentas e atos fiscais sintéticos.
 // O alvo vem exclusivamente de --url, nunca de .env ou de variáveis de produção.
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve, dirname, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
@@ -20,6 +23,16 @@ process.env.INTEGRACAO_IA_COMERCIAL = '0';
 process.env.WHATSAPP_PHONE_NUMBER_ID = 'fixture-channel';
 process.env.ANTHROPIC_API_KEY = 'TESTE-SEM-MODELOS';
 process.env.OPENAI_API_KEY = 'TESTE-SEM-MODELOS';
+// Histórico documental real em storage descartável, nunca em storage configurado.
+const storageTemporario = mkdtempSync(join(tmpdir(), 'altan-multiempresa-'));
+process.env.GUIDE_STORAGE_PROVIDER = 'LOCAL';
+process.env.GUIDE_LOCAL_STORAGE_DIR = storageTemporario;
+const limparStorage = () => {
+  const alvo = resolve(storageTemporario);
+  assert.equal(dirname(alvo), resolve(tmpdir()));
+  assert(basename(alvo).startsWith('altan-multiempresa-'));
+  rmSync(alvo, { recursive: true, force: true });
+};
 const redeProibida = () => { throw new Error('Rede, modelo ou executor não simulado nesta verificação'); };
 globalThis.fetch = redeProibida;
 http.request = http.get = https.request = https.get = redeProibida;
@@ -33,13 +46,14 @@ const { garantirAtendimentoResponsavel, resolverContextoDaMensagem, atenderConte
   selecionarEmpresaDoEscritorio } = await import('../src/application/whatsapp/AtendimentoResponsavelWhatsappService.js');
 const { responderMenuWhatsapp } = await import('../src/application/whatsapp/MenuWhatsappService.js');
 const { executarFerramenta } = await import('../src/application/assistente/ferramentas/index.js');
+const { revisaoDocumentoGuia, enviarDocumentoGuiaWhatsapp } = await import('../src/application/whatsapp/EnvioDocumentoGuiaWhatsappService.js');
 const { processarEventoWhatsapp } = await import('../src/application/whatsapp/ProcessarEventoWhatsappService.js');
 const { iniciarColeta } = await import('../src/application/assistente/coletaEmissaoWhatsapp.js');
 const { confirmarEExecutar, autorizarPermissaoDaAcao } = await import('../src/application/assistente/AcoesPendentesService.js');
 const { grupoNoEscopo, filtroMensagensDoGrupo, resumoDoGrupo } = await import('../src/routes/firm/whatsappAtendimento.js');
 const log = { info() {}, warn() {}, error() {} };
 const prefixo = `multi-check-${randomUUID()}`;
-const ids = { empresas: [], usuarios: [], conversas: [], atendimentos: [], notas: [] };
+const ids = { empresas: [], usuarios: [], conversas: [], atendimentos: [], notas: [], guias: [] };
 let usuario;
 let contador;
 let checks = 0;
@@ -48,6 +62,46 @@ const json = valor => JSON.parse(JSON.stringify(valor));
 const checkpoint = id => prisma.atendimentoResponsavelWhatsapp.findUniqueOrThrow({ where: { id } });
 const recibo = mensagemId => prisma.resolucaoContextoWhatsapp.findUniqueOrThrow({ where: { mensagemId } });
 const draft = conversaId => prisma.rascunhoEmissaoWhatsapp.findUnique({ where: { conversaId } });
+
+function pdfSintetico(empresaId) {
+  const objetos = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> >>'];
+  let texto = `%PDF-1.4\n% fixture ${empresaId}\n`; const offsets = [0];
+  objetos.forEach((objeto, i) => { offsets.push(Buffer.byteLength(texto)); texto += `${i + 1} 0 obj\n${objeto}\nendobj\n`; });
+  const xref = Buffer.byteLength(texto);
+  texto += `xref\n0 4\n0000000000 65535 f \n${offsets.slice(1).map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(texto);
+}
+
+async function conferirTracking(pedido, empresa, neutraId, telefone) {
+  const guideId = `guia-${empresa.id}`;
+  const guia = await prisma.guide.findUniqueOrThrow({ where: { id: guideId } });
+  const saidas = await prisma.mensagemWhatsapp.findMany({ where: { conversaId: pedido.contexto.conversaId, turnoIaId: `menu:${pedido.mensagem.id}`, tipo: 'document' } });
+  assert.equal(saidas.length, 1, 'Um pedido gera somente um balão documental');
+  const mensagem = saidas[0];
+  const tentativas = await prisma.envioGuiaTentativa.findMany({ where: { envioGuia: { guideId } } });
+  assert.equal(tentativas.length, 1, 'Reentrega não duplica tentativa');
+  const tentativa = tentativas[0];
+  const envio = await prisma.envioGuia.findUniqueOrThrow({ where: { id: tentativa.envioGuiaId } });
+  assert.equal(mensagem.envioGuiaTentativaId, tentativa.id);
+  assert.equal(mensagem.envioGuiaId, envio.id);
+  assert.equal(tentativa.providerMessageId, mensagem.providerMessageId);
+  assert.match(tentativa.providerMessageId, /^wamid\.fixture\.out\./);
+  assert.equal(tentativa.status, 'enviado');
+  assert.equal(tentativa.entregueEm, null, 'Aceite sintético não fabrica callback de entrega');
+  assert.equal(envio.guideId, guideId); assert.equal(envio.destino, telefone);
+  assert.equal(tentativa.snapshot.guideId, guideId);
+  assert.equal(tentativa.snapshot.portalClientId, empresa.id);
+  assert.equal(tentativa.snapshot.conversaId, pedido.contexto.conversaId);
+  assert.equal(tentativa.snapshot.revisaoDocumento, revisaoDocumentoGuia(guia));
+  assert.equal(tentativa.arquivoSha256, guia.hash);
+  const arquivo = resolve(storageTemporario, tentativa.arquivoPdfFileId);
+  assert(arquivo.startsWith(resolve(storageTemporario) + (process.platform === 'win32' ? '\\' : '/')));
+  assert(readFileSync(arquivo).equals(pdfSintetico(empresa.id)), 'Snapshot conserva PDF exato da empresa');
+  const original = await prisma.mensagemWhatsapp.findUniqueOrThrow({ where: { id: pedido.mensagem.id } });
+  assert.equal(original.conversaId, neutraId, 'Resolução não move a entrada original');
+  return { tentativaId: tentativa.id, envioId: envio.id, wamid: tentativa.providerMessageId };
+}
 
 function comPrazo(promise, nome) {
   let timer;
@@ -73,6 +127,14 @@ async function novoCaso(nome) {
     const empresa = await prisma.portalClient.create({ data: { razao: `${letra} ${prefixo} ${nome}`, cnpj: documentoSintetico, emissaoClienteLiberada: true } });
     ids.empresas.push(empresa.id);
     empresas.push(empresa);
+    if (nome === 'reacoes-menu-guias') {
+      const pdfBytes = pdfSintetico(empresa.id);
+      const guia = await prisma.guide.create({ data: { id: `guia-${empresa.id}`, portalClientId: empresa.id,
+        tipo: 'SIMPLES', competencia: '2026-08', vencimento: new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 20)),
+        valor: '125.50', status: 'PROCESSED', liberadaCliente: true, paymentStatus: 'OPEN', source: 'LOCAL', storageProvider: 'DATABASE',
+        pdfBytes, hash: createHash('sha256').update(pdfBytes).digest('hex') } });
+      ids.guias.push(guia.id);
+    }
     await prisma.companyClientUser.create({ data: { companyId: empresa.id, userId: usuario.id, role: 'OWNER', status: 'ACTIVE' } });
     await prisma.contatoWhatsapp.create({ data: { portalClientId: empresa.id, nome: `Responsável ${prefixo}`, telefoneE164: telefone, userId: usuario.id, ativo: true,
       permissoesAssistente: ['EMISSAO_NFSE', 'GUIAS', 'NOTAS_DANFSE', 'DOCUMENTOS_EMPRESA', 'RECALCULO_GUIA'] } });
@@ -110,7 +172,7 @@ async function novoCaso(nome) {
     return { wamid: `wamid.fixture.out.${randomUUID()}` };
   };
   const cloud = { enviarTexto: enviar, enviarLista: enviar, enviarBotoes: enviar, enviarDocumento: async args => {
-    assert(Buffer.isBuffer(args.conteudo) && args.conteudo.toString().startsWith('%PDF fixture'), 'Somente PDF sintético');
+    assert(Buffer.isBuffer(args.conteudo) && empresas.some(e => args.conteudo.equals(pdfSintetico(e.id))), 'Somente PDF sintético desta fixture');
     return enviar(args);
   } };
   const empresaDoContexto = ctx => {
@@ -131,7 +193,7 @@ async function novoCaso(nome) {
       return { ok: true, textoDeConfirmacao: preparada.texto, codigo: preparada.codigo };
     }
     if (ferramenta === 'quanto_devo' && nome === 'reacoes-menu-guias') return { ok: true, guias: [{ guideId: `guia-${empresa.id}`, tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 125,50', vencimento: `20/${String(ctx.agora.getUTCMonth() + 1).padStart(2, '0')}/${ctx.agora.getUTCFullYear()}` }] };
-    if (ferramenta === 'enviar_pdf_da_guia') { assert.equal(input.guideId, `guia-${empresa.id}`); await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: `${input.guideId}.pdf`, legenda: 'Aqui está sua guia DAS.' }); return { ok: true, enviado: true }; }
+    if (ferramenta === 'enviar_pdf_da_guia') { assert.equal(input.guideId, `guia-${empresa.id}`); return executarFerramenta(ferramenta, input, ctx); }
     if (ferramenta === 'consultar_faturamento') return executarFerramenta(ferramenta, input, ctx);
     if (ferramenta === 'tomadores_conhecidos') return { ok: true, tomadores: [] };
     if (ferramenta === 'quanto_devo') return { ok: true, guias: [], quantidade: 0, observacao: `Guia sintética de ${empresa.razao}` };
@@ -250,6 +312,11 @@ async function limparFixtures() {
     await prisma.whatsappLease.deleteMany({ where: { id: { in: ids.atendimentos.map(id => `responsavel:${id}`) } } });
   }
   if (ids.conversas.length) await prisma.conversaWhatsapp.deleteMany({ where: { id: { in: ids.conversas } } });
+  if (ids.guias.length) {
+    await prisma.appSetting.deleteMany({ where: { key: { startsWith: 'guia_documento_whatsapp:' }, OR: ids.guias.map(id => ({ value: { path: ['guideId'], equals: id } })) } });
+    await prisma.envioGuia.deleteMany({ where: { guideId: { in: ids.guias } } });
+    await prisma.guide.deleteMany({ where: { id: { in: ids.guias } } });
+  }
   if (ids.atendimentos.length) await prisma.atendimentoResponsavelWhatsapp.deleteMany({ where: { id: { in: ids.atendimentos } } });
   if (ids.empresas.length) await prisma.portalClient.deleteMany({ where: { id: { in: ids.empresas } } });
   if (ids.usuarios.length) await prisma.user.deleteMany({ where: { id: { in: ids.usuarios } } });
@@ -265,7 +332,7 @@ if (posRetomar >= 0) {
     const vinculo = await resolverVinculoPorTelefone(conversa.telefoneE164, { client: prisma });
     const resultado = await resolverContextoDaMensagem({ registro: { conversa, mensagem, vinculo }, atendimento: { id: atendimentoId }, texto: 'NÃO REINTERPRETAR ESTE TEXTO', client: prisma, resolverVinculo: redeProibida });
     console.log(`RETOMADA:${JSON.stringify({ recibo: resultado.recibo, origemId: mensagem.conversaId })}`);
-  } finally { await prisma.$disconnect(); }
+  } finally { try { await prisma.$disconnect(); } finally { limparStorage(); } }
 } else {
   try {
     await conferirBanco();
@@ -296,20 +363,29 @@ if (posRetomar >= 0) {
     assert.equal(jornada.envios.filter(e => e.tituloBotao === 'Escolher empresa').length, 1);
     assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1);
     assert.equal(jornada.consultas.find(c => c.ferramenta === 'quanto_devo').empresaId, jornada.empresas[1].id);
-    assert.match(jornada.envios.at(-1).legenda, /Aqui está sua guia DAS/);
+    assert.match(jornada.envios.at(-1).legenda, /Aqui está sua guia de Simples Nacional\./);
     const pdfPersistido = await prisma.mensagemWhatsapp.findFirstOrThrow({ where: { conversaId: pedidoGuias.contexto.conversaId, turnoIaId: `menu:${pedidoGuias.mensagem.id}`, tipo: 'document' } });
     assert.equal(pdfPersistido.contextoConsulta.guias[0].guideId, `guia-${jornada.empresas[1].id}`);
+    const trackingBeta = await conferirTracking(pedidoGuias, jornada.empresas[1], jornada.neutra.id, jornada.telefone);
+    await assert.rejects(enviarDocumentoGuiaWhatsapp({ conversa: jornada.daEmpresa(jornada.empresas[1].id), documento: {
+      mensagemEntradaId: pedidoGuias.mensagem.id, conteudo: pdfSintetico(jornada.empresas[1].id) }, client: prisma,
+      antesDeEnviar: redeProibida, registrarSaida: redeProibida }), { code: 'GUIA_ENVIO_SEM_ORIGEM' }, 'Payload sem identidade continua recusado');
     await jornada.receberWebhook('Guias em aberto', { interacao: botaoGuias, providerMessageId: pedidoGuias.mensagem.providerMessageId });
     assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1, 'Reentrega não consulta nem responde de novo');
+    assert.deepEqual(await conferirTracking(pedidoGuias, jornada.empresas[1], jornada.neutra.id, jornada.telefone), trackingBeta);
     await jornada.receberWebhook('Pode mudar de empresa, por favor?');
     assert.equal((await checkpoint(jornada.atendimento.id)).aguardandoSelecao, true);
     assert.equal(jornada.consultas.length, 2, 'Pedido de troca só exibe empresas, sem consultar ou enviar de novo');
     const outraEmpresa = jornada.envios.at(-1).linhas.find(o => o.id.endsWith(`.${jornada.empresas[0].id}`));
     await jornada.receberWebhook(outraEmpresa.titulo, { interacao: outraEmpresa });
     const guiasDaOutra = jornada.envios.at(-1).linhas.find(o => o.titulo === 'Guias em aberto');
-    await jornada.receberWebhook(guiasDaOutra.titulo, { interacao: guiasDaOutra });
+    const pedidoAlfa = await jornada.receberWebhook(guiasDaOutra.titulo, { interacao: guiasDaOutra });
     assert.equal(jornada.consultas.length, 4);
     assert.equal(jornada.consultas[2].empresaId, jornada.empresas[0].id);
+    const trackingAlfa = await conferirTracking(pedidoAlfa, jornada.empresas[0], jornada.neutra.id, jornada.telefone);
+    assert.notEqual(trackingAlfa.tentativaId, trackingBeta.tentativaId);
+    assert.notEqual(trackingAlfa.wamid, trackingBeta.wamid);
+    assert.deepEqual(await conferirTracking(pedidoGuias, jornada.empresas[1], jornada.neutra.id, jornada.telefone), trackingBeta, 'Trocar empresa preserva tracking anterior');
     ok('webhook real: reações → empresa → menu → guias → troca por texto e reentrega sem modelo');
 
     const receita = await novoCaso('faturamento-completo');
@@ -608,6 +684,6 @@ if (posRetomar >= 0) {
 
     console.log(`PASS: ${checks} verificações multiempresa em PostgreSQL real; nenhum modelo, envio ou ato fiscal externo.`);
   } finally {
-    try { await limparFixtures(); } finally { await prisma.$disconnect(); }
+    try { await limparFixtures(); } finally { try { await prisma.$disconnect(); } finally { limparStorage(); } }
   }
 }
