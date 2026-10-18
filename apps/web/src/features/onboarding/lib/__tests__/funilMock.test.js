@@ -8,6 +8,12 @@
 
 import { podarInvisiveis, rascunhoVazio } from "../onboardingSpec";
 
+// A biblioteca de geração de fixtures não contém o estado do funil. Reutilizar a biblioteca
+// REAL evita recarregar todos os seus locales a cada resetModules; mockApi ainda é reavaliado,
+// recria seus Maps, aplica faker.seed e restaura a contratação exclusivamente do sessionStorage.
+const mockFakerModule = jest.requireActual('@faker-js/faker');
+jest.mock('@faker-js/faker', () => mockFakerModule);
+
 /**
  * ⚠⚠ TETO DE TEMPO DESTE ARQUIVO — 20 s, e ele é DAQUI, nunca do `jest.config` (02/09/2026).
  *
@@ -21,14 +27,17 @@ import { podarInvisiveis, rascunhoVazio } from "../onboardingSpec";
  * Quem estoura não é o teste errado: é o que estava rodando quando a máquina engasgou, e por isso
  * subir caso a caso seria correr atrás de um alvo que muda a cada execução.
  *
- * ⚠ O custo é jsdom montando tela de verdade (modal cheio, tabela, várias renderizações por caso).
- * Não há espera, relógio nem rede aqui. Os outros ~3.339 casos deste app continuam com 5 s.
+ * Este arquivo exercita serviços, sem montar telas. O mock tinha esperas reais de 120/180 ms,
+ * somadas à reavaliação do módulo em cada recarga. Injetamos somente a latência; todos os
+ * métodos, Maps, serialização, reimportações e asserts continuam reais. O teto fica inalterado.
+ * Os outros ~3.339 casos deste app continuam com 5 s.
  * ⚠ O precedente é da casa: `api: nfse/danfse/__tests__/danfse.test.js` já faz `jest.setTimeout(30000)`.
  */
 jest.setTimeout(20000);
 
 describe("funil no modo mock — ponta a ponta, sem backend", () => {
   let api;
+  const semLatencia = async () => {};
 
   // ⚠ Os `Map` do mock são de MÓDULO, não da instância: `createMockApi()` chamado duas vezes
   // compartilha o mesmo estado. Isso é PROPOSITAL no app (o rascunho tem de sobreviver à navegação
@@ -39,7 +48,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     sessionStorage.removeItem("mock:onboardings:v1");
     jest.resetModules();
     const { createMockApi } = await import("../../../../api/mock/mockApi");
-    api = createMockApi();
+    api = createMockApi({ delay: semLatencia });
   });
 
   test("criar → preencher → finalizar → concluir etapa → converter", async () => {
@@ -98,7 +107,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
       // não apenas outra instância que ainda compartilha os mesmos Maps.
       jest.resetModules();
       const { createMockApi } = await import('../../../../api/mock/mockApi');
-      api = createMockApi();
+      api = createMockApi({ delay: semLatencia });
     }
     const { onboarding: o } = await api.criarOnboarding('ABERTURA');
     const { onboarding: outra } = await api.criarOnboarding('ABERTURA');
@@ -151,7 +160,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     sessionStorage.setItem('mock:onboardings:v1', JSON.stringify(salvo));
     jest.resetModules();
     const { createMockApi } = await import('../../../../api/mock/mockApi');
-    api = createMockApi();
+    api = createMockApi({ delay: semLatencia });
     expect((await api.getOnboarding(onboarding.id)).onboarding.comercial.contratacao).toMatchObject({ ganha: false, carteiraPermitida: false });
     expect((await api.comercial(`/onboardings/${onboarding.id}`)).marcos).toEqual([]);
   });

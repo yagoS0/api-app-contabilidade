@@ -580,7 +580,7 @@ const EXECUTORES = {
     });
     const { texto, codigo } = await servicos.criarPendencia({
       conversaId: ctx.conversa.id, portalClientId: sessao.portalClientId, userId: sessao.userId,
-      tipo: TIPOS.EMITIR_NFSE, payload: { ...dados, companyId: sessao.portalClientId }, corpo: declaracao, agora: ctx.agora,
+      tipo: TIPOS.EMITIR_NFSE, payload: { ...dados, companyId: sessao.portalClientId, fingerprintConfirmacao: fiscal.fingerprintConfirmacao || null }, corpo: declaracao, agora: ctx.agora,
     });
     ctx.registrarPendencia?.({ tipo: TIPOS.EMITIR_NFSE, codigo, texto });
     return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto, origens: { fiscal: fiscal.origens, tomador: tomador.origens }, instrucao: "O texto de confirmação será enviado ao cliente EXATAMENTE como está; diga apenas que o pedido foi montado e que ele precisa responder CONFIRMAR com o código." };

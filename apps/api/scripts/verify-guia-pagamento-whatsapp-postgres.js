@@ -82,7 +82,13 @@ try {
   assert.equal(logDeclaracao.value.guideId, f.guia.id);
   assert.equal(logDeclaracao.value.versaoGuia, versaoPagamentoGuia(f.guia));
   assert.equal(logDeclaracao.value.pagoEm, '2026-09-20T00:00:00.000Z');
+  const estadoAntesReplay = await client.appSetting.findUniqueOrThrow({ where: { key: `${PREFIXO_ESTADO}${f.companyId}:${respostas[0].confirmacaoId}` } });
+  const eventosPendentes = { key: { startsWith: `contabil:cliente:evento:${f.companyId}:${respostas[0].confirmacaoId}:` } };
+  assert.equal(await client.appSetting.count({ where: eventosPendentes }), 1, 'Entregas concorrentes da mesma declaração geram uma única transição pendente.');
   assert.deepEqual(await f.run(declaracao), respostas[0]);
+  assert.deepEqual(await client.appSetting.findUniqueOrThrow({ where: { key: estadoAntesReplay.key } }), estadoAntesReplay,
+    'Replay não reescreve revisão/updatedAt de pendência inalterada.');
+  assert.equal(await client.appSetting.count({ where: eventosPendentes }), 1);
   assert.deepEqual(await client.appSetting.findUniqueOrThrow({ where: { key: chaveDeclaracao } }), logDeclaracao);
   assert.equal(await client.appSetting.count({ where: { key: { startsWith: `${PREFIXO_CONFIRMACAO}${f.companyId}:` } } }), 1);
   assert.equal(await client.accountingEntry.count({ where: { portalClientId: f.companyId, tipo: 'BAIXA' } }), 0);

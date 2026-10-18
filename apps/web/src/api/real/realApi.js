@@ -1157,6 +1157,10 @@ export function createRealApi() {
       return request(`/firm/whatsapp/resumo${area ? `?area=${encodeURIComponent(area)}` : ''}`);
     },
     async getPendenciasSuporte(companyId) { return request('/firm/whatsapp/suporte/pendencias' + (companyId ? '?companyId=' + encodeURIComponent(companyId) : '')); },
+    async listarEmissoesInterrompidasWhatsapp(conversaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/emissoes-interrompidas`); },
+    async conferirEmissaoInterrompidaWhatsapp(conversaId, acaoId, { versao, motivo }) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/emissoes-interrompidas/${encodeURIComponent(acaoId)}/conferir`, { method: 'POST', body: JSON.stringify({ versao, motivo }) });
+    },
     async getConsumoIaDetalhado() { return request('/firm/whatsapp/consumo-ia'); },
     async resolverSuporte(conversaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/resolver-suporte`, { method: 'POST' }); },
     async excluirDemandaSuporte(conversaId, pendenciaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/suporte/${encodeURIComponent(pendenciaId)}/excluir`, { method: 'POST' }); },

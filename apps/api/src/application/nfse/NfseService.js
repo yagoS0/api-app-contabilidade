@@ -1,4 +1,9 @@
 import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
+import { fingerprintConfirmacaoEmissao, exigirFingerprintConfirmado } from './fingerprintConfirmacaoEmissao.js';
+import { XMLValidator } from 'fast-xml-parser';
+import { numeroDaNfse } from './numeroDaNfse.js';
+import { conferirControleEmissao, persistirDesfechoControlado } from '../whatsapp/ControleEmissaoWhatsapp.js';
+import { Prisma } from '@prisma/client';
 import { validarPercentualSimples } from './validarPercentualSimples.js';
 import { conciliarDps } from './conciliacaoDps.js';
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
@@ -10,7 +15,7 @@ import https from "node:https";
 import axios from "axios";
 import { SignedXml } from "xml-crypto";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
 import { parseDate } from "../../utils/date.js";
@@ -1449,6 +1454,56 @@ export async function carregarPerfilDeEmissao(company, perfilId) {
   }
 }
 
+// A resposta do POST precisa conter a NFS-e autorizada correspondente à DPS enviada.
+// Não consulta o provedor nem inventa sucesso a partir do HTTP ou do pedido assinado.
+function provaDaRespostaEmissao(response, xmlEnviado) {
+  const ns = 'http://www.sped.fazenda.gov.br/nfse';
+  const limite = 5 * 1024 * 1024;
+  const falha = () => Object.assign(new Error('O sistema nacional não devolveu prova válida da emissão. Confira a tentativa antes de emitir novamente.'), { code: 'NFSE_RESPOSTA_INCONCLUSIVA' });
+  try {
+    const chave = response?.chaveAcesso;
+    if (!/^\d{50}$/.test(chave || '') || (response.status && response.status !== STATUS.ISSUED) || response.cancelada === true) throw falha();
+    let xml = response.xmlRecuperado;
+    if (!xml) {
+      const b64 = response.nfseXmlGZipB64;
+      if (typeof b64 !== 'string' || b64.length > Math.ceil(limite * 4 / 3) + 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) throw falha();
+      xml = gunzipSync(Buffer.from(b64, 'base64'), { maxOutputLength: limite }).toString('utf8');
+    }
+    const parse = texto => {
+      if (typeof texto !== 'string' || Buffer.byteLength(texto) > limite || /<!DOCTYPE|<!ENTITY/i.test(texto) || XMLValidator.validate(texto) !== true) throw falha();
+      return new DOMParser().parseFromString(texto, 'text/xml').documentElement;
+    };
+    const raiz = parse(xml);
+    const enviado = parse(xmlEnviado);
+    const filhos = node => Array.from(node.childNodes || []).filter(n => n.nodeType === 1);
+    const unico = (node, nome) => {
+      const nodes = filhos(node).filter(n => n.localName === nome && n.namespaceURI === ns);
+      if (nodes.length !== 1) throw falha();
+      return nodes[0];
+    };
+    if (raiz.localName !== 'NFSe' || raiz.namespaceURI !== ns) throw falha();
+    for (const nome of ['DPS', 'infDPS', 'infNFSe']) if (raiz.getElementsByTagNameNS('*', nome).length !== 1) throw falha();
+    const inf = unico(raiz, 'infNFSe');
+    const numero = numeroDaNfse(xml, chave);
+    if (!numero || inf.getAttribute('Id') !== `NFS${chave}` || unico(inf, 'cStat').textContent.trim() !== '100'
+      || (response.numeroNfse != null && String(response.numeroNfse) !== numero)) throw falha();
+    const original = unico(enviado, 'infDPS');
+    const oficial = unico(unico(inf, 'DPS'), 'infDPS');
+    const ambiente = unico(original, 'tpAmb').textContent.trim();
+    for (const campo of ['tipoAmbiente', 'tpAmb']) if (response[campo] != null && String(response[campo]) !== ambiente) throw falha();
+    const canonico = node => {
+      if (node.namespaceURI !== ns) throw falha();
+      const atributos = Array.from(node.attributes || []).filter(a => a.namespaceURI !== 'http://www.w3.org/2000/xmlns/')
+        .map(a => [a.namespaceURI || '', a.localName, a.value]).sort();
+      const children = filhos(node);
+      if (children.length && Array.from(node.childNodes).some(n => [3, 4].includes(n.nodeType) && n.nodeValue.trim())) throw falha();
+      return [node.localName, atributos, children.length ? children.map(canonico) : node.textContent.trim()];
+    };
+    if (JSON.stringify(canonico(original)) !== JSON.stringify(canonico(oficial))) throw falha();
+    return { xml, numeroNfse: numero, chaveAcesso: chave };
+  } catch { throw falha(); }
+}
+
 function maskSensitive(value) {
   if (!value) return value;
   const str = String(value);
@@ -1835,7 +1890,9 @@ export class NfseService {
    * tentativa anterior — e só é aceito quando a falha daquela linha LIBEROU o número (camadas
    * `NOSSA` e `RECEITA`). Falha de `TRANSPORTE` não libera: ali o desfecho é desconhecido.
    */
-  static async conciliarTentativa({ companyId, invoiceId }) {
+  static async conciliarTentativa({ companyId, invoiceId, supervisao = null }) {
+    if (supervisao) await conferirControleEmissao(supervisao);
+    if (supervisao && (supervisao.invoiceId !== invoiceId || supervisao.companyId !== companyId)) throw Object.assign(new Error('Tentativa fora da supervisão autorizada.'), { code: 'NFSE_SUPERVISAO_INVALIDA' });
     const anterior = await prisma.serviceInvoice.findUnique({ where: { id: invoiceId } });
     if (!anterior || anterior.companyId !== companyId) {
       throw Object.assign(new Error('Tentativa não encontrada nesta empresa.'), { code: 'NFSE_RETRY_INVOICE_NOT_FOUND' });
@@ -1844,16 +1901,24 @@ export class NfseService {
       return { estado: 'MESMA', recuperada: true, message: 'Nota autorizada já recuperada.',
         nfse: await NfseRepository.findById(anterior.id) };
     }
-    if (![STATUS.REJECTED, STATUS.FALHA_ENVIO].includes(anterior.status)
+    const pendingSupervisionado = supervisao && anterior.status === 'pending';
+    if ((!pendingSupervisionado && (![STATUS.REJECTED, STATUS.FALHA_ENVIO].includes(anterior.status)
       || !(anterior.falhaCodigo === 'E0014' || anterior.falhaCamada === CAMADA.TRANSPORTE)
+      ))
       || !anterior.idDps || !(anterior.xmlDps || anterior.xml)) {
       throw Object.assign(new Error('Esta tentativa não possui um envio pendente de conferência que possa ser consultado.'), { code: 'NFSE_CONCILIACAO_NAO_PERMITIDA' });
     }
     const company = await prisma.company.findUnique({ where: { id: companyId } });
     if (!company) throw Object.assign(new Error('Empresa não encontrada.'), { code: 'COMPANY_NOT_FOUND' });
+    if (supervisao) await conferirControleEmissao(supervisao);
     const certificados = await resolverCertificadosDaEmpresa(companyId);
     const client = buildAxiosClient(certificados.transporte);
-    const resultado = await conciliarDps({ client, clientEventos: clientEventosDaEmpresa(client),
+    if (supervisao) await conferirControleEmissao(supervisao);
+    const protegerConsulta = transporte => supervisao ? { get: async (...args) => {
+      await conferirControleEmissao(supervisao);
+      return transporte.get(...args);
+    } } : transporte;
+    const resultado = await conciliarDps({ client: protegerConsulta(client), clientEventos: protegerConsulta(clientEventosDaEmpresa(client)),
       idDps: anterior.idDps, xmlEnviado: anterior.xmlDps || anterior.xml,
       ambiente: NFSE_ENV === 'producao' ? '1' : '2', cnpjPrestador: normalizarDocumento(company.cnpj),
       dpsPath: NFSE_DPS_PATH, nfsePath: NFSE_NFSE_PATH });
@@ -1861,11 +1926,14 @@ export class NfseService {
       estado: resultado.estado, motivo: resultado.motivo, chaveAcesso: resultado.chaveAcesso || null,
       xml: resultado.xml || null, consultadaEm: new Date().toISOString(),
     } };
+    configuracaoFiscal.historicoConciliacoes = [...(anterior.configuracaoFiscal?.historicoConciliacoes || []), configuracaoFiscal.ultimaConciliacao];
+    if (supervisao) await conferirControleEmissao(supervisao);
     const alteracao = resultado.estado === 'MESMA' ? { status: STATUS.ISSUED, revisaoPeriodoPendente: NFSE_ENV === 'producao',
       chaveAcesso: resultado.chaveAcesso, numeroNfse: resultado.numeroNfse,
       xml: resultado.xml, ...CAMPOS_DE_FALHA_LIMPOS, configuracaoFiscal } : { configuracaoFiscal };
     const aplicado = await prisma.serviceInvoice.updateMany({ where: { id: anterior.id, companyId,
-      status: anterior.status, updatedAt: anterior.updatedAt }, data: alteracao });
+      status: anterior.status, updatedAt: anterior.updatedAt,
+      configuracaoFiscal: { equals: anterior.configuracaoFiscal ?? Prisma.DbNull } }, data: alteracao });
     if (aplicado.count !== 1) {
       throw Object.assign(new Error('A tentativa foi atualizada durante a consulta. Confira o resultado salvo antes de continuar.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
     }
@@ -1878,7 +1946,7 @@ export class NfseService {
       nfse: await NfseRepository.findById(anterior.id) };
   }
 
-  static async issue({ data, log, retryInvoiceId = null, antesDeEnviar = null }) {
+  static async issue({ data, log, retryInvoiceId = null, antesDeEnviar = null, autorizarEnvioFinal = null, fingerprintConfirmado = null, exigirConfirmacao = false, controleExecucao = null }) {
     const company = await prisma.company.findUnique({
       where: { id: data.companyId },
       include: { regimeHistorico: true },
@@ -1902,6 +1970,7 @@ export class NfseService {
         "NFSe: integração não configurada — falta NFSE_BASE_URL (endpoint do sistema nacional)."
       );
       err.code = "NFSE_NOT_CONFIGURED";
+        err.antesDoPost = true;
       throw err;
     }
 
@@ -1947,6 +2016,12 @@ export class NfseService {
     let perfilDeEmissao;
     try { perfilDeEmissao = await carregarPerfilDeEmissao(company, data.perfilId); }
     catch (err) { return recusaAntesDeEscrever(err, "perfil de emissão"); }
+
+    const fingerprint = (cadastro, perfil, regimeAtual) => fingerprintConfirmacaoEmissao({
+      company: cadastro, perfil, regime: regimeAtual, ambiente: NFSE_ENV,
+      perfisHabilitados: INTEGRACAO_PERFIL_EMISSAO_NFSE, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS,
+    });
+    if (exigirConfirmacao) exigirFingerprintConfirmado(fingerprintConfirmado, fingerprint(company, perfilDeEmissao, regime));
 
     // ── 1.b PRÉ-VOO DO CADASTRO ───────────────────────────────────────────────────────────
     //
@@ -2117,6 +2192,14 @@ export class NfseService {
     let rawXml = null;
     let requestUrl = null;
     let conciliacao = null;
+    let postIniciado = false;
+    let versaoDesfecho = controleExecucao ? await prisma.serviceInvoice.findUnique({ where: { id: record.id } }) : null;
+    const gravarDesfecho = async dataDesfecho => {
+      if (!controleExecucao) return NfseRepository.markIssued(record.id, dataDesfecho);
+      if (!versaoDesfecho) throw Object.assign(new Error('Tentativa sem versão persistida.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+      return persistirDesfechoControlado({ client: prisma, controle: controleExecucao, invoiceId: record.id,
+        data: { ...dataDesfecho, ...(dataDesfecho.status === STATUS.ISSUED ? { revisaoPeriodoPendente: NFSE_ENV === 'producao' } : {}) }, versao: versaoDesfecho });
+    };
     try {
       const client = buildAxiosClient(certificados.transporte);
       const construido = buildDpsPayload({
@@ -2136,13 +2219,19 @@ export class NfseService {
       });
       rawXml = construido.rawXml;
       // Persistir antes da rede: timeout não pode apagar o documento efetivamente enviado.
-      await prisma.serviceInvoice.update({ where: { id: record.id }, data: {
+      const preparacaoFiscal = {
         contratoEmissao: CONTRATO_NACIONAL.id,
         xmlDps: rawXml,
         configuracaoFiscal: { ...snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
           codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS, contextoFiscal: construido.contextoFiscal, regimeVigente }),
           ...(conciliacoes.length ? { conciliacoes: [...conciliacoes] } : {}) },
-      } });
+      };
+      if (controleExecucao) {
+        await conferirControleEmissao(controleExecucao);
+        const preparada = await gravarDesfecho(preparacaoFiscal);
+        if (!preparada._controleAplicado) throw Object.assign(new Error('A tentativa mudou durante a preparação.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+        versaoDesfecho = await prisma.serviceInvoice.findUnique({ where: { id: record.id } });
+      } else await prisma.serviceInvoice.update({ where: { id: record.id }, data: preparacaoFiscal });
 
       if (construido.localPrestacaoAssumido) {
         // Ver o bloco sobre a LC 116/2003, art. 3º em `buildDpsXml`. A suposição fica no log em
@@ -2156,15 +2245,33 @@ export class NfseService {
       requestUrl = `${client.defaults.baseURL}${NFSE_PATH}`;
       // Agendamentos persistem o vínculo com a tentativa ANTES de qualquer envio externo.
       if (antesDeEnviar) await antesDeEnviar(record.id);
+      if (exigirConfirmacao) {
+        const cadastroAtual = await prisma.company.findUnique({ where: { id: company.id }, include: { regimeHistorico: true } });
+        const perfilAtual = await carregarPerfilDeEmissao(cadastroAtual, data.perfilId);
+        const vigenciaAtual = regimeDaCompetencia({ historico: cadastroAtual?.regimeHistorico, competencia: data.competencia });
+        exigirFingerprintConfirmado(fingerprintConfirmado, vigenciaAtual.ok ? fingerprint(cadastroAtual, perfilAtual, vigenciaAtual.regime) : null);
+      }
       let response;
       try {
+        // Guarda somente de autorização: executada depois das releituras fiscais, sem
+        // repetir os efeitos de antesDeEnviar (vínculo durável da tentativa).
+        if (controleExecucao) {
+          versaoDesfecho = await prisma.serviceInvoice.findUnique({ where: { id: record.id } });
+          await conferirControleEmissao(controleExecucao);
+        }
+        if (autorizarEnvioFinal) await autorizarEnvioFinal(record.id);
+        postIniciado = true;
         ({ data: response } = await client.post(NFSE_PATH, {
           dpsXmlGZipB64: construido.dpsXmlGZipB64,
         }));
       } catch (erroEnvio) {
         const falha = classificarFalha(erroEnvio);
         if (falha.codigo !== 'E0014') throw erroEnvio;
-        conciliacao = await conciliarDps({ client, clientEventos: clientEventosDaEmpresa(client), idDps: construido.infId, xmlEnviado: rawXml,
+        const protegerConsulta = transporte => controleExecucao ? { get: async (...args) => {
+          await conferirControleEmissao(controleExecucao);
+          return transporte.get(...args);
+        } } : transporte;
+        conciliacao = await conciliarDps({ client: protegerConsulta(client), clientEventos: protegerConsulta(clientEventosDaEmpresa(client)), idDps: construido.infId, xmlEnviado: rawXml,
           ambiente: NFSE_ENV === 'producao' ? '1' : '2', cnpjPrestador: normalizarDocumento(company.cnpj),
           dpsPath: NFSE_DPS_PATH, nfsePath: NFSE_NFSE_PATH });
         const evidencia = { tentativaId: record.id, idDps: construido.infId,
@@ -2172,17 +2279,27 @@ export class NfseService {
           chaveAcesso: conciliacao.chaveAcesso || null, consultadaEm: new Date().toISOString(),
           xml: conciliacao.xml || null };
         conciliacoes.push(evidencia);
+        if (controleExecucao) await conferirControleEmissao(controleExecucao);
         // A prova fica na tentativa recusada; nunca vincular a chave de outra operação a ela.
-        await prisma.serviceInvoice.update({ where: { id: record.id }, data: {
+        const dadosConciliacao = {
           configuracaoFiscal: { ...snapshotFiscal({ company, perfil: perfilDeEmissao, regime,
             codigoServico: codigoServicoDaNota, ibscbsLigado: INTEGRACAO_NFSE_IBSCBS,
             contextoFiscal: construido.contextoFiscal, regimeVigente }), conciliacoes },
-        } });
+        };
+        if (controleExecucao) {
+          const conciliada = await gravarDesfecho(dadosConciliacao);
+          if (!conciliada._controleAplicado) throw Object.assign(new Error('A tentativa mudou durante a consulta.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+        } else await prisma.serviceInvoice.update({ where: { id: record.id }, data: dadosConciliacao });
+        if (controleExecucao) versaoDesfecho = await prisma.serviceInvoice.findUnique({ where: { id: record.id } });
         if (conciliacao.estado === 'MESMA') {
           response = { status: STATUS.ISSUED, chaveAcesso: conciliacao.chaveAcesso,
             numeroNfse: conciliacao.numeroNfse, xmlRecuperado: conciliacao.xml };
         } else if (conciliacao.estado === 'OUTRA' && tentativa + 1 < MAX_TENTATIVAS) {
-          await NfseRepository.markIssued(record.id, { ...camposDeFalha(falha), xml: rawXml });
+          const recusada = await gravarDesfecho({ ...camposDeFalha(falha), xml: rawXml });
+          if (controleExecucao) {
+            await conferirControleEmissao(controleExecucao);
+            if (!recusada._controleAplicado) throw Object.assign(new Error('A tentativa mudou antes de reservar numeração.'), { code: 'NFSE_CONCILIACAO_ESTADO_ALTERADO' });
+          }
           // Só uma recusa explícita E0014 com XML de outra operação autoriza avançar.
           // A reserva usa o mesmo contador transacional das emissões concorrentes.
           const reserva = await reservarTentativa();
@@ -2194,16 +2311,23 @@ export class NfseService {
         }
       }
 
-      const issued = await NfseRepository.markIssued(record.id, {
-        status: response.status || STATUS.ISSUED,
+      // MESMA já passou pelo comparador completo e pela consulta de eventos do ADN.
+      const prova = conciliacao?.estado === 'MESMA'
+        ? { xml: conciliacao.xml, numeroNfse: conciliacao.numeroNfse, chaveAcesso: conciliacao.chaveAcesso }
+        : provaDaRespostaEmissao(response, rawXml);
+      const issued = await gravarDesfecho({
+        status: STATUS.ISSUED,
         idDps: construido.infId,
-        chaveAcesso: response.chaveAcesso || response.numeroNfse || null,
-        numeroNfse: response.numeroNfse || null,
+        chaveAcesso: prova.chaveAcesso,
+        numeroNfse: prova.numeroNfse,
         codigoVerificacao: response.codigoVerificacao || response.codigo || null,
-        xml: response.xmlRecuperado || response.nfseXmlGZipB64 || rawXml || null,
+        xml: prova.xml,
         pdfUrl: response.pdfUrl || null,
         ...CAMPOS_DE_FALHA_LIMPOS,
       });
+      if (issued.status !== STATUS.ISSUED) return { status: issued.status, camada: CAMADA.TRANSPORTE,
+        codigo: 'NFSE_DESFECHO_TARDIO', indeterminado: true, numeroReutilizavel: false, invoiceId: record.id, nfse: issued,
+        message: 'Resposta fiscal preservada no histórico. Confira o resultado antes de continuar.' };
 
       // ⚠ NÃO HÁ MAIS INCREMENTO AQUI. O contador foi movido na RESERVA (etapa 2), dentro da
       // transação. O `update` que existia neste ponto — `String(Number(company.rpsNumero) + 1)` —
@@ -2263,6 +2387,8 @@ export class NfseService {
       // mesmo balde: uma nota que nunca saiu da máquina ficava gravada como recusada pela Receita.
       const desfecho = classificarFalha(err);
 
+      if (!postIniciado) Object.assign(desfecho, { camada: CAMADA.NOSSA, numeroReutilizavel: true });
+
       if (desfecho.codigo === 'E0014' && conciliacao) {
         desfecho.correcao = conciliacao.estado === 'OUTRA'
           ? 'O limite de três DPS ocupadas foi atingido. Atualize o acervo de notas e confira a numeração antes de continuar.'
@@ -2285,9 +2411,10 @@ export class NfseService {
         "Falha ao enviar NFS-e ao sistema nacional"
       );
 
-      const gravado = await NfseRepository.markIssued(record.id, {
+      const gravado = await gravarDesfecho({
         ...camposDeFalha(desfecho),
         xml: rawXml || null,
+        ...(controleExecucao && conciliacao ? { configuracaoFiscal: { ...(versaoDesfecho?.configuracaoFiscal || {}), evidenciaConciliacaoTardia: conciliacao } } : {}),
       });
 
       return {
@@ -2299,6 +2426,10 @@ export class NfseService {
         numeroReutilizavel: desfecho.numeroReutilizavel,
         providerData: desfecho.providerData,
         url: requestUrl,
+        antesDoPost: !postIniciado,
+        invoiceId: record.id,
+        indeterminado: postIniciado && (desfecho.camada === CAMADA.TRANSPORTE || (desfecho.codigo === 'E0014' && conciliacao?.estado !== 'OUTRA')),
+        conciliacao: conciliacao ? { estado: conciliacao.estado, motivo: conciliacao.motivo || null } : null,
         nfse: gravado,
       };
     }

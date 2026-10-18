@@ -1,3 +1,4 @@
+import { comControleEmissao } from '../../whatsapp/ControleEmissaoWhatsapp.js';
 // O XML DA DPS TEM DE DIZER A VERDADE SOBRE A EMPRESA — E RECUSAR QUANDO NÃO SOUBER.
 //
 // Exercita `NfseService.issue` de ponta a ponta (com o mundo externo simulado) e olha o XML que
@@ -82,6 +83,8 @@ import axios from "axios";
 import { prisma, __tx } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
 import { NfseService } from "../NfseService.js";
+import { fingerprintConfirmacaoEmissao } from '../fingerprintConfirmacaoEmissao.js';
+import { prepararDadosFiscaisDoCliente } from '../preparacaoFiscalDoCliente.js';
 import { NfseRepository } from '../../../infrastructure/db/NfseRepository.js';
 
 const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -125,11 +128,15 @@ const PAYLOAD_BASE = {
 
 let postMock;
 
+function respostaAutorizada(body, numero = '18', chave = '3'.repeat(50)) {
+  const enviado = gunzipSync(Buffer.from(body.dpsXmlGZipB64, 'base64')).toString('utf8');
+  const dps = enviado.slice(enviado.indexOf('<DPS'));
+  const xml = `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS${chave}"><nNFSe>${numero}</nNFSe><cStat>100</cStat>${dps}</infNFSe></NFSe>`;
+  return { data: { chaveAcesso: chave, nfseXmlGZipB64: gzipSync(xml).toString('base64') } };
+}
+
 test('número autorizado vem do XML gzip quando o JSON não informa numeroNfse', async () => {
-  const { gzipSync } = require('node:zlib');
-  const chave = '3'.repeat(50);
-  montarCenario({ respostaProvedor: () => ({ data: { chaveAcesso: chave,
-    nfseXmlGZipB64: gzipSync(`<NFSe><infNFSe Id="NFS${chave}"><nNFSe>11</nNFSe><DPS><nDPS>5</nDPS></DPS></infNFSe></NFSe>`).toString('base64') } }) });
+  montarCenario({ respostaProvedor: body => respostaAutorizada(body, '11') });
   const result = await NfseService.issue({ data: PAYLOAD_BASE, log });
   expect(result.nfse.numeroNfse).toBe('11');
   expect(prisma.serviceInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({numeroNfse:'11'}) }));
@@ -149,10 +156,10 @@ function montarCenario({ empresa = {}, cadastroFiscal = null, respostaProvedor }
   prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,
     regimeHistorico: [{ id: 'rh-teste', regime: cadastroFiscal?.regime || ('regimeTributario' in empresa ? empresa.regimeTributario : EMPRESA_BASE.regimeTributario), vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], ...empresa });
   prisma.cadastroFiscal.findUnique.mockResolvedValue(cadastroFiscal);
-  postMock = jest.fn(async () =>
+  postMock = jest.fn(async (_url, body) =>
     respostaProvedor === undefined
-      ? { data: { status: "issued", chaveAcesso: "3".repeat(50), numeroNfse: "18" } }
-      : respostaProvedor()
+      ? respostaAutorizada(body)
+      : respostaProvedor(body)
   );
   axios.create.mockReturnValue({
     defaults: { baseURL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional" },
@@ -210,6 +217,103 @@ describe("certificado — sem o A1 da empresa NADA é enviado", () => {
     const options = axios.create.mock.calls[0][0].httpsAgent.options;
     expect(options).toMatchObject({ cert: 'CERT', key: 'KEY', rejectUnauthorized: true });
     expect(options).not.toHaveProperty('pfx');
+  });
+});
+
+describe('resumo fiscal confirmado e prova de autorização', () => {
+  async function fingerprint() {
+    const company = await prisma.company.findUnique();
+    return fingerprintConfirmacaoEmissao({ company, perfil: null, regime: 'SIMPLES_NACIONAL', ambiente: 'homolog' });
+  }
+  it('preparação e emissão usam o mesmo fingerprint, sem depender da numeração', async () => {
+    montarCenario();
+    prisma.portalClient.findUnique.mockResolvedValueOnce({ id: 'portal-1', companyId: 'company-1' });
+    const previa = await prepararDadosFiscaisDoCliente({ portalClientId: 'portal-1', competencia: '2026-01-23', pTotTribSN: 6, servico: PAYLOAD_BASE.servico });
+    expect(previa.ok).toBe(true);
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log, exigirConfirmacao: true, fingerprintConfirmado: previa.fingerprintConfirmacao });
+    expect(r.status).toBe('issued');
+  });
+  it('resumo ausente ou alteração anterior à confirmação não reserva nem envia', async () => {
+    montarCenario();
+    const antigo = await fingerprint();
+    const company = await prisma.company.findUnique();
+    prisma.company.findUnique.mockResolvedValue({ ...company, codigoServicoMunicipal: '999' });
+    for (const confirmado of [null, antigo]) await expect(NfseService.issue({ data: PAYLOAD_BASE, log, exigirConfirmacao: true, fingerprintConfirmado: confirmado })).rejects.toMatchObject({ code: 'NFSE_RESUMO_ALTERADO', antesDoPost: true });
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it('mudança durante antesDeEnviar bloqueia POST e conserva tentativa com recusa local', async () => {
+    montarCenario();
+    const confirmado = await fingerprint();
+    const company = await prisma.company.findUnique();
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log, exigirConfirmacao: true, fingerprintConfirmado: confirmado,
+      antesDeEnviar: async () => prisma.company.findUnique.mockResolvedValue({ ...company, inscricaoMunicipal: 'alterada' }) });
+    expect(r).toMatchObject({ status: 'falha_envio', camada: 'NOSSA', codigo: 'NFSE_RESUMO_ALTERADO', antesDoPost: true, indeterminado: false, invoiceId: 'inv-1' });
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it('perfil efetivo alterado depois do resumo é recusado antes da reserva', async () => {
+    montarCenario();
+    const config = require('../../../config.js');
+    const perfis = require('../perfilEmissao/resolverPerfilDeEmissao.js');
+    const resolver = jest.spyOn(perfis, 'resolverPerfilDeEmissao');
+    config.INTEGRACAO_PERFIL_EMISSAO_NFSE = true;
+    const perfil = { id: 'perfil-1', portalClientId: 'portal-1', ativo: true, codigoServicoNacional: '171201', pAliq: '5' };
+    resolver.mockResolvedValue({ temPerfil: true, perfisAtivos: 1, perfil });
+    try {
+      prisma.portalClient.findUnique.mockResolvedValueOnce({ id: 'portal-1', companyId: 'company-1' });
+      const previa = await prepararDadosFiscaisDoCliente({ portalClientId: 'portal-1', perfilId: perfil.id, competencia: '2026-01-23', pTotTribSN: 6, servico: PAYLOAD_BASE.servico });
+      expect(previa.ok).toBe(true);
+      resolver.mockResolvedValue({ temPerfil: true, perfisAtivos: 1, perfil: { ...perfil, pAliq: '3' } });
+      await expect(NfseService.issue({ data: { ...PAYLOAD_BASE, perfilId: perfil.id }, log, exigirConfirmacao: true, fingerprintConfirmado: previa.fingerprintConfirmacao })).rejects.toMatchObject({ code: 'NFSE_RESUMO_ALTERADO' });
+      expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+      expect(postMock).not.toHaveBeenCalled();
+    } finally {
+      config.INTEGRACAO_PERFIL_EMISSAO_NFSE = false;
+      resolver.mockRestore();
+    }
+  });
+  it('revogação durante releitura fiscal é reconferida imediatamente antes do POST sem repetir vínculo', async () => {
+    montarCenario();
+    const confirmado = await fingerprint();
+    const company = await prisma.company.findUnique();
+    let autorizado = true;
+    const antesDeEnviar = jest.fn(async () => {
+      prisma.company.findUnique.mockImplementation(async () => {
+        autorizado = false;
+        return company;
+      });
+    });
+    const autorizarEnvioFinal = jest.fn(async () => {
+      if (!autorizado) throw Object.assign(new Error('Acesso revogado durante conferência.'), { code: 'ACESSO_REVOGADO' });
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log, exigirConfirmacao: true,
+      fingerprintConfirmado: confirmado, antesDeEnviar, autorizarEnvioFinal });
+    expect(r).toMatchObject({ status: 'falha_envio', camada: 'NOSSA', codigo: 'ACESSO_REVOGADO', antesDoPost: true, indeterminado: false });
+    expect(antesDeEnviar).toHaveBeenCalledTimes(1);
+    expect(autorizarEnvioFinal).toHaveBeenCalledTimes(1);
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it.each([{}, { status: 'issued', numeroNfse: '18', chaveAcesso: '3'.repeat(50) }, { nfseXmlGZipB64: 'eA==' }])('HTTP 200 sem prova %j conserva tentativa incerta, sem retry', async data => {
+    montarCenario({ respostaProvedor: () => ({ data }) });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r).toMatchObject({ status: 'falha_envio', camada: 'TRANSPORTE', codigo: 'NFSE_RESPOSTA_INCONCLUSIVA', numeroReutilizavel: false, indeterminado: true, invoiceId: 'inv-1' });
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceInvoice.update.mock.calls.some(([arg]) => arg.data.status === 'issued')).toBe(false);
+  });
+  it.each(['chave', 'status', 'dps', 'namespace'])('XML autorizado incompatível (%s) não vira sucesso', async tipo => {
+    montarCenario({ respostaProvedor: body => {
+      const resposta = respostaAutorizada(body);
+      let xml = gunzipSync(Buffer.from(resposta.data.nfseXmlGZipB64, 'base64')).toString('utf8');
+      if (tipo === 'chave') resposta.data.chaveAcesso = '4'.repeat(50);
+      if (tipo === 'status') xml = xml.replace('<cStat>100', '<cStat>101');
+      if (tipo === 'dps') xml = xml.replace('<vServ>100.00', '<vServ>999.00');
+      if (tipo === 'namespace') xml = xml.replaceAll('http://www.sped.fazenda.gov.br/nfse', 'urn:invalido');
+      resposta.data.nfseXmlGZipB64 = gzipSync(xml).toString('base64');
+      return resposta;
+    } });
+    expect(await NfseService.issue({ data: PAYLOAD_BASE, log })).toMatchObject({ indeterminado: true, numeroReutilizavel: false, status: 'falha_envio' });
+    expect(postMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1102,7 +1206,7 @@ describe('conciliação integrada E0014 sem duplicar operação', () => {
       posts++;
       if (posts <= colisoes) throw erroDuplicada();
       if (timeoutSegundo) throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
-      return { data: { status: 'issued', chaveAcesso: chave, numeroNfse: '266' } };
+      return respostaAutorizada(body, '266', chave);
     });
     const get = jest.fn(async url => {
       if (falhaGet) throw falhaGet;
@@ -1116,6 +1220,28 @@ describe('conciliação integrada E0014 sem duplicar operação', () => {
   afterEach(() => {
     __tx.$queryRaw.mockImplementation(async () => [{ rpsNumero: '42' }]);
     prisma.serviceInvoice.create.mockImplementation(async ({ data }) => ({ id: 'inv-1', ...data }));
+  });
+  it('controle perdido durante E0014 preserva evidência e impede nova reserva/POST', async () => {
+    const get = preparar({ outra: true });
+    const saved = ['create', 'findUnique', 'updateMany'].map(k => [k, prisma.serviceInvoice[k].getMockImplementation()]);
+    const rows = new Map(); let vivo = true;
+    prisma.serviceInvoice.create.mockImplementation(async ({ data }) => { const r = { id: `inv-${data.rpsNumero}`, updatedAt: new Date(), ...data }; rows.set(r.id, r); return { ...r }; });
+    prisma.serviceInvoice.findUnique.mockImplementation(async ({ where }) => { const r = rows.get(where.id); return r ? { ...r } : null; });
+    prisma.serviceInvoice.updateMany.mockImplementation(async ({ where, data }) => {
+      const r = rows.get(where.id);
+      if (!r || r.status !== where.status || JSON.stringify(r.configuracaoFiscal ?? {}) !== JSON.stringify(where.configuracaoFiscal.equals ?? {})) return { count: 0 };
+      Object.assign(r, data); return { count: 1 };
+    });
+    const consulta = get.getMockImplementation();
+    get.mockImplementation(async (...args) => { const r = await consulta(...args); vivo = false; return r; });
+    try {
+      await comControleEmissao({ acaoId: 'acao', client: { $transaction: async fn => fn({ $queryRaw: async () => { if (!vivo) throw Error('conexão encerrada'); return [{ acquired: true }]; } }) }, executar: async controleExecucao => {
+        const r = await NfseService.issue({ data: PAYLOAD_BASE, log, controleExecucao });
+        expect(r.status).not.toBe('issued');
+      } });
+      expect(postMock).toHaveBeenCalledTimes(1); expect(prisma.serviceInvoice.create).toHaveBeenCalledTimes(1);
+      expect([...rows.values()][0].configuracaoFiscal.historicoDesfechos.at(-1).tardio).toBe(true);
+    } finally { for (const [k, fn] of saved) prisma.serviceInvoice[k].mockImplementation(fn); }
   });
   it('MESMA recupera após1POST+3GET e não reserva novamente', async () => {
     const get = preparar();
@@ -1184,6 +1310,26 @@ describe('conciliação integrada E0014 sem duplicar operação', () => {
     axios.create.mockReturnValue({ defaults: { baseURL: 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional' }, post: postMock, get });
     return { row, get, xml };
   }
+  it.each([false, true])('pending exige capability sem POST: %s', async autorizado => {
+    const { row, get } = await pendente(); row.status = 'pending';
+    const args = { companyId: row.companyId, invoiceId: row.id };
+    if (!autorizado) await expect(NfseService.conciliarTentativa(args)).rejects.toMatchObject({ code: 'NFSE_CONCILIACAO_NAO_PERMITIDA' });
+    else await comControleEmissao({ acaoId: 'acao', client: { $transaction: async fn => fn({ $queryRaw: async () => [{ acquired: true }] }) }, executar: async supervisao => {
+      Object.assign(supervisao, args);
+      expect(await NfseService.conciliarTentativa({ ...args, supervisao })).toMatchObject({ estado: 'MESMA', recuperada: true });
+    } });
+    expect(get).toHaveBeenCalledTimes(autorizado ? 3 : 0); expect(postMock).not.toHaveBeenCalled();
+  });
+  it('revogação durante primeiro GET impede consultas seguintes', async () => {
+    const { row, get } = await pendente(); row.status = 'pending';
+    let permitido = true; const original = get.getMockImplementation();
+    get.mockImplementation(async (...args) => { const r = await original(...args); permitido = false; return r; });
+    await comControleEmissao({ acaoId: 'acao', client: { $transaction: async fn => fn({ $queryRaw: async () => [{ acquired: true }] }) }, executar: async supervisao => {
+      Object.assign(supervisao, { invoiceId: row.id, companyId: row.companyId, conferirEscopo: async () => { if (!permitido) throw Error('revogado'); } });
+      await expect(NfseService.conciliarTentativa({ companyId: row.companyId, invoiceId: row.id, supervisao })).rejects.toThrow('revogado');
+    } });
+    expect(get).toHaveBeenCalledTimes(1); expect(postMock).not.toHaveBeenCalled(); expect(prisma.serviceInvoice.updateMany).not.toHaveBeenCalled();
+  });
   it('consulta manual verifica empresa antes da rede', async () => {
     const { get } = await pendente();
     await expect(NfseService.conciliarTentativa({ companyId: 'outra', invoiceId: 'pendente' })).rejects.toMatchObject({ code: 'NFSE_RETRY_INVOICE_NOT_FOUND' });
@@ -1193,7 +1339,7 @@ describe('conciliação integrada E0014 sem duplicar operação', () => {
     const { row, get } = await pendente();
     expect(await NfseService.conciliarTentativa({ companyId: row.companyId, invoiceId: row.id })).toMatchObject({ estado: 'MESMA', recuperada: true });
     expect(get).toHaveBeenCalledTimes(3); expect(postMock).not.toHaveBeenCalled();
-    expect(prisma.serviceInvoice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: row.id, companyId: row.companyId, status: row.status, updatedAt: row.updatedAt }, data: expect.objectContaining({ status: 'issued', numeroNfse: '265' }) }));
+    expect(prisma.serviceInvoice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: row.id, companyId: row.companyId, status: row.status, updatedAt: row.updatedAt, configuracaoFiscal: expect.anything() }), data: expect.objectContaining({ status: 'issued', numeroNfse: '265' }) }));
   });
   it('consulta manual OUTRA só registra evidência, sem numeração/envio', async () => {
     const { row, get, xml } = await pendente();

@@ -1,4 +1,4 @@
-import { confirmarEExecutar } from "../assistente/AcoesPendentesService.js";
+import { confirmarEExecutar, recuperarEmissaoPersistida } from "../assistente/AcoesPendentesService.js";
 import { decidirResposta, lerConfirmacao, FRASES, STATUS } from "../assistente/confirmacaoPendente.js";
 
 const LIMITE_ENTRADAS = 100;
@@ -29,13 +29,21 @@ export async function processarConfirmacaoGuiada({ conversa, mensagem, sessao, t
     || mensagem.direcao !== "in" || !mensagem.id || !Number.isFinite(new Date(mensagem.registradaEm).getTime())) throw erroAcesso();
   const escopo = { conversaId: conversa.id, portalClientId: conversa.portalClientId, userId: sessao.userId };
   const lerAcao = (where) => client.acaoPendenteWhatsapp.findFirst({ where: { ...escopo, ...where }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  const recuperarComProva = async (acao) => {
+    await conferirAcesso();
+    const atual = await recuperarEmissaoPersistida(acao, { client, ...(acoesDeps ? { deps: acoesDeps } : {}) });
+    await conferirAcesso();
+    return recuperar(atual);
+  };
 
   // O recibo da coleta pode não ter sido gravado após o ato. Recuperação é por entrada durável,
   // antes de procurar uma pendência nova. Nunca tenta o executor pela segunda vez.
   const anterior = await lerAcao({ mensagemConfirmacaoId: mensagem.id, status: { in: [STATUS.CONFIRMADA, STATUS.EXECUTADA, STATUS.CANCELADA] } });
-  if (anterior) return recuperar(anterior);
-  const incerta = await lerAcao({ status: STATUS.CONFIRMADA });
-  if (incerta) return recuperar(incerta);
+  if (anterior) return recuperarComProva(anterior);
+  const incerta = await lerAcao({ OR: [{ status: STATUS.CONFIRMADA },
+    { status: STATUS.EXECUTADA, resultado: { path: ['indeterminado'], equals: true } }],
+  });
+  if (incerta) return recuperarComProva(incerta);
 
   const pendente = await lerAcao({ status: STATUS.PENDENTE });
   const textoConfirmacao = mensagem.tipo === "text" ? texto : "";

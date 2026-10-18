@@ -1,3 +1,4 @@
+import { encerrarPoolEmissaoLocks } from './infrastructure/db/prismaEmissaoLocks.js';
 import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 // src/server.js
 import express from "express";
@@ -202,6 +203,7 @@ async function encerrarWhatsapp() {
   limite.unref();
   servidor.close();
   await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp(), pararWorkerVarreduraNotasLocal(), pararWorkerAtendimento()]);
+  await encerrarPoolEmissaoLocks();
   await prisma.$disconnect();
   process.exit(0);
 }

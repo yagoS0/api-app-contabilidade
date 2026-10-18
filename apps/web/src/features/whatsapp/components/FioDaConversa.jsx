@@ -23,6 +23,7 @@ import { NotaDaMensagem } from "./NotaDaMensagem";
 import { PainelAtendimento } from "./PainelAtendimento";
 import { AtualizacaoAtendimento } from './AtendimentoComercial.shared.js';
 import { ContingenciaIa } from "./ContingenciaIa";
+import { EmissoesInterrompidas } from './EmissoesInterrompidas';
 import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
 import { AvatarConversa, SituacaoConversa, SituacaoIdentificacao, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
@@ -234,6 +235,7 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
       {conversa.pendencia ? <details data-testid="pendencia-aberta" className="wa-notice wa-notice-expandable"><summary>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Pedido"} · aguarda confirmação</summary><div>Pedido aguardando confirmação do cliente: <strong>{PEDIDOS_PENDENTES[conversa.pendencia.tipo] || "Operação solicitada"}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div></details> : null}
+      {!somenteLeitura && <EmissoesInterrompidas api={hook.api} conversaId={conversa.id} contexto={`${conversa.portalClientId || ''}:${hook.empresaHistorico || ''}`} />}
       {!somenteLeitura && !onDetalhes && podeAtendimentoComercial(conversa) && Boolean(slotVincular) && (hook.api?.comercial || !conversa.portalClientId) ? <PainelAtendimento>{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</PainelAtendimento> : null}
       {historico ? <details className="wa-thread-setup"><summary>Verificar vínculo e iniciar conversa atual</summary><p>O vínculo abre um segmento verificado e preserva este histórico anterior.</p>{slotVincular || <a href="/whatsapp">Verificar vínculo na central de WhatsApp, em Histórico anterior</a>}</details> : null}
       <div className="wa-messages" ref={historicoRef} onScroll={acompanharLeitura} aria-label="Histórico de mensagens" tabIndex={0}>

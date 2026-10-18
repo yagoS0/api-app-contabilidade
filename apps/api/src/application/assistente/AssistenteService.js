@@ -17,7 +17,7 @@ import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
 import { sessaoDoContato, fraseSemSessao, papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL } from "./sessaoDoContato.js";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
-import { decidirResposta, lerConfirmacao, FRASES } from "./confirmacaoPendente.js";
+import { decidirResposta, lerConfirmacao, FRASES, STATUS } from "./confirmacaoPendente.js";
 import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
 import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferramentas/index.js";
 import { evidenciaDoAnexo } from "./evidenciaDoAnexo.js";
@@ -155,13 +155,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     const textoNoEscopo = texto => conversa.atendimentoId
       ? `${conversa.portalClient.razao} · CNPJ ${conversa.portalClient.cnpj}\n\n${texto}`
       : texto;
-    const dizer = async (texto, { autor = AUTOR.IA, tipo = "text" } = {}) => {
+    const dizer = async (texto, { autor = AUTOR.IA, tipo = "text", conferirAntesDeEnviar = null } = {}) => {
       const corpo = textoNoEscopo(texto);
       const r = await enviarMensagemRastreada({ conversa, tipo, corpo, autor, turnoIaId, client,
         antesDeEnviar: async () => {
           await conferirPortao();
           const atual = await janelaDaConversa(conversa.id, new Date());
           if (atual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
+          await conferirAntesDeEnviar?.();
         }, enviar: () => cloud.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }),
       });
       houveSaida = true;
@@ -453,7 +454,24 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
     if (chamouEscritorio) await encaminharParaEquipe(chamouEscritorio.motivo);
-    const texto = (respostaEncaminhamentoObrigatoria || resposta.texto || "").trim();
+    const ultimaPreparacao = pendenciasDoTurno.at(-1);
+    const lerPreparacaoVigente = async () => {
+      await conferirSessaoNaoAlterada();
+      if (!ultimaPreparacao) return null;
+      const atual = await client.acaoPendenteWhatsapp.findFirst({ where: {
+        conversaId: conversa.id, portalClientId: sessao.portalClientId, userId: sessao.userId,
+        atendimentoId: contexto?.atendimentoId ?? null, contextoVersao: contexto?.versao ?? null,
+        status: STATUS.PENDENTE, expiraEm: { gt: deps.agora ?? new Date() },
+      }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+      return atual && atual.codigo === ultimaPreparacao.codigo && atual.tipo === ultimaPreparacao.tipo
+        && atual.textoDeConfirmacao === ultimaPreparacao.texto ? atual : null;
+    };
+    const preparada = ultimaPreparacao ? await lerPreparacaoVigente() : null;
+    // A prosa do modelo pode repetir um resumo/código já cancelado nesta rodada.
+    // Somente o texto persistido e ainda vigente pode apresentar a confirmação.
+    const texto = (respostaEncaminhamentoObrigatoria || (ultimaPreparacao
+      ? preparada ? "Montei o pedido; confira o resumo e o código abaixo." : "O pedido mudou antes do envio. Vamos conferir os dados novamente antes de confirmar."
+      : resposta.texto) || "").trim();
     if (texto) {
       // A ferramenta pode ter lido dados e a autorização ser retirada enquanto o modelo redige a
       // frase final. Reconfere o mesmo usuário, papel e conjunto de permissões antes de liberar o
@@ -464,11 +482,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       }
       await dizer(texto, { autor: AUTOR.IA });
     }
-    for (const p of pendenciasDoTurno) {
+    if (preparada) {
       // O código confirma um ato fiscal real. A autorização é conferida novamente imediatamente
       // antes de cada envio, inclusive quando o modelo devolve texto vazio.
       await conferirSessaoNaoAlterada();
-      await dizer(p.texto, { autor: AUTOR.SISTEMA });
+      await dizer(preparada.textoDeConfirmacao, { autor: AUTOR.SISTEMA, conferirAntesDeEnviar: async () => {
+        const atual = await lerPreparacaoVigente();
+        if (!atual || atual.id !== preparada.id) throw Object.assign(new Error("O pedido mudou antes do envio da confirmação."), { codigo: "PENDENCIA_SUPERADA" });
+      } });
     }
     if (chamouEscritorio) {
       await conferirPortao();

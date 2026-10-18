@@ -1,6 +1,7 @@
 import { regimeDaCompetencia } from './regimeDaCompetencia.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS } from "../../config.js";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE, INTEGRACAO_NFSE_IBSCBS, NFSE_ENV } from "../../config.js";
+import { CAMPOS_EMPRESA_CONFIRMACAO, fingerprintConfirmacaoEmissao } from './fingerprintConfirmacaoEmissao.js';
 import { resolverContextoFiscalDaNota } from './resolverContextoFiscalDaNota.js';
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
@@ -65,7 +66,7 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
   try {
     const portal = await client.portalClient.findUnique({ where: { id: pid }, select: { id: true, companyId: true } });
     if (!portal?.companyId) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "O escritório precisa conferir o cadastro fiscal desta empresa.");
-    const company = await client.company.findUnique({ where: { id: portal.companyId }, select: { id: true, regimeTributario: true, regimeHistorico: true, codigoServicoNacional: true, codigosServicoNacional: true, codigoMunicipioIbge: true, beneficioMunicipalNumero: true, pTotTribFed: true, pTotTribEst: true, pTotTribMun: true } });
+    const company = await client.company.findUnique({ where: { id: portal.companyId }, select: { ...Object.fromEntries(CAMPOS_EMPRESA_CONFIRMACAO.map(k => [k, true])), regimeTributario: true, regimeHistorico: true } });
     if (!company) return recusa("CADASTRO_FISCAL_INDISPONIVEL", "O escritório precisa conferir o cadastro fiscal desta empresa.");
     const regimeVigente = regimeDaCompetencia({ historico: company.regimeHistorico, competencia: comp.valor });
     if (!regimeVigente.ok) return recusa(regimeVigente.codigo, regimeVigente.message, ['regimeHistorico'], { correcao: regimeVigente.correcao });
@@ -132,6 +133,7 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
     }
     return {
       ok: true, competencia: comp.valor, perfil, regime, pTotTribSN: percentualSimples, cargaTributaria, origens, avisos, aliquotaDps, contextoFiscal, regimeVigente,
+      fingerprintConfirmacao: fingerprintConfirmacaoEmissao({ company, perfil, regime: regimeBruto, ambiente: NFSE_ENV, perfisHabilitados, ibscbsLigado }),
       servico: { ...servico, codigoServicoNacional: escolhaCodigo.codigo, aliquota, issRetido: servico.issRetido === true,
         ...(!contextoFiscal.local.assumido ? { cLocPrestacao: contextoFiscal.local.codigo } : {}) },
     };

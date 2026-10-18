@@ -1,4 +1,4 @@
-import { confirmarEExecutar, DEPS_PADRAO } from "../AcoesPendentesService.js";
+import { confirmarEExecutar, recuperarEmissaoPersistida, DEPS_PADRAO } from "../AcoesPendentesService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
 
 const agora = new Date("2026-09-09T12:00:00Z");
@@ -22,6 +22,21 @@ function ambiente({ tipo = TIPOS.EMITIR_NFSE, desfecho = { texto: "Nota emitida,
 }
 
 describe("resultado durável da confirmação guiada", () => {
+  it.each(["issued", "pending", "rejected"])("recuperação de %s nunca reenvia e exige prova local", async status => {
+    const acao = { id: "a1", conversaId: "c1", portalClientId: "p1", userId: "u1", tipo: TIPOS.EMITIR_NFSE,
+      status: STATUS.CONFIRMADA, resultado: { nfseId: "n1", indeterminado: true } };
+    const client = { serviceInvoice: { findFirst: jest.fn(async () => ({ id: "n1", status, chaveAcesso: "chave", numeroNfse: "71" })) },
+      acaoPendenteWhatsapp: { updateMany: jest.fn(async () => ({ count: 1 })) } };
+    const deps = { resolveLegacyCompanyId: jest.fn(async () => "legacy-1"), NfseService: { issue: jest.fn(), conciliarTentativa: jest.fn() } };
+    const r = await recuperarEmissaoPersistida(acao, { client, deps });
+    expect(client.serviceInvoice.findFirst.mock.calls[0][0].where).toEqual({ id: "n1", companyId: "legacy-1" });
+    expect(deps.NfseService.issue).not.toHaveBeenCalled(); expect(deps.NfseService.conciliarTentativa).not.toHaveBeenCalled();
+    if (status === "issued") {
+      expect(r).toMatchObject({ status: STATUS.EXECUTADA, resultado: { indeterminado: false, recuperada: true } });
+      expect(client.acaoPendenteWhatsapp.updateMany.mock.calls[0][0].where.resultado).toEqual({ equals: acao.resultado });
+    } else { expect(r).toBe(acao); expect(client.acaoPendenteWhatsapp.updateMany).not.toHaveBeenCalled(); }
+  });
+
   it("grava o texto e a decisão de encaminhamento junto do resultado fiscal", async () => {
     const a = ambiente();
     await a.executar();

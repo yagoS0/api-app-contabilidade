@@ -58,7 +58,9 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   const guias = Object.values(company.guideCompliance || {}).filter(g => g && typeof g === 'object' && g.required);
   const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro;
   const disponiveis = guiasConhecidas && guias.every(g => ['gerada', 'enviada', 'falhou', 'vazio', 'present'].includes(g.state));
-  const enviadas = guiasConhecidas && guias.every(g => ['enviada', 'vazio'].includes(g.state) && !g.pendenciaOperacional);
+  // A pendência financeira/contábil da parcela permanece no compliance. Não desfaz
+  // uma entrega comprovada nem cria envio para débito automático sem documento exigível.
+  const enviadas = guiasConhecidas && guias.every(g => ['enviada', 'vazio'].includes(g.state));
   const fechado = Boolean(company.fechamentoContabil?.fechado);
   const lancamentos = contexto.lancamentos || { total: null, importados: 0 };
   const importado = fechado && lancamentos.total > 0 && lancamentos.importados === lancamentos.total;

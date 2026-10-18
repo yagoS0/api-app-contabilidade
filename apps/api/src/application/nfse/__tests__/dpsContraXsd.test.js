@@ -87,7 +87,7 @@ import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import forge from 'node-forge';
 import { inspectPfx } from '../../security/inspectPfx.js';
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
 import axios from "axios";
 import { prisma } from "../../../infrastructure/db/prisma.js";
@@ -439,9 +439,12 @@ function montarCenario({ empresa = {}, cadastroFiscal = null } = {}) {
   prisma.company.findUnique.mockResolvedValue({ ...EMPRESA_BASE,
     regimeHistorico: [{ id: 'rh-teste', regime: cadastroFiscal?.regime || ('regimeTributario' in empresa ? empresa.regimeTributario : EMPRESA_BASE.regimeTributario), vigenciaInicio: new Date('2020-01-01'), vigenciaFim: null }], ...empresa });
   prisma.cadastroFiscal.findUnique.mockResolvedValue(cadastroFiscal);
-  postMock = jest.fn(async () => ({
-    data: { status: "issued", chaveAcesso: "3".repeat(50), numeroNfse: "18" },
-  }));
+  postMock = jest.fn(async (_url, body) => {
+    const xml = gunzipSync(Buffer.from(body.dpsXmlGZipB64, 'base64')).toString('utf8');
+    const chaveAcesso = '3'.repeat(50);
+    const oficial = `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS${chaveAcesso}"><nNFSe>18</nNFSe><cStat>100</cStat>${xml.slice(xml.indexOf('<DPS'))}</infNFSe></NFSe>`;
+    return { data: { chaveAcesso, nfseXmlGZipB64: gzipSync(oficial).toString('base64') } };
+  });
   axios.create.mockReturnValue({
     defaults: { baseURL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional" },
     post: postMock,

@@ -16,6 +16,7 @@ jest.mock('../../whatsapp/EnvioDocumentoGuiaWhatsappService.js', () => ({
 
 import { responderMensagem, montarHistorico, AUTOR } from "../AssistenteService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
+import { criarPendencia } from "../AcoesPendentesService.js";
 import { TODAS_PERMISSOES_ASSISTENTE, PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 jest.mock("../../whatsapp/ConversaWhatsappService.js", () => {
@@ -66,7 +67,13 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1", per
     contatoWhatsapp: { findMany: jest.fn(async () => contato ? [contato] : []) },
     companyClientUser: { findUnique: jest.fn(async () => vinculo) },
     acaoPendenteWhatsapp: {
-      findFirst: jest.fn(async ({ where }) => [...acoes.values()].find((a) => a.conversaId === where.conversaId && a.status === where.status) || null),
+      findFirst: jest.fn(async ({ where, orderBy }) => {
+        const encontrados = [...acoes.values()].filter((a) => Object.entries(where).every(([campo, valor]) => {
+          if (campo === "expiraEm") return a.expiraEm > valor.gt;
+          return valor === null ? a[campo] == null : a[campo] === valor;
+        }));
+        return (orderBy ? encontrados.reverse() : encontrados)[0] || null;
+      }),
       updateMany: jest.fn(async ({ where, data }) => {
         let count = 0;
         for (const a of acoes.values()) {
@@ -103,6 +110,62 @@ const deps = (over = {}) => ({ flag: true, piloto: ["pc-1"], log: silencio, agor
 
 beforeEach(() => { registrarMensagemEnviada.mockClear(); });
 
+describe("somente a intenção persistida vigente chega ao cliente", () => {
+  async function prepararCaso({ invalidar, duranteEnvio = false } = {}) {
+    const client = bancoEmMemoria(), cloud = cloudFalso();
+    const resultados = [];
+    const dados = { tomadorDoc: "12345678000190", tomadorNome: "Tomador sintético", descricao: "Consultoria", valor: 100, competencia: "2026-09" };
+    const servicos = {
+      prepararDadosFiscaisDoCliente: async ({ servico, competencia }) => ({ ok: true, servico, competencia, regime: null }),
+      prepararTomadorDoCliente: async input => ({ ok: true, tomador: { cnpjCpf: input.tomadorDoc, nome: input.tomadorNome } }),
+      autorizarEmissaoDoCliente: async () => ({ ok: true }), listarPerfisEmissao: async () => [],
+    };
+    const invalidarAtual = () => invalidar?.([...client._acoes.values()].at(-1));
+    if (duranteEnvio) cloud.enviarTexto.mockImplementation(async () => { invalidarAtual(); return { wamid: "wamid.intro" }; });
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      resultados.push(await executar("preparar_emissao", dados));
+      resultados.push(await executar("preparar_emissao", { ...dados, valor: 200 }));
+      expect(resultados.every(r => r.pendenciaCriada)).toBe(true);
+      if (!duranteEnvio) invalidarAtual();
+      return { texto: resultados.map(r => r.textoDeConfirmacao).join("\n"), usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 2,
+        ferramentasChamadas: ["preparar_emissao", "preparar_emissao"], stopReason: "end_turn", recusou: false };
+    }) };
+    const resultado = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente, servicos }) });
+    return { client, cloud, resultado, acoes: [...client._acoes.values()] };
+  }
+
+  it("duas preparações reais enviam um único resumo vigente, sem repetir o resumo cancelado na prosa da IA", async () => {
+    const { cloud, resultado, acoes } = await prepararCaso();
+    expect(resultado.motivo).toBe("RESPONDIDA");
+    expect(acoes.map(a => a.status)).toEqual([STATUS.CANCELADA, STATUS.PENDENTE]);
+    expect(cloud.enviarTexto).toHaveBeenCalledTimes(2);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("CONFIRMAR");
+    expect(cloud.enviarTexto.mock.calls[1][0].texto).toBe(acoes[1].textoDeConfirmacao);
+    expect(cloud.enviarTexto.mock.calls.map(([p]) => p.texto)).not.toContain(acoes[0].textoDeConfirmacao);
+  });
+
+  it.each([
+    ["cancelamento", a => { a.status = STATUS.CANCELADA; }],
+    ["expiração", a => { a.expiraEm = new Date(0); }],
+    ["empresa", a => { a.portalClientId = "outra"; }],
+    ["pessoa", a => { a.userId = "outra"; }],
+    ["contexto", a => { a.atendimentoId = "outro"; a.contextoVersao = 2; }],
+  ])("%s externo impede envio do código, mesmo quando repetido pelo modelo", async (_, invalidar) => {
+    const { cloud, resultado } = await prepararCaso({ invalidar });
+    expect(resultado.motivo).toBe("RESPONDIDA");
+    expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toContain("pedido mudou");
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("CONFIRMAR");
+  });
+
+  it("cancelamento entre a introdução e o envio do resumo é reconferido no transporte", async () => {
+    const { cloud, resultado } = await prepararCaso({ duranteEnvio: true, invalidar: a => { a.status = STATUS.CANCELADA; } });
+    expect(resultado).toMatchObject({ feito: false, motivo: "PENDENCIA_SUPERADA" });
+    expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("CONFIRMAR");
+  });
+});
+
 describe('GPT no suporte com registro por rodada e encaminhamento persistente', () => {
   test('cliente padrão usa Responses e registra modelo e precisão corretos', async () => {
     const client = bancoEmMemoria();
@@ -136,7 +199,7 @@ describe("a escolha do perfil de emissão exige uma nova mensagem do cliente", (
     prepararTomadorDoCliente: async (input) => ({ ok: true, tomador: { cnpjCpf: input.tomadorDoc, nome: input.tomadorNome } }),
     autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true })),
     listarPerfisEmissao: jest.fn(async () => perfis),
-    criarPendencia: jest.fn(async ({ corpo }) => ({ codigo: "A7K2", texto: corpo + "\nCONFIRMAR A7K2" })),
+    criarPendencia: jest.fn(criarPendencia),
     listGuias: jest.fn(async () => []),
   });
   const resposta = (ferramentasChamadas = ["preparar_emissao"]) => ({ texto: "Qual perfil você quer usar: Consultoria ou Suporte?", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 2, ferramentasChamadas, stopReason: "end_turn", recusou: false });
@@ -514,13 +577,13 @@ describe("a pendência — a confirmação NÃO passa pelo modelo", () => {
     client.guide.findFirst = jest.fn(async ({ where }) => (where.id === "g1" && where.portalClientId === "pc-1" ? guia : null));
     const servicos = {
       canGuideRecalculate: () => true, isGuideOverdue: () => true, avisoDeRecalculo: () => ({ texto: "Gera uma nova guia com juros e multa." }),
-      criarPendencia: jest.fn(async ({ corpo }) => ({ acao: { id: "apX" }, codigo: "K9M3", texto: `${corpo}\n\nPara confirmar, responda CONFIRMAR K9M3.` })),
+      criarPendencia: jest.fn(criarPendencia),
     };
     const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente, servicos }) });
     expect(r.motivo).toBe("RESPONDIDA");
     expect(cloud.enviarTexto).toHaveBeenCalledTimes(2);
-    expect(cloud.enviarTexto.mock.calls[0][0].texto).toBe("Montei o pedido; confirme com o código.");
-    expect(cloud.enviarTexto.mock.calls[1][0].texto).toMatch(/CONFIRMAR K9M3/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toBe("Montei o pedido; confira o resumo e o código abaixo.");
+    expect(cloud.enviarTexto.mock.calls[1][0].texto).toContain(`CONFIRMAR ${[...client._acoes.values()][0].codigo}`);
     expect(cloud.enviarTexto.mock.calls[1][0].texto).toMatch(/juros e multa/);
     const autores = client.mensagemWhatsapp.create.mock.calls.map((c) => c[0].data.autor);
     expect(autores).toEqual([AUTOR.IA, AUTOR.SISTEMA]);
@@ -533,7 +596,7 @@ describe("a pendência — a confirmação NÃO passa pelo modelo", () => {
     client.guide.findFirst = jest.fn(async () => guia);
     const servicos = {
       canGuideRecalculate: () => true, isGuideOverdue: () => true, avisoDeRecalculo: () => ({ texto: "Gera uma nova guia com juros e multa." }),
-      criarPendencia: jest.fn(async ({ corpo }) => ({ acao: { id: "apX" }, codigo: "K9M3", texto: `${corpo}\n\nPara confirmar, responda CONFIRMAR K9M3.` })),
+      criarPendencia: jest.fn(criarPendencia),
     };
     const assistente = { responder: jest.fn(async ({ executar }) => {
       await executar("preparar_recalculo", { guideId: "g1" });

@@ -6,13 +6,13 @@ const guia = (over = {}) => ({ id: 'g1', portalClientId: 'p1', competencia: '202
 
 describe('Registro explícito sem alterar contabilidade', () => {
   it.each([1000, 1100])('registra sucesso inclusive quando o total continua %s', async (valor) => {
-    const client = { guide: { findFirst: jest.fn(async () => guia({ valor })), update: jest.fn(async () => ({})) } };
-    const anterior = { id: 'g1', portalClientId: 'p1', competencia: '2026-07', valor: 1000 };
+    const client = { guide: { findFirst: jest.fn(async () => guia({ valor })), updateMany: jest.fn(async () => ({ count: 1 })) } };
+    const anterior = { id: 'g1', portalClientId: 'p1', competencia: '2026-07', valor: 1000, extracted: guia().extracted };
     const r = await registrarRecalculoGuia(client, { guiaAnterior: anterior, guiaId: 'g1', especie: 'DARF_PRESUMIDO', userId: 'u1', agora: new Date(em) });
     expect(r).toMatchObject({ guiaId: 'g1', valorAnterior: 1000, valorAtual: valor, recalculadoEm: em, escopoValor: 'TOTAL_GUIA' });
     expect(r).not.toHaveProperty('solicitadoPor');
     expect(client.guide.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'g1', portalClientId: 'p1', competencia: '2026-07', status: 'PROCESSED' } }));
-    const escrita = client.guide.update.mock.calls[0][0];
+    const escrita = client.guide.updateMany.mock.calls[0][0];
     expect(Object.keys(escrita.data)).toEqual(['extracted']);
     expect(escrita.data.extracted.numeroDocumento).toBe('doc1');
     expect(escrita.data.extracted.recalculoGuia.solicitadoPor).toBe('u1');
@@ -20,12 +20,12 @@ describe('Registro explícito sem alterar contabilidade', () => {
   });
 
   it('não registra ausência de guia nem engole falha de persistência', async () => {
-    const client = { guide: { findFirst: jest.fn(async () => null), update: jest.fn() } };
+    const client = { guide: { findFirst: jest.fn(async () => null), updateMany: jest.fn() } };
     const opts = { guiaAnterior: guia(), guiaId: 'g1', especie: 'INSS' };
     await expect(registrarRecalculoGuia(client, opts)).rejects.toThrow('guia_recalculada_nao_encontrada');
-    expect(client.guide.update).not.toHaveBeenCalled();
+    expect(client.guide.updateMany).not.toHaveBeenCalled();
     client.guide.findFirst.mockResolvedValue(guia());
-    client.guide.update.mockRejectedValue(new Error('banco indisponível'));
+    client.guide.updateMany.mockRejectedValue(new Error('banco indisponível'));
     await expect(registrarRecalculoGuia(client, opts)).rejects.toThrow('banco indisponível');
   });
 

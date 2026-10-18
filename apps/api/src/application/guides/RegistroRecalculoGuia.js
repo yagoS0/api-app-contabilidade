@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 // Evidência informativa do recálculo explícito. Não altera o razão nem confirma pagamento.
 const objeto = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 const idVinculado = (e) => e.sourceGuideId || (e.eventType === "DAS_SIMPLES" ? null : e.sourceGuide?.id);
@@ -16,20 +17,34 @@ export function lerRegistroRecalculo(guide) {
 
 export async function registrarRecalculoGuia(client, { guiaAnterior, guiaId, especie, userId, agora = new Date() }) {
   if (!guiaAnterior?.portalClientId || !guiaId) throw new Error("recalculo_sem_vinculo_da_guia");
-  const atual = await client.guide.findFirst({
-    where: { id: String(guiaId), portalClientId: guiaAnterior.portalClientId, competencia: guiaAnterior.competencia, status: "PROCESSED" },
-    select: { id: true, valor: true, extracted: true },
-  });
-  if (!atual) throw new Error("guia_recalculada_nao_encontrada");
-  const recalculoGuia = {
-    guiaId: atual.id, recalculadoEm: agora.toISOString(),
-    valorAnterior: moeda(guiaAnterior.valor), valorAtual: moeda(atual.valor),
-    escopoValor: "TOTAL_GUIA", especie, solicitadoPor: userId || null,
-  };
-  await client.guide.update({ where: { id: atual.id }, data: {
-    extracted: { ...objeto(atual.extracted), recalculoGuia },
-  } });
-  return lerRegistroRecalculo({ ...atual, extracted: { recalculoGuia } });
+  for (let tentativa = 0; tentativa < 4; tentativa += 1) {
+    const atual = await client.guide.findFirst({
+      where: { id: String(guiaId), portalClientId: guiaAnterior.portalClientId, competencia: guiaAnterior.competencia, status: "PROCESSED" },
+      select: { id: true, valor: true, extracted: true, updatedAt: true },
+    });
+    if (!atual) throw new Error("guia_recalculada_nao_encontrada");
+    // Releitura pode incorporar um comprovante, mas não substituir outro recálculo
+    // que terminou depois de começar esta operação. Preserve a evidência vencedora.
+    const registrado = objeto(atual.extracted).recalculoGuia;
+    if (registrado && JSON.stringify(registrado) !== JSON.stringify(objeto(guiaAnterior.extracted).recalculoGuia)) {
+      throw Object.assign(new Error("Outro recálculo foi registrado. Confira a guia antes de continuar."), { code: "GUIA_ALTERADA", status: 409 });
+    }
+    const recalculoGuia = {
+      guiaId: atual.id, recalculadoEm: agora.toISOString(),
+      valorAnterior: moeda(guiaAnterior.valor), valorAtual: moeda(atual.valor),
+      escopoValor: "TOTAL_GUIA", especie, solicitadoPor: userId || null,
+    };
+    const alterada = await client.guide.updateMany({ where: {
+      id: atual.id, portalClientId: guiaAnterior.portalClientId,
+      competencia: guiaAnterior.competencia, status: "PROCESSED", updatedAt: atual.updatedAt,
+      valor: atual.valor,
+      extracted: { equals: atual.extracted ?? Prisma.AnyNull },
+    }, data: {
+      extracted: { ...objeto(atual.extracted), recalculoGuia },
+    } });
+    if (alterada.count === 1) return lerRegistroRecalculo({ ...atual, extracted: { recalculoGuia } });
+  }
+  throw Object.assign(new Error("A guia mudou durante o registro do recálculo. Confira antes de continuar."), { code: "GUIA_ALTERADA", status: 409 });
 }
 
 // A ligação direta prevalece. DAS antigo sem sourceGuideId só é associado se houver uma
