@@ -1,0 +1,27 @@
+{
+  "summary": "Tracking documental WhatsApp por identidade/revisão, encaminhamento manual transacional, procuração e orientação de apuração visíveis na carteira.",
+  "risk": "high",
+  "domains": ["accounting", "api", "commercial", "communication", "documentation", "fiscal", "guides", "operations", "portal", "shared", "web"],
+  "operationalImpact": "Implementa R01/R02/R08-R12/R16/R19-R22 sem criar nova regra de negócio. Preserva R25-R28, vínculo pessoa/empresa, pausa humana e exigências de contratação/pagamento. DAS disponível não comprova transmissão. Tentativa de procuração falha não apaga evidência válida. Não altera eligible fiscal, políticas, migrações ou propostas pendentes.",
+  "baseCommit": "9f06abb989eb2ebc93760eb0ca72d2ba633d0c3d",
+  "sourceFingerprint": "c86c104cbfc7bd76310b13851548a49e6581b5036f0b448166ccab006fc519cc",
+  "fingerprintScope": "Snapshot integral das fontes de produto aprovadas antes deste registro derivado. Depois dele, somente este JSON e o consumidor de teste verify-whatsapp-multiempresa-postgres.js foram adaptados, com revisão e repetição próprias. Nenhuma fonte de produto foi alterada; o fingerprint original não representa o arquivo de teste atualizado.",
+  "tests": [
+    "Catálogo versionado sem alteração: governance-engine, api-regression, portal-regression, web-build e portal-build passaram no fingerprint indicado; integrated-gates-1792341400290, fontes inalteradas.",
+    "API: 603 suítes/10642 testes aprovados, 1 suíte/teste condicional pendente. Portal: 99 suítes/1580 testes aprovados.",
+    "Web: execução paralela falhou por dois timeouts; falha preservada. Repetição integral isolada, sem alterar código/testes/limites, passou 496 suítes/5542 testes; integrated-gates-1792342141830, fontes inalteradas.",
+    "ESLint web: 1086 arquivos, 0 erros e 0 avisos. A correção posterior alterou somente SQL/teste API/CSS/documentação, sem JavaScript web adicional.",
+    "PostgreSQL descartável: 26 cenários tracking; mais 10 cenários encaminhamento real e produtor/DTO procuração, incluindo rollback/retry/replay/revisão/concorrência. Rede externa bloqueada e bancos encerrados. Fontes tracking preservadas após sua execução.",
+    "Comercial sintético: contratação, assinatura, pagamento, implantação e carteira, controles de autorização, idempotência, auditoria e recarga. Ensaios isolados distintos, não uma única jornada autenticada em produção.",
+    "Visual sintético em componentes reais 1440/390: DAS contextual, procuração e última tentativa, teclado, atualização e ausência de overflow. Reprovações SQL void/Prisma e botão comprimido corrigidas; repetição aprovada.",
+    "Evidências locais ignoradas: audit-integrated-recovery.json, audit-integrated-independent.json, audit-commercial-synthetic.json e manifests/logs dos gates. Não publicar logs brutos ou dados privados. CI remoto ainda deve validar o commit integrado.",
+    "Integração CI PR230: o verificador multiempresa anterior omitia guideId/revisaoDocumento e não persistia Guide/PDF. A guarda de produto rejeitou corretamente GUIA_ENVIO_SEM_ORIGEM; reprodução exata preservada. Corrigido somente o consumidor de teste para usar ferramenta real e dados sintéticos completos, sem alterar produto, workflow, limites ou guardas.",
+    "Verificador multiempresa SHA256 ae4a2346faa266ca40cad9749f7eda85f52ddf7e65d71b309e9874f948a3b14f: 15 verificações PostgreSQL reais aprovadas, incluindo webhook/menu/PDF/identidade/revisão/wamid/replay/troca de empresa. Cleanup confirmado: zero fixtures/reservas e nenhum diretório temporário restante; banco encerrado, fontes inalteradas. Evidência multiempresa/postgres-1792343519410; falhas anteriores de origem e expectativa de legenda preservadas."
+  ],
+  "reviewProcess": "Controladores iniciais executados; journal A interrompido após reprovação e B escalado por timeout permanecem preservados. Continuação coordenada pelo Principal com executor e revisores nativos independentes, gates confiáveis e fontes congeladas. Não representa ready_for_human emitido pelo runtime nem aprovação humana.",
+  "rollback": "Não restaurar indiscriminadamente o baseline: seu encaminhamento manual ocorre antes da reserva. Manter guardas de revisão e transação, ou suspender explicitamente o fluxo afetado antes de reverter e conciliar. Preservar demandas, AppSettings, reservas, mensagens, recibos e snapshots. Sem exclusão/backfill; reverter somente delta revisado.",
+  "humanDecisions": [
+    "Publicação deste incremento depende de decisão humana concreta pelo Orquestrador após revisão do diff e checks obrigatórios; não houve merge/deploy nesta validação.",
+    "Usuário não possui segundo número interno desvinculado. Preservar pausa humana do contato existente e manter IA automática real pendente; envio manual e leitura reais não certificam alternância automática nem contratação produtiva completa."
+  ]
+}

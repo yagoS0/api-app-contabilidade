@@ -106,3 +106,12 @@ test('ativação exige prévia e não salva na leitura; resposta perdida reutili
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Configuração salva'));
   expect(api.saveCompanyAutomation.mock.calls[0]).toEqual(api.saveCompanyAutomation.mock.calls[1]);
 });
+
+test('DAS disponível mantém a revisão fiscal na mesma projeção da carteira', () => {
+ const c = {...company, apuracao:{competencia:'2026-09'}, guideCompliance:{competencia:'2026-09', das:{required:true, ok:true, state:'gerada', guideId:'das'}}};
+ const result = projetarOperacoesEmpresas([c], '2026-09');
+ expect(result.rows[0].fluxo).toEqual(fluxoDaEmpresa(c));
+ expect(result.rows[0].fluxo.status.rotulo).toBe('Conferir apuração');
+ expect(result.rows[0].fluxo.apuracao.transmitida).toBe(false);
+ expect(result.groups.apuracoes).toHaveLength(1);
+});

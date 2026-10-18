@@ -1,6 +1,9 @@
 // Core, parser, persistência da saída e hidratação reais. Somente banco, lease, transportes e
-// consulta de vínculo são dublês. Não chama modelo, provedor fiscal nem WhatsApp real.
+// consulta de vínculo e storage são dublês. Não chama modelo, provedor fiscal nem WhatsApp real.
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
+jest.mock('../../guides/GuideStorageService.js', () => ({ GuideStorageService: class {
+  async upload({ key, buffer }) { return { key, tamanho: buffer.length }; }
+} }));
 jest.mock("../WhatsappLeaseService.js", () => {
   const donos = new Map();
   let sequencia = 0;
@@ -13,12 +16,24 @@ jest.mock("../WhatsappLeaseService.js", () => {
 });
 
 import { Prisma } from "@prisma/client";
+import { createHash } from 'node:crypto';
+import { revisaoDocumentoGuia } from '../EnvioDocumentoGuiaWhatsappService.js';
+import { versaoPagamentoGuia } from '../../guides/ConfirmacaoPagamentoClienteService.js';
 import { responderMenuWhatsapp } from "../MenuWhatsappService.js";
 import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel, selecionarEmpresaDoEscritorio } from "../AtendimentoResponsavelWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease, __limparLeases } from "../WhatsappLeaseService.js";
 
 const AGORA = new Date("2026-09-10T12:00:00.000Z");
 const TELEFONE = "5521999998888";
+const PDF_GUIA = (() => {
+  const objetos = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> >>'];
+  let texto = '%PDF-1.4\n'; const offsets = [0];
+  objetos.forEach((objeto, i) => { offsets.push(Buffer.byteLength(texto)); texto += `${i + 1} 0 obj\n${objeto}\nendobj\n`; });
+  const xref = Buffer.byteLength(texto);
+  texto += `xref\n0 4\n0000000000 65535 f \n${offsets.slice(1).map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(texto);
+})();
 const log = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
 const copy = v => v === undefined ? undefined : structuredClone(v);
 const ehData = v => Object.prototype.toString.call(v) === "[object Date]";
@@ -45,7 +60,7 @@ function casa(row, where) {
 }
 
 function banco() {
-  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [], encaminhamentoSuporte: [], eventoPushAtendimento: [] };
+  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [], encaminhamentoSuporte: [], eventoPushAtendimento: [], appSetting: [], guide: [], envioGuia: [], envioGuiaTentativa: [] };
   const hooks = {};
   let sequencia = 0;
   const defaults = name => name === "conversaWhatsapp" ? { portalClientId: null, atendimentoId: null, atendidaPor: null, atendidaDesde: null, excluidaEm: null, automacaoInvalidadaEm: null }
@@ -58,13 +73,17 @@ function banco() {
     if (name === "mensagemWhatsapp" || name === "acaoPendenteWhatsapp") return { ...row, conversa: rows.conversaWhatsapp.find(c => c.id === row.conversaId) || null };
     return row;
   };
-  const client = { rows, hooks, appSetting: { findUnique: jest.fn(async()=>null) } };
+  const client = { rows, hooks };
   for (const name of Object.keys(rows)) {
     const normalizarWhere = where => where?.canal_telefoneE164 || where || {};
     const encontrar = where => rows[name].find(row => casa(expandir(name, row), normalizarWhere(where)));
     const criar = async data => {
       const row = atribuir({ id: `${name}-${++sequencia}`, ...defaults(name) }, data);
       if (name === "resolucaoContextoWhatsapp" && rows[name].some(v => v.mensagemId === row.mensagemId)) throw Object.assign(new Error("unique"), { code: "P2002" });
+      if (rows[name].some(v => v.id === row.id)
+        || name === 'appSetting' && rows[name].some(v => v.key === row.key)
+        || name === 'envioGuia' && rows[name].some(v => v.guideId === row.guideId && v.canal === row.canal && v.destino === row.destino))
+        throw Object.assign(new Error('unique'), { code: 'P2002' });
       rows[name].push(row);
       if (name === "mensagemWhatsapp") await hooks.afterCreateMessage?.(row);
       return copy(expandir(name, row));
@@ -144,11 +163,23 @@ async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guide
   const f = await fixture();
   f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
   f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
+  f.client.portalClient = { findUnique: jest.fn(async ({ where }) => {
+    const encontrada = EMPRESAS.find(e => e.portalClientId === where.id);
+    return encontrada ? { id: encontrada.portalClientId, razao: encontrada.razao, cnpj: encontrada.cnpj } : null;
+  }) };
   let mensagens = 0;
   f.cloud.enviarBotoes = jest.fn(async () => ({ wamid: `botoes-${++mensagens}` }));
   f.cloud.enviarDocumento = jest.fn(async () => ({ wamid: `documento-${++mensagens}` }));
   const executar = jest.fn(async (nome, input, ctx) => {
-    if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: `${input.guideId}.pdf`, legenda: `Aqui está sua guia ${input.guideId}.` }); return { ok: true, enviado: true }; }
+    if (nome === 'enviar_pdf_da_guia') {
+      const conteudo = PDF_GUIA;
+      let guia = await f.client.guide.findUnique({ where: { id: input.guideId } });
+      if (!guia) guia = await f.client.guide.create({ data: { id: input.guideId, portalClientId: ctx.sessao.portalClientId, tipo: guias.find(g => g.guideId === input.guideId)?.tipoCodigo || 'SIMPLES',
+        competencia: '2026-08', vencimento: '2026-09-20', valor: 100, status: 'PROCESSED', liberadaCliente: true,
+        hash: createHash('sha256').update(conteudo).digest('hex') } });
+      await ctx.enviarDocumento({ conteudo, guideId: guia.id, revisaoDocumento: revisaoDocumentoGuia(guia),
+        nomeArquivo: `${input.guideId}.pdf`, legenda: `Aqui está sua guia ${input.guideId}.` }); return { ok: true, enviado: true };
+    }
     if (nome === 'consultar_faturamento') return { ok: true, ...input, quantidade: 25, semValor: 0, totalFormatado: 'R$ 12.500,00' };
     return { ok: true, guias, proximaPagina: null };
   });
@@ -179,6 +210,35 @@ const GUIAS_DA_JORNADA = [
   { guideId: 'guia-simples', tipo: 'Simples Nacional', tipoCodigo: 'SIMPLES', competencia: '2026-08', valorFormatado: 'R$ 740,00', vencimento: '21/09/2026' },
   { guideId: 'guia-inss', tipo: 'INSS', tipoCodigo: 'INSS', competencia: '2026-08', valorFormatado: 'R$ 180,00', vencimento: '20/09/2026' },
 ];
+
+test('Menu real recupera encaminhamento manual após rollback do aviso sem perder demanda ou mover entrada', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const id = 'altan.payment.recalculate.11111111-1111-4111-8111-111111111111';
+  const guia = await f.client.guide.create({ data: { id: 'guia-manual', portalClientId: 'lente', tipo: 'INSS', source: 'MANUAL',
+    competencia: '2026-08', vencimento: '2026-09-01', hash: 'pdf-manual', status: 'PROCESSED', liberadaCliente: true, valor: 100 } });
+  await f.client.appSetting.create({ data: { key: id, value: { companyId: 'lente', guideId: guia.id, competencia: guia.competencia,
+    hash: guia.hash, versaoPagamento: versaoPagamentoGuia(guia), contatoId: 'contato', telefone: TELEFONE, expiraEm: '2026-10-01' } } });
+  f.client.contatoWhatsapp.findFirst = jest.fn(async () => ({ id: 'contato' }));
+  f.client.feriado = { findMany: jest.fn(async () => []) };
+  f.client.eventoPushAtendimento.create.mockRejectedValueOnce(Error('persistência do aviso recusada'));
+  const pedir = async () => { jest.setSystemTime(new Date(Date.now() + 1000)); const entrada = await f.novo('Atualizar guia', { tipo: 'interactive', interacao: { id } }); return { entrada, resultado: await f.rodar(entrada) }; };
+  expect((await pedir()).resultado).toMatchObject({ pendente: true });
+  expect(f.client.rows.encaminhamentoSuporte).toHaveLength(0);
+  expect(f.client.rows.eventoPushAtendimento).toHaveLength(0);
+  expect(f.atendimento().atendidaDesde).toBeNull();
+  expect(f.client.rows.appSetting.filter(r => r.key.startsWith('recalculo_whatsapp:'))).toHaveLength(0);
+  const { entrada, resultado } = await pedir();
+  expect(resultado).toMatchObject({ encaminhado: true });
+  expect(f.client.rows.encaminhamentoSuporte).toHaveLength(1);
+  expect(f.client.rows.eventoPushAtendimento).toHaveLength(1);
+  expect(f.client.rows.appSetting.find(r => r.key.startsWith('recalculo_whatsapp:')).value).toMatchObject({ status: 'ENCAMINHADO_CONTADOR', suporteId: f.client.rows.encaminhamentoSuporte[0].id, versaoPagamento: versaoPagamentoGuia(guia) });
+  expect(f.atendimento().atendidaDesde).not.toBeNull();
+  expect(f.client.rows.mensagemWhatsapp.find(m => m.id === entrada.registro.mensagem.id).conversaId).toBe('neutra');
+  await expect(f.rodar(entrada)).rejects.toMatchObject({ codigo: 'CONTEXTO_ALTERADO' });
+  expect(f.client.rows.encaminhamentoSuporte).toHaveLength(1);
+  expect(f.client.rows.eventoPushAtendimento).toHaveLength(1);
+});
 const dizerNaJornada = async (f, texto) => { jest.setSystemTime(new Date(Date.now() + 1000)); const e = await f.novo(texto); await f.rodar(e); return e; };
 
 it.each(['2', 'a segunda', 'INSS'])('cliente escolhe a guia por %s e recebe o PDF sem IA nem campos técnicos', async escolha => {
@@ -192,6 +252,29 @@ it.each(['2', 'a segunda', 'INSS'])('cliente escolhe a guia por %s e recebe o PD
   expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
   await f.rodar(entrada);
   expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(f.client.rows.envioGuiaTentativa).toHaveLength(1);
+  const tentativa = f.client.rows.envioGuiaTentativa[0];
+  expect(tentativa.snapshot).toMatchObject({ guideId: 'guia-inss', portalClientId: 'lente', conversaId: f.atendimento().conversaId,
+    revisaoDocumento: revisaoDocumentoGuia(f.client.rows.guide[0]) });
+  expect(f.client.rows.mensagemWhatsapp.filter(m => m.envioGuiaTentativaId === tentativa.id)).toHaveLength(1);
+  expect(f.client.rows.mensagemWhatsapp.find(m => m.id === entrada.registro.mensagem.id).conversaId).toBe('neutra');
+});
+
+it.each(['expirada', 'versao', 'acesso'])('contexto %s após preparar PDF impede transporte e preserva entrada neutra', async mudanca => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('me manda a guia', 'lente');
+  f.client.hooks.afterCreateMessage = async m => {
+    if (!m.envioGuiaTentativaId) return;
+    if (mudanca === 'expirada') f.atendimento().expiraEm = new Date(0);
+    else if (mudanca === 'versao') f.atendimento().versao += 1;
+    else f.setEmpresas([]);
+  };
+  jest.setSystemTime(new Date(Date.now() + 1000));
+  const entrada = await f.novo('INSS');
+  await expect(f.rodar(entrada)).rejects.toMatchObject({ codigo: mudanca === 'acesso' ? 'ACESSO_REVOGADO' : 'CONTEXTO_ALTERADO' });
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.client.rows.envioGuiaTentativa).toHaveLength(1);
+  expect(f.client.rows.mensagemWhatsapp.find(m => m.id === entrada.registro.mensagem.id).conversaId).toBe('neutra');
 });
 
 it('toque na guia usa a opção oferecida e menu antigo não troca a escolha', async () => {

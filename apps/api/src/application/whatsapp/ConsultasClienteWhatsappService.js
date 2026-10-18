@@ -134,7 +134,7 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     // Cada PDF do pedido tem seu recibo. Uma reentrega não repete arquivos já aceitos.
     const anterior = await client.mensagemWhatsapp.findFirst({ where: { conversaId: conversa.id, direcao: 'out', turnoIaId: idTurno } });
     if (anterior) return ['enviado', 'entregue', 'lido'].includes(anterior.statusEnvio) && anterior.tipo === 'document';
-    const r = await chamar(ferramenta, { guideId: guia.guideId }, { enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType }) => enviar({
+    const r = await chamar(ferramenta, { guideId: guia.guideId }, { enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, revisaoDocumento }) => enviar({ documentoGuia: { guideId, conteudo, nomeArquivo, revisao: revisaoDocumento },
       tipo: 'document', corpo: rotular(legenda || nomeArquivo), contextoConsulta: contexto(meta), ferramenta, idTurno,
       chamada: () => cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda: rotular(legenda || nomeArquivo), mimeType }),
     }) });

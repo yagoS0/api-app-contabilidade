@@ -1,3 +1,4 @@
+import { revisaoDocumentoGuia } from '../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
 const dataCivil = value => {
   const d = new Date(value || '');
   return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null;
@@ -16,7 +17,9 @@ export async function conferirEntregaGuiaWhatsapp(db, guia, telefone, vinculoNum
   });
   const entregue = guia.hash && tentativas.some(t => {
     const s = t.snapshot;
-    return t.arquivoSha256 === guia.hash && s?.guideId === guia.id
+    // Histórico sem revisão integral continua consultável, mas não comprova a
+    // composição atual para uma nova cobrança. Não completar prova por inferência.
+    return s?.revisaoDocumento === revisaoDocumentoGuia(guia) && t.arquivoSha256 === guia.hash && s?.guideId === guia.id
       && s.portalClientId === guia.portalClientId && s.telefone === telefone
       && (!vinculoNumeroId || s.vinculoNumeroId === vinculoNumeroId)
       && s.competencia === guia.competencia

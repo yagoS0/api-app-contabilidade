@@ -1,3 +1,4 @@
+import { revisaoDocumentoGuia } from '../../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // AS FERRAMENTAS DO ASSISTENTE — 1:1 com as capacidades que o cliente JÁ tem nas rotas `/client`.
 //
@@ -321,7 +322,7 @@ const EXECUTORES = {
     const conteudo = await ctx.servicos.getGuidePdfBuffer(guide);
     if (!conteudo?.length) return recusa("GUIA_SEM_PDF", "O arquivo desta guia não está disponível no momento. O escritório pode reenviar.");
     const nomeArquivo = `${rotuloDaGuia(guide).replace(/[\\/\s()]+/g, "-")}-${guide.competencia || "guia"}.pdf`;
-    const envio = await ctx.enviarDocumento({ conteudo, nomeArquivo, legenda: `Aqui está sua guia de ${guiaCurta(guide).tipo}.\nValor: ${guide.valor == null ? "não informado" : fmtBRL(guide.valor)}\nVencimento: ${dataBR(guide.vencimento) || "não informado"}${guide.competencia ? `\nReferente a ${rotuloMesConsulta(guide.competencia)}.` : ""}`, guideId: guide.id });
+    const envio = await ctx.enviarDocumento({ conteudo, nomeArquivo, legenda: `Aqui está sua guia de ${guiaCurta(guide).tipo}.\nValor: ${guide.valor == null ? "não informado" : fmtBRL(guide.valor)}\nVencimento: ${dataBR(guide.vencimento) || "não informado"}${guide.competencia ? `\nReferente a ${rotuloMesConsulta(guide.competencia)}.` : ""}`, guideId: guide.id, revisaoDocumento: revisaoDocumentoGuia(guide) });
     return { ok: true, enviado: true, guideId: guide.id, nomeArquivo, providerMessageId: envio?.wamid || null };
   },
 

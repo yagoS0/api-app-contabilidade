@@ -14,13 +14,14 @@ function cenario() {
     contatoWhatsapp: { findFirst: jest.fn(async () => ({ id: 'ct', userId: 'u' })) },
     portalClient: { findUnique: jest.fn(async () => ({ municipio: 'Contagem', razao: 'EMPRESA A' })) },
     feriado: { findMany: jest.fn(async () => []) },
+    encaminhamentoSuporte: { findFirst: jest.fn(async () => ({ id: 'suporte', conversaId: 'cv' })) },
   };
   const ordem = [];
   const cloud = { enviarBotoes: jest.fn(async () => ({ wamid: 'botoes' })), enviarTexto: jest.fn(async ({ texto }) => { ordem.push(texto); return { wamid: 'text' }; }),
     enviarGuiaComPagamento: jest.fn(async () => { ordem.push('PDF_E_CODIGO'); return { wamid: 'pdf' }; }) };
   const deps = { recalcular: jest.fn(async () => { ordem.push('RECALCULO'); return { ...guia }; }), carregarPdf: jest.fn(async () => Buffer.from('PDF')), prepararPagamento: jest.fn(async () => ({ linhaDigitavel: '8' + '0'.repeat(47) })) };
   const args = { id: ID, conversa: { id: 'cv', portalClientId: 'c', telefoneE164: token.telefone }, mensagem: { id: 'm', direcao: 'in', conversaId: 'cv' }, client, cloud,
-    enviar: jest.fn(async ({ chamada }) => chamada()), encaminhar: jest.fn(async () => {}), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
+    enviar: jest.fn(async ({ chamada }) => chamada()), encaminhar: jest.fn(async (_motivo, options) => { await options?.aoPersistir(client, { id: 'suporte', conversaId: 'cv' }); }), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
   return { guia, token, records, client, cloud, deps, args, ordem, run: () => recalcularGuiaWhatsapp(args, deps) };
 }
 
@@ -81,9 +82,9 @@ test('falha do PDF não afirma entrega; código ausente é parcial', async () =>
 
 test('guia sem recálculo automático registra pedido antes de avisar, sem custo fiscal', async () => {
  const f = cenario(); f.guia.source = 'MANUAL'; f.guia.tipo = 'GUIA_AVULSA';
- f.args.encaminhar = jest.fn(async () => { f.ordem.push('CONTADOR'); });
+ f.args.encaminhar = jest.fn(async (_motivo, options) => { await options.aoPersistir(f.client, { id: 'suporte', conversaId: 'cv' }); f.ordem.push('CONTADOR'); });
  expect(await f.run()).toMatchObject({ encaminhado: true });
- expect(f.args.encaminhar).toHaveBeenCalledWith(expect.stringContaining('g: atualização pelo contador'));
+ expect(f.args.encaminhar).toHaveBeenCalledWith(expect.stringContaining('g: atualização pelo contador'), expect.objectContaining({ aoPersistir: expect.any(Function) }));
  expect(f.ordem[0]).toBe('CONTADOR'); expect(f.ordem[1]).toContain('Solicitei ao contador');
  expect(f.deps.recalcular).not.toHaveBeenCalled(); expect(f.deps.carregarPdf).not.toHaveBeenCalled();
 });
@@ -94,3 +95,49 @@ test('não afirma encaminhamento quando o registro falha', async () => {
 });
 
 test('botão após recálculo preserva composição nova e bloqueia alteração durante entrega',async()=>{const f=cenario();f.deps.recalcular.mockImplementation(async()=>{f.guia.extracted={fields:{principal:100,juros:10,multa:5,total:115}};return {...f.guia};});await f.run();const token=f.records.get(f.cloud.enviarBotoes.mock.calls[0][0].botoes[0].id).value;expect(token.versaoPagamento).toBe(versaoPagamentoGuia(f.guia));const g=cenario();g.deps.carregarPdf.mockImplementation(async()=>{g.guia.extracted={fields:{principal:99}};return Buffer.from('PDF');});await g.run();expect(g.cloud.enviarBotoes).not.toHaveBeenCalled();expect(g.cloud.enviarGuiaComPagamento).not.toHaveBeenCalled();});
+
+test('recusa revisão do botão alterada mesmo com o mesmo PDF', async () => {
+  const f = cenario();
+  f.token.versaoPagamento = versaoPagamentoGuia(f.guia);
+  f.guia.extracted = { fields: { principal: 120, juros: 2 } };
+  expect(await f.run()).toMatchObject({ pendente: true });
+  expect(f.deps.recalcular).not.toHaveBeenCalled();
+  expect(f.args.encaminhar).not.toHaveBeenCalled();
+});
+test('alteração de composição durante aguarde impede custo e entrega', async () => {
+  const f = cenario();
+  f.token.versaoPagamento = versaoPagamentoGuia(f.guia);
+  f.cloud.enviarTexto.mockImplementation(async () => { f.guia.valor = 999; return {}; });
+  await f.run();
+  expect(f.deps.recalcular).not.toHaveBeenCalled();
+  expect(f.cloud.enviarGuiaComPagamento).not.toHaveBeenCalled();
+});
+test.each(['FGTS', 'INSS', 'ISS', 'GUIA_AVULSA'])('encaminhamento de %s concorrente tem uma única reserva', async tipo => {
+  const f = cenario(); Object.assign(f.guia, { tipo, source: 'MANUAL' });
+  await Promise.all([f.run(), f.run()]);
+  expect([...f.records.values()].filter(r => r.value.status === 'ENCAMINHADO_CONTADOR')).toHaveLength(1);
+  expect(f.deps.recalcular).not.toHaveBeenCalled();
+  expect([...f.records.values()].some(r => r.value.status === 'ENCAMINHADO_CONTADOR')).toBe(true);
+});
+
+test('falha manual sem commit permite novo pedido; reserva concluída exige suporte verificável', async () => {
+  const f = cenario(); Object.assign(f.guia, { tipo: 'INSS', source: 'MANUAL' });
+  f.args.encaminhar.mockRejectedValueOnce(Error('rollback confirmado'));
+  expect(await f.run()).toMatchObject({ pendente: true });
+  expect([...f.records.keys()].filter(k => k.startsWith('recalculo_whatsapp:'))).toHaveLength(0);
+  expect(await f.run()).toMatchObject({ encaminhado: true });
+  expect(await f.run()).toMatchObject({ repetido: true, pendente: false });
+  f.client.encaminhamentoSuporte.findFirst.mockResolvedValue(null);
+  expect(await f.run()).toMatchObject({ repetido: true, pendente: true });
+});
+
+test('nova revisão manual com mesmo PDF e vencimento registra identidade própria', async () => {
+  const f = cenario(); Object.assign(f.guia, { tipo: 'INSS', source: 'MANUAL' });
+  f.token.versaoPagamento = versaoPagamentoGuia(f.guia);
+  expect(await f.run()).toMatchObject({ encaminhado: true });
+  f.guia.valor = 200;
+  f.token.versaoPagamento = versaoPagamentoGuia(f.guia);
+  expect(await f.run()).toMatchObject({ encaminhado: true });
+  expect([...f.records.values()].filter(r => r.value.status === 'ENCAMINHADO_CONTADOR')).toHaveLength(2);
+  expect(f.deps.recalcular).not.toHaveBeenCalled();
+});

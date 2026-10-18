@@ -1,8 +1,21 @@
 import { conferirEntregaGuiaWhatsapp } from '../EntregaGuiaWhatsappService.js';
 const g={id:'g',portalClientId:'c',hash:'sha-atual',competencia:'2026-09',valor:'601.26',vencimento:'2026-10-20'};
-function setup(patch={}){const t={arquivoSha256:g.hash,snapshot:{guideId:g.id,portalClientId:g.portalClientId,telefone:'5511999999999',competencia:g.competencia,valor:'601.26',vencimento:'2026-10-20T00:00:00.000Z',tipo:'DAS'},...patch};const db={envioGuiaTentativa:{findMany:jest.fn(async()=>[t])}};return {db,t,run:()=>conferirEntregaGuiaWhatsapp(db,g,'5511999999999')};}
+function setup(patch={}){const t={arquivoSha256:g.hash,snapshot:{revisaoDocumento:revisaoDocumentoGuia(g),guideId:g.id,portalClientId:g.portalClientId,telefone:'5511999999999',competencia:g.competencia,valor:'601.26',vencimento:'2026-10-20T00:00:00.000Z',tipo:'DAS'},...patch};const db={envioGuiaTentativa:{findMany:jest.fn(async()=>[t])}};return {db,t,run:()=>conferirEntregaGuiaWhatsapp(db,g,'5511999999999')};}
 test('exige recibo entregue/lido do mesmo documento, canal e destinatário',async()=>{const f=setup();await f.run();expect(f.db.envioGuiaTentativa.findMany.mock.calls[0][0].where).toEqual({envioGuia:{guideId:'g',canal:'WHATSAPP',destino:'5511999999999'},status:{in:['entregue','lido']},OR:[{entregueEm:{not:null}},{lidoEm:{not:null}}]});});
 test.each([{arquivoSha256:'sha-antigo'},{snapshot:null}])('não aceita evidência incompleta ou PDF substituído %j',async patch=>{await expect(setup(patch).run()).rejects.toMatchObject({code:'GUIA_WHATSAPP_NAO_ENTREGUE'});});
 test.each([{telefone:'5511888888888'},{portalClientId:'outra'},{guideId:'outra'},{valor:'601.00'},{competencia:'2026-08'},{vencimento:'2026-10-21'}])('não aceita outra identidade/versão %j',async patch=>{const f=setup();Object.assign(f.t.snapshot,patch);await expect(f.run()).rejects.toMatchObject({code:'GUIA_WHATSAPP_NAO_ENTREGUE'});});
 test('sem tentativa comprovada não libera; erro de banco não vira entrega',async()=>{const f=setup();f.db.envioGuiaTentativa.findMany.mockResolvedValue([]);await expect(f.run()).rejects.toMatchObject({code:'GUIA_WHATSAPP_NAO_ENTREGUE'});f.db.envioGuiaTentativa.findMany.mockRejectedValue(Error('banco'));await expect(f.run()).rejects.toThrow('banco');});
 test('troca da identidade do número não herda entrega do titular anterior',async()=>{const f=setup();f.t.snapshot.vinculoNumeroId='anterior';await expect(conferirEntregaGuiaWhatsapp(f.db,g,'5511999999999','novo')).rejects.toMatchObject({code:'GUIA_WHATSAPP_NAO_ENTREGUE'});});
+
+import { revisaoDocumentoGuia } from '../../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
+test.each([{ tipo: 'INSS' }, { parcelamentoId: 'novo' }, { extracted: { fields: { principal: 590, juros: 11.26 } } }])('recibo antigo não prova revisão atual mesmo com PDF igual %j', async patch => {
+  const f = setup(); f.t.snapshot.revisaoDocumento = revisaoDocumentoGuia(g);
+  await expect(conferirEntregaGuiaWhatsapp(f.db, { ...g, ...patch }, '5511999999999')).rejects.toMatchObject({ code: 'GUIA_WHATSAPP_NAO_ENTREGUE' });
+});
+
+test.each([{}, { tipo: 'INSS' }, { parcelamentoId: 'novo' }, { extracted: { fields: { principal: 590, juros: 11.26 } } }])('legado sem revisão não autoriza novo lembrete nem é preenchido com a guia atual %j', async patch => {
+  const f = setup(); delete f.t.snapshot.revisaoDocumento;
+  const original = JSON.stringify(f.t);
+  await expect(conferirEntregaGuiaWhatsapp(f.db, { ...g, ...patch }, '5511999999999')).rejects.toMatchObject({ code: 'GUIA_WHATSAPP_NAO_ENTREGUE' });
+  expect(JSON.stringify(f.t)).toBe(original);
+});

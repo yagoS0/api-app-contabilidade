@@ -1,3 +1,4 @@
+import { marcadorProcuracao, dataProcuracao } from "../../../fiscal/serpro/lib/procuracao";
 import { fluxoDaEmpresa, ETAPAS_CARTEIRA } from "@contabilidade/shared/fluxo-carteira";
 import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // A carteira em TABELA — a visão padrão no desktop.
@@ -141,6 +142,7 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
   const [consultando, setConsultando] = useState(false);
   const fluxo = fluxoDaEmpresa(company);
   const apuracao = fluxo.apuracao;
+  const procuracao = marcadorProcuracao(company.serproStatus);
   const fechada = fluxo.status.chave === "concluido";
   const tags = getComplianceTags(company.guideCompliance);
   const fiscal = situacaoFiscalDaLinha(company);
@@ -282,6 +284,18 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
             />
           )}
         </span>
+        <details className="carteira-procuracao">
+          <summary style={{ color: procuracao.cor }}>Procuração: {procuracao.rotulo}</summary>
+          <div>
+            <span>Último resultado válido: {company.serproStatus?.procurationStatus === 'ATIVA' ? 'Procuração ativa' : company.serproStatus?.procurationStatus === 'AUSENTE' ? 'Sem procuração ativa' : 'Sem resultado conclusivo'}</span>
+            <span>Fonte: {company.serproStatus?.checkedAt ? 'verificação SERPRO salva' : 'Sem verificação salva'}</span>
+            <span>Verificada em: {dataProcuracao(company.serproStatus?.checkedAt)}</span>
+            <span>Validade: {dataProcuracao(company.serproStatus?.validUntil)}</span>
+            <span>Serviços informados: {Array.isArray(company.serproStatus?.systems) && company.serproStatus.systems.length ? company.serproStatus.systems.join(', ') : 'Escopo não informado'}</span>
+            {company.serproStatus?.ultimaTentativa && <span>Última tentativa: {company.serproStatus.ultimaTentativa.status === 'ERRO' ? 'Não foi possível verificar; resultado anterior preservado' : company.serproStatus.ultimaTentativa.status === 'SUCESSO' ? 'Concluída' : 'Sem conclusão confirmada'} · {dataProcuracao(company.serproStatus.ultimaTentativa.iniciadaEm)}{company.serproStatus.ultimaTentativa.vinculoConfirmado !== true ? ' · Vínculo atual não confirmado' : ''}</span>}
+            <span>A autorização depende do serviço e do vínculo verificados.</span>
+          </div>
+        </details>
         {config && <PopoverConfig company={company} onFechar={() => setConfig(false)} />}
       </td>
 
@@ -290,7 +304,10 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
         <button type="button" onClick={() => onFluxo?.(company)} className={`carteira-tag carteira-tag--${fechada ? 'ok' : 'neutro'}`} aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
       </td>
       <td data-label="Apuração" style={CELULA}>
-        <span className={`carteira-apuracao-tag carteira-apuracao-tag--${apuracao.chave}`}><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{apuracao.rotulo}</span>
+        {apuracao.documentoDisponivel ? <details className="carteira-procuracao">
+          <summary className={`carteira-apuracao-tag carteira-apuracao-tag--${apuracao.chave}`}>{apuracao.rotulo}</summary>
+          <div>O DAS desta competência está disponível, mas a conclusão da apuração ainda não foi comprovada no Altan. Confira a apuração e o recibo de transmissão nas tarefas da empresa. A guia não confirma envio ao cliente nem pagamento.</div>
+        </details> : <span className={`carteira-apuracao-tag carteira-apuracao-tag--${apuracao.chave}`}><span aria-hidden="true" className="carteira-apuracao-tag__dot"/>{apuracao.rotulo}</span>}
       </td>
       <td data-label="Guias" style={CELULA}>
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

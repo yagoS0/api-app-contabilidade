@@ -1,3 +1,8 @@
+import { enviarDocumentoGuiaWhatsapp } from '../EnvioDocumentoGuiaWhatsappService.js';
+jest.mock('../EnvioDocumentoGuiaWhatsappService.js', () => ({
+  ...jest.requireActual('../EnvioDocumentoGuiaWhatsappService.js'),
+  enviarDocumentoGuiaWhatsapp: jest.fn(async ({ registrarSaida, antesDeEnviar }) => registrarSaida({ antesDeEnviar })),
+}));
 import { versaoPagamentoGuia } from '../../guides/ConfirmacaoPagamentoClienteService.js';
 import { responderMenuWhatsapp, opcoesIniciaisDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
 import { executarFerramenta } from "../../assistente/ferramentas/index.js";
@@ -360,7 +365,7 @@ describe("roteamento sem modelo", () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"] });
     const cloud = nuvem();
     const executar = jest.fn(async (nome, input, ctx) => {
-      if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: 'guia.pdf', legenda: 'DAS · R$ 826,66 · vence 20/09/2026' }); return { ok: true, enviado: true }; }
+      if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ guideId: 'das-setembro', revisaoDocumento: 'revisao-fixture', conteudo: Buffer.from('%PDF fixture'), nomeArquivo: 'guia.pdf', legenda: 'DAS · R$ 826,66 · vence 20/09/2026' }); return { ok: true, enviado: true }; }
       return { ok: true, guias: [
         { guideId: 'das-setembro', tipo: "DAS", competencia: "2026-08", valorFormatado: "R$ 826,66", vencimento: "20/09/2026" },
         { guideId: 'inss-agosto', tipo: "INSS", competencia: "2026-07", valorFormatado: "R$ 100,00", vencimento: "20/08/2026" },
@@ -374,6 +379,7 @@ describe("roteamento sem modelo", () => {
 
     expect(executar).toHaveBeenCalledWith("quanto_devo", {}, expect.any(Object));
     expect(executar).toHaveBeenLastCalledWith('enviar_pdf_da_guia', { guideId: 'das-setembro' }, expect.anything());
+    expect(enviarDocumentoGuiaWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ documento: expect.objectContaining({ guideId: 'das-setembro', revisao: 'revisao-fixture', mensagemEntradaId: 'm1' }) }));
     expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
     expect(cloud.enviarTexto).not.toHaveBeenCalled();
   });

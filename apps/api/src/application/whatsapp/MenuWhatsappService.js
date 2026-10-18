@@ -339,22 +339,26 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     if (janela.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
   };
   const assinatura = JSON.stringify({ ok: sessao.ok, userId: sessao.userId, papel: sessao.papel, permissoes: [...(sessao.permissoesAssistente || [])].sort() });
-  const encaminhar = async (motivo = 'Cliente solicitou atendimento da equipe') => {
+  const encaminhar = async (motivo = 'Cliente solicitou atendimento da equipe', { aoPersistir } = {}) => {
     await antesDeEnviar(null, assinatura);
+    const registrar = async tx => {
+      const suporte = (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId
+        ? await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora }) : null;
+      await aoPersistir?.(tx, suporte);
+    };
     const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
       ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora,
-        aoEncaminhar: tx => (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId
-          ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora }) : Promise.resolve() })
+        aoEncaminhar: registrar })
       : await client.$transaction(async tx => {
         const mudou = await marcarHandoff(conversa, agora, tx);
-        if (mudou.count && (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId) await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora });
+        if (mudou.count) await registrar(tx);
         return mudou;
       });
     if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
     encaminhamentoDoMenu = true;
   };
-  const enviar = async ({ tipo = "text", corpo, ferramenta = null, chamada, idTurno = turnoId, contextoConsulta }) => enviarMensagemRastreada({
-    conversa, tipo, corpo, autor: "SISTEMA", turnoIaId: idTurno, client, contextoConsulta,
+  const enviar = async ({ tipo = "text", corpo, ferramenta = null, chamada, idTurno = turnoId, contextoConsulta, documentoGuia }) => enviarMensagemRastreada({
+    conversa, tipo, corpo, autor: "SISTEMA", turnoIaId: idTurno, client, contextoConsulta, documentoGuia: documentoGuia ? { ...documentoGuia, mensagemEntradaId: mensagem.id } : null,
     antesDeEnviar: () => antesDeEnviar(ferramenta, assinatura), enviar: chamada,
   });
 
