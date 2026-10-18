@@ -2,7 +2,7 @@
 
 ## Continuação supervisionada — 18/10/2026
 
-Esta seção substitui as pendências de implementação descritas nos registros históricos abaixo. O usuário autorizou integrar na main e publicar este incremento somente após revisões e testes aprovados. No momento deste registro, a implementação e as revisões dirigidas estão concluídas; as baterias gerais ainda estão em execução e nenhuma publicação desta rodada ocorreu.
+Esta seção substitui as pendências de implementação descritas nos registros históricos abaixo. O usuário autorizou integrar na main e publicar este incremento somente após revisões e testes aprovados. Implementação, revisões independentes e gates locais concluídos. A integração continua condicionada aos checks obrigatórios do PR 232 no commit final, seguida de implantação e verificação produtiva.
 
 A conciliação está disponível no suporte em **Conferir emissões**: o contador identifica a tentativa, informa motivo e pede consulta do resultado. O servidor valida permissão, empresa, conversa, tentativa e versão. Um controle compartilhado com a emissão, tokens de posse e gravações condicionais impedem concorrência e sobrescrita por execução antiga. O histórico conserva operador, motivo e provas. Somente prova da mesma emissão resolve o resultado; consulta inconclusiva, 404 ou legado sem vínculo conserva bloqueio e orientação de revisão. Não há reenvio fiscal, reserva de número nem mensagem automática nessa ação.
 
@@ -17,6 +17,8 @@ Compatibilidade dos verificadores de dados: DRE e fluxo de caixa passam a aceita
 Impacto operacional: implementação dos contratos existentes R19/R20/R22, sem nova regra tributária ou autorização de reemissão. Fonte operacional canônica e snapshot continuam reconciliados. Piloto WhatsApp encerrado permanece desligado.
 
 Publicação obrigatória em duas etapas: primeiro atualizar todos os executores API/workers com `NFSE_CONCILIACAO_SUPERVISIONADA_ENABLED=0` (ausência também desabilita); comprovar retirada das instâncias antigas; somente então habilitar `=1`. Rollback: desabilitar e drenar as instâncias habilitadas antes de restaurar versão antiga, preservando ações, tentativas e auditoria. Não testar com emissão fictícia em produção.
+
+Fechamento local: API completa selecionou 613 suítes, com 612 aprovadas/10.773 testes e um teste PostgreSQL condicional; esse teste foi executado separadamente no banco descartável e passou (listagem de 1/100 fichas, 479 ms). Web: 498 suítes/5.567 testes aprovados, incluindo contratação/recargas em 2.280 ms. Portal: 99 suítes/1.580 testes do checkpoint preservado, com fontes portal/shared/package idênticas. Governança: 63 testes. Builds web/portal, lint direcionado, PostgreSQL e revisão visual final aprovados. A primeira execução API foi interrompida por EPERM ao renomear o manifesto depois de 375 suítes; não foi aprovada. A repetição integral passou sem modificar fontes ou gates. Único ajuste web durante sua bateria: captura estável de referência no cleanup, com 12 testes, lint e revisão renovados. Manifesto final dos arquivos de produto em bytes Git: SHA256 `c790d1819ae78ae92b95f437873bcb7e156c414b0f17c32117f87b173576429f`.
 
 As seções seguintes são histórico de checkpoints anteriores. Pendências superadas e reprovações antigas ficam preservadas como evidência, não como estado atual.
 
