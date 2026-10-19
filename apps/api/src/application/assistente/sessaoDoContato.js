@@ -25,6 +25,7 @@ export const MOTIVOS_SEM_SESSAO = Object.freeze({
   SEM_EMPRESA: "SEM_EMPRESA",
   SEM_PESSOA: "SEM_PESSOA",
   VINCULO_INATIVO: "VINCULO_INATIVO",
+  USUARIO_INATIVO: "USUARIO_INATIVO",
 });
 
 /**
@@ -34,7 +35,7 @@ export const MOTIVOS_SEM_SESSAO = Object.freeze({
  * @param {{role:string, status:string}|null} p.vinculoRbac  `CompanyClientUser` da pessoa nesta empresa
  * @returns {{ok:boolean, portalClientId:string|null, userId:string|null, papel:string|null, motivo:string|null, contatoNome:string|null}}
  */
-export function sessaoDoContato({ portalClientId, contato, vinculoRbac } = {}) {
+export function sessaoDoContato({ portalClientId, contato, vinculoRbac, usuario } = {}) {
   const base = {
     portalClientId: portalClientId ? String(portalClientId) : null,
     userId: null,
@@ -46,6 +47,9 @@ export function sessaoDoContato({ portalClientId, contato, vinculoRbac } = {}) {
   if (!contato?.userId) return { ...base, ok: false, motivo: MOTIVOS_SEM_SESSAO.SEM_PESSOA };
   if (!vinculoRbac || vinculoRbac.status !== "ACTIVE") {
     return { ...base, userId: String(contato.userId), ok: false, motivo: MOTIVOS_SEM_SESSAO.VINCULO_INATIVO };
+  }
+  if (usuario?.status !== 'active' || String(usuario.id || '') !== String(contato.userId)) {
+    return { ...base, userId: String(contato.userId), ok: false, motivo: MOTIVOS_SEM_SESSAO.USUARIO_INATIVO };
   }
   return { ...base, ok: true, userId: String(contato.userId), papel: String(vinculoRbac.role || "").toUpperCase() || null, motivo: null };
 }
@@ -61,7 +65,7 @@ export function fraseSemSessao(motivo) {
   if (motivo === MOTIVOS_SEM_SESSAO.SEM_EMPRESA) {
     return "Não reconheci este número em nenhuma empresa. O escritório vai conferir o cadastro e responder por aqui.";
   }
-  if (motivo === MOTIVOS_SEM_SESSAO.VINCULO_INATIVO) {
+  if (motivo === MOTIVOS_SEM_SESSAO.VINCULO_INATIVO || motivo === MOTIVOS_SEM_SESSAO.USUARIO_INATIVO) {
     return "Seu número está cadastrado, mas o acesso ligado a ele não está ativo nesta empresa. O escritório resolve — enquanto isso, não consigo consultar nada por aqui.";
   }
   return "Seu número está cadastrado na empresa, mas ainda não ligado a um acesso do portal. O escritório resolve isso — enquanto isso, não consigo consultar nada por aqui.";

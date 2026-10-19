@@ -65,6 +65,7 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1", per
       updateMany: jest.fn(async ({data}) => { if(conversa.excluidaEm) return {count:0}; Object.assign(conversa,data);return {count:1}; }),
     },
     contatoWhatsapp: { findMany: jest.fn(async () => contato ? [contato] : []) },
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     companyClientUser: { findUnique: jest.fn(async () => vinculo) },
     acaoPendenteWhatsapp: {
       findFirst: jest.fn(async ({ where, orderBy }) => {

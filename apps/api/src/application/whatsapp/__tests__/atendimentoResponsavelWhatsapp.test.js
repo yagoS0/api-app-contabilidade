@@ -162,6 +162,7 @@ afterEach(() => { jest.useRealTimers(); __limparLeases(); });
 async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }], textoLivreDisponivel = true) {
   const f = await fixture();
   f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
+  f.client.user = { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: 'active' })) };
   f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
   f.client.portalClient = { findUnique: jest.fn(async ({ where }) => {
     const encontrada = EMPRESAS.find(e => e.portalClientId === where.id);
@@ -864,4 +865,14 @@ test('CNPJ: opção do menu dispensa permissão de documentos', async () => {
   await f.clicar(menu.find(o => o.titulo === 'CNPJ da empresa'));
   expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toContain('11444777000161');
   expect(f.executar).not.toHaveBeenCalled();
+});
+
+
+test('documentos: usuário desativado após a lista não acessa nem envia documento', async () => {
+  const f = await fixtureDocumentos(); await f.selecionar('documentos', 'lente');
+  const op = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  f.client.user.findUnique.mockImplementation(async ({ where }) => ({ id: where.id, status: 'inactive' }));
+  await f.clicar(op);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.executar.mock.calls.some(([nome]) => nome === 'enviar_documento_da_empresa')).toBe(false);
 });

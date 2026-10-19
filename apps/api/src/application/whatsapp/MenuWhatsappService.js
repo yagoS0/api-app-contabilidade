@@ -1,3 +1,4 @@
+import { enviarDanfseWhatsapp, emissaoConfirmada } from './EnvioDanfseWhatsappService.js';
 import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { recalcularGuiaWhatsapp } from '../guides/RecalcularGuiaWhatsappService.js';
 // Menus determinísticos do WhatsApp. Cliques nunca passam pelo modelo: o id estável decide a ação,
@@ -133,7 +134,8 @@ async function carregarSessao(conversa, client) {
       select: { role: true, status: true },
     })
     : null;
-  return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac });
+  const usuario = contato?.userId ? await client.user.findUnique({ where: { id: contato.userId }, select: { id: true, status: true } }) : null;
+  return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac, usuario });
 }
 
 const ferramentaLiberada = (sessao, nome) => definicoes(sessao).some((f) => f.name === nome);
@@ -399,6 +401,18 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       retomarComTexto: registro.contexto?.resultado?.retomarColeta ? registro.contexto.resultado.textoRetomada : null,
       agora, client, executar, servicos: servicosColeta, log: logger, conferirAcesso: () => antesDeEnviar("preparar_emissao", assinatura) });
     if (guiada.tratado) {
+      if (emissaoConfirmada(guiada.resultado)) {
+        try {
+          if (!ferramentaLiberada(sessao, 'danfse_da_nota')) throw Object.assign(new Error('DANFSe não liberado para este contato.'), { codigo: 'ACESSO_REVOGADO' });
+          await enviarDanfseWhatsapp({ conversa, notaId: guiada.resultado.nfseId, acaoId: guiada.acaoId,
+            mensagemEntradaId: mensagem.id, client, cloud: whatsapp, turnoIaId: turnoId,
+            ...(servicosColeta.gerarDanfseDaNota ? { gerar: servicosColeta.gerarDanfseDaNota } : {}),
+            conferirAcesso: () => antesDeEnviar('danfse_da_nota', assinatura) });
+        } catch {
+          guiada.texto += ' A nota permanece emitida, mas a entrega do DANFSe precisa de conferência pela equipe. Não solicite outra emissão para obter o PDF.';
+          guiada.filaHumana = true;
+        }
+      }
       if (guiada.filaHumana) await encaminhar();
       const corpo = rotularEmpresa(guiada.texto, conversa, "Empresa emissora");
       const opcoes = corpo.length <= 1024 ? (guiada.opcoes || []).slice(0, 10).map((o, i) => ({ ...o, titulo: `${i + 1}. ${o.titulo}` })) : [];

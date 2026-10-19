@@ -32,7 +32,8 @@ export async function consultarGuiasDoResponsavel({ registro, recibo, conferirLe
       select: { id: true, nome: true, userId: true, permissoesAssistente: true } });
     const contato = contatos.length === 1 ? contatos[0] : null;
     const vinculoRbac = contato?.userId ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: portalClientId, userId: contato.userId } } }) : null;
-    const sessao = sessaoDoContato({ portalClientId, contato, vinculoRbac });
+    const usuario = contato?.userId ? await client.user.findUnique({ where: { id: contato.userId }, select: { id: true, status: true } }) : null;
+    const sessao = sessaoDoContato({ portalClientId, contato, vinculoRbac, usuario });
     if (!sessao.ok || sessao.userId !== atendimento.userId) throw recusa();
     return { empresa, sessao, liberado: definicoes(sessao).some(f => f.name === "quanto_devo") };
   };

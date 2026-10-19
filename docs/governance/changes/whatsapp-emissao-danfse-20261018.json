@@ -1,0 +1,64 @@
+{
+  "summary": "Entrega do DANFSe após emissão pelo WhatsApp, reserva documental persistente e revalidação de usuário, identidade, canal e revisão do documento antes do envio.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "security",
+    "web"
+  ],
+  "baseCommit": "3509b2f47cb34dc31662424f02b59be6c7261de1",
+  "status": "validated_locally_authorized_pending_ci",
+  "operationalImpact": "Adequação a R01/R02/R19/R20/R22/R29 existentes. Não muda regras fiscais, papéis, público piloto, consentimento, certificado ou condições tributárias. Usuário global rejeitado não conserva acesso por vínculo empresarial. EMISSAO_NFSE não concede NOTAS_DANFSE. Nenhum ato fiscal ou envio real; dados sintéticos somente em banco descartável. Preserva PR232 e evita nova emissão para obter PDF.",
+  "tests": [
+    "Reprodução inicial falhou com zero chamadas de entrega após emissão confirmada, contra uma esperada; log danfse-repro.log.",
+    "Segurança: 112 testes/5 suítes; correção independente da classificação de revogação pós-upload: 59 testes Cloud.",
+    "Integração menu/coleta/confirmação/executor real com serviço fiscal sintético: 37 testes. Serviço documental: 15 casos após correção da recusa Meta; correção sistêmica de canal/identidade: 127 testes/4 suítes.",
+    "PostgreSQL final: geração real PDF de XML sintético, histórico/hash, concorrência, replay, novo pedido, callbacks monotônicos, revogação global durante upload, recuperação de XML, permissão documental, HTTP400 recuperável, canal desativado após upload e timeout bloqueado. Zero rede externa. Log danfse-pg-final.log.",
+    "Regressão PostgreSQL PR232: vínculo pré-POST, exclusão concorrente, CAS, expiração, preservação de desfechos tardios e pool operacional1/locks2 aprovados; log danfse-emissao-pg-regression.log.",
+    "63 testes da governança aprovados. Sintaxe dos JavaScripts alterados e git diff --check aprovados. Três PDFs sintéticos inspecionados visualmente e três QR Codes decodificados. Gates amplos ainda em andamento nesta versão do relato.",
+    "Revisão de respostas ambíguas: 88 testes/3 suítes aprovados. HTTP500 vazio, HTTP400 JSON inválido e código Meta desconhecido permanecem incertos; recusa documentada e upload anterior ao POST são distinguíveis. PostgreSQL final ampliado confirmou bloqueio de novo POST em ambos os cenários ambíguos.",
+    "Web completo: 498 suítes/5567 testes aprovados; fontes web/shared inalteradas durante execução. Portal/builds/API ainda em andamento.",
+    "Portal completo: 99 suítes/1580 testes aprovados. Builds web e portal aprovados. Condicional PostgreSQL onboarding executado separadamente: 1 teste aprovado em589ms; fontes não alteradas.",
+    "Primeira bateria API interrompida pelo gate no lote2:52 casos da fixture antiga de atendimento sem client.user. Não é aprovação. Adequação dos dados sintéticos ao contrato de usuário ativo e repetição integral são necessárias; erro e manifesto originais preservados.",
+    "Fixture de atendimento atualizada sem alteração de produção; novo caso bloqueia documentos após revogação global. 328 testes/8 suítes consumidores passaram. Revisão independente audit_guides_cycle aprovou o delta sem enfraquecimento de asserções. Repetição integral API em andamento.",
+    "Repetição integral API aprovada:615 suítes/10821 testes;1 suíte/1 teste condicional não executado nesta bateria, coberto separadamente pelo PostgreSQL onboarding. 616 suítes descobertas,25 lotes,exit0, fontes verificadas antes/depois sem alteração. Evidência api-wumv2o e danfse-api-gate.json."
+  ],
+  "reviewProcess": "Controlador executável iniciou run2026-10-19T01-20-58-205Z-9f0589ba; executor CLI entregou diagnóstico por EPERM ao iniciar Node. Principal interrompeu gates incompletos e continuou com delegados nativos, preservando journal e catálogo. Não se declara ready_for_human desse run. Autores audit_fiscal_cycle/implement_danfse; revisores independentes audit_guides_cycle/audit_isolation_design. Reprovações de falsa incerteza, recusa Meta irrecuperável e canal desativado durante upload retornaram aos autores, com regressões. Pareceres finais backend/fiscal/comunicação/segurança e sistêmico aprovam código, condicionados à conclusão dos gates gerais. Revisão backend final identificou resposta HTTP sem prova classificada como RECUSADO; executor restringiu a prova a erro documentado e acrescentou regressões com transporte real simulado.",
+  "sourceFingerprint": "4aae13824a7daca79d17acc8af781fd8fee6f0fb5f778da247d3bdec863fd14f",
+  "fingerprintScope": "3347 arquivos apps/packages/scripts-governance/package manifests, bytes locais; snapshot .altan-governance/danfse-final-source-snapshot.json. Relatos docs excluídos. Renovar após qualquer alteração de fonte.",
+  "rollback": "Sem migration, flag ou dependência de aplicação nova. Reverter código preservando XML fiscal, mensagens, arquivos e reservas documentais; não apagar reserva incerta para liberar reenvio. Rollback não desfaz emissão nem autoriza repetir ato fiscal. Conciliação PR232 preservada.",
+  "humanDecisions": [
+    "Integração e publicação autorizadas em19/10/2026, condicionadas a CI e revisões. Ato fiscal adicional separado aguarda identificação e dados reais."
+  ],
+  "limitations": [
+    "Não certifica emissão/Meta/IA externas ou disponibilidade produtiva do certificado/cofre.",
+    "Reservas ACEITO sem conclusão persistida, RESERVADO após crash e INDETERMINADO exigem conferência humana; não foi adicionada interface de conciliação do transporte.",
+    "Público piloto e sessão IA real interrompida não foram alterados."
+  ],
+  "authorization": "19/10/2026: usuário autorizou abrir PR e, passando CI e revisões, integrar main e publicar produção. Nenhuma autorização para inventar dados fiscais; pedido adicional de nota R$1 aguarda identificação completa e serviço. Não houve emissão nem envio real na validação local.",
+  "reviewEvidence": [
+    {
+      "role": "backend,fiscal,communication,security",
+      "saidaSha256": "611243fccd7e00f0543219a01b5bcc48626b4795a6546d42ac1bc1cb2ceca020",
+      "envioSha256": "a4b402efa53b058c0649445b709c20938bc2ce943b3077a51421782a89b70df0",
+      "verdict": "approved_with_local_gates",
+      "cloudSha256": "f0b0084ed52cf0fab0cd1826acc9ad95a13475e375bae6ecd4991d083076abb3",
+      "evidence": "Leitura independente das fontes,88testes/3suítes e7PASSPostgreSQL; sem reexecução de testes. Gates finais conferidos: API615/10821,condicionalPG1/1,web498/5567,portal99/1580,builds,snapshot intacto.",
+      "reviewer": "audit_guides_cycle"
+    },
+    {
+      "verdict": "approved_with_local_gates",
+      "evidence": "Revalidou canal/identidade pós-upload e prova explícita de recusa; confirmou hashes finais,88/3 e7PASSPostgreSQL. Não certifica provedores reais nem produção. Parecer final conferiu API615/10821,condicionalPG1,web498/5567,portal99/1580,builds,governança63,PG7 e snapshot3347 inalterado. CI do commit final continua requisito antes de integração.",
+      "role": "system",
+      "reviewer": "audit_isolation_design"
+    }
+  ]
+}

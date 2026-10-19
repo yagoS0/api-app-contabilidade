@@ -431,6 +431,11 @@ export class WhatsappCloudClient {
         "envio WhatsApp recusado pela Meta",
       );
       const erro = new WhatsappError(traducao);
+      // Um status HTTP sozinho não prova que a mensagem foi recusada. Corpo inválido,
+      // código desconhecido ou retentativa sem base documentada continuam inconclusivos.
+      erro.recusaComprovada = recurso === "messages" && status >= 400 && status < 500
+        && traducao.traduzido === true && traducao.baseDaRetentativa === BASE_DA_RETENTATIVA.DOCUMENTADA
+        && traducao.retentativa !== RETENTATIVA.NAO_DOCUMENTADA;
       if (recurso !== "messages") erro.desfechoIndeterminado = false;
       throw erro;
     }
@@ -669,9 +674,29 @@ export class WhatsappCloudClient {
    * chamar; aqui só se sabe que a operação existe.
    * O PDF sobe agora (`uploadDocumento`, `id`) — nunca `link`, nunca `media_id` guardado.
    */
-  async enviarDocumento({ telefone, conteudo, nomeArquivo, legenda, mimeType = "application/pdf" }) {
+  async enviarDocumento({ telefone, conteudo, nomeArquivo, legenda, mimeType = "application/pdf", antesDeEnviar = async () => {} }) {
     const para = this.destino(telefone);
-    const mediaId = await this.uploadDocumento({ conteudo, nomeArquivo, mimeType });
+    const conferirAntesDaMensagem = async () => {
+      try { await antesDeEnviar(); }
+      catch (err) {
+        // Evidência local: a guarda recusou antes de chamar POST /messages.
+        // Upload de mídia não envia mensagem ao destinatário.
+        throw Object.assign(new Error(err?.message || 'Envio não autorizado.'), {
+          codigo: err?.codigo, code: err?.code, cause: err,
+          mensagemNaoEnviada: true, desfechoIndeterminado: false,
+        });
+      }
+    };
+    await conferirAntesDaMensagem();
+    let mediaId;
+    try { mediaId = await this.uploadDocumento({ conteudo, nomeArquivo, mimeType }); }
+    catch (err) {
+      // Mesmo upload de resultado desconhecido ainda não solicitou uma mensagem.
+      err.mensagemNaoEnviada = true;
+      err.desfechoIndeterminado = false;
+      throw err;
+    }
+    await conferirAntesDaMensagem();
     const json = await this.chamar({
       recurso: "messages",
       corpo: montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }),

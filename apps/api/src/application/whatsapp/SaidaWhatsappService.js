@@ -16,9 +16,9 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
       const canal = await client.canalWhatsapp.findUnique({ where: { id: conversa.canalId } });
       if (!canal?.ativo) throw Object.assign(new Error("O canal desta mensagem foi desativado."), { codigo: "CANAL_DESABILITADO" });
     }
+    if (antesDeEnviar) await antesDeEnviar();
   };
   await conferirOrigem();
-  if (antesDeEnviar) await antesDeEnviar();
   const mensagem = await client.mensagemWhatsapp.create({ data: {
     conversaId: conversa.id, direcao: "out", tipo, corpo, autor, turnoIaId, referenciaComercial, statusEnvio: "enviando",
     ...(vinculoGuia ? { ...vinculoGuia, id: `guia-whatsapp-${vinculoGuia.envioGuiaTentativaId}` } : {}),
@@ -31,21 +31,31 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
   try {
     if (aposRegistrar) await aposRegistrar(mensagem);
     await conferirOrigem();
-    if (antesDeEnviar) await antesDeEnviar();
     iniciouRede = true;
-    const r = await enviar();
+    // Transportes com upload reutilizam a mesma guarda imediatamente antes do POST.
+    const r = await enviar({ antesDeEnviar: conferirOrigem });
     aceitou = true;
     wamid = r?.wamid || null;
     if (!wamid) throw Object.assign(new Error("A Meta não devolveu o identificador da mensagem."), { codigo: "SEM_WAMID", indeterminado: true });
     if (aoAceitar) await aoAceitar(r);
-    const salva = await client.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: {
+    let salva;
+    if (contextoConsulta?.tipo === 'DANFSE') {
+      // Uma resposta tardia do transporte não rebaixa delivered/read do callback.
+      await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, statusEnvio: 'enviando' }, data: {
+        providerMessageId: wamid, statusEnvio: 'enviado', enviadoEm: new Date(),
+      } });
+      salva = await client.mensagemWhatsapp.findUnique({ where: { id: mensagem.id } });
+    } else salva = await client.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: {
       providerMessageId: wamid, statusEnvio: "enviado", enviadoEm: new Date(),
     } });
     await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });
     return { ...r, mensagem: salva };
   } catch (err) {
     const httpStatus = err?.httpStatus ?? err?.traducao?.httpStatus;
-    const indeterminado = iniciouRede && (aceitou || err?.indeterminado === true || !httpStatus);
+    const recusaComprovada = err?.mensagemNaoEnviada === true || err?.recusaComprovada === true;
+    const indeterminado = iniciouRede && (aceitou || (contextoConsulta?.tipo === 'DANFSE'
+      ? !recusaComprovada
+      : err?.mensagemNaoEnviada !== true && (err?.indeterminado === true || !httpStatus)));
     const recuperacao = {
       statusEnvio: indeterminado ? "indeterminado" : "falhou",
       ...(wamid ? { providerMessageId: wamid, enviadoEm: new Date() } : {}),

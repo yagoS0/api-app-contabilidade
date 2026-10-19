@@ -8,6 +8,7 @@ import { TIPOS } from '../confirmacaoPendente.js';
 function fixture({ permission = true, enabled = true, role = 'CLIENT_ADMIN', status = 'ACTIVE', owner = 'u' } = {}) {
   const acao = { tipo: TIPOS.EMITIR_NFSE, conversaId: 'cv', portalClientId: 'pc', userId: 'u' };
   const client = {
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     conversaWhatsapp: { findFirst: jest.fn(async () => ({ telefoneE164: 'numero-sintetico' })) },
     contatoWhatsapp: { findMany: jest.fn(async () => [{ userId: owner, permissoesAssistente: permission ? ['EMISSAO_NFSE'] : [] }]) },
     portalClient: { findUnique: jest.fn(async () => ({ id: 'pc', emissaoClienteLiberada: enabled })) },

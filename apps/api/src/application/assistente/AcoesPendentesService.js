@@ -79,6 +79,8 @@ export async function autorizarPermissaoDaAcao({ acao, client = prisma }) {
     select: { telefoneE164: true },
   });
   if (!conversa?.telefoneE164 || !acao?.userId) return { ok: false, codigo: "CONTATO_NAO_IDENTIFICADO" };
+  const usuario = await client.user.findUnique({ where: { id: String(acao.userId) }, select: { id: true, status: true } });
+  if (!usuario || usuario.status !== "active") return { ok: false, codigo: "USUARIO_INATIVO" };
   const contatos = await client.contatoWhatsapp.findMany({
     where: {
       portalClientId: String(acao.portalClientId),
@@ -364,7 +366,7 @@ async function confirmarEExecutarInterno({ acaoId, conversaId = null, portalClie
     where: { id: acao.id },
     data: { status: STATUS.EXECUTADA, executadaEm: new Date(), resultado: desfecho.resultado ?? null, respostaAoCliente: desfecho.texto, encaminharHumano: Boolean(desfecho.filaHumana) },
   });
-  return { executou: true, texto: desfecho.texto, filaHumana: Boolean(desfecho.filaHumana), resultado: desfecho.resultado ?? null };
+  return { executou: true, ...(desfecho.resultado?.erro === "NFSE_RESUMO_ALTERADO" ? { codigo: "NFSE_RESUMO_ALTERADO" } : {}), texto: desfecho.texto, filaHumana: Boolean(desfecho.filaHumana), resultado: desfecho.resultado ?? null };
 }
 
 // ── OS EXECUTORES — um por tipo, chamando a MESMA função da rota ─────────────────────────────────

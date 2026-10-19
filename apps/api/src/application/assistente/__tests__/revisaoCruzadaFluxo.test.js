@@ -38,6 +38,7 @@ function ambiente(mensagens, { antesDaReserva } = {}) {
     conversaWhatsapp: { findUnique: jest.fn(async () => conversa), updateMany: jest.fn(async ({ data }) => { Object.assign(conversa, data); return { count: 1 }; }) },
     mensagemWhatsapp: { findUnique: jest.fn(async ({ where }) => mensagens.find((m) => m.id === where.id)), findFirst: jest.fn(async (q) => buscar(q)[0] || null), findMany: jest.fn(async (q) => buscar(q)), updateMany: jest.fn(async () => ({ count: 1 })) },
     contatoWhatsapp: { findMany: jest.fn(async () => [{ id: "c1", nome: "Contato de teste", userId: "u1", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] }]) },
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     companyClientUser: { findUnique: jest.fn(async () => ({ role: "CLIENT_ADMIN", status: "ACTIVE" })) },
     acaoPendenteWhatsapp: {
       findFirst: jest.fn(async ({ where }) => casa(acao, where) ? acao : null),
