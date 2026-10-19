@@ -24,6 +24,7 @@ function fixture() {
   let empresasRevogadas = [];
   const resolverVinculo = jest.fn(async () => ({ situacao: "AMBIGUO", leitura: "ESTRITA", ambiguidades: ["EMPRESA"], empresas: contatos.filter(c => !empresasRevogadas.includes(c.portalClientId)).map(c => ({ portalClientId: c.portalClientId, razao: c.razao, cnpj: c.cnpj, pessoaAmbigua: false, contatos: [{ contatoId: c.id, userId: c.userId, papelRbac: c.papelRbac, statusRbac: c.statusRbac }] })) }));
   const client = {
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     conversas,
     atendimentoResponsavelWhatsapp: { findUnique: jest.fn(async () => copy(attendance)), update: jest.fn(() => { throw new Error("Consulta não altera o atendimento"); }), updateMany: jest.fn(() => { throw new Error("Consulta não altera o atendimento"); }) },
     conversaWhatsapp: { findUnique: jest.fn(async ({ where }) => copy(conversas.find(c => c.id === where.id))), update: jest.fn(async ({ where, data }) => Object.assign(conversas.find(c => c.id === where.id), data)) },
@@ -141,4 +142,10 @@ it("recibo que contém empresa não autorizada não permite consultá-la", async
 it("mudança de lease entre empresas interrompe antes da próxima consulta", async () => {
   const f = fixture(); f.cloud.enviarTexto.mockImplementation(async () => { f.conferirLease.mockRejectedValue(Object.assign(new Error("lease perdida"), { codigo: "LEASE_PERDIDA" })); return { wamid: "primeira" }; });
   await expect(f.rodar()).rejects.toMatchObject({ codigo: "LEASE_PERDIDA" }); expect(f.executar).toHaveBeenCalledTimes(1); expect(f.cloud.enviarTexto).toHaveBeenCalledTimes(1);
+});
+
+it('usuário global revogado não consulta nem envia guias agregadas', async () => {
+  const f = fixture(); f.client.user.findUnique.mockResolvedValue({ id: 'liz', status: 'rejected' });
+  await expect(f.rodar()).rejects.toMatchObject({ codigo: 'CONTEXTO_ALTERADO' });
+  expect(f.executar).not.toHaveBeenCalled(); expect(f.cloud.enviarTexto).not.toHaveBeenCalled();
 });

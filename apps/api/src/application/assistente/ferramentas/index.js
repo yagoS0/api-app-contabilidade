@@ -394,12 +394,15 @@ const EXECUTORES = {
     if (ctx.janela && ctx.janela.aberta === false) return recusa("FORA_DA_JANELA", "A janela de 24h do WhatsApp está fechada; não dá para mandar documento agora.");
     let resultado;
     try {
-      resultado = await ctx.servicos.gerarDanfseDaNota({ portalClientId: ctx.sessao.portalClientId, notaId: String(input.notaId || "") });
+      resultado = await ctx.servicos.gerarDanfseDaNota({ portalClientId: ctx.sessao.portalClientId, notaId: String(input.notaId || ""), client: ctx.prisma });
     } catch (err) {
       const code = String(err?.code || "");
       if (code === "DANFSE_NOTA_NAO_ENCONTRADA") return recusa(code, "Não encontrei essa nota na empresa.");
-      if (code === "DANFSE_SEM_QRCODE") return recusa(code, `Este DANFSe não pode ser gerado sem o QR Code (${err?.motivo || "chave ausente"}); sem ele o documento não vale. O escritório pode conferir.`);
-      if (code.startsWith("DANFSE_")) return recusa(code, "O DANFSe desta nota não pôde ser gerado com o que temos guardado. O escritório pode conferir.");
+      if (code.startsWith("DANFSE_")) return { ...recusa(code, code === 'DANFSE_SEM_QRCODE'
+        ? "Não consigo gerar este DANFSe sem o QR Code. A equipe vai conferir o documento existente; não solicite outra emissão para obter o PDF."
+        : "Não consegui gerar o DANFSe desta nota. A equipe vai conferir o documento existente; não solicite outra emissão para obter o PDF."),
+        encaminharEscritorio: true, motivoEncaminhamento: 'Documento indisponível: DANFSe',
+        respostaObrigatoria: "Não consegui gerar o DANFSe desta nota. A equipe vai conferir o documento existente; não solicite outra emissão para obter o PDF." };
       throw err;
     }
     const envio = await ctx.enviarDocumento({ conteudo: resultado.pdf, nomeArquivo: resultado.nomeArquivo || "danfse.pdf", legenda: `DANFSe${resultado.marcaDagua ? ` (${resultado.marcaDagua})` : ""}`, notaId: String(input.notaId) });

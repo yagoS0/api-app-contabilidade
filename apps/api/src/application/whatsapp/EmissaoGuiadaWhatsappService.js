@@ -71,7 +71,7 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
     idPendenciaAnterior = confirmacao.acaoId || null;
     if (confirmacao.tratado) {
       estado ||= mesmoEscopo ? limpar(anterior.estado) : iniciarColeta({ agora }).estado;
-      const revisarNovamente = ["CONFIRMACAO_SUPERADA", "EXPIRADA"].includes(confirmacao.codigo);
+      const revisarNovamente = ["CONFIRMACAO_SUPERADA", "EXPIRADA", "NFSE_RESUMO_ALTERADO"].includes(confirmacao.codigo);
       if (confirmacao.finalizada) estado.status = confirmacao.filaHumana ? "EQUIPE" : revisarNovamente ? "REVISAO" : "CONCLUIDO";
       if (revisarNovamente) delete estado.codigo;
       resultado = { ...confirmacao, motivo: confirmacao.codigo || "CONFIRMACAO_GUIADA" };

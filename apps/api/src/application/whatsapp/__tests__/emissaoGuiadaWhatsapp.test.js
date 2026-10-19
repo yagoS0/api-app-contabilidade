@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+import { DEPS_PADRAO } from '../../assistente/AcoesPendentesService.js';
 import { processarEmissaoGuiada } from "../EmissaoGuiadaWhatsappService.js";
 import { responderMenuWhatsapp, IDS_MENU_WHATSAPP } from "../MenuWhatsappService.js";
 import { prepararTomadorDoCliente } from "../../tomador/prepararTomadorDoCliente.js";
@@ -14,6 +16,10 @@ function casa(row, where = {}) {
   return Object.entries(where).every(([k, v]) => {
     if (k === "OR") return v.some(w => casa(row, w));
     if (k === "conversa") return true; // Guardas SQL reais são exercitadas no PostgreSQL do CI.
+    if (k === 'resultado' && v && typeof v === 'object') {
+      if (v.path) return v.path.reduce((r, key) => r?.[key], row[k]) === v.equals;
+      if ('equals' in v) return v.equals === Prisma.DbNull ? row[k] == null : JSON.stringify(row[k]) === JSON.stringify(v.equals);
+    }
     if (v && typeof v === "object" && !(v instanceof Date)) return Object.entries(v).every(([op, valor]) => {
       if (op === "notIn") return !valor.includes(row[k]);
       if (op === "in") return valor.includes(row[k]);
@@ -52,6 +58,7 @@ function fixture() {
     try { return await fn(client); } catch (e) { Object.keys(snapshot).forEach(k => { tabelas[k] = snapshot[k]; }); throw e; }
   };
   client.contatoWhatsapp = { findMany: jest.fn(async () => [{ userId: sessao.userId, permissoesAssistente: sessao.permissoesAssistente }]) };
+  client.user = { findUnique: jest.fn(async ({where}) => ({id:where.id,status:"active"})) };
   client.companyClientUser = { findUnique: jest.fn(async () => ({ role: "CLIENT_ADMIN", status: "ACTIVE" })) };
   const emitir = jest.fn(async () => ({ texto: "Nota emitida — número 123.", resultado: { status: "issued", numero: "123" }, filaHumana: false }));
   const servicos = {
@@ -411,4 +418,48 @@ describe("conversação guiada persistente sem IA", () => {
     expect((await processarEmissaoGuiada({ ...f.args, mensagem: cancelar, texto: cancelar.corpo })).codigo).toBe("CANCELAMENTO_ANTERIOR_RESUMO");
     expect(f.tabelas.acaoPendenteWhatsapp[0].status).toBe("pendente");
   });
+});
+
+
+test('configuração alterada volta à revisão e preserva dados sem encerrar coleta', async () => {
+  const f = fixture(); await revisar(f);
+  f.emitir.mockResolvedValue({ texto: 'A configuração mudou. Confira novo resumo.', resultado: { erro: 'NFSE_RESUMO_ALTERADO', indeterminado: false }, filaHumana: false });
+  const r = await f.responder(`CONFIRMAR ${f.tabelas.acaoPendenteWhatsapp[0].codigo}`);
+  expect(r.codigo).toBe('NFSE_RESUMO_ALTERADO');
+  expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.status).toBe('REVISAO');
+  expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados.valor).toBe(1500.5);
+});
+
+test('menu real integra coleta, resumo, confirmação, emissão simulada e entrega com histórico', async () => {
+  const f = fixture(), settings = new Map(), arquivos = [];
+  f.client.contatoWhatsapp.findMany.mockResolvedValue([{userId:sessao.userId,permissoesAssistente:['EMISSAO_NFSE','NOTAS_DANFSE']}]);
+  f.client.appSetting = {
+    findUnique: async ({where}) => structuredClone(settings.get(where.key)||null),
+    create: async ({data}) => {if(settings.has(data.key))throw Object.assign(new Error('unique'),{code:'P2002'});settings.set(data.key,structuredClone(data));return data;},
+    updateMany: async ({where,data}) => {if(JSON.stringify(settings.get(where.key)?.value)!==JSON.stringify(where.value.equals))return {count:0};settings.set(where.key,{key:where.key,...structuredClone(data)});return {count:1};},
+    upsert: async ({where,create}) => {if(!settings.has(where.key))settings.set(where.key,structuredClone(create));return settings.get(where.key);},
+  };
+  f.client.portalInvoice = {findFirst:async()=>null};
+  f.client.portalClient = {findUnique:async()=>({companyId:'legacy'})};
+  f.client.serviceInvoice = {findFirst:async()=>({id:'nfse-fixture',status:'issued',xml:'synthetic'})};
+  f.client.arquivoWhatsapp = {upsert:async ({create})=>{arquivos.push(create);return create;}};
+  delete f.servicos.executores;
+  f.client.$queryRaw = async () => [{acquired:true,alive:1}];
+  const issue = jest.fn(async ({antesDeEnviar, autorizarEnvioFinal}) => {
+    await autorizarEnvioFinal();
+    await antesDeEnviar('nfse-fixture');
+    expect(f.tabelas.acaoPendenteWhatsapp[0].resultado).toMatchObject({nfseId:'nfse-fixture',indeterminado:true});
+    return {status:'issued',nfse:{id:'nfse-fixture',numeroNfse:'123'}};
+  });
+  f.servicos.acoesDeps = {...DEPS_PADRAO, ...f.servicos.acoesDeps, resolveLegacyCompanyId:async()=> 'legacy', NfseService:{issue}};
+  f.servicos.gerarDanfseDaNota = jest.fn(async()=>({pdf:Buffer.from('%PDF-1.4\nfixture'),nomeArquivo:'danfse.pdf'}));
+  const cloud=Object.fromEntries(['enviarTexto','enviarLista','enviarBotoes','enviarDocumento'].map(n=>[n,jest.fn(async args=>{await args.antesDeEnviar?.();if(n==='enviarDocumento')expect(arquivos).toHaveLength(1);return {wamid:`wamid-${Math.random()}`};})]));
+  const atender = async texto => {const mensagem=f.novaMensagem(texto);return responderMenuWhatsapp({registro:{conversa:f.conversa,mensagem,vinculo},texto,agora:AGORA,client:f.client,cloud,textoLivreDisponivel:false,servicosColeta:f.servicos,conferirJanela:async()=>({situacao:'ABERTA'}),resolverVinculo:async()=>vinculo});};
+  await atender('emitir nota');await atender(DOC);await atender('Descrição: Consultoria; valor: 950,00; competência: atual');
+  expect(issue).not.toHaveBeenCalled();
+  const codigo=f.tabelas.acaoPendenteWhatsapp[0].codigo;await atender(`CONFIRMAR ${codigo}`);
+  expect(issue).toHaveBeenCalledTimes(1);expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(arquivos[0].portalClientId).toBe(sessao.portalClientId);
+  await atender(`CONFIRMAR ${codigo}`);
+  expect(issue).toHaveBeenCalledTimes(1);expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
 });

@@ -32,6 +32,10 @@ export async function autorizarEmissaoDoCliente({ portalClientId, userId, client
   if (!pid || !uid) {
     return { ok: false, ...decidirEmissaoCliente({ ladoEscritorio: false, empresaLiberada: false, papelCliente: null }) };
   }
+  const usuario = await client.user.findUnique({ where: { id: uid }, select: { id: true, status: true } });
+  if (!usuario || usuario.id !== uid || usuario.status !== 'active') return {
+    ok: false, codigo: 'USUARIO_INATIVO', message: 'O acesso desta pessoa não está ativo.', correcao: 'O escritório precisa conferir o acesso antes de emitir.',
+  };
   const portal = await client.portalClient.findUnique({ where: { id: pid }, select: { id: true, emissaoClienteLiberada: true } });
   if (!portal) {
     return { ok: false, ...decidirEmissaoCliente({ ladoEscritorio: false, empresaLiberada: false, papelCliente: null }) };

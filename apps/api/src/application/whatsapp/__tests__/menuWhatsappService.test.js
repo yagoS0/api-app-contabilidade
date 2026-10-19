@@ -1,4 +1,11 @@
 import { enviarDocumentoGuiaWhatsapp } from '../EnvioDocumentoGuiaWhatsappService.js';
+// A auditoria usa somente fixtures; importar config não deve abrir .env local.
+jest.mock('dotenv', () => ({ config: jest.fn(() => ({})) }));
+jest.mock('../../nfse/danfse/danfseDaNotaDoPortal.js', () => ({
+  gerarDanfseDaNota: jest.fn(async () => ({
+    pdf: Buffer.from('%PDF-1.4\nfixture sintética'), nomeArquivo: 'danfse-fixture.pdf', marcaDagua: null,
+  })),
+}));
 jest.mock('../EnvioDocumentoGuiaWhatsappService.js', () => ({
   ...jest.requireActual('../EnvioDocumentoGuiaWhatsappService.js'),
   enviarDocumentoGuiaWhatsapp: jest.fn(async ({ registrarSaida, antesDeEnviar }) => registrarSaida({ antesDeEnviar })),
@@ -35,7 +42,17 @@ function banco({ cliente = false, permissoes = [], menuRecente = false, semPesso
   const conversa = registro({ cliente }).conversa;
   return {
     $transaction: jest.fn(async function(fn) { return fn(this); }),
-    appSetting: { findUnique: jest.fn(async()=>null) },
+    portalInvoice: { findFirst: jest.fn(async()=>null) },
+    portalClient: { findUnique: jest.fn(async()=>({companyId:'legacy'})) },
+    serviceInvoice: { findFirst: jest.fn(async()=>({id:'nfse-fixture',status:'issued',xml:'synthetic'})) },
+    appSetting: (() => { const rows = new Map(); return {
+      findUnique: jest.fn(async ({where}) => rows.get(where.key) || null),
+      create: jest.fn(async ({data}) => { if(rows.has(data.key)) throw Object.assign(new Error('unique'), {code:'P2002'}); rows.set(data.key, structuredClone(data)); return data; }),
+      upsert: jest.fn(async ({where,create}) => { if(!rows.has(where.key)) rows.set(where.key, structuredClone(create)); return rows.get(where.key); }),
+      updateMany: jest.fn(async ({where,data}) => { if(JSON.stringify(rows.get(where.key)?.value)!==JSON.stringify(where.value.equals)) return {count:0}; rows.set(where.key, {key:where.key,...structuredClone(data)}); return {count:1}; }),
+      update: jest.fn(async ({where,data}) => { rows.set(where.key, {key:where.key,...structuredClone(data)}); return data; }),
+    }; })(),
+    arquivoWhatsapp: { upsert: jest.fn(async ({create}) => create) },
     acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
     mensagemWhatsapp: {
       findFirst: jest.fn(async ({ where }) => where.turnoIaId ? null : menuRecente ? { id: "out-old" } : null),
@@ -49,6 +66,7 @@ function banco({ cliente = false, permissoes = [], menuRecente = false, semPesso
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
     contatoWhatsapp: { findMany: jest.fn(async () => cliente ? [{ id: "ct1", nome: "Julia", userId: semPessoa ? null : "u1", permissoesAssistente: permissoes }] : []) },
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     companyClientUser: { findUnique: jest.fn(async () => cliente && !semPessoa ? ({ role: "CLIENT_ADMIN", status: inativo ? "INACTIVE" : "ACTIVE" }) : null) },
   };
 }
@@ -191,6 +209,38 @@ describe("menus por perfil e permissão", () => {
 });
 
 describe("roteamento sem modelo", () => {
+  // Regressão de fronteira: a emissão é simulada; este caso NÃO é um percurso fiscal integrado.
+  // Deve permanecer vermelho até a entrega usar a ação persistida com reserva idempotente.
+  it("entrega o DANFSe da emissão confirmada pelo menu sem depender de nova pergunta ou IA", async () => {
+    const texto = 'CONFIRMAR A7K2';
+    const entrada = registro({ cliente: true, texto });
+    entrada.mensagem.tipo = 'text';
+    const client = banco({ cliente: true, permissoes: ['EMISSAO_NFSE', 'NOTAS_DANFSE'] });
+    const cloud = nuvem();
+    const acao = {
+      id: 'acao-emissao-fixture', conversaId: entrada.conversa.id, portalClientId: 'pc1', userId: 'u1',
+      tipo: 'EMITIR_NFSE', status: 'executada',
+      resultado: { status: 'issued', nfseId: 'nfse-fixture', numero: '71', indeterminado: false },
+    };
+    client.acaoPendenteWhatsapp.findUnique = jest.fn(async () => acao);
+    client.mensagemWhatsapp.findUnique = jest.fn(async () => entrada.mensagem);
+    const coleta = jest.fn(async () => ({
+      tratado: true, finalizada: true, filaHumana: false,
+      codigo: 'EXECUTADA', motivo: 'EXECUTADA', acaoId: acao.id,
+      texto: 'Nota emitida — número 71. Ela aparece no portal.', resultado: acao.resultado,
+    }));
+    const executar = jest.fn(async () => { throw new Error('Este percurso não deve chamar uma ferramenta de IA'); });
+    await responderMenuWhatsapp({ registro: entrada, texto, coleta, executar, agora: AGORA, client, cloud,
+      conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(coleta).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({
+      telefone: entrada.conversa.telefoneE164, nomeArquivo: 'danfse-fixture.pdf',
+      conteudo: expect.any(Buffer),
+    }));
+    expect(executar).not.toHaveBeenCalled();
+  });
+
   it("a intenção de emissão resolvida inicia a coleta e preserva a indicação do tomador", async () => {
     const texto = "emitir uma nota para a Lente";
     const entrada = registro({ cliente: true, texto });

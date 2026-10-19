@@ -602,3 +602,32 @@ test('retomada envia assunto posicional e resposta rápida nativa',async()=>{
  const payload=JSON.parse(fetchFalso.mock.calls[0][1].body);
  expect(payload.template.components).toEqual([{type:'body',parameters:[{type:'text',text:'o envio das guias'}]},{type:'button',sub_type:'quick_reply',index:'0',parameters:[{type:'payload',payload:'altan.client.human.v1'}]}]);
 });
+
+it.each([1, 2])('documento recusa guarda na etapa %s sem enviar mensagem', async etapa => {
+  const cliente = clienteCom([]); cliente.uploadDocumento = jest.fn(async () => 'media-sintetica'); cliente.chamar = jest.fn();
+  let chamadas = 0;
+  const antesDeEnviar = jest.fn(async () => { if (++chamadas === etapa) throw Object.assign(Error('revogado'), { codigo: 'ACESSO_REVOGADO' }); });
+  await expect(cliente.enviarDocumento({ telefone: '5521999998888', conteudo: Buffer.from('%PDF'), nomeArquivo: 'nota.pdf', antesDeEnviar })).rejects.toMatchObject({ message: 'revogado', codigo: 'ACESSO_REVOGADO', mensagemNaoEnviada: true, desfechoIndeterminado: false });
+  expect(cliente.uploadDocumento).toHaveBeenCalledTimes(etapa - 1); expect(cliente.chamar).not.toHaveBeenCalled();
+});
+it('documento mantém guarda antes/depois upload e mensagem por último', async () => {
+  const cliente = clienteCom([]); const ordem = [];
+  cliente.uploadDocumento = jest.fn(async () => { ordem.push('upload'); return 'media'; });
+  cliente.chamar = jest.fn(async () => { ordem.push('mensagem'); return { messages: [{ id: 'wamid-sintetico' }] }; });
+  await cliente.enviarDocumento({ telefone: '5521999998888', conteudo: Buffer.from('%PDF'), nomeArquivo: 'nota.pdf', antesDeEnviar: async () => ordem.push('guarda') });
+  expect(ordem).toEqual(['guarda', 'upload', 'guarda', 'mensagem']);
+});
+
+it.each(['timeout', 'sem-wamid'])('erro POST %s nunca recebe prova de mensagem não enviada', async caso => {
+  const cliente = clienteCom([]); cliente.uploadDocumento = jest.fn(async () => 'media');
+  cliente.chamar = jest.fn(async () => {
+    if (caso === 'timeout') throw Object.assign(Error('timeout'), { desfechoIndeterminado: true });
+    return {};
+  });
+  let falha;
+  try { await cliente.enviarDocumento({ telefone: '5521999998888', conteudo: Buffer.from('%PDF'), nomeArquivo: 'nota.pdf', antesDeEnviar: async () => {} }); }
+  catch (err) { falha = err; }
+  expect(cliente.chamar).toHaveBeenCalledTimes(1); expect(falha).toBeDefined();
+  expect(falha.mensagemNaoEnviada).not.toBe(true);
+  expect(falha.desfechoIndeterminado).not.toBe(false);
+});

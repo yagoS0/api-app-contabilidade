@@ -65,6 +65,7 @@ function clienteFalso({ acoes = [], guide = GUIA } = {}) {
     contatoWhatsapp: {
       findMany: jest.fn(async () => [{ userId: "u1", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] }]),
     },
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     companyClientUser: {
       findUnique: jest.fn(async () => ({ role: "CLIENT_ADMIN", status: "ACTIVE" })),
     },

@@ -75,6 +75,7 @@ function banco() {
       updateMany: jest.fn(async ({ where, data }) => { const rows = mensagens.filter(m => casa(mensagemExpandida(m), where)); rows.forEach(m => Object.assign(m, data)); return { count: rows.length }; }),
     },
     contatoWhatsapp: { findMany: jest.fn(async () => [{ id: "contato", nome: "Liz sintética", userId: "liz", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] }]) },
+    user: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, status: "active" })) },
     companyClientUser: { findUnique: jest.fn(async () => ({ role: "CLIENT_ADMIN", status: "ACTIVE" })) },
     acaoPendenteWhatsapp: {
       findFirst: jest.fn(async () => null), findUnique: jest.fn(async ({ where }) => ({ ...acoes.find(a => a.id === where.id) })),

@@ -1,3 +1,4 @@
+import { enviarDanfseWhatsapp, emissaoConfirmada } from '../whatsapp/EnvioDanfseWhatsappService.js';
 // Turnos duráveis, lease com posse, escopo verificado e guardas refeitas antes de cada efeito.
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { IA_HISTORICO_MENSAGENS, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO, log as logPadrao } from "../../config.js";
@@ -177,9 +178,20 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       const vinculoRbac = contato?.userId && conversa.portalClientId
         ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: conversa.portalClientId, userId: contato.userId } }, select: { role: true, status: true } })
         : null;
-      return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac });
+      const usuario = contato?.userId ? await client.user.findUnique({ where: { id: contato.userId }, select: { id: true, status: true } }) : null;
+      return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac, usuario });
     };
     const sessao = await carregarSessaoAtual();
+    const conferirDanfse = async () => {
+      await conferirPortao();
+      const atual = await carregarSessaoAtual();
+      if (!atual.ok || atual.userId !== sessao.userId || !temPermissaoAssistente(atual, PERMISSOES_ASSISTENTE.NOTAS_DANFSE)
+        || !papelAlcanca(atual.papel, PAPEL_MINIMO_LEITURA)) throw Object.assign(new Error('Acesso ao DANFSe revogado.'), { codigo: 'ACESSO_REVOGADO' });
+      if ((await janelaDaConversa(conversa.id, new Date())).situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error('Janela fechada.'), { codigo: 'FORA_DA_JANELA' });
+    };
+    const entregarDanfse = args => enviarDanfseWhatsapp({ conversa, mensagemEntradaId: mensagem.id, client, cloud, turnoIaId,
+      conferirAcesso: conferirDanfse, ...(deps.servicos?.gerarDanfseDaNota ? { gerar: deps.servicos.gerarDanfseDaNota } : {}), ...args });
+
     const assinaturaDaSessao = (s) => JSON.stringify({
       ok: Boolean(s?.ok),
       userId: s?.userId || null,
@@ -300,6 +312,13 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         // confirmada por outro, nem executada depois de o fio mudar de empresa. A reserva também
         // recusa qualquer entrada que tenha chegado entre a leitura acima e o UPDATE atômico.
         const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, userId: sessao.userId, contexto, confirmacao, agora, client, log, antesDeExecutar: conferirSessaoNaoAlterada, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
+        if (emissaoConfirmada(r.resultado)) {
+          try { await entregarDanfse({ notaId: r.resultado.nfseId, acaoId: pendente.id }); }
+          catch {
+            r.texto += ' A nota permanece emitida, mas a entrega do DANFSe precisa de conferência pela equipe. Não solicite outra emissão para obter o PDF.';
+            r.filaHumana = true;
+          }
+        }
         if (r.filaHumana) await encaminharParaEquipe();
         await dizer(r.texto, { autor: AUTOR.SISTEMA });
         return concluir({ feito: true, motivo: r.codigo || "EXECUTADA", texto: r.texto });
@@ -381,6 +400,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, revisaoDocumento, notaId, documentId, situacaoFiscal = false }) => {
         const chaveDocumento = `${guideId || ""}:${notaId || ""}:${documentId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
+        if (notaId) {
+          const tentativa = entregarDanfse({ notaId, documento: { conteudo, nomeArquivo }, autor: AUTOR.IA });
+          documentosTentados.set(chaveDocumento, tentativa);
+          const r = await tentativa;
+          houveSaida = true;
+          arquivosEnviados += 1;
+          return r;
+        }
         const ehImagem = String(mimeType || "").toLowerCase().startsWith("image/");
         const legendaDoEscopo = textoNoEscopo(legenda || nomeArquivo);
         const tentativa = enviarMensagemRastreada({ documentoGuia: guideId ? { guideId, revisao: revisaoDocumento, conteudo, nomeArquivo, mensagemEntradaId: mensagem.id } : null, conversa, tipo: ehImagem ? "image" : "document", corpo: legendaDoEscopo, autor: AUTOR.IA, turnoIaId, client,

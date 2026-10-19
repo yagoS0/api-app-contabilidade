@@ -13,7 +13,7 @@ function recuperar(acao) {
   if (acao.status === STATUS.CONFIRMADA || (acao.status === STATUS.EXECUTADA && !acao.respostaAoCliente?.trim())) {
     return resposta(INDETERMINADA, "RESULTADO_INDETERMINADO", acao.id, true, true);
   }
-  return resposta(acao.respostaAoCliente || FRASES.CANCELADA, "RESULTADO_RECUPERADO", acao.id, true, Boolean(acao.encaminharHumano));
+  return { ...resposta(acao.respostaAoCliente || FRASES.CANCELADA, acao.resultado?.erro === "NFSE_RESUMO_ALTERADO" ? "NFSE_RESUMO_ALTERADO" : "RESULTADO_RECUPERADO", acao.id, true, Boolean(acao.encaminharHumano)), resultado: acao.resultado };
 }
 
 /**
@@ -105,5 +105,5 @@ export async function processarConfirmacaoGuiada({ conversa, mensagem, sessao, t
     const atual = await lerAcao({ id: pendente.id });
     if (atual && [STATUS.CONFIRMADA, STATUS.EXECUTADA].includes(atual.status)) return recuperar(atual);
   }
-  return resposta(r.texto, r.codigo || (r.executou ? "EXECUTADA" : "EXECUCAO_RECUSADA"), pendente.id, true, Boolean(r.filaHumana));
+  return { ...resposta(r.texto, r.codigo || (r.executou ? "EXECUTADA" : "EXECUCAO_RECUSADA"), pendente.id, true, Boolean(r.filaHumana)), resultado: r.resultado };
 }

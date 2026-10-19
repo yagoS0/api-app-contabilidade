@@ -52,7 +52,7 @@ describe("sessaoDoContato — vínculo não é autorização", () => {
     expect(s.papel).toBeNull();
   });
   it("vínculo ativo → sessão com papel em caixa alta", () => {
-    const s = sessaoDoContato({ portalClientId: "pc-1", contato, vinculoRbac: { role: "client_admin", status: "ACTIVE" } });
+    const s = sessaoDoContato({ portalClientId: "pc-1", contato, usuario: { id: "u1", status: "active" }, vinculoRbac: { role: "client_admin", status: "ACTIVE" } });
     expect(s).toEqual({ ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", motivo: null, contatoNome: "Maria", permissoesAssistente: [] });
   });
   it("⚠ papelAlcanca usa a MESMA tabela de pesos da emissão", () => {
@@ -110,4 +110,8 @@ describe("confirmacaoPendente — o código e a leitura", () => {
     expect(rodapeDeConfirmacao("A7K2")).toMatch(/10 minutos/);
     expect(FRASES.CODIGO_ERRADO("A7K2")).toMatch(/A7K2/);
   });
+});
+
+it.each(['inactive', 'pending', 'rejected', null, undefined])('sessão recusa usuário global %s apesar de vínculo ativo', status => {
+  expect(sessaoDoContato({ portalClientId: 'p', contato: { userId: 'u' }, vinculoRbac: { status: 'ACTIVE', role: 'CLIENT_ADMIN' }, usuario: status == null ? null : { id: 'u', status } })).toMatchObject({ ok: false, motivo: 'USUARIO_INATIVO', papel: null });
 });
