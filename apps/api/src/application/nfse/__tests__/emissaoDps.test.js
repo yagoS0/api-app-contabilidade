@@ -1138,6 +1138,8 @@ describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
  it.each(['REGULAR', 'NO_DAS'])('mantém bloqueio também em produção sem criar nota: %s', async apuracaoIbsCbs => {
   const config = jest.requireMock('../../../config.js');
   const ambienteAnterior = config.NFSE_ENV;
+  const baseAnterior = config.NFSE_BASE_URL;
+  config.NFSE_BASE_URL = "https://sefin.nfse.gov.br/SefinNacional";
   config.NFSE_ENV = 'producao';
   try {
     montarCenario({ empresa: { regimeHistorico: [{ regime: 'SIMPLES', vigenciaInicio: new Date('2027-01-01'), vigenciaFim: null, apuracaoIbsCbs, comprovanteOpcaoIbsCbs: 'teste' }] } });
@@ -1148,6 +1150,7 @@ describe('opção de IBS/CBS vem do cadastro no mesmo emissor', () => {
     expect(postMock).not.toHaveBeenCalled();
   } finally {
     config.NFSE_ENV = ambienteAnterior;
+    config.NFSE_BASE_URL = baseAnterior;
   }
  });
  it.each(['REGULAR', 'NO_DAS'])('recusa contrato de 2027 antes da reserva: %s', apuracaoIbsCbs => {

@@ -1,3 +1,4 @@
+import { chaveCancelamento, conferirCancelamentoAnterior, reservarCancelamento } from './ControleCancelamentoWhatsapp.js';
 // AS AÇÕES PENDENTES — a ligação com o banco e a EXECUÇÃO do que o cliente confirmou.
 //
 // ⚠⚠ A IA NUNCA EXECUTA. Ela chama `criarPendencia` (via ferramenta); quem executa é
@@ -129,6 +130,7 @@ export async function criarPendencia({ conversaId, portalClientId, userId, tipo,
     } });
     if (incerta) throw Object.assign(new Error("A equipe precisa conferir a tentativa anterior antes de preparar outra emissão."), { code: "NFSE_RESULTADO_INDETERMINADO" });
   }
+  if (tipo === TIPOS.CANCELAR_NFSE) await conferirCancelamentoAnterior({ portalClientId, payload }, client);
   // Não escolher a empresa atual aqui. A versão pertence ao pedido recebido, mesmo que a
   // consulta fiscal tenha demorado e o responsável já tenha selecionado outra empresa.
   const conversa = await client.conversaWhatsapp?.findUnique?.({ where: { id: String(conversaId) } });
@@ -200,6 +202,24 @@ export async function confirmarEExecutar(args = {}) {
   const acao = await client.acaoPendenteWhatsapp.findUnique({ where: { id: String(args.acaoId) } });
   if (acao?.tipo === TIPOS.EMITIR_NFSE && !args.executores) return comControleEmissao({ acaoId: acao.id, client,
     executar: controleExecucao => confirmarEExecutarInterno({ ...args, controleExecucao }) });
+  if (acao?.tipo === TIPOS.CANCELAR_NFSE) {
+    if (acao.status === STATUS.EXECUTADA
+      && (!args.conversaId || String(args.conversaId) === acao.conversaId)
+      && (!args.portalClientId || String(args.portalClientId) === acao.portalClientId)
+      && (!args.userId || String(args.userId) === acao.userId)
+      && (!acao.atendimentoId || ((args.atendimentoId ?? args.contexto?.atendimentoId) === acao.atendimentoId
+        && (args.contextoVersao ?? args.contexto?.versao) === acao.contextoVersao))) {
+      return { executou: false, codigo: 'RESULTADO_RECUPERADO', texto: acao.respostaAoCliente || 'A equipe precisa conferir o resultado deste pedido.',
+        filaHumana: Boolean(acao.encaminharHumano), resultado: acao.resultado ?? null };
+    }
+    return comControleEmissao({ acaoId: chaveCancelamento(acao), client, executar: async controle => {
+      await conferirCancelamentoAnterior(acao, client, acao.id);
+      return confirmarEExecutarInterno({ ...args, antesDeExecutar: async () => {
+        await conferirControleEmissao(controle);
+        await args.antesDeExecutar?.();
+      } });
+    } });
+  }
   return confirmarEExecutarInterno(args);
 }
 
@@ -453,11 +473,16 @@ async function executarEmissao({ acao, log, client, antesDeExecutar, controleExe
   };
 }
 
-async function executarCancelamento({ acao, log, deps = DEPS_PADRAO }) {
+async function executarCancelamento({ acao, log, client, antesDeExecutar, deps = DEPS_PADRAO }) {
   const legacyCompanyId = await deps.resolveLegacyCompanyId(acao.portalClientId);
   if (!legacyCompanyId) return { texto: "Não encontrei o cadastro fiscal da empresa. O escritório vai conferir.", filaHumana: true, resultado: { erro: "company_not_found" } };
   const p = acao.payload || {};
+  const concluir = await reservarCancelamento(acao, client);
+  let iniciouChamada = false;
+  const finalizar = async desfecho => { await concluir(desfecho.resultado); return desfecho; };
   try {
+    await antesDeExecutar?.();
+    iniciouChamada = true;
     const r = await deps.NfseService.sendEvent({
       chaveAcesso: p.chaveAcesso,
       tipoEvento: "e101101",
@@ -474,18 +499,18 @@ async function executarCancelamento({ acao, log, deps = DEPS_PADRAO }) {
     } catch (err) {
       // O provedor já aceitou. Falha na nossa projeção não desfaz o ato fiscal nem autoriza retry.
       log?.error?.({ codigo: err?.code || "SINCRONIZACAO_CANCELAMENTO", notaId: p.notaId }, "assistente: cancelamento aceito, atualização local pendente");
-      return { texto: `O sistema nacional aceitou o cancelamento da nota ${p.numero || ""}. Não consegui atualizar o registro no portal; a equipe vai conferir. Não é preciso pedir o cancelamento novamente.`, filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } };
+      return finalizar({ texto: `O sistema nacional aceitou o cancelamento da nota ${p.numero || ""}. Não consegui atualizar o registro no portal; a equipe vai conferir. Não é preciso pedir o cancelamento novamente.`, filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } });
     }
-    return { texto: `Pedido de cancelamento da nota ${p.numero || ""} enviado e aceito. A nota passa a constar como cancelada assim que o sistema nacional processar.`, filaHumana: false, resultado: { status: r?.status || "accepted" } };
+    return finalizar({ texto: `Pedido de cancelamento da nota ${p.numero || ""} enviado e aceito. A nota passa a constar como cancelada assim que o sistema nacional processar.`, filaHumana: false, resultado: { status: r?.status || "accepted" } });
   } catch (err) {
     const camada = err?.camada || null;
-    if (camada === CAMADA.TRANSPORTE) {
-      return { texto: "Não consegui confirmar se o cancelamento foi registrado: a comunicação falhou no meio. NÃO peça de novo — o escritório vai conferir antes.", filaHumana: true, resultado: { camada, indeterminado: true, codigo: err?.codigo || err?.code || null } };
+    if (camada === CAMADA.TRANSPORTE || (iniciouChamada && err?.antesDoPost !== true && camada !== CAMADA.NOSSA && camada !== CAMADA.RECEITA)) {
+      return finalizar({ texto: "Não consegui confirmar se o cancelamento foi registrado: a comunicação falhou no meio. NÃO peça de novo — o escritório vai conferir antes.", filaHumana: true, resultado: { camada, indeterminado: true, codigo: err?.codigo || err?.code || null } });
     }
     if (camada === CAMADA.RECEITA) {
-      return { texto: `O sistema nacional RECUSOU o cancelamento: ${err?.message || err?.codigo || "motivo não informado"}. A nota continua válida.`, filaHumana: true, resultado: { camada, codigo: err?.codigo || null } };
+      return finalizar({ texto: `O sistema nacional RECUSOU o cancelamento: ${err?.message || err?.codigo || "motivo não informado"}. A nota continua válida.`, filaHumana: true, resultado: { camada, indeterminado: false, codigo: err?.codigo || null } });
     }
-    return { texto: `O cancelamento não saiu: ${err?.message || err?.code || "motivo não informado"}. Nada foi cancelado. O escritório vai conferir.`, filaHumana: true, resultado: { camada: camada || CAMADA.NOSSA, codigo: err?.code || err?.codigo || null } };
+    return finalizar({ texto: `O cancelamento não saiu: ${err?.message || err?.code || "motivo não informado"}. Nada foi cancelado. O escritório vai conferir.`, filaHumana: true, resultado: { camada: camada || CAMADA.NOSSA, indeterminado: false, codigo: err?.code || err?.codigo || null } });
   }
 }
 
