@@ -1,3 +1,4 @@
+import { validarAmbienteNfse } from './ambienteNfse.js';
 import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import { fingerprintConfirmacaoEmissao, exigirFingerprintConfirmado } from './fingerprintConfirmacaoEmissao.js';
 import { XMLValidator } from 'fast-xml-parser';
@@ -160,6 +161,11 @@ function signDpsXml(xml, certificadoAssinatura) {
   return sig.getSignedXml();
 }
 
+function validarConfiguracaoDoAmbiente() {
+  return validarAmbienteNfse({ ambiente: NFSE_ENV, baseUrl: NFSE_BASE_URL,
+    caminhos: [NFSE_PATH, NFSE_CONSULT_PATH, NFSE_DPS_PATH, NFSE_NFSE_PATH] });
+}
+
 function buildAxiosClient(certificadoTransporte) {
   if (!integrationReady()) {
     const err = new Error(
@@ -169,25 +175,7 @@ function buildAxiosClient(certificadoTransporte) {
     throw err;
   }
 
-  // Validação de base URL (precisa ter protocolo e não pode ser protocol-relative //)
-  if (!/^https?:\/\//i.test(NFSE_BASE_URL)) {
-    const err = new Error(
-      `NFSe: NFSE_BASE_URL inválida (${NFSE_BASE_URL || "vazia"}). Informe URL absoluta com https://`
-    );
-    err.code = "NFSE_INVALID_BASE_URL";
-    throw err;
-  }
-
-  // Sanidade de ambiente/baseURL para evitar enviar produção em host de homolog (ou vice-versa)
-  const baseUrlTrimmed = NFSE_BASE_URL.replace(/\/+$/, "").toLowerCase();
-  const isHomologHost = baseUrlTrimmed.includes("producaorestrita") || baseUrlTrimmed.includes("homolog");
-  if (NFSE_ENV === "producao" && isHomologHost) {
-    const err = new Error(
-      `NFSe: NFSE_ENV=producao, mas NFSE_BASE_URL aponta para ambiente de homolog (${NFSE_BASE_URL}). Ajuste NFSE_BASE_URL para o host de produção.`
-    );
-    err.code = "NFSE_ENV_HOST_MISMATCH";
-    throw err;
-  }
+  validarConfiguracaoDoAmbiente();
 
   // ⚠ O PFX do mTLS é o **certificado de TRANSPORTE** que `nfseCertificado.js` resolveu para ESTA
   // empresa. Antes era `fs.readFileSync(NFSE_CERT_PFX_PATH)` — um arquivo global lido do disco a
@@ -209,6 +197,7 @@ function buildAxiosClient(certificadoTransporte) {
   });
 
   const client = axios.create({
+    maxRedirects: 0, // Nunca encaminhar mTLS/documento para outro host ou ambiente.
     baseURL: NFSE_BASE_URL.replace(/\/+$/, ""),
     httpsAgent: agent,
     timeout: 15000,
@@ -1536,21 +1525,25 @@ export class NfseService {
     if (!integrationReady()) {
       const err = new Error("NFSe: integração não configurada");
       err.code = "NFSE_NOT_CONFIGURED";
+      err.antesDoPost = true;
       throw err;
     }
     if (!chaveAcesso) {
       const err = new Error("chave_required");
       err.code = "NFSE_CHAVE_REQUIRED";
+      err.antesDoPost = true;
       throw err;
     }
     if (!tipoEvento) {
       const err = new Error("tipo_evento_required");
       err.code = "NFSE_TIPO_EVENTO_REQUIRED";
+      err.antesDoPost = true;
       throw err;
     }
     if (!justificativa) {
       const err = new Error("justificativa_required");
       err.code = "NFSE_JUSTIFICATIVA_REQUIRED";
+      err.antesDoPost = true;
       throw err;
     }
 
@@ -1577,6 +1570,7 @@ export class NfseService {
       // motivo fiscal declarável —, mas o código distingue para o log e para a tela.
       err.code = String(cMotivo ?? "").trim() ? "NFSE_CMOTIVO_INVALIDO" : "NFSE_CMOTIVO_REQUIRED";
       err.motivosAceitos = motivosDoEvento(tipoEvento) || [];
+      err.antesDoPost = true;
       throw err;
     }
 
@@ -1584,6 +1578,7 @@ export class NfseService {
     if (!conferencia.ok) {
       const err = new Error(conferencia.mensagem);
       err.code = conferencia.codigo;
+      err.antesDoPost = true;
       throw err;
     }
     // ⚠⚠ ESTE CAMINHO ESTÁ ERRADO PARA A SUBSTITUIÇÃO — MARCADO, NÃO CONSERTADO (Fase 4).
@@ -1631,7 +1626,8 @@ export class NfseService {
       if (normalizeDigits(chaveSubstituta).length !== 50) {
         const err = new Error("chave_substituta_required");
         err.code = "NFSE_CHAVE_SUBSTITUTA_REQUIRED";
-        throw err;
+        err.antesDoPost = true;
+      throw err;
       }
     }
 
@@ -1647,7 +1643,8 @@ export class NfseService {
       if (!invoice?.companyId) {
         const err = new Error("nfse_not_found");
         err.code = "NFSE_NOT_FOUND";
-        throw err;
+        err.antesDoPost = true;
+      throw err;
       }
       empresaDoEvento = invoice.companyId;
     }
@@ -1655,17 +1652,27 @@ export class NfseService {
     if (!companyDoEvento) {
       const err = new Error("company_not_found");
       err.code = "COMPANY_NOT_FOUND";
+      err.antesDoPost = true;
       throw err;
     }
     const autor = cnpjAutor || companyDoEvento?.cnpj || null;
     if (!autor) {
       const err = new Error("cnpj_autor_required");
       err.code = "NFSE_CNPJ_AUTOR_REQUIRED";
+      err.antesDoPost = true;
       throw err;
     }
 
-    const certificados = await resolverCertificadosDaEmpresa(empresaDoEvento);
-    const client = buildAxiosClient(certificados.transporte);
+    validarConfiguracaoDoAmbiente();
+    let certificados, client;
+    try {
+      certificados = await resolverCertificadosDaEmpresa(empresaDoEvento);
+      client = buildAxiosClient(certificados.transporte);
+    } catch (err) {
+      // Somente configuração/certificado: ainda não houve chamada ao autorizador.
+      err.antesDoPost = true;
+      throw err;
+    }
     const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
     const requestUrl = `${client.defaults.baseURL}${nfsePath}/${encodeURIComponent(
       chaveAcesso
@@ -1791,6 +1798,7 @@ export class NfseService {
     // cadastrado no gov.br/nfse, então consultar com o certificado dele traz as notas DELE,
     // gravadas debaixo da empresa cliente. Aqui isso valia para os três caminhos, porque
     // `buildAxiosClient()` lia o PFX global.
+    validarConfiguracaoDoAmbiente();
     const certificados = await resolverCertificadosDaEmpresa(companyId);
     const client = buildAxiosClient(certificados.transporte);
     const idDps = filters.idDps;
@@ -1911,6 +1919,7 @@ export class NfseService {
     const company = await prisma.company.findUnique({ where: { id: companyId } });
     if (!company) throw Object.assign(new Error('Empresa não encontrada.'), { code: 'COMPANY_NOT_FOUND' });
     if (supervisao) await conferirControleEmissao(supervisao);
+    validarConfiguracaoDoAmbiente();
     const certificados = await resolverCertificadosDaEmpresa(companyId);
     const client = buildAxiosClient(certificados.transporte);
     if (supervisao) await conferirControleEmissao(supervisao);
@@ -1973,6 +1982,9 @@ export class NfseService {
         err.antesDoPost = true;
       throw err;
     }
+
+    // Configuração inválida não pode ler A1, reservar DPS nem consumir claim de retry.
+    validarConfiguracaoDoAmbiente();
 
     // ── 1. CERTIFICADO DA PRÓPRIA EMPRESA (E0718) ────────────────────────────────────────
     //

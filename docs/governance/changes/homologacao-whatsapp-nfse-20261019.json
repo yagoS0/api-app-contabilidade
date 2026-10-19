@@ -1,0 +1,82 @@
+{
+  "summary": "Preparação local isolada do ciclo WhatsApp NFS-e R$1/DANFSe/cancelamento, guarda antecipada de ambiente fiscal e proteção de cancelamento por empresa/chave contra repetição após incerteza.",
+  "risk": "high",
+  "baseCommit": "0fde3bb7a5cab8fa180d932cdc2d18fe592f3fba",
+  "status": "validated_locally_awaiting_ci",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "security",
+    "web"
+  ],
+  "operationalImpact": "Implementa R19/R20/R22/R29 existentes; nenhuma nova regra fiscal ou decisão de negócio. Guarda antes de certificado/reserva/claim, bloqueio de produção no harness e reserva persistente AppSetting por empresa/chave para cancelamento. Nenhuma migration, emissão/cancelamento externo, canal/webhook real, segredo ou produção alterados. Não liberar reservas aceitas/incertas por expiração ou limpeza. Delta R02/R22: aviso existente INTEGRACAO_DESLIGADA propagado ao resumo WhatsApp; sem alteração tributária, catálogo ou enquadramento.",
+  "tests": [
+    "API integral final api-cgtY58:618 suítes/10894 testes aprovados; única suíte/teste condicional PostgreSQL executada separadamente e aprovada. Total619 suítes/10895 testes.",
+    "Web integral web-wQKAiO:498 suítes/5567 testes aprovados. Portal integral portal-cliente-web-ymh5TW:99 suítes/1580 testes aprovados. Builds web e portal aprovados.",
+    "Governança:63 testes aprovados; check de estrutura/impacto e git diff --check aprovados.",
+    "Regressões dirigidas:324 testes fiscais/9 suítes;246 comunicação/8 suítes;75 webhook/identidade/4 suítes;29 contratos. Contagens sobrepostas à bateria integral, não somar como testes únicos.",
+    "Wrapper isolado:254 testes fiscais/6 suítes e regressões PostgreSQL. Ciclo final:8 etapas aprovadas, mesma nota R$1/XML/PDF/cancelamento, concorrência entre conversas, replay e incerteza; zero tentativas de rede externa.",
+    "PDF persistido inspecionado visualmente:uma página legível, tpAmb2, estado100, valorR$1 e SEM VALIDADE JURIDICA. SHA256 d8189539dfa49f9082274a642b172b7e29468aca77f346c6dde64c8d4224e242. Dados/assinatura sintéticos, sem validação tributária real.",
+    "Snapshot final a2d733abf268dbbebb75ee6e2cfa12a6689d4b8298d1e9c77fc9d268e4966cc5 inalterado;3355 arquivos. Cluster PostgreSQL descartável encerrado após0conexões; evidências preservadas.",
+    "Delta IBS/CBS:182 testes em7suítes de auditoria passaram; aviso facultativo reprovado P2, corrigido com85testes/2suítes aprovados. Apenas3arquivos alterados após bateria integral:preparação fiscal e seus2testes. Gates integrais anteriores correspondem snapshot a2d733; novo snapshot33b833 exige CI final."
+  ],
+  "reviewProcess": "Runtime 2026-10-19T09-09-51-899Z-a52dcec2 iniciou planner/executor. Executor teve EPERM no Node do sandbox. Principal executou testes autorizados; interrompeu gates desta rodada por P1 independente antes de aprovação, preservando journal e lock arquivado. Continuação nativa com autores implement_danfse/acceptance_harness, revisores audit_guides_cycle/audit_isolation_design e catálogo existente. Não declarar ready_for_human do runtime interrompido nem simular aprovação. Guarda tardia, repetição após cancelamento incerto e classificação de falha pré-POST retornaram aos autores.",
+  "reviewEvidence": [
+    {
+      "evidence": "Revisou guarda antes efeitos, reserva empresa/chave, recusa pré-POST, replay aceite/incerteza e contratos consumidores. Logs324/9,246/8,8PASS PG conferidos. Renovou delta ferramentasContratos:29/29, CAS e asserções preservadas, sem mudança produto. Gates finais concluídos: API618/10894 + condicionalPG1; web498/5567; portal99/1580; builds; governança63. Atualização factual pelo Principal; revisor sistêmico confirmou encerramento aprovado após ler manifestos finais e snapshot.",
+      "role": "fiscal,backend,communication,data,security",
+      "reviewer": "audit_guides_cycle",
+      "verdict": "approved_locally"
+    },
+    {
+      "evidence": "Conferiu isolamento, fontes, docs, env homolog preservado, sentinelas e PDF. Delta fixture coerente(tpAmb2,ISSsintético0.05,cStat100) aprovado. Sem UI/layout de produto alterado. Limites externos explícitos; Gates API/web finais posteriormente concluídos. Gates finais concluídos: API618/10894 + condicionalPG1; web498/5567; portal99/1580; builds; governança63. Atualização factual pelo Principal; revisor sistêmico confirmou encerramento aprovado após ler manifestos finais e snapshot.",
+      "role": "system,ui,ux",
+      "reviewer": "audit_isolation_design",
+      "verdict": "approved_locally"
+    },
+    {
+      "reviewer": "audit_guides_cycle",
+      "role": "fiscal,communication",
+      "verdict": "approved_locally",
+      "evidence": "Delta IBS/CBS snapshot33b833: revisão independente dos3arquivos e log85testes/2suítes aprovada. P2 encerrado; obrigatoriedade e tributação preservadas."
+    },
+    {
+      "reviewer": "audit_isolation_design",
+      "role": "system,ui,ux",
+      "verdict": "approved_locally",
+      "evidence": "Delta IBS/CBS snapshot33b833 e log85/2 conferidos; aprovado sem novo bloqueador sistêmico. Gates amplos anteriores preservados, CI final obrigatório. Rollout/rollback e limites externos mantidos."
+    }
+  ],
+  "rollback": "Preservar XML, documentos, mensagens, ações e reservas AppSetting. Drenar instâncias novas antes de reversão. Código anterior não honra as novas reservas de cancelamento: não reativar cancelamento legado enquanto houver reservas aceitas/incertas sem avaliação supervisionada. Preferir correção progressiva que preserve travas. Nenhuma migration ou alteração de flags.",
+  "humanDecisions": [],
+  "authorization": "19/10/2026: usuário autorizou abrir PR, integrar main e publicar em produção após CI e revisões, com conferência posterior sem emitir notas reais. Acrescentou validação IBS/CBS/NBS. Não autoriza alterar enquadramento de empresa, enviar WhatsApp ou realizar ato fiscal como teste.",
+  "limitations": [
+    "Não valida certificado, assinatura XML aceita, autorizador fiscal, Meta, IA real nem recebimento no celular.",
+    "Webhook/HMAC e chat guiado são coberturas separadas do ciclo PostgreSQL, não uma única conversa externa ponta a ponta.",
+    "Não foi provisionada stack externa nem canal Meta; produção permanece inalterada.",
+    "Cancelamento incerto exige conferência supervisionada; não foi criada interface de conciliação ou desbloqueio automático neste incremento."
+  ],
+  "sourceFingerprint": "33b833395e36075f0e273dd0ef3a4fef9879737aec81deab6e95cc07bcf0b342",
+  "fingerprintScope": "3355 arquivos apps/packages/scripts-governance/manifests. Snapshot ignorado homologacao-final-source-snapshot.json; renovar após fonte alterada.",
+  "historicalValidationRuns": [
+    "Primeira rodada:227 testes focados passaram, mas revisão reprovou guarda tardia; não considerada aprovada.",
+    "Guarda fiscal final:324 testes/9 suítes; comunicação/cancelamento:246 testes/8 suítes. Logs nfse-ambiente-regressoes-final.log e cancelamento-r20-regressoes-final.log.",
+    "Webhook/identidade:75 testes/4 suítes, relatório homologacao-ingress.json.",
+    "Wrapper isolado:254 testes/6 suítes fiscais, regressões PostgreSQL de emissão/DANFSe e ciclo8etapas, exit0. Depois fixture em memória ajustada para tpAmb2; ciclo8etapas repetido com sucesso e PDF SEM VALIDADE JURIDICA. Zero tentativa de rede externa.",
+    "Ciclo reproduziu novo cancelamento após resultado incerto antes da correção; passou depois. Duas ações/conversas da mesma chave produzem um único evento simulado. Replays de emissão, entrega e cancelamento não duplicam efeitos.",
+    "Portal:99 suítes/1580 testes aprovados; builds web/portal aprovados. API/web gerais em andamento.",
+    "Governança:63 testes aprovados; check de estrutura/impacto aprovado. PostgreSQL condicional onboarding:1 teste aprovado em397ms. PDF sintético inspecionado visualmente após coerência da fixture(tpAmb2,cStat100,ISS0.05).",
+    "API geral api-VARCU6 reprovada no lote5:1 teste ferramentasContratos sem client de reserva. Correção somente da fixture, preservando asserções e exercitando CAS, em revisão. Web web-58OKOf interrompido por contençãoRAM; não aprovado, repetição sequencial em andamento.",
+    "Fixture ferramentasContratos corrigida sem alteração de produção,29testes aprovados e revisão independente. Cluster PostgreSQL descartável encerrado após conferir0conexões; evidências/fixtures preservadas.",
+    "Web sequencial completo aprovado:498 suítes/5567 testes, evidence web-wQKAiO. Portal99/1580 e builds aprovados. API integral final em execução, sem outras fontes alteradas.",
+    "API final integral api-cgtY58:619 suítes descobertas,618 suítes/10894 testes aprovados,1 suíte/1 teste condicional PostgreSQL executado separadamente e aprovado. Exit0. Snapshot final a2d733abf268dbbebb75ee6e2cfa12a6689d4b8298d1e9c77fc9d268e4966cc5 inalterado."
+  ]
+}

@@ -8,6 +8,7 @@ import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { TIPOS } from "../confirmacaoPendente.js";
 import { preparacaoEmissaoFalsa } from "../__fixtures__/preparacaoEmissao.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
+import { prepararDadosFiscaisDoCliente } from "../../nfse/preparacaoFiscalDoCliente.js";
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
@@ -231,6 +232,24 @@ describe("documentos — só dentro da janela, e sempre pelo escopo", () => {
 
 describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
   const emissao = { tomadorDoc: "12.345.678/0001-90", tomadorNome: "ACME", tomadorEmail: null, descricao: "Consultoria", valor: 1500.5, competencia: "2026-09", aliquota: null, issRetido: null, pTotTribSN: null, endereco: null };
+  it('resumo conserva o aviso real de IBS/CBS configurado com integração desligada', async () => {
+    const perfil = { id: 'p1', nome: 'Consultoria', codigoServicoNacional: '170601', ibscbsCIndOp: '100301' };
+    const clientFiscal = {
+      portalClient: { findUnique: async () => ({ id: 'pc-1', companyId: 'legacy-1' }) },
+      company: { findUnique: async () => ({ id: 'legacy-1', regimeHistorico: [{ regime: 'LUCRO_PRESUMIDO', vigenciaInicio: new Date('2020-01-01') }], codigoMunicipioIbge: '3304557', codigoServicoNacional: '170601', pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 5 }) },
+    };
+    const c = ctx({ servicos: servicosFalsos({
+      listarPerfisEmissao: async () => [perfil],
+      prepararDadosFiscaisDoCliente: input => prepararDadosFiscaisDoCliente(input, {
+        client: clientFiscal, perfisHabilitados: true, ibscbsLigado: false,
+        resolverPerfil: async () => ({ temPerfil: true, perfisAtivos: 1, perfil }),
+      }),
+    }) });
+    const r = await executarFerramenta('preparar_emissao', emissao, c);
+    expect(r).toMatchObject({ ok: true, pendenciaCriada: true });
+    expect(c.servicos.criarPendencia.mock.calls[0][0].corpo).toMatch(/IBS\/CBS está configurado.*não será informado nesta nota/);
+    expect(r.textoDeConfirmacao).toMatch(/IBS\/CBS está configurado.*não será informado nesta nota/);
+  });
   it("exige escolha entre perfis e leva o escolhido à confirmação", async () => {
     const perfis = [{ id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901" }, { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101" }];
     const c = ctx({ servicos: servicosFalsos({ listarPerfisEmissao: jest.fn(async () => perfis) }) });

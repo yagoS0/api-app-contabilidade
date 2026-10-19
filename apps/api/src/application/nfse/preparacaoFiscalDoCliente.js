@@ -104,6 +104,9 @@ export async function prepararDadosFiscaisDoCliente({ portalClientId, perfilId =
       competencia: { fonte: comp.assumida ? "DATA_DO_ATENDIMENTO" : "PEDIDO" },
     };
     const avisos = [];
+    if (contextoFiscal.ibscbs.motivo === 'INTEGRACAO_DESLIGADA') {
+      avisos.push('IBS/CBS está configurado no perfil, mas a integração está desabilitada e não será informado nesta nota. Confira com o escritório antes de confirmar.');
+    }
     let percentualSimples = null;
     let cargaTributaria = null;
     if (regime.exigePTotTribSN) {

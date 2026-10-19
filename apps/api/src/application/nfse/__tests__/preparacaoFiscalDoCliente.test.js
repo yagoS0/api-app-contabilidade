@@ -6,6 +6,15 @@ import { escolherAliquotaEfetiva as escolherNoPortal } from "../../../../../port
 
 const pedido = { portalClientId: "portal-teste", competencia: "2026-09", servico: { descricao: "Consultoria", valorServicos: 1000, issRetido: false } };
 
+test.each([false, true])('IBS/CBS facultativo configurado: aviso corresponde à integração ligada=%s', async ibscbsLigado => {
+  const perfil = { id: 'p1', codigoServicoNacional: '170601', codigoNbs: '1.1502.10.00',
+    ibscbsCIndOp: '100301', ibscbsCClassTrib: '200052', ibscbsCst: '200' };
+  const r = await prepararDadosFiscaisDoCliente(pedido, { ...contexto({ perfil }), perfisHabilitados: true, ibscbsLigado });
+  expect(r).toMatchObject({ ok: true, contextoFiscal: { obrigacao: { estado: 'FACULTATIVO' }, ibscbs: { informar: ibscbsLigado } } });
+  if (ibscbsLigado) expect(r.avisos).toEqual([]);
+  else expect(r.avisos).toEqual([expect.stringMatching(/IBS\/CBS está configurado.*não será informado nesta nota/)]);
+});
+
 test('preparação também bloqueia obrigação vigente antes de pedir dados ao cliente', async () => {
   const deps = { ...contexto({ perfil: { id: 'p1', codigoServicoNacional: '170601', categoriaObrigacaoIbscbs: 'SERVICO_ISS' } }), perfisHabilitados: true, ibscbsLigado: false };
   const r = await prepararDadosFiscaisDoCliente({ ...pedido, competencia: '2026-10' }, deps);

@@ -31,9 +31,11 @@ const GUIA = {
 /** Banco em memória: só o que estes caminhos tocam. */
 function clienteFalso({ acoes = [], guide = GUIA } = {}) {
   const tabela = new Map(acoes.map((a) => [a.id, { ...a }]));
+  const settings = new Map();
   const casa = (a, where) => (
-    (!where.id || a.id === where.id)
+    (!where.id || (typeof where.id === "object" ? a.id !== where.id.not : a.id === where.id))
     && (!where.OR || where.OR.some(w => casa(a, w)))
+    && (!where.payload || where.payload.path.reduce((v,k)=>v?.[k],a.payload) === where.payload.equals)
     && (!where.tipo || a.tipo === where.tipo)
     && (!where.resultado || (where.resultado.path ? where.resultado.path.reduce((v, k) => v?.[k], a.resultado) === where.resultado.equals : where.resultado.equals === Prisma.DbNull ? a.resultado == null : JSON.stringify(a.resultado) === JSON.stringify(where.resultado.equals)))
     && (!where.status || a.status === where.status)
@@ -44,6 +46,12 @@ function clienteFalso({ acoes = [], guide = GUIA } = {}) {
   return {
     $transaction: async fn => fn({ $queryRaw: async () => [{ acquired: true, alive: 1 }] }),
     _tabela: tabela,
+    _settings: settings,
+    appSetting: {
+      findUnique: jest.fn(async ({where})=>structuredClone(settings.get(where.key)||null)),
+      create: jest.fn(async ({data})=>{if(settings.has(data.key))throw Object.assign(new Error('unique'),{code:'P2002'});settings.set(data.key,structuredClone(data));return data;}),
+      updateMany: jest.fn(async ({where,data})=>{if(JSON.stringify(settings.get(where.key)?.value)!==JSON.stringify(where.value.equals))return {count:0};settings.set(where.key,{key:where.key,...structuredClone(data)});return {count:1};}),
+    },
     acaoPendenteWhatsapp: {
       updateMany: jest.fn(async ({ where, data }) => {
         let count = 0;
@@ -345,4 +353,54 @@ it.each([
   const nova = criarPendencia({ conversaId: 'cv1', portalClientId: 'pc-1', tipo: TIPOS.EMITIR_NFSE, client });
   if (incerto) await expect(nova).rejects.toMatchObject({ code: 'NFSE_RESULTADO_INDETERMINADO' });
   else await expect(nova).resolves.toHaveProperty('acao.id');
+});
+
+
+describe('cancelamento incerto por empresa e chave fiscal', () => {
+ const payload = {chaveAcesso:'5'.repeat(50),cMotivo:'2',justificativa:'Serviço não prestado ao cliente'};
+ const pedido = over => pendencia({tipo:TIPOS.CANCELAR_NFSE,payload,...over});
+ const executar = (client,deps,acaoId='ap1',conversaId='cv1') => confirmarEExecutar({acaoId,conversaId,portalClientId:'pc-1',agora:AGORA,client,log:silencio,deps});
+ it('timeout bloqueia novo pedido da mesma nota inclusive outro fio; outra nota/empresa continua independente',async()=>{
+   const client=clienteFalso({acoes:[pedido()]});const deps=depsFalsos();
+   deps.NfseService.sendEvent.mockRejectedValue(Object.assign(new Error('timeout'),{camada:'TRANSPORTE'}));
+   expect((await executar(client,deps)).resultado.indeterminado).toBe(true);
+   for(const conversaId of ['cv1','outro-fio'])await expect(criarPendencia({conversaId,portalClientId:'pc-1',tipo:TIPOS.CANCELAR_NFSE,payload,client})).rejects.toMatchObject({code:'NFSE_RESULTADO_INDETERMINADO'});
+   await expect(criarPendencia({conversaId:'outro-fio',portalClientId:'pc-1',tipo:TIPOS.CANCELAR_NFSE,payload:{...payload,chaveAcesso:'6'.repeat(50)},client})).resolves.toHaveProperty('acao.id');
+   await expect(criarPendencia({conversaId:'outro-fio',portalClientId:'pc-2',tipo:TIPOS.CANCELAR_NFSE,payload,client})).resolves.toHaveProperty('acao.id');
+   expect(deps.NfseService.sendEvent).toHaveBeenCalledTimes(1);
+ });
+ it('interrupção após reserva conserva bloqueio durável mesmo sem resultado da ação',async()=>{
+   const client=clienteFalso({acoes:[pedido()]});const deps=depsFalsos();
+   deps.NfseService.sendEvent.mockRejectedValue(new Error('processo interrompido'));
+   client.appSetting.updateMany.mockRejectedValue(new Error('persistência indisponível'));
+   client.acaoPendenteWhatsapp.update.mockRejectedValue(new Error('processo encerrado'));
+   await expect(executar(client,deps)).rejects.toThrow();
+   await expect(criarPendencia({conversaId:'outro',portalClientId:'pc-1',tipo:TIPOS.CANCELAR_NFSE,payload,client})).rejects.toMatchObject({code:'NFSE_RESULTADO_INDETERMINADO'});
+   expect([...client._settings.values()][0].value.status).toBe('RESERVADO');
+ });
+ it('recusa anterior ao POST permite preparar outro cancelamento após correção',async()=>{
+   const client=clienteFalso({acoes:[pedido()]});const deps=depsFalsos();
+   deps.NfseService.sendEvent.mockRejectedValue(Object.assign(new Error('config inválida'),{code:'NFSE_INVALID_ENV',antesDoPost:true}));
+   expect((await executar(client,deps)).resultado.indeterminado).toBe(false);
+   await expect(criarPendencia({conversaId:'cv1',portalClientId:'pc-1',tipo:TIPOS.CANCELAR_NFSE,payload,client})).resolves.toHaveProperty('acao.id');
+ });
+ it('ações confirmadas legadas sem reserva também bloqueiam nova criação',async()=>{
+   const client=clienteFalso({acoes:[pedido({status:STATUS.CONFIRMADA})]});
+   await expect(criarPendencia({conversaId:'outro',portalClientId:'pc-1',tipo:TIPOS.CANCELAR_NFSE,payload,client})).rejects.toMatchObject({code:'NFSE_RESULTADO_INDETERMINADO'});
+ });
+ it('nova ação já preparada antes do timeout não envia cancelamento novamente',async()=>{
+   const client=clienteFalso({acoes:[pedido(),pedido({id:'ap2',conversaId:'cv2'})]});const deps=depsFalsos();
+   deps.NfseService.sendEvent.mockRejectedValue(Object.assign(new Error('timeout'),{camada:'TRANSPORTE'}));
+   await executar(client,deps);
+   await expect(executar(client,deps,'ap2','cv2')).rejects.toMatchObject({code:'NFSE_RESULTADO_INDETERMINADO'});
+   expect(deps.NfseService.sendEvent).toHaveBeenCalledTimes(1);
+ });
+});
+
+it('replay de cancelamento aceito recupera resposta persistida sem anunciar incerteza ou reenviar',async()=>{
+ const client=clienteFalso({acoes:[pendencia({tipo:TIPOS.CANCELAR_NFSE,payload:{chaveAcesso:'7'.repeat(50),cMotivo:'2',justificativa:'Serviço não prestado'}})]});
+ const deps=depsFalsos();const args={acaoId:'ap1',conversaId:'cv1',portalClientId:'pc-1',agora:AGORA,client,log:silencio,deps};
+ const primeiro=await confirmarEExecutar(args);const replay=await confirmarEExecutar(args);
+ expect(replay).toMatchObject({executou:false,codigo:'RESULTADO_RECUPERADO',texto:primeiro.texto,resultado:{status:'accepted'}});
+ expect(deps.NfseService.sendEvent).toHaveBeenCalledTimes(1);
 });

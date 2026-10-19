@@ -224,15 +224,36 @@ describe("documentos: seleção não para nos primeiros 30 arquivos", () => {
 
 describe("atos confirmados: resultado fiscal aceito sobrevive à falha local", () => {
   it("cancelamento aceito seguido de erro ao atualizar banco não afirma que nada foi cancelado", async () => {
+    const reservas = new Map();
+    const client = {
+      acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
+      appSetting: {
+        findUnique: jest.fn(async ({ where }) => reservas.get(where.key) ?? null),
+        create: jest.fn(async ({ data }) => {
+          if (reservas.has(data.key)) throw Object.assign(new Error("Reserva existente"), { code: "P2002" });
+          reservas.set(data.key, structuredClone(data));
+          return data;
+        }),
+        updateMany: jest.fn(async ({ where, data }) => {
+          const atual = reservas.get(where.key);
+          if (!atual || JSON.stringify(atual.value) !== JSON.stringify(where.value.equals)) return { count: 0 };
+          reservas.set(where.key, { ...atual, ...structuredClone(data) });
+          return { count: 1 };
+        }),
+      },
+    };
     const sendEvent = jest.fn(async () => ({ status: "accepted" }));
     const r = await EXECUTORES.CANCELAR_NFSE({
-      acao: { portalClientId: "pc-1", payload: { chaveAcesso: NOTA.chaveAcesso, numero: "8" } }, log: silencio,
+      acao: { id: "cancelamento-1", portalClientId: "pc-1", payload: { chaveAcesso: NOTA.chaveAcesso, numero: "8" } }, log: silencio, client,
       deps: { resolveLegacyCompanyId: async () => "legacy-1", NfseService: { sendEvent }, NfseRepository: { updateByChaveAcesso: async () => { throw new Error("banco indisponível"); } } },
     });
     expect(sendEvent).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({ filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } });
     expect(r.texto).toMatch(/aceit/i);
     expect(r.texto).not.toMatch(/nada foi cancelado|cancelamento não saiu/i);
+    expect([...reservas.values()]).toEqual([expect.objectContaining({ value: expect.objectContaining({
+      acaoId: "cancelamento-1", status: "ACEITO", resultado: expect.objectContaining({ status: "accepted", sincronizacaoPendente: true }),
+    }) })]);
   });
 
   it("erro não classificado da emissão não afirma que a nota foi recusada antes de sair", async () => {
