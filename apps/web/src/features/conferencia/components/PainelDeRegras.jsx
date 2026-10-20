@@ -11,9 +11,10 @@
 // ⚠ A REGRA NÃO MORA AQUI. Quem valida é `lib/regraDoFornecedor.js` (espelho declarado do servidor),
 // e quem decide de verdade é `application/declarados/RegraService.js` — um `curl` bate lá.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import {
   comportamentoDaRegra,
   COMPORTAMENTO,
@@ -56,7 +57,7 @@ function mensagemDoErro(e) {
   return e?.body?.message || e?.message || "Não foi possível concluir.";
 }
 
-export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) {
+export function PainelDeRegras({ companyId, contas = [], podeEscrever = true, revisao = 0, aoAlterar }) {
   const rotuloConta = codigo => {
     if (!codigo) return "Caixa padrão";
     const normalizar = v => String(v || "").replace(/\D/g, "");
@@ -69,24 +70,53 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   // para `FormularioDeRegra`) tem o dele. Dois atos, dois ocupados: um não pode travar o outro.
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
+  const [editando, setEditando] = useState(null);
+  const [revogando, setRevogando] = useState(null);
+  const [motivoRevogacao, setMotivoRevogacao] = useState("");
+  const pedidoAtual = useRef(0);
 
   const carregar = useCallback(() => {
+    const pedido = ++pedidoAtual.current;
     if (!companyId || typeof regrasApi.getConferenciaRegras !== "function") {
       setEstado({ carregando: false, regras: [], indisponivel: true, erro: null });
       return;
     }
     setEstado((e) => ({ ...e, carregando: true }));
     Promise.resolve(regrasApi.getConferenciaRegras(companyId))
-      .then((r) => setEstado({
+      .then((r) => {
+        if (pedido !== pedidoAtual.current) return;
+        if (r?.ok === false || !Array.isArray(r?.regras)) throw new Error('Não foi possível confirmar as regras.');
+        setEstado({
         carregando: false,
         regras: Array.isArray(r?.regras) ? r.regras : [],
         indisponivel: r?.indisponivel === true,
         erro: null,
-      }))
-      .catch((e) => setEstado({ carregando: false, regras: [], indisponivel: false, erro: e }));
+        });
+      })
+      .catch((e) => {
+        if (pedido === pedidoAtual.current) setEstado({ carregando: false, regras: [], indisponivel: false, erro: e });
+      });
   }, [companyId]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  const invalidarPedido = useCallback(() => { pedidoAtual.current += 1; }, []);
+  useEffect(() => {
+    setEditando(null);
+    carregar();
+    return invalidarPedido;
+  }, [carregar, revisao, invalidarPedido]);
+
+  async function revogar(regra) {
+    if (enviando) return;
+    const motivo = motivoRevogacao;
+    if (!motivo?.trim()) return;
+    setEnviando(true); setAviso(null);
+    try {
+      const r = await regrasApi.patchConferenciaRegra(companyId, regra.id, { acao: "revogar", motivo, anterior: regra });
+      if (r?.ok !== true || !r.regra?.revogadaEm) throw new Error("Revogação sem confirmação. Atualize antes de repetir.");
+      setRevogando(null); setMotivoRevogacao(""); carregar(); aoAlterar?.();
+    } catch (e) { setAviso(mensagemDoErro(e)); }
+    finally { setEnviando(false); }
+  }
 
   async function alternarAutomatico(regra) {
     const ligando = regra.lancaSozinha !== true;
@@ -120,7 +150,8 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   }
 
   // ⚠ O painel some sozinho quando não há regra nem porta — mesmo desenho dos outros desta tela.
-  if (estado.carregando) return null;
+  if (estado.carregando) return <p role="status">Carregando regras…</p>;
+  if (estado.erro) return <p role="alert">{mensagemDoErro(estado.erro)} <Button variant="secondary" onClick={carregar}>Tentar novamente</Button></p>;
   if (estado.indisponivel && !estado.regras.length) {
     return (
       <div style={{ ...card, color: "var(--text-muted)" }}>
@@ -161,6 +192,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
             aoSalvar={() => {
               setAbrindo(false);
               carregar();
+              aoAlterar?.();
             }}
           />
         </div>
@@ -211,6 +243,10 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
                 >
                   {r.lancaSozinha ? "Parar de lançar sozinha" : "Lançar sozinha"}
                 </Button>
+                {podeEscrever && <><Button size="sm" variant="secondary" disabled={enviando} onClick={() => setEditando(r)}>Editar</Button>
+                  <Button size="sm" variant="secondary" disabled={enviando} onClick={() => { setMotivoRevogacao(""); setRevogando(r); }}>Revogar</Button></>}
+                {editando?.id === r.id && <FormularioDeRegra key={r.id} companyId={companyId} contas={contas} iniciais={r} regra={r}
+                  aoCancelar={() => setEditando(null)} aoSalvar={() => { setEditando(null); carregar(); aoAlterar?.(); }} />}
               </li>
             );
           })}
@@ -220,6 +256,13 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
           Nenhuma regra nesta empresa. Cada despesa continua esperando o seu clique.
         </p>
       )}
+      {revogando && <Modal titulo="Revogar regra?" tamanho="sm" ocupado={enviando} aoFechar={() => setRevogando(null)}
+        rodape={<><Button variant="secondary" disabled={enviando} onClick={() => setRevogando(null)}>Cancelar</Button>
+          <Button variant="danger" disabled={enviando || !motivoRevogacao.trim()} onClick={() => revogar(revogando)}>Revogar regra</Button></>}>
+        <p>Impede novas aplicações desta regra e preserva os lançamentos e o histórico. O aprendizado pode sugerir outra regra, sem habilitar lançamento automático.</p>
+        <label>Motivo<textarea rows={3} maxLength={500} value={motivoRevogacao} disabled={enviando} onChange={e => setMotivoRevogacao(e.target.value)} /></label>
+        {aviso && <p role="alert">{aviso}</p>}
+      </Modal>}
     </div>
   );
 }

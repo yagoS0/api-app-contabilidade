@@ -23,6 +23,7 @@ import {
   descartar,
   elegibilidadeDescarte,
   desistir,
+  retomarAtendimento,
   listar,
   obter,
 } from "../../application/onboarding/OnboardingService.js";
@@ -78,7 +79,7 @@ export function createOnboardingsRouter({ log } = {}) {
 
   const comercial = criarServicoComercial();
   router.use("/onboardings/:id", async (req, res, next) => {
-    if ((req.method === "DELETE" && req.path === "/") || /\/(convert|desistir|analises)(\/|$)/.test(req.path)) {
+    if ((req.method === "DELETE" && req.path === "/") || /\/(convert|desistir|retomar|analises)(\/|$)/.test(req.path)) {
       if (!somenteAdminOuContador(req, res)) return;
     }
     try { await exigirEscopo(req.params.id, req.auth?.user); next(); }
@@ -224,6 +225,16 @@ export function createOnboardingsRouter({ log } = {}) {
     } catch (err) {
       return falhar(res, err, { rota: "desistir", id: req.params.id });
     }
+  });
+
+  router.post("/onboardings/:id/retomar", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try {
+      const onboarding = await retomarAtendimento(req.params.id, {
+        versao: req.body?.versao, motivo: req.body?.motivo, user: req.auth.user,
+      });
+      return res.json({ ok: true, onboarding });
+    } catch (err) { return falhar(res, err, { rota: "retomar", id: req.params.id }); }
   });
 
   // ── Descarte de rascunho ─────────────────────────────────────────────────────

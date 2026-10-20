@@ -229,11 +229,11 @@ export async function aplicarTransicao({
   agora,
   client = prisma,
 }) {
-  const declarado = await acharDeclarado(client, portalClientId, declaradoId);
+  let declarado = await acharDeclarado(client, portalClientId, declaradoId);
 
   // 1. A REGRA PURA decide. ⚠ Ela vem primeiro: não faz sentido consultar fechamento de mês para
   //    uma transição que o estado já recusa.
-  const veredito = podeTransitar(declarado, transicao, dados);
+  let veredito = podeTransitar(declarado, transicao, dados);
   if (!veredito.ok) recusar(veredito.motivo, veredito.frase);
 
   const vaiContabilizar = veredito.estado === ESTADO.CONTABILIZADO;
@@ -263,7 +263,7 @@ export async function aplicarTransicao({
     }
   }
 
-  const camposComuns = {
+  let camposComuns = {
     ...veredito.campos,
     estado: veredito.estado,
     decididoPor: String(usuarioId || ""),
@@ -272,13 +272,28 @@ export async function aplicarTransicao({
 
   // 3. O caminho simples: nada a criar nem a apagar no razão.
   if (!criaLancamento && !vaiDesfazer && !vaiCorrigirData) {
-    return client.lancamentoDeclarado.update({ where: { id: declarado.id }, data: camposComuns });
+    return client.lancamentoDeclarado.update({ where: { id: declarado.id, portalClientId, estado: declarado.estado, accountingEntryId: declarado.accountingEntryId }, data: camposComuns });
   }
 
   // 4. ⚠⚠ O caminho transacional.
   const plano = criaLancamento ? await carregarPlano(portalClientId, client) : null;
 
   const atualizado = await client.$transaction(async (tx) => {
+    if (criaLancamento && usuarioId === "regra_automatica") {
+      await tx.$queryRaw`SELECT id FROM regras_contabilizacao WHERE id = ${dados.regraId} AND "portalClientId" = ${portalClientId} FOR UPDATE`;
+      const regra = await tx.regraContabilizacao.findFirst({ where: { id: dados.regraId, portalClientId, ativa: true, lancaSozinha: true, suspensaEm: null, revogadaEm: null } });
+      const campos = ["cnpjFornecedor", "padraoDescricao", "valorMin", "valorMax", "contaDestino", "contaCredito", "diaDoLancamento"];
+      if (!regra || !dados.regraRevisao || campos.some(c => String(regra[c] ?? "") !== String(dados.regraRevisao[c] ?? ""))) {
+        recusar("regra_alterada", "A regra mudou ou foi revogada. Confira a despesa novamente.");
+      }
+    }
+    // Ordem: regra, declarado, competência. Reavaliar depois do lock, nunca com snapshot anterior.
+    await tx.$queryRaw`SELECT id FROM lancamentos_declarados WHERE id = ${declaradoId} AND "portalClientId" = ${portalClientId} FOR UPDATE`;
+    declarado = await acharDeclarado(tx, portalClientId, declaradoId);
+    veredito = podeTransitar(declarado, transicao, dados);
+    if (!veredito.ok) recusar(veredito.motivo, veredito.frase);
+    if (await isMonthClosed(portalClientId, declarado.competencia, tx)) recusar(RECUSA_DO_SERVICO.MES_FECHADO);
+    camposComuns = { ...veredito.campos, estado: veredito.estado, decididoPor: String(usuarioId || ""), decididoEm: agora };
     if (criaLancamento) {
       // ⚠ A FORMA é montada sobre o declarado JÁ com a transição aplicada — senão a conta escolhida
       // no próprio ato (e o valor ajustado) não chegariam ao lançamento.
@@ -326,7 +341,7 @@ export async function aplicarTransicao({
       });
     }
     return tx.lancamentoDeclarado.update({ where: { id: declarado.id }, data: camposComuns });
-  });
+  }, { isolationLevel: "Serializable" });
 
   // ⚠⚠ O APRENDIZADO ACONTECE DEPOIS DA TRANSAÇÃO, E FORA DELA — de propósito.
   //

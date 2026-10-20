@@ -500,7 +500,7 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FON
           // data, historico, lines preservados — flag de recálculo é indicada via badge no UI
         },
       });
-      return { action: "recalculated", entry: updated };
+      return { action: "recalculated", entry: { ...updated, lines: existingEntry.lines } };
     }
 
     // Campos `data` e `historico` são preservados (editáveis pelo contador).
@@ -526,14 +526,13 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FON
     });
 
     await tx.accountingEntryLine.deleteMany({ where: { entryId: updated.id } });
-    await tx.accountingEntryLine.createMany({
-      data: [
+    const persistedLines = [
         { entryId: updated.id, conta: debitConta, tipo: "D", valor: event.amount, ordem: 0 },
         { entryId: updated.id, conta: creditConta, tipo: "C", valor: event.amount, ordem: 1 },
-      ],
-    });
+      ];
+    await tx.accountingEntryLine.createMany({ data: persistedLines });
 
-    return { action: "updated", entry: updated };
+    return { action: "updated", entry: { ...updated, lines: persistedLines } };
   }
 
   const created = await tx.accountingEntry.create({
@@ -567,7 +566,10 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FON
     include: { lines: { orderBy: { ordem: "asc" } } },
   });
 
-  return { action: "created", entry: created };
+  return { action: "created", entry: { ...created, lines: [
+    { conta: debitConta, tipo: "D", valor: event.amount, ordem: 0 },
+    { conta: creditConta, tipo: "C", valor: event.amount, ordem: 1 },
+  ] } };
 }
 
 // `edicaoManual`: o contador CORRIGIU o valor na Circular (o novo valor é a verdade). Sem isso, o
@@ -588,7 +590,7 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FON
 // desfez tudo, corretamente, e nada foi gravado. Dentro do Railway (worker, rota) a latência é de
 // rede interna e o default sempre bastou; subir o default para todo mundo seria afrouxar uma
 // guarda de produção para resolver um problema de quem está do lado de fora.
-export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false, fonteValor = FONTE_VALOR_GUIA, txTimeoutMs }) {
+export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false, fonteValor = FONTE_VALOR_GUIA, txTimeoutMs, exigirExtratoCompleto = false }) {
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedPortalClientId) {
@@ -602,12 +604,10 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
     throw err;
   }
 
-  // ⚠ Sem `txTimeoutMs` NÃO se passa o objeto de opções: mandar `{ timeout: undefined }` não é o
-  // mesmo que omitir em toda versão do client, e o ponto aqui é que produção continue exatamente
-  // como estava.
+  // Leitura de fechamento e geração compartilham snapshot Serializable; conflitos exigem releitura.
   const txOptions = Number.isFinite(txTimeoutMs) && txTimeoutMs > 0
-    ? { timeout: txTimeoutMs, maxWait: Math.min(txTimeoutMs, 15000) }
-    : undefined;
+    ? { isolationLevel: "Serializable", timeout: txTimeoutMs, maxWait: Math.min(txTimeoutMs, 15000) }
+    : { isolationLevel: "Serializable" };
 
   return prisma.$transaction(async (tx) => {
     const company = await tx.portalClient.findUnique({
@@ -638,6 +638,18 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
       };
     }
 
+    if (circular.fechadoContabilEm) return { ok: false, reason: "mes_fechado", generatedEntries: [], circular };
+    // PDF disponível não comprova extração dos valores. Zero explícito é válido.
+    // A sincronização documental exige ambos os valores; edição de um evento
+    // contábil isolado conserva o contrato de geração parcial existente.
+    if (exigirExtratoCompleto && [circular.receitaBruta, circular.dasTotal]
+      .some(value => value == null || String(value).trim() === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+      const pending = await tx.companyMonthlyCircular.update({
+        where: { id: circular.id },
+        data: { hasAccountingDivergence: true, accountingDivergenceMessage: "Extrato com receita ou DAS não extraídos. Confira os valores antes de contabilizar." },
+      });
+      return { ok: false, reason: "extrato_incompleto", generatedEntries: [], circular: pending };
+    }
     const events = buildEventsFromCircular(circular);
     const generatedEntries = [];
     const skipped = [];
@@ -693,6 +705,9 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
           action: outcome.action,
           entryId: outcome.entry?.id || null,
         });
+        if (outcome.entry?.lines?.some(line => !String(line.conta || "").trim())) {
+          divergences.push({ eventType: event.eventType, entryId: outcome.entry.id, message: `Evento ${event.eventType}: contas pendentes de classificação.` });
+        }
       }
       if (outcome.action === "divergence") {
         divergences.push({

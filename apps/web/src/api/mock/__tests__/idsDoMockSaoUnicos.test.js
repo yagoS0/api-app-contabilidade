@@ -12,6 +12,7 @@
 
 import { createMockApi } from "../mockApi";
 
+beforeAll(() => { global.structuredClone ??= value => JSON.parse(JSON.stringify(value)); });
 const api = createMockApi();
 
 const duplicados = (ids) => {

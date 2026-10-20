@@ -1,3 +1,4 @@
+import { trabalhoFiscalAnteriorARetomada } from './automacaoComercialDoCaso.js';
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { consultarCnpj } from "../tomador/consultaCnpj.js";
@@ -134,6 +135,8 @@ export function criarFiscalLead({
           updatedAt: new Date()
         }
       });
+      const fichaAtual = await tx.onboarding.findUnique({ where: { id } });
+      if (!fichaAtual || fichaAtual.versao !== r.versao || encerrado(fichaAtual)) throw new OnboardingError("atendimento_alterado", "A ficha mudou. Confira antes de solicitar uma consulta.", 409);
       const existente = await tx.trabalhoFiscalLead.findFirst({
         where: {
           onboardingId: id,
@@ -230,6 +233,7 @@ export function criarFiscalLead({
           }
         });
         exigirGestor(user);
+        if (trabalhoFiscalAnteriorARetomada(a, j)) throw new OnboardingError('retomada_manual', 'Confira a ficha antes de uma nova consulta.', 409);
         if (!r || r.cnpj !== j.cnpj || encerrado(r) || !a?.representanteVerificadoEm || a.autorizacao?.cnpj !== j.cnpj) throw new OnboardingError("escopo_alterado", "CNPJ, representante ou atendimento mudou.", 409);
         await conferirIdentidade(a);
         if (j.tipo === "PROCURACAO") {
@@ -258,7 +262,7 @@ export function criarFiscalLead({
               id: a.id,
               encerradoEm: null,
               autorizacao: { equals: a.autorizacao || {} },
-              onboarding: { cnpj: j.cnpj, status: r.status },
+              onboarding: { cnpj: j.cnpj, status: r.status, versao: r.versao },
               representanteVerificadoEm: a.representanteVerificadoEm
             },
             data: {
@@ -276,7 +280,7 @@ export function criarFiscalLead({
             mensagem: estado === "ATIVA" ? "Procuração verificada. A consulta SITFIS pode ser solicitada." : "Autorização insuficiente ou não vigente."
           };
         } else {
-          const out = await comercial.analisar(j.onboardingId, user, "SITFIS");
+          const out = await comercial.analisar(j.onboardingId, user, "SITFIS", { versaoEsperada: r.versao });
           resultado = {
             analiseId: out.analise?.id,
             mensagem: out.analise?.resultado?.mensagem || "Consulta registrada.",

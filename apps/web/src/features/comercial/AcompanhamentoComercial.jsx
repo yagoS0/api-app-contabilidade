@@ -29,7 +29,9 @@ export function AcompanhamentoComercial({ api, onboarding, onAtualizar }) {
     try {
       if (form === 'contato') {
         const r = await api.comercial(`${base}/contato`, { nome, telefone, canalId, autorizado, evidencia });
+        if (!r?.conversaId || !r?.atendimentoId) throw new Error('Contato sem confirmação. Atualize a ficha antes de repetir.');
         setEstado(s => ({ ...s, conversaId: r.conversaId }));
+        await onAtualizar?.();
       } else {
         const data = new Date(quando);
         if (!Number.isFinite(data.getTime())) throw new Error('Informe uma data e hora válidas para o retorno.');

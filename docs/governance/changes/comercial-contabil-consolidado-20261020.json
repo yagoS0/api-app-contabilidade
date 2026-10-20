@@ -1,0 +1,37 @@
+{
+  "summary": "Consolida ajustes de onboarding, Comercial, procurações, regras contábeis, baixa, circular e contabilização de extrato, com retomada manual auditada e rodada adicional de dois testes autorizada pelo usuário.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "baseCommit": "c4b0274c696ec7f703327e42d5e9ba75842d2d15",
+  "productCheckpoint": "2706505a3f6df771a79f89153bc011bea9e4ded9",
+  "operationalImpact": "Preserva R02, R19-R23, R25-R28 e implementa a decisão aprovada R31/T47-T52: retomada manual com motivo, versão, histórico e auditoria; nenhuma reativação automática de links/jobs/consultas. Regras editáveis/revogáveis preservam aplicações; extrato gera receita/provisão idempotentes com dados suficientes; pagamento utiliza data de evidência sem dispensar correção explícita de mês fechado. Procuração usa validade real, mantendo incerteza. Sem migração, nova regra fiscal ou resolução das decisões V02/V03/V05-V08 ainda pendentes. Correção adicional somente de testes e consolidação documental sem impacto operacional. Não altera gates, permissões ou dependências.",
+  "tests": [
+    "Run adicional 2026-10-20T19-09-21-440Z-6ff003c7: ready_for_human, fingerprint f429fda0f6c3787e5ce2a053a2d1583c90de5e162a4c760450403971d28f412d; seis gates aprovados.",
+    "API 10978 testes aprovados e 1 pendente preexistente; web 511 suites/5793 testes aprovados; portal 99 suites/1580 testes aprovados; governanca 63 testes aprovados; builds web/portal aprovados com avisos de empacotamento.",
+    "Doze pareceres independentes aprovados no run adicional somente para os dois testes: oito dominios, backend, UI, UX e sistemico. Nao substituem isoladamente a revisao do produto completo.",
+    "Parecer sistemico integral independente /root/diagnostico_comercial: approved_technically, sem bloqueadores, base c4b0274 ate checkpoint2706505a3 mais dois testes; .altan-governance/PARECER_SISTEMICO_CONSOLIDADO.json, SHA256 48a63f67f633b44dc43ad4b9fb62ff585eb1febf7e24a2bc77149c3900dbffb8.",
+    "Run original aa4356d2 permanece escalated; treze pareceres apontaram somente os dois testes agora corrigidos. Reuso das fontes do produto conferido por hashes em reuso-evidencias-produto.json; nao se reescreve reprovacao como aprovacao.",
+    "Lint integral da interface aprovado, lint dos dois testes aprovado novamente; PostgreSQL descartavel dez grupos aprovados e cluster encerrado; rota conferencia 124 testes aprovados; consumidores reais com dependencias sinteticas 5 testes aprovados.",
+    "QA local em 1440/390: 42 capturas verificadas e percursos de regras, baixa, navegacao, procuracoes, retomada e confirmacao de custo. Sem erros de pagina ou transbordamento global nos percursos registrados. Nao homologa integracoes externas.",
+    "Relatorio e caminhos detalhados: docs/revisao-produto-2026-10/AJUSTES_COMERCIAL_CONTABIL_20261020.md. Provas locais sob .altan-governance; nao sao checks GitHub nem prova de producao."
+  ],
+  "rollback": "Reversao seletiva do incremento sem migracao. Preservar eventos, versoes, auditorias, lancamentos, documentos/protocolos incertos e pagamentos ja confirmados. Nao reativar links/jobs antigos, reconsultar, reenviar ou apagar historico automaticamente. Nenhuma alteracao produtiva foi executada nesta validacao.",
+  "humanDecisions": [
+    "Usuario autorizou rodada adicional restrita a dois testes apos duas correcoes; nao reinicia automaticamente o orcamento nem amplia escopo.",
+    "Usuario pediu resultado antes de publicar. Esta consolidacao tecnica nao autoriza merge/deploy; nao houve publicacao.",
+    "Restaurar Neurogenesis foi autorizado para essa ficha concreta, mas ainda nao executado em producao; depende da implantacao segura. Demais operacoes reais nao sao autorizadas por este registro.",
+    "Nenhuma nova decisao de negocio e necessaria para o codigo revisado; aspectos pendentes das regras operacionais continuam pendentes."
+  ]
+}

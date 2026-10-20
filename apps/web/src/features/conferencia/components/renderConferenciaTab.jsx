@@ -1866,7 +1866,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           </span>
         </div>
 
-        <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
+        <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} revisao={versao} aoAlterar={carregar} />
       </SecaoDaConferencia></details>
 
       {/* ─────────────────────────────────────────────────────────────────────────────────────────

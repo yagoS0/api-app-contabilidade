@@ -1269,41 +1269,44 @@ export function createAccountingEntriesRouter({ log }) {
 
     if (!competencia) return res.status(400).json({ error: "competencia_required" });
 
-    const circular = await prisma.companyMonthlyCircular.findUnique({
-      where: {
-        portalClientId_competencia: {
+    try {
+      const circular = await prisma.companyMonthlyCircular.findUnique({
+        where: {
+          portalClientId_competencia: {
+            portalClientId,
+            competencia,
+          },
+        },
+      });
+      const entries = await prisma.accountingEntry.findMany({
+        where: {
           portalClientId,
           competencia,
+          tipo: { not: "PARCELA" }, // Q16: linhas leves de rastreio não entram na listagem
         },
-      },
-    });
-    if (!circular) return res.status(404).json({ error: "circular_nao_encontrada" });
+        include: { lines: { orderBy: { ordem: "asc" } } },
+        orderBy: [{ createdAt: "asc" }],
+      });
 
-    const entries = await prisma.accountingEntry.findMany({
-      where: {
-        portalClientId,
-        competencia,
-        tipo: { not: "PARCELA" }, // Q16: linhas leves de rastreio não entram na listagem
-      },
-      include: { lines: { orderBy: { ordem: "asc" } } },
-      orderBy: [{ createdAt: "asc" }],
-    });
+      const generatedEntries = await prisma.accountingEntry.findMany({
+        where: {
+          portalClientId,
+          competencia,
+          origem: "SERPRO",
+        },
+        include: { lines: { orderBy: { ordem: "asc" } } },
+        orderBy: [{ createdAt: "asc" }],
+      });
 
-    const generatedEntries = await prisma.accountingEntry.findMany({
-      where: {
-        portalClientId,
-        competencia,
-        origem: "SERPRO",
-      },
-      include: { lines: { orderBy: { ordem: "asc" } } },
-      orderBy: [{ createdAt: "asc" }],
-    });
-
-    return res.json({
-      circular,
-      entries: generatedEntries.map(entryToResponse),
-      allEntries: entries.map(entryToResponse),
-    });
+      return res.json({
+        circular,
+        entries: generatedEntries.map(entryToResponse),
+        allEntries: entries.map(entryToResponse),
+      });
+    } catch (err) {
+      log?.error?.({ err, portalClientId, competencia }, 'Falha na leitura dos lançamentos da circular');
+      return res.status(500).json({ error: 'circular_leitura_indisponivel', message: 'Não foi possível carregar os lançamentos da competência. Tente atualizar novamente.' });
+    }
   });
 
   // PATCH /firm/companies/:companyId/circular/:competencia

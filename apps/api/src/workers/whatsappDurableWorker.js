@@ -1,4 +1,4 @@
-import { INTEGRACAO_WHATSAPP, log } from "../config.js";
+import { INTEGRACAO_WHATSAPP, INTEGRACAO_FISCAL_LEADS, log } from "../config.js";
 import { processarInboxWhatsappUmaVez } from "../application/whatsapp/WhatsappInboxService.js";
 import { processarTurnosIaUmaVez } from "../application/assistente/TurnoIaWhatsappService.js";
 import { processarContingenciasComerciaisUmaVez } from "../application/onboarding/WatchdogComercialService.js";
@@ -18,8 +18,10 @@ let iaEmCurso = null;
 let contingenciaEmCurso = null;
 let proximaContingencia = 0;
 export function iniciarWorkerWhatsappDuravel() {
-  if (timer || !INTEGRACAO_WHATSAPP) return;
+  if (timer || (!INTEGRACAO_WHATSAPP && !INTEGRACAO_FISCAL_LEADS)) return;
   const tick = () => {
+    if (INTEGRACAO_FISCAL_LEADS && !fiscalEmCurso) fiscalEmCurso = fiscal.processarUmaVez().catch(e => log.error({ codigo: e.code }, "Consulta fiscal de lead interrompida")).finally(() => { fiscalEmCurso = null; });
+    if (!INTEGRACAO_WHATSAPP) return;
     if (!testeIaEmCurso && process.env.WHATSAPP_TESTE_IA_ENABLED === '1') testeIaEmCurso = testeIa.processarUmaVez()
       .catch(e => log.error({ codigo: e.code }, 'Teste isolado WhatsApp interrompido'))
       .finally(() => { testeIaEmCurso = null; });
@@ -32,7 +34,6 @@ export function iniciarWorkerWhatsappDuravel() {
     if (!comunicadoEmCurso) comunicadoEmCurso = comunicados.processarUmaVez()
       .catch(e => log.error({ codigo: e.code }, "Comunicado WhatsApp interrompido"))
       .finally(() => { comunicadoEmCurso = null; });
-    if (!fiscalEmCurso) fiscalEmCurso = fiscal.processarUmaVez().catch(e => log.error({ codigo: e.code }, "Consulta fiscal de lead interrompida")).finally(() => { fiscalEmCurso = null; });
     // A latência do modelo nunca impede a ingestão de mensagens e recibos.
     if (!inboxEmCurso) inboxEmCurso = processarInboxWhatsappUmaVez({ log })
       .catch((e) => log.error({ codigo: e?.code }, "WhatsApp: inbox falhou; próximo ciclo recupera"))

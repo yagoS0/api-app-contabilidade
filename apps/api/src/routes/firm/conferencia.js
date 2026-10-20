@@ -41,6 +41,7 @@ import {
   RegraRecusada,
   RECUSA_DA_REGRA,
   alternarRegra,
+  gerirRegra,
   criarRegraManual,
   definirLancamentoAutomatico,
   listarRegras,
@@ -223,6 +224,12 @@ function serializar(d) {
 }
 
 function responderRecusa(res, erro, log) {
+  if (erro?.code === "P2034" || (erro?.code === "P2010" && erro?.meta?.code === "40001")) {
+    return res.status(409).json({
+      ok: false, error: "conferencia_conflito",
+      message: "Os dados mudaram durante a operação. Releia a conferência antes de decidir novamente.",
+    });
+  }
   if (erro instanceof DeclaradoRecusado) {
     const status = STATUS_DA_RECUSA[erro.codigo] || 400;
     return res.status(status).json({ ok: false, error: erro.codigo, message: erro.frase });
@@ -971,6 +978,11 @@ export function createConferenciaRouter({ log } = {}) {
   // ⚠ Desligar/religar é ESCRITA e mexe no que o sistema sugere — mesmo piso das outras escritas.
   router.patch("/conferencia/regras/:regraId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
+      if (req.body?.acao) {
+        const regra = await gerirRegra({ portalClientId: String(req.params.companyId), regraId: String(req.params.regraId),
+          patch: req.body, usuarioId: req.auth?.user?.id, agora: new Date() });
+        return res.json({ ok: true, regra });
+      }
       const { ativa } = req.body || {};
       if (typeof ativa !== "boolean") {
         return res.status(400).json({ ok: false, error: "ativa_obrigatoria", message: "Informe `ativa` (true ou false)." });

@@ -6,7 +6,7 @@ it('ativa histórica permanece em Revalidar com data e orientação sem consulta
  const run=jest.fn();
  render(<MemoryRouter><SerproFuncoesPage settingsStatus="ready" settings={{enabled:true,certificate:{hasCertificate:true}}} companies={[{companyId:'a',razao:'Empresa histórica',cnpj:'00.000.000/0001-00',serproStatus:{procurationStatus:'ATIVA',checkedAt:new Date(Date.now()-86400000).toISOString(),validUntil:'2099-10-13',vinculoConfirmado:true}}]} onRunOp={run}/></MemoryRouter>);
  fireEvent.change(screen.getByLabelText('Filtrar por procuração'),{target:{value:'revalidar'}});
- expect(screen.getByText('Ativa na última verificação')).toBeVisible();
+ expect(within(screen.getByRole('row', { name: /Empresa histórica/ })).getByText('Revalidar')).toBeVisible();
  expect(screen.getByText('Atualize a verificação antes de operar.')).toBeVisible();
  expect(screen.getByText('Validade: 13/10/2099')).toBeVisible();
  fireEvent.change(screen.getByLabelText('Filtrar por procuração'),{target:{value:'ativa'}});

@@ -1,3 +1,4 @@
+const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
 import { validarContratacaoExterna } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
@@ -9294,9 +9295,10 @@ export function createMockApi({ delay = defaultDelay } = {}) {
      * ⚠ Os valores NÃO são redondos: o mock deste projeto já escondeu dois ramos inteiros por usar
      * só múltiplos de 100.
      */
-    async getConferenciaRegras() {
+    async getConferenciaRegras(companyId) {
       await delay(60);
-      return {
+      if (regrasConferenciaPorEmpresa.has(companyId)) return { ok: true, regras: structuredClone(regrasConferenciaPorEmpresa.get(companyId).filter(r => !r.revogadaEm)) };
+      const inicial = {
         ok: true,
         indisponivel: false,
         regras: [
@@ -9336,6 +9338,8 @@ export function createMockApi({ delay = defaultDelay } = {}) {
           },
         ],
       };
+      regrasConferenciaPorEmpresa.set(companyId, inicial.regras.map(r => ({ ...r, portalClientId: companyId })));
+      return structuredClone(inicial);
     },
 
     async postConferenciaRegra(_companyId, corpo = {}) {
@@ -9361,14 +9365,34 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       if (credito && !credito.startsWith("111")) {
         recusa("credito_nao_e_disponibilidade", "O crédito tem de ser conta de caixa ou banco.");
       }
-      return { ok: true, regra: { id: `reg-${Date.now()}`, origemRegra: "MANUAL" } };
+      await this.getConferenciaRegras(_companyId);
+      const regra = { ...corpo, portalClientId: _companyId, id: crypto.randomUUID(), origemRegra: "MANUAL", ativa: true, suspensaEm: null, revogadaEm: null };
+      regrasConferenciaPorEmpresa.get(_companyId).push(regra);
+      return { ok: true, regra: structuredClone(regra) };
     },
 
-    async patchConferenciaRegra(_companyId, regraId, { ativa } = {}) {
-      await delay(50);
-      return { ok: true, regra: { id: regraId, ativa } };
+    async patchConferenciaRegra(companyId, regraId, patch = {}) {
+      await this.getConferenciaRegras(companyId);
+      const regra = regrasConferenciaPorEmpresa.get(companyId).find(r => r.id === regraId);
+      if (!regra) throw Object.assign(new Error("Regra não encontrada nesta empresa."), { status: 404 });
+      if (regra.revogadaEm && patch.acao === 'revogar') return { ok: true, regra: structuredClone(regra) };
+      if (regra.revogadaEm) throw new Error('Esta regra foi revogada.');
+      if (patch.acao) {
+        if (!['editar', 'revogar'].includes(patch.acao) || !patch.motivo?.trim()) throw new Error('Informe ação e motivo.');
+        const campos = ['cnpjFornecedor','padraoDescricao','valorMin','valorMax','contaDestino','contaCredito','ativa','lancaSozinha','diaDoLancamento'];
+        if (!patch.anterior || campos.some(c => String(patch.anterior[c] ?? '') !== String(regra[c] ?? ''))) throw Object.assign(new Error('A regra mudou. Recarregue.'), { status: 409 });
+        const antes = structuredClone(regra);
+        if (patch.acao === 'revogar') Object.assign(regra, { ativa: false, lancaSozinha: false, revogadaEm: new Date().toISOString() });
+        else {
+          const c = patch.campos || {};
+          if (!c.contaDestino || (!c.cnpjFornecedor && !c.padraoDescricao) || !Number.isFinite(Number(c.valorMin)) || Number(c.valorMax) < Number(c.valorMin)) throw new Error('Confira as contas e a faixa da regra.');
+          for (const campo of campos.slice(0, 6)) regra[campo] = c[campo] ?? null;
+          Object.assign(regra, { origemRegra: 'MANUAL', confirmacoesBase: [], suspensaEm: null, motivoSuspensao: null });
+        }
+        regra.historico = [...(antes.historico || []), { acao: patch.acao, motivo: patch.motivo, antes: { ...antes, historico: undefined } }];
+      } else regra.ativa = patch.ativa === true;
+      return { ok: true, regra: structuredClone(regra) };
     },
-
     async patchConferenciaRegraAutomatico(_companyId, regraId, { lancaSozinha, diaDoLancamento } = {}) {
       await delay(60);
       // ⚠ O mock exerce as DUAS recusas do servidor — elas são o que impede uma regra marcada
@@ -9398,14 +9422,11 @@ export function createMockApi({ delay = defaultDelay } = {}) {
           throw e;
         }
       }
-      return {
-        ok: true,
-        regra: {
-          id: regraId,
-          lancaSozinha: lancaSozinha === true,
-          diaDoLancamento: lancaSozinha === true ? Number(diaDoLancamento) : null,
-        },
-      };
+      await this.getConferenciaRegras(_companyId);
+      const regra = regrasConferenciaPorEmpresa.get(_companyId).find(r => r.id === regraId && !r.revogadaEm);
+      if (!regra) throw new Error("Regra não encontrada.");
+      Object.assign(regra, { lancaSozinha: lancaSozinha === true, diaDoLancamento: lancaSozinha === true ? Number(diaDoLancamento) : null });
+      return { ok: true, regra: structuredClone(regra) };
     },
 
     /**
@@ -11222,12 +11243,30 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       if (["CONVERTIDO", "CONCLUIDO_AVULSO"].includes(registro.status)) throw Object.assign(new Error("Ficha encerrada."), { status: 409 });
       if (registro.status === "DESISTIU") return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
       if (!Number.isInteger(versao) || versao !== (registro.versao || 0)) throw Object.assign(new Error("A ficha mudou. Confira novamente."), { code: "formulario_alterado", status: 409 });
+      const statusAnterior = registro.status;
       registro.versao = versao + 1;
       registro.status = "DESISTIU";
       registro.desistiuEm = new Date().toISOString();
       registro.motivoDesistencia = motivo || null;
       registro.updatedAt = new Date().toISOString();
-      registro.eventos = [...(registro.eventos || []), { id: crypto.randomUUID(), tipo: "DESISTIU", dados: { motivo: motivo || null }, createdAt: registro.updatedAt }];
+      registro.eventos = [...(registro.eventos || []), { id: crypto.randomUUID(), tipo: "DESISTIU", dados: { motivo: motivo || null, statusAnterior }, createdAt: registro.updatedAt }];
+      persistirOnboardingsMock();
+      return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
+    },
+
+    async retomarAtendimentoOnboarding(id, motivo, versao) {
+      const r = mockOnboardings.get(id);
+      if (!r) throw Object.assign(new Error("Onboarding não encontrado."), { status: 404 });
+      if (typeof motivo !== 'string' || !motivo.trim() || motivo.trim().length > 500) throw new Error("Informe o motivo da retomada.");
+      const ultimo = [...(r.eventos || [])].reverse().find(e => e.tipo === 'ATENDIMENTO_RETOMADO');
+      if (ultimo?.dados.versaoAnterior === versao && r.versao === versao + 1 && ultimo.dados.motivo === motivo.trim() && r.status === ultimo.dados.statusRestaurado) return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
+      if (!Number.isInteger(versao) || versao !== r.versao || r.status !== 'DESISTIU' || r.portalClientId) throw Object.assign(new Error("A ficha mudou. Confira novamente."), { status: 409 });
+      const auditado = [...(r.eventos || [])].reverse().find(e => e.tipo === 'DESISTIU')?.dados.statusAnterior;
+      const anterior = ['RASCUNHO', 'RECEBIDO', 'EM_TRILHA'].includes(auditado) ? auditado : r.enviadoEm ? 'RECEBIDO' : 'RASCUNHO';
+      r.eventos ||= [];
+      for (const link of mockLinksComerciais.values()) if (link.onboardingId === id && !link.revokedAt) link.revokedAt = new Date().toISOString();
+      r.eventos.push({ id: crypto.randomUUID(), tipo: 'ATENDIMENTO_RETOMADO', createdAt: new Date().toISOString(), dados: { motivo: motivo.trim(), versaoAnterior: versao, statusRestaurado: anterior, desistenciaAnterior: { motivo: r.motivoDesistencia, em: r.desistiuEm } } });
+      Object.assign(r, { status: anterior, versao: versao + 1, desistiuEm: null, motivoDesistencia: null, updatedAt: new Date().toISOString() });
       persistirOnboardingsMock();
       return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
     },

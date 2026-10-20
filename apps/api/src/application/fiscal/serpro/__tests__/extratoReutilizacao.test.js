@@ -1,10 +1,10 @@
 import { syncPgdasByCompetencia } from '../SerproPgdasDeclaracaoService.js';
 import { prisma } from '../../../../infrastructure/db/prisma.js';
 import { getResolvedSerproCredentials } from '../SerproRuntimeSettings.js';
-jest.mock('../../../../infrastructure/db/prisma.js', () => ({ prisma: { portalClient: { findUnique: jest.fn() }, guide: { findFirst: jest.fn() }, companyMonthlyCircular: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() } } }));
+jest.mock('../../../../infrastructure/db/prisma.js', () => ({ prisma: { $transaction: jest.fn(), portalClient: { findUnique: jest.fn() }, guide: { findFirst: jest.fn() }, companyMonthlyCircular: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() } } }));
 jest.mock('../SerproRuntimeSettings.js', () => ({ getResolvedSerproCredentials: jest.fn(async () => { throw new Error('PARADA_ANTES_HTTP'); }) }));
 const input = { portalClientId: 'c1', competencia: '2026-08' };
-beforeEach(() => { jest.clearAllMocks(); prisma.portalClient.findUnique.mockResolvedValue({ id: 'c1', cnpj: '12345678000199' }); prisma.guide.findFirst.mockResolvedValue({ id: 'g1', pdfBytes: Buffer.from('pdf') }); prisma.companyMonthlyCircular.upsert.mockResolvedValue({ id: 'circ' }); });
+beforeEach(() => { jest.clearAllMocks(); prisma.$transaction.mockImplementation(callback => callback(prisma)); prisma.portalClient.findUnique.mockResolvedValue({ id: 'c1', cnpj: '12345678000199' }); prisma.guide.findFirst.mockResolvedValue({ id: 'g1', pdfBytes: Buffer.from('pdf') }); prisma.companyMonthlyCircular.upsert.mockResolvedValue({ id: 'circ' }); });
 test('extrato completo reutiliza estado antes do upsert RUNNING', async () => {
   prisma.companyMonthlyCircular.findUnique.mockResolvedValue({ id: 'circ', serproSyncStatus: 'SUCCESS', pgdasDeclaracaoFileId: 'f1', pgdasNumeroDeclaracao: '123', pgdasReciboFileId: 'recibo', dasNumeroDocumento: '123' });
   expect(await syncPgdasByCompetencia(input)).toMatchObject({ reutilizado: true, guide: { id: 'g1' } });

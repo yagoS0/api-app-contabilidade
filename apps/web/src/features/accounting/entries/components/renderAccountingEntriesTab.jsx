@@ -857,6 +857,9 @@ export function AccountingEntriesTab({
   // Estado das buscas pagas nesta competência, vindo do GET do fechamento. `null` = ainda não sei.
   const [buscasSerpro, setBuscasSerpro] = useState(null);
   const [buscandoSerpro, setBuscandoSerpro] = useState(null); // "extrato" | "presumido"
+  const tentativasSerpro = useRef(new Map());
+  const travaSerpro = useRef(false);
+  const [erroConsultaSerpro, setErroConsultaSerpro] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adding, setAdding] = useState(false); // Q18: linha de novo lançamento inline
@@ -939,41 +942,50 @@ export function AccountingEntriesTab({
   /**
    * Busca no SERPRO, confirmando ANTES quando já foi buscado nesta competência.
    *
-   * A confirmação lê o estado que veio do GET, nunca a resposta do POST: quando o POST responde, a
+   * A confirmação combina o GET com as tentativas locais, inclusive falhas: quando o POST responde, a
    * chamada paga já saiu. E o Presumido são DUAS chamadas por clique (declaração + DARF), então um
    * duplo clique distraído custa quatro.
    *
    * Avisa e deixa seguir — refazer é legítimo depois de uma retificação; o que não pode é gastar
    * sem saber.
    */
-  async function buscarNoSerpro(qual) {
-    if (buscandoSerpro) return;
-    const jaBuscado = qual === "extrato" ? buscasSerpro?.extrato : buscasSerpro?.presumido;
-    if (jaBuscado?.buscado) {
-      const oQue = qual === "extrato" ? "Este extrato" : "Estes tributos";
-      // eslint-disable-next-line no-alert
-      const seguir = await pedir({ titulo: "Repetir consulta no SERPRO", acao: "Consultar novamente", texto:
-        `${oQue} já ${qual === "extrato" ? "foi buscado" : "foram buscados"} em ${fmtDataHora(jaBuscado.em)}.\n\n`
-        + "Buscar de novo consome uma nova consulta paga no SERPRO e sobrescreve os valores da "
-        + "competência.\n\nBuscar mesmo assim?",
-      });
-      if (!seguir) return;
-    }
-    setBuscandoSerpro(qual);
+  async function buscarNoSerpro(qual, atualizar = false) {
+    if (travaSerpro.current || buscandoSerpro) return;
+    const handler = qual === "extrato" ? onSyncSerproPgdas : onCaptureSerproLp;
+    if (!handler) return;
+    const chave = JSON.stringify([companyId, activeComp, qual]);
+    const jaBuscado = tentativasSerpro.current.get(chave) || (qual === "extrato" ? buscasSerpro?.extrato : buscasSerpro?.presumido);
+    travaSerpro.current = true;
     try {
-      // Os dois handlers recebem `{competencia}`, não a string solta.
-      if (qual === "extrato") await onSyncSerproPgdas?.(companyId, { competencia: activeComp });
-      else await onCaptureSerproLp?.(companyId, { competencia: activeComp });
+      if ((qual === "extrato" && atualizar) || (qual !== "extrato" && jaBuscado?.buscado)) {
+        const oQue = qual === "extrato" ? "Este extrato" : "Estes tributos";
+        const seguir = await pedir({ titulo: "Repetir consulta no SERPRO", acao: "Consultar novamente", texto:
+          `${oQue}${jaBuscado?.em ? ` teve uma tentativa de consulta em ${fmtDataHora(jaBuscado.em)}` : " será atualizado na Receita"}.\n\n`
+          + "Uma tentativa sem resultado confirmado também pode ter gerado custo. Confira o resultado antes de repetir.\n\n"
+          + "Buscar de novo consome uma nova consulta paga no SERPRO e sobrescreve os valores da "
+          + "competência.\n\nBuscar mesmo assim?",
+        });
+        if (!seguir) return;
+      }
+      setBuscandoSerpro(qual);
+      setErroConsultaSerpro(null);
+      // Marca conservadora por empresa/competência antes de entregar ao handler.
+      // Uma releitura do fechamento não pode apagar uma tentativa sem resultado.
+      const anterior = tentativasSerpro.current.get(chave);
+      tentativasSerpro.current.set(chave, { buscado: true, em: new Date().toISOString() });
+      const resultado = qual === "extrato"
+        ? await handler(companyId, { competencia: activeComp, atualizar })
+        : await handler(companyId, { competencia: activeComp });
+      if (resultado?.reutilizado || resultado?.cancelado || resultado?.tentativaEnviada === false) {
+        if (anterior) tentativasSerpro.current.set(chave, anterior);
+        else tentativasSerpro.current.delete(chave);
+      }
+    } catch {
+      setErroConsultaSerpro({ companyId, competencia: activeComp,
+        mensagem: "Resultado da consulta não confirmado. Confira os dados antes de solicitar outra consulta paga." });
     } finally {
       setBuscandoSerpro(null);
-      // Marca no `finally`, não no sucesso: a chamada paga saiu do mesmo jeito, e o que a
-      // confirmação protege é o BOLSO, não o resultado. O pré-voo vem do GET do fechamento, que só
-      // roda na montagem e ao trocar de competência — sem isto, o segundo clique na mesma sessão
-      // não avisaria nada, que é justamente o caso para o qual a confirmação existe.
-      setBuscasSerpro((atual) => ({
-        ...(atual || {}),
-        [qual]: { ...(atual?.[qual] || {}), buscado: true, em: new Date().toISOString() },
-      }));
+      travaSerpro.current = false;
     }
   }
 
@@ -1065,6 +1077,8 @@ export function AccountingEntriesTab({
        padding no contêiner, cada bloco interno é simplesmente `width: 100%` e acompanha sozinho. */
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--content-gutter)", boxSizing: "border-box" }}>
       <AvisosContabeis companyId={companyId} competencia={activeComp} myRole={myRole} aoConcluirBaixa={onLoad} />
+      {erroConsultaSerpro?.companyId === companyId && erroConsultaSerpro.competencia === activeComp
+        && <p role="alert">{erroConsultaSerpro.mensagem}</p>}
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1124,11 +1138,16 @@ export function AccountingEntriesTab({
             label="SERPRO"
             items={[
               ...(isSimples ? [{
-                label: buscandoSerpro === "extrato" ? "Buscando extrato…" : "Extrato do Simples — receita e imposto",
+                label: buscandoSerpro === "extrato" ? "Obtendo extrato…" : "Extrato do Simples — reaproveitar ou obter",
                 hint: buscasSerpro?.extrato?.buscado
-                  ? `Já buscado em ${fmtDataHora(buscasSerpro.extrato.em)}`
-                  : `Consulta receita e imposto de ${activeComp} e gera os lançamentos contábeis. Não consulta pagamento.`,
+                  ? `Reaproveita o extrato completo salvo e confere a contabilização. Última busca: ${fmtDataHora(buscasSerpro.extrato.em)}.`
+                  : `Reaproveita o extrato completo salvo. Se não houver, a obtenção pode consumir consulta paga. Não consulta pagamento.`,
                 onClick: () => buscarNoSerpro("extrato"),
+                disabled: Boolean(buscandoSerpro) || monthClosed || !onSyncSerproPgdas,
+              }, {
+                label: "Atualizar extrato na Receita",
+                hint: "Nova consulta paga, com confirmação. Preserva as travas contábeis.",
+                onClick: () => buscarNoSerpro("extrato", true),
                 disabled: Boolean(buscandoSerpro) || monthClosed || !onSyncSerproPgdas,
               }] : []),
               ...(isPresumido ? [{

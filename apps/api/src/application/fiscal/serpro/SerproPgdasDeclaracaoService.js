@@ -579,9 +579,14 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
   }
   if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasNumeroDeclaracao && salva.pgdasDeclaracaoFileId && salva.pgdasReciboFileId) {
     const guide = await prisma.guide.findFirst({ where: whereDasSalvo(company.id, competenciaStorage), orderBy: { updatedAt: "desc" } });
-    if (somenteDocumentos || guide?.pdfBytes?.length || !salva.dasNumeroDocumento) return { company, circular: salva, guide, reutilizado: true,
-      accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex,
-      files: { declaracaoFileId: salva.pgdasDeclaracaoFileId, reciboFileId: salva.pgdasReciboFileId } };
+    { // O extrato completo basta para contabilizar; falta de PDF da guia não autoriza nova consulta paga.
+      const accounting = somenteDocumentos
+        ? { ok: true, generatedEntries: [], somenteDocumentos: true }
+        : await generateEntriesFromCircular({ portalClientId: company.id, competencia: competenciaStorage, now: new Date(), fonteValor: FONTE_VALOR_EXTRATO, exigirExtratoCompleto: true });
+      return { company, circular: accounting.circular || salva, guide, reutilizado: true,
+        accounting, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex,
+        files: { declaracaoFileId: salva.pgdasDeclaracaoFileId, reciboFileId: salva.pgdasReciboFileId } };
+    }
   }
   const circular = await findOrCreateCircular({ portalClientId: company.id, competencia: competenciaStorage });
 
@@ -803,6 +808,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       competencia: competenciaStorage,
       now: new Date(),
       fonteValor: FONTE_VALOR_EXTRATO,
+      exigirExtratoCompleto: true,
     });
 
     // ─── DECLARAÇÃO ZERADA MARCA O MÊS ────────────────────────────────────────────────────────

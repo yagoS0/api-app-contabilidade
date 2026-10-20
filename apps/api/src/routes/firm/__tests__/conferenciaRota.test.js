@@ -9,6 +9,10 @@
 
 jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
   requireFirmCompanyAccess: jest.fn((opcoes) => (req, res, next) => {
+    if (req.headers["x-test-real-access"]) {
+      req.auth = { user: { id: "u-1", role: "contador" } };
+      return jest.requireActual("../../../middlewares/requireFirmCompanyAccess.js").requireFirmCompanyAccess(opcoes)(req, res, next);
+    }
     req.__gate = opcoes || null; // ⚠ guarda o gate para o teste de papel poder olhá-lo
     req.auth = { user: { id: "u-1", role: "ACCOUNTANT" } };
     next();
@@ -120,6 +124,28 @@ const POST = (acao, body) => request(makeApp()).post(`/firm/companies/emp-1/conf
 const GET = (qs = "") => request(makeApp()).get(`/firm/companies/emp-1/conferencia${qs}`);
 
 beforeEach(() => jest.clearAllMocks());
+
+test.each([
+  { code: "P2034" },
+  { code: "P2010", meta: { code: "40001" } },
+])("conflito concorrente recuperável pela rota: %j", async erro => {
+  aplicarTransicao.mockRejectedValueOnce(erro);
+  const r = await POST("confirmar", {});
+  expect(r.status).toBe(409);
+  expect(r.body).toMatchObject({ ok: false, error: "conferencia_conflito" });
+  expect(r.body.message).toMatch(/Releia/);
+  expect(aplicarTransicao).toHaveBeenCalledTimes(1);
+});
+
+test.each([{ code: "P2010", meta: { code: "42P01" } }, { code: "P2010" }])(
+  "P2010 distinto não é mascarado como concorrência: %j", async erro => {
+    aplicarTransicao.mockRejectedValueOnce(erro);
+    const r = await POST("confirmar", {});
+    expect(r.status).toBe(500);
+    expect(r.body.error).toBe("conferencia_falhou");
+    expect(aplicarTransicao).toHaveBeenCalledTimes(1);
+  },
+);
 
 describe("⚠⚠ A DATA DO PAGAMENTO VEM DO CORPO, NUNCA DO RELÓGIO", () => {
   it("a data digitada chega ao serviço como meia-noite UTC daquele dia", async () => {
@@ -1326,5 +1352,50 @@ describe("⚠⚠ POST /conferencia/classificar-ia — o botão de IA", () => {
     });
     // linha sem proposta: `null`, nunca `undefined` (a tela distingue "não há" de "não veio")
     expect(Object.prototype.hasOwnProperty.call(r.body.itens[0], "contaSugeridaIa")).toBe(true);
+  });
+});
+
+describe("gestão pela rota, middleware e serviço reais", () => {
+  let regra, anterior, tx, spies;
+  beforeEach(() => {
+    regra = { id: "r", portalClientId: "emp-1", cnpjFornecedor: "12345678000190", padraoDescricao: null, valorMin: 100, valorMax: 200, contaDestino: "411020008", contaCredito: null, ativa: true, lancaSozinha: false, diaDoLancamento: null, revogadaEm: null };
+    anterior = { ...regra };
+    tx = { $queryRaw: jest.fn(async () => []),
+      regraContabilizacao: { findFirst: jest.fn(async ({ where }) => where.portalClientId === regra.portalClientId && where.id === regra.id ? { ...regra } : null), update: jest.fn(async ({ data }) => (regra = { ...regra, ...data })) },
+      chartOfAccount: { findMany: jest.fn(async () => [{ codigo: "464", codigoCompleto: "411020008", nome: "SERVIÇOS PJ", tipo: "DESPESA", analitica: true }]) },
+      appSetting: { create: jest.fn(async ({ data }) => data) },
+    };
+    spies = [jest.spyOn(prisma, "$transaction").mockImplementation(async fn => fn(tx)),
+      jest.spyOn(prisma.companyFirmAccess, "findUnique").mockImplementation(async ({ where }) => where.companyId_userId.companyId === "emp-1" ? { role: "ACCOUNTANT", status: "ACTIVE", scopes: [] } : null)];
+  });
+  afterEach(() => spies.forEach(s => s.mockRestore()));
+  const patch = (body, company = "emp-1") => request(makeApp()).patch(`/firm/companies/${company}/conferencia/regras/r`).set("x-test-real-access", "1").send(body);
+  test("revogação repetida preserva identidade e registra um histórico", async () => {
+    const body = { acao: "revogar", motivo: "Não utilizar no futuro", anterior };
+    expect((await patch(body)).status).toBe(200); expect((await patch(body)).status).toBe(200);
+    expect(regra).toMatchObject({ id: "r", ativa: false, lancaSozinha: false });
+    expect(tx.appSetting.create).toHaveBeenCalledTimes(1);
+    expect(tx.appSetting.create.mock.calls[0][0].data.value).toMatchObject({ autorId: "u-1", antes: { ativa: true }, depois: { ativa: false } });
+  });
+  test("edição validada mantém id e não aplica histórico", async () => {
+    expect((await patch({ acao: "editar", motivo: "Faixa conferida", anterior, campos: { ...anterior, valorMax: 300 } })).status).toBe(200);
+    expect(regra).toMatchObject({ id: "r", valorMax: 300, origemRegra: "MANUAL" });
+    expect(tx.appSetting.create).toHaveBeenCalledTimes(1);
+  });
+  test("STAFF e empresa sem vínculo são recusados antes de escrever", async () => {
+    spies[1].mockResolvedValueOnce({ role: "STAFF", status: "ACTIVE", scopes: [] });
+    expect((await patch({ acao: "revogar", motivo: "Teste", anterior })).status).toBe(403);
+    expect((await patch({ acao: "revogar", motivo: "Teste", anterior }, "outra")).status).toBe(403);
+    expect(tx.regraContabilizacao.update).not.toHaveBeenCalled();
+  });
+  test("vínculo permitido não autoriza regra de outra empresa", async () => {
+    spies[1].mockResolvedValueOnce({ role: "ACCOUNTANT", status: "ACTIVE", scopes: [] });
+    expect((await patch({ acao: "revogar", motivo: "Teste", anterior }, "outra")).status).toBe(404);
+    expect(tx.regraContabilizacao.update).not.toHaveBeenCalled();
+  });
+  test("motivo e revisão inválidos impedem escrita", async () => {
+    expect((await patch({ acao: "revogar", motivo: "", anterior })).status).toBe(400);
+    expect((await patch({ acao: "editar", motivo: "Teste", anterior: { ...anterior, valorMax: 1 }, campos: anterior })).status).toBe(400);
+    expect(tx.regraContabilizacao.update).not.toHaveBeenCalled();
   });
 });

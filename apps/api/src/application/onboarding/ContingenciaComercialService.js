@@ -1,3 +1,4 @@
+import { automacaoComercialBloqueada } from './automacaoComercialDoCaso.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso, emTransacaoComercial } from './ContextoComercialService.js';
 import { iniciarAtendimento, encerrado } from './LeadService.js';
@@ -29,6 +30,7 @@ export async function encaminharContingenciaComercial({ conversaId, mensagemId, 
       || conversa.automacaoInvalidadaEm && new Date(mensagem.registradaEm) <= new Date(conversa.automacaoInvalidadaEm))
       return { encaminhado: false, motivo: 'MENSAGEM_FORA_DO_ESCOPO' };
     let caso = await tx.atendimentoLead.findFirst({ where: { ...filtroCasoDaConversa(conversa, interlocutorId), encerradoEm: null }, include: { onboarding: true } });
+    if (automacaoComercialBloqueada(caso)) return { encaminhado: false, motivo: "RETOMADA_MANUAL" };
     if (caso && (encerrado(caso.onboarding) || caso.conversaId !== conversaId)) return { encaminhado: false, motivo: 'CASO_INDISPONIVEL' };
     if (caso?.triagem?.contingenciaIa?.estado === 'PENDENTE' && caso.triagem.contingenciaIa.mensagemId === mensagemId)
       return { encaminhado: true, atendimentoId: caso.id, repetido: true };

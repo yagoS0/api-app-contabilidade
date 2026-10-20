@@ -15,6 +15,7 @@ function setup() {
   let caso = null;
   const analises = [], trabalhos = [];
   const db = {
+    $queryRaw: jest.fn(async () => []),
     onboarding: { findUnique: jest.fn(async () => clone(ficha)), update: jest.fn(async () => clone(ficha)) },
     atendimentoLead: {
       findFirst: jest.fn(async () => clone(caso)),
@@ -37,6 +38,7 @@ function setup() {
       }),
     },
   };
+  db.$transaction = jest.fn(async fn => fn(db));
   const procura = jest.fn(async () => proof());
   const procuradorAtual = jest.fn(async () => procuradorCnpj);
   const sitfis = jest.fn(async () => ({ ok: true, protocolo: "protocolo-sintetico", relatorioPdfBuffer: Buffer.from("%PDF-sintetico") }));
@@ -207,4 +209,41 @@ test("falha na cifra não permite concluir relatório indisponível", async () =
   const t = setup(); t.cifrar.mockResolvedValue(null);
   const out = await t.consultar(); expect(out.analise.status).toBe("FALHOU");
   expect(out.analise.resultado.relatorioDisponivel).toBe(false);
+});
+
+test("desistir e retomar durante procuração impede iniciar SITFIS na revisão nova", async () => {
+  const t = setup();
+  const a = t.caso({ autorizacao: { cnpj, estado: "ATIVA", prova: proof({ checkedAt: new Date(Date.now() - 360000).toISOString() }) } });
+  let liberar, iniciou;
+  const chamada = new Promise(resolve => { iniciou = resolve; });
+  t.procura.mockImplementation(() => { iniciou(); return new Promise(resolve => { liberar = resolve; }); });
+  const pendente = t.consultar(); await chamada;
+  t.ficha.versao += 2;
+  a.versao = 2; a.triagem = { retomadaManual: { bloqueiaAutomacao: true, em: new Date().toISOString() } };
+  liberar(proof());
+  const out = await pendente;
+  expect(t.sitfis).not.toHaveBeenCalled();
+  expect(out.analise).toMatchObject({ status: "FALHOU", resultado: { revisaoExigeConferencia: true } });
+  expect(t.ficha.versao).toBe(3);
+});
+
+test("resposta SITFIS antiga conserva PDF/protocolo sem concluir a ficha retomada", async () => {
+  const t = setup(); const a = t.caso();
+  t.sitfis.mockImplementation(async ({ validarExecucao, onProtocolo }) => {
+    await validarExecucao(); await onProtocolo("protocolo-ja-enviado");
+    t.ficha.versao += 2; a.versao = 3;
+    a.triagem = { retomadaManual: { bloqueiaAutomacao: true, em: new Date().toISOString() } };
+    await expect(validarExecucao()).rejects.toMatchObject({ code: "escopo_alterado" });
+    return { ok: true, protocolo: "protocolo-ja-enviado", relatorioPdfBuffer: Buffer.from("%PDF-evidencia-antiga") };
+  });
+  const out = await t.consultar();
+  expect(out.analise).toMatchObject({ status: "FALHOU", resultado: { revisaoExigeConferencia: true, protocolo: "protocolo-ja-enviado" } });
+  expect(t.analises[0].documentoCifrado).toBe("pdf-cifrado-sintetico");
+  expect(t.db.$queryRaw).toHaveBeenCalled();
+});
+test("job da versão anterior não inicia nem reaproveita consulta na revisão retomada", async () => {
+  const t = setup(); t.ficha.versao = 3;
+  await expect(t.comercial.analisar(t.ficha.id, user, "SITFIS", { versaoEsperada: 1 })).rejects.toMatchObject({ code: "escopo_alterado" });
+  expect(t.procura).not.toHaveBeenCalled(); expect(t.sitfis).not.toHaveBeenCalled();
+  expect(t.db.onboardingAnalise.create).not.toHaveBeenCalled();
 });

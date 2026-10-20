@@ -45,3 +45,11 @@ test("número reassociado depois do agendamento bloqueia consulta privada sem re
   expect(t.procura).not.toHaveBeenCalled();
   expect(t.db.trabalhoFiscalLead.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "FALHOU", resultado: expect.objectContaining({ codigo: "identidade_alterada" }) }) }));
 });
+
+test("trabalho anterior à retomada não consulta nem libera autorização", async () => {
+ const t = setup();
+ t.a.triagem = { retomadaManual: { bloqueiaAutomacao: true, em: '2026-10-20T12:00:00Z' } };
+ await t.service.processarUmaVez();
+ expect(t.procura).not.toHaveBeenCalled();
+ expect(t.db.atendimentoLead.updateMany).not.toHaveBeenCalled();
+});

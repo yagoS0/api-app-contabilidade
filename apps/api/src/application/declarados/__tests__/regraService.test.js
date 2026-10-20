@@ -13,6 +13,7 @@ import {
   criarRegraManual,
   definirLancamentoAutomatico,
   listarRegras,
+  gerirRegra,
   reavaliarAprendizado,
   sugerirContaPara,
   sugerirContaParaLote,
@@ -669,4 +670,33 @@ describe("⚠⚠ `definirLancamentoAutomatico` — ligar numa regra que JÁ exis
       portalClientId: "emp-2", regraId: "r-1", lancaSozinha: false, client,
     })).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.NAO_ENCONTRADA });
   });
+});
+
+describe('gestão preserva identidade, autoria e aplicações', () => {
+ function gestao() {
+   let regra = { id: 'r', portalClientId: 'emp-1', cnpjFornecedor: '12345678000190', valorMin: 100, valorMax: 200, contaDestino: '411020008', contaCredito: null, ativa: true, lancaSozinha: false, diaDoLancamento: null, origemRegra: 'APRENDIDA', confirmacoesBase: ['anterior'] };
+   const db = { $queryRaw: jest.fn(async () => []), chartOfAccount: { findMany: async () => PLANO_GLOBAL },
+     regraContabilizacao: { findFirst: jest.fn(async ({where}) => where.portalClientId === regra.portalClientId ? regra : null),
+       update: jest.fn(async ({data}) => (regra = { ...regra, ...data })) },
+     lancamentoDeclarado: { findMany: async () => [] }, appSetting: { create: jest.fn(async () => ({})) } };
+   db.$transaction = fn => fn(db);
+   return { db, anterior: { ...regra } };
+ }
+ test('edição manual não fica sujeita à suspensão pelo aprendizado anterior', async () => {
+   const { db, anterior } = gestao();
+   const regra = await gerirRegra({ portalClientId:'emp-1', regraId:'r', usuarioId:'contador', agora:AGORA,
+     patch:{ acao:'editar', motivo:'Classificação conferida', anterior, campos:{ ...anterior, contaDestino:'411030012' } }, client:db });
+   expect(regra).toMatchObject({ id:'r', origemRegra:'MANUAL', confirmacoesBase:[], contaDestino:'411030012' });
+   expect(db.appSetting.create.mock.calls[0][0].data.value.antes.origemRegra).toBe('APRENDIDA');
+   db.regraContabilizacao.update.mockClear();
+   await reavaliarAprendizado({ portalClientId:'emp-1', cnpjFornecedor:regra.cnpjFornecedor, agora:AGORA, client:db });
+   expect(db.regraContabilizacao.update).not.toHaveBeenCalled();
+ });
+ test('revogação repetida é estável e empresa alheia é recusada', async () => {
+   const { db, anterior } = gestao();
+   const input = { portalClientId:'emp-1', regraId:'r', usuarioId:'contador', agora:AGORA, patch:{ acao:'revogar', motivo:'Não usar', anterior }, client:db };
+   await gerirRegra(input); await gerirRegra(input);
+   expect(db.regraContabilizacao.update).toHaveBeenCalledTimes(1);
+   await expect(gerirRegra({ ...input, portalClientId:'outra' })).rejects.toMatchObject({ codigo:RECUSA_DA_REGRA.NAO_ENCONTRADA });
+ });
 });

@@ -48,6 +48,12 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     return () => onRegistrarSaida?.(null);
   }, [onRegistrarSaida, salvarAgora, passo]);
 
+  useEffect(() => {
+    const proteger = event => event.detail.push(() => salvarAgora({ ultimoPasso: passo }));
+    window.addEventListener('altan:onboarding-antes-de-navegar', proteger);
+    return () => window.removeEventListener('altan:onboarding-antes-de-navegar', proteger);
+  }, [salvarAgora, passo]);
+
   // Reabre onde o preenchimento parou — é para isso que `ultimoPasso` existe.
   useEffect(() => {
     if (onboarding && passo === "origem" && onboarding.ultimoPasso) {
