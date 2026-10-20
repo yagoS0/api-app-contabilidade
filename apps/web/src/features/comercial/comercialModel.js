@@ -8,6 +8,7 @@ export function etapaDaOportunidade(item) {
   if (item.comercial?.contratacao?.ganha) return 'GANHA';
   return ({ cadastro: 'LEAD', publica: 'ANALISE', autorizacao: 'ANALISE', fiscal: 'ANALISE', diagnostico: 'ANALISE', devolutiva: 'ANALISE', proposta: 'PROPOSTA', contrato: 'CONTRATADO', pagamento: 'CONTRATADO', conclusao: 'CONCLUSAO' })[item.comercial?.atual] || 'INDISPONIVEL';
 }
+export const oportunidadeAtiva = item => !['CONCLUIDO', 'DESISTIU'].includes(etapaDaOportunidade(item));
 export const nomeDaOportunidade = item => item.razaoSocial?.trim() || item.responsavelNome?.trim() || `Atendimento ${String(item.id).slice(-6)}`;
 export function resumoRetorno(retorno) {
   if (!retorno) return 'Nenhum retorno agendado';

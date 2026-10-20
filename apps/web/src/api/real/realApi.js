@@ -1351,7 +1351,8 @@ export function createRealApi() {
     // ── Plano de Contas ────────────────────────────────────────────────────
     async getChartOfAccounts(companyId) {
       const payload = await request(`/firm/companies/${companyId}/chart-of-accounts`);
-      return Array.isArray(payload?.data) ? payload.data : [];
+      if (!Array.isArray(payload?.data)) throw new Error("Resposta inválida do plano de contas.");
+      return payload.data;
     },
     async createChartOfAccount(companyId, input) {
       return request(`/firm/companies/${companyId}/chart-of-accounts`, {
@@ -1382,7 +1383,8 @@ export function createRealApi() {
     // ── Plano de Contas Global ─────────────────────────────────────────────
     async getGlobalChartOfAccounts() {
       const payload = await request(`/firm/chart-of-accounts/global`);
-      return Array.isArray(payload?.data) ? payload.data : [];
+      if (!Array.isArray(payload?.data)) throw new Error("Resposta inválida do plano de contas global.");
+      return payload.data;
     },
     // Indica se o plano global tem cobertura mínima (5 tipos básicos) — pré-requisito para criar empresas.
     async getGlobalChartStatus() {
@@ -1424,7 +1426,8 @@ export function createRealApi() {
       if (params.status) q.set("status", params.status);
       const suffix = q.toString() ? `?${q}` : "";
       const payload = await request(`/firm/companies/${companyId}/parcelamentos${suffix}`);
-      return Array.isArray(payload?.data) ? payload.data : [];
+      if (!Array.isArray(payload?.data)) throw new Error("Resposta inválida ao listar parcelamentos. Tente atualizar novamente.");
+      return payload.data;
     },
     async gestaoParcelamento(companyId, id, action = '', body) {
       return request(`/firm/companies/${encodeURIComponent(companyId)}/parcelamentos/${encodeURIComponent(id)}/gestao${action}`, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) });

@@ -505,6 +505,8 @@ function AppInterno({ session, feedback }) {
           parcelamentos,       // Q9: hook de parcelamentos (parcelamentos, ingest, rescindir, conferência)
           savingEntry: accountingWorkspace.savingEntry,
           accounts: accountingWorkspace.chartOfAccountsState.accounts,
+          accountsLoading: accountingWorkspace.chartOfAccountsState.loading,
+          accountsError: accountingWorkspace.chartOfAccountsState.error,
           onLoadAccounts: () => accountingWorkspace.loadChartOfAccounts(),
           onCreateAccount: accountingWorkspace.handleCreateAccount,
           onUpdateAccount: accountingWorkspace.handleUpdateAccount,

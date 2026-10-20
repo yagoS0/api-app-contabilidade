@@ -425,9 +425,11 @@
 /* Atualização mantém o espaço da grade e sua rolagem. */
 .agenda-refresh-status { height:24px; font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .agenda-task-menu { position:relative; display:inline-flex; flex:none; align-self:start; z-index:5; }
-.agenda-task-menu button { color:var(--text); background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; min-width:28px; min-height:28px; cursor:pointer; }
-.agenda-task-menu-options { position:fixed; display:grid; width:210px; max-width:calc(100vw - 16px); box-sizing:border-box; color:var(--text); background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; padding:4px; z-index:1000; box-shadow:0 3px 12px #0004; }
-.agenda-task-menu-options button { font:inherit; color:var(--text); background:var(--bg-surface); border:0; border-radius:4px; text-align:left; padding:8px; min-height:44px; cursor:pointer; }
+.agenda-task-menu button { font:inherit; font-size:20px; line-height:1; color:inherit; background:transparent; border:0; border-radius:var(--radius-sm); min-width:28px; min-height:28px; cursor:pointer; }
+.agenda-task-menu button:hover { background:var(--accent-purple-surface); }
+.agenda-task-menu-options { position:fixed; display:grid; width:210px; max-width:calc(100vw - 16px); box-sizing:border-box; color:var(--text); background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-1); z-index:1000; box-shadow:var(--shadow); }
+.agenda-task-menu-options button { font:inherit; font-size:0.875rem; font-weight:400; color:var(--text); background:transparent; border:0; border-radius:var(--radius-sm); text-align:left; padding:var(--space-2); min-height:44px; cursor:pointer; }
+.agenda-task-menu-options button:hover { background:var(--accent-purple-surface); }
 .agenda-task-menu-options button:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
 .agenda-task-menu button:disabled { opacity:.5; cursor:wait; }
 .agenda-task-menu button:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:1px; }
@@ -435,6 +437,10 @@
 .agenda-time-day .agenda-event:has(.agenda-task-menu) .agenda-event-open { padding-right:30px; }
 .agenda-month .agenda-event:has(.agenda-task-menu) { flex-wrap:wrap; }
 .agenda-month .agenda-event:has(.agenda-task-menu) .agenda-event-open { flex-basis:calc(100% - 35px); }
+@media (min-width:641px) {
+ .agenda-month .agenda-event:has(.agenda-task-menu) { flex-wrap:nowrap; }
+ .agenda-month .agenda-event:has(.agenda-task-menu) .agenda-event-open { flex-basis:0; }
+}
 @media (max-width:640px) {
  .agenda-task-menu button { min-width:36px; min-height:36px; }
  .agenda-month .agenda-event:has(.agenda-task-menu) .agenda-event-open { flex-basis:100%; min-height:24px; }

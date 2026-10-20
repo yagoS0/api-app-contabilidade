@@ -26,11 +26,11 @@ export function useParcelamentos({ api, companyId, status = null }) {
     try {
       const data = await api.listParcelamentos(companyId, status ? { status } : {});
       if (version !== request.current) return;
-      setParcelamentos(Array.isArray(data) ? data : []);
+      if (!Array.isArray(data)) throw new Error("Resposta inválida ao listar parcelamentos. Tente atualizar novamente.");
+      setParcelamentos(data);
     } catch (err) {
       if (version !== request.current) return;
       setError(err?.message || "Falha ao listar parcelamentos.");
-      setParcelamentos([]);
     } finally {
       if (version === request.current) setLoading(false);
     }
@@ -119,7 +119,8 @@ export function useParcelamentos({ api, companyId, status = null }) {
   // `ConferenciaParcelasPanel` a mostra com o motivo e o "Tentar de novo".
   async function listConferencia() {
     const res = await api.getConferenciaParcelas(companyId);
-    return Array.isArray(res?.items) ? res.items : [];
+    if (!Array.isArray(res?.items)) throw new Error("Não foi possível ler a conferência de parcelas. Tente novamente.");
+    return res.items;
   }
   async function aprovarConferencia(guideIds) {
     setSaving(true); setError(null);

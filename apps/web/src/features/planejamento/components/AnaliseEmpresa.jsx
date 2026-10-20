@@ -22,6 +22,10 @@ const ePercentual = k => k.startsWith('margem') || k === 'carga';
 const mensagemErroAnalise = (erro, portalCliente) => portalCliente && erro?.code === 'CONTABILIDADE_ABERTA'
   ? 'Relatório disponível após o fechamento pelo escritório. Selecione um período encerrado.'
   : erro?.message || 'Não foi possível carregar a análise.';
+const analiseValida = r => r && r.ok !== false && r.atual?.indicadores && r.anterior?.indicadores
+  && Array.isArray(r.atual?.dre?.linhas) && Array.isArray(r.anterior?.dre?.linhas)
+  && ['serie', 'guias', 'insights', 'cobertura', 'avisos'].every(k => Array.isArray(r[k]))
+  && r.variacoes && r.serie.every(m => m && m.indicadores);
 
 function Variacao({ valor, pontos = false }) {
   if (!valor) return null;
@@ -31,7 +35,7 @@ function Variacao({ valor, pontos = false }) {
 function DetalheConta({ api, empresaId, conta, de, ate, fechar }) {
   const [pagina,setPagina] = useState(1), [dados,setDados] = useState(null), [erro,setErro] = useState('');
   useEffect(() => { let vivo=true; setDados(null); setErro('');
-    Promise.resolve().then(() => api.getAnaliseLancamentos(empresaId,{ conta: conta.reduzido, de, ate, pagina })).then(r => { if(vivo) { if(r?.ok === false) throw new Error(r.message); setDados(r); } }).catch(e => { if(vivo) setErro(e.message); });
+    Promise.resolve().then(() => api.getAnaliseLancamentos(empresaId,{ conta: conta.reduzido, de, ate, pagina })).then(r => { if(vivo) { if(!r || r.ok === false || !Array.isArray(r.linhas)) throw new Error(r?.message || 'Não foi possível ler os lançamentos da conta.'); setDados(r); } }).catch(e => { if(vivo) setErro(e.message); });
     return () => { vivo=false; };
   },[api,empresaId,conta,de,ate,pagina]);
   return <section className="bi-card" aria-label="Lançamentos da conta"><button type="button" onClick={fechar}>Fechar detalhe</button><h3>{conta.nome} · {conta.reduzido}</h3><p>{mes(de)} a {mes(ate)} · Valores por débito e crédito, antes do sinal de apresentação da DRE.</p>
@@ -60,7 +64,7 @@ export function AnaliseEmpresa({ api, empresaId, empresaNome, empresaCnpj, porta
   useEffect(() => { let vivo=true; setErro(''); setConta(null);
     if (!competenciasFechadas || !de || !ate || (portalCliente && !fechamentos?.liberado)) return;
     if (de>ate) { setErro('Informe um intervalo válido.'); return; }
-    Promise.resolve().then(()=>api.getAnalisePlanejamento(empresaId,{de,ate,comparar})).then(r=>{if(!r || r.ok===false) throw Object.assign(new Error(r?.message||'Resposta inválida.'), { code: r?.code || r?.error }); if(vivo)setResposta({chave,dados:r});}).catch(e=>{if(vivo){setResposta(null);setErro(mensagemErroAnalise(e,portalCliente));}});
+    Promise.resolve().then(()=>api.getAnalisePlanejamento(empresaId,{de,ate,comparar})).then(r=>{if(!analiseValida(r)) throw Object.assign(new Error(r?.message||'Resposta inválida.'), { code: r?.code || r?.error }); if(vivo)setResposta({chave,dados:r});}).catch(e=>{if(vivo){setResposta(null);setErro(mensagemErroAnalise(e,portalCliente));}});
     return ()=>{vivo=false;};
   },[api,empresaId,de,ate,comparar,chave,tentativa,competenciasFechadas,portalCliente,fechamentos?.liberado]);
   const atual = dados?.atual, anterior = dados?.anterior;

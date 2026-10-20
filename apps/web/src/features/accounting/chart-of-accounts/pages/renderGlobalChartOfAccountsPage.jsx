@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { ChartOfAccountsPage } from "./renderChartOfAccountsPage";
@@ -10,18 +10,37 @@ import { ChartOfAccountsPage } from "./renderChartOfAccountsPage";
 export function GlobalChartOfAccountsPage({ api, onBack }) {
   const [accounts, setAccounts] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const request = useRef(0);
+  const currentApi = useRef(api);
+  const loadedApi = useRef(null);
+  currentApi.current = api;
 
   const load = useCallback(async () => {
-    setError("");
+    if (currentApi.current !== api) return;
+    const id = ++request.current;
+    const current = () => id === request.current && currentApi.current === api;
+    setLoading(true);
     try {
       const data = await api.getGlobalChartOfAccounts();
-      setAccounts(Array.isArray(data) ? data : []);
+      if (!current()) return;
+      if (!Array.isArray(data)) throw new Error("Resposta inválida do plano de contas global.");
+      loadedApi.current = api;
+      setAccounts(data);
+      setError("");
     } catch (err) {
-      setError(err?.message || "Falha ao carregar plano global.");
+      if (current()) setError(err?.message || "Falha ao carregar plano global.");
+    } finally {
+      if (current()) setLoading(false);
     }
   }, [api]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    setAccounts([]);
+    setError("");
+    load();
+    return () => { request.current += 1; };
+  }, [load]);
 
   async function handleCreate(input) {
     await api.createGlobalChartOfAccount(input);
@@ -48,14 +67,12 @@ export function GlobalChartOfAccountsPage({ api, onBack }) {
       onBack={onBack}
     >
       <AppShell>
-        {error && (
-          <div style={{ padding: 10, marginBottom: 10, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", color: "#FF5757", borderRadius: 6 }}>
-            {error}
-          </div>
-        )}
         <ChartOfAccountsPage
           scope="GLOBAL"
-          accounts={accounts}
+          accounts={loadedApi.current === api ? accounts : []}
+          loading={loading}
+          loadError={error}
+          onReload={load}
           onCreateAccount={handleCreate}
           onUpdateAccount={handleUpdate}
           onDeleteAccount={handleDelete}

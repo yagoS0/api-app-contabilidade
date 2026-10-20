@@ -52,7 +52,7 @@ function recusa(codigo, mensagem, status) {
 function montarApi(createBaixa) {
   return {
     getChartOfAccounts: jest.fn().mockResolvedValue([]),
-    getCircular: jest.fn().mockResolvedValue({ months: [] }),
+    getCircular: jest.fn().mockResolvedValue({ provisoes: [], receitas: {}, extrato: {} }),
     getCircularAccountingEntries: jest.fn().mockResolvedValue({ entries: [] }),
     getAccountingEntries: jest.fn().mockResolvedValue({ entries: [], total: 0 }),
     createBaixa,
@@ -128,6 +128,19 @@ describe("handleCreateBaixa — a recusa não pode ser engolida", () => {
   });
 
   // ⚠ A baixa do INSS na Circular é sintética e vai por outra rota — a mesma regra vale para ela.
+  it("baixa aceita com recarga inválida conserva aviso e não repete gravação", async () => {
+    const createBaixa = jest.fn().mockResolvedValue({ ok: true, entry: { id: "baixa-1" } });
+    const api = montarApi(createBaixa);
+    const { result } = montarHook(api);
+    await act(async () => {});
+    api.getCircular.mockResolvedValue({ months: [] });
+    await act(async () => {
+      await expect(result.current.handleCreateBaixa("entry-das-junho", { lines: [] })).resolves.toBeUndefined();
+    });
+    expect(createBaixa).toHaveBeenCalledTimes(1);
+    expect(result.current.entriesError).toContain("Não foi possível atualizar a circular");
+  });
+
   it("REJEITA também na baixa do INSS sintético", async () => {
     const api = montarApi(jest.fn());
     api.saveInssBaixa = jest.fn().mockRejectedValue(recusa("MES_FECHADO", "Mês fechado.", 409));

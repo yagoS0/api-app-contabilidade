@@ -96,6 +96,9 @@ function normalize(value) {
 
 export function ChartOfAccountsPage({
   accounts = [],
+  loading = false,
+  loadError = "",
+  onReload,
   onCreateAccount,
   onUpdateAccount,
   onDeleteAccount,
@@ -349,7 +352,7 @@ export function ChartOfAccountsPage({
             {isGlobal ? "Plano de Contas Global" : "Plano de contas da empresa"}
           </h2>
           <p style={{ margin: "4px 0 0", color: PANEL.muted, fontSize: "0.875rem" }}>
-            {isGlobal
+            {accounts.length === 0 && (loading || loadError) ? "Plano de contas ainda não disponível." : isGlobal
               ? `${accounts.length} conta${accounts.length !== 1 ? "s" : ""} global${accounts.length !== 1 ? "is" : ""} — usadas por todas as empresas.`
               : <>
                   {accounts.length} conta{accounts.length !== 1 ? "s" : ""} dispon{accounts.length !== 1 ? "íveis" : "ível"}
@@ -359,6 +362,11 @@ export function ChartOfAccountsPage({
         </div>
         {onBack && <BackButton onClick={onBack} />}
       </div>
+      {loading && <p role="status">{accounts.length ? "Atualizando plano de contas…" : "Carregando plano de contas…"}</p>}
+      {loadError && <div role="alert" style={{ color: "var(--state-danger)", marginBottom: 12 }}>
+        <p>{loadError}{accounts.length > 0 && " As contas da última leitura foram preservadas."}</p>
+        {onReload && <Button variant="secondary" disabled={loading} onClick={onReload}>Tentar novamente</Button>}
+      </div>}
       {!isGlobal && <details style={{ marginBottom: 16, color: PANEL.muted, fontSize: "0.875rem" }}><summary>Como o plano da empresa funciona</summary><p>As contas da empresa têm prioridade pelo código reduzido. Os demais códigos usam o plano global. Personalizar ou importar aqui altera somente esta empresa.</p></details>}
 
       {message && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(105,255,71,0.12)", color: PANEL.success, borderRadius: 8, fontSize: "0.9rem" }}>{message}</p>}
@@ -503,7 +511,7 @@ export function ChartOfAccountsPage({
 
       {/* Tabela */}
       <div style={sectionStyle}>
-        {accounts.length === 0 ? (
+        {accounts.length === 0 && (loading || loadError) ? null : accounts.length === 0 ? (
           <p style={{ color: PANEL.muted, fontSize: "0.9375rem" }}>
             Nenhuma conta cadastrada ainda. Importe um CSV/PDF ou adicione manualmente acima.
           </p>

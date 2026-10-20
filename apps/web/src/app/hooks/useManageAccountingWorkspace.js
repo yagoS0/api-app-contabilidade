@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
 import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
@@ -40,6 +40,16 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   // sincronização para divergir. O default vence o do calendário do escritório (mês anterior), o
   // mesmo do dashboard.
   const circularCompetencia = accountingEntriesState.filters.competencia;
+  const circularScope = useMemo(() => ({ api, companyId: selectedCompanyId, year: circularYear, competencia: circularCompetencia }), [api, selectedCompanyId, circularYear, circularCompetencia]);
+  const currentCircularScope = useRef(circularScope);
+  currentCircularScope.current = circularScope;
+  const circularRequest = useRef(0);
+  const [loadedCircularScope, setLoadedCircularScope] = useState(null);
+  const chartRequest = useRef(0);
+  const chartScope = useMemo(() => ({ api, companyId: selectedCompanyId }), [api, selectedCompanyId]);
+  const currentChartScope = useRef(chartScope);
+  currentChartScope.current = chartScope;
+  const [loadedChartScope, setLoadedChartScope] = useState(null);
   function setCircularCompetencia(value) {
     if (!value) return;
     accountingEntriesState.setFilter("competencia", value);
@@ -57,17 +67,25 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }
   const [entriesMessage, setEntriesMessage] = useState("");
   const [entriesError, setEntriesError] = useState("");
+  const [chartFailure, setChartFailure] = useState(null);
+  const chartError = chartFailure?.scope === chartScope ? chartFailure.message : "";
 
   async function loadChartOfAccounts(companyId = selectedCompanyId) {
-    if (!companyId) return;
+    if (!companyId || companyId !== selectedCompanyId || chartScope !== currentChartScope.current) return;
+    const request = ++chartRequest.current;
+    const stillCurrent = () => request === chartRequest.current && chartScope === currentChartScope.current;
     chartOfAccountsState.setLoading(true);
     try {
       const data = await api.getChartOfAccounts(companyId);
+      if (!stillCurrent()) return;
+      if (!Array.isArray(data)) throw new Error("Resposta inválida do plano de contas.");
       chartOfAccountsState.setAccounts(data);
-    } catch {
-      chartOfAccountsState.setAccounts([]);
+      setLoadedChartScope(chartScope);
+      setChartFailure(null);
+    } catch (err) {
+      if (stillCurrent()) setChartFailure({ scope: chartScope, message: err?.message || "Falha ao carregar plano de contas." });
     } finally {
-      chartOfAccountsState.setLoading(false);
+      if (stillCurrent()) chartOfAccountsState.setLoading(false);
     }
   }
 
@@ -150,30 +168,45 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }
 
   async function loadCircular(year = circularYear, competencia = circularCompetencia) {
-    if (!selectedCompanyId) return;
+    if (!selectedCompanyId || circularScope !== currentCircularScope.current) return;
+    const request = ++circularRequest.current;
+    const stillCurrent = () => request === circularRequest.current && circularScope === currentCircularScope.current;
     setLoadingCircular(true);
     setEntriesError("");
     try {
       const yearly = await api.getCircular(selectedCompanyId, { year });
+      if (!stillCurrent()) return;
+      const isRecord = value => value != null && typeof value === "object" && !Array.isArray(value);
+      if (!isRecord(yearly) || yearly.ok === false || !Array.isArray(yearly.provisoes)
+        || !isRecord(yearly.receitas) || !isRecord(yearly.extrato)) {
+        throw new Error(yearly?.message || "Não foi possível ler a circular.");
+      }
       let review = null;
+      let reviewError = "";
       if (competencia) {
         try {
           review = await api.getCircularAccountingEntries(selectedCompanyId, competencia);
-        } catch {
+          if (!review || review.ok === false || !Array.isArray(review.entries)) throw new Error("Resposta inválida da conferência contábil.");
+        } catch (err) {
           review = null;
+          reviewError = err?.message || "Falha ao carregar conferência contábil.";
         }
       }
+      if (!stillCurrent()) return;
       setCircularData({
         ...yearly,
         circular: review?.circular || null,
         accountingReview: review || null,
+        reviewError,
         reviewEntries: Array.isArray(review?.entries) ? review.entries : [],
         reviewAllEntries: Array.isArray(review?.allEntries) ? review.allEntries : [],
       });
+      setLoadedCircularScope(circularScope);
+      if (reviewError) setEntriesError(`Matriz anual carregada; conferência indisponível. ${reviewError}`);
     } catch (err) {
-      setEntriesError(err?.message || "Falha ao carregar circular.");
+      if (stillCurrent()) setEntriesError(`Não foi possível atualizar a circular. ${err?.message || ""}`);
     } finally {
-      setLoadingCircular(false);
+      if (stillCurrent()) setLoadingCircular(false);
     }
   }
 
@@ -589,6 +622,9 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }
 
   function resetWorkspace() {
+    chartRequest.current += 1;
+    setLoadedChartScope(null);
+    setChartFailure(null);
     setEntriesMessage("");
     setEntriesError("");
     accountingEntriesState.setEntries([]);
@@ -623,9 +659,9 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId, companyDetailTab, accountingEntriesState.filters]);
 
-  // Deep link/F5 no plano de contas também deve carregar, sem depender do clique no menu.
+  // Todos os consumidores do plano devem carregar também por link direto/F5.
   useEffect(() => {
-    if (page === "companyDetail" && selectedCompanyId && companyDetailTab === "planoContas") loadChartOfAccounts(selectedCompanyId);
+    if (page === "companyDetail" && selectedCompanyId && ["planoContas", "guides", "parcelamento"].includes(companyDetailTab)) loadChartOfAccounts(selectedCompanyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId, companyDetailTab]);
 
@@ -652,17 +688,22 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   return {
     accountingEntriesState: { ...accountingEntriesState, entries: visibleEntriesScope === entriesScope ? accountingEntriesState.entries : [] },
-    chartOfAccountsState,
+    chartOfAccountsState: {
+      ...chartOfAccountsState,
+      accounts: loadedChartScope === chartScope ? chartOfAccountsState.accounts : [],
+      loading: chartOfAccountsState.loading || (loadedChartScope !== chartScope && !chartError && Boolean(selectedCompanyId)),
+      error: chartError,
+    },
     savingEntry,
     savingBaixa,
-    circularData,
+    circularData: loadedCircularScope === circularScope ? circularData : null,
     loadingCircular,
     circularYear,
     circularCompetencia,
     savingCircular,
     approvingCircularEntryId,
     entriesMessage,
-    entriesError,
+    entriesError: [entriesError, chartError].filter(Boolean).join(" "),
     loadChartOfAccounts,
     loadAccountingEntries,
     loadCircular,

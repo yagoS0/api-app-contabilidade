@@ -148,6 +148,33 @@ function renderTab(provisoes, { acrescimos = {}, ...over } = {}) {
   return { props, ...render(<MemoryRouter><CircularTab {...props} /></MemoryRouter>) };
 }
 
+test('recarga conserva matriz montada e anuncia atualização', () => {
+  const { props, rerender } = renderTab([provisao()]);
+  const tabela = screen.getByRole('table');
+  rerender(<MemoryRouter><CircularTab {...props} loading /></MemoryRouter>);
+  expect(screen.getByRole('table')).toBe(tabela);
+  expect(screen.getByRole('status')).toHaveTextContent('Atualizando circular');
+  const atualizacao = screen.getByRole('status');
+  rerender(<MemoryRouter><CircularTab {...props} /></MemoryRouter>);
+  expect(atualizacao).toBeInTheDocument();
+  expect(atualizacao).toHaveStyle({ height: '40px', boxSizing: 'border-box', lineHeight: '24px', padding: '8px 0' });
+  expect(screen.getByRole('table')).toBe(tabela);
+  expect(screen.getByRole('region', { name: `Circular de ${ANO}` })).toHaveAttribute('tabindex', '0');
+});
+
+test('falha inicial é anunciada sem declarar ausência legítima de dados', () => {
+  renderTab([], { circularData: null, error: 'Circular indisponível' });
+  expect(screen.getByRole('alert')).toHaveTextContent('Circular indisponível');
+  expect(screen.queryByText(/Nenhum dado disponível/)).not.toBeInTheDocument();
+});
+
+test('faturamento zero explícito permanece distinto de mês sem informação', () => {
+  renderTab([], { circularData: { provisoes: [], receitas: { [COMP]: 0 }, acrescimos: {}, extrato: {} } });
+  const linha = document.querySelector(`[data-circular-month="${COMP}"]`);
+  expect(within(linha).getByText('R$ 0,00')).toBeVisible();
+  expect(screen.getAllByTitle('Faturamento não informado')).toHaveLength(11);
+});
+
 test("origem parcelada não indica pagamento e leva à composição do acordo", () => {
   renderTab([provisao({ parcelamentoOrigem: { parcelamentoId: "acordo-1", statusContrato: "ATIVO" } })]);
   const valor = screen.getByRole("button", { name: "R$ 1.234,56" });
@@ -739,8 +766,8 @@ describe("provisão fora do regime / sem subtipo — continua clicável em algum
 });
 
 describe("estados de carga", () => {
-  it("carregando não mostra a tabela", () => {
-    renderTab([], { loading: true });
+  it("carga inicial sem matriz não mostra a tabela", () => {
+    renderTab([], { loading: true, circularData: null });
     expect(screen.getByText("Carregando...")).toBeInTheDocument();
     expect(screen.queryByText("Total em aberto")).not.toBeInTheDocument();
   });

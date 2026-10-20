@@ -290,6 +290,7 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
             <span>Último resultado válido: {company.serproStatus?.procurationStatus === 'ATIVA' ? 'Procuração ativa' : company.serproStatus?.procurationStatus === 'AUSENTE' ? 'Sem procuração ativa' : 'Sem resultado conclusivo'}</span>
             <span>Fonte: {company.serproStatus?.checkedAt ? 'verificação SERPRO salva' : 'Sem verificação salva'}</span>
             <span>Verificada em: {dataProcuracao(company.serproStatus?.checkedAt)}</span>
+            {procuracao.orientacao && <span>{procuracao.orientacao}</span>}
             <span>Validade: {dataProcuracao(company.serproStatus?.validUntil)}</span>
             <span>Serviços informados: {Array.isArray(company.serproStatus?.systems) && company.serproStatus.systems.length ? company.serproStatus.systems.join(', ') : 'Escopo não informado'}</span>
             {company.serproStatus?.ultimaTentativa && <span>Última tentativa: {company.serproStatus.ultimaTentativa.status === 'ERRO' ? 'Não foi possível verificar; resultado anterior preservado' : company.serproStatus.ultimaTentativa.status === 'SUCESSO' ? 'Concluída' : 'Sem conclusão confirmada'} · {dataProcuracao(company.serproStatus.ultimaTentativa.iniciadaEm)}{company.serproStatus.ultimaTentativa.vinculoConfirmado !== true ? ' · Vínculo atual não confirmado' : ''}</span>}
