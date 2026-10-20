@@ -60,6 +60,15 @@ function montar(props = {}) {
   );
 }
 
+test('procuração antiga mostra estado histórico e necessidade de atualização no detalhe', () => {
+  montar({ companies: [empresa({ serproStatus: { procurationStatus:'ATIVA', vinculoConfirmado:true, checkedAt:new Date(Date.now()-86400000).toISOString(), validUntil:'2099-10-13' } })] });
+  const resumo = screen.getByText('Procuração: Ativa na última verificação');
+  fireEvent.click(resumo);
+  expect(screen.getByText('Atualize a verificação antes de operar.')).toBeVisible();
+  expect(screen.getByText(/Verificada em:/)).toBeVisible();
+  expect(screen.getByText('Validade: 13/10/2099')).toBeVisible();
+});
+
 test("empresa zerada e fechada mantém indicação PARC visível, sem reabrir fechamento", () => {
   const c = empresa({ empresaZerada: true, fechamentoContabil: { fechado: true }, guideCompliance: { hasPendenciasParcelamento: true, parcDas: { required: true, state: "missing", pendenciaOperacional: true, pendencias: 1, itens: [{ id: "i1", estado: "IDENTIFICAR", label: "Identificar parcelamento" }] } } });
   montar({ companies: [c] });

@@ -2,6 +2,24 @@ import { render,screen,fireEvent,waitFor } from '@testing-library/react';
 import { ClientesRelatorio } from '../../components/ClientesRelatorio';
 import { clientesAnaliseMock } from '../../../../api/mock/clientesAnaliseMock';
 const filtros={de:'2026-08',ate:'2026-08',comparar:'anterior'};
+
+test.each([null, {}, {ok:true,clientes:[]}])('resposta incompleta dos clientes é erro, não carteira vazia: %p',async(resposta)=>{
+ const api={getAnaliseClientes:jest.fn(async()=>resposta)};
+ render(<ClientesRelatorio api={api} empresaId="sintetica" {...filtros}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Resposta inválida');
+ expect(screen.getByRole('button',{name:'Recarregar clientes'})).toBeEnabled();
+ expect(screen.queryByText('Carteira de clientes')).not.toBeInTheDocument();
+});
+
+test('impressão recusa resposta incompleta mesmo após leitura válida',async()=>{
+ const print=jest.spyOn(window,'print').mockImplementation(()=>{});
+ const api={getAnaliseClientes:jest.fn().mockResolvedValueOnce(clientesAnaliseMock('demo',filtros)).mockResolvedValue({ok:true})};
+ render(<ClientesRelatorio api={api} empresaId="demo" {...filtros}/>);
+ await screen.findByText('Carteira de clientes');
+ fireEvent.click(screen.getByRole('button',{name:'Imprimir / salvar PDF'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível validar');
+ expect(print).not.toHaveBeenCalled();print.mockRestore();
+});
 test('relatório tem gráficos, números e detalhe das notas',async()=>{const api={getAnaliseClientes:jest.fn(async(id,f)=>clientesAnaliseMock(id,f))};render(<ClientesRelatorio api={api} empresaId="demo" {...filtros}/>);await screen.findByText('Carteira de clientes');expect(screen.getByRole('img',{name:'Faturamento identificado · 12 meses'})).toBeInTheDocument();fireEvent.click(screen.getAllByRole('button',{name:'Clínica Aurora · Exemplo'})[0]);expect(screen.getByText('Notas que compõem o período')).toBeInTheDocument();expect(screen.getByText('Acumulado até a referência')).toBeInTheDocument();});
 test('trocar empresa descarta resposta tardia',async()=>{let resolve;const api={getAnaliseClientes:jest.fn().mockImplementationOnce(()=>new Promise(r=>{resolve=r;})).mockImplementation(async(id,f)=>clientesAnaliseMock(id,f))};const view=render(<ClientesRelatorio api={api} empresaId="a" {...filtros}/>);await waitFor(()=>expect(resolve).toBeDefined());view.rerender(<ClientesRelatorio api={api} empresaId="b007" {...filtros}/>);await screen.findByText('Sem faturamento identificado para calcular concentração.');resolve(clientesAnaliseMock('a',filtros));await waitFor(()=>expect(screen.queryByText('Clínica Aurora · Exemplo')).not.toBeInTheDocument());});
 test('erro tem retentativa sem fabricar demonstração',async()=>{const api={getAnaliseClientes:jest.fn().mockRejectedValueOnce(new Error('Falha')).mockImplementation(async(id,f)=>clientesAnaliseMock(id,f))};render(<ClientesRelatorio api={api} empresaId="a" {...filtros}/>);await screen.findByRole('alert');fireEvent.click(screen.getByText('Recarregar clientes'));await screen.findByText('Carteira de clientes');});

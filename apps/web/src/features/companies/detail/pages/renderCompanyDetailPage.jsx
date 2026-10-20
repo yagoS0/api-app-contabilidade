@@ -393,6 +393,19 @@ function SitfisTabWrapper({ companyId, guidesPanel, feedback, empresa }) {
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
 
+export function PlanoContasAviso({ panel = {}, mostrarErro = true }) {
+  const { accountsLoading, accountsError, onLoadAccounts } = panel;
+  return <div data-chart-loading-slot style={{ minHeight: 40, boxSizing: "border-box", padding: "8px var(--space-4)" }}>
+    <div style={{ height: 24, lineHeight: "24px" }}>
+      {accountsLoading && <span role="status">Atualizando plano de contas…</span>}
+    </div>
+    {accountsError && <>
+      {mostrarErro && <p role="alert" style={{ color: "var(--state-danger)" }}>{accountsError}</p>}
+      <Button variant="secondary" disabled={accountsLoading} onClick={onLoadAccounts}>Atualizar plano de contas</Button>
+    </>}
+  </div>;
+}
+
 function CompanyDetailContent({
   usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
@@ -438,9 +451,7 @@ function CompanyDetailContent({
     // faria duas requisições por clique.
     // Plano de contas carrega pelo hook também em acesso direto e troca de empresa.
     // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
-    if (tab === "guides") { accountingPanel.onLoadAccounts(); }
     // Parcelamento: o modal de config de contas usa o plano de contas.
-    if (tab === "parcelamento") { accountingPanel.onLoadAccounts(); }
     if (tab === "notasFiscais") { notasPanel?.reload?.(); }
   }
 
@@ -463,6 +474,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
+          <PlanoContasAviso panel={accountingPanel} mostrarErro={false} />
           <AccountingEntriesTab
             companyId={companyId}
             myRole={selectedCompany?.myRole}
@@ -536,6 +548,7 @@ function CompanyDetailContent({
               "aceita, sem confirmação" até alguém apertar F5 — que foi o que aconteceu em
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
+          <PlanoContasAviso panel={accountingPanel} />
           <CompanyGuidesTable
             key={companyId}
             guiaDeOrigem={guiaOrigemParcelamento?.companyId === companyId ? guiaOrigemParcelamento : null}
@@ -596,6 +609,9 @@ function CompanyDetailContent({
           <ChartOfAccountsPage
             key={selectedCompany.id || selectedCompany.companyId}
             accounts={accountingPanel.accounts || []}
+            loading={accountingPanel.accountsLoading}
+            loadError={accountingPanel.accountsError}
+            onReload={accountingPanel.onLoadAccounts}
             onCreateAccount={accountingPanel.onCreateAccount}
             onUpdateAccount={accountingPanel.onUpdateAccount}
             onDeleteAccount={accountingPanel.onDeleteAccount}
@@ -1225,6 +1241,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
+          <PlanoContasAviso panel={accountingPanel} mostrarErro={false} />
           <CircularTab
             companyId={companyId}
             companyRegime={companyRegime}
@@ -1277,6 +1294,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
+              <PlanoContasAviso panel={accountingPanel} />
               <ParcelamentoTab
                 companyId={companyId}
                 parcelamentos={accountingPanel.parcelamentos}
@@ -1439,7 +1457,6 @@ function CompanyDetailComConfiguracoes(props) {
  if (!id) return <TabLoadingFallback/>;
  const navegar = (tab) => {
    c.setCompanyDetailTab(tab);
-   if (['lancamentos', 'guides', 'parcelamento'].includes(tab)) props.accountingPanel?.onLoadAccounts?.();
    if (tab === 'lancamentos') props.accountingPanel?.onLoadEntries?.();
    if (tab === 'notasFiscais') props.notasPanel?.reload?.();
  };

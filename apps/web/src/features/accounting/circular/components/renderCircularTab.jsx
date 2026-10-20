@@ -1230,12 +1230,12 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
       {(error || message) && (
         <div style={{ marginBottom: 12, display: "grid", gap: 6 }}>
           {error && (
-            <div style={{ padding: "10px 14px", borderRadius: 6, background: "#3d1515", border: "1px solid #7f1d1d", color: "#fca5a5", fontSize: "0.8125rem" }}>
+            <div role="alert" style={{ padding: "10px 14px", borderRadius: 6, background: "#3d1515", border: "1px solid #7f1d1d", color: "#fca5a5", fontSize: "0.8125rem" }}>
               {error}
             </div>
           )}
           {message && (
-            <div style={{ padding: "10px 14px", borderRadius: 6, background: "#0d2d1e", border: "1px solid #166534", color: "#86efac", fontSize: "0.8125rem" }}>
+            <div role="status" style={{ padding: "10px 14px", borderRadius: 6, background: "#0d2d1e", border: "1px solid #166534", color: "#86efac", fontSize: "0.8125rem" }}>
               {message}
             </div>
           )}
@@ -1245,17 +1245,17 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
       {/* Operações Fiscais removidas: ações (Buscar Guias, Verificar Pagtos, Sincronizar INSS)
           ficam nas abas Guias/Configurações; Circular foca só na tabela. */}
 
-      {loading && (
-        <p style={{ color: "#6272A4", textAlign: "center", padding: 32 }}>Carregando...</p>
-      )}
+      <div data-circular-loading-slot role={loading ? "status" : undefined} style={{ color: "var(--text-muted)", height: 40, boxSizing: "border-box", lineHeight: "24px", textAlign: "center", padding: "8px 0" }}>
+        {loading ? (circularData ? "Atualizando circular…" : "Carregando...") : null}
+      </div>
 
-      {!loading && !circularData && (
+      {!loading && !circularData && !error && (
         <p style={{ color: "#6272A4", textAlign: "center", padding: 32 }}>
           Nenhum dado disponível. Clique em Atualizar.
         </p>
       )}
 
-      {!loading && circularData && (
+      {circularData && (
         <div data-print-area>
           {/* Cabeçalho que só existe no PAPEL: a folha sai sem o header do app, e uma tabela de
               12 meses sem empresa nem ano é indistinguível da de qualquer outra empresa. */}
@@ -1272,7 +1272,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             </p>
           </div>
           <CircularMonthTags>
-          <div data-print-tabela style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
+          <div data-print-tabela role="region" aria-label={`Circular de ${year}`} tabIndex={0} style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
           <table style={{ width: (1 + visibleRows.length + 2 + (temExtratoNoAno ? 1 : 0)) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
               <tr style={{ background: "#282A36" }}>
@@ -1331,7 +1331,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         acrescimo={acrescimoFor(col.key, comp)}
                       />
                     )))}
-                    <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtValor(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                    <td style={extraCellStyle}>{fat != null && fat !== '' && Number.isFinite(Number(fat)) ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtValor(fat) || "0,00"}</span> : <span title="Faturamento não informado" style={{ color: "var(--text-muted)" }}>—</span>}</td>
                     {/* Vencido em VERMELHO, a vencer em ÂMBAR — e cada um com o seu rótulo, porque
                         cor sozinha não é estado (princípio 2). Nada em aberto vira "—", não "R$ 0,00":
                         zero e ausência se leem igual num relance e significam a mesma coisa aqui. */}

@@ -352,7 +352,7 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                         <td style={{ padding: "8px 10px", color: "var(--text)" }}>{company.razao}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{company.cnpj}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{regime}</td>
-                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}><span style={{color:proc.cor}}>{proc.rotulo}</span><small style={{display:"block"}}>Verificada: {dataProcuracao(dados.checkedAt)}</small>{dados.validUntil && <small style={{display:"block"}}>Validade: {dataProcuracao(dados.validUntil)}</small>}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}><span style={{color:proc.cor}}>{proc.rotulo}</span><small style={{display:"block"}}>Verificada: {dataProcuracao(dados.checkedAt)}</small>{proc.orientacao && <small style={{display:"block"}}>{proc.orientacao}</small>}{dados.validUntil && <small style={{display:"block"}}>Validade: {dataProcuracao(dados.validUntil)}</small>}</td>
                         <td style={{ padding: "8px 10px" }}>{renderResultCell(company.companyId)}</td>
                       </tr>
                     );

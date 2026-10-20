@@ -1,8 +1,30 @@
 import {render,screen,fireEvent,waitFor,act} from '@testing-library/react';
 import {CalendarioAgenda} from '../CalendarioAgenda';
+import {MenuTarefaCalendario} from '../MenuTarefaCalendario';
 import {criarMockTarefasCalendario} from '../../../../api/mock/tarefasCalendarioMock';
 const ctx={referencia:'2026-10-15',visao:'dia'};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+
+test('menu conserva teclado, retorno de foco e identidade da ocorrência', () => {
+ const item={id:'ocorrencia',titulo:'Tarefa teste'}, duplicar=jest.fn(), excluir=jest.fn();
+ render(<MenuTarefaCalendario item={item} onDuplicar={duplicar} onExcluir={excluir}/>);
+ const gatilho=screen.getByRole('button',{name:'Ações de Tarefa teste'});
+ fireEvent.click(gatilho);
+ const primeira=screen.getByRole('menuitem',{name:'Duplicar ocorrência'});
+ expect(primeira).toHaveFocus();
+ fireEvent.keyDown(primeira,{key:'ArrowDown'});
+ const ultima=screen.getByRole('menuitem',{name:'Excluir ocorrência'});
+ expect(ultima).toHaveFocus();
+ fireEvent.keyDown(ultima,{key:'Escape'});
+ expect(gatilho).toHaveFocus();
+ expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+ expect(excluir).not.toHaveBeenCalled();
+ fireEvent.click(gatilho);
+ fireEvent.click(screen.getByRole('menuitem',{name:'Duplicar ocorrência'}));
+ expect(duplicar).toHaveBeenCalledWith(item);
+ expect(duplicar).toHaveBeenCalledTimes(1);
+ expect(gatilho).toHaveFocus();
+});
 async function montar() {
  const api=criarMockTarefasCalendario([]);
  const one=await api.criarTarefaCalendario({titulo:'Original',config:{dataInicio:'2026-10-15',recorrencia:'MENSAL'}});

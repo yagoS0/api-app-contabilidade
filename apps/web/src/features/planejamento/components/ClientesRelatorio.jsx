@@ -7,6 +7,9 @@ const parte=v=>v==null?'Sem base':`${v.toLocaleString('pt-BR',{maximumFractionDi
 const mes=v=>v?`${v.slice(5)}/${v.slice(0,4)}`:'Não informado';
 const doc=v=>v.length===11?v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4'):v.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5');
 const compacto=v=>Number(v).toLocaleString('pt-BR',{notation:'compact',maximumFractionDigits:1});
+const clientesValidos = r => r && r.ok !== false && r.resumo && r.anterior && r.ponte
+ && Array.isArray(r.serie) && Array.isArray(r.clientes)
+ && r.clientes.every(c => c && typeof c.documento === 'string' && Array.isArray(c.serie) && Array.isArray(c.notas));
 
 function Evolucao({serie,titulo}) {
  const w=640,h=220,p=42,max=Math.max(1,...serie.map(s=>s.valor||0)),largura=(w-p*2)/Math.max(1,serie.length);
@@ -41,7 +44,7 @@ export function ClientesRelatorio({api,empresaId,empresaNome,de,ate,comparar,emb
  const r=base&&limitarGraficoAoPeriodo?{...base,serie:base.serie.filter(m=>m.mes>=de&&m.mes<=ate&&(!competenciasFechadas||competenciasFechadas.includes(m.mes))),clientes:base.clientes.map(c=>({...c,serie:c.serie.filter(m=>m.mes>=de&&m.mes<=ate&&(!competenciasFechadas||competenciasFechadas.includes(m.mes)))}))}:base;
  const consultaAtual=useRef(chave),ativo=useRef(true);consultaAtual.current=chave;
  useEffect(()=>{ativo.current=true;return()=>{ativo.current=false;};},[]);
- useEffect(()=>{let vivo=true;setErro('');setSelecionado(null);setPagina(1);Promise.resolve().then(()=>api.getAnaliseClientes(empresaId,{de,ate,comparar})).then(d=>{if(!d||d.ok===false)throw new Error(d?.message||'Resposta inválida.');if(vivo)setResposta({chave,dados:d});}).catch(e=>{if(vivo)setErro(e.message);});return()=>{vivo=false;};},[api,empresaId,de,ate,comparar,chave,tentativa]);
+ useEffect(()=>{let vivo=true;setErro('');setSelecionado(null);setPagina(1);Promise.resolve().then(()=>api.getAnaliseClientes(empresaId,{de,ate,comparar})).then(d=>{if(!clientesValidos(d))throw new Error(d?.message||'Resposta inválida.');if(vivo)setResposta({chave,dados:d});}).catch(e=>{if(vivo)setErro(e.message);});return()=>{vivo=false;};},[api,empresaId,de,ate,comparar,chave,tentativa]);
  if(erro)return <section role="alert">{erro} <button onClick={()=>{setResposta(null);setTentativa(n=>n+1);}}>Recarregar clientes</button></section>;
  if(!r)return <p role="status">Carregando relatório de clientes…</p>;
  const s=r.resumo,ativos=r.clientes.filter(c=>c.atual>0),top=ativos.slice(0,5),restante=s.total-top.reduce((v,c)=>v+c.atual,0);
@@ -54,7 +57,7 @@ export function ClientesRelatorio({api,empresaId,empresaNome,de,ate,comparar,emb
    try {
      const atual=await api.getAnaliseClientes(empresaId,{de,ate,comparar});
      if(!ativo.current||consultaAtual.current!==chaveSolicitada)return;
-     if(!atual||atual.ok===false)throw Error(atual?.message||'Não foi possível validar o fechamento para impressão.');
+     if(!clientesValidos(atual))throw Error(atual?.message||'Não foi possível validar o fechamento para impressão.');
      flushSync(()=>{setResposta({chave:chaveSolicitada,dados:atual});setImprimindo(true);});
      document.body.classList.add('imprimindo-clientes');
      window.addEventListener('afterprint',limpar,{once:true});
