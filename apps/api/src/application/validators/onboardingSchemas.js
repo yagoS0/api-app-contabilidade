@@ -38,5 +38,10 @@ export const onboardingEtapaPatchSchema = z.object({
 }).strict();
 
 export const onboardingDesistirSchema = z.object({
+  versao: z.number().int().nonnegative(),
   motivo: z.string().max(500).or(z.literal("")).optional().nullable(),
+}).strict();
+
+export const onboardingDescarteSchema = z.object({
+  versao: z.number().int().nonnegative(),
 }).strict();

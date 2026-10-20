@@ -86,7 +86,7 @@ try {
       return r;
     };
     const pendente = acao === "etapa" ? concluirEtapa(t.ficha.id, t.ficha.etapas[0].id, { concluida: true })
-      : acao === "desistencia" ? desistir(t.ficha.id, { motivo: "Declaração fictícia" })
+      : acao === "desistencia" ? desistir(t.ficha.id, { motivo: "Declaração fictícia", versao: t.ficha.versao })
       : acao === "comercial" ? criarServicoComercial({ db }).comercial(t.ficha.id, { id: `${run}-contador`, role: "contador" }, { faseComercial: "PROPOSTA", proposta: { texto: "Não deve persistir" } })
       : atualizar(t.ficha.id, { versao: 0, ultimoPasso: "dados" });
     // Captura imediatamente a rejeição para não produzir unhandledRejection.

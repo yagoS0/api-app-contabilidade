@@ -222,12 +222,27 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
   test("descartar só vale para rascunho", async () => {
     const { onboarding } = await api.criarOnboarding("ABERTURA");
     await api.salvarOnboarding(onboarding.id, { finalizar: true });
-    await expect(api.descartarOnboarding(onboarding.id)).rejects.toMatchObject({
+    await expect(api.descartarOnboarding(onboarding.id, onboarding.versao || 0)).rejects.toMatchObject({
       code: "somente_rascunho_pode_ser_descartado",
     });
 
     const rascunho = await api.criarOnboarding("ABERTURA");
-    await expect(api.descartarOnboarding(rascunho.onboarding.id)).resolves.toEqual({ ok: true });
+    await expect(api.descartarOnboarding(rascunho.onboarding.id, rascunho.onboarding.versao || 0)).resolves.toEqual({ ok: true });
+  });
+
+  test("prévia mock, versão e repetição preservam desistência e histórico na releitura", async () => {
+    const { onboarding } = await api.criarOnboarding("ABERTURA");
+    const { elegibilidade } = await api.getElegibilidadeDescarteOnboarding(onboarding.id);
+    expect(elegibilidade).toMatchObject({ podeExcluir: true, podeEncerrar: true });
+    await expect(api.desistirOnboarding(onboarding.id, "Motivo", elegibilidade.versao + 1))
+      .rejects.toMatchObject({ code: "formulario_alterado" });
+    await api.desistirOnboarding(onboarding.id, "Motivo original", elegibilidade.versao);
+    await api.desistirOnboarding(onboarding.id, "Outro motivo", elegibilidade.versao);
+    const { onboarding: salva } = await api.getOnboarding(onboarding.id);
+    expect(salva).toMatchObject({ status: "DESISTIU", motivoDesistencia: "Motivo original", versao: elegibilidade.versao + 1 });
+    expect((await api.getElegibilidadeDescarteOnboarding(onboarding.id)).elegibilidade)
+      .toMatchObject({ podeExcluir: false, podeEncerrar: false });
+    expect((await api.listarOnboardings({ incluirRascunhos: true })).itens.find(i => i.id === onboarding.id)?.status).toBe("DESISTIU");
   });
 
   // A poda é do lado da tela (o hook a chama antes de salvar). Este teste amarra as duas pontas:

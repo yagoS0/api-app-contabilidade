@@ -1,3 +1,4 @@
+import { AcoesOportunidade } from '../components/AcoesOportunidade';
 import { nomeDaOportunidade } from '../../comercial/comercialModel';
 import { etapaSatisfeita } from '../lib/jornadaComercial';
 import { PainelComercial } from "../components/PainelComercial";
@@ -43,11 +44,14 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   const [continuacao, setContinuacao] = useState(0);
   const [conversaVinculada, setConversaVinculada] = useState(null);
   const contexto = useRef(onboardingId), leitura = useRef(0);
+  const fichaAtual = useRef(onboarding), atualizacaoManual = useRef(null);
+  const acoesRef = useRef(null);
+  fichaAtual.current = onboarding;
   if (contexto.current !== onboardingId) { contexto.current = onboardingId; leitura.current++; }
   useEffect(() => {
     const leituraDaFicha = leitura;
     contexto.current = onboardingId;
-    return () => { leituraDaFicha.current++; contexto.current = null; };
+    return () => { leituraDaFicha.current++; contexto.current = null; atualizacaoManual.current = null; };
   }, [onboardingId]);
   useEffect(() => {
     let atual = true;
@@ -79,27 +83,63 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   useEffect(() => { setEditando(preenchimentoInicial); setAreaEscolhida(null); setOcupada(false); setAviso(null); setModalAberto(false); }, [onboardingId, preenchimentoInicial]);
 
   async function continuarAtendimento() {
+    const id = onboardingId, pedido = ++leitura.current;
     try {
-      const r = await api.getOnboarding(onboardingId);
-      setOnboarding(r?.onboarding || r);
+      const r = await api.getOnboarding(id);
+      if (contexto.current !== id || pedido !== leitura.current) return;
+      const salva = conferirLeitura(r, id);
+      if (!salva) return;
+      setOnboarding(salva);
       setRevisaoComercial(v => v + 1);
       setEditando(false);
       setContinuacao(v => v + 1);
       setAreaEscolhida({ id: onboardingId, area: typeof api.getOnboardingComercial === "function" ? "comercial" : "dados" });
       setAviso(null);
-    } catch (e) { setAviso(`Os dados foram salvos, mas não foi possível atualizar o atendimento. ${e.message}`); }
+    } catch (e) {
+      if (contexto.current === id && pedido === leitura.current) {
+        setAviso(`Os dados foram salvos, mas não foi possível atualizar o atendimento. ${e.message}`);
+      }
+    }
+  }
+
+  function conferirLeitura(resposta, id) {
+    const salva = resposta?.onboarding || resposta;
+    if (resposta?.ok === false || salva?.id !== id ||
+        (salva.versao != null && !Number.isInteger(salva.versao))) {
+      throw new Error("Resposta sem ficha válida. Confira novamente.");
+    }
+    const atual = fichaAtual.current;
+    // Leituras legadas não fabricam revisão nem substituem evidência versionada.
+    // As ações destrutivas obtêm sua própria prévia com versão obrigatória.
+    if (atual?.id === id && Number.isInteger(atual.versao)) {
+      if (!Number.isInteger(salva.versao)) throw new Error("Resposta sem versão da ficha. Confira novamente.");
+      if (salva.versao < atual.versao) return null;
+    }
+    return salva;
   }
 
   async function atualizarFicha() {
     if (ocupada) return;
+    const id = onboardingId, pedido = ++leitura.current;
+    const operacao = {};
+    atualizacaoManual.current = operacao;
     setOcupada(true);
     try {
-      const r = await api.getOnboarding(onboardingId);
-      setOnboarding(r?.onboarding || r);
+      const r = await api.getOnboarding(id);
+      if (contexto.current !== id || pedido !== leitura.current) return;
+      const salva = conferirLeitura(r, id);
+      if (!salva) return;
+      setOnboarding(salva);
       setRevisaoComercial(v => v + 1);
       setAviso("Ficha atualizada com os dados salvos pelo cliente.");
-    } catch (e) { setAviso(e.message); }
-    finally { setOcupada(false); }
+    } catch (e) { if (contexto.current === id && pedido === leitura.current) setAviso(e.message); }
+    finally {
+      // Polling pode invalidar a resposta, mas não é dono da ocupação manual.
+      if (contexto.current === id && atualizacaoManual.current === operacao) {
+        atualizacaoManual.current = null;
+        setOcupada(false);
+      }
+    }
   }
 
   async function atualizarEvidencias({ origem } = {}) {
@@ -109,7 +149,8 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     try {
       const r = await api.getOnboarding(id);
       if (contexto.current !== id || pedido !== leitura.current) return;
-      setOnboarding(atual => atual?.id === id && r?.onboarding?.versao >= atual.versao ? r.onboarding : atual);
+      const salva = conferirLeitura(r, id);
+      if (salva) setOnboarding(salva);
     } catch (e) {
       if (contexto.current === id && pedido === leitura.current) setAviso(origem === 'polling'
         ? `Não foi possível atualizar as evidências. Os dados anteriores foram preservados. ${e.message}`
@@ -242,17 +283,6 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     }
   }
 
-  async function marcarDesistencia() {
-    const motivo = window.prompt("Motivo da desistência (opcional):", "");
-    if (motivo === null) return;
-    try {
-      const r = await api.desistirOnboarding(onboarding.id, motivo);
-      setOnboarding(r?.onboarding || onboarding);
-    } catch (e) {
-      setAviso(e.message);
-    }
-  }
-
   if (carregando) {
     return <PageShell title="Entrada de clientes" onBack={onVoltar}><p style={{ color: "var(--text-muted)" }}>Carregando…</p></PageShell>;
   }
@@ -282,9 +312,9 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
       onBack={voltar}
       backLabel="Entrada de clientes"
       actions={
-        <div className="onboarding-actions">
+        <div className="onboarding-actions" ref={acoesRef}>
           {conversaVinculada?.onboardingId === onboardingId && conversaVinculada.id && <Button variant="secondary" size="sm" onClick={voltarAoChat}>Voltar ao chat</Button>}
-          <Button variant="secondary" size="sm" disabled={ocupada || editando} onClick={atualizarFicha}>Atualizar ficha</Button>
+          <Button data-foco-ficha variant="secondary" size="sm" disabled={ocupada || editando} onClick={atualizarFicha}>Atualizar ficha</Button>
           <span
             style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, borderWidth: 1, borderStyle: "solid", fontSize: 12, fontWeight: 600 }}
           >
@@ -295,9 +325,21 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
               <Button type="button" variant="secondary" size="sm" onClick={() => { setEditando(true); setAreaEscolhida({ id: onboarding.id, area: "dados" }); }}>
                 Editar ficha
               </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={marcarDesistencia}>
-                Desistiu
-              </Button>
+              <AcoesOportunidade key={onboarding.id} api={api} item={onboarding} aoRestaurarFoco={({ excluido }) => {
+                // Ao navegar para Comercial ainda carregando, a aba persiste
+                // até a busca aparecer. Onboarding mantém a busca durante a carga.
+                const destino = excluido ? document.querySelector('[data-oportunidades-busca], [data-oportunidades-retorno]') : null;
+                (destino || acoesRef.current?.querySelector('[data-foco-ficha]'))?.focus({ preventScroll: true });
+              }} onPersistir={({ excluido, onboarding: salvo }) => {
+                if (contexto.current !== onboarding.id) return;
+                leitura.current += 1;
+                atualizacaoManual.current = null;
+                setOcupada(false);
+                if (excluido) { onVoltar?.(); return; }
+                setOnboarding(atual => ({ ...atual, ...salvo }));
+                setRevisaoComercial(v => v + 1);
+                atualizarEvidencias();
+              }} />
               {onboarding.origem !== "PESSOA_FISICA" && <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
                 Adicionar à carteira
               </Button>}
@@ -314,7 +356,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
       contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
-      {aviso && editando && <p role="alert">{aviso}</p>}
+      {aviso && <p role="alert">{aviso}</p>}
       {(onboarding.demandasRelacionadas || []).length > 0 && <details className="onboarding-panel"><summary>Outros serviços deste contato</summary>{onboarding.demandasRelacionadas.map(d => <p key={d.id}><a href={`/onboardings/${encodeURIComponent(d.id)}`}>{d.anterior ? "Atendimento anterior" : "Serviço relacionado"} · {tituloDaOrigem(d.origem)}</a></p>)}</details>}
       <div hidden={editando}>{api.comercial && !encerrado && <AcompanhamentoComercial key={onboarding.id} api={api} onboarding={onboarding} onAtualizar={atualizarEvidencias} />}</div>
       {editando && <OnboardingWizardPage key={onboarding.id} embedded api={api} onboardingId={onboarding.id} onRegistrarSaida={registrarSaida} onVoltar={continuarAtendimento} onAbrirDetalhe={continuarAtendimento} />}
@@ -324,11 +366,6 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
           aria-pressed={area === chave} aria-controls={`onboarding-area-${chave}`}
           onClick={() => setAreaEscolhida({ id: onboarding.id, area: chave })}>{rotulo}</button>)}
       </nav>
-      {aviso && (
-        <div style={{ padding: "var(--space-2) var(--space-3)", marginBottom: "var(--space-3)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, color: "var(--text-muted)" }}>
-          {aviso}
-        </div>
-      )}
 
       {convertido && (
         <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 0 }}>

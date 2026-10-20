@@ -42,12 +42,15 @@ export function useOnboardings({ api }) {
     setFiltros((atual) => ({ ...atual, [campo]: valor }));
   }, []);
 
-  const descartar = useCallback(async (id) => {
-    await api.descartarOnboarding(id);
-    await carregar();
-  }, [api, carregar]);
+  const aplicarPersistencia = useCallback(({ id, excluido, onboarding }) => {
+    leitura.current += 1;
+    setItens(atuais => excluido ? atuais.filter(i => i.id !== id) : atuais.map(i => i.id === id ? { ...i, ...onboarding } : i));
+    // O resultado confirmado já atualiza lista/contadores sem perder filtros ou desmontar cartões.
+    setErro(null);
+    setCarregando(false);
+  }, []);
 
-  return { itens, carregando, erro, filtros, alterarFiltro, recarregar: carregar, descartar };
+  return { itens, carregando, erro, filtros, alterarFiltro, recarregar: carregar, aplicarPersistencia };
 }
 
 export default useOnboardings;

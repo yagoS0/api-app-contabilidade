@@ -101,6 +101,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   };
 
   const onboardingEtapa = {
+    findFirst: jest.fn(async ({ where }) => clone([...etapas.values()].find(e => casa(e, where)) || null)),
     createMany: jest.fn(async ({ data, skipDuplicates }) => {
       let count = 0;
       for (const linha of data) {
@@ -198,6 +199,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     },
   });
 
+  raiz.$queryRaw = jest.fn(async () => []);
   raiz.$transaction = jest.fn(async (arg) => (typeof arg === "function" ? arg(proxy) : Promise.all(arg)));
   return { prisma: proxy };
 });
@@ -495,13 +497,39 @@ describe("lista", () => {
     const id = body.onboarding.id;
     await patchFicha(id, { finalizar: true });
 
-    const recusa = await request(app).delete(`/firm/onboardings/${id}`);
+    const recusa = await request(app).delete(`/firm/onboardings/${id}`).send({ versao: 0 });
     expect(recusa.status).toBe(409);
     expect(recusa.body.error).toBe("somente_rascunho_pode_ser_descartado");
   });
 });
 
 describe("validação do envelope", () => {
+  test("prévia e exclusão de rascunho vazio exigem confirmação versionada", async () => {
+    const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
+    const id = body.onboarding.id;
+    const previa = await request(app).get(`/firm/onboardings/${id}/elegibilidade-descarte`);
+    expect(previa.status).toBe(200);
+    expect(previa.body.elegibilidade).toMatchObject({ podeExcluir: true, versao: 0 });
+    expect((await request(app).delete(`/firm/onboardings/${id}`)).status).toBe(400);
+    expect((await request(app).delete(`/firm/onboardings/${id}`).send({ versao: 7 })).status).toBe(409);
+    expect((await request(app).delete(`/firm/onboardings/${id}`).send({ versao: 0 })).body).toEqual({ ok: true });
+    expect((await request(app).get(`/firm/onboardings/${id}`)).status).toBe(404);
+  });
+  test("prévia de exclusão recusa atendente mesmo em ficha própria", async () => {
+    const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
+    usuarioAtual = { id: "user-firm-1", role: "atendente", accountType: "FIRM" };
+    expect((await request(app).get(`/firm/onboardings/${body.onboarding.id}/elegibilidade-descarte`)).status).toBe(403);
+    expect((await request(app).post(`/firm/onboardings/${body.onboarding.id}/desistir`).send({ versao: 0 })).status).toBe(403);
+    expect((await request(app).delete(`/firm/onboardings/${body.onboarding.id}`).send({ versao: 0 })).status).toBe(403);
+  });
+  test("prévia não revela ficha fora do escopo", async () => {
+    const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
+    usuarioAtual = { id: "outro", role: "atendente", accountType: "FIRM" };
+    expect((await request(app).get(`/firm/onboardings/${body.onboarding.id}/elegibilidade-descarte`)).status).toBe(404);
+    // Mutações recusam o papel antes de consultar a ficha; não revelam sua existência.
+    expect((await request(app).post(`/firm/onboardings/${body.onboarding.id}/desistir`).send({ versao: 0 })).status).toBe(403);
+    expect((await request(app).delete(`/firm/onboardings/${body.onboarding.id}`).send({ versao: 0 })).status).toBe(403);
+  });
   test("origem desconhecida na criação → 400 validation_failed", async () => {
     const res = await request(app).post("/firm/onboardings").send({ origem: "SEI_LA" });
     expect(res.status).toBe(400);

@@ -1971,13 +1971,20 @@ export function createRealApi() {
         method: "POST", body: JSON.stringify(payload || {}),
       });
     },
-    async desistirOnboarding(id, motivo) {
-      return request(`/firm/onboardings/${id}/desistir`, {
-        method: "POST", body: JSON.stringify({ motivo: motivo || "" }),
-      });
+    async getElegibilidadeDescarteOnboarding(id) {
+      return request(`/firm/onboardings/${encodeURIComponent(id)}/elegibilidade-descarte`);
     },
-    async descartarOnboarding(id) {
-      return request(`/firm/onboardings/${id}`, { method: "DELETE" });
+    async desistirOnboarding(id, motivo, versao) {
+      const r = await request(`/firm/onboardings/${encodeURIComponent(id)}/desistir`, {
+        method: "POST", body: JSON.stringify({ motivo: motivo || "", versao }),
+      });
+      if (r?.ok !== true || r.onboarding?.id !== id || r.onboarding?.status !== "DESISTIU") throw new Error("Encerramento sem confirmação. Confira a ficha antes de repetir.");
+      return r;
+    },
+    async descartarOnboarding(id, versao) {
+      const r = await request(`/firm/onboardings/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ versao }) });
+      if (r?.ok !== true) throw new Error("Exclusão sem confirmação. Confira a lista antes de repetir.");
+      return r;
     },
 
     // ── Entrega por arquivo (EFD-Contribuições, ECD, ECF) ─────────────────

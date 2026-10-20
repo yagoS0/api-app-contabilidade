@@ -101,4 +101,10 @@
 @media(max-width:760px){.commercial-workspace--chat .wa-thread-actions > .btn:has(.wa-details-label){width:44px;padding:0;}}
 /* Retorno permanece legível no celular; metadados não comprimem o nome. */
 .commercial-client small,.commercial-followup-heading p,.commercial-returns a span{overflow-wrap:anywhere}
+.commercial-opportunity{display:flex;align-items:center;border-bottom:1px solid var(--border);gap:var(--space-2);padding-right:var(--space-3)}
+.commercial-opportunity:last-child{border-bottom:0}
+.commercial-opportunity .commercial-row{flex:1;min-width:0;border-bottom:0}
+.commercial-opportunity .onboarding-opportunity-actions{flex:0 0 auto;max-width:220px}
+.onboarding-opportunity-actions > button:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:var(--radius-sm)}
+@media(max-width:760px){.commercial-opportunity{padding-right:var(--space-2)}.commercial-opportunity .commercial-row{flex-basis:calc(100% - 60px)}}
 @media(max-width:760px){.commercial-row{flex-wrap:wrap}.commercial-client{flex-basis:calc(100% - 60px)}.commercial-stage{margin-left:42px;max-width:calc(100% - 60px);font-size:12px}}
