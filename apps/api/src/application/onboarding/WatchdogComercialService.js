@@ -50,7 +50,7 @@ export function consultaContingenciasComerciais({ agora, limite = 50 }) {
           AND resposta."statusEnvio" IN ('enviado','entregue','lido'))
       AND NOT EXISTS (SELECT 1 FROM atendimentos_lead a JOIN onboardings o ON o.id = a."onboardingId"
         WHERE a."conversaId" = c.id AND a."encerradoEm" IS NULL
-          AND o.status IN ('CONVERTIDO','DESISTIU','CONCLUIDO_AVULSO'))
+          AND (o.status IN ('CONVERTIDO','DESISTIU','CONCLUIDO_AVULSO') OR a.triagem->'retomadaManual'->>'bloqueiaAutomacao' = 'true'))
     ORDER BY m."registradaEm" ASC LIMIT ${Math.max(1, Math.min(100, limite))}`;
 }
 

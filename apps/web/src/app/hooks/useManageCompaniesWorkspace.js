@@ -486,11 +486,18 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       const payload = await api.syncPgdasCircular(companyId, competencia, {
         contratanteCnpj: input?.contratanteCnpj || undefined,
+        atualizar: input?.atualizar === true,
       });
+      if (payload?.ok === false || !payload?.result?.circular) throw new Error(payload?.message || "Sincronização sem confirmação. Confira os documentos antes de repetir.");
       if (payload?.result?.circular?.serproSyncStatus === "NOT_FOUND") {
         feedback.setMessage("Nenhuma declaração PGDAS-D transmitida foi encontrada para essa competência.");
+      } else if (payload.result.circular.serproSyncStatus !== "SUCCESS") {
+        feedback.setError("Extrato incompleto ou indisponível. Confira os documentos e os valores antes de contabilizar.");
+      } else if (payload.result.accounting?.ok !== true || payload.result.accounting?.divergences?.length || payload.result.accounting?.skipped?.length) {
+        feedback.setError("Extrato obtido; contabilização pendente. Confira as contas, regras, divergências e o fechamento em Lançamentos.");
       } else {
-        feedback.setMessage("Extrato PGDAS-D sincronizado com sucesso.");
+        const criados = payload.result.accounting.generatedEntries?.filter(e => e.action === "created").length || 0;
+        feedback.setMessage(`${payload.result.reutilizado ? "Extrato salvo reaproveitado" : "Extrato obtido"}. ${criados} lançamentos criados; confira a contabilidade.`);
       }
       if (typeof onPgdasSynced === "function") {
         try {
@@ -521,12 +528,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   async function handleCaptureSerproLp(companyId, input = {}) {
     if (!companyId) {
       feedback.setError("Selecione uma empresa para buscar os tributos do Presumido.");
-      return false;
+      return { ok: false, tentativaEnviada: false };
     }
     const competencia = String(input?.competencia || "").trim();
     if (!competencia) {
       feedback.setError("Informe a competência para buscar os tributos do Presumido.");
-      return false;
+      return { ok: false, tentativaEnviada: false };
     }
     setCapturingSerproLp(true);
     feedback.clearFeedback();
@@ -534,9 +541,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       const payload = await api.captureSerproLp(companyId, { competencia });
       if (payload?.ok === false) {
         feedback.setMessage(payload?.message || "Nada a buscar nesta competência.");
-        return null;
+        return { ok: false, tentativaEnviada: true, resultadoIncerto: false };
       }
-      const qtd = payload?.result?.debitos?.length || 0;
+      if (!payload?.result || !Array.isArray(payload.result.debitos)) throw new Error("Resposta sem confirmação. Confira os tributos antes de repetir a consulta paga.");
+      const qtd = payload.result.debitos.length;
       feedback.setMessage(
         qtd
           ? `Tributos do Presumido buscados: ${qtd} provisão(ões) na competência.`
@@ -545,10 +553,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       if (typeof onPgdasSynced === "function") {
         try { await onPgdasSynced(companyId, payload?.result || null); } catch { /* best-effort */ }
       }
-      return payload?.result || null;
+      return { ...payload.result, tentativaEnviada: payload.result.reutilizado !== true, resultadoIncerto: false };
     } catch (err) {
       feedback.setError(err?.message || "Falha ao buscar os tributos do Presumido.");
-      return false;
+      return { ok: false, tentativaEnviada: true, resultadoIncerto: true };
     } finally {
       setCapturingSerproLp(false);
     }

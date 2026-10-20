@@ -60,13 +60,17 @@ function montar(props = {}) {
   );
 }
 
-test('procuração antiga mostra estado histórico e necessidade de atualização no detalhe', () => {
+test('procuração antiga mantém incerteza sem detalhes técnicos na tabela', () => {
   montar({ companies: [empresa({ serproStatus: { procurationStatus:'ATIVA', vinculoConfirmado:true, checkedAt:new Date(Date.now()-86400000).toISOString(), validUntil:'2099-10-13' } })] });
-  const resumo = screen.getByText('Procuração: Ativa na última verificação');
-  fireEvent.click(resumo);
-  expect(screen.getByText('Atualize a verificação antes de operar.')).toBeVisible();
-  expect(screen.getByText(/Verificada em:/)).toBeVisible();
-  expect(screen.getByText('Validade: 13/10/2099')).toBeVisible();
+  expect(screen.getByText('Procuração: Revalidar')).toBeVisible();
+  expect(screen.queryByText(/Verificada em:/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Sem procuração')).not.toBeInTheDocument();
+});
+
+test("validade vem de validUntil e nunca de checkedAt", () => {
+  montar({ companies: [empresa({ serproStatus: { procurationStatus: "ATIVA", vinculoConfirmado: true,
+    checkedAt: new Date().toISOString(), validUntil: "2099-10-13" } })] });
+  expect(screen.getByText("Procuração ativa até 13/10/2099")).toBeVisible();
 });
 
 test("empresa zerada e fechada mantém indicação PARC visível, sem reabrir fechamento", () => {

@@ -80,6 +80,7 @@ function fazerClient(declarado, opcoes = {}) {
     });
 
   const tx = {
+    $queryRaw: jest.fn(async () => []),
     accountingEntry: {
       create: jest.fn(async ({ data }) => {
         if (opcoes.falharNoCreate) throw new Error("banco caiu no meio");
@@ -92,7 +93,7 @@ function fazerClient(declarado, opcoes = {}) {
         return { count: tinha ? 1 : 0 };
       }),
     },
-    lancamentoDeclarado: { update: updateEm(chamadas.update) },
+    lancamentoDeclarado: { findFirst: jest.fn(async ({ where }) => where.id === declarado.id && where.portalClientId === declarado.portalClientId ? declarado : null), update: updateEm(chamadas.update) },
   };
 
   return {
@@ -764,6 +765,7 @@ describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
       [par.nota.id, { ...par.nota }],
     ]);
     const tx = {
+    $queryRaw: jest.fn(async () => []),
       lancamentoDeclarado: {
         updateMany: jest.fn(async ({ where, data }) => {
           const atual = registros.get(where.id);
@@ -1006,6 +1008,7 @@ describe("⚠⚠ OS DOIS BUGS DA FUSÃO ACHADOS POR AUDITORIA (25/08/2026)", () 
   function clientReal(registros) {
     const mapa = new Map(registros.map((r) => [r.id, { ...r }]));
     const tx = {
+    $queryRaw: jest.fn(async () => []),
       lancamentoDeclarado: {
         updateMany: jest.fn(async ({ where, data }) => {
           const atual = mapa.get(where.id);
@@ -1168,6 +1171,7 @@ describe("⚠⚠ FUNDIR sobre nota de DATA PRESUMIDA — corrige, e não cria um
     const entradas = [];
     const criados = jest.fn();
     const tx = {
+    $queryRaw: jest.fn(async () => []),
       lancamentoDeclarado: {
         updateMany: jest.fn(async ({ where, data }) => {
           const atual = registros.get(where.id);
@@ -1549,4 +1553,24 @@ describe("⚠⚠ o crédito escolhido chega ao RAZÃO — a corrente inteira", (
     expect(chamadas.create).toHaveLength(0);
     expect(chamadas.update).toHaveLength(0);
   });
+});
+
+test("releitura sob lock recusa estado já contabilizado antes de criar outra partida", async () => {
+ const { client } = fazerClient(declaradoBase());
+ const criar = jest.fn();
+ client.$transaction.mockImplementation(async fn => fn({
+   $queryRaw: jest.fn(async () => []),
+   lancamentoDeclarado: { findFirst: jest.fn(async () => declaradoBase({ estado: ESTADO.CONTABILIZADO, accountingEntryId: 'existente' })) },
+   accountingEntry: { create: criar },
+ }));
+ await expect(aplicar(client, TRANSICAO.CONFIRMAR, { contaAplicada: '411020008' })).rejects.toBeInstanceOf(DeclaradoRecusado);
+ expect(criar).not.toHaveBeenCalled();
+});
+
+test("fechamento ocorrido após pré-voo bloqueia criação na transação", async () => {
+ const { client, chamadas } = fazerClient(declaradoBase());
+ isMonthClosed.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+ await expect(aplicar(client, TRANSICAO.CONFIRMAR, { contaAplicada: '411020008' })).rejects.toMatchObject({ codigo: 'mes_fechado' });
+ expect(chamadas.create).toHaveLength(0);
+ expect(client.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'Serializable' });
 });

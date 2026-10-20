@@ -379,3 +379,20 @@ test("deep link no plano de contas carrega empresa e acompanha mudança de empre
  expect(api.getChartOfAccounts).toHaveBeenCalledWith("empresa-a");expect(api.getAccountingEntries).not.toHaveBeenCalled();
  r.rerender({...props,selectedCompanyId:"empresa-b"});await act(async()=>{});expect(api.getChartOfAccounts).toHaveBeenLastCalledWith("empresa-b");
 });
+
+test('matriz válida e lançamentos manuais continuam disponíveis sem circular mensal', async () => {
+ const api = montarApi([]);
+ api.getCircularAccountingEntries.mockResolvedValue({ circular:null, entries:[], allEntries:[{id:'manual'}] });
+ const { result } = montarHook(api);
+ await act(async () => {});
+ expect(result.current.circularData.reviewAllEntries).toEqual([{id:'manual'}]);
+ expect(result.current.circularData.reviewError).toBe('');
+});
+
+test('falha real da leitura mensal conserva matriz anual e sinaliza revisão indisponível', async () => {
+ const api = montarApi([]);
+ api.getCircularAccountingEntries.mockRejectedValue(new Error('Não foi possível carregar os lançamentos da competência.'));
+ const { result } = montarHook(api);
+ await act(async () => {});
+ expect(result.current.circularData.reviewError).toContain('Não foi possível carregar');
+});

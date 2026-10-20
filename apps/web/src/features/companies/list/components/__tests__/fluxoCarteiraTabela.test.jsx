@@ -33,12 +33,13 @@ test('procuração salva aparece sem executar consulta e muda na releitura', () 
  const consultar = jest.fn();
  const ativa = {...company, serproStatus:{procurationStatus:'ATIVA', checkedAt:new Date().toISOString(), validUntil:'2099-12-31', vinculoConfirmado:true, systems:['00146']}};
  const view = render(<CompaniesTable companies={[ativa]} acoesGuia={{onConsultarFiscal: consultar}} />);
- expect(screen.getByText('Procuração: Ativa')).toBeInTheDocument();
- fireEvent.click(screen.getByText('Procuração: Ativa'));
- expect(screen.getByText('Serviços informados: 00146')).toBeVisible();
+ expect(screen.getByText('Procuração ativa até 31/12/2099')).toBeVisible();
+ fireEvent.click(screen.getByText('Procuração ativa até 31/12/2099'));
+ expect(screen.queryByText(/Serviços informados:/)).not.toBeInTheDocument();
  expect(consultar).not.toHaveBeenCalled();
  view.rerender(<CompaniesTable companies={[{...ativa, serproStatus:{...ativa.serproStatus, procurationStatus:'AUSENTE'}}]} />);
- expect(screen.getByText('Procuração: Sem procuração ativa')).toBeInTheDocument();
+ expect(screen.getByText('Sem procuração')).toBeVisible();
+ expect(consultar).not.toHaveBeenCalled();
 });
 test('DAS disponível mostra conferência preservando o acesso às tarefas', () => {
  const c = {...company, apuracao:{competencia:'2026-09'}, guideCompliance:{competencia:'2026-09', das:{required:true, ok:true, state:'gerada', guideId:'das'}}};
@@ -51,11 +52,13 @@ test('DAS disponível mostra conferência preservando o acesso às tarefas', () 
  expect(detalhe).toBeVisible();
 });
 
-test('falha mais recente mostra última tentativa e preserva resultado válido no detalhe', () => {
+test('falha mais recente mostra erro simples sem declarar ausência nem detalhes técnicos', () => {
  const c = {...company, serproStatus:{procurationStatus:'ATIVA',checkedAt:new Date().toISOString(),validUntil:'2099-12-31',vinculoConfirmado:true,
    ultimaTentativa:{status:'ERRO',iniciadaEm:new Date().toISOString(),vinculoConfirmado:true}}};
  render(<CompaniesTable companies={[c]} />);
  fireEvent.click(screen.getByText('Procuração: Erro na verificação'));
- expect(screen.getByText('Último resultado válido: Procuração ativa')).toBeVisible();
- expect(screen.getByText(/Última tentativa: Não foi possível verificar; resultado anterior preservado/)).toBeVisible();
+ expect(screen.getByText('Procuração: Erro na verificação')).toBeVisible();
+ expect(screen.queryByText(/Último resultado válido:|Última tentativa:/)).not.toBeInTheDocument();
+ expect(screen.queryByText('Sem procuração')).not.toBeInTheDocument();
+ expect(c.serproStatus.procurationStatus).toBe('ATIVA');
 });

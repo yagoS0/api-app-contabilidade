@@ -320,11 +320,11 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
           >
             <span aria-hidden="true">{status.icone}</span> Ficha: {status.rotulo}
           </span>
-          {!encerrado && !editando && (
+          {(!encerrado || onboarding.status === 'DESISTIU') && !editando && (
             <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => { setEditando(true); setAreaEscolhida({ id: onboarding.id, area: "dados" }); }}>
+              {!encerrado && <Button type="button" variant="secondary" size="sm" onClick={() => { setEditando(true); setAreaEscolhida({ id: onboarding.id, area: "dados" }); }}>
                 Editar ficha
-              </Button>
+              </Button>}
               <AcoesOportunidade key={onboarding.id} api={api} item={onboarding} aoRestaurarFoco={({ excluido }) => {
                 // Ao navegar para Comercial ainda carregando, a aba persiste
                 // até a busca aparecer. Onboarding mantém a busca durante a carga.
@@ -340,7 +340,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
                 setRevisaoComercial(v => v + 1);
                 atualizarEvidencias();
               }} />
-              {onboarding.origem !== "PESSOA_FISICA" && <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
+              {!encerrado && onboarding.origem !== "PESSOA_FISICA" && <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
                 Adicionar à carteira
               </Button>}
             </>

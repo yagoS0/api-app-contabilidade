@@ -464,3 +464,22 @@ Impacto: R19/R20/R22/R24 e isolamento de comunicação. Não muda regras fiscais
 | T44 | Duplicar ocorrência concluída/recorrente com empresas e subtarefas | Nova tarefa avulsa pendente; identidade e progresso da origem preservados |
 | T45 | Excluir pelo menu, cancelar, teclado e celular | Confirmação clara; apenas ocorrência escolhida; navegação e gestos preservados |
 | T46 | Duas entradas simultâneas, crash/retry e timeout de transporte | Turnos preservados, recuperação delimitada e nenhuma repetição de saída incerta |
+
+## 24. Retomada manual após desistência — decisão de 20/10/2026
+
+O usuário determinou que a Neurogenesis não permaneça como desistência e que seu atendimento seja retomado. Este registro aprova essa recuperação concreta, preservando histórico; não aprova V08 integralmente nem autoriza exclusão com vínculos. A interface de retomada é o mecanismo de recuperação auditada, sujeito às permissões existentes de administrador/contador do escritório e ao escopo da ficha.
+
+**R31 — retomada auditada e conservadora.** A ação exige motivo e versão atual de ficha em DESISTIU ainda não convertida. Restaura o estágio anterior comprovado pelo histórico. Em registros legados sem esse estágio, retorna a RECEBIDO quando houver envio registrado, ou a RASCUNHO quando não houver; registra a origem dessa decisão. Retomar não comprova contratação, assinatura, pagamento, implantação ou consentimento.
+
+A transição e sua auditoria são atômicas: registrar autor, momento, motivo, versão, estado restaurado e desistência anterior. Preservar documentos, conversas e eventos; revogar links antigos e manter o caso em atendimento manual. Não alterar a pessoa nem outro atendimento que compartilhe a conversa. Trabalhos fiscais antigos pendentes exigem revisão; resultados de trabalhos em processamento permanecem indeterminados até conferência. A retomada não deve provocar novas consultas, mensagens ou repetição de atos externos incertos. Revalidar a identidade/revisão da execução antes de novas etapas externas e impedir que resultados antigos concluam a revisão retomada. Repetição da mesma ação não duplica eventos; falha de auditoria desfaz os efeitos transacionais.
+
+**Histórico e impacto:** 20/10/2026 — pedido expresso de devolver a Neurogenesis ao atendimento. Nova transição operacional de recuperação, concretizando R19–R23 e preservando R27–R28. A manutenção em modo manual e a revogação de links são proteções técnicas conservadoras, não autorização para apagar vínculos ou reativar automações. V08 continua pendente nos demais aspectos. Registro não declara implementação, aprovação técnica, alteração produtiva ou publicação concluída.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T47 | Retomada autorizada de ficha desistente | Preservar desistência no histórico e restaurar estágio comprovado; não fabricar contratação ou pagamento |
+| T48 | Legado sem estágio anterior comprovado | Retorno conservador conforme envio registrado, com origem da decisão auditada |
+| T49 | Repetição ou concorrência da mesma retomada | Uma transição e um evento; versão antiga não sobrescreve estado posterior |
+| T50 | Falha ao persistir auditoria | Estado, links e trabalhos permanecem como antes da tentativa |
+| T51 | Permissão/escopo inválidos ou ficha convertida | Recusar sem efeitos parciais |
+| T52 | Automação ou consulta em andamento durante retomada | Bloquear novas etapas/saídas do caso e conclusão antiga; preservar evidência incerta e outros atendimentos |

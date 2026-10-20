@@ -31,3 +31,20 @@ test('expõe falha da consulta para permitir nova tentativa', async () => {
   await waitFor(() => expect(result.current.loading).toBe(false));
   expect(result.current.error).toBe('Falha local');
 });
+
+test("atualização falha preserva evidência e identifica leitura anterior", async () => {
+  const api = { getPagamentosPendentes: jest.fn().mockResolvedValueOnce({ itens: [{ id: "p" }] }).mockRejectedValueOnce(new Error("offline")) };
+  const { result } = renderHook(() => usePagamentosPendentes(api, "a", "2026-09", 0));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  await act(() => result.current.reload());
+  expect(result.current).toMatchObject({ itens: [{ id: "p" }], anterior: true, error: "offline" });
+});
+test("troca de empresa descarta resposta tardia", async () => {
+  let resolver;
+  const api = { getPagamentosPendentes: jest.fn().mockImplementationOnce(() => new Promise(r => { resolver = r; })).mockResolvedValueOnce({ itens: [{ id: "b" }] }) };
+  const { result, rerender } = renderHook(({ id }) => usePagamentosPendentes(api, id, "2026-09", 0), { initialProps: { id: "a" } });
+  rerender({ id: "b" });
+  await waitFor(() => expect(result.current.itens).toEqual([{ id: "b" }]));
+  await act(async () => resolver({ itens: [{ id: "a" }] }));
+  expect(result.current.itens).toEqual([{ id: "b" }]);
+});

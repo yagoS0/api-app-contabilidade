@@ -33,22 +33,22 @@ export function procuracaoHabilitaSitfis(p, agora = new Date()) {
     && Array.isArray(p.systems) && p.systems.some((s) => nomes.has(String(typeof s === "string" ? s : s?.idSistema || s?.nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()));
 }
 export function criarServicoComercial({ db = prisma, consultaPublica = consultarCnpj, procura = (cnpj) => new SerproProcurationService().checkCnpjProcuration({ cnpj }), procuradorAtual = async () => (await getResolvedSerproCredentials()).certificate.document, sitfis = obterRelatorio, cifrar = encryptSecret, decifrar = decryptSecret, agora = () => new Date() } = {}) {
-  async function conferirCasoFiscal(r) {
-    const caso = await db.atendimentoLead.findFirst({ where: { onboardingId: r.id, encerradoEm: null } });
+  async function conferirCasoFiscal(r, client = db) {
+    const caso = await client.atendimentoLead.findFirst({ where: { onboardingId: r.id, encerradoEm: null } });
     if (!caso) return null; // Fichas anteriores ao atendimento comercial conservam a conferência oficial.
     if (!caso.representanteVerificadoEm || caso.autorizacao?.cnpj !== r.cnpj) throw erro("escopo_alterado", "Confira CNPJ e representante antes da consulta privada.", 409);
     if (caso.interlocutorId) {
-      const conversa = await db.conversaWhatsapp.findUnique({ where: { id: caso.conversaId } });
-      await exigirConversaDoCaso(caso, conversa, db);
+      const conversa = await client.conversaWhatsapp.findUnique({ where: { id: caso.conversaId } });
+      await exigirConversaDoCaso(caso, conversa, client);
     }
     if (caso.autorizacao?.estado !== "ATIVA" || !procuracaoHabilitaSitfis(caso.autorizacao?.prova, agora())) throw erro("procuracao_nao_verificada", "Verifique primeiro uma procuração vigente para SITFIS.", 409);
     return caso;
   }
-  async function conferirContextoFiscal(r, caso) {
-    const atual = await db.onboarding.findUnique({ where: { id: r.id } });
-    if (!atual || atual.cnpj !== r.cnpj || fechado(atual)) throw erro("escopo_alterado", "O CNPJ ou a situação da ficha mudou durante a consulta.", 409);
-    const casoAtual = await conferirCasoFiscal(atual);
-    if (casoAtual?.id !== caso?.id || casoAtual?.interlocutorId !== caso?.interlocutorId || String(casoAtual?.representanteVerificadoEm) !== String(caso?.representanteVerificadoEm) || JSON.stringify(casoAtual?.autorizacao) !== JSON.stringify(caso?.autorizacao)) throw erro("escopo_alterado", "O atendimento ou a autorização mudou. Confira antes de consultar.", 409);
+  async function conferirContextoFiscal(r, caso, client = db) {
+    const atual = await client.onboarding.findUnique({ where: { id: r.id } });
+    if (!atual || atual.cnpj !== r.cnpj || atual.versao !== r.versao || atual.status !== r.status || fechado(atual)) throw erro("escopo_alterado", "A revisão da ficha mudou durante a consulta. Confira o resultado anterior antes de repetir.", 409);
+    const casoAtual = await conferirCasoFiscal(atual, client);
+    if (casoAtual?.id !== caso?.id || casoAtual?.versao !== caso?.versao || casoAtual?.conversaId !== caso?.conversaId || casoAtual?.interlocutorId !== caso?.interlocutorId || JSON.stringify(casoAtual?.triagem?.retomadaManual) !== JSON.stringify(caso?.triagem?.retomadaManual) || String(casoAtual?.representanteVerificadoEm) !== String(caso?.representanteVerificadoEm) || JSON.stringify(casoAtual?.autorizacao) !== JSON.stringify(caso?.autorizacao)) throw erro("escopo_alterado", "O atendimento ou a autorização mudou. Confira antes de consultar.", 409);
   }
   async function procuracaoDaConsulta(r, ultima, caso) {
     if (caso) {
@@ -65,6 +65,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
         if (recente) return recente;
       }
     }
+    await conferirContextoFiscal(r, caso);
     return procura(r.cnpj);
   }
   async function painel(id, user) {
@@ -100,8 +101,9 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
       return { faseComercial: atualizado.faseComercial, proposta: atualizado.proposta };
     });
   }
-  async function analisar(id, user, tipo) {
+  async function analisar(id, user, tipo, execucao = {}) {
     const r = await exigirEscopo(id, user, db);
+    if (execucao.versaoEsperada !== undefined && execucao.versaoEsperada !== r.versao) throw erro("escopo_alterado", "A revisão do trabalho fiscal mudou. Confira antes de uma nova consulta.", 409);
     if (fechado(r)) throw erro("onboarding_fechado", "Ficha encerrada.", 409);
     if (!["PUBLICA", "SITFIS"].includes(tipo)) throw erro("tipo_invalido", "Escolha análise pública ou SITFIS.");
     if (!/^\d{14}$/.test(r.cnpj || "")) throw erro("cnpj_necessario", "Salve o CNPJ completo na ficha antes de consultar.");
@@ -125,7 +127,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
       resultado.protocolo = ultima.resultado.protocolo;
       resultado.protocoloProcuradorCnpj = ultima.resultado.protocoloProcuradorCnpj || ultima.resultado.procuracao?.procuradorCnpj || null;
     }
-    let status = "CONCLUIDA", documentoCifrado = null;
+    let status = "CONCLUIDA", documentoCifrado = null, casoExecucao;
     try {
       if (tipo === "PUBLICA") {
         const out = await consultaPublica(r.cnpj, { escopo: `conta:${user.id}`, finalidade: 'PUBLICO' });
@@ -137,6 +139,8 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
       } else {
         await comContextoSerpro({ origem: "onboarding_analise", userId: user.id, acaoId: id }, async () => {
           const caso = await conferirCasoFiscal(r);
+          casoExecucao = caso;
+          await conferirContextoFiscal(r, caso);
           const p = await procuracaoDaConsulta(r, ultima, caso);
           resultado.procuracao = { status: p.status, validUntil: p.validUntil, systems: p.systems, checkedAt: p.checkedAt, procuradorCnpj: p.procuradorCnpj };
           if (!procuracaoHabilitaSitfis(p, agora())) { status = "BLOQUEADA"; resultado.mensagem = "Confirme procuração vigente para o procurador informado e autorização explícita para SITFIS na Receita Federal. Nenhuma consulta fiscal foi executada."; return; }
@@ -147,7 +151,8 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
           resultado.protocoloProcuradorCnpj = p.procuradorCnpj;
           // Salvar também na retomada: /Emitir pode falhar sem chamar onProtocolo.
           await db.onboardingAnalise.update({ where: { id: analise.id }, data: { resultado } });
-          const out = await sitfis({ contribuinteCnpj: r.cnpj, contratanteCnpj: p.procuradorCnpj, protocoloExistente: anterior, onProtocolo: async (protocolo) => { resultado.protocolo = protocolo; await db.onboardingAnalise.update({ where: { id: analise.id }, data: { resultado } }); } });
+          await conferirContextoFiscal(r, caso);
+          const out = await sitfis({ contribuinteCnpj: r.cnpj, contratanteCnpj: p.procuradorCnpj, protocoloExistente: anterior, validarExecucao: () => conferirContextoFiscal(r, caso), onProtocolo: async (protocolo) => { resultado.protocolo = protocolo; await db.onboardingAnalise.update({ where: { id: analise.id }, data: { resultado } }); } });
           if (!out.ok) throw erro("sitfis_indisponivel", "O SITFIS não concluiu a consulta.", 502);
           resultado.protocolo = out.protocolo || resultado.protocolo || null;
           resultado.relatorioDisponivel = Buffer.isBuffer(out.relatorioPdfBuffer) && out.relatorioPdfBuffer.length > 0;
@@ -173,8 +178,24 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
         resultado.mensagem = `A consulta foi realizada há pouco. Aguarde ${Math.ceil(espera)} segundos antes de acompanhar novamente.`;
       }
     }
-    const salva = await db.onboardingAnalise.update({ where: { id: analise.id }, data: { status, resultado, documentoCifrado } });
-    await evento(db, id, "ANALISE_" + tipo, user.id, { analiseId: analise.id, status, cnpj: r.cnpj });
+    // Serializa a conclusão com desistência/retomada. Evidência de chamada já enviada
+    // permanece na análise original, mas nunca conclui a revisão nova.
+    const persistir = async client => {
+      if (tipo === "SITFIS" && casoExecucao !== undefined) {
+        await client.$queryRaw`SELECT id FROM onboardings WHERE id = ${r.id} FOR UPDATE`;
+        if (casoExecucao?.id) await client.$queryRaw`SELECT id FROM atendimentos_lead WHERE id = ${casoExecucao.id} FOR UPDATE`;
+        try { await conferirContextoFiscal(r, casoExecucao, client); }
+        catch (e) {
+          status = "FALHOU";
+          resultado = { ...resultado, codigo: e.code || "escopo_alterado", revisaoExigeConferencia: true,
+            versaoDaExecucao: r.versao, mensagem: "A ficha mudou durante a consulta. Evidências preservadas na análise anterior; confira antes de repetir." };
+        }
+      }
+      const salva = await client.onboardingAnalise.update({ where: { id: analise.id }, data: { status, resultado, documentoCifrado } });
+      await evento(client, id, "ANALISE_" + tipo, user.id, { analiseId: analise.id, status, cnpj: r.cnpj, versaoDaExecucao: r.versao });
+      return salva;
+    };
+    const salva = tipo === "SITFIS" ? await db.$transaction(persistir) : await persistir(db);
     return { analise: { id: salva.id, tipo, status, cnpj: r.cnpj, resultado, createdAt: salva.createdAt } };
   }
   async function documento(id, analiseId, user) {

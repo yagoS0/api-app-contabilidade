@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { formatarCnpj } from "../lib/brasilApi";
 import { OrientacaoDoPasso } from "./PassosDoLead";
+import { AcompanhamentoComercial } from "../../comercial/AcompanhamentoComercial";
 
 export function AutorizacaoDoLead({ api, recursos, estado, conversaId, ocupado, carregar, acao, trabalho }) {
   const [registrando, setRegistrando] = useState(false), [evidencia, setEvidencia] = useState("");
@@ -19,6 +20,10 @@ export function AutorizacaoDoLead({ api, recursos, estado, conversaId, ocupado, 
     trava.current = true; setExecutando(true);
     try { return await acao(path, body); } finally { trava.current = false; setExecutando(false); }
   }
+  if (!a) return <div className="lead-authorization">
+    <p role="status">Prepare ou vincule o contato autorizado desta ficha antes de conferir o representante.</p>
+    <AcompanhamentoComercial api={api} onboarding={estado.onboarding} onAtualizar={carregar} />
+  </div>;
   return <div className="lead-authorization">
     {pedido?.estado === 'AGUARDANDO_AUTORIZACAO' && <p role="status">Autorização solicitada ao cliente. Acompanhamento com o contador.</p>}
     {pedido?.estado === 'REVISAO_NECESSARIA' && <p role="alert">Confira a orientação de autorização e os dados institucionais antes de continuar.</p>}

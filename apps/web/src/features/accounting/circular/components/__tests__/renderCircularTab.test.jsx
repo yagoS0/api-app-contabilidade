@@ -798,3 +798,11 @@ test('baixa sem valor confiável não inventa valor pago', () => {
   expect(screen.getByText('Baixa a conferir')).toBeInTheDocument();
   expect(screen.queryByText(/Valor pago:/)).not.toBeInTheDocument();
 });
+
+test('matriz anual continua renderizando provisão manual sem registro mensal', () => {
+  const manual = provisao({ id: 'manual-sem-circular', origem: 'MANUAL', circularId: null, valor: 123, valorProvisionado: 123 });
+  renderTab([], { circularData: { circular: null, provisoes: [manual], receitas: {}, acrescimos: {}, extrato: {}, entries: [], reviewAllEntries: [manual], reviewError: '' } });
+  expect(screen.getByText('Total em aberto')).toBeVisible();
+  expect(screen.getAllByRole('button', { name: 'R$ 123,00' }).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/circular_nao_encontrada/)).not.toBeInTheDocument();
+});

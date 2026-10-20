@@ -123,7 +123,7 @@ export function podeLancarSozinho({ declarado, regras, ligado = INTEGRACAO_LANCA
   if (!cnpj) return nao(FORA_DO_AUTOMATICO.SEM_REGRA);
 
   const daEmpresa = (Array.isArray(regras) ? regras : []).filter((r) =>
-    r && r.ativa !== false && !r.suspensaEm && soDigitos(r.cnpjFornecedor) === cnpj);
+    r && r.ativa !== false && !r.suspensaEm && !r.revogadaEm && soDigitos(r.cnpjFornecedor) === cnpj);
   if (!daEmpresa.length) return nao(FORA_DO_AUTOMATICO.SEM_REGRA);
 
   const lancadoras = daEmpresa.filter((r) => r.lancaSozinha === true);
@@ -185,6 +185,7 @@ export async function lancarPorRegra({
       dataPagamento,
       origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
       regraId: veredito.regra.id,
+      regraRevisao: veredito.regra,
     },
     // ⚠⚠ `usuarioId` NOMEIA A AUTOMAÇÃO, e não pode ser o id de uma pessoa: quem lançou foi a regra,
     // e atribuí-lo ao contador diria que ele praticou um ato que não praticou naquele mês.
@@ -225,7 +226,7 @@ export async function lancarPorRegraNaEmpresa({
   const escopo = { portalClientId: String(portalClientId) };
 
   const [regras, candidatos] = await Promise.all([
-    client.regraContabilizacao.findMany({ where: { ...escopo, ativa: true, lancaSozinha: true } }),
+    client.regraContabilizacao.findMany({ where: { ...escopo, ativa: true, lancaSozinha: true, revogadaEm: null } }),
     // ⚠ Os MESMOS dois estados que `podeLancarSozinho` aceita. `CONTABILIZADO` já está no razão e
     // `RECUSADO` foi uma decisão do contador — ressuscitá-lo por regra desfaria essa decisão.
     client.lancamentoDeclarado.findMany({

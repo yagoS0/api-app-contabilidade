@@ -26,3 +26,24 @@ it("contingência continua mesmo com coleta síncrona e turno IA travados",async
  liberarInbox({}); liberarIa({}); await pararWorkerWhatsappDuravel();
  jest.useRealTimers();
 });
+
+jest.mock("../../application/onboarding/FiscalLeadService.js", () => ({ criarFiscalLead: () => ({ processarUmaVez: (...args) => mockFiscal(...args) }) }));
+jest.mock("../../application/whatsapp/ComunicadosWhatsappService.js", () => ({ criarComunicadosWhatsapp: () => ({ processarUmaVez: async () => ({}) }) }));
+jest.mock("../../application/whatsapp/TesteIaWhatsappService.js", () => ({ criarTesteIaWhatsapp: () => ({ processarUmaVez: async () => ({}) }) }));
+const mockFiscal = jest.fn(async () => ({}));
+test.each([[false,false], [false,true], [true,false], [true,true]])(
+  "flags WhatsApp=%s Fiscal=%s respeitam cada integração", async (whatsapp, fiscal) => {
+    jest.resetModules(); jest.clearAllMocks(); jest.useFakeTimers();
+    jest.doMock("../../config.js", () => ({ INTEGRACAO_WHATSAPP: whatsapp, INTEGRACAO_FISCAL_LEADS: fiscal, log: { error: jest.fn() } }));
+    const inbox = require("../../application/whatsapp/WhatsappInboxService.js").processarInboxWhatsappUmaVez;
+    inbox.mockResolvedValue({});
+    require("../../application/assistente/TurnoIaWhatsappService.js").processarTurnosIaUmaVez.mockResolvedValue({});
+    const worker = require("../whatsappDurableWorker.js");
+    try {
+      worker.iniciarWorkerWhatsappDuravel();
+      expect(mockFiscal).toHaveBeenCalledTimes(fiscal ? 1 : 0);
+      expect(inbox).toHaveBeenCalledTimes(whatsapp ? 1 : 0);
+      worker.iniciarWorkerWhatsappDuravel();
+      expect(mockFiscal).toHaveBeenCalledTimes(fiscal ? 1 : 0);
+    } finally { await worker.pararWorkerWhatsappDuravel(); jest.useRealTimers(); }
+  });

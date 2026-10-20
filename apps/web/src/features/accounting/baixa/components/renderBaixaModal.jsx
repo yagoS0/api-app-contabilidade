@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CONTA_JUROS, CONTA_MULTA, conferirPrincipalContraSaldo } from "../lib/principalDaBaixa";
 import { diaCivil } from '../../../../lib/dataCivil';
+import { dataDoComprovante } from '../lib/dataDoComprovante';
 
 // ⚠ `CONTA_JUROS`/`CONTA_MULTA` vêm de `lib/principalDaBaixa.js`, que também é quem espelha a regra
 // do servidor. Eram literais "501"/"506" soltos aqui — quarta cópia de um código de conta que já
@@ -222,7 +223,7 @@ function LineEditor({ lines, onChange, accounts }) {
 // mês diferente do atual (às vezes futuro), fora do mês que o contador está fechando.
 // O campo segue editável para corrigir um pagamento feito em outro dia.
 
-export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate, competenciaPagamento }) {
+export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate, competenciaPagamento, bloqueioLeitura = "" }) {
   const subtipoLabel = SUBTIPO_LABELS[entry.subtipo] || entry.subtipo || entry.tipo;
   const title = `Dar Baixa — ${subtipoLabel}`;
 
@@ -236,13 +237,10 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   // Quando o pagamento já foi localizado no SERPRO, a data da BAIXA é a da arrecadação (não hoje)
   // e os valores vêm do comprovante — é o ponto do fluxo "buscar agora, lançar depois".
   const comprovante = entry?.comprovante?.confiavel ? entry.comprovante : null;
-  const dataComprovante = (() => {
-    const m = String(comprovante?.dataArrecadacao || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
-  })();
+  const dataComprovante = dataDoComprovante(comprovante);
   const dataInformada = entry.sourceGuide?.paymentStatus === 'PAID' && entry.sourceGuide?.paymentStatusSource === 'CLIENTE'
     ? diaCivil(entry.sourceGuide.paymentConfirmedAt) : null;
-  const [data, setData] = useState(dataComprovante || dataInformada || (!competenciaPagamento || today.startsWith(competenciaPagamento) ? today : ""));
+  const [data, setData] = useState(dataComprovante || dataInformada || (comprovante ? "" : !competenciaPagamento || today.startsWith(competenciaPagamento) ? today : ""));
   const [historico, setHistorico] = useState(defaultHistorico);
   // Só reaproveita um passivo identificado. A despesa da provisão nunca é a
   // contrapartida do pagamento; caixa/banco deve vir da regra ou do contador.
@@ -335,8 +333,8 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const debitosBaixa = lines.filter((l) => l.tipo === "D");
   const papeisPreenchidos = debitosBaixa.every((l) => ["PRINCIPAL", "JUROS", "MULTA"].includes(l.papel));
   const creditoUnico = lines.filter((l) => l.tipo === "C").length === 1;
-  const canSave = !mesIncorreto && data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !ocupado && !loadingTemplate;
-  const motivoNaoSalva = mesIncorreto ? `Informe a data real do pagamento no mês ${competenciaPagamento}, ou abra esse mês em Lançamentos.` : loadingTemplate
+  const canSave = !bloqueioLeitura && !mesIncorreto && data && historico && balanced && contasPreenchidas && papeisPreenchidos && creditoUnico && !excedeSaldo && !ocupado && !loadingTemplate;
+  const motivoNaoSalva = bloqueioLeitura || (mesIncorreto ? `O pagamento informado pertence a outro mês. Abra o mês do pagamento em Lançamentos, preservando a data real.` : loadingTemplate
     ? "Carregando contas e saldo da provisão."
     : !papeisPreenchidos
       ? "Identifique cada débito como principal, juros ou multa."
@@ -352,7 +350,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         ? "As partidas não fecham (Σ D ≠ Σ C)."
         : excedeSaldo
           ? `${excedeSaldo.motivo} ${excedeSaldo.saida}`
-          : "";
+          : "");
 
   async function handleSave() {
     if (!canSave || trava.current) return;
@@ -422,6 +420,8 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         )}
 
         {error && <p role="alert" style={{ color: "var(--danger)", margin: "0 0 12px", fontSize: "0.875rem" }}>{error}</p>}
+        {motivoNaoSalva && <p role="status">{motivoNaoSalva}</p>}
+        {mesIncorreto && <p>Feche este modal e selecione {data.slice(0, 7).split('-').reverse().join('/')} em Lançamentos. Se o mês estiver fechado, use “Corrigir mês fechado” com motivo antes de registrar a baixa.</p>}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 12, marginBottom: 8 }}>
           <label style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-muted)", display: "grid", gap: 4 }}>

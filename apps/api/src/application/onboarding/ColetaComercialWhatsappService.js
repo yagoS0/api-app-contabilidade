@@ -1,3 +1,4 @@
+import { automacaoComercialBloqueada } from './automacaoComercialDoCaso.js';
 import { dadosContingenciaIa } from './ContingenciaComercialService.js';
 import { consultarCadastroInicial, resumoDaConsulta } from './ConsultaCadastralInicial.js';
 import { prepararSolicitacaoAutorizacao } from './SolicitacaoAutorizacaoComercial.js';
@@ -64,6 +65,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const identidadeVersao = pessoa?.versao || 0;
   const escopo = filtroCasoDaConversa(inicial, interlocutorId);
   const vinculado = await db.atendimentoLead.findFirst({ where: { ...escopo, encerradoEm: null }, include: { onboarding: true } });
+  if (automacaoComercialBloqueada(vinculado)) return { tratado: true, motivo: "RETOMADA_MANUAL" };
   // Um vínculo legado aberto não torna uma ficha concluída uma coleta ativa.
   const existente = vinculado && !encerrado(vinculado.onboarding) ? vinculado : null;
   let origem = intencaoRecebida;
@@ -112,6 +114,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     if (interlocutorId) { const p = await tx.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }); if (p.versao !== identidadeVersao || p.estado !== "ATIVO" || p.atendidaPor || p.atendidaDesde && !proprioHandoff(p)) throw new OnboardingError("identidade_alterada", "A identificação mudou durante a coleta.", 409); }
     let caso = await iniciarAtendimento({ conversaId: atual.id, origem: existente?.onboarding ? null : origemDaIntencao(origem), client: tx });
     await exigirConversaDoCaso(caso, atual, tx);
+    if (automacaoComercialBloqueada(caso)) throw new OnboardingError('retomada_manual', 'Este caso está em atendimento manual.', 409);
     if (encerrado(caso.onboarding)) throw new OnboardingError("atendimento_encerrado", "A solicitação não está em coleta.", 409);
     const triagem = caso.triagem || {};
     if (mensagemAnterior(mensagem, triagem)) return { resultado: { texto: null }, atendimentoLeadId: caso.id, identidadeVersao };
@@ -195,6 +198,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     if (bloqueada(handoffDoTurno ? { ...c, atendidaDesde: null } : c) || c.vinculoNumeroId !== inicial.vinculoNumeroId || c.canalId !== inicial.canalId) throw new OnboardingError("atendimento_alterado", "A conversa mudou antes da resposta.", 409);
     const caso = await db.atendimentoLead.findUnique({ where: { id: persistido.atendimentoLeadId }, include: { onboarding: true } });
     await exigirConversaDoCaso(caso, c, db);
+    if (automacaoComercialBloqueada(caso)) throw new OnboardingError('retomada_manual', 'Este caso está em atendimento manual.', 409);
     if (caso.versao !== resultado.casoVersao || (caso.onboarding?.versao ?? null) !== (resultado.fichaVersao ?? null)) throw new OnboardingError("atendimento_alterado", "A ficha mudou antes da resposta.", 409);
     if (interlocutorId) { const p = await db.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }); if (p.versao !== persistido.identidadeVersao || p.estado !== "ATIVO" || p.atendidaPor || p.atendidaDesde && (!resultado.handoffEm || new Date(p.atendidaDesde).toISOString() !== resultado.handoffEm)) throw new OnboardingError("identidade_alterada", "A identificação ou o responsável mudou antes da resposta.", 409); }
     await deps.conferirContexto?.(resultado.contexto);

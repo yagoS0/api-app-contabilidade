@@ -464,10 +464,69 @@ export async function desistir(id, { motivo = null, atorId = null, versao } = {}
       desistiuEm: new Date(),
       motivoDesistencia: motivo ? String(motivo).slice(0, 500) : null,
       convertidoPorId: registro.convertidoPorId,
-      eventos: { create: { tipo: "DESISTIU", atorId, dados: { motivo: motivo ? String(motivo).slice(0, 500) : null } } },
+      eventos: { create: { tipo: "DESISTIU", atorId, dados: { motivo: motivo ? String(motivo).slice(0, 500) : null, statusAnterior: registro.status } } },
     },
   }).catch(e => { if (e.code === "P2025") throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de desistir.", 409); throw e; });
   return carregar(registro.id, { comEtapas: true });
+}
+
+// Não deduz contratação, assinatura ou pagamento da situação operacional da ficha.
+export function statusAntesDaDesistencia(registro, eventos) {
+  const desistencia = eventos.find(e => e.tipo === "DESISTIU");
+  const anterior = desistencia?.dados?.statusAnterior;
+  if (["RASCUNHO", "RECEBIDO", "EM_TRILHA"].includes(anterior)) return anterior;
+  // Legado: etapa concluída não comprova promoção. O fallback é conservador e auditado.
+  return registro.enviadoEm ? "RECEBIDO" : "RASCUNHO";
+}
+
+export async function retomarAtendimento(id, { motivo, versao, user } = {}, db = prisma) {
+  if (!user?.id || !["admin", "contador"].includes(String(user.role).toLowerCase()) || user.accountType !== "FIRM") {
+    throw new OnboardingError("forbidden_admin_or_contador_only", "A retomada exige administrador ou contador.", 403);
+  }
+  if (typeof motivo !== "string" || !motivo.trim() || motivo.trim().length > 500) {
+    throw new OnboardingError("motivo_obrigatorio", "Informe o motivo da retomada (até 500 caracteres).");
+  }
+  if (!Number.isInteger(versao) || versao < 0) throw new OnboardingError("formulario_alterado", "Confira a versão atual da ficha.", 409);
+  try {
+    return await db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM onboardings WHERE id = ${id} FOR UPDATE`;
+      const registro = await tx.onboarding.findUnique({ where: { id } });
+      if (!registro) throw new OnboardingError("onboarding_nao_encontrado", "Onboarding não encontrado.", 404);
+      const eventos = await tx.onboardingEvento.findMany({ where: { onboardingId: id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+      const repetido = eventos.find(e => e.tipo === "ATENDIMENTO_RETOMADO" && e.dados?.versaoAnterior === versao);
+      if (repetido && registro.versao === versao + 1 && repetido.atorId === user.id && repetido.dados.motivo === motivo.trim() && registro.status === repetido.dados.statusRestaurado) {
+        return tx.onboarding.findUnique({ where: { id }, include: { etapas: { orderBy: { ordem: "asc" } } } });
+      }
+      conferirVersao(registro, versao);
+      if (registro.status !== "DESISTIU" || registro.portalClientId || registro.convertidoEm) throw new OnboardingError("retomada_indisponivel", "Somente uma ficha em desistência, ainda não convertida, pode ser retomada.", 409);
+      const status = statusAntesDaDesistencia(registro, eventos);
+      const agora = new Date();
+      const links = await tx.onboardingLink.updateMany({ where: { onboardingId: id, revokedAt: null }, data: { revokedAt: agora } });
+      const casos = await tx.atendimentoLead.findMany({ where: { onboardingId: id } });
+      for (const caso of casos) {
+        await tx.atendimentoLead.update({ where: { id: caso.id }, data: { versao: { increment: 1 }, triagem: {
+          ...caso.triagem, retomadaManual: { bloqueiaAutomacao: true, em: agora.toISOString(), atorId: user.id, versaoAnterior: versao },
+        } } });
+      }
+      // Não retomar trabalho antigo nem repetir chamada cujo resultado pode ser incerto.
+      await tx.trabalhoFiscalLead.updateMany({ where: { onboardingId: id, status: { in: ["PENDENTE", "AGUARDANDO"] } },
+        data: { status: "EXIGE_REVISAO", resultado: { codigo: "RETOMADA_MANUAL", mensagem: "Solicite novamente após conferir a ficha retomada." } } });
+      await tx.trabalhoFiscalLead.updateMany({ where: { onboardingId: id, status: "PROCESSANDO" },
+        data: { status: "INDETERMINADO", resultado: { codigo: "RETOMADA_MANUAL", mensagem: "Confira o resultado anterior antes de uma nova consulta." } } });
+      return tx.onboarding.update({
+        where: { id, versao, status: "DESISTIU" },
+        data: { status, versao: { increment: 1 }, desistiuEm: null, motivoDesistencia: null,
+          eventos: { create: { tipo: "ATENDIMENTO_RETOMADO", atorId: user.id, dados: {
+            linksRevogados: links.count, restauracao: ["RASCUNHO", "RECEBIDO", "EM_TRILHA"].includes(eventos.find(e => e.tipo === "DESISTIU")?.dados?.statusAnterior) ? "STATUS_AUDITADO" : registro.enviadoEm ? "ENVIO_REGISTRADO" : "RASCUNHO_CONSERVADOR", motivo: motivo.trim(), versaoAnterior: versao, statusAnterior: "DESISTIU", statusRestaurado: status,
+            desistenciaAnterior: { motivo: registro.motivoDesistencia, em: registro.desistiuEm ? new Date(registro.desistiuEm).toISOString() : null },
+          } } } },
+        include: { etapas: { orderBy: { ordem: "asc" } } },
+      });
+    });
+  } catch (e) {
+    if (["P2025", "P2034"].includes(e.code)) throw new OnboardingError("formulario_alterado", "A ficha mudou. Confira novamente antes de retomar.", 409);
+    throw e;
+  }
 }
 
 /**

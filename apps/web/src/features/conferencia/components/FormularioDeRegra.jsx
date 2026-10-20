@@ -59,10 +59,12 @@ export function FormularioDeRegra({
   notaDaFaixa = null,
   aoSalvar,
   aoCancelar = null,
+  regra = null,
 }) {
   const [campos, setCampos] = useState(() => ({ ...CAMPOS_VAZIOS, ...(iniciais || {}), lancaSozinha: false }));
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
+  const [motivo, setMotivo] = useState("");
 
   const debitos = useMemo(() => contasDeDebitoOferecidas(contas), [contas]);
   const creditos = useMemo(() => contasDeCreditoOferecidas(contas), [contas]);
@@ -72,7 +74,7 @@ export function FormularioDeRegra({
     setEnviando(true);
     setAviso(null);
     try {
-      const r = await regrasApi.postConferenciaRegra(companyId, {
+      const corpo = {
         cnpjFornecedor: campos.cnpjFornecedor || null,
         padraoDescricao: campos.padraoDescricao || null,
         valorMin: Number(campos.valorMin),
@@ -82,7 +84,11 @@ export function FormularioDeRegra({
         // ⚠ `=== true` EXATO, nunca `Boolean(...)` — a string "false" de um formulário é verdadeira.
         lancaSozinha: campos.lancaSozinha === true,
         diaDoLancamento: campos.lancaSozinha === true ? Number(campos.diaDoLancamento) : null,
-      });
+      };
+      const r = regra
+        ? await regrasApi.patchConferenciaRegra(companyId, regra.id, { acao: "editar", anterior: regra, motivo, campos: corpo })
+        : await regrasApi.postConferenciaRegra(companyId, corpo);
+      if (r?.ok !== true || !r.regra?.id) throw new Error("Regra sem confirmação. Atualize antes de repetir.");
       setCampos({ ...CAMPOS_VAZIOS });
       aoSalvar?.(r?.regra ?? r ?? null);
     } catch (e) {
@@ -179,7 +185,7 @@ export function FormularioDeRegra({
         <div style={{ fontSize: 13, color: "var(--state-warn)" }}>{notaDaFaixa}</div>
       ) : null}
 
-      <label className="cq-check">
+      {!regra && <label className="cq-check">
         <input
           type="checkbox"
           checked={campos.lancaSozinha === true}
@@ -189,7 +195,7 @@ export function FormularioDeRegra({
           <strong>Lançar sozinha</strong> — toda nota deste fornecedor dentro da faixa vira
           lançamento contábil sem ninguém clicar.
         </span>
-      </label>
+      </label>}
 
       {campos.lancaSozinha ? (
         <label className="cq-field" style={{ maxWidth: 360 }}>
@@ -216,8 +222,9 @@ export function FormularioDeRegra({
       ) : null}
 
       <div className="cq-form-actions">
-        <Button size="sm" disabled={!veredito.pode || enviando} onClick={criar}>
-          {enviando ? "Salvando…" : "Criar regra"}
+        {regra && <label className="cq-field">Motivo da alteração<input maxLength={500} value={motivo} onChange={e => setMotivo(e.target.value)} /></label>}
+        <Button size="sm" disabled={!veredito.pode || enviando || (regra && !motivo.trim())} onClick={criar}>
+          {enviando ? "Salvando…" : regra ? "Salvar regra" : "Criar regra"}
         </Button>
         {aoCancelar ? (
           <Button size="sm" variant="secondary" disabled={enviando} onClick={aoCancelar}>

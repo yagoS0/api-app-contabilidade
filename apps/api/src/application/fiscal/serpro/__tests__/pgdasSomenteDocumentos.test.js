@@ -86,3 +86,16 @@ test("declaração nova sem PDF não herda os arquivos da anterior", async () =>
   expect(prisma.appSetting.upsert.mock.calls[1][0].create.value.declaracaoFileId).toBeNull();
  } finally { SerproHttpClient.mockImplementation(original); }
 });
+
+test.each([false, true])("cache documental reutilizado, somenteDocumentos=%s", async somenteDocumentos => {
+ const circular = { id: "circ", serproSyncStatus: "SUCCESS", pgdasNumeroDeclaracao: "123", pgdasDeclaracaoFileId: "pdf", pgdasReciboFileId: "rec", dasNumeroDocumento: "das-sem-pdf" };
+ prisma.companyMonthlyCircular.findUnique.mockResolvedValueOnce(circular);
+ prisma.guide.findFirst.mockResolvedValueOnce(null);
+ generateEntriesFromCircular.mockResolvedValueOnce({ ok: false, reason: "mes_fechado", circular });
+ const r = await syncPgdasByCompetencia({ portalClientId: "c", competencia: "2026-09", somenteDocumentos });
+ expect(r.reutilizado).toBe(true);
+ expect(SerproHttpClient).not.toHaveBeenCalled();
+ expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
+ expect(generateEntriesFromCircular).toHaveBeenCalledTimes(somenteDocumentos ? 0 : 1);
+ if (!somenteDocumentos) expect(r.accounting).toMatchObject({ ok: false, reason: "mes_fechado" });
+});

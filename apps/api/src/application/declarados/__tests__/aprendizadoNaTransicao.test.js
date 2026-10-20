@@ -51,6 +51,7 @@ const declaradoBase = (extra = {}) => ({
 function fazerClient(declarado, opcoes = {}) {
   const ordem = [];
   const tx = {
+    $queryRaw: jest.fn(async () => []),
     accountingEntry: {
       create: jest.fn(async () => {
         ordem.push("create-lancamento");
@@ -62,6 +63,7 @@ function fazerClient(declarado, opcoes = {}) {
       }),
     },
     lancamentoDeclarado: {
+      findFirst: jest.fn(async ({ where }) => where.id === declarado.id && where.portalClientId === declarado.portalClientId ? declarado : null),
       update: jest.fn(async ({ data }) => {
         ordem.push("update-declarado");
         return { ...declarado, ...data };

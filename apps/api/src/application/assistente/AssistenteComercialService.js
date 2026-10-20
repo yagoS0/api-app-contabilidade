@@ -1,3 +1,4 @@
+import { automacaoComercialBloqueada } from '../onboarding/automacaoComercialDoCaso.js';
 import { permiteRespostaEspecial, RESPOSTAS_ESPECIAIS } from "@contabilidade/shared/onboarding-dados";
 import { dadosContingenciaIa } from '../onboarding/ContingenciaComercialService.js';
 import { registrarContingenciaComercialPush } from '../whatsapp/AtendimentoPushService.js';
@@ -47,6 +48,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     const pessoaHandoff = handoffEm && !pessoa?.atendidaPor && new Date(pessoa?.atendidaDesde).getTime() === handoffEm.getTime();
     if (pessoa && (pessoa.estado !== "ATIVO" || pessoa.atendidaPor || pessoa.atendidaDesde && !pessoaHandoff)) throw falha("ASSUMIDA_POR_HUMANO");
     const casoComercial = c && interlocutorId ? await db.atendimentoLead.findFirst({ where: { ...filtroCasoDaConversa(c, interlocutorId), encerradoEm: null } }) : null;
+    if (automacaoComercialBloqueada(casoComercial)) throw falha("RETOMADA_MANUAL");
     // Só a reserva humana feita por este turno permite confirmar o encaminhamento.
     const proprioHandoff = handoffEm && !c?.atendidaPor && new Date(c?.atendidaDesde).getTime() === handoffEm.getTime();
     const decisao = decidirRespostaComercial({ r: {
@@ -59,6 +61,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     if (lead) {
       const atual = await db.atendimentoLead.findFirst({ where: { id: lead.id, encerradoEm: null }, include: { onboarding: true } });
       await exigirConversaDoCaso(atual, c, db);
+      if (automacaoComercialBloqueada(atual)) throw falha('RETOMADA_MANUAL');
       if (!atual || atual.onboardingId !== lead.onboardingId || atual.onboarding?.versao !== lead.onboarding?.versao) throw falha("FICHA_ALTERADA");
     }
     return { c, m };
@@ -120,6 +123,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     const ids = bolhas.map(b => b.id);
     const pedido = { ...bolhas.at(-1), corpo: bolhas.map(b => b.corpo || "").join("\n") };
     lead = await iniciarAtendimento({ conversaId, client: db });
+    if (automacaoComercialBloqueada(lead)) throw falha("RETOMADA_MANUAL");
     const recursos = criarRecursosComerciais({ db });
     const aprovadas = await recursos.listar({ aprovados: true, tipo: "ORIENTACAO" });
     const ferramentas = [{ name: "registrar_atendimento", strict: false,

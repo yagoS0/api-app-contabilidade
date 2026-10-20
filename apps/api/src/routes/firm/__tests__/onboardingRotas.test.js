@@ -84,6 +84,13 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       const atual = onboardings.get(where.id);
       if (!atual) throw new Error("registro nao encontrado");
       if (where.versao !== undefined && where.versao !== atual.versao) throw Object.assign(new Error("Versão alterada"), { code: "P2025" });
+      if (where.status !== undefined && where.status !== atual.status) throw Object.assign(new Error("Estado alterado"), { code: "P2025" });
+      if (data.eventos?.create) {
+        const evento = { id: novoId("evento"), createdAt: new Date(), onboardingId: atual.id, ...data.eventos.create };
+        eventos.set(evento.id, evento);
+        const { eventos: _eventos, ...campos } = data;
+        data = campos;
+      }
       const versao = data.versao?.increment ? atual.versao + data.versao.increment : atual.versao;
       Object.assign(atual, data, { versao, updatedAt: new Date() });
       return clone(atual);
@@ -576,4 +583,35 @@ test('conferência salva e recarga concordam em lista, ficha e painel usado na c
   // Outra ação persistida não apaga a evidência comercial na recarga.
   expect((await request(app).patch(`/firm/onboardings/${id}/etapas/${depois.etapas[0].id}`).send({ concluida: true })).status).toBe(200);
   await conferir('autorizacao');
+});
+
+describe("retomada pela rota real", () => {
+  async function desistente() {
+    const row = await prisma.onboarding.create({ data: { origem: "TRANSFERENCIA", status: "DESISTIU", versao: 4, criadoPorId: "user-firm-1", motivoDesistencia: "Motivo anterior", desistiuEm: new Date() } });
+    await prisma.onboardingEvento.create({ data: { onboardingId: row.id, tipo: "DESISTIU", atorId: "user-firm-1", dados: { statusAnterior: "EM_TRILHA", motivo: "Motivo anterior" } } });
+    return row;
+  }
+  test("retoma, preserva histórico, repete sem novo evento e recusa versão antiga", async () => {
+    const row = await desistente();
+    const url = `/firm/onboardings/${row.id}/retomar`;
+    const body = { versao: 4, motivo: "Cliente pediu continuidade" };
+    const first = await request(app).post(url).send(body);
+    expect(first.status).toBe(200); expect(first.body.onboarding.status).toBe("EM_TRILHA");
+    const retry = await request(app).post(url).send(body); expect(retry.status).toBe(200);
+    const eventos = await prisma.onboardingEvento.findMany({ where: { onboardingId: row.id } });
+    expect(eventos.filter(e => e.tipo === "ATENDIMENTO_RETOMADO")).toHaveLength(1);
+    expect(eventos.find(e => e.tipo === "DESISTIU").dados.motivo).toBe("Motivo anterior");
+    expect((await request(app).post(url).send({ ...body, motivo: "Outra operação" })).status).toBe(409);
+  });
+  test.each(["staff", "cliente"])("papel %s não retoma caso alheio", async role => {
+    const row = await desistente(); usuarioAtual = { id: "outro", role, accountType: role === "cliente" ? "CLIENT" : "FIRM" };
+    expect((await request(app).post(`/firm/onboardings/${row.id}/retomar`).send({ versao: 4, motivo: "Tentar" })).status).toBe(403);
+    expect((await prisma.onboarding.findUnique({ where: { id: row.id } })).status).toBe("DESISTIU");
+  });
+  test("identidade inexistente e motivo vazio não produzem transição", async () => {
+    const row = await desistente();
+    expect((await request(app).post('/firm/onboardings/inexistente/retomar').send({ versao: 4, motivo: "Tentar" })).status).toBe(404);
+    expect((await request(app).post(`/firm/onboardings/${row.id}/retomar`).send({ versao: 4, motivo: " " })).status).toBe(400);
+    expect((await prisma.onboarding.findUnique({ where: { id: row.id } })).status).toBe("DESISTIU");
+  });
 });

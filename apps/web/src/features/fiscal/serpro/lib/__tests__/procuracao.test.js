@@ -13,7 +13,7 @@ test('validade, vínculo e idade da verificação',()=>{
 
 test('24h mantém estado histórico sem liberar filtro de ativas', () => {
  const checkedAt = new Date(agora - 86400000).toISOString();
- expect(marcadorProcuracao({...ativa, checkedAt}, agora)).toMatchObject({chave:'revalidar', rotulo:'Ativa na última verificação', orientacao:'Atualize a verificação antes de operar.'});
+ expect(marcadorProcuracao({...ativa, checkedAt}, agora)).toMatchObject({chave:'revalidar', rotulo:'Revalidar', orientacao:'Atualize a verificação antes de operar.'});
  expect(marcadorProcuracao({...ativa, checkedAt:new Date(agora - 86400000 + 1).toISOString()}, agora).chave).toBe('ativa');
 });
 
@@ -25,7 +25,7 @@ test.each([
  { ultimaTentativa:{status:'CONSULTANDO',vinculoConfirmado:true} },
 ])('não apresenta ativa histórica com informação inconclusiva %j', patch => {
  const resultado = marcadorProcuracao({...ativa, checkedAt:'2026-10-12', ...patch}, agora);
- expect(resultado.rotulo).not.toBe('Ativa na última verificação');
+ expect(resultado.rotulo).not.toBe('Ativa');
  expect(resultado.chave).not.toBe('ativa');
 });
 

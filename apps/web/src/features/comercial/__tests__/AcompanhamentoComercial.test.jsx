@@ -8,7 +8,7 @@ function montar(comercial) {
 test('prepara o contato autorizado e abre a conversa sem enviar mensagem', async () => {
   const comercial = jest.fn(async (path, body) => {
     if (path === '/canais-comerciais') return { canais: [{ id: 'c1', chave: 'Comercial' }] };
-    if (body) return { conversaId: 'conv1' };
+    if (body) return { conversaId: 'conv1', atendimentoId: 'lead1' };
     return { versao: 4, retorno: null, conversaId: null };
   });
   montar(comercial);

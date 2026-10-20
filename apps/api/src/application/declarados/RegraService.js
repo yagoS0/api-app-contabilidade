@@ -8,6 +8,7 @@
 // continua sendo `aplicarTransicao`, no `DeclaradoService`, com o contador clicando.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { randomUUID } from "node:crypto";
 import { decidirAprendizado, MOTIVO_DA_SUSPENSAO } from "./lib/aprendizado.js";
 import { chaveDaDescricao, sugerirConta } from "./lib/motorDeSugestao.js";
 // ⚠⚠ REUSADA, não reescrita: quem responde "esta conta é caixa/banco?" decide pelo PREFIXO do
@@ -169,7 +170,7 @@ export async function reavaliarAprendizado({
 
     if (decisao.acao === "SUSPENDER") {
       await client.regraContabilizacao.update({
-        where: { id: regraExistente.id },
+        where: { id: regraExistente.id, portalClientId, origemRegra: "APRENDIDA", revogadaEm: null, contaDestino: regraExistente.contaDestino },
         data: { suspensaEm: agora, motivoSuspensao: decisao.motivo },
       });
       return { acao: "SUSPENDER", regraId: regraExistente.id, motivo: decisao.motivo, frase: decisao.frase };
@@ -231,10 +232,10 @@ export async function listarRegras({ portalClientId, client = prisma }) {
  * decidiu"*. Colapsá-las faria a tela não distinguir uma suspensão automática de uma escolha.
  */
 export async function alternarRegra({ portalClientId, regraId, ativa, client = prisma }) {
-  const regra = await client.regraContabilizacao.findFirst({ where: { id: regraId, portalClientId } });
+  const regra = await client.regraContabilizacao.findFirst({ where: { id: regraId, portalClientId, revogadaEm: null } });
   if (!regra) return null;
   return client.regraContabilizacao.update({
-    where: { id: regra.id },
+    where: { id: regra.id, portalClientId, revogadaEm: null },
     data: {
       ativa: Boolean(ativa),
       // ⚠ Religar à mão LIMPA a suspensão automática: o contador está dizendo que conferiu. Sem
@@ -246,6 +247,44 @@ export async function alternarRegra({ portalClientId, regraId, ativa, client = p
 }
 
 export { MOTIVO_DA_SUSPENSAO, chaveDaDescricao };
+
+// Edição e revogação preservam o id referenciado pelos lançamentos passados.
+export async function gerirRegra({ portalClientId, regraId, patch, usuarioId, agora, client = prisma }) {
+  const falha = (codigo, frase) => { throw new RegraRecusada(codigo, frase); };
+  if (!usuarioId || !agora || !patch || !["editar", "revogar"].includes(patch.acao)) falha("gestao_invalida", "Informe a ação e seu responsável.");
+  if (typeof patch.motivo !== "string" || !patch.motivo.trim() || patch.motivo.length > 500) falha("motivo_obrigatorio", "Informe o motivo (até 500 caracteres).");
+  return client.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM regras_contabilizacao WHERE id = ${regraId} AND "portalClientId" = ${portalClientId} FOR UPDATE`;
+    const antes = await tx.regraContabilizacao.findFirst({ where: { id: regraId, portalClientId } });
+    if (!antes) recusarRegra(RECUSA_DA_REGRA.NAO_ENCONTRADA);
+    if (antes.revogadaEm) {
+      if (patch.acao === "revogar") return antes;
+      falha("regra_revogada", "Esta regra foi revogada e não pode ser editada.");
+    }
+    const campos = ["cnpjFornecedor", "padraoDescricao", "valorMin", "valorMax", "contaDestino", "contaCredito", "ativa", "lancaSozinha", "diaDoLancamento"];
+    if (!patch.anterior || campos.some(c => String(patch.anterior[c] ?? "") !== String(antes[c] ?? ""))) falha("regra_alterada", "A regra mudou. Recarregue antes de confirmar.");
+    let data;
+    if (patch.acao === "revogar") data = { ativa: false, lancaSozinha: false, revogadaEm: agora };
+    else {
+      // Reutiliza todas as validações de criação sem criar uma segunda regra.
+      const validada = await criarRegraManual({
+        ...patch.campos, portalClientId, usuarioId, agora,
+        lancaSozinha: antes.lancaSozinha, diaDoLancamento: antes.diaDoLancamento,
+        client: { ...tx, regraContabilizacao: { create: async ({ data: candidata }) => candidata } },
+      });
+      data = Object.fromEntries(campos.filter(c => !["ativa", "lancaSozinha", "diaDoLancamento"].includes(c)).map(c => [c, validada[c]]));
+      data.origemRegra = 'MANUAL';
+      data.confirmacoesBase = [];
+      data.suspensaEm = null;
+      data.motivoSuspensao = null;
+    }
+    const depois = await tx.regraContabilizacao.update({ where: { id: regraId, portalClientId, revogadaEm: null }, data });
+    await tx.appSetting.create({ data: { key: `regra-contabilizacao-historico:${regraId}:${randomUUID()}`, value: JSON.parse(JSON.stringify({
+      portalClientId, regraId, acao: patch.acao, motivo: patch.motivo.trim(), autorId: usuarioId, em: agora, antes, depois,
+    })) } });
+    return depois;
+  });
+}
 
 /**
  * ⚠⚠ A REGRA MANUAL — a porta que faltava (29/08/2026).
@@ -474,7 +513,7 @@ export async function definirLancamentoAutomatico({
   let regra;
   try {
     regra = await client.regraContabilizacao.findFirst({
-      where: { id: String(regraId), portalClientId: String(portalClientId) },
+      where: { id: String(regraId), portalClientId: String(portalClientId), revogadaEm: null },
     });
   } catch (e) {
     if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
@@ -488,7 +527,7 @@ export async function definirLancamentoAutomatico({
   const dia = automaticoOuNulo(lancaSozinha, diaDoLancamento, soDigitos(regra.cnpjFornecedor));
 
   return client.regraContabilizacao.update({
-    where: { id: regra.id },
+    where: { id: regra.id, portalClientId: String(portalClientId), revogadaEm: null },
     data: { lancaSozinha: lancaSozinha === true, diaDoLancamento: dia },
   });
 }

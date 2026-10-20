@@ -5,7 +5,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { nomeDaOportunidade } from '../../comercial/comercialModel';
 
 // Mesmo padrão de portal/posicionamento/teclado do MenuTarefaCalendario.
-function MenuOportunidade({ nome, rascunho, onAcao }) {
+function MenuOportunidade({ nome, rascunho, desistiu, onAcao }) {
   const [aberto, setAberto] = useState(false), [posicao, setPosicao] = useState({ top: 0, left: 0 });
   const gatilho = useRef(null), menu = useRef(null), id = useId();
   const fechar = () => { setAberto(false); gatilho.current?.focus({ preventScroll: true }); };
@@ -38,7 +38,7 @@ function MenuOportunidade({ nome, rascunho, onAcao }) {
     <button ref={gatilho} type="button" aria-label={`Ações de ${nome}`} aria-haspopup="menu" aria-expanded={aberto} aria-controls={aberto ? id : undefined}
       onClick={() => setAberto(v => !v)} style={{ minWidth: 44, minHeight: 44, border: 0, borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 20 }}>⋯</button>
     {aberto && createPortal(<div ref={menu} id={id} role="menu" aria-label={`Ações de ${nome}`} style={{ ...posicao, position: 'fixed', zIndex: 1000, display: 'grid', gap: 'var(--space-1)', padding: 'var(--space-2)', maxWidth: 'calc(100vw - 16px)', background: 'var(--bg-surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow)' }}>
-      <Button role="menuitem" tabIndex={-1} variant="secondary" onClick={() => { fechar(); onAcao('encerrar'); }}>Encerrar oportunidade</Button>
+      <Button role="menuitem" tabIndex={-1} variant="secondary" onClick={() => { fechar(); onAcao(desistiu ? 'retomar' : 'encerrar'); }}>{desistiu ? 'Retomar atendimento' : 'Encerrar oportunidade'}</Button>
       {rascunho && <Button role="menuitem" tabIndex={-1} variant="secondary" onClick={() => { fechar(); onAcao('excluir'); }}>Excluir rascunho</Button>}
     </div>, document.body)}
   </span>;
@@ -82,11 +82,16 @@ function AcoesDaFicha({ api, item, onPersistir, aoRestaurarFoco }) {
     try {
       const r = acao === 'excluir'
         ? await api.descartarOnboarding(item.id, previa.versao)
+        : acao === 'retomar'
+        ? await api.retomarAtendimentoOnboarding(item.id, motivo, previa.versao)
         : await api.desistirOnboarding(item.id, motivo, previa.versao);
       // A mutação já foi enviada. Sair da ficha invalida apenas sua conclusão
       // visual, inclusive callbacks que poderiam focar a nova ficha/rota.
       if (!aindaAtual()) return;
-      if (r?.ok !== true || (acao === 'encerrar' && (r.onboarding?.id !== item.id || r.onboarding?.status !== 'DESISTIU'))) {
+      if (r?.ok !== true || (acao === 'encerrar' && (r.onboarding?.id !== item.id || r.onboarding?.status !== 'DESISTIU')) ||
+          (acao === 'retomar' && (r.onboarding?.id !== item.id ||
+            !Number.isInteger(r.onboarding?.versao) || r.onboarding.versao <= previa.versao ||
+            !['RASCUNHO', 'RECEBIDO', 'EM_TRILHA'].includes(r.onboarding?.status)))) {
         throw new Error('Resposta sem confirmação. Confira a oportunidade antes de tentar novamente.');
       }
       const excluido = acao === 'excluir';
@@ -105,25 +110,26 @@ function AcoesDaFicha({ api, item, onPersistir, aoRestaurarFoco }) {
       if (aindaAtual()) { trava.current = false; setOcupado(false); }
     }
   }
-  if (['DESISTIU', 'CONVERTIDO', 'CONCLUIDO_AVULSO'].includes(item.status)) return null;
+  if (['CONVERTIDO', 'CONCLUIDO_AVULSO'].includes(item.status)) return null;
   const excluir = acao === 'excluir';
+  const retomar = acao === 'retomar';
   return <>
-    <MenuOportunidade nome={nomeDaOportunidade(item)} rascunho={item.status === 'RASCUNHO'} onAcao={abrir} />
-    {acao && <Modal titulo={excluir ? 'Excluir rascunho?' : 'Encerrar oportunidade?'} tamanho="sm" ocupado={ocupado} aoFechar={() => setAcao(null)}
+    <MenuOportunidade nome={nomeDaOportunidade(item)} rascunho={item.status === 'RASCUNHO'} desistiu={item.status === 'DESISTIU'} onAcao={abrir} />
+    {acao && <Modal titulo={excluir ? 'Excluir rascunho?' : retomar ? 'Retomar atendimento?' : 'Encerrar oportunidade?'} tamanho="sm" ocupado={ocupado} aoFechar={() => setAcao(null)}
       rodape={<><Button variant="secondary" disabled={ocupado} onClick={() => setAcao(null)}>Cancelar</Button>
-        <Button variant={excluir ? 'danger' : 'primary'} disabled={ocupado || !previa || !(excluir ? previa.podeExcluir : previa.podeEncerrar)} onClick={confirmar}>
-          {ocupado ? 'Salvando…' : excluir ? 'Excluir rascunho' : 'Confirmar desistência'}
+        <Button variant={excluir ? 'danger' : 'primary'} disabled={ocupado || !previa || !(excluir ? previa.podeExcluir : retomar ? previa.status === 'DESISTIU' && motivo.trim() : previa.podeEncerrar)} onClick={confirmar}>
+          {ocupado ? 'Salvando…' : excluir ? 'Excluir rascunho' : retomar ? 'Retomar atendimento' : 'Confirmar desistência'}
         </Button></>}>
       <p><strong>{nomeDaOportunidade(item)}</strong></p>
-      <p>{excluir ? 'Remove definitivamente somente esta ficha em rascunho, se não houver vínculos ou histórico relevante.' : 'Registra a oportunidade como Desistiu e a retira das oportunidades em andamento. A ficha, as conversas, os documentos e o histórico permanecem consultáveis: Perdido ou Todas no Comercial; Encerrados no Onboarding.'}</p>
-      {!excluir && <label style={{ display: 'grid', gap: 'var(--space-2)' }}>Motivo (opcional)
+      <p>{excluir ? 'Remove definitivamente somente esta ficha em rascunho, se não houver vínculos ou histórico relevante.' : retomar ? 'Retoma o estágio registrado; em fichas antigas sem esse registro, retorna para Recebido quando houve envio ou para Rascunho. Preserva a desistência no histórico, revoga links antigos e mantém este caso em atendimento manual, sem confirmar contratação ou pagamento.' : 'Registra a oportunidade como Desistiu e a retira das oportunidades em andamento. A ficha, as conversas, os documentos e o histórico permanecem consultáveis: Perdido ou Todas no Comercial; Encerrados no Onboarding.'}</p>
+      {!excluir && <label style={{ display: 'grid', gap: 'var(--space-2)' }}>{retomar ? 'Motivo da retomada' : 'Motivo (opcional)'}
         <textarea maxLength={500} value={motivo} disabled={ocupado} onChange={e => setMotivo(e.target.value)} rows={3} style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-page)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-2)' }} />
       </label>}
       {!previa && !erro && <p role="status">Conferindo oportunidade…</p>}
       {excluir && previa && !previa.podeExcluir && <div><p>Esta ficha deve ser preservada:</p><ul>{previa.impedimentos.map(i => <li key={i}>{i}</li>)}</ul>
         {previa.podeEncerrar && <Button variant="secondary" onClick={() => abrir('encerrar')}>Encerrar como desistência</Button>}
       </div>}
-      {!excluir && previa && !previa.podeEncerrar && <p role="status">Esta oportunidade já está encerrada. Atualize a lista para conferir o histórico.</p>}
+      {!excluir && !retomar && previa && !previa.podeEncerrar && <p role="status">Esta oportunidade já está encerrada. Atualize a lista para conferir o histórico.</p>}
       {erro && <div role="alert"><p>{erro}</p><Button variant="secondary" disabled={ocupado} onClick={() => setRevisao(v => v + 1)}>Conferir novamente</Button></div>}
     </Modal>}
   </>;

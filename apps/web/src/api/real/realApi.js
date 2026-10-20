@@ -1981,6 +1981,13 @@ export function createRealApi() {
       if (r?.ok !== true || r.onboarding?.id !== id || r.onboarding?.status !== "DESISTIU") throw new Error("Encerramento sem confirmação. Confira a ficha antes de repetir.");
       return r;
     },
+    async retomarAtendimentoOnboarding(id, motivo, versao) {
+      const r = await request(`/firm/onboardings/${encodeURIComponent(id)}/retomar`, {
+        method: "POST", body: JSON.stringify({ motivo, versao }),
+      });
+      if (r?.ok !== true || r.onboarding?.id !== id || !["RASCUNHO", "RECEBIDO", "EM_TRILHA"].includes(r.onboarding?.status)) throw new Error("Retomada sem confirmação. Confira a ficha antes de repetir.");
+      return r;
+    },
     async descartarOnboarding(id, versao) {
       const r = await request(`/firm/onboardings/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ versao }) });
       if (r?.ok !== true) throw new Error("Exclusão sem confirmação. Confira a lista antes de repetir.");
@@ -2444,10 +2451,10 @@ export function createRealApi() {
       });
     },
 
-    async patchConferenciaRegra(companyId, regraId, { ativa }) {
+    async patchConferenciaRegra(companyId, regraId, patch) {
       return request(`/firm/companies/${companyId}/conferencia/regras/${regraId}`, {
         method: "PATCH",
-        body: JSON.stringify({ ativa }),
+        body: JSON.stringify(patch),
       });
     },
 

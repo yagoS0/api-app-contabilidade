@@ -232,7 +232,7 @@ function safeApoiarPreview(resp) {
  *   de re-solicitar, devolve `{ protocoloExpirado: true }` ou `{ protocoloAusente: true }` e sai.
  *   A tela usa o padrão `true` — lá reconsultar TEM que solicitar.
  */
-export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null, permitirNovaSolicitacao = true, onProtocolo = null }) {
+export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null, permitirNovaSolicitacao = true, onProtocolo = null, validarExecucao = null }) {
   if (!INTEGRACAO_SERPRO_SITFIS) {
     const err = new Error("serpro_sitfis_disabled");
     err.code = "SERPRO_SITFIS_DISABLED";
@@ -265,6 +265,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
   // Cache oficial do SITFIS: se já há protocolo válido no dia, o /Apoiar responde 304 e o protocolo vem
   // no header ETag (corpo vazio). Se não há, responde 200 com o protocolo no corpo (dados.protocoloRelatorio).
   async function solicitarProtocolo() {
+    await validarExecucao?.();
     const resp = await client.post("/Apoiar", {
       ...envelopeBase,
       pedidoDados: {
@@ -397,7 +398,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
   // Grava ANTES do primeiro /Emitir: daqui em diante qualquer falha deixaria o lugar órfão.
   if (protocolo && protocolo !== protocoloExistente) {
     try { await onProtocolo?.(protocolo); }
-    catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo recém-obtido"); }
+    catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo recém-obtido"); throw e; }
   }
   // O /Apoiar 200 traz o tempoEspera a aguardar antes do 1º /Emitir; no 304 (cache) usa espera curta.
   const preWait = sol.wait || (sol.status === 304 ? 1500 : 0);
@@ -413,6 +414,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
   let resolicitou = 0;
   let consultas = 0;
   while (Date.now() < deadline && consultas < 3) {
+    await validarExecucao?.();
     consultas += 1;
     const emitirDados = JSON.stringify({ protocoloRelatorio: protocolo });
     // eslint-disable-next-line no-await-in-loop
@@ -519,7 +521,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
       protocolo = sol.proto;
       // Mesmo cuidado na re-solicitação: este protocolo também abriu um lugar novo.
       try { await onProtocolo?.(protocolo); }
-      catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo re-solicitado"); }
+      catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo re-solicitado"); throw e; }
       // eslint-disable-next-line no-await-in-loop
       if (sol.wait) await sleep(Math.min(sol.wait, 5000));
       continue;

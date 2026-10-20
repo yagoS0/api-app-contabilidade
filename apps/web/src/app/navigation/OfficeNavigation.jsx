@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { WorkspaceHomeLink } from "./WorkspaceNavigation";
 import { TaskCenterSlot } from "../../features/tasks/TaskCenterPlacement";
 import "./office-navigation.css";
@@ -50,6 +50,23 @@ function matchesLink(link, pathname) {
 // Rendered by the authenticated shell; public forms and login keep their own layout.
 export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const saidaEmCurso = useRef(false);
+  async function navegarComRascunho(event) {
+    const link = event.target.closest('a[href]');
+    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || link.target === '_blank') return;
+    const destino = new URL(link.href, window.location.href);
+    if (destino.origin !== window.location.origin) return;
+    const pendencias = [];
+    window.dispatchEvent(new CustomEvent('altan:onboarding-antes-de-navegar', { detail: pendencias }));
+    if (!pendencias.length) return;
+    event.preventDefault(); event.stopPropagation();
+    if (saidaEmCurso.current) return;
+    saidaEmCurso.current = true;
+    try { await Promise.all(pendencias.map(salvar => salvar())); navigate(destino.pathname + destino.search + destino.hash); }
+    catch { /* O formulário preserva o rascunho e apresenta o erro. */ }
+    finally { saidaEmCurso.current = false; }
+  }
   const [destinationsOpen, setDestinationsOpen] = useState(false);
   const destinationsId = useId();
   const disclosureRef = useRef(null);
@@ -57,6 +74,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
   const focusFirstLink = useRef(false);
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
   const activeArea = OFFICE_AREAS.find((area) => area.links.some((link) => matchesLink(link, pathname)));
+  const currentDestination = location.pathname + location.search + location.hash;
   const inCompany = /^\/companies\/(?!new(?:\/|$))[^/]+/.test(pathname);
 
   useEffect(() => { setDestinationsOpen(false); }, [location.pathname, location.search, location.hash]);
@@ -87,7 +105,7 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
   }, [destinationsOpen]);
 
   if (!activeArea || inCompany) return null;
-  const currentDestination = `${location.pathname}${location.search}${location.hash}`;
+
   const unread = resumoWhatsapp?.selo;
   const suportePendente = resumoWhatsapp?.pendenciasSuporte > 0 ? <span className="office-navigation__badge" aria-label={`${resumoWhatsapp.pendenciasSuporte} atendimentos precisam da equipe`}>{Math.min(99, resumoWhatsapp.pendenciasSuporte)}{resumoWhatsapp.pendenciasSuporte > 99 ? '+' : ''}</span> : null;
   const unreadBadge = unread ? <span className="office-navigation__badge" aria-label={`${unread} mensagens não lidas no WhatsApp`}>{unread}</span> : null;
@@ -106,13 +124,13 @@ export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null
       >{link.label}{link.to === '/suporte' ? suportePendente : null}</Link>)}
   </nav>;
 
-  return <div className={`office-navigation${inCompany ? " office-navigation--company" : ""}`}>
+  return <div onClickCapture={navegarComRascunho} className={`office-navigation${inCompany ? " office-navigation--company" : ""}`}>
     <div className="office-navigation__top">
     <WorkspaceHomeLink />
     <nav className="office-navigation__areas" aria-label="Áreas do escritório">
       {OFFICE_AREAS.map((area) => <Link
         key={area.id}
-        to={area.id === activeArea.id ? currentDestination : area.to}
+        to={area.id === activeArea.id && area.id !== "comercial" ? currentDestination : area.to}
         className="office-navigation__area"
         aria-current={area.id === activeArea.id ? "location" : undefined}
         title={area.id === "suporte" ? resumoWhatsapp?.frase : undefined}

@@ -1,0 +1,19 @@
+{
+  "summary": "Registra decisão concreta de retomada manual da Neurogenesis, separada da implementação ainda em revisão",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance"
+  ],
+  "baseCommit": "c4b0274c696ec7f703327e42d5e9ba75842d2d15",
+  "operationalImpact": "Seção24 R31/T47-T52: transição auditada, histórico preservado, recuperação conservadora e automação manual por caso. Demais aspectos V08 continuam pendentes. Sem alteração de gates ou permissões técnicas.",
+  "tests": [
+    "git diff --check passou; fonte canônica e snapshot idênticos SHA256 8a0c578e5cac16376fd0e156c32b2712a2b9e8929936a12f051384363d12b302",
+    "Revisão independente /root/diagnostico_comercial aprovada para documentação: bytes anteriores preservados, 3093 bytes acrescentados, sem autorização de publicação. Não certifica produto.",
+    "check.mjs plan --base c4b0274: documentation/governance high, nenhum caminho desconhecido"
+  ],
+  "rollback": "Reverter somente o registro se substituído por decisão posterior explícita; não apagar eventos nem reativar automações ou links. Nenhum dado operacional foi alterado.",
+  "humanDecisions": [
+    "Usuário autorizou restaurar Neurogenesis; operação produtiva ainda pendente. Solicitou resultado antes de publicar; esta mudança não autoriza publicação."
+  ]
+}

@@ -22,7 +22,7 @@ export function marcadorProcuracao(dados = {}, agora = Date.now()) {
   if (dados.vinculoConfirmado !== true) return { chave: "revalidar", rotulo: "Revalidar", cor: "var(--state-warn)" };
   if (status === "ATIVA" && validade > 0 && validade <= agora) return { chave: "regularizar", rotulo: "Vencida", cor: "var(--state-warn)" };
   if (status === "ATIVA" && validade > agora && consulta > 0 && consulta <= agora && !recente) {
-    return { chave: "revalidar", rotulo: "Ativa na última verificação", cor: "var(--state-warn)", orientacao: "Atualize a verificação antes de operar." };
+    return { chave: "revalidar", rotulo: "Revalidar", cor: "var(--state-warn)", orientacao: "Atualize a verificação antes de operar." };
   }
   if (!recente || (status === "ATIVA" && !(validade > 0))) return { chave: "revalidar", rotulo: "Revalidar", cor: "var(--state-warn)" };
   if (status === "AUSENTE") return { chave: "regularizar", rotulo: "Sem procuração ativa", cor: "var(--state-warn)" };

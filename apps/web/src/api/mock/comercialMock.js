@@ -221,7 +221,15 @@ export function criarMockComercial({
         onboarding: {
           ...o
         },
-        atendimento: a || null,
+        atendimento: a ? {
+          ...a,
+          triagem: {
+            ...a.triagem,
+            ...([...(o.eventos || [])].reverse().find(e => e.tipo === "ATENDIMENTO_RETOMADO") ? {
+              retomadaManual: { bloqueiaAutomacao: true, em: [...o.eventos].reverse().find(e => e.tipo === "ATENDIMENTO_RETOMADO").createdAt },
+            } : {}),
+          },
+        } : null,
         jornada: { analises: [], diagnostico: diagnosticoAtual(o),
           diagnosticoDesatualizado: Boolean(o.diagnosticoDemonstracao && !diagnosticoAtual(o)),
           diagnosticoAnterior: !diagnosticoAtual(o) ? o.diagnosticoDemonstracao?.dados || null : null,
