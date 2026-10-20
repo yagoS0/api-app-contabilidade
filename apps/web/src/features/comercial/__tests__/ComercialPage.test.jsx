@@ -128,3 +128,40 @@ test('resposta antiga não restaura oportunidade desistida nem altera mensagens 
   fireEvent.change(screen.getByLabelText('Etapa comercial'), { target: { value: 'DESISTIU' } });
   expect(screen.getByRole('link', { name: /Contato/ })).toBeVisible();
 });
+
+test.each(['encerrar', 'excluir'])('ação %s atualiza contador imediatamente e invalida leitura em voo sem perder busca', async acao => {
+  const ficha = { id: 'f', responsavelNome: 'Contato sintético', status: 'RASCUNHO', versao: 0 };
+  const outra = { id: 'g', responsavelNome: 'Contato restante', status: 'RECEBIDO' };
+  const encerrada = { ...ficha, status: 'DESISTIU', versao: 1 };
+  let antiga, nova;
+  const api = {
+    listarOnboardings: jest.fn().mockResolvedValueOnce({ itens: [ficha, outra] })
+      .mockImplementationOnce(() => new Promise(r => { antiga = r; }))
+      .mockImplementationOnce(() => new Promise(r => { nova = r; })),
+    getElegibilidadeDescarteOnboarding: jest.fn().mockResolvedValue({ ok: true, elegibilidade: {
+      id: ficha.id, versao: 0, podeExcluir: true, podeEncerrar: true, impedimentos: [],
+    } }),
+    desistirOnboarding: jest.fn().mockResolvedValue({ ok: true, onboarding: encerrada }),
+    descartarOnboarding: jest.fn().mockResolvedValue({ ok: true }),
+  };
+  render(<MemoryRouter initialEntries={['/comercial/oportunidades']}><ComercialPage api={api} /></MemoryRouter>);
+  await screen.findByLabelText('2 oportunidades em andamento');
+  fireEvent.change(screen.getByLabelText('Buscar oportunidade'), { target: { value: 'Contato' } });
+  await act(async () => { window.dispatchEvent(new Event('focus')); });
+  fireEvent.click(screen.getByLabelText('Ações de Contato sintético'));
+  fireEvent.click(screen.getByRole('menuitem', { name: acao === 'encerrar' ? 'Encerrar oportunidade' : 'Excluir rascunho' }));
+  const confirmar = screen.getByRole('button', { name: acao === 'encerrar' ? 'Confirmar desistência' : 'Excluir rascunho' });
+  await waitFor(() => expect(confirmar).toBeEnabled());
+  fireEvent.click(confirmar);
+  await screen.findByLabelText('1 oportunidades em andamento');
+  expect(screen.queryByRole('link', { name: /Contato sintético/ })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Buscar oportunidade')).toHaveValue('Contato');
+  expect(screen.getByLabelText('Buscar oportunidade')).toHaveFocus();
+  await act(async () => { antiga({ itens: [ficha, outra] }); });
+  expect(screen.getByLabelText('1 oportunidades em andamento')).toBeVisible();
+  expect(screen.queryByRole('link', { name: /Contato sintético/ })).not.toBeInTheDocument();
+  await act(async () => { nova({ itens: acao === 'encerrar' ? [encerrada, outra] : [outra] }); });
+  fireEvent.change(screen.getByLabelText('Etapa comercial'), { target: { value: 'TODAS' } });
+  if (acao === 'encerrar') expect(screen.getByRole('link', { name: /Contato sintético/ })).toBeVisible();
+  else expect(screen.queryByRole('link', { name: /Contato sintético/ })).not.toBeInTheDocument();
+});

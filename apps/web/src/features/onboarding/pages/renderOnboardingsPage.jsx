@@ -1,3 +1,4 @@
+import { AcoesOportunidade } from '../components/AcoesOportunidade';
 import { nomeDaOportunidade, resumoRetorno } from '../../comercial/comercialModel';
 // LISTA / QUADRO do funil.
 //
@@ -8,7 +9,7 @@ import { useMemo, useRef, useState } from "react";
 import { NovoAtendimentoModal } from "../components/NovoAtendimentoModal";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
-import { Modal } from "../../../components/ui/Modal";
+
 import { useOnboardings } from "../hooks/useOnboardings";
 import { colunasDoQuadro, estiloDoStatus, statusDoOnboarding } from "../lib/onboardingStatus";
 import { ONBOARDING_ORIGENS } from "../lib/onboardingSpec";
@@ -36,7 +37,7 @@ function Crachá({ origem }) {
   );
 }
 
-function CartaoOnboarding({ item, onAbrir, onDescartar }) {
+function CartaoOnboarding({ item, onAbrir, api, onPersistir, aoRestaurarFoco }) {
   const status = statusDoOnboarding(item.status);
   const progresso = item.progresso || { total: 0, concluidas: 0 };
 
@@ -85,31 +86,18 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
         </span>
       )}
 
-      {onDescartar && (
-        <button
-          type="button"
-          onClick={() => onDescartar(item)}
-          style={{
-            justifySelf: "start", background: "none", border: "none", padding: 0,
-            color: "var(--text-faint)", fontSize: 12, cursor: "pointer", textDecoration: "underline",
-          }}
-        >
-          descartar rascunho
-        </button>
-      )}
+      <AcoesOportunidade api={api} item={item} onPersistir={onPersistir} aoRestaurarFoco={aoRestaurarFoco} />
     </article>
   );
 }
 
 export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
-  const { itens, carregando, erro, filtros, alterarFiltro, descartar, recarregar } = useOnboardings({ api });
+  const buscaRef = useRef(null);
+  const restaurarFoco = () => buscaRef.current?.focus({ preventScroll: true });
+  const { itens, carregando, erro, filtros, alterarFiltro, aplicarPersistencia, recarregar } = useOnboardings({ api });
   const [mostrarRascunhos, setMostrarRascunhos] = useState(true);
   const [novoAberto, setNovoAberto] = useState(false);
   const [visao, setVisao] = useState("ativos");
-  const [rascunhoParaExcluir, setRascunhoParaExcluir] = useState(null);
-  const [erroDescarte, setErroDescarte] = useState(null), [descartando, setDescartando] = useState(false);
-  const descarteEmCurso = useRef(false);
-
   const encerrados = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
   const colunas = useMemo(() => colunasDoQuadro().filter(c => visao === "todos" ||
     (["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(c.chave) === (visao === "encerrados"))), [visao]);
@@ -132,17 +120,6 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
     alterarFiltro("incluirRascunhos", proximo);
   }
 
-  function confirmarDescarte(item) {
-    setErroDescarte(null); setRascunhoParaExcluir(item);
-  }
-  async function excluirRascunho() {
-    if (!rascunhoParaExcluir || descarteEmCurso.current) return;
-    descarteEmCurso.current = true; setDescartando(true); setErroDescarte(null);
-    try { await descartar(rascunhoParaExcluir.id); setRascunhoParaExcluir(null); }
-    catch (e) { setErroDescarte(e); }
-    finally { descarteEmCurso.current = false; setDescartando(false); }
-  }
-
   return (
     <PageShell
       title="Entrada de clientes"
@@ -152,10 +129,6 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
       contentStyle={{ maxWidth: "var(--content-wide)", margin: "0 auto", width: "100%" }}
     >
       {novoAberto && <NovoAtendimentoModal onCriar={onNovo} onFechar={() => { setNovoAberto(false); recarregar(); }} />}
-      {rascunhoParaExcluir && <Modal titulo="Descartar rascunho?" tamanho="sm" ocupado={descartando} aoFechar={() => setRascunhoParaExcluir(null)} rodape={<><Button variant="secondary" disabled={descartando} onClick={() => setRascunhoParaExcluir(null)}>Cancelar</Button><Button variant="danger" disabled={descartando || Boolean(erroDescarte)} onClick={excluirRascunho}>{descartando ? "Excluindo…" : "Descartar rascunho"}</Button></>}>
-        <p><strong>{rascunhoParaExcluir.razaoSocial || rascunhoParaExcluir.responsavelNome || "Ficha em preenchimento"}</strong></p><p>A exclusão remove esta ficha em preenchimento. Atendimentos com conversa vinculada devem ser encerrados para preservar o histórico.</p>
-        {erroDescarte && <div role="alert"><p>{erroDescarte.payload?.message || erroDescarte.message || "Não foi possível confirmar a exclusão. Atualize a lista antes de tentar novamente."}</p><Button variant="secondary" onClick={() => { const ficha = rascunhoParaExcluir; setRascunhoParaExcluir(null); onAbrir?.(ficha); }}>Abrir ficha para conferir</Button></div>}
-      </Modal>}
       <nav className="onboarding-sections" aria-label="Situação dos atendimentos">
         {[["ativos", "Em andamento"], ["encerrados", "Encerrados"], ["todos", "Todos"]].map(([valor, rotulo]) =>
           <button key={valor} type="button" aria-pressed={visao === valor} onClick={() => setVisao(valor)}>
@@ -164,6 +137,8 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
       </nav>
       <div className="onboarding-list-filters" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <input
+          ref={buscaRef}
+          data-oportunidades-busca
           aria-label="Buscar atendimento"
           placeholder="Buscar por nome, CNPJ ou responsável"
           value={filtros.q}
@@ -207,7 +182,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))", gap: "var(--space-2)" }}>
               {rascunhos.map((item) => (
-                <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} onDescartar={confirmarDescarte} />
+                <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} api={api} onPersistir={aplicarPersistencia} aoRestaurarFoco={restaurarFoco} />
               ))}
             </div>
           )}
@@ -242,7 +217,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
                   <span style={{ fontSize: 12, color: "var(--text-faint)" }}>Nenhum atendimento nesta etapa.</span>
                 )}
                 {lista.map((item) => (
-                  <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} />
+                  <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} api={api} onPersistir={aplicarPersistencia} aoRestaurarFoco={restaurarFoco} />
                 ))}
               </div>
             </section>

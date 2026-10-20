@@ -1,0 +1,54 @@
+{
+  "summary": "Implementar a entrega JÁ PREPARADA e salva no commit95d02ce40c2f2002dbde1bbc1758e9ce45830e9c sobre esta árvore limpa da base96a0dd5. Usuário autorizou retomar encerramento/exclusão de oportunidades, preservar histórico. Esta árvore foi criada pelo Principal para permitir runtime comparar delta COMPLETO da entrega, preservando árvore anterior. Planner: incluir exatamente22caminhos abaixo, todos serão criados/modificados ao recuperar entrega. Executor: restaurar SOMENTE esses22arquivos do commit95d02ce40 (git restore --source=95d02ce40 --worktree -- caminhos ou equivalente); NÃO restaurar outros caminhos, NÃO commit/merge. Não refazer implementação. Inspecionar e corrigir apenas defeitos concretos. Runtime executará todos gates e revisões independentes+sistêmica. Não alterar política/gates/governança para aprovar. Regras existentes R19-R23/R27-R28; sem mudança operacional, V08 permanece pendente. Sem publicação, sem mensagens, sem alterar fichas reais. Quatro oportunidades reais têm histórico e devem poder ser encerradas comoDESISTIU; descarte só rascunho vazio. Entrega inclui22arquivos e proteção de relações/concorrência, atualização de contadores, menus acessíveis, foco e respostas tardias. Diagnóstico e evidências anteriores encontram-se na árvore ../altan-comercial-encerramento-20261020/.altan-governance/RETOMADA_ENCERRAMENTO_OPORTUNIDADES.txt e auditorias-principal.txt. QA desktop/mobile, PG19 e lint passaram na versão95d02ce40; preservar evidências, não dizer atualgateaprovado antesexecução. Revisores inspecionam todaentrega, não somentedoc. Nenhum teste pelo sandbox dosagentes; controlador executa gates. Sem dados externos. Caminhos:\napps/api/scripts/verify-encerramento-oportunidades-postgres.mjs\napps/api/scripts/verify-mensagens-onboarding-postgres.mjs\napps/api/src/application/onboarding/OnboardingService.js\napps/api/src/application/onboarding/__tests__/onboardingService.test.js\napps/api/src/application/validators/onboardingSchemas.js\napps/api/src/routes/firm/__tests__/onboardingRotas.test.js\napps/api/src/routes/firm/onboardings.js\napps/web/src/api/mock/mockApi.js\napps/web/src/api/real/__tests__/encerramentoOportunidades.test.js\napps/web/src/api/real/realApi.js\napps/web/src/features/comercial/ComercialPage.jsx\napps/web/src/features/comercial/__tests__/ComercialPage.test.jsx\napps/web/src/features/comercial/comercial.css\napps/web/src/features/onboarding/components/AcoesOportunidade.jsx\napps/web/src/features/onboarding/components/__tests__/AcoesOportunidade.test.jsx\napps/web/src/features/onboarding/components/__tests__/descarteRascunho.test.jsx\napps/web/src/features/onboarding/components/__tests__/encerramentoDetalhe.test.jsx\napps/web/src/features/onboarding/hooks/useOnboardings.js\napps/web/src/features/onboarding/lib/__tests__/funilMock.test.js\napps/web/src/features/onboarding/pages/renderOnboardingDetailPage.jsx\napps/web/src/features/onboarding/pages/renderOnboardingsPage.jsx\ndocs/revisao-produto-2026-10/ENCERRAMENTO_OPORTUNIDADES_20261020.md\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-20T13-43-09-934Z-015b0450",
+  "tests": [
+    "governance-engine: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-governance-engine",
+    "api-regression: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-api-regression",
+    "web-regression: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-web-regression",
+    "portal-regression: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-portal-regression",
+    "web-build: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-web-build",
+    "portal-build: passed against 4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-encerramento-validacao-20261020\\.altan-governance\\runs\\2026-10-20T13-43-09-934Z-015b0450\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-20T13-43-09-934Z-015b0450; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "4bd1ec7747da6be3f9669fcfaec4e803bcda037ca72d2e408839dabede240660",
+  "sourcePaths": [
+    "apps/api/scripts/verify-encerramento-oportunidades-postgres.mjs",
+    "apps/api/scripts/verify-mensagens-onboarding-postgres.mjs",
+    "apps/api/src/application/onboarding/OnboardingService.js",
+    "apps/api/src/application/onboarding/__tests__/onboardingService.test.js",
+    "apps/api/src/application/validators/onboardingSchemas.js",
+    "apps/api/src/routes/firm/__tests__/onboardingRotas.test.js",
+    "apps/api/src/routes/firm/onboardings.js",
+    "apps/web/src/api/mock/mockApi.js",
+    "apps/web/src/api/real/__tests__/encerramentoOportunidades.test.js",
+    "apps/web/src/api/real/realApi.js",
+    "apps/web/src/features/comercial/ComercialPage.jsx",
+    "apps/web/src/features/comercial/__tests__/ComercialPage.test.jsx",
+    "apps/web/src/features/comercial/comercial.css",
+    "apps/web/src/features/onboarding/components/AcoesOportunidade.jsx",
+    "apps/web/src/features/onboarding/components/__tests__/AcoesOportunidade.test.jsx",
+    "apps/web/src/features/onboarding/components/__tests__/descarteRascunho.test.jsx",
+    "apps/web/src/features/onboarding/components/__tests__/encerramentoDetalhe.test.jsx",
+    "apps/web/src/features/onboarding/hooks/useOnboardings.js",
+    "apps/web/src/features/onboarding/lib/__tests__/funilMock.test.js",
+    "apps/web/src/features/onboarding/pages/renderOnboardingDetailPage.jsx",
+    "apps/web/src/features/onboarding/pages/renderOnboardingsPage.jsx",
+    "docs/revisao-produto-2026-10/ENCERRAMENTO_OPORTUNIDADES_20261020.md"
+  ],
+  "runId": "2026-10-20T13-43-09-934Z-015b0450"
+}

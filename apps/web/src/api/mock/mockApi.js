@@ -11195,26 +11195,55 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       };
     },
 
-    async desistirOnboarding(id, motivo) {
+    async getElegibilidadeDescarteOnboarding(id) {
+      const r = mockOnboardings.get(id);
+      if (!r) throw Object.assign(new Error("Onboarding não encontrado."), { status: 404 });
+      const impedimentos = [];
+      if (r.status !== "RASCUNHO") impedimentos.push("A ficha não está em rascunho");
+      if (r.portalClientId || r.convertidoEm) impedimentos.push("Empresa vinculada");
+      if (r.proposta || r.enviadoEm || r.origemPreenchimento === "CLIENTE") impedimentos.push("Proposta ou preenchimento recebido");
+      if (r.desistiuEm || (r.faseComercial && r.faseComercial !== "LEAD") || Object.keys(r.fontesDados || {}).length) impedimentos.push("Marcos ou origem dos dados registrados");
+      if (r.demandaOrigemId || r.demandasRelacionadas?.length || [...mockOnboardings.values()].some(o => o.demandaOrigemId === id)) impedimentos.push("Demandas vinculadas");
+      if (r.conversaId || r.conversaComercialId || r.atendimentoLeadId || r.atendimentosLead?.length) impedimentos.push("Conversa vinculada");
+      if (r.eventos?.length || r.marcosComerciais?.length || r.diagnosticoDemonstracao || r.apresentacaoDemonstracao || r.analises?.length || r.trabalhosFiscais?.length) impedimentos.push("Histórico do atendimento");
+      if (mockEtapasDe(id).length) impedimentos.push("Etapas de implantação");
+      if ([...mockLinksComerciais.values()].some(l => l.onboardingId === id)) impedimentos.push("Link de preenchimento");
+      for (const [chave, mapa] of Object.entries(mockContratacao)) {
+        if (mapa.has(id) || [...mapa.values()].some(v => v.onboardingId === id)) impedimentos.push(`Vínculo comercial: ${chave}`);
+      }
+      return { ok: true, elegibilidade: { id, versao: r.versao || 0, status: r.status, podeExcluir: !impedimentos.length,
+        podeEncerrar: !["CONVERTIDO", "CONCLUIDO_AVULSO", "DESISTIU"].includes(r.status), impedimentos } };
+    },
+
+    async desistirOnboarding(id, motivo, versao) {
       await delay(180);
       const registro = mockOnboardings.get(id);
       if (!registro) throw Object.assign(new Error("Onboarding não encontrado."), { code: "onboarding_nao_encontrado", status: 404 });
+      if (["CONVERTIDO", "CONCLUIDO_AVULSO"].includes(registro.status)) throw Object.assign(new Error("Ficha encerrada."), { status: 409 });
+      if (registro.status === "DESISTIU") return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
+      if (!Number.isInteger(versao) || versao !== (registro.versao || 0)) throw Object.assign(new Error("A ficha mudou. Confira novamente."), { code: "formulario_alterado", status: 409 });
+      registro.versao = versao + 1;
       registro.status = "DESISTIU";
       registro.desistiuEm = new Date().toISOString();
       registro.motivoDesistencia = motivo || null;
       registro.updatedAt = new Date().toISOString();
+      registro.eventos = [...(registro.eventos || []), { id: crypto.randomUUID(), tipo: "DESISTIU", dados: { motivo: motivo || null }, createdAt: registro.updatedAt }];
       persistirOnboardingsMock();
       return { ok: true, onboarding: await comProjecaoComercial(mockOnboardingComEtapas(id)) };
     },
 
-    async descartarOnboarding(id) {
+    async descartarOnboarding(id, versao) {
       await delay(180);
       const registro = mockOnboardings.get(id);
+      if (!registro) throw Object.assign(new Error("Onboarding não encontrado."), { status: 404 });
       if (registro && registro.status !== "RASCUNHO") {
         throw Object.assign(new Error("Só um rascunho pode ser descartado."), {
           code: "somente_rascunho_pode_ser_descartado", status: 409,
         });
       }
+      if (!Number.isInteger(versao) || versao !== (registro.versao || 0)) throw Object.assign(new Error("A ficha mudou. Confira novamente."), { code: "formulario_alterado", status: 409 });
+      const { elegibilidade } = await this.getElegibilidadeDescarteOnboarding(id);
+      if (!elegibilidade.podeExcluir) throw Object.assign(new Error("Há histórico ou vínculos. Encerre como desistência."), { code: "atendimento_tem_historico", status: 409 });
       mockOnboardings.delete(id);
       mockOnboardingEtapas.delete(id);
       persistirOnboardingsMock();

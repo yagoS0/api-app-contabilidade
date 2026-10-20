@@ -449,9 +449,13 @@ async function salvarContatoDaConversao(tx, registro, payload, criada) {
   } });
 }
 
-export async function desistir(id, { motivo = null, atorId = null } = {}) {
+export async function desistir(id, { motivo = null, atorId = null, versao } = {}) {
   const registro = await carregar(id);
   recusarSeConvertido(registro);
+  if (registro.status === "DESISTIU") return carregar(id, { comEtapas: true });
+  // Chamadores internos legados não têm confirmação visual; a rota exige versão.
+  // Mesmo nesses casos o CAS abaixo protege a revisão carregada pelo serviço.
+  if (versao !== undefined) conferirVersao(registro, versao);
   await prisma.onboarding.update({
     where: { id: registro.id, versao: registro.versao, status: registro.status },
     data: {
@@ -530,8 +534,46 @@ export async function obter(id, user = null) {
   return { ...registro, comercial, conversao, etapas: etapasComEvidencias(registro.etapas, comercial.evidencias), demandasRelacionadas: (vinculos || []).map(e => ({ id: e.dados.onboardingId, origem: e.dados.origem || null, anterior: e.tipo === "DEMANDA_ORIGEM" })) };
 }
 
-/** Só RASCUNHO pode ser descartado — o resto é rastro, e rastro não se apaga. */
-export async function descartar(id) {
+function conferirVersao(registro, versao) {
+  if (!Number.isInteger(versao) || versao !== registro.versao) {
+    throw new OnboardingError("formulario_alterado", "A ficha mudou ou a confirmação não tem versão. Confira novamente antes de confirmar.", 409);
+  }
+}
+
+// Inventário de TODAS as relações de Onboarding, inclusive as que usam Cascade.
+// A criação simples não grava evento. Qualquer evento existente é histórico preservado.
+export const VINCULOS_DESCARTE = [
+  ["atendimentoLead", "Conversa vinculada"],
+  ["propostaComercial", "Proposta comercial"],
+  ["contratoComercial", "Contrato comercial"],
+  ["documentoOnboarding", "Documento recebido"],
+  ["trabalhoFiscalLead", "Trabalho fiscal"],
+  ["fichaEmpresaAvulsa", "Ficha de serviço avulso"],
+  ["onboardingAnalise", "Análise registrada"],
+  ["onboardingLink", "Link de preenchimento"],
+  ["onboardingEtapa", "Etapas de implantação"],
+];
+
+export async function elegibilidadeDescarte(id, db = prisma) {
+  const registro = await db.onboarding.findUnique({ where: { id } });
+  if (!registro) throw new OnboardingError("onboarding_nao_encontrado", "Onboarding não encontrado.", 404);
+  const impedimentos = [];
+  if (registro.status !== "RASCUNHO") impedimentos.push("A ficha não está em rascunho");
+  if (registro.portalClientId || registro.convertidoEm) impedimentos.push("Empresa vinculada ou conversão registrada");
+  if (registro.proposta || registro.enviadoEm || registro.origemPreenchimento === "CLIENTE") impedimentos.push("Proposta ou preenchimento recebido");
+  if (registro.desistiuEm || (registro.faseComercial && registro.faseComercial !== "LEAD") || Object.keys(registro.fontesDados || {}).length) impedimentos.push("Marcos ou origem dos dados registrados");
+  for (const [modelo, rotulo] of VINCULOS_DESCARTE) {
+    if (await db[modelo].findFirst({ where: { onboardingId: id }, select: { id: true } })) impedimentos.push(rotulo);
+  }
+  if (await db.onboardingEvento.findFirst({ where: { onboardingId: id }, select: { id: true } })) {
+    impedimentos.push("Histórico do atendimento");
+  }
+  return { id, versao: registro.versao, status: registro.status, podeExcluir: impedimentos.length === 0,
+    podeEncerrar: !["CONVERTIDO", "CONCLUIDO_AVULSO", "DESISTIU"].includes(registro.status), impedimentos };
+}
+
+/** A trava FOR UPDATE também serializa os inserts por FK, inclusive em relações Cascade. */
+export async function descartar(id, { versao } = {}) {
   const registro = await carregar(id);
   if (registro.status !== "RASCUNHO") {
     throw new OnboardingError(
@@ -540,14 +582,19 @@ export async function descartar(id) {
       409
     );
   }
-  await prisma.$transaction(async tx => {
+  conferirVersao(registro, versao);
+  try { await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM onboardings WHERE id = ${registro.id} FOR UPDATE`;
     // Serializa descarte e criação de demanda na mesma ficha antes de ler os vínculos.
     const trava = await tx.onboarding.updateMany({ where: { id: registro.id, versao: registro.versao, status: "RASCUNHO" }, data: { updatedAt: new Date() } });
     if (trava.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou. Atualize antes de descartar.", 409);
-    if (await tx.atendimentoLead.findFirst({ where: { onboardingId: id } })) throw new OnboardingError("atendimento_tem_historico", "Este atendimento possui conversa vinculada. Use desistência para preservar o histórico.", 409);
-    if (await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: { in: ["DEMANDA_ORIGEM", "DEMANDA_RELACIONADA_CRIADA"] } } })) throw new OnboardingError("atendimento_tem_historico", "Há demandas vinculadas. Use desistência para preservar o histórico.", 409);
+    const elegibilidade = await elegibilidadeDescarte(id, tx);
+    if (!elegibilidade.podeExcluir) throw new OnboardingError("atendimento_tem_historico", "Esta ficha possui histórico. Encerre a oportunidade como desistência para preservá-lo.", 409, { impedimentos: elegibilidade.impedimentos });
     await tx.onboarding.delete({ where: { id: registro.id } });
-  });
+  }, { isolationLevel: "ReadCommitted" }); } catch (e) {
+    if (["P2003", "P2034"].includes(e.code)) throw new OnboardingError("atendimento_tem_historico", "Os vínculos mudaram. Confira a ficha antes de confirmar novamente.", 409);
+    throw e;
+  }
   return { ok: true };
 }
 

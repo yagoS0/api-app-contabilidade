@@ -7,7 +7,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const proxy = new Proxy(raiz, {
     get(alvo, prop) {
       if (typeof prop === "symbol") return alvo[prop];
-      if (prop === "$transaction") return alvo.$transaction;
+      if (prop === "$transaction" || prop === "$queryRaw") return alvo[prop];
       if (!models[prop]) {
         const metodos = {};
         models[prop] = new Proxy(metodos, {
@@ -21,6 +21,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       return models[prop];
     },
   });
+  raiz.$queryRaw = jest.fn(async () => [{ id: "onb-1" }]);
   raiz.$transaction = jest.fn(async (arg) => (typeof arg === "function" ? arg(proxy) : Promise.all(arg)));
   return { prisma: proxy };
 });
@@ -33,6 +34,7 @@ import {
   converter,
   criar,
   descartar,
+  elegibilidadeDescarte, VINCULOS_DESCARTE,
   desistir,
   extrairColunas,
   listar,
@@ -41,6 +43,48 @@ import { etapasDaOrigem, ETAPAS_POR_ORIGEM } from "../etapasTemplate.js";
 import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
 
 const barreira = () => { let liberar; const promessa = new Promise(resolve => { liberar = resolve; }); return { promessa, liberar }; };
+
+describe("proteção do histórico no encerramento", () => {
+  test.each(VINCULOS_DESCARTE)("%s impede apagar rascunho e aparece na prévia", async (modelo, rotulo) => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+    prisma[modelo].findFirst.mockResolvedValue({ id: "vinculo" });
+    expect(await elegibilidadeDescarte("onb-1")).toMatchObject({ podeExcluir: false, impedimentos: [rotulo] });
+    await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({ status: 409, code: "atendimento_tem_historico" });
+    expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+  });
+  test.each(["CONVERSA_VINCULADA", "DEMANDA_ORIGEM", "DEMANDA_RELACIONADA_CRIADA", "ANALISE_PUBLICA", "FICHA_ATUALIZADA", "REINICIO"])("evento %s preservado", async tipo => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+    prisma.onboardingEvento.findFirst.mockResolvedValue({ id: "ev", tipo });
+    await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({ code: "atendimento_tem_historico" });
+    expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+  });
+  test.each([{ portalClientId: "empresa" }, { convertidoEm: new Date() }, { proposta: {} }, { origemPreenchimento: "CLIENTE" }, { fontesDados: { nome: "CLIENTE" } }, { faseComercial: "CONTRATADO" }])("evidência escalar impede exclusão %j", async campos => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva(campos));
+    expect((await elegibilidadeDescarte("onb-1")).podeExcluir).toBe(false);
+  });
+  test("consulta de elegibilidade não escreve", async () => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+    expect(await elegibilidadeDescarte("onb-1")).toMatchObject({ podeExcluir: true, versao: 0 });
+    expect(prisma.onboarding.updateMany).not.toHaveBeenCalled();
+    expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+  });
+  test("versão obsoleta da confirmação impede desistência", async () => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ versao: 2 }));
+    await expect(desistir("onb-1", { versao: 1 })).rejects.toMatchObject({ code: "formulario_alterado" });
+    expect(prisma.onboarding.update).not.toHaveBeenCalled();
+  });
+  test("desistência já persistida não duplica evento nem altera motivo", async () => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "DESISTIU", versao: 2, motivoDesistencia: "Original" }));
+    expect(await desistir("onb-1", { versao: 1, motivo: "Outro" })).toMatchObject({ motivoDesistencia: "Original", versao: 2 });
+    expect(prisma.onboarding.update).not.toHaveBeenCalled();
+  });
+  test.each(["P2003", "P2034"])("falha transacional %s vira conflito recuperável", async code => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+    prisma.$transaction.mockRejectedValueOnce(Object.assign(new Error("Conflito do banco"), { code }));
+    await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({ code: "atendimento_tem_historico", status: 409 });
+    expect(prisma.onboarding.delete).not.toHaveBeenCalled();
+  });
+});
 
 function fichaSalva(over = {}) {
   return {
@@ -65,6 +109,7 @@ function fichaSalva(over = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  for (const [modelo] of VINCULOS_DESCARTE) prisma[modelo].findFirst.mockReset().mockResolvedValue(null);
   prisma.user.findUnique.mockResolvedValue(null);
   prisma.propostaComercial.findFirst.mockResolvedValue(null);
   prisma.contratoComercial.findFirst.mockResolvedValue(null);
@@ -96,7 +141,7 @@ describe("escritas atrasadas depois de conversão", () => {
       return Object.assign(estado, data);
     });
     const operacao = acao === "etapa" ? concluirEtapa("onb-1", "et-1", { concluida: true })
-      : acao === "desistencia" ? desistir("onb-1", { motivo: "Desisti" }) : atualizar("onb-1", { versao: 0, ultimoPasso: "dados" });
+      : acao === "desistencia" ? desistir("onb-1", { motivo: "Desisti", versao: 0 }) : atualizar("onb-1", { versao: 0, ultimoPasso: "dados" });
     const rejeitada = expect(operacao).rejects.toMatchObject({ code: "formulario_alterado", status: 409 });
     await chegou.promessa;
     // Simula o COMMIT concorrente; o ensaio PostgreSQL executa converter real.
@@ -445,7 +490,7 @@ describe("listar e descartar", () => {
 
   test("só RASCUNHO pode ser descartado", async () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "EM_TRILHA" }));
-    await expect(descartar("onb-1")).rejects.toMatchObject({
+    await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({
       code: "somente_rascunho_pode_ser_descartado",
       status: 409,
     });
@@ -455,7 +500,7 @@ describe("listar e descartar", () => {
   test("rascunho é apagado", async () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "RASCUNHO" }));
     prisma.onboarding.delete.mockResolvedValue({});
-    await expect(descartar("onb-1")).resolves.toEqual({ ok: true });
+    await expect(descartar("onb-1", { versao: 0 })).resolves.toEqual({ ok: true });
   });
 });
 
@@ -484,7 +529,7 @@ test("descarte lê vínculos depois do lock e preserva demanda que acabou de ser
   prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
   prisma.atendimentoLead.findFirst.mockResolvedValueOnce(null);
   prisma.onboardingEvento.findFirst.mockResolvedValueOnce({ id: "vinculo-concorrente", tipo: "DEMANDA_RELACIONADA_CRIADA" });
-  await expect(descartar("onb-1")).rejects.toMatchObject({ code: "atendimento_tem_historico" });
+  await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({ code: "atendimento_tem_historico" });
   expect(prisma.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "onb-1", versao: 0, status: "RASCUNHO" } }));
   expect(prisma.onboarding.updateMany.mock.invocationCallOrder[0]).toBeLessThan(prisma.onboardingEvento.findFirst.mock.invocationCallOrder[0]);
   expect(prisma.onboarding.delete).not.toHaveBeenCalled();
@@ -492,7 +537,7 @@ test("descarte lê vínculos depois do lock e preserva demanda que acabou de ser
 test("descarte recusa versão alterada antes de apagar ou consultar vínculos", async () => {
   prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
   prisma.onboarding.updateMany.mockResolvedValueOnce({ count: 0 });
-  await expect(descartar("onb-1")).rejects.toMatchObject({ code: "formulario_alterado" });
+  await expect(descartar("onb-1", { versao: 0 })).rejects.toMatchObject({ code: "formulario_alterado" });
   expect(prisma.onboardingEvento.findFirst).not.toHaveBeenCalled();
   expect(prisma.onboarding.delete).not.toHaveBeenCalled();
 });
@@ -534,6 +579,7 @@ test('listagem de 1 e 100 fichas tem número constante de consultas, sem consult
   const contagens = [];
   for (const quantidade of [1, 100]) {
     jest.clearAllMocks();
+  for (const [modelo] of VINCULOS_DESCARTE) prisma[modelo].findFirst.mockReset().mockResolvedValue(null);
     const fichas = Array.from({ length: quantidade }, (_, i) => fichaSalva({ id: `f-${i}`, status: 'EM_TRILHA', criadoPorId: 'autor', etapas: [] }));
     prisma.onboarding.findMany.mockResolvedValue(fichas);
     const resultado = await listar({ escopo: { criadoPorId: 'autor' } });

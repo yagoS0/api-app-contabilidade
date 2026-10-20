@@ -21,6 +21,7 @@ import {
   converter,
   criar,
   descartar,
+  elegibilidadeDescarte,
   desistir,
   listar,
   obter,
@@ -29,6 +30,7 @@ import { CompanyProvisioningError } from "../../application/companies/CompanyPro
 import {
   onboardingCreateSchema,
   onboardingDesistirSchema,
+  onboardingDescarteSchema,
   onboardingEtapaPatchSchema,
   onboardingPatchSchema,
 } from "../../application/validators/onboardingSchemas.js";
@@ -201,12 +203,20 @@ export function createOnboardingsRouter({ log } = {}) {
   });
 
   // ── Desistência ──────────────────────────────────────────────────────────────
+  router.get("/onboardings/:id/elegibilidade-descarte", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try {
+      res.set("Cache-Control", "no-store");
+      return res.json({ ok: true, elegibilidade: await elegibilidadeDescarte(req.params.id) });
+    } catch (err) { return falhar(res, err, { rota: "elegibilidade_descarte" }); }
+  });
   router.post("/onboardings/:id/desistir", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return;
     const validacao = validateCompanyInput(onboardingDesistirSchema, req.body || {});
     if (!validacao.ok) return res.status(validacao.status).json(validacao.body);
     try {
       const onboarding = await desistir(req.params.id, {
+        versao: validacao.data.versao,
         motivo: validacao.data.motivo || null,
         atorId: atorDe(req),
       });
@@ -219,8 +229,10 @@ export function createOnboardingsRouter({ log } = {}) {
   // ── Descarte de rascunho ─────────────────────────────────────────────────────
   router.delete("/onboardings/:id", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return;
+    const validacao = validateCompanyInput(onboardingDescarteSchema, req.body || {});
+    if (!validacao.ok) return res.status(validacao.status).json(validacao.body);
     try {
-      return res.json(await descartar(req.params.id));
+      return res.json(await descartar(req.params.id, validacao.data));
     } catch (err) {
       return falhar(res, err, { rota: "descartar", id: req.params.id });
     }
