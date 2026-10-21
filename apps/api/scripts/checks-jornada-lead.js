@@ -89,17 +89,19 @@ export async function verificarJornada({ db, user, ok }) {
     assert.equal(chamadas.length, qt + 1); durantePdf = null;
     ok(`Jornada ${origem}: novo relatório exige revisão e encerramento durante PDF impede o texto`);
   }
-  const p = await db.propostaComercial.create({ data: { onboardingId: id, versao: 1, fichaVersao: o.versao, snapshot: {}, expiraEm: new Date(Date.now() + 60000), status: "ACEITA" } });
-  const contrato = await db.contratoComercial.create({ data: { onboardingId: id, propostaId: p.id, modeloId: "sintetico", texto: "SINTÉTICO", dados: {} } });
-  const pagamento = { contratoId: contrato.id, evidencia: "Comprovante sintético conferido, nenhuma cobrança real." };
+  const p = await db.propostaComercial.create({ data: { onboardingId: id, versao: 1, fichaVersao: o.versao, snapshot: {}, opcaoAceita: "AVULSO", expiraEm: new Date(Date.now() + 60000), status: "ACEITA" } });
+  const contrato = await db.contratoComercial.create({ data: { onboardingId: id, propostaId: p.id, modeloId: "sintetico", texto: "SINTÉTICO", dados: { politicaContratacao: "R35", opcao: { chave: "AVULSO", recorrente: false, unicoCentavos: 10000 } } } });
+  await assert.rejects(j.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "Comprovante sintético" }), e => e.code === "pagamento_incompleto");
+  const revisaoContrato = new Date();
+  const pagamento = { contratoId: contrato.id, versao: (await db.onboarding.findUnique({ where: { id } })).versao, propostaVersao: p.versao, contratoRevisao: revisaoContrato.toISOString(), confirmado: true, valorCentavos: 10000, referencia: "Comprovante sintético conferido, nenhuma cobrança real." };
   await assert.rejects(j.confirmarPagamento(id, user, pagamento), e => e.code === "contrato_pendente");
-  await db.contratoComercial.update({ where: { id: contrato.id }, data: { status: "ASSINADO_CONFERIDO" } });
+  await db.contratoComercial.update({ where: { id: contrato.id }, data: { status: "AGUARDANDO_ASSINATURA", aprovadoEm: revisaoContrato, aprovadoPor: user.id } });
   const pagos = await Promise.all([1, 2].map(() => j.confirmarPagamento(id, user, pagamento)));
   assert.equal(pagos[0].id, pagos[1].id);
   assert.equal(pagos[0].dados.contratoId, contrato.id);
   await db.propostaComercial.update({ where: { id: p.id }, data: { revogadaEm: new Date() } });
   await assert.rejects(j.confirmarPagamento(id, user, pagamento), e => e.code === "contrato_pendente");
-  ok("Jornada: pagamento manual exige assinatura da proposta aceita, não duplica nem aceita contrato revogado");
+  ok("Jornada: pagamento manual exige contrato aprovado da proposta aceita, não duplica nem aceita contrato revogado");
   const { verificarJornadaCanais } = await import("./checks-jornada-canais.js");
   await verificarJornadaCanais({ db, user, ok });
 }

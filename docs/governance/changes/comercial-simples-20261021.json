@@ -34,7 +34,9 @@
     "Candidatoisolado canal-atendimento/proposta.patch SHA256E7A91A5BAD58F5F8CF1C422D34624BE4B3CB01E8EE93E6FF8538329EDE9B33D8:4/4testes aprovados e revisãoindependente,preserva canal,vínculo,janela,ausênciaenvioautomático e separa download/conferência/envio. Posteriormente autorizado pelo usuário e aplicado exatamente na árvore principal; revisão independente renovada.",
     "Falhas históricas preservadas nosevidências:web-E0rGWz/JQhsqN/Ndnxry/BdR4Rg e api-GR3KcZ (configuração ausente do banco,corrigida naexecuçãofinal).",
     "Candidato canalAtendimentoJornada autorizado e aplicado exatamente, sem alterações extras:4/4 testes dirigidos e repetição independente4/4,lint/diffcheck aprovados. Gate integral final web-O8AZVn APROVADO:514suítes e5871testes,zerofalhas/pendentes,exit0;sem filtros/exclusões.",
-    "Preparação de CI: PostgreSQL descartável adicional nos jobs que descobrem os novos testes transacionais; preservados jobs, seleções, guards e banco legado lead_flow_check. Verificador de conferência PDF acrescentado ao CI; revisão independente e CI remoto pendentes no momento deste registro. Sem impacto operacional adicional."
+    "Preparação de CI: PostgreSQL descartável adicional nos jobs que descobrem os novos testes transacionais; preservados jobs, seleções, guards e banco legado lead_flow_check. Verificador de conferência PDF acrescentado ao CI; revisão independente e CI remoto pendentes no momento deste registro. Sem impacto operacional adicional.",
+    "CI inicial PR238: recusou payloads antigos de pagamento em verificadores standalone. Candidato6scripts isolado aprovado por revisão independente, 45+9+7+11 verificações PostgreSQL aprovadas. Atualiza fixtures R35 e preserva negativas, incrementos de assinatura/pagamento, ganho/implantação, guards e zero rede. Aplicação autorizada; CI remoto será reexecutado.",
+    "Revalidação após aplicação do candidato na PRIMARY: quatro verificadores PostgreSQL exit0 (45+9+7+11 cenários), hashes dos seis scripts idênticos ao candidato revisado, cluster descartável parado. Revisão independente da aplicação aprovada, impacto/diffcheck aprovados."
   ],
   "rollback": "Publicação via main/Railway, sem migração nova. Em incidente, interromper integração e avaliar rollback do deploy para a versão anterior, preservando eventos R35, validações manuais, cobrança, documentos e tentativas de envio. Não reclassificar histórico nem reenviar resultados incertos. Antes de reverter código, avaliar compatibilidade de pagamentos já confirmados sem assinatura; não restaurar bloqueios indevidos sobre esses registros.",
   "humanDecisions": [
@@ -43,6 +45,7 @@
     "AutorizacaoDoLead.test.jsx corrigido após autorização de21/10/2026: waitFor pela habilitação, verificações preservadas, teste/lint e revisão independente aprovados. Sem mudança de produto.",
     "Histórico: publicação não estava autorizada durante os testes locais; nenhuma alteração produtiva foi feita nessa etapa.",
     "Usuário autorizou em21/10/2026 aplicar o candidato revisado somente em canalAtendimentoJornada.test.jsx e revalidar, sem publicar. Aplicado exatamente;4/4testes,lint e revisão independente na árvore principal aprovados.",
-    "21/10/2026: usuário autorizou abrir PR, integrar na main e publicar em produção após CI e revisões aprovados; conferir Comercial e onboarding no app. Não autoriza mensagens nem atos fiscais como teste."
+    "21/10/2026: usuário autorizou abrir PR, integrar na main e publicar em produção após CI e revisões aprovados; conferir Comercial e onboarding no app. Não autoriza mensagens nem atos fiscais como teste.",
+    "Usuário autorizou aplicar o candidato revisado de seis scripts PostgreSQL e revalidar após falhas no CI do PR238. Aplicado exatamente patch7DAE5931505B14B72877F47F0359B6DF71D81FFEB7127A3BF04664A373E05A56; sem alteração de produto ou gates."
   ]
 }
