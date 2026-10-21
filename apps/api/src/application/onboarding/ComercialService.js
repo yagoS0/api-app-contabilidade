@@ -36,7 +36,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
   async function conferirCasoFiscal(r, client = db) {
     const caso = await client.atendimentoLead.findFirst({ where: { onboardingId: r.id, encerradoEm: null } });
     if (!caso) return null; // Fichas anteriores ao atendimento comercial conservam a conferência oficial.
-    if (!caso.representanteVerificadoEm || caso.autorizacao?.cnpj !== r.cnpj) throw erro("escopo_alterado", "Confira CNPJ e representante antes da consulta privada.", 409);
+    if ((!caso.representanteVerificadoEm && !caso.autorizacao?.consultaAutorizadaPor) || caso.autorizacao?.cnpj !== r.cnpj) throw erro("escopo_alterado", "Confira CNPJ e autorização interna antes da consulta privada.", 409);
     if (caso.interlocutorId) {
       const conversa = await client.conversaWhatsapp.findUnique({ where: { id: caso.conversaId } });
       await exigirConversaDoCaso(caso, conversa, client);

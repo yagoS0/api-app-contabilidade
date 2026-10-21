@@ -1,6 +1,6 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { carregarEvidenciasJornada } from './JornadaLeadService.js';
-import { montarJornadaComercial } from './PoliticaJornadaComercial.js';
+import { carregarEvidenciasJornada, tiposConferencia } from './JornadaLeadService.js';
+import { montarJornadaComercial, procuracaoManualVigente } from './PoliticaJornadaComercial.js';
 
 // Leitura interna de ficha já autorizada. A política existente decide o passo.
 export async function projetarComercial(ficha, db = prisma) {
@@ -32,6 +32,16 @@ export function evidenciasDiagnostico(ficha, jornada, atendimento, agora = new D
   const fiscal = jornada.analises?.find(a => a.cnpj === ficha.cnpj && a.tipo === 'SITFIS' && a.status === 'CONCLUIDA' && a.resultado?.relatorioDisponivel);
   if (fiscal && jornada.fiscalConferido) evidencias.push({ chave: 'sitfis', id: fiscal.id, cnpj: ficha.cnpj, origem: 'Diagnóstico comercial', escopo: 'Relatório SITFIS conferido', em: fiscal.createdAt, satisfaz: true });
   const a = atendimento?.autorizacao;
+  if (jornada.fiscalAlternativa) evidencias.push({ chave: 'sitfis', id: jornada.fiscalAlternativa.id, cnpj: ficha.cnpj,
+    origem: jornada.fiscalAlternativa.dados.modo, escopo: jornada.fiscalAlternativa.dados.limitacao,
+    em: jornada.fiscalAlternativa.createdAt, atorId: jornada.fiscalAlternativa.atorId, satisfaz: false });
+  const manualAtendimento = a?.cnpj === ficha.cnpj && procuracaoManualVigente(ficha, a?.validacaoManual);
+  if (manualAtendimento) evidencias.push({ chave: 'procuracao_ecac', id: atendimento.id,
+    cnpj: ficha.cnpj, origem: 'MANUAL', escopo: a.validacaoManual.limitacao, em: a.validacaoManual.registradaEm,
+    atorId: a.validacaoManual.atorId, estado: 'VALIDADA_MANUALMENTE', satisfaz: false });
+  const manual = ficha.dados?.procuracaoManual;
+  if (!manualAtendimento && procuracaoManualVigente(ficha, manual)) evidencias.push({ chave: 'procuracao_ecac', id: ficha.id,
+    cnpj: ficha.cnpj, origem: 'MANUAL', escopo: manual.limitacao, em: manual.registradaEm, atorId: manual.atorId, estado: 'VALIDADA_MANUALMENTE', satisfaz: false });
   const expirada = a?.prova?.validUntil && new Date(a.prova.validUntil).getTime() <= new Date(agora).getTime();
   if (a && a.cnpj === ficha.cnpj) evidencias.push({ chave: 'procuracao_ecac', id: atendimento.id, cnpj: ficha.cnpj, origem: 'Diagnóstico comercial', escopo: 'Autorização para SITFIS; demais acessos exigem conferência', em: a.prova?.checkedAt || null, validade: a.prova?.validUntil || null, estado: expirada ? 'EXPIRADA · evidência histórica' : a.estado, estadoRegistrado: a.estado, historica: Boolean(expirada), satisfaz: false });
   return evidencias;
@@ -50,7 +60,7 @@ export async function projetarComerciais(fichas, db = prisma) {
   const [analises, registros, conferencias, apresentacoes, propostas, contratos, marcos, atendimentos] = await Promise.all([
     db.onboardingAnalise.findMany({ where: { OR: fichas.map(f => ({ onboardingId: f.id, cnpj: f.cnpj || '' })) }, orderBy: { createdAt: 'desc' }, select: { onboardingId: true, id: true, tipo: true, status: true, cnpj: true, resultado: true, createdAt: true } }),
     db.onboardingEvento.findMany({ where: { ...where, tipo: 'JORNADA_DIAGNOSTICO' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
-    db.onboardingEvento.findMany({ where: { ...where, tipo: { in: ['JORNADA_PUBLICA_CONFERIDA', 'JORNADA_PUBLICA_MANUAL_CONFERIDA', 'JORNADA_SITFIS_CONFERIDA'] } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
+    db.onboardingEvento.findMany({ where: { ...where, tipo: { in: tiposConferencia } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
     db.onboardingEvento.findMany({ where: { ...where, tipo: 'JORNADA_DEVOLUTIVA_CONFERIDA' }, orderBy: { createdAt: 'desc' } }),
     db.propostaComercial.findMany({ where, orderBy: { versao: 'desc' } }),
     db.contratoComercial.findMany({ where, orderBy: { createdAt: 'desc' } }),

@@ -483,3 +483,47 @@ A transição e sua auditoria são atômicas: registrar autor, momento, motivo, 
 | T50 | Falha ao persistir auditoria | Estado, links e trabalhos permanecem como antes da tentativa |
 | T51 | Permissão/escopo inválidos ou ficha convertida | Recusar sem efeitos parciais |
 | T52 | Automação ou consulta em andamento durante retomada | Bloquear novas etapas/saídas do caso e conclusão antiga; preservar evidência incerta e outros atendimentos |
+
+## 25. Jornada comercial simplificada — decisões de 21/10/2026
+
+Pedido expresso do usuário: nove etapas em uma jornada simples, com dados reaproveitados, ações alinhadas e menos abas e legendas. Este registro aprova comportamento; não declara implementação, testes ou publicação.
+
+**R32 — cadastro e apresentação.** Empresa com CNPJ inicia por campo CNPJ, consulta explícita, um único card cadastral editável e Prosseguir. Consulta bem-sucedida preenche a mesma ficha; destacar dados novos com marcador textual além de cor. Entrada manual coleta os dados cadastrais necessários no mesmo contexto, sem questionário adicional nesta etapa. Dados não obtidos não podem ser inventados. Informações complementares ficam no diagnóstico e na ficha final. Retirar logs da tela principal preserva auditoria interna. Anotação usa campo de texto e Salvar. Preservar atendimento PF e abertura sem CNPJ, adaptando campos aplicáveis.
+
+**R33 — procuração e situação fiscal.** Procuração mostra orientação ao cliente, consulta SERPRO e alternativa “Validado por mim”. Usuário confirmou: validação manual identificada por usuário e data, sem justificativa livre obrigatória, permite avançar sem sucesso do SERPRO. Origem manual não comprova consulta oficial, validade ou poderes aceitos pelo provedor; não marcar ATIVA/SERPRO por declaração. Consulta externa continua sujeita à autorização e recusas reais do provedor. Situação fiscal permite consulta explícita e distingue sucesso técnico de regularidade fiscal. Em falha, oferecer registro manual ou pular a etapa, persistindo origem/autor/data e ausência de consulta válida, sem fabricar regularidade. Diagnóstico e PDFs conservam essa limitação.
+
+**R34 — diagnóstico, documentos e envio.** Diagnóstico reúne cadastro, situação fiscal estruturada e PDF oficial quando disponível, regime e volumes declarados e demais dados necessários. Gera apresentação PDF completa na etapa seguinte, com origem/limitações; permite voltar para editar e invalida documentos derivados desatualizados. Apresentação oferece envio ao cliente e download. Proposta reaproveita ficha/diagnóstico, permite revisar dados, serviços e valores avulsos/recorrentes conforme modalidade e gera documento para envio/download. Contrato preenche modelo aprovado com dados do cliente e escritório, preserva prévia, envio e download. Não inventar valores, cláusulas, aceites ou assinatura. Envio continua explícito, por destinatário/canal válido, com evidência de resultado e proteção contra duplicação/incerteza.
+
+**R35 — contratação por pagamento confirmado.** Decisão expressa: “Pagamento confirmado comprova contratação”. Substitui para o novo fluxo o marco de assinatura conferida de R28: confirmação do recebimento pelo contador/administrador autorizado, vinculada à proposta/contrato e revisão aplicáveis, confirma contratação, marca oportunidade ganha e habilita implantação. Assinatura permanece registrável, mas não é condição obrigatória desse novo marco. Não fabricar assinatura ou aceite digital. Mantêm-se demais requisitos de cadastro, permissão e entrada na carteira; pagamento não cria empresa automaticamente. Propostas/contratos e pagamentos legados preservam histórico; sem reclassificação em massa. Exceção de contratação externa R27 permanece identificada e justificada, sem virar atalho genérico.
+
+**R36 — pagamento externo e ficha final.** Sem integração automática Asaas neste escopo: contador gera cobrança externamente e cadastra link/documento, com opção de envio pelo Altan ou registro de envio externo. Usuário confirmou que o contador confirma o recebimento; anexar comprovante ou receber mensagem não confirma pagamento sozinho. Persistir confirmação com autor/data, valor/referência e vínculo aplicável, respeitando versão e idempotência. Última etapa reúne ficha complementar editável por contador ou cliente e documentos recebidos por chat/upload externo, com vínculo e origem. Não misturar dados entre pessoas/fichas nem concluir implantação apenas por receber documentos.
+
+Impacto: R19–R23, R27–R28; esta seção prevalece sobre instruções históricas de UI e assinatura em conflito. Não altera regras fiscais, guias de impostos ou R25. Testes sem mensagens, consultas pagas, assinatura, recebimento ou documentos fiscais reais; publicação não autorizada neste pedido.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T53 | Consulta CNPJ, edição manual, troca de CNPJ e retorno tardio | Mesmo card/ficha, origem indicada, sem sobrescrever edição ou outra empresa |
+| T54 | Validação manual de procuração | Autor/data persistidos; avanço permitido sem afirmar verificação SERPRO |
+| T55 | SITFIS falha, manual ou pulada | Estado explícito e limitação no diagnóstico/PDF, sem regularidade fabricada |
+| T56 | Editar diagnóstico após gerar apresentação/proposta | Nova revisão; documento antigo não enviado como atual |
+| T57 | Proposta/contrato preenchidos e canal indisponível/incerto | Documentos íntegros; envio bloqueado ou conciliável, sem duplicidade |
+| T58 | Cobrança externa ou comprovante sem confirmação | Pagamento pendente; envio/download não marcam ganho |
+| T59 | Contador confirma pagamento da revisão correta | Contratação ganha; implantação habilitada; assinatura não fabricada |
+| T60 | Confirmação sem permissão, duplicada ou da revisão antiga | Recusa/resultado idempotente; sem conversão ou efeitos parciais |
+| T61 | Documentos via chat e upload manual na ficha final | Origem e vínculo conservados; isolamento entre fichas/clientes |
+| T62 | Desktop/celular, falha/recarga e navegação entre etapas | Ações legíveis, rascunhos preservados, ausência de logs na tela principal |
+### Complemento R34 — conferência da apresentação, decisão de 21/10/2026
+
+Resposta expressa do usuário: “Liberar após minha conferência do PDF”. A proposta pode ser liberada após ação explícita do contador confirmando a conferência da apresentação PDF vigente, sem exigir envio ou apresentação ao cliente. Registrar autor, data, ficha, diagnóstico e versão/hash do conteúdo conferido. Abrir a tela, visualizar ou baixar o PDF não registra conferência automaticamente. Mudança dos dados que invalide o diagnóstico/PDF invalida essa liberação; confirmação de revisão antiga deve ser recusada. Conferência interna não comprova envio, entrega, aceite ou aprovação pelo cliente. Preservar evidências históricas de apresentação/envio sem reclassificá-las como conferência nova.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T63 | Contador confirma conferência do PDF vigente sem enviar ao cliente | Proposta liberada; autoria/data e revisão persistidas, sem fabricar envio |
+| T64 | Somente visualizar/baixar, confirmar revisão antiga ou mudar dados após conferência | Não liberar por leitura/download; recusar versão antiga e exigir nova conferência quando documento invalidado |
+| T65 | Repetir confirmação ou falhar auditoria | Sem duplicidade ou persistência parcial; permissão e escopo verificados no servidor |
+
+Histórico: decisão fecha a pendência da apresentação de R34. Usuário também autorizou uma rodada adicional limitada às seis compatibilidades identificadas (link sem conversa, dados legados, identidade CNPJ, honorários legados, consulta cadastral legada e endereço legado) e aos testes correspondentes. Não altera a política geral de rodadas; AutorizacaoDoLead.test.jsx continua pendente por decisão anterior. Sem autorização de publicação ou atos externos.
+
+### Correção autorizada de AutorizacaoDoLead — 21/10/2026
+
+O usuário autorizou corrigir AutorizacaoDoLead.test.jsx preservando as verificações, com nova execução dos testes e revisão antes de publicar. Esta decisão encerra a pendência histórica registrada acima. A correção aguarda a habilitação assíncrona do botão, sem mudar comportamento do produto, regras de negócio ou gates. Não autoriza publicação.

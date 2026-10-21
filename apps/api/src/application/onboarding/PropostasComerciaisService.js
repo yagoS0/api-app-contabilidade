@@ -24,10 +24,50 @@ const evento = (tx, onboardingId, tipo, atorId, dados = {}) => tx.onboardingEven
     dados
   }
 });
-async function conferirDiagnosticoDaProposta(db, proposta) {
-  if (!proposta.snapshot?.diagnosticoId || proposta.status === "ACEITA") return;
-  const atual = await db.onboardingEvento.findFirst({ where: { onboardingId: proposta.onboardingId, tipo: "JORNADA_DIAGNOSTICO" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-  if (atual?.id !== proposta.snapshot.diagnosticoId) throw erro("proposta_desatualizada", "O diagnóstico mudou. Peça uma versão revisada da proposta.");
+export async function conferirDiagnosticoDaProposta(db, proposta) {
+  const ficha = await db.onboarding.findUnique({ where: { id: proposta.onboardingId } });
+  if ((ficha?.dados?.cadastroRevisao || 0) !== (proposta.snapshot?.cadastroRevisao || 0)) throw erro('proposta_desatualizada', 'O cadastro mudou. Revise a proposta antes de continuar; o aceite anterior permanece no histórico.');
+  if (!proposta.snapshot?.diagnosticoId) return;
+  const { carregarEvidenciasJornada } = await import('./JornadaLeadService.js');
+  const atual = ficha && await carregarEvidenciasJornada(ficha, db);
+  if (atual?.diagnostico?.id !== proposta.snapshot.diagnosticoId) throw erro("proposta_desatualizada", "O diagnóstico mudou. Peça uma versão revisada da proposta.");
+}
+export async function habilitarImplantacaoContratada(tx, id, contrato, ficha, agora = () => new Date()) {
+      const etapas = contrato.dados.opcao.recorrente ? etapasDaOrigem(ficha.origem) : [{
+        chave: "avulso_documentacao",
+        titulo: "Conferir documentos do serviço",
+        descricao: "Documentos recebidos e exigências do escopo avulso.",
+        ordem: 1
+      }, {
+        chave: "avulso_execucao",
+        titulo: "Executar serviço contratado",
+        descricao: "Executar somente o escopo da opção avulsa aceita.",
+        ordem: 2
+      }, {
+        chave: "avulso_entrega",
+        titulo: "Conferir e entregar resultado",
+        descricao: "Registrar a entrega para concluir o atendimento avulso.",
+        ordem: 3
+      }];
+      await tx.onboardingEtapa.createMany({
+        data: etapas.map(e => ({
+          ...e,
+          onboardingId: id
+        })),
+        skipDuplicates: true
+      });
+      await tx.onboarding.update({
+        where: {
+          id
+        },
+        data: {
+          faseComercial: "CONTRATADO",
+          ...(ficha.status === "RASCUNHO" ? {
+            status: "RECEBIDO",
+            enviadoEm: agora()
+          } : {})
+        }
+      });
 }
 export function criarPropostasComerciais({
   db = prisma,
@@ -89,7 +129,7 @@ export function criarPropostasComerciais({
         where: {
           onboardingId: id,
           tipo: {
-            in: ["DOCUMENTACAO_CONFERIDA", "PAGAMENTO_HONORARIOS_CONFERIDO", "ANALISE_REVISADA", "CONVERTIDO"]
+            in: ["DOCUMENTACAO_CONFERIDA", "PAGAMENTO_HONORARIOS_CONFERIDO", "COBRANCA_EXTERNA_REGISTRADA", "ANALISE_REVISADA", "CONVERTIDO"]
           }
         },
         orderBy: {
@@ -152,6 +192,7 @@ export function criarPropostasComerciais({
           snapshot: {
             ...proposta,
             diagnosticoId: diagnostico?.id || null,
+            cadastroRevisao: r.dados?.cadastroRevisao || 0,
             catalogoId: catalogo.id,
             catalogoVersao: catalogo.versao,
             origem: r.origem,
@@ -359,6 +400,7 @@ export function criarPropostasComerciais({
       }
     });
     if (!p || encerrado(r) || p.fichaVersao !== r.versao) throw erro("aceite_ausente", "A proposta precisa ter uma opção aceita com os dados atuais.");
+    await conferirDiagnosticoDaProposta(db, p);
     const modelo = await db.recursoComercial.findUnique({
       where: {
         id: body.modeloId
@@ -390,6 +432,7 @@ export function criarPropostasComerciais({
         dados: JSON.parse(JSON.stringify({
           variaveis: dados,
           opcao,
+          politicaContratacao: 'R35',
           modeloVersao: modelo.versao
         }))
       },
@@ -398,7 +441,11 @@ export function criarPropostasComerciais({
   }
   async function aprovarContrato(id, contratoId, user) {
     exigirGestor(user);
-    await exigirEscopo(id, user, db);
+    const ficha = await exigirEscopo(id, user, db);
+    if (encerrado(ficha)) throw erro('contrato_indisponivel', 'O atendimento está encerrado.');
+    const atual = await db.contratoComercial.findFirst({ where: { id: contratoId, onboardingId: id }, include: { proposta: true } });
+    if (!atual?.proposta) throw erro('contrato_indisponivel', 'Contrato não encontrado.');
+    await conferirDiagnosticoDaProposta(db, atual.proposta);
     const out = await db.contratoComercial.updateMany({
       where: {
         id: contratoId,
@@ -507,41 +554,7 @@ export function criarPropostasComerciais({
           id
         }
       });
-      const etapas = contrato.dados.opcao.recorrente ? etapasDaOrigem(ficha.origem) : [{
-        chave: "avulso_documentacao",
-        titulo: "Conferir documentos do serviço",
-        descricao: "Documentos recebidos e exigências do escopo avulso.",
-        ordem: 1
-      }, {
-        chave: "avulso_execucao",
-        titulo: "Executar serviço contratado",
-        descricao: "Executar somente o escopo da opção avulsa aceita.",
-        ordem: 2
-      }, {
-        chave: "avulso_entrega",
-        titulo: "Conferir e entregar resultado",
-        descricao: "Registrar a entrega para concluir o atendimento avulso.",
-        ordem: 3
-      }];
-      await tx.onboardingEtapa.createMany({
-        data: etapas.map(e => ({
-          ...e,
-          onboardingId: id
-        })),
-        skipDuplicates: true
-      });
-      await tx.onboarding.update({
-        where: {
-          id
-        },
-        data: {
-          faseComercial: "CONTRATADO",
-          ...(ficha.status === "RASCUNHO" ? {
-            status: "RECEBIDO",
-            enviadoEm: agora()
-          } : {})
-        }
-      });
+      if (contrato.dados?.politicaContratacao !== 'R35') await habilitarImplantacaoContratada(tx, id, contrato, ficha, agora);
       await evento(tx, id, "ASSINATURA_CONFERIDA_MANUALMENTE", user.id, {
         contratoId,
         documentoId,
@@ -591,7 +604,7 @@ export function criarPropostasComerciais({
   async function registrarMarco(id, user, tipo, evidencia) {
     exigirGestor(user);
     await exigirEscopo(id, user, db);
-    if (!["DOCUMENTACAO_CONFERIDA", "PAGAMENTO_HONORARIOS_CONFERIDO", "ANALISE_REVISADA"].includes(tipo) || typeof evidencia !== "string" || evidencia.trim().length < 10 || evidencia.length > 2000) throw erro("marco_invalido", "Informe o fato conferido e a evidência.");
+    if (!["DOCUMENTACAO_CONFERIDA", "ANALISE_REVISADA"].includes(tipo) || typeof evidencia !== "string" || evidencia.trim().length < 10 || evidencia.length > 2000) throw erro("marco_invalido", "Informe o fato conferido e a evidência. Pagamento exige a ação específica vinculada ao contrato.");
     await evento(db, id, tipo, user.id, {
       evidencia
     });

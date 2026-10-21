@@ -108,3 +108,14 @@ test("a prévia substitui a lista e mensagem vazia não pode entrar no composito
   fireEvent.click(screen.getByRole("button", { name: "Voltar às mensagens" }));
   expect(screen.getByLabelText("Buscar mensagem rápida")).toBeVisible();
 });
+
+test('atalho de contratos abre a categoria existente da biblioteca', async () => {
+  history.replaceState(null, '', '/biblioteca#CONTRATO');
+  try {
+    const api = { comercial: jest.fn(async () => ({ recursos: [] })) };
+    render(<BibliotecaComercialPage api={api} />);
+    expect(await screen.findByRole('button', { name: 'Novo modelo de contrato' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Modelo de contrato' })).toHaveAttribute('aria-pressed', 'true');
+    expect(api.comercial.mock.calls.filter(([, body]) => body)).toHaveLength(0);
+  } finally { history.replaceState(null, '', '/'); }
+});

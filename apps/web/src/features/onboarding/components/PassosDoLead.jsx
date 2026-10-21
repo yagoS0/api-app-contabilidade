@@ -1,28 +1,34 @@
 import { numeroDeclarado, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
 import { camposDaOrigem } from "../lib/onboardingSpec";
-import { AcoesDaEtapa } from "./AcoesDaEtapa";
+import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { DadosDaAnalise, ConferenciasDaAnalise } from "./RoteiroDaAnalise";
 import { BLOCOS_DEVOLUTIVA, DADOS_ANALISE, dadosAnaliseDaFicha, normalizarRoteiroAnalise, normalizarDiagnosticoComercial, pendenciasRoteiroAnalise, textoDaDevolutiva } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 
 export function ProgressoDoLead({ jornada, selecionado, onSelecionar, ocupado }) {
+  const lista = useRef(null);
+  useEffect(() => {
+    const ativa = lista.current?.querySelector('[aria-pressed="true"]');
+    ativa?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [selecionado]);
   const nomes = { cadastro: "Dados iniciais", publica: "CNPJ", autorizacao: "Procuração", fiscal: "Situação fiscal", diagnostico: "Diagnóstico", devolutiva: "Apresentação", proposta: "Proposta", contrato: "Contrato", pagamento: "Pagamento", conclusao: "Ficha e documentos" };
-  return <nav className="lead-steps" aria-label="Passo a passo do lead"><ol>{jornada.passos.map((p, i) => <li key={p.id} data-status={p.concluido ? "concluido" : p.id === jornada.atual ? "atual" : "pendente"}>
+  return <nav className="lead-steps" aria-label="Passo a passo do lead"><ol ref={lista}>{jornada.passos.map((p, i) => <li key={p.id} data-status={p.concluido ? "concluido" : p.id === jornada.atual ? "atual" : "pendente"}>
     <button type="button" title={p.titulo} aria-label={`${i + 1}. ${p.titulo}`} disabled={ocupado || !p.acessivel} aria-current={p.id === jornada.atual ? "step" : undefined} aria-pressed={p.id === selecionado} onClick={() => onSelecionar(p.id)}>
       <span className="lead-step-number" aria-hidden="true">{p.concluido ? "✓" : i + 1}</span><span>{nomes[p.id] || p.titulo}<small>{p.concluido ? "Concluído" : p.anterior ? "Registro anterior" : p.id === jornada.atual ? "Você está aqui" : "A seguir"}</small></span>
     </button></li>)}</ol></nav>;
 }
 
 export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado, sempreAberto = false, onEdicaoPendente }) {
+  const id = useId();
   const [aberto, setAberto] = useState(sempreAberto), [iniciado, setIniciado] = useState(sempreAberto);
   const [rascunho, setRascunho] = useState({}), versaoEdicao = useRef(null);
   const descritores = camposDaOrigem(onboarding.origem).filter(d => campos.includes(d.campo)).sort((a,b) => campos.indexOf(a.campo) - campos.indexOf(b.campo));
   const dados = { ...onboarding.dados, ...rascunho };
   return <>
     {!aberto && <Button variant="secondary" disabled={ocupado} aria-expanded={false} onClick={() => { setIniciado(true); setAberto(true); }}>Conferir ou preencher dados deste passo</Button>}
-    {iniciado && <fieldset hidden={!aberto} disabled={ocupado} className="lead-step-fields"><legend>Dados deste passo</legend>{descritores.map(d => <CampoOnboarding key={d.campo} idPrefix="jornada" descritor={d} dados={dados} valor={dados[d.campo] ?? ""} onChange={v => {
+    {iniciado && <fieldset hidden={!aberto} disabled={ocupado} className="lead-step-fields"><legend>Dados deste passo</legend>{descritores.map(d => <CampoOnboarding key={d.campo} idPrefix={id} descritor={d} dados={dados} valor={dados[d.campo] ?? ""} onChange={v => {
     if (versaoEdicao.current === null) versaoEdicao.current = onboarding.versao;
     onEdicaoPendente?.(true);
     setRascunho(atual => ({ ...atual, [d.campo]: v }));
@@ -75,20 +81,20 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
     {!aberto && <Button disabled={ocupado} aria-expanded={false} onClick={() => { setIniciado(true); setAberto(true); }}>Preparar diagnóstico e escopo</Button>}
     {iniciado && <fieldset hidden={!aberto} disabled={ocupado} className="lead-step-fields"><legend>Conferência do contador</legend>
     {anterior && !anterior.devolutiva && <p role="status">Diagnóstico anterior preservado nos pontos de atenção. Confira o escopo antes de preparar uma nova proposta.</p>}
-    <AcoesDaEtapa tituloPrincipal="Devolutiva">
+    <div className="lead-diagnosis-fields">
     {(onboarding.origem === "PESSOA_FISICA" ? [{ chave: "atencao", rotulo: "Condições ou pendências (opcional)" }] : BLOCOS_DEVOLUTIVA).map(c => <label key={c.chave}>{c.rotulo}<textarea maxLength={1200} rows={3} value={devolutiva[c.chave]} onChange={e => setDevolutiva(v => ({ ...v, [c.chave]: e.target.value }))} /></label>)}
     <label>Serviços necessários e escopo<textarea maxLength={1200} rows={4} value={servicos} onChange={e => setServicos(e.target.value)} placeholder={onboarding.origem === "PESSOA_FISICA" ? "Descreva o serviço solicitado e o que será entregue." : "Descreva os serviços avulsos e o acompanhamento mensal, quando houver."} /></label>
     {!["ABERTURA", "PESSOA_FISICA"].includes(onboarding.origem) && <><label>Regularização antes da contabilidade mensal<select value={regularizacao.necessaria == null ? "" : String(regularizacao.necessaria)} onChange={e => setRegularizacao(v => ({ ...v, necessaria: e.target.value === "" ? null : e.target.value === "true" }))}><option value="">Conferir necessidade</option><option value="true">Necessária, com orçamento separado</option><option value="false">Não identificada no escopo conferido</option></select></label><label>Motivo da decisão sobre regularização<textarea rows={2} maxLength={1200} value={regularizacao.justificativa} onChange={e => setRegularizacao(v => ({ ...v, justificativa: e.target.value }))} /></label>{regularizacao.necessaria === true && <p>A contabilidade mensal começa após a regularização. Na proposta, os valores serão separados.</p>}</>}
     {limitado && <label>Limitação do serviço e motivo para dispensar a consulta privada<textarea rows={3} maxLength={1200} value={dispensaConsultaPrivada} onChange={e => setDispensaConsultaPrivada(e.target.value)} /><small>A limitação aparecerá na proposta. Esta opção não registra procuração nem consulta fiscal realizada.</small></label>}
     <p>O cliente receberá este diagnóstico. Informe as pendências.</p>
-    {onboarding.origem !== "PESSOA_FISICA" && <><details><summary>Dados da análise</summary>{onSalvarDados && <><p>Salve os dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise camposNaFicha={onSalvarDados ? ["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal"] : undefined} roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
-    <details><summary>Conferências</summary><ConferenciasDaAnalise roteiro={roteiro} origem={onboarding.origem} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></details>
+    {onboarding.origem !== "PESSOA_FISICA" && <><section aria-label="Dados da análise"><h4>Dados da análise</h4>{onSalvarDados && <><p>Salve os dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise camposNaFicha={onSalvarDados ? ["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal"] : undefined} roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></section>
+    <section aria-label="Conferências"><h4>Conferências</h4><ConferenciasDaAnalise roteiro={roteiro} origem={onboarding.origem} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></section>
     </>}
-    </AcoesDaEtapa>
+    </div>
     {pendencias.length > 0 && <p role="status">{pendencias.length} informações ou conferências ainda pendentes no roteiro. Elas serão informadas na devolutiva; uma API indisponível não impede continuar com o escopo delimitado.</p>}
     {mudou && <><p role="alert">{anteriorDesatualizado ? "O diagnóstico anterior foi recuperado como rascunho. Confira os dados atuais antes de confirmar." : "A ficha ou o relatório mudou. O texto foi preservado; confira os dados atuais antes de confirmar."}</p><Button variant="secondary" onClick={() => setBase(contexto)}>Conferi os dados atualizados: manter meu texto</Button></>}
     {validacao && <p>{validacao}</p>}
-    {dadosFichaPendentes && <p role="status">Salve os dados da ficha editados na guia Dados da análise antes de confirmar.</p>}
+    {dadosFichaPendentes && <p role="status">Salve os dados da ficha editados em Dados da análise antes de confirmar.</p>}
     <div className="lead-form-actions"><Button disabled={mudou || dadosFichaPendentes || Boolean(validacao)} onClick={() => onSalvar({ versao: onboarding.versao, diagnosticoBaseId, analiseId: limitado ? null : fiscal?.id || null, ...preparado, servicos, ...(limitado ? { dispensaConsultaPrivada } : {}) })}>Confirmar diagnóstico e continuar</Button>
     {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher diagnóstico</Button>}</div>
   </fieldset>}</>;
@@ -117,7 +123,7 @@ export function MensagemDoPasso({ api, conversaId, preparar, rotulo, onEnviado, 
 
 export function OrientacaoDoPasso({ api, recursos, chaves, onboarding, conversaId, onEnviado, disabled, enviado }) {
   const r = recursos.filter(r => r.tipo === "ORIENTACAO" && r.aprovadoEm && chaves.includes(r.chave)).sort((a,b) => chaves.indexOf(a.chave) - chaves.indexOf(b.chave) || b.versao - a.versao)[0];
-  if (!r) return <p role="status">A orientação desta etapa ainda não foi aprovada. Abra Biblioteca e dados de apoio, carregue os modelos e confira os dados institucionais antes de aprovar.</p>;
+  if (!r) return <p role="status">A orientação desta etapa ainda não foi aprovada. Revise a mensagem e os dados do escritório na biblioteca. <AbrirBiblioteca categoria="ORIENTACAO" /></p>;
   return <MensagemDoPasso key={`${r.id}:${onboarding.cnpj || ""}`} api={api} conversaId={conversaId} enviado={enviado} disabled={disabled} onEnviado={onEnviado} rotulo={`Preparar orientação: ${r.titulo}`} preparar={async () => {
     const variaveis = { nome: onboarding.responsavelNome || onboarding.dados?.responsavelNome || "", cnpj: onboarding.cnpj || "", servico: "atendimento contábil" };
     const p = await api.comercial(`/recursos/${r.id}/previa`, { variaveis }); return { texto: p.previa.texto, orientacaoId: r.id, variaveis };

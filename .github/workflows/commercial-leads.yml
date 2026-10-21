@@ -10,6 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
+      comercial-postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: comercial_test
+          POSTGRES_PASSWORD: fixture_only_ci
+          POSTGRES_DB: comercial_20261021_governance_test
+        ports:
+          - 55489:5432
+        options: >-
+          --health-cmd "pg_isready -U comercial_test -d comercial_20261021_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
       postgres:
         image: postgres:15
         env:
@@ -22,6 +33,7 @@ jobs:
           --health-cmd "pg_isready -U lead_test -d lead_flow_check"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://comercial_test:fixture_only_ci@127.0.0.1:55489/comercial_20261021_governance_test
       DATABASE_URL: postgresql://lead_test:ci_test_only@127.0.0.1:55440/lead_flow_check
       NODE_ENV: test
       INTEGRACAO_IA_COMERCIAL: "0"
@@ -36,6 +48,12 @@ jobs:
       - run: npm ci
       - run: npm run prisma:generate -w @contabilidade/api
       - run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Migrate isolated commercial transaction database
+        env:
+          DATABASE_URL: ${{ env.ALTAN_GOVERNANCE_TEST_DATABASE_URL }}
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Verify current PDF confirmation, concurrency and audit rollback
+        run: node apps/api/scripts/verify-conferencia-pdf-postgres.mjs "$ALTAN_GOVERNANCE_TEST_DATABASE_URL"
       - name: Private import CLI validation
         run: node --test apps/api/scripts/import-commercial-resources.test.mjs
       - name: External availability monitor regression without network

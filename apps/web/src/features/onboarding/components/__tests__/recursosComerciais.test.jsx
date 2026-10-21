@@ -18,7 +18,7 @@ test("edita todas as regras e salva nova versão, preservando campos desconhecid
   fireEvent.click(screen.getByText("Editar"));
   expect(screen.getByLabelText("Abertura (R$)")).toHaveValue("");
   expect(screen.getByLabelText("Baixa (R$)")).toHaveValue("0,00");
-  expect(screen.getByLabelText("Atalho / chave")).toHaveAttribute("readonly");
+  expect(screen.queryByLabelText("Atalho / chave")).not.toBeInTheDocument();
   const faixa = within(screen.getByRole("group", { name: "Faixa 1" }));
   fireEvent.change(faixa.getByLabelText("Até quantos funcionários"), { target: { value: "3" } });
   fireEvent.change(faixa.getByLabelText("Notas recebidas incluídas por mês"), { target: { value: "22" } });
@@ -37,7 +37,7 @@ test("edita todas as regras e salva nova versão, preservando campos desconhecid
 
 test("novo catálogo começa sem preços, tem chave correta e não salva incompleto", () => {
   const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Tipo", "CATALOGO");
-  expect(screen.getByLabelText("Atalho / chave")).toHaveValue("honorarios");
+  expect(screen.queryByLabelText("Atalho / chave")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Simples Nacional mensal (R$)")).toHaveValue("");
   expect(screen.getByLabelText("Piso de regularização (R$)")).toHaveValue("");
   salvar(); expect(screen.getByRole("alert")).toHaveFocus(); expect(screen.getByRole("alert")).toHaveTextContent("Condições".toLowerCase()); expect(api.comercial).not.toHaveBeenCalled();
@@ -76,7 +76,7 @@ test("falha ao salvar preserva edição e não faz aprovação automática", asy
 
 test("dados institucionais normalizam CNPJ e não aceitam link inseguro", async () => {
   const { api } = montar([]); fireEvent.click(screen.getByText("Nova mensagem")); alterar("Tipo", "INSTITUCIONAL");
-  expect(screen.getByLabelText("Atalho / chave")).toHaveValue("escritorio");
+  expect(screen.queryByLabelText("Atalho / chave")).not.toBeInTheDocument();
   alterar("Título", "Escritório demonstrativo"); alterar("Nome do escritório", "Escritório de teste"); alterar("CNPJ do procurador", "12.345.678/0001-95"); alterar("Link HTTPS das instruções de autorização", "http://example.invalid/instrucoes");
   salvar(); expect(screen.getByRole("alert")).toHaveTextContent("HTTPS"); expect(api.comercial).not.toHaveBeenCalled();
   alterar("Link HTTPS das instruções de autorização", "https://example.invalid/instrucoes"); salvar();

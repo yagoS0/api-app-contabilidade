@@ -1,9 +1,23 @@
 import crypto from "node:crypto";
 import { prepararArquivoConversao, conferirFontesDoArquivo } from "../ArquivoConversaoService.js";
 import { validateAndNormalizeCompanyProfile } from "../../company/companyProfile.js";
+import { contextoContrato } from '../../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
+jest.mock('../PropostaComercialPdf.js', () => ({ propostaParaCliente: p => p, gerarPropostaPdf: async () => Buffer.from('%PDF-proposta-sintetica') }));
+jest.mock('../ContratoComercialPdf.js', () => ({ gerarContratoPdf: async () => Buffer.from('%PDF-contrato-sintetico') }));
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 const buffer = Buffer.from("%PDF-1.4\nSINTÉTICO\n%%EOF"), sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
 const fonte = { id: "doc-teste", nome: "teste.pdf", mime: "application/pdf", sha256, conteudoCifrado: "cifra" };
+
+test('R35 pago arquiva minuta sem inventar assinatura; assinatura declarada exige original', async () => {
+  const proposta = { id: 'p', versao: 1, status: 'ACEITA', opcaoAceita: 'mensal', snapshot: {} };
+  const contrato = { id: 'c', propostaId: 'p', status: 'AGUARDANDO_ASSINATURA', dados: { politicaContratacao: 'R35', opcao: { chave: 'mensal' } } };
+  const marcos = [{ tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', atorId: 'contador', dados: { contratoId: 'c', politica: 'R35', confirmadoEm: '2026-10-21', contextoContrato: contextoContrato(proposta, contrato) } }];
+  const db = { documentoOnboarding: { findMany: async () => [] }, onboardingEvento: { findMany: async () => marcos } };
+  const storage = { upload: jest.fn(async () => {}) };
+  expect((await prepararArquivoConversao({ db, onboardingId: 'o', proposta, contrato, storage })).documentos).toHaveLength(2);
+  contrato.status = 'ASSINADO_CONFERIDO';
+  await expect(prepararArquivoConversao({ db, onboardingId: 'o', proposta, contrato, storage })).rejects.toMatchObject({ code: 'arquivo_conversao_indisponivel' });
+});
 test("storage indisponível não produz um arquivo de conversão utilizável", async () => {
   const db = { documentoOnboarding: { findMany: jest.fn().mockResolvedValue([fonte]) } };
   const storage = { upload: jest.fn().mockRejectedValue(Error("Sem storage")) };

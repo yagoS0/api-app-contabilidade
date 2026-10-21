@@ -112,7 +112,31 @@ export function criarFiscalLead({
     });
     if (!out.count) throw new OnboardingError("atendimento_alterado", "O atendimento mudou durante a conferência. Recarregue antes de registrar novamente.", 409);
   }
-  async function enfileirar(id, user, tipo) {
+  async function validarProcuracaoManual(id, user, body = {}) {
+    exigirGestor(user);
+    if (!Number.isInteger(body.versao) || body.versao < 0 || body.confirmada !== true) throw new OnboardingError('validacao_invalida', 'Confirme a validação manual e a versão da ficha.');
+    return db.$transaction(async tx => {
+      const r = await exigirEscopo(id, user, tx);
+      if (!/^\d{14}$/.test(r.cnpj || '') || encerrado(r)) throw new OnboardingError('consulta_invalida', 'Confira o CNPJ e o atendimento.');
+      const reserva = await tx.onboarding.updateMany({ where: { id, versao: r.versao }, data: { updatedAt: new Date() } });
+      if (!reserva.count) throw new OnboardingError('atendimento_alterado', 'A ficha mudou.', 409);
+      const a = await tx.atendimentoLead.findFirst({ where: { onboardingId: id, encerradoEm: null } });
+      if (a) await conferirIdentidade(a);
+      const anterior = r.dados?.procuracaoManual || (a?.autorizacao?.cnpj === r.cnpj && a?.autorizacao?.validacaoManual);
+      if (anterior?.cnpj === r.cnpj && (anterior.cadastroRevisao || 0) === (r.dados?.cadastroRevisao || 0) && anterior?.fichaVersao === body.versao && r.versao === body.versao + 1) return anterior;
+      if (r.versao !== body.versao) throw new OnboardingError('atendimento_alterado', 'A ficha mudou.', 409);
+      const validacaoManual = { origem: 'MANUAL', atorId: user.id, registradaEm: new Date().toISOString(), fichaVersao: body.versao,
+        cnpj: r.cnpj, cadastroRevisao: r.dados?.cadastroRevisao || 0, provaOficial: false, limitacao: 'Validação declarada pelo contador; não comprova validade nem poderes aceitos pelo SERPRO.' };
+      const atualizada = await tx.onboarding.updateMany({ where: { id, versao: body.versao }, data: { dados: { ...(r.dados || {}), procuracaoManual: validacaoManual }, versao: { increment: 1 } } });
+      if (!atualizada.count) throw new OnboardingError('atendimento_alterado', 'A ficha mudou.', 409);
+      const gravada = a ? await tx.atendimentoLead.updateMany({ where: { id: a.id, onboardingId: id, encerradoEm: null, autorizacao: { equals: a.autorizacao || {} } },
+        data: { autorizacao: { ...(a.autorizacao?.cnpj === r.cnpj ? a.autorizacao : { cnpj: r.cnpj, estado: 'NAO_VERIFICADA' }), validacaoManual } } }) : { count: 1 };
+      if (!gravada.count) throw new OnboardingError('atendimento_alterado', 'A autorização mudou.', 409);
+      await tx.onboardingEvento.create({ data: { onboardingId: id, tipo: 'PROCURACAO_VALIDADA_MANUALMENTE', atorId: user.id, dados: validacaoManual } });
+      return validacaoManual;
+    });
+  }
+  async function enfileirar(id, user, tipo, body = {}) {
     exigirGestor(user);
     const r = await exigirEscopo(id, user, db);
     if (!flag) throw new OnboardingError("FISCAL_LEADS_OFF", "O piloto de consultas fiscais de leads está desligado.", 409);
@@ -123,7 +147,9 @@ export function criarFiscalLead({
         encerradoEm: null
       }
     });
-    if (!a?.representanteVerificadoEm || a.autorizacao?.cnpj !== r.cnpj) throw new OnboardingError("representante_nao_verificado", "Confira a identidade e a representação antes da consulta privada.", 409);
+    const autorizacaoExplicita = tipo === 'PROCURACAO' && body.autorizada === true && body.versao === r.versao;
+    const autorizacaoInterna = a?.autorizacao?.cnpj === r.cnpj && a.autorizacao?.consultaAutorizadaPor;
+    if (!a || (!autorizacaoExplicita && (!a.representanteVerificadoEm && !autorizacaoInterna || a.autorizacao?.cnpj !== r.cnpj))) throw new OnboardingError("representante_nao_verificado", "Autorize explicitamente a consulta na revisão atual da ficha.", 409);
     await conferirIdentidade(a);
     if (tipo === "SITFIS" && (a.autorizacao?.estado !== "ATIVA" || !procuracaoHabilitaSitfis(a.autorizacao?.prova))) throw new OnboardingError("procuracao_nao_verificada", "Verifique primeiro uma procuração vigente para SITFIS.", 409);
     return db.$transaction(async tx => {
@@ -148,12 +174,20 @@ export function criarFiscalLead({
         }
       });
       if (existente) return existente;
+      if (autorizacaoExplicita) {
+        const autorizacao = { ...(a.autorizacao?.cnpj === r.cnpj ? a.autorizacao : { cnpj: r.cnpj, estado: 'NAO_VERIFICADA' }),
+          consultaAutorizadaPor: user.id, consultaAutorizadaEm: new Date().toISOString(), fichaVersao: r.versao };
+        const gravada = await tx.atendimentoLead.updateMany({ where: { id: a.id, onboardingId: id, encerradoEm: null, autorizacao: { equals: a.autorizacao || {} } }, data: { autorizacao } });
+        if (!gravada.count) throw new OnboardingError('atendimento_alterado', 'A autorização mudou.', 409);
+        await tx.onboardingEvento.create({ data: { onboardingId: id, tipo: 'CONSULTA_PROCURACAO_AUTORIZADA', atorId: user.id, dados: { cnpj: r.cnpj, fichaVersao: r.versao } } });
+      }
       return tx.trabalhoFiscalLead.create({
         data: {
           onboardingId: id,
           cnpj: r.cnpj,
           tipo,
-          criadoPor: user.id
+          criadoPor: user.id,
+          ...(autorizacaoExplicita ? { resultado: { fichaVersao: r.versao, autorizadaPor: user.id } } : {})
         }
       });
     });
@@ -233,8 +267,10 @@ export function criarFiscalLead({
           }
         });
         exigirGestor(user);
+        await exigirEscopo(j.onboardingId, user, db);
+        if (j.resultado?.fichaVersao != null && r?.versao !== j.resultado.fichaVersao) throw new OnboardingError('escopo_alterado', 'A revisão autorizada para a consulta mudou.', 409);
         if (trabalhoFiscalAnteriorARetomada(a, j)) throw new OnboardingError('retomada_manual', 'Confira a ficha antes de uma nova consulta.', 409);
-        if (!r || r.cnpj !== j.cnpj || encerrado(r) || !a?.representanteVerificadoEm || a.autorizacao?.cnpj !== j.cnpj) throw new OnboardingError("escopo_alterado", "CNPJ, representante ou atendimento mudou.", 409);
+        if (!r || r.cnpj !== j.cnpj || encerrado(r) || (!a?.representanteVerificadoEm && !a?.autorizacao?.consultaAutorizadaPor) || a.autorizacao?.cnpj !== j.cnpj) throw new OnboardingError("escopo_alterado", "CNPJ, autorização interna ou atendimento mudou.", 409);
         await conferirIdentidade(a);
         if (j.tipo === "PROCURACAO") {
           const p = await comContextoSerpro({
@@ -243,6 +279,7 @@ export function criarFiscalLead({
             userId: user.id
           }, () => procura(j.cnpj));
           const prova = {
+            origem: 'SERPRO',
             status: p.status,
             validUntil: p.validUntil,
             systems: p.systems,
@@ -303,6 +340,7 @@ export function criarFiscalLead({
         }
       }
       let proximaTentativaEm = new Date(Date.now() + 120000);
+      if (j.resultado?.fichaVersao != null) resultado = { ...resultado, fichaVersao: j.resultado.fichaVersao, autorizadaPor: j.resultado.autorizadaPor };
       const prazo = new Date(resultado?.tentarNovamenteEm).getTime();
       // Somente recusas conhecidas, anteriores à rede, entram em espera. Resultado
       // incerto, limite de consumo e falta de PDF continuam exigindo ação humana.
@@ -329,6 +367,7 @@ export function criarFiscalLead({
     };
   }
   return {
+    validarProcuracaoManual,
     verificarRepresentante,
     enfileirar,
     processarUmaVez

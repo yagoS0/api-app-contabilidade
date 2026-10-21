@@ -2,6 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
 import { ChatDaEmpresa } from "../../components/ChatDaEmpresa";
 
+let criarUrlOriginal, revogarUrlOriginal;
+beforeEach(() => {
+  criarUrlOriginal = URL.createObjectURL; revogarUrlOriginal = URL.revokeObjectURL;
+  URL.createObjectURL = jest.fn(() => "blob:apresentacao-sintetica"); URL.revokeObjectURL = jest.fn();
+});
+afterEach(() => { URL.createObjectURL = criarUrlOriginal; URL.revokeObjectURL = revogarUrlOriginal; });
+
 const clonar = valor => JSON.parse(JSON.stringify(valor));
 function cenario() {
   const canais = [
@@ -16,15 +23,24 @@ function cenario() {
   const api = {
     listarConversasWhatsapp: jest.fn(async () => ({ conversas: [clonar(conversa)], temMais: false })),
     getMensagensWhatsapp: jest.fn(async () => ({ conversa: clonar(conversa), mensagens: [], temMais: false })),
-    baixarAnaliseOnboarding: jest.fn(async () => new Blob(["%PDF-1.4"], { type: "application/pdf" })),
+    baixarApresentacaoComercial: jest.fn(async (id, diagnostico, hash) => {
+      if (id !== "o" || diagnostico !== "d" || hash !== "hash-atual") throw new Error("PDF de outro contexto");
+      return new Blob(["%PDF-1.4 sintético"], { type: "application/pdf" });
+    }),
     comercial: jest.fn(async (path, body) => {
       if (path === "/recursos") return { recursos: [] };
       if (path.startsWith("/conversas/")) return { atendimento: { id: "caso", onboardingId: "o", onboarding: estado.onboarding } };
-      if (path.endsWith("/jornada/devolutiva")) {
+      if (path === "/onboardings/o/apresentacao" && body === undefined) return { diagnosticoId: "d", conteudoHash: "hash-atual", versao: 2, pdfDisponivel: true };
+      if (path === "/onboardings/o/apresentacao/d/enviar") {
+        if (body.conteudoHash !== "hash-atual") throw new Error("Apresentação desatualizada");
         if (body.conversaId !== "recente" || canais[1].janela.situacao !== "ABERTA") throw Object.assign(new Error("Canal fechado"), { code: "FORA_DA_JANELA", status: 409 });
-        estado.jornada.devolutiva.concluida = true;
+        return { envio: { estado: "ENVIADO" } };
       }
-      if (path.endsWith("/jornada/apresentacao")) estado.jornada.devolutiva.concluida = true;
+      if (path === "/onboardings/o/apresentacao/d/conferir") {
+        if (body.versao !== 2 || body.conteudoHash !== "hash-atual" || body.confirmado !== true) throw new Error("Conferência de outra revisão");
+        estado.jornada.devolutiva.concluida = true;
+        return { conferencia: { atorId: "contador-sintetico", createdAt: "2026-10-21T15:00:00Z" } };
+      }
       if (estado.jornada.devolutiva.concluida) { estado.jornada.projecao.atual = "proposta"; passos[4].concluido = true; passos[5].acessivel = true; }
       return clonar(estado);
     }),
@@ -47,43 +63,47 @@ test("entrada comercial recente escolhe o mesmo canal no chat e na etapa cinco, 
   const mapa = screen.getByRole("navigation", { name: "Passo a passo do lead" });
   expect(mapa).toBeVisible(); expect(mapa.closest("details")).toBeNull();
   expect(screen.getByRole("button", { name: "5. devolutiva" })).toHaveAttribute("aria-current", "step");
-  expect(screen.getByText("Análise sintética e serviços conferidos.")).toBeVisible();
-  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/jornada/devolutiva"))).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" }));
-  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d", conversaId: "recente" }));
-  expect(await screen.findByText("Preparar uma nova proposta em PDF")).toBeVisible();
+  expect(await screen.findByTitle("Prévia PDF da apresentação da empresa")).toBeVisible();
+  expect(api.baixarApresentacaoComercial).toHaveBeenCalledWith("o", "d", "hash-atual");
+  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/enviar"))).toBe(false);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Enviar ao cliente" }));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/apresentacao/d/enviar", { conteudoHash: "hash-atual", conversaId: "recente" }));
+  expect(screen.queryByText("Preparar uma nova proposta em PDF")).not.toBeInTheDocument();
+  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/conferir"))).toBe(false);
 });
 
 test("cliente pode trocar canal na própria etapa sem perder diagnóstico nem enviar automaticamente", async () => {
   const { api, conversa } = cenario(); conversa.relacionamento = { tipo: "CLIENTE" }; await abrir(api);
   fireEvent.change(screen.getByLabelText("Canal do atendimento"), { target: { value: "principal" } });
   await waitFor(() => expect(screen.getByLabelText("Canal do atendimento")).toHaveValue("principal"));
-  expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Usar Comercial — conversa aberta" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeEnabled());
-  expect(screen.getByText("Análise sintética e serviços conferidos.")).toBeVisible();
-  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/jornada/devolutiva"))).toBe(false);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeEnabled());
+  expect(await screen.findByTitle("Prévia PDF da apresentação da empresa")).toBeVisible();
+  expect(api.baixarApresentacaoComercial).toHaveBeenCalledWith("o", "d", "hash-atual");
+  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/enviar"))).toBe(false);
 });
 
-test("janela fechada permite baixar relatório e registrar apresentação real por outro meio, avançando para proposta", async () => {
+test("janela fechada permite baixar PDF e conferir a revisão sem enviar ao cliente", async () => {
   const { api, canais } = cenario(); canais[1].janela.situacao = "EXPIRADA"; canais[1].podeResponder = false;
-  const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
-  URL.createObjectURL = jest.fn(() => "blob:teste"); URL.revokeObjectURL = jest.fn();
   const baixar = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   try {
     await abrir(api);
-    expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Baixar PDF fiscal para apresentar" }));
-    await waitFor(() => expect(api.baixarAnaliseOnboarding).toHaveBeenCalledWith("o", "fiscal"));
+    await screen.findByTitle("Prévia PDF da apresentação da empresa");
+    expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Baixar PDF" }));
+    await waitFor(() => expect(api.baixarApresentacaoComercial).toHaveBeenCalledTimes(2));
+    expect(api.baixarApresentacaoComercial).toHaveBeenLastCalledWith("o", "d", "hash-atual");
     await waitFor(() => expect(baixar).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("tab", { name: "Apresentar por outro meio" }));
-    fireEvent.change(screen.getByLabelText("Meio e data"), { target: { value: "Reunião em 21/09/2026" } });
-    fireEvent.change(screen.getByLabelText("Evidência e observações"), { target: { value: "Relatório e escopo apresentados na reunião de teste." } });
-    fireEvent.click(screen.getByRole("button", { name: "Conferi: registrar apresentação" }));
+    expect(screen.queryByText("Preparar uma nova proposta em PDF")).not.toBeInTheDocument();
+    expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/conferir"))).toBe(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conferi o PDF e quero preparar a proposta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Conferi o PDF e quero preparar a proposta" }));
     expect(await screen.findByText("Preparar uma nova proposta em PDF")).toBeVisible();
-    expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/apresentacao", { versao: 2, diagnosticoId: "d", meio: "Reunião em 21/09/2026", evidencia: "Relatório e escopo apresentados na reunião de teste." });
-    expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/jornada/devolutiva"))).toBe(false);
-  } finally { baixar.mockRestore(); URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
+    expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/apresentacao/d/conferir", { versao: 2, conteudoHash: "hash-atual", confirmado: true });
+    expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/enviar"))).toBe(false);
+  } finally { baixar.mockRestore(); }
 });
 
 test("chat da ficha abre o mesmo atendimento e envia a devolutiva pelo canal preparado", async () => {
@@ -98,10 +118,12 @@ test("chat da ficha abre o mesmo atendimento e envia a devolutiva pelo canal pre
   expect(screen.getByRole("button", { name: "5. devolutiva" })).toHaveAttribute("aria-current", "step");
   expect(screen.getByLabelText("Canal do atendimento")).toHaveValue("comercial");
   fireEvent.change(screen.getByLabelText("Canal do atendimento"), { target: { value: "principal" } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeDisabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeDisabled());
   fireEvent.click(screen.getByRole("button", { name: "Usar Comercial — conversa aberta" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "Conferi: enviar PDF e devolutiva" }));
-  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d", conversaId: "recente" }));
-  expect(await screen.findByText("Preparar uma nova proposta em PDF")).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Enviar ao cliente" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Enviar ao cliente" }));
+  await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/apresentacao/d/enviar", { conteudoHash: "hash-atual", conversaId: "recente" }));
+  expect(screen.queryByText("Preparar uma nova proposta em PDF")).not.toBeInTheDocument();
+  expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/conferir"))).toBe(false);
 });

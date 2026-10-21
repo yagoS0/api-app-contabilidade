@@ -49,7 +49,7 @@ test("avulso, minuta e contrato que exige CNPJ não são oferecidos para a contr
   expect(screen.getByRole("status")).toHaveTextContent("Falta um modelo próprio para abertura antes do CNPJ");
   expect(screen.getByRole("button", { name: "Gerar contrato da opção aceita" })).toBeDisabled();
   expect(screen.queryByLabelText("Modelo do contrato")).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /biblioteca/ })).toHaveAttribute("target", "_blank");
+  expect(screen.getByRole("link", { name: /modelos de contrato/ })).toHaveAttribute("target", "_blank");
 });
 test("duas opções exigem escolha; troca de modelo limpa campos particulares", () => {
   const p = props(); p.recursos.push({ ...p.recursos[0], id: "m2", titulo: "Segundo modelo" });
@@ -158,4 +158,35 @@ test("versão alterada sob o mesmo ID exige nova escolha e aprovação de rascun
   rerender(<FormularioContrato {...p} recursos={[{ ...original, versao: 3, aprovadoEm: "2026-09-21" }]} />);
   expect(screen.getByRole("alert")).toHaveTextContent("não está mais disponível");
   expect(screen.getByRole("button", { name: "Gerar contrato da opção aceita" })).toBeDisabled();
+});
+
+
+test.each(['versao', 'opcaoAceita'])('mesma ficha com nova %s da proposta descarta edições e prévia anteriores', alteracao => {
+  const p = props();
+  p.onboarding.id = 'ficha-mesma';
+  p.proposta.versao = 1;
+  const view = render(<FormularioContrato {...p} />);
+  fireEvent.change(screen.getByLabelText('Cargo do representante'), { target: { value: 'Cargo da contratação anterior' } });
+  fireEvent.change(screen.getByLabelText('Nome do representante'), { target: { value: 'Nome editado anterior' } });
+  fireEvent.click(screen.getByText('Conferir prévia do texto'));
+  const previaAnterior = screen.getByText('Conferir prévia do texto').closest('details');
+  expect(previaAnterior).toHaveAttribute('open');
+  expect(previaAnterior).toHaveTextContent('Cargo da contratação anterior');
+  expect(previaAnterior).toHaveTextContent('137,11');
+  const opcao = { ...p.proposta.snapshot.opcoes[0], chave: alteracao === 'opcaoAceita' ? 'RECORRENTE_NOVA' : p.proposta.opcaoAceita, mensalCentavos: 24822, escopo: 'Novo escopo aceito' };
+  const proposta = { ...p.proposta, versao: alteracao === 'versao' ? 2 : 1, opcaoAceita: opcao.chave, snapshot: { ...p.proposta.snapshot, opcoes: [...p.proposta.snapshot.opcoes.filter(o => o.chave !== opcao.chave), opcao] } };
+  view.rerender(<FormularioContrato {...p} proposta={proposta} />);
+  expect(screen.getByLabelText('Cargo do representante')).toHaveValue('');
+  expect(screen.getByLabelText('Nome do representante')).toHaveValue('Ana');
+  expect(screen.getByRole('region', { name: 'Dados vinculados à proposta' })).toHaveTextContent('248,22');
+  expect(screen.getByRole('region', { name: 'Dados vinculados à proposta' })).toHaveTextContent('Novo escopo aceito');
+  const previaAtual = screen.getByText('Conferir prévia do texto').closest('details');
+  expect(previaAtual).not.toHaveAttribute('open');
+  fireEvent.click(screen.getByText('Conferir prévia do texto'));
+  expect(previaAtual).toHaveTextContent('248,22');
+  expect(previaAtual).not.toHaveTextContent('137,11');
+  expect(previaAtual).not.toHaveTextContent('Cargo da contratação anterior');
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar contrato da opção aceita' }));
+  expect(p.onGerar).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Cargo do representante')).toHaveAttribute('aria-invalid', 'true');
 });

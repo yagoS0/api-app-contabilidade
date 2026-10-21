@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { AtendimentoComercial } from '../../../whatsapp/components/AtendimentoComercial';
+import { waitFor, render, screen } from '@testing-library/react';
 import { CardEtapa } from '../ChecklistEtapas';
 import { etapaDaOportunidade, nomeDaOportunidade, resumoRetorno } from '../../../comercial/comercialModel';
 import { montarJornada } from '../../lib/jornadaComercial';
@@ -106,12 +107,12 @@ test('ação no filho atualiza a ficha pai sem apagar anotações legadas em edi
   };
   const { container } = render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId={ficha.id} /></MemoryRouter>);
   await screen.findByRole('button', { name: 'Salvar dados deste passo' });
-  fireEvent.click(screen.getByText('Anotações comerciais e análises'));
-  fireEvent.change(screen.getByLabelText('Proposta e condições'), { target: { value: 'Rascunho preservado' } });
-  fireEvent.change(container.querySelector('#jornada-responsavelNome'), { target: { value: 'Nome salvo' } });
+  expect(screen.getByRole('region', { name: 'Anotações' })).toBeVisible();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Anotações' }), { target: { value: 'Rascunho preservado' } });
+  fireEvent.change(container.querySelector('.lead-step-fields input[id$="-responsavelNome"]'), { target: { value: 'Nome salvo' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar dados deste passo' }));
   expect(await screen.findByText('Nome salvo', { selector: '.page-shell__title' })).toBeVisible();
-  expect(screen.getByLabelText('Proposta e condições')).toHaveValue('Rascunho preservado');
+  expect(screen.getByRole('textbox', { name: 'Anotações' })).toHaveValue('Rascunho preservado');
   expect(api.comercial.mock.calls.filter(([, body]) => body)).toHaveLength(1);
 });
 
@@ -150,10 +151,11 @@ test('falha da releitura após comando preserva campos e informa que ação foi 
   const atualizar = jest.fn();
   const { container } = render(<FluxoComercial api={api} onboardingId={ficha.id} onAtualizar={atualizar} />);
   await screen.findByRole('button', { name: 'Salvar dados deste passo' });
-  fireEvent.change(container.querySelector('#jornada-responsavelNome'), { target: { value: 'Nome confirmado' } });
+  fireEvent.change(container.querySelector('.lead-step-fields input[id$="-responsavelNome"]'), { target: { value: 'Nome confirmado' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar dados deste passo' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('A ação foi salva');
-  expect(container.querySelector('#jornada-responsavelNome')).toHaveValue('Nome confirmado');
+  expect(await screen.findByText(/^A ação foi salva/)).toHaveAttribute('role', 'alert');
+  expect(screen.getByText(/Não foi possível atualizar o atendimento/)).toHaveAttribute('role', 'alert');
+  expect(container.querySelector('.lead-step-fields input[id$="-responsavelNome"]')).toHaveValue('Nome confirmado');
   expect(atualizar).toHaveBeenCalledTimes(1);
   expect(api.comercial.mock.calls.filter(([, body]) => body)).toHaveLength(1);
 });
@@ -194,17 +196,17 @@ test('polling de aceite externo atualiza a etapa da ficha sem ação local e pre
     };
     await act(async () => { view = render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId={ficha.id} /></MemoryRouter>); });
     expect(screen.getByLabelText('Etapa comercial')).toHaveTextContent('Valores e aceite da proposta');
-    expect(screen.getByText('Jornada comercial e contratação').closest('details')).not.toHaveAttribute('open');
-    fireEvent.click(screen.getByText('Anotações comerciais e análises'));
-    fireEvent.change(screen.getByLabelText('Proposta e condições'), { target: { value: 'Rascunho durante aceite externo' } });
+    expect(screen.getByRole('region', { name: 'Jornada comercial' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Anotações' })).toBeVisible();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Anotações' }), { target: { value: 'Rascunho durante aceite externo' } });
     // O aceite altera as evidências sem necessariamente alterar a versão dos dados da ficha.
     ficha = { ...ficha, comercial: { atual: 'contrato', titulo: 'Contrato e assinatura' } };
     atual = 'contrato';
     await act(async () => { jest.advanceTimersByTime(10000); });
     expect(screen.getByLabelText('Etapa comercial')).toHaveTextContent('Contrato e assinatura');
-    fireEvent.click(screen.getByText('Jornada comercial e contratação'));
+    expect(screen.getByRole('region', { name: 'Jornada comercial' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Contrato e assinatura', level: 4 })).toBeVisible();
-    expect(screen.getByLabelText('Proposta e condições')).toHaveValue('Rascunho durante aceite externo');
+    expect(screen.getByRole('textbox', { name: 'Anotações' })).toHaveValue('Rascunho durante aceite externo');
     expect(api.comercial.mock.calls.every(([, body]) => body === undefined)).toBe(true);
     expect(api.getOnboarding).toHaveBeenCalledTimes(2);
     api.getOnboarding.mockRejectedValueOnce(new Error('Leitura temporariamente indisponível'));
@@ -212,7 +214,7 @@ test('polling de aceite externo atualiza a etapa da ficha sem ação local e pre
     expect(screen.getByLabelText('Etapa comercial')).toHaveTextContent('Contrato e assinatura');
     expect(screen.getByText(/Não foi possível atualizar as evidências/)).toBeVisible();
     expect(screen.queryByText(/A ação foi salva/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Proposta e condições')).toHaveValue('Rascunho durante aceite externo');
+    expect(screen.getByRole('textbox', { name: 'Anotações' })).toHaveValue('Rascunho durante aceite externo');
     ficha = { ...ficha, versao: 2, responsavelNome: 'Nome na versão dois' };
     await act(async () => { jest.advanceTimersByTime(10000); });
     expect(screen.getByText('Nome na versão dois', { selector: '.page-shell__title' })).toBeVisible();
@@ -222,7 +224,7 @@ test('polling de aceite externo atualiza a etapa da ficha sem ação local e pre
     expect(screen.getByText('Nome na versão dois', { selector: '.page-shell__title' })).toBeVisible();
     expect(screen.getByLabelText('Etapa comercial')).toHaveTextContent('Contrato e assinatura');
     expect(screen.getByRole('heading', { name: 'Contrato e assinatura', level: 4 })).toBeVisible();
-    expect(screen.getByLabelText('Proposta e condições')).toHaveValue('Rascunho durante aceite externo');
+    expect(screen.getByRole('textbox', { name: 'Anotações' })).toHaveValue('Rascunho durante aceite externo');
   } finally { view?.unmount(); jest.useRealTimers(); }
 });
 
@@ -231,7 +233,7 @@ test('polling antigo não propaga atualização para outra ficha', async () => {
   let view;
   try {
     const ficha = fichaPF();
-    const nova = { ...ficha, id: 'nova-987654', responsavelNome: 'Nova pessoa' };
+    const nova = { ...ficha, id: 'nova-987654', responsavelNome: 'Nova pessoa', dados: { ...ficha.dados, responsavelNome: 'Nova pessoa' } };
     let resolver, atrasar = false;
     const atualizar = jest.fn();
     const api = { comercial: jest.fn(async path => {
@@ -245,8 +247,99 @@ test('polling antigo não propaga atualização para outra ficha', async () => {
     await act(async () => { jest.advanceTimersByTime(10000); });
     await act(async () => { view.rerender(<FluxoComercial api={api} onboardingId={nova.id} onAtualizar={atualizar} />); });
     await act(async () => { resolver(painel(ficha)); });
-    expect(screen.getByText('Nova pessoa')).toBeVisible();
-    expect(screen.queryByText('Nome inicial')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Nova pessoa')).toBeVisible();
+    expect(api.comercial).toHaveBeenCalledWith('/onboardings/' + nova.id);
+    expect(screen.queryByDisplayValue('Nome inicial')).not.toBeInTheDocument();
     expect(atualizar).not.toHaveBeenCalled();
+  } finally { view?.unmount(); jest.useRealTimers(); }
+});
+
+test('contato confirmado invalida os consumidores mesmo sem mudar a versão da ficha', async () => {
+  const ficha = fichaPF();
+  let conversaId = null;
+  const api = {
+    getOnboarding: jest.fn(async () => ({ onboarding: ficha })),
+    getOnboardingComercial: jest.fn(async () => ({ links: [], eventos: [], analises: [], proposta: {} })),
+    comercial: jest.fn(async (path, body) => {
+      if (path === '/recursos') return { recursos: [] };
+      if (path === '/canais-comerciais') return { canais: [{ id: 'canal-qa', chave: 'Comercial QA' }] };
+      if (path.endsWith('/acompanhamento')) return { versao: ficha.versao, conversaId };
+      if (path.endsWith('/contato') && body) { conversaId = 'vinculo-persistido-qa'; return { conversaId, atendimentoId: 'atendimento-qa' }; }
+      return painel(ficha);
+    }),
+  };
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId={ficha.id} /></MemoryRouter>);
+  const acompanhamento = await screen.findByRole('region', { name: 'Acompanhamento comercial' });
+  const local = within(acompanhamento);
+  await waitFor(() => expect(local.getByRole('button', { name: 'Iniciar contato' })).toBeEnabled());
+  fireEvent.click(local.getByRole('button', { name: 'Iniciar contato' }));
+  await local.findByRole('option', { name: 'Comercial QA' });
+  fireEvent.change(local.getByLabelText('Nome'), { target: { value: 'Pessoa QA' } });
+  fireEvent.change(local.getByLabelText('Telefone com DDI'), { target: { value: '5521999990000' } });
+  fireEvent.change(local.getByLabelText('Origem da autorização'), { target: { value: 'Autorização sintética do teste' } });
+  fireEvent.click(local.getByRole('checkbox'));
+  fireEvent.click(local.getByRole('button', { name: 'Preparar conversa' }));
+  expect(await local.findByRole('link', { name: /Abrir conversa/ })).toHaveAttribute('href', '/comercial/conversas?conversa=vinculo-persistido-qa');
+  expect(ficha.versao).toBe(1);
+  expect(api.comercial.mock.calls.filter(([path]) => path.endsWith('/acompanhamento')).length).toBeGreaterThan(2);
+  expect(api.comercial.mock.calls.filter(([, body]) => body)).toHaveLength(1);
+});
+
+
+test('polling integrado no chat preserva prévia e envio incerto e descarta retorno do atendimento anterior', async () => {
+  jest.useFakeTimers();
+  let view;
+  try {
+    const ficha = fichaPF(), outra = { ...fichaPF(), id: 'outra-ficha', responsavelNome: 'Outro interessado', dados: { responsavelNome: 'Outro interessado' } };
+    let atrasar = false, resolverAntiga;
+    const onCriado = jest.fn(), onEstado = jest.fn();
+    const api = {
+      comercial: jest.fn(async path => {
+        if (path === '/recursos') return { recursos: [] };
+        if (path === '/conversas/conversa-qa') return { atendimento: { id: 'atendimento-qa', onboardingId: ficha.id } };
+        if (path === '/conversas/conversa-nova') return { atendimento: { id: 'atendimento-novo', onboardingId: outra.id } };
+        if (path === `/onboardings/${outra.id}`) return painel(outra);
+        if (path === `/onboardings/${ficha.id}` && atrasar) return new Promise(resolve => { resolverAntiga = resolve; });
+        return painel(ficha);
+      }),
+      criarLinkOnboarding: jest.fn(async () => ({ token: 'token-sintetico-qa' })),
+      enviarOrientacaoWhatsapp: jest.fn(async () => { throw new Error('Resultado incerto sintético'); }),
+    };
+    const tela = id => <AtendimentoComercial api={api} conversa={{ id, podeResponder: true, janela: { situacao: 'ABERTA' } }} onCriado={onCriado} onEstado={onEstado} />;
+    await act(async () => { view = render(tela('conversa-qa')); });
+    fireEvent.click(screen.getByText('Enviar formulário', { selector: 'summary' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Preparar formulário/ })); });
+    const previa = screen.getByText(/token-sintetico-qa/);
+    expect(previa).toBeVisible();
+    await act(async () => { jest.advanceTimersByTime(10000); });
+    expect(api.comercial.mock.calls.filter(([p]) => p === '/conversas/conversa-qa')).toHaveLength(2);
+    expect(screen.getByText(/token-sintetico-qa/)).toBe(previa);
+    expect(api.criarLinkOnboarding).toHaveBeenCalledTimes(1);
+    expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
+    expect(onCriado).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Conferi: enviar mensagem' })); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Resultado incerto sintético');
+    expect(screen.getByRole('button', { name: 'Conferi: enviar mensagem' })).toBeDisabled();
+    await act(async () => { jest.advanceTimersByTime(10000); });
+    expect(api.comercial.mock.calls.filter(([p]) => p === '/conversas/conversa-qa')).toHaveLength(3);
+    expect(screen.getByText(/token-sintetico-qa/)).toBe(previa);
+    expect(screen.getByRole('button', { name: 'Conferi: enviar mensagem' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar prévia' })).toBeDisabled();
+    expect(screen.getByText(/Confira o histórico: não foi possível confirmar/)).toBeVisible();
+    expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledTimes(1);
+    atrasar = true;
+    await act(async () => { jest.advanceTimersByTime(10000); });
+    expect(resolverAntiga).toEqual(expect.any(Function));
+    await act(async () => { view.rerender(tela('conversa-nova')); });
+    expect(screen.getByRole('link', { name: 'Abrir ficha do cliente em nova aba' })).toHaveAttribute('href', '/onboardings/outra-ficha');
+    const leituras = api.comercial.mock.calls.length, estados = onEstado.mock.calls.length;
+    await act(async () => { resolverAntiga(painel(ficha)); });
+    expect(api.comercial.mock.calls).toHaveLength(leituras);
+    expect(onEstado.mock.calls).toHaveLength(estados);
+    expect(screen.getByRole('link', { name: 'Abrir ficha do cliente em nova aba' })).toHaveAttribute('href', '/onboardings/outra-ficha');
+    expect(screen.queryByText(/token-sintetico-qa/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Resultado incerto sintético/)).not.toBeInTheDocument();
+    expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledTimes(1);
+    expect(onCriado).not.toHaveBeenCalled();
   } finally { view?.unmount(); jest.useRealTimers(); }
 });

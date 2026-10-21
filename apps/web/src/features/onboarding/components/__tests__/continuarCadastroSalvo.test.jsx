@@ -15,20 +15,21 @@ test("continuar preenchimento atualiza imediatamente o cadastro salvo sem espera
       }),
     };
     await act(async () => { vista = render(<FluxoComercial api={api} onboardingId="empresa" revisao={0} />); });
-    expect(screen.queryByRole("region", { name: "Cadastro já preenchido" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Cadastro da empresa" })).toBeVisible();
+    expect(screen.queryByText("Rua recém-salva, 42, Rio, RJ")).not.toBeInTheDocument();
     expect(api.comercial.mock.calls.filter(([path]) => path === "/onboardings/empresa")).toHaveLength(1);
     ficha = { ...ficha, versao: 8, cnpj: "11222333000181", dados: { razaoSocial: "Empresa recém-preenchida", cadastroCnpj: {
       cnpj: "11222333000181", fonte: "BRASIL_API", consultadoEm: "2026-10-08T12:00:00Z",
-      empresa: { razaoSocial: "Empresa recém-preenchida", endereco: { rua: "Rua recém-salva", numero: "42" }, cnaePrincipal: "6201501" },
+      empresa: { razaoSocial: "Empresa recém-preenchida", naturezaJuridica: "2062", porte: "ME", endereco: { rua: "Rua recém-salva", numero: "42", municipio: "Rio", uf: "RJ" }, cnaePrincipal: "6201501" },
     } } };
     // O relógio falso não é avançado: uma atualização só pode vir da revisão explícita.
     await act(async () => { vista.rerender(<FluxoComercial api={api} onboardingId="empresa" revisao={1} />); });
-    expect(screen.getByRole("region", { name: "Cadastro já preenchido" })).toBeVisible();
-    expect(screen.getByText("Rua recém-salva, 42")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Cadastro da empresa" })).toBeVisible();
+    expect(screen.getByText("Rua recém-salva, 42, Rio, RJ")).toBeVisible();
     expect(api.comercial.mock.calls.filter(([path]) => path === "/onboardings/empresa")).toHaveLength(2);
     expect(api.criarAnaliseOnboarding).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Conferi os dados: continuar" })); });
-    expect(api.comercial).toHaveBeenCalledWith("/onboardings/empresa/jornada/conferencia", expect.objectContaining({ versao: 8, tipo: "PUBLICA" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Prosseguir" })); });
+    expect(api.comercial).toHaveBeenCalledWith("/onboardings/empresa/cadastro", expect.objectContaining({ versao: 8, cnpj: "11222333000181", origem: "MANUAL", empresa: expect.objectContaining({ endereco: expect.objectContaining({ logradouro: "Rua recém-salva", numero: "42" }) }) }));
   } finally {
     vista?.unmount();
     jest.useRealTimers();

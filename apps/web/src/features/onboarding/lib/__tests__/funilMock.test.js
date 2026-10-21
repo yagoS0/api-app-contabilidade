@@ -133,7 +133,8 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
       const detalhe = (await api.getOnboarding(o.id)).onboarding.comercial.contratacao;
       const lista = (await api.listarOnboardings({ incluirRascunhos: true })).itens.find(i => i.id === o.id).comercial.contratacao;
       const conversa = (await api.comercial(base)).jornada.projecao.contratacao;
-      expect(detalhe).toMatchObject({ ganha: true, implantacaoPermitida: true, carteiraPermitida: permitida, excecaoAplicavel: false, propostaId: proposta.id, contratoId: contrato.id });
+      // R35: assinatura permanece registrada, mas somente pagamento confirma a contratação.
+      expect(detalhe).toMatchObject({ ganha: permitida, implantacaoPermitida: permitida, carteiraPermitida: permitida, excecaoAplicavel: false, propostaId: proposta.id, contratoId: contrato.id });
       expect(lista).toEqual(detalhe); expect(conversa).toEqual(detalhe);
       expect((await api.getOnboarding(outra.id)).onboarding.comercial.contratacao).toMatchObject({ ganha: false, carteiraPermitida: false, excecaoAplicavel: true });
     }
@@ -142,8 +143,13 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     await conferir(false);
     expect((await api.comercial(base)).contratos[0]).toMatchObject({ documentoAssinadoId: documento.id, assinaturaConferidaPor: 'contador-demonstracao' });
     await expect(api.baixarDocumentoComercial(o.id, documento.id)).rejects.toThrow(/indisponível após recarga/);
-    await expect(api.comercial(`${base}/jornada/pagamento`, { contratoId: contrato.id })).rejects.toThrow(/evidência/);
-    const pagamento = { contratoId: contrato.id, evidencia: 'Pagamento sintético conferido' };
+    await expect(api.comercial(`${base}/jornada/pagamento`, { contratoId: contrato.id })).rejects.toThrow(/recebimento e a revisão/);
+    const atual = await api.comercial(base);
+    const contratoAtual = atual.contratos.find(c => c.id === contrato.id);
+    const pagamento = { contratoId: contrato.id, versao: atual.onboarding.versao, propostaVersao: proposta.versao, contratoRevisao: contratoAtual.aprovadoEm, confirmado: true, valorCentavos: 10000, referencia: 'Pagamento sintético conferido' };
+    await expect(api.comercial(`${base}/jornada/pagamento`, { ...pagamento, referencia: '' })).rejects.toThrow(/recebimento e a revisão/);
+    await expect(api.comercial(`${base}/jornada/pagamento`, { ...pagamento, propostaVersao: proposta.versao + 1 })).rejects.toThrow(/recebimento e a revisão/);
+    await conferir(false);
     await api.comercial(`${base}/jornada/pagamento`, pagamento);
     await api.comercial(`${base}/jornada/pagamento`, pagamento);
     await conferir(true);

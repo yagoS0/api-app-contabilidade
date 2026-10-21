@@ -1,4 +1,4 @@
-import { projetarContratacao, validarContratacaoExterna } from '../../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
+import { projetarContratacao, validarContratacaoExterna, contextoContrato } from '../../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 
 const ficha = () => ({ onboarding: { id: 'o', origem: 'TRANSFERENCIA', status: 'EM_TRILHA', faseComercial: 'CONTRATADO' }, propostas: [{ id: 'p', status: 'ACEITA', opcaoAceita: 'RECORRENTE' }], contratos: [{ id: 'c', propostaId: 'p', status: 'ASSINADO_CONFERIDO', dados: { opcao: { chave: 'RECORRENTE', recorrente: true } } }], marcos: [] });
 test('T31: fase manual e checklist não comprovam contratação', () => {
@@ -38,4 +38,19 @@ test('T38: PF e avulso podem ser ganhos sem entrada na carteira', () => {
   expect(projetarContratacao(e)).toMatchObject({ ganha: true, carteiraPermitida: false, excecaoAplicavel: false });
   e.onboarding.origem = 'ABERTURA'; e.contratos[0].dados.opcao.recorrente = false;
   expect(projetarContratacao(e)).toMatchObject({ ganha: true, carteiraPermitida: false });
+});
+
+test('R35: contrato novo assinado ainda aguarda pagamento; assinatura continua verdadeira', () => {
+  const e = ficha(); e.contratos[0].dados.politicaContratacao = 'R35';
+  expect(projetarContratacao(e)).toMatchObject({ ganha: false, implantacaoPermitida: false });
+  expect(e.contratos[0].status).toBe('ASSINADO_CONFERIDO');
+});
+
+test('R35: confirmação atual sem assinatura habilita PF/avulso sem criar carteira', () => {
+  const e = ficha(); e.onboarding.origem = 'PESSOA_FISICA';
+  e.contratos[0].status = 'AGUARDANDO_ASSINATURA';
+  e.marcos = [{ tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', atorId: 'contador', dados: { contratoId: 'c', politica: 'R35', confirmadoEm: '2026-10-21', contextoContrato: contextoContrato(e.propostas[0], e.contratos[0]) } }];
+  expect(projetarContratacao(e)).toMatchObject({ ganha: true, implantacaoPermitida: true, carteiraPermitida: false });
+  e.propostas[0].versao = 99;
+  expect(projetarContratacao(e).ganha).toBe(false);
 });

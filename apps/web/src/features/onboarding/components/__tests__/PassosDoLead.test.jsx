@@ -7,7 +7,7 @@ const completarBlocos = () => {
   fireEvent.change(screen.getByLabelText("O que podemos corrigir ou fazer a seguir"), { target: { value: "Executar os serviços dentro do escopo delimitado." } });
 };
 
-test("transferência oferece roteiro em guias, exige decisão de regularização e preserva pendências", () => {
+test("transferência oferece roteiro em seções, exige decisão de regularização e preserva pendências", () => {
   const onSalvar = jest.fn();
   render(<DiagnosticoDoLead sempreAberto limitado onboarding={{ id: "t", origem: "TRANSFERENCIA", versao: 2, cnpj: "11222333000181", dados: { qtdFuncionarios: 2, notasRecebidasMes: 20 } }} jornada={{}} onSalvar={onSalvar} />);
   completarBlocos();
@@ -17,9 +17,9 @@ test("transferência oferece roteiro em guias, exige decisão de regularização
   expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Regularização antes da contabilidade mensal"), { target: { value: "true" } });
   fireEvent.change(screen.getByLabelText("Motivo da decisão sobre regularização"), { target: { value: "Declarações omissas indicadas no documento recebido." } });
-  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  expect(screen.getByRole("region", { name: "Dados da análise" })).toBeVisible();
   fireEvent.change(screen.getByLabelText("Receita dos últimos 12 meses (R$)"), { target: { value: "120000" } });
-  fireEvent.click(screen.getByRole("tab", { name: "Conferências" }));
+  expect(screen.getByRole("region", { name: "Conferências" })).toBeVisible();
   fireEvent.click(screen.getByText("Certidões RFB e PGFN"));
   fireEvent.change(screen.getByLabelText("Certidões RFB e PGFN — resultado"), { target: { value: "FEITO" } });
   expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
@@ -35,7 +35,7 @@ test("dados da ficha em edição não podem ficar silenciosamente fora do diagn�
   completarBlocos();
   fireEvent.change(screen.getByLabelText(/Pontos de atenção/), { target: { value: "Viabilidade condicionada aos órgãos responsáveis." } });
   fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Abertura e contabilidade conforme escopo." } });
-  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  expect(screen.getByRole("region", { name: "Dados da análise" })).toBeVisible();
   fireEvent.change(screen.getByLabelText(/Quantidade de funcionários/), { target: { value: "2" } });
   expect(screen.getByText("Confirmar diagnóstico e continuar")).toBeDisabled();
   fireEvent.click(screen.getByText("Salvar dados deste passo"));
@@ -200,27 +200,37 @@ test("orientação precisa de prévia e envio explícito; timeout impede repeti�
   expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledTimes(1);
 });
 test("tela avança diagnóstico, devolutiva e proposta com dados salvos e retoma após recarregar", async () => {
-  let e = { onboarding: { id: "o", origem: "ABERTURA", versao: 1, dados: { responsavelNome: "Ana", atividadePretendida: "Consultoria", municipioAtendimento: "Rio", enderecoPretendido: "Rua sintética" } }, jornada: { analises: [], devolutiva: { partes: [], concluida: false } }, propostas: [], contratos: [], documentos: [], trabalhos: [] };
-  const api = { comercial: jest.fn(async (path, body) => {
-    if (path === "/recursos") return { recursos: [] };
-    if (path.endsWith("/jornada/diagnostico")) e = { ...e, jornada: { ...e.jornada, diagnostico: { id: "d", dados: { ...body, texto: "Devolutiva sintética" } } } };
-    if (path.endsWith("/jornada/devolutiva")) e = { ...e, jornada: { ...e.jornada, devolutiva: { partes: [{ parte: "TEXTO", status: "enviado" }], concluida: true } } };
-    return JSON.parse(JSON.stringify(e));
-  }) };
-  const { unmount } = render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
-  expect(await screen.findByLabelText(/Pontos de atenção/)).toBeVisible();
-  fireEvent.change(await screen.findByLabelText(/Pontos de atenção/), { target: { value: "Conferência da viabilidade sintética." } });
-  completarBlocos();
-  fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Serviços avulsos e mensais sintéticos." } });
-  fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
-  expect(await screen.findByText("Devolutiva sintética")).toBeVisible();
-  fireEvent.click(await screen.findByText("Conferi: enviar devolutiva"));
-  fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
-  await screen.findByText("Gerar proposta para revisão");
-  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d", conversaId: "c" });
-  unmount(); render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
-  fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
-  expect(await screen.findByText("Gerar proposta para revisão")).toBeInTheDocument();
+  const createObjectURL = URL.createObjectURL, revokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = jest.fn(() => "blob:apresentacao-sintetica");
+  URL.revokeObjectURL = jest.fn();
+  try {
+    let e = { onboarding: { id: "o", origem: "ABERTURA", versao: 1, dados: { responsavelNome: "Ana", atividadePretendida: "Consultoria", municipioAtendimento: "Rio", enderecoPretendido: "Rua sintética" } }, jornada: { analises: [], devolutiva: { partes: [], concluida: false } }, propostas: [], contratos: [], documentos: [], trabalhos: [] };
+    const api = { comercial: jest.fn(async (path, body) => {
+      if (path === "/recursos") return { recursos: [] };
+      if (path.endsWith("/jornada/diagnostico")) e = { ...e, jornada: { ...e.jornada, diagnostico: { id: "d", dados: { ...body, texto: "Devolutiva sintética" } } } };
+      if (path.endsWith("/apresentacao")) return { diagnosticoId: "d", conteudoHash: "hash-atual" };
+      if (path.endsWith("/apresentacao/d/enviar")) e = { ...e, jornada: { ...e.jornada, devolutiva: { partes: [{ parte: "TEXTO", status: "enviado" }], concluida: true } } };
+      return JSON.parse(JSON.stringify(e));
+    }), baixarApresentacaoComercial: jest.fn(async () => new Blob(["%PDF-1.4 sintético"], { type: "application/pdf" })) };
+    const { unmount } = render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
+    expect(await screen.findByLabelText(/Pontos de atenção/)).toBeVisible();
+    fireEvent.change(await screen.findByLabelText(/Pontos de atenção/), { target: { value: "Conferência da viabilidade sintética." } });
+    completarBlocos();
+    fireEvent.change(screen.getByLabelText("Serviços necessários e escopo"), { target: { value: "Serviços avulsos e mensais sintéticos." } });
+    fireEvent.click(screen.getByText("Confirmar diagnóstico e continuar"));
+    expect(await screen.findByText("Apresentação pronta · diagnóstico atual")).toBeVisible();
+    expect(api.baixarApresentacaoComercial).toHaveBeenCalledWith("o", "d", "hash-atual");
+    fireEvent.click(await screen.findByText("Enviar ao cliente"));
+    fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
+    await screen.findByText("Gerar proposta para revisão");
+    expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/apresentacao/d/enviar", { conteudoHash: "hash-atual", conversaId: "c" });
+    unmount(); render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
+    fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
+    expect(await screen.findByText("Gerar proposta para revisão")).toBeInTheDocument();
+  } finally {
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+  }
 });
 
 test("revisar dados materiais na tela preserva o rascunho do diagnóstico já salvo e exige nova conferência", async () => {
@@ -242,7 +252,7 @@ test("revisar dados materiais na tela preserva o rascunho do diagnóstico já sa
   const atencao = screen.getByLabelText(/Pontos de atenção/);
   const textoRevisado = "Endereço depende de viabilidade e a equipe terá dois funcionários.";
   fireEvent.change(atencao, { target: { value: textoRevisado } });
-  fireEvent.click(screen.getByRole("tab", { name: "Dados da análise" }));
+  expect(screen.getByRole("region", { name: "Dados da análise" })).toBeVisible();
   fireEvent.change(screen.getByLabelText("Receita dos últimos 12 meses (R$)"), { target: { value: "120000" } });
   fireEvent.change(screen.getByLabelText(/Quantidade de funcionários/), { target: { value: "2" } });
   fireEvent.click(screen.getByText("Salvar dados deste passo"));
@@ -277,7 +287,7 @@ test("onboarding direto não envia à conversa antiga e permite avançar pela co
   const api = { enviarOrientacaoWhatsapp: jest.fn(async () => ({ ok: true })), comercial: jest.fn(async (path, body) => {
     if (path === "/recursos") return { recursos: [{ id: "r", tipo: "ORIENTACAO", chave: "autorizacao-acesso", titulo: "Procuração", aprovadoEm: "2026-09-15", versao: 1 }] };
     if (path.endsWith("/previa")) return { previa: { texto: "Orientação de procuração sintética" } };
-    if (path.endsWith("/representante")) e = { ...e, atendimento: { ...e.atendimento, representanteVerificadoEm: "2026-09-15" } };
+    if (path.endsWith("/procuracao/manual")) e = { ...e, atendimento: { ...e.atendimento, autorizacao: { cnpj, estado: "NAO_VERIFICADA", validacaoManual: { atorId: "contador", registradaEm: "2026-10-21" } } } };
     if (path.endsWith("/consultas") && body.tipo === "PROCURACAO") e = { ...e, atendimento: { ...e.atendimento, autorizacao: { cnpj, estado: "ATIVA", prova: { validUntil: "2099-01-01" } } } };
     return JSON.parse(JSON.stringify(e));
   }) };
@@ -286,12 +296,9 @@ test("onboarding direto não envia à conversa antiga e permite avançar pela co
   expect(preparar).toBeDisabled(); fireEvent.click(preparar);
   expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
   expect(screen.queryByLabelText("Como a representação foi conferida")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText("Registrar conferência do representante"));
-  fireEvent.change(screen.getByLabelText("Como a representação foi conferida"), { target: { value: "Representante conferido com documentação." } });
-  fireEvent.click(screen.getByText("OK: registrar e continuar"));
-  fireEvent.click(await screen.findByLabelText("Aceite conferido no portal da Receita"));
-  fireEvent.click(screen.getByText("Verificar procuração e avançar"));
-  await screen.findByText("Solicitar situação fiscal");
+  fireEvent.click(screen.getByRole("button", { name: "Validado por mim" }));
+  await screen.findByRole("button", { name: "Consultar situação fiscal" });
+  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/procuracao/manual", { versao: 2, confirmada: true });
   expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
   expect(screen.queryByLabelText("Como a representação foi conferida")).not.toBeInTheDocument();
 });
@@ -305,4 +312,17 @@ test("serviço avulso contratado só encerra com evidência explícita de entreg
   fireEvent.change(screen.getByLabelText("Evidência da entrega"), { target: { value: "Entrega sintética conferida pelo escritório." } });
   fireEvent.click(screen.getByText("Conferi a entrega: concluir serviço avulso"));
   await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/concluir-avulso", { evidencia: "Entrega sintética conferida pelo escritório." }));
+});
+
+
+test('campos de etapas preservadas têm ids exclusivos e labels locais', () => {
+  const onboarding = { id: 'qa', origem: 'ABERTURA', versao: 1, dados: {} };
+  const { container } = render(<><div hidden><CamposDaEtapa sempreAberto onboarding={onboarding} campos={['responsavelNome']} onSalvar={jest.fn()} /></div><CamposDaEtapa sempreAberto onboarding={onboarding} campos={['responsavelNome']} onSalvar={jest.fn()} /></>);
+  const campos = Array.from(container.querySelectorAll('input'));
+  expect(campos).toHaveLength(2);
+  expect(new Set(campos.map(c => c.id)).size).toBe(2);
+  for (const campo of campos) expect(campo.labels).toHaveLength(1);
+  fireEvent.change(campos[1], { target: { value: 'Responsável visível' } });
+  expect(campos[0]).toHaveValue('');
+  expect(campos[1]).toHaveValue('Responsável visível');
 });

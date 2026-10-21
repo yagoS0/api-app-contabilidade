@@ -13,19 +13,33 @@ test('validade, vínculo e idade da verificação',()=>{
 
 test('24h mantém estado histórico sem liberar filtro de ativas', () => {
  const checkedAt = new Date(agora - 86400000).toISOString();
- expect(marcadorProcuracao({...ativa, checkedAt}, agora)).toMatchObject({chave:'revalidar', rotulo:'Revalidar', orientacao:'Atualize a verificação antes de operar.'});
+ expect(marcadorProcuracao({...ativa, checkedAt}, agora)).toMatchObject({chave:'revalidar', rotulo:'Revalidar', rotuloDocumental:'Procuração ativa até 01/01/2027', orientacao:'A verificação salva tem 24 horas ou mais. Atualize a verificação antes de operar.'});
  expect(marcadorProcuracao({...ativa, checkedAt:new Date(agora - 86400000 + 1).toISOString()}, agora).chave).toBe('ativa');
 });
 
 test.each([
+ [{ vinculoConfirmado: false }, /não confirma o vínculo/],
+ [{ validUntil: null }, /não informa uma validade válida/],
+ [{ checkedAt: 'inválida' }, /data da verificação salva é inválida ou futura/],
+ [{ checkedAt: '2099-01-01' }, /data da verificação salva é inválida ou futura/],
+ [{ checkedAt: '2026-10-12' }, /24 horas ou mais/],
+])('explica revalidação sem completar a evidência %j', (patch, motivo) => {
+ const dados = { ...ativa, ...patch };
+ const antes = { ...dados };
+ expect(marcadorProcuracao(dados, agora)).toMatchObject({ chave: 'revalidar', orientacao: expect.stringMatching(motivo) });
+ expect(dados).toEqual(antes);
+});
+
+test.each([
  { checkedAt:'inválida' }, { checkedAt:'2026-02-30' }, { checkedAt:'2099-01-01' },
- { validUntil:'inválida' }, { validUntil:'2027-02-30' }, { vinculoConfirmado:false },
+ { validUntil:'inválida' }, { validUntil:'2027-02-30' }, { validUntil:null }, { validUntil:'2025-01-01' }, { vinculoConfirmado:false }, { vinculoConfirmado:undefined },
  { procurationStatus:'AUSENTE' }, { procurationStatus:'ERRO' },
  { ultimaTentativa:{status:'ERRO',vinculoConfirmado:true} },
  { ultimaTentativa:{status:'CONSULTANDO',vinculoConfirmado:true} },
 ])('não apresenta ativa histórica com informação inconclusiva %j', patch => {
  const resultado = marcadorProcuracao({...ativa, checkedAt:'2026-10-12', ...patch}, agora);
  expect(resultado.rotulo).not.toBe('Ativa');
+ expect(resultado.rotuloDocumental).toBeUndefined();
  expect(resultado.chave).not.toBe('ativa');
 });
 
@@ -36,6 +50,7 @@ describe.each(['2026-10-14T17:00:00Z', '2026-10-12T17:00:00Z'])('tentativa isola
   if (ultimaTentativa.vinculoConfirmado === true) {
    expect(resultado.chave).toBe('revalidar');
    expect(resultado.rotulo).toBe(ultimaTentativa.status === 'ERRO' ? 'Erro na verificação' : 'Verificação pendente');
+   expect(resultado.rotuloDocumental).toBeUndefined();
   } else {
    expect(resultado).toEqual(marcadorProcuracao(evidencia, agora));
   }

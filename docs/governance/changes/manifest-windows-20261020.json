@@ -1,0 +1,21 @@
+{
+  "summary": "Tolerar locks transitórios de rename no Windows ao publicar o manifest dos lotes Jest, preservando gravação atômica e falha fechada.",
+  "risk": "high",
+  "domains": [
+    "governance"
+  ],
+  "operationalImpact": "Nenhuma mudança de regra operacional ou produto. Referência canônica e snapshot conferidos integralmente e com SHA256 coincidente 8a0c578e5cac16376fd0e156c32b2712a2b9e8929936a12F051384363d12b302. Catálogo, filtros, contagem, cobertura e timeouts de testes permanecem inalterados.",
+  "implementation": "Somente EPERM, EBUSY e EACCES no Windows permitem repetir o rename. Até seis tentativas, esperas de 50/100/200/200/200 ms, dentro do prazo global existente. Nunca remove o destino. A tentativa inicial de persistir falha permanece possível após esgotar o prazo, mas não há retry após esse prazo. Falha final de gravação rejeita a execução; não retorna passed sem manifest persistido.",
+  "tests": [
+    "node --test scripts/governance/run-jest-batches.test.mjs: 35 testes aprovados, zero falhas, zero skips; exit 0.",
+    "Fault injection: três códigos transitórios seguidos de sucesso, lock persistente, erro não recuperável, plataforma não Windows, prazo insuficiente e timer atrasado, preservação do destino anterior e rejeição quando o resultado passed não pode ser persistido.",
+    "Regressões anteriores preservadas: discovery integral 25+1, contagens, omissão/duplicidade, saída inválida, falhas de assertions e timeout.",
+    "git diff --check: aprovado. Plano de impacto: governance, risco high, sem caminhos desconhecidos."
+  ],
+  "rollback": "Reverter apenas esta alteração de run-jest-batches.mjs, seus testes e este registro. Não remover evidências das execuções anteriores.",
+  "review": "Histórico: execução originalmente entregue com revisão independente pendente. Revisão sistêmica renovada em 21/10/2026 por governanca_revisao sobre o diff contra origin/main 48dc5efa8: retries limitados a erros transitórios Windows, atomicidade, falha fechada, cobertura e prazo preservados. Sem bloqueantes no escopo; CI remoto da integração ainda será acompanhado.",
+  "humanDecisions": [
+    "Integração sujeita à aprovação aplicável pelo Principal; testes unitários não substituem nova execução do gate web completo.",
+    "21/10/2026: usuário autorizou PR, merge na main e publicação do conjunto Comercial/onboarding após CI e revisões. Gate web integral final validado: 514 suítes, 5871 testes, sem falhas ou pendências."
+  ]
+}

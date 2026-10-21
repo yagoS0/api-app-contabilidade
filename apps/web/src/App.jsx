@@ -358,7 +358,7 @@ function AppInterno({ session, feedback }) {
           const criada = await api.criarOnboarding(origem);
           const id = criada?.onboarding?.id;
           if (!id) throw new Error("O servidor não confirmou a ficha criada.");
-          session.setPage(modo === "escritorio" ? "onboardingWizard" : "onboardingDetail", { onboardingId: id });
+          session.setPage(modo === "escritorio" && !["TRANSFERENCIA", "INATIVA"].includes(origem) ? "onboardingWizard" : "onboardingDetail", { onboardingId: id });
         }}
         onAbrir={(item) =>
           session.setPage(

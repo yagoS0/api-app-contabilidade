@@ -162,7 +162,6 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
       for (const o of ops) {
         const monthsForOp = o.useRange ? months : [null];
         for (const month of monthsForOp) {
-          // eslint-disable-next-line no-await-in-loop
           const res = await onRunOp(o.key, companyId, month);
           if (res?.procuracao) setProcuracoesAtualizadas(prev => ({ ...prev, [companyId]: { ...res.procuracao, vinculoConfirmado: true } }));
           if (["SERPRO_TETO_MENSAL_ESCRITORIO", "SERPRO_MEDICAO_INDISPONIVEL", "SERPRO_REGISTRO_INDETERMINADO"].includes(res?.code)) {
@@ -352,7 +351,12 @@ export function SerproFuncoesPage({ api, settings, settingsStatus, settingsError
                         <td style={{ padding: "8px 10px", color: "var(--text)" }}>{company.razao}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{company.cnpj}</td>
                         <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>{regime}</td>
-                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}><span style={{color:proc.cor}}>{proc.rotulo}</span><small style={{display:"block"}}>Verificada: {dataProcuracao(dados.checkedAt)}</small>{proc.orientacao && <small style={{display:"block"}}>{proc.orientacao}</small>}{dados.validUntil && <small style={{display:"block"}}>Validade: {dataProcuracao(dados.validUntil)}</small>}</td>
+                        <td style={{ padding: "8px 10px", color: "var(--text-muted)" }}>
+                          <span style={{color:proc.cor}}>{proc.rotuloDocumental || proc.rotulo}</span>
+                          {proc.rotuloDocumental && proc.chave === 'revalidar' && <small style={{display:"block"}}>{proc.rotulo}</small>}
+                          {proc.orientacao && <small style={{display:"block"}}>{proc.orientacao}</small>}
+                          {!proc.rotuloDocumental && dados.validUntil && <small style={{display:"block"}}>Validade: {dataProcuracao(dados.validUntil)}</small>}
+                        </td>
                         <td style={{ padding: "8px 10px" }}>{renderResultCell(company.companyId)}</td>
                       </tr>
                     );

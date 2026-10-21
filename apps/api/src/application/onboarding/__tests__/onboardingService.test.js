@@ -160,8 +160,8 @@ describe("escritas atrasadas depois de conversão", () => {
 test("recuperação da conversão não consulta nem vincula empresa fora do escopo", async () => {
   prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
   prisma.propostaComercial.findFirst.mockResolvedValue({ id: 'p', status: 'ACEITA', opcaoAceita: 'RECORRENTE' });
-  prisma.contratoComercial.findFirst.mockResolvedValue({ id: 'c', dados: { opcao: { chave: 'RECORRENTE', recorrente: true } } });
-  prisma.onboardingEvento.findFirst.mockResolvedValue({ id: 'pagamento' });
+  prisma.contratoComercial.findFirst.mockResolvedValue({ id: 'c', propostaId: 'p', status: 'ASSINADO_CONFERIDO', dados: { opcao: { chave: 'RECORRENTE', recorrente: true } } });
+  prisma.onboardingEvento.findFirst.mockResolvedValue({ id: 'pagamento', tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', dados: { contratoId: 'c' } });
   await expect(converter("onb-1", { vincularPortalClientId: "portal-fora" }, { atorId: "u1", portalIds: ["portal-permitido"] })).rejects.toMatchObject({ code: "portal_client_nao_encontrado", status: 404 });
   expect(prisma.portalClient.findUnique).not.toHaveBeenCalled();
   expect(prisma.onboarding.update).not.toHaveBeenCalled();

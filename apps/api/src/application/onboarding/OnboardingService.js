@@ -1,4 +1,5 @@
 import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { projetarContratacao, contratoAptoPagamento } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 // ONBOARDING — regras do funil pré-cadastro.
 //
 // ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
@@ -426,10 +427,11 @@ async function conferirContratoDeConversao(db, onboardingId, { externa, atorId, 
     return { externa: { origem: "EXTERNA", justificativa: externa.justificativa.trim(), evidencia: externa.evidencia.trim(), atorId: usuario.id, onboardingId, versao: registro.versao } };
   }
   if (!proposta) throw new OnboardingError("contratacao_necessaria", "Confirme a contratação antes de adicionar à carteira. Para cliente já contratado fora da Altan, registre a exceção com justificativa e evidência.", 409);
-  const contrato = await db.contratoComercial.findFirst({ where: { onboardingId, propostaId: proposta.id, status: "ASSINADO_CONFERIDO" } });
-  if (proposta.revogadaEm || proposta.status !== "ACEITA" || !contrato?.dados?.opcao?.recorrente || proposta.opcaoAceita !== contrato.dados.opcao.chave) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente da proposta aceita antes de criar a empresa.", 409);
+  const contrato = await db.contratoComercial.findFirst({ where: { onboardingId, propostaId: proposta.id } });
+  if (!contratoAptoPagamento(proposta, contrato) || contrato.dados?.opcao?.recorrente !== true) throw new OnboardingError("contrato_recorrente_necessario", "Confira o contrato recorrente aprovado da proposta aceita antes de criar a empresa.", 409);
   const pagamento = await db.onboardingEvento.findFirst({ where: { onboardingId, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: contrato.id } } });
-  if (!pagamento) throw new OnboardingError("pagamento_pendente", "Confira o pagamento deste contrato na jornada antes de criar a empresa.", 409);
+  const projecao = projetarContratacao({ onboarding: registro || {}, propostas: [proposta], contratos: [contrato], marcos: pagamento ? [pagamento] : [] });
+  if (!projecao.carteiraPermitida) throw new OnboardingError("pagamento_pendente", "Confira o pagamento deste contrato na jornada antes de criar a empresa.", 409);
   return { proposta, contrato };
 }
 

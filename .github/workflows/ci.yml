@@ -88,6 +88,20 @@ jobs:
   whatsapp-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      comercial-postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: comercial_test
+          POSTGRES_PASSWORD: fixture_only_ci
+          POSTGRES_DB: comercial_20261021_governance_test
+        ports:
+          - 55489:5432
+        options: >-
+          --health-cmd "pg_isready -U comercial_test -d comercial_20261021_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://comercial_test:fixture_only_ci@127.0.0.1:55489/comercial_20261021_governance_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -104,6 +118,10 @@ jobs:
       - name: Invoice preparation and public registration lookups without network
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='src/application/tomador|preparacaoFiscalDoCliente'
+      - name: Migrate disposable commercial database
+        env:
+          DATABASE_URL: ${{ env.ALTAN_GOVERNANCE_TEST_DATABASE_URL }}
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
       - name: Commercial proposals, PDFs and contract forms without external calls
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/onboarding/__tests__'

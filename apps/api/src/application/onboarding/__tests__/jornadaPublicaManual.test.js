@@ -4,11 +4,27 @@ import { montarJornadaComercial } from "../PoliticaJornadaComercial.js";
 import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
 import { propostaParaCliente } from "../PropostaComercialPdf.js";
 import { CATALOGO_SINTETICO } from "./fixtures/catalogoSintetico.js";
+import { conferirDiagnosticoDaProposta } from '../PropostasComerciaisService.js';
 
 const user = { id: "contador-sintetico", role: "contador" };
 const cnpj = "11222333000181";
 const manual = { fonte: "Documento cadastral apresentado pelo cliente", evidencia: "Conferi CNPJ e razão social no documento recebido, com registro no atendimento." };
 const clone = v => structuredClone(v);
+
+test('cadastro único salvo conclui cadastro e revisão material invalida diagnóstico e proposta aceita', async () => {
+  const t = setup();
+  t.ficha.dados.cadastroRevisao = 1;
+  t.ficha.dados.cadastroCnpj = { empresa: { cnpj, razaoSocial: 'Empresa de teste' }, origem: 'MANUAL', atorId: user.id, em: '2026-10-21', fonte: 'Preenchimento pelo contador' };
+  expect((await t.jornada.carregar(t.ficha.id, user)).publicaConferida).toBe(true);
+  const diagnostico = await t.diagnosticar();
+  expect(diagnostico.dados.cadastroRevisao).toBe(1);
+  const p = { onboardingId: t.ficha.id, status: 'ACEITA', snapshot: { cadastroRevisao: 1, diagnosticoId: diagnostico.id } };
+  await expect(conferirDiagnosticoDaProposta(t.db, p)).resolves.toBeUndefined();
+  t.ficha.dados.cadastroRevisao = 2;
+  expect((await t.jornada.carregar(t.ficha.id, user)).diagnosticoDesatualizado).toBe(true);
+  await expect(conferirDiagnosticoDaProposta(t.db, p)).rejects.toMatchObject({ code: 'proposta_desatualizada' });
+  expect(p.status).toBe('ACEITA');
+});
 function matches(item, where = {}) {
   return Object.entries(where).every(([key, value]) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {

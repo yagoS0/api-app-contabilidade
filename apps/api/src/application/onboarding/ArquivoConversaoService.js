@@ -4,6 +4,7 @@ import { GuideStorageService } from "../guides/GuideStorageService.js";
 import { gerarPropostaPdf, propostaParaCliente } from "./PropostaComercialPdf.js";
 import { gerarContratoPdf } from "./ContratoComercialPdf.js";
 import { OnboardingError } from "./OnboardingService.js";
+import { pagamentoDoContrato } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 
 const hash = valor => crypto.createHash("sha256").update(valor).digest("hex");
 const assinatura = documentos => documentos.map(d => `${d.id}:${d.sha256}`).sort().join("|");
@@ -22,7 +23,11 @@ export async function prepararArquivoConversao({ db, onboardingId, proposta, con
     documentos.push({ id, nome, tipo: "OUTRO", fileKey, mimeType: "application/pdf", bytes: buffer.length, uploadedById, createdAt });
   }
   try {
-    if (contrato && !fontes.some(f => f.id === contrato.documentoAssinadoId)) throw Error("Contrato assinado sem documento de origem.");
+    if (contrato?.status === 'ASSINADO_CONFERIDO' && !fontes.some(f => f.id === contrato.documentoAssinadoId)) throw Error("Contrato assinado sem documento de origem.");
+    if (contrato && contrato.status !== 'ASSINADO_CONFERIDO') {
+      const marcos = await db.onboardingEvento.findMany({ where: { onboardingId, tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO' } });
+      if (contrato.dados?.politicaContratacao !== 'R35' || !pagamentoDoContrato(proposta, contrato, marcos)) throw Error('Contrato sem assinatura exige recebimento confirmado da revisão correspondente.');
+    }
     for (const fonte of fontes) {
       const plain = await decifrar(fonte.conteudoCifrado);
       const buffer = Buffer.from(plain || "", "base64");

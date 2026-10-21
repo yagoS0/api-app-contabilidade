@@ -6,6 +6,11 @@ import { criarRecursosComerciais, exigirGestor } from "../../application/onboard
 import { criarPropostasComerciais } from "../../application/onboarding/PropostasComerciaisService.js";
 import { criarFiscalLead } from "../../application/onboarding/FiscalLeadService.js";
 import { criarRelatorioFiscalLead } from "../../application/onboarding/RelatorioFiscalLeadService.js";
+import { criarApresentacaoDiagnostico } from "../../application/onboarding/ApresentacaoDiagnosticoService.js";
+import { criarDocumentosChatComercial } from "../../application/onboarding/DocumentosChatComercialService.js";
+import { criarContratoEnvio } from "../../application/onboarding/ContratoEnvioService.js";
+import { criarCobrancaEnvio } from "../../application/onboarding/CobrancaEnvioService.js";
+import { criarCadastroComercial } from "../../application/onboarding/CadastroComercialService.js";
 import { iniciarAtendimento, registrarCampos, proximaPergunta } from "../../application/onboarding/LeadService.js";
 import { exigirEscopo } from "../../application/onboarding/ComercialService.js";
 import { OnboardingError } from "../../application/onboarding/OnboardingService.js";
@@ -34,6 +39,11 @@ export function createFluxoComercialRouter({
     });
   const jornada = criarJornadaLead({ db });
   const relatorioFiscal = criarRelatorioFiscalLead({ db });
+  const apresentacao = criarApresentacaoDiagnostico({ db });
+  const documentosChat = criarDocumentosChatComercial({ db });
+  const envioContrato = criarContratoEnvio({ db });
+  const envioCobranca = criarCobrancaEnvio({ db });
+  const cadastro = criarCadastroComercial({ db });
   const fichasAvulsas = criarFichaEmpresaAvulsa({ db });
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -91,6 +101,21 @@ export function createFluxoComercialRouter({
   })));
   router.get('/canais-comerciais', wrap(async () => ({ canais: await db.canalWhatsapp.findMany({ where: { ativo: true, finalidade: 'COMERCIAL' }, select: { id: true, chave: true } }) })));
   router.get('/onboardings/:id/fiscal', wrap(req => relatorioFiscal.carregar(req.params.id, req.auth.user)));
+  router.post('/onboardings/:id/cadastro', wrap(req => cadastro.salvar(req.params.id, req.auth.user, req.body)));
+  router.post('/onboardings/:id/cadastro/consulta', wrap(req => cadastro.consultar(req.params.id, req.auth.user, req.body)));
+  router.get('/onboardings/:id/apresentacao', wrap(req => apresentacao.carregar(req.params.id, req.auth.user)));
+  router.get('/onboardings/:id/documentos-chat', wrap(req => documentosChat.listar(req.params.id, req.auth.user)));
+  router.post('/onboardings/:id/documentos-chat', wrap(req => documentosChat.vincular(req.params.id, req.auth.user, req.body)));
+  router.get('/onboardings/:id/contratos/:contratoId/envio', wrap(req => envioContrato.carregar(req.params.id, req.params.contratoId, req.auth.user)));
+  router.post('/onboardings/:id/contratos/:contratoId/enviar', wrap(req => envioContrato.enviar(req.params.id, req.params.contratoId, req.auth.user, req.body)));
+  router.post('/onboardings/:id/jornada/cobranca-envio', wrap(req => envioCobranca.enviar(req.params.id, req.auth.user, req.body)));
+  router.get('/onboardings/:id/apresentacao/:diagnosticoId/pdf', wrap(async (req, res) => {
+    const pdf = await apresentacao.documento(req.params.id, req.params.diagnosticoId, req.auth.user, req.query.conteudoHash);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="apresentacao-altan.pdf"', 'X-Content-Type-Options': 'nosniff' });
+    res.send(pdf);
+  }));
+  router.post('/onboardings/:id/apresentacao/:diagnosticoId/enviar', wrap(req => apresentacao.enviar(req.params.id, req.params.diagnosticoId, req.auth.user, req.body)));
+  router.post('/onboardings/:id/apresentacao/:diagnosticoId/conferir', wrap(req => apresentacao.conferir(req.params.id, req.params.diagnosticoId, req.auth.user, req.body)));
   router.get('/onboardings/:id/fiscal/:analiseId/tabela.pdf', wrap(async (req, res) => {
     const pdf = await relatorioFiscal.tabela(req.params.id, req.params.analiseId, req.auth.user, req.query.conteudoHash);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="situacao-fiscal-tabela.pdf"' });
@@ -170,6 +195,9 @@ export function createFluxoComercialRouter({
   router.post("/onboardings/:id/jornada/diagnostico", wrap(async req => ({ diagnostico: await jornada.diagnosticar(req.params.id, req.auth.user, req.body) })));
   router.post("/onboardings/:id/jornada/devolutiva", wrap(async req => jornada.enviarDevolutiva(req.params.id, req.auth.user, req.body)));
   router.post("/onboardings/:id/jornada/pagamento", wrap(async req => ({ marco: await jornada.confirmarPagamento(req.params.id, req.auth.user, req.body) })));
+  router.post('/onboardings/:id/jornada/fiscal-alternativa', wrap(async req => ({ registro: await jornada.registrarFiscalAlternativa(req.params.id, req.auth.user, req.body) })));
+  router.post('/onboardings/:id/jornada/cobranca-externa', wrap(async req => ({ cobranca: await jornada.registrarCobrancaExterna(req.params.id, req.auth.user, req.body) })));
+  router.post('/onboardings/:id/procuracao/manual', wrap(async req => ({ validacao: await fiscal.validarProcuracaoManual(req.params.id, req.auth.user, req.body) })));
   router.post("/onboardings/:id/jornada/conferencia", wrap(async req => ({ conferencia: await jornada.conferirAnalise(req.params.id, req.auth.user, req.body) })));
   router.post("/onboardings/:id/jornada/apresentacao", wrap(async req => ({ apresentacao: await jornada.registrarApresentacao(req.params.id, req.auth.user, req.body) })));
   router.patch("/onboardings/:id/campos", wrap(async req => {
@@ -187,7 +215,7 @@ export function createFluxoComercialRouter({
   }));
   router.post("/onboardings/:id/representante", wrap(async req => fiscal.verificarRepresentante(req.params.id, req.auth.user, req.body?.evidencia)));
   router.post("/onboardings/:id/consultas", wrap(async req => ({
-    trabalho: await fiscal.enfileirar(req.params.id, req.auth.user, req.body?.tipo)
+    trabalho: await fiscal.enfileirar(req.params.id, req.auth.user, req.body?.tipo, req.body)
   })));
   router.post("/onboardings/:id/propostas", wrap(async req => ({
     proposta: await propostas.gerar(req.params.id, req.auth.user, req.body)

@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { NovoAtendimentoModal } from "../NovoAtendimentoModal";
 import { OnboardingsPage } from "../../pages/renderOnboardingsPage";
@@ -62,27 +63,27 @@ test("gerar outro link exige confirmar que o anterior deixará de funcionar", as
 test("atualizar respostas mantém o link gerado e a proposta em edição", async () => {
   const registro={id:"a",origem:"ABERTURA",status:"RASCUNHO",dados:{},etapas:[]};
   const api={getOnboarding:jest.fn().mockResolvedValue({onboarding:registro}), getOnboardingComercial:jest.fn().mockResolvedValue({links:[]}),criarLinkOnboarding:jest.fn().mockResolvedValue({token:"manter",link:{id:"l",expiresAt:"2099-01-01"}})};
-  render(<OnboardingDetailPage api={api} onboardingId="a" />);
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="a" /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button",{name:"Gerar link de preenchimento"}));
   await screen.findByLabelText("Link pessoal");
-  fireEvent.click(screen.getByText("Anotações comerciais e análises"));
-  fireEvent.change(screen.getByLabelText("Proposta e condições"),{target:{value:"Proposta em edição"}});
+  expect(screen.getByRole("region",{name:"Anotações"})).toBeVisible();
+  fireEvent.change(screen.getByRole("textbox",{name:"Anotações"}),{target:{value:"Proposta em edição"}});
   api.getOnboarding.mockResolvedValue({onboarding:{...registro,status:"RECEBIDO",dados:{responsavelNome:"Ana"}}});
   fireEvent.click(screen.getByRole("button",{name:"Atualizar ficha"}));
   await screen.findByText("Ficha atualizada com os dados salvos pelo cliente.");
   expect(screen.getByLabelText("Link pessoal").value).toContain("#token=manter");
-  expect(screen.getByLabelText("Proposta e condições")).toHaveValue("Proposta em edição");
+  expect(screen.getByRole("textbox",{name:"Anotações"})).toHaveValue("Proposta em edição");
   expect(api.criarLinkOnboarding).toHaveBeenCalledTimes(1);
 });
 
 test("alternar comercial, dados e implantação preserva link, proposta e observação sem gravar", async () => {
   const registro={id:"a",origem:"ABERTURA",status:"EM_TRILHA",dados:{},etapas:[{id:"e",titulo:"Conferir endereço",obrigatoria:true}]};
   const api={getOnboarding:jest.fn().mockResolvedValue({onboarding:registro}),getOnboardingComercial:jest.fn().mockResolvedValue({links:[]}),criarLinkOnboarding:jest.fn().mockResolvedValue({token:"manter",link:{id:"l",expiresAt:"2099-01-01"}}),salvarEtapaOnboarding:jest.fn(),salvarOnboardingComercial:jest.fn()};
-  render(<OnboardingDetailPage api={api} onboardingId="a" />);
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="a" /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button",{name:"Gerar link de preenchimento"}));
   await screen.findByLabelText("Link pessoal");
-  fireEvent.click(screen.getByText("Anotações comerciais e análises"));
-  fireEvent.change(screen.getByLabelText("Proposta e condições"),{target:{value:"Condições ainda em revisão"}});
+  expect(screen.getByRole("region",{name:"Anotações"})).toBeVisible();
+  fireEvent.change(screen.getByRole("textbox",{name:"Anotações"}),{target:{value:"Condições ainda em revisão"}});
   fireEvent.click(screen.getByRole("button",{name:"Implantação"}));
   expect(screen.queryByRole("button",{name:"Gerar link de preenchimento"})).not.toBeInTheDocument();
   expect(screen.getByText("Próxima pendência da checklist")).toBeVisible();
@@ -92,7 +93,7 @@ test("alternar comercial, dados e implantação preserva link, proposta e observ
   expect(screen.getByRole("region",{name:"Dados do cliente"})).toBeVisible();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button",{name:"Atendimento comercial"}));
-  expect(screen.getByLabelText("Proposta e condições")).toHaveValue("Condições ainda em revisão");
+  expect(screen.getByRole("textbox",{name:"Anotações"})).toHaveValue("Condições ainda em revisão");
   expect(screen.getByLabelText("Link pessoal").value).toContain("#token=manter");
   fireEvent.click(screen.getByRole("button",{name:"Implantação"}));
   expect(screen.getByLabelText("Observação de Conferir endereço")).toHaveValue("Aguardando revisão");
@@ -117,7 +118,7 @@ test("lista inicia nos atendimentos ativos e conserva avulsos, desistências e c
 test("ficha na carteira abre implantação da empresa e oferece os documentos", async () => {
   const abrir=jest.fn(), api={getOnboarding:jest.fn().mockResolvedValue({onboarding:{id:"a",origem:"ABERTURA",status:"CONVERTIDO",portalClientId:"portal-a",dados:{},etapas:[{id:"e",titulo:"Documento arquivado",obrigatoria:true,concluidaEm:null}]}})};
   api.getImplantacao=jest.fn().mockResolvedValue({implantacao:{podeEditar:true,tarefas:[{chave:"documentos",titulo:"Conferir documentos",status:"A_FAZER",versao:0}],resumo:{pendentes:1,atrasadas:0,semResponsavel:1,concluidas:0}}});
-  render(<OnboardingDetailPage api={api} onboardingId="a" onAbrirEmpresa={abrir} />);
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="a" onAbrirEmpresa={abrir} /></MemoryRouter>);
   const implantacao=await screen.findByRole("region",{name:"Implantação"});
   expect(within(implantacao).queryByRole("checkbox")).not.toBeInTheDocument();
   expect(await within(implantacao).findByRole("button",{name:/Atualizar tarefa/})).toBeEnabled();
@@ -130,26 +131,26 @@ test("nova coleta sem conversa expõe gerar link e preserva seções escolhidas 
   const registro={id:"coleta",origem:"ABERTURA",status:"RASCUNHO",dados:{},etapas:[]};
   const comercial={onboarding:registro,propostas:[],contratos:[],documentos:[],trabalhos:[]};
   const api={getOnboarding:jest.fn().mockResolvedValue({onboarding:registro}),getOnboardingComercial:jest.fn().mockResolvedValue({links:[]}),comercial:jest.fn(async path => path === "/recursos" ? {recursos:[]} : comercial),criarLinkOnboarding:jest.fn().mockResolvedValue({token:"coleta-token",link:{id:"link-coleta",expiresAt:"2099-01-01"}})};
-  render(<OnboardingDetailPage api={api} onboardingId="coleta" />);
+  render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="coleta" /></MemoryRouter>);
   const gerar=await screen.findByRole("button",{name:"Gerar link de preenchimento"});
   expect(gerar).toBeVisible();
   expect(gerar).toBeEnabled();
   const formulario=screen.getByText("Formulário do cliente").closest("details");
-  const jornada=screen.getByText("Jornada comercial e contratação").closest("details");
+  const jornada=screen.getByRole("region",{name:"Jornada comercial"});
   expect(formulario).toHaveAttribute("open");
-  expect(jornada).not.toHaveAttribute("open");
+  expect(jornada).toBeVisible();
   fireEvent.click(gerar);
   expect((await screen.findByLabelText("Link pessoal")).value).toContain("coleta-token");
-  fireEvent.click(screen.getByText("Jornada comercial e contratação"));
-  await waitFor(() => expect(jornada).toHaveAttribute("open"));
+  expect(jornada).toBeVisible();
   expect(await screen.findByRole("heading",{name:"Entender a abertura"})).toBeVisible();
-  fireEvent.click(screen.getByText("Jornada comercial e contratação"));
   fireEvent.click(screen.getByText("Formulário do cliente"));
   await waitFor(() => expect(formulario).not.toHaveAttribute("open"));
   api.getOnboarding.mockResolvedValue({onboarding:{...registro,status:"RECEBIDO"}});
   fireEvent.click(screen.getByRole("button",{name:"Atualizar ficha"}));
   await screen.findByText("Ficha atualizada com os dados salvos pelo cliente.");
-  expect(jornada).not.toHaveAttribute("open");
+  expect(jornada).toBeVisible();
+  expect(formulario).toBeInTheDocument();
   expect(formulario).not.toHaveAttribute("open");
+  expect(screen.getByLabelText("Link pessoal").value).toContain("coleta-token");
   expect(api.criarLinkOnboarding).toHaveBeenCalledTimes(1);
 });

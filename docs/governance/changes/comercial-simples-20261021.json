@@ -1,0 +1,48 @@
+{
+  "summary": "Jornada Comercial em nove etapas, cadastro único, procuração manual identificada, diagnóstico/apresentação versionados e contratação por pagamento confirmado pelo contador.",
+  "risk": "high",
+  "baseCommit": "2d5094075",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Implementa as decisões aprovadas R32–R36/T53–T62 da seção 25, reconciliada com a referência canônica. Pagamento identificado da revisão aplicável substitui assinatura obrigatória no novo fluxo. Mantém histórico legado, aceites, evidência oficial distinta de declaração manual, idempotência, auditoria e demais requisitos da carteira. Não há migração, reclassificação em massa, mensagem, consulta fiscal ou operação produtiva nesta entrega. Complemento R34/T63–T65 aprovado: conferência interna explícita do PDF vigente libera proposta sem envio obrigatório, com autoria/data/revisão e invalidação após mudança. Correção posterior de AutorizacaoDoLead.test.jsx autorizada: apenas sincronização da espera no teste; sem impacto operacional. Aplicação autorizada do candidato de canalAtendimentoJornada: somente fixtures/asserts alinhados à apresentação vigente; sem mudança operacional.",
+  "reviewProcess": "Controlador executável iniciado, com journal preservado em run 2026-10-21T10-21-58-118Z-9b57d625; execução escalada por timeout do implementador antes dos gates. Principal integrou frentes nativas isoladas e executou o catálogo sem modificar gates. Revisões independentes reprovaram e devolveram ao autor problemas de identidade cadastral, contexto documental, tipos de campos e revisão do pagamento. Pareceres finais de backend e UI aprovados no escopo inspecionado. Não é ready_for_human emitido pelo controlador nem substituto da autorização humana. Última aplicação limitada de canalAtendimentoJornada autorizada pelo usuário: conteúdo exatamente igual ao candidato revisado, testes/lint e revisão independente renovados; gate web integral web-O8AZVn aprovado. Sem novas alterações de produto. Publicação posteriormente autorizada pelo usuário, condicionada a CI e revisões.",
+  "tests": [
+    "API integral final api-ANHa3M:632suítes descobertas,631aprovadas e1condicional preexistente pendente;11108testes aprovados e1pendente,exit0. Produto API não alterado após essa execução.",
+    "Portal integral anterior99suítes/1580testes e build aprovados; portal/shared não alterados nesta correção de teste.",
+    "Governance-engine72testes; gate de dados/migrações,impacto e diffcheck aprovados. Runtime/gates preservados.",
+    "PostgreSQL descartável:verificações independentes de pagamento/documentos/cobrança e conferênciaPDF;concorrência,idempotência,rollback,auditoria,hash antigo e zero rede. Cluster parado.",
+    "Buildweb e lint dos arquivos alterados aprovados antes desta correção exclusiva de teste; lint de AutorizacaoDoLead reexecutado comexit0.",
+    "Seis compatibilidades revisadas independentemente:4suítes25testes aprovados;preservação final do link repetida em10testes. ConferênciaPDF:51backend e25UI aprovados independentemente.",
+    "Revisão visual local9etapas390/1440px e apresentação após nova ação,semoverflow. Dados/respostasfictícios,sem certificaçãoexterna;PDFgerado2páginasrenderizadasinspecionadas.",
+    "AutorizacaoDoLead corrigido por autorização expressa:waitFor pela habilitação assíncrona,quatroverificações preservadas;teste dirigido1/1,lint,revisãoindependente e execução no lote1aprovados.",
+    "Histórico: Gateweb21r0O0 reprovado por4casos de canalAtendimentoJornada.test.jsx comfixtures/controles antigos da apresentação. Nenhum teste foi retirado paraaprovar gate.",
+    "Histórico anterior à aplicação: Diagnóstico completo separado:514suítes únicas,comparação contra discovery semdiferenças;513suítes/5867testes aprovados,1suíte/4testes reprovados,zeropendentes. Primeiro lote original+20lotes restantes,semexclusões. Resumo diagnostico-web-completo-resumo.json. Não equivale a gate aprovado.",
+    "Candidatoisolado canal-atendimento/proposta.patch SHA256E7A91A5BAD58F5F8CF1C422D34624BE4B3CB01E8EE93E6FF8538329EDE9B33D8:4/4testes aprovados e revisãoindependente,preserva canal,vínculo,janela,ausênciaenvioautomático e separa download/conferência/envio. Posteriormente autorizado pelo usuário e aplicado exatamente na árvore principal; revisão independente renovada.",
+    "Falhas históricas preservadas nosevidências:web-E0rGWz/JQhsqN/Ndnxry/BdR4Rg e api-GR3KcZ (configuração ausente do banco,corrigida naexecuçãofinal).",
+    "Candidato canalAtendimentoJornada autorizado e aplicado exatamente, sem alterações extras:4/4 testes dirigidos e repetição independente4/4,lint/diffcheck aprovados. Gate integral final web-O8AZVn APROVADO:514suítes e5871testes,zerofalhas/pendentes,exit0;sem filtros/exclusões.",
+    "Preparação de CI: PostgreSQL descartável adicional nos jobs que descobrem os novos testes transacionais; preservados jobs, seleções, guards e banco legado lead_flow_check. Verificador de conferência PDF acrescentado ao CI; revisão independente e CI remoto pendentes no momento deste registro. Sem impacto operacional adicional."
+  ],
+  "rollback": "Publicação via main/Railway, sem migração nova. Em incidente, interromper integração e avaliar rollback do deploy para a versão anterior, preservando eventos R35, validações manuais, cobrança, documentos e tentativas de envio. Não reclassificar histórico nem reenviar resultados incertos. Antes de reverter código, avaliar compatibilidade de pagamentos já confirmados sem assinatura; não restaurar bloqueios indevidos sobre esses registros.",
+  "humanDecisions": [
+    "Decisão confirmada e implementada em21/10/2026: conferência explícita do PDF vigente pelo contador libera proposta sem enviar ao cliente. Revisão independente aprovada no escopo.",
+    "Rodada adicional limitada às seis compatibilidades e testes autorizada em21/10/2026, aplicada e revisada sem publicar.",
+    "AutorizacaoDoLead.test.jsx corrigido após autorização de21/10/2026: waitFor pela habilitação, verificações preservadas, teste/lint e revisão independente aprovados. Sem mudança de produto.",
+    "Histórico: publicação não estava autorizada durante os testes locais; nenhuma alteração produtiva foi feita nessa etapa.",
+    "Usuário autorizou em21/10/2026 aplicar o candidato revisado somente em canalAtendimentoJornada.test.jsx e revalidar, sem publicar. Aplicado exatamente;4/4testes,lint e revisão independente na árvore principal aprovados.",
+    "21/10/2026: usuário autorizou abrir PR, integrar na main e publicar em produção após CI e revisões aprovados; conferir Comercial e onboarding no app. Não autoriza mensagens nem atos fiscais como teste."
+  ]
+}

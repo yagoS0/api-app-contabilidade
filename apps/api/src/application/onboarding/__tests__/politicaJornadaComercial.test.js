@@ -19,11 +19,11 @@ test("transferência exige conferências e escopo limitado não inventa análise
   expect(p.comandosPermitidos.aprovarProposta).toBe(true); expect(p.fiscal).toBeUndefined();
 });
 test("pagamento precisa ser do contrato exato para concluir avulso", async () => {
-  const contrato = { id: "ct", dados: { opcao: { chave: "AVULSO", recorrente: false } }, proposta: { opcaoAceita: "AVULSO" } };
+  const contrato = { id: "ct", propostaId: 'p', status: 'ASSINADO_CONFERIDO', dados: { opcao: { chave: "AVULSO", recorrente: false } }, proposta: { id: 'p', status: 'ACEITA', opcaoAceita: "AVULSO" } };
   const db = { contratoComercial: { findFirst: async () => contrato }, onboardingEvento: { findFirst: jest.fn(async () => null) } };
   await expect(exigirContratoAvulsoConcluivel(db, "o")).rejects.toMatchObject({ code: "pagamento_pendente" });
   expect(db.onboardingEvento.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ dados: { path: ["contratoId"], equals: "ct" } }) }));
-  db.onboardingEvento.findFirst.mockResolvedValue({ id: "pago" }); expect(await exigirContratoAvulsoConcluivel(db, "o")).toBe(contrato);
+  db.onboardingEvento.findFirst.mockResolvedValue({ id: "pago", tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', dados: { contratoId: 'ct' } }); expect(await exigirContratoAvulsoConcluivel(db, "o")).toBe(contrato);
 });
 test("aceite preservado permite retomar assinatura sem fabricar provas históricas", () => {
   const p = montarJornadaComercial({ onboarding: abertura, propostas: [{ id: "p", status: "ACEITA" }], jornada: {} });
@@ -42,7 +42,7 @@ test("cadastro avulso rejeita perfil incompleto antes de criar arquivo ou empres
   expect(preparar).not.toHaveBeenCalled();
 });
 test("erro no arquivo avulso impede gravação cadastral", async () => {
-  const db = { onboarding: { findUnique: async () => abertura }, contratoComercial: { findFirst: async () => ({ id: "ct", dados: { opcao: { chave: "AVULSO", recorrente: false } }, proposta: { opcaoAceita: "AVULSO" } }) }, onboardingEvento: { findFirst: async () => ({ id: "pago" }) }, $transaction: jest.fn() };
+  const db = { onboarding: { findUnique: async () => abertura }, contratoComercial: { findFirst: async () => ({ id: "ct", propostaId: 'p', status: 'ASSINADO_CONFERIDO', dados: { opcao: { chave: "AVULSO", recorrente: false } }, proposta: { id: 'p', status: 'ACEITA', opcaoAceita: "AVULSO" } }) }, onboardingEvento: { findFirst: async () => ({ id: "pago", tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', dados: { contratoId: 'ct' } }) }, $transaction: jest.fn() };
   const preparar = jest.fn(async () => { throw Error("storage indisponível"); });
   const dados = { cnpj: "11222333000181", razaoSocial: "Empresa sintética", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua", numero: "1", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } };
   await expect(criarFichaEmpresaAvulsa({ db, preparar }).salvar("o", user, { versao: 1, dados })).rejects.toThrow("storage indisponível"); expect(db.$transaction).not.toHaveBeenCalled();
