@@ -3,7 +3,87 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runJestBatches } from './run-jest-batches.mjs';
+import { runJestBatches, saveManifestAtomically } from './run-jest-batches.mjs';
+
+function manifestFixture(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'altan-manifest-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const destination = path.join(directory, 'manifest.json');
+  fs.writeFileSync(destination, JSON.stringify({ status: 'running' }));
+  return { directory, destination };
+}
+
+for (const code of ['EPERM', 'EBUSY', 'EACCES']) {
+  test(`rename Windows ${code} transitório preserva destino e publica resultado completo`, async t => {
+    const { directory, destination } = manifestFixture(t);
+    const manifest = { status: 'failed', error: 'Teste reprovado', batches: [1, 2] };
+    let attempts = 0, elapsed = 0;
+    await saveManifestAtomically(directory, manifest, 1000, {
+      platform: 'win32', now: () => elapsed,
+      wait: async ms => { elapsed += ms; assert.equal(JSON.parse(fs.readFileSync(destination)).status, 'running'); },
+      rename: (source, target) => {
+        if (++attempts < 3) throw Object.assign(new Error('locked'), { code });
+        fs.renameSync(source, target);
+      },
+    });
+    assert.equal(attempts, 3);
+    assert.equal(elapsed, 150);
+    assert.deepEqual(JSON.parse(fs.readFileSync(destination)), manifest);
+    assert.equal(fs.existsSync(path.join(directory, 'manifest.tmp')), false);
+  });
+}
+
+test('lock persistente falha após seis tentativas sem remover a evidência anterior', async t => {
+  const { directory, destination } = manifestFixture(t);
+  const error = Object.assign(new Error('locked'), { code: 'EPERM' });
+  let attempts = 0, elapsed = 0;
+  await assert.rejects(saveManifestAtomically(directory, { status: 'passed' }, 10000, {
+    platform: 'win32', now: () => elapsed, wait: async ms => { elapsed += ms; },
+    rename: () => { attempts++; throw error; },
+  }), candidate => candidate === error);
+  assert.equal(attempts, 6);
+  assert.equal(elapsed, 750);
+  assert.deepEqual(JSON.parse(fs.readFileSync(destination)), { status: 'running' });
+  assert.equal(fs.existsSync(path.join(directory, 'manifest.tmp')), true);
+});
+
+for (const [platform, code] of [['win32', 'ENOENT'], ['linux', 'EPERM']]) {
+  test(`não repete erro ${code} em ${platform}`, async t => {
+    const { directory } = manifestFixture(t);
+    let attempts = 0;
+    await assert.rejects(saveManifestAtomically(directory, {}, 1000, {
+      platform, now: () => 0,
+      wait: async () => assert.fail('Não deveria esperar'),
+      rename: () => { attempts++; throw Object.assign(new Error('fatal'), { code }); },
+    }), { code });
+    assert.equal(attempts, 1);
+  });
+}
+
+for (const delayedTimer of [false, true]) {
+  test(`prazo global limita retry, timer atrasado=${delayedTimer}`, async t => {
+    const { directory } = manifestFixture(t);
+    let attempts = 0, elapsed = 0, waits = 0;
+    await assert.rejects(saveManifestAtomically(directory, {}, delayedTimer ? 100 : 50, {
+      platform: 'win32', now: () => elapsed,
+      wait: async () => { waits++; elapsed = 101; },
+      rename: () => { attempts++; throw Object.assign(new Error('locked'), { code: 'EBUSY' }); },
+    }), { code: 'EBUSY' });
+    assert.equal(attempts, 1);
+    assert.equal(waits, delayedTimer ? 1 : 0);
+  });
+}
+
+test('resultado passed não é retornado quando a gravação final falha', async t => {
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (source, destination) => {
+    if (JSON.parse(fs.readFileSync(source)).status === 'passed') {
+      throw Object.assign(new Error('final manifest unavailable'), { code: 'EPERM' });
+    }
+    return rename(source, destination);
+  });
+  await assert.rejects(fixture(t, 'pass', 1), /final manifest unavailable/);
+});
 
 async function fixture(t, mode, count = 26) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'altan-jest-batches-'));

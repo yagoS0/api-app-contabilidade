@@ -26,7 +26,9 @@ test.each(["TRANSFERENCIA", "INATIVA"])("%s percorre análise pública, autoriza
   e.propostas = [{ id: "pr", status: "ENVIADA" }]; expect(montarJornada(e).atual).toBe("proposta");
   e.propostas[0].status = "ACEITA"; e.propostas[0].opcaoAceita = "RECORRENTE"; expect(montarJornada(e).atual).toBe("contrato");
   e.contratos = [{ id: "ct", propostaId: "pr", status: "AGUARDANDO_ASSINATURA", dados: { opcao: { chave: "RECORRENTE", recorrente: true } } }];
-  expect(montarJornada(e).atual).toBe("contrato");
+  // R35: contrato aprovado segue para pagamento, sem exigir assinatura.
+  expect(montarJornada(e).atual).toBe("pagamento");
+  expect(montarJornada(e).contratacao.ganha).toBe(false);
   e.contratos[0].status = "ASSINADO_CONFERIDO"; expect(montarJornada(e).atual).toBe("pagamento");
   e.marcos.push({ tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: "outro" } }); expect(montarJornada(e).atual).toBe("pagamento");
   e.marcos.push({ tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { contratoId: "ct" } }); expect(montarJornada(e).atual).toBe("conclusao");
@@ -41,5 +43,14 @@ test("CNPJ trocado e procuração vencida impedem usar as provas anteriores", ()
   expect(montarJornada(e).atual).toBe("publica");
   e.jornada.analises[0].cnpj = e.onboarding.cnpj;
   e.atendimento = { representanteVerificadoEm: "2026-01-01", autorizacao: { cnpj: e.onboarding.cnpj, estado: "ATIVA", prova: { validUntil: "2020-01-01" } } };
+  expect(montarJornada(e).atual).toBe("autorizacao");
+});
+
+test("conferência manual só libera cadastro do CNPJ correspondente", () => {
+  const e = base("TRANSFERENCIA");
+  e.jornada.publicaConferida = true;
+  e.jornada.publicaConferencia = { modo: "MANUAL", cnpj: "00000000000000" };
+  expect(montarJornada(e).atual).toBe("publica");
+  e.jornada.publicaConferencia.cnpj = e.onboarding.cnpj;
   expect(montarJornada(e).atual).toBe("autorizacao");
 });

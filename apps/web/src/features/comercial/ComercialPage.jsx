@@ -58,7 +58,7 @@ export function ComercialPage({ api, usuarioId, companies = [], mensagemBibliote
     const r = await api.criarOnboarding(origem);
     if (!r?.onboarding?.id) throw new Error('Criação sem confirmação. Confira a lista antes de repetir.');
     setNovo(false);
-    navigate(`/onboardings/${encodeURIComponent(r.onboarding.id)}${modo === 'escritorio' ? '/editar' : ''}`);
+    navigate(`/onboardings/${encodeURIComponent(r.onboarding.id)}${modo === 'escritorio' && !['TRANSFERENCIA', 'INATIVA'].includes(origem) ? '/editar' : ''}`);
   }
   return <main className={`commercial-workspace${visao === 'conversas' ? ' commercial-workspace--chat' : ''}`}>
     <header className="commercial-heading"><div><span className="commercial-eyebrow">ALTAN · COMERCIAL</span><h1>{visao === 'hoje' ? 'Comercial' : visao === 'conversas' ? 'Conversas' : 'Oportunidades'}</h1></div><Button variant="secondary" onClick={() => setNovo(true)}>+ Nova oportunidade</Button></header>

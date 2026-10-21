@@ -96,7 +96,16 @@ try {
   await propostas.aprovarContrato(ficha.id, contrato.id, user);
   const documento = await propostas.salvarDocumento(ficha.id, user, { buffer: Buffer.from("%PDF-1.4\nDocumento sintético, sem assinatura real\n%%EOF"), mimetype: "application/pdf", originalname: "assinatura-sintetica.pdf" });
   await propostas.conferirAssinatura(ficha.id, contrato.id, user, documento.id);
-  await j.confirmarPagamento(ficha.id, user, { contratoId: contrato.id, evidencia: "Pagamento fictício conferido para testar a conclusão manual." });
+  const fichaPagamento = await db.onboarding.findUnique({ where: { id: ficha.id } });
+  const contratoPagamento = await db.contratoComercial.findUnique({ where: { id: contrato.id }, include: { proposta: true } });
+  await assert.rejects(j.confirmarPagamento(ficha.id, user, { contratoId: contrato.id, evidencia: "Pagamento fictício conferido para testar a conclusão manual." }), e => e.code === "pagamento_incompleto");
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id: ficha.id } }), fichaPagamento);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: ficha.id, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO" } }), 0);
+  const valorPagamento = contratoPagamento.dados.opcao.unicoCentavos || contratoPagamento.dados.opcao.mensalCentavos;
+  assert.ok(Number.isSafeInteger(valorPagamento) && valorPagamento > 0);
+  const pagamentoRegistrado = await j.confirmarPagamento(ficha.id, user, { contratoId: contrato.id, versao: fichaPagamento.versao, propostaVersao: contratoPagamento.proposta.versao, contratoRevisao: contratoPagamento.aprovadoEm.toISOString(), confirmado: true, valorCentavos: valorPagamento, referencia: "Pagamento fictício conferido para testar a conclusão manual." });
+  assert.equal(pagamentoRegistrado.dados.valorCentavos, valorPagamento);
+  assert.equal(pagamentoRegistrado.dados.politica, "R35");
   await propostas.concluirAvulso(ficha.id, user, "Serviço sintético entregue e conferido, sem execução externa.");
   assert.equal((await atual()).status, "CONCLUIDO_AVULSO"); assert.equal(await db.onboardingAnalise.count({ where: { onboardingId: ficha.id } }), 0);
   ok("Assinatura por arquivo, pagamento e conclusão avulsa funcionam sem consulta automática ou provedor");

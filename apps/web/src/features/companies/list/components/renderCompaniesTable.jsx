@@ -1,4 +1,4 @@
-import { marcadorProcuracao, dataProcuracao } from "../../../fiscal/serpro/lib/procuracao";
+import { marcadorProcuracao } from "../../../fiscal/serpro/lib/procuracao";
 import { fluxoDaEmpresa, ETAPAS_CARTEIRA } from "@contabilidade/shared/fluxo-carteira";
 import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
 // A carteira em TABELA — a visão padrão no desktop.
@@ -284,9 +284,9 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
             />
           )}
         </span>
-        <span className="carteira-procuracao" style={{ color: procuracao.cor }}>
-          {procuracao.chave === 'ativa'
-            ? `Procuração ativa até ${dataProcuracao(company.serproStatus?.validUntil)}`
+        <span className="carteira-procuracao" style={{ color: procuracao.cor }} title={procuracao.orientacao} aria-label={procuracao.orientacao ? `${procuracao.rotuloDocumental || `Procuração: ${procuracao.rotulo}`}. ${procuracao.orientacao}` : undefined}>
+          {procuracao.rotuloDocumental
+            ? procuracao.rotuloDocumental
             : procuracao.rotulo === 'Sem procuração ativa' ? 'Sem procuração' : `Procuração: ${procuracao.rotulo}`}
         </span>
         {config && <PopoverConfig company={company} onFechar={() => setConfig(false)} />}

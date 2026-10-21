@@ -1898,6 +1898,11 @@ export function createRealApi() {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos`, { method: "POST", headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, body: form });
       const out = await res.json(); if (!res.ok) throw new Error(out.message || "Falha no envio do documento."); return out;
     },
+    async baixarApresentacaoComercial(id, diagnosticoId, conteudoHash) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/apresentacao/${encodeURIComponent(diagnosticoId)}/pdf?conteudoHash=${encodeURIComponent(conteudoHash)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Não foi possível carregar a apresentação PDF."); }
+      return res.blob();
+    },
     async baixarContratoComercial(id, contratoId) {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();

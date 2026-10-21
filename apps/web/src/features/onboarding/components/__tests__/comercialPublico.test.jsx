@@ -6,8 +6,8 @@ const comercial={faseComercial:"LEAD",analises:[],links:[],eventos:[]};
 test("salva proposta e gera link sem enviar mensagem ao cliente",async()=>{
  const api={getOnboardingComercial:jest.fn().mockResolvedValue(comercial),salvarOnboardingComercial:jest.fn().mockResolvedValue({ok:true}),criarLinkOnboarding:jest.fn().mockResolvedValue({token:"segredo",link:{id:"l",expiresAt:"2026-09-15"}})};
  render(<PainelComercial api={api} onboardingId="lead-1" />);
- await screen.findByText("Salvar atendimento");fireEvent.change(screen.getByLabelText("Honorários mensais (R$)"),{target:{value:"250,50"}});
- fireEvent.click(screen.getByText("Salvar atendimento"));await waitFor(()=>expect(api.salvarOnboardingComercial).toHaveBeenCalledWith("lead-1",{faseComercial:"LEAD",proposta:{texto:"",valorMensal:250.5}}));
+ await screen.findByRole("button",{name:"Salvar"});fireEvent.change(screen.getByLabelText("Honorários mensais (R$)"),{target:{value:"250,50"}});
+ fireEvent.click(screen.getByRole("button",{name:"Salvar"}));await waitFor(()=>expect(api.salvarOnboardingComercial).toHaveBeenCalledWith("lead-1",{faseComercial:"LEAD",proposta:{texto:"",valorMensal:250.5}}));
  await screen.findByText("Gerar link de preenchimento");fireEvent.click(screen.getByText("Gerar link de preenchimento"));
  await waitFor(()=>expect(screen.getByLabelText("Link pessoal").value).toContain("/onboarding/publico#token=segredo"));
 });
@@ -58,13 +58,14 @@ test("aviso ao sair só aparece quando há mudanças ainda não salvas",async()=
 test("consultar e revogar preservam a proposta ainda não salva",async()=>{
  const estado={...comercial,proposta:{texto:"Salvo",valorMensal:100},links:[{id:"l",expiresAt:"2099-01-01"}]};
  const api={getOnboardingComercial:jest.fn().mockResolvedValue(estado),criarAnaliseOnboarding:jest.fn().mockResolvedValue({ok:true}),revogarLinkOnboarding:jest.fn().mockResolvedValue({ok:true})};
- render(<PainelComercial api={api} onboardingId="a"/>);const campo=await screen.findByLabelText("Proposta e condições");fireEvent.change(campo,{target:{value:"Proposta em edição"}});
+ render(<PainelComercial api={api} onboardingId="a"/>);const campo=await screen.findByRole("textbox",{name:"Anotações"});fireEvent.change(campo,{target:{value:"Proposta em edição"}});
+ fireEvent.click(screen.getByText("Consulta pública"));
  fireEvent.click(screen.getByText("Consultar dados públicos"));await waitFor(()=>expect(api.getOnboardingComercial).toHaveBeenCalledTimes(2));expect(campo).toHaveValue("Proposta em edição");
  fireEvent.click(screen.getByText("Revogar link"));await waitFor(()=>expect(api.getOnboardingComercial).toHaveBeenCalledTimes(3));expect(campo).toHaveValue("Proposta em edição");
 });
 test("geração atualiza links sem perder token ou proposta; vencido aparece expirado",async()=>{
  const inicial={...comercial,links:[{id:"velho",expiresAt:"2000-01-01"}]};const novo={id:"novo",expiresAt:"2099-01-01"};
  const api={getOnboardingComercial:jest.fn().mockResolvedValueOnce(inicial).mockResolvedValue({...inicial,links:[{...inicial.links[0],revokedAt:"2026-09-08"},novo]}),criarLinkOnboarding:jest.fn().mockResolvedValue({token:"token-novo",link:novo})};
- render(<PainelComercial api={api} onboardingId="a"/>);const campo=await screen.findByLabelText("Proposta e condições");expect(screen.getByText(/Expirado/)).toBeInTheDocument();fireEvent.change(campo,{target:{value:"Preservar"}});fireEvent.click(screen.getByText("Gerar link de preenchimento"));
+ render(<PainelComercial api={api} onboardingId="a"/>);const campo=await screen.findByRole("textbox",{name:"Anotações"});expect(screen.getByText(/Expirado/)).toBeInTheDocument();fireEvent.change(campo,{target:{value:"Preservar"}});fireEvent.click(screen.getByText("Gerar link de preenchimento"));
  await waitFor(()=>expect(api.getOnboardingComercial).toHaveBeenCalledTimes(2));expect(campo).toHaveValue("Preservar");expect(screen.getByLabelText("Link pessoal").value).toContain("token-novo");expect(screen.getByText(/Revogado/)).toBeInTheDocument();expect(screen.getAllByText("Revogar link")).toHaveLength(1);
 });

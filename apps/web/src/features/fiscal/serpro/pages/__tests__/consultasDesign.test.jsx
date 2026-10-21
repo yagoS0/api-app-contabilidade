@@ -36,5 +36,5 @@ test('filtro limita seleção e marcador muda após regularização', async () =
  await waitFor(()=>expect(onRunOp).toHaveBeenCalledWith('procuracao','a',null));
  await waitFor(()=>expect(screen.queryByRole('checkbox',{name:'Selecionar Regularizar'})).not.toBeInTheDocument());
  fireEvent.change(screen.getByLabelText('Filtrar por procuração'),{target:{value:'ativa'}});
- expect(screen.getAllByText('Ativa')).toHaveLength(2);expect(screen.getByRole('button',{name:'Rodar'})).toBeDisabled();
+ expect(screen.getAllByText('Procuração ativa até 31/12/2099')).toHaveLength(2);expect(screen.getByRole('button',{name:'Rodar'})).toBeDisabled();
 });

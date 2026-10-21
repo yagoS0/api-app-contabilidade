@@ -3,20 +3,20 @@ import { FluxoComercial } from "./FluxoComercial";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 
-const FASES = { LEAD: "Primeiro contato", ANALISE: "Em análise", PROPOSTA: "Proposta", CONTRATADO: "Contratado" };
 const data = (v) => v ? new Date(v).toLocaleString("pt-BR") : "—";
 const campoStyle = { display: "block", width: "100%", padding: 8, marginBottom: 12, background: "var(--bg-page)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6 };
 
-export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0, coletaInicial = false, continuar = 0, onAtualizar }) {
+export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0, coletaInicial = false, continuar = 0, onAtualizar, onAbrirExecucao }) {
   const { pedir: confirmar, dialogo } = useConfirmacao();
   const [estado, setEstado] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false);
+  const [erroLeitura, setErroLeitura] = useState("");
   const [fase, setFase] = useState("LEAD"), [texto, setTexto] = useState(""), [valor, setValor] = useState("");
   const [link, setLink] = useState(""), [aviso, setAviso] = useState("");
   const [geracao, setGeracao] = useState(0);
   // Somente a primeira montagem escolhe a seção: atualizar a ficha não desfaz a escolha do usuário.
   const [formularioAberto, setFormularioAberto] = useState(() => coletaInicial || !api.comercial);
-  const [jornadaAberta, setJornadaAberta] = useState(() => !coletaInicial);
-  useEffect(() => { if (continuar) { setJornadaAberta(true); setFormularioAberto(false); } }, [continuar]);
+
+  useEffect(() => { if (continuar) { setFormularioAberto(false); } }, [continuar]);
   const carregadaRef = useRef(null);
   useEffect(() => {
     let vivo = true;
@@ -24,11 +24,12 @@ export function PainelComercial({ api, onboardingId, convertido = false, revisao
     api.getOnboardingComercial(onboardingId).then((r) => {
       if (!vivo) return;
       setEstado(r);
+      setErroLeitura("");
       if (carregadaRef.current !== onboardingId) {
         setFase(r.faseComercial || "LEAD"); setTexto(r.proposta?.texto || ""); setValor(r.proposta?.valorMensal == null ? "" : String(r.proposta.valorMensal));
         carregadaRef.current = onboardingId;
       }
-    }).catch((e) => { if (vivo) setErro(e.message); });
+    }).catch((e) => { if (vivo) setErroLeitura(e.message); });
     return () => { vivo = false; };
   }, [api, onboardingId, geracao, revisao]);
   async function executar(fn, mensagem) {
@@ -54,39 +55,31 @@ export function PainelComercial({ api, onboardingId, convertido = false, revisao
   }
   return <section className="onboarding-workspace onboarding-commercial" aria-label="Atendimento comercial">
     {dialogo}
-    <h2>Atendimento comercial</h2>
     {api.mode === "mock" && <p role="status">Demonstração: consultas simuladas e links válidos somente enquanto esta sessão estiver aberta.</p>}
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
-    {!estado ? <Button onClick={() => setGeracao((v) => v + 1)} disabled={!erro}>{erro ? "Recarregar atendimento" : "Carregando atendimento…"}</Button> : <>
-<details className="onboarding-panel onboarding-form-link" open={formularioAberto} onToggle={e => setFormularioAberto(e.currentTarget.open)}><summary>Formulário do cliente</summary><p>Link pessoal · válido por 7 dias.</p>
+    {erroLeitura && <p role="alert">{erroLeitura} <Button variant="secondary" onClick={() => setGeracao(v => v + 1)}>Atualizar atendimento</Button></p>}
+    {!estado ? <Button onClick={() => setGeracao((v) => v + 1)} disabled={!erroLeitura}>{erroLeitura ? "Recarregar atendimento" : "Carregando atendimento…"}</Button> : <>
+{(!api.comercial || coletaInicial || link) && <details className="onboarding-panel onboarding-form-link" open={formularioAberto} onToggle={e => setFormularioAberto(e.currentTarget.open)}><summary>Formulário do cliente</summary><p>Link pessoal · válido por 7 dias.</p>
         <Button disabled={ocupado || convertido} onClick={gerarLink}>Gerar link de preenchimento</Button>
       {link && <div className="onboarding-share"><p>Envio manual: copie o link ou a mensagem.</p><label>Link pessoal<input style={campoStyle} value={link} readOnly /></label><Button onClick={async () => { try { await navigator.clipboard.writeText(link); setAviso("Link copiado."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar link</Button><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(`Olá! Preencha o formulário para iniciarmos seu atendimento: ${link}\nVocê pode salvar por etapas. Ao concluir, envie os dados ao escritório pelo próprio formulário.`); setAviso("Mensagem com link copiada. Cole na conversa com o cliente."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar mensagem com link</Button></div>}
       <ul className="onboarding-links">{(estado.links || []).map((l) => <li key={l.id}>Validade: {data(l.expiresAt)} · {l.revokedAt ? "Revogado" : l.submittedAt ? "Enviado pelo cliente" : new Date(l.expiresAt).getTime() <= Date.now() ? "Expirado" : "Ativo"} {!l.revokedAt && !l.submittedAt && new Date(l.expiresAt).getTime() > Date.now() && !convertido && <Button variant="secondary" disabled={ocupado} onClick={() => executar(async () => { await api.revogarLinkOnboarding(onboardingId, l.id); setLink(""); }, "Link revogado.")}>Revogar link</Button>}</li>)}</ul>
-</details>
-      {api.comercial && <details className="onboarding-panel" open={jornadaAberta} onToggle={e => setJornadaAberta(e.currentTarget.open)}><summary>Jornada comercial e contratação</summary><FluxoComercial api={api} onboardingId={onboardingId} revisao={revisao} onAtualizar={onAtualizar} /></details>}
-      <details className="onboarding-panel"><summary>Anotações comerciais e análises</summary>
-      <fieldset disabled={ocupado || convertido} style={{ border: 0, padding: 0 }}>
-        <legend>Anotações livres do atendimento</legend>
-        <p>Registro legado: estas anotações não definem a jornada nem comprovam aceite de proposta.</p><label>Classificação manual legada<select style={campoStyle} value={fase} onChange={(e) => setFase(e.target.value)}>{Object.entries(FASES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
-        <label>Proposta e condições<textarea style={campoStyle} value={texto} maxLength={10000} onChange={(e) => setTexto(e.target.value)} /></label>
-        <label>Honorários mensais (R$)<input style={campoStyle} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} /></label>
-        <Button onClick={() => {
-          const mensal = valor.trim().replace(",", ".");
-          if (mensal && (!/^\d+(\.\d{1,2})?$/.test(mensal) || Number(mensal) < 0)) { setErro("Informe honorários com até duas casas decimais, sem separador de milhar."); return; }
-          executar(() => api.salvarOnboardingComercial(onboardingId, { faseComercial: fase, proposta: { texto, valorMensal: mensal ? Number(mensal) : null } }), "Anotações comerciais salvas.");
-        }}>Salvar atendimento</Button>
-        <h3>Análises</h3>
-        <p>A consulta fiscal exige procuração válida.</p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Button onClick={() => executar(() => api.criarAnaliseOnboarding(onboardingId, { tipo: "PUBLICA" }), "Análise inicial registrada.")}>Consultar dados públicos</Button>
-          <Button variant="secondary" onClick={() => executar(() => api.criarAnaliseOnboarding(onboardingId, { tipo: "SITFIS" }), "Análise fiscal registrada.")}>Consultar situação fiscal autorizada</Button>
-        </div>
-      </fieldset>
-      <h3>Resultados das análises</h3>
-      {(estado.analises || []).length === 0 && <p>Nenhuma análise registrada.</p>}
-      {(estado.analises || []).map((a) => <article key={a.id} style={{ padding: 12, borderBottom: "1px solid var(--border)" }}><strong>{a.tipo === "SITFIS" ? "Situação fiscal" : "Dados públicos"}</strong><p>{data(a.createdAt)} · {a.status} · CNPJ {a.cnpj || "—"}</p><ResultadoAnalise resultado={a.resultado} />{a.resultado?.relatorioDisponivel && <Button onClick={async () => { try { const blob = await api.baixarAnaliseOnboarding(onboardingId, a.id); const url = URL.createObjectURL(blob); const el = document.createElement("a"); el.href = url; el.download = "analise-fiscal.pdf"; el.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); } catch (e) { setErro(e.message); } }}>Baixar relatório fiscal</Button>}</article>)}
-      </details>
-      <details className="onboarding-panel"><summary>Histórico do atendimento</summary><ul>{(estado.eventos || []).map((e) => <li key={e.id}>{data(e.createdAt)} · {e.tipo}</li>)}</ul></details>
+</details>}
+      {api.comercial && <section className="onboarding-panel" aria-label="Jornada comercial"><FluxoComercial api={api} onboardingId={onboardingId} revisao={revisao} onAtualizar={onAtualizar} onAbrirExecucao={onAbrirExecucao} /></section>}
+      <section className="onboarding-panel lead-notes" aria-label="Anotações">
+        <fieldset disabled={ocupado || convertido || Boolean(erroLeitura)}>
+          <label>Anotações<textarea rows={3} value={texto} maxLength={10000} onChange={e => setTexto(e.target.value)} /></label>
+          {!api.comercial && <label>Honorários mensais (R$)<input inputMode="decimal" value={valor} onChange={e => setValor(e.target.value)} /></label>}
+          <Button onClick={() => {
+            const mensal = valor.trim().replace(",", ".");
+            if (mensal && !/^\d+(\.\d{1,2})?$/.test(mensal)) { setErro("Informe honorários com até duas casas decimais, sem separador de milhar."); return; }
+            executar(() => api.salvarOnboardingComercial(onboardingId, { faseComercial: fase, proposta: { texto, valorMensal: mensal ? Number(mensal) : null } }), "Anotação salva.");
+          }}>Salvar</Button>
+        </fieldset>
+      </section>
+      {!api.comercial && api.criarAnaliseOnboarding && <details className="onboarding-panel"><summary>Consulta pública</summary>
+        <Button variant="secondary" disabled={ocupado || convertido || Boolean(erroLeitura)} onClick={() => executar(() => api.criarAnaliseOnboarding(onboardingId, { tipo: "PUBLICA" }), "Análise inicial registrada.")}>Consultar dados públicos</Button>
+        {(estado.analises || []).filter(a => a.tipo === "PUBLICA").map(a => <article key={a.id}><p>{data(a.createdAt)} · {a.status} · CNPJ {a.cnpj || "—"}</p><ResultadoAnalise resultado={a.resultado} /></article>)}
+      </details>}
     </>}
   </section>;
 }

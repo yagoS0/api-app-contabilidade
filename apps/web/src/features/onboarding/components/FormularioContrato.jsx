@@ -4,7 +4,11 @@ import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { camposDoContrato, sugerirVariaveisContrato, problemasDosCamposContrato } from "../../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
 import { motivoIncompatibilidadeContrato } from "../../../../../../packages/shared/src/onboarding/modeloContrato.js";
 
-export function FormularioContrato({ onboarding, proposta, recursos, onGerar }) {
+export function FormularioContrato(props) {
+  return <FormularioDaProposta key={JSON.stringify([props.onboarding.id, props.proposta.id, props.proposta.versao, props.proposta.opcaoAceita])} {...props} />;
+}
+
+function FormularioDaProposta({ onboarding, proposta, recursos, onGerar }) {
   const [edicoes, setEdicoes] = useState({}), [validou, setValidou] = useState(false);
   const raiz = useRef(null);
   const opcao = proposta.snapshot?.opcoes?.find(o => o.chave === proposta.opcaoAceita);
@@ -43,8 +47,8 @@ export function FormularioContrato({ onboarding, proposta, recursos, onGerar }) 
     <p>Valores e escopo seguem a proposta aceita.</p>
     {!onboarding.cnpj && onboarding.origem === "ABERTURA" && <p>A contratação inicial identifica a pessoa responsável pela abertura, com CPF e endereço próprio. O CNPJ definitivo será registrado na ficha quando a empresa for constituída.</p>}
     {indisponivel && <p role="alert">A versão do modelo que estava sendo preenchida não está mais disponível para esta contratação. Selecione explicitamente outro modelo e confira seus campos antes de gerar o contrato.</p>}
-    {!modelos.length ? <p role="status">{onboarding.origem === "PESSOA_FISICA" ? "Falta um modelo de serviço avulso para pessoa física." : !onboarding.cnpj ? "Falta um modelo próprio para abertura antes do CNPJ, na modalidade aceita." : opcao?.recorrente === false ? "Falta um modelo de serviço avulso compatível com esta solicitação." : "Falta um modelo de contabilidade mensal compatível com esta solicitação."} Revise e aprove a versão adequada na biblioteca. <AbrirBiblioteca /></p> : <label>Modelo do contrato<select value={modelo?.id || ""} onChange={e => { const m = compativeis.find(r => r.id === e.target.value); setSelecao({ id: m?.id || "", versao: m?.versao }); setEdicoes({}); setValidou(false); }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao} · {m.aprovadoEm ? "Aprovado" : "Rascunho"}</option>)}</select></label>}
-    {modelo && !modelo.aprovadoEm && <p role="status"><strong>Rascunho da biblioteca.</strong> Você pode preencher os dados e conferir a prévia. Revise e aprove o modelo na biblioteca para gerar contrato. <AbrirBiblioteca /></p>}
+    {!modelos.length ? <p role="status">{onboarding.origem === "PESSOA_FISICA" ? "Falta um modelo de serviço avulso para pessoa física." : !onboarding.cnpj ? "Falta um modelo próprio para abertura antes do CNPJ, na modalidade aceita." : opcao?.recorrente === false ? "Falta um modelo de serviço avulso compatível com esta solicitação." : "Falta um modelo de contabilidade mensal compatível com esta solicitação."} Revise e aprove a versão adequada na biblioteca. <AbrirBiblioteca categoria="CONTRATO" /></p> : <label>Modelo do contrato<select value={modelo?.id || ""} onChange={e => { const m = compativeis.find(r => r.id === e.target.value); setSelecao({ id: m?.id || "", versao: m?.versao }); setEdicoes({}); setValidou(false); }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao} · {m.aprovadoEm ? "Aprovado" : "Rascunho"}</option>)}</select></label>}
+    {modelo && !modelo.aprovadoEm && <p role="status"><strong>Rascunho da biblioteca.</strong> Você pode preencher os dados e conferir a prévia. Revise e aprove o modelo na biblioteca para gerar contrato. <AbrirBiblioteca categoria="CONTRATO" /></p>}
     {modelo && <>
       {grupos.map(grupo => <fieldset key={grupo}><legend>{grupo}</legend>{campos.filter(c => c.grupo === grupo && !c.protegido).map(c => {
         const problema = validou && problemas.find(p => p.chave === c.chave);

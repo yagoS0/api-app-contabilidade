@@ -93,7 +93,16 @@ try {
   const doc = await propostas.salvarDocumento(id, user, { buffer: Buffer.from("%PDF-1.4\nDOCUMENTO SINTÉTICO\n%%EOF"), mimetype: "application/pdf", originalname: "contrato-simulado.pdf" });
   await propostas.conferirAssinatura(id, contrato.id, user, doc.id);
   await assert.rejects(propostas.concluirAvulso(id, user, "Entrega simulada conferida"), e => e.code === "pagamento_pendente");
-  await jornada.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "Pagamento sintético conferido, sem cobrança real." });
+  const fichaPagamento = await db.onboarding.findUnique({ where: { id: id } });
+  const contratoPagamento = await db.contratoComercial.findUnique({ where: { id: contrato.id }, include: { proposta: true } });
+  await assert.rejects(jornada.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "Pagamento sintético conferido, sem cobrança real." }), e => e.code === "pagamento_incompleto");
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id: id } }), fichaPagamento);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: id, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO" } }), 0);
+  const valorPagamento = contratoPagamento.dados.opcao.unicoCentavos || contratoPagamento.dados.opcao.mensalCentavos;
+  assert.ok(Number.isSafeInteger(valorPagamento) && valorPagamento > 0);
+  const pagamentoRegistrado = await jornada.confirmarPagamento(id, user, { contratoId: contrato.id, versao: fichaPagamento.versao, propostaVersao: contratoPagamento.proposta.versao, contratoRevisao: contratoPagamento.aprovadoEm.toISOString(), confirmado: true, valorCentavos: valorPagamento, referencia: "Pagamento sintético conferido, sem cobrança real." });
+  assert.equal(pagamentoRegistrado.dados.valorCentavos, valorPagamento);
+  assert.equal(pagamentoRegistrado.dados.politica, "R35");
   await assert.rejects(propostas.concluirAvulso(id, user, "Entrega simulada conferida"), e => e.code === "ficha_avulsa_pendente");
   ok("Conclusão avulsa exige pagamento do contrato e ficha da empresa aberta");
   const usuariosAntes = await db.user.count(), empresasAntes = await db.portalClient.count();

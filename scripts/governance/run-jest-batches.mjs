@@ -7,6 +7,31 @@ const BATCH_SIZE = 25;
 // Leave ten seconds for child-tree termination before the unchanged outer gate.
 const TIMEOUT_MS = 1190000;
 
+// Windows readers (including virus scanners) can briefly lock the destination.
+// Never unlink it: readers must see either the previous or the complete new file.
+export async function saveManifestAtomically(directory, manifest, deadline, {
+  platform = process.platform, rename = fs.renameSync, now = Date.now,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
+} = {}) {
+  const temporary = path.join(directory, 'manifest.tmp');
+  const destination = path.join(directory, 'manifest.json');
+  fs.writeFileSync(temporary, JSON.stringify(manifest, null, 2));
+  const delays = [50, 100, 200, 200, 200];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rename(temporary, destination);
+      return;
+    } catch (error) {
+      const delay = delays[attempt];
+      if (platform !== 'win32' || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code) ||
+          delay === undefined || now() + delay >= deadline) throw error;
+      await wait(delay);
+      // A delayed timer must not start another attempt after the global deadline.
+      if (now() >= deadline) throw error;
+    }
+  }
+}
+
 function command(args, cwd, deadline) {
   return new Promise((resolve, reject) => {
     const remaining = deadline - Date.now();
@@ -62,12 +87,8 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
   fs.mkdirSync(evidenceRoot, { recursive: true });
   const directory = fs.mkdtempSync(path.join(evidenceRoot, `${path.basename(cwd)}-`));
   const manifest = { cwd, jestPath, batchSize: BATCH_SIZE, startedAt: new Date().toISOString(), status: 'running', discovered: [], batches: [] };
-  const save = () => {
-    const temporary = path.join(directory, 'manifest.tmp');
-    fs.writeFileSync(temporary, JSON.stringify(manifest, null, 2));
-    fs.renameSync(temporary, path.join(directory, 'manifest.json'));
-  };
   const deadline = Date.now() + timeoutMs;
+  const save = () => saveManifestAtomically(directory, manifest, deadline);
   async function execute(args, label) {
     const result = await command([jestPath, ...args], cwd, deadline);
     fs.writeFileSync(path.join(directory, `${label}.stdout.log`), result.stdout);
@@ -75,7 +96,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
     if (result.error || result.code !== 0 || result.signal) throw new Error(`${label}: ${result.error || `exit=${result.code}, signal=${result.signal}`}`);
     return result.stdout;
   }
-  save();
+  await save();
   try {
     const configuration = JSON.parse(await execute(['--showConfig'], 'configuration'));
     if (!Array.isArray(configuration.configs) || configuration.configs.length !== 1 || !configuration.globalConfig ||
@@ -88,7 +109,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
     const keys = discovered.map(name => suitePath(name, cwd));
     if (new Set(keys).size !== keys.length) throw new Error('Discovery duplicada');
     manifest.discovered = discovered;
-    save();
+    await save();
     const covered = [];
     const totals = { numTotalTestSuites: 0, numPassedTestSuites: 0, numPendingTestSuites: 0, numTotalTests: 0, numPassedTests: 0, numPendingTests: 0, numTodoTests: 0 };
     for (let offset = 0; offset < discovered.length; offset += BATCH_SIZE) {
@@ -97,7 +118,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
       const outputFile = path.join(directory, `${label}.json`);
       const batch = { files, status: 'running' };
       manifest.batches.push(batch);
-      save();
+      await save();
       // Relative argv keeps Windows command length bounded without changing the selected files.
       await execute(['--runInBand', '--silent', '--json', '--outputFile', outputFile, '--runTestsByPath', ...files.map(file => `.${path.sep}${path.relative(cwd, file)}`)], label);
       const report = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
@@ -123,7 +144,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
         assertions.passed !== report.numPassedTests || assertions.pending !== report.numPendingTests || assertions.todo !== report.numTodoTests) throw new Error(`${label}: contagens divergentes`);
       covered.push(...actual);
       batch.status = 'passed';
-      save();
+      await save();
       console.log(`${label}: ${files.length} suítes; ${covered.length}/${discovered.length}`);
     }
     if (covered.length !== keys.length || new Set(covered).size !== keys.length || totals.numTotalTests === 0) throw new Error('Cobertura final divergente ou nenhum teste contabilizado');
@@ -134,7 +155,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
     manifest.error = error.message;
   }
   manifest.finishedAt = new Date().toISOString();
-  save();
+  await save();
   console.log(JSON.stringify({ ...manifest.totals, status: manifest.status, evidence: directory, error: manifest.error }));
   return manifest;
 }

@@ -60,10 +60,23 @@ function montar(props = {}) {
   );
 }
 
-test('procuração antiga mantém incerteza sem detalhes técnicos na tabela', () => {
+test('procuração documental vigente com consulta antiga mostra validade sem renovar autorização', () => {
   montar({ companies: [empresa({ serproStatus: { procurationStatus:'ATIVA', vinculoConfirmado:true, checkedAt:new Date(Date.now()-86400000).toISOString(), validUntil:'2099-10-13' } })] });
-  expect(screen.getByText('Procuração: Revalidar')).toBeVisible();
+  expect(screen.getByText('Procuração ativa até 13/10/2099')).toBeVisible();
+  expect(screen.getByText('Procuração ativa até 13/10/2099')).toHaveAttribute('title', 'A verificação salva tem 24 horas ou mais. Atualize a verificação antes de operar.');
+  expect(screen.getByText('Procuração ativa até 13/10/2099')).toHaveAttribute('aria-label', expect.stringContaining('Procuração ativa até 13/10/2099. A verificação salva tem 24 horas ou mais'));
   expect(screen.queryByText(/Verificada em:/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Sem procuração')).not.toBeInTheDocument();
+});
+
+test.each([
+  { validUntil: null }, { validUntil: 'inválida' }, { checkedAt: '2099-01-01' },
+  { vinculoConfirmado: false }, { ultimaTentativa: { status: 'ERRO', vinculoConfirmado: true } },
+  { ultimaTentativa: { status: 'CONSULTANDO', vinculoConfirmado: true } },
+])('carteira não inventa validade documental com evidência inconclusiva %j', patch => {
+  montar({ companies: [empresa({ serproStatus: { procurationStatus: 'ATIVA', vinculoConfirmado: true,
+    checkedAt: new Date(Date.now() - 86400000).toISOString(), validUntil: '2099-10-13', ...patch } })] });
+  expect(screen.queryByText(/Procuração ativa até/)).not.toBeInTheDocument();
   expect(screen.queryByText('Sem procuração')).not.toBeInTheDocument();
 });
 

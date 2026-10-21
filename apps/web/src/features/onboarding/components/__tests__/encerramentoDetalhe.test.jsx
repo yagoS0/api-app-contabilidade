@@ -124,7 +124,8 @@ test('recusa é visível no detalhe fora da edição e mantém oportunidade', as
   await encerrar();
   expect(await screen.findByRole('alert')).toHaveTextContent('Sem permissão para encerrar');
   expect(screen.getByRole('button', { name: 'Conferir novamente' })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Editar ficha' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Proposta em edição')).toBeVisible();
+  expect(screen.getByText(/Ficha: Em preenchimento/)).toBeVisible();
 });
 test('confirmação invalida atualização antiga, preserva rascunho comercial e mostra falha de releitura', async () => {
   let resolverAntiga;
@@ -255,7 +256,7 @@ test('polling durante atualização manual descarta leitura antiga e libera ocup
 
 test('continuação antiga não substitui desistência confirmada', async () => {
   let resolverContinuacao;
-  const api = montar();
+  const api = montar({ getOnboardingComercial: undefined });
   fireEvent.click(await screen.findByRole('button', { name: 'Editar ficha' }));
   api.getOnboarding.mockImplementationOnce(() => new Promise(r => { resolverContinuacao = r; }))
     .mockResolvedValueOnce({ onboarding: ficha });
@@ -291,7 +292,7 @@ test.each(['sucesso', 'erro'])('continuação de outra ficha ignora %s tardio', 
 });
 
 test('continuação recusa revisão inferior sem sair da edição', async () => {
-  const api = montar();
+  const api = montar({ getOnboardingComercial: undefined });
   fireEvent.click(await screen.findByRole('button', { name: 'Editar ficha' }));
   api.getOnboarding.mockResolvedValue({ onboarding: { ...ficha, versao: 1 } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continuar atendimento' })); });
@@ -332,7 +333,8 @@ test.each([
   api.getOnboarding.mockResolvedValue(resposta);
   fireEvent.click(screen.getByRole('button', { name: 'Atualizar ficha' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/Resposta sem/);
-  expect(screen.getByRole('button', { name: 'Editar ficha' })).toBeVisible();
+  expect(screen.getByLabelText('Proposta em edição')).toBeVisible();
+  expect(screen.getByText(/Ficha: Em preenchimento/)).toBeVisible();
   expect(screen.getByRole('button', { name: 'Atualizar ficha' })).toBeEnabled();
   expect(screen.queryByText('Ficha atualizada com os dados salvos pelo cliente.')).not.toBeInTheDocument();
 });
