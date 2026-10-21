@@ -39,3 +39,10 @@ test('conflito é revisão, não um documento ausente; parcela fica separada', (
   const r = resumirGuias({ das: node('conflito'), parcDas: node('missing') });
   expect(r).toMatchObject({ revisoes: 1, faltantes: 0, completo: false, esperadas: 1 });
 });
+
+test('parcelas não alteram cobertura de obrigações e documentos repetidos são contados uma vez', () => {
+  const parcelas = [{ id: 'p1', guideId: 'pdf', documento: 'disponivel' }, { id: 'p2', guideId: 'pdf', documento: 'disponivel' }, { id: 'p3', documento: 'faltante' }];
+  const r = resumirGuias({ das: node('gerada', 'das'), coberturaParcelamentoMes: parcelas });
+  expect(r).toMatchObject({ esperadas: 1, disponiveis: 1, documentosParcelamento: 1, unidade: 'obrigações com guia' });
+  expect(r.parcelas).toEqual(parcelas);
+});

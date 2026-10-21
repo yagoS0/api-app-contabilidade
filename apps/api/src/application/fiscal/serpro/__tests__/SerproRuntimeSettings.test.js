@@ -81,3 +81,13 @@ test.each([null, [], "all", { desconhecida: { enabled: true } }])("objeto de rot
   await expect(updateSerproRuntimeSettings({ rotinas })).rejects.toMatchObject({ code: "SERPRO_ROTINA_AGENDA_INVALIDA" });
   expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
 });
+
+test("agenda de avisos não herda nem altera a consulta fiscal mensal", async () => {
+ stored={rotinas:{pagamento:{enabled:true,day:25,hour:8,frequency:"MONTHLY"}}};
+ const before=await getSerproRuntimeSettings();
+ expect(before.rotinas.avisos_guias_whatsapp).toMatchObject({enabled:false,hour:8,frequency:"DAILY"});
+ const after=await updateSerproRuntimeSettings({rotinas:{avisos_guias_whatsapp:{enabled:true,day:1,hour:9,frequency:"DAILY"}}});
+ expect(after.rotinas.pagamento).toEqual(before.rotinas.pagamento);
+ expect(after.rotinas.avisos_guias_whatsapp).toMatchObject({enabled:true,hour:9,cron:"0 9 * * *"});
+ expect(ROTINA_KEYS).not.toContain("avisos_guias_whatsapp");
+});

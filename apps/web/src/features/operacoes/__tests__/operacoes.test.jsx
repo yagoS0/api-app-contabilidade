@@ -5,6 +5,27 @@ import { projetarOperacoesEmpresas } from '../operacoes';
 import { fluxoDaEmpresa } from '@contabilidade/shared/fluxo-carteira';
 
 const company = { companyId: 'a', razao: 'Empresa exemplo', regimeTributario: 'SIMPLES', apuracao: { competencia: '2026-09', numeroDeclaracaoRfb: 'recibo-oficial' } };
+
+test('aviso mensal de parcelamento entra em guias faltantes com o mesmo detalhe da carteira', () => {
+  const itens = [{ id: 'parcela:1', estado: 'OBTER_GUIA', referencia: '2026-10' }];
+  const c = { ...company, guideCompliance: { das: { required: false, state: 'na', ok: true },
+    guiasParcelamentoMes: [{ tipoParcelamento: 'PARCSN', referencia: '2026-10', itens }] } };
+  const r = projetarOperacoesEmpresas([c], '2026-09');
+  expect(r.groups.faltantes).toHaveLength(1);
+  expect(r.groups.faltantes[0]).toMatchObject({ titulo: 'PARCSN · documento ausente',
+    tag: { mensal: true, referencia: '2026-10', itens } });
+  expect(r.groups.revisoes).toHaveLength(0);
+  expect(r.groups.envios).toHaveLength(0);
+  expect(r.groups.pendencias).toEqual(r.groups.faltantes);
+});
+
+test('não exigibilidade conhecida não cria pendência; erro de leitura exige revisão', () => {
+  const guideCompliance = { das: { required: false, state: 'na', ok: true }, guiasParcelamentoMes: [] };
+  expect(projetarOperacoesEmpresas([{ ...company, guideCompliance }], '2026-09').groups.pendencias).toEqual([]);
+  const indisponivel = projetarOperacoesEmpresas([{ ...company, guideCompliance: { ...guideCompliance, erro: true } }], '2026-09');
+  expect(indisponivel.groups.revisoes).toHaveLength(1);
+  expect(indisponivel.groups.revisoes[0].titulo).toBe('Guias · cobertura a conferir');
+});
 test('reutiliza o status da tabela Empresas, sem duplicar ou misturar competências', () => {
   const result = projetarOperacoesEmpresas([company, company, { ...company, companyId: 'inativa', status: 'INATIVA' }, { ...company, companyId: 'antiga', apuracao: { competencia: '2026-08' } }], '2026-09');
   expect(result.rows).toHaveLength(1);

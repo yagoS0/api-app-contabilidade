@@ -176,3 +176,17 @@ test('vínculo da parcela muda antes da saída: não envia e preserva motivo de 
   const r = await f.run(); expect(enviou).toBe(false);
   expect(r.resultados[0]).toMatchObject({ status: 'PENDENTE', motivo: 'DOCUMENTO_ESCOPO_DIVERGENTE' });
 });
+
+
+test.each([false, true])('débito da indicação impede lembrete, inclusive se declarado antes da rede (%s)', async durante => {
+ const f = setup({ parcelamentoId: 'avulsa', parcelamento: { id: 'avulsa', origem: 'GUIA_AVULSA', formaPagamento: 'GUIA_MENSAL', portalClientId: 'c' }, extracted: { indicacaoParcelamentoId: 'i' } });
+ f.db.parcelamentoIndicacao = { findFirst: jest.fn(async () => ({ id: 'i', portalClientId: 'c' })) };
+ const declarar = () => f.records.set('parcelamento_indicacao_forma:v1:i', { value: { periodos: [{ desde: '2026-09', formaPagamento: 'DEBITO_AUTOMATICO', usuarioId: 'u', em: '2026-09-01' }] } });
+ let rede = 0;
+ f.transporte.whatsapp.mockImplementation(async ({ conferir }) => { if (durante) declarar(); await conferir(); rede++; });
+ if (!durante) declarar();
+ const result = await f.run();
+ expect(rede).toBe(0);
+ if (!durante) { expect(result).toMatchObject({ status: 'IGNORADO', motivo: 'PARCELA_DEBITO_AUTOMATICO' }); expect(f.transporte.whatsapp).not.toHaveBeenCalled(); }
+ else expect(result.resultados[0]).toMatchObject({ status: 'CANCELADO', motivo: 'PARCELA_DEBITO_AUTOMATICO' });
+});

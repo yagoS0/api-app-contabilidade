@@ -34,7 +34,7 @@ test('batch scopes companies and documents; no PDF bodies or document proof of t
 test.each(['VAZIO', 'ERROR', 'NEEDS_REVIEW', 'PENDING', 'PROCESSING'])('status %s never proves a document ready', async status => {
   const { db, guides } = database(); guides.push(guide({ status }));
   const result = await lerInssManual(db, 'a', '2026-09');
-  expect(result.status).toBe(status === 'VAZIO' ? 'PENDING_DOCUMENT' : 'DOCUMENT_REVIEW');
+  expect(result.status).toBe(status === 'VAZIO' ? 'DOCUMENT_ABSENT' : 'DOCUMENT_REVIEW');
   expect(result.guides[0].available).toBe(false);
 });
 
@@ -102,4 +102,41 @@ test('a second stale save preserves conflict and return-to-company override requ
   await salvarInssManual(db, 'a', '2026-09', 'user', input);
   await expect(salvarInssManual(db, 'a', '2026-09', 'user', { ...input, requestId: 'request-other' })).rejects.toMatchObject({ status: 409 });
   await expect(salvarInssManual(db, 'a', '2026-09', 'user', await inputFor(db, { requestId: 'request-return' }))).rejects.toMatchObject({ status: 422 });
+});
+
+
+test('monthly absence is canonical, scoped and preserves the manual control without creating fiscal facts', async () => {
+  const { db, guides, settings, companies } = database();
+  guides.push(guide({ id: 'absence', status: 'VAZIO', pdfBytes: null, vazioEm: new Date('2026-10-01T12:00:00Z'), vazioPor: 'accountant', vazioMotivo: 'Sem retirada neste mês' }));
+  const result = await lerInssManual(db, 'a', '2026-09');
+  expect(result).toMatchObject({ status: 'DOCUMENT_ABSENT', applicable: true, applicabilitySource: 'company', absence: { guideId: 'absence', by: 'accountant', reason: 'Sem retirada neste mês' } });
+  expect(result.guides[0].available).toBe(false);
+  expect(result).not.toHaveProperty('paid');
+  expect(result).not.toHaveProperty('transmitted');
+  expect(companies[0].hasProlabore).toBe(true);
+  expect((await lerInssManual(db, 'a', '2026-10')).status).toBe('PENDING_DOCUMENT');
+  expect((await lerInssManual(db, 'b', '2026-09')).absence).toBeNull();
+  const saved = await salvarInssManual(db, 'a', '2026-09', 'user', await inputFor(db, { state: state({ responsible: 'Equipe fiscal', note: 'Conservar observação' }) }));
+  expect(saved).toMatchObject({ status: 'DOCUMENT_ABSENT', state: { responsible: 'Equipe fiscal', note: 'Conservar observação' } });
+  expect(settings.size).toBe(2);
+  const stale = await inputFor(db);
+  guides[0].vazioMotivo = 'Motivo corrigido';
+  await expect(salvarInssManual(db, 'a', '2026-09', 'user', { ...stale, requestId: 'stale-absence' })).rejects.toMatchObject({ status: 409 });
+});
+
+test.each([
+  [{}, 'DOCUMENT_AVAILABLE'],
+  [{ pdfBytes: null }, 'DOCUMENT_REVIEW'],
+  [{ status: 'ERROR' }, 'DOCUMENT_REVIEW'],
+  [{ extracted: { composicao: [{ codigo: '8109', total: 100 }] } }, 'DOCUMENT_REVIEW'],
+])('real documents and unresolved failures prevail over an absence marker: %j', async (overrides, expected) => {
+  const { db, guides } = database();
+  guides.push(guide({ id: 'absence', status: 'VAZIO', pdfBytes: null }), guide({ id: 'real', paymentStatus: 'PAID', emailStatus: 'SENT', ...overrides }));
+  const before = JSON.stringify(guides);
+  const result = await lerInssManual(db, 'a', '2026-09');
+  expect(result.status).toBe(expected);
+  expect(result.absence).toBeNull();
+  expect(JSON.stringify(guides)).toBe(before);
+  const saved = await salvarInssManual(db, 'a', '2026-09', 'user', await inputFor(db, { state: state({ applicable: false, reason: 'Exceção mensal' }) }));
+  expect(saved).toMatchObject({ status: 'DOCUMENT_REVIEW', applicabilityConflict: true, applicable: false });
 });

@@ -31,7 +31,7 @@ export async function finishScheduledRun(claim, result, error, { db = prisma, no
   const current = await db.appSetting.findUnique({ where: { key: claim.key } });
   if (current?.value?.owner !== claim.value.owner) return false;
   const failed = Boolean(error || result?.skipped || result?.failed || result?.falhas
-    || result?.naoConferiveis || result?.extratoErro || result?.parcelasErro || result?.skippedByProcuration || result?.avisosPendentes
+    || result?.naoConferiveis || result?.extratoErro || result?.parcelasErro || result?.skippedByProcuration || result?.avisosPendentes || result?.solicitacoesWhatsapp?.avisosPendentes
     || (Array.isArray(result?.errors) ? result.errors.length : Number(result?.errors || 0)));
   const value = jsonValue({ ...current.value, owner: null, leaseUntil: null,
     status: failed ? "FAILED" : "SUCCEEDED", finishedAt: now.toISOString(),
@@ -98,9 +98,6 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
     avisos_guias_whatsapp: "GUIAS_WHATSAPP_AVISOS",
   };
   const rotinas = { ...settings.rotinas };
-  if (settings.rotinas?.pagamento) rotinas.avisos_guias_whatsapp = {
-    enabled: settings.rotinas.pagamento.enabled, frequency: 'DAILY', hour: settings.rotinas.pagamento.hour,
-  };
   return Promise.all(Object.entries(rotinas).map(async ([routine, config]) => {
     const workerFlag = workers[routine];
     const avisoWhatsapp = routine === 'avisos_guias_whatsapp';

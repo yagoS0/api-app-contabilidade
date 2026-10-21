@@ -1,7 +1,9 @@
+import { FormasIndicacoesParcelamento } from './FormasIndicacoesParcelamento';
 import { PagamentoGuia } from "./PagamentoGuia";
 import { ConsultaSerproGuias } from "./ConsultaSerproGuias";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createApiClient } from "../../../../api/client";
+import { RegistrarEnvioExterno } from './RegistrarEnvioExterno';
 import { Aviso } from "../../../../components/ui/Aviso";
 import { Button } from "../../../../components/ui/Button";
 // ⚠ AS DUAS CONVIVEM DE PROPÓSITO: `fmtDataCivil` para o VENCIMENTO (data civil, meia-noite UTC —
@@ -568,7 +570,7 @@ export function CompanyGuidesTable({
   // ⚠ Vivo desde `e1ec3a8e` (09/08/2026). Nenhum chamador passa a prop hoje, então declará-la com
   // `null` mantém o comportamento pretendido (não recarrega nada) e tira o erro. Quem quiser a
   // recarga só precisa passá-la — que é o que o código já esperava poder fazer.
-  onRefresh = null,
+  onRefresh = null, onFormaParcelamentoSaved = null,
   guiaDeOrigem = null, onLimparGuiaDeOrigem,
 }) {
   // R4 — "+ Subir Guia → PARCELAMENTO": anexar uma guia a um contrato que JÁ EXISTE.
@@ -659,6 +661,7 @@ export function CompanyGuidesTable({
   // Completar flow (modal split p/ guia já existente)
   const [corrigindoValor, setCorrigindoValor] = useState(null);
   const [corrigindoCompetencia, setCorrigindoCompetencia] = useState(null);
+  const [entregaExterna, setEntregaExterna] = useState(null);
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
@@ -1028,12 +1031,14 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
+      <FormasIndicacoesParcelamento key={`${companyId}:${mesVencimento}`} api={expectedGuidesApi} companyId={companyId} mes={mesVencimento} onSaved={async () => { await refreshAfterVazio(); await onFormaParcelamentoSaved?.(); }} />
       {temGuiaDeOrigem && <div role="status" style={{ padding: "10px 12px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: "var(--text-muted)" }}>
         {filteredGuides.length ? "Parcela selecionada a partir do acompanhamento." : loadingGuides ? "Localizando a guia da parcela…" : "A guia da parcela não foi localizada nesta listagem. Atualize os documentos para conferir."}
         <Button variant="secondary" size="sm" onClick={onLimparGuiaDeOrigem}>Mostrar todas as guias</Button>
       </div>}
       {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
       {corrigindoCompetencia && <ModalCorrigirCompetenciaGuia key={`${companyId}:${corrigindoCompetencia.guideId || corrigindoCompetencia.id}`} api={expectedGuidesApi} companyId={companyId} guia={corrigindoCompetencia} aoFechar={() => setCorrigindoCompetencia(null)} aoCorrigir={async () => { clearSelection(); await onRefresh?.(); setVazioRefreshKey(k => k + 1); }} />}
+      {entregaExterna && <RegistrarEnvioExterno key={`${companyId}:${entregaExterna.guideId || entregaExterna.id}`} api={expectedGuidesApi} companyId={companyId} guia={entregaExterna} aoFechar={() => setEntregaExterna(null)} aoSalvar={onRefresh} />}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
         <GuideCaptureModal
@@ -1328,6 +1333,9 @@ export function CompanyGuidesTable({
                       ✎ Completar
                     </Button>
                   )}
+                  {companyId && (
+                    <Button variant="secondary" size="sm" disabled={actionsBusy || selectedGuide.status !== 'PROCESSED'} onClick={() => setEntregaExterna(selectedGuide)}>Registrar envio externo</Button>
+                  )}
                   {onDeleteGuide && (
                     <Button
                       variant="danger" size="sm"
@@ -1432,7 +1440,7 @@ export function CompanyGuidesTable({
                 <div className="guides-grid__row" role="row" key={p.key}>
                   <span className="guides-grid__cell guides-grid__cell--check" role="cell" />
                   <span className="guides-grid__cell guides-grid__cell--type" role="cell">
-                    <strong>Falta guia de parcelamento</strong>
+                    <strong>{p.indicacaoId && !p.formaPagamento ? "Conferir forma de pagamento" : "Falta guia de parcelamento"}</strong>
                     <span><Button size="sm" variant="secondary" disabled={!onUploadGuide} onClick={() => {
                     handleStartUpload(TIPO_UPLOAD_PARCELAMENTO); setAnexoIndicacao(p); setAnexoParcelamentoId(p.parcelamentoId || "");
                   }}>Subir parcela</Button></span>

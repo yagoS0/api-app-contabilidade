@@ -26,7 +26,7 @@ test("indício vira linha sem valor nem vencimento e upload não exige contrato"
   const upload = jest.fn().mockResolvedValue({ ok: true, guide: { id: "g1" } });
   const refresh = jest.fn();
   render(<CompanyGuidesTable {...props} onUploadGuide={upload} onRefresh={refresh} />);
-  expect(await screen.findByText("Falta guia de parcelamento")).toBeInTheDocument();
+  expect(await screen.findByText("Conferir forma de pagamento")).toBeInTheDocument();
   expect(screen.getByText("3 parcela(s) em atraso no relatório fiscal.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Subir parcela" }));
   fireEvent.click(screen.getByText("Salvar avulsa"));

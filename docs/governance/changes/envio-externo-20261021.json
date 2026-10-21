@@ -1,0 +1,34 @@
+{
+  "summary": "Registro identificado de entrega externa por revisão da guia, com fechamento da pendência operacional e preservação dos transportes e pagamento.",
+  "baseCommit": "687b770e",
+  "risk": "high",
+  "domains": [
+    "guides",
+    "communication",
+    "api",
+    "web",
+    "data",
+    "accounting",
+    "operations",
+    "documentation"
+  ],
+  "operationalImpact": "Complemento aprovado de R11: data/meio/autor/horário; declaração externa não equivale a recibo Meta nem pagamento. Snapshot candidato aguarda sincronização canônica pelo Orquestrador.",
+  "rollback": "Reverter código sem apagar evidências AppSetting e tentativas EXTERNO; código antigo não reconhece declarado_externo como recibo oficial. Sem migration estrutural ou backfill.",
+  "tests": [
+    "API final: 7 suites, 138 testes aprovados",
+    "UI final: 3 suites, 34 testes aprovados",
+    "PostgreSQL descartável: concorrência, idempotência, rollback auditoria, disputa com transporte, revisão antiga, ACL e ausência de recibo/pagamento; zero rede externa"
+  ],
+  "limitations": [
+    "Revisão independente, integração e QA visual pendentes",
+    "Mock declara indisponibilidade do registro em vez de simular evidência operacional",
+    "Sem atos produtivos, merge, commit, push ou publicação",
+    "Lint ampliado bloqueado por incompatibilidade eslint-plugin-react-hooks/context.getSource em componente batch legado; nenhum gate alterado",
+    "Relatório diagnóstico de falhas de e-mail preserva a ocorrência histórica do transporte; declaração externa fecha pendência operacional, não converte emailStatus em SENT"
+  ],
+  "reviewCorrections": [
+    "Validade documental atual exigida na prévia, declaração e projeção; PostgreSQL sem PDF/pendente/ERROR recusa e invalida",
+    "Identidade do formulário isolada; retorno anterior ignorado; rótulos humanos com ID auditável preservado",
+    "EOL da referência preservado, 17 adições sem remoções"
+  ]
+}

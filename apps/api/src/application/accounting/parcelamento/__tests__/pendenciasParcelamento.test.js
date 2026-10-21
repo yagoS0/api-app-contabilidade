@@ -137,3 +137,18 @@ test("a guia de setembro não esconde o lembrete de outubro do mesmo indício", 
   expect(r.itens.find(i => i.indicacaoId)).toMatchObject({ referencia: "2026-10", guiaDoMesPresente: false, atrasosInformados: 3 });
   expect(r.itens.find(i => i.guideId === "upload")).toMatchObject({ anterior: true });
 });
+
+
+test('guia avulsa preserva forma declarada por mês sem reescrever contrato real ou pagamento', () => {
+ const i = { id: 'i', portalClientId: 'empresa', status: 'PENDENTE', modalidade: 'PARCSN', formaPagamento: 'DEBITO_AUTOMATICO', formasPagamento: [{ desde: '2026-10', formaPagamento: 'DEBITO_AUTOMATICO', usuarioId: 'u', em: '2026-10-01' }] };
+ const c = contrato({ origem: 'GUIA_AVULSA', parcelas: ['2026-09', '2026-10'].map((mes, n) => parcela({ id: `p${n}`, competencia: mes, guia: { id: `g${n}`, extracted: { indicacaoParcelamentoId: 'i' }, status: 'PROCESSED', storageKey: 'teste.pdf', valor: 100, vencimento: `${mes}-20` } })) });
+ const original = JSON.stringify(c);
+ const result = projetarPendenciasParcelamento({ contratos: [c], indicacoes: [i], mesOperacional: '2026-10' });
+ expect(result.itens.find(x => x.guideId === 'g1')).toMatchObject({ formaPagamento: 'DEBITO_AUTOMATICO', estado: 'CONSULTAR_PAGAMENTO', pagamentoConfirmado: false });
+ expect(result.itens.find(x => x.guideId === 'g0')).toMatchObject({ formaPagamento: 'GUIA_MENSAL', estado: 'ENVIAR' });
+ expect(JSON.stringify(c)).toBe(original);
+ const real = projetarPendenciasParcelamento({ contratos: [{ ...c, origem: 'MANUAL' }], indicacoes: [i], mesOperacional: '2026-10' });
+ expect(real.itens.find(x => x.guideId === 'g1')).toMatchObject({ formaPagamento: 'GUIA_MENSAL', estado: 'ENVIAR' });
+ const other = projetarPendenciasParcelamento({ contratos: [c], indicacoes: [{ ...i, portalClientId: 'outra' }], mesOperacional: '2026-10' });
+ expect(other.itens.find(x => x.guideId === 'g1').formaPagamento).toBe('GUIA_MENSAL');
+});

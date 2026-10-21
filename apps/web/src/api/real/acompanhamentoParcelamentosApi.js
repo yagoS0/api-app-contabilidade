@@ -2,6 +2,8 @@ export function acompanhamentoParcelamentosApi(request) {
   const base = (companyId) => `/firm/companies/${encodeURIComponent(companyId)}/parcelamentos/acompanhamento`;
   const post = (url, body = {}) => request(url, { method: "POST", body: JSON.stringify(body) });
   return {
+    getFormasIndicacoesParcelamento: (id, mes) => request(`${base(id)}/indicacoes/formas?mes=${encodeURIComponent(mes)}`),
+    salvarFormaIndicacaoParcelamento: (id, indicacaoId, body) => post(`${base(id)}/indicacoes/${encodeURIComponent(indicacaoId)}/forma`, body),
     getAcompanhamentoParcelamentos: (id) => request(base(id)),
     vincularGuiaParcelamento: (id, guideId, body) => post(`${base(id)}/guias/${encodeURIComponent(guideId)}/vincular`, body),
     reprocessarIndiciosParcelamento: (id) => post(`${base(id)}/reprocessar`),

@@ -50,7 +50,14 @@ export function montarRelatorioVencimento({ mesVencimento, companies, guides, pa
   }
   for (const g of guides) {
     if (!empresas.has(g.portalClientId)) continue;
-    const bloqueio = bloqueioEnvioParcela(g);
+    // O acompanhamento resolve indicação, vigência e precedência do contrato real.
+    // Reutilize essa evidência apenas para a mesma guia/empresa/contrato/mês.
+    const formaProjetada = acompanhamento?.itens?.find(item => item.guideId === g.id
+      && item.portalClientId === g.portalClientId && item.parcelamentoId === g.parcelamentoId
+      && (mesDaData(item.vencimento) || item.referencia) === mesDaData(g.vencimento))?.formaPagamento;
+    const bloqueio = bloqueioEnvioParcela(formaProjetada ? {
+      ...g, parcelamento: { ...g.parcelamento, formaPagamento: formaProjetada },
+    } : g);
     const doc = { bloqueioEnvio: bloqueio, guideId: g.id, portalClientId: g.portalClientId, razao: empresas.get(g.portalClientId).razao,
       tipo: g.tipo, competencia: g.competencia, vencimento: g.vencimento, valor: Number(g.valor || 0),
       parcelamentoId: g.parcelamentoId, numeroParcela: g.numeroParcela,
@@ -91,7 +98,7 @@ export function montarRelatorioVencimento({ mesVencimento, companies, guides, pa
   const result = { mesVencimento, competencia: mesVencimento, simples: [], presumidos: [], outros: [], pendenciasAnteriores, conferirVencimento };
   for (const row of rows.values()) {
     row.assinatura = assinaturaGuias(guides.filter((g) => row.pendingGuideIds.includes(g.id)));
-    row.situacao = row.faltantes.length || row.documentos.some(d => d.bloqueioEnvio && !d.paga) ? "incompleto" : row.pendingGuideIds.length ? "pendente" : "documentos_tratados";
+    row.situacao = row.faltantes.length || row.documentos.some(d => d.bloqueioEnvio && d.bloqueioEnvio.code !== "PARCELA_DEBITO_AUTOMATICO" && !d.paga) ? "incompleto" : row.pendingGuideIds.length ? "pendente" : "documentos_tratados";
     row.pendenciasParcelamento = row.acompanhamento.length;
     const grupo = row.regimeTributario === "SIMPLES" ? "simples" : ["LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(row.regimeTributario) ? "presumidos" : "outros";
     result[grupo].push(row);

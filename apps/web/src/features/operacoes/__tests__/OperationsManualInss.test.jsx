@@ -92,3 +92,14 @@ test('permissão retirada após prévia impede salvar', async () => {
   expect(screen.queryByRole('button', { name: 'Salvar controle' })).not.toBeInTheDocument();
   expect(api.saveCompanyManualInss).not.toHaveBeenCalled();
 });
+
+
+test.each([false, true])('monthly absence has a readable status and evidence, without false document availability (compact=%s)', async compact => {
+  const data = { ...initial, status: 'DOCUMENT_ABSENT', absence: { guideId: 'absence', at: '2026-10-01T12:00:00Z', by: 'accountant', reason: 'Sem retirada em setembro' }, guides: [{ id: 'absence', status: 'VAZIO', available: false, reviewReason: null }] };
+  const { api } = setup({ getCompanyManualInss: jest.fn(async () => data) }, { compact });
+  expect(await screen.findByText(/Ausência de guia confirmada nesta competência/)).toBeInTheDocument();
+  expect(screen.getByText(/Declarada na aba Guias em 01\/10\/2026.*Sem retirada em setembro/)).toBeInTheDocument();
+  expect(screen.queryByText('Aguardando guia manual')).not.toBeInTheDocument();
+  expect(screen.queryByText('Guia disponível')).not.toBeInTheDocument();
+  expect(api.saveCompanyManualInss).not.toHaveBeenCalled();
+});

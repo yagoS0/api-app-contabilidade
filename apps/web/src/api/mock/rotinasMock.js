@@ -1,8 +1,8 @@
-const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
-const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN"];
+const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp"];
+const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp"];
 let savedCompanies = null;
-let agenda = Object.fromEntries(keys.map(key => [key, { enabled: true, day: key === "conferencia" ? 1 : 10,
-  hour: key === "pagamento" ? 8 : 7, frequency: key === "pagamento" ? "DAILY" : "MONTHLY", timeZone: "America/Sao_Paulo" }]));
+let agenda = Object.fromEntries(keys.map(key => [key, { enabled: key !== "avisos_guias_whatsapp", day: key === "conferencia" ? 1 : 10,
+  hour: ["pagamento", "avisos_guias_whatsapp"].includes(key) ? 8 : 7, frequency: key === "avisos_guias_whatsapp" ? "DAILY" : "MONTHLY", timeZone: "America/Sao_Paulo" }]));
 
 export function mockExecucoesRotinas() {
   const now = new Date();

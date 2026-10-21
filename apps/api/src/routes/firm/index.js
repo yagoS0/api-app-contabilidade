@@ -56,6 +56,7 @@ import { createImplantacaoRouter } from './implantacao.js';
 import { createParametrosMunicipaisRouter } from './parametrosMunicipais.js';
 import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
+import { createEntregaExternaGuiaRouter } from './entregaExternaGuia.js';
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createPortalAccessRouter } from "./portalAccess.js";
 import { createCalendarioRouter } from "./calendario.js";
@@ -171,7 +172,7 @@ import {
   updateSerproRuntimeSettings,
   validarAgendaRotinas,
   uploadSerproCertificate,
-  ROTINA_KEYS,
+  ROTINA_KEYS, AGENDA_KEYS,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
 import {
   listCompanyRotinas,
@@ -2469,7 +2470,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     ]);
     return res.json({
       ok: true,
-      rotinas: ROTINA_KEYS.map((key) => ({ key, label: ROTINA_LABELS[key] })),
+      rotinas: AGENDA_KEYS.map((key) => ({ key, label: key === "avisos_guias_whatsapp" ? "Lembretes de guias no WhatsApp" : ROTINA_LABELS[key] })),
       agenda: settings.rotinas,
       executions: await getRoutineExecutionStatus(settings),
       empresas,
@@ -3590,6 +3591,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // Enviada = terminal em QUALQUER canal (a mesma leitura de `foiEnviadaComLegado`).
         enviada,
         canalEnvio: exibir?.canal || null,
+        entregaExterna: envios.find(e => e.entregaExterna)?.entregaExterna || null,
+        envioIndeterminado: envios.some(e => e.status === 'indeterminado'),
         envioStatus: exibir?.status || null,
         envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
         envioErro: exibir?.erroMensagemUsuario || null,
@@ -5499,6 +5502,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
   const companyDocumentsRouter = createCompanyDocumentsRouter({ log });
+  router.use('/companies/:companyId', createEntregaExternaGuiaRouter());
   router.use("/companies/:companyId", companyDocumentsRouter);
 
   // Cofre de senhas + "outras informações" da empresa (grupo "Empresa" na UI).

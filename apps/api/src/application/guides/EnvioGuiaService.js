@@ -12,10 +12,11 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { randomUUID } from "node:crypto";
+import { entregaExternaVigente } from './EntregaExternaGuiaService.js';
 
 const transacao = (client, executar) => typeof client.$transaction === "function" ? client.$transaction(executar) : executar(client);
 
-export const CANAL = Object.freeze({ EMAIL: "EMAIL", WHATSAPP: "WHATSAPP" });
+export const CANAL = Object.freeze({ EMAIL: "EMAIL", WHATSAPP: "WHATSAPP", EXTERNO: "EXTERNO" });
 
 /** Estados que bloqueiam repetição automática; WhatsApp enviado significa aceite, não entrega. */
 export const STATUS_TERMINAL = Object.freeze(["enviado", "entregue", "lido"]);
@@ -28,7 +29,7 @@ export const STATUS_TERMINAL = Object.freeze(["enviado", "entregue", "lido"]);
  * vale: enviada só por WhatsApp é enviada.
  */
 export function foiEnviada(envios) {
-  return (envios || []).some((e) => STATUS_TERMINAL.includes(String(e.status)));
+  return (envios || []).some((e) => STATUS_TERMINAL.includes(String(e.status)) || e.canal === 'EXTERNO' && e.status === 'declarado_externo' && e.entregaExterna);
 }
 
 /**
@@ -54,12 +55,12 @@ export function foiEnviadaComLegado(envios, guideLegado) {
 /** Canais com envio registrado, usando a mesma regra de legado do estado da guia. */
 export function canaisEnviadosComLegado(envios, guideLegado) {
   if (!envios?.length) return foiEnviadaComLegado(envios, guideLegado) ? [CANAL.EMAIL] : [];
-  return Object.values(CANAL).filter(canal => envios.some(e => e.canal === canal && STATUS_TERMINAL.includes(e.status)));
+  return Object.values(CANAL).filter(canal => envios.some(e => e.canal === canal && foiEnviada([e])));
 }
 
 /** O envio mais "adiantado" — é o que o popover do chip mostra. */
 export function envioParaExibir(envios) {
-  const ordem = { lido: 4, entregue: 3, enviado: 2, enviando: 1, pendente: 0, falhou: -1 };
+  const ordem = { lido: 4, entregue: 3, declarado_externo: 2, enviado: 2, enviando: 1, pendente: 0, falhou: -1 };
   return (envios || [])
     .slice()
     .sort((a, b) => (ordem[b.status] ?? -2) - (ordem[a.status] ?? -2))[0] || null;
@@ -354,9 +355,17 @@ export async function aplicarFalhaDoProvedor({ providerMessageId, codigo, mensag
 export async function enviosPorGuia(guideIds) {
   const ids = [...new Set((guideIds || []).filter(Boolean))];
   if (!ids.length) return new Map();
-  const envios = await prisma.envioGuia.findMany({ where: { guideId: { in: ids } } });
+  const envios = await prisma.envioGuia.findMany({ where: { guideId: { in: ids } }, include: { historicoTentativas: { where: { status: 'declarado_externo' } } } });
+  const externos = envios.filter(e => e.canal === 'EXTERNO').map(e => e.guideId);
+  const guias = externos.length ? await prisma.guide.findMany({ where: { id: { in: externos } }, select: { id: true, portalClientId: true, status: true, pdfBytes: true, storageKey: true, hash: true, tipo: true, parcelamentoId: true, numeroParcela: true, competencia: true, valor: true, extracted: true, vencimento: true } }) : [];
+  const porId = new Map(guias.map(g => [g.id, g]));
   const mapa = new Map();
   for (const e of envios) {
+    if (e.canal === 'EXTERNO') {
+      e.entregaExterna = entregaExternaVigente(e, porId.get(e.guideId));
+      if (!e.entregaExterna) continue;
+    }
+    delete e.guide; delete e.historicoTentativas;
     if (!mapa.has(e.guideId)) mapa.set(e.guideId, []);
     mapa.get(e.guideId).push(e);
   }

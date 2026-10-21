@@ -27,7 +27,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
     portalClient: { findUnique: jest.fn() },
     templateWhatsapp: { findUnique: jest.fn() },
-    guide: { findMany: jest.fn(), findUnique: jest.fn() },
+    guide: { findMany: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     envioGuiaTentativa: { create: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn(), updateMany: jest.fn() },
@@ -106,6 +106,7 @@ function clienteFalso(resultado = { wamid: "wamid.OK" }) {
 
 /** O estado de partida: nenhum envio registrado, contato com opt-in, template aprovado. */
 function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLATE_APROVADO, envios = [] } = {}) {
+  prisma.guide.updateMany.mockResolvedValue({ count: 1 });
   prisma.templateWhatsapp.findUnique.mockResolvedValue(template);
   prisma.guide.findMany.mockImplementation(async (args) => (
     // `preverLote` pede o `portalClient` junto; `executarLote` recarrega só o necessário do envio.

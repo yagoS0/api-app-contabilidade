@@ -67,3 +67,22 @@ test("falha mostra ação do contador e não promete retry antigo", async () => 
 
 test('recusa de acesso não anuncia lista vazia e impede salvar sem carga',async()=>{const api={getRotinas:jest.fn(async()=>{throw new Error('forbidden_admin_or_contador_only')}),saveRotinas:jest.fn()};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('administrador ou contador');expect(screen.queryByText('Nenhuma empresa.')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));expect(screen.getByRole('button',{name:'Salvar horários'})).toBeDisabled();expect(api.saveRotinas).not.toHaveBeenCalled();});
 test('gravação mantém dados bloqueados e avisa dia inexistente sem promessa de antecipação',async()=>{let concluir;const api={getRotinas:async()=>({rotinas:[{key:'das',label:'DAS'}],agenda:{das:{enabled:true,day:31,hour:7}},empresas:[]}),saveRotinas:jest.fn(()=>new Promise(r=>{concluir=r}))};render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));await screen.findByLabelText('Dia de DAS');expect(screen.getByText(/a rotina não será executada naquele mês/)).toBeVisible();expect(screen.queryByText(/usamos o último dia/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Salvar horários'}));expect(screen.getByLabelText('Dia de DAS')).toBeDisabled();expect(screen.getByRole('button',{name:'Descartar alterações de horário'})).toBeDisabled();await act(async()=>concluir({}));});
+
+test('horário dos lembretes é independente da consulta fiscal mensal',async()=>{
+ const api={getRotinas:async()=>({rotinas:[{key:'pagamento',label:'Pagamento'},{key:'avisos_guias_whatsapp',label:'Lembretes de guias no WhatsApp'}],agenda:{pagamento:{enabled:true,frequency:'MONTHLY',day:25,hour:8},avisos_guias_whatsapp:{enabled:false,frequency:'DAILY',day:1,hour:8}},empresas:[]}),saveRotinas:jest.fn(async b=>b)};
+ render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));
+ fireEvent.click(await screen.findByLabelText('Ligar Lembretes de guias no WhatsApp'));
+ expect(screen.getByText('Diariamente')).toBeVisible();
+ expect(screen.queryByLabelText('Dia de Lembretes de guias no WhatsApp')).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('Horário de Lembretes de guias no WhatsApp'),{target:{value:'09:00'}});
+ fireEvent.click(screen.getByRole('button',{name:'Salvar horários'}));
+ await waitFor(()=>expect(api.saveRotinas).toHaveBeenCalledWith({agenda:{pagamento:{enabled:true,frequency:'MONTHLY',day:25,hour:8},avisos_guias_whatsapp:{enabled:true,frequency:'DAILY',day:1,hour:9}}}));
+});
+
+test('execução de lembretes sempre tem nome legível antes do cadastro de rotinas carregar',async()=>{
+ const api={getRotinas:async()=>({rotinas:[],agenda:{},empresas:[],executions:[{routine:'avisos_guias_whatsapp',enabled:true,alive:true,lastRun:null}]})};
+ render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
+ expect(await screen.findByText('Lembretes de guias no WhatsApp')).toBeVisible();
+ expect(screen.queryByText('avisos_guias_whatsapp')).not.toBeInTheDocument();
+});

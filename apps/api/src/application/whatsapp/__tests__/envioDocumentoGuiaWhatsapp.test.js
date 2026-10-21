@@ -11,7 +11,7 @@ function setup() {
   const guide = { id: 'g', portalClientId: 'c', tipo: 'SIMPLES', competencia: '2026-09', valor: 100,
     vencimento: '2026-10-20', hash: createHash('sha256').update(conteudo).digest('hex'), liberadaCliente: true, status: 'PROCESSED' };
   const conversa = { id: 'conv', portalClientId: 'c', telefoneE164: '5511000000000' };
-  const client = { mensagemWhatsapp: { findUnique: jest.fn(async () => ({ id: 'entrada', conversaId: 'conv', direcao: 'in' })) }, guide: { findFirst: jest.fn(async () => guide) },
+  const client = { mensagemWhatsapp: { findUnique: jest.fn(async () => ({ id: 'entrada', conversaId: 'conv', direcao: 'in' })) }, guide: { findFirst: jest.fn(async () => guide), findUnique: jest.fn(async () => guide), updateMany: jest.fn(async () => ({ count: 1 })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error(), { code: 'P2002' }); records.set(data.key, data.value); }),
       update: jest.fn(async ({ where, data }) => { records.set(where.key, data.value); }) } };
   const documento = { guideId: 'g', mensagemEntradaId: 'entrada', conteudo, nomeArquivo: 'guia.pdf', revisao: revisaoDocumentoGuia(guide) };

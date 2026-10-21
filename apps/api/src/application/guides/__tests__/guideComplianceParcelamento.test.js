@@ -58,6 +58,15 @@ beforeEach(() => {
   mockGuides();
 });
 
+test('carteira recebe documento mensal presente sem convertê-lo em DAS ou perder o envio', async () => {
+  prisma.parcelamento.findMany.mockResolvedValueOnce([{ id: 'contrato', portalClientId: PORTAL, tipo: 'PARCSN', status: 'ATIVO', formaPagamento: null,
+    parcelasContratadas: [{ id: 'parcela', numeroParcela: 2, competencia: '2026-06', vencimento: new Date('2026-06-20'), guia: { id: 'guia', portalClientId: PORTAL, status: 'PROCESSED', storageKey: 'guia.pdf', vencimento: new Date('2026-06-20'), valor: 100 } }] }]);
+  const c = (await computeGuideComplianceMap([linhaSimples], COMP)).get(PORTAL);
+  expect(c.das.state).toBe('missing');
+  expect(c.guiasParcelamentoMes).toEqual([]);
+  expect(c.coberturaParcelamentoMes).toEqual([expect.objectContaining({ parcelaId: 'parcela', guideId: 'guia', documento: 'disponivel', mesOperacional: '2026-06', pagamentoConfirmado: false })]);
+});
+
 describe("parcela de parcelamento × DAS", () => {
   it("guia de parcelamento NÃO satisfaz o DAS — e o DAS continua faltando", async () => {
     mockGuides({

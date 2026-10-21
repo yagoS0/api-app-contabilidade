@@ -11,7 +11,7 @@ import { getSerproRuntimeSettings } from "../../application/fiscal/serpro/Serpro
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runRoutineLoop } from "../runRoutineLoop.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "../serproPaymentConfirmationWorker.js";
-test("agenda independente solicita pagamentos com SERPRO desligado sem chamada fiscal", async () => {
+test("worker fiscal não solicita WhatsApp nem consulta quando SERPRO desligado", async () => {
  const release = jest.fn();
  acquireGuideLease.mockResolvedValue({assertActive:jest.fn(),release});
  getSerproRuntimeSettings.mockResolvedValue({enabled:false});
@@ -21,8 +21,8 @@ test("agenda independente solicita pagamentos com SERPRO desligado sem chamada f
   expect(options.routines).toEqual(['pagamento']);
   return options.run({scheduledAt:'2026-09-25T12:00:00Z',assertActive:jest.fn()});
  });
- expect(await runSerproPaymentConfirmationWorkerLoop()).toMatchObject({skipped:false,serproSkipped:"serpro_disabled"});
- expect(solicitarPagamentosWhatsapp).toHaveBeenCalledWith(expect.objectContaining({scheduledAt:'2026-09-25T12:00:00Z'}));
+ expect(await runSerproPaymentConfirmationWorkerLoop()).toMatchObject({skipped:true,reason:"serpro_disabled"});
+ expect(solicitarPagamentosWhatsapp).not.toHaveBeenCalled();
  expect(runPaymentConfirmationOnce).not.toHaveBeenCalled();
  expect(release).toHaveBeenCalledTimes(1);
 });

@@ -75,8 +75,10 @@ function deriveMonthlyCron(day, hour) {
 // separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
 export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
 
+export const AGENDA_KEYS = [...ROTINA_KEYS, "avisos_guias_whatsapp"];
+
 // Sugestões de preenchimento não autorizam execução nem herdam a agenda global.
-const SUGESTOES_POR_ROTINA = { conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
+const SUGESTOES_POR_ROTINA = { avisos_guias_whatsapp: { day: 1, hour: 8 }, conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
 const objeto = value => value != null && typeof value === "object" && !Array.isArray(value);
 function inteiroExplicito(value, min, max) {
   if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) return null;
@@ -84,17 +86,18 @@ function inteiroExplicito(value, min, max) {
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
 function frequenciaValida(key, value) {
+  if (key === "avisos_guias_whatsapp") return value === undefined || value === "DAILY";
   return value === undefined || value === "MONTHLY" || (key === "pagamento" && value === "DAILY");
 }
 function resolveRotinas(stored) {
   const salvas = objeto(stored.rotinas) ? stored.rotinas : {};
-  return Object.fromEntries(ROTINA_KEYS.map(key => {
+  return Object.fromEntries(AGENDA_KEYS.map(key => {
     const salva = objeto(salvas[key]) ? salvas[key] : {};
     const sugestao = SUGESTOES_POR_ROTINA[key] || { day: 5, hour: 7 };
     const diaSalvo = inteiroExplicito(salva.day, 1, 31);
     const horaSalva = inteiroExplicito(salva.hour, 0, 23);
     const day = diaSalvo ?? sugestao.day, hour = horaSalva ?? sugestao.hour;
-    const frequency = key === "pagamento" && salva.frequency === "DAILY" ? "DAILY" : "MONTHLY";
+    const frequency = key === "avisos_guias_whatsapp" || (key === "pagamento" && salva.frequency === "DAILY") ? "DAILY" : "MONTHLY";
     return [key, { enabled: salva.enabled === true && diaSalvo !== null && horaSalva !== null && frequenciaValida(key, salva.frequency),
       day, hour, frequency, timeZone: "America/Sao_Paulo",
       cron: frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour) }];
@@ -108,7 +111,7 @@ function atualizarRotinas(stored, input) {
   if (!objeto(input.rotinas)) throw erroAgenda("rotinas", "informe um objeto de rotinas");
   const next = objeto(stored.rotinas) ? { ...stored.rotinas } : {};
   for (const [key, entrada] of Object.entries(input.rotinas)) {
-    if (!ROTINA_KEYS.includes(key)) throw erroAgenda(key, "rotina desconhecida");
+    if (!AGENDA_KEYS.includes(key)) throw erroAgenda(key, "rotina desconhecida");
     if (!objeto(entrada)) throw erroAgenda(key, "configuração inválida");
     const atual = objeto(next[key]) ? next[key] : {};
     const merged = { ...atual };

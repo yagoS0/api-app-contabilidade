@@ -1,0 +1,18 @@
+{
+  "summary": "Facilitar o acesso ao cadastro existente de benefício municipal e esclarecer a indisponibilidade da emissão com benefício.",
+  "baseCommit": "687b770e",
+  "risk": "medium",
+  "domains": ["web", "fiscal", "documentation"],
+  "operationalImpact": "Nenhuma nova regra fiscal. Pedido genérico de configuração, sem conceder benefício a qualquer empresa. Campos, normalização, permissões, salvamento e bloqueio NFSE_BENEFICIO_MUNICIPAL_PENDENTE preservados; nenhum grupo BM adicionado à DPS. R02 e proteção da emissão permanecem aplicáveis.",
+  "implementation": "Atalho abre a seção existente e foca o número sem salvar. Explicação da limitação antes do preenchimento e ajuda técnica recolhível. Aviso do emissor identifica indisponibilidade em vez de sugerir emissão sem benefício.",
+  "tests": [
+    "Web: beneficioMunicipalLigado, beneficioMunicipal e abaEmissaoNfseLigada — 3 suítes, 54 testes aprovados. Inclui foco, ausência de salvamento automático, somente leitura, campos condicionais e payload existente.",
+    "API: prioridadesFiscais e emissaoNfseSalvarProprio — 2 suítes, 44 testes aprovados; guard fiscal e validação/persistência existentes preservados.",
+    "Regressão adicional emissaoNfseNaoVoltaAtras: 8 testes aprovados; preservação do salvamento entre cadastro e configuração de emissão.",
+    "ESLint dos quatro arquivos alterados e git diff --check aprovados.",
+    "Primeira execução web não iniciou duas suítes por dependências locais ausentes; após ligar node_modules dos workspaces existentes, todas passaram, sem mudar testes ou dependências versionadas."
+  ],
+  "review": "Candidato isolado preparado por delegado. Revisão independente e conferência visual desktop/celular pendentes. Tentativa local com Playwright/Chrome, dados fictícios e bloqueio de rede externa foi interrompida sem capturas ou resultado; não constitui evidência visual. Não declarar homologação da emissão de benefício.",
+  "rollback": "Reverter somente este incremento de interface/testes. Nenhuma migração ou alteração de dados; campos e bloqueios fiscais permanecem no comportamento anterior.",
+  "humanDecisions": ["Nenhuma empresa ou concessão precisa ser identificada para este ajuste genérico. Aplicação fiscal futura exige contrato e evidência próprios; cadastro não comprova direito ou vigência."]
+}

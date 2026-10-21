@@ -1,5 +1,5 @@
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {
-  portalClient: { findUnique: jest.fn() }, guide: { findMany: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(),
+  portalClient: { findUnique: jest.fn() }, guide: { findMany: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() }, envioGuia: { findFirst: jest.fn() }, $transaction: jest.fn(),
 } }));
 jest.mock("../../../infrastructure/mail/EmailService.js", () => ({ EmailService: jest.fn() }));
 jest.mock("../GuideService.js", () => ({ getGuidePdfBuffer: jest.fn(async () => Buffer.from("test-pdf")) }));
@@ -16,6 +16,8 @@ const input = { portalClientId: "c", mesVencimento: "2026-09", selectedGuideIds:
 const send = jest.fn();
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.guide.findUnique.mockImplementation(async ({ where }) => guides.find(g => g.id === where.id));
+  prisma.envioGuia.findFirst.mockResolvedValue(null);
   prisma.portalClient.findUnique.mockResolvedValue({ id: "c", razao: "Cliente" });
   let reservaEm;
   prisma.guide.findMany.mockImplementation(async (query) => query.select?.updatedAt && !query.select?.portalClientId
@@ -37,7 +39,7 @@ test("conferência alterada impede reserva e envio", async () => {
   expect(prisma.guide.updateMany).not.toHaveBeenCalled();
 });
 test("reserva concorrente incompleta interrompe o envio", async () => {
-  prisma.guide.updateMany.mockResolvedValueOnce({ count: 1 });
+  prisma.guide.updateMany.mockImplementation(async query => ({ count: query.data.emailStatus === 'SENDING' ? 1 : 2 }));
   await expect(sendCompanyGuidesEmail(input)).rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
   expect(send).not.toHaveBeenCalled();
 });

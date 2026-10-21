@@ -1,4 +1,4 @@
-import { bloqueioEnvioParcela } from './GuiaParcelaEnvioGuard.js';
+import { bloqueioEnvioParcela, conferirFormaIndicacaoParaEnvio } from './GuiaParcelaEnvioGuard.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -58,6 +58,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     if (contrato?.portalClientId && contrato.portalClientId !== (g?.portalClientId || p?.portalClientId)) throw erro('DOCUMENTO_ESCOPO_DIVERGENTE', 'O contrato não pertence à empresa da guia.');
     if ((g?.parcelamentoId || p?.parcelamentoId) && !contrato) throw erro('PARCELA_VINCULO_INCOMPLETO', 'O contrato desta parcela precisa de conferência.');
     if (p?.pagamentoErro || ['DIVERGENTE', 'ERRO'].includes(p?.pagamentoStatus)) throw erro('CONSULTA_NAO_CONCLUIDA', 'Pagamento precisa de conferência pelo contador.');
+    if (g) await conferirFormaIndicacaoParaEnvio(g, db);
     const bloqueio = bloqueioEnvioParcela({ ...g, parcelamentoId: g?.parcelamentoId || p?.parcelamentoId, parcela: p, parcelamento: contrato });
     if (bloqueio) throw erro(bloqueio.code, bloqueio.message);
     if (!p && !g) throw erro("DOCUMENTO_NAO_ENCONTRADO", "Documento não encontrado.");

@@ -6,7 +6,7 @@ import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import { dataCivilBR } from '../../lib/dataCivil';
 
-const statuses = { NOT_APPLICABLE: 'Não se aplica nesta competência', PENDING_DOCUMENT: 'Aguardando guia manual', DOCUMENT_REVIEW: 'Guia precisa de revisão', DOCUMENT_AVAILABLE: 'Guia disponível' };
+const statuses = { DOCUMENT_ABSENT: 'Ausência de guia confirmada nesta competência', NOT_APPLICABLE: 'Não se aplica nesta competência', PENDING_DOCUMENT: 'Aguardando guia manual', DOCUMENT_REVIEW: 'Guia precisa de revisão', DOCUMENT_AVAILABLE: 'Guia disponível' };
 const empty = { applicable: null, responsible: '', dueDate: null, note: '', reason: '' };
 const fieldStyle = { display: 'grid', gap: 6, minWidth: 0 };
 const controlStyle = { width: '100%', boxSizing: 'border-box', minHeight: 40, font: 'inherit', color: 'var(--text)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 8 };
@@ -66,6 +66,7 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
         {data.status === 'DOCUMENT_REVIEW' && <p role="alert">Confira a classificação e o documento antes de liberar ao cliente.</p>}
         {[...new Set((data.guides || []).map(g => g.reviewReason).filter(Boolean))].map(reason => <p key={reason}>{reason}</p>)}
       </div>
+      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${dataCivilBR(String(data.absence.at).slice(0, 10))}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
       <dl className="operacoes-inss-dados">
         <div><dt>Responsável</dt><dd>{data.state.responsible || 'Não definido'}</dd></div>
         <div><dt>Prazo operacional</dt><dd>{dataCivilBR(data.state.dueDate) || 'Não definido'}</dd>{overdue && <span className="operacoes-erro" role="alert">Prazo operacional vencido</span>}</div>
@@ -82,7 +83,8 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
     {error && <div role="alert"><p>{error}</p>{(!pending.current || reloadRequired) && <Button variant="secondary" disabled={busy} onClick={load}>Recarregar controle</Button>}</div>}
     {saved && <p role="status">{saved}</p>}
     {data && <>
-      <p role="status">{statuses[data.status]}{data.guides?.length > 0 ? ` · ${data.guides.length} guia(s) registrada(s)` : ''}</p>
+      <p role="status">{statuses[data.status]}{data.guides?.some(g => g.status !== 'VAZIO') ? ` · ${data.guides.filter(g => g.status !== 'VAZIO').length} guia(s) registrada(s)` : ''}</p>
+      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${dataCivilBR(String(data.absence.at).slice(0, 10))}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
       <p>Pró-labore no cadastro: {data.hasProlabore ? 'sim' : 'não'}. {data.applicabilitySource === 'month' ? 'Exceção desta competência.' : 'Aplicação conforme cadastro.'}</p>
       {overdue && <p role="alert">Prazo operacional vencido em {dataCivilBR(data.state.dueDate)}.</p>}
       {data.status === 'DOCUMENT_REVIEW' && <p role="alert">Confira a guia e sua classificação na aba Guias antes de liberá-la ao cliente.</p>}

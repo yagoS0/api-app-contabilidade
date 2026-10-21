@@ -83,13 +83,13 @@ test("declaração CLIENTE pode ser conferida manualmente, mas nunca gera consul
   expect((await confirmarPagamentoGuia({ guideId: "g", scheduledAt })).skipped).toBe("already_paid");
   await confirmarPagamentoGuia({ guideId: "g" }); expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(1);
 });
-test("negativa fresca avisa uma vez; outra agenda não consulta a obrigação, manual pode consultar", async () => {
+test("negativa fiscal não envia mensagem; outra agenda não reconsulta e manual pode consultar", async () => {
   const first = await runPaymentConfirmationOnce({ portalClientId: "c", scheduledAt });
-  expect(first.avisosEnviados).toBe(1);
+  expect(first.avisosEnviados).toBe(0);
   await runPaymentConfirmationOnce({ portalClientId: "c", scheduledAt: "2026-09-25T11:00:00Z" });
   expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(1);
-  // Pode retomar aviso reservado após reinício; o serviço de aviso deduplica o transporte.
-  expect(avisarPagamentoNaoConfirmado).toHaveBeenCalledTimes(2);
+  // A agenda fiscal não produz avisos, mesmo após reinício.
+  expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled();
   await confirmarPagamentoGuia({ guideId: "g" });
   expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(2);
 });
@@ -106,9 +106,9 @@ test("falha técnica não notifica e pago automático faz somente a consulta de 
   await confirmarPagamentoGuia({ guideId: "g", scheduledAt });
   expect(confirmarPagamento).not.toHaveBeenCalled();
 });
-test("falha após persistir negativa retoma só aviso, nunca outra consulta fiscal", async () => {
+test("indisponibilidade do canal de avisos não contamina resultado fiscal", async () => {
   avisarPagamentoNaoConfirmado.mockRejectedValueOnce(Error("banco do aviso indisponível"));
-  expect((await runPaymentConfirmationOnce({ portalClientId: "c", scheduledAt })).errors).toBe(1);
+  expect((await runPaymentConfirmationOnce({ portalClientId: "c", scheduledAt })).errors).toBe(0);
   const r = await runPaymentConfirmationOnce({ portalClientId: "c", scheduledAt: "2026-09-25T11:00:00Z" });
-  expect(r.avisosEnviados).toBe(1); expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(1);
+  expect(r.avisosEnviados).toBe(0); expect(avisarPagamentoNaoConfirmado).not.toHaveBeenCalled(); expect(consultarDasIndexPorCompetencia).toHaveBeenCalledTimes(1);
 });

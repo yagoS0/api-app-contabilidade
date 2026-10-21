@@ -41,7 +41,7 @@ export function BeneficioMunicipalDaNota({ cadastroEmissao }) {
       borderRadius: 8, padding: 10, display: "grid", gap: 6,
       fontSize: "0.8rem", color: "var(--state-warn)",
     }}>
-      <strong>Esta empresa tem benefício municipal cadastrado — e ele NÃO entra nesta nota.</strong>
+      <strong>Benefício municipal cadastrado · emissão pela Altan indisponível</strong>
       <div style={{ color: PANEL.muted }}>
         {/* ⚠ O número gravado fora da forma NÃO some: mostrar o que está gravado é o que permite
             perceber o erro. Some só a leitura formatada. */}

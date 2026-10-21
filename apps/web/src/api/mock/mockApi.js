@@ -7953,6 +7953,8 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     async preverCorrecaoCompetenciaGuia() {
       throw new Error("A correção de competência exige conferir os vínculos no servidor real. Nenhuma guia foi alterada.");
     },
+    async preverEnvioExternoGuia() { throw new Error('O registro de entrega externa exige o servidor para conferir a revisão. Nenhuma entrega foi registrada.'); },
+    async registrarEnvioExternoGuia() { throw new Error('Nenhuma entrega externa é registrada no ambiente de demonstração.'); },
     async corrigirCompetenciaGuia() {
       throw new Error("A correção de competência não é aplicada no ambiente de demonstração.");
     },

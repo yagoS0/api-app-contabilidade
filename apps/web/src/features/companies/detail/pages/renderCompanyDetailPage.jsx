@@ -570,7 +570,7 @@ function CompanyDetailContent({
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
             recalculatingGuideId={guidesPanel.recalculatingGuideId}
-            onRefresh={guidesPanel.onRefresh}
+            onRefresh={guidesPanel.onRefresh} onFormaParcelamentoSaved={guidesPanel.onFormaParcelamentoSaved}
             onUploadGuide={guidesPanel.onUploadGuide}
             uploadingGuide={guidesPanel.uploadingGuide}
             onIdentifyGuide={guidesPanel.onIdentifyGuide}
@@ -1426,7 +1426,7 @@ function CompanyDetailContent({
 
       {companyDetailTab === "guides" && (
           <Suspense fallback={<TabLoadingFallback />}>
-          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
+          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onFormaParcelamentoSaved={guidesPanel.onFormaParcelamentoSaved} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
           </Suspense>
         )}
 

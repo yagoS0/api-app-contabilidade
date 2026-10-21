@@ -1,0 +1,16 @@
+{
+  "summary": "Exibir a cobertura documental mensal de parcelamentos, inclusive guias presentes e enviadas, separada da cobertura de obrigações tributárias.",
+  "risk": "medium",
+  "baseCommit": "687b770e",
+  "domains": ["accounting", "guides", "api", "web", "documentation"],
+  "operationalImpact": "Concretiza R01/R02: documento, comunicação e pagamento permanecem distintos. Acrescenta projeção mensal somente leitura. Não modifica contratos, forma de pagamento, cobranças, lançamento, envio ou baixas. guiasParcelamentoMes continua representando alertas de faltantes; coberturaParcelamentoMes representa itens do mês operacional com documento presente, faltante, a conferir ou não exigido. Forma desconhecida/indicação não é convertida em débito automático nem guia mensal.",
+  "tests": [
+    "Rodada de correção após revisão independente P2: expõe documentoConferido do produtor; cobertura só declara disponível quando PDF, processamento, valor, vencimento e conferência são válidos. Envio/pagamento não ocultam revisão documental. 56 testes API em 3 suítes aprovados, incluindo 12 combinações de documento pendente/valor ausente ou zerado/data inválida com parcela aberta/enviada/paga. Sem nova regra operacional.",
+    "API: coberturaParcelamento, pendenciasParcelamento e guideComplianceParcelamento: 44 testes, 3 suítes aprovados. Inclui integração computeGuideComplianceMap com relações de parcelas contratadas, mês seguinte à competência, separação do DAS e documento presente.",
+    "Web: coberturaParcelamento, resumoGuias, indicadorParcelamentoMensal, tabelaEmpresasLeitura e fluxoCarteiraDetalhe: 52 testes, 5 suítes aprovados. Unidade de obrigação preservada; documento compartilhado contado uma vez; parcela enviada permanece visível e débito automático não pede guia.",
+    "Primeira fixture adicional de integração usou parcelas em vez da relação Prisma parcelasContratadas; corrigida a fixture mantendo asserções, nova execução aprovada. Nenhuma mudança de produto para contornar teste.",
+    "Revisão independente e inspeção visual pendentes. Nenhum teste fiscal externo ou dado produtivo alterado."
+  ],
+  "rollback": "Reverter projeção adicional e UI; sem migração ou alteração persistida. Preservar projeção original dos alertas e acompanhamento dos contratos.",
+  "humanDecisions": ["Sintropia não possui contrato cadastrado segundo diagnóstico do Principal. Não inferir forma de pagamento das indicações. Tratamento cadastral produtivo é separado deste candidato."]
+}

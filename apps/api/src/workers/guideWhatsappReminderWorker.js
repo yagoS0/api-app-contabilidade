@@ -7,13 +7,13 @@ import { log, INTEGRACAO_WHATSAPP } from '../config.js';
 export async function runGuideWhatsappReminderTick({ agora = new Date(), settings = getSerproRuntimeSettings,
   schedule = runScheduledRoutine, solicitar = solicitarPagamentosWhatsapp, ligado = INTEGRACAO_WHATSAPP } = {}) {
   if (!ligado) return null;
-  const salvo = (await settings()).rotinas?.pagamento;
+  const salvo = (await settings()).rotinas?.avisos_guias_whatsapp;
   if (!salvo?.enabled) return null;
   const config = { enabled: true, frequency: 'DAILY', hour: salvo.hour };
   return schedule('avisos_guias_whatsapp', config, async options => {
     const assertActive = async () => {
       options.assertActive();
-      const atual = (await settings()).rotinas?.pagamento;
+      const atual = (await settings()).rotinas?.avisos_guias_whatsapp;
       if (!atual?.enabled || atual.hour !== config.hour) throw Object.assign(new Error('Agenda de avisos alterada.'), { code: 'AGENDA_ALTERADA' });
     };
     await assertActive();

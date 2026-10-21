@@ -65,6 +65,11 @@ function GuideStatusCell({ value }) {
     );
   }
   const valorTitle = value.valor != null ? `R$ ${Number(value.valor).toFixed(2)}` : "";
+  if (value.entregaExterna) {
+    const p = value.entregaExterna;
+    const meio = { PESSOAL: 'entrega pessoal', WHATSAPP_PARTICULAR: 'WhatsApp particular', EMAIL_EXTERNO: 'e-mail externo', OUTRO: 'outro meio' }[p.meio] || 'meio registrado';
+    return <td style={{ ...cellBaseStyle, color: PANEL.success }} title={`Envio externo declarado: ${meio} em ${p.dataEntrega}; registrado por ${p.atorNome || 'contador identificado no histórico'}. ${valorTitle}`}>✓ enviada externamente{value.envioIndeterminado ? ' · conferir tentativa anterior' : ''}</td>;
+  }
   // ⚠ Enviada = terminal em QUALQUER canal (`enviada` vem de `envios_guia`, a mesma fonte do chip do
   // dashboard). `emailStatus === "SENT"` continua valendo para a guia anterior à tabela de envios.
   if (value.enviada || value.emailStatus === "SENT") {

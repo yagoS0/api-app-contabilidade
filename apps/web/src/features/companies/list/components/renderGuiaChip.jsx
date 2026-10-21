@@ -105,7 +105,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
   const canaisEnviados = rotuloCanaisEnviados(tag);
   const estadosParcela = tag.key === "parcDas" ? [...new Set((tag.itens || []).filter(i => i.estado !== "RESOLVIDA").map(i => i.estado))] : [];
   const rotuloParcela = { IDENTIFICAR: "identificar parcelamento", CONFERIR_PARCELA: "conferir parcelas", CONSULTAR_PAGAMENTO: "confirmar pagamento", CONTABILIZAR: "pagamento confirmado, falta contabilizar", OBTER_GUIA: "obter guia", ENVIAR: "enviar guia", DIVERGENCIA: "conferir divergência", CONFERIR_DOCUMENTO: "conferir documento", CONSULTA_FALHOU: "consulta não concluída" };
-  const rotuloEstado = tag.mensal ? 'falta guia do mês' : estadosParcela.length ? estadosParcela.length === 1 ? rotuloParcela[estadosParcela[0]] || "conferir acompanhamento" : `${tag.pendencias || estadosParcela.length} tarefas de acompanhamento` : canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
+  const rotuloEstado = tag.mensal ? tag.itens?.some(i => i.indicacaoId && !i.formaPagamento) ? 'conferir forma de pagamento' : 'falta guia do mês' : estadosParcela.length ? estadosParcela.length === 1 ? rotuloParcela[estadosParcela[0]] || "conferir acompanhamento" : `${tag.pendencias || estadosParcela.length} tarefas de acompanhamento` : canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
   // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
   const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";

@@ -1,0 +1,76 @@
+{
+  "summary": "Integração local de entrega externa auditada, configuração de débito automático por indicação, cobertura mensal de parcelamentos, coerência INSS, agenda independente de lembretes e cadastro de benefício municipal.",
+  "baseCommit": "687b770ebbb24dc4722574022453f555c27c1afa",
+  "risk": "critical",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web",
+    "governance",
+    "documentation"
+  ],
+  "operationalImpact": "Decisões aprovadas consolidadas na seção26 da referência canônica e snapshot versionado, T66–T75. Entrega externa passa a concluir comunicação pela declaração identificada do contador, sem pagamento/recibo oficial. Agenda de mensagens separada da fiscal, OFF até salvamento explícito. Coerência documental e ausência mensal não alteram matriz tributária. Cadastro de benefício municipal mantém bloqueio de emissão. Configuração de forma por indicação incorporada após correção revisada de precedência do contrato, atualização da interface e projeção no lote. Nenhuma produção alterada.",
+  "orchestrator": {
+    "run": "2026-10-21T19-41-57-660Z-a7030824",
+    "status": "interrompido_e_replanejado_pelo_principal",
+    "reason": "GateAPI original sem ambiente PostgreSQL descartável; novas decisões e auditoria ampliaram escopo além do allowlist inicial. Journal preservado. Continuação por executores/revisores nativos com worktrees isoladas e gates reais do catálogo. Não declara ready_for_human."
+  },
+  "reviews": [
+    "audit_contabil: cobertura documental de parcelamentos reprovada, corrigida e aprovada; 56 testesAPI repetidos.",
+    "governanca_revisao: INSS e quatro arquivos originais aprovados no escopo; 47API+22web e8+12 testes repetidos.",
+    "audit_contabil: cadastro de benefício municipal aprovado; 62web repetidos.",
+    "governanca_revisao: lembretes aprovados no delta;72API+8web repetidos. Ajuste visual posterior diário/rótulo:9web do autor e conferência visual do Principal.",
+    "governanca_revisao: entrega externa reprovada por validade, corrigida e aprovada;95API+23web repetidos.",
+    "governanca_revisao: revisão sistêmica parcial sem nova regressão;37web e referência operacional conferidos. Parecer final pendente.",
+    "desenho_comercial_nove: configuração de débito da indicação ainda reprovada por precedência de contrato e interface após salvar; proposta adicional isolada em preparação, sem aplicação.",
+    "desenho_comercial_nove: proposta adicional de quatro arquivos aprovada com83API+5UI; contexto2543arquivos conferido. Aplicada após instruções do usuário para seguir na retomada.",
+    "governanca_revisao: parecer sistêmico favorável após correção do lote por forma efetiva,12testes repetidos; aguarda conclusão dos gates.",
+    "Revisão final governanca_revisao: fixtures de e-mail e agenda preservam verificações; CSS restrito aos formulários. Parecer favorável, condicionado ao gate API final."
+  ],
+  "tests": [
+    "Principal:54API de interseção cobertura/INSS passaram após integração inicial.",
+    "Governance engine:72/72, exit0.",
+    "Portal:99 suítes,1580/1580 testes, exit0, portal-integrado.log.",
+    "Build web e portal:exit0; avisos de chunks grandes preexistentes, sem alteração de limites.",
+    "Gate dados:exit0, banco loopback exclusivo altan_integrado_dados_20261021_governance_test; validate/schema/migrations/DRE/fluxo aprovados.",
+    "API e escritório:regressões completas em andamento; não declarar aprovadas antes dos manifests finais.",
+    "Visual mock:benefício municipal desktop/celular, agenda de lembretes desktop/celular e modal envio externo desktop/celular. Mock de entrega externa informa indisponibilidade do servidor; gravação testada em PostgreSQL descartável, sem envio real.",
+    "Escritório:516suítes,5887testes aprovados antes da incorporação débito; após incorporação,14testes de interseção UI passaram. QA localisolado validou salvar,alterar,histórico e celular; dados fictícios semrede.",
+    "API final: batch3 identificou3falhas em guiaEmailDestinatariosExecucao; diagnóstico/correção de fixture em andamento, sem aprovação do gate.",
+    "Lint final: ESLint8.57.1 local do web, arquivos modificados e novos, exit0. Build web final exit0. Referência canônica e snapshot SHA256 f13853d53e75dc3dff4e99c4396d8e9f1bc9ae92a0689208bf8fd1d9cb29ba7e iguais. git diff --check aprovado.",
+    "Fixture de e-mail corrigida e revisada:20/20, verificações preservadas. Nova API completa em execução, api-final-validado.log; não aprovada antecipadamente."
+  ],
+  "rollback": "Desabilitar agenda de comunicação antes de reverter código; não restaurar saídas acopladas ao fiscal por acidente. Preservar declarações externas, tentativas, eventos e revisões. Não apagar dados históricos. Sem migração estrutural neste incremento; alteração de schema é comentário do canal EXTERNO.",
+  "humanDecisions": [
+    "Sem autorização de publicação deste incremento.",
+    "Competência inicial da configuração real da Sintropia e ativação de agenda ficam para etapa produtiva explícita.",
+    "Conciliação dos recibos legados e vencimento inválido exigem evidência; sem preenchimento retroativo por inferência.",
+    "Drive:proposta de importação conferida documentada; integração direta depende identificação da pasta e acesso autorizado.",
+    "Usuário determinou continuar pelo Orquestrador após retomada da assinatura e pediu economia de limite. Principal reutilizou pareceres e aplicou correção delimitada já validada; não interpretou como autorização de publicação ou dados reais."
+  ],
+  "limitations": [
+    "Auditoria produtiva somente SELECT:35guias enviadasOutubro,17empresas;33recibos sem revisão integral,1vencimento inválido,1paga. Agenda separada não resolve o legado sozinha.",
+    "Não houve mensagens, consultas fiscais, baixas, mudança de empresa real, publicação ou push.",
+    "Testes e pareceres específicos dos candidatos são evidência do escopo indicado, não aprovação automática da integração final."
+  ],
+  "finalValidation": {
+    "status": "gates_e_revisoes_aprovados_localmente_sem_publicacao",
+    "api": "636 suítes descobertas:635 aprovadas e1 condicional;11.161 aprovados. Caso condicional PostgreSQL executado separadamente:1/1 aprovado, api-p0-final.log. Gate exit0, api-final-validado.log/api-9qtypY.",
+    "web": "5.887 testes aprovados;14 testes adicionais após integração de débito automático;lint/build finais exit0",
+    "portal": "1.580 testes aprovados;build exit0",
+    "governance": "72 testes aprovados;run original permanece interrompido/replanejado, sem ready_for_human fabricado",
+    "data": "gate aprovado em PostgreSQL descartável",
+    "reviews": "Parecer sistêmico favorável; fixtures finais e CSS revisados independentemente",
+    "production": "Somente leitura; sem publicação, mensagens ou alterações reais",
+    "historicalEntries": "Registros intermediários abaixo preservam reprovações e correções; o estado atual consta neste objeto"
+  },
+  "releaseAuthorization": "21/10/2026: usuário autorizou PR, merge main e produção após CI/revisões; após deploy, configurar4parcelamentosSintropia DA desde início e conferir avisos. Histórico de pendências anterior fica superado somente nesse escopo. Sem ativação de agenda ou pagamento.",
+  "integrationReview": "Revisor independente confirmou fingerprints funcionais; correção de metadados integra domínio documentation e normaliza EOL de arquivos novos, sem alteração semântica."
+}

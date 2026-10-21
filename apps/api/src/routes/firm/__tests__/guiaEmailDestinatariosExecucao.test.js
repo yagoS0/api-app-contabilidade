@@ -47,7 +47,11 @@ beforeEach(() => {
   guias = [guia()];
   contatos = [];
   mockSend.mockResolvedValue({});
-  getGuidePdfBuffer.mockResolvedValue(Buffer.from("%PDF-1.4 teste"));
+  // Não carregar uma remoção programada para o teste seguinte se a execução falhar antes do PDF.
+  getGuidePdfBuffer.mockReset().mockResolvedValue(Buffer.from("%PDF-1.4 teste"));
+  // A conferência/reserva também lê evidências de entrega externa antes do transporte.
+  prisma.envioGuia.findMany.mockResolvedValue([]);
+  prisma.envioGuia.findUnique.mockResolvedValue(null);
   prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
   prisma.portalClient.findUnique.mockImplementation(async ({ where }) => ({ id: where.id, razao: "Empresa sintética", cnpj: "00000000000000", guideNotificationEmail: "legado@example.com" }));
   prisma.contatoWhatsapp.findMany.mockImplementation(async ({ where }) => contatos.filter((c) => c.portalClientId === where.portalClientId && (where.ativo === undefined || c.ativo === where.ativo)));
