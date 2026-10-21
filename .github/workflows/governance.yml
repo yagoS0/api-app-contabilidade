@@ -41,7 +41,20 @@ jobs:
   accounting-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: accounting_test
+          POSTGRES_PASSWORD: fixture_only_ci
+          POSTGRES_DB: accounting_governance_test
+        ports:
+          - 55490:5432
+        options: >-
+          --health-cmd "pg_isready -U accounting_test -d accounting_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://accounting_test:fixture_only_ci@127.0.0.1:55490/accounting_governance_test
       TZ: America/Sao_Paulo
       NODE_ENV: test
       INTEGRACAO_IA_COMERCIAL: "0"
@@ -57,6 +70,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run prisma:generate -w @contabilidade/api
+      - name: Migrate disposable accounting database
+        env:
+          DATABASE_URL: ${{ env.ALTAN_GOVERNANCE_TEST_DATABASE_URL }}
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
       - name: Accounting services, ledger routes and closing contracts
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/accounting/|accountingEntries|fechamentoContabil'

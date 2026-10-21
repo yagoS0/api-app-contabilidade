@@ -14,7 +14,8 @@
     "portal",
     "web",
     "governance",
-    "documentation"
+    "documentation",
+    "ci"
   ],
   "operationalImpact": "Decisões aprovadas consolidadas na seção26 da referência canônica e snapshot versionado, T66–T75. Entrega externa passa a concluir comunicação pela declaração identificada do contador, sem pagamento/recibo oficial. Agenda de mensagens separada da fiscal, OFF até salvamento explícito. Coerência documental e ausência mensal não alteram matriz tributária. Cadastro de benefício municipal mantém bloqueio de emissão. Configuração de forma por indicação incorporada após correção revisada de precedência do contrato, atualização da interface e projeção no lote. Nenhuma produção alterada.",
   "orchestrator": {
@@ -72,5 +73,6 @@
     "historicalEntries": "Registros intermediários abaixo preservam reprovações e correções; o estado atual consta neste objeto"
   },
   "releaseAuthorization": "21/10/2026: usuário autorizou PR, merge main e produção após CI/revisões; após deploy, configurar4parcelamentosSintropia DA desde início e conferir avisos. Histórico de pendências anterior fica superado somente nesse escopo. Sem ativação de agenda ou pagamento.",
-  "integrationReview": "Revisor independente confirmou fingerprints funcionais; correção de metadados integra domínio documentation e normaliza EOL de arquivos novos, sem alteração semântica."
+  "integrationReview": "Revisor independente confirmou fingerprints funcionais; correção de metadados integra domínio documentation e normaliza EOL de arquivos novos, sem alteração semântica.",
+  "ciCorrection": "PR239 primeira rodada: novo teste PostgreSQL falhou porque accounting/usability não tinham banco. Principal acrescentou serviçospostgres15descartáveis, saúde, variávelloopback e migrations antes dos testes. Sem skips, exclusões, mudanças de assertions, timeouts ou permissões. Revisão independente específica requerida e CI novamente obrigatório. Sem impacto operacional;rollback da infraestrutura CI remove somente serviços isolados."
 }
