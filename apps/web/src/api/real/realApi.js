@@ -1132,6 +1132,12 @@ export function createRealApi() {
     async preverCorrecaoCompetenciaGuia(companyId, guideId, competencia) {
       return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-competencia?competencia=${encodeURIComponent(competencia)}`);
     },
+    async preverEnvioExternoGuia(companyId, guideId) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/envio-externo/previa`);
+    },
+    async registrarEnvioExternoGuia(companyId, guideId, body) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/envio-externo`, { method: 'POST', body: JSON.stringify(body) });
+    },
     async corrigirCompetenciaGuia(companyId, guideId, { competencia, revisao }) {
       return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-competencia`, { method: "POST", body: JSON.stringify({ competencia, revisao }) });
     },

@@ -72,6 +72,24 @@ describe("⚠ A ABA PASSA AS PROPS — o bloco não renderiza vazio para sempre"
     return { onSalvar };
   }
 
+  it("o atalho abre a configuração e foca o campo sem salvar ou escolher benefício", () => {
+    const { onSalvar } = abrirAba({});
+    const numero = screen.getByLabelText("Número do benefício (nBM)", { exact: false });
+    expect(numero.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar benefício municipal' }));
+    expect(numero.closest('details')).toHaveAttribute('open');
+    expect(numero).toHaveFocus();
+    expect(numero).toHaveValue('');
+    expect(screen.getByText(/Este cadastro não habilita a emissão com benefício pela Altan/)).toBeVisible();
+    expect(onSalvar).not.toHaveBeenCalled();
+  });
+
+  it("somente leitura não oferece atalho nem campos de configuração", () => {
+    render(<EmissaoNfseTab company={{ razao: 'ACME', legacyCompany: {} }} podeEditar={false} />);
+    expect(screen.queryByRole('button', { name: 'Configurar benefício municipal' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Número do benefício (nBM)', { exact: false })).not.toBeInTheDocument();
+  });
+
   it("o campo do número aparece na aba, com o que está gravado", () => {
     abrirAba({ beneficioMunicipalNumero: "33045570200123" });
     expect(screen.getByLabelText("Número do benefício (nBM)", { exact: false }))
@@ -154,7 +172,7 @@ describe("⚠⚠ O ASSISTENTE DE EMISSÃO DIZ QUE O BENEFÍCIO NÃO ENTRA NA NOT
       beneficioMunicipalTipoReducao: "PERCENTUAL",
       beneficioMunicipalPRedBC: 40,
     }} />);
-    expect(screen.getByText(/NÃO entra nesta nota/)).toBeInTheDocument();
+    expect(screen.getByText(/Benefício municipal cadastrado · emissão pela Altan indisponível/)).toBeInTheDocument();
     expect(screen.getByText(/33045570200123/)).toBeInTheDocument();
     expect(screen.getByText(/emissão fica bloqueada para conferência/)).toBeInTheDocument();
   });

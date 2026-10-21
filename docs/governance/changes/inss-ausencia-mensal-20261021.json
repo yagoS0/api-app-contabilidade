@@ -1,0 +1,32 @@
+{
+  "summary": "Candidato isolado: controle manual de INSS reconhece ausência mensal confirmada VAZIO pela resolução canônica das guias.",
+  "baseCommit": "687b770ebbb24dc4722574022453f555c27c1afa",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Correção de coerência R01/R02/R08/R13/R14/R19/R21/R22, sem nova matriz fiscal ou mudança das decisões pendentes. VAZIO não comprova PDF, envio ou pagamento. Conserva aplicabilidade/override/responsável, conflitos documentais e auditoria. Metadados da ausência passam a compor a revisão otimista. Nenhuma migração ou gravação operacional. Referência canônica e snapshot idênticos FD6AF79506D3CBC79107C38951299118209D2147ED1514FC77F37289B963FD20.",
+  "tests": [
+    "API: 47 testes em OperationsManualInss, operationsManualInss rota e guideComplianceCiclo; exit0, .altan-governance/api-round1.log.",
+    "Web rodada1: 20/21; falha de fixture nova criou tarefa enviada com tipo pendencias. Corrigido tipo da fixture sem mudança da projeção.",
+    "Web rodada2: 22 testes em OperationsManualInss, manualInssProjection e manualInssMock; exit0, .altan-governance/web-round2.log.",
+    "Lint web dirigido exit0 sem avisos, .altan-governance/lint-web-final.log. Tentativas anteriores falharam por cwd/config e dependência globals local ausente; ajustados somente junctions locais de dependências.",
+    "git diff --check aprovado. Nenhum teste com rede fiscal, DB produtivo ou mensagens."
+  ],
+  "reviewProcess": "Delegado do Principal em worktree isolado, sem relançar controlador nem editar árvore concorrente. Candidato aguarda revisão independente, sistêmica e QA visual; não declara ready_for_human.",
+  "rollback": "Reverter somente este diff. Nenhuma migração ou dado alterado; preservar marcadores e históricos.",
+  "humanDecisions": [
+    "Sem novas regras de negócio necessárias para reconhecer ausência já confirmada. Não publicar neste escopo."
+  ],
+  "limitations": [
+    "QA visual desktop/celular e gates integrais pendentes do Principal.",
+    "Dependências reutilizadas por junction local, sem modificar destinos compartilhados; nenhum arquivo packages/shared foi alterado."
+  ]
+}

@@ -1419,7 +1419,7 @@ model ContatoWhatsapp {
 model EnvioGuia {
   id                  String    @id @default(uuid())
   guideId             String
-  canal               String // EMAIL | WHATSAPP
+  canal               String // EMAIL | WHATSAPP | EXTERNO (declaração, sem recibo do provedor)
   status              String    @default("pendente") // pendente|enviando|enviado|entregue|lido|falhou
   /// Para onde foi de fato: e-mail ou E.164. Guardado no envio (não lido do cadastro na hora de
   /// exibir) porque o contato pode mudar depois — o histórico tem que dizer para onde FOI.

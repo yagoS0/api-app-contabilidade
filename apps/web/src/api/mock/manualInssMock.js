@@ -17,14 +17,15 @@ export function criarManualInssMock(companies, guidesByCompany = new Map()) {
     const source = (guidesByCompany.get(companyId) || []).filter(g => g.competencia === competencia && g.tipo === 'INSS' && !g.parcelamentoId && !String(g.sourceFileId || '').startsWith('PARC-'));
     const guides = source.map(g => {
       const available = g.status === 'PROCESSED' && g.hasPdf === true;
-      return { id: g.id, status: g.status, available, reviewReason: available ? null : g.status === 'VAZIO' ? 'Registro sem guia; não comprova documento disponível.' : 'Confira o processamento e o PDF da guia.',
+      return { id: g.id, status: g.status, available, reviewReason: available ? null : g.status === 'VAZIO' ? null : 'Confira o processamento e o PDF da guia.',
         valor: g.valor == null ? null : String(g.valor), vencimento: g.vencimento || null };
     });
-    return clone({ companyId, companyName: company.razao, competencia, hasProlabore: company.hasProlabore === true,
+    const absent = applicable && source.every(g => g.status === 'VAZIO') ? source.find(g => g.status === 'VAZIO') : null;
+    return clone({ absence: absent ? { guideId: absent.id, at: absent.vazioEm || null, by: absent.vazioPor || null, reason: absent.vazioMotivo || null } : null, companyId, companyName: company.razao, competencia, hasProlabore: company.hasProlabore === true,
       regime: aplicabilidadeRotinasMock(company).regime, applicable, applicabilitySource: state.applicable === null ? 'company' : 'month', state,
       revision: JSON.stringify([companyId, competencia, company.hasProlabore, company.regimeTributario, record, source]), guides,
       applicabilityConflict: !applicable && guides.some(g => g.status !== 'VAZIO'),
-      status: !applicable ? guides.some(g => g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : 'NOT_APPLICABLE' : guides.some(g => !g.available && g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : guides.some(g => g.available) ? 'DOCUMENT_AVAILABLE' : 'PENDING_DOCUMENT',
+      status: !applicable ? guides.some(g => g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : 'NOT_APPLICABLE' : guides.some(g => !g.available && g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : guides.some(g => g.available) ? 'DOCUMENT_AVAILABLE' : absent ? 'DOCUMENT_ABSENT' : 'PENDING_DOCUMENT',
       changedAt: record?.changedAt || null, changedBy: record?.changedBy || null });
   }
   return {

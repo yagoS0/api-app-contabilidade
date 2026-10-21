@@ -1,0 +1,38 @@
+{
+  "summary": "Candidato: configuração explícita da forma de pagamento de indicação de parcelamento sem contrato, com vigência e auditoria.",
+  "baseCommit": "687b770e",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "guides",
+    "web",
+    "communication",
+    "operations",
+    "portal",
+    "documentation"
+  ],
+  "decision": "21/10/2026: Principal transmite confirmação expressa do usuário de débito automático para as quatro indicações da Sintropia e pedido de configuração para evitar avisos indevidos. Nenhum cadastro produtivo foi alterado. A vigência concreta não foi informada; deve ser escolhida explicitamente no formulário, limitada a mês atual/futuro. Sem motivo obrigatório novo.",
+  "operationalImpact": "Concretiza R01/R02/R08/R18/R19/R20/R22. Declaração por indicação identifica ator/data/vigência; não comprova adesão bancária, contrato, débito ou pagamento. AppSetting versionado contém períodos; ParcelamentoIndicacaoEvento registra antes/depois atomicamente. Preserva histórico de meses anteriores, controle de contrato existente e autorizações. Desconhecido não equivale a falta inequívoca. Sem schema ou migração: utiliza persistências existentes. Nenhuma regra fiscal nova.",
+  "tests": [
+    "Rodada1 API:57 testes/4suítes aprovados, incluindo PG real loopback isolado.",
+    "Rodada1 web:4falhas:3uso incorreto de fireEvent.toggle na fixture nova e1rótulo antigo em teste de indício. Corrigidas fixtures, mantendo asserções de upload/vínculo e sem mudança de gates.",
+    "Rodada2 API:60testes/5suítes, exit0 .altan-governance/api-round2.log. PG real confirma isolamento/ACL, vigência, replay concorrente, concorrência com revisão, rollback de auditoria e indicação resolvida.",
+    "Rodada2 web:9testes/3suítes, exit0 .altan-governance/web-round2.log. Seleção explícita, somente leitura, replay de resposta incerta, indicação sem contrato/upload e chip mensal.",
+    "Lint dirigido:exit0, zero erros e3warnings de diretivas no-alert preexistentes em renderCompanyGuidesTable. diffcheck limpo. Nenhuma rede fiscal ou mensagem.",
+    "Segunda rodada de correção, após revisão independente: 101 testes/7 suítes API aprovados, .altan-governance/api-correcao2.log. Lembrete consulta mesma guarda da indicação na carga e imediatamente antes da rede; débito declarado durante preparação cancela a saída. Projeção da guia avulsa usa a declaração da indicação pelo mês próprio, sem alterar contrato real nem mês anterior. UI permaneceu congelada com 9 testes aprovados."
+  ],
+  "propagation": "Após salvar, relê relatório de guias e lista, e recarrega carteira que alimenta Empresas/Operações. Leituras descartam contexto anterior. Guard compartilhado de liberação/envio confere configuração da indicação no mês de vencimento antes do transporte, incluindo guias avulsas ligadas por indicacaoParcelamentoId. Contratos existentes usam configuração já disponível; nenhuma forma é copiada automaticamente para um contrato novo.",
+  "limits": [
+    "Revisão independente/sistêmica, QA visual real e gates completos pendentes.",
+    "Projeções e prévias antigas podem existir até releitura; guard de envio revalida e recusa débito automático declarado. Nenhum teste com Meta/SERPRO.",
+    "Nova suíte PostgreSQL exige ALTAN_GOVERNANCE_TEST_DATABASE_URL loopback terminada em _governance_test; não reduz gate sem banco.",
+    "Integração deve reconciliar pendenciasParcelamento.js com candidato cobertura; alterações são distintas.",
+    "Principal deve consolidar decisão aprovada na referência operacional canônica e snapshot da integração; delegado não alterou referência compartilhada nem regras/gates."
+  ],
+  "rollback": "Reverter código somente não apaga evidências. Antes de rollback da guarda, preservar o bloqueio das indicações já declaradas em débito automático; não retomar cobrança automaticamente. Configurações/eventos devem permanecer consultáveis.",
+  "humanDecisions": [
+    "Escolher início de vigência antes de qualquer gravação real. Produção não alterada; publicação e gravação real dependem do Principal e autorização concreta."
+  ],
+  "reviewProcess": "Revisor independente reprovou dois caminhos: lembretes usavam somente guarda síncrona e projeção de guia avulsa perdia forma da indicação. Segunda rodada de correção agrupada autorizada pelo Principal; fontes congeladas para renovação do parecer. Não declara aprovação técnica final."
+}

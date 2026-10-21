@@ -1,3 +1,4 @@
+import { aplicarFormasIndicacoes } from './IndicacaoFormaPagamentoService.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { enviosPorGuia, foiEnviadaComLegado } from "../../guides/EnvioGuiaService.js";
 import { projetarPendenciasParcelamento, mesAtualOperacional } from "./pendenciasParcelamento.js";
@@ -34,6 +35,6 @@ export async function listarPendenciasParcelamento({ portalClientIds, mesOperaci
   ]);
   const pdfs = new Set(documentos.map(d => d.id));
   for (const c of normalizados) for (const p of c.parcelas) if (p.guia) p.guia.pdfDisponivel = pdfs.has(p.guia.id);
-  return projetarPendenciasParcelamento({ contratos: normalizados, indicacoes, mesOperacional,
+  return projetarPendenciasParcelamento({ contratos: normalizados, indicacoes: await aplicarFormasIndicacoes(prisma, indicacoes, mesOperacional), mesOperacional,
     enviada: g => foiEnviadaComLegado(envios.get(g.id) || [], g) });
 }

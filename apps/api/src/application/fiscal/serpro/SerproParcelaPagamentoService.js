@@ -6,7 +6,6 @@ import { parcelaPagamentoConfirmado } from "../../accounting/parcelamento/penden
 import { atualizarGuiaComEvidencia } from "../../guides/atualizarGuiaComEvidencia.js";
 import { comprovanteParaRegistro } from "../../guides/lib/comprovantePagamento.js";
 import { lerComposicaoDoDocumento } from "../../accounting/parcelamento/composicaoDocumentoParcela.js";
-import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
 import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
@@ -99,8 +98,7 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logge
       try {
         const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt });
         if (!r.skipped) consultas++;
-        const aviso = scheduledAt && r.status === "NAO_LOCALIZADO" && (!r.skipped || r.skipped === "conferencia_manual")
-          ? await avisarPagamentoNaoConfirmado({ parcelaId: p.id, scheduledAt, assertActive }) : null;
+        const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
         results.push({ companyId: p.portalClientId, razao: p.parcelamento?.portalClient?.razao || null, competencia: p.anoMesParcela,
           parcelaId: p.id, status: r.skipped || (r.pago ? "paid" : r.status || "open"), ...(aviso ? { aviso } : {}) });
       }

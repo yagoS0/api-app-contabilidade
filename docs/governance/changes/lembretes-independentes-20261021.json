@@ -1,0 +1,27 @@
+{
+  "summary": "Agenda diária de lembretes WhatsApp independente da consulta fiscal mensal",
+  "baseCommit": "687b770e",
+  "risk": "critical",
+  "domains": [
+    "communication",
+    "guides",
+    "fiscal",
+    "workers",
+    "api",
+    "web",
+    "operations"
+  ],
+  "operationalImpact": "Decisão aprovada: agenda diária configurável, seleção atual preservada, consulta fiscal não envia WhatsApp; snapshot R20 para sincronização pelo Principal",
+  "tests": [
+    "9 suites API/126 testes",
+    "1 suite UI/8 testes",
+    "PG descartável: 12 reservas concorrentes/um dono, pendência aninhada, sem replay, próximo dia independente e zero rede"
+  ],
+  "rollback": "Desabilitar a agenda avisos_guias_whatsapp; preservar reservas/histórico; reverter código somente com revisão para não restaurar envios acoplados inadvertidamente",
+  "limitations": [
+    "Nova agenda inicialmente desligada, ativação produtiva não executada",
+    "Revisão independente, QA visual e build pendentes",
+    "Nenhuma mensagem, chamada SERPRO ou alteração de empresa real executada",
+    "Uma rodada de correção: expectativas históricas do envio fiscal adaptadas à nova decisão"
+  ]
+}

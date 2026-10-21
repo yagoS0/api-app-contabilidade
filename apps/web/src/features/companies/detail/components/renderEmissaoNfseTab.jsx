@@ -78,6 +78,7 @@ export function EmissaoNfseTab({
   // A aba tem estado PRÓPRIO, e não o do formulário do cadastro: se dependesse dele, salvar daqui
   // exigiria o cadastro carregado e uma refatoração daquele estado quebraria esta tela em silêncio.
   const [form, setForm] = useState(gravado);
+  const configuracoesGerais = useRef(null);
   const [semear, setSemear] = useState(() => JSON.stringify(gravado));
 
   // Re-semeia quando o que está GRAVADO muda (troca de empresa, ou a recarga depois do salvar).
@@ -166,6 +167,12 @@ export function EmissaoNfseTab({
       <h1 className="company-form-page__title nfse-emission-title">Emissão de NFS-e</h1>
       <div className="company-form-page__panel nfse-settings">
       <GuiaEmissaoLink />
+      {podeEditar && <Button variant="secondary" onClick={() => {
+        const painel = configuracoesGerais.current;
+        if (!painel) return;
+        painel.open = true;
+        painel.querySelector('#beneficioMunicipalNumero')?.focus();
+      }}>Configurar benefício municipal</Button>}
 
       {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : empresaDosPerfis !== portalClientId || !perfis ? <div role="status"><p>Não foi possível carregar os perfis de emissão.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div> : null}
       <EditorPerfilEmissao
@@ -185,7 +192,7 @@ export function EmissaoNfseTab({
       {!podeEditar ? (
         <p className="text-muted">Apenas admin ou contador pode alterar a configuração de emissão.</p>
       ) : (
-        <details className="nfse-section nfse-base-settings"><summary>Serviços habilitados e configurações gerais</summary><form className="form-grid two-col" onSubmit={submeter}>
+        <details ref={configuracoesGerais} className="nfse-section nfse-base-settings"><summary>Serviços habilitados e configurações gerais</summary><form className="form-grid two-col" onSubmit={submeter}>
           <CamposEmissaoNfse
             codigoServicoNacional={form.codigoServicoNacional}
             codigosServicoNacional={form.codigosServicoNacional}

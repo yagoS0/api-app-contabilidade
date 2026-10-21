@@ -1,6 +1,7 @@
 import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "../application/guides/GuiaParcelaEnvioGuard.js";
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
+import { reservarSemEntregaExterna } from '../application/guides/EntregaExternaGuiaService.js';
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
 import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
@@ -92,7 +93,8 @@ async function processOneGuide({ guide, emailService }) {
   }
 
   const attempts = Number(guide.emailAttempts || 0) + 1;
-  const source = await prisma.guide.update({
+  let source;
+  try { source = await reservarSemEntregaExterna(prisma, [guide], tx => tx.guide.update({
     where: { id: guide.id },
     data: {
       emailStatus: "SENDING",
@@ -100,7 +102,10 @@ async function processOneGuide({ guide, emailService }) {
       emailLastError: null,
       emailNextRetryAt: null,
     },
-  });
+  })); } catch (e) {
+    if (e.code === 'GUIA_ENTREGA_EXTERNA' || e.code === 'GUIA_ALTERADA') return { guideId: guide.id, status: 'SKIPPED', code: e.code, reason: e.message };
+    throw e;
+  }
   try {
     const to = destinatario;
     const fileBuffer = await getGuidePdfBuffer(source);

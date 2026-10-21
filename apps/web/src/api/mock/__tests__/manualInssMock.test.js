@@ -39,3 +39,13 @@ test('não permite dispensar mês sem justificativa nem salvar data inexistente'
   await expect(api.saveCompanyManualInss('simple', '2026-09', input)).rejects.toMatchObject({ status: 422 });
   await expect(api.saveCompanyManualInss('simple', '2026-09', { ...input, state: { ...before.state, dueDate: '2026-02-30' } })).rejects.toMatchObject({ status: 422 });
 });
+
+
+test('ausência confirmada não pede nova guia; documento real posterior prevalece', async () => {
+  const documents = [{ id: 'absence', competencia: '2026-09', tipo: 'INSS', status: 'VAZIO', vazioMotivo: 'Sem retirada' }];
+  const api = criarManualInssMock(companies, new Map([['simple', documents]]));
+  expect(await api.getCompanyManualInss('simple', '2026-09')).toMatchObject({ status: 'DOCUMENT_ABSENT', applicable: true, absence: { guideId: 'absence', reason: 'Sem retirada' } });
+  expect((await api.getCompanyManualInss('simple', '2026-10')).status).toBe('PENDING_DOCUMENT');
+  documents.push({ id: 'actual', competencia: '2026-09', tipo: 'INSS', status: 'PROCESSED', hasPdf: true });
+  expect(await api.getCompanyManualInss('simple', '2026-09')).toMatchObject({ status: 'DOCUMENT_AVAILABLE', absence: null });
+});

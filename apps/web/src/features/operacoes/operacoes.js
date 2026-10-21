@@ -28,8 +28,8 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
     const itens = getComplianceTags(company.guideCompliance).filter(t => ['missing', 'conflito', 'falhou', 'gerada'].includes(t.state) || t.pendenciaOperacional).map(tag => ({
       id: `${company.companyId}:guia:${tag.id || tag.key || tag.label}`, company, fluxo,
       tipo: tag.state === 'falhou' ? 'erros' : 'pendencias',
-      categoria: tag.key === 'parcDas' ? 'revisoes' : tag.state === 'missing' ? 'faltantes' : ['gerada', 'falhou'].includes(tag.state) ? 'envios' : 'revisoes',
-      titulo: `${tag.label} · ${tag.state === 'falhou' ? 'erro de envio' : tag.state === 'gerada' ? 'aguardando envio' : tag.state === 'conflito' ? 'conferir divergência' : tag.pendenciaOperacional ? 'conferir pendência' : 'documento ausente'}`,
+      categoria: tag.key === 'parcDas' && !tag.mensal ? 'revisoes' : tag.state === 'missing' ? 'faltantes' : ['gerada', 'falhou'].includes(tag.state) ? 'envios' : 'revisoes',
+      titulo: `${tag.label} · ${tag.state === 'falhou' ? 'erro de envio' : tag.state === 'gerada' ? 'aguardando envio' : tag.state === 'conflito' ? 'conferir divergência' : tag.mensal && tag.state === 'missing' ? 'documento ausente' : tag.pendenciaOperacional ? 'conferir pendência' : 'documento ausente'}`,
       tag: { ...tag, envioPodeTentarDeNovo: company.guideCompliance?.[tag.key]?.envioPodeTentarDeNovo ?? null },
     }));
     if (!fluxo.apuracao.apurada) itens.unshift({ id: `${company.companyId}:apuracao`, company, fluxo, tipo: 'apuracoes', titulo: `Apuração · ${fluxo.apuracao.rotulo}` });

@@ -13,7 +13,6 @@ import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB, INTEGRACAO_SERPRO_PARCELAMENTO } from "../../../config.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "./SerproParcelaPagamentoService.js";
-import { avisarPagamentoNaoConfirmado } from "../../guides/AvisoPagamentoService.js";
 import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
@@ -244,7 +243,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     try {
       // eslint-disable-next-line no-await-in-loop
       const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
-      const aviso = scheduledAt && r.negativaConfirmada ? await avisarPagamentoNaoConfirmado({ guideId: g.id, scheduledAt, assertActive }) : null;
+      const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
       results.push({ ...contexto, guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
     } catch (err) {
       const code = err?.code || "CONSULTA_FALHOU";

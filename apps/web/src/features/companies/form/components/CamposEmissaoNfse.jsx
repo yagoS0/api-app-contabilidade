@@ -284,12 +284,17 @@ export function CamposEmissaoNfse({
           município e ninguém aqui confere o conteúdo, que o tipo de redução não se deduz, e que
           **o que for preenchido aqui ainda não chega à nota**. */}
       <div className="full" style={{ marginTop: 12 }}>
-        <strong style={{ fontSize: "0.85rem", color: "#F8F8F2" }}>
+        <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text)", margin: 0 }}>
           Benefício municipal do ISSQN
-        </strong>
-        <div style={{ ...AJUDA, marginTop: 4 }}>
-          {MOTIVO_BENEFICIO_MUNICIPAL} {PORQUE_BENEFICIO_DIGITADO}
-        </div>
+        </h3>
+        <p style={{ ...AJUDA, marginTop: 8 }}>
+          Este cadastro não habilita a emissão com benefício pela Altan. Ao cadastrar um benefício,
+          a emissão fica indisponível até que sua aplicação seja suportada e conferida.
+        </p>
+        <details style={AJUDA}>
+          <summary>Como preencher os dados da concessão</summary>
+          <p>{MOTIVO_BENEFICIO_MUNICIPAL} {PORQUE_BENEFICIO_DIGITADO}</p>
+        </details>
       </div>
 
       <Campo

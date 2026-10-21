@@ -485,6 +485,7 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
 function envioDaGuia(item) {
   const envios = Array.isArray(item.envios) ? item.envios : [];
   const canais = envios.map((e) => ({
+    entregaExterna: e.entregaExterna || null,
     canal: e.canal,
     status: e.status,
     tentativaId: e.tentativaAtualId || null,
@@ -504,6 +505,7 @@ function envioDaGuia(item) {
   return {
     // A leitura de sempre: terminal em qualquer canal, com a tolerância do legado.
     jaEnviada: foiEnviadaComLegado(envios, item),
+    entregaExterna: envios.find(e => e.entregaExterna)?.entregaExterna || null,
     // ⚠ A pergunta nova: alguém CONFIRMOU a chegada?
     chegouAoCliente: chegou,
     // WhatsApp aceito pela Meta e ainda sem confirmação — o estado que a tela pintava de verde.

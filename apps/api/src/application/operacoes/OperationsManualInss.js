@@ -1,3 +1,4 @@
+import { resolveNode } from '../guides/resolveGuideNode.js';
 import { createHash } from 'node:crypto';
 import { validarCompetencia } from './OperationsService.js';
 import { aplicarRegimeRotinas } from '../fiscal/serpro/CompanyRoutineApplicability.js';
@@ -33,7 +34,7 @@ export async function listarInssManual(db, companyIds, competencia) {
   const [legacy, settings, guides, pdfs] = await Promise.all([
     db.company.findMany({ where: { id: { in: companies.map(c => c.companyId).filter(Boolean) } }, select: { id: true, regimeTributario: true, tipoTributario: true } }),
     db.appSetting.findMany({ where: { key: { in: foundIds.map(id => keyFor(id, competencia)) } } }),
-    db.guide.findMany({ where, orderBy: { id: 'asc' }, select: { id: true, portalClientId: true, status: true, valor: true, vencimento: true, hash: true, updatedAt: true, extracted: true, storageKey: true } }),
+    db.guide.findMany({ where, orderBy: { id: 'asc' }, select: { id: true, portalClientId: true, status: true, valor: true, vencimento: true, hash: true, updatedAt: true, extracted: true, storageKey: true, vazioEm: true, vazioPor: true, vazioMotivo: true } }),
     // Ask the database for identities, never load PDF bytes into the dashboard.
     db.guide.findMany({ where: { ...where, AND: [{ pdfBytes: { not: null } }, { NOT: { pdfBytes: Buffer.alloc(0) } }] }, select: { id: true } }),
   ]);
@@ -51,18 +52,21 @@ export async function listarInssManual(db, companyIds, competencia) {
     const documents = rows.map(g => {
       const wrongTax = tributosSeNaoForPrevidenciario(g.extracted?.composicao || []);
       const available = g.status === 'PROCESSED' && pdfIds.has(g.id) && !wrongTax;
-      const reviewReason = available ? null : g.status === 'VAZIO' ? 'Registro sem guia; não comprova documento disponível.'
+      const reviewReason = available ? null : g.status === 'VAZIO' ? null
         : wrongTax ? 'A composição indica tributos não previdenciários. Confira a classificação.'
           : g.status !== 'PROCESSED' ? 'A guia ainda precisa de processamento ou revisão.'
             : g.storageKey ? 'Documento em armazenamento externo; confira a disponibilidade em Guias.' : 'PDF local ausente. Confira ou anexe a guia.';
       return { id: g.id, status: g.status, available, reviewReason, valor: g.valor == null ? null : String(g.valor), vencimento: g.vencimento ? new Date(g.vencimento).toISOString() : null };
     });
+    const absence = rows.find(g => g.status === 'VAZIO');
+    const evidence = resolveNode({ required: applicable }, rows.some(g => g.status !== 'VAZIO') ? {} : null, absence ? { guideId: absence.id, vazioEm: absence.vazioEm, vazioPor: absence.vazioPor, vazioMotivo: absence.vazioMotivo } : null);
     const review = documents.some(g => !g.available && g.status !== 'VAZIO');
     return { companyId: company.id, companyName: company.razao, competencia, hasProlabore: company.hasProlabore === true, regime,
       applicable, applicabilitySource: state.applicable === null ? 'company' : 'month', state,
-      revision: hash([company.id, competencia, company.hasProlabore, regime, saved ?? null, rows.map(g => [g.id, g.status, g.hash, g.updatedAt, g.extracted, g.storageKey, pdfIds.has(g.id)])]),
+      revision: hash([company.id, competencia, company.hasProlabore, regime, saved ?? null, rows.map(g => [g.id, g.status, g.hash, g.updatedAt, g.extracted, g.storageKey, pdfIds.has(g.id), g.vazioEm, g.vazioPor, g.vazioMotivo])]),
       applicabilityConflict: !applicable && documents.some(g => g.status !== 'VAZIO'),
-      guides: documents, status: !applicable ? documents.some(g => g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : 'NOT_APPLICABLE' : review ? 'DOCUMENT_REVIEW' : documents.some(g => g.available) ? 'DOCUMENT_AVAILABLE' : 'PENDING_DOCUMENT',
+      absence: evidence.state === 'vazio' ? { guideId: evidence.guideId, at: evidence.vazioEm, by: evidence.vazioPor, reason: evidence.vazioMotivo } : null,
+      guides: documents, status: !applicable ? documents.some(g => g.status !== 'VAZIO') ? 'DOCUMENT_REVIEW' : 'NOT_APPLICABLE' : review ? 'DOCUMENT_REVIEW' : documents.some(g => g.available) ? 'DOCUMENT_AVAILABLE' : evidence.state === 'vazio' ? 'DOCUMENT_ABSENT' : 'PENDING_DOCUMENT',
       changedAt: saved?.changedAt || null, changedBy: saved?.changedBy || null };
   }) };
 }

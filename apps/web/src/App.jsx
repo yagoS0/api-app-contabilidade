@@ -436,6 +436,7 @@ function AppInterno({ session, feedback }) {
           guides: companiesWorkspace.guidesState.guides,
           loading: companiesWorkspace.guidesState.loadingGuides,
           onRefresh: (options) => companiesWorkspace.loadGuides(undefined, options),
+          onFormaParcelamentoSaved: () => companiesWorkspace.loadCompanies(),
           onResendGuide: companiesWorkspace.handleResendGuide,
           onConfirmGuidePayment: companiesWorkspace.handleConfirmGuidePayment,
           onRecalculateGuide: companiesWorkspace.handleRecalculateGuide,

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { reservarSemEntregaExterna } from '../guides/EntregaExternaGuiaService.js';
 import { registrarEnvio, materializarEnvioDeEmailLegado, marcarEnviando, marcarEnviado, marcarFalhou, marcarIndeterminado } from '../guides/EnvioGuiaService.js';
 import { versaoPagamentoGuia } from '../guides/ConfirmacaoPagamentoClienteService.js';
 import { prepararHistoricoGuia } from './HistoricoArquivoWhatsappService.js';
@@ -53,7 +54,7 @@ export async function enviarDocumentoGuiaWhatsapp({ conversa, documento, client,
     const registro = await registrarEnvio({ guideId, canal: 'WHATSAPP', destino: conversa.telefoneE164, reenviar: true, tx: client });
     if (registro.emAndamento || registro.jaEnviado) throw erro('GUIA_ENVIO_EM_ANDAMENTO', 'Confira a tentativa anterior antes de enviar esta guia.');
     envioId = registro.envio.id;
-    const reserva = await marcarEnviando(envioId, client);
+    const reserva = await reservarSemEntregaExterna(client, [guide], tx => marcarEnviando(envioId, tx), true);
     if (!reserva.reservado) throw erro('GUIA_ENVIO_EM_ANDAMENTO', 'Outra saída já reservou esta guia.');
     tentativaId = reserva.tentativaId;
     await (deps.prepararHistorico || prepararHistoricoGuia)({ tentativaId, envioGuiaId: envioId, guide, conversa,

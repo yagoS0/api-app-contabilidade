@@ -1,3 +1,4 @@
+import { formaIndicacaoNoMes } from './IndicacaoFormaPagamentoService.js';
 const MESES = /^\d{4}-(0[1-9]|1[0-2])$/;
 const dataCivil = (v) => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toISOString().slice(0, 10) : null;
 const valor = (v) => v == null ? null : Number(v);
@@ -42,10 +43,26 @@ export function guiasParcelamentoDoMes(itens, mesOperacional) {
     const tipo = item.tipo || 'Parcelamento';
     const grupo = grupos.get(tipo) || { tipoParcelamento: tipo, referencia: mesOperacional, itens: [] };
     grupo.itens.push({ ...item, estado: 'OBTER_GUIA', acao: 'obter_guia',
-      label: 'Falta guia do mês', atrasada: false, atrasosInformados: null });
+      label: item.indicacaoId && !item.formaPagamento ? 'Conferir forma de pagamento' : 'Falta guia do mês', atrasada: false, atrasosInformados: null });
     grupos.set(tipo, grupo);
   }
   return [...grupos.values()].sort((a, b) => a.tipoParcelamento.localeCompare(b.tipoParcelamento));
+}
+
+/** Cobertura documental mensal, distinta dos alertas e do acompanhamento do contrato. */
+export function coberturaParcelamentoDoMes(itens, mesOperacional) {
+  if (!MESES.test(String(mesOperacional))) throw new Error('Mês operacional inválido.');
+  const unicos = new Map();
+  for (const item of itens) {
+    const mes = item.vencimento?.slice(0, 7) || item.referencia;
+    if (item.anterior || item.somenteAnteriores || item.guiaDoMesPresente || mes !== mesOperacional) continue;
+    const automatico = item.formaPagamento === 'DEBITO_AUTOMATICO';
+    const documento = item.documentoConferido === true ? 'disponivel' : item.guideId ? 'a_conferir' : automatico ? 'nao_exigido'
+      : item.indicacaoId || !item.formaPagamento ? 'a_conferir' : 'faltante';
+    unicos.set(item.id, { ...item, mesOperacional, documento,
+      comunicacao: item.enviada ? 'enviada' : automatico ? 'nao_exigida' : item.documentoConferido === true ? 'pendente' : 'aguarda_documento' });
+  }
+  return [...unicos.values()];
 }
 
 /** Uma projeção operacional; não altera obrigações, documentos nem lançamentos. */
@@ -70,8 +87,8 @@ export function projetarPendenciasParcelamento({ contratos = [], indicacoes = []
     if (cobertaNoMes && !(Number(i.parcelasEmAtraso) > 0)) continue;
     itens.push({ id: `indicacao:${i.id}`, indicacaoId: i.id, portalClientId: i.portalClientId,
       parcelamentoId: null, parcelaId: null, guideId: null, tipo: i.modalidade, numeroParcelamento: i.numeroParcelamento,
-      numeroParcela: null, referencia: cobertaNoMes ? null : mesOperacional, vencimento: null, valor: null, estado: "IDENTIFICAR", acao: "identificar",
-      label: cobertaNoMes ? "Parcelas anteriores em atraso informadas no relatório" : "Falta guia de parcelamento",
+      numeroParcela: null, referencia: cobertaNoMes ? null : mesOperacional, vencimento: null, valor: null, estado: "IDENTIFICAR", acao: "identificar", formaPagamento: i.formaPagamento || null,
+      label: cobertaNoMes ? "Parcelas anteriores em atraso informadas no relatório" : i.formaPagamento === "DEBITO_AUTOMATICO" ? "Débito automático declarado · acompanhar pagamento" : i.formaPagamento === "GUIA_MENSAL" ? "Falta guia de parcelamento" : "Conferir forma de pagamento",
       anterior: cobertaNoMes, somenteAnteriores: cobertaNoMes, guiaDoMesPresente: cobertaNoMes, atrasada: Number(i.parcelasEmAtraso) > 0,
       atrasosInformados: i.parcelasEmAtraso ?? null, evidenciaEm: i.evidenciaEm, origem: i.origem,
       pagamentoConfirmado: false, contabilizacaoPendente: false });
@@ -99,7 +116,15 @@ export function projetarPendenciasParcelamento({ contratos = [], indicacoes = []
       const contabilizacaoPendente = pago && !contabilizado;
       const falhou = Boolean(p.pagamentoErro);
       const divergente = p.pagamentoStatus === "DIVERGENTE";
-      const automatico = c.formaPagamento === "DEBITO_AUTOMATICO";
+      // A synthetic upload identity does not replace the declaration attached to its source indication.
+      // Real contracts retain their own configuration; historical guides resolve their own month.
+      const origemIndicacao = c.origem === 'GUIA_AVULSA' && g?.extracted?.indicacaoParcelamentoId
+        ? indicacoes.find(i => i.id === g.extracted.indicacaoParcelamentoId && i.portalClientId === c.portalClientId) : null;
+      const declarada = origemIndicacao && mes ? Array.isArray(origemIndicacao.formasPagamento)
+        ? formaIndicacaoNoMes({ periodos: origemIndicacao.formasPagamento }, mes)?.formaPagamento
+        : mes === mesOperacional ? origemIndicacao.formaPagamento : null : null;
+      const formaPagamento = declarada || c.formaPagamento;
+      const automatico = formaPagamento === "DEBITO_AUTOMATICO";
       const temPdf = Boolean(g?.pdfDisponivel || g?.pdfBytes?.length || g?.storageKey);
       const documentoConferido = g?.status === "PROCESSED" && temPdf && Boolean(dataCivil(g.vencimento))
         && Number(g.valor) > 0 && !g.extracted?.conferenciaDocumentoPendente;
@@ -110,7 +135,7 @@ export function projetarPendenciasParcelamento({ contratos = [], indicacoes = []
       else if (residualOficial || automatico || enviado) { estado = "CONSULTAR_PAGAMENTO"; acao = "consultar_pagamento"; label = "Conferir pagamento"; }
       else if (g && temPdf && !documentoConferido) { estado = "CONFERIR_DOCUMENTO"; acao = "conferir_documento"; label = "Conferir documento"; }
       else if (documentoConferido) { estado = "ENVIAR"; acao = "enviar"; label = "Enviar guia"; }
-      else if (c.formaPagamento === "GUIA_MENSAL") { estado = "OBTER_GUIA"; acao = "obter_guia"; label = "Obter guia"; }
+      else if (formaPagamento === "GUIA_MENSAL") { estado = "OBTER_GUIA"; acao = "obter_guia"; label = "Obter guia"; }
       // Data prevista indica necessidade de conferência, nunca atraso oficial.
       const atrasada = !pago && Boolean(g?.vencimento && vencimento < hoje);
       itens.push({ id: `parcela:${p.id}`, portalClientId: c.portalClientId, parcelamentoId: c.id,
@@ -119,11 +144,12 @@ export function projetarPendenciasParcelamento({ contratos = [], indicacoes = []
         vencimentoPrevisto: !g?.vencimento && Boolean(p.vencimento), valor: pago ? valor(p.valorEfetivoPago ?? p.valorPago ?? g?.extracted?.comprovante?.total) : valor(g?.valor ?? p.valorPrevisto),
         estado, acao, label, anterior, atrasada, enviada: enviado, pagamentoConfirmado: pago, contabilizacaoPendente,
         documentoDisponivel: Boolean(g?.status === 'PROCESSED' && temPdf),
+        documentoConferido: Boolean(documentoConferido),
         pagamentoConsultadoEm: p.pagamentoConsultadoEm, consultaErro: p.pagamentoErro || null,
         divergenciaMotivo: divergente ? p.pagamentoErro || "PAGAMENTO_DIVERGENTE" : null,
         valorPago: valor(p.valorEfetivoPago ?? p.valorPago ?? p.pagamentoEvidencia?.comprovante?.total ?? p.pagamentoEvidencia?.valorPago),
         documentoErro: g?.extracted?.parcelamentoFiscal?.leituraErro || null,
-        formaPagamento: c.formaPagamento, contabilizado: Boolean(c.aberturaEntryId) });
+        formaPagamento, contabilizado: Boolean(c.aberturaEntryId) });
     }
     // Contrato confirmado sem calendário/PDF não desaparece entre duas consultas.
     if (ativas && !possuiMes) {

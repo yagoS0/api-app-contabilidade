@@ -1,3 +1,4 @@
+import { projetarPendenciasParcelamento } from '../../accounting/parcelamento/pendenciasParcelamento.js';
 import { montarRelatorioVencimento, periodoVencimento, assinaturaGuias } from "../loteVencimento.js";
 
 const company = { id: "empresa", razao: "Empresa", company: { regimeTributario: "SIMPLES" } };
@@ -37,6 +38,25 @@ test("vencimento real prevalece sobre calendário contratado", () => {
   expect(relatorio([], [p]).simples).toEqual([]);
 });
 
+test("débito automático conserva documento e pagamento aberto sem incompletude documental", () => {
+  const r = relatorio([guia("debito", "2026-09", "2026-09-30", {
+    parcelamentoId: "acordo", parcelamento: { formaPagamento: "DEBITO_AUTOMATICO" },
+  })]);
+  expect(r.simples[0]).toMatchObject({ situacao: "documentos_tratados", faltantes: [], pendingGuideIds: [],
+    documentos: [{ guideId: "debito", paga: false, enviada: false,
+      bloqueioEnvio: { code: "PARCELA_DEBITO_AUTOMATICO" } }] });
+});
+
+test("dispensa de envio do débito não oculta documento pendente de conferência", () => {
+  const r = relatorio([guia("debito", "2026-09", "2026-09-30", {
+    parcelamentoId: "acordo", parcelamento: { formaPagamento: "DEBITO_AUTOMATICO" },
+  }), guia("conferir", "2026-09", "2026-09-30", {
+    extracted: { conferenciaDocumentoPendente: true },
+  })]);
+  expect(r.simples[0]).toMatchObject({ situacao: "incompleto", pendingGuideIds: [] });
+  expect(r.simples[0].documentos[1].bloqueioEnvio.code).toBe("PARCELA_DOCUMENTO_PENDENTE");
+});
+
 test("mês civil inclui primeiro dia e exclui primeiro dia seguinte; valida mês", () => {
   expect(periodoVencimento("2026-12")).toEqual({ gte: new Date("2026-12-01Z"), lt: new Date("2027-01-01Z") });
   expect(() => periodoVencimento("2026-13")).toThrow();
@@ -51,4 +71,25 @@ test("conferência detecta alteração de valor, pagamento, PDF e identidade sem
   for (const change of [{ valor: 999 }, { paymentStatus: "PAID" }, { hash: "novo-pdf" }, { id: "outra" }]) {
     expect(assinaturaGuias([{ ...a, ...change }, b])).not.toBe(assinaturaGuias([a, b]));
   }
+});
+
+
+test.each([
+ ['2026-09', 'GUIA_AVULSA', false, [], 'PARCELA_DEBITO_AUTOMATICO'],
+ ['2026-08', 'GUIA_AVULSA', false, ['avulsa'], undefined],
+ ['2026-09', 'MANUAL', false, ['avulsa'], undefined],
+ ['2026-09', 'GUIA_AVULSA', true, [], 'PARCELA_DOCUMENTO_PENDENTE'],
+])('forma efetiva compartilhada no lote: mês %s origem %s conferência %s', (mes, origem, conferir, pending, code) => {
+ const g = guia('avulsa', mes, `${mes}-20`, { parcelamentoId: 'contrato', extracted: { indicacaoParcelamentoId: 'indicacao', conferenciaDocumentoPendente: conferir },
+  pdfDisponivel: true, parcelamento: { origem, formaPagamento: 'GUIA_MENSAL' } });
+ const acompanhamento = projetarPendenciasParcelamento({ mesOperacional: mes,
+  indicacoes: [{ id: 'indicacao', portalClientId: 'empresa', status: 'PENDENTE', modalidade: 'PARCSN', formasPagamento: [{ desde: '2026-09', formaPagamento: 'DEBITO_AUTOMATICO', usuarioId: 'contador', em: '2026-09-01' }] }],
+  contratos: [{ id: 'contrato', portalClientId: 'empresa', origem, formaPagamento: 'GUIA_MENSAL', parcelas: [{ id: 'parcela', numeroParcela: 1, referencia: mes, vencimento: g.vencimento, guia: g }] }],
+ });
+ const r = montarRelatorioVencimento({ mesVencimento: mes, companies: [company], guides: [g], acompanhamento, enviada: () => false });
+ expect(r.simples[0].pendingGuideIds).toEqual(pending);
+ expect(r.simples[0].documentos[0].bloqueioEnvio?.code).toBe(code);
+ expect(r.simples[0].documentos[0]).toMatchObject({ guideId: 'avulsa', paga: false, enviada: false });
+ expect(g.parcelamento.formaPagamento).toBe('GUIA_MENSAL');
+ if (conferir) expect(r.simples[0].situacao).toBe('incompleto');
 });

@@ -1,3 +1,4 @@
+import { listarFormasIndicacoes, salvarFormaIndicacao } from '../../application/accounting/parcelamento/IndicacaoFormaPagamentoService.js';
 import { Router } from "express";
 import { vincularGuiaParcelamento } from "../../application/accounting/parcelamento/GuiaAvulsaParcelamentoService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -20,6 +21,8 @@ export function createParcelamentosAcompanhamentoRouter({ log } = {}) {
       return res.status(Number(err.status) >= 400 && Number(err.status) <= 599 ? Number(err.status) : err.code ? 502 : 500).json({ ok: false, error: err.code || "ACOMPANHAMENTO_FALHOU", message: err.code ? err.message : "Não foi possível concluir o acompanhamento." });
     }
   };
+  router.get(`${base}/indicacoes/formas`, requireFirmCompanyAccess(), handle(async req => ({ ...(await listarFormasIndicacoes(prisma, req.params.companyId, String(req.query.mes || ''))), canEdit: ['ACCOUNTANT', 'FIRM_ADMIN'].includes(req.access?.role) })));
+  router.post(`${base}/indicacoes/:indicacaoId/forma`, acesso, handle(async req => ({ indicacao: await salvarFormaIndicacao(prisma, req.params.companyId, req.params.indicacaoId, req.auth.user, req.body) })));
   router.post(`${base}/guias/:guideId/vincular`, acesso, handle(req => vincularGuiaParcelamento({ portalClientId: req.params.companyId, guideId: req.params.guideId, parcelamentoId: req.body?.parcelamentoId, numeroParcela: req.body?.numeroParcela })));
   router.get(base, requireFirmCompanyAccess(), handle(async req => {
     const portalClientId = req.params.companyId;

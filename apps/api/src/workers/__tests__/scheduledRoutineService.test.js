@@ -65,7 +65,7 @@ test("suspensão do processo além da reserva impede a próxima chamada mesmo an
   } finally { jest.useRealTimers(); }
 });
 
-test.each([{ parcelasErro: 1 }, { extratoErro: 1 }, { errors: 2 }, { naoConferiveis: 1 }, { avisosPendentes: 1 }])("falha parcial não aparece como conclusão: %j", async (result) => {
+test.each([{ parcelasErro: 1 }, { extratoErro: 1 }, { errors: 2 }, { naoConferiveis: 1 }, { avisosPendentes: 1 }, { solicitacoesWhatsapp: {avisosPendentes:1} }])("falha parcial não aparece como conclusão: %j", async (result) => {
   const db = memoryDb();
   const claim = await claimScheduledRun({ routine: "parcelamento", config, now, db });
   await finishScheduledRun(claim, result, null, { db, now });

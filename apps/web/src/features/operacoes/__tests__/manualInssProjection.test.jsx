@@ -65,3 +65,12 @@ test('resposta vazia do controle mensal não é uma lista confirmada sem pendên
   expect(await screen.findByText(/Não foi possível conferir o INSS manual/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Guias faltantes —/ })).toBeDisabled();
 });
+
+
+test('confirmed monthly absence does not become a manual INSS pending and never erases delivery evidence', () => {
+  const delivered = { ...missing, id: 'delivered', tipo: 'concluidas', tag: { key: 'inss', state: 'enviada' } };
+  const result = incorporarInssManual({ ...projection, tasks: [missing, failure, delivered] }, [{ companyId: 'a', status: 'DOCUMENT_ABSENT' }]);
+  expect(result.groups.pendencias).toEqual([]);
+  expect(result.tasks).toEqual([failure, delivered]);
+  expect(result.groups.concluidas).toEqual([{ company }]);
+});

@@ -1,4 +1,6 @@
 import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "./GuiaParcelaEnvioGuard.js";
+import { reservarSemEntregaExterna } from './EntregaExternaGuiaService.js';
+import { enviosPorGuia } from './EnvioGuiaService.js';
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -93,7 +95,8 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   });
 
   const bloqueadas = candidatos.filter(bloqueioEnvioParcela).map(g => bloqueioEnvioParcela(g));
-  const pendingAll = candidatos.filter(g => !bloqueioEnvioParcela(g));
+  const entregas = await enviosPorGuia(candidatos.map(g => g.id));
+  const pendingAll = candidatos.filter(g => !bloqueioEnvioParcela(g) && !(entregas.get(g.id) || []).some(e => e.entregaExterna));
   if (!pendingAll.length && bloqueadas.length) throw Object.assign(new Error(bloqueadas[0].message), bloqueadas[0], { bloqueadas });
   if (!pendingAll.length) {
     return {
@@ -115,7 +118,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   const toSend = maxFilesPerRun ? pendingGuides.slice(0, maxFilesPerRun) : pendingGuides;
   const toSendIds = toSend.map((g) => g.id);
 
-  await prisma.guide.updateMany({
+  await reservarSemEntregaExterna(prisma, toSend, tx => tx.guide.updateMany({
     where: { id: { in: toSendIds } },
     data: {
       emailStatus: "SENDING",
@@ -123,7 +126,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       emailNextRetryAt: null,
       emailAttempts: { increment: 1 },
     },
-  });
+  }));
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-email-"));
   const attachments = [];
@@ -324,11 +327,11 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
   });
   if (mesVencimento) {
     if (guides.length !== selectedGuideIds.length) throw loteAlterado();
-    await prisma.$transaction(async (tx) => {
+    await reservarSemEntregaExterna(prisma, guides, async (tx) => {
       const r = await reservar(tx);
       if (r.count !== guideIds.length) throw loteAlterado();
     });
-  } else await reservar(prisma);
+  } else await reservarSemEntregaExterna(prisma, guides, reservar);
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-batch-email-"));
   const attachments = [];

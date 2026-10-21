@@ -35,6 +35,7 @@ const ROTINA_HINT = {
   extrato: "Extrato do PGDAS-D — gera os lançamentos",
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
+  avisos_guias_whatsapp: "Diariamente, sem consulta SERPRO. Usa as empresas habilitadas em Pagamento.",
   pagamento: "Confirma pagamentos de DAS, INSS e parcelas acompanhadas",
   conferencia: "Confere as NFS-e contra o ADN nacional antes do fechamento",
 };
@@ -157,7 +158,7 @@ export function RotinasPage({
   const naoSalvo = carregou && baseline !== JSON.stringify({ agenda, empresas });
   const execucoes = workerStatus?.routines || executionStatus;
   const avisosRevisaveis = execucoes.filter(row => elegivelLimparAviso(row) && !avisosVistos.has(chaveAvisoRotina(row)));
-  const tituloRotina = row => row.label || rotinas.find(r => r.key === row.routine)?.label || row.routine;
+  const tituloRotina = row => row.label || rotinas.find(r => r.key === row.routine)?.label || (row.routine === "avisos_guias_whatsapp" ? "Lembretes de guias no WhatsApp" : row.routine);
 
   async function atualizarExecucoes() {
     if (!onRefreshWorkerStatus || atualizando) return;
@@ -306,7 +307,7 @@ export function RotinasPage({
                             />
                           </td>
                           <td style={td}>
-                            <select
+                            {r.key === "avisos_guias_whatsapp" ? <span>Diariamente</span> : <select
                               value={String(cfg.day ?? 5)}
                               disabled={!ligada || cfg.frequency === "DAILY"}
                               aria-label={`Dia de ${r.label}`}
@@ -314,7 +315,7 @@ export function RotinasPage({
                               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             >
                               {DAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
+                            </select>}
                           </td>
                           <td style={td}>
                             <input
@@ -328,7 +329,7 @@ export function RotinasPage({
                             />
                           </td>
                           <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                            {contagem[r.key] || 0} de {empresas.length}
+                            {contagem[r.key === "avisos_guias_whatsapp" ? "pagamento" : r.key] || 0} de {empresas.length}
                           </td>
                         </tr>
                       );

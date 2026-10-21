@@ -1,4 +1,5 @@
 import { conferirParcelasParaEnvio, SELECT_PARCELA_ENVIO } from "../guides/GuiaParcelaEnvioGuard.js";
+import { reservarSemEntregaExterna } from '../guides/EntregaExternaGuiaService.js';
 import { prepararGuiaPagamentoWhatsapp, TEMPLATE_GUIA_PAGAMENTO as WHATSAPP_TEMPLATE_GUIA } from './PrepararGuiaPagamentoWhatsapp.js';
 import { identificarGuiaWhatsapp, ordenarGuiasWhatsapp, sequenciasGuiasWhatsapp } from './IdentificacaoGuiaWhatsapp.js';
 // O ENVIO DA GUIA PELO WHATSAPP — individual e em LOTE. É o MVP da Entrega 1 (plano, P0).
@@ -385,7 +386,7 @@ export async function enviarGuiaPorWhatsapp({
     mensagem: "Existe uma tentativa sem desfecho confirmado. Confira o histórico antes de qualquer novo envio.", podeTentarDeNovo: false,
   };
 
-  const { reservado, tentativaId } = await marcarEnviando(envio.id);
+  const { reservado, tentativaId } = await reservarSemEntregaExterna(prisma, [guide], tx => marcarEnviando(envio.id, tx), reenviar === true);
   if (!reservado) {
     // Outra requisição já está mandando ESTA guia. Recusar aqui é o que impede a segunda cópia de
     // chegar ao cliente — e é recusa nomeada, não erro genérico.

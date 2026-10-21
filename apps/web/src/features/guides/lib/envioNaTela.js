@@ -21,6 +21,7 @@
 
 /** Lista FECHADA. Estado que não casar com nenhum destes vira `DESCONHECIDA`, nunca "enviada". */
 export const SITUACAO_ENVIO = Object.freeze({
+  EXTERNA: 'EXTERNA',
   /** Não há e-mail nem WhatsApp cadastrado — a guia não tem para onde ir. */
   SEM_DESTINATARIO: "SEM_DESTINATARIO",
   /** Gerada e nunca tentada. */
@@ -49,6 +50,7 @@ const NEUTRO = "var(--state-neutral)";
  * screenshot dessaturado continue legível, e `✓` ≠ `✓✓` ≠ `✖` ≠ `✈` mesmo sem cor.
  */
 export const DESENHO_ENVIO = Object.freeze({
+  [SITUACAO_ENVIO.EXTERNA]: { icone: '✓', tom: 'var(--state-ok)', rotulo: 'enviada externamente' },
   [SITUACAO_ENVIO.SEM_DESTINATARIO]: { icone: "—", tom: NEUTRO, rotulo: "sem destinatário" },
   [SITUACAO_ENVIO.NAO_ENVIADA]: { icone: "✈", tom: "var(--state-warn)", rotulo: "não enviada" },
   // ⚠⚠ NEUTRO, NUNCA VERDE. Ver o cabeçalho: verde aqui foi o defeito.
@@ -88,6 +90,11 @@ const chegou = (c) => (String(c.canal).toUpperCase() === "EMAIL"
  * para fulano@email.com".
  */
 export function frasePorCanal(c) {
+  if (c?.canal === 'EXTERNO' && c.entregaExterna) {
+    const p = c.entregaExterna;
+    const meio = { PESSOAL: 'entrega pessoal', WHATSAPP_PARTICULAR: 'WhatsApp particular', EMAIL_EXTERNO: 'e-mail externo', OUTRO: 'outro meio' }[p.meio] || 'meio registrado';
+    return `Envio externo: ${meio} em ${p.dataEntrega} · registrado por ${p.atorNome || 'contador identificado no histórico'} em ${new Date(p.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (Brasília). Declaração do contador; sem recibo do provedor.`;
+  }
   const canal = rotuloDoCanal(c?.canal);
   const para = c?.destino ? ` para ${c.destino}` : "";
   const registro = c?.status === "lido" ? c.lidoEm : c?.status === "entregue" ? c.entregueEm : c?.status === "enviado" ? c.em : null;
@@ -142,7 +149,9 @@ export function lerEnvioDaGuia(guide) {
   const tentados = canais.filter((c) => c.status !== "pendente");
 
   let situacao;
-  if (!canais.length) {
+  if (envio.entregaExterna && !canais.some(c => c.status === 'indeterminado') && !aguardando.length) {
+    situacao = SITUACAO_ENVIO.EXTERNA;
+  } else if (!canais.length) {
     // ⚠ `jaEnviada` sem NENHUMA linha é a tolerância do legado (guias anteriores a `envios_guia`,
     // que valem pelo `emailStatus`). Ela é e-mail enviado — não um estado desconhecido.
     situacao = envio.jaEnviada ? SITUACAO_ENVIO.ENVIADA_EMAIL : SITUACAO_ENVIO.NAO_ENVIADA;

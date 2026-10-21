@@ -149,3 +149,6 @@
   .guides-page .guides-grid__cell--valor { text-align: left; }
   .guides-page .guides-grid__linha-numero { min-width: 0; flex: 1 1 0; }
 }
+.guides-external-form { display: grid; gap: 16px; }
+.guides-external-form label, .guides-payment-form label { display: grid; gap: 8px; }
+.guides-external-form input, .guides-external-form select, .guides-payment-form input, .guides-payment-form select { box-sizing: border-box; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text); font: inherit; }

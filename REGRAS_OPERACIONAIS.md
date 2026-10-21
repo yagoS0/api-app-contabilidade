@@ -527,3 +527,36 @@ Histórico: decisão fecha a pendência da apresentação de R34. Usuário tamb�
 ### Correção autorizada de AutorizacaoDoLead — 21/10/2026
 
 O usuário autorizou corrigir AutorizacaoDoLead.test.jsx preservando as verificações, com nova execução dos testes e revisão antes de publicar. Esta decisão encerra a pendência histórica registrada acima. A correção aguarda a habilitação assíncrona do botão, sem mudar comportamento do produto, regras de negócio ou gates. Não autoriza publicação.
+
+## 26. Entrega externa, parcelamentos e lembretes — decisões de 21/10/2026
+
+O usuário aprovou registrar entrega externa com data e meio (pessoalmente, WhatsApp particular, e-mail externo ou outro), usuário e horário do registro. A declaração do contador encerra a pendência de envio da revisão documental indicada, com origem manual visível. Não comprova recibo de Meta/SMTP, pagamento nem liberação no portal. Datas de entrega são civis em Brasília; horário do registro não vira horário inventado da entrega. Exigir documento válido e preservar tentativa oficial de resultado incerto.
+
+Complemento R11/R19/R20: persistir empresa, guia, competência, revisão/hash, data, meio, ator e instante com auditoria atômica e idempotência. Documento substituído ou invalidado não mantém envio concluído por declaração antiga; histórico permanece. Reserva de envio concorrente e declaração não podem duplicar saída. Entrega externa não substitui a prova específica exigida pelos lembretes WhatsApp ao destinatário atual.
+
+Complemento R18: permitir configurar Guia mensal ou Débito automático por parcelamento, inclusive em indicação identificada antes de cadastrar o contrato completo. Informação desconhecida exige conferência, sem fabricar contrato ou pagamento. Registrar vigência, autoria, instante e histórico, preservando competências anteriores. Débito automático sem documento exigível retira a pendência de guia/envio, mantendo a conferência do pagamento; a forma efetiva acompanha também eventual guia avulsa vinculada à indicação. Não enviar cobrança incompatível por lote ou lembrete. Alteração de forma de pagamento não confirma baixa nem modifica lançamentos.
+
+O usuário confirmou que as quatro indicações da Sintropia com finais 25-54, 25-20, 26-54 e 26-88 estão em débito automático. Complemento expresso de 21/10/2026: todos estão nessa modalidade desde o início de cada parcelamento. Autorizou configurar esses quatro casos após publicação aprovada. Usar a origem comprovada de cada acordo, sem inventar datas, fabricar contrato ou confirmar pagamento. A correção administrativa retrospectiva deve registrar autorização, autor, instante real e estado anterior; não remove a proteção geral contra edição retroativa.
+
+Complemento R20: manter a agenda fiscal atual e separar a agenda de lembretes WhatsApp. A nova agenda é diária e configurável, com 8h como sugestão técnica; permanece desativada até salvamento explícito. Não há autorização de ativação produtiva neste incremento. Consultas fiscais não disparam mensagens; lembretes não consultam SERPRO. Preservar seleção de empresas e revalidá-la antes do transporte, além de contato autorizado, revisão, entrega comprovada, pagamento e proteção contra repetição de resultado incerto. Pendência ou falha não aparece como sucesso. O horário fiscal observado (dia 25 às 8h) não é imposto a outras instalações.
+
+DP: o usuário definiu envio dos documentos de folha/pró-labore ao responsável da empresa. Estrutura informada: FOLHA 2026/pro-labore/empresa/arquivos; folha normal fora de pro-labore. Isso orienta a proposta de importação conferida, sem autorizar acesso a uma conta Drive, inventar vínculo por nome de pasta ou disparar documentos reais.
+
+Benefício municipal: preparar campos de cadastro/configuração, sem presumir concessão, alíquota ou elegibilidade. Cadastro não equivale a suporte da emissão; a limitação e o bloqueio fiscal existentes permanecem explícitos até implementação e validação específica.
+
+Impacto: R01/R02/R08/R10/R11/R12/R18/R19/R20/R21/R22. Decisões pendentes V02/V03/V05/V06 permanecem pendentes; esta seção não define matriz fiscal, efeitos de falha bancária ou cobrança alternativa. Registro não declara testes concluídos nem autoriza publicação, mensagens, consultas fiscais ou baixas reais.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T66 | Entrega externa com data/meio e documento vigente | Origem manual, ator e instante; fecha envio, preserva pagamento e recibos oficiais |
+| T67 | Documento inválido, revisão antiga, escopo sem permissão ou data futura | Recusar sem persistência parcial |
+| T68 | Declaração concorrente com envio, repetição ou falha de auditoria | Uma evidência coerente, reserva protegida e rollback atômico |
+| T69 | Indicação sem contrato com débito automático configurado | Sem falta de guia/envio; vigência auditada, sem contrato ou pagamento fabricados |
+| T70 | Guia avulsa vinculada à indicação em débito automático | Projeção e guardas de envio/lembrete concordam com a forma vigente |
+| T71 | Troca de forma, competência anterior ou atualização concorrente | Histórico preservado, vigência respeitada e revisão antiga recusada |
+| T72 | Lembrete diário independente da consulta fiscal | Zero consulta fiscal pelo lembrete; agenda fiscal e seleção preservadas |
+| T73 | Agenda desligada, empresa retirada, recibo incompatível ou resultado incerto | Nenhuma saída indevida/repetida; motivo e pendência distintos de sucesso |
+| T74 | Documento de parcela presente mas em conferência, pago ou enviado | Não contar como disponível válido antes da conferência |
+| T75 | INSS VAZIO mensal já confirmado e documento real posterior | Mesma projeção em Operações/Guias, documento e conflitos têm precedência |
+
+Complemento de integração de 21/10/2026: o usuário autorizou abrir PR, integrar na main e publicar este incremento somente após CI e revisões aprovados; em seguida configurar os quatro parcelamentos da Sintropia e conferir avisos. Não autoriza ativar a agenda de lembretes, enviar mensagens ou realizar baixas. Cenário T76: correção administrativa identificada desde a origem dos quatro acordos remove apenas avisos incompatíveis de guia/envio; histórico e pagamentos permanecem intactos, com recusa se identidade ou origem não puderem ser confirmadas.

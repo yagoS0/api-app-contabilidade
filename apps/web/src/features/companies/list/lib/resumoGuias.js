@@ -29,7 +29,10 @@ export function resumirGuias(compliance) {
   const falhas = count(item => item.falha);
   const revisoes = count(item => item.revisar);
   const completo = Boolean(known) && !revisoes;
+  const parcelas = Array.isArray(compliance?.coberturaParcelamentoMes) ? compliance.coberturaParcelamentoMes : [];
+  const documentosParcelamento = new Set(parcelas.filter(p => p.documento === 'disponivel' && p.guideId).map(p => p.guideId)).size;
   return { items, completo, esperadas, disponiveis, faltantes, enviadas, enviosPendentes, falhas, revisoes,
+    parcelas, documentosParcelamento,
     rotulo: !completo ? 'Cobertura a conferir' : esperadas ? `${disponiveis}/${esperadas} disponíveis` : 'Nenhuma guia exigível',
     // Unit remains explicit until the domain supplies document expectation IDs.
     unidade: 'obrigações com guia',

@@ -1,4 +1,3 @@
-import { solicitarPagamentosWhatsapp } from "../application/guides/SolicitarPagamentosWhatsappService.js";
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { acquireGuideLease } from "../application/guides/GuideLockService.js";
@@ -22,8 +21,7 @@ async function executarPagamento(options = {}) {
   if (!lease) return { skipped: true, reason: "lock_active" };
   try {
     const settings = await getSerproRuntimeSettings();
-    const solicitar = () => solicitarPagamentosWhatsapp({ portalClientId: options.portalClientId || null, scheduledAt: options.scheduledAt || null, assertActive: () => { lease.assertActive(); options.assertActive?.(); } });
-    if (!settings.enabled) return { skipped: false, serproSkipped: "serpro_disabled", solicitacoesWhatsapp: await solicitar() };
+    if (!settings.enabled) return { skipped: true, reason: "serpro_disabled" };
 
     const startedAt = Date.now();
     const summary = await runPaymentConfirmationOnce({
@@ -34,7 +32,7 @@ async function executarPagamento(options = {}) {
       assertActive: () => { lease.assertActive(); options.assertActive?.(); },
     });
 
-    const result = { skipped: false, durationMs: Date.now() - startedAt, ...summary, solicitacoesWhatsapp: await solicitar() };
+    const result = { skipped: false, durationMs: Date.now() - startedAt, ...summary };
     await createSerproExecutionLog({
       worker: "serpro_payment_confirmation",
       createdAt: new Date().toISOString(),
