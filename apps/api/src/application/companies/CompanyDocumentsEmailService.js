@@ -14,7 +14,8 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { resolveCompanyNotificationEmail } from "../guides/GuideScheduledEmailService.js";
 import { GuideStorageService } from "../guides/GuideStorageService.js";
-import { TIPO_DOCUMENTO_LABELS, CompanyDocumentError } from "./CompanyDocumentsService.js";
+import { TIPO_DOCUMENTO_LABELS, CompanyDocumentError, baixarBuffer } from "./CompanyDocumentsService.js";
+import { PREFIXO_DOCUMENTO } from '../guides/lib/documentoNaoArrecadatorio.js';
 
 function escapeHtml(text) {
   return String(text ?? "")
@@ -78,7 +79,9 @@ export async function enviarDocumentosPorEmail({ portalClientId, documentIds, de
   try {
     for (const doc of documentos) {
       // eslint-disable-next-line no-await-in-loop
-      const buffer = await storage.downloadBuffer({ key: doc.fileKey });
+      const buffer = doc.fileKey.startsWith(PREFIXO_DOCUMENTO)
+        ? (await baixarBuffer({ portalClientId, documentId: doc.id })).buffer
+        : await storage.downloadBuffer({ key: doc.fileKey });
       if (!buffer?.length) {
         throw new CompanyDocumentError(
           "arquivo_ausente",

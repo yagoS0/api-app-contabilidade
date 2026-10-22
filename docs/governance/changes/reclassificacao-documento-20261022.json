@@ -1,0 +1,51 @@
+{
+  "summary": "Preparar reclassificação administrativa auditada de folha/documento não arrecadatório cadastrado como guia, preservando PDF e histórico.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "portal",
+    "web",
+    "operations"
+  ],
+  "operationalImpact": "Cumpre seção28 e R02/R08/R10/R11/R19/R20 existentes: reclassificação explícita com ACL, revisão, transação, auditoria e idempotência. Não confirma pagamento, apaga histórico, inventa vencimento nem autoriza mensagens. Sem alteração de regra fiscal ou schema.",
+  "tests": [
+    "PostgreSQL descartável:7 cenários finais aprovados; reclassificacao-postgres-final.log. Ensaio explícito fora da descoberta unitária em apps/api/scripts/verify-reclassificacao-documento.postgres.js, sem skips.",
+    "Focal inicial73/112; ampliado178/215; segunda rodada agrupada359/362. Após autorização expressa e aplicação somente do candidato revisado:13suítes/362testesPASS, exit0, reclassificacao-focused-autorizado.log. Logs anteriores preservados.",
+    "Candidato isolado de guiaAvulsaParcelamento.test.js:11/11PASS. PatchSHA256328E7A9B77031E6BC6493EB7BDC36037F632D0A306B24016EE57916342BEDFA6 aprovado independentemente e aplicado após autorização do usuário. Preserva recusa, trava sem mutação, snapshot da guia/parcela e proibição de escritas materiais; imports relativos preservados.",
+    "Gates executados pelo Principal:engine72PASS; portal99suítes/1580testesPASS; buildsweb/portalPASS. Planoimpacto high e unknown[] em reclassificacao-impact-plan.json.",
+    "Regressão integral API após aplicação: lote com 710 testes aprovados e 21 falhas em atendimentoResponsavelWhatsapp.test.js; mock de transação devolve cliente raiz e causa recursão. Correção posterior autorizada e aplicada somente nos dois fixtures revisados; ver validação consolidada abaixo.",
+    "Web integral: 300 suítes aprovadas antes do limite global; repetição serial encontrou timeout de 5 segundos no assistente de parcelamento. Suíte isolada do assistente: 21 testes aprovados sem mudar código ou timeout. Esse era o estado da tentativa anterior; conclusão posterior registrada abaixo.",
+    "Após autorização expressa dos dois candidatos:18suítes/532testesPASS, exit0 em compatibilidade-reservas-autorizado.log. Execução consolidada cobre99testes dos dois arquivos reais e440 do lote anterior, com7sobrepostos executados uma única vez. Não altera produto/gates/timeouts; regressão integral ainda pendente naquela etapa.",
+    "API integral seguinte:325suítes aprovadas antes de uma expectativa desatualizada em guiaDoAvisoCliente.test.js no lote14. Diagnóstico separado dos lotes15–26:288suítesPASS, sem novas falhas; diagnóstico não equivale a gate integral aprovado.",
+    "Após autorização do último candidato guiaDoAvisoCliente:suíte real5/5PASS, exit0 em guiaDoAvisoCliente-autorizado.log. Nova regressão API/web integral sequencial sob coordenação do Principal; gates permaneciam pendentes até a conclusão registrada abaixo.",
+    "Fechamento API:gate exit0 em reclassificacao-api-ultimo-autorizado.log, manifest api-vGcTAS. 638suítes/11234testes descobertos;637suítes/11233testesPASS e1skip coerenciaComercialP0 por variável própria de ambiente. Não afirmar zero skips nesse gate.",
+    "Complemento explícito coerenciaComercialP0 com ALTAN_P0_DATABASE_URL loopback:1testePASS, exit0 em reclassificacao-comercial-pg-complementar.log. Catálogo638suítes/11234testes exercitado com sucesso entre as duas execuções; logs distintos preservados.",
+    "Web integral final:exit0, manifest web-s8BULY,518suítes/5899testesPASS, zero skips. Engine72, portal99suítes/1580testes, buildsweb/portal e PostgreSQL7 anteriores continuam válidos, sem novas alterações de produto."
+  ],
+  "reviews": [
+    "Controlador executado:primeiro run sem alterações por escopo insuficiente; segundo timeout do executor. Patch retomado por executor delimitado. O runtime não concluiu ready_for_human; pareceres finais independentes posteriores estão registrados abaixo.",
+    "Revisor sistêmico identificou projeções Calendário/Fluxo de caixa, corrigidas na segunda rodada. Nova inspeção sem bloqueador de produto remanescente, condicionada a testes/gates. Revisor independente aprovou candidato restrito da fixture; aplicado após decisão expressa, sem alteração de produto.",
+    "Candidatos atendimentoResponsavelWhatsapp.test.js e envioTentativas.test.js revisados independentemente, favoráveis. HashesSHA25624A1E2D936B679C4EC2F20DF526F93129E6D1D25D67D6C0F3EFF8B887FF3B674 eC4A036B554E2B674AA098E8F0B804685F3820B2B8665D44FB43EF4A8C1ECD3E3 conferidos antes da aplicação; imports relativos e assertions preservados.",
+    "Candidato mínimo guiaDoAvisoCliente.test.js preparado e revisado independentemente; hashSHA2561D125CD32B9757E62F93934EE486B41563B6AD79AA000711E89DE39A569AAD1D conferido e aplicado exatamente. Acrescenta filtro de exclusão documental esperado mantendo empresa/id/liberação/paginação e todos os testes de acesso.",
+    "Após gates e complemento PostgreSQL, foram solicitados pareceres finais independentes, concluídos conforme registros abaixo. Nenhum ready_for_human do runtime escalado foi fabricado.",
+    "Parecer final domínio/backend/consumidores FAVORÁVEL:revisor confirmou fingerprint dos25JS de produto e evidências API11234 incluindo complemento,web5899 ePG7. Check de impacto aprovado,unknown[],riscohigh. Parecer sistêmico final também favorável, conforme registro seguinte.",
+    "Parecer sistêmico final FAVORÁVEL:mesmo fingerprint25JS,sem bloqueador de produto remanescente; projeçõesCalendário/Fluxo corrigidas e evidências conferidas. Validação técnica local encerrada por coordenação do Principal com pareceres independentes; nenhuma publicação ou ativação."
+  ],
+  "humanDecisions": [
+    "Manter30guias antigas/16empresas bloqueadas; acompanhar somente novos envios válidos.",
+    "Sintropia excluída; não configurar retroativamente.",
+    "MetaD0 APPROVED/MARKETING recusado pelo contratoUTILITY; usuário sem acessoMeta.",
+    "LembretesOFF, nenhuma empresa selecionada, sem mensagens ou aplicação de dados reais. Ativação será apresentada depois. PR240jápublicado; candidato separado ainda local.",
+    "22/10/2026: usuário autorizou Aplicar candidato e revalidar. Exceção restrita ao patch revisado de guiaAvulsaParcelamento.test.js e nova validação, sem autorizar outras correções, publicação ou ativação por essa exceção.",
+    "22/10/2026: usuário autorizou Aplicar os dois candidatos e revalidar, sem publicar/ativar. Aplicação restrita aos patches revisados atendimentoResponsavelWhatsapp.test.js e envioTentativas.test.js; nenhuma autorização genérica para outras correções.",
+    "22/10/2026: usuário autorizou aplicar o último candidato guiaDoAvisoCliente e revalidar tudo, sem publicar nem ativar. Aplicação restrita ao patch revisado; nenhuma alteração de produto/gates/timeouts.",
+    "22/10/2026: publicação autorizada após CI e revisões, com conferência no app, mantendo lembretes OFF e Sintropia excluída. Não executar reclassificação real ou mensagens."
+  ],
+  "rollback": "Antes de aplicação produtiva, reverter código sem migração. Depois de aplicação, preservar marcadores, documentos e auditoria; não voltar a versão que desconheça bloqueios nem apagar dados para reabrir cobrança. Agenda continua desligada até conciliação e decisão específica."
+}

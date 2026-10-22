@@ -1,4 +1,5 @@
 import { inicioDoHistoricoFluxo, aplicarSaldosProjetados } from "./SaldoInicialFluxoService.js";
+import { STATUS_DOCUMENTO } from '../guides/lib/documentoNaoArrecadatorio.js';
 // O FLUXO DE CAIXA — a ligação com o banco.
 //
 // ⚠⚠ ESTE SERVIÇO É **SÓ LEITURA**. Ele não grava nada, não marca nada, não cria lançamento nenhum.
@@ -153,6 +154,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       portalClientId: String(portalClientId),
       // ⚠⚠ `"PAID"` ENTROU. Sem ele não existe passado: a guia paga é o único imposto que é FATO.
       paymentStatus: { in: ["OPEN", "OVERDUE", "PAID"] },
+      status: { not: STATUS_DOCUMENTO },
     },
     select: {
       id: true, tipo: true, competencia: true, valor: true, vencimento: true,

@@ -31,9 +31,7 @@ export {
 } from "./lib/recalculoDaGuia.js";
 
 async function updateGuidePaymentStatus(guideId, data) {
-  return prisma.guide.update({
-    where: { id: String(guideId) },
-    data,
+  return atualizarGuiaComEvidencia(prisma, guideId, () => data, {
     // A guia atualizada volta para a tela e substitui a linha da listagem. Sem o parcelamento junto,
     // confirmar o pagamento de uma PARCELA rebaixava o rótulo dela para o do DAS do mês — a linha
     // mudava de nome no clique, sem que nada tivesse mudado no banco.

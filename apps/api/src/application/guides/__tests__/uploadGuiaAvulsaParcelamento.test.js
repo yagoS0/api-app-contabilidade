@@ -3,6 +3,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const client = {
     portalClient: { findUnique: jest.fn(async () => ({ id: "empresa", cnpj: "12345678000199", razao: "Teste" })) },
     guide: {
+      findUnique: jest.fn(async () => store.guide),
       findFirst: jest.fn(async ({ where }) => where.sourceFileId ? null : store.guide ? { ...store.guide, parcelamento: store.contrato, parcela: store.parcela } : null),
       create: jest.fn(async ({ data }) => (store.guide = { id: "guia", updatedAt: new Date(), ...data })),
       updateMany: jest.fn(async ({ data }) => { Object.assign(store.guide, data); return { count: 1 }; }),

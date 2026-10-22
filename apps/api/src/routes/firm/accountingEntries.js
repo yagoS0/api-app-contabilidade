@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
 import { corrigirMesFechado, estadoCorrecaoTx, concluirCorrecaoTx, listarCorrecoesContabeis, registrarAlteracaoTx, registrarConferenciaTx, CorrecaoContabilError } from '../../application/accounting/CorrecaoMesContabilService.js';
 import { listarConfirmacoesPagamento, lerConfirmacaoPagamento, tentarBaixaConfirmacao, resumoConfirmacaoPagamento } from '../../application/guides/ConfirmacaoPagamentoClienteService.js';
 import { salvarComposicaoExistente, candidatosComposicao, enriquecerOrigens, composicaoHabilitada, ComposicaoError } from '../../application/accounting/parcelamento/ComposicaoParcelamentoService.js';
@@ -4795,7 +4796,7 @@ export function createAccountingEntriesRouter({ log }) {
         const guideId = entryId.replace("synthetic-inss-", "");
         const guide = await prisma.guide.findFirst({ where: { id: guideId, portalClientId }, select: { id: true } });
         if (!guide) return res.status(404).json({ ok: false, error: "guide_not_found" });
-        await prisma.guide.update({ where: { id: guideId }, data: { parcelamentoId } });
+        await prisma.$transaction(async tx => { await travarGuiaArrecadatoria(tx, guideId, portalClientId); await tx.guide.update({ where: { id: guideId }, data: { parcelamentoId } }); });
         return res.json({ ok: true, entryId, parcelamentoId });
       }
       const entry = await prisma.accountingEntry.findFirst({ where: { id: entryId, portalClientId }, select: { id: true, tipo: true } });

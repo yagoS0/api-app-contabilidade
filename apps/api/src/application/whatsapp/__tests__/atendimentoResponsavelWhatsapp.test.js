@@ -107,11 +107,28 @@ function banco() {
   }
   client.$transaction = jest.fn(async fn => {
     const antes = copy(rows);
-    try { return await fn(client); }
+    // Prisma fornece um cliente transacional distinto, sem abertura de transação aninhada.
+    const tx = { ...client };
+    delete tx.$transaction;
+    try { return await fn(tx); }
     catch (err) { for (const name of Object.keys(rows)) rows[name] = antes[name]; throw err; }
   });
   return client;
 }
+
+test('dublê transacional separa cliente e preserva rollback dos registros', async () => {
+  const client = banco();
+  await client.guide.create({ data: { id: 'guia-fixture', status: 'PROCESSED' } });
+  const antes = copy(client.rows);
+  await expect(client.$transaction(async tx => {
+    expect(tx).not.toBe(client);
+    expect(tx.$transaction).toBeUndefined();
+    await tx.guide.updateMany({ where: { id: 'guia-fixture' }, data: { status: 'ALTERADA' } });
+    await tx.appSetting.create({ data: { key: 'auditoria-fixture', value: { status: 'reservado' } } });
+    throw new Error('falha-transacao-fixture');
+  })).rejects.toThrow('falha-transacao-fixture');
+  expect(client.rows).toEqual(antes);
+});
 
 async function fixture() {
   const client = banco();

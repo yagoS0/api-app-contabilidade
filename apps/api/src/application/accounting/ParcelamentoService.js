@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from '../guides/lib/documentoNaoArrecadatorio.js';
 import {bloquearComposicaoEmpresa,composicaoHabilitada} from './parcelamento/ComposicaoParcelamentoService.js';
 import { exigirOrigensLegadasSeparadas } from './parcelamento/protegerOrigensLegadas.js';
 // Q9: serviço de Parcelamentos (Simples Nacional, INSS, DARF, OUTRO).
@@ -193,6 +194,7 @@ export async function createParcelamento({
     : numParcelas * principal;
 
   return prisma.$transaction(async (tx) => {
+    if (sourceGuideId) await travarGuiaArrecadatoria(tx, sourceGuideId, portalClientId);
     const company = await tx.portalClient.findUnique({
       where: { id: portalClientId },
       select: { id: true, razao: true, cnpj: true },

@@ -1,3 +1,4 @@
+import { exigirGuiaArrecadatoria } from '../../guides/lib/documentoNaoArrecadatorio.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
 import {
@@ -48,6 +49,7 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
     include: { portalClient: { select: { id: true, cnpj: true } } },
   });
   if (!guide) return { ok: false, skipped: "guide_not_found" };
+  exigirGuiaArrecadatoria(guide);
   const conferirDeclaracaoCliente = !scheduledAt && guide.paymentStatusSource === "CLIENTE" && !guide.baixada;
   if (!conferirDeclaracaoCliente && (isGuidePaid(guide) || guide.clienteConfirmouEm || guide.baixada)) return {
     ok: true, skipped: "already_paid", guideId: guide.id, pago: isGuidePaid(guide),

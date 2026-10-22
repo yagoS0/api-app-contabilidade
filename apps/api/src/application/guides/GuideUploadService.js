@@ -1,3 +1,4 @@
+import { exigirGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 import { randomUUID } from "node:crypto";
 import { prepararParcelamentoDaGuia, vincularGuiaParcelamento } from "../accounting/parcelamento/GuiaAvulsaParcelamentoService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -177,6 +178,7 @@ async function processUploadedFile({ file, parserClient, requestId: headerReques
   const fileBuffer = file.buffer;
   const hash = hashPdf(fileBuffer);
   const sourceFileId = buildUploadSourceFileId(hash);
+  exigirGuiaArrecadatoria(await prisma.guide.findFirst({ where: { hash } }));
   const requestId = randomUUID();
   const parseTraceId = headerRequestId || requestId;
 
@@ -498,6 +500,7 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
 
   const hash = hashPdf(fileBuffer);
   const sourceFileId = buildUploadSourceFileId(hash);
+  exigirGuiaArrecadatoria(await prisma.guide.findFirst({ where: { hash } }));
   const existingGuide = await prisma.guide.findFirst({
     where: { sourceFileId },
     select: { id: true, portalClientId: true, parcelamentoId: true },

@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 import { bloqueioEnvioParcela, conferirFormaIndicacaoParaEnvio } from './GuiaParcelaEnvioGuard.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
@@ -109,7 +110,10 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     // Revisão diferente ou legado não autorizam repetir uma saída de resultado incerto.
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
     const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, revisao, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
-    try { await db.appSetting.create({ data: { key, value } }); }
+    try { await db.$transaction(async tx => {
+      if (g) await travarGuiaArrecadatoria(tx, g.id, companyId);
+      await tx.appSetting.create({ data: { key, value } });
+    }); }
     catch (e) {
       if (e.code !== "P2002") throw e;
       const anterior = await db.appSetting.findUnique({ where: { key } });

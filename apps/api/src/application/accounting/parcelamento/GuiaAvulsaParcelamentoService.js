@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria, exigirGuiaArrecadatoria } from '../../guides/lib/documentoNaoArrecadatorio.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { TIPOS_PARCELAMENTO, grupoDoParcelamento } from "./contracts.js";
 
@@ -6,6 +7,7 @@ export const GUIA_AVULSA = "GUIA_AVULSA";
 const numeracao = n => n == null || n === "" ? null : Number(n);
 
 export async function prepararParcelamentoDaGuia({ portalClientId, metadata, guiaExistente, client = prisma }) {
+  exigirGuiaArrecadatoria(guiaExistente);
   if (metadata?.isParcelamento !== true) return null;
   const tipo = String(metadata.parcelamentoTipo || "OUTRO").toUpperCase();
   if (!TIPOS_PARCELAMENTO.includes(tipo)) throw erro("MODALIDADE_INVALIDA", "Selecione uma modalidade de parcelamento válida.", 400);
@@ -33,6 +35,7 @@ export async function prepararParcelamentoDaGuia({ portalClientId, metadata, gui
 
 /** Pode ser reutilizado dentro da ingestão contábil, na mesma transação. */
 export async function vincularGuiaParcelamentoTx(tx, { portalClientId, guideId, parcelamentoId, numeroParcela }) {
+  await travarGuiaArrecadatoria(tx, guideId, portalClientId);
   const guia = await tx.guide.findFirst({ where: { id: guideId, portalClientId }, include: { parcelamento: true, parcela: true } });
   const destino = await tx.parcelamento.findFirst({ where: { id: parcelamentoId, portalClientId, status: { not: "EXCLUIDO" } } });
   if (!guia || !destino) throw erro("VINCULO_NAO_ENCONTRADO", "Guia e parcelamento devem pertencer a esta empresa.", 404);

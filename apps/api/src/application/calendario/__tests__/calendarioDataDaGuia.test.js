@@ -91,6 +91,18 @@ async function itens() {
   };
 }
 
+test('documento de folha reclassificado com vencimento válido não gera evento nem contagem de guia', async () => {
+  const rows = [GUIA_DE_HOJE, guia({ id: 'folha', status: 'DOCUMENTO_NAO_ARRECADATORIO' }), guia({ id: 'vazio', status: 'VAZIO' })];
+  prisma.guide.findMany.mockImplementation(async ({ where }) => {
+    expect(where.portalClientId).toEqual({ in: ['p1'] });
+    expect(where.status.notIn).toEqual(expect.arrayContaining(['VAZIO', 'DOCUMENTO_NAO_ARRECADATORIO']));
+    return rows.filter(g => !where.status.notIn.includes(g.status));
+  });
+  const out = await montarCalendarioDoMes({ portalIds: ['p1'], competencia: COMPETENCIA });
+  expect(out.totais.guias).toBe(1);
+  expect(out.dias.flatMap(d => d.itens).filter(i => i.tipo === 'guia').map(i => i.id)).toEqual([GUIA_DE_HOJE.id]);
+});
+
 describe("o item de GUIA leva o vencimento no campo `data`", () => {
   it("as três guias chegam com `data` preenchida", async () => {
     const { guias } = await itens();

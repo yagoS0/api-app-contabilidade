@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from '../guides/lib/documentoNaoArrecadatorio.js';
 // Gera AccountingEntry (tipo=PROVISAO) a partir de uma Guide processada.
 // Decisões alinhadas com o usuário:
 //  - INSS continua manual (skip).
@@ -208,6 +209,8 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
 
   // Executa em transação (se chamador não passou tx)
   async function run(ctx) {
+    const atual = await travarGuiaArrecadatoria(ctx, guide.id, guide.portalClientId);
+    if (String(atual.updatedAt) !== String(guide.updatedAt)) throw Object.assign(new Error("Guia alterada."), { code: "GUIA_ALTERADA", status: 409 });
     const created = [];
     for (const l of linhas) {
       const subtipo = EVENT_TO_SUBTIPO[l.eventType] || "OUTROS_TRIBUTOS";

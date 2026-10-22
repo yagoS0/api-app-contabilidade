@@ -20,6 +20,7 @@
 // `GET /firm/companies/annual`, que faz duas queries pro ano em vez de doze por empresa.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { STATUS_DOCUMENTO } from '../guides/lib/documentoNaoArrecadatorio.js';
 import { ocorrenciasDoPeriodo } from "../obrigacoes/ObrigacoesService.js";
 
 const APURADA = new Set(["transmitida", "confirmada"]);
@@ -74,7 +75,7 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
       where: {
         portalClientId: { in: alvos },
         vencimento: { gte: limites.inicio, lt: limites.fim },
-        status: { not: "VAZIO" },
+        status: { notIn: ["VAZIO", STATUS_DOCUMENTO] },
       },
       select: { id: true, portalClientId: true, tipo: true, competencia: true, vencimento: true, valor: true, paymentStatus: true },
     }),

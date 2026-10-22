@@ -1,3 +1,4 @@
+import { STATUS_DOCUMENTO } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
 import { situacaoDoPeriodo } from "../../application/notas/pendenciasDoPeriodo.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
@@ -1234,7 +1235,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       const { companyId, guideId } = req.params || {};
       const guide = await prisma.guide.findFirst({
         // Portal Cliente (#3.1): cliente só baixa guia liberada.
-        where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true },
+        where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true, status: { not: STATUS_DOCUMENTO } },
       });
       if (!guide) return res.status(404).json({ error: "not_found" });
       const buf = await getGuidePdfBuffer(guide);

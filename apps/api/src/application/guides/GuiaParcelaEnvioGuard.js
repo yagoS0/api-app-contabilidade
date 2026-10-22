@@ -1,9 +1,11 @@
 import { formaIndicacaoNoMes } from '../accounting/parcelamento/IndicacaoFormaPagamentoService.js';
+import { documentoNaoArrecadatorio, STATUS_DOCUMENTO, exigirGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 
 // A conferência é comum à liberação no portal e a todos os transportes de cobrança.
 export function bloqueioEnvioParcela(guide) {
   const recusa = (code, message) => ({ code, message, status: 409, guideId: guide?.id });
+  if (documentoNaoArrecadatorio(guide)) return recusa(STATUS_DOCUMENTO, 'Documento reclassificado. Consulte Documentos da empresa.');
   if (guide?.extracted?.conferenciaDocumentoPendente === true) return recusa(
     "PARCELA_DOCUMENTO_PENDENTE", "Confira o documento desta parcela na aba Parcelamento antes de liberar ou enviar ao cliente.");
   if (!guide?.parcelamentoId) return null;
@@ -26,6 +28,7 @@ export const SELECT_PARCELA_ENVIO = {
 
 export async function conferirParcelasParaEnvio(guias, { client = prisma, atualizar = true } = {}) {
   for (const original of guias || []) {
+    exigirGuiaArrecadatoria(original);
     if (!original?.parcelamentoId && !original?.extracted?.indicacaoParcelamentoId && original?.extracted?.conferenciaDocumentoPendente !== true) continue;
     const guide = atualizar ? await client.guide.findFirst({
       where: { id: original.id, portalClientId: original.portalClientId },
