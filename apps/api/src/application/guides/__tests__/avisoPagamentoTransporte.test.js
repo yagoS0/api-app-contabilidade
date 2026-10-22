@@ -8,6 +8,7 @@ import { transportePadrao } from '../AvisoPagamentoService.js';
 import { prisma } from '../../../infrastructure/db/prisma.js';
 import { janelaDaConversa } from '../../whatsapp/ConversaWhatsappService.js';
 import { whatsappPorCanal } from '../../whatsapp/CanalWhatsappService.js';
+import { TEMPLATES_GUIAS_WHATSAPP, validarTemplateGuias } from '../../whatsapp/templatesGuiasWhatsapp.js';
 
 function cenario(aberta = true) {
   janelaDaConversa.mockResolvedValue({ situacao: aberta ? 'ABERTA' : 'FECHADA' });
@@ -20,12 +21,24 @@ function cenario(aberta = true) {
 test('janela aberta envia dois botões de resposta sem links', async () => {
   const f = cenario(); await f.run(); expect(f.cloud.enviarBotoes).toHaveBeenCalledWith({ telefone: f.args.contato.telefoneE164, texto: 'Já pagou?', botoes: [{ id: 'confirmar', titulo: 'Confirmar pagamento' }, { id: 'recalcular', titulo: 'Recalcular guia' }] });
 });
-test.each(['ANTES', 'DEPOIS'])('janela fechada envia template %s com os payloads dos botões', async fase => {
-  const f = cenario(false); f.args.fase = fase; if (fase === 'ANTES') f.args.acoes = [];
-  await f.run(); expect(f.cloud.enviarTemplate).toHaveBeenCalledWith(expect.objectContaining({ template: fase === 'ANTES' ? 'guia_pagamento_antes_v1' : 'guia_pagamento_depois_atualizacao_v2', variaveis: f.args.variaveis, botoesResposta: fase === 'ANTES' ? ['confirmar'] : ['confirmar', 'recalcular'] }));
+test.each(['ANTES', 'NO_VENCIMENTO', 'DEPOIS'])('janela fechada envia template %s com os payloads dos botões', async fase => {
+  const f = cenario(false); f.args.fase = fase; if (fase !== 'DEPOIS') f.args.acoes = [];
+  await f.run(); expect(f.cloud.enviarTemplate).toHaveBeenCalledWith(expect.objectContaining({ template: { ANTES: 'guia_pagamento_antes_v1', NO_VENCIMENTO: 'guia_pagamento_no_vencimento_v1', DEPOIS: 'guia_pagamento_depois_atualizacao_v2' }[fase], variaveis: f.args.variaveis, botoesResposta: fase !== 'DEPOIS' ? ['confirmar'] : ['confirmar', 'recalcular'] }));
   expect(f.cloud.enviarBotoes).not.toHaveBeenCalled();
 });
-test('modelo não aprovado fica pendente sem envio livre fora da janela', async () => {
-  const f = cenario(false); prisma.templateWhatsapp.findUnique.mockResolvedValue(null);
+test.each(['ANTES', 'NO_VENCIMENTO', 'DEPOIS'])('modelo %s não aprovado fica pendente sem envio livre fora da janela', async fase => {
+  const f = cenario(false); f.args.fase = fase; if (fase !== 'DEPOIS') f.args.acoes = []; prisma.templateWhatsapp.findUnique.mockResolvedValue(null);
   await expect(f.run()).rejects.toMatchObject({ code: 'WHATSAPP_TEMPLATE_PENDENTE' }); expect(f.cloud.enviarBotoes).not.toHaveBeenCalled(); expect(f.cloud.enviarTemplate).not.toHaveBeenCalled();
+});
+
+test('contrato D0 tem um botão, texto próprio e recusa corpo de DEPOIS', () => {
+  const contrato = TEMPLATES_GUIAS_WHATSAPP.guia_pagamento_no_vencimento_v1;
+  expect(contrato.corpo).toContain('vence hoje');
+  expect(contrato.corpo).not.toMatch(/atras|acréscimos|atualizar|recalcular/i);
+  const template = { status: 'APPROVED', category: 'UTILITY', language: 'pt_BR', name: 'guia_pagamento_no_vencimento_v1', components: [
+    { type: 'BODY', text: contrato.corpo }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Confirmar pagamento' }] },
+  ] };
+  expect(validarTemplateGuias(template.name, template).statusAprovacao).toBe('APROVADO');
+  template.components[0].text = TEMPLATES_GUIAS_WHATSAPP.guia_pagamento_depois_v1.corpo;
+  expect(() => validarTemplateGuias(template.name, template)).toThrow('Texto ou botões diferem');
 });

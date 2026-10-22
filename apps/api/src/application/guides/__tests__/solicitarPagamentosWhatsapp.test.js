@@ -15,3 +15,19 @@ test('empresa explicitamente solicitada fora da seleção não recebe aviso',asy
  await solicitarPagamentosWhatsapp({portalClientId:'desabilitada',scheduledAt:'2026-10-21'},{db,avisar,idsAtivos:async()=>['outra']});
  expect(avisar).not.toHaveBeenCalled();expect(db.guide.findMany).not.toHaveBeenCalled();
 });
+
+test('varredura inclui D0 e informa vencimento inválido sem chamar aviso nem inventar data', async () => {
+ const db={feriado:{findMany:async()=>[]},guide:{findMany:async()=>[
+  {id:'d0',portalClientId:'c',vencimento:'2026-09-25'},
+  {id:'impossivel',portalClientId:'c',vencimento:'2026-02-30'},
+  {id:'ausente',portalClientId:'c',vencimento:null},
+ ]}};
+ const avisar=jest.fn(async()=>({status:'ENVIADO'}));
+ const r=await solicitarPagamentosWhatsapp({scheduledAt:'2026-09-25',agora:new Date('2026-09-25T12:00Z')},{db,idsAtivos:async()=>['c'],avisar});
+ expect(avisar).toHaveBeenCalledTimes(1);expect(avisar.mock.calls[0][0].guideId).toBe('d0');
+ expect(r.avisosPendentes).toBe(2);expect(r.results).toEqual([
+  {guideId:'d0',status:'ENVIADO'},
+  expect.objectContaining({guideId:'impossivel',status:'PENDENTE',motivo:'VENCIMENTO_INVALIDO'}),
+  expect.objectContaining({guideId:'ausente',status:'PENDENTE',motivo:'VENCIMENTO_INVALIDO'}),
+ ]);
+});

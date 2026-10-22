@@ -560,3 +560,19 @@ Impacto: R01/R02/R08/R10/R11/R12/R18/R19/R20/R21/R22. Decisões pendentes V02/V0
 | T75 | INSS VAZIO mensal já confirmado e documento real posterior | Mesma projeção em Operações/Guias, documento e conflitos têm precedência |
 
 Complemento de integração de 21/10/2026: o usuário autorizou abrir PR, integrar na main e publicar este incremento somente após CI e revisões aprovados; em seguida configurar os quatro parcelamentos da Sintropia e conferir avisos. Não autoriza ativar a agenda de lembretes, enviar mensagens ou realizar baixas. Cenário T76: correção administrativa identificada desde a origem dos quatro acordos remove apenas avisos incompatíveis de guia/envio; histórico e pagamentos permanecem intactos, com recusa se identidade ou origem não puderem ser confirmadas.
+
+## 27. Acompanhamento no vencimento — decisão de 21/10/2026
+
+O usuário solicitou confirmação antes, no vencimento e após, e autorizou resolver o possível em desenvolvimento. Acrescentar NO_VENCIMENTO ao calendário útil existente: um dia útil antes, dia útil efetivo do vencimento, um dia útil depois. Preservar vencimento nominal do PDF e agenda fiscal separada. No dia, mensagem neutra de vencimento hoje e confirmação; atualização da guia continua restrita ao período posterior e aos serviços/guardas existentes.
+
+Complemento R02/R11/R18/R20/R25: data inválida ou alterada pela conversão gera pendência explícita para o contador, nunca data inventada. Revalidar pagamento, débito automático, empresa, contato, consentimento, documento e entrega antes da saída. Reserva por guia/fase/vencimento/destinatário mantém identidade estável; revisão fica na evidência. Legado sem revisão ou revisão divergente exige conferência e não é sucesso atual, nem autorização para repetir resultado incerto. Não migrar recibos antigos com dados atuais. O modelo novo fora da janela exige aprovação/cadastro real; não reutilizar texto de atraso como D0 nem afirmar aprovação da Meta.
+
+Impacto: calendário de comunicação e clareza das pendências. Sem mudança de prazo tributário, pagamentos, documentos ou dados reais. Incremento local, sem publicação, ativação de agenda ou mensagens. Proposta DP permanece proposta, não implementação.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T77 | Guia elegível nos três marcos e fuso Brasília | Uma fase correta por data útil; D0 confirma sem recálculo ou atraso |
+| T78 | Data ausente, impossível ou ano alterado na conversão | Pendência VENCIMENTO_INVALIDO, sem reserva/envio e sem modificar guia |
+| T79 | Legado sem revisão ou nova revisão sobre reserva anterior | Pendência de conferência; não declarar envio da revisão atual ou repetir saída |
+| T80 | Janela fechada com template D0 ausente/não aprovado | Pendência, zero transporte livre e sem fallback de atraso |
+| T81 | Pagamento/DA/contato/empresa alterados durante preparo | Revalidar antes da rede e impedir saída indevida |
