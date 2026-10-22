@@ -93,3 +93,48 @@ test('pausa e retomada auditadas sem mudar rotinas; replay mantém o resultado e
   expect(resumed.serproPolicy.paused).toBe(false);
   expect(db.appSetting.create.mock.calls.at(-1)[0].data.value.beforeSerproPolicy.paused).toBe(true);
 });
+
+test('lembretes ausentes ficam OFF, independentes da consulta fiscal e da agenda global', async () => {
+  const db = database();
+  await db.companyRotina.upsert({ create: { portalClientId: 'a', rotina: 'pagamento', enabled: true }, update: {} });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  expect(before.lembretes).toMatchObject({ enabled: false, agenda: { enabled: false, hour: null } });
+  db.companyRotina.upsert.mockClear();
+  const input = { expectedRevision: before.revision, requestId: 'reminder-123', lembretes: { enabled: true } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(saved.lembretes).toMatchObject({ enabled: true, agenda: { enabled: false } });
+  expect(saved.rotinas).toEqual(before.rotinas);
+  expect(saved.serproPolicy).toEqual(before.serproPolicy);
+  expect(db.companyRotina.upsert).toHaveBeenCalledTimes(1);
+  expect(db.companyRotina.upsert.mock.calls[0][0].create.rotina).toBe('avisos_guias_whatsapp');
+  expect(db.appSetting.upsert).not.toHaveBeenCalled();
+  expect(db.appSetting.create.mock.calls.at(-1)[0].data.value.beforeLembretes.enabled).toBe(false);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(saved);
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, lembretes: { enabled: false } })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'reminder-stale' })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+});
+
+test.each([null, [], {}, { enabled: 'true' }, { enabled: true, hour: 10 }])('rejeita contrato de lembretes inválido %j sem mutações', async lembretes => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'invalid-reminder', lembretes })).rejects.toMatchObject({ status: 422 });
+  expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('permissão revogada bloqueia lembretes, inclusive replay de pedido salvo', async () => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: before.revision, requestId: 'access-reminder', lembretes: { enabled: true } };
+  await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  db.companyRotina.upsert.mockClear();
+  db.companyFirmAccess.findUnique.mockResolvedValue({ status: 'ACTIVE', role: 'STAFF' });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ status: 403 });
+  expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('agenda global entra na revisão; leitura não salva ou expõe dados privados', async () => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  await db.appSetting.upsert({ create: { key: 'serpro_runtime_settings', value: { rotinas: { avisos_guias_whatsapp: { enabled: true, day: 1, hour: 8, frequency: 'DAILY' } } } } });
+  const current = await lerAutomacaoEmpresa(db, 'a');
+  expect(current.lembretes).toMatchObject({ enabled: false, agenda: { enabled: true, hour: 8 } });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'agenda-reminder', lembretes: { enabled: true } })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+  expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+});

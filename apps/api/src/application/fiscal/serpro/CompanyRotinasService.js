@@ -114,6 +114,7 @@ export async function listCompanyRotinas() {
       status: p.status,
       regime: normalizaRegime(p.companyId ? legacyMap.get(p.companyId) : null) || null,
       rotinas,
+      lembretes: { enabled: marcadas.avisos_guias_whatsapp === true },
     };
   });
 }

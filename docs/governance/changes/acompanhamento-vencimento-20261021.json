@@ -1,0 +1,48 @@
+{
+  "summary": "Completar os três marcos de acompanhamento de guias e a configuração independente de lembretes por empresa, preservando evidências e consultas fiscais.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Seção 27 e cenários T77–T81 da referência operacional reconciliada. D0 segue calendário útil existente e fuso Brasília, sem alterar vencimento fiscal/documento. Revisão permanece na evidência, identidade da reserva permanece estável. Datas inválidas, legado sem revisão e revisão divergente exigem conferência. Agenda, dados reais, recebimentos e consultas SERPRO não foram alterados. Proposta de documentos DP não foi implementada. Seção28 e T82–T86: lembretes opt-in por empresa, ausência OFF, CAS/auditoria e revalidação. Configurações da empresa → Automação. Seleção não ativa agenda global nem herda Pagamento fiscal.",
+  "tests": [
+    "Escopo: 9 suítes, 159 testes aprovados; .altan-governance/escopo.log.",
+    "Engine da governança: 72 testes aprovados; .altan-governance/engine.log.",
+    "Build web e portal aprovados após corrigir acesso às dependências locais; web-build.log e portal-build.log.",
+    "Regressão API completa: 636 suítes e 11206 testes aprovados, sem pendências/skips; api-final.log. Portal completo: 99 suítes e 1580 testes aprovados, sem pendências/skips; portal-final.log.",
+    "Web: primeira tentativa falhou por dependência local ausente, corrigida sem modificar código; segunda teve timeout em coerenciaComercialP0. A suíte isolada passou em 12 testes, sem alterar timeout/verificações. Regressão completa sem concorrência APROVADA: 517 suítes, 5892 testes, zero pendências/skips; web-final-serial.log e test-batches/web-dFcDwP.",
+    "22/10 configuração: API completa 637 suítes/11227 testes aprovados; run f23266cc, gate-api-regression. Engine 72 aprovados.",
+    "PostgreSQL isolado: seleção independente, permissão, CAS concorrente, replay, rollback, 12 reservas concorrentes/um dono e zero rede aprovados; config-postgres.log.",
+    "Primeira regressão web reprovou seletor genérico de checkbox em operacoes.test. Correção restrita para DAS preserva todas assertions; 2 suítes/17 testes aprovados. Regressão integral final aprovada: 518 suítes/5899 testes, zero pendências/skips; web-config-final.log e web-qEltRj.",
+    "QA mock Chrome local: 1440/390 sem overflow e sem pageerror; lembretes-visual.json e capturas. Navegação e salvamento também conferidos no navegador interno com dados fictícios; mock em memória não comprova persistência após reload. Persistência coberta no PostgreSQL.",
+    "22/10 portal final: 99 suítes/1580 testes, zero pendências/skips; portal-config-final.log. Builds web e portal aprovados; web-config-build.log e portal-config-build.log. Gate de impacto aprovado, nenhum caminho sem domínio; config-impact-check.log."
+  ],
+  "reviews": [
+    "Executor do controlador concluiu implementação; controlador interrompido pelo principal antes dos gates finais para fornecer PostgreSQL isolado e corrigir achados. Não há ready_for_human do controlador.",
+    "Revisor independente governanca_revisao reproduziu ano civil reinterpretado e risco em reserva legada; nova revisão favorável após correções, condicionada a gates/documentação.",
+    "Auditoria contábil independente: não preencher retroativamente revisão documental com dados atuais; conciliação histórica requer evidência específica.",
+    "Revisor governanca_revisao conferiu seção27, referência e registro: coerentes, sem bloqueantes documentais e sem ampliar autorização.",
+    "22/10 controlador executou plano/executor/engine/API e iniciou demais gates; Principal interrompeu após falha do seletor para correção e validação manual dos mesmos gates. Não há ready_for_human do controlador.",
+    "Revisor independente config_lembretes_audit: domínio/backend/sistêmico favoráveis; confirmou separação fiscal, revalidação e ausência de bloqueantes. Correção do teste, descoberta e seção28 revisadas e aprovadas.",
+    "Revisor independente lembretes_ui_review: parecer favorável UI/UX em código/testes/capturas 1440/390, condicionado aos gates. Navegação móvel preexistente fora do incremento."
+  ],
+  "humanDecisions": [
+    "Usuário pediu resolver o possível no acompanhamento e apresentar proposta DP no chat.",
+    "Sem publicação/ativação ou mensagens reais neste incremento. Template D0 requer cadastro e aprovação reais antes do uso fora da janela.",
+    "Configuração autorizada de Sintropia pertence ao incremento anterior e continua dependente de publicação e origem comprovada dos acordos.",
+    "22/10: usuário autorizou PR, main e produção após CI e revisões; esta decisão substitui a restrição anterior de publicação deste incremento.",
+    "Lembretes permanecem desligados. Ativação, template D0 e eventuais reenvios reais exigem decisão específica. Não completar recibos históricos com dados atuais.",
+    "DLN: arquivo OUTRA auditado é folha de pagamento, não arrecadação. Reclassificação preservando histórico requer mecanismo próprio; nenhuma exclusão, baixa ou data inventada."
+  ],
+  "rollback": "Reverter commits deste incremento mantendo a agenda de lembretes desligada. Não há migração de schema. Seleção por empresa ausente fica OFF; preservar configuração e evidências históricas, sem apagar reservas para repetir envios. Validar versão anterior antes de rollback da API e web."
+}

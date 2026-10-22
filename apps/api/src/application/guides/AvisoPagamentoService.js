@@ -20,7 +20,7 @@ export async function transportePadrao() {
       const { enviarMensagemRastreada } = await import("../whatsapp/SaidaWhatsappService.js");
       const conversa = await garantirConversa({ telefone: contato.telefoneE164, portalClientId: companyId });
       const aberta = (await janelaDaConversa(conversa.id)).situacao === 'ABERTA';
-      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : acoes.length ? 'guia_pagamento_depois_atualizacao_v2' : 'guia_pagamento_depois_v1';
+      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : fase === 'NO_VENCIMENTO' ? 'guia_pagamento_no_vencimento_v1' : acoes.length ? 'guia_pagamento_depois_atualizacao_v2' : 'guia_pagamento_depois_v1';
       const template = aberta ? null : await templateOperacional(chaveTemplate, prisma);
       const checar = async () => {
         await conferir();
@@ -68,14 +68,15 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     if (g.status !== 'PROCESSED') throw erro('GUIA_NAO_PROCESSADA', 'A guia precisa de revisão antes de avisar o cliente.');
     const companyId = p?.portalClientId || g.portalClientId;
     const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true, municipio: true } });
+    if (!calendarioAvisosGuia(g.vencimento, feriados, company?.municipio)) throw erro('VENCIMENTO_INVALIDO', 'Confira o vencimento da guia antes de avisar o cliente.');
     const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio);
-    if (!fase) throw erro('FORA_DO_DIA_DO_AVISO', 'Hoje não é o dia útil anterior ou posterior ao vencimento.');
+    if (!fase) throw erro('FORA_DO_DIA_DO_AVISO', 'Hoje não é o dia útil anterior, o vencimento ajustado ou o dia útil posterior.');
     return { p: p ? { ...p, parcelamento: contrato } : null, g, companyId, company, fase };
   };
   let doc;
   try { await assertActive(); doc = await carregar(); }
   catch (e) {
-    if (!["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE"].includes(e.code)) throw e;
+    if (!["VENCIMENTO_INVALIDO", "PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "GUIA_NAO_LIBERADA", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE"].includes(e.code)) throw e;
     return { status: ["PAGAMENTO_JA_CONFIRMADO", "FORA_DO_DIA_DO_AVISO", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO"].includes(e.code) ? "IGNORADO" : "PENDENTE", motivo: e.code, mensagem: e.message };
   }
   const { p, g, companyId, company, fase } = doc;
@@ -84,6 +85,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const acoes = fase === 'DEPOIS' ? [{ acao: 'recalcular', label: 'Atualizar guia' }] : [];
   // O vínculo posterior pode mudar parcela/contrato; a guia e sua competência preservam a identidade.
   const base = createHash("sha256").update(JSON.stringify([companyId, g.id, g.competencia || referencia, fase, new Date(g.vencimento).toISOString().slice(0, 10)])).digest("hex");
+  const revisao = versaoPagamentoGuia(g);
   const transporte = deps.transporte || await transportePadrao();
   const destinos = await transporte.destinatarios(companyId);
   const targets = destinos.telefones.map(contato => ({ canal: "WHATSAPP", destino: contato.telefoneE164, contato }));
@@ -91,7 +93,9 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const tipo = p ? `parcela${p.numeroParcela ? ` ${p.numeroParcela}` : ""} do parcelamento${p.parcelamento?.numeroParcelamento ? ` ${p.parcelamento.numeroParcelamento}` : ""}` : g.tipo;
   const vencimento = calendarioAvisosGuia(g.vencimento, feriados, company?.municipio).vencimento.split('-').reverse().join('/');
   const variaveis = [company?.razao || 'Empresa', tipo, referencia, vencimento].map(String);
-  const texto = `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
+  const texto = fase === 'NO_VENCIMENTO'
+    ? `${variaveis[0]}\nA guia de ${tipo}, referência ${referencia}, vence hoje (${vencimento}). Se você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.`
+    : `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
   const resultados = [];
   for (const target of targets) {
     // Verificar antes da reserva permite nova avaliação após o escritório entregar
@@ -102,12 +106,17 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
       resultados.push({ status: 'PENDENTE', motivo: e.code, mensagem: e.message, canal: target.canal });
       continue;
     }
+    // Revisão diferente ou legado não autorizam repetir uma saída de resultado incerto.
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
-    const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
+    const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, revisao, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
     try { await db.appSetting.create({ data: { key, value } }); }
     catch (e) {
       if (e.code !== "P2002") throw e;
       const anterior = await db.appSetting.findUnique({ where: { key } });
+      if (anterior?.value?.revisao !== revisao) {
+        resultados.push({ status: 'PENDENTE', motivo: 'AVISO_REVISAO_A_CONFERIR', mensagem: 'Existe um aviso anterior sem revisão compatível. Confira o histórico antes de reenviar.', canal: target.canal });
+        continue;
+      }
       resultados.push({ status: anterior?.value?.status === "ENVIADO" ? "JA_ENVIADO" : "PENDENTE", motivo: anterior?.value?.motivo || "AVISO_JA_RESERVADO", mensagem: anterior?.value?.mensagem || "Confira o histórico do aviso antes de reenviar.", canal: target.canal }); continue;
     }
     let iniciou = false;
@@ -138,7 +147,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
       resultados.push({ status: "ENVIADO", canal: target.canal });
     } catch (e) {
       const motivo = e.code || e.codigo || "AVISO_ENVIO_NAO_CONFIRMADO";
-      const status = ["PAGAMENTO_JA_CONFIRMADO", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO"].includes(motivo) ? "CANCELADO" : iniciou && !["WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA", "GUIA_WHATSAPP_NAO_ENTREGUE", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE", "GUIA_NAO_LIBERADA", "FORA_DO_DIA_DO_AVISO"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
+      const status = ["PAGAMENTO_JA_CONFIRMADO", "PARCELA_PAGA", "PARCELA_DEBITO_AUTOMATICO", "PARCELAMENTO_EXCLUIDO"].includes(motivo) ? "CANCELADO" : iniciou && !["VENCIMENTO_INVALIDO", "WHATSAPP_JANELA_FECHADA", "WHATSAPP_TEMPLATE_PENDENTE", "DESTINATARIO_ALTERADO", "GUIA_ALTERADA", "GUIA_WHATSAPP_NAO_ENTREGUE", "GUIA_NAO_PROCESSADA", "CONSULTA_NAO_CONCLUIDA", "PARCELA_DOCUMENTO_PENDENTE", "PARCELA_DOCUMENTO_INCOMPLETO", "PARCELA_VINCULO_INCOMPLETO", "DOCUMENTO_ESCOPO_DIVERGENTE", "GUIA_NAO_LIBERADA", "FORA_DO_DIA_DO_AVISO"].includes(motivo) ? "INDETERMINADO" : "PENDENTE";
       const mensagem = e.code || e.codigo ? e.message : "Não foi possível confirmar o envio. Confira o histórico antes de reenviar.";
       await db.appSetting.update({ where: { key }, data: { value: { ...value, status, motivo, mensagem, concluidoEm: new Date().toISOString() } } });
       resultados.push({ status, motivo, mensagem, canal: target.canal });

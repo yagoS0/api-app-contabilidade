@@ -46,3 +46,15 @@ test("apenas salvamento explícito altera rotinas enviadas; worker lê enabled t
   expect(await idsComRotinaAtiva("pagamento")).toEqual(new Set(["p"]));
   expect(prisma.companyRotina.findMany).toHaveBeenLastCalledWith({ where: { rotina: "pagamento", enabled: true }, select: { portalClientId: true } });
 });
+
+test('seleção de lembretes é independente e não entra no lote fiscal', async () => {
+  prisma.companyRotina.findMany.mockResolvedValue([{ portalClientId: 'p', rotina: 'pagamento', enabled: true }]);
+  expect((await listCompanyRotinas())[0].lembretes.enabled).toBe(false);
+  prisma.companyRotina.findMany.mockResolvedValue([{ portalClientId: 'p', rotina: 'avisos_guias_whatsapp', enabled: true }]);
+  const [company] = await listCompanyRotinas();
+  expect(company.lembretes.enabled).toBe(true);
+  expect(company.rotinas.pagamento).toBe(false);
+  expect(company.rotinas.avisos_guias_whatsapp).toBeUndefined();
+  await saveCompanyRotinas([{ companyId: 'p', rotinas: { avisos_guias_whatsapp: false } }]);
+  expect(prisma.companyRotina.upsert).not.toHaveBeenCalled();
+});

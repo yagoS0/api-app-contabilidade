@@ -17,3 +17,9 @@ test('rotina desabilitada e agenda revogada não disparam', async () => {
   await expect(runGuideWhatsappReminderTick({ ligado: true, settings, schedule, solicitar })).rejects.toMatchObject({ code: 'AGENDA_ALTERADA' });
   expect(solicitar).not.toHaveBeenCalled();
 });
+
+test('agenda global OFF impede varredura mesmo com empresas selecionadas', async () => {
+ const solicitar=jest.fn(),schedule=jest.fn();
+ await runGuideWhatsappReminderTick({ligado:true,settings:async()=>({rotinas:{pagamento:{enabled:true},avisos_guias_whatsapp:{enabled:false,hour:8}}}),solicitar,schedule});
+ expect(solicitar).not.toHaveBeenCalled();expect(schedule).not.toHaveBeenCalled();
+});

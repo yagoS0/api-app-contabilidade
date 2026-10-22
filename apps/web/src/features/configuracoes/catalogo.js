@@ -1,5 +1,5 @@
 export const CONFIG_EMPRESA = [
-  { id: 'automacao', grupo: 'Fiscal', titulo: 'Automação', descricao: 'Ativação das consultas desta empresa e horários das rotinas.', tab: 'automacao', termos: 'serpro consultas rotinas das inss extrato' },
+  { id: 'automacao', grupo: 'Fiscal', titulo: 'Automação', descricao: 'Lembretes de guias no WhatsApp e consultas automáticas desta empresa.', tab: 'automacao', termos: 'serpro consultas rotinas das inss extrato lembretes whatsapp acompanhamento' },
   { id: 'implantacao', grupo: 'Empresa', titulo: 'Implantação', descricao: 'Checklist, responsáveis, prazos e pendências após a entrada na carteira.', tab: 'implantacao', termos: 'onboarding acompanhamento implantação tarefas' },
   { id: 'cadastro', grupo: 'Empresa', titulo: 'Dados cadastrais', descricao: 'Identificação, endereço, responsáveis e regime.', tab: 'cadastro', tabs: ['cadastro','edit'], termos: 'cnpj socios razão social' },
   { id: 'perfilFiscal', grupo: 'Fiscal', titulo: 'Atividades e tributação', descricao: 'Atividades permitidas, anexos e parâmetros de ISS.', tab: 'perfilFiscal', termos: 'cnae fator r simples' },

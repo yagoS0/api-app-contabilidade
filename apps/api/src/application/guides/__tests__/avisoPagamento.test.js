@@ -14,7 +14,7 @@ function setup(patch = {}) {
   const transporte = { canais: jest.fn(async () => ({ escolha: "EMAIL" })), destinatarios: jest.fn(async () => ({ emails: ["fixture@example.invalid"], telefones: [{ id: "contato", telefoneE164: "5511000000000" }] })),
     email: jest.fn(), whatsapp: jest.fn(async ({ conferir }) => { await conferir(); }) };
   const run = extra => avisarPagamentoNaoConfirmado({ guideId: "g", scheduledAt: "2026-09-24T11:00:00Z", ...extra }, { db, transporte, portalUrl: "https://portal.example.invalid/" });
-  return { guide, db, transporte, records, run };
+  return { guide, entrega, db, transporte, records, run };
 }
 test("aviso neutro só aos destinatários cadastrados e uma vez sob concorrência/reinício", async () => {
   const f = setup();
@@ -83,14 +83,19 @@ test('um aviso em cada fase, sem duplicar na mesma fase e sem recálculo antecip
   await f.run(); await f.run();
   expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
   expect(f.transporte.whatsapp.mock.calls[0][0]).toMatchObject({ fase: 'ANTES', acoes: [] });
+  jest.setSystemTime(new Date('2026-09-25T15:00:00Z'));
+  await Promise.all([f.run(), f.run()]); await f.run();
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(2);
+  expect(f.transporte.whatsapp.mock.calls[1][0]).toMatchObject({ fase: 'NO_VENCIMENTO', acoes: [], texto: expect.stringContaining('vence hoje') });
+  expect(f.transporte.whatsapp.mock.calls[1][0].texto).not.toMatch(/atras|acréscimos|atualizar|recalcular/i);
   jest.setSystemTime(new Date('2026-09-28T15:00:00Z'));
   await f.run(); await f.run();
-  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(2);
-  expect(f.transporte.whatsapp.mock.calls[1][0]).toMatchObject({ fase: 'DEPOIS', acoes: [{ acao: 'recalcular' }] });
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(3);
+  expect(f.transporte.whatsapp.mock.calls[2][0]).toMatchObject({ fase: 'DEPOIS', acoes: [{ acao: 'recalcular' }] });
 });
 
-test('nenhum aviso no vencimento ou fora dos dois dias definidos', async () => {
-  const f = setup(); f.guide.vencimento = '2026-09-24';
+test('nenhum aviso fora dos três dias definidos', async () => {
+  const f = setup({ vencimento: '2026-08-01' });
   expect(await f.run()).toMatchObject({ status: 'IGNORADO', motivo: 'FORA_DO_DIA_DO_AVISO' });
   f.guide.vencimento = '2026-08-01'; await f.run();
   expect(f.transporte.whatsapp).not.toHaveBeenCalled();
@@ -189,4 +194,61 @@ test.each([false, true])('débito da indicação impede lembrete, inclusive se d
  expect(rede).toBe(0);
  if (!durante) { expect(result).toMatchObject({ status: 'IGNORADO', motivo: 'PARCELA_DEBITO_AUTOMATICO' }); expect(f.transporte.whatsapp).not.toHaveBeenCalled(); }
  else expect(result.resultados[0]).toMatchObject({ status: 'CANCELADO', motivo: 'PARCELA_DEBITO_AUTOMATICO' });
+});
+
+test.each([null, 'invalida', '2026-02-30', '0001-01-01', new Date('0001-01-01'), new Date(NaN)])('vencimento inválido %s fica pendente sem reserva nem saída', async vencimento => {
+  const f = setup(); f.guide.vencimento = vencimento;
+  expect(await f.run()).toMatchObject({ status: 'PENDENTE', motivo: 'VENCIMENTO_INVALIDO' });
+  expect(f.records.size).toBe(0); expect(f.transporte.whatsapp).not.toHaveBeenCalled();
+});
+
+test.each(['ENVIADO', 'INDETERMINADO', 'RESERVADO'])('D0 conserva reserva %s após revisão e exige conciliação', async status => {
+  const f = setup({ vencimento: '2026-09-24' });
+  await f.run(); const primeiro = f.transporte.whatsapp.mock.calls[0][0];
+  f.records.get(primeiro.key).value.status = status;
+  f.guide.hash = 'pdf-revisado';
+  expect(await f.run()).toMatchObject({ status: 'PENDENTE', resultados: [{ motivo: 'GUIA_WHATSAPP_NAO_ENTREGUE' }] });
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+  f.entrega.arquivoSha256 = f.guide.hash;
+  f.entrega.snapshot.revisaoDocumento = revisaoDocumentoGuia(f.guide);
+  const results = await Promise.all([f.run(), f.run()]);
+  expect(results.every(r => r.status === 'PENDENTE' && r.resultados[0].motivo === 'AVISO_REVISAO_A_CONFERIR')).toBe(true);
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+  expect(f.records.get(primeiro.key).value.status).toBe(status);
+  expect(f.records.get(primeiro.botaoId).value.hash).toBe('pdf-atual');
+});
+
+test.each(['ENVIADO', 'INDETERMINADO', 'RESERVADO'])('reserva legada %s não é repetida por adicionar revisão à chave', async status => {
+  const f = setup(); await f.run();
+  const key = f.transporte.whatsapp.mock.calls[0][0].key;
+  const value = f.records.get(key).value;
+  f.records.set(key, { value: { ...value, status, revisao: undefined } });
+  expect(await f.run()).toMatchObject({ status: 'PENDENTE', resultados: [{ motivo: 'AVISO_REVISAO_A_CONFERIR' }] });
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+});
+
+test('D0 preserva reserva independente por destinatário com recibo próprio', async () => {
+  const f = setup({ vencimento: '2026-09-24' }); await f.run();
+  f.transporte.destinatarios.mockResolvedValue({ telefones: [{ id: 'outro', telefoneE164: '5511000000001' }] });
+  f.entrega.snapshot.telefone = '5511000000001';
+  await f.run(); await f.run();
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(2);
+  expect(new Set(f.transporte.whatsapp.mock.calls.map(([a]) => a.key)).size).toBe(2);
+});
+
+test.each([{ paymentStatus: 'PAID' }, { paymentConfirmedAt: new Date() }, { clienteConfirmouEm: new Date() },
+  { parcelamentoId: 'acordo', parcelamento: { id: 'acordo', formaPagamento: 'DEBITO_AUTOMATICO' } }])('D0 conserva bloqueio %j antes e durante preparação', async patch => {
+  const f = setup({ vencimento: '2026-09-24', ...patch });
+  expect(await f.run()).toMatchObject({ status: 'IGNORADO' }); expect(f.transporte.whatsapp).not.toHaveBeenCalled();
+  const outro = setup({ vencimento: '2026-09-24' }); let saiu = false;
+  outro.transporte.whatsapp.mockImplementation(async ({ conferir }) => { Object.assign(outro.guide, patch); await conferir(); saiu = true; });
+  expect(await outro.run()).toMatchObject({ resultados: [{ status: 'CANCELADO' }] }); expect(saiu).toBe(false);
+});
+
+test('D0 não repete transporte incerto', async () => {
+  const f = setup({ vencimento: '2026-09-24' });
+  f.transporte.whatsapp.mockImplementation(async ({ conferir }) => { await conferir(); throw Error('timeout'); });
+  await f.run(); await f.run();
+  expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+  expect([...f.records.values()].find(r => r.value.fase === 'NO_VENCIMENTO').value.status).toBe('INDETERMINADO');
 });

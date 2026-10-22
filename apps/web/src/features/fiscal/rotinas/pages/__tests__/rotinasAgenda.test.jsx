@@ -86,3 +86,11 @@ test('execução de lembretes sempre tem nome legível antes do cadastro de roti
  expect(await screen.findByText('Lembretes de guias no WhatsApp')).toBeVisible();
  expect(screen.queryByText('avisos_guias_whatsapp')).not.toBeInTheDocument();
 });
+
+test('alcance dos lembretes não usa empresas selecionadas para consulta de pagamento',async()=>{
+ const api={getRotinas:async()=>({rotinas:[{key:'avisos_guias_whatsapp',label:'Lembretes de guias no WhatsApp'}],agenda:{avisos_guias_whatsapp:{enabled:false,frequency:'DAILY',day:1,hour:8}},empresas:[{companyId:'a',razao:'A',rotinas:{pagamento:true},lembretes:{enabled:false}},{companyId:'b',razao:'B',rotinas:{pagamento:false},lembretes:{enabled:true}},{companyId:'c',razao:'C',rotinas:{pagamento:true},lembretes:{enabled:false}}]})};
+ render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));
+ expect(await screen.findByText('1 de 3')).toBeVisible();
+ expect(screen.queryByText(/Usa as empresas habilitadas em Pagamento/)).toBeNull();
+});

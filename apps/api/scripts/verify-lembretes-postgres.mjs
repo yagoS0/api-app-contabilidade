@@ -11,6 +11,8 @@ const {claimScheduledRun,finishScheduledRun}=await import('../src/workers/schedu
 const {runGuideWhatsappReminderTick}=await import('../src/workers/guideWhatsappReminderWorker.js');
 const routine=`test_lembretes_${randomUUID()}`,now=new Date('2026-10-21T11:00:05Z'),config={enabled:true,frequency:'DAILY',hour:8};
 let calls=0;
+const fixtureId=randomUUID(), actor='reminder-test-'+randomUUID();
+const {lerAutomacaoEmpresa,salvarAutomacaoEmpresa}=await import('../src/application/fiscal/serpro/CompanyAutomationService.js');
 try{
  const claims=await Promise.all(Array.from({length:12},()=>claimScheduledRun({routine,config,now,db})));
  assert.equal(claims.filter(Boolean).length,1);
@@ -23,5 +25,27 @@ try{
  const settings=async()=>({enabled:false,rotinas:{pagamento:fiscal,avisos_guias_whatsapp:config}});
  await runGuideWhatsappReminderTick({agora:now,ligado:true,settings,schedule:async(_,saved,run)=>{assert.deepEqual(saved,config);return run({scheduledAt:now.toISOString(),assertActive:()=>{}});},solicitar:async()=>{calls++;return {avisosPendentes:0,total:0};}});
  assert.equal(calls,1);assert.deepEqual(fiscal,{enabled:true,day:25,hour:8,frequency:'MONTHLY'});assert.equal(network,0);
+ // Configuração real em banco descartável: seleção independente, CAS e rollback da auditoria.
+ await db.portalClient.create({data:{id:fixtureId,razao:'Fixture lembretes',cnpj:'test-'+fixtureId}});
+ await db.companyRotina.create({data:{portalClientId:fixtureId,rotina:'pagamento',enabled:true}});
+ const before=await lerAutomacaoEmpresa(db,fixtureId);
+ assert.equal(before.lembretes.enabled,false);
+ const input={expectedRevision:before.revision,requestId:'select-'+randomUUID(),lembretes:{enabled:true}};
+ await assert.rejects(()=>salvarAutomacaoEmpresa(db,fixtureId,actor,input),e=>e.status===403);
+ const concurrent=await Promise.allSettled(Array.from({length:4},(_,i)=>salvarAutomacaoEmpresa(db,fixtureId,actor,{...input,requestId:input.requestId+'-'+i},{isAdmin:true})));
+ assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);
+ for(const r of concurrent.filter(r=>r.status==='rejected')) assert.ok(['P2034','AUTOMATION_CHANGED'].includes(r.reason.code));
+ const winner=concurrent.findIndex(r=>r.status==='fulfilled');
+ const selected=await lerAutomacaoEmpresa(db,fixtureId);
+ assert.equal(selected.lembretes.enabled,true);assert.deepEqual(selected.rotinas,before.rotinas);assert.deepEqual(selected.lembretes.agenda,before.lembretes.agenda);
+ assert.deepEqual(await salvarAutomacaoEmpresa(db,fixtureId,actor,{...input,requestId:input.requestId+'-'+winner},{isAdmin:true}),concurrent[winner].value);
+ const failAudit={...db,$transaction:(fn,options)=>db.$transaction(tx=>fn(new Proxy(tx,{get(target,key){if(key==='appSetting')return new Proxy(target.appSetting,{get(model,method){if(method==='create')return async()=>{throw Error('AUDIT_FAILURE');};return model[method];}});return target[key];}})),options)};
+ const disable={expectedRevision:selected.revision,requestId:'disable-'+randomUUID(),lembretes:{enabled:false}};
+ await assert.rejects(()=>salvarAutomacaoEmpresa(failAudit,fixtureId,actor,disable,{isAdmin:true}),/AUDIT_FAILURE/);
+ assert.equal((await lerAutomacaoEmpresa(db,fixtureId)).revision,selected.revision);
+ assert.equal(await db.appSetting.findUnique({where:{key:`company_automation_request:${actor}:${disable.requestId}`}}),null);
+ const disabled=await salvarAutomacaoEmpresa(db,fixtureId,actor,disable,{isAdmin:true});assert.equal(disabled.lembretes.enabled,false);
+ assert.deepEqual(disabled.rotinas,before.rotinas);assert.equal(network,0);
+ console.log('PASS: seleção independente por empresa, ausência OFF, permissão, CAS concorrente, replay e rollback de auditoria com zero rede.');
  console.log('PASS: 12 reservas concorrentes/um dono, pendência aninhada, sem replay, próximo dia independente, agenda fiscal intacta e zero rede.');
-}finally{await db.appSetting.deleteMany({where:{key:{startsWith:`fiscal_schedule:${routine}:`}}});await db.$disconnect();}
+}finally{await db.appSetting.deleteMany({where:{key:{startsWith:`company_automation_request:${actor}:`}}});await db.companyRotina.deleteMany({where:{portalClientId:fixtureId}});await db.portalClient.deleteMany({where:{id:fixtureId}});await db.appSetting.deleteMany({where:{key:{startsWith:`fiscal_schedule:${routine}:`}}});await db.$disconnect();}
