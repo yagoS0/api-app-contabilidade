@@ -27,7 +27,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
     portalClient: { findUnique: jest.fn() },
     templateWhatsapp: { findUnique: jest.fn() },
-    guide: { findMany: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
+    guide: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     envioGuiaTentativa: { create: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn(), updateMany: jest.fn() },
@@ -106,6 +106,7 @@ function clienteFalso(resultado = { wamid: "wamid.OK" }) {
 
 /** O estado de partida: nenhum envio registrado, contato com opt-in, template aprovado. */
 function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLATE_APROVADO, envios = [] } = {}) {
+  prisma.guide.findFirst.mockImplementation(async ({ where }) => guias.find(g => g.id === where.id) || null);
   prisma.guide.updateMany.mockResolvedValue({ count: 1 });
   prisma.templateWhatsapp.findUnique.mockResolvedValue(template);
   prisma.guide.findMany.mockImplementation(async (args) => (
@@ -120,7 +121,7 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
   prisma.envioGuia.findUnique.mockResolvedValue(null);
   // ⚠ A chave passou a incluir o DESTINO (05/09/2026): quem procura o envio existente é o
   // `findFirst`, e a linha legada do e-mail é procurada por `destino: null`.
-  prisma.envioGuia.findFirst.mockResolvedValue(null);
+  prisma.envioGuia.findFirst.mockImplementation(async ({ where }) => where.id ? { id: where.id, guideId: guias[0]?.id, status: 'pendente' } : null);
   prisma.envioGuia.upsert.mockResolvedValue({ id: "e1", status: "pendente" });
   prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
   const tentativas = new Map();
@@ -393,7 +394,7 @@ describe("a mesma guia não vai duas vezes ao cliente", () => {
   it("envio que FALHOU é reenviável — a linha volta a `pendente`, sem segunda linha", async () => {
     cenarioLimpo();
     prisma.envioGuia.findFirst.mockImplementation(async ({ where }) => (
-      where.canal === "WHATSAPP" && where.destino ? { id: "e1", status: "falhou" } : null
+      where.id === 'e1' ? { id: 'e1', guideId: 'g1', status: 'pendente' } : where.canal === "WHATSAPP" && where.destino ? { id: "e1", status: "falhou" } : null
     ));
     const cliente = clienteFalso();
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });

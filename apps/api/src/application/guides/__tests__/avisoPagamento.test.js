@@ -11,6 +11,9 @@ function setup(patch = {}) {
   const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => where.envioGuia.destino === entrega.snapshot.telefone ? [entrega] : []) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error("duplicado"), { code: "P2002" }); records.set(data.key, data); return data; }),
       findUnique: jest.fn(async ({ where }) => records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
+  db.guide.findFirst = jest.fn(async () => ({ ...guide }));
+  db.guide.updateMany = jest.fn(async () => ({ count: 1 }));
+  db.$transaction = fn => fn(db);
   const transporte = { canais: jest.fn(async () => ({ escolha: "EMAIL" })), destinatarios: jest.fn(async () => ({ emails: ["fixture@example.invalid"], telefones: [{ id: "contato", telefoneE164: "5511000000000" }] })),
     email: jest.fn(), whatsapp: jest.fn(async ({ conferir }) => { await conferir(); }) };
   const run = extra => avisarPagamentoNaoConfirmado({ guideId: "g", scheduledAt: "2026-09-24T11:00:00Z", ...extra }, { db, transporte, portalUrl: "https://portal.example.invalid/" });

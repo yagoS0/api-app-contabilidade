@@ -9,7 +9,7 @@ function contexto(extra = {}, candidato = null) {
     paymentStatus: "PAID", extracted: { comprovante: { principal: 100, total: 100, juros: 0 }, indicacaoParcelamentoId: "ind" },
     parcela: { id: "prestacao", updatedAt: new Date("2026-09-01Z"), pagamentoStatus: "CONFIRMADO", valorPago: 100, pagamentoEvidencia: { comprovante: { total: 100 } } }, ...extra };
   return { guide, tx: {
-    guide: { findFirst: jest.fn(async () => guide), updateMany: jest.fn(async () => ({ count: 1 })) },
+    guide: { findFirst: jest.fn(async () => guide), findUnique: jest.fn(async () => guide), updateMany: jest.fn(async () => ({ count: 1 })) },
     parcelamento: { findFirst: jest.fn(async () => destino), updateMany: jest.fn(async () => ({ count: 1 })), create: jest.fn(async x => ({ id: "novo", ...x.data })) },
     parcela: { findFirst: jest.fn(async () => candidato), create: jest.fn(), updateMany: jest.fn(async () => ({ count: 1 })), deleteMany: jest.fn(async () => ({ count: 1 })) },
   } };
@@ -33,14 +33,25 @@ test("vínculo posterior conserva pagamento e identidade da parcela e remove só
   expect(tx.parcela.updateMany).toHaveBeenCalledWith({ where: { id: "prestacao", portalClientId: "empresa", parcelamentoId: "avulso", guiaId: "g", updatedAt: guide.parcela.updatedAt, origemBaixa: null, baixadaEm: null }, data: { parcelamentoId: "contrato", numeroParcela: 3 } });
   expect(JSON.stringify(guide.parcela)).toBe(prova);
   expect(tx.parcela.deleteMany).toHaveBeenCalledWith({ where: { id: "previsao", portalClientId: "empresa", parcelamentoId: "contrato", origem: "CONTRATO", updatedAt: new Date("2026-09-02Z"), guiaId: null, origemBaixa: null, baixadaEm: null, pagamentoStatus: null, pagamentoConsultadoEm: null, pagamentoEm: null, valorPago: null, pagamentoErro: null } });
-  expect(tx.guide.updateMany.mock.calls[0][0].data).not.toHaveProperty("paymentStatus");
-  expect(tx.guide.updateMany.mock.calls[0][0].data).not.toHaveProperty("valor");
+  for (const [call] of tx.guide.updateMany.mock.calls) {
+    expect(call.data).not.toHaveProperty("paymentStatus");
+    expect(call.data).not.toHaveProperty("valor");
+  }
   expect(tx.parcelamento.updateMany).toHaveBeenCalledWith({ where: { id: "avulso", portalClientId: "empresa", origem: "GUIA_AVULSA", aberturaEntryId: null, updatedAt: origem.updatedAt }, data: { status: "EXCLUIDO" } });
 });
 test.each([{ guiaId: "outra" }, { pagamentoStatus: "CONFIRMADO" }, { origemBaixa: "MANUAL" }])("não substitui evidência existente no destino %j", async dado => {
-  const { tx } = contexto({}, { id: "previsao", ...dado });
+  const candidato = { id: "previsao", ...dado };
+  const { tx, guide } = contexto({}, candidato);
+  const anterior = JSON.stringify({ guide, candidato });
+  tx.guide.updateMany.mockImplementation(async ({ data }) => { Object.assign(guide, data); return { count: 1 }; });
   await expect(vincularGuiaParcelamentoTx(tx, { portalClientId: "empresa", guideId: "g", parcelamentoId: "contrato" })).rejects.toMatchObject({ code: "PARCELA_JA_VINCULADA" });
-  expect(tx.guide.updateMany).not.toHaveBeenCalled();
+  expect(tx.guide.updateMany).toHaveBeenCalledTimes(1);
+  expect(tx.guide.updateMany).toHaveBeenCalledWith({ where: { id: guide.id, updatedAt: guide.updatedAt, status: { not: "DOCUMENTO_NAO_ARRECADATORIO" } }, data: { updatedAt: guide.updatedAt } });
+  expect(JSON.stringify({ guide, candidato })).toBe(anterior);
+  expect(tx.parcela.updateMany).not.toHaveBeenCalled();
+  expect(tx.parcela.deleteMany).not.toHaveBeenCalled();
+  expect(tx.parcela.create).not.toHaveBeenCalled();
+  expect(tx.parcelamento.updateMany).not.toHaveBeenCalled();
 });
 test("vínculo não altera guia já contabilizada", async () => {
   const { tx } = contexto({ baixada: true });

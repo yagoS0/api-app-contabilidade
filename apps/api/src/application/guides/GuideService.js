@@ -1,3 +1,4 @@
+import { STATUS_DOCUMENTO, exigirGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 import { reconfirmacaoPagamentoTx, listarConfirmacoesPagamento, resumoConfirmacaoPagamento, versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import crypto from "node:crypto";
 import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
@@ -124,6 +125,7 @@ export async function findPortalClientByCnpj(cnpj) {
 /** PDF da guia: coluna `pdfBytes` no banco ou storage legado (S3/R2/local). */
 export async function getGuidePdfBuffer(guide) {
   if (!guide) return null;
+  exigirGuiaArrecadatoria(guide);
   const raw = guide.pdfBytes;
   if (raw != null && raw.length) {
     return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
@@ -160,6 +162,7 @@ export async function listGuidesByCompany({
   const skip = (pageNum - 1) * take;
   const where = {
     portalClientId: String(portalClientId),
+    AND: [{ status: { not: STATUS_DOCUMENTO } }],
     ...(guideId ? { id: String(guideId) } : {}),
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),

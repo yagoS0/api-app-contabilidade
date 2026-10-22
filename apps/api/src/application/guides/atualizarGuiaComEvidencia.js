@@ -1,11 +1,13 @@
 // Compare-and-swap: documento e comprovante dividem o JSON, mas não podem apagar
 // uma alteração concorrente. Releia e mescle novamente se outro escritor vencer.
+import { exigirGuiaArrecadatoria, STATUS_DOCUMENTO } from './lib/documentoNaoArrecadatorio.js';
 export async function atualizarGuiaComEvidencia(db, guideId, construirDados, { include } = {}) {
   for (let tentativa = 0; tentativa < 4; tentativa += 1) {
     const atual = await db.guide.findUnique({ where: { id: String(guideId) } });
     if (!atual) throw Object.assign(new Error("Guia não encontrada."), { code: "guide_not_found" });
+    exigirGuiaArrecadatoria(atual);
     const alterada = await db.guide.updateMany({
-      where: { id: String(guideId), updatedAt: atual.updatedAt },
+      where: { id: String(guideId), updatedAt: atual.updatedAt, status: { not: STATUS_DOCUMENTO } },
       data: construirDados(atual),
     });
     if (alterada.count === 1) return db.guide.findUnique({ where: { id: String(guideId) }, ...(include ? { include } : {}) });

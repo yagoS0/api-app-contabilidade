@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from '../../guides/lib/documentoNaoArrecadatorio.js';
 import { bloquearComposicaoEmpresa, incluirComposicaoTx, composicaoHabilitada, ComposicaoError } from './ComposicaoParcelamentoService.js';
 // Q21 (spec v2) — Núcleo do parcelamento: ingestão de uma guia de parcela →
 // provisão (1ª vez) + pagamento (por composição, juros LIDO) → circular.
@@ -559,6 +560,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
   const cfgPagamento = configFromLines(pagamentoLines);
 
   return prisma.$transaction(async (tx) => {
+    if (guideId) await travarGuiaArrecadatoria(tx, guideId, portalClientId);
     if(origensCircular?.length)await bloquearComposicaoEmpresa(tx,portalClientId);
     const company = await tx.portalClient.findUnique({ where: { id: portalClientId }, select: { razao: true, cnpj: true } });
     const compLabel = parc.anoMesParcela ? `${parc.anoMesParcela.slice(0, 4)}-${parc.anoMesParcela.slice(4, 6)}` : null;
@@ -1142,7 +1144,7 @@ async function gerarPagamentoParcela({
     // nada. As verificações de cima continuam onde estão — elas dão o motivo legível no caminho
     // normal; esta é a que vale quando há corrida.
     const reserva = await tx.guide.updateMany({
-      where: { id: guide.id, portalClientId, lancamentoId: null },
+      where: { id: guide.id, portalClientId, lancamentoId: null, updatedAt: guide.updatedAt, status: { not: "DOCUMENTO_NAO_ARRECADATORIO" } },
       data: { baixada: true, dataBaixa: data },
     });
     if (reserva.count !== 1) return { skipped: true, reason: "ja_baixada" };

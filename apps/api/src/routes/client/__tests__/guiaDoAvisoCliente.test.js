@@ -27,7 +27,7 @@ function setup() {
 beforeEach(() => { jest.clearAllMocks(); prisma.companyClientUser.findUnique.mockResolvedValue({ role: 'OWNER', status: 'ACTIVE' }); });
 test('leitura direta mantém empresa e liberação, ignora paginação e competência do aviso', async () => {
   const test = setup(); await test.run({ guideId: 'guia-antiga', competencia: '2026-09', page: '8', limit: '25' });
-  expect(prisma.guide.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: 'c1', id: 'guia-antiga', liberadaCliente: true }, skip: 0, take: 1 }));
+  expect(prisma.guide.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: 'c1', id: 'guia-antiga', liberadaCliente: true, AND: [{ status: { not: 'DOCUMENTO_NAO_ARRECADATORIO' } }] }, skip: 0, take: 1 }));
   expect(test.res.json).toHaveBeenCalledWith({ data: [], page: 1, limit: 1, total: 0 });
 });
 test('empresa sem vínculo ativo não alcança consulta da guia', async () => {

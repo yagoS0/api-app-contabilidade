@@ -239,7 +239,7 @@ async function gerarPagamentoInss({ portalClientId, guideId, dataPagamento, hist
     // verificações de cima continuam onde estão — elas dão o motivo legível no caminho normal;
     // esta é a que vale quando há corrida.
     const reserva = await tx.guide.updateMany({
-      where: { id: guide.id, portalClientId, lancamentoId: null },
+      where: { id: guide.id, portalClientId, lancamentoId: null, updatedAt: guide.updatedAt, status: { not: "DOCUMENTO_NAO_ARRECADATORIO" } },
       data: { baixada: true, dataBaixa: data },
     });
     if (reserva.count !== 1) return { skipped: true, reason: "ja_baixada" };

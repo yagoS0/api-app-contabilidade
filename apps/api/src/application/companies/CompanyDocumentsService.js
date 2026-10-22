@@ -10,6 +10,8 @@
 // resolução já corrigida em config.js.
 
 import path from "node:path";
+import { PREFIXO_DOCUMENTO, documentoNaoArrecadatorio } from '../guides/lib/documentoNaoArrecadatorio.js';
+import { createHash } from 'node:crypto';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../guides/GuideStorageService.js";
 
@@ -124,13 +126,22 @@ export async function adicionar({ portalClientId, tipo, nome, validade, uploaded
 export async function baixarBuffer({ portalClientId, documentId }) {
   const doc = await prisma.companyDocument.findFirst({ where: { id: documentId, portalClientId } });
   if (!doc) throw new CompanyDocumentError("documento_nao_encontrado", "Documento não encontrado.", 404);
-  const buffer = await new GuideStorageService().downloadBuffer({ key: doc.fileKey });
+  let buffer;
+  if (doc.fileKey.startsWith(PREFIXO_DOCUMENTO)) {
+    const guia = await prisma.guide.findFirst({ where: { id: doc.fileKey.slice(PREFIXO_DOCUMENTO.length), portalClientId } });
+    if (!documentoNaoArrecadatorio(guia) || guia.extracted?.documentoNaoArrecadatorio?.documentId !== doc.id || !guia.pdfBytes?.length) throw new CompanyDocumentError('documento_indisponivel', 'Confira o vínculo do documento reclassificado.', 409);
+    buffer = Buffer.from(guia.pdfBytes);
+    if (createHash('sha256').update(buffer).digest('hex') !== guia.hash) throw new CompanyDocumentError('documento_indisponivel', 'Confira a integridade do documento reclassificado.', 409);
+  } else {
+    buffer = await new GuideStorageService().downloadBuffer({ key: doc.fileKey });
+  }
   return { doc, buffer };
 }
 
 export async function remover({ portalClientId, documentId }) {
   const doc = await prisma.companyDocument.findFirst({ where: { id: documentId, portalClientId } });
   if (!doc) throw new CompanyDocumentError("documento_nao_encontrado", "Documento não encontrado.", 404);
+  if (doc.fileKey.startsWith(PREFIXO_DOCUMENTO)) throw new CompanyDocumentError('documento_reclassificado_preservado', 'Este documento integra uma reclassificação auditada e deve ser preservado.', 409);
   // O registro sai mesmo que o arquivo já não exista — ficar preso a um arquivo ausente só deixaria
   // uma linha impossível de remover na tela.
   await prisma.companyDocument.delete({ where: { id: doc.id } });

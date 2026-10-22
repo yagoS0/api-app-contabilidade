@@ -12,6 +12,19 @@ import {
 
 const CICLO = "2026-08";
 
+test.each([0, 1250])('documento reclassificado de valor %s não vira imposto nem pendência de valor', async valor => {
+  const rows = [guia(), guia({ id: 'folha', status: 'DOCUMENTO_NAO_ARRECADATORIO', valor })];
+  const client = clientDe();
+  client.guide.findMany.mockImplementation(async ({ where }) => {
+    expect(where.portalClientId).toBe('emp-1');
+    expect(where.status).toEqual({ not: 'DOCUMENTO_NAO_ARRECADATORIO' });
+    return rows.filter(g => g.status !== where.status.not);
+  });
+  const atual = await montarFluxoDeCaixa({ portalClientId: 'emp-1', cicloAtual: CICLO, hoje: '2026-08-10', client });
+  const controle = await montarFluxoDeCaixa({ portalClientId: 'emp-1', cicloAtual: CICLO, hoje: '2026-08-10', client: clientDe({ guias: [guia()] }) });
+  expect(atual).toEqual(controle);
+});
+
 /**
  * ⚠⚠ `liberadaCliente: true` NO PADRÃO, e a escolha é deliberada (02/09/2026).
  *

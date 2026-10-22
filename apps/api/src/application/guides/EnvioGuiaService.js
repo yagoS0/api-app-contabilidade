@@ -1,3 +1,4 @@
+import { travarGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 // O ESTADO DE ENVIO DE UMA GUIA — agora por canal.
 //
 // ⚠ POR QUE ESTA CAMADA EXISTE
@@ -74,6 +75,8 @@ export function envioParaExibir(envios) {
  * de revisão do lote precisa mostrar "já enviada" em vez de fingir que vai enviar.
  */
 export async function registrarEnvio({ guideId, canal, destino, reenviar = false, tx = prisma }) {
+  if (typeof tx.$transaction === "function") return tx.$transaction(client => registrarEnvio({ guideId, canal, destino, reenviar, tx: client }));
+  await travarGuiaArrecadatoria(tx, guideId);
   // ⚠ A CHAVE INCLUI O DESTINO desde 05/09/2026: mandar a mesma guia para OUTRO telefone não é
   // repetir, é outro destinatário. `destino` nulo é a linha LEGADA (ver `linhaLegadoDoEmail`).
   const alvo = destino || null;
@@ -126,6 +129,9 @@ export async function registrarEnvio({ guideId, canal, destino, reenviar = false
  */
 export async function marcarEnviando(envioId, tx = prisma) {
   return transacao(tx, async (client) => {
+    const envioAtual = await client.envioGuia.findFirst({ where: { id: String(envioId) } });
+    if (!envioAtual) return { reservado: false, tentativaId: null };
+    await travarGuiaArrecadatoria(client, envioAtual.guideId);
     const tentativaId = randomUUID();
     const r = await client.envioGuia.updateMany({
       where: { id: String(envioId), status: "pendente" },

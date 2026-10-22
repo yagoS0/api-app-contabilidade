@@ -1,3 +1,4 @@
+import { documentoNaoArrecadatorio } from './documentoNaoArrecadatorio.js';
 // RECALCULAR UMA GUIA — quem pode, qual serviço do SERPRO, e o que se diz ANTES do clique.
 //
 // ⚠⚠ ESTAS REGRAS SAÍRAM DE `GuidePaymentStatusService.js` EM 27/08/2026, sem mudar comportamento.
@@ -55,7 +56,7 @@ export function isGuideOverdue(guide, now = new Date()) {
 }
 
 export function canGuideConfirmPayment(guide) {
-  return !isGuidePaid(guide);
+  return !documentoNaoArrecadatorio(guide) && !isGuidePaid(guide);
 }
 
 /**
@@ -90,6 +91,7 @@ export const ESPECIE_RECALCULO = Object.freeze({
 });
 
 export function especieDoRecalculo(guide) {
+  if (documentoNaoArrecadatorio(guide)) return null;
   if (normalizar(guide?.source) !== "SERPRO") return null;
   // ⚠ Parcela antes de tudo: ela é `tipo: "SIMPLES"` e passaria pela regra do DAS.
   if (guide?.parcelamentoId) return null;

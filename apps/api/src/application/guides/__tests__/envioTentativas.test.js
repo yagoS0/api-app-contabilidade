@@ -7,7 +7,8 @@ import {
 function banco(estado = "pendente") {
   const envios = [{ id: "e1", guideId: "g1", canal: "WHATSAPP", destino: "destino-teste", status: estado, tentativas: 0, tentativaAtualId: null }];
   const tentativas = [];
-  const igual = (a, b) => b && typeof b === "object" && Array.isArray(b.in) ? b.in.includes(a) : a === b;
+  const igual = (a, b) => b && typeof b === "object" && Object.hasOwn(b, "not") ? !igual(a, b.not)
+    : b && typeof b === "object" && Array.isArray(b.in) ? b.in.includes(a) : a === b;
   const casa = (linha, where = {}) => Object.entries(where).every(([k, v]) => v === undefined || igual(linha[k], v));
   const modelo = (linhas) => ({
     findFirst: jest.fn(async ({ where }) => { const r = linhas.find((l) => casa(l, where)); return r ? { ...r } : null; }),
@@ -19,7 +20,8 @@ function banco(estado = "pendente") {
       return { count: rs.length };
     }),
   });
-  const tx = { envioGuia: modelo(envios), envioGuiaTentativa: modelo(tentativas) };
+  const guias = [{ id: "g1", status: "PROCESSED", updatedAt: new Date("2026-10-22T00:00:00Z") }];
+  const tx = { guide: modelo(guias), envioGuia: modelo(envios), envioGuiaTentativa: modelo(tentativas) };
   return { tx, envios, tentativas };
 }
 

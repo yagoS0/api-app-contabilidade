@@ -6,6 +6,7 @@
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    guide: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     envioGuia: { findUnique: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
     envioGuiaTentativa: { findUnique: jest.fn() },
   },
@@ -18,6 +19,10 @@ import {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  const guia = { id: 'g1', status: 'PROCESSED', updatedAt: new Date('2026-10-22T00:00:00Z') };
+  prisma.guide.findFirst.mockResolvedValue(guia);
+  prisma.guide.findUnique.mockResolvedValue(guia);
+  prisma.guide.updateMany.mockResolvedValue({ count: 1 });
   prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
   prisma.envioGuiaTentativa.findUnique.mockResolvedValue(null);
 });

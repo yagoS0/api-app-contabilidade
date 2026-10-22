@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { exigirGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 
@@ -26,6 +27,7 @@ export async function reservarSemEntregaExterna(db, guias, reservar, reenvioExpl
       const lock = await tx.guide.updateMany({ where: { id: g.id, updatedAt: g.updatedAt }, data: { updatedAt: g.updatedAt } });
       if (!lock.count) throw erro('GUIA_ALTERADA', 'A guia mudou. Atualize antes de enviar.');
       const atual = await tx.guide.findUnique({ where: { id: g.id } });
+      exigirGuiaArrecadatoria(atual);
       if (!reenvioExplicito && await externaDaGuia(atual, tx)) throw erro('GUIA_ENTREGA_EXTERNA', 'Esta revisão já tem envio externo registrado.');
     }
     return reservar(tx);

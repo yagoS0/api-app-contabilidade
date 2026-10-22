@@ -1,3 +1,6 @@
+import { createReclassificarDocumentoGuiaRouter } from './reclassificarDocumentoGuia.js';
+import { travarGuiaArrecadatoria } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
+import { atualizarGuiaComEvidencia } from '../../application/guides/atualizarGuiaComEvidencia.js';
 import { createPgdasHistoricoRouter } from "./pgdasHistorico.js";
 import { criarRotasConsultaCnpj } from '../consultaCnpjHttp.js';
 import { anexarAlertasMonitoramento, anexarDocumentosMonitoramento } from "../../application/fiscal/serpro/alertasMonitoramento.js";
@@ -2796,7 +2799,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Idempotente: se já existe guia (qualquer status) pra (empresa, tipo, competência),
       // não sobrescreve uma guia real PROCESSED; só cria o marcador VAZIO quando não há guia real.
       const existing = await prisma.guide.findFirst({
-        where: { portalClientId, tipo, competencia },
+        where: { portalClientId, tipo, competencia, status: { not: 'DOCUMENTO_NAO_ARRECADATORIO' } },
         select: { id: true, status: true },
       });
       if (existing && existing.status === "PROCESSED") {
@@ -2816,14 +2819,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         vazioMotivo: motivoInformado || null,
       };
       const guide = existing
-        ? await prisma.guide.update({
-            where: { id: existing.id },
-            data: {
+        ? await atualizarGuiaComEvidencia(prisma, existing.id, () => ({
               status: "VAZIO", source: "MANUAL",
               reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date(),
               ...auditoria,
-            },
-          })
+          }))
         : await prisma.guide.create({
             data: {
               portalClientId, tipo, competencia,
@@ -2913,6 +2913,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       await prisma.$transaction(async (tx) => {
+        await travarGuiaArrecadatoria(tx, guide.id, guide.portalClientId);
         for (const e of derivadas) {
           await tx.accountingEntryLine.deleteMany({ where: { entryId: e.id } });
           await tx.accountingEntry.delete({ where: { id: e.id } });
@@ -3809,9 +3810,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       // Promove para PROCESSED quando os obrigatórios estão preenchidos.
-      const updated = await prisma.guide.update({
-        where: { id: guide.id },
-        data: {
+      const updated = await atualizarGuiaComEvidencia(prisma, guide.id, () => ({
           tipo,
           competencia,
           ...(Number.isFinite(valor) ? { valor } : {}),
@@ -3820,8 +3819,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           errors: [],
           // Marca como pendente de envio para o worker pegar (caso já tenha sido enviado errado, o user reabilita).
           emailStatus: guide.emailStatus === "SENT" ? guide.emailStatus : "PENDING",
-        },
-      });
+      }));
 
       // Q5: gera provisão (DARF/IRPJ/CSLL/PIS/COFINS/ISS) a partir da guia identificada.
       // Best-effort: se falhar, só loga e segue.
@@ -3897,9 +3895,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_pdf_not_available" });
       }
 
-      const updated = await prisma.guide.update({
-        where: { id: guide.id },
-        data: {
+      const updated = await atualizarGuiaComEvidencia(prisma, guide.id, () => ({
           portalClientId: portal.id,
           legacyCompanyId: portal.companyId || null,
           competencia,
@@ -3921,8 +3917,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           reviewedByUserId: String(req.auth.user.id),
           reviewedAt: new Date(),
           errors: [],
-        },
-      });
+      }));
 
       // Regra de negócio: para empresa + competência + tipo, manter apenas a última PROCESSED.
       await prisma.guide.deleteMany({
@@ -5503,6 +5498,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
   const companyDocumentsRouter = createCompanyDocumentsRouter({ log });
   router.use('/companies/:companyId', createEntregaExternaGuiaRouter());
+  router.use('/companies/:companyId', createReclassificarDocumentoGuiaRouter());
   router.use("/companies/:companyId", companyDocumentsRouter);
 
   // Cofre de senhas + "outras informações" da empresa (grupo "Empresa" na UI).
