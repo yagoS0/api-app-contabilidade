@@ -20,12 +20,19 @@ export async function lerAutomacaoEmpresa(db, companyId) {
     return [key, r ? { enabled: r.enabled === true && Boolean(valid), day: valid ? Number(r.day) : null, hour: valid ? Number(r.hour) : null, frequency: r.frequency ?? 'MONTHLY' } : null];
   }));
   const serproPolicy = await lerPoliticaSerpro(db, companyId);
-  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability])).digest('hex');
-  return { companyId, revision, serproPolicy, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
+  const savedReminder = setting?.value?.rotinas?.avisos_guias_whatsapp;
+  const integer = (v, min, max) => (typeof v === 'number' || typeof v === 'string' && /^\d+$/.test(v)) && Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
+  const validReminder = savedReminder && integer(savedReminder.day, 1, 31) && integer(savedReminder.hour, 0, 23) && (savedReminder.frequency === undefined || savedReminder.frequency === 'DAILY');
+  const lembretes = { enabled: rows.some(r => r.rotina === 'avisos_guias_whatsapp' && r.enabled === true),
+    agenda: { enabled: savedReminder?.enabled === true && Boolean(validReminder), hour: validReminder ? Number(savedReminder.hour) : null, frequency: 'DAILY', timeZone: 'America/Sao_Paulo' } };
+  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes])).digest('hex');
+  return { companyId, revision, serproPolicy, lembretes, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
 }
 
 export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isAdmin = false } = {}) {
-  const { expectedRevision, requestId, rotinas, serproPolicy } = input || {};
+  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes } = input || {};
+  const validReminders = lembretes === undefined || lembretes && !Array.isArray(lembretes) && typeof lembretes === 'object'
+    && typeof lembretes.enabled === 'boolean' && Object.keys(lembretes).every(k => k === 'enabled');
   const validRoutines = rotinas === undefined || rotinas && !Array.isArray(rotinas) && typeof rotinas === 'object'
     && Object.keys(rotinas).length > 0 && Object.entries(rotinas).every(([k, v]) => ROTINA_KEYS.includes(k) && typeof v === 'boolean');
   const validPolicy = serproPolicy === undefined || serproPolicy && !Array.isArray(serproPolicy) && typeof serproPolicy === 'object'
@@ -33,12 +40,12 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     && serproPolicy.reason.trim().length > 0 && serproPolicy.reason.trim().length <= 300
     && Object.keys(serproPolicy).every(k => ['paused', 'reason'].includes(k));
   if (!/^[a-f0-9]{64}$/.test(expectedRevision || '') || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId || '')
-    || !validRoutines || !validPolicy || rotinas === undefined && serproPolicy === undefined) {
+    || !validRoutines || !validPolicy || !validReminders || rotinas === undefined && serproPolicy === undefined && lembretes === undefined) {
     throw fail('INVALID_AUTOMATION', 'Revise as rotinas selecionadas e atualize a configuração antes de salvar.', 422);
   }
   const key = `company_automation_request:${userId}:${requestId}`;
   const policyInput = serproPolicy === undefined ? null : { paused: serproPolicy.paused, reason: serproPolicy.reason.trim() };
-  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput])).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null])).digest('hex');
   return db.$transaction(async tx => {
     await bloquearPoliticaEmpresa(tx, companyId);
     if (!isAdmin) {
@@ -58,12 +65,16 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     for (const [rotina, enabled] of Object.entries(rotinas || {})) {
       await tx.companyRotina.upsert({ where: { portalClientId_rotina: { portalClientId: companyId, rotina } }, create: { portalClientId: companyId, rotina, enabled }, update: { enabled } });
     }
+    if (lembretes !== undefined) {
+      const rotina = 'avisos_guias_whatsapp', enabled = lembretes.enabled;
+      await tx.companyRotina.upsert({ where: { portalClientId_rotina: { portalClientId: companyId, rotina } }, create: { portalClientId: companyId, rotina, enabled }, update: { enabled } });
+    }
     if (policyInput) {
       const value = { ...policyInput, updatedAt: new Date().toISOString(), updatedBy: String(userId) };
       await tx.appSetting.upsert({ where: { key: chavePoliticaSerpro(companyId) }, create: { key: chavePoliticaSerpro(companyId), value }, update: { value } });
     }
     const result = { ...await lerAutomacaoEmpresa(tx, companyId), savedAt: new Date().toISOString() };
-    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeSerproPolicy: before.serproPolicy, result, eventId: randomUUID() } } });
+    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeLembretes: before.lembretes, beforeSerproPolicy: before.serproPolicy, result, eventId: randomUUID() } } });
     return result;
   }, { isolationLevel: 'Serializable' });
 }

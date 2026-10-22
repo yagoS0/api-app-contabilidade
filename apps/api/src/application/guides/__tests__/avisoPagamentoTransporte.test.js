@@ -42,3 +42,9 @@ test('contrato D0 tem um botão, texto próprio e recusa corpo de DEPOIS', () =>
   template.components[0].text = TEMPLATES_GUIAS_WHATSAPP.guia_pagamento_depois_v1.corpo;
   expect(() => validarTemplateGuias(template.name, template)).toThrow('Texto ou botões diferem');
 });
+
+test.each([true, false])('revogação da seleção no callback bloqueia transporte (janela aberta %s)', async aberta => {
+ const f=cenario(aberta);f.args.conferir.mockRejectedValue(Object.assign(new Error('Seleção revogada'),{code:'ROTINA_EMPRESA_DESABILITADA'}));
+ await expect(f.run()).rejects.toMatchObject({code:'ROTINA_EMPRESA_DESABILITADA'});
+ expect(f.cloud.enviarBotoes).not.toHaveBeenCalled();expect(f.cloud.enviarTemplate).not.toHaveBeenCalled();
+});

@@ -31,3 +31,21 @@ test('varredura inclui D0 e informa vencimento inválido sem chamar aviso nem in
   expect.objectContaining({guideId:'ausente',status:'PENDENTE',motivo:'VENCIMENTO_INVALIDO'}),
  ]);
 });
+
+test('consulta fiscal habilitada não seleciona empresa para lembretes', async () => {
+ const db={guide:{findMany:jest.fn()}}; const avisar=jest.fn();
+ const idsAtivos=jest.fn(async key=>key==='pagamento'?['c']:[]);
+ await solicitarPagamentosWhatsapp({scheduledAt:'2026-09-25'}, {db,avisar,idsAtivos});
+ expect(idsAtivos).toHaveBeenCalledWith('avisos_guias_whatsapp');
+ expect(db.guide.findMany).not.toHaveBeenCalled();expect(avisar).not.toHaveBeenCalled();
+});
+
+test('revogação durante preparação é revalidada pelo callback antes do transporte', async () => {
+ const db={feriado:{findMany:async()=>[]},guide:{findMany:async()=>[{id:'g',portalClientId:'c',vencimento:'2026-09-25'}]}};
+ let selected=true;const send=jest.fn();
+ const idsAtivos=jest.fn(async key=>key==='avisos_guias_whatsapp'&&selected?['c']:[]);
+ const avisar=async ({assertActive})=>{selected=false;await assertActive();send();};
+ const result=await solicitarPagamentosWhatsapp({scheduledAt:'2026-09-25',agora:new Date('2026-09-25T12:00Z')},{db,avisar,idsAtivos});
+ expect(send).not.toHaveBeenCalled();expect(result.avisosPendentes).toBe(1);
+ expect(idsAtivos.mock.calls.every(([key])=>key==='avisos_guias_whatsapp')).toBe(true);
+});

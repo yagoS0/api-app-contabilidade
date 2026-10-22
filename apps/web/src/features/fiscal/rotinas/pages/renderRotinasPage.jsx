@@ -35,7 +35,7 @@ const ROTINA_HINT = {
   extrato: "Extrato do PGDAS-D — gera os lançamentos",
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
-  avisos_guias_whatsapp: "Diariamente, sem consulta SERPRO. Usa as empresas habilitadas em Pagamento.",
+  avisos_guias_whatsapp: "Diariamente, sem consulta SERPRO. Selecione cada empresa em Configuração → Automação → Lembretes de guias.",
   pagamento: "Confirma pagamentos de DAS, INSS e parcelas acompanhadas",
   conferencia: "Confere as NFS-e contra o ADN nacional antes do fechamento",
 };
@@ -203,7 +203,7 @@ export function RotinasPage({
   // Quantas empresas fazem cada rotina — cabeçalho mostra o alcance de cada uma.
   const contagem = useMemo(() => {
     const out = {};
-    for (const r of rotinas) out[r.key] = empresas.filter((e) => e.rotinas?.[r.key]).length;
+    for (const r of rotinas) out[r.key] = empresas.filter((e) => r.key === "avisos_guias_whatsapp" ? (e.lembretes?.enabled ?? e.rotinas?.avisos_guias_whatsapp) === true : e.rotinas?.[r.key]).length;
     return out;
   }, [rotinas, empresas]);
 
@@ -329,7 +329,7 @@ export function RotinasPage({
                             />
                           </td>
                           <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                            {contagem[r.key === "avisos_guias_whatsapp" ? "pagamento" : r.key] || 0} de {empresas.length}
+                            {contagem[r.key] || 0} de {empresas.length}
                           </td>
                         </tr>
                       );

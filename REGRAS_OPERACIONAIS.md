@@ -576,3 +576,21 @@ Impacto: calendário de comunicação e clareza das pendências. Sem mudança de
 | T79 | Legado sem revisão ou nova revisão sobre reserva anterior | Pendência de conferência; não declarar envio da revisão atual ou repetir saída |
 | T80 | Janela fechada com template D0 ausente/não aprovado | Pendência, zero transporte livre e sem fallback de atraso |
 | T81 | Pagamento/DA/contato/empresa alterados durante preparo | Revalidar antes da rede e impedir saída indevida |
+
+## 28. Seleção de lembretes por empresa — decisão de 22/10/2026
+
+O usuário solicitou uma área de configurações das empresas para lembretes e autorizou abrir PR, integrar na main e publicar somente após CI e revisões aprovados. Depois da publicação, resolver pendências do acompanhamento e apresentar decisões antes de ativar os lembretes. Esta autorização substitui o limite de publicação do incremento da seção27; não autoriza ativação, envio real, consulta fiscal paga ou baixa.
+
+Em Configurações da empresa → Automação, a seleção de lembretes WhatsApp é independente das consultas fiscais e da seleção Pagamento. Ausência de configuração significa desligado; não copiar adesão fiscal para comunicação. Selecionar empresa não liga a agenda global. Horário e agenda global permanecem em Rotinas → Configuração → Agenda, com os três marcos da seção27. Registrar alteração com usuário, revisão e auditoria atômica; preservar controles de permissão, concorrência e repetição.
+
+Revalidar seleção da empresa e agenda global antes do transporte. Empresa desmarcada, agenda desligada/incompleta, pagamento confirmado, débito automático incompatível, documento inválido, entrega sem evidência da revisão vigente ou contato não autorizado impedem saída. Não fabricar prova histórica ou repetir envio incerto para desbloquear acompanhamento. Consultas SERPRO mantêm sua agenda e seleção atuais.
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T82 | Empresa sem seleção de lembretes e com Pagamento fiscal ativo | Lembretes desligados; seleção fiscal não herdada |
+| T83 | Selecionar/desmarcar lembretes e confirmar alteração | Persistência auditada independente; demais consultas e agenda global preservadas |
+| T84 | Usuário sem permissão, versão antiga, concorrência, replay ou falha na auditoria | Recusa ou repetição idempotente; nenhuma escrita parcial |
+| T85 | Desmarcar empresa durante preparo do lembrete | Revalidação bloqueia transporte; zero consulta fiscal |
+| T86 | Buscar lembretes nas configurações e usar computador/celular | Área encontrável, estados claros e controles acessíveis sem alargar a página |
+
+Histórico: decisão expressa do usuário em22/10/2026; ativação e tratamento de evidências históricas continuam separados da publicação do código. Documento de folha cadastrado como guia exige reclassificação auditada própria, preservando PDF e envios; não corrigir com pagamento, vencimento inventado ou exclusão de histórico.

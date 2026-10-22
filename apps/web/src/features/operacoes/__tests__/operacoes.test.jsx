@@ -118,7 +118,7 @@ test('ativação exige prévia e não salva na leitura; resposta perdida reutili
   const before = { revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: false, agenda: null }] };
   const api = { getCompanyAutomation: jest.fn().mockResolvedValue(before), saveCompanyAutomation: jest.fn().mockRejectedValueOnce(new Error('Resposta perdida')).mockResolvedValue({ ...before, revision: 'r2', rotinas: [{ ...before.rotinas[0], enabled: true }] }) };
   render(<CompanyAutomation api={api} companyId="a" canEdit />);
-  fireEvent.click(await screen.findByRole('checkbox'));
+  fireEvent.click(await screen.findByRole('checkbox', { name: /^DAS/ }));
   expect(api.saveCompanyAutomation).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Conferir alterações'));
   fireEvent.click(screen.getByText('Salvar configuração'));
