@@ -6,6 +6,7 @@ import { ProtecaoEdicao } from '../../../configuracoes/ProtecaoEdicao';
 import { useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao.shared.js';
 import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { CompanyAutomation } from '../../../operacoes/CompanyAutomation';
+import { GuruConferenciaPanel } from '../../../notas/components/GuruConferenciaPanel';
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
@@ -865,6 +866,13 @@ function CompanyDetailContent({
 
   // ─── Aba Notas Fiscais (Q12.A): layout full-screen ───────────────────────────
 
+  if (companyDetailTab === 'integracoes') {
+    return <CompanyTabLayout company={selectedCompany} activeTab="integracoes" onBack={onBack}
+      onTabChange={switchTab} canEditCompany={canEditCompany} feedback={feedback} largura="trabalho">
+      <GuruConferenciaPanel api={companyDocsApi} companyId={companyId} />
+    </CompanyTabLayout>;
+  }
+
   if (companyDetailTab === "notasFiscais") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
@@ -881,6 +889,8 @@ function CompanyDetailContent({
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
               <NotasFiscaisTab
+                hrefIntegracoes={companyTabPath(companyId, 'integracoes')}
+                onAbrirIntegracoes={() => switchTab('integracoes')}
                 notasPanel={notasPanel}
                 /* ⚠ `hasInscricaoEstadual` SAIU daqui em 23/08/2026, e não foi limpeza: enquanto
                    existiu, ele escondia a janela de NF-e de TODA empresa sem inscrição estadual —

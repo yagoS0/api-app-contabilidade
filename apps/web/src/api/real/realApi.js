@@ -348,6 +348,8 @@ async function formularioPublicoRequest(token, patch) {
     })()]);
   } finally { clearTimeout(timer); }
 }
+import { criarGuruConferenciaApi } from './guruConferenciaApi';
+
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
   let unauthorizedHandler = null;
@@ -434,6 +436,7 @@ export function createRealApi() {
 
   const background = createBackgroundTaskClient(request);
   return {
+    ...criarGuruConferenciaApi(request),
     getAgendaCarteira: (inicio, fim, companyId) => request(`/firm/agenda/carteira?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}${companyId ? `&companyId=${encodeURIComponent(companyId)}` : ''}`),
     getFluxoCarteira: (id, competencia) => request(`/firm/companies/${encodeURIComponent(id)}/fluxo-carteira?competencia=${encodeURIComponent(competencia)}`),
     salvarFluxoTarefa: (id, chave, dados) => request(`/firm/companies/${encodeURIComponent(id)}/fluxo-carteira/${encodeURIComponent(chave)}`, { method: 'POST', body: JSON.stringify(dados) }),

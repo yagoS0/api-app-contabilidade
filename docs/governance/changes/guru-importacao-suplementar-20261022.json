@@ -1,0 +1,88 @@
+{
+  "summary": "Importação Guru e tela de conferência local: correções de StrictMode, auditoria de interrupção e comparativo completo. Registro suplementar do Principal com pareceres independentes autênticos; não é aprovação automática do runtime.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "R01/R02/R19/R20/R22 preservadas; sem mudança de regra fiscal. SaaS Sintropia somente conferência. eNotas não alterado. Benefício pendente vigência.",
+  "tests": [
+    "governance-engine: True; logs round-1-gate-governance-engine",
+    "api-regression: True; logs round-1-gate-api-regression",
+    "web-regression: True; logs round-1-gate-web-regression",
+    "portal-regression: True; logs round-1-gate-portal-regression",
+    "web-build: True; logs round-1-gate-web-build",
+    "portal-build: True; logs round-1-gate-portal-build",
+    "API 11306; web 5933; portal 1580; governança 72; dois builds. Banco descartável loopback.",
+    "QA Chrome local: 20 cenários visuais desktop/celular e 2 registros de Tab; app mock carregado/recarregado. Sem chamadas externas; não equivale a auditoria completa de acessibilidade."
+  ],
+  "rollback": "Reverter apenas este incremento desde38a4d1150, preservando históricos AppSetting e trabalho alheio; não apagar registros ou cancelar documentos.",
+  "humanDecisions": [
+    "Credencial Guru segregada e titularidade da conta para importação autenticada; não enviar token no chat.",
+    "Vigência do benefício municipal segue pendente.",
+    "Sem autorização de publicação ou emissão neste escopo."
+  ],
+  "sourceFingerprint": "9da5afd235df02836d437f2e593da9880cc27731bbe9b69b2f74cd0269be9067",
+  "sourcePaths": [
+    "apps/api/src/application/nfse/guru/GuruConferenciaService.js",
+    "apps/api/src/application/nfse/guru/GuruHttpClient.js",
+    "apps/api/src/application/nfse/guru/__tests__/fixtures/transacoesGuru.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruHttpClient.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruImportacao.postgres.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruImportacao.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/transacaoGuru.test.js",
+    "apps/api/src/application/nfse/guru/transacaoGuru.js",
+    "apps/api/src/routes/__tests__/nfseGuruConferencia.postgres.test.js",
+    "apps/api/src/routes/__tests__/nfseGuruConferencia.test.js",
+    "apps/api/src/routes/nfseGuruConferencia.js",
+    "apps/web/src/api/__tests__/guruConferenciaContrato.test.js",
+    "apps/web/src/api/mock/guruConferenciaMock.js",
+    "apps/web/src/api/mock/mockApi.js",
+    "apps/web/src/api/real/guruConferenciaApi.js",
+    "apps/web/src/api/real/realApi.js",
+    "apps/web/src/features/notas/components/GuruConferenciaPanel.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaNavegacao.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaPanel.test.jsx",
+    "apps/web/src/features/notas/components/guru-conferencia.css",
+    "apps/web/src/features/notas/components/renderNotasFiscaisTab.jsx",
+    "docs/guru-conferencia-20261022.md"
+  ],
+  "runId": "2026-10-22T22-44-17-114Z-7af30971",
+  "reviewedBase": "38a4d1150",
+  "productionInvariantsBase": "514e63765",
+  "checkpoint": "15138358c",
+  "runtimeStatus": "interrompido pelo Principal após duas correções, durante revisão UX; não atingiu ready_for_human",
+  "interruptionReason": "UI inconclusiva por não localizar QA atual já existente. Evitada terceira rodada corretiva. State e parecer histórico preservados.",
+  "supplementalReviews": [
+    {
+      "scope": "UI/UX; capturas e hash atual inspecionados",
+      "verdict": "approved",
+      "sourceHash": "cda8337b393ec9077cf22dc15092017ba6d08c3b4fc6fd4156dd61e10080c244",
+      "reviewer": "/root/guru_ui_final"
+    },
+    {
+      "scope": "Sistêmica do incremento completo e evidências, com parecer UI suplementar",
+      "verdict": "approved",
+      "reviewer": "/root/guru_sistemica_final"
+    }
+  ],
+  "residualRisks": [
+    "Baixa: nome acessível de Ver registro não contém texto visível.",
+    "Cobertura complementar: múltiplas páginas e falha de releitura após escrita persistida; não homologados visualmente.",
+    "Sem conexão autenticada, comprovação remota de conta ou validação tributária."
+  ],
+  "evidence": [
+    ".altan-governance/guru-ui-qa/QA-PRINCIPAL.txt",
+    ".altan-governance/guru-ui-qa/qa-report.json",
+    ".altan-governance/guru-ui-qa/app-report.json",
+    ".altan-governance/runs/2026-10-22T22-44-17-114Z-7af30971/state.json"
+  ]
+}

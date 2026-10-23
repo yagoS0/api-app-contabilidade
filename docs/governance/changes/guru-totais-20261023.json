@@ -1,0 +1,70 @@
+{
+  "summary": "Correção autorizada dos totais do resumo Guru: formatação brasileira exata sem conversão do valor monetário para ponto flutuante. Resolve a ressalva visual do incremento anterior.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Somente apresentação R02/R21/R22. Preserva dígitos, sinais, casas e expoentes, moedas separadas e distinção entre zero, ausência e inválido. Nenhuma mudança em cálculo, contrato, persistência, fiscal, pagamento ou regra operacional; benefício PENDENTE_VIGENCIA e eNotas intocado.",
+  "reviewedBase": "c2fb9214334d3931b10f1d2b9b546469600f2391",
+  "sourceFingerprint": "1554e93078c677a1108f28d85567e8389f707d8c44e519987a7083f1533e0ab2",
+  "sourcePaths": [
+    "apps/web/src/features/notas/components/GuruConferenciaPanel.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaPanel.test.jsx"
+  ],
+  "tests": [
+    "governance-engine: aprovado; logs .altan-governance/guru-totais-gates/governance-engine",
+    "api-regression: aprovado; logs .altan-governance/guru-totais-gates/api-regression",
+    "web-regression: aprovado; logs .altan-governance/guru-totais-gates/web-regression",
+    "portal-regression: aprovado; logs .altan-governance/guru-totais-gates/portal-regression",
+    "web-build: aprovado; logs .altan-governance/guru-totais-gates/web-build",
+    "portal-build: aprovado; logs .altan-governance/guru-totais-gates/portal-build",
+    "31 novos casos de integração preservam testes anteriores. Conferir totais das regressões nos logs dos gates.",
+    "Revisor sistêmico: 400 combinações determinísticas comparadas com BigInt exato, aprovadas.",
+    "QA independente: 16 cenários visuais 1440/390 e 17 verificações de exatidão; zero erros JS, rede externa e overflow. Capturas antes/depois.",
+    "Lint: zero erros e um warning preexistente exhaustive-deps, sem supressão. Builds podem conservar avisos de bundle/importações.",
+    "API 11334/649 suítes; web 5971/521; portal1580/99; governança72: total18957 testes aprovados, sem skips. Ambos builds aprovados."
+  ],
+  "rollback": "Reverter somente este incremento de apresentação e testes desdec2fb92143. Nenhum dado, configuração ou documento fiscal precisa ser alterado.",
+  "humanDecisions": [
+    "Usuário autorizou esta correção adicional delimitada em23/10/2026, sem publicação ou emissão.",
+    "Vigência do benefício municipal permanece pendente; eNotas deve continuar preservado."
+  ],
+  "runId": "2026-10-23T09-23-07-582Z-a42b8062",
+  "runtimeStatus": "Controlador executou planejamento/implementação. Principal interrompeu a execução de testes por falta da URL do PostgreSQL descartável no ambiente inicial. Gates originais foram executados com banco isolado; revisões nativas suplementares autênticas. Não ready_for_human automático.",
+  "supplementalReviews": [
+    {
+      "reviewer": "/root/integracoes_qa_preparo",
+      "scope": "UI/UX e exatidão visual",
+      "verdict": "approved"
+    },
+    {
+      "reviewer": "/root/integracoes_sistemica_final",
+      "scope": "Precisão, domínios afetados e efeitos sistêmicos",
+      "verdict": "approved"
+    }
+  ],
+  "limitations": [
+    "Expoentes com magnitude superior a10000 permanecem exatos em notação científica para evitar alocação excessiva; mantissa usa separadores brasileiros.",
+    "Valores legados Number não recuperam precisão perdida na origem; não finitos e magnitude acima do limite seguro são recusados. Contrato real do resumo usa string decimal.",
+    "Escopo restrito ao resumo; não altera outras apresentações, importação Guru, emissão, eNotas ou benefício."
+  ],
+  "evidence": [
+    ".altan-governance/guru-totais-gates/source-snapshot.json",
+    ".altan-governance/guru-totais-gates/lint.json",
+    ".altan-governance/guru-totais-qa/PARECER-FINAL.txt",
+    ".altan-governance/guru-totais-qa/baseline-report.json",
+    ".altan-governance/guru-totais-qa/final-report.json",
+    ".altan-governance/test-batches/api-IGx7tN/manifest.json",
+    ".altan-governance/test-batches/web-6sbGwM/manifest.json",
+    ".altan-governance/test-batches/portal-cliente-web-KA74On/manifest.json",
+    ".altan-governance/guru-totais-qa/exatidao-report.json"
+  ]
+}

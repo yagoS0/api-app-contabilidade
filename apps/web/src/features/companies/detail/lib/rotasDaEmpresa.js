@@ -17,6 +17,7 @@
 // URL cai em Anotações sem erro nenhum.
 
 export const SEGMENT_TO_TAB = {
+  integracoes: 'integracoes',
   automacao: 'automacao',
   implantacao: 'implantacao',
   certificado: "certificado",
@@ -89,6 +90,7 @@ export const SEGMENT_TO_TAB = {
 };
 
 export const TAB_TO_SEGMENT = {
+  integracoes: 'integracoes',
   automacao: 'automacao',
   implantacao: 'implantacao',
   certificado: "certificado",

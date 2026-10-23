@@ -1,0 +1,31 @@
+.guru-conferencia { margin-block: 16px; min-width: 0; overflow-wrap: anywhere; }
+.guru-conferencia__tabela { max-width: 100%; overflow-x: auto; }
+.guru-conferencia__tabela table { width: 100%; min-width: 640px; }
+.guru-conferencia__tabela th { font-weight: 500; }
+.guru-conferencia__tabela td { vertical-align: top; }
+.guru-conferencia__tabela .btn { margin: var(--space-1); }
+.guru-conferencia__resumo { border-block: 1px solid var(--border); padding-block: var(--space-2); }
+.guru-conferencia__resumo strong { font-weight: 600; }
+.guru-conferencia :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.guru-conferencia__tabela th:nth-child(2), .guru-conferencia__tabela td:nth-child(2), .guru-conferencia__dinheiro { text-align: right; font-variant-numeric: tabular-nums; }
+.guru-conferencia p { font-weight: 400; line-height: 1.5; }
+.guru-conferencia h3 { font-size: 1rem; font-weight: 600; }
+.guru-conferencia__filtros { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-block: 16px; }
+.guru-conferencia__filtros label { display: grid; gap: 6px; font-weight: 500; min-width: 0; }
+.guru-conferencia__filtros input, .guru-conferencia__filtros select { box-sizing: border-box; min-height: 44px; max-width: 100%; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; font: inherit; }
+.guru-conferencia__auxiliar { color: var(--text-muted); }
+.guru-conferencia__erro { color: var(--state-danger); }
+.guru-conferencia__lista { list-style: none; padding: 0; }
+.guru-conferencia__lista li { border-bottom: 1px solid var(--border); padding-block: 12px; display: grid; gap: 8px; }
+.guru-conferencia__lista li > div, .guru-conferencia__acoes { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.guru-conferencia__detalhe { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
+.guru-conferencia__dados { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.guru-conferencia dt { color: var(--text-muted); font-weight: 500; }
+.guru-conferencia dd { margin: 4px 0 0; font-weight: 400; }
+.guru-conferencia details { margin-block: 12px; }
+.guru-conferencia summary { cursor: pointer; min-height: 44px; display: list-item; align-content: center; }
+@media (max-width: 600px) {
+  .guru-conferencia__dados { grid-template-columns: minmax(0, 1fr); }
+  .guru-conferencia__filtros > * { width: 100%; }
+  .guru-conferencia .btn { min-height: 44px; white-space: normal; }
+}

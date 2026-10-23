@@ -1,0 +1,40 @@
+{
+  "summary": "Usuário23/10autoriza abrirPR, integrar main e publicar produção apósCI/revisões, conferir áreaIntegrações, GuruCONFERENCIA/eNotasativo/benefícioPENDENTE_VIGENCIA, nenhumaemissãoreal. Base83bd356b3; origin/main514e63765, ancestral, semconflito,7commitslocaisprontos. ÁreaEmpresa/Integrações jáimplementada comvendas,totais,notasvinculadas eXML/DANFSe; preservar.\nInspeçãoPrincipal encontrou bloqueio NODE_ENV production emGuruConferenciaService.contexto; publicarassim deixariaárea inutilizável. Implementar incremento mínimo de prontidãoprodutiva: permitir produção SOMENTEcomopt-in explícito servidor GURU_CONFERENCIA_PRODUCTION_ENABLED==='true', preservando company/accountpiloto exatos,autorizaçãoadmin/contadorativo eescopoURL. Development/test compatíveis. Nunca definirNODE_ENVdevelopmentemprodução. Semconfigprod=desabilitado,outraempresa=foraescopo,emissãoSEMPRERECUSADA. Importaçãoexplicitamantémsegredosegregado/IMPORT_ENABLED/CREDENTIAL_SCOPE eGETnãochamaGuru. Incluirnovooptin nohashconfig para impedirimportaçãotardiadepoisdesabilitação. Nãoalteraremissor,eNotas,benefício,worker,pagamentos,permissõesougate. AtualizarmensagemUIquehojedizservidordedesenvolvimento parafuncionarnoapprealcomconfigfaltante, semvazarsegredos. Testes produçãooff/on,escopo/permissão/emissãorecusada,semredeporGET,revalidaçãoconfig alterada/replay. Preservartestesexistentes; atualizarassertantigadeproduçãoincondicional somenteparasubstituirporcasosdeoptinexplícito.\nLeiaAGENTS/referênciaoperacionalcanônica/localhash1ad2d8c79dfe40a03235bcfc52055c372e38326aa53a46783403814610b82832 jáiguais. Impacto: implantação controladadomodoCONFERENCIAjáaprovado; R01/R02/R19/R20/R21/R22 semnovaregrafiscal. Atualizardocs/guru-conferencia-20261022.md comlimitesatuais,parametronovo epublicaçãoAINDApendente. Manterregistrosanterioreshistóricos.Nenhumconfigrealoucredencialépapeldoexecutor. Principal faráPR/deploy/config seguraapóstestes. Nãoacessarsecretos/contasreais/nãoemitir/mensagem/publicar peloexecutor.\nControleexecutávelusaPGdescartávelpreparadopeloPrincipal,env herdado antesdeiniciar. Selecionargatesoriginais; nãoalterarpolítica,mapa,CIouconfigparaaprovar. PrincipalcoordenaQA/revisãonativa eCI. Escopopequeno,usar2rodadasmáximo,preservartrabalhoanterior. Autorizaçãodepublicaçãoatualsubstituilimiteantigomasnãoliberaemissão. Revisoresconferiremprontidãoend-to-end; nãochamarconexãoprodativa semevidência.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-23T09-57-10-011Z-499daff1",
+  "tests": [
+    "governance-engine: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-governance-engine",
+    "api-regression: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-api-regression",
+    "web-regression: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-web-regression",
+    "portal-regression: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-portal-regression",
+    "web-build: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-web-build",
+    "portal-build: passed against 7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-23T09-57-10-011Z-499daff1\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-23T09-57-10-011Z-499daff1; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "7b531a81538af9bf4603e8b37bdf9858586a88eaec5ecc9cf5414f742bac500c",
+  "sourcePaths": [
+    "apps/api/src/application/nfse/guru/GuruConferenciaService.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruConferencia.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruImportacao.test.js",
+    "apps/api/src/routes/__tests__/nfseGuruConferencia.postgres.test.js",
+    "apps/web/src/features/notas/components/GuruConferenciaPanel.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaPanel.test.jsx",
+    "docs/guru-conferencia-20261022.md"
+  ],
+  "runId": "2026-10-23T09-57-10-011Z-499daff1"
+}

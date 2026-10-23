@@ -1,0 +1,38 @@
+{
+  "summary": "Continuar incremento Guru local sobre checkpoint fa0c91dda (WIP não aprovado; base produtiva 514e63765). Usuário autoriza corrigir achados, concluir testes/revisões, somente CONFERENCIA, sem notas reais, publicação ou desativar/alterar eNotas. Preserve eNotas e todas integrações produtivas. Esta é correção 1 após rodada inicial; no máximo mais uma correção adicional, preservando limite total de duas. Execução anterior .altan-governance/runs/2026-10-22T18-58-31-263Z-6f102d67 interrompida pelo Principal durante revisão por ambiente incompleto, preservada como evidência não aprovada. Não copiar aprovações. Não modificar governança/gates/testes alheios/credenciais/configs.\nCorrigir GuruConferenciaService: não afirmar nota NAO_EMITIDA sem evidência externa (R02; Guru real tem eNotas ativo). Separar emissaoAltan NAO_REALIZADA e situacaoFiscalExterna NAO_VERIFICADA, inclusive após preparar/conferir/recarregar/replay. Testar invariantes e não aceitar essas situações via body como prova. Nenhuma emissão/entrega/baixa, consulta fiscal, webhook/integração real.\nAdicionar teste integrado da montagem createNfseRouter com serviço Guru real e persistência PostgreSQL descartável: preparar, reler, conferir, replay, recusar emitir, cliente/API key/empresa alheia, resolução PortalClient→Company. Pode simular fronteira da sessão autenticada se explicitado, mas não simular serviço Guru nem persistência; conferir zero chamadas fiscais/transporte. Não remover verificações existentes. Banco local descartável será fornecido pelo Principal em ALTAN_GOVERNANCE_TEST_DATABASE_URL; gates rodam com NODE_ENV test e integrações desativadas. Não ler env/credenciais de produção.\nAtualizar docs/guru-conferencia-20261022.md com semântica, limites, decisão eNotas preservado e evidências reais. Não prometer integração Guru/importação/UI: ainda API interna manual. Atualizações de notas existentes estão fora do escopo. Registrar solicitação fiscal mensal/anual 2% e mesmo benefício somente como configuração futura pendente de validação/evidência/vigência, nunca ativar ou homologar automaticamente. Não inserir dados pessoais reais em fixtures/docs. Impacto R01/R02/R19/R20; não muda regras fiscais.\nEvidências prévias do Principal: 33 testes focais e PG (concorrência, recarga, rollback) passaram, logs .altan-governance/guru-pg-1792696262050. Reexecutar após correção; não usar resultado antigo para versão nova. Gate anterior API parou por falta URL PG; web falhou por faker declarado ausente. Ambiente será suprido sem mudar manifests. Planejar apenas arquivos realmente alterados e teste integrado novo; sem mudanças protegidas. Revisores devem examinar também incremento completo desde 514e63765, não apenas ajuste do checkpoint.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-22T19-35-43-313Z-ebe8af5e",
+  "tests": [
+    "governance-engine: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-governance-engine",
+    "api-regression: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-api-regression",
+    "web-regression: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-web-regression",
+    "portal-regression: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-portal-regression",
+    "web-build: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-web-build",
+    "portal-build: passed against e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-guru-conferencia-20261022\\.altan-governance\\runs\\2026-10-22T19-35-43-313Z-ebe8af5e\\round-1-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-22T19-35-43-313Z-ebe8af5e; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "e04c3aa39ef6f42df2c57f42fb2410ce3ca03deb749759f199545d866f6a284e",
+  "sourcePaths": [
+    "apps/api/src/application/nfse/guru/GuruConferenciaService.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruConferencia.postgres.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruConferencia.test.js",
+    "apps/api/src/routes/__tests__/nfseGuruConferencia.postgres.test.js",
+    "docs/guru-conferencia-20261022.md"
+  ],
+  "runId": "2026-10-22T19-35-43-313Z-ebe8af5e"
+}
