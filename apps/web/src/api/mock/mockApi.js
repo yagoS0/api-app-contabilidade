@@ -3832,6 +3832,8 @@ const prepararConversaComercialMock = (o, body) => {
 
 // A latência é apresentação da demonstração, independente da persistência e das regras.
 // Testes de contrato podem injetar uma espera determinística sem substituir os métodos reais.
+import { criarGuruConferenciaMock } from './guruConferenciaMock';
+
 export function createMockApi({ delay = defaultDelay } = {}) {
   for (const o of mockOnboardings.values()) {
     if (o.contatoComercialMock) prepararConversaComercialMock(o, o.contatoComercialMock);
@@ -3862,6 +3864,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
 
   return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
+    ...criarGuruConferenciaMock(),
     ...criarCompanyAutomationMock(mockCompanies),
     ...criarManualInssMock(mockCompanies, mockGuidesByCompany),
     ...atendimentoMovel,

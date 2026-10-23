@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createNfseRecorrenciasRouter } from './nfseRecorrencias.js';
+import { createNfseGuruConferenciaRouter } from './nfseGuruConferencia.js';
 import { validateNfsePayload } from "../application/validators/nfsePayload.js";
 import { NfseService } from "../application/nfse/NfseService.js";
 import { NfseRepository } from "../infrastructure/db/NfseRepository.js";
@@ -34,6 +35,7 @@ const CODIGOS_CERT = new Set([
 export function createNfseRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use('/recorrencias', createNfseRecorrenciasRouter({ ensureAuthorized, log }));
+  router.use('/guru-conferencia', createNfseGuruConferenciaRouter({ ensureAuthorized, log }));
 
   async function listNfse({ params, limit, offset, shouldSync }) {
     let syncResult = null;

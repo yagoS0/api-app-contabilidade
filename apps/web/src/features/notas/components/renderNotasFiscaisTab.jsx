@@ -89,6 +89,8 @@ export function NotasFiscaisTab({
   onAbrirConfiguracaoEmissao = null,
   hrefAuditoria = null,
   onAbrirAuditoria = null,
+  hrefIntegracoes = null,
+  onAbrirIntegracoes = null,
 }) {
   const {
     loading, error, erroCaptura, erroNotas, reload,
@@ -245,6 +247,8 @@ export function NotasFiscaisTab({
         </label>
       {janelaAtiva === 'NFSE' && <FerramentasNfse api={nfseApi} companyId={companyId}
         revisao={Boolean(emissao)} revisaoNotas={notas} competencia={notasFilters.competencia} onAbrirNota={abrirNota} />}
+      {janelaAtiva === 'NFSE' && hrefIntegracoes && <a className="btn btn-secondary btn-md" href={hrefIntegracoes}
+        onClick={e => { if (onAbrirIntegracoes && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) { e.preventDefault(); onAbrirIntegracoes(); } }}>Guru em Integrações</a>}
         {janelaAtiva === "NFSE" && hrefConfiguracaoEmissao && (
           /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
              cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o

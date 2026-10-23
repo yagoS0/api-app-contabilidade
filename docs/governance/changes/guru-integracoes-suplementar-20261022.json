@@ -1,0 +1,97 @@
+{
+  "summary": "Aba Integrações por empresa, vendas Guru e conferência manual de notas existentes. Validação local com ressalva visual; pareceres nativos suplementares, sem ready_for_human automático.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "R01/R02/R19/R20/R21/R22 reforçadas: identidade, ausência, auditoria, revisão, totais antes da paginação e estados explícitos. Sem nova regra fiscal, baixa, comunicação, schema ou emissão. eNotas intocado; benefício PENDENTE_VIGENCIA; piloto development/test.",
+  "tests": [
+    "governance-engine: aprovado; logs .altan-governance/integracoes-final-gates/governance-engine",
+    "api-regression: aprovado; logs .altan-governance/integracoes-final-gates/api-regression",
+    "web-regression: aprovado; logs .altan-governance/integracoes-final-gates/web-regression",
+    "portal-regression: aprovado; logs .altan-governance/integracoes-final-gates/portal-regression",
+    "web-build: aprovado; logs .altan-governance/integracoes-final-gates/web-build",
+    "portal-build: aprovado; logs .altan-governance/integracoes-final-gates/portal-build",
+    "api-qw1cwQ: 11334 testes / 649 suítes aprovados",
+    "web-6kiT4B: 5940 testes / 521 suítes aprovados",
+    "portal-cliente-web-88mOuH: 1580 testes / 99 suítes aprovados",
+    "Governança: 72 testes; ambos os builds aprovados. PostgreSQL descartável loopback.",
+    "Focais: 42 API + 42 web; reproduzidor independente 7/7, incluindo seis recusas antes ausentes. Concorrência PostgreSQL real antes/depois do vínculo.",
+    "QA: 30 verificações em 1440/390, navegação/reload do app mock, zero erro JS/rede externa/overflow global. Downloads UI são artificiais; backend valida gerador local.",
+    "Lint dirigido: zero erros e um warning preexistente exhaustive-deps; configuração preservada."
+  ],
+  "rollback": "Reverter somente este incremento desde715654499, preservando AppSetting, auditoria e dados fiscais. Não apagar, cancelar ou emitir documentos para desfazer a interface.",
+  "humanDecisions": [
+    "Vigência do benefício municipal continua pendente; sem aplicação fiscal.",
+    "Publicação e emissão não autorizadas neste escopo."
+  ],
+  "reviewedBase": "715654499",
+  "sourceFingerprint": "6b775dad1147c61e761c3161e75189878fcdfa44d919fca06f1080841e6951df",
+  "sourcePaths": [
+    "apps/api/src/application/nfse/guru/GuruConferenciaService.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruImportacao.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruNotasVinculadas.postgres.test.js",
+    "apps/api/src/application/nfse/guru/__tests__/guruNotasVinculadas.test.js",
+    "apps/api/src/application/nfse/guru/guruNotasVinculadas.js",
+    "apps/api/src/routes/__tests__/nfseGuruConferencia.test.js",
+    "apps/api/src/routes/nfseGuruConferencia.js",
+    "apps/web/src/api/__tests__/guruConferenciaContrato.test.js",
+    "apps/web/src/api/mock/guruConferenciaMock.js",
+    "apps/web/src/api/real/guruConferenciaApi.js",
+    "apps/web/src/features/companies/detail/components/renderCompanyDetailHeader.jsx",
+    "apps/web/src/features/companies/detail/lib/rotasDaEmpresa.js",
+    "apps/web/src/features/companies/detail/pages/renderCompanyDetailPage.jsx",
+    "apps/web/src/features/notas/components/GuruConferenciaPanel.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaNavegacao.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/guruConferenciaPanel.test.jsx",
+    "apps/web/src/features/notas/components/guru-conferencia.css",
+    "apps/web/src/features/notas/components/renderNotasFiscaisTab.jsx",
+    "docs/guru-conferencia-20261022.md"
+  ],
+  "runtimeStatus": "Controlador iniciado; correção1 reprovada. Principal interrompeu revisões repetidas, executou correção2 delimitada e gates originais, com revisão nativa independente. Não ready_for_human automático.",
+  "runId": "2026-10-23T01-42-37-923Z-6270715a",
+  "correctionRounds": 2,
+  "supplementalReviews": [
+    {
+      "reviewer": "/root/integracoes_revisao_fiscal",
+      "scope": "API/fiscal/dados/segurança/contabilidade e reproduzidor7/7",
+      "verdict": "approved"
+    },
+    {
+      "reviewer": "/root/integracoes_qa_preparo",
+      "scope": "UI/UX/web, QA visual final",
+      "verdict": "approved_with_nonblocking_visual_issue"
+    },
+    {
+      "reviewer": "/root/integracoes_sistemica_final",
+      "scope": "Incremento completo, efeitos entre domínios e validação documental final das evidências",
+      "verdict": "approved_with_nonblocking_visual_issue"
+    }
+  ],
+  "residualRisks": [
+    "Totais string decimal no resumo usam ponto, sem formatação pt-BR. Valor/cálculo/precisão preservados; pendência visual não bloqueante confirmada por UI e revisão sistêmica. Corrigir futuramente sem Number/perda de precisão.",
+    "Um aviso lint preexistente no efeito carregar, sem supressão.",
+    "Documento salvo coerente não equivale a consulta atual/autenticidade remota. Vínculo manual não infere correspondência comercial; notas vinculadas incluem reconferência.",
+    "XML municipal proprietário/homologação não permite vínculo. Ausência de documento não prova ausência de emissão.",
+    "Nenhuma nova importação real neste incremento; validação anterior autenticada de54vendas não constitui prova fiscal.",
+    "Builds concluídos com avisos de tamanho de chunks/importações, sem falha."
+  ],
+  "evidence": [
+    ".altan-governance/integracoes-final-gates/source-snapshot.json",
+    ".altan-governance/guru-integracoes-correcao2-focal-api.json",
+    ".altan-governance/guru-integracoes-correcao2-focal-web.json",
+    ".altan-governance/guru-integracoes-qa/qa-report.json",
+    ".altan-governance/guru-integracoes-qa/app-report.json",
+    ".altan-governance/guru-integracoes-qa/PARECER-UI-UX-FINAL.txt",
+    ".altan-governance/guru-integracoes-qa/repro-rodada1-result.json"
+  ]
+}

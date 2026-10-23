@@ -148,6 +148,11 @@ const GROUPS = [
   {
     // A antiga entrada "Empresa" abria Cadastro dentro das configurações, onde as
     // subabas sumiam. Documentos precisa continuar acessível em qualquer seção.
+    key: "integracoes",
+    label: "Integrações",
+    tabs: [{ key: "integracoes", label: "Integrações" }],
+  },
+  {
     key: "documentos",
     label: "Documentos",
     tabs: [
