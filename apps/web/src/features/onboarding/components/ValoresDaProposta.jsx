@@ -7,8 +7,13 @@ export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao,
   const snapshot = anterior?.snapshot;
   const abertura = onboarding.origem === "ABERTURA", pessoaFisica = onboarding.origem === "PESSOA_FISICA";
   const encerramento = onboarding.origem === "INATIVA" && onboarding.dados?.pretendeReativar === "BAIXAR";
-  const mensal = !pessoaFisica && !encerramento && onboarding.dados?.modalidadeServico !== "AVULSO";
-  const avulso = pessoaFisica || encerramento || abertura || ["AVULSO", "COMPARAR"].includes(onboarding.dados?.modalidadeServico);
+  const [modalidadeServico, setModalidadeServico] = useState(pessoaFisica ? "AVULSO" : snapshot?.politicaComercial?.modalidadeServico || onboarding.dados?.modalidadeServico || "");
+  const mensal = !pessoaFisica && !encerramento && ["RECORRENTE", "COMPARAR"].includes(modalidadeServico);
+  const [consultoria, setConsultoria] = useState(() => {
+    const v = snapshot?.perfil?.consultoriaMensal ?? onboarding.dados?.consultoriaMensal;
+    return typeof v === 'boolean' ? String(v) : '';
+  });
+  const avulso = pessoaFisica || encerramento || abertura || ["AVULSO", "COMPARAR"].includes(modalidadeServico);
   const decisao = pessoaFisica ? null : regularizacao || snapshot?.decisaoRegularizacao;
   const [tipoServicoAvulso, setTipoServicoAvulso] = useState(pessoaFisica ? "OUTRO" : snapshot?.tipoServicoAvulso || "");
   const propriaRegularizacao = !abertura && avulso && tipoServicoAvulso === "REGULARIZACAO";
@@ -28,7 +33,8 @@ export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao,
   const temAjustes = campos.some(([k]) => ajustes[k]?.trim());
   async function gerar() {
     setErro("");
-    if (encerramento && onboarding.dados?.modalidadeServico !== "AVULSO") { setErro("O cliente escolheu encerrar a empresa. Em Dados para o orçamento, altere a modalidade para serviço avulso e confira o serviço de encerramento."); return; }
+    if (!modalidadeServico) { setErro("Defina a modalidade de serviço."); return; }
+    if (encerramento && modalidadeServico !== "AVULSO") { setErro("O cliente escolheu encerrar a empresa. Na modalidade definida pela equipe, altere a modalidade para serviço avulso e confira o serviço de encerramento."); return; }
     if (encerramento && tipoServicoAvulso !== "BAIXA") { setErro("Selecione Encerramento da empresa para o serviço avulso deste atendimento."); return; }
     if (!abertura && !pessoaFisica && !decisao) { setErro("Volte ao diagnóstico e confira se há regularização necessária antes de gerar valores."); return; }
     if (!abertura && avulso && !tipoServicoAvulso) { setErro("Escolha o tipo de serviço avulso."); return; }
@@ -46,10 +52,12 @@ export function ValoresDaProposta({ onboarding, anterior, escopo, regularizacao,
       justificativaRef.current?.focus();
       return;
     }
-    await onGerar({ ...valores, ...(!abertura && avulso ? { tipoServicoAvulso } : {}), justificativa: justificativa.trim(), escopoAvulso: escopo || snapshot?.servicosConferidos || "",
+    await onGerar({ modalidadeServico, ...(mensal && consultoria !== '' ? { consultoriaMensal: consultoria === 'true' } : {}), ...valores, ...(!abertura && avulso ? { tipoServicoAvulso } : {}), justificativa: justificativa.trim(), escopoAvulso: escopo || snapshot?.servicosConferidos || "",
       ...(snapshot?.taxasConfirmadas && valores.taxasCentavos === snapshot.taxasCentavos ? { taxasConfirmadas: true } : {}) });
   }
   return <section aria-label={correcao ? "Corrigir proposta pendente" : "Valores da proposta"}>
+    {!pessoaFisica && <label>Modalidade definida pela equipe<select value={modalidadeServico} onChange={e => setModalidadeServico(e.target.value)}><option value="">Selecione</option><option value="AVULSO">Serviço avulso</option>{encerramento && ['RECORRENTE', 'COMPARAR'].includes(modalidadeServico) && <option value={modalidadeServico} disabled>{modalidadeServico === 'RECORRENTE' ? 'Contabilidade mensal' : 'Comparar opções'} — revisar para encerramento</option>}{!encerramento && <><option value="RECORRENTE">Serviço e contabilidade mensal</option><option value="COMPARAR">Comparar opções</option></>}</select></label>}
+    {mensal && <label>Consultoria mensal — decisão da equipe<select value={consultoria} onChange={e => setConsultoria(e.target.value)}><option value="">A conferir conforme o catálogo</option><option value="true">Incluir consultoria</option><option value="false">Sem adicional de consultoria</option></select></label>}
     {correcao && <h4>Corrigir e gerar uma nova versão</h4>}
     <p>{anterior ? `Valores recuperados da proposta ${anterior.versao}. Confira os campos e registre a justificativa; a versão anterior será preservada.` : pessoaFisica ? "Confira os honorários e o escopo do serviço pessoal." : encerramento ? "Confira os honorários do encerramento e as taxas públicas conforme o escopo analisado." : "A mensalidade vem do catálogo aprovado. Personalizações respeitam o mínimo da faixa e dos adicionais contratados."}</p>
     {!abertura && !pessoaFisica && <p>{decisao ? decisao.necessaria ? encerramento ? "Diagnóstico: há regularização a orçar antes do encerramento da empresa." : "Diagnóstico: há regularização a orçar antes do início da contabilidade mensal." : "Diagnóstico: não há regularização anterior necessária." : "Falta conferir no diagnóstico se há regularização necessária."}</p>}

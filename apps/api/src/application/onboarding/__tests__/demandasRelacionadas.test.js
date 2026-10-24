@@ -22,7 +22,7 @@ test("Alex mantém serviço pessoal e contato é reutilizado na empresa, inclusi
   const resultados = await Promise.all([criarDemandaRelacionada("alex-irrf", pedido, user, t.db), criarDemandaRelacionada("alex-irrf", pedido, user, t.db)]);
   expect(resultados[0].id).toBe(resultados[1].id); expect(t.fichas).toHaveLength(2);
   expect(t.original).toEqual(antes);
-  expect(resultados[0].dados).toEqual({ responsavelNome: "Alex Exemplo", responsavelEmail: "alex@example.test", responsavelTelefone: "" });
+  expect(resultados[0].dados).toEqual({ responsavelNome: "Alex Exemplo", responsavelEmail: "alex@example.test", responsavelTelefone: "", cartoesPessoas: 2 });
   expect(resultados[0].cnpj).toBeNull(); expect(resultados[0].status).toBe("RASCUNHO");
   expect(resultados[0].eventos.create.dados.onboardingId).toBe("alex-irrf");
   const outra = await criarDemandaRelacionada("alex-irrf", { ...pedido, chaveSolicitacao: "pedido-empresa-0002" }, user, t.db);

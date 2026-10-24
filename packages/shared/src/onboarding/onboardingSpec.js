@@ -5,7 +5,7 @@ export const ONBOARDING_ORIGENS = Object.freeze([
   Object.freeze({
     chave: "ABERTURA",
     titulo: "Vai abrir a empresa",
-    subtitulo: "Ainda não existe CNPJ. O que se coleta aqui é a intenção: sócios, atividade e regime pretendido.",
+    subtitulo: "Ainda não existe CNPJ. Informe a atividade, as pessoas responsáveis e onde a empresa vai funcionar.",
     // Acento de CATEGORIA (não de estado), reusado no crachá do quadro para os dois se ensinarem.
     acento: "--accent-cyan",
   }),
@@ -70,13 +70,45 @@ const semSocios = (dados) => !["MEI", "EI"].includes(String(dados?.tipoEmpresa |
  *   obrigaria a duplicar a condição em todo campo dependente.
  * - `sensivel: true` = dado DECLARADO, ainda não conferido. Ganha o selo na ficha do escritório.
  */
+export const CAMPOS_INTERNOS = Object.freeze(['modalidadeServico', 'consultoriaMensal', 'regimePretendido', 'regimeAtual', 'contadorAnterior', 'contatoContadorAnterior', 'motivoTroca', 'ultimaCompetenciaEntregue', 'inicioCompetenciaAltan', 'temDebitos', 'debitosDeclarados', 'temParcelamento', 'paradaDesde', 'notasRecebidasMes']);
+export const empresaIndividual = dados => ['MEI', 'EI'].includes(dados?.tipoEmpresa);
+export const pessoaPreenchida = pessoa => pessoa && ['nome', 'cpf', 'participacao'].some(c => String(pessoa[c] ?? '').trim());
+export const COLUNAS_PESSOA = [{ campo: 'nome', rotulo: 'Nome', tipo: 'texto' }, { campo: 'cpf', rotulo: 'CPF', tipo: 'cpf' }];
+export const CAMPOS_ENDERECO = [{ campo: 'cep', rotulo: 'CEP' }, { campo: 'rua', rotulo: 'Logradouro' }, { campo: 'numero', rotulo: 'Número' }, { campo: 'complemento', rotulo: 'Complemento (opcional)' }, { campo: 'bairro', rotulo: 'Bairro' }, { campo: 'cidade', rotulo: 'Município' }, { campo: 'uf', rotulo: 'UF' }, { campo: 'inscricaoImobiliaria', rotulo: 'Inscrição imobiliária / número do cadastro do IPTU' }];
+export function formatarEnderecoAbertura(v) {
+  if (typeof v === 'string') return v;
+  if (!v || typeof v !== 'object') return '';
+  return [...CAMPOS_ENDERECO.map(c => c.campo === 'inscricaoImobiliaria' ? (v.iptuDesconhecido ? 'IPTU: não informado; conferir' : v[c.campo] ? `Cadastro IPTU: ${v[c.campo]}` : '') : c.campo === 'numero' && v.semNumero ? 'Sem número' : v[c.campo]), v.legado].filter(Boolean).join(' · ');
+}
+export function cpfValido(valor) {
+  const cpf = String(valor ?? '').replace(/[.\s-]/g, '');
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+  for (let n = 9; n <= 10; n++) {
+    const soma = [...cpf.slice(0, n)].reduce((total, digito, i) => total + Number(digito) * (n + 1 - i), 0);
+    const dv = (soma * 10) % 11 % 10;
+    if (dv !== Number(cpf[n])) return false;
+  }
+  return true;
+}
+export function errosConclusaoPessoas(dados = {}) {
+  const individual = empresaIndividual(dados), campo = individual ? 'titular' : 'socios';
+  const pessoas = (Array.isArray(dados[campo]) ? dados[campo] : []).filter(pessoaPreenchida);
+  const outro = individual ? 'socios' : 'titular';
+  if (Array.isArray(dados[outro]) && dados[outro].some(pessoaPreenchida)) return { [campo]: 'Confira a mudança entre sócios e titular. As pessoas anteriores foram preservadas; adeque a identificação antes de concluir.' };
+  if (!pessoas.length || individual && pessoas.length !== 1) return { [campo]: individual ? 'Identifique um titular com nome e CPF válidos.' : 'Identifique pelo menos um sócio com nome e CPF válidos.' };
+  const indice = pessoas.findIndex(p => typeof p.nome !== 'string' || !p.nome.trim() || p.nome.length > 200 || !cpfValido(p.cpf));
+  return indice < 0 ? {} : { [campo]: `Confira nome e CPF de ${individual ? 'Titular' : 'Sócio ' + (indice + 1)} ou remova o cartão incompleto.` };
+}
+
 export const ONBOARDING_CAMPOS = Object.freeze([
+
+  { passo: 'situacao', campo: 'enderecoAbertura', tipo: 'endereco', origens: ['ABERTURA'], rotulo: 'Endereço onde a empresa vai funcionar' },
   { passo: "identificacao", campo: "servicoSolicitado", tipo: "texto", origens: ["PESSOA_FISICA"], rotulo: "O que precisa resolver?", obrigatorio: () => true },
   { passo: "responsavel", campo: "responsavelCpf", tipo: "cpf", origens: ["PESSOA_FISICA"], rotulo: "CPF (opcional neste momento)" },
   { passo: "situacao", campo: "modalidadeServico", tipo: "escolha", rotulo: "Serviço desejado", opcoes: [{ valor: "AVULSO", rotulo: "Somente serviço avulso" }, { valor: "RECORRENTE", rotulo: "Serviço e contabilidade mensal" }, { valor: "COMPARAR", rotulo: "Quero comparar as opções" }] },
   { passo: "situacao", campo: "notasRecebidasMes", tipo: "inteiro", rotulo: "Notas recebidas e despesas por mês", ajuda: "Não inclui notas emitidas. Conte cada documento uma única vez; uma estimativa é suficiente." },
   { passo: "situacao", campo: "consultoriaMensal", tipo: "booleano", rotulo: "Deseja consultoria mensal?" },
-  { passo: "situacao", campo: "municipioAtendimento", tipo: "texto", rotulo: "Município e UF do estabelecimento" },
+  { passo: "situacao", campo: "municipioAtendimento", tipo: "texto", origens: ["TRANSFERENCIA", "INATIVA"], rotulo: "Município e UF do estabelecimento" },
   { passo: "situacao", campo: "enderecoPretendido", tipo: "texto", origens: ["ABERTURA"], rotulo: "Endereço pretendido para análise de viabilidade" },
 
   { passo: "situacao", campo: "notasEmitidasMes", tipo: "inteiro", rotulo: "Média de notas emitidas por mês", sensivel: true, ajuda: "Notas de vendas ou serviços emitidas pela empresa. Uma estimativa é suficiente." },
@@ -115,15 +147,14 @@ export const ONBOARDING_CAMPOS = Object.freeze([
   {
     passo: "identificacao", campo: "tipoEmpresa", tipo: "escolha",
     rotulo: "Tipo de empresa",
-    ajuda: "Tipo SOCIETÁRIO. Não é o regime tributário — esse é perguntado no passo Situação.",
+    ajuda: "Se não souber, a equipe ajuda a identificar.",
     opcoes: TIPOS_EMPRESA,
-    obrigatorio: () => true,
   },
   {
-    passo: "identificacao", campo: "atividadePretendida", tipo: "texto",
+    passo: "identificacao", campo: "atividadePretendida", tipo: "textarea",
     origens: ["ABERTURA"],
-    rotulo: "Atividade pretendida",
-    ajuda: "Em texto livre — o CNAE definitivo só existe depois do registro.",
+    rotulo: "Descreva a atividade que a empresa vai exercer",
+    ajuda: "Conte quais produtos vai vender ou quais serviços vai prestar.",
     obrigatorio: () => true,
   },
   {
@@ -134,12 +165,12 @@ export const ONBOARDING_CAMPOS = Object.freeze([
     passo: "identificacao", campo: "capitalSocialPretendido", tipo: "moeda",
     origens: ["ABERTURA"], rotulo: "Capital social pretendido",
   },
+  { passo: 'identificacao', campo: 'titular', tipo: 'lista', rotulo: 'Titular', visivel: dados => empresaIndividual(dados) || (dados.titular || []).some(pessoaPreenchida), colunas: COLUNAS_PESSOA },
   {
     passo: "identificacao", campo: "socios", tipo: "lista",
     rotulo: "Sócios",
-    // ⚠ Some no MEI e no EI: não existe quadro societário nos dois. E o que some precisa ser
-    // PODADO antes de salvar — ver `podarInvisiveis`.
-    visivel: semSocios,
+    // MEI/EI usam titular. Pessoas anteriores ficam visíveis até adequação explícita.
+    visivel: dados => semSocios(dados) || (dados.socios || []).some(pessoaPreenchida),
     colunas: [
       { campo: "nome", rotulo: "Nome", tipo: "texto" },
       { campo: "cpf", rotulo: "CPF", tipo: "cpf" },
@@ -238,9 +269,9 @@ export const ONBOARDING_CAMPOS = Object.freeze([
     rotulo: "Tem parcelamento em andamento", sensivel: true,
   },
   {
-    passo: "situacao", campo: "pendenciasDeclaradas", tipo: "texto",
+    passo: "situacao", campo: "pendenciasDeclaradas", tipo: "textarea",
     origens: ["TRANSFERENCIA", "INATIVA"],
-    rotulo: "Pendências que o cliente conhece", sensivel: true,
+    rotulo: "Deseja relatar alguma informação importante sobre a empresa?", sensivel: true,
   },
   {
     passo: "situacao", campo: "qtdFuncionarios", tipo: "inteiro",
@@ -248,8 +279,8 @@ export const ONBOARDING_CAMPOS = Object.freeze([
   },
   {
     passo: "situacao", campo: "temProLabore", tipo: "booleano",
-    rotulo: "Há pró-labore",
-    ajuda: "Define se o INSS entra nas obrigações da empresa quando ela for criada.",
+    rotulo: "O titular ou algum sócio recebe uma remuneração pelo trabalho na empresa?",
+    ajuda: "Essa remuneração é chamada de pró-labore. É diferente da distribuição de lucros.",
     sensivel: true,
   },
 
@@ -270,6 +301,7 @@ function valeParaOrigem(descritor, origem) {
 }
 
 function estaVisivel(descritor, dados) {
+  if (CAMPOS_INTERNOS.includes(descritor.campo) || ['municipioPretendido', 'enderecoPretendido'].includes(descritor.campo)) return false;
   if (typeof descritor.visivel !== "function") return true;
   return descritor.visivel(dados || {}) === true;
 }
@@ -284,7 +316,7 @@ const ORDEM_SITUACAO = ["modalidadeServico", "regimeAtual", "regimePretendido", 
 export function camposDoPasso(origem, passo, dados) {
   return ONBOARDING_CAMPOS.filter(
     (d) => d.passo === passo && valeParaOrigem(d, origem) && estaVisivel(d, dados)
-  ).sort((a, b) => passo === "situacao" ? ORDEM_SITUACAO.indexOf(a.campo) - ORDEM_SITUACAO.indexOf(b.campo) : Number(Boolean(b.consultaReceita)) - Number(Boolean(a.consultaReceita)));
+  ).map(d => d.campo === 'temProLabore' && origem === 'ABERTURA' ? { ...d, rotulo: 'O titular ou algum sócio pretende receber uma remuneração pelo trabalho na empresa?' } : d).sort((a, b) => passo === "situacao" ? ORDEM_SITUACAO.indexOf(a.campo) - ORDEM_SITUACAO.indexOf(b.campo) : Number(Boolean(b.consultaReceita)) - Number(Boolean(a.consultaReceita)));
 }
 
 /** Todos os descritores da origem, visíveis ou não — usado pela poda e pelo `rascunhoVazio`. */
@@ -312,7 +344,7 @@ const VAZIO_POR_TIPO = {
 
 /** O rascunho em branco daquela origem — a forma canônica de `Onboarding.dados`. */
 export function rascunhoVazio(origem) {
-  const out = {};
+  const out = origem === "PESSOA_FISICA" ? {} : { cartoesPessoas: 2 };
   for (const descritor of camposDaOrigem(origem)) {
     out[descritor.campo] = Object.prototype.hasOwnProperty.call(VAZIO_POR_TIPO, descritor.tipo)
       ? (descritor.tipo === "lista" ? [] : VAZIO_POR_TIPO[descritor.tipo])
@@ -322,27 +354,56 @@ export function rascunhoVazio(origem) {
 }
 
 /**
- * ⚠ ISTO NÃO É ENFEITE. Escolher LTDA, preencher dois sócios, voltar e trocar para MEI deixa os
- * sócios em `dados`: eles sobrevivem ao PATCH, e a ficha do escritório passa a mostrar quadro
- * societário de um MEI. Chamar ANTES de todo salvamento e de toda validação.
+ * Sócios/titular e dados internos sobrevivem à mudança de visibilidade. O conflito
+ * de pessoas é resolvido explicitamente antes da conclusão, sem apagar histórico.
  *
  * Poda também o que não pertence à origem — o rascunho pode carregar resíduo de um estado anterior
  * da tela.
  */
 export function podarInvisiveis(origem, dados) {
   const entrada = dados && typeof dados === "object" ? dados : {};
-  const permitidos = new Set(
-    camposDaOrigem(origem).filter((d) => estaVisivel(d, entrada)).map((d) => d.campo)
-  );
+  const permitidos = new Set(camposDaOrigem(origem).map(d => d.campo));
   const out = {};
   for (const [chave, valor] of Object.entries(entrada)) {
-    if (permitidos.has(chave)) out[chave] = valor;
+    if (permitidos.has(chave) || chave === 'cartoesPessoas') out[chave] = valor;
   }
   if (origem !== "PESSOA_FISICA") {
     const cadastro = normalizarCadastroCnpj(entrada.cadastroCnpj, out.cnpj);
     if (cadastro) out.cadastroCnpj = cadastro;
   }
+  if (out.cartoesPessoas !== undefined) out.cartoesPessoas = Number.isInteger(out.cartoesPessoas) ? Math.max(1, Math.min(100, out.cartoesPessoas)) : 1;
+  for (const campo of ['socios', 'titular']) if (Array.isArray(out[campo])) out[campo] = out[campo].filter(pessoaPreenchida);
   return out;
+}
+
+// Campos internos e históricos vêm do estado persistido, nunca do body público.
+export function combinarColetaPublica(origem, atual, entrada) {
+  const permitidos = new Set(camposDaOrigem(origem).filter(d => !CAMPOS_INTERNOS.includes(d.campo) && !['enderecoPretendido', 'municipioPretendido'].includes(d.campo)).map(d => d.campo));
+  return { ...atual, ...Object.fromEntries(Object.entries(entrada || {}).filter(([k]) => permitidos.has(k) || k === 'cartoesPessoas' || k === 'cadastroCnpj')) };
+}
+
+export function combinarFichaInterna(atual, entrada) {
+  const preservados = new Set([...CAMPOS_INTERNOS, 'enderecoPretendido', 'municipioPretendido']);
+  if (entrada?.tipoEmpresa !== undefined && entrada.tipoEmpresa !== atual?.tipoEmpresa) {
+    preservados.add('socios'); preservados.add('titular');
+  }
+  return { ...Object.fromEntries(Object.entries(atual || {}).filter(([k]) => preservados.has(k))), ...entrada };
+}
+
+export function camposDaColeta(origem, dados = {}) {
+  return passosVisiveis(origem).flatMap(p => camposDoPasso(origem, p.chave, dados));
+}
+
+// Metadados operacionais já persistidos não pertencem ao questionário e não podem
+// ser substituídos por chaves extras de um formulário. Só o estado do servidor os fornece.
+export function preservarDadosPersistidos(origem, atual, validado) {
+  const questionario = new Set([...camposDaOrigem(origem).map(d => d.campo), 'cadastroCnpj', 'cartoesPessoas']);
+  const dados = { ...Object.fromEntries(Object.entries(atual || {}).filter(([k]) => !questionario.has(k))), ...validado };
+  const documento = v => String(v || '').replace(/[.\s/-]/g, '').toUpperCase();
+  if (atual?.cadastroCnpj?.atorId && documento(atual.cnpj) && documento(atual.cnpj) === documento(validado.cnpj)) {
+    dados.cadastroCnpj = atual.cadastroCnpj;
+  }
+  return dados;
 }
 
 function estaPreenchido(valor, tipo) {
@@ -359,9 +420,11 @@ function estaPreenchido(valor, tipo) {
  */
 export function problemasDoPasso(origem, passo, dados) {
   const entrada = dados && typeof dados === "object" ? dados : {};
-  return camposDoPasso(origem, passo, entrada)
+  const problemas = camposDoPasso(origem, passo, entrada)
     .filter((d) => ehObrigatorio(d, entrada) && !estaPreenchido(entrada[d.campo], d.tipo))
     .map((d) => ({ campo: d.campo, rotulo: d.rotulo, motivo: "obrigatorio" }));
+  if (origem !== "PESSOA_FISICA" && passo === "identificacao") for (const [campo, rotulo] of Object.entries(errosConclusaoPessoas(entrada))) problemas.push({ campo, rotulo, motivo: "identificacao_pessoa" });
+  return problemas;
 }
 
 /** Todos os problemas da ficha, passo a passo — o que a tela de revisão lista. */

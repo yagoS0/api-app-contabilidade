@@ -45,6 +45,13 @@ import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
 const barreira = () => { let liberar; const promessa = new Promise(resolve => { liberar = resolve; }); return { promessa, liberar }; };
 
 describe("proteção do histórico no encerramento", () => {
+  test('conversão exige resolver pessoas incompatíveis sem descartá-las', async () => {
+    const dados = { tipoEmpresa: 'MEI', socios: [{ nome: 'Pessoa Sintética', cpf: '52998224725' }] };
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ dados }));
+    await expect(converter('onb-1')).rejects.toMatchObject({ code: 'pessoas_incompativeis' });
+    expect(prisma.onboarding.updateMany).not.toHaveBeenCalled();
+    expect(dados.socios).toHaveLength(1);
+  });
   test.each(VINCULOS_DESCARTE)("%s impede apagar rascunho e aparece na prévia", async (modelo, rotulo) => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
     prisma[modelo].findFirst.mockResolvedValue({ id: "vinculo" });
@@ -292,7 +299,7 @@ describe("atualizar — troca de origem zera `dados` no SERVIDOR", () => {
 
 describe("finalizar — idempotente", () => {
   test("promove a RECEBIDO, carimba enviadoEm e materializa a checklist com skipDuplicates", async () => {
-    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "RASCUNHO" }));
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "RASCUNHO", dados: { socios: [{ nome: 'Ana', cpf: '52998224725' }] } }));
     prisma.onboarding.update.mockResolvedValue(fichaSalva({ id: "onb-1", status: "RECEBIDO" }));
 
     await atualizar("onb-1", { versao: 0, finalizar: true });
@@ -505,7 +512,7 @@ describe("listar e descartar", () => {
 });
 
 describe("criar", () => {
-  test("nasce RASCUNHO, ESCRITORIO e com `dados` vazio", async () => {
+  test("nasce RASCUNHO, ESCRITORIO e com dois cartões sem pessoas persistidas", async () => {
     prisma.onboarding.create.mockResolvedValue({ id: "onb-novo" });
     await criar({ origem: "abertura", criadoPorId: "u1" });
     const { data } = prisma.onboarding.create.mock.calls[0][0];
@@ -513,7 +520,7 @@ describe("criar", () => {
       origem: "ABERTURA",
       status: "RASCUNHO",
       origemPreenchimento: "ESCRITORIO",
-      dados: {},
+      dados: { cartoesPessoas: 2 },
       criadoPorId: "u1",
     });
   });
@@ -522,6 +529,24 @@ describe("criar", () => {
     await expect(criar({ origem: "OUTRA" })).rejects.toBeInstanceOf(OnboardingError);
     expect(prisma.onboarding.create).not.toHaveBeenCalled();
   });
+});
+
+test('PATCH substitui coleta mas preserva internos, legado e pessoas na troca de tipo', async () => {
+  const pessoa = { nome: 'Pessoa Teste', cpf: '52998224725' };
+  prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ origem: 'ABERTURA', dados: {
+    tipoEmpresa: 'LTDA', socios: [pessoa], modalidadeServico: 'AVULSO', enderecoPretendido: 'Texto antigo', responsavelNome: 'Limpar',
+  } }));
+  prisma.onboarding.update.mockResolvedValue(fichaSalva());
+  await atualizar('onb-1', { versao: 0, dados: { tipoEmpresa: 'MEI' } });
+  const dados = prisma.onboarding.update.mock.calls[0][0].data.dados;
+  expect(dados).toMatchObject({ tipoEmpresa: 'MEI', socios: [pessoa], modalidadeServico: 'AVULSO', enderecoPretendido: 'Texto antigo' });
+  expect(dados.responsavelNome).toBeUndefined();
+});
+
+test('finalizar sem patch.dados valida pessoas persistidas antes da escrita', async () => {
+  prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: 'RASCUNHO', dados: {} }));
+  await expect(atualizar('onb-1', { versao: 0, finalizar: true })).rejects.toMatchObject({ code: 'dados_invalidos' });
+  expect(prisma.onboarding.update).not.toHaveBeenCalled();
 });
 
 
@@ -592,4 +617,18 @@ test('listagem de 1 e 100 fichas tem número constante de consultas, sem consult
     expect(prisma.propostaComercial.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { onboardingId: { in: fichas.map(f => f.id) } } }));
   }
   expect(contagens).toEqual([9, 9]);
+});
+
+describe('identificação mínima na conclusão empresarial', () => {
+  test.each([{}, { socios: [{}] }, { socios: [{ nome: 'Ana', cpf: '11111111111' }] }, { socios: [{ nome: 'Ana', cpf: '52998224725' }, { nome: 'Bia' }] }])('recusa sem escrita, inclusive sem patch.dados: %j', async dados => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ dados }));
+    await expect(atualizar('onb-1', { versao: 0, finalizar: true })).rejects.toMatchObject({ code: 'dados_invalidos', status: 400 });
+    expect(prisma.onboarding.update).not.toHaveBeenCalled();
+    expect(prisma.onboardingEtapa.createMany).not.toHaveBeenCalled();
+  });
+  test('rascunho incompleto preserva campos internos históricos ausentes no patch', async () => {
+    prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ dados: { regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15 } }));
+    await atualizar('onb-1', { versao: 0, dados: { socios: [{ nome: 'Ana' }] } });
+    expect(prisma.onboarding.update.mock.calls[0][0].data.dados).toMatchObject({ regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15, socios: [{ nome: 'Ana' }] });
+  });
 });

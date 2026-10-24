@@ -158,6 +158,19 @@ test("registra pela função antes de enviar a resposta livre fundamentada no re
   expect(a.db.eventos).toEqual(["dados-salvos", "saida-registrada", "transporte"]);
 });
 
+test('prompt do atendimento real oferece somente os campos atuais da coleta', async () => {
+  const a = ambiente();
+  a.deps.assistente.responder.mockImplementation(async ({ system, executar }) => {
+    const contexto = JSON.parse(system[0].text.split('Contexto: ')[1]);
+    for (const campo of ['modalidadeServico', 'consultoriaMensal', 'regimeAtual', 'regimePretendido', 'notasRecebidasMes', 'motivoTroca', 'temDebitos', 'temParcelamento']) {
+      expect(contexto.campos.some(c => c.campo === campo)).toBe(false);
+    }
+    await executar('registrar_atendimento', {});
+    return fim('A equipe vai conferir os dados registrados.');
+  });
+  expect(await a.rodar()).toMatchObject({ feito: true });
+});
+
 test("duas bolhas com o mesmo timestamp viram uma resposta e preservam os dois IDs de origem", async () => {
   const a = ambiente([entrada(), entrada("m2", "Meu nome é Carla")]);
   a.deps.assistente.responder.mockImplementation(async ({ messages, executar }) => {

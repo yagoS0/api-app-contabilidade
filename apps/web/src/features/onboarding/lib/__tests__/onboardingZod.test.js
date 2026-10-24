@@ -27,12 +27,12 @@ describe("buildZodFromSpec — derivado da spec, sem regra duplicada", () => {
     expect(r.erros).toEqual({});
   });
 
-  test("mesAno opcional em branco passa; preenchido errado falha", () => {
+  test("competência histórica não bloqueia coleta; validação interna continua disponível", () => {
     const base = { ...rascunhoVazio("TRANSFERENCIA"), regimeAtual: "SIMPLES" };
     expect(validarPasso("TRANSFERENCIA", { ...base, ultimaCompetenciaEntregue: "" }, "situacao").ok).toBe(true);
     const ruim = validarPasso("TRANSFERENCIA", { ...base, ultimaCompetenciaEntregue: "03/2026" }, "situacao");
-    expect(ruim.ok).toBe(false);
-    expect(ruim.erros.ultimaCompetenciaEntregue).toMatch(/AAAA-MM/);
+    expect(ruim.ok).toBe(true);
+    expect(ruim.erros.ultimaCompetenciaEntregue).toBeUndefined();
   });
 
   test("CNPJ exige 14 dígitos, com ou sem máscara", () => {
@@ -57,7 +57,7 @@ describe("buildZodFromSpec — derivado da spec, sem regra duplicada", () => {
   test("escolha só aceita valor da própria lista de opções", () => {
     const base = { ...rascunhoVazio("INATIVA"), paradaDesde: "2024-01", pretendeReativar: "REATIVAR" };
     expect(validarPasso("INATIVA", { ...base, regimeAtual: "SIMPLES" }, "situacao").ok).toBe(true);
-    expect(validarPasso("INATIVA", { ...base, regimeAtual: "PRESUMIDÍSSIMO" }, "situacao").ok).toBe(false);
+    expect(validarPasso("INATIVA", { ...base, pretendeReativar: "VALOR_INVALIDO" }, "situacao").ok).toBe(false);
   });
 
   // O campo escondido não entra no schema do passo: exigir o que a tela não mostra deixaria o
@@ -66,7 +66,7 @@ describe("buildZodFromSpec — derivado da spec, sem regra duplicada", () => {
     const escondido = buildZodFromSpec("TRANSFERENCIA", { temDebitos: false }, { passo: "situacao" });
     expect(Object.keys(escondido.shape)).not.toContain("debitosDeclarados");
     const visivel = buildZodFromSpec("TRANSFERENCIA", { temDebitos: true }, { passo: "situacao" });
-    expect(Object.keys(visivel.shape)).toContain("debitosDeclarados");
+    expect(Object.keys(visivel.shape)).not.toContain("debitosDeclarados");
   });
 
   test("sem `passo`, o schema cobre a origem inteira", () => {
@@ -88,8 +88,8 @@ describe("buildZodFromSpec — derivado da spec, sem regra duplicada", () => {
 
   test("booleano não aceita string vazia disfarçada de resposta", () => {
     const schema = buildZodFromSpec("TRANSFERENCIA", { temDebitos: null }, { passo: "situacao" });
-    expect(schema.shape.temDebitos.safeParse("").success).toBe(false);
-    expect(schema.shape.temDebitos.safeParse(null).success).toBe(true);
-    expect(schema.shape.temDebitos.safeParse(true).success).toBe(true);
+    expect(schema.shape.temProLabore.safeParse("").success).toBe(false);
+    expect(schema.shape.temProLabore.safeParse(null).success).toBe(true);
+    expect(schema.shape.temProLabore.safeParse(true).success).toBe(true);
   });
 });

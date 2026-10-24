@@ -245,6 +245,7 @@ export async function provisionarEmpresa({ body, actorUserId, log = null, conclu
           desoneracao: normalizedCompany.desoneracao,
           alteracaoNumero: normalizedCompany.alteracaoNumero,
           alteracaoData: normalizedCompany.alteracaoData,
+          ...(normalizedCompany.titular ? { titular: normalizedCompany.titular } : {}),
           quantidadeSocios: normalizedCompany.socios
             ? normalizedCompany.socios.filter((s) => !s.dataSaida).length
             : null,

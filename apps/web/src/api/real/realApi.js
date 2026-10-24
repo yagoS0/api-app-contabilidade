@@ -207,6 +207,10 @@ function buildCompanyPayload(input) {
         uf: String(input.enderecoUf || "").trim().toUpperCase(),
         cep: String(input.enderecoCep || "").replace(/\D+/g, ""),
         complemento: txt(input.enderecoComplemento),
+        ...(input.enderecoLegado ? { legado: input.enderecoLegado } : {}),
+          ...(input.inscricaoImobiliaria !== undefined ? { inscricaoImobiliaria: input.inscricaoImobiliaria } : {}),
+        ...(input.iptuDesconhecido !== undefined ? { iptuDesconhecido: input.iptuDesconhecido } : {}),
+        ...(input.semNumero !== undefined ? { semNumero: input.semNumero } : {}),
       },
       // ── Ficha de cadastro ──
       // A inscrição municipal já era ACEITA pela API, mas o form nunca mandava:
@@ -264,6 +268,7 @@ function buildCompanyPayload(input) {
       alteracaoData: omitIfEmpty(input.alteracaoData),
       // Só manda se o form editou: ausente = backend não mexe na lista.
       // Linhas sem nome/regime são descartadas aqui (o form deixa linha vazia enquanto digita).
+      ...(input.titular ? { titular: input.titular } : {}),
       ...(Array.isArray(input.socios)
         ? {
             socios: input.socios

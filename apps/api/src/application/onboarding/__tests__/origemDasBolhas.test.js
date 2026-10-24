@@ -26,7 +26,7 @@ test("origem de outra conversa impede gravação dos campos", async () => {
 test.each([["m2"], ["m1", "m1"], [], Array.from({ length: 13 }, (_, i) => `m${i}`)].map(ids => [ids]))("conjunto inválido não é aceito: %j", async mensagensIds => {
   await expect(registrarCampos({ ...args, mensagensIds, client: banco() })).rejects.toMatchObject({ code: "mensagem_fora_do_escopo" });
 });
-test("abertura avulsa não exige volumes da contabilidade mensal", () => {
+test("coleta de abertura preserva perguntas aprovadas sem endereço legado livre", () => {
   const r = proximaPergunta({ origem: "ABERTURA", dados: { responsavelNome: "Ana", atividadePretendida: "Consultório", municipioAtendimento: "Rio de Janeiro", modalidadeServico: "AVULSO" } });
-  expect(r.campo).toBe("enderecoPretendido");
+  expect(r.campo).toBe("qtdFuncionarios");
 });

@@ -70,7 +70,7 @@ test("abertura termina com nome, atividade e cidade, sem questionário de contra
   expect((await t.chamar("Olá, sou médica e quero abrir uma empresa")).resultado.texto).toContain("Como você se chama?");
   expect((await t.chamar("Me chamo Ana")).resultado.texto).toContain("Em qual cidade");
   const fim = await t.chamar("Niterói/RJ"); expect(fim.motivo).toBe("ENCAMINHADA");
-  expect(t.caso.triagem.preatendimento).toMatchObject({ nome: "Ana", atividade: "médica", cidade: "Niterói/RJ", estado: "ENCAMINHADO" });
+  expect(t.caso.triagem.preatendimento).toMatchObject({ nome: "Ana", atividade: "médica", cidade: "Niterói", estado: "ENCAMINHADO" });
   expect(fim.resultado.texto).not.toMatch(/funcionários|notas de compras|modalidade|CNPJ/); expect(fim.resultado.botoes).toBeUndefined();
   expect(t.conversa.portalClientId).toBe("empresa-atual"); expect(t.ficha.cnpj).toBeNull();
   expect((await t.chamar("Obrigado")).motivo).toBe("AUTOMACAO_INVALIDADA");
@@ -78,12 +78,12 @@ test("abertura termina com nome, atividade e cidade, sem questionário de contra
 test("mensagem completa não repete perguntas; replay é idempotente", async () => {
   const t = banco(); const texto = "Quero abrir uma empresa; me chamo Ana; atividade: Medicina; cidade: Rio/RJ; só abertura";
   const fim = await t.chamar(texto, { id: "unico" }); await t.chamar(texto, { id: "unico" });
-  expect(fim.motivo).toBe("ENCAMINHADA"); expect(fim.resultado.texto).not.toContain("?"); expect(t.ficha.dados.modalidadeServico).toBe("AVULSO");
+  expect(fim.motivo).toBe("ENCAMINHADA"); expect(fim.resultado.texto).not.toContain("?"); expect(t.ficha.dados.modalidadeServico).toBeUndefined(); expect(t.ficha.dados.declaracoesCliente).toEqual(expect.arrayContaining([expect.objectContaining({ campos: expect.arrayContaining([{ campo: "modalidadeServico", acao: "set", valor: "AVULSO" }]) })]));
   expect(t.db.onboarding.updateMany).toHaveBeenCalledTimes(1); expect(t.db.coletaComercialWhatsapp.create).toHaveBeenCalledTimes(1);
 });
 test.each(["Preço", "O preço", "valor", "caro", "atendimento", "O preço está muito alto", "Não me respondem", "Meu contador só manda guias"])("transferência encaminha o motivo sem exigir CNPJ: %s", async motivo => {
   const t = banco(); t.ficha.origem = "TRANSFERENCIA";
-  expect((await t.chamar("Trocar de contador")).resultado.texto).toContain("melhorar");
+  expect((await t.chamar("Trocar de contador")).resultado.texto).toContain("Deseja relatar alguma informação importante");
   expect((await t.chamar(motivo)).motivo).toBe("ENCAMINHADA"); expect(t.caso.triagem.preatendimento.necessidade).toBe(motivo);
   expect(t.ficha.dados.modalidadeServico).toBeUndefined(); expect(t.ficha.cnpj).toBeNull();
 });

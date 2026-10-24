@@ -24,9 +24,9 @@ test('bloqueia quantidade negativa e salva números normalizados sem perder zero
   fireEvent.change(screen.getByLabelText('Quantidade de funcionários'), { target: { value: '0' } });
   fireEvent.change(screen.getByLabelText('Média de notas emitidas por mês'), { target: { value: '25' } });
   fireEvent.change(screen.getByLabelText('Faturamento mensal aproximado (R$)'), { target: { value: '10.500,50' } });
-  fireEvent.change(screen.getByLabelText('Como responder: notas recebidas e despesas por mês'), { target: { value: 'NAO_SEI' } });
+  fireEvent.change(screen.getByLabelText('Como responder: o titular ou algum sócio recebe uma remuneração pelo trabalho na empresa?'), { target: { value: 'NAO_SEI' } });
   fireEvent.click(screen.getByText('Salvar e continuar'));
-  await waitFor(() => expect(api.salvarFormularioOnboarding).toHaveBeenCalledWith('teste', expect.objectContaining({ dados: { qtdFuncionarios: 0, notasEmitidasMes: 25, faturamentoMensal: 10500.5, notasRecebidasMes: 'NAO_SEI' } })));
+  await waitFor(() => expect(api.salvarFormularioOnboarding).toHaveBeenCalledWith('teste', expect.objectContaining({ dados: { qtdFuncionarios: 0, notasEmitidasMes: 25, faturamentoMensal: 10500.5, temProLabore: 'NAO_SEI' } })));
   expect(await screen.findByText('Não sei / preciso confirmar')).toBeInTheDocument();
 });
 
@@ -89,7 +89,7 @@ test('compara valores humanos fora dos botões e preserva a resposta escolhida',
 });
 
 test('resposta perdida no envio final confirma recebimento sem reenviar', async () => {
-  const { api } = iniciar({}, 'revisao');
+  const { api } = iniciar({ socios: [{ nome: 'Ana Teste', cpf: '52998224725' }] }, 'revisao');
   fireEvent.click(await screen.findByRole('checkbox'));
   api.salvarFormularioOnboarding.mockRejectedValueOnce(Error('Falha de rede'));
   fireEvent.click(screen.getByText('Enviar cadastro ao escritório'));

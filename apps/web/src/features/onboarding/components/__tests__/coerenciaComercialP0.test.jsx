@@ -65,7 +65,7 @@ test('mock real mantém a mesma jornada na lista, ficha e conversa após salvar 
   expect(criada.comercial.titulo).toBe('Entender a abertura');
   await conferirSuperficies('Entender a abertura');
   const { onboarding: salva } = await api.salvarOnboarding(id, {
-    finalizar: true, dados: { responsavelNome: `Pessoa fictícia ${id}` },
+    finalizar: true, dados: { responsavelNome: `Pessoa fictícia ${id}`, socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] },
   });
   expect(salva.comercial).toEqual(criada.comercial);
   await api.salvarOnboardingComercial(id, { faseComercial: 'CONTRATADO', proposta: { texto: 'Anotação legada sem aceite' } });

@@ -1,3 +1,4 @@
+import { CAMPOS_ENDERECO, empresaIndividual, pessoaPreenchida } from '@contabilidade/shared/onboarding';
 import { Button } from "../../../components/ui/Button";
 import { permiteRespostaEspecial, respostaEspecial } from "@contabilidade/shared/onboarding-dados";
 // Um campo do formulário, renderizado A PARTIR DO DESCRITOR.
@@ -49,8 +50,12 @@ function Rotulo({ descritor, dados, htmlFor, mostrarSelo, origemPreenchimento })
   );
 }
 
-function ListaDeLinhas({ descritor, valor, onChange, id }) {
-  const linhas = Array.isArray(valor) ? valor : [];
+function ListaDeLinhas({ descritor, valor, onChange, onAdequarPessoas, id, dados, acessibilidade }) {
+  const titular = descritor.campo === 'titular';
+  const conflito = descritor.campo === 'socios' && empresaIndividual(dados) || titular && !empresaIndividual(dados);
+  const preenchidas = Array.isArray(valor) ? valor : [];
+  const quantidade = titular ? 1 : Math.max(1, Math.min(100, Number(dados?.cartoesPessoas) || 1));
+  const linhas = Array.from({ length: Math.max(preenchidas.length, quantidade) }, (_, i) => preenchidas[i] || {});
   const colunas = descritor.colunas || [];
 
   function alterar(indice, campo, novo) {
@@ -59,7 +64,9 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
   }
 
   return (
-    <div id={id} style={{ display: "grid", gap: "var(--space-2)" }}>
+    <div id={id} role="group" {...acessibilidade} style={{ display: "grid", gap: "var(--space-2)" }}>
+      {conflito && <p role="alert">O tipo de empresa mudou. Transfira a pessoa para o bloco adequado ou volte ao tipo anterior. Os dados permanecem preservados até sua escolha.</p>}
+      {conflito && !titular && (dados.titular || []).some(pessoaPreenchida) && <p role="status">Já há um titular definido. Confira as pessoas restantes e remova somente as que não devem constar nesta ficha, ou volte ao tipo anterior para manter a sociedade.</p>}
       {linhas.length === 0 && (
         <span style={{ color: "var(--text-faint)", fontSize: 13 }}>Nenhum item.</span>
       )}
@@ -74,11 +81,13 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
             alignItems: "end",
           }}
         >
+          <strong style={{ gridColumn: "1 / -1" }}>{titular ? "Titular" : `Sócio ${indice + 1}`}</strong>
+          {conflito && onAdequarPessoas && <Button type="button" variant="secondary" disabled={!pessoaPreenchida(linha) || !titular && (dados.titular || []).some(pessoaPreenchida)} onClick={() => onAdequarPessoas(descritor.campo, indice)}>{titular ? 'Usar como sócio' : 'Usar como titular'}</Button>}
           {colunas.map((coluna) => (
             <label key={coluna.campo} className="onboarding-field-row__column" style={{ minWidth: 0, display: "grid", gap: 4 }}>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{coluna.rotulo}</span>
               <input
-                style={INPUT_STYLE}
+                {...acessibilidade} style={INPUT_STYLE}
                 placeholder={coluna.rotulo}
                 aria-label={`${descritor.rotulo} — ${coluna.rotulo} (linha ${indice + 1})`}
                 value={linha?.[coluna.campo] ?? ""}
@@ -88,23 +97,39 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
           ))}
           <Button variant="secondary" size="sm"
             type="button"
+            disabled={linhas.length === 1 && !conflito}
             onClick={() => onChange(linhas.filter((_, i) => i !== indice))}
-            aria-label={`Remover linha ${indice + 1}`}
+            aria-label={`Remover ${titular ? "titular" : "sócio"} ${indice + 1}`}
             className="onboarding-field-row__remove"
           >
-            remover
+            {titular ? "Remover titular" : "Remover sócio"}
           </Button>
         </div>
       ))}
-      <Button variant="secondary" size="sm"
+      {!titular && <Button variant="secondary"
         type="button"
         onClick={() => onChange([...linhas, {}])}
         className="onboarding-field-row__add"
       >
-        + adicionar
-      </Button>
+        + Adicionar sócio
+      </Button>}
     </div>
   );
+}
+
+function EnderecoAbertura({ valor, onChange, id, legado, acessibilidade }) {
+  const v = valor && typeof valor === 'object' ? valor : {};
+  const alterar = (campo, novo) => onChange({ ...v, [campo]: novo });
+  return <div id={id} role="group" {...acessibilidade} style={{ display: 'grid', gap: 'var(--space-3)', minWidth: 0 }}>
+    {legado && <p>Endereço informado anteriormente: {legado}</p>}
+    {CAMPOS_ENDERECO.map(c => <div key={c.campo} style={{ minWidth: 0 }}>
+      <label htmlFor={`${id}-${c.campo}`}>{c.rotulo}</label>
+      {c.campo === 'uf' ? <select aria-invalid={acessibilidade?.['aria-invalid']} aria-describedby={acessibilidade?.['aria-describedby']} id={`${id}-${c.campo}`} style={INPUT_STYLE} value={v.uf || ''} onChange={e => alterar('uf', e.target.value)}><option value="">Selecione</option>{'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ').map(uf => <option key={uf}>{uf}</option>)}</select>
+      : <input aria-invalid={acessibilidade?.['aria-invalid']} id={`${id}-${c.campo}`} style={INPUT_STYLE} value={v[c.campo] || ''} aria-describedby={[acessibilidade?.['aria-describedby'], c.campo === 'inscricaoImobiliaria' && `${id}-iptu-ajuda`].filter(Boolean).join(' ') || undefined} disabled={c.campo === 'numero' && v.semNumero || c.campo === 'inscricaoImobiliaria' && v.iptuDesconhecido} onChange={e => alterar(c.campo, e.target.value)} />}
+      {c.campo === 'numero' && <label style={{ display: 'flex', alignItems: 'center', minHeight: 44, gap: 'var(--space-2)' }}><input type="checkbox" checked={v.semNumero === true} onChange={e => alterar('semNumero', e.target.checked)} /> Sem número</label>}
+      {c.campo === 'inscricaoImobiliaria' && <><p id={`${id}-iptu-ajuda`} className="onboarding-help">Informe o número de identificação do imóvel que aparece no carnê ou cadastro do IPTU. Não é o valor do imposto.</p><label style={{ display: 'flex', alignItems: 'center', minHeight: 44, gap: 'var(--space-2)' }}><input type="checkbox" checked={v.iptuDesconhecido === true} onChange={e => alterar('iptuDesconhecido', e.target.checked)} /> Não tenho essa informação agora</label></>}
+    </div>)}
+  </div>;
 }
 
 export function CampoOnboarding({
@@ -113,6 +138,7 @@ export function CampoOnboarding({
   valor,
   erro,
   onChange,
+  onAdequarPessoas,
   origemPreenchimento,
   mostrarSelo = false,
   acaoExtra = null,
@@ -154,8 +180,14 @@ export function CampoOnboarding({
         </select>
       );
       break;
+    case "textarea":
+      controle = <textarea {...comum} rows={4} value={valor ?? ''} onChange={e => onChange(e.target.value)} />;
+      break;
+    case "endereco":
+      controle = <EnderecoAbertura valor={valor} onChange={onChange} id={id} legado={dados?.enderecoPretendido} acessibilidade={{ 'aria-label': descritor.rotulo, 'aria-invalid': comum['aria-invalid'], 'aria-describedby': comum['aria-describedby'] }} />;
+      break;
     case "lista":
-      controle = <ListaDeLinhas descritor={descritor} valor={valor} onChange={onChange} id={id} />;
+      controle = <ListaDeLinhas descritor={descritor} dados={dados} valor={valor} onChange={onChange} onAdequarPessoas={onAdequarPessoas} id={id} acessibilidade={{ 'aria-label': descritor.rotulo, 'aria-invalid': comum['aria-invalid'], 'aria-describedby': comum['aria-describedby'] }} />;
       break;
     case "mesAno":
       controle = (

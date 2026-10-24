@@ -1,7 +1,7 @@
 import { AssistenteClient } from './AssistenteClient.js';
 import { montarPromptComercial, respostaComercialUtilizavel } from './promptComercial.js';
 import { identificarIntencaoComercial, prepararPreatendimento, mensagemDeValor } from '../onboarding/preatendimentoComercial.js';
-import { camposDaOrigem } from '@contabilidade/shared/onboarding';
+import { camposDaColeta as camposDaOrigem } from '@contabilidade/shared/onboarding';
 import { validarDadosOnboarding } from '@contabilidade/shared/onboarding-dados';
 import { IA_MODELO } from '../../config.js';
 
@@ -22,7 +22,7 @@ export async function responderTesteWhatsapp({historico,texto,contexto={},mensag
   }
   let registrado=false,chamarContador=false;
   const origem=['ABERTURA','TRANSFERENCIA','INATIVA'].includes(novo.intencao)?novo.intencao:'ABERTURA';
-  const campos=camposDaOrigem(origem).map(d=>({campo:d.campo,tipo:d.tipo,opcoes:d.opcoes}));
+  const campos=camposDaOrigem(origem, novo.dados || {}).map(d=>({campo:d.campo,tipo:d.tipo,opcoes:d.opcoes}));
   const system=montarPromptComercial({ficha:{origem,dados:novo.dados||{}},campos,orientacoes:[]});
   system.push({type:'text',text:'AMBIENTE DE TESTE ISOLADO: somente declarações desta sessão são conhecidas. Não existem empresa, guia, contrato, assinatura, pagamento, documento ou equipe reais acessíveis. A ferramenta grava apenas o roteiro fictício. Não afirme executar operações reais. A passagem ao contador é apenas local. Não solicite senhas ou documentos reais.'});
   const messages=[...historico,{role:'user',content:texto}];

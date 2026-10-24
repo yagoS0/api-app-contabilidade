@@ -111,7 +111,7 @@ function FluxoDaFicha({ api, onboardingId, conversaId: conversaInformada, janela
   const contratosAtuais = estado.contratos.filter(c => c.propostaId === jornada.proposta?.id);
   const etapa = jornada.passos.find(p => p.id === passo);
   const trabalho = tipo => estado.trabalhos?.find(t => t.tipo === tipo && t.cnpj === o.cnpj);
-  const camposOrcamento = <CamposDaEtapa sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelEmail", "servicoSolicitado"] : ["responsavelNome", "responsavelEmail", "modalidadeServico", jornada.abertura ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} />;
+  const camposOrcamento = <CamposDaEtapa interno sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelEmail", "servicoSolicitado"] : ["responsavelNome", "responsavelEmail", "modalidadeServico", jornada.abertura ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "consultoriaMensal"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} />;
   const formulario = <MensagemDoPasso api={api} conversaId={conversaId} disabled={ocupado} onEnviado={atualizarAposAcao} rotulo={"Preparar formulário de " + jornada.nome.toLowerCase()} preparar={async () => {
     const r = await api.criarLinkOnboarding(onboardingId, { diasValidade: 7 });
     if (!r.token) throw new Error("Não foi possível confirmar o link.");
@@ -137,7 +137,7 @@ function FluxoDaFicha({ api, onboardingId, conversaId: conversaInformada, janela
       const passo = passoDaSecao;
       return <fieldset key={passo} hidden={!selecionado} disabled={!selecionado || ocupado || Boolean(erroLeitura)} className="lead-actions">
       <div className="lead-stage-action">
-      {passo === "cadastro" && <><details><summary>Enviar formulário</summary>{formulario}<p>Gerar outro formulário substitui o link anterior. O envio do link não conclui a coleta.</p></details><CamposDaEtapa sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelCpf", "responsavelEmail", "responsavelTelefone", "servicoSolicitado"] : ["responsavelNome", "atividadePretendida", "municipioAtendimento", "enderecoPretendido"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} /></>}
+      {passo === "cadastro" && <><details><summary>Enviar formulário</summary>{formulario}<p>Gerar outro formulário substitui o link anterior. O envio do link não conclui a coleta.</p></details><CamposDaEtapa sempreAberto onboarding={o} campos={pessoaFisica ? ["responsavelNome", "responsavelCpf", "responsavelEmail", "responsavelTelefone", "servicoSolicitado"] : ["responsavelNome", "atividadePretendida", "enderecoAbertura"]} ocupado={ocupado} onSalvar={b => acao("/campos", b)} /></>}
       {passo === "publica" && <CadastroComercialSimples key={onboardingId} api={api} onboarding={o} ocupado={ocupado} acao={acao} onAtualizar={atualizarAposAcao} />}
       {passo === "autorizacao" && <ProcuracaoSimples key={onboardingId + o.cnpj} api={api} recursos={recursos} estado={estado} conversaId={conversaId} ocupado={ocupado} carregar={atualizarAposAcao} acao={acao} trabalho={trabalho("PROCURACAO")} />}
       {passo === "fiscal" && <SituacaoFiscalSimples estado={estado} ocupado={ocupado} acao={acao} trabalho={trabalho("SITFIS")} />}

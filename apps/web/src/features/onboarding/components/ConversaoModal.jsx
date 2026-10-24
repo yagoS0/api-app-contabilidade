@@ -15,6 +15,7 @@
 //     reescrito — duas políticas de senha divergiriam na primeira mudança de regra).
 
 import { cloneElement, useEffect, useId, useMemo, useRef, useState } from "react";
+import { empresaIndividual, pessoaPreenchida } from '@contabilidade/shared/onboarding';
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { passwordChecklist } from "../../../lib/schemas/passwordPolicy";
@@ -87,9 +88,11 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
   const senhaExigida = !emailJaExiste;
 
   const camposEndereco = ["rua", "numero", "bairro", "cidade", "uf", "cep"];
-  const enderecoCompleto = camposEndereco.every((c) => String(form.endereco[c] || "").trim());
+  const enderecoCompleto = camposEndereco.every((c) => c === 'numero' && form.endereco.semNumero || String(form.endereco[c] || "").trim());
+  const pessoasIncompativeis = onboarding.dados?.[empresaIndividual(onboarding.dados) ? 'socios' : 'titular'];
+  const conflitoPessoas = Array.isArray(pessoasIncompativeis) && pessoasIncompativeis.some(pessoaPreenchida);
   const podeConverter =
-    autorizacaoComercial &&
+    !conflitoPessoas && autorizacaoComercial &&
     soDigitosCnpj(form.cnpj).length === 14 &&
     String(form.razaoSocial).trim() &&
     REGIMES_ACEITOS.some((r) => r.valor === form.regimeTributario) &&
@@ -174,7 +177,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           {externa && !excecaoAplicavel && <p role="status">A contratação mudou e a exceção não está mais disponível. Feche este modal e confira a contratação atual antes de continuar.</p>}
           {excecaoAplicavel && <fieldset disabled={enviando}>
             <legend>Cliente já contratado externamente</legend>
-            <label><input type="checkbox" checked={externaAtual} onChange={e => { setExterna(e.target.checked); setRevisaoExterna({ id: onboarding.id, versao: onboarding.versao }); setForm(atual => ({ ...atual, cadastroConferido: false })); }} /> Registrar contratação externa ao adicionar à carteira</label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}><input type="checkbox" checked={externaAtual} onChange={e => { setExterna(e.target.checked); setRevisaoExterna({ id: onboarding.id, versao: onboarding.versao }); setForm(atual => ({ ...atual, cadastroConferido: false })); }} /> Registrar contratação externa ao adicionar à carteira</label>
             {externa && !externaAtual && <p role="status">A ficha mudou. Confira a versão atual e confirme novamente a contratação externa. Seus textos foram preservados.</p>}
             {externa && <>
               <Campo rotulo="Justificativa da exceção" obrigatorio><textarea style={INPUT} rows={3} maxLength={2000} value={justificativa} onChange={e => setJustificativa(e.target.value)} /></Campo>
@@ -191,6 +194,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           a minuta do contrato serão arquivados nos documentos da empresa.
         </p>
 
+        {conflitoPessoas && <p role="alert">Confira os sócios e o titular na ficha antes de converter. As pessoas registradas foram preservadas.</p>}
         {conflito && (
           <div ref={erroRef} role="alert" aria-atomic="true" tabIndex={-1} style={avisoStyle("var(--state-warn)")}>
             <strong style={{ color: "var(--state-warn)" }}>Este CNPJ já está na carteira.</strong>
@@ -272,29 +276,31 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
               <label key={campo} style={{ fontSize: 13 }}>{rotulo}<input style={INPUT} type={campo === "dataAbertura" ? "date" : "text"} value={form[campo]} onChange={e => set(campo, e.target.value)} /></label>
             ))}
           </div>
-          <p style={{ fontSize: 12 }}>Sócios: confira a composição registrada e as participações.</p>
+          <p style={{ fontSize: 12 }}>{form.titular ? "Titular: confira a identificação." : "Sócios: confira a composição registrada e as participações."}</p>
+            {form.titular && <div>{["nome", "cpf"].map(campo => <label key={campo}>{campo === "nome" ? "Nome do titular" : "CPF do titular"}<input style={INPUT} value={form.titular[campo] || ""} onChange={e => set("titular", { ...form.titular, [campo]: e.target.value })} /></label>)}</div>}
           {form.socios.map((socio, i) => <div key={i} className="onboarding-conversion-partner">
             {[["nome", "Nome"], ["cpf", "CPF"], ["participacao", "Participação (%)"]].map(([campo, rotulo]) => <label key={campo} style={{ flex: "1 1 120px", fontSize: 12 }}>{rotulo}<input aria-label={`${rotulo} do sócio ${i + 1}`} style={INPUT} value={socio[campo]} onChange={e => set("socios", form.socios.map((s, j) => j === i ? { ...s, [campo]: e.target.value } : s))} /></label>)}
             <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", form.socios.filter((_, j) => j !== i))}>Remover sócio {i + 1}</Button>
           </div>)}
-          <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", [...form.socios, { nome: "", cpf: "", participacao: "" }])}>Adicionar sócio</Button>
+          {!form.titular && <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", [...form.socios, { nome: "", cpf: "", participacao: "" }])}>Adicionar sócio</Button>}
         </fieldset>
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "var(--space-3)", marginBottom: "var(--space-3)" }}>
           <legend style={{ fontSize: 12, color: "var(--text-muted)", padding: "0 6px" }}>
-            Endereço (todos os campos são exigidos pelo cadastro)
+            Endereço definitivo (campos obrigatórios indicados com asterisco)
           </legend>
           <div className="onboarding-conversion-grid">
             {[
               ["rua", "Rua"], ["numero", "Número"], ["complemento", "Complemento"],
-              ["bairro", "Bairro"], ["cidade", "Cidade"], ["uf", "UF"], ["cep", "CEP"],
+              ["bairro", "Bairro"], ["cidade", "Cidade"], ["uf", "UF"], ["cep", "CEP"], ["inscricaoImobiliaria", "Inscrição imobiliária / cadastro do IPTU"],
             ].map(([campo, rotulo]) => (
               <label key={campo} style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 {rotulo}
-                {campo !== "complemento" && <span aria-hidden="true" style={{ color: "var(--state-warn)" }}> *</span>}
+                {!["complemento", "inscricaoImobiliaria"].includes(campo) && <span aria-hidden="true" style={{ color: "var(--state-warn)" }}> *</span>}
                 <input
                   style={{ ...INPUT, marginTop: 2 }}
-                  value={form.endereco[campo]}
+                  value={form.endereco[campo] || ''}
+                  disabled={campo === 'numero' && form.endereco.semNumero || campo === 'inscricaoImobiliaria' && form.endereco.iptuDesconhecido}
                   onChange={(e) => setEndereco(campo, e.target.value)}
                 />
               </label>
@@ -302,6 +308,11 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           </div>
         </fieldset>
 
+        {form.endereco.legado && <p>Endereço informado anteriormente: {form.endereco.legado}</p>}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}><input type="checkbox" checked={form.endereco.semNumero === true} onChange={e => setEndereco('semNumero', e.target.checked)} /> Sem número</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}><input type="checkbox" checked={form.endereco.iptuDesconhecido === true} onChange={e => setEndereco('iptuDesconhecido', e.target.checked)} /> IPTU não informado — conferir</label>
+        </div>
         {/* ── 3) Acesso do cliente ─────────────────────────────────────── */}
         <Campo rotulo="E-mail do dono (acesso do cliente)" obrigatorio>
           <input style={INPUT} value={form.ownerEmail} onChange={(e) => set("ownerEmail", e.target.value)} />
@@ -315,7 +326,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         <Campo rotulo="E-mail para guias">
           <input aria-label="E-mail para guias" type="email" style={INPUT} value={form.guideNotificationEmail} onChange={e => set("guideNotificationEmail", e.target.value)} />
         </Campo>
-        <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.whatsappAutorizado} onChange={e => set("whatsappAutorizado", e.target.checked)} />Responsável autorizou receber comunicações pelo WhatsApp (conferido pelo escritório).</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.whatsappAutorizado} onChange={e => set("whatsappAutorizado", e.target.checked)} />Responsável autorizou receber comunicações pelo WhatsApp (conferido pelo escritório).</label>
 
         {emailJaExiste ? (
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-3)" }}>
@@ -352,7 +363,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           </div>
         </fieldset>
 
-        <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>
       </div>
     </Modal>
   );

@@ -17,7 +17,7 @@ test("erro na consulta comercial é explícito e oferece recarga",async()=>{
 });
 test("formulário público salva progressivamente e consome somente no envio confirmado",async()=>{
  window.history.replaceState(null,"","/onboarding/publico#token=abc");
- const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa"},ultimoPasso:"identificacao",versao:0};
+ const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa",socios:[{nome:"Ana Teste",cpf:"52998224725"}]},ultimoPasso:"identificacao",versao:0};
  const api={consultarFormularioOnboarding:jest.fn().mockResolvedValue({onboarding}),salvarFormularioOnboarding:jest.fn().mockImplementation(async(_t,p)=>({onboarding:{...onboarding,...p,versao:p.versao+1}}))};
  render(<FormularioPublico api={api}/>);await screen.findByText("Salvar e continuar");
  fireEvent.click(screen.getByText("Salvar e continuar"));await waitFor(()=>expect(api.salvarFormularioOnboarding).toHaveBeenCalledWith("abc",expect.objectContaining({finalizar:false,versao:0,ultimoPasso:"responsavel"})));
@@ -34,7 +34,7 @@ test("link ausente não consulta o servidor",async()=>{
 
 test("envio final exige conferência explícita e limpa token do endereço",async()=>{
  window.history.replaceState(null,"","/onboarding/publico#token=final");
- const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa"},ultimoPasso:"revisao",versao:3};
+ const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa",socios:[{nome:"Ana Teste",cpf:"52998224725"}]},ultimoPasso:"revisao",versao:3};
  const api={consultarFormularioOnboarding:jest.fn().mockResolvedValue({onboarding}),salvarFormularioOnboarding:jest.fn().mockResolvedValue({ok:true})};
  render(<FormularioPublico api={api}/>);
  const enviar=await screen.findByText("Enviar cadastro ao escritório");expect(enviar).toBeDisabled();
@@ -44,7 +44,7 @@ test("envio final exige conferência explícita e limpa token do endereço",asyn
 
 test("aviso ao sair só aparece quando há mudanças ainda não salvas",async()=>{
  window.history.replaceState(null,"","/onboarding/publico#token=dirty");
- const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa"},ultimoPasso:"identificacao",versao:0};
+ const onboarding={origem:"ABERTURA",dados:{razaoSocial:"Empresa",socios:[{nome:"Ana Teste",cpf:"52998224725"}]},ultimoPasso:"identificacao",versao:0};
  const api={consultarFormularioOnboarding:jest.fn().mockResolvedValue({onboarding}),salvarFormularioOnboarding:jest.fn().mockImplementation(async(_t,p)=>({onboarding:{...onboarding,...p,versao:p.versao+1}}))};
  const r=render(<FormularioPublico api={api}/>);const campo=await screen.findByLabelText(/Nome pretendido/);
  const sair=()=>{const e=new Event("beforeunload",{cancelable:true});window.dispatchEvent(e);return e.defaultPrevented;};

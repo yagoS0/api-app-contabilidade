@@ -1,3 +1,4 @@
+import { empresaIndividual, pessoaPreenchida, cpfValido } from '@contabilidade/shared/onboarding';
 import { useEffect, useRef, useState } from "react";
 import { cnpjTemDvValido } from "@contabilidade/shared/documentos-fiscais";
 import { consultarCnpj, soDigitosCnpj, mapearParaFormularioEmpresa } from "../lib/brasilApi";
@@ -27,8 +28,13 @@ export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCamp
     setCarregando(false);
     setConsulta(resultado);
     if (!resultado.ok) return;
-    const empresa = { ...resultado.empresa, ...mapearParaFormularioEmpresa(resultado.bruto) };
+    const empresa = { ...resultado.empresa, ...mapearParaFormularioEmpresa(resultado.bruto, { incluirSocios: true }) };
     agora.alterarCampo("cadastroCnpj", { cnpj, fonte: resultado.fonte || "CONSULTA_CADASTRAL", consultadoEm: resultado.consultadoEm || new Date().toISOString(), empresa, situacao: resultado.situacao });
+    const campoPessoas = empresaIndividual(agora.dados) ? 'titular' : 'socios';
+    if (agora.dados.tipoEmpresa === inicio.dados.tipoEmpresa && JSON.stringify(agora.dados[campoPessoas]) === JSON.stringify(inicio.dados[campoPessoas]) && !(agora.dados[campoPessoas] || []).some(pessoaPreenchida) && empresa.socios?.length) {
+      const unicas = [...new Map(empresa.socios.map(p => [cpfValido(p.cpf) ? String(p.cpf).replace(/\D/g, '') : `${p.nome || ''}|${p.cpf || ''}`, p])).values()];
+      if (campoPessoas === 'socios' || unicas.length === 1) agora.alterarCampo(campoPessoas, unicas);
+    }
     for (const campo of ["razaoSocial", "nomeFantasia"]) {
       // Correções durante a consulta vencem o retorno remoto.
       if (agora.dados[campo] === inicio.dados[campo] && (!agora.dados[campo] || agora.dados[campo] === inicio.dados.cadastroCnpj?.empresa?.[campo])) agora.alterarCampo(campo, empresa[campo] || "");
@@ -56,5 +62,13 @@ export function useConsultaCnpjOnboarding({ contexto, origem, dados, alterarCamp
     }
     alterarCampo(campo, valor);
   }
-  return { consulta, carregando, consultar, editar, permitido };
+  function adequarPessoas(campo, indice) {
+    const destino = campo === 'socios' ? 'titular' : 'socios';
+    const origemLista = dados[campo] || [], destinoLista = (dados[destino] || []).filter(pessoaPreenchida);
+    const pessoa = origemLista[indice];
+    if (!pessoaPreenchida(pessoa) || destino === 'titular' && destinoLista.length) return;
+    editar(destino, [...destinoLista, pessoa]);
+    editar(campo, origemLista.filter((_, i) => i !== indice));
+  }
+  return { consulta, carregando, consultar, editar, adequarPessoas, permitido };
 }

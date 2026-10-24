@@ -34,3 +34,19 @@ test("capital e participação numéricos conservam centavos e casas decimais", 
   const perfil = validateAndNormalizeCompanyProfile({ razaoSocial: "Exemplo", cnpj: "11222333000181", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua", numero: "1", bairro: "Centro", cidade: "São Paulo", uf: "SP", cep: "01001000" }, capitalSocial: 25000.5, socios: [{ nome: "Ana", participacao: 60.5 }] });
   expect(perfil.ok).toBe(true); expect(perfil.data.capitalSocial).toBe(25000.5); expect(perfil.data.socios[0].participacao).toBe(60.5);
 });
+
+import { prepararConversao, payloadConversao } from '../../../../../../apps/web/src/features/onboarding/lib/conversaoEmpresa.js';
+
+test('abertura com titular chega ao contrato de provisionamento com IPTU e legado separados', () => {
+  const endereco = { rua: 'Rua Sintética', semNumero: true, bairro: 'Centro', cidade: 'Recife', uf: 'PE', cep: '50000000', inscricaoImobiliaria: '000AB-012' };
+  const ficha = { origem: 'ABERTURA', razaoSocial: 'Empresa Sintética', cnpj: '11222333000181', responsavelEmail: 'ana@example.invalid', dados: { tipoEmpresa: 'EI', titular: [{ nome: 'Ana Teste', cpf: '52998224725' }], enderecoAbertura: endereco, enderecoPretendido: 'Texto antigo preservado' } };
+  const form = { ...prepararConversao(ficha), regimeTributario: 'SIMPLES', cnaePrincipal: '7020400', hasProlabore: false, temFolha: false };
+  const payload = payloadConversao(form, { senhaExigida: false });
+  const perfil = validateAndNormalizeCompanyProfile(payload.company);
+  expect(perfil.ok).toBe(true);
+  expect(perfil.data.titular).toEqual(ficha.dados.titular[0]);
+  expect(perfil.data.socios).toEqual([]);
+  expect(perfil.data.endereco).toMatchObject({ ...endereco, numero: 'S/N', legado: 'Texto antigo preservado' });
+  expect(perfil.data.inscricaoMunicipal).toBeNull();
+  expect(ficha.dados.enderecoAbertura).toEqual(endereco);
+});

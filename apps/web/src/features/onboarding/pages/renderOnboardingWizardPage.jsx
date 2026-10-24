@@ -1,3 +1,4 @@
+import { errosConclusaoPessoas } from '@contabilidade/shared/onboarding-dados';
 // WIZARD — a ficha de pré-cadastro, preenchida pelo escritório.
 //
 // ⚠ LARGURA: `--content-max` (leitura/formulário), não `--content-wide`. Linha longa demais em
@@ -135,6 +136,8 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   }
 
   async function finalizar() {
+    const erros = origem === "PESSOA_FISICA" ? {} : errosConclusaoPessoas(dados);
+    if (Object.keys(erros).length) { await irPara("identificacao"); setErrosDoPasso(erros); return; }
     setFinalizando(true);
     try {
       const registro = await rascunho.finalizar();
@@ -213,6 +216,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
               erro={errosDoPasso[descritor.campo]}
               origemPreenchimento={onboarding?.origemPreenchimento}
               onChange={(valor) => cnpj.editar(descritor.campo, valor)}
+              onAdequarPessoas={cnpj.adequarPessoas}
               acaoExtra={
                 descritor.consultaReceita ? (
                   <Button

@@ -401,7 +401,7 @@ export function CompanyForm({
       const atual = consultaAtual.current;
       if (sequencia !== consultaSequencia.current || atual.empresaAtualId !== inicio.empresaAtualId || normalizarDocumento(atual.form.cnpj) !== digits) return;
       aplicarConsultaEmpresaPreservandoEdicoes(data, inicio.form, atual.form, atual.onChange);
-      if (fonte === 'SERPRO_EMPRESA' && !atual.form.socios?.length && atual.form.socios === inicio.form.socios) {
+      if (fonte === 'SERPRO_EMPRESA' && !atual.form.titular && !atual.form.socios?.length && atual.form.socios === inicio.form.socios) {
         const socios = sociosDaConsulta(data).map(s => ({ name: s.nome, documento: s.documento, participacao: '', representante: false }));
         if (socios.length) atual.onChange('socios', socios);
       }
@@ -695,9 +695,14 @@ export function CompanyForm({
         Número
         <input
           value={form.enderecoNumero}
+          disabled={form.semNumero === true}
           onChange={(event) => onChange("enderecoNumero", event.target.value)}
-          required
+          required={!form.semNumero}
         />
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', minHeight: 44 }}>
+        <input type="checkbox" checked={form.semNumero === true} onChange={event => onChange('semNumero', event.target.checked)} />
+        Sem número
       </label>
       <label>
         Complemento
@@ -723,6 +728,12 @@ export function CompanyForm({
         UF
         <input value={form.enderecoUf} onChange={(event) => onChange("enderecoUf", event.target.value)} required />
       </label>
+      <label>
+        Inscrição imobiliária / cadastro do IPTU
+        <input value={form.inscricaoImobiliaria || ''} disabled={form.iptuDesconhecido === true} onChange={event => onChange('inscricaoImobiliaria', event.target.value)} />
+      </label>
+      <label><input type="checkbox" checked={form.iptuDesconhecido === true} onChange={event => onChange('iptuDesconhecido', event.target.checked)} /> IPTU não informado — conferir</label>
+      {form.enderecoLegado && <p className="full">Endereço informado anteriormente: {form.enderecoLegado}</p>}
 
       {/* ── Ficha de cadastro ── */}
       <SecaoDoFormulario id="secao-dados-da-ficha" titulo="Dados da ficha" />
@@ -858,7 +869,19 @@ export function CompanyForm({
       </label>
       <div />
 
-      <SociosEditor socios={form.socios} onChange={(next) => onChange("socios", next)} />
+      {form.titular ? <>
+        <section className="full"><h3>Titular</h3>{['nome', 'cpf'].map(campo => <label key={campo}>{campo === 'nome' ? 'Nome do titular' : 'CPF do titular'}<input value={form.titular[campo] || ''} onChange={e => onChange('titular', { ...form.titular, [campo]: e.target.value })} /></label>)}</section>
+        {Array.isArray(form.socios) && form.socios.length > 0 && <section className="full" aria-label="Conferência dos vínculos de sócios">
+          <p role="alert">Há titular e sócios neste cadastro. Confira os vínculos antes de salvar. Para manter o titular, remova apenas os vínculos de sócios que estiverem incorretos.</p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            {form.socios.map((socio, index) => <li key={socio.id || index} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ overflowWrap: 'anywhere' }}>{socio.name || socio.nome || ('Sócio ' + (index + 1))}{socio.documento ? (' · ' + socio.documento) : ''}</span>
+              <Button type="button" variant="secondary" style={{ minHeight: 44 }} aria-label={'Remover vínculo de ' + (socio.name || socio.nome || ('sócio ' + (index + 1)))} onClick={() => onChange('socios', form.socios.filter((_, i) => i !== index))}>Remover vínculo</Button>
+            </li>)}
+          </ul>
+        </section>}
+      </> : <SociosEditor socios={form.socios} onChange={(next) => onChange("socios", next)} />}
+      {form.iptuDesconhecido && <p className="full">Cadastro IPTU não informado — conferir com o responsável.</p>}
       <RegimeHistoricoEditor historico={form.regimeHistorico} onChange={(next) => onChange("regimeHistorico", next)} />
       </div>
 

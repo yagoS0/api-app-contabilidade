@@ -10,13 +10,13 @@ import { Button } from "../../../components/ui/Button";
 
 const AJUDAS_CLIENTE = {
   razaoSocial: "Informe o nome que você gostaria de usar na nova empresa.",
-  tipoEmpresa: "Se ainda não souber, deixe em branco. O contador ajudará na escolha.",
-  atividadePretendida: "Descreva os produtos ou serviços que sua empresa vai oferecer.",
+  tipoEmpresa: "Se não souber, a equipe ajuda a identificar.",
+  atividadePretendida: "Conte quais produtos vai vender ou quais serviços vai prestar.",
   capitalSocialPretendido: "Se souber, informe o valor que pretende investir para iniciar a empresa.",
 };
 const descritorDoCliente = (d, origem) => origem === "ABERTURA" && AJUDAS_CLIENTE[d.campo]
   ? { ...d, ajuda: AJUDAS_CLIENTE[d.campo] } : d;
-const complementares = new Set(["socios", "capitalSocialPretendido", "consultoriaMensal", "responsavelCargo", "responsavelCpf"]);
+const complementares = new Set(["responsavelCargo", "responsavelCpf"]);
 
 function RespostaEmConflito({ descritor, valor }) {
   if (valor && typeof valor === "object" && descritor?.tipo !== "lista") {
@@ -40,7 +40,7 @@ export function FormularioPublico({ api }) {
   const [releitura, setReleitura] = useState(0);
   const tituloEtapa = useRef(null);
   const etapaAnterior = useRef(null);
-  function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor })); setAviso("Alterações ainda não salvas."); setConfirmado(false); setErrosCampos(e => ({ ...e, [campo]: undefined })); }
+  function alterarCampo(campo, valor) { setDados(d => ({ ...d, [campo]: valor, ...(campo === "socios" && Array.isArray(valor) ? { cartoesPessoas: Math.max(1, valor.length) } : {}) })); setAviso("Alterações ainda não salvas."); setConfirmado(false); setErrosCampos(e => ({ ...e, [campo]: undefined })); }
   const cnpj = useConsultaCnpjOnboarding({ contexto: token, origem: registro?.origem, dados, alterarCampo, habilitado: Boolean(registro && !concluido), tokenPublico: token });
   const dadosAtuais = registro ? JSON.stringify(podarInvisiveis(registro.origem, dados)) : "";
   const alterado = Boolean(registro && !concluido && dadosAtuais !== dadosSalvos);
@@ -81,7 +81,7 @@ export function FormularioPublico({ api }) {
       if (r.enviado) { concluir(); return; }
       if (r.onboarding.origem !== registro.origem) { setErro("A equipe alterou o tipo de atendimento. Suas respostas continuam nesta tela; peça à equipe para conferir antes de continuar."); return; }
       const remoto = r.onboarding.dados || {};
-      const normalizar = d => validarDadosOnboarding(registro.origem, d).dados;
+      const normalizar = d => validarDadosOnboarding(registro.origem, d, { coleta: true }).dados;
       const conciliacao = reconciliarDados(normalizar(baseSalva.current), normalizar(dados), normalizar(remoto));
       baseSalva.current = remoto;
       setRegistro(r.onboarding); setDados(conciliacao.dados); setConflitos(conciliacao.conflitos);
@@ -92,7 +92,7 @@ export function FormularioPublico({ api }) {
   }
   async function salvar(destino = atual, finalizar = false) {
     if (trava.current || !registro || conflitos.length || verificar || (finalizar && !confirmado)) return;
-    const validacao = validarDadosOnboarding(registro.origem, dados);
+    const validacao = validarDadosOnboarding(registro.origem, dados, { finalizar, coleta: true });
     if (!validacao.ok) {
       setErrosCampos(validacao.erros); setErro("Confira os campos indicados. Suas respostas continuam nesta tela.");
       const campo = Object.keys(validacao.erros)[0];
@@ -113,7 +113,7 @@ export function FormularioPublico({ api }) {
     } finally { trava.current = false; setOcupado(false); }
   }
   function campoPublico(descritor) {
-    return <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} erro={errosCampos[descritor.campo]} onChange={v => cnpj.editar(descritor.campo, v)} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />;
+    return <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} erro={errosCampos[descritor.campo]} onChange={v => cnpj.editar(descritor.campo, v)} onAdequarPessoas={cnpj.adequarPessoas} acaoExtra={descritor.consultaReceita ? <Button type="button" variant="secondary" disabled={!cnpj.permitido || cnpj.carregando} onClick={cnpj.consultar}>Consultar novamente</Button> : null} origemPreenchimento="CLIENTE" />;
   }
   return <main className="onboarding-workspace onboarding-public">
     <header className="onboarding-public__header"><span className="onboarding-eyebrow">ALTAN · ENTRADA DE CLIENTES</span>

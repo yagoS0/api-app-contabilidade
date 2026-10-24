@@ -15,7 +15,7 @@ test("valor informado exige justificativa antes de criar um rascunho", async () 
   expect(screen.queryByLabelText("Mensalidade personalizada (R$)")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Valor conferido com o escopo da abertura." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
-  expect(gerar).toHaveBeenCalledWith({ aberturaCentavos: 89500, justificativa: "Valor conferido com o escopo da abertura.", escopoAvulso: "" });
+  expect(gerar).toHaveBeenCalledWith({ modalidadeServico: "AVULSO", aberturaCentavos: 89500, justificativa: "Valor conferido com o escopo da abertura.", escopoAvulso: "" });
 });
 
 test("rascunho antigo com justificativa ausente recupera valores e permite corrigir, aprovar e gerar o link", async () => {
@@ -41,7 +41,7 @@ test("rascunho antigo com justificativa ausente recupera valores e permite corri
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Honorários conferidos conforme o escopo negociado." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar versão corrigida para revisão" }));
   expect(await screen.findByText("Proposta 2 · Rascunho")).toBeVisible();
-  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/propostas", { versao: 3, ajustes: { mensalCentavos: 79000, taxasCentavos: 0, justificativa: "Honorários conferidos conforme o escopo negociado.", escopoAvulso: "Regularização e serviços conferidos." } });
+  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/propostas", { versao: 3, ajustes: { modalidadeServico: "RECORRENTE", mensalCentavos: 79000, taxasCentavos: 0, justificativa: "Honorários conferidos conforme o escopo negociado.", escopoAvulso: "Regularização e serviços conferidos." } });
   fireEvent.click(screen.getByRole("button", { name: "Aprovar esta versão" }));
   const link = await screen.findByRole("button", { name: "Gerar link da proposta" });
   fireEvent.click(link);
@@ -51,7 +51,7 @@ test("rascunho antigo com justificativa ausente recupera valores e permite corri
 test.each([false, true])("gerar proposta pela aba de preparação mostra imediatamente o resultado (anterior: %s)", async temAnterior => {
   const anterior = { id: "proposta-antiga", versao: 1, status: "RASCUNHO", snapshot: { opcoes: [] } };
   const nova = { id: "proposta-nova", versao: temAnterior ? 2 : 1, status: "RASCUNHO", snapshot: { opcoes: [{ chave: "AVULSO", titulo: "Escopo da nova proposta", unicoCentavos: 89500, mensalCentavos: 0 }] } };
-  let estado = { onboarding: { id: "ficha", origem: "ABERTURA", dados: { responsavelEmail: "pessoa@example.test" }, versao: 4 },
+  let estado = { onboarding: { id: "ficha", origem: "ABERTURA", dados: { responsavelEmail: "pessoa@example.test", modalidadeServico: "AVULSO" }, versao: 4 },
     propostas: temAnterior ? [anterior] : [], contratos: [], documentos: [], trabalhos: [],
     jornada: { diagnostico: { id: "diagnostico", dados: { servicos: "Abertura conforme análise conferida." } },
       projecao: { atual: "proposta", abertura: true, proposta: temAnterior ? anterior : null, passos: [{ id: "proposta", titulo: "Proposta", acessivel: true, pendencias: [] }] } } };
@@ -75,7 +75,7 @@ test.each([false, true])("gerar proposta pela aba de preparação mostra imediat
   expect(screen.getByRole("button", { name: "Aprovar esta versão" })).toBeVisible();
   expect(screen.getByText("Dados para o orçamento", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
   expect(screen.getByText("Preparar uma nova proposta em PDF", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
-  expect(api.comercial).toHaveBeenCalledWith("/onboardings/ficha/propostas", { versao: 4, ajustes: { aberturaCentavos: 89500, justificativa: "Orçamento de abertura conferido pelo escritório.", escopoAvulso: "Abertura conforme análise conferida." } });
+  expect(api.comercial).toHaveBeenCalledWith("/onboardings/ficha/propostas", { versao: 4, ajustes: { modalidadeServico: "AVULSO", aberturaCentavos: 89500, justificativa: "Orçamento de abertura conferido pelo escritório.", escopoAvulso: "Abertura conforme análise conferida." } });
   expect(api.comercial.mock.calls.filter(([path, body]) => path.endsWith("/propostas") && body)).toHaveLength(1);
 });
 

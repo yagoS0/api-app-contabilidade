@@ -115,12 +115,12 @@ describe("visivel — condição sobre o rascunho INTEIRO", () => {
     expect(visivelPara("")).toBe(true);
   });
 
-  test("valor dos débitos só aparece depois de o cliente dizer que tem débitos", () => {
+  test("valor dos débitos permanece fora da coleta mesmo com declaração histórica", () => {
     const tem = (dados) =>
       camposDoPasso("TRANSFERENCIA", "situacao", dados).map((c) => c.campo).includes("debitosDeclarados");
     expect(tem({ temDebitos: null })).toBe(false);
     expect(tem({ temDebitos: false })).toBe(false);
-    expect(tem({ temDebitos: true })).toBe(true);
+    expect(tem({ temDebitos: true })).toBe(false);
   });
 });
 
@@ -129,6 +129,7 @@ describe("rascunhoVazio", () => {
     for (const origem of ORIGENS) {
       const vazio = rascunhoVazio(origem);
       const esperados = new Set(camposDaOrigem(origem).map((c) => c.campo));
+      if (origem !== 'PESSOA_FISICA') esperados.add('cartoesPessoas');
       expect(new Set(Object.keys(vazio))).toEqual(esperados);
     }
   });
@@ -150,7 +151,7 @@ describe("rascunhoVazio", () => {
 });
 
 describe("podarInvisiveis — a regressão do MEI com quadro societário", () => {
-  test("trocar LTDA→MEI remove os sócios que ficaram no rascunho", () => {
+  test("trocar LTDA→MEI preserva pessoas para adequação explícita", () => {
     const rascunho = {
       tipoEmpresa: "LTDA",
       razaoSocial: "EMPRESA X",
@@ -160,15 +161,15 @@ describe("podarInvisiveis — a regressão do MEI com quadro societário", () =>
 
     const viroumei = { ...rascunho, tipoEmpresa: "MEI" };
     const podado = podarInvisiveis("ABERTURA", viroumei);
-    expect(podado.socios).toBeUndefined();
+    expect(podado.socios).toEqual(rascunho.socios);
     expect(podado.razaoSocial).toBe("EMPRESA X");
   });
 
-  test("desmarcar 'tem débitos' remove o valor declarado", () => {
+  test("desmarcar 'tem débitos' preserva o valor histórico declarado", () => {
     const com = { temDebitos: true, debitosDeclarados: "15000" };
     expect(podarInvisiveis("TRANSFERENCIA", com).debitosDeclarados).toBe("15000");
     const sem = { temDebitos: false, debitosDeclarados: "15000" };
-    expect(podarInvisiveis("TRANSFERENCIA", sem).debitosDeclarados).toBeUndefined();
+    expect(podarInvisiveis("TRANSFERENCIA", sem).debitosDeclarados).toBe("15000");
   });
 
   test("campo que não pertence à origem é removido (resíduo de troca de origem)", () => {

@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 const user = { id: "gestor", role: "contador" };
 const now = new Date("2026-09-08T12:00:00Z");
 function setup() {
-  const ficha = { id: "lead", criadoPorId: "dono", status: "RASCUNHO", origem: "TRANSFERENCIA", cnpj: "11222333000181", dados: { responsavelNome: "Maria" }, versao: 1 };
+  const ficha = { id: "lead", criadoPorId: "dono", status: "RASCUNHO", origem: "TRANSFERENCIA", cnpj: "11222333000181", dados: { responsavelNome: "Maria", socios: [{ nome: 'Maria', cpf: '52998224725' }] }, versao: 1 };
   const db = {
     $queryRaw: jest.fn(async () => []),
     atendimentoLead: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })) },
@@ -151,7 +151,8 @@ it.each([{ qtdFuncionarios: -2 }, { responsavelEmail: "invalido" }, { notasEmiti
 });
 it("normaliza respostas públicas para o diagnóstico e preserva desconhecimento", async () => {
   const t = setup(); await t.servico.publico("a".repeat(43), { versao: 1, dados: { qtdFuncionarios: "2", notasEmitidasMes: "20", faturamentoMensal: "10.500,50", temDebitos: "NAO_SEI" } });
-  expect(t.db.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dados: { qtdFuncionarios: 2, notasEmitidasMes: 20, faturamentoMensal: 10500.50, temDebitos: "NAO_SEI" } }) }));
+  expect(t.db.onboarding.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dados: expect.objectContaining({ qtdFuncionarios: 2, notasEmitidasMes: 20, faturamentoMensal: 10500.50 }) }) }));
+  expect(t.db.onboarding.updateMany.mock.calls[0][0].data.dados.temDebitos).toBeUndefined();
 });
 
 it.each(["CONVERTIDO", "DESISTIU", "versao"])("edição comercial atrasada recusa alteração concorrente %s sem evento", async alteracao => {
@@ -192,4 +193,17 @@ it("falha de auditoria reverte escrita comercial na mesma transação", async ()
   t.db.onboardingEvento.create.mockRejectedValue(new Error("Auditoria indisponível"));
   await expect(t.servico.comercial("lead", user, { faseComercial: "ANALISE" })).rejects.toThrow("Auditoria indisponível");
   expect(t.ficha.faseComercial).toBe("LEAD");
+});
+
+it('conclusão pública exige pessoa válida sem gravar nem consumir link', async () => {
+  const t = setup(); t.ficha.dados = { socios: [{ nome: 'Ana' }] };
+  await expect(t.servico.publico('a'.repeat(43), { versao: 1, dados: {}, finalizar: true })).rejects.toMatchObject({ status: 400 });
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+  expect(t.db.onboardingLink.update).not.toHaveBeenCalled();
+});
+it('body público forjado preserva dados internos e histórico, enquanto salva coleta', async () => {
+  const t = setup(); t.ficha.dados = { modalidadeServico: 'AVULSO', regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15, cadastroRevisao: 4, procuracaoManual: { atorId: 'contador' } };
+  await t.servico.publico('a'.repeat(43), { versao: 1, dados: { modalidadeServico: 'RECORRENTE', regimeAtual: '', temDebitos: false, notasRecebidasMes: 0, responsavelNome: 'Ana' } });
+  expect(t.db.onboarding.updateMany.mock.calls[0][0].data.dados).toMatchObject({ modalidadeServico: 'AVULSO', regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15, responsavelNome: 'Ana' });
+  expect(t.db.onboarding.updateMany.mock.calls[0][0].data.dados).toMatchObject({ cadastroRevisao: 4, procuracaoManual: { atorId: 'contador' } });
 });

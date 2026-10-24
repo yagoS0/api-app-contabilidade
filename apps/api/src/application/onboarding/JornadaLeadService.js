@@ -1,5 +1,6 @@
+import { formatarEnderecoAbertura } from '../../../../../packages/shared/src/onboarding/onboardingSpec.js';
 import { createHash } from "node:crypto";
-import { conferenciaPdfVigente } from './IdentidadeApresentacao.js';
+import { conferenciaPdfVigente, hashApresentacao } from './IdentidadeApresentacao.js';
 import { contratoAptoPagamento, contextoContrato, pagamentoDoContrato, urlCobrancaSegura } from "../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarServicoComercial, exigirEscopo } from "./ComercialService.js";
@@ -45,7 +46,7 @@ export function dadosIniciaisPendentes(ficha) {
   if (!["ABERTURA", "PESSOA_FISICA"].includes(ficha.origem)) return ficha.cnpj ? [] : ["CNPJ"];
   const d = ficha.dados || {};
   return [[ficha.responsavelNome || d.responsavelNome, "Nome do responsável"], [d.atividadePretendida, "Atividade pretendida"],
-    [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]]
+    [d.enderecoAbertura?.cidade || d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [(formatarEnderecoAbertura(d.enderecoAbertura) || d.enderecoPretendido), "Endereço para viabilidade"]]
     .filter(([v]) => !String(v || "").trim()).map(([, nome]) => nome);
 }
 function perfilDaAnalise(ficha) {
@@ -55,12 +56,13 @@ function perfilDaAnalise(ficha) {
 function contextoDoDiagnostico(ficha, analiseId, conferencia = null, roteiroVersao = 0, perfilConferido = {}, fiscalAlternativa = null) {
   const d = ficha.dados || {};
   const partes = [ficha.origem, ficha.cnpj || null, analiseId,
-    d.atividadePretendida || null, d.municipioAtendimento || d.municipioPretendido || null, d.enderecoPretendido || null];
+    d.atividadePretendida || null, d.enderecoAbertura?.cidade || d.municipioAtendimento || d.municipioPretendido || null, (formatarEnderecoAbertura(d.enderecoAbertura) || d.enderecoPretendido) || null];
   if (ficha.origem === "PESSOA_FISICA") partes.push(d.servicoSolicitado || null, d.responsavelCpf || null, ficha.responsavelNome || d.responsavelNome || null);
   // Preserva os hashes anteriores de conferências por consulta oficial.
   if (conferencia?.modo === "MANUAL") partes.push("CADASTRO_MANUAL", conferencia.id);
   if (fiscalAlternativa) partes.push('FISCAL_ALTERNATIVA', fiscalAlternativa.id);
   if (d.cadastroRevisao) partes.push('CADASTRO_REVISAO', d.cadastroRevisao);
+  if (d.socios?.length || d.titular?.length) partes.push('PESSOAS', d.tipoEmpresa || null, d.socios || [], d.titular || []);
   if (roteiroVersao) {
     const atual = perfilDaAnalise(ficha);
     // Preencher um dado antes ausente não invalida uma análise que não o usou.
@@ -96,7 +98,10 @@ export async function carregarEvidenciasJornada(ficha, db = prisma, leituras = n
     const apresentacao = registroApresentacao?.dados?.origem === 'PDF_CONTADOR' ? conferenciaPdf : registroApresentacao;
     const apresentacaoEnviada = diagnostico && saidas.find(s => s.referenciaComercial?.tipo === 'APRESENTACAO_DIAGNOSTICO'
       && s.referenciaComercial?.cadastroRevisao === (ficha.dados?.cadastroRevisao || 0)
-      && s.referenciaComercial?.diagnosticoContexto === diagnostico.dados?.contexto && confirmados.has(s.statusEnvio));
+      && s.referenciaComercial?.diagnosticoContexto === diagnostico.dados?.contexto
+      && Number.isInteger(s.referenciaComercial?.fichaVersao)
+      && s.referenciaComercial?.apresentacaoChave === hashApresentacao({ ...ficha, versao: s.referenciaComercial.fichaVersao }, diagnostico, fiscalApresentacao)
+      && confirmados.has(s.statusEnvio));
     return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
       diagnosticoPendencias: pendenciasDiagnosticoComercial(diagnostico?.dados, ficha.origem),
       publicaConferida: Boolean(publicaConferencia), publicaConferencia,

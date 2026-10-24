@@ -1,3 +1,4 @@
+import { empresaIndividual } from '@contabilidade/shared/onboarding';
 const textoDecimal = v => typeof v === "number" ? String(v).replace(".", ",") : String(v ?? "");
 const digitos = v => String(v || "").replace(/\D/g, "");
 
@@ -13,16 +14,17 @@ export function prepararConversao(onboarding) {
     whatsappAutorizado: false, cadastroConferido: false,
     hasProlabore: typeof d.temProLabore === "boolean" ? d.temProLabore : null, temFolha: d.qtdFuncionarios != null && d.qtdFuncionarios !== "" && Number.isFinite(Number(d.qtdFuncionarios)) ? Number(d.qtdFuncionarios) > 0 : null,
     capitalSocial: textoDecimal(cadastro.capitalSocial ?? d.capitalSocialPretendido ?? d.capitalSocial),
-    socios: (d.socios || []).map(s => ({ ...s, nome: s.nome || s.name || "", cpf: s.cpf || s.documento || "", participacao: textoDecimal(s.participacao) })),
+    titular: empresaIndividual(d) ? d.titular?.[0] || { nome: '', cpf: '' } : undefined,
+    socios: (empresaIndividual(d) ? [] : d.socios || []).map(s => ({ ...s, nome: s.nome || s.name || "", cpf: s.cpf || s.documento || "", participacao: textoDecimal(s.participacao) })),
     naturezaJuridica: cadastro.naturezaJuridica || d.naturezaJuridica || "", porte: cadastro.porte || d.porte || "", dataAbertura: cadastro.dataAbertura || d.dataAbertura || "",
     inscricaoMunicipal: "", inscricaoEstadual: "",
-    endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", ...cadastro.endereco },
+    endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", ...(d.enderecoPretendido ? { legado: d.enderecoPretendido } : {}), ...cadastro.endereco, ...d.enderecoAbertura },
   };
 }
 
 export function aplicarConsultaNaConversao(atual, consulta) {
   const proximo = { ...atual, cadastroConferido: false };
-  if (!atual.socios?.length && consulta.socios?.length) proximo.socios = consulta.socios;
+  if (!atual.titular && !atual.socios?.length && consulta.socios?.length) proximo.socios = consulta.socios;
   for (const campo of ["razaoSocial", "nomeFantasia", "telefone", "cnaePrincipal", "naturezaJuridica", "porte", "dataAbertura"]) {
     if (consulta[campo]) proximo[campo] = consulta[campo];
   }
@@ -42,7 +44,7 @@ export function payloadConversao(form, { senhaExigida = true } = {}) {
       regimeTributario: form.regimeTributario, cnaePrincipal: form.cnaePrincipal.trim(),
       cnaesSecundarios: String(form.cnaesSecundarios || "").split(/[,;\n]/).map(v => v.trim()).filter(Boolean),
       telefone: form.telefone || null, endereco: form.endereco, guideNotificationEmail: form.guideNotificationEmail || null,
-      capitalSocial: form.capitalSocial || null, socios: form.socios,
+      capitalSocial: form.capitalSocial || null, socios: form.socios, ...(form.titular ? { titular: form.titular } : {}),
       naturezaJuridica: form.naturezaJuridica || null, porte: form.porte || null, dataAbertura: form.dataAbertura || null,
       inscricaoMunicipal: form.inscricaoMunicipal || null, inscricaoEstadual: form.inscricaoEstadual || null,
     },

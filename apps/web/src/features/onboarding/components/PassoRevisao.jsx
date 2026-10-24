@@ -15,6 +15,7 @@ export function FichaDeclarada({ origem, dados, origemPreenchimento, compacta = 
 
   return (
     <div style={{ display: "grid", gap: "var(--space-5)" }}>
+      {origem === 'ABERTURA' && dados?.enderecoPretendido && <p>Endereço informado anteriormente: {dados.enderecoPretendido}</p>}
       {passos.map((passo) => {
         const campos = camposDoPasso(origem, passo.chave, dados);
         if (!campos.length) return null;
@@ -87,7 +88,7 @@ export function PassoRevisao({ origem, dados, origemPreenchimento, onIrPara }) {
           {/* ⚠ Isto NÃO bloqueia finalizar. O funil aceita preenchimento parcial — é a razão de
               ele existir. A lista serve para o contador saber o que vai faltar depois. */}
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            A ficha pode ser finalizada assim mesmo — o que faltar continua pendente na trilha.
+            Salve o rascunho para continuar depois. Para concluir uma ficha empresarial, identifique ao menos uma pessoa com nome e CPF válidos.
           </span>
           <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>
             {problemas.map((p) => (

@@ -20,3 +20,14 @@ test("desconhecimento de folha e pró-labore não vira declaração negativa", (
   const form = prepararConversao({ dados: { qtdFuncionarios: "NAO_SEI", temProLabore: "NAO_SEI" } });
   expect(form.temFolha).toBeNull(); expect(form.hasProlabore).toBeNull();
 });
+
+test.each(['MEI', 'EI'])('conversão %s distingue titular e conserva IPTU e legado', tipoEmpresa => {
+  const enderecoAbertura = { rua: 'Rua A', semNumero: true, cidade: 'Recife', uf: 'PE', inscricaoImobiliaria: '000AB-12', iptuDesconhecido: false };
+  const form = prepararConversao({ responsavelEmail: 'teste@example.invalid', dados: { tipoEmpresa, titular: [{ nome: 'Ana', cpf: '52998224725' }], enderecoAbertura, enderecoPretendido: 'Texto original' } });
+  const payload = payloadConversao(form, { senhaExigida: false });
+  expect(payload.company.socios).toEqual([]);
+  expect(payload.company.titular).toEqual({ nome: 'Ana', cpf: '52998224725' });
+  expect(payload.company.endereco).toMatchObject({ ...enderecoAbertura, legado: 'Texto original' });
+  expect(payload.company.inscricaoMunicipal).toBeNull();
+  expect(aplicarConsultaNaConversao(form, { socios: [{ nome: 'Outra pessoa' }] }).socios).toEqual([]);
+});

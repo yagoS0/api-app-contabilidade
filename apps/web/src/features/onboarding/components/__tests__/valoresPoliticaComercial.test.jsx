@@ -15,7 +15,7 @@ test("regularização avulsa usa um só campo de preço", () => {
   fireEvent.change(screen.getByLabelText("Regularização — valor total do serviço avulso (R$)"), { target: { value: "53,27" } });
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Honorários sintéticos conferidos para a regularização." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
-  expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "REGULARIZACAO", regularizacaoCentavos: 5327, justificativa: "Honorários sintéticos conferidos para a regularização.", escopoAvulso: "" });
+  expect(onGerar).toHaveBeenCalledWith({ modalidadeServico: "AVULSO", tipoServicoAvulso: "REGULARIZACAO", regularizacaoCentavos: 5327, justificativa: "Honorários sintéticos conferidos para a regularização.", escopoAvulso: "" });
 });
 test("baixa sem pendências não sugere nem envia orçamento de regularização", () => {
   const onGerar = jest.fn(); render(<ValoresDaProposta onboarding={onboarding} regularizacao={decisao(false)} onGerar={onGerar} />);
@@ -24,7 +24,7 @@ test("baixa sem pendências não sugere nem envia orçamento de regularização"
   fireEvent.change(screen.getByLabelText("Encerramento da empresa (R$)"), { target: { value: "12,13" } });
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Baixa sem regularização prévia necessária." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
-  expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "BAIXA", servicoCentavos: 1213, justificativa: "Baixa sem regularização prévia necessária.", escopoAvulso: "" });
+  expect(onGerar).toHaveBeenCalledWith({ modalidadeServico: "AVULSO", tipoServicoAvulso: "BAIXA", servicoCentavos: 1213, justificativa: "Baixa sem regularização prévia necessária.", escopoAvulso: "" });
 });
 test("apresentação comparativa informa inclusão avulsa e condição mensal", () => {
   render(<ApresentacaoProposta proposta={{ opcoes: [{ chave: "AVULSO", titulo: "Regularização", unicoCentavos: 5327, mensalCentavos: 0, regularizacaoIncluida: true }, { chave: "RECORRENTE", titulo: "Mensal", unicoCentavos: 0, mensalCentavos: 13711, recorrente: true }], regularizacaoCentavos: 5327, decisaoRegularizacao: decisao(true) }} />);
@@ -53,7 +53,7 @@ test("encerramento avulso envia baixa e regularização separadas, sem mensalida
   fireEvent.change(screen.getByLabelText("Regularização necessária antes do encerramento (R$)"), { target: { value: "53,27" } });
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Baixa e regularização discriminadas no escopo." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
-  expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "BAIXA", servicoCentavos: 1213, regularizacaoCentavos: 5327, justificativa: "Baixa e regularização discriminadas no escopo.", escopoAvulso: "" });
+  expect(onGerar).toHaveBeenCalledWith({ modalidadeServico: "AVULSO", tipoServicoAvulso: "BAIXA", servicoCentavos: 1213, regularizacaoCentavos: 5327, justificativa: "Baixa e regularização discriminadas no escopo.", escopoAvulso: "" });
 });
 
 
@@ -65,5 +65,5 @@ test("PF gera orçamento do serviço pessoal sem mensalidade, regularização ou
   fireEvent.change(screen.getByLabelText("Serviço avulso (R$)"), { target: { value: "123,45" } });
   fireEvent.change(screen.getByLabelText("Fonte, escopo e justificativa dos ajustes"), { target: { value: "Honorários do serviço pessoal conferidos." } });
   fireEvent.click(screen.getByRole("button", { name: "Gerar proposta para revisão" }));
-  expect(onGerar).toHaveBeenCalledWith({ tipoServicoAvulso: "OUTRO", servicoCentavos: 12345, justificativa: "Honorários do serviço pessoal conferidos.", escopoAvulso: "Análise do IRRF de Alex." });
+  expect(onGerar).toHaveBeenCalledWith({ modalidadeServico: "AVULSO", tipoServicoAvulso: "OUTRO", servicoCentavos: 12345, justificativa: "Honorários do serviço pessoal conferidos.", escopoAvulso: "Análise do IRRF de Alex." });
 });

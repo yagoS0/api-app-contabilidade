@@ -88,7 +88,7 @@ describe("FichaDeclarada — percorre a MESMA spec do wizard", () => {
 
   test("campo sensível PREENCHIDO ganha o selo; vazio não ganha", () => {
     const { rerender } = render(
-      <FichaDeclarada origem="TRANSFERENCIA" dados={{ regimeAtual: "SIMPLES" }} origemPreenchimento="ESCRITORIO" />
+      <FichaDeclarada origem="TRANSFERENCIA" dados={{ faturamentoMensal: 1000 }} origemPreenchimento="ESCRITORIO" />
     );
     expect(screen.getAllByText("declarado no atendimento").length).toBeGreaterThan(0);
 

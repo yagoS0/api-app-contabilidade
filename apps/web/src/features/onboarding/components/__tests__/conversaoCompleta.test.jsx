@@ -86,3 +86,22 @@ test.each([
     else delete Element.prototype.scrollIntoView;
   }
 });
+
+test('opções de endereço preservam valores e revisão explícita até envio', async () => {
+  const converter=jest.fn().mockResolvedValue({});const confirm=jest.spyOn(window,'confirm').mockReturnValue(true);
+  try {
+    render(<ConversaoModal onboarding={ficha} onConverter={converter} onFechar={()=>{}} />);
+    fireEvent.change(screen.getByLabelText('Regime tributário'),{target:{value:'SIMPLES'}});
+    fireEvent.change(screen.getByLabelText('CNAE principal'),{target:{value:'7020400'}});
+    for(const [campo,valor] of [['Rua','Rua Teste'],['Número','123'],['Bairro','Centro'],['Cidade','Recife'],['UF','PE'],['CEP','50000000'],['Inscrição imobiliária','000AB']])fireEvent.change(screen.getByLabelText(new RegExp('^'+campo)),{target:{value:valor}});
+    fireEvent.change(screen.getByLabelText(/Há pró-labore/),{target:{value:'false'}});
+    fireEvent.change(screen.getByRole('combobox',{name:'A empresa possui funcionários na implantação?'}),{target:{value:'false'}});
+    const revisao=screen.getByRole('checkbox',{name:/Conferi os dados definitivos/});fireEvent.click(revisao);
+    fireEvent.click(screen.getByRole('checkbox',{name:'Sem número'}));expect(screen.getByLabelText(/^Número/)).toBeDisabled();expect(revisao).not.toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox',{name:'Sem número'}));expect(screen.getByLabelText(/^Número/)).toHaveValue('123');
+    fireEvent.click(screen.getByRole('checkbox',{name:'IPTU não informado — conferir'}));expect(screen.getByLabelText(/^Inscrição imobiliária/)).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox',{name:'IPTU não informado — conferir'}));expect(screen.getByLabelText(/^Inscrição imobiliária/)).toHaveValue('000AB');
+    expect(converter).not.toHaveBeenCalled();fireEvent.click(revisao);fireEvent.click(screen.getByRole('button',{name:'Criar empresa'}));
+    await waitFor(()=>expect(converter).toHaveBeenCalledTimes(1));expect(converter.mock.calls[0][0].company.endereco).toMatchObject({numero:'123',semNumero:false,inscricaoImobiliaria:'000AB',iptuDesconhecido:false});
+  } finally {confirm.mockRestore();}
+});

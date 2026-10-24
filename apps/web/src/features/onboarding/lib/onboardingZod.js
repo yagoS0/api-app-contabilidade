@@ -36,6 +36,8 @@ function baseDoTipo(descritor) {
       const valores = (descritor.opcoes || []).map((o) => o.valor);
       return valores.length ? z.enum(valores) : z.string();
     }
+    case "endereco":
+      return z.record(z.string(), z.unknown());
     case "lista":
       return z.array(z.record(z.string(), z.unknown()));
     case "texto":
@@ -66,7 +68,7 @@ function exigirPreenchido(base, descritor) {
 export function buildZodFromSpec(origem, dados, { passo } = {}) {
   const descritores = passo
     ? camposDoPasso(origem, passo, dados)
-    : camposDaOrigem(origem);
+    : ["identificacao", "responsavel", "situacao", "revisao"].flatMap(p => camposDoPasso(origem, p, dados));
 
   const shape = {};
   for (const descritor of descritores) {

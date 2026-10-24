@@ -1,3 +1,4 @@
+import { formatarEnderecoAbertura } from '@contabilidade/shared/onboarding';
 import { montarJornada } from '../../features/onboarding/lib/jornadaComercial';
 import { contratoAptoPagamento, contextoContrato, pagamentoDoContrato, urlCobrancaSegura } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 // Demonstração local, sem consultas fiscais, mensagens externas ou assinatura real.
@@ -32,8 +33,9 @@ export function criarMockComercial({
   const contextoDiagnostico = (o, perfil = o.diagnosticoDemonstracao?.dados?.perfilConferido) => JSON.stringify([
     o.origem, o.cnpj || null, o.fiscalAlternativaMock?.id || null, o.publicaConferenciaMock?.id || null,
     o.dados?.atividadePretendida || null,
-    o.dados?.municipioAtendimento || o.dados?.municipioPretendido || null,
-    o.dados?.enderecoPretendido || null,
+    o.dados?.enderecoAbertura?.cidade || o.dados?.municipioAtendimento || o.dados?.municipioPretendido || null,
+    formatarEnderecoAbertura(o.dados?.enderecoAbertura) || o.dados?.enderecoPretendido || null,
+    ...((o.dados?.socios?.length || o.dados?.titular?.length) ? ['PESSOAS', o.dados?.tipoEmpresa || null, o.dados?.socios || [], o.dados?.titular || []] : []),
     ...(o.origem === "PESSOA_FISICA" ? [o.dados?.servicoSolicitado || null, o.dados?.responsavelCpf || null, o.responsavelNome || o.dados?.responsavelNome || null] : []),
     ...(perfil ? [Object.keys(perfil).sort().map(k => [k, perfilDaAnalise(o)[k] ?? null])] : [])
   ]);
@@ -392,8 +394,18 @@ export function criarMockComercial({
           versao: [...propostas.values()].filter(p => p.onboardingId === o.id).length + 1,
           status: "RASCUNHO",
           expiraEm: new Date(Date.now() + 604800000).toISOString(),
-          snapshot: snapshot(o)
+          snapshot: snapshot({ ...o, dados: { ...o.dados, ...(body.ajustes?.modalidadeServico ? { modalidadeServico: body.ajustes.modalidadeServico } : {}) } })
         };
+        const modalidade = body.ajustes?.modalidadeServico || o.dados?.modalidadeServico;
+        if (o.origem !== 'PESSOA_FISICA' && !['AVULSO', 'RECORRENTE', 'COMPARAR'].includes(modalidade)) {
+          p.snapshot.opcoes = []; p.snapshot.pendencias.push('A equipe deve definir a modalidade de serviço na proposta.');
+        }
+        if (['RECORRENTE', 'COMPARAR'].includes(modalidade)) {
+          const consultoria = body.ajustes?.consultoriaMensal ?? o.dados?.consultoriaMensal;
+          p.snapshot.perfil = { consultoriaMensal: typeof consultoria === 'boolean' ? consultoria : null };
+          if (typeof consultoria !== 'boolean') p.snapshot.pendencias.push('Conferir consultoria mensal com o catálogo.');
+          if (!(o.dados?.regimeAtual || o.dados?.regimePretendido) || o.dados?.notasRecebidasMes == null) p.snapshot.pendencias.push('Conferir regime e volume de documentos internamente.');
+        }
         propostas.set(p.id, p);
         persistir();
         return {
@@ -405,7 +417,7 @@ export function criarMockComercial({
       if (pm) {
         const p = propostas.get(pm[1]);
         if (!p || p.onboardingId !== o.id) throw Error("Proposta não encontrada.");
-        if (pm[2] === "aprovar") { p.status = "APROVADA"; persistir(); }
+        if (pm[2] === "aprovar") { if (p.snapshot.pendencias?.length) throw Error('Confira as pendências da proposta.'); p.status = "APROVADA"; persistir(); }
         if (pm[2] === "link") {
           const token = uid();
           links.set(token, p.id);
