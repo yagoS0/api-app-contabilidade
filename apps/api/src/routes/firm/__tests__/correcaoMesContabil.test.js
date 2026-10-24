@@ -55,7 +55,7 @@ test('detalhe e retomada usam empresa autorizada e identidade do contador', asyn
 });
 
 test('fechar com token atual não reutiliza checklist de lançamentos anteriores', async () => {
-  const tx = {accountingEntry:{findMany:jest.fn(async()=>[])},companyMonthlyCircular:{update:jest.fn()}};
+  const tx = {$executeRaw:jest.fn(async()=>1),accountingEntry:{findMany:jest.fn(async()=>[])},companyMonthlyCircular:{update:jest.fn()}};
   prisma.$transaction = jest.fn(async cb=>cb(tx));
   estadoCorrecaoTx.mockResolvedValue({versao:'versao-atual',correcao:{id:'c'},atual:{circular:{id:'circ',folhaProlaboreOk:true,despesasOk:true,receitasOk:true,provisoesOk:true,pagamentosOk:true}},conferencia:{valida:false,campos:{}}});
   const r = await request(app()).post('/firm/companies/emp/fechamento-contabil/2026-09/fechar').send({versao:'versao-atual'});

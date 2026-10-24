@@ -1,8 +1,9 @@
-// Q12.C.1: tabela de notas da janela ativa (NF-e OU NFS-e) — enxuta, sem resumo/stats.
+// Tabela paginada de NF-e/NFS-e; filtros e totais vêm do servidor.
 
 import { useEffect, useRef, useState } from "react";
 
-import { PANEL, fmtMoney, fmtDate } from "./notasStyles.shared.js";
+import { formatarDataEmissao } from "../lib/dataEmissaoNota";
+import { PANEL, fmtMoney } from "./notasStyles.shared.js";
 import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota } from "../lib/cicloNotaTela";
@@ -64,7 +65,7 @@ function Paginacao({ total, offset, limit, carregados, loading, onOffset }) {
     }}>
       <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>
         {temTudo ? (
-          <>Mostrando <strong style={{ color: PANEL.text }}>{total}</strong> nota(s) — todas as da competência.</>
+          <>Mostrando <strong style={{ color: PANEL.text }}>{total}</strong> nota(s) — todas as do filtro.</>
         ) : (
           <>
             Mostrando <strong style={{ color: PANEL.text }}>{inicio}–{fim}</strong> de{" "}
@@ -114,7 +115,7 @@ function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebida
   const [local, setLocal] = useState(filters);
   function patch(k, v) { setLocal((p) => ({ ...p, [k]: v, offset: 0 })); }
   function apply() {
-    const efetivo = { ...local, papel: filters.papel, incluirCanceladas: filters.incluirCanceladas, competencia: filters.competencia };
+    const efetivo = { ...filters, search: local.search, offset: 0 };
     onChange(efetivo);
     onApply(efetivo);
   }
@@ -126,6 +127,13 @@ function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebida
           tabela mostrava outro até alguém clicar, então os dois controles chegavam a discordar
           dentro da MESMA tela. O valor continua à vista, como rótulo, porque filtro ativo sem
           rastro visível é o "filtro fantasma" que a listagem já teve de resolver. */}
+      <details className="notas-data">
+        <summary>Data de emissão{(filters.dataInicio || filters.dataFim) && ` · ${filters.dataInicio ? filters.dataInicio.split('-').reverse().join('/') : 'Sem início'} até ${filters.dataFim ? filters.dataFim.split('-').reverse().join('/') : 'Sem fim'}`}</summary>
+        <label>De<input type="date" value={filters.dataInicio || ""} max={filters.dataFim || undefined}
+          onChange={e => onChange({ ...filters, dataInicio: e.target.value, offset: 0 })} /></label>
+        <label>Até<input type="date" value={filters.dataFim || ""} min={filters.dataInicio || undefined}
+          onChange={e => onChange({ ...filters, dataFim: e.target.value, offset: 0 })} /></label>
+      </details>
       <span style={{ fontSize: "0.8rem", color: PANEL.muted, whiteSpace: "nowrap" }}>
         Competência: <strong style={{ color: PANEL.text }}>{filters.competencia || "todas"}</strong>
       </span>
@@ -133,13 +141,13 @@ function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebida
       <input type="search" aria-label="Buscar nota por número, nome, documento ou chave" value={local.search || ""} onKeyDown={e => { if (e.key === "Enter") apply(); }} onChange={(e) => patch("search", e.target.value)}
         placeholder="Número, nome, CPF/CNPJ ou chave" style={{ ...inputStyle, width: "100%" }} /></label>
       <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Direção
-        <select aria-label="Direção das notas" value={filters.papel || ""} onChange={e => { const f = { ...filters, search: local.search, papel: e.target.value, competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
+        <select aria-label="Direção das notas" value={filters.papel || ""} onChange={e => { const f = { ...filters, search: local.search, papel: e.target.value, type: "", competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
           {!somenteRecebidas && <><option value="">Emitidas e recebidas</option><option value="EMIT">Emitidas</option></>}<option value="DEST">Recebidas</option>
         </select>
       </label>
       <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Situação
-        <select aria-label="Incluir notas canceladas" value={filters.incluirCanceladas || ""} onChange={e => { const f = { ...filters, search: local.search, incluirCanceladas: e.target.value, competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
-          <option value="">Sem canceladas</option><option value="1">Incluir canceladas</option>
+        <select aria-label="Situação das notas" value={filters.situacao || ""} onChange={e => { const f = { ...filters, search: local.search, situacao: e.target.value, incluirCanceladas: "1", competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
+          <option value="">Todas</option><option value="autorizada">Autorizada</option><option value="cancelada">Cancelada (inclui substituídas)</option><option value="rejeitada">Rejeitada</option>
         </select>
       </label>
       <Button size="sm" onClick={apply} disabled={loading}>
@@ -159,7 +167,7 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false }) {
+export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false, error }) {
   const [selecionadas, setSelecionadas] = useState([]);
   const [baixando, setBaixando] = useState(false);
   const [resultadoDownload, setResultadoDownload] = useState(null);
@@ -168,12 +176,14 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
   const downloadAtivo = useRef(false);
   paginaAtual.current = pagina;
   useEffect(() => { setSelecionadas([]); setResultadoDownload(null); }, [pagina]);
+  useEffect(() => { paginaAtual.current = pagina; return () => { paginaAtual.current = null; }; }, [pagina]);
   async function baixar(formato) {
     if (downloadAtivo.current || !selecionadas.length) return;
     downloadAtivo.current = true;
     setBaixando(true); setResultadoDownload(null);
     try {
       const out = await onBaixarSelecionadas(selecionadas, formato);
+      if (paginaAtual.current !== pagina) return;
       const url = URL.createObjectURL(out.blob);
       const link = document.createElement("a"); link.href = url;
       link.download = `notas-${filters.competencia || "selecionadas"}-${formato.toLowerCase()}.zip`;
@@ -196,8 +206,8 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total ?? notas.length} somenteRecebidas={somenteRecebidas} />
-      {onBaixarSelecionadas && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
+      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total} somenteRecebidas={somenteRecebidas} />
+      {onBaixarSelecionadas && (selecionadas.length > 0 || resultadoDownload) && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
         <span style={{ color: PANEL.muted, fontSize: "0.8rem" }}>{selecionadas.length} selecionada(s) nesta página</span>
         <Button variant="secondary" size="sm" disabled={!selecionadas.length || baixando || loading} onClick={() => baixar("XML")}>Baixar XML</Button>
         <Button variant="secondary" size="sm" disabled={!selecionadas.length || baixando || loading} onClick={() => baixar("PDF")}>Baixar DANFE / DANFSe</Button>
@@ -205,22 +215,23 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
         {resultadoDownload && <span role={resultadoDownload.erro ? "alert" : "status"} style={{ color: resultadoDownload.erro ? "var(--state-warn)" : "var(--state-ok)" }}>{resultadoDownload.texto}</span>}
       </div>}
 
-      {notas.length === 0 && !loading && (
+      {notas.length === 0 && !loading && !error && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted, fontSize: "0.85rem" }}>
           Nenhuma nota encontrada.
         </div>
       )}
 
+      {loading && <p role="status">Carregando notas…</p>}{error && <p role="alert">{error}</p>}
       {notas.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
+        <div role="region" aria-label="Tabela de notas fiscais" tabIndex={0} style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
-                {onBaixarSelecionadas && <th style={th}><input type="checkbox" aria-label="Selecionar todas as notas desta página" disabled={loading || baixando} checked={notas.length > 0 && selecionadas.length === notas.length} ref={el => { if (el) el.indeterminate = selecionadas.length > 0 && selecionadas.length < notas.length; }} onChange={e => setSelecionadas(e.target.checked ? notas.map(n => n.id) : [])} /></th>}
+                {onBaixarSelecionadas && <th style={th}><input type="checkbox" aria-label="Selecionar todas as notas desta página" disabled={loading || baixando} checked={notas.length > 0 && selecionadas.length === Math.min(notas.length, 100)} ref={el => { if (el) el.indeterminate = selecionadas.length > 0 && selecionadas.length < Math.min(notas.length, 100); }} onChange={e => setSelecionadas(e.target.checked ? notas.slice(0, 100).map(n => n.id) : [])} /></th>}
                 <th style={th}>Data</th>
-                <th style={th}>Papel</th>
+                <th style={th}>Estado de emissão</th><th style={th}>Tipo</th>
                 <th style={th}>Nº/Série</th>
-                <th style={th}>Emitente</th>
+                <th style={th}>Emissor</th><th style={th}>Competência</th>
                 <th style={th}>Tomador</th>
                 <th style={{ ...th, textAlign: "right" }}>Valor</th>
                 <th style={th}>Status</th>
@@ -264,25 +275,26 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       cursor: onAbrirNota ? "pointer" : "default", outlineOffset: -2,
                     }}
                   >
-                    {onBaixarSelecionadas && <td style={td} onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={`Selecionar nota ${n.numero || n.id}`} disabled={loading || baixando} checked={selecionadas.includes(n.id)} onChange={e => setSelecionadas(ids => e.target.checked ? [...ids, n.id] : ids.filter(id => id !== n.id))} /></td>}
-                    <td style={td}>{fmtDate(n.issueDate)}</td>
+                    {onBaixarSelecionadas && <td style={td} onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={`Selecionar nota ${n.numero || n.id}`} disabled={loading || baixando || (!selecionadas.includes(n.id) && selecionadas.length >= 100)} checked={selecionadas.includes(n.id)} onChange={e => setSelecionadas(ids => e.target.checked ? [...ids, n.id] : ids.filter(id => id !== n.id))} /></td>}
+                    <td style={td}>{formatarDataEmissao(n)}</td>
                     <td style={td}>
-                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
-                                     background: pap.bg, color: pap.color, border: `1px solid ${pap.color}` }}>
-                        {pap.label}
+                      <span title={pap.label} style={{ fontSize: "0.82rem", color: PANEL.muted }}>
+                        {n.status === 'EMITIDA' ? 'Emitida' : n.status === 'CANCELADA' ? 'Cancelada' : n.status || 'A verificar'}
                       </span>
                     </td>
-                    <td style={td}>{n.numero || "—"}{n.serie ? `/${n.serie}` : ""}</td>
-                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    <td style={td}>{n.type === "NFE" ? "NF-e" : n.type === "NFSE" ? "NFS-e" : "A verificar"}<small style={{ display: 'block', color: PANEL.muted }}>{pap.label}</small></td><td style={td}>{n.numero || "—"}{n.serie ? `/${n.serie}` : ""}</td>
+                    <td style={{ ...td, width: 190, minWidth: 190, maxWidth: 190, whiteSpace: "nowrap" }}
                         title={n.emitenteNome}>
-                      {n.emitenteNome || "—"}
+                      <div style={{ width: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.emitenteNome || "—"}</div>
                       <div style={{ fontSize: "0.82rem", color: PANEL.muted, fontFamily: "monospace" }}>
                         {String(n.emitenteDoc || "").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}
                       </div>
                     </td>
-                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    <td style={td}>{n.competencia ? String(n.competencia).slice(0, 7) : "A verificar"}</td>
+                    <td style={{ ...td, width: 190, minWidth: 190, maxWidth: 190, whiteSpace: "nowrap" }}
                         title={n.tomadorNome}>
-                      {n.tomadorNome || "—"}
+                      <div style={{ width: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.tomadorNome || "—"}</div>
+                      {n.tomadorDoc && <div style={{ fontSize: '0.82rem', color: PANEL.muted, fontFamily: 'monospace' }}>{n.tomadorDoc}</div>}
                     </td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(n.total)}</td>
                     <td style={td}><StatusBadge nota={n} /></td>
@@ -361,7 +373,7 @@ Ela sai do faturamento e da apuração.
       {/* Fica fora do `notas.length > 0` de propósito: numa página vazia depois de avançar demais,
           o contador e o botão "‹ Anterior" são a única saída — sem eles a tela seria só
           "Nenhuma nota encontrada", que é a mensagem errada. */}
-      {(notas.length > 0 || (filters?.offset || 0) > 0) && (
+      {!loading && !error && (notas.length > 0 || (filters?.offset || 0) > 0) && (
         <Paginacao
           total={total}
           offset={offset}
@@ -374,5 +386,5 @@ Ela sai do faturamento e da apuração.
     </section>
   );
 }
-const th = { padding: 6 };
-const td = { padding: 6 };
+const th = { padding: "12px 10px", fontWeight: 500, whiteSpace: "nowrap" };
+const td = { padding: "14px 10px" };

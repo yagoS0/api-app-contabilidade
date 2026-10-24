@@ -1,3 +1,5 @@
+import { projetarDataEmissao, selectDataEmissao } from "../dataEmissaoNota.js";
+import { raizDoXml } from '../importXml/loteNfe.js';
 // Q48 — Download de notas em lote: gera um ZIP (pasta por empresa) com os XMLs já armazenados em
 // PortalInvoice.xmlRaw, filtrado por período/tipo/papel. O job roda EM SEGUNDO PLANO no próprio
 // processo da API (fire-and-forget, padrão dos workers do server.js) sem travar o event loop:
@@ -215,16 +217,16 @@ export async function processarNotasDownloadJob(jobId) {
           orderBy: { id: "asc" },
           take: PAGE_SIZE,
           ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
-          select: { id: true, type: true, numero: true, chaveAcesso: true, issueDate: true, xmlRaw: true },
+          select: { id: true, type: true, numero: true, chaveAcesso: true, issueDate: true, ...selectDataEmissao, xmlRaw: true },
         });
         if (!lote.length) break;
 
         for (const inv of lote) {
-          if (!inv.xmlRaw) continue;
+          if (!inv.xmlRaw || String(raizDoXml(inv.xmlRaw)).toLowerCase() === 'resnfe') continue;
           const sub = String(inv.type || "nota").toLowerCase() === "nfe" ? "nfe" : "nfse";
           const n = safeFilePart(inv.numero || "");
           const ch = safeFilePart(inv.chaveAcesso || "");
-          const date = inv.issueDate ? safeFilePart(new Date(inv.issueDate).toISOString().slice(0, 10)) : "";
+          const date = safeFilePart(projetarDataEmissao(inv).dataEmissao.civil || "data-a-verificar");
           const base = n || ch || safeFilePart(inv.id);
           archive.append(inv.xmlRaw, { name: `${folder}/${sub}/${base}${date ? `_${date}` : ""}.xml` });
           totalNotas += 1;

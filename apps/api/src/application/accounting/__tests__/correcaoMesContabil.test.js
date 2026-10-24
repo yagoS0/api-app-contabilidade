@@ -8,6 +8,7 @@ function banco() {
   let data = { settings: {}, circular: { id: 'c', portalClientId: 'emp', competencia: '2026-09', estado: 'transmitido', fechadoContabilEm: '2026-10-01T10:00:00.000Z', fechadoContabilPor: 'outro', despesasOk: true }, entries: [{ id: 'l', competencia: '2026-09', portalClientId: 'emp', historico: 'antes', lines: [] }] };
   const matches = (row, where) => Object.entries(where).every(([k, v]) => k === 'value' ? JSON.stringify(row[k]) === JSON.stringify(v.equals) : String(row[k]) === String(v instanceof Date ? v.toISOString() : v));
   const db = {
+    $executeRaw: jest.fn(async () => 1),
     appSetting: {
       findUnique: jest.fn(async ({ where }) => clone(data.settings[where.key] || null)),
       findMany: jest.fn(async ({ where }) => clone(Object.values(data.settings).filter(r => r.key.startsWith(where.key.startsWith)))),

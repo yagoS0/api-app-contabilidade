@@ -136,3 +136,37 @@ test('DAS disponível mantém a revisão fiscal na mesma projeção da carteira'
  expect(result.rows[0].fluxo.apuracao.transmitida).toBe(false);
  expect(result.groups.apuracoes).toHaveLength(1);
 });
+
+import { distribuirOperacoes } from '../operacoes';
+
+test.each([['enviada', 'Enviada'], ['falhou', 'Falhou']])('INSS em revisão preserva comunicação %s da mesma guia', (state, comunicacao) => {
+  const inss = { required: true, state, guideId: 'original', revision: 'r1', envioPodeTentarDeNovo: false };
+  const rows = [{ company: { companyId: 'a', guideCompliance: { inss } }, fluxo: { status: { chave: 'guias' }, apuracao: {} } }];
+  const d = distribuirOperacoes(rows, [{ companyId: 'a', status: 'DOCUMENT_REVIEW', guides: [{ id: 'outra', available: true }] }]);
+  const [{ item }] = d.guias.flatMap(g => g.items);
+  expect(item).toMatchObject({ documento: 'A conferir', comunicacao, disponivel: false, revisar: true, guideId: 'original' });
+  expect(item.enviada).toBe(state === 'enviada');
+  expect(item.falha).toBe(state === 'falhou');
+  expect(inss).toEqual({ required: true, state, guideId: 'original', revision: 'r1', envioPodeTentarDeNovo: false });
+});
+test('distribuições são exclusivas por empresa e preservam Obrigações, Concluído e desconhecido', () => {
+  const rows = ['apuracao', 'obrigacoes', 'guias', 'contabilizacao', 'importacao', 'concluido', 'novo'].map((chave, i) => ({ company: { companyId: String(i) }, fluxo: { status: { chave }, apuracao: {} } }));
+  const d = distribuirOperacoes(rows);
+  expect(d.status.flatMap(g => g.items).map(r => r.company.companyId)).toHaveLength(7);
+  expect(new Set(d.status.flatMap(g => g.items).map(r => r.company.companyId)).size).toBe(7);
+  for (const key of ['obrigacoes', 'concluido', 'desconhecido']) expect(d.status.find(g => g.key === key).items).toHaveLength(1);
+});
+test('parcelamento isolado e consulta futura não viram situação fiscal verde', () => {
+  const row = (id, data) => ({ company: { companyId: id, ...data }, fluxo: { status: {}, apuracao: {} } });
+  const d = distribuirOperacoes([row('sem', { temParcelamento: true }), row('regular', { temParcelamento: true, fiscalSituacao: 'SEM_PENDENCIA', fiscalCheckedAt: new Date().toISOString() }), row('futuro', { fiscalSituacao: 'REGULAR', fiscalCheckedAt: '2099-01-01' }), row('pendente', { fiscalSituacao: 'COM_PENDENCIA' })]);
+  expect(d.fiscal.find(g => g.key === 'emDia').items.map(r => r.company.companyId)).toEqual(['regular']);
+  expect(d.fiscal.find(g => g.key === 'verificar').items.map(r => r.company.companyId)).toEqual(['sem', 'futuro']);
+  expect(d.fiscal.find(g => g.key === 'pendencia').items).toHaveLength(1);
+});
+test('INSS mensal reconcilia o gráfico sem mudar o status geral da carteira', () => {
+  const rows = [{ company: { companyId: 'a', guideCompliance: { inss: { required: true, state: 'missing' } } }, fluxo: { status: { chave: 'guias' }, apuracao: {} } }];
+  const d = distribuirOperacoes(rows, [{ companyId: 'a', status: 'DOCUMENT_ABSENT' }]);
+  expect(d.guias.flatMap(g => g.items)).toHaveLength(0);
+  expect(d.status.find(g => g.key === 'guias').items).toHaveLength(1);
+  expect(rows[0].company.guideCompliance.inss.state).toBe('missing');
+});

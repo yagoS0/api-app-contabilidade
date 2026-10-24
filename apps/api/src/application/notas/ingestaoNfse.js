@@ -36,6 +36,7 @@ import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 // legado seja aposentado, e é por isso que ele está nomeado aqui em vez de esquecido.
 
 import { log } from "../../config.js";
+import { prepararDocumentoNota, bloquearDocumentosDaEmpresa } from "./persistirDocumentoNota.js";
 import { situacaoDoPeriodo, registrarPendenciaDoPeriodo } from "./pendenciasDoPeriodo.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
 import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
@@ -110,9 +111,10 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     };
   }
 
+  await bloquearDocumentosDaEmpresa(tx, portalClientId);
   const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
   const periodo = metadata.competencia ? await situacaoDoPeriodo(tx, { portalClientId, competencia: metadata.competencia }) : null;
-  const fechada = periodo?.exigeRevisao || false;
+  let fechada = periodo?.exigeRevisao || false;
   const canceladaNoXml = metadata.situacao === "CANCELADA" || metadata.situacao === "2";
 
   // Dedup: por chaveAcesso quando houver; senão por idNfse (numeroNfse). idNfse só é escrito no
@@ -122,22 +124,25 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     : { clientId_idNfse: { clientId: portalClientId, idNfse } };
 
   // Preserva o cancelamento numa re-captura: nunca rebaixa "cancelada" → "autorizada".
-  const existing = await tx.portalInvoice.findUnique({ where, select: { id: true, statusEfetivo: true } });
+  const existing = await tx.portalInvoice.findUnique({ where });
+  if (existing?.competencia) fechada = fechada || (await situacaoDoPeriodo(tx, { portalClientId, competencia: existing.competencia })).exigeRevisao;
   const statusEfetivo = existing?.statusEfetivo === "cancelada" || canceladaNoXml ? "cancelada" : "autorizada";
 
+  const { documentoPreservado, ...documento } = prepararDocumentoNota(existing, { chaveAcesso, xmlRaw: xmlPlain, emitenteDoc: metadata.cnpjPrestador }, companyCnpj);
   const dataToWrite = {
     type: "NFSE",
     numero: metadata.numeroNfse,
     chaveAcesso: chaveAcesso || null,
     ...(chaveAcesso ? {} : { idNfse }),
     competencia: competenciaDate,
+    ...documento,
     issueDate: metadata.dataEmissao,
     total: metadata.valorServicos,
     emitenteNome: metadata.prestadorNome,
     emitenteDoc: metadata.cnpjPrestador,
     tomadorNome: metadata.tomadorNome,
     tomadorDoc: metadata.cnpjTomador,
-    xmlRaw: xmlPlain || null,
+
     status: canceladaNoXml ? "CANCELADA" : "EMITIDA",
     papel,
     statusEfetivo,
@@ -193,7 +198,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
   const upserted = await tx.portalInvoice.upsert({
     where,
     create: { clientId: portalClientId, ...dataToWrite },
-    update: dataToWrite,
+    update: documentoPreservado ? { ...documento, statusEfetivo } : { ...dataToWrite, issueDate: existing ? existing.issueDate : dataToWrite.issueDate, competencia: existing ? existing.competencia : dataToWrite.competencia },
     select: { id: true },
   });
 
@@ -203,7 +208,7 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
   // ⚠ A recriação PRESERVA a classificação do item que não mudou (ver `notaItens.js`). Antes era
   // `deleteMany` + `create` seco, e toda recaptura apagava `tipoReceita`/`anexoResolvido`/
   // `classificadoEm` em silêncio.
-  if (metadata.codigoServico) {
+  if (!documentoPreservado && metadata.codigoServico) {
     await substituirItensPreservandoClassificacao(tx, {
       notaId: upserted.id,
       itens: [{

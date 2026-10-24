@@ -1,0 +1,30 @@
+.notas-resumo { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+.notas-indicador { display:flex; flex-direction:column; align-items:flex-start; gap:8px; min-width:0; padding:18px; background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; color:var(--text); font:inherit; text-align:left; text-decoration:none; cursor:pointer; }
+.notas-indicador>span,.notas-indicador>small { color:var(--text-muted); font-size:.8rem; }
+.notas-indicador>strong { font-size:1.5rem; font-weight:600; font-variant-numeric:tabular-nums; }
+.notas-indicador[aria-pressed=true] { border-color:var(--accent-purple); background:var(--state-neutral-surface); }
+.notas-tipos { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.notas-tipos [aria-pressed=true] { border-color:var(--accent-purple); }
+.notas-tipo-acao { display:flex; gap:8px; align-items:center; font-size:.8rem; }
+.notas-tipo-acao select,.notas-data input { color:var(--text); background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; min-height:40px; max-width:100%; }
+.notas-data summary { cursor:pointer; min-height:40px; display:flex; align-items:center; }
+.notas-data label { display:grid; gap:4px; margin-bottom:8px; }
+.notas-pendencias__scroll { max-width:100%; min-width:0; overflow-x:auto; }
+.notas-pendencias__scroll:focus-visible { outline:2px solid var(--accent-purple); outline-offset:2px; }
+/* Scoped override of the company audit table rule; no other table is affected. */
+.notas-pendencias .notas-pendencias__scroll table,
+.company-workspace .company-auditoria > section.notas-pendencias table {
+  table-layout:auto; min-width:680px; overflow-wrap:normal; word-break:normal;
+}
+.notas-pendencias th:first-child,.notas-pendencias td:first-child,
+.notas-pendencias th:nth-child(3),.notas-pendencias td:nth-child(3) { white-space:nowrap; }
+.notas-pendencias td:nth-child(2) { min-width:230px; overflow-wrap:break-word; }
+.notas-pendencias td:last-child button { white-space:nowrap; }
+@media(max-width:720px) {
+  .notas-pendencias td:last-child button { min-height:44px; min-width:44px; }
+}
+@media(max-width:600px) {
+  .notas-resumo { grid-template-columns:1fr; }
+  .notas-indicador { padding:14px; }
+  .notas-tipos button,.notas-data summary { min-height:44px; }
+}

@@ -26,7 +26,7 @@ import {
   sinteticasIntroduzidas, filhasDiretas, mensagemRecusa,
 } from "../../application/accounting/lib/gateContaSintetica.js";
 import { executarBaixaProvisaoTx } from '../../application/accounting/BaixaProvisaoService.js';
-import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
+import { isMonthClosed, bloquearFechamentoContabil } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
 import { verificarLancamento, verificarLote } from "../../application/accounting/regras/MotorRegras.js";
@@ -1685,6 +1685,7 @@ export function createAccountingEntriesRouter({ log }) {
     if (!competencia) return res.status(400).json({ error: "competencia_required" });
     try {
       const resultado = await prisma.$transaction(async tx => {
+        await bloquearFechamentoContabil(tx, portalClientId);
         const estado = await estadoCorrecaoTx(tx, portalClientId, competencia);
         if ((estado.correcao || req.body?.versao) && req.body?.versao !== estado.versao) throw new CorrecaoContabilError('VERSAO_ALTERADA','Os lançamentos mudaram. Atualize e confira novamente.');
         const validation = await validateFechamentoContabil(tx, {portalClientId,competencia});

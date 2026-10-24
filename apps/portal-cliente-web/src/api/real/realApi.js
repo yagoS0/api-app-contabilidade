@@ -187,10 +187,10 @@ export function createRealApi() {
     async getInvoiceDetail(companyId, invoiceId) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/invoices/${encodeURIComponent(invoiceId)}`);
     },
-    async getInvoices(companyId, { competencia, page = 1, limit = 25 } = {}) {
+    async getInvoices(companyId, { competencia, page = 1, limit = 25, from, to, type, status, search, sort, order, direcao = "emitidas", incluirCanceladas } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/invoices${qs({
-          direcao: "emitidas",
+          direcao, from, to, type, status, search, sort, order, incluirCanceladas: incluirCanceladas ? "1" : undefined,
           competencia,
           page,
           limit,

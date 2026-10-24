@@ -2340,6 +2340,8 @@ model PortalSyncState {
   lastSyncAt       DateTime?
   state            String    @default("OK") // OK|RUNNING|ERROR
   lastError        String?
+  documentoRecusado Json?
+  syncDocumentoPendenteId String?
   lockUntil        DateTime?
   backoffUntil     DateTime?
   // Q12.B: cursor separado para DFe/SEFAZ (NF-e) — ADN e DFe rodam independentes.
@@ -2386,6 +2388,11 @@ model PortalInvoice {
   idDps       String? // opcional (NFSe Nacional)
 
   competencia DateTime?
+  dataEmissaoCivil String? @db.VarChar(10)
+  dataEmissaoInstante DateTime?
+  dataEmissaoEvidencia Json?
+  provenienciaDfe Json?
+  xmlResumo String?
   issueDate   DateTime?
   status      String    @default("PENDENTE") // EMITIDA|CANCELADA|SUBSTITUIDA|REJEITADA|PENDENTE|...
   total       Decimal?  @db.Decimal(18, 2)
@@ -2512,6 +2519,7 @@ model PortalInvoice {
   @@index([clientId, updatedAt])
   @@index([clientId, competencia, status, updatedAt])
   @@index([clientId, issueDate])
+  @@index([clientId, dataEmissaoCivil])
   @@index([status, updatedAt])
   @@index([papel])
   @@index([statusEfetivo])
@@ -6180,4 +6188,60 @@ model CalendarioLegadoSnapshot {
   dados Json
   createdAt DateTime @default(now())
   @@map("calendario_legado_snapshots")
+}
+
+// Recovery ledger: no cascade deletion of the evidence when a client/invoice is removed.
+model SyncDocumentoPendente {
+  id String @id
+  clientId String
+  origem String
+  nsu String?
+  snapshot Json
+  snapshotHash String
+  hashVersao String @default("sync-json-v1")
+  stateVersion String
+  revisao Int @default(1)
+  estado String @default("ATIVA")
+  motivo String
+  classe String
+  resultado Json?
+  createdAt DateTime @default(now())
+  resolvidoEm DateTime?
+  tentativas SyncDocumentoTentativa[]
+  @@unique([id, clientId])
+  @@index([clientId, estado])
+}
+model SyncDocumentoTentativa {
+  id String @id @default(uuid())
+  clientId String
+  pendenciaId String
+  actorId String
+  motivo String
+  idempotencyKey String
+  revisaoSolicitada String
+  hashSolicitado String
+  fingerprint String
+  estado String @default("EM_ANDAMENTO")
+  codigo String?
+  httpStatus Int?
+  resultado Json?
+  erroSecundario String?
+  conflitos Json?
+  iniciadaEm DateTime @default(now())
+  concluidaEm DateTime?
+  pendencia SyncDocumentoPendente @relation(fields: [pendenciaId, clientId], references: [id, clientId], onDelete: Restrict)
+  @@unique([clientId, pendenciaId, idempotencyKey], map: "sync_tentativa_idempotencia_key")
+}
+model SyncDocumentoEntrega {
+  id String @id @default(uuid())
+  clientId String
+  origem String
+  nsu String
+  conteudoHash String
+  chaveAcesso String?
+  invoiceId String
+  eventId String?
+  resultado Json
+  createdAt DateTime @default(now())
+  @@unique([clientId, origem, nsu])
 }

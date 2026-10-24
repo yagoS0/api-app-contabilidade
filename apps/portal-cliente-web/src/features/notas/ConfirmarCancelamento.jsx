@@ -1,3 +1,4 @@
+import { dataEmissaoDaNota } from "./lib/dataEmissaoDaNota";
 import { useState } from "react";
 import { useDialogoModal } from "../../lib/hooks";
 import { brl, fmtDateBr, fmtDoc, texto, TRACO } from "../../lib/format";
@@ -96,7 +97,7 @@ export function ConfirmarCancelamento({ nota, aoFechar, aoConfirmar }) {
           </div>
           <div>
             <dt>Emissão</dt>
-            <dd>{fmtDateBr(nota.issueDate)}</dd>
+            <dd>{dataEmissaoDaNota(nota)}</dd>
           </div>
         </dl>
 

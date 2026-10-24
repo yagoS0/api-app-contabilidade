@@ -824,6 +824,7 @@ export function createRealApi() {
     },
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
+    getOperationConsultas: competencia => request('/firm/operacoes/consultas?competencia=' + encodeURIComponent(competencia)),
     getOperationManualInss: competencia => request(`/firm/operacoes/inss-manual?competencia=${encodeURIComponent(competencia)}`),
     getCompanyManualInss: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`),
     saveCompanyManualInss: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`, { method: 'PUT', body: JSON.stringify(input) }),
@@ -2197,11 +2198,11 @@ export function createRealApi() {
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {
       const q = new URLSearchParams();
-      ["papel", "type", "competencia", "search", "cfop", "servico", "incluirCanceladas", "limit", "offset"].forEach((k) => {
+      ["papel", "type", "competencia", "search", "cfop", "servico", "incluirCanceladas", "dataInicio", "dataFim", "situacao", "limit", "offset"].forEach((k) => {
         if (filters[k] != null && filters[k] !== "") q.set(k, String(filters[k]));
       });
       const suffix = q.toString() ? `?${q.toString()}` : "";
-      return request(`/firm/companies/${companyId}/notas${suffix}`);
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/notas${suffix}`);
     },
     async getNotasSummary(companyId, anoOrFilters) {
       // Backward-compat: aceita Number (ano) ou Object com filtros completos
@@ -2209,6 +2210,9 @@ export function createRealApi() {
       if (typeof anoOrFilters === "number") {
         q.set("ano", String(anoOrFilters));
       } else if (anoOrFilters && typeof anoOrFilters === "object") {
+        for (const key of ['dataInicio', 'dataFim', 'situacao', 'incluirCanceladas']) {
+          if (anoOrFilters[key]) q.set(key, String(anoOrFilters[key]));
+        }
         const { ano, papel, type, competencia, search, cfop, servico } = anoOrFilters;
         if (ano) q.set("ano", String(ano));
         if (papel) q.set("papel", String(papel));
@@ -2219,7 +2223,7 @@ export function createRealApi() {
         if (servico) q.set("servico", String(servico));
       }
       const suffix = q.toString() ? `?${q.toString()}` : "";
-      return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/notas/summary${suffix}`);
     },
     // A AUDITORIA PRÉ-APURAÇÃO da competência — SÓ LEITURA (não marca nota, não altera apuração,
     // não fala com ADN/SEFAZ/SERPRO). A rota é LITERAL e registrada antes de `/notas/:notaId`.

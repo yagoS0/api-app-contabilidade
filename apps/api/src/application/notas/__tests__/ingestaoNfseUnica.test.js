@@ -91,7 +91,7 @@ const CHAVE = "33045572200000000000191000000000000926088310270000";
 
 function xmlNfse({ numero = "926", valor = "1500.00", chave = CHAVE, subst = "" } = {}) {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse">
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
   <infNFSe Id="NFS${chave}">
     <nNFSe>${numero}</nNFSe>
     <dhProc>2026-07-14T10:00:00-03:00</dhProc>

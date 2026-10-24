@@ -1,46 +1,4 @@
-import { PendenciasPeriodoBanner } from "./PendenciasPeriodoBanner";
-// Q12.C.1: aba "Notas Fiscais" da empresa — enxuta, em 2 janelas:
-//   • Notas de serviço (NFS-e) — captura ADN + import XML
-//   • Notas de venda/compra (NF-e) — captura SEFAZ (DFe)
-// Competências/fechamento/apuração ficam na aba Apuração / página global.
-//
-// ⚠⚠ AS DUAS JANELAS CONTINUAM SEPARADAS, E ISSO É DECISÃO DO DONO (23/08/2026):
-//
-// > *"vou corrigir algo que disse: as notas de compra devem ser separadas das notas recebidas de
-// > serviço"* — corrigindo, no mesmo dia, o pedido anterior de juntar as duas numa aba só.
-//
-// O fundamento técnico reforça a decisão: **as duas espécies não são a mesma coisa.** NF-e tem
-// item, NCM, CFOP e quantidade; NFS-e tem código de serviço e ISS. A coluna comum é pouca (data,
-// emitente, valor, situação), então lista única sempre mostraria o menor denominador das duas.
-// ⚠ O que ele quer saber — *"o total de notas recebidas"* — é respondido pelo **`NotasResumo`**,
-// que conta as duas espécies e diz que a soma é soma de espécies diferentes. Não precisa de lista
-// única, e por isso ela não existe.
-//
-// ⚠ ESTA FRASE DIZIA `RecebidasResumo` ATÉ 24/08/2026, e o componente **não existe mais**: ele foi
-// APAGADO em 23/08 quando o dono mandou absorver a faixa de recebidas para junto das outras caixas
-// (*"isso aqui tá horrível, esse notas recebidas em cima tem que ser absorvido"*). Um comentário
-// que manda procurar um arquivo apagado custa uma busca inteira a quem vier atrás.
-//
-// ⚠⚠ DOIS DEFEITOS MEDIDOS EM PRODUÇÃO (23/08/2026) FORAM CONSERTADOS AQUI, e os dois faziam a
-// MESMA coisa: esconder do contador as notas de COMPRA que nós já tínhamos capturado.
-//
-//   1. **A janela de NF-e só aparecia com inscrição estadual** (`hasInscricaoEstadual`). Medido:
-//      as três — e únicas — empresas com NF-e na base **não têm IE** (SINTROPIA 34, LENTE 11,
-//      ALBATROZ 2), porque as notas delas são **compras**, e **receber** NF-e não exige inscrição
-//      estadual. Quem precisa de IE é quem EMITE. A única empresa com IE (VAGALO) tem **zero**
-//      NF-e. Ou seja: a janela aparecia exatamente para quem não tinha nota, e sumia exatamente
-//      para quem tinha. ⚠ É o MESMO raciocínio já registrado no `apps/api/CLAUDE.md` para o worker
-//      do DFe (*"NÃO filtre o worker por `inscricaoEstadual`"*) — a regra existia, esta tela é que
-//      não a seguia.
-//   2. **O filtro de papel começa em `EMIT`** (`useNotasFiscais.js`) e trocar de janela mexia só
-//      no `type`. Como **as 47 NF-e da base são `DEST`**, a janela de NF-e, mesmo visível, listava
-//      **zero linhas** — "Nenhuma nota encontrada" sobre 34 notas que existem. Consertar só o item
-//      1 teria trocado uma janela invisível por uma janela vazia, que é pior: parece resposta.
-//      Por isso `trocarJanela` leva o papel para `DEST` ao entrar na NF-e. ⚠ É um PADRÃO, não uma
-//      trava: a captura de NF-e é o fluxo do **destinatário** (a fila do projeto se chama
-//      `NfeManifestacaoQueue`, "manifestação do destinatário"), e as caixas do resumo continuam
-//      trocando o papel para quem emitir NF-e um dia.
-
+import { PendenciasPeriodoBanner } from './PendenciasPeriodoBanner';
 import { useEffect, useState } from "react";
 import { FerramentasNfse } from './FerramentasNfse';
 
@@ -52,13 +10,13 @@ import { NotasResumo } from "./NotasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
 import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
-import { Tabs } from "../../../components/ui/Tabs";
+import "../notas.css";
 import { Button } from "../../../components/ui/Button";
 // A MESMA regra de clique das abas — ver `cliqueDeLink.js`. A engrenagem é um link de verdade.
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { modeloDeEmissaoDaNota } from "../lib/reaproveitarNota";
 import { BotaoAuditoria } from "./BotaoAuditoria";
-import { somenteServicosSemIE } from "../lib/janelasDeNotas";
+
 
 // Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
 // por props e não tem `api` em escopo.
@@ -71,7 +29,7 @@ export function NotasFiscaisTab({
   codigoMunicipioIbge = null,
   // O cadastro que `buildMissingFields` confere, vindo inteiro de `legacyCompany`.
   cadastroEmissao = null,
-  inscricaoEstadual,
+
   // ── A ENGRENAGEM DE CONFIGURAÇÃO (dono, 19/08/2026) ────────────────────────────────────────
   //
   // > *"a aba nova que criei no fiscal de emissão de NFS-e deve ser uma engrenagem de configuração
@@ -103,67 +61,15 @@ export function NotasFiscaisTab({
     notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
   } = notasPanel;
 
-  // NFS-e é a janela padrão (é onde está o faturamento). A de NF-e existe SEMPRE — ver o cabeçalho
-  // deste arquivo: condicioná-la à inscrição estadual escondia as notas de compra justamente de
-  // quem as tem.
-  const [janela, setJanela] = useState("NFSE");
-  const [perfilFiscal, setPerfilFiscal] = useState(null);
-  useEffect(() => {
-    let cancelado = false; setPerfilFiscal(null);
-    if (!nfseApi.getPerfilFiscal) return;
-    nfseApi.getPerfilFiscal(companyId).then(r => { if (!cancelado && r?.ok !== false) setPerfilFiscal(r); }).catch(() => {});
-    return () => { cancelado = true; };
-  }, [companyId]);
-  const servicosSemIE = somenteServicosSemIE(inscricaoEstadual, perfilFiscal);
-  const somenteRecebidas = janela === "NFE" && servicosSemIE;
-  useEffect(() => {
-    if (somenteRecebidas && notasFilters.papel !== "DEST") setNotasFilters({ ...notasFilters, papel: "DEST", offset: 0 });
-  }, [somenteRecebidas, notasFilters, setNotasFilters]);
-  // ⚠ `null` = assistente fechado. `{ modelo: null }` = nota do zero. `{ modelo: {...} }` = nota
-  // NOVA a partir de uma já emitida. Um booleano não conseguiria carregar o modelo, e uma segunda
-  // variável ao lado dele poderia ficar preenchida com o assistente fechado — e a próxima emissão
-  // do zero abriria com os dados da nota anterior.
+  // The list accepts both species. Capture/import still require an explicit species.
+  const [tipoAcao, setTipoAcao] = useState("NFSE");
+  const somenteRecebidas = false;
   const [emissao, setEmissao] = useState(null);
-  const janelaAtiva = janela;
-  const notasDaJanela = notas.filter((n) => n.type === janelaAtiva);
-
-  // Trocar de janela é trocar o `type` — e, ao ENTRAR na de NF-e, também o papel.
-  //
-  // ⚠ O papel nasce em `EMIT` (é o faturamento, o que o contador quer ver ao abrir a aba) e a
-  // troca de janela mexia só no `type`. Com as 47 NF-e da base em `DEST`, isso entregava uma
-  // janela de NF-e permanentemente vazia. Ver o cabeçalho deste arquivo, defeito 2.
-  //
-  // ⚠ Os dois campos vão no MESMO `setNotasFilters` de propósito: em duas chamadas, o effect de
-  // `type` logo abaixo dispararia uma carga intermediária (NF-e + EMIT) — exatamente a consulta
-  // vazia que este conserto existe para não fazer.
-  //
-  // `papelForcado` é o caminho das caixas de "Notas recebidas": clicar em "Compra (NF-e): 34" tem
-  // de abrir a janela JÁ em Recebidas, senão o número clicado e a lista aberta discordariam — que
-  // é o defeito que aquele bloco existe para não ter.
-  function irParaJanela(nova, papelForcado = null) {
-    setJanela(nova);
-    setNotasFilters({
-      ...notasFilters,
-      type: nova,
-      // Sem `papelForcado`, o padrão só vale ao ENTRAR na NF-e. Voltando para NFS-e o papel fica
-      // como estava — quem escolheu "Recebidas" na janela de serviço não perde a escolha ao
-      // passear pela de compra.
-      papel: papelForcado || (nova === "NFE" ? "DEST" : notasFilters.papel),
-      offset: 0,
-    });
+  const janelaAtiva = notasFilters.type || tipoAcao;
+  const notasDaJanela = notas;
+  function irParaJanela(type, papel = notasFilters.papel) {
+    setNotasFilters({ ...notasFilters, type, papel, offset: 0 });
   }
-
-  const trocarJanela = (nova) => irParaJanela(nova);
-
-  // O filtro `type` acompanha a janela ativa: assim o RESUMO (que é agregado no servidor)
-  // fala da mesma janela que a tabela — e a paginação passa a ser por janela, não dividida
-  // entre NF-e e NFS-e. Só dispara quando muda de fato (evita loop com o effect do hook).
-  useEffect(() => {
-    if (notasFilters.type !== janelaAtiva) {
-      setNotasFilters({ ...notasFilters, type: janelaAtiva, offset: 0 });
-    }
-  }, [janelaAtiva, notasFilters, setNotasFilters]);
-
   // A competência da EMPRESA (seletor do header) manda no filtro. Mesmo padrão do effect acima:
   // só escreve quando muda de fato, senão vira laço com o effect de carga do hook.
   useEffect(() => {
@@ -202,39 +108,37 @@ export function NotasFiscaisTab({
         <Button variant="secondary" size="sm" onClick={() => loadNotas()} style={{ marginLeft: 12 }}>Tentar carregar notas novamente</Button>
       </div>}
 
-      {/* ⚠ AS DUAS JANELAS APARECEM SEMPRE. O `hasInscricaoEstadual` que envolvia este bloco era o
-          defeito 1 do cabeçalho: ele escondia a NF-e de 3 de 3 empresas que TÊM nota de compra.
-          Empresas com IE ou perfil incerto também precisam encontrar suas vendas aqui. */}
-      <Tabs
-        mode="view"
-        ariaLabel="Janela de notas"
-        align="start"
-        style={{ marginBottom: 16 }}
-        items={[
-          { key: "NFSE", label: "Notas de serviço (NFS-e)" },
-          { key: "NFE", label: servicosSemIE ? "Notas de compra (NF-e)" : "Notas de venda e compra (NF-e)" },
-        ]}
-        active={janelaAtiva}
-        onChange={trocarJanela}
-      />
-
+      <NotasResumo summary={notasSummary} resumoRecebidas={notasRecebidas}
+        loading={loadingNotas} error={erroNotas} papel={notasFilters.papel}
+        onSelectPapel={papel => setNotasFilters({ ...notasFilters, papel, type: papel === 'DEST' && notasFilters.papel === 'DEST' ? notasFilters.type : '', offset: 0 })}
+        auditoria={hrefAuditoria && <BotaoAuditoria card api={nfseApi} companyId={companyId}
+          competencia={notasFilters.competencia} revisao={notas} href={hrefAuditoria} onAbrir={onAbrirAuditoria} />} />
+      {notasFilters.papel === "DEST" && <div className="notas-tipos" role="group" aria-label="Tipo de nota recebida">
+        {[["", "Ambas"], ["NFSE", "NFS"], ["NFE", "NF"]].map(([type, label]) =>
+          <Button key={type} variant="secondary" aria-pressed={(notasFilters.type || "") === type}
+            onClick={() => irParaJanela(type, "DEST")}>{label}</Button>)}
+      </div>}
       {/* ⚠ EMITIR é o PRIMÁRIO da janela de NFS-e; buscar e importar viram secundários.
           A aba nasceu só para CAPTURAR nota que já existe, e emitir — que é o que a empresa faz
           para faturar — não tinha porta nenhuma na tela, embora o backend (`POST /nfse/issue`)
           esteja de pé há tempos. Só na janela de NFS-e: NF-e de venda não se emite por aqui. */}
       <div aria-label="Ações das notas" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        {hrefAuditoria && <BotaoAuditoria api={nfseApi} companyId={companyId} competencia={notasFilters.competencia} revisao={notas} href={hrefAuditoria} onAbrir={onAbrirAuditoria} />}
+        {!notasFilters.type && <label className="notas-tipo-acao">Buscar / importar
+          <select aria-label="Tipo para buscar ou importar" value={tipoAcao} onChange={e => setTipoAcao(e.target.value)}>
+            <option value="NFSE">NFS-e</option><option value="NFE">NF-e</option>
+          </select>
+        </label>}
         {janelaAtiva === "NFSE" ? (
           <>
             {/* ⚠ Era ciano (`--accent-cyan`). Ciano é a cor de CATEGORIA do Simples Nacional
                 (`tokens.css`) — usá-la como CTA colocava a mesma cor em "esta empresa é do Simples"
                 e em "clique aqui". Ação primária é o accent do botão. */}
-            <Button
+            {notasFilters.papel !== 'DEST' && <Button
               type="button"
               onClick={() => setEmissao({ modelo: null })}
             >
               + Emitir nota
-            </Button>
+            </Button>}
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} mostrarStatus={false} />
 
           </>
@@ -295,44 +199,19 @@ export function NotasFiscaisTab({
       </div>}
 
 
-      {/* ⚠ FAIXA ÚNICA desde 23/08/2026 — ela absorveu o bloco "Notas recebidas" que ficava acima
-          do toggle. Ver o cabeçalho de `NotasResumo` para o porquê de `resumoRecebidas` e `summary`
-          serem DUAS chamadas diferentes que não podem ser trocadas uma pela outra. */}
-      <NotasResumo
-        mostrarEmitidas={!somenteRecebidas}
-        summary={notasSummary}
-        resumoRecebidas={notasRecebidas}
-        onVerRecebidas={(tipo) => irParaJanela(tipo, "DEST")}
-        janela={janelaAtiva}
-        competencia={notasFilters.competencia}
-        loading={loadingNotas}
-        papel={notasFilters.papel}
-        // Clicar na caixa filtra a tabela por papel. Clicar na já ativa NÃO desliga: a tabela
-        // sempre mostra um dos dois lados (emitidas por padrão) — sem estado "misturado".
-        onSelectPapel={(p) => {
-          if (notasFilters.papel === p) return;
-          setNotasFilters({ ...notasFilters, papel: p, offset: 0 });
-        }}
-        verCanceladas={notasFilters.incluirCanceladas === "1"}
-        // Alterna entre esconder (default, só faturamento) e mostrar as canceladas na tabela.
-        onToggleCanceladas={() => setNotasFilters({
-          ...notasFilters,
-          incluirCanceladas: notasFilters.incluirCanceladas === "1" ? "" : "1",
-          offset: 0,
-        })}
-      />
-
+      {!loadingNotas && !erroNotas && notasPanel.datasIndeterminadas > 0 && <p role="status">{notasPanel.datasIndeterminadas} nota(s) com data de emissão a verificar no restante dos filtros. {notasFilters.dataInicio || notasFilters.dataFim ? "Não incluídas no intervalo de datas; remova o intervalo para conferi-las." : "Confira a origem no detalhe."}</p>}
       <NotasList
         key={companyId}
         somenteRecebidas={somenteRecebidas}
         onBaixarSelecionadas={(ids, formato) => nfseApi.baixarNotasSelecionadas(companyId, ids, formato)}
-        notas={notasDaJanela}
+        notas={erroNotas || loadingNotas ? [] : notasDaJanela}
         /* ⚠ O TOTAL É O DO SERVIDOR, não `notasDaJanela.length`.
            `notasDaJanela` é uma PÁGINA (100 por vez) já filtrada de novo no cliente — usá-la como
            total fazia a tela escrever "100 nota(s)" num mês de 2.717 e não havia nada distinguindo
            isso de um mês que teve 100 notas mesmo. `notasTotal` já vinha certo da rota (`total`) e
            não era lido por ninguém. */
-        total={notasTotal}
+        total={erroNotas || loadingNotas ? null : notasTotal}
+        error={erroNotas}
         filters={notasFilters}
         onFiltersChange={setNotasFilters}
         onApply={(f) => loadNotas(f)}

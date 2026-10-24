@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
-import { projetarOperacoesEmpresas } from './operacoes';
+import { projetarOperacoesEmpresas, distribuirOperacoes } from './operacoes';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { ofertaDeRetentativa } from '../guides/lib/canalDeEnvio';
 import './operacoes.css';
@@ -16,9 +16,30 @@ import { incorporarInssManual, useManualInss } from './useManualInss';
 const quadros = [['apuracoes', 'Apurações pendentes', 'empresas'], ['faltantes', 'Guias faltantes', 'obrigações'], ['envios', 'Envios pendentes', 'obrigações'], ['erros', 'Erros de envio de guias', 'itens'], ['revisoes', 'Revisões pendentes', 'itens'], ['concluidas', 'Empresas concluídas', 'empresas']];
 const nome = c => c.razao || c.razaoSocial || c.nome || c.cnpj;
 
+
+function Distribuicao({ title, groups, unavailable, onSelect, bar = false }) {
+  const total = groups.reduce((sum, group) => sum + group.items.length, 0);
+  let start = 0;
+  const stops = groups.map(group => {
+    const from = start;
+    start += total ? group.items.length / total * 100 : 0;
+    return group.color + ' ' + from + '% ' + start + '%';
+  });
+  return <section className={bar ? 'operacoes-distribuicao-barra' : 'operacoes-distribuicao'}>
+    <h3>{title}</h3><small>{unavailable ? 'Informação indisponível' : total + ' ' + groups[0].unit}</small>
+    {!unavailable && total > 0 && <div className={bar ? 'operacoes-barra' : 'operacoes-pizza'} aria-hidden="true"
+      style={{ background: (bar ? 'linear-gradient(to right,' : 'conic-gradient(') + stops.join(',') + ')' }} />}
+    <div className="operacoes-distribuicao-legenda">{groups.map(group =>
+      <button type="button" key={group.key} disabled={unavailable} onClick={() => onSelect(group)}>
+        <i aria-hidden="true" style={{ background: group.color }} /><span>{group.label}</span><strong>{unavailable ? '—' : group.items.length}</strong>
+      </button>)}</div>
+  </section>;
+}
 export function OperationsPage({ api, companies = [], competencia, loading = false, error, onRefresh, onChangeCompetencia, onOpenCompany, acoesGuia = {} }) {
   const manualInss = useManualInss(api, competencia, companies);
   const { rows, tasks, groups } = incorporarInssManual(projetarOperacoesEmpresas(companies, competencia), manualInss.items);
+  const distribution = distribuirOperacoes(rows, manualInss.items);
+  const [chart, setChart] = useState(null);
   const [selection, setSelection] = useState(null);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState(false);
@@ -54,13 +75,25 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
   }
   return <section className="operacoes" aria-label="Central de Operações">
     <div className="operacoes-resumo">
-      <div className="operacoes-cabecalho"><h2>Central de Operações</h2><Button variant="secondary" disabled={unavailable} onClick={() => setApprovalOpen(true)}>Conferir e liberar apurações</Button></div>
+      <div className="operacoes-cabecalho"><h2>Centro de Operações</h2><Button variant="secondary" disabled={unavailable} onClick={() => setApprovalOpen(true)}>Conferir e liberar apurações</Button></div>
       <div className="operacoes-cabecalho"><label>Competência <input type="month" value={competencia || ''} disabled={busy} onChange={e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) onChangeCompetencia?.(e.target.value); }} /></label><Button variant="secondary" onClick={onRefresh} disabled={loading || busy}>Atualizar empresas</Button></div>
       {error && <p role="alert">{error} Os indicadores ficam indisponíveis até a atualização.</p>}
       {manualInss.error && <p role="alert">{manualInss.error} <Button variant="secondary" onClick={manualInss.reload}>Tentar novamente</Button></p>}
-      <div className="operacoes-indicadores">{quadros.map(([key, label, unit]) => <button type="button" className="operacoes-quadro" key={key} disabled={unavailable || (['concluidas', 'faltantes', 'revisoes'].includes(key) && (manualInss.loading || !!manualInss.error))} aria-pressed={active?.group === key} aria-controls="operacoes-fila" onClick={() => open(key)}>
+      <OperationsRoutineCompanies api={api} companies={companies} competencia={competencia} loading={loading} error={error} onRefreshCompanies={onRefresh} />
+      <div className="operacoes-distribuicoes">
+        {[['guias','Guias'],['parcelas','Parcelamento'],['status','Status geral']].map(([key,title]) =>
+          <Distribuicao key={key} title={title} groups={distribution[key]} unavailable={unavailable || (key === 'guias' && manualUnavailable)}
+            onSelect={group => setChart({ key, group: group.key, competencia })} />)}
+        <section className="operacoes-acompanhamento"><h3>Acompanhamento</h3>
+          {[['fiscal','Situação fiscal'],['apuracao','Apuração']].map(([key,title]) =>
+            <Distribuicao bar key={key} title={title} groups={distribution[key]} unavailable={unavailable}
+              onSelect={group => setChart({ key, group: group.key, competencia })} />)}
+        </section>
+      </div>
+      {!unavailable && distribution.coberturaIndisponivel.length > 0 && <p role="status">Cobertura de guias a verificar em {distribution.coberturaIndisponivel.length} empresa(s). O gráfico inclui apenas obrigações identificadas.</p>}
+      <details open className="operacoes-filas"><summary>Filas de trabalho e notas para revisão</summary><div className="operacoes-indicadores">{quadros.map(([key, label, unit]) => <button type="button" className="operacoes-quadro" key={key} disabled={unavailable || (['concluidas', 'faltantes', 'revisoes'].includes(key) && (manualInss.loading || !!manualInss.error))} aria-pressed={active?.group === key} aria-controls="operacoes-fila" onClick={() => open(key)}>
         <span>{label}</span><strong className={key === 'erros' && groups[key].length ? 'operacoes-erro' : ''}>{unavailable || (['concluidas', 'faltantes', 'revisoes'].includes(key) && (manualInss.loading || manualInss.error)) ? '—' : groups[key].length}</strong><small>{unit}</small>
-      </button>)}<OperationsAlerts api={api} /></div>
+      </button>)}<OperationsAlerts api={api} /></div></details>
     </div>
     {active && <section id="operacoes-fila" className="operacoes-fila" aria-label="Fila de trabalho">
       <div className="operacoes-cabecalho"><h3>{quadros.find(([key]) => key === active.group)?.[1]} <span>· {groups[active.group].length}</span></h3><Button variant="secondary" disabled={busy} onClick={close}>Limpar filtro</Button></div>
@@ -68,10 +101,21 @@ export function OperationsPage({ api, companies = [], competencia, loading = fal
       <ul className="operacoes-tarefas">{groups[active.group].map(t => <li key={t.id}><div><strong>{nome(t.company)}</strong><small>{t.titulo}</small></div><span>{t.tag?.envioErro || t.tag?.emailLastError || ''}</span><Button size="sm" variant="secondary" onClick={() => open(active.group, t.id)}>Ver detalhes</Button></li>)}</ul>
       {!groups[active.group].length && <p role="status">Nenhum item nesta categoria.</p>}
     </section>}
-    <h3>Automações</h3>
-    <OperationsRoutineCompanies api={api} companies={companies} loading={loading} error={error} onRefreshCompanies={onRefresh} />
+
     <h3>Em acompanhamento</h3>
     <OperationsDailyCalendar api={api} empresas={companies} onOpenCompany={onOpenCompany} />
+    {chart?.competencia === competencia && !unavailable && !(chart.key === 'guias' && manualUnavailable) && (() => {
+      const group = distribution[chart.key].find(g => g.key === chart.group);
+      return <Modal titulo={group.label + ' · ' + group.items.length + ' ' + group.unit} aoFechar={() => setChart(null)} tamanho="md">
+        <p>Competência {competencia}</p>
+        <ul className="operacoes-lista-modal">{group.items.map((row, index) =>
+          <li key={row.company.companyId + ':' + (row.item?.key || index)}>
+            <div><strong>{nome(row.company)}</strong>{row.item && <small>{row.item.label} · Documento: {row.item.documento} · Envio: {row.item.comunicacao} · Pagamento: {row.item.pagamento}</small>}</div>
+            <InternalLink href={link(row.company, chart.key === 'guias' ? 'guides' : chart.key === 'fiscal' ? 'sitfis' : chart.key === 'parcelas' ? 'parcelamento' : chart.key === 'apuracao' ? 'cadastroFiscal' : ({ apuracao: 'cadastroFiscal', obrigacoes: 'obrigacoes', guias: 'guides', contabilizacao: 'lancamentos', importacao: 'lancamentos' }[group.key] || 'cadastro'))}>Abrir empresa</InternalLink>
+          </li>)}</ul>
+        {!group.items.length && <p>Nenhum item neste grupo.</p>}
+      </Modal>;
+    })()}
     {approvalOpen && <Modal titulo="Conferir e liberar apurações" tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
       {!unavailable ? <OperationsApproval embedded key={competencia} api={api} rows={rows} competencia={competencia} onChanged={onRefresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
     </Modal>}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { bloquearFechamentoContabil } from './fechamentoContabil.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { CHECKLIST_FECHAMENTO } from './fechamentoBlockers.js';
 import { appendEventoTx, hashSnapshot, jsonSnapshot, listarEventosContabeis } from './AuditoriaContabilService.js';
@@ -68,6 +69,7 @@ export async function corrigirMesFechado({ companyId, competencia, motivo, versa
   if (!String(motivo || '').trim()) fail('MOTIVO_OBRIGATORIO', 'Informe o motivo da correção.', 400);
   if (!versao) fail('VERSAO_OBRIGATORIA', 'Atualize o fechamento antes de corrigir.', 400);
   return db.$transaction(async (tx) => {
+    await bloquearFechamentoContabil(tx, companyId);
     const leitura = await ler(tx, companyId, competencia);
     const { atual, versao: atualVersao } = await estadoCorrecaoTx(tx, companyId, competencia);
     if (leitura.state.active?.versaoAnterior === versao && leitura.state.active?.autor?.id === autor.id && leitura.state.active?.motivo === motivo.trim()) {

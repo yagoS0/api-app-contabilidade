@@ -1,3 +1,4 @@
+import { situacaoFiscalDaLinha } from '../companies/list/lib/situacaoFiscal';
 import { fluxoDaEmpresa, ETAPAS_CARTEIRA } from '@contabilidade/shared/fluxo-carteira';
 import { getComplianceTags } from '../companies/list/components/renderCompanyCard';
 import { resumirGuias } from '../companies/list/lib/resumoGuias';
@@ -47,4 +48,47 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
     rows.filter(r => r.fluxo.status.chave === 'guias').length,
     rows.filter(r => r.fluxo.contabilizacao.chave === 'aberto').length,
   ] };
+}
+
+// Every chart keeps the counted items, so its drill-down cannot use a different predicate.
+export function distribuirOperacoes(rows, manualInss = []) {
+  const group = (keys, unit) => keys.map(([key, label, color]) => ({ key, label, color, unit, items: [] }));
+  const neutral = 'var(--text-faint)', green = 'var(--state-ok)';
+  const guias = group([['pendente','Pendente','var(--state-danger)'],['disponivel','Disponível','var(--accent-orange)'],['enviada','Enviada','var(--logo-sol)'],['paga','Paga',green],['verificar','A verificar',neutral]], 'obrigações com guia');
+  const status = group([['apuracao','Apuração','var(--accent-orange)'],['obrigacoes','Obrigações','var(--primary)'],['guias','Guias','var(--logo-sol)'],['contabilizacao','Contabilização',green],['importacao','Importação','var(--accent-purple)'],['concluido','Concluído',green],['desconhecido','A verificar',neutral]], 'empresas');
+  const parcelas = group([['com','Em parcelamento','var(--accent-purple)'],['sem','Sem parcelamento',neutral],['verificar','A verificar',neutral]], 'empresas');
+  const fiscal = group([['pendencia','Com pendência','var(--state-danger)'],['emDia','Sem pendência',green],['verificar','A verificar',neutral]], 'empresas');
+  const apuracao = group([['sim','Apuradas',green],['nao','Não apuradas',neutral],['verificar','A verificar',neutral]], 'empresas');
+  const add = (groups, key, item) => groups.find(g => g.key === key).items.push(item);
+  for (const row of rows) {
+    const { company, fluxo } = row;
+    add(status, status.some(g => g.key === fluxo.status?.chave) ? fluxo.status.chave : 'desconhecido', row);
+    const parc = company.guideCompliance?.parcDas;
+    add(parcelas, company.temParcelamento === true || parc?.required === true ? 'com' : company.temParcelamento === false || parc?.required === false ? 'sem' : 'verificar', row);
+    const checked = new Date(company.fiscalCheckedAt).getTime();
+    const savedSituation = situacaoFiscalDaLinha(company).estado.chave;
+    const situation = checked > Date.now() && savedSituation === 'emDia' ? 'verificar' : savedSituation;
+    add(fiscal, ['pendencia','emDia'].includes(situation) ? situation : 'verificar', row);
+    add(apuracao, fluxo.apuracao?.apurada === true ? 'sim' : fluxo.apuracao?.apurada === false ? 'nao' : 'verificar', row);
+    const manual = manualInss.find(item => item.companyId === company.companyId);
+    const compliance = { ...company.guideCompliance };
+    // Only the chart's INSS document axis reconciles the monthly control. The
+    // general status remains exactly fluxo.status.chave from the company table.
+    if (manual) {
+      const existing = compliance.inss;
+      const hasDocument = ['present', 'gerada', 'enviada', 'falhou'].includes(existing?.state);
+      if (!hasDocument || manual.status === 'DOCUMENT_REVIEW') {
+        const states = { NOT_APPLICABLE: 'na', DOCUMENT_ABSENT: 'vazio', PENDING_DOCUMENT: 'missing', DOCUMENT_REVIEW: 'conflito', DOCUMENT_AVAILABLE: 'gerada' };
+        // Review changes only the document axis of the existing evidence. Never
+        // attach an old delivery/payment to another guide selected by the control.
+        compliance.inss = { ...existing, required: true, state: states[manual.status] || 'unknown',
+          guideId: existing?.guideId || manual.guides?.find(g => g.available)?.id,
+          communicationState: existing?.communicationState || existing?.state };
+      }
+    }
+    const resumo = resumirGuias(compliance);
+    for (const item of resumo.items.filter(item => !item.dispensada)) add(guias, item.grupo, { ...row, item });
+  }
+  return { guias, status, parcelas, fiscal, apuracao,
+    coberturaIndisponivel: rows.filter(row => !resumirGuias(row.company.guideCompliance).completo) };
 }

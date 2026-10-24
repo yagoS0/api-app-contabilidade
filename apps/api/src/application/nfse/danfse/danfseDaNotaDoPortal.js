@@ -24,8 +24,9 @@
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { derivarCiclo } from "../../notas/cicloNota.js";
-import { lerEnvelopeXml, raizDoXml } from "../lerEnvelopeXml.js";
+import { raizDoXml } from "../lerEnvelopeXml.js";
 import { gerarDanfse } from "./gerarDanfse.js";
+import { projetarEmissaoServico } from '../../notas/dataEmissaoNota.js';
 
 /** Códigos que este serviço lança. Os de `gerarDanfse` (DANFSE_SEM_QRCODE, …) sobem sem tradução. */
 export const DANFSE_ERRO = Object.freeze({
@@ -112,7 +113,7 @@ export async function gerarDanfseDaNota({
   if (!nota) {
     const portal = await client.portalClient.findUnique({
       where: { id: clientId },
-      select: { companyId: true },
+      select: { companyId: true, cnpj: true },
     });
     // ⚠ Sem `companyId` NÃO se busca. Cair para `where: { id }` sozinho serviria a nota de outra
     // empresa a quem soubesse o id — o furo de multi-tenancy que o `where` desta função existe
@@ -122,6 +123,7 @@ export async function gerarDanfseDaNota({
         where: { id, companyId: portal.companyId },
         select: { id: true, numeroNfse: true, chaveAcesso: true, status: true, xml: true },
       });
+      if (nossa) nossa = { ...nossa, documentoEmpresa: portal.cnpj };
     }
   }
 
@@ -183,7 +185,8 @@ export async function gerarDanfseDaNota({
  * são mais simples aqui porque a nota tem horas de vida.
  */
 async function danfseDaNossaEmissao({ nota, incluirCanhoto }) {
-  const { forma, xml } = lerEnvelopeXml(nota.xml);
+  const { xml, evidencia } = projetarEmissaoServico(nota, nota.documentoEmpresa);
+  const forma = xml ? 'legível' : 'ausente ou ilegível';
 
   if (!xml) {
     throw erro(
@@ -209,6 +212,9 @@ async function danfseDaNossaEmissao({ nota, incluirCanhoto }) {
       "pedido de emissão (DPS), não a NFS-e. Não há DANFSe de um pedido recusado.",
     );
   }
+
+  if (!evidencia.identidadeConferida) throw erro(DANFSE_ERRO.XML_INDISPONIVEL,
+    'A identidade do XML desta nota precisa ser conferida antes de gerar o DANFSe.');
 
   // ⚠ A MARCA D'ÁGUA VEM DO `status`, e a lista é FECHADA. Aqui não há `PortalInvoiceEvent` nem
   // nota substituta para consultar — a linha é NOSSA e tem horas de vida. `cancelled` é o único

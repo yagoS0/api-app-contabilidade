@@ -70,7 +70,7 @@ test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupa
   expect(task.api.executeCompanyOperation).toHaveBeenCalledTimes(1);
   expect(task.api.saveCompanyOperation).toHaveBeenCalledTimes(1);
   await act(async () => { if (result === 'success') task.resolve(); else task.reject(); });
-  if (result === 'success') expect(await screen.findByRole('status')).toHaveTextContent('1 liberação(ões) processada(s)');
+  if (result === 'success') expect(await within(screen.getByRole('region', { name: 'Conferência e programação de Operações' })).findByRole('status')).toHaveTextContent('1 liberação(ões) processada(s)');
   else {
     expect(await screen.findByRole('alert')).toHaveTextContent('Resultado desconhecido');
     expect(screen.getByRole('button', { name: 'Conferir' })).toBeDisabled();

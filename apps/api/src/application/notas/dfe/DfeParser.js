@@ -89,7 +89,7 @@ export function parseDistDFeResponse(xmlEnvelope) {
       } catch (err) {
         return { schema, xml: "", error: `gunzip_failed: ${err?.message}` };
       }
-      return { schema, xml };
+      return { schema, xml, nsu: String(item["@_NSU"] || item.NSU || '') };
     });
   }
 
@@ -166,7 +166,8 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
         status: mapSituation(r.nSit),
         statusEfetivo: "autorizada",
         papel,
-        xmlRaw: null, // resNFe não é o XML completo da nota — não persistimos
+        xmlRaw: null, // Resumo não habilita XML completo nem DANFE.
+        xmlResumo: xml,
       },
       items: [], // resumo não traz itens
     };
