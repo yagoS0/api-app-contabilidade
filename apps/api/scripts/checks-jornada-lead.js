@@ -25,7 +25,7 @@ export async function verificarJornada({ db, user, ok }) {
   await assert.rejects(j.diagnosticar(id, user, diagnostico(abertura.o)), e => e.code === "dados_incompletos");
   await assert.rejects(j.carregar(id, { id: user.id, role: "cliente" }), e => e.code === "forbidden");
   const o = await registrarCampos({ onboardingId: id, versao: 0, atorId: user.id, client: db, operacoes: [
-    ["responsavelNome", "Pessoa sintética"], ["atividadePretendida", "Consultoria"], ["municipioAtendimento", "Rio de Janeiro"], ["enderecoPretendido", "Endereço sintético 100"],
+    ["responsavelNome", "Pessoa sintética"], ["atividadePretendida", "Consultoria"], ["enderecoAbertura", { rua: "Rua Sintética", numero: "100", cidade: "Rio de Janeiro", uf: "RJ" }],
   ].map(([campo, valor]) => ({ campo, acao: "set", valor })) });
   await assert.rejects(j.diagnosticar(id, user, diagnostico(abertura.o)), e => e.code === "formulario_alterado");
   const ds = await Promise.all([1, 2].map(() => j.diagnosticar(id, user, diagnostico(o))));
@@ -40,7 +40,7 @@ export async function verificarJornada({ db, user, ok }) {
   assert.equal((await j.enviarDevolutiva(id, user, { diagnosticoId: ds[0].id })).jaEnviada, true);
   assert.equal(chamadas.length, antes + 1); assert.equal(chamadas.at(-1)[0], "TEXTO");
   ok("Jornada: abertura envia somente texto, respeita janela e não duplica a devolutiva");
-  await registrarCampos({ onboardingId: id, versao: o.versao, atorId: user.id, client: db, operacoes: [{ campo: "enderecoPretendido", acao: "set", valor: "Outro endereço sintético" }] });
+  await registrarCampos({ onboardingId: id, versao: o.versao, atorId: user.id, client: db, operacoes: [{ campo: "enderecoAbertura", acao: "set", valor: { rua: "Outra rua sintética", numero: "100", cidade: "Rio de Janeiro", uf: "RJ" } }] });
   assert.equal((await j.carregar(id, user)).diagnosticoDesatualizado, true);
   await assert.rejects(j.enviarDevolutiva(id, user, { diagnosticoId: ds[0].id }), e => e.code === "atendimento_alterado");
   ok("Jornada: alteração material invalida diagnóstico e impede envio da versão anterior");

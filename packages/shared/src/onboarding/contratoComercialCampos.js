@@ -71,7 +71,7 @@ export const variaveisDoModelo = texto => [...new Set([...String(texto || '').ma
 export function enderecoContrato(valor) {
   if (typeof valor === 'string') return valor;
   if (!valor || typeof valor !== 'object') return '';
-  return [valor.logradouro || valor.street, valor.numero || valor.number, valor.complemento, valor.bairro, valor.municipio || valor.cidade || valor.city, valor.uf || valor.estado, valor.cep].filter(v => typeof v === 'string' || typeof v === 'number').join(', ');
+  return [valor.rua || valor.logradouro || valor.street, valor.semNumero ? "Sem número" : valor.numero || valor.number, valor.complemento, valor.bairro, valor.municipio || valor.cidade || valor.city, valor.uf || valor.estado, valor.cep].filter(v => typeof v === 'string' || typeof v === 'number').join(', ');
 }
 export function sugerirVariaveisContrato({ onboarding = {}, proposta = {}, modelo = {}, institucional = {}, variaveis = {} } = {}) {
   const d = onboarding.dados || {}, s = proposta.snapshot || {}, i = institucional.dados || institucional;
@@ -82,7 +82,7 @@ export function sugerirVariaveisContrato({ onboarding = {}, proposta = {}, model
     nome: onboarding.responsavelNome || d.responsavelNome, email: onboarding.responsavelEmail || d.responsavelEmail,
     cpf: d.responsavelCpf, cargo: d.responsavelCargo, whatsapp: onboarding.responsavelTelefone || d.responsavelTelefone,
     enderecoRepresentante: enderecoContrato(d.responsavelEndereco),
-    endereco: enderecoContrato(d.endereco || d.enderecoPretendido),
+    endereco: enderecoContrato(d.endereco || d.enderecoAbertura || d.enderecoPretendido),
     regimeTributario: ({ SIMPLES: 'Simples Nacional', LUCRO_PRESUMIDO: 'Lucro Presumido', LUCRO_REAL: 'Lucro Real' })[s.perfil?.regime || d.regimeAtual || d.regimePretendido],
   });
   const valores = { ...preenchidos(modelo.dados?.camposPadrao), ...preenchidos(i), ...cadastro, ...preenchidos(variaveis, true) };

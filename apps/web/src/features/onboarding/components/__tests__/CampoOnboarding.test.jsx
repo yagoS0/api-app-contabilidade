@@ -28,10 +28,10 @@ test("campos de sócios mantêm rótulos e valores ao editar, remover e adiciona
   }
   render(<Formulario />);
   fireEvent.change(screen.getByRole("textbox", { name: "Sócios — Nome (linha 2)" }), { target: { value: "Beatriz" } });
-  fireEvent.click(screen.getByRole("button", { name: "Remover linha 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remover sócio 1" }));
   expect(screen.getByRole("textbox", { name: "Sócios — Nome (linha 1)" })).toHaveValue("Beatriz");
   expect(screen.getByRole("textbox", { name: "Sócios — CPF (linha 1)" })).toHaveValue("456");
-  fireEvent.click(screen.getByRole("button", { name: "+ adicionar" }));
+  fireEvent.click(screen.getByRole("button", { name: "+ Adicionar sócio" }));
   expect(screen.getByRole("textbox", { name: "Sócios — Nome (linha 2)" })).toHaveValue("");
   expect(screen.getAllByText("Nome")).toHaveLength(2);
 });

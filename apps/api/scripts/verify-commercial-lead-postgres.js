@@ -92,7 +92,7 @@ try {
   const concurrent = await Promise.allSettled([escrever("Ana"), escrever("Bia")]); assert.equal(concurrent.filter(x => x.status === "fulfilled").length, 1); ok("CAS conserva somente uma escrita de campo por versão");
   let r = await db.onboarding.findUnique({ where: { id } });
   await assert.rejects(atualizar(id, { dados: {} }, { atorId: user.id }), e => e.code === "formulario_alterado"); ok("Escrita humana sem versão é recusada");
-  r = await atualizar(id, { versao: r.versao, dados: { ...r.dados, modalidadeServico: "AVULSO", atividadePretendida: "Consultório", municipioAtendimento: "Rio de Janeiro/RJ", enderecoPretendido: "Endereço sintético para conferência" } }, { atorId: user.id });
+  r = await atualizar(id, { versao: r.versao, dados: { ...r.dados, modalidadeServico: "AVULSO", atividadePretendida: "Consultório", enderecoAbertura: { rua: "Rua Sintética", numero: "100", cidade: "Rio de Janeiro", uf: "RJ" } } }, { atorId: user.id });
   assert.equal(r.fontesDados.modalidadeServico.conferido, true); ok("Escrita humana registra origem e conferência");
   const recursos = criarRecursosComerciais({ db }); await recursos.iniciarBiblioteca(user);
   const pacote = { formatVersion: 1, resources: [{ tipo: "CATALOGO", chave: "honorarios", versao: 1, titulo: "Catálogo sintético", dados: CATALOGO_SINTETICO }] };

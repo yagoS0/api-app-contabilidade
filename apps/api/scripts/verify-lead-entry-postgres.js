@@ -99,13 +99,13 @@ try {
       }
       if (indice === 0) {
         await entrada(telefone, "Trocar de contador", { interacao: "altan.comercial.transferencia.v1" });
-        assert.match(saidas.at(-1).texto, /melhorar/);
+        assert.match(saidas.at(-1).texto, /Deseja relatar alguma informação importante sobre a empresa\?/);
         await entrada(telefone, "Me chamo Caio");
         const retomada = (await casos(telefone))[0];
         assert.equal(retomada.id, caso.id); assert.equal(retomada.onboardingId, ficha.id);
         assert.equal(retomada.onboarding.dados.responsavelNome, "Caio");
         assert.equal(retomada.onboarding.cnpj, "11222333000181");
-        assert.match(saidas.at(-1).texto, /melhorar/i);
+        assert.match(saidas.at(-1).texto, /Deseja relatar alguma informação importante sobre a empresa\?/i);
         ok("Histórico de outro canal: saudações/menu não alteram ficha nem acumulam erro; retomada conserva CNPJ e não duplica caso");
       } else {
         const escolhas = [null,
@@ -152,7 +152,7 @@ try {
   ok("Abertura curta responde dúvida, reutiliza dados, não pede contratação e encerra na equipe; replay não duplica");
 
   cenario = "Transferência: contador só manda guias";
-  await entrada(transferencia, "Quero trocar de contador"); assert.match(saidas.at(-1).texto, /melhorar/);
+  await entrada(transferencia, "Quero trocar de contador"); assert.match(saidas.at(-1).texto, /Deseja relatar alguma informação importante sobre a empresa\?/);
   await entrada(transferencia, "Meu contador só manda guias");
   assert.match(saidas.at(-1).texto, /resultados/);
   assert.equal((await resumo(transferencia)).necessidade, "Meu contador só manda guias");

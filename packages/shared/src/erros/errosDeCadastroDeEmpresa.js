@@ -114,6 +114,8 @@ const TEXTOS = Object.freeze({
     "Este e-mail já é de uma conta existente. Confirme na tela para vincular esta empresa a ela.",
 
   // ── sócios ───────────────────────────────────────────────────────────────────────────────
+  company_titular_invalid:
+    "Confira o nome e o CPF do titular. O cadastro deve ter titular ou sócios, não ambos.",
   company_socio_participacao_invalid:
     "A participação de um sócio está inválida. Use um número entre 0 e 100.",
   company_socio_data_nascimento_invalid:

@@ -2,7 +2,7 @@ import { numeroDeclarado, respostaEspecial } from "@contabilidade/shared/onboard
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
-import { camposDaOrigem } from "../lib/onboardingSpec";
+import { camposDaOrigem, camposDoPasso } from "../lib/onboardingSpec";
 import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { DadosDaAnalise, ConferenciasDaAnalise } from "./RoteiroDaAnalise";
 import { BLOCOS_DEVOLUTIVA, DADOS_ANALISE, dadosAnaliseDaFicha, normalizarRoteiroAnalise, normalizarDiagnosticoComercial, pendenciasRoteiroAnalise, textoDaDevolutiva } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
@@ -20,22 +20,22 @@ export function ProgressoDoLead({ jornada, selecionado, onSelecionar, ocupado })
     </button></li>)}</ol></nav>;
 }
 
-export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado, sempreAberto = false, onEdicaoPendente }) {
+export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado, sempreAberto = false, onEdicaoPendente, interno = false }) {
   const id = useId();
   const [aberto, setAberto] = useState(sempreAberto), [iniciado, setIniciado] = useState(sempreAberto);
   const [rascunho, setRascunho] = useState({}), versaoEdicao = useRef(null);
-  const descritores = camposDaOrigem(onboarding.origem).filter(d => campos.includes(d.campo)).sort((a,b) => campos.indexOf(a.campo) - campos.indexOf(b.campo));
   const dados = { ...onboarding.dados, ...rascunho };
+  const descritores = (interno ? camposDaOrigem(onboarding.origem) : ['identificacao', 'responsavel', 'situacao', 'revisao'].flatMap(p => camposDoPasso(onboarding.origem, p, dados))).filter(d => campos.includes(d.campo)).sort((a,b) => campos.indexOf(a.campo) - campos.indexOf(b.campo));
   return <>
     {!aberto && <Button variant="secondary" disabled={ocupado} aria-expanded={false} onClick={() => { setIniciado(true); setAberto(true); }}>Conferir ou preencher dados deste passo</Button>}
     {iniciado && <fieldset hidden={!aberto} disabled={ocupado} className="lead-step-fields"><legend>Dados deste passo</legend>{descritores.map(d => <CampoOnboarding key={d.campo} idPrefix={id} descritor={d} dados={dados} valor={dados[d.campo] ?? ""} onChange={v => {
     if (versaoEdicao.current === null) versaoEdicao.current = onboarding.versao;
     onEdicaoPendente?.(true);
-    setRascunho(atual => ({ ...atual, [d.campo]: v }));
+    setRascunho(atual => ({ ...atual, [d.campo]: v, ...(d.campo === 'socios' ? { cartoesPessoas: Math.max(1, v.length) } : {}) }));
   }} />)}
     {versaoEdicao.current !== null && versaoEdicao.current !== onboarding.versao && <p role="alert">A ficha foi atualizada enquanto você preenchia. Seus campos estão preservados; confira a versão atual antes de salvar.</p>}
     <div className="lead-form-actions"><Button disabled={!Object.keys(rascunho).length} onClick={async () => {
-      const operacoes = Object.entries(rascunho).map(([campo, valor]) => { const d = descritores.find(x => x.campo === campo); return { campo, acao: valor === "" || valor == null ? "unset" : "set", valor: ["inteiro", "moeda"].includes(d.tipo) && valor !== "" ? (respostaEspecial(valor) ? valor : numeroDeclarado(valor)) : valor }; });
+      const operacoes = Object.entries(rascunho).map(([campo, valor]) => { const d = descritores.find(x => x.campo === campo); return { campo, acao: valor === "" || valor == null ? "unset" : "set", valor: ["inteiro", "moeda"].includes(d?.tipo) && valor !== "" ? (respostaEspecial(valor) ? valor : numeroDeclarado(valor)) : valor }; });
       if (await onSalvar({ versao: versaoEdicao.current, operacoes })) { setRascunho({}); versaoEdicao.current = null; setAberto(sempreAberto); onEdicaoPendente?.(false); }
     }}>Salvar dados deste passo</Button>
     {!sempreAberto && <Button variant="secondary" onClick={() => setAberto(false)}>Recolher dados</Button>}
@@ -87,7 +87,7 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, onSalvarDados
     {!["ABERTURA", "PESSOA_FISICA"].includes(onboarding.origem) && <><label>Regularização antes da contabilidade mensal<select value={regularizacao.necessaria == null ? "" : String(regularizacao.necessaria)} onChange={e => setRegularizacao(v => ({ ...v, necessaria: e.target.value === "" ? null : e.target.value === "true" }))}><option value="">Conferir necessidade</option><option value="true">Necessária, com orçamento separado</option><option value="false">Não identificada no escopo conferido</option></select></label><label>Motivo da decisão sobre regularização<textarea rows={2} maxLength={1200} value={regularizacao.justificativa} onChange={e => setRegularizacao(v => ({ ...v, justificativa: e.target.value }))} /></label>{regularizacao.necessaria === true && <p>A contabilidade mensal começa após a regularização. Na proposta, os valores serão separados.</p>}</>}
     {limitado && <label>Limitação do serviço e motivo para dispensar a consulta privada<textarea rows={3} maxLength={1200} value={dispensaConsultaPrivada} onChange={e => setDispensaConsultaPrivada(e.target.value)} /><small>A limitação aparecerá na proposta. Esta opção não registra procuração nem consulta fiscal realizada.</small></label>}
     <p>O cliente receberá este diagnóstico. Informe as pendências.</p>
-    {onboarding.origem !== "PESSOA_FISICA" && <><section aria-label="Dados da análise"><h4>Dados da análise</h4>{onSalvarDados && <><p>Salve os dados antes de confirmar o diagnóstico.</p><CamposDaEtapa sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise camposNaFicha={onSalvarDados ? ["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal"] : undefined} roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></section>
+    {onboarding.origem !== "PESSOA_FISICA" && <><section aria-label="Dados da análise"><h4>Dados da análise</h4>{onSalvarDados && <><p>Salve os dados antes de confirmar o diagnóstico.</p><CamposDaEtapa interno sempreAberto onboarding={onboarding} campos={[onboarding.origem === "ABERTURA" ? "regimePretendido" : "regimeAtual", "qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal", "consultoriaMensal"]} onSalvar={onSalvarDados} ocupado={ocupado} onEdicaoPendente={setDadosFichaPendentes} /></>}<DadosDaAnalise camposNaFicha={onSalvarDados ? ["qtdFuncionarios", "notasRecebidasMes", "notasEmitidasMes", "faturamentoMensal"] : undefined} roteiro={roteiro} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></section>
     <section aria-label="Conferências"><h4>Conferências</h4><ConferenciasDaAnalise roteiro={roteiro} origem={onboarding.origem} onChange={v => { setEditouRoteiro(true); setRoteiro(v); }} /></section>
     </>}
     </div>

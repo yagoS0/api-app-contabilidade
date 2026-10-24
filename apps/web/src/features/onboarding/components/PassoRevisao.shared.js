@@ -1,6 +1,8 @@
+import { formatarEnderecoAbertura } from '@contabilidade/shared/onboarding';
 
 
 export function formatarValor(descritor, valor) {
+  if (descritor.tipo === "endereco") return formatarEnderecoAbertura(valor);
   if (descritor.tipo === "moeda" && typeof valor === "number") return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   if (valor === "NAO_SEI") return "Não sei / preciso confirmar";
   if (valor === "NAO_APLICAVEL") return "Não se aplica";

@@ -1,3 +1,4 @@
+import { CAMPOS_INTERNOS } from '@contabilidade/shared/onboarding';
 import { numeroDeclarado, permiteRespostaEspecial } from "@contabilidade/shared/onboarding-dados";
 import { descritorDe } from "@contabilidade/shared/onboarding";
 import { pediuMenuWhatsapp, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
@@ -112,8 +113,8 @@ export function responderDuvidaComercial(texto, { origem = null, pretendeReativa
   if (/\b(?:sem (?:movimento|movimentacao|faturamento)|nao fatur[oa]|nao (?:uso|movimento) (?:mais )?(?:a |minha )?empresa|empresa (?:esta |ta )?parada)\b/.test(t)
     && /\b(?:impostos?|declarac\w*|pagar|preciso|devo|obriga\w*|entregar)\b/.test(t)) return "Estar sem movimento, por si só, não permite concluir quais impostos ou declarações se aplicam. A equipe confere o regime, o período e o que já foi entregue antes de orientar. A análise aponta as pendências; a execução de regularizações recebe orçamento separado.";
   if (/\b(?:procuracao|autorizar acesso|autorizacao de acesso|senha do gov|senha gov)\b/.test(t)) return "Para a análise fiscal, a equipe orienta como autorizar o acesso à Receita por procuração. Não precisamos da sua senha gov.br. Se você já autorizou, a equipe confere antes de pedir novamente.";
-  if (/\b(?:qual|o que|como|quais|preciso|precisa|posso)\b.{0,35}\b(?:documentos?|documentacao)\b|\blista de documentos\b/.test(t)) return origem === "ABERTURA"
-    ? "Começamos com sua atividade, cidade e tipo de serviço desejado. Depois, a equipe orienta quais documentos dos sócios e do endereço serão necessários para a abertura."
+  if (/\b(?:qual|o que|como|quais|posso)\b.{0,35}\b(?:documentos?|documentacao)\b|\blista de documentos\b|\b(?:preciso|precisa)\b.{0,35}\b(?:documentos?|documentacao)\b[^?]*\?/.test(t) || /\b(?:preciso|precisa) (?:de )?(?:quais|que|algum|alguns|alguma|algumas|apresentar|enviar|levar)\b.{0,35}\b(?:documentos?|documentacao)\b/.test(t)) return origem === "ABERTURA"
+    ? "Começamos com sua atividade e cidade. Depois, a equipe orienta quais documentos dos sócios e do endereço serão necessários para a abertura e prepara a definição comercial, sem exigir essa escolha para continuar o cadastro."
     : origem ? "Para começar a análise de uma empresa existente, precisamos do CNPJ. Depois da consulta pública, a equipe indica os documentos e autorizações necessários para seu caso."
       : "Na abertura, começamos pela atividade e cidade; depois orientamos os documentos dos sócios e do endereço. Se a empresa já existe, começamos pelo CNPJ para indicar os documentos necessários.";
   if (/\b(?:quanto tempo|qual (?:e )?o prazo|prazo|demora|fica pront[oa])\b/.test(t) && (/\?|\b(?:quanto|qual|em quantos|que prazo|demora para|demora a abrir)\b/.test(t))) return "O prazo depende do serviço, dos documentos e, na abertura, da análise do endereço e dos órgãos responsáveis. A equipe confirma uma previsão depois dessa conferência.";
@@ -208,8 +209,19 @@ function declarouMotivoTroca(texto) {
 }
 
 export function interpretarColetaComercial({ texto, origem, campoEsperado = null, anoParadaPendente = null, dadosAtuais = {} }) {
+  if (CAMPOS_INTERNOS.includes(campoEsperado) || campoEsperado === "enderecoPretendido") campoEsperado = null;
   const raw = String(texto || "").trim(), t = limpo(raw), campos = new Map();
-  const set = (campo, valor) => campos.set(campo, { campo, acao: "set", valor });
+  const set = (campo, valor) => {
+    if (origem === 'ABERTURA' && campo === 'municipioAtendimento') {
+      const atual = dadosAtuais.enderecoAbertura || {};
+      const partes = String(valor).trim().match(/^(.*?)(?:\s*[,\/]\s*([A-Za-z]{2}))?$/);
+      // Município espontâneo complementa a ficha; não substitui edição já feita.
+      const endereco = { ...atual, ...(!atual.cidade ? { cidade: partes[1].trim() } : {}), ...(!atual.uf && partes[2] ? { uf: partes[2].toUpperCase() } : {}) };
+      campos.set('enderecoAbertura', { campo: 'enderecoAbertura', acao: 'set', valor: endereco });
+      return;
+    }
+    campos.set(campo, { campo, acao: "set", valor });
+  };
   const retomada = /^(?:voltei|estou de volta|vamos continuar|pode continuar|continuar|continuando|podemos continuar|quero continuar|retomar|quero retomar|ja (?:falei|conversei) com voces(?: antes)?|ja (?:enviei|mandei|informei)(?: (?:isso|meu nome|meus dados|os dados))?)$/.test(t);
   const aguardar = /^(?:ok|okay|entendi|certo|beleza|ta bom|tudo bem|tudo bom|obrigad[oa]|valeu|por nada|aguard[ae](?: (?:ai|um pouco|um (?:momento|minuto|minutinho)|que ja volto))?|(?:pode |poderia )?(?:aguardar|esperar)(?: (?:um pouco|um (?:momento|minuto|minutinho)))?|(?:pera|espera)(?: ai| um pouco)?|perai|(?:so )?um (?:momento|minuto|minutinho)|ja (?:te |lhe )?(?:mando|envio|respondo)|depois|falo depois|respondo depois|vou (?:ver|conferir|procurar)(?: e (?:te |lhe )?(?:mando|envio))?)(?:,? por favor)?(?:,? (?:estou|to) (?:ocupad[oa]|no trabalho|em reuniao|dirigindo))?$/.test(t);
   const reinicio = /^(?:(?:quero|vamos|pode) )?(?:recomecar|reiniciar|comecar (?:de novo|do zero)|zerar (?:o )?atendimento|cancelar (?:o )?atendimento)$/.test(t);
@@ -219,10 +231,10 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   const desconhece = naoSabeCampo(t, campoEsperado);
   // Quando perguntamos o motivo da troca, "Preço" é a resposta, não um orçamento.
   // Perguntas explícitas sobre nossos valores continuam na FAQ.
-  const motivoInformado = origem === "TRANSFERENCIA" && campoEsperado === "motivoTroca" && !desconhece && declarouMotivoTroca(raw);
+  const motivoInformado = ['TRANSFERENCIA', 'INATIVA'].includes(origem) && campoEsperado === "pendenciasDeclaradas" && !desconhece && declarouMotivoTroca(raw);
   const objetivo = origem === "INATIVA" ? objetivoDeclarado(raw, campoEsperado === "pretendeReativar") : null;
   let resposta = responderDuvidaComercial(raw, { origem, pretendeReativar: objetivo || dadosAtuais.pretendeReativar });
-  if (motivoInformado) { set("motivoTroca", raw); resposta = null; }
+  if (motivoInformado) { set("pendenciasDeclaradas", raw); resposta = null; }
   let respostaSubstituiPergunta = false;
   let anoParadaAtualizado;
   const pergunta = Boolean(resposta) || raw.includes("?") || /\b(?:qual|quais|como|quanto|posso|pode me|voces fazem)\b/.test(t);
@@ -279,8 +291,7 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
   if (origem === "INATIVA") {
     if (objetivo) set("pretendeReativar", objetivo);
     else if (/^(?:estou |ainda estou |sou )?indecis[oa]$/.test(t) || desconhece && campoEsperado === "pretendeReativar") set("pretendeReativar", "INDECISO");
-    if (objetivo === "BAIXAR") set("modalidadeServico", "AVULSO");
-    else if (objetivo === "REATIVAR" && dadosAtuais.pretendeReativar === "BAIXAR" && !modalidade) campos.set("modalidadeServico", { campo: "modalidadeServico", acao: "unset" });
+    // Objetivo declarado não substitui a modalidade conferida pela equipe.
     // A baixa não contrata mensalidade para uma empresa que será encerrada.
     // Uma demanda recorrente de outra empresa precisa ser separada pela equipe.
     if (!objetivo && dadosAtuais.pretendeReativar === "BAIXAR" && modalidade && modalidade !== "AVULSO") {
@@ -316,8 +327,16 @@ export function interpretarColetaComercial({ texto, origem, campoEsperado = null
     if (campoEsperado === "responsavelNome") {
       const candidato = parteDoCampo(raw.replace(/^(?:sou )?(?:a |o )/i, ""));
       if (nomeValido(candidato)) set(campoEsperado, candidato);
-    } else if (["atividadePretendida", "municipioAtendimento", "enderecoPretendido", "motivoTroca"].includes(campoEsperado) && !campos.size
+    } else if (campoEsperado === 'pendenciasDeclaradas' && !campos.size && raw.length >= 2 && raw.length <= 1000
+      && !/^(?:sim|nao|ja mandei|ja informei|vamos|ainda nao|nao sei)$/.test(t)) set(campoEsperado, raw);
+    else if (["atividadePretendida", "municipioAtendimento"].includes(campoEsperado) && !campos.size
       && raw.length >= 2 && raw.length <= 1000 && !/^(?:sim|nao|quero|preciso|pode|ja mandei|ja informei|vamos|ainda nao|nao sei)\b/.test(t)) set(campoEsperado, raw);
+  }
+  if (['socios', 'titular', 'enderecoAbertura'].includes(campoEsperado) && !campos.has(campoEsperado) && !resposta) {
+    resposta = campoEsperado === 'enderecoAbertura'
+      ? 'O endereço precisa ser registrado em campos separados, incluindo o cadastro do IPTU quando disponível. A equipe vai ajudar a completar a ficha; sua mensagem permanece no histórico.'
+      : 'Precisamos identificar pelo menos uma pessoa com nome e CPF válidos. A equipe vai ajudar a registrar os sócios ou titular na ficha; sua mensagem permanece no histórico.';
+    return { operacoes: [...campos.values()], desconhecido, humano: true, resposta, retomada, aguardar, reinicio, respostaSubstituiPergunta: true };
   }
   return { operacoes: [...campos.values()], desconhecido, humano, resposta, retomada, aguardar, reinicio, respostaSubstituiPergunta,
     ...(anoParadaAtualizado !== undefined ? { anoParadaPendente: anoParadaAtualizado } : {}) };

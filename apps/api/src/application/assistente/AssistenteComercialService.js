@@ -16,7 +16,7 @@ import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { montarHistorico } from "./AssistenteService.js";
-import { camposDaOrigem } from "@contabilidade/shared/onboarding";
+import { camposDaColeta as camposDaOrigem } from "@contabilidade/shared/onboarding";
 import { montarPromptComercial, respostaComercialUtilizavel } from "./promptComercial.js";
 import { identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "../onboarding/ContextoComercialService.js";
 
@@ -129,7 +129,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     const ferramentas = [{ name: "registrar_atendimento", strict: false,
       description: "Registra declarações do pedido atual antes de responder. Retorna os dados salvos, consulta pública e a próxima informação útil. Use uma vez por turno; em dúvida registre campos vazios. Não executa serviços fiscais nem aprova propostas.",
       input_schema: { type: "object", additionalProperties: false, properties: {
-        origem: { type: "string", enum: ["ABERTURA", "TRANSFERENCIA", "INATIVA"] },
+        origem: { type: "string", enum: ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"] },
         campos: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, properties: {
           campo: { type: "string" }, acao: { type: "string", enum: ["set", "unset"] }, valor: {},
         }, required: ["campo", "acao"] } },
@@ -146,7 +146,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
         let usada = false;
         try {
           resposta = await (deps.assistente || new AssistenteClient({ maxIteracoes: 2 })).responder({
-            system: montarPromptComercial({ ficha: lead.onboarding, campos: (lead.onboarding ? camposDaOrigem(lead.onboarding.origem) : ["ABERTURA", "TRANSFERENCIA", "INATIVA"].flatMap(camposDaOrigem)).map(d => ({ campo: d.campo, tipo: d.tipo, opcoes: d.opcoes, respostasEspeciais: permiteRespostaEspecial(d) ? RESPOSTAS_ESPECIAIS : undefined })), orientacoes: aprovadas.map(o => ({ id: o.id, chave: o.chave, titulo: o.titulo })) }),
+            system: montarPromptComercial({ ficha: lead.onboarding, campos: (lead.onboarding ? camposDaOrigem(lead.onboarding.origem, lead.onboarding.dados) : ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"].flatMap(camposDaOrigem)).map(d => ({ campo: d.campo, tipo: d.tipo, opcoes: d.opcoes, respostasEspeciais: permiteRespostaEspecial(d) ? RESPOSTAS_ESPECIAIS : undefined })), orientacoes: aprovadas.map(o => ({ id: o.id, chave: o.chave, titulo: o.titulo })) }),
             messages: montarHistorico(historico.filter(h => !ids.includes(h.id)), pedido), ferramentas,
             executar: async (nome, input) => {
               await conferir();

@@ -1,3 +1,4 @@
+import { formatarEnderecoAbertura, empresaIndividual } from '../../../../../packages/shared/src/onboarding/onboardingSpec.js';
 import PDFDocument from 'pdfkit';
 import { DADOS_ANALISE, BLOCOS_DEVOLUTIVA, CONFERENCIAS_ANALISE } from '../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js';
 
@@ -14,13 +15,13 @@ export function apresentarDiagnostico({ ficha, diagnostico, fiscal = null }) {
     ['Nome fantasia', cadastro.nomeFantasia], ['Atividade', cadastro.atividadePrincipal || d.atividadePretendida],
     ['CNAE principal', cadastro.cnaePrincipal], ['Natureza jurídica', cadastro.naturezaJuridica],
     ['Porte', cadastro.porte], ['Abertura', cadastro.dataAbertura],
-    ['Endereço', typeof cadastro.endereco === 'string' ? cadastro.endereco : [cadastro.endereco?.logradouro, cadastro.endereco?.numero, cadastro.endereco?.complemento, cadastro.endereco?.bairro, cadastro.endereco?.cep].filter(Boolean).join(', ') || d.enderecoPretendido],
-    ['Município', cadastro.municipio || d.municipioAtendimento || d.municipioPretendido], ['UF', cadastro.uf],
+    ['Endereço', typeof cadastro.endereco === 'string' ? cadastro.endereco : [cadastro.endereco?.logradouro || cadastro.endereco?.rua, cadastro.endereco?.numero, cadastro.endereco?.complemento, cadastro.endereco?.bairro, cadastro.endereco?.cep].filter(Boolean).join(', ') || formatarEnderecoAbertura(d.enderecoAbertura) || d.enderecoPretendido],
+    ['Município', cadastro.municipio || d.enderecoAbertura?.cidade || d.municipioAtendimento || d.municipioPretendido], ['UF', cadastro.uf || d.enderecoAbertura?.uf],
     ['Situação cadastral', cadastro.situacaoCadastral], ['Regime declarado', regimes[d.regimeAtual || d.regimePretendido] || d.regimeAtual || d.regimePretendido],
     ['Responsável', ficha.responsavelNome || d.responsavelNome],
-    ['Capital social', cadastro.capitalSocial == null ? null : Number(cadastro.capitalSocial).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+    ['Capital social', (cadastro.capitalSocial ?? d.capitalSocialPretendido) == null ? null : Number(cadastro.capitalSocial ?? d.capitalSocialPretendido).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
     ['CNAEs secundários', cadastro.cnaesSecundarios?.map(c => [c.codigo, c.descricao].filter(Boolean).join(' - ')).join('\n')],
-    ['Quadro societário', cadastro.socios?.map(s => [s.nome, s.qualificacao].filter(Boolean).join(' - ')).join('\n')],
+    [empresaIndividual(d) ? 'Titular' : 'Quadro societário', (empresaIndividual(d) ? d.titular : d.socios?.length ? d.socios : cadastro.socios)?.map(s => [s.nome, s.cpf, s.qualificacao].filter(Boolean).join(' - ')).join('\n')],
   ];
   return { diagnosticoId: diagnostico.id, criadoEm: diagnostico.createdAt, origem: origens[ficha.origem] || 'Atendimento comercial',
     cadastro: campos.filter(([, value]) => value !== undefined && value !== null && value !== ''),

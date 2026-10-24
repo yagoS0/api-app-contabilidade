@@ -204,7 +204,7 @@ export function criarPropostasComerciais({
               regime: r.dados?.regimeAtual || r.dados?.regimePretendido || null,
               funcionarios: r.dados?.qtdFuncionarios ?? null,
               notasRecebidasMes: r.dados?.notasRecebidasMes ?? null,
-              consultoriaMensal: proposta.opcoes.some(o => o.recorrente) && (r.dados?.consultoriaMensal === true || Number(r.dados?.qtdFuncionarios) >= catalogo.dados.consultoriaIncluidaAPartir)
+              consultoriaMensal: proposta.consultoriaMensal
             },
             servicosConferidos: String(body.ajustes?.escopoAvulso || "").slice(0, 1200),
             criadoPor: user.id

@@ -1,3 +1,4 @@
+import { travarPessoasDoCadastro, exigirPessoasCompativeis } from '../../application/company/pessoasDoCadastro.js';
 import { createReclassificarDocumentoGuiaRouter } from './reclassificarDocumentoGuia.js';
 import { travarGuiaArrecadatoria } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
 import { atualizarGuiaComEvidencia } from '../../application/guides/atualizarGuiaComEvidencia.js';
@@ -659,6 +660,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     capitalSocial: true,
     dataAbertura: true,
     quantidadeSocios: true,
+    titular: true,
     inscricaoMunicipal: true,
     codigoServicoNacional: true,
     // ⚠ MESMO MOTIVO DA LINHA ABAIXO (`codigoMunicipioIbge`): sem isto a lista de serviços não
@@ -1350,10 +1352,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             // das linhas que a tinham. Medido em producao (30/08/2026): 12 de 34 empresas perdiam
             // texto a cada "Salvar alteracoes", e esse texto e a unica fonte do `xDescServ` da DPS
             // (`features/notas/lib/descricaoSugerida.js`, o unico consumidor).
-            const legacyAtual = await tx.company.findUnique({
-              where: { id: portal.companyId },
-              select: { atividades: true },
-            });
+            const alteraPessoas = normalizedCompany.titular !== undefined || normalizedCompany.socios !== null;
+            const legacyAtual = alteraPessoas
+              ? await travarPessoasDoCadastro(tx, portal.companyId)
+              : await tx.company.findUnique({ where: { id: portal.companyId }, select: { atividades: true } });
+            const titularResultante = normalizedCompany.titular ?? legacyAtual?.titular;
+            const sociosResultantes = normalizedCompany.socios ?? legacyAtual?.partners ?? [];
+            if (alteraPessoas) {
+              exigirPessoasCompativeis(titularResultante, sociosResultantes);
+            }
             updatedLegacy = await tx.company.update({
               where: { id: portal.companyId },
               data: {
@@ -1480,6 +1487,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 desoneracao: normalizedCompany.desoneracao,
                 alteracaoNumero: normalizedCompany.alteracaoNumero,
                 alteracaoData: normalizedCompany.alteracaoData,
+                ...(normalizedCompany.titular ? { titular: normalizedCompany.titular, quantidadeSocios: 0 } : {}),
                 ...(normalizedCompany.socios
                   ? { quantidadeSocios: normalizedCompany.socios.filter((s) => !s.dataSaida).length }
                   : {}),
@@ -1879,6 +1887,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
         if (err?.code === "P2002") {
           return res.status(409).json({ error: "unique_constraint_violation" });
+        }
+        if (err?.code === "COMPANY_TITULAR_INVALID") {
+          return res.status(400).json({ error: "company_titular_invalid" });
         }
         log.error({ err }, "Falha ao atualizar empresa no portal firm");
         return res.status(500).json({ error: "internal_error" });

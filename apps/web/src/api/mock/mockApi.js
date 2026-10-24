@@ -2,7 +2,8 @@ const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
 import { validarContratacaoExterna } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
-import { exigirDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { exigirDadosOnboarding, validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { combinarColetaPublica, combinarFichaInterna, preservarDadosPersistidos } from "@contabilidade/shared/onboarding";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
 import { withFluxoCarteiraMock } from "./fluxoCarteiraMock";
@@ -4095,6 +4096,10 @@ export function createMockApi({ delay = defaultDelay } = {}) {
           uf: companyInput.enderecoUf,
           cep: companyInput.enderecoCep,
           complemento: companyInput.enderecoComplemento,
+          ...(companyInput.inscricaoImobiliaria !== undefined ? { inscricaoImobiliaria: companyInput.inscricaoImobiliaria } : {}),
+          ...(companyInput.iptuDesconhecido !== undefined ? { iptuDesconhecido: companyInput.iptuDesconhecido } : {}),
+          ...(companyInput.semNumero !== undefined ? { semNumero: companyInput.semNumero } : {}),
+          ...(companyInput.enderecoLegado ? { legado: companyInput.enderecoLegado } : {}),
         };
       const next = {
         ...current,
@@ -4144,7 +4149,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         // no-op offline: salvar, recarregar e ver o valor velho parece campo descartado pelo
         // backend — que é exatamente o defeito que este trabalho consertou no real.
         ...normalizarCamposEmissaoNfseMock(companyInput, legacyCurrent),
+        ...(companyInput.titular ? { titular: companyInput.titular } : {}),
         enderecoJson: {
+          ...Object.fromEntries(['inscricaoImobiliaria', 'iptuDesconhecido', 'semNumero', 'legado'].filter(k => endereco[k] !== undefined || legacyCurrent.enderecoJson?.[k] !== undefined).map(k => [k, endereco[k] ?? legacyCurrent.enderecoJson[k]])),
           rua: String(endereco.rua || legacyCurrent.enderecoJson?.rua || "").trim() || null,
           numero: String(endereco.numero || legacyCurrent.enderecoJson?.numero || "").trim() || null,
           bairro: String(endereco.bairro || legacyCurrent.enderecoJson?.bairro || "").trim() || null,
@@ -11128,7 +11135,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     },
     async revogarLinkOnboarding(id,linkId){const l=[...mockLinksComerciais.values()].find(l=>l.id===linkId&&l.onboardingId===id);if(!l)throw new Error("Link não encontrado.");l.revokedAt=new Date().toISOString();return {ok:true};},
     async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado ou revogado.");if(l.submittedAt)return {ok:true,enviado:true};const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
-    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado ou revogado.");if(l.submittedAt)return {ok:true,enviado:true};if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=exigirDadosOnboarding(o.origem,patch.dados);o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado ou revogado.");if(l.submittedAt)return {ok:true,enviado:true};if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);const validacao=validarDadosOnboarding(o.origem,combinarColetaPublica(o.origem,o.dados,patch.dados),{coleta:true,finalizar:patch.finalizar===true&&o.status==="RASCUNHO"});if(!validacao.ok)throw Object.assign(new Error(Object.values(validacao.erros)[0]),{status:400,erros:validacao.erros});o.dados=preservarDadosPersistidos(o.origem,o.dados,validacao.dados);o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
     async criarDemandaOnboarding(id, { origem, versao, chaveSolicitacao }) {
       const anterior = mockOnboardings.get(id);
       if (!anterior) throw new Error("Atendimento não encontrado.");
@@ -11157,7 +11164,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         cnpj: null, razaoSocial: null,
         responsavelNome: null, responsavelEmail: null, responsavelTelefone: null,
         emailJaCadastrado: false,
-        dados: {},
+        dados: String(origem).toUpperCase() === 'PESSOA_FISICA' ? {} : { cartoesPessoas: 2 },
         ultimoPasso: null, enviadoEm: null, portalClientId: null,
         convertidoEm: null, desistiuEm: null, motivoDesistencia: null,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -11210,6 +11217,11 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         throw Object.assign(new Error("Este onboarding já virou empresa."), { code: "onboarding_convertido", status: 409 });
       }
 
+      const validacao = validarDadosOnboarding(patch.origem || atual.origem,
+        patch.origem && patch.origem !== atual.origem ? {} : patch.dados === undefined ? atual.dados : combinarFichaInterna(atual.dados, patch.dados),
+        { coleta: true, finalizar: patch.finalizar === true && atual.status === 'RASCUNHO' });
+      if (!validacao.ok) throw Object.assign(new Error(Object.values(validacao.erros)[0]), { code: 'dados_invalidos', status: 400, erros: validacao.erros });
+
       // ⚠ TROCAR DE ORIGEM ZERA `dados`, e o mock faz isso DE VERDADE. Se só o servidor zerasse, o
       // modo mock deixaria o rascunho antigo sobreviver e a regressão só apareceria em produção.
       if (patch.origem && patch.origem !== atual.origem) {
@@ -11218,8 +11230,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         atual.ultimoPasso = null;
         Object.assign(atual, mockColunasDoOnboarding({}));
       } else if (patch.dados !== undefined) {
-        // SUBSTITUI, não mescla.
-        atual.dados = patch.dados || {};
+        atual.dados = preservarDadosPersistidos(atual.origem, atual.dados, validacao.dados);
         Object.assign(atual, mockColunasDoOnboarding(atual.dados));
       }
 

@@ -1,4 +1,5 @@
-import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { validarDadosOnboarding, errosConclusaoPessoas } from "@contabilidade/shared/onboarding-dados";
+import { preservarDadosPersistidos, combinarFichaInterna, CAMPOS_INTERNOS, empresaIndividual, pessoaPreenchida } from '@contabilidade/shared/onboarding';
 import { projetarContratacao, contratoAptoPagamento } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 // ONBOARDING — regras do funil pré-cadastro.
 //
@@ -113,7 +114,7 @@ export async function criar({ origem, criadoPorId = null } = {}) {
       origem: origemNormalizada,
       status: "RASCUNHO",
       origemPreenchimento: "ESCRITORIO",
-      dados: {},
+      dados: origemNormalizada === "PESSOA_FISICA" ? {} : { cartoesPessoas: 2 },
       criadoPorId: criadoPorId ? String(criadoPorId) : null,
     },
   });
@@ -158,9 +159,14 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
     if (patch.dados === null || typeof patch.dados !== "object" || Array.isArray(patch.dados)) {
       throw new OnboardingError("dados_invalidos", "`dados` deve ser um objeto.", 400);
     }
-    const validacao = validarDadosOnboarding(origemEfetiva, patch.dados);
+    for (const campo of CAMPOS_INTERNOS) {
+      if (!Object.hasOwn(patch.dados, campo) || JSON.stringify(patch.dados[campo]) === JSON.stringify(atual.dados?.[campo])) continue;
+      const interna = validarDadosOnboarding(origemEfetiva, { [campo]: patch.dados[campo] });
+      if (!interna.ok) throw Object.assign(new OnboardingError('dados_invalidos', Object.values(interna.erros)[0], 400), { erros: interna.erros });
+    }
+    const validacao = validarDadosOnboarding(origemEfetiva, combinarFichaInterna(atual.dados, patch.dados), { coleta: true });
     if (!validacao.ok) throw Object.assign(new OnboardingError("dados_invalidos", Object.values(validacao.erros)[0], 400), { erros: validacao.erros });
-    dadosEfetivos = validacao.dados;
+    dadosEfetivos = preservarDadosPersistidos(origemEfetiva, atual.dados, validacao.dados);
     data.dados = dadosEfetivos;
   }
 
@@ -178,6 +184,11 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
   const emailNovo = data.responsavelEmail ?? null;
   if (data.dados !== undefined && emailNovo !== atual.responsavelEmail) {
     data.emailJaCadastrado = await emailTemConta(emailNovo);
+  }
+
+  if (patch.finalizar === true && atual.status === "RASCUNHO" && origemEfetiva !== "PESSOA_FISICA") {
+    const erros = errosConclusaoPessoas(dadosEfetivos);
+    if (Object.keys(erros).length) throw Object.assign(new OnboardingError("dados_invalidos", Object.values(erros)[0], 400), { erros });
   }
 
   if (patch.finalizar === true) {
@@ -305,6 +316,10 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     );
   }
 
+  const pessoasIncompativeis = registro.dados?.[empresaIndividual(registro.dados) ? 'socios' : 'titular'];
+  if (Array.isArray(pessoasIncompativeis) && pessoasIncompativeis.some(pessoaPreenchida)) {
+    throw new OnboardingError('pessoas_incompativeis', 'Confira os sócios e o titular na ficha antes de converter. As pessoas registradas foram preservadas.', 409);
+  }
   const contexto = { externa: payload.contratacaoExterna, atorId, registro };
   const comercial = await conferirContratoDeConversao(prisma, id, contexto);
   let arquivo;

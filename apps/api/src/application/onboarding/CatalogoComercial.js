@@ -19,25 +19,30 @@ export function calcularOpcoes({
     status: 409
   });
   const pessoaFisica = ficha.origem === "PESSOA_FISICA";
-  const d = pessoaFisica ? { ...ficha.dados, modalidadeServico: "AVULSO" } : ficha.dados || {},
+  const d = pessoaFisica ? { ...ficha.dados, modalidadeServico: "AVULSO" } : { ...ficha.dados, ...(ajustes.modalidadeServico ? { modalidadeServico: ajustes.modalidadeServico } : {}) },
     pendencias = [],
     opcoes = [];
   const regime = d.regimeAtual || d.regimePretendido;
   const quantidade = v => typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v;
   const funcionarios = quantidade(d.qtdFuncionarios);
   const recebidas = quantidade(d.notasRecebidasMes);
-  const mensalNecessaria = d.modalidadeServico !== "AVULSO";
+  const consultoria = typeof ajustes.consultoriaMensal === 'boolean' ? ajustes.consultoriaMensal : typeof d.consultoriaMensal === 'boolean' ? d.consultoriaMensal : null;
+  const consultoriaIncluida = Number.isInteger(funcionarios) && funcionarios >= catalogo.consultoriaIncluidaAPartir;
+  const mensalNecessaria = ["RECORRENTE", "COMPARAR"].includes(d.modalidadeServico);
+  if (!pessoaFisica && !["AVULSO", "RECORRENTE", "COMPARAR"].includes(d.modalidadeServico)) pendencias.push("A equipe deve definir a modalidade de serviço na proposta.");
   const limiteFuncionarios = catalogo.faixas.at(-1).ate;
   let mensal = null;
   let mensalMinimoCentavos = null;
   if (mensalNecessaria) {
+    if (consultoria === null && !consultoriaIncluida) pendencias.push('A equipe deve definir a inclusão de consultoria mensal na proposta.');
     if (!Number.isInteger(funcionarios) || funcionarios < 0) pendencias.push("Conferir quantidade de funcionários (sem pró-labore).");
     if (!["SIMPLES", "LUCRO_PRESUMIDO"].includes(regime)) pendencias.push("Contador deve confirmar o regime e o preço mensal.");
-    const faixa = catalogo.faixas?.find(f => funcionarios <= f.ate);
-    if (faixa && centavosValidos(faixa[regime])) {
+    const faixa = Number.isInteger(funcionarios) && funcionarios >= 0 ? catalogo.faixas?.find(f => funcionarios <= f.ate) : null;
+    if (!Number.isInteger(recebidas) || recebidas < 0) pendencias.push("Conferir volume de notas recebidas/despesas.");
+    if (faixa && centavosValidos(faixa[regime]) && Number.isInteger(recebidas) && recebidas >= 0) {
       mensal = faixa[regime];
-      if (!Number.isInteger(recebidas) || recebidas < 0) pendencias.push("Conferir volume de notas recebidas/despesas.");else mensal += Math.ceil(Math.max(0, recebidas - faixa.recebidas) / catalogo.blocoRecebidas.quantidade) * catalogo.blocoRecebidas.centavos;
-      if (d.consultoriaMensal === true && funcionarios < catalogo.consultoriaIncluidaAPartir) mensal += catalogo.consultoriaCentavos;
+      mensal += Math.ceil(Math.max(0, recebidas - faixa.recebidas) / catalogo.blocoRecebidas.quantidade) * catalogo.blocoRecebidas.centavos;
+      if (consultoria === true && funcionarios < catalogo.consultoriaIncluidaAPartir) mensal += catalogo.consultoriaCentavos;
     } else if (funcionarios > limiteFuncionarios && !(centavosValidos(ajustes.mensalCentavos) && ajustes.justificativa?.trim())) pendencias.push(`Equipe com ${limiteFuncionarios + 1} ou mais funcionários exige orçamento personalizado.`);
     mensalMinimoCentavos = funcionarios > limiteFuncionarios ? catalogo.pisoPersonalizado?.[regime] ?? null : mensal;
     if (centavosValidos(ajustes.mensalCentavos) && ajustes.justificativa?.trim()) {
@@ -71,7 +76,7 @@ export function calcularOpcoes({
       escopo: ajustes.escopoAvulso || (ficha.origem === "ABERTURA" ? catalogo.escopoAbertura : "Serviço avulso com escopo a conferir pelo contador.")
     });
   }
-  if (mensalNecessaria || ficha.origem === "ABERTURA") {
+  if (mensalNecessaria) {
     if (mensal === null && ficha.origem === "ABERTURA" && d.modalidadeServico === "AVULSO") {
       // A escolha já foi explícita: comparação não obriga contratar contabilidade.
     } else opcoes.push({
@@ -88,14 +93,15 @@ export function calcularOpcoes({
   if (Object.keys(ajustes).some(k => k.endsWith("Centavos")) && !ajustes.justificativa?.trim()) pendencias.push("Registrar a justificativa e fonte dos valores conferidos.");
   return {
     moeda: "BRL",
+    consultoriaMensal: mensalNecessaria ? consultoriaIncluida ? true : consultoria : null,
     opcoes,
-    ...apresentacaoDaProposta({ catalogo, funcionarios, recebidas, consultoria: d.consultoriaMensal === true || funcionarios >= catalogo.consultoriaIncluidaAPartir, recorrente: opcoes.some(o => o.recorrente) }),
+    ...apresentacaoDaProposta({ catalogo, funcionarios, recebidas, consultoria: consultoria === true || consultoriaIncluida, recorrente: opcoes.some(o => o.recorrente) }),
     pendencias,
     regularizacaoCentavos,
     tipoServicoAvulso,
     decisaoRegularizacao,
     politicaComercial: { versao: 1, mensalMinimoCentavos, regularizacaoMinimaCentavos: catalogo.regularizacaoMinimaCentavos,
-      origem: ficha.origem, modalidadeServico: d.modalidadeServico || "RECORRENTE", tipoServicoAvulso: tipoServicoAvulso || null,
+      origem: ficha.origem, modalidadeServico: d.modalidadeServico || null, tipoServicoAvulso: tipoServicoAvulso || null,
       decisaoRegularizacao, regularizacaoNoAvulso, encerramentoEmpresa },
     taxasCentavos: ajustes.taxasCentavos ?? null,
     taxasConfirmadas: ajustes.taxasConfirmadas === true,

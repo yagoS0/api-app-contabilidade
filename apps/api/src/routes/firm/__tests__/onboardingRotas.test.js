@@ -335,7 +335,7 @@ describe("percurso completo: criar → PATCH → finalizar → etapa → convert
         razaoSocial: "EMPRESA QUE VEM DO OUTRO CONTADOR LTDA",
         cnpj: "11.222.333/0001-81",
         responsavelNome: "Maria",
-        responsavelEmail: "maria@empresa.com",
+        responsavelEmail: "maria@empresa.com", socios: [{ nome: "Maria Teste", cpf: "52998224725" }],
       },
       ultimoPasso: "responsavel",
     });
@@ -377,7 +377,7 @@ describe("idempotência e 409", () => {
   async function fichaFinalizada(origem = "TRANSFERENCIA") {
     const { body } = await request(app).post("/firm/onboardings").send({ origem });
     const id = body.onboarding.id;
-    await patchFicha(id, { finalizar: true });
+    await patchFicha(id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
     return id;
   }
 
@@ -488,7 +488,7 @@ describe("lista", () => {
   test("rascunho fica fora por padrão e volta com incluirRascunhos=1", async () => {
     await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
     const { body } = await request(app).post("/firm/onboardings").send({ origem: "INATIVA" });
-    await patchFicha(body.onboarding.id, { finalizar: true });
+    await patchFicha(body.onboarding.id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
 
     const padrao = await request(app).get("/firm/onboardings");
     expect(padrao.body.itens).toHaveLength(1);
@@ -502,7 +502,7 @@ describe("lista", () => {
   test("descartar só vale para rascunho", async () => {
     const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
     const id = body.onboarding.id;
-    await patchFicha(id, { finalizar: true });
+    await patchFicha(id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
 
     const recusa = await request(app).delete(`/firm/onboardings/${id}`).send({ versao: 0 });
     expect(recusa.status).toBe(409);
@@ -560,7 +560,7 @@ describe("validação do envelope", () => {
 test('conferência salva e recarga concordam em lista, ficha e painel usado na conversa', async () => {
   const criada = await request(app).post('/firm/onboardings').send({ origem: 'TRANSFERENCIA' });
   const id = criada.body.onboarding.id;
-  await patchFicha(id, { dados: { cnpj: '11222333000181', responsavelNome: 'Pessoa de teste' }, finalizar: true });
+  await patchFicha(id, { dados: { cnpj: '11222333000181', responsavelNome: 'Pessoa de teste', socios: [{ nome: 'Pessoa de teste', cpf: '52998224725' }] }, finalizar: true });
   async function conferir(atual) {
     const [lista, ficha, chat] = await Promise.all([
       request(app).get('/firm/onboardings?incluirRascunhos=1'),

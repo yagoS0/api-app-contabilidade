@@ -50,7 +50,7 @@ export function useOnboardingRascunho({ api, onboardingId }) {
       const registro = r?.onboarding || r;
       versaoRef.current = registro?.versao ?? 0;
       setOnboarding(registro);
-      setDados({ ...rascunhoVazio(registro?.origem), ...(registro?.dados || {}) });
+      setDados({ ...rascunhoVazio(registro?.origem), cartoesPessoas: 1, ...(registro?.dados || {}) });
       setErro(null);
     } catch (e) {
       setErro(e);
@@ -105,7 +105,7 @@ export function useOnboardingRascunho({ api, onboardingId }) {
   /** Edita um campo em memória e agenda o salvamento. */
   const alterarCampo = useCallback((campo, valor) => {
     setDados((atual) => {
-      const proximo = { ...atual, [campo]: valor };
+      const proximo = { ...atual, [campo]: valor, ...(campo === "socios" && Array.isArray(valor) ? { cartoesPessoas: Math.max(1, valor.length) } : {}) };
       pendenteRef.current = proximo;
       return proximo;
     });

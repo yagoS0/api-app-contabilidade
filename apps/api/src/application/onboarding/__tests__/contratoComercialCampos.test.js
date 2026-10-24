@@ -44,3 +44,10 @@ test("aprovação do modelo recusa defaults que alterem valores ou sejam inváli
   expect(validarPadroesContrato({ dados: { camposPadrao: { diaVencimento: "", contadorNome: "" } } })).toBe(true);
 });
 test.each([[0, "zero reais"], [100, "um real"], [101, "um real e um centavo"], [10000, "cem reais"], [100000, "mil reais"], [100000000, "um milhão de reais"], [11, "onze centavos"]])("valor por extenso deriva dos centavos %s", (valor, esperado) => expect(valorPorExtenso(valor)).toBe(esperado));
+
+test('contrato reaproveita endereço estruturado sem confundir IPTU e inscrição municipal', () => {
+  const c = contexto();
+  delete c.onboarding.dados.endereco;
+  c.onboarding.dados.enderecoAbertura = { rua: 'Rua Teste', semNumero: true, cidade: 'Recife', uf: 'PE', inscricaoImobiliaria: '000AB-12' };
+  expect(prepararCamposContrato(c).endereco).toBe('Rua Teste, Sem número, Recife, PE');
+});

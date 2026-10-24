@@ -135,6 +135,7 @@ model Company {
   telefone                      String?
   capitalSocial                 Decimal?          @db.Decimal(18, 2)
   dataAbertura                  DateTime?
+  titular                       Json?
   quantidadeSocios              Int?
   inscricaoMunicipal            String?
   /// O código de tributação nacional (`cTribNac`) que a DPS LEVA — um só, porque a DPS tem um só.

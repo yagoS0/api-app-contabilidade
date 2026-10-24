@@ -7,13 +7,13 @@ function passo(texto, anterior=base, dados=[], comportamento='DADOS', mensagemId
     interpretacaoIa:{intencao:null,evidenciaIntencao:null,comportamento,resposta:null,dados:dados.map(([campo,valor])=>({campo,valor,evidencia:valor===null?texto:valor}))}});
 }
 
-test('não pagamento investiga período, obrigações e operação antes de prazo/receita',()=>{
+test('não pagamento espontâneo é preservado sem novas perguntas fiscais',()=>{
   let r=passo('Não pago nada',base,[['necessidade','Não pago nada']]);
-  expect(r.pre.campoEsperado).toBe('periodoPendencias');
+  expectPerguntaAtual(r);
   r=passo('Desde 2022',r.pre,[['periodoPendencias','Desde 2022']], 'DADOS','m2');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
   r=passo('Impostos e declarações, não sei quais',r.pre,[['tipoPendencias','Impostos e declarações, não sei quais']],'DADOS','m3');
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+  expectPerguntaAtual(r);
   r=passo('Continuo atendendo normalmente e trabalho sozinho',r.pre,[['situacaoOperacional','Continuo atendendo normalmente'],['estrutura','trabalho sozinho']],'DADOS','m4');
   expect(r.pre.campoEsperado).toBe('urgencia');
   expect(r.pre.necessidade).toBe('Não pago nada');
@@ -28,21 +28,21 @@ test('complementos fora de ordem e operação já relatada evitam repetição',(
   expect(r.pre.campoEsperado).toBe('estrutura');
 });
 
-test('complemento na etapa de receita reabre somente investigação relevante',()=>{
+test('complemento na etapa de receita preserva evidência sem reabrir perguntas removidas',()=>{
   const r=passo('Também não paguei os impostos desde março',{...base,necessidade:'Quero voltar a operar',estrutura:'sozinho',urgencia:'amanhã',campoEsperado:'faturamento'},
     [['periodoPendencias','desde março'],['tipoPendencias','impostos']]);
   expect(r.pre.investigacaoPendencias).toBe(true);
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+  expectPerguntaAtual(r);
 });
 
 test('não saber ou recusar um dado segue sem insistência nem inventar resposta',()=>{
   let r=passo('Não pago nada',base,[['necessidade','Não pago nada']]);
   r=passo('Não lembro',r.pre,[],'DESCONHECIDO','m2');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
-  expect(r.pre.dispensados).toContain('periodoPendencias');
+  expectPerguntaAtual(r);
+  expect(r.pre.campoEsperado).not.toBe('periodoPendencias');
   r=passo('Prefiro não falar sobre isso',r.pre,[],'DESCONHECIDO','m3');
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
-  expect(r.pre.dispensados).toContain('tipoPendencias');
+  expectPerguntaAtual(r);
+  expect(r.pre.campoEsperado).not.toBe('tipoPendencias');
   expect(r.pre.tipoPendencias).toBeUndefined();
 });
 
@@ -79,7 +79,7 @@ test('relato real empresa toda atrasada ativa investigação desde o primeiro co
   expect(r.pre.investigacaoPendencias).toBe(true);
   expect(r.pre.campoEsperado).toBe('cnpj');
   r=passo('11.222.333/0001-81',r.pre,[],'DADOS','m2');
-  expect(r.pre.campoEsperado).toBe('periodoPendencias');
+  expectPerguntaAtual(r);
 });
 
 test('atraso do contador em responder não presume pendência fiscal',()=>{
@@ -92,14 +92,14 @@ test('pedido de ajuda após declaração de não pagamento mantém investigaçã
   const texto='Não pago os impostos desde 2022, vocês podem me ajudar?';
   const r=passo(texto,base,[['necessidade',texto],['periodoPendencias','desde 2022'],['tipoPendencias','impostos']]);
   expect(r.pre.investigacaoPendencias).toBe(true);
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+  expectPerguntaAtual(r);
 });
 
 test('desconhecimento citado de terceiro não dispensa obrigações do cliente',()=>{
   const r=passo('Meu sócio disse: não sei quais impostos',{...base,investigacaoPendencias:true,necessidade:'Não pago impostos',
     periodoPendencias:'desde 2022',campoEsperado:'tipoPendencias'},[],'DESCONHECIDO');
   expect(r.pre.dispensados).not.toContain('tipoPendencias');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
 });
 
 test.each(['Se eu não pago impostos, vocês ajudam?', 'Não pago impostos?', 'Vocês ajudam quem não paga impostos, mesmo assim?'])('pergunta hipotética não ativa pendências: %s',texto=>{
@@ -115,27 +115,27 @@ test('não saber quais obrigações permite aproveitar período declarado',()=>{
   const r=passo('Não sei quais, parei em 2022',{...base,investigacaoPendencias:true,necessidade:'Não pago impostos',campoEsperado:'tipoPendencias'},
     [['periodoPendencias','em 2022']]);
   expect(r.pre.periodoPendencias).toBe('em 2022');
-  expect(r.pre.dispensados).toContain('tipoPendencias');
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+  expect(r.pre.campoEsperado).not.toBe('tipoPendencias');
+  expectPerguntaAtual(r);
 });
 
-test.each(['faz tempo','há muito tempo','há bastante tempo','há anos','há meses'])('período impreciso pede esclarecimento uma vez: %s',periodo=>{
+test.each(['faz tempo','há muito tempo','há bastante tempo','há anos','há meses'])('período impreciso é preservado sem pedir esclarecimento: %s',periodo=>{
   const texto=`Trabalho sozinho, mas ${periodo} que não pago nada`;
   let r=passo(texto,{...base,necessidade:'Quero voltar a operar',campoEsperado:'estrutura'},
     [['estrutura','sozinho'],['periodoPendencias',periodo]]);
-  expect(r.pre.campoEsperado).toBe('periodoPendencias');
+  expectPerguntaAtual(r);
   expect(r.pre.periodoPendencias).toBe(periodo);
-  expect(r.pre.periodoPendenciasEsclarecimentoPerguntado).toBe(true);
+  expect(r.pre.periodoPendenciasEsclarecimentoPerguntado).not.toBe(true);
   r=passo(periodo,r.pre,[['periodoPendencias',periodo]],'DADOS','m2');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
-  expect(r.pre.dispensados).toContain('periodoPendencias');
+  expectPerguntaAtual(r);
+  expect(r.pre.campoEsperado).not.toBe('periodoPendencias');
 });
 
 test.each(['Não lembro','Prefiro não informar'])('esclarecimento respeita recusa preservando período vago: %s',texto=>{
   const estado={...base,necessidade:'Não pago',investigacaoPendencias:true,periodoPendencias:'faz tempo',
     periodoPendenciasEsclarecimentoPerguntado:true,campoEsperado:'periodoPendencias'};
   const r=passo(texto,estado,[],'DESCONHECIDO');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
   expect(r.pre.periodoPendencias).toBe('faz tempo');
 });
 
@@ -143,10 +143,10 @@ test('período concreto vence comentário vago posterior e aceita correção exp
   const anterior={...base,necessidade:'Não pago',investigacaoPendencias:true,periodoPendencias:'desde 2022',campoEsperado:'tipoPendencias'};
   let r=passo('Já faz tempo',anterior,[['periodoPendencias','faz tempo']]);
   expect(r.pre.periodoPendencias).toBe('desde 2022');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
   r=passo('Corrigindo, faz tempo, não lembro desde quando',anterior,[['periodoPendencias','faz tempo']]);
   expect(r.pre.periodoPendencias).toBe('faz tempo');
-  expect(r.pre.dispensados).toContain('periodoPendencias');
+  expect(r.pre.campoEsperado).not.toBe('periodoPendencias');
 });
 
 test('esclarecimento concreto substitui vago sem inventar nem dispensar o dado',()=>{
@@ -154,7 +154,7 @@ test('esclarecimento concreto substitui vago sem inventar nem dispensar o dado',
     periodoPendenciasEsclarecimentoPerguntado:true,campoEsperado:'periodoPendencias'},[['periodoPendencias','Desde 2022']]);
   expect(r.pre.periodoPendencias).toBe('Desde 2022');
   expect(r.pre.dispensados).not.toContain('periodoPendencias');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
 });
 
 test('primeiro contato completo preserva relato mesmo quando IA classifica necessidade genérica',()=>{
@@ -170,8 +170,8 @@ test('desconhecimento não perde turno por intenção herdada de mensagem anteri
   const r=prepararPreatendimento({texto:'Não lembro',intencao:'INATIVA',anterior:{...base,necessidade:'Não pago nada',investigacaoPendencias:true,campoEsperado:'periodoPendencias'},
     interpretacaoIa:{intencao:'INATIVA',evidenciaIntencao:'Quero regularizar minha empresa, não pago nada',comportamento:'DESCONHECIDO',dados:[],resposta:null}});
   expect(r.encaminhar).toBe(false);
-  expect(r.pre.dispensados).toContain('periodoPendencias');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expect(r.pre.campoEsperado).not.toBe('periodoPendencias');
+  expectPerguntaAtual(r);
 });
 
 test.each(['não pago nada','tudo','nada','tudo atrasado'])('tipo genérico não substitui pergunta de obrigações: %s',tipo=>{
@@ -181,10 +181,10 @@ test.each(['não pago nada','tudo','nada','tudo atrasado'])('tipo genérico não
   expect(r.pre.evidenciasIa.tipoPendencias).toBeUndefined();
   expect(r.pre.relatosCliente[0].texto).toBe(texto);
   r=passo('Não lembro',r.pre,[],'DESCONHECIDO','m2');
-  expect(r.pre.campoEsperado).toBe('tipoPendencias');
+  expectPerguntaAtual(r);
   r=passo('Não sei quais',r.pre,[],'DESCONHECIDO','m3');
-  expect(r.pre.dispensados).toContain('tipoPendencias');
-  expect(r.pre.campoEsperado).toBe('situacaoOperacional');
+  expect(r.pre.campoEsperado).not.toBe('tipoPendencias');
+  expectPerguntaAtual(r);
 });
 
 test('todos os impostos identifica tipo sem inventar impostos específicos',()=>{
@@ -199,4 +199,19 @@ test('comentário genérico preserva tipo específico já declarado',()=>{
 
 test('faturamento não presume retomada quando operação é desconhecida ou dispensada',()=>{
   expect(perguntasQualificacao({...base,dispensados:['situacaoOperacional']}).faturamento).not.toMatch(/retomada|voltar|parada/i);
+});
+
+function expectPerguntaAtual(r) {
+  expect(['periodoPendencias', 'tipoPendencias', 'paradaDesde', 'temDebitos', 'temParcelamento']).not.toContain(r.pre.campoEsperado);
+  if (r.pre.campoEsperado === null) expect(r.encaminhar).toBe(true);
+  else expect(['cnpj', 'necessidade', 'atividade', 'cidade', 'estrutura', 'urgencia', 'faturamento']).toContain(r.pre.campoEsperado);
+}
+
+test('nenhuma intenção reinicia perguntas removidas mesmo com campoEsperado histórico', () => {
+  for (const campoEsperado of ['periodoPendencias', 'tipoPendencias', 'paradaDesde', 'modalidadeServico', 'regimeAtual', 'notasRecebidasMes']) {
+    const r = passo('Pode continuar', { ...base, necessidade: 'Regularizar', campoEsperado }, [], 'RETOMAR');
+    expectPerguntaAtual(r);
+    expect(perguntasQualificacao(r.pre)).not.toHaveProperty('periodoPendencias');
+    expect(perguntasQualificacao(r.pre)).not.toHaveProperty('tipoPendencias');
+  }
 });

@@ -1,3 +1,4 @@
+import { travarPessoasDoCadastro, exigirPessoasCompativeis } from '../../application/company/pessoasDoCadastro.js';
 import { STATUS_DOCUMENTO } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
 import { situacaoDoPeriodo } from "../../application/notas/pendenciasDoPeriodo.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
@@ -427,18 +428,29 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       if (!portal?.companyId) return res.status(400).json({ error: "legacy_company_not_linked" });
       const body = req.body || {};
       if (!body.name) return res.status(400).json({ error: "name_required" });
-      const created = await prisma.partner.create({
-        data: {
-          companyId: portal.companyId,
-          name: String(body.name),
-          phone: body.phone ? String(body.phone) : null,
-          email: body.email ? String(body.email).toLowerCase() : null,
-          documento: body.documento ? String(body.documento) : null,
-          representante: body.representante === true,
-          participacao: body.participacao ?? null,
-        },
-      });
-      return res.status(201).json(created);
+      try {
+        const created = await prisma.$transaction(async tx => {
+          const atual = await travarPessoasDoCadastro(tx, portal.companyId);
+          exigirPessoasCompativeis(atual?.titular, [{}]);
+          const created = await tx.partner.create({
+            data: {
+              companyId: portal.companyId,
+              name: String(body.name),
+              phone: body.phone ? String(body.phone) : null,
+              email: body.email ? String(body.email).toLowerCase() : null,
+              documento: body.documento ? String(body.documento) : null,
+              representante: body.representante === true,
+              participacao: body.participacao ?? null,
+            },
+          });
+          return created;
+        });
+        return res.status(201).json(created);
+      } catch (err) {
+        if (err?.code === 'COMPANY_TITULAR_INVALID') return res.status(400).json({ error: 'company_titular_invalid', message: err.message });
+        if (err?.code === 'PARTNER_NOT_FOUND') return res.status(404).json({ error: 'not_found' });
+        throw err;
+      }
     }
   );
 
@@ -456,24 +468,37 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       });
       if (!existing) return res.status(404).json({ error: "not_found" });
       const body = req.body || {};
-      const updated = await prisma.partner.update({
-        where: { id: existing.id },
-        data: {
-          ...(body.name !== undefined ? { name: String(body.name) } : {}),
-          ...(body.phone !== undefined ? { phone: body.phone ? String(body.phone) : null } : {}),
-          ...(body.email !== undefined
-            ? { email: body.email ? String(body.email).toLowerCase() : null }
-            : {}),
-          ...(body.documento !== undefined
-            ? { documento: body.documento ? String(body.documento) : null }
-            : {}),
-          ...(body.participacao !== undefined ? { participacao: body.participacao } : {}),
-          ...(body.representante !== undefined
-            ? { representante: Boolean(body.representante) }
-            : {}),
-        },
-      });
-      return res.json(updated);
+      try {
+        const updated = await prisma.$transaction(async tx => {
+          const atual = await travarPessoasDoCadastro(tx, portal.companyId);
+          exigirPessoasCompativeis(atual?.titular, [{}]);
+          const presente = await tx.partner.findFirst({ where: { id: existing.id, companyId: portal.companyId } });
+          if (!presente) { const err = new Error('not_found'); err.code = 'PARTNER_NOT_FOUND'; throw err; }
+          const updated = await tx.partner.update({
+            where: { id: existing.id },
+            data: {
+              ...(body.name !== undefined ? { name: String(body.name) } : {}),
+              ...(body.phone !== undefined ? { phone: body.phone ? String(body.phone) : null } : {}),
+              ...(body.email !== undefined
+                ? { email: body.email ? String(body.email).toLowerCase() : null }
+                : {}),
+              ...(body.documento !== undefined
+                ? { documento: body.documento ? String(body.documento) : null }
+                : {}),
+              ...(body.participacao !== undefined ? { participacao: body.participacao } : {}),
+              ...(body.representante !== undefined
+                ? { representante: Boolean(body.representante) }
+                : {}),
+            },
+          });
+          return updated;
+        });
+        return res.json(updated);
+      } catch (err) {
+        if (err?.code === 'COMPANY_TITULAR_INVALID') return res.status(400).json({ error: 'company_titular_invalid', message: err.message });
+        if (err?.code === 'PARTNER_NOT_FOUND') return res.status(404).json({ error: 'not_found' });
+        throw err;
+      }
     }
   );
 
@@ -490,8 +515,21 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         where: { id: String(req.params.partnerId), companyId: portal.companyId },
       });
       if (!existing) return res.status(404).json({ error: "not_found" });
-      await prisma.partner.delete({ where: { id: existing.id } });
+      try {
+        await prisma.$transaction(async tx => {
+          await travarPessoasDoCadastro(tx, portal.companyId);
+          // Exclusão explícita pode resolver um legado incompatível; não apaga titular.
+          const presente = await tx.partner.findFirst({ where: { id: existing.id, companyId: portal.companyId } });
+          if (!presente) { const err = new Error('not_found'); err.code = 'PARTNER_NOT_FOUND'; throw err; }
+          const deleted = await tx.partner.delete({ where: { id: existing.id } });
+          return deleted;
+        });
       return res.json({ ok: true });
+      } catch (err) {
+        if (err?.code === 'COMPANY_TITULAR_INVALID') return res.status(400).json({ error: 'company_titular_invalid', message: err.message });
+        if (err?.code === 'PARTNER_NOT_FOUND') return res.status(404).json({ error: 'not_found' });
+        throw err;
+      }
     }
   );
 

@@ -22,7 +22,7 @@ test('botão usa ID, nunca título livre', () => {
 });
 test.each(['CONTADOR', 'contador'])('palavra %s inicia conversa sobre a troca, sem ser confundida com pedido humano', texto => {
   const r = prepararPreatendimento({ texto, intencao: 'TRANSFERENCIA' });
-  expect(r.encaminhar).toBe(false); expect(r.pergunta).toContain('melhorar');
+  expect(r.encaminhar).toBe(false); expect(r.pergunta).toContain('Deseja relatar alguma informação importante');
   expect(r.pre.nome).toBeNull(); expect(r.pre.necessidade).toBeNull();
 });
 test('palavra de campanha não inventa a origem da pessoa', () => {
@@ -42,4 +42,14 @@ test('pedido de reunião segue à equipe sem inventar agendamento', () => {
 test('benefício contextual não promete redução de imposto nem proposta automática', () => {
   expect(mensagemDeValor({ intencao: 'TRANSFERENCIA', necessidade: 'Meu contador só manda guias' })).toContain('resultados');
   expect(mensagemDeValor({ intencao: 'PLANEJAMENTO' })).toContain('antes de falar em economia');
+});
+
+test('município estruturado e relato do formulário evitam perguntas repetidas', () => {
+  const abertura = prepararPreatendimento({ texto: 'voltei', intencao: 'ABERTURA', dadosFicha: { responsavelNome: 'Ana', atividadePretendida: 'Medicina', enderecoAbertura: { cidade: 'Recife', uf: 'PE', inscricaoImobiliaria: '000A' } } });
+  expect(abertura.pre.cidade).toBe('Recife');
+  expect(abertura.pergunta).toBeNull();
+  const transferencia = prepararPreatendimento({ texto: 'voltei', intencao: 'TRANSFERENCIA', dadosFicha: { responsavelNome: 'Ana', pendenciasDeclaradas: 'Preciso organizar documentos', motivoTroca: 'Histórico anterior' } });
+  expect(transferencia.pre.necessidade).toBe('Preciso organizar documentos');
+  expect(transferencia.pergunta).toBeNull();
+  expect(transferencia.operacoes).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import { formatarEnderecoAbertura } from '@contabilidade/shared/onboarding';
 import { pendenciasDiagnosticoComercial } from "../../../../../../packages/shared/src/onboarding/roteiroAnaliseComercial.js";
 import { projetarContratacao, resumirContratacao, contratoAptoPagamento } from "../../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 const nomes = { PESSOA_FISICA: "Pessoa física", ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" };
@@ -28,7 +29,7 @@ export function montarJornada(estado, agora = Date.now()) {
   const { proposta, contrato, pagamento } = contratacao;
   const aceita = proposta?.status === "ACEITA";
   const contratoAprovado = contratoAptoPagamento(proposta, contrato);
-  const pendentes = j.dadosPendentes || (pessoaFisica ? [[o.responsavelNome || d.responsavelNome, "Nome"], [d.servicoSolicitado, "Serviço solicitado"]].filter(([v]) => !existe(v)).map(([, n]) => n) : abertura ? [[o.responsavelNome || d.responsavelNome, "Nome do responsável"], [d.atividadePretendida, "Atividade pretendida"], [d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [d.enderecoPretendido, "Endereço para viabilidade"]].filter(([v]) => !existe(v)).map(([,n]) => n) : o.cnpj ? [] : ["CNPJ"]);
+  const pendentes = j.dadosPendentes || (pessoaFisica ? [[o.responsavelNome || d.responsavelNome, "Nome"], [d.servicoSolicitado, "Serviço solicitado"]].filter(([v]) => !existe(v)).map(([, n]) => n) : abertura ? [[o.responsavelNome || d.responsavelNome, "Nome do responsável"], [d.atividadePretendida, "Atividade pretendida"], [d.enderecoAbertura?.cidade || d.municipioAtendimento || d.municipioPretendido, "Município da sede"], [formatarEnderecoAbertura(d.enderecoAbertura) || d.enderecoPretendido, "Endereço para viabilidade"]].filter(([v]) => !existe(v)).map(([,n]) => n) : o.cnpj ? [] : ["CNPJ"]);
   const autorizacao = estado.atendimento?.autorizacao;
   const autorizada = Boolean((estado.atendimento?.representanteVerificadoEm || autorizacao?.consultaAutorizadaPor) && autorizacao?.cnpj === o.cnpj && autorizacao.estado === "ATIVA"
     && new Date(autorizacao.prova?.validUntil).getTime() > agora);

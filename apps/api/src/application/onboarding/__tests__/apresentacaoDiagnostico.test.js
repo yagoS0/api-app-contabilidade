@@ -137,3 +137,43 @@ test('apresentação preserva situação fiscal manual integral, identificada co
   const p = apresentarDiagnostico({ ficha: t.ficha, diagnostico: t.diagnostico });
   expect(p.situacaoManual).toBe(t.diagnostico.dados.fiscalAlternativa.dados.informacao); expect(p.fiscal).toBeNull(); expect(p.fonteFiscal).toContain('Sem consulta fiscal oficial válida');
 });
+
+test('apresentação da abertura mostra endereço e titular sem objetos brutos', () => {
+  const t = setup();
+  t.ficha.origem = 'ABERTURA';
+  t.ficha.dados = { tipoEmpresa: 'EI', titular: [{ nome: 'Ana Teste', cpf: '52998224725' }], enderecoAbertura: { rua: 'Rua A', cidade: 'Recife', uf: 'PE', inscricaoImobiliaria: '000AB-12', semNumero: true } };
+  const r = apresentarDiagnostico({ ficha: t.ficha, diagnostico: t.diagnostico });
+  expect(r.cadastro).toContainEqual(['Titular', 'Ana Teste - 52998224725']);
+  expect(r.cadastro.find(([k]) => k === 'Endereço')[1]).toContain('000AB-12');
+  expect(JSON.stringify(r)).not.toContain('[object Object]');
+  expect(r.fonteFiscal).toContain('Não comprova regularidade fiscal');
+});
+
+
+test('capital alterado invalida PDF enviado e conferido sem apagar histórico; nova conferência libera conteúdo atual', async () => {
+  const t = setup();
+  t.ficha.dados.capitalSocialPretendido = 1000;
+  t.diagnostico.dados.contexto = createHash('sha256').update(JSON.stringify(['TRANSFERENCIA', t.ficha.cnpj, null, null, null, null])).digest('hex');
+  const anterior = await body(t);
+  await t.s.enviar('o', 'diag', user, anterior);
+  await t.s.conferir('o', 'diag', user, { ...anterior, versao: 3, confirmado: true });
+  const leituras = { analises: [], registros: [t.diagnostico], conferencias: [], apresentacoes: t.eventos, saidas: t.mensagens };
+  const historico = clone({ mensagens: t.mensagens, eventos: t.eventos });
+  expect((await carregarEvidenciasJornada(t.ficha, t.db, leituras)).devolutiva.concluida).toBe(true);
+  t.ficha.versao++;
+  expect((await carregarEvidenciasJornada(t.ficha, t.db, leituras)).devolutiva.concluida).toBe(true);
+  t.ficha.dados.capitalSocialPretendido = 2500;
+  const atual = await carregarEvidenciasJornada(t.ficha, t.db, leituras);
+  expect(atual.diagnostico.id).toBe('diag');
+  expect(atual.devolutiva).toMatchObject({ concluida: false, conferenciaPdf: null, apresentacao: null, apresentacaoEnviada: null });
+  expect({ mensagens: t.mensagens, eventos: t.eventos }).toEqual(historico);
+  await expect(t.s.conferir('o', 'diag', user, { ...anterior, versao: 4, confirmado: true })).rejects.toMatchObject({ code: 'apresentacao_alterada' });
+  const novo = await body(t);
+  expect(novo.conteudoHash).not.toBe(anterior.conteudoHash);
+  const conferida = await t.s.conferir('o', 'diag', user, { ...novo, versao: 4, confirmado: true });
+  const final = await carregarEvidenciasJornada(t.ficha, t.db, { ...leituras, apresentacoes: [conferida.conferencia, ...historico.eventos] });
+  expect(final.devolutiva).toMatchObject({ concluida: true, conferenciaPdf: { id: conferida.conferencia.id }, apresentacaoEnviada: null });
+  expect(t.mensagens).toEqual(historico.mensagens);
+  expect(t.eventos).toHaveLength(2);
+  expect(t.enviarDocumento).toHaveBeenCalledTimes(1);
+});

@@ -2,7 +2,7 @@ import { exigirDadosOnboarding, respostaEspecial, permiteRespostaEspecial, proxi
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
 import { emTransacaoComercial, identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./ContextoComercialService.js";
-import { descritorDe } from "@contabilidade/shared/onboarding";
+import { descritorDe, preservarDadosPersistidos, CAMPOS_INTERNOS } from "@contabilidade/shared/onboarding";
 const erro = (code, message, status = 409) => new OnboardingError(code, message, status);
 export const ORIGENS_LEAD = ["ABERTURA", "TRANSFERENCIA", "INATIVA", "PESSOA_FISICA"];
 export const encerrado = r => ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(r?.status);
@@ -128,6 +128,7 @@ export async function iniciarAtendimento({
     }
     if (!lead.onboardingId && origem) {
       const dados = {
+        ...(origem !== "PESSOA_FISICA" ? { cartoesPessoas: 2 } : {}),
         responsavelTelefone: conversa.telefoneE164
       };
       const onboarding = await tx.onboarding.create({
@@ -177,6 +178,7 @@ export function aplicarCampos(origem, atual, operacoes) {
     ...atual
   };
   for (const op of operacoes) {
+    if (op.campo === 'cartoesPessoas' && origem !== 'PESSOA_FISICA' && op.acao === 'set' && Number.isInteger(op.valor) && op.valor >= 1 && op.valor <= 100) { dados.cartoesPessoas = op.valor; continue; }
     const d = descritorDe(origem, op.campo);
     if (!d || !["set", "unset"].includes(op.acao)) throw erro("campo_invalido", "Campo não permitido.", 400);
     if (op.acao === "unset") {
@@ -189,12 +191,12 @@ export function aplicarCampos(origem, atual, operacoes) {
     if (d.tipo === "booleano" && typeof v !== "boolean") throw erro("valor_invalido", "Informe sim ou não.", 400);
     if (["inteiro", "moeda"].includes(d.tipo) && (typeof v !== "number" || !Number.isFinite(v) || v < 0 || d.tipo === "inteiro" && !Number.isInteger(v))) throw erro("valor_invalido", "Informe um número válido.", 400);
     if (d.opcoes && !d.opcoes.some(o => o.valor === v)) throw erro("valor_invalido", "Escolha uma opção válida.", 400);
-    if (!["booleano", "inteiro", "moeda", "lista"].includes(d.tipo) && typeof v !== "string") throw erro("valor_invalido", "Informe um texto.", 400);
+    if (!["booleano", "inteiro", "moeda", "lista", "endereco"].includes(d.tipo) && typeof v !== "string") throw erro("valor_invalido", "Informe um texto.", 400);
     if (d.tipo === "cnpj" && !/^\d{14}$/.test(v.replace(/\D/g, ""))) throw erro("cnpj_invalido", "Confira os 14 dígitos do CNPJ.", 400);
     if (d.tipo === "lista" && !Array.isArray(v)) throw erro("valor_invalido", "Informe uma lista completa.", 400);
     dados[op.campo] = v;
   }
-  try { return exigirDadosOnboarding(origem, dados); } catch (e) { throw erro(e.code, e.message, e.status); }
+  try { return preservarDadosPersistidos(origem, atual, exigirDadosOnboarding(origem, dados)); } catch (e) { throw erro(e.code, e.message, e.status); }
 }
 export async function registrarCampos({
   onboardingId,
@@ -232,11 +234,18 @@ export async function registrarCampos({
       if (entradas.length !== mensagensIds.length) throw erro("mensagem_fora_do_escopo", "Mensagens não pertencem ao atendimento.", 403);
       if (caso?.interlocutorId) for (const entrada of entradas) await exigirConversaDoCaso(caso, entrada.conversa, tx);
     }
-    const dados = aplicarCampos(r.origem, r.dados || {}, operacoes);
+    // Mensagem do cliente não decide preço/regime/modalidade. Preservar a declaração
+    // espontânea com a mensagem de origem, sem sobrescrever a decisão da equipe.
+    const internas = mensagemId ? operacoes.filter(o => CAMPOS_INTERNOS.includes(o.campo)) : [];
+    if (internas.length) aplicarCampos(r.origem, r.dados || {}, internas);
+    const efetivas = mensagemId ? operacoes.filter(o => !CAMPOS_INTERNOS.includes(o.campo)) : operacoes;
+    const dados = aplicarCampos(r.origem, r.dados || {}, efetivas);
+    if (internas.length) dados.declaracoesCliente = [...(Array.isArray(r.dados?.declaracoesCliente) ? r.dados.declaracoesCliente : []),
+      { mensagemId, campos: internas }].slice(-100);
     const fontesDados = {
       ...(r.fontesDados || {})
     };
-    for (const op of operacoes) fontesDados[op.campo] = {
+    for (const op of efetivas) fontesDados[op.campo] = {
       fonte,
       mensagemId,
       ...(mensagensIds ? { mensagensIds } : {}),

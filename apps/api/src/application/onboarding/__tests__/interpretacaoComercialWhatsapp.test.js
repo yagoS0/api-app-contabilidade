@@ -3,6 +3,19 @@ import { identificarOrigemComercial, interpretarColetaComercial, pedidoOperacion
 const ler = (texto, campoEsperado = null, origem = "ABERTURA") => interpretarColetaComercial({ texto, campoEsperado, origem });
 const dados = resultado => Object.fromEntries(resultado.operacoes.map(o => [o.campo, o.valor]));
 
+test.each(['modalidadeServico', 'consultoriaMensal', 'regimeAtual', 'paradaDesde', 'notasRecebidasMes'])('estado antigo %s não volta a cobrar resposta removida', campo => {
+  const r = interpretarColetaComercial({ texto: 'Não sei', origem: 'INATIVA', campoEsperado: campo, anoParadaPendente: '2023' });
+  expect(r.operacoes.some(o => o.campo === campo)).toBe(false);
+  expect(r.resposta || '').not.toMatch(/mês de 2023|regime|consultoria|notas recebidas/i);
+});
+
+test.each(['socios', 'titular', 'enderecoAbertura'])('%s não interpretável é encaminhado sem concluir a ficha', campoEsperado => {
+  const r = interpretarColetaComercial({ texto: 'Ainda estou conferindo os documentos', origem: 'ABERTURA', campoEsperado });
+  expect(r.humano).toBe(true);
+  expect(r.resposta).toMatch(/equipe vai ajudar/);
+  expect(r.operacoes.some(o => o.campo === campoEsperado)).toBe(false);
+});
+
 test.each([
   ["Sou médico e preciso de CNPJ para meu consultório", "ABERTURA"],
   ["Quero abrir um MEI", "ABERTURA"], ["Preciso de um CNPJ", "ABERTURA"],
@@ -50,11 +63,11 @@ test("assunto de terceiro continua classificação, sem declaração de identida
 });
 
 test.each([
-  ["só abertura", "AVULSO"], ["avulso", "AVULSO"], ["só o serviço", "AVULSO"], ["serviço pontual", "AVULSO"],
-  ["mensal", "RECORRENTE"], ["abertura e contabilidade", "RECORRENTE"], ["com contabilidade", "RECORRENTE"],
+  ["só abertura", "AVULSO"], ["avulso", undefined], ["só o serviço", "AVULSO"], ["serviço pontual", undefined],
+  ["mensal", undefined], ["abertura e contabilidade", "RECORRENTE"], ["com contabilidade", "RECORRENTE"],
   ["as duas opções", "COMPARAR"], ["os dois", "COMPARAR"], ["quero comparar", "COMPARAR"],
   ["não quero contabilidade mensal", "AVULSO"], ["sem mensalidade", "AVULSO"],
-])("entende a escolha oferecida: %s", (texto, esperado) => expect(dados(ler(texto, "modalidadeServico")).modalidadeServico).toBe(esperado));
+])("declaração espontânea distingue texto completo de opção antiga: %s", (texto, esperado) => expect(dados(ler(texto, "modalidadeServico")).modalidadeServico).toBe(esperado));
 
 test("opção isolada depende da pergunta, não vira modalidade fora de contexto", () => {
   expect(dados(ler("mensal", "atividadePretendida")).modalidadeServico).toBeUndefined();
@@ -68,32 +81,13 @@ test("não isolado em outro campo não significa zero funcionários", () => {
   expect(ler("não", "responsavelNome").operacoes).toEqual([]);
 });
 
-test.each([
-  ["desde janeiro de 2023", "2023-01"], ["janeiro de 2023", "2023-01"], ["desde 01/2022", "2022-01"], ["1/2022", "2022-01"],
-])("inatividade com mês e ano explícitos: %s", (texto, esperado) => expect(dados(ler(texto, "paradaDesde", "INATIVA")).paradaDesde).toBe(esperado));
-
-test.each(["desde 2022", "2020", "em 2024"])("pede mês sem inventar precisão para %s", texto => {
-  const r = ler(texto, "paradaDesde", "INATIVA");
-  expect(r.operacoes).toEqual([]); expect(r.resposta).toContain("Em que mês"); expect(r.respostaSubstituiPergunta).toBe(true);
-  expect(r.anoParadaPendente).toMatch(/^\d{4}$/);
+test.each(['desde janeiro de 2023', 'janeiro de 2023', 'desde 01/2022', '1/2022', 'desde 2022', '2020', 'em 2024', 'janeiro', '5', '05', 'em março', 'não sei'])('estado antigo de parada não reinicia coleta removida: %s', texto => {
+  const r = interpretarColetaComercial({ texto, origem: 'INATIVA', campoEsperado: 'paradaDesde', anoParadaPendente: '2020' });
+  expect(r.operacoes).toEqual([]);
+  expect(r.resposta).toBeNull();
+  expect(r.anoParadaPendente).toBeUndefined();
+  expect(r.desconhecido).toBeNull();
 });
-
-test.each([["janeiro", "01"], ["5", "05"], ["05", "05"], ["em março", "03"]])("mês isolado usa somente o ano declarado antes: %s", (texto, mes) => {
-  const r = interpretarColetaComercial({ texto, origem: "INATIVA", campoEsperado: "paradaDesde", anoParadaPendente: "2020" });
-  expect(dados(r)).toEqual({ paradaDesde: `2020-${mes}` }); expect(r.anoParadaPendente).toBeNull();
-  expect(ler(texto, "paradaDesde", "INATIVA").operacoes).toEqual([]);
-  expect(interpretarColetaComercial({ texto, origem: "INATIVA", campoEsperado: "cnpj", anoParadaPendente: "2020" }).operacoes).toEqual([]);
-});
-test("data explícita corrige o ano pendente; desconhecimento encerra a pergunta sem inventar mês", () => {
-  const contexto = { origem: "INATIVA", campoEsperado: "paradaDesde", anoParadaPendente: "2020" };
-  const corrigido = interpretarColetaComercial({ ...contexto, texto: "janeiro de 2023" });
-  expect(dados(corrigido)).toEqual({ paradaDesde: "2023-01" }); expect(corrigido.anoParadaPendente).toBeNull();
-  const desconhecido = interpretarColetaComercial({ ...contexto, texto: "não sei" });
-  expect(desconhecido).toMatchObject({ operacoes: [], desconhecido: "paradaDesde", anoParadaPendente: null });
-  expect(interpretarColetaComercial({ ...contexto, texto: "13" }).operacoes).toEqual([]);
-  expect(interpretarColetaComercial({ ...contexto, texto: "2021" })).toMatchObject({ operacoes: [], anoParadaPendente: "2021" });
-});
-
 test.each([["quero fechar", "BAIXAR"], ["quero voltar", "REATIVAR"], ["dar baixa", "BAIXAR"], ["não sei", "INDECISO"]])("objetivo da empresa parada: %s", (texto, esperado) => {
   expect(dados(ler(texto, "pretendeReativar", "INATIVA")).pretendeReativar).toBe(esperado);
 });
@@ -112,8 +106,8 @@ test.each(["Olá", "Bom dia!", "quero orçamento", "Qual o prazo?", "Pode me aju
 });
 
 test("aproveita nome, atividade e cidade de uma mensagem sem misturar os campos", () => {
-  expect(dados(ler("Sou Ana, médica, moro em Niterói/RJ", "responsavelNome"))).toEqual({ responsavelNome: "Ana", atividadePretendida: "médica", municipioAtendimento: "Niterói/RJ" });
-  expect(dados(ler("Meu nome é Caio, sou médico e moro em Rio de Janeiro, RJ", "responsavelNome"))).toEqual({ responsavelNome: "Caio", atividadePretendida: "médico", municipioAtendimento: "Rio de Janeiro, RJ" });
+  expect(dados(ler("Sou Ana, médica, moro em Niterói/RJ", "responsavelNome"))).toEqual({ responsavelNome: "Ana", atividadePretendida: "médica", enderecoAbertura: { cidade: "Niterói", uf: "RJ" } });
+  expect(dados(ler("Meu nome é Caio, sou médico e moro em Rio de Janeiro, RJ", "responsavelNome"))).toEqual({ responsavelNome: "Caio", atividadePretendida: "médico", enderecoAbertura: { cidade: "Rio de Janeiro", uf: "RJ" } });
 });
 test("nome pode acompanhar email; não obriga repetir informação", () => {
   expect(dados(ler("Ana e meu email é ana@example.test", "responsavelNome"))).toEqual({ responsavelNome: "Ana", responsavelEmail: "ana@example.test" });
@@ -128,8 +122,8 @@ test.each([
   "ta mt caro", "tá caríssimo", "Não gostei do atendimento", "Não me respondem", "Não tenho retorno",
   "Quero pagar menos", "Preciso de um atendimento melhor", "É o preço, não o atendimento", "Não é pelo preço, é pelo atendimento",
 ])("resposta natural ao motivo da troca não vira pergunta de orçamento: %s", texto => {
-  const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
-  expect(dados(r).motivoTroca).toBe(texto); expect(r.resposta).toBeNull();
+  const r = ler(texto, "pendenciasDeclaradas", "TRANSFERENCIA");
+  expect(dados(r).pendenciasDeclaradas).toBe(texto); expect(r.resposta).toBeNull();
 });
 
 test.each([
@@ -137,15 +131,15 @@ test.each([
   "Me passa o valor", "Quero saber o preço", "Pode informar os honorários", "O preço de vocês", "Seus honorários",
   "qto fica", "quanto tá a mensalidade", "Queria um orçamento", "Não sei o preço de vocês",
 ])("pergunta explícita de valores durante o motivo continua sendo dúvida: %s", texto => {
-  const r = ler(texto, "motivoTroca", "TRANSFERENCIA");
-  expect(dados(r).motivoTroca).toBeUndefined(); expect(r.resposta).toContain("O valor depende");
+  const r = ler(texto, "pendenciasDeclaradas", "TRANSFERENCIA");
+  expect(dados(r).pendenciasDeclaradas).toBeUndefined(); expect(r.resposta).toContain("O valor depende");
 });
 test.each(["Preço", "Valor", "Mensalidade"])("palavra de preço fora da pergunta de motivo continua como dúvida: %s", texto => {
   const r = ler(texto, "responsavelNome", "TRANSFERENCIA");
   expect(r.operacoes).toEqual([]); expect(r.resposta).toContain("O valor depende");
 });
 test.each(["Não sei", "menu", "Falar com a equipe", "Como funciona o atendimento?", "Qual o prazo?"])("dúvida e navegação não viram motivo da troca: %s", texto => {
-  expect(dados(ler(texto, "motivoTroca", "TRANSFERENCIA")).motivoTroca).toBeUndefined();
+  expect(dados(ler(texto, "pendenciasDeclaradas", "TRANSFERENCIA")).motivoTroca).toBeUndefined();
 });
 test("CNPJ é validado, normalizado e nunca cria vínculo", () => {
   expect(dados(ler("11.222.333/0001-81", "cnpj", "TRANSFERENCIA"))).toEqual({ cnpj: "11222333000181" });
@@ -156,9 +150,9 @@ test("desconhecimento respeita campo solicitado e não contamina outros", () => 
   expect(ler("não tenho o CNPJ comigo", "cnpj", "TRANSFERENCIA").desconhecido).toBe("cnpj");
   expect(ler("não sei meu faturamento", "cnpj", "TRANSFERENCIA").desconhecido).toBeNull();
   expect(ler("não sei quantas notas recebo", "cnpj", "TRANSFERENCIA").desconhecido).toBeNull();
-  expect(ler("não sei quantas notas recebo", "notasRecebidasMes", "TRANSFERENCIA").desconhecido).toBe("notasRecebidasMes");
+  expect(ler("não sei quantas notas recebo", "notasRecebidasMes", "TRANSFERENCIA").desconhecido).toBeNull();
   expect(ler("Minha empresa está parada e não sei o que fazer", null, "INATIVA").desconhecido).toBeNull();
-  expect(ler("ainda não tenho endereço", "enderecoPretendido").desconhecido).toBe("enderecoPretendido");
+  expect(ler("ainda não tenho endereço", "enderecoPretendido").desconhecido).toBeNull();
 });
 
 test.each([
@@ -234,12 +228,12 @@ test.each([
 });
 
 test.each(["Quero dar baixa", "Quero fechar", "Quero encerrar minha empresa", "Não quero reativar, quero dar baixa"])("encerramento explícito é serviço avulso: %s", texto => {
-  expect(dados(ler(texto, "pretendeReativar", "INATIVA"))).toMatchObject({ pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" });
+  expect(dados(ler(texto, "pretendeReativar", "INATIVA"))).toMatchObject({ pretendeReativar: "BAIXAR" });
 });
 test("mudança explícita de baixa para reativação pede uma nova escolha de modalidade", () => {
   const r = interpretarColetaComercial({ texto: "Quero reativar", origem: "INATIVA", campoEsperado: "cnpj", dadosAtuais: { pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" } });
   expect(r.operacoes).toContainEqual({ campo: "pretendeReativar", acao: "set", valor: "REATIVAR" });
-  expect(r.operacoes).toContainEqual({ campo: "modalidadeServico", acao: "unset" });
+  expect(r.operacoes.some(o => o.campo === "modalidadeServico")).toBe(false);
 });
 test("mensalidade não substitui silenciosamente pedido anterior de encerramento", () => {
   const r = interpretarColetaComercial({ texto: "Quero contabilidade mensal", origem: "INATIVA", campoEsperado: "cnpj", dadosAtuais: { pretendeReativar: "BAIXAR", modalidadeServico: "AVULSO" } });
@@ -252,7 +246,7 @@ test.each(["Aguarda um pouco", "Espera aí", "Pera aí", "Peraí", "Só um minut
   }
 });
 test("não saber onde funciona como desconhecimento somente do endereço", () => {
-  expect(ler("Ainda não sei onde", "enderecoPretendido").desconhecido).toBe("enderecoPretendido");
+  expect(ler("Ainda não sei onde", "enderecoPretendido").desconhecido).toBeNull();
   expect(ler("Ainda não sei onde", "responsavelNome").desconhecido).toBeNull();
 });
 
@@ -293,4 +287,16 @@ test.each([
   ['Quero ativar as notificações da empresa', null], ['Quero abrir uma empresa', 'ABERTURA'],
 ])('ativação de empresa não é abertura nem ativação de acesso: %s', (texto, origem) => {
   expect(identificarOrigemComercial(texto)).toBe(origem);
+});
+
+test('cidade da abertura complementa endereço sem sobrescrever edição manual ou IPTU', () => {
+  const enderecoAbertura = { rua: 'Rua Manual', cidade: 'Recife', uf: 'PE', numero: '12', inscricaoImobiliaria: '000A' };
+  const r = interpretarColetaComercial({ texto: 'cidade: Rio/RJ', origem: 'ABERTURA', dadosAtuais: { enderecoAbertura } });
+  expect(dados(r)).toEqual({ enderecoAbertura });
+  expect(enderecoAbertura.cidade).toBe('Recife');
+});
+
+test('relato opcional é interpretado sem gravar motivo de troca interno', () => {
+  const r = interpretarColetaComercial({ texto: 'Preciso organizar documentos antigos', origem: 'TRANSFERENCIA', campoEsperado: 'pendenciasDeclaradas' });
+  expect(dados(r)).toEqual({ pendenciasDeclaradas: 'Preciso organizar documentos antigos' });
 });

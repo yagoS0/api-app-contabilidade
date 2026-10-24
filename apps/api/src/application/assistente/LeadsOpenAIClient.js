@@ -27,6 +27,7 @@ export function normalizarUsageOpenAI(usage) {
 
 export function prepararPedidoLead({ texto, intencao = null, campoEsperado = null, resumo = null }) {
   if (typeof texto !== 'string' || !texto.trim() || texto.length > 4000) throw erro('ENTRADA_LEAD_INVALIDA');
+  if (['periodoPendencias', 'tipoPendencias', 'modalidadeServico', 'consultoriaMensal', 'regimeAtual', 'regimePretendido', 'notasRecebidasMes', 'paradaDesde', 'contadorAnterior', 'contatoContadorAnterior', 'motivoTroca', 'ultimaCompetenciaEntregue', 'inicioCompetenciaAltan', 'temDebitos', 'debitosDeclarados', 'temParcelamento'].includes(campoEsperado)) campoEsperado = null;
   const dadosColetados = resumo ? Object.fromEntries(['nome', 'atividade', 'cidade', 'necessidade', 'estrutura', 'faturamento', 'urgencia', 'preferenciaContato', 'cnpj', 'periodoPendencias', 'tipoPendencias', 'situacaoOperacional', 'qtdFuncionarios', 'notasRecebidasMes', 'notasEmitidasMes', 'faturamentoMensal']
     .filter(k => typeof resumo[k] === 'string' && resumo[k].trim() && (k !== 'cnpj' || /^\d{14}$/.test(resumo[k]))).map(k => [k, resumo[k].slice(0, k === 'nome' ? 120 : 700)])) : null;
   const ordem = intencao ? ordemQualificacao({ ...resumo, intencao }) : ORDEM_QUALIFICACAO;

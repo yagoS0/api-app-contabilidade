@@ -1,4 +1,18 @@
 import { responderTesteWhatsapp } from '../AssistenteTesteWhatsappService.js';
+import { CAMPOS_INTERNOS } from '@contabilidade/shared/onboarding';
+
+test('sessão simulada não oferece nem altera decisões internas retiradas da coleta', async () => {
+  const assistente = { responder: async op => {
+    const contexto = JSON.parse(op.system[0].text.split('Contexto: ')[1]);
+    expect(contexto.campos.some(c => CAMPOS_INTERNOS.includes(c.campo))).toBe(false);
+    expect(await op.executar('registrar_atendimento', { campos: [{ campo: 'consultoriaMensal', acao: 'set', valor: false }] })).toMatchObject({ ok: false });
+    expect(await op.executar('registrar_atendimento', { campos: [{ campo: 'responsavelNome', acao: 'set', valor: 'Ana Teste' }] })).toMatchObject({ ok: true });
+    return { texto: 'A equipe vai conferir as informações.', stopReason: 'end_turn' };
+  } };
+  const r = await responderTesteWhatsapp({ historico: [], texto: 'Meu nome é Ana Teste', contexto: { dados: { consultoriaMensal: true } }, assistente });
+  expect(r.contexto.dados.consultoriaMensal).toBe(true);
+  expect(r.contexto.dados.responsavelNome).toBe('Ana Teste');
+});
 test('menu e abertura usam comportamento automático; dúvida usa prompt comercial e ferramenta sandbox',async()=>{
  const assistente={responder:jest.fn(async op=>{
    expect(op.system[0].text).toContain('registrar_atendimento');

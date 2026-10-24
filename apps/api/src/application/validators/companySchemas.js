@@ -13,6 +13,10 @@ import { strongPasswordSchema } from "./passwordPolicy.js";
 const senhaForte = strongPasswordSchema;
 
 const enderecoSchema = z.object({
+  legado: z.string().max(2000).optional(),
+  inscricaoImobiliaria: z.string().max(200).optional().nullable(),
+  iptuDesconhecido: z.boolean().optional(),
+  semNumero: z.boolean().optional(),
   rua: z.string().max(200).optional().nullable(),
   numero: z.string().max(20).optional().nullable(),
   bairro: z.string().max(120).optional().nullable(),
@@ -23,6 +27,7 @@ const enderecoSchema = z.object({
 }).partial().optional();
 
 const companyBaseFields = {
+  titular: z.object({ nome: z.string().min(1).max(200), cpf: z.string().max(20) }).optional(),
   razaoSocial: z.string().min(1, "razão social obrigatória").max(200),
   nomeFantasia: z.string().max(200).optional().nullable(),
   cnpj: z.string().refine(cnpjCompativel, "CNPJ em formato inválido ou DV alfanumérico incorreto"),

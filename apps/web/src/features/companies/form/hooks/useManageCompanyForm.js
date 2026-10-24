@@ -74,6 +74,7 @@ export function getInitialCompanyFormState() {
     alteracaoNumero: "",
     alteracaoData: "",
     socios: [],
+    titular: undefined,
     regimeHistorico: [],
   };
 }
@@ -207,6 +208,11 @@ export function mapCompanyToEditForm(company) {
     desoneracao: Boolean(legacy?.desoneracao),
     alteracaoNumero: String(legacy?.alteracaoNumero || "").trim(),
     alteracaoData: toDateInput(legacy?.alteracaoData),
+    titular: legacy?.titular || undefined,
+    inscricaoImobiliaria: endereco.inscricaoImobiliaria || "",
+    enderecoLegado: endereco.legado || "",
+    iptuDesconhecido: endereco.iptuDesconhecido === true,
+    semNumero: endereco.semNumero === true,
     socios: Array.isArray(legacy?.partners)
       ? legacy.partners.map((p) => ({
           name: String(p.name || ""),

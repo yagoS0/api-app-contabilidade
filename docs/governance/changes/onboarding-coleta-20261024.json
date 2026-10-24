@@ -1,0 +1,174 @@
+{
+  "rollback": "Não houve implantação. Preservar dados e coluna titular; nenhuma reversão destrutiva proposta. Alterações locais e evidências permanecem isoladas.",
+  "baseCommit": "6249856a713f7c31ce5b1bba4f569a6d9cf293a7",
+  "tests": [
+    "Sete gates originais aprovados nas fontes ativas, sem resolver de candidato, no run 2026-10-24T17-02-51-847Z-51912461.",
+    "API 11632/11632 em 670 suítes; web 6024/6024 em 528 suítes; portal 1586/1586 em 101 suítes: total 19242, zero falhas e zero testes ignorados.",
+    "Governança 72/72; web-build, portal-build e data-postgres aprovados.",
+    "Apresentação 26/26 incluídos no gate API: alteração material do capital invalida evidência antiga, preserva histórico, recusa hash antigo e permite nova conferência sem reenvio. Mudança somente de versão sem alteração material preserva prova.",
+    "Cinco testes PostgreSQL de pessoas incluídos no gate API, com rollback e concorrência entre conexões; banco descartável encerrado corretamente após runtime.",
+    "Onze pareceres de domínio, quatro técnicos e um sistêmico aprovados sobre o incremento acumulado desde 6249856 e o mesmo fingerprint de fontes.",
+    "Evidência visual anterior corresponde às fontes de interface inalteradas nesta rodada: 390/1440 px, quatro labels e dois botões com 44 px. Quinta label condicional somente inspeção estática; não houve nova captura nem navegação completa por teclado/leitor de tela nesta rodada."
+  ],
+  "risk": "high",
+  "humanDecisions": [
+    "24/10/2026: usuário autorizou aplicar exatamente os seis scripts do candidato ci-compat e revalidar; integração/publicação permanecem condicionadas ao CI e revisões aprovados.",
+    "Implementação, testes e revisões locais autorizados; sem publicação ou atos reais.",
+    "Usuário autorizou global3 limitada: três arquivos de interpretação/seleção de teste; aplicados por hashes exatos.",
+    "Usuário autorizou global4 limitada: mensagem company_titular_invalid no dicionário; aplicada por hash exato.",
+    "Usuário autorizou global5: aplicar exatamente nove candidatos, preservar verificações e revalidar sem publicar. Aplicados com nove hashes exatos.",
+    "Usuário autorizou global6: aplicar exatamente os dois arquivos de candidate-apresentacao-capital, preservar histórico e verificações, executar testes/revisões sem publicar. Aplicados pelos hashes aprovados.",
+    "Nenhuma decisão de negócio adicional necessária para estes reparos. PR, integração, publicação e atos externos não autorizados neste pedido.",
+    "24/10/2026: usuário autorizou abrir PR, integrar main somente após CI aprovado, publicar em produção e conferir onboarding/Comercial sem alterar atendimentos reais."
+  ],
+  "reviewProcess": {
+    "ciCompatibility": "Seis scripts aplicados pelos hashes do manifesto a572e4029a16c84be1f5bcd3d5d18716ad242a09007b2bb17d205c542f6c33c4. Candidato isolado passou 143 cenários em sete execuções PostgreSQL. Nas fontes ativas sem loader, 98 cenários passaram; verify-commercial-lead-postgres:189 recebeu PENDENTE em vez de CONCLUIDO. A reexecução focada do mesmo arquivo, sem alterações, passou seus 45 cenários; a primeira falha permanece registrada. Trecho temporal preexistente na base6249856; diferença entre relógios é hipótese, não causa medida. Revisão independente pós-aplicação favorável com ressalva, condicionada aos checks obrigatórios do SHA final: nova falha não pode ser dispensada como instabilidade presumida. Clusters descartáveis encerrados; nenhuma alteração de produto, guards ou gates. Regra vigente seção29/T87/T92/T94 preservada; sem mudança operacional.",
+    "releaseCi": "PR #244, head 9ae9a69fe4913dde64e010f394a312d3b4041100: publicação bloqueada pelo CI. Registro principal completado com documentation após reprovação Missing affected domains; revisão independente release_check favorável, sem alterar gates ou registro runtime derivado. Dois scripts PostgreSQL comerciais também falharam; diagnóstico/candidato isolado em preparação, sem aplicação funcional ou publicação.",
+    "visual": "Consumidores ativos inspecionados390/1440 em Chrome local com fixtures e redeexternabloqueada; desvio44px registrado. Candidatos finais revalidados:4labelsvisíveis e2botões44px, semoverflow/erroJS, IPTU e titular preservados; quinta label condicional somente revisãoestática. Evidências locais e limitações nos pareceres; servidores/perfis temporários próprios encerrados.",
+    "candidatePessoas": "applied_authorized_exact_hashes; 9 arquivos; focais históricos 103 API/9 web e pareceres independentes favoráveis; gates atuais completos aprovados",
+    "blockingFinding": "Resolvido e aprovado: a projeção exige identidade documental vigente ao reconhecer envio; mudança material invalida conclusão antiga sem apagar evidência histórica. Nenhum bloqueio técnico remanescente apontado pelos dezesseis pareceres.",
+    "candidateExtra": "applied authorized exact hashes",
+    "systemic": "approved: altan_system_reviewer, same source fingerprint and accumulated base6249856",
+    "gates": "7 passed",
+    "globalCorrectionsCompleted": 6,
+    "completedReviews": 16,
+    "runtimeRun": "2026-10-24T17-02-51-847Z-51912461",
+    "status": "ready_for_human",
+    "candidateMessage": "applied authorized exact hash",
+    "mechanicalCheckpoint": "da444c852b09deca07d3994736b3b05e83395d6c",
+    "fingerprintScope": "Snapshot técnico antes dos registros documentais finais. Conferência dos 3881 arquivos em capital-post-runtime-preservation.json permite somente este registro modificado; o registro runtime derivado é novo. Nenhum código alterado após testes/revisões.",
+    "approvedDomainReviews": 11,
+    "rejectedTransversalReviews": 0,
+    "candidateApresentacao": "applied_authorized_exact_hashes; dois arquivos, teste aditivo e histórico preservado; gate API atual inclui26/26. Evidência isolada anterior88/88 preservada, incluindo aviso de handles do Jest na baseline/candidato, sem forceExit.",
+    "localPostgresStopped": true,
+    "fingerprint": "3c45a3f14c8297097b1c2f2b827db55e11e09e0c530bbd3f5023d4fe06a8bd29",
+    "approvedTransversalReviews": 4,
+    "derivedRuntimeRecord": "docs/governance/changes/runtime-2026-10-24T17-02-51-847Z-51912461.json",
+    "documentationReview": "approved: .altan-governance/final-record-global6-review.md; independent reviewer authorized only this mechanical status update"
+  },
+  "summary": "Coleta simplificada do onboarding conforme decisão expressa de 24/10/2026",
+  "status": "ready_for_human",
+  "operationalImpact": "Implementa decisões da seção29/R02/R22/R32–R36 com histórico e decisões internas preservados. Global6 concretiza R34/T56/T64/T94: documento obsoleto não conclui apresentação vigente. Não introduz nova regra comercial/fiscal; referências sincronizadas. Fontes tecnicamente aprovadas, sem publicação.",
+  "operationalDetails": {
+    "canonicalSynchronized": true,
+    "acceptanceScenarios": [
+      "T87",
+      "T88",
+      "T89",
+      "T90",
+      "T91",
+      "T92",
+      "T93",
+      "T94",
+      "T95",
+      "T96"
+    ],
+    "rules": [
+      "R02",
+      "R22",
+      "R32",
+      "R33",
+      "R34",
+      "R35",
+      "R36"
+    ],
+    "decisionSection": 29
+  },
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "historicalValidation": [
+    "Aceitação complementar:12/12.",
+    "PostgreSQL onboarding:2/2; complementar perfil/roundtrip passou com rollback e zero resíduos.",
+    "API focal ativa:1862 passaram,3 falharam; incremento reprovado.",
+    "UI:parecer independente favorável somente no escopo visual revisado.",
+    "Candidato isolado não aplicado:468/468 em5suítes API originais e365/365 em39suítes web onboarding; todos asserts preservados.",
+    "Regressão web ativa após restauração de dependência:2728 passaram,1 falhou; não aprovado."
+  ],
+  "publication": "Authorized conditionally on CI and reviewed sources; not yet performed. Post-deploy verification is read-only; no real client workflow, messages or fiscal acts.",
+  "workingTree": "C:/Users/yagoa/Documents/ChatGPT/ALTAN/altan-onboarding-final-20261024",
+  "branch": "codex/onboarding-final-20261024",
+  "historicalReviewRounds": [
+    {
+      "tests": [
+        "Versão ativa final: sete gates originais aprovados no run2026-10-24T14-43-21-308Z-aa8d4527.",
+        "API11614/11614 em668suítes; web6021/6021 em528suítes; portal1586/1586 em101suítes; sem testes pendentes.",
+        "Governança72/72; web-build, portal-build e data-postgres aprovados.",
+        "Aceitação complementar12/12; coletaSimplificada.postgres2/2 incluídos no gateAPI.",
+        "Candidato adicional NÃOAPLICADO:103API incluindo5PostgreSQL reais e9web; revisões independentes favoráveis; aguarda autorização de aplicação e gates completos.",
+        "Revisão acumulada contra6249856:15pareceres rejeitaram integridade titular/sócios; revisão sistêmica não liberada. Gates aprovados não significam ready_for_human."
+      ],
+      "humanDecisions": [
+        "Implementação, testes e revisões locais autorizados; sem publicação ou atos reais.",
+        "Usuário autorizou global3 limitada: três arquivos de interpretação/seleção de teste; aplicados por hashes exatos.",
+        "Usuário autorizou global4 limitada: mensagem company_titular_invalid no dicionário; aplicada por hash exato.",
+        "Proposta isolada candidate-pessoas em nove arquivos NÃO autorizada para aplicação; preservar escopo até decisão após revisão independente."
+      ],
+      "reviewProcess": {
+        "visual": "Consumidores ativos inspecionados390/1440 em Chrome local com fixtures e redeexternabloqueada; desvio44px registrado. Candidatos finais revalidados:4labelsvisíveis e2botões44px, semoverflow/erroJS, IPTU e titular preservados; quinta label condicional somente revisãoestática. Evidências locais e limitações nos pareceres; servidores/perfis temporários próprios encerrados.",
+        "candidatePessoas": "isolated proposal,9files;103API including5realPostgreSQL and9web passed; backend/UI independent reviews favorable; NOT applied, awaiting user authorization",
+        "blockingFinding": "PATCH valida apenas payload e pode conservar titular/sócios incompatíveis; client partner writer também exige guarda comum; UI oculta conflito",
+        "fingerprint": "51c2ec16c92429e583e5a513b07f2693f21a4e44aa9974eb0006639d716d1815",
+        "candidateExtra": "applied authorized exact hashes",
+        "systemic": "not released after domain rejections",
+        "gates": "7 passed",
+        "globalCorrectionsCompleted": 4,
+        "completedReviews": 15,
+        "runtimeRun": "2026-10-24T14-43-21-308Z-aa8d4527",
+        "status": "escalated",
+        "candidateMessage": "applied authorized exact hash",
+        "mechanicalCheckpoint": "3bb92c3f5b68d4f1e058735e1bd72846d3aa7a35",
+        "fingerprintScope": "Fingerprint do runtime antes da atualização deste registro documental. Comparação dos3878arquivos após run encontrou diferença somente neste registro; fontes de produto preservadas."
+      }
+    },
+    {
+      "tests": [
+        "Sete gates originais aprovados no run 2026-10-24T15-54-47-686Z-7b77d5cc; fontes ativas sem resolver de candidato.",
+        "API 11631/11631 em 670 suítes; web 6024/6024 em 528 suítes; portal 1586/1586 em 101 suítes. Total 19241, zero falhas e zero testes ignorados.",
+        "Governança 72/72; web-build, portal-build e data-postgres aprovados.",
+        "Cinco casos PostgreSQL reais de pessoas incluídos na regressão API: rollback e quatro disputas com conexões distintas; PostgreSQL descartável encerrado ao final.",
+        "Revisões acumuladas contra 6249856: onze domínios aprovaram; backend, dados, UI e UX reprovaram pelo mesmo bloqueio de apresentação desatualizada. Sistêmica não liberada.",
+        "Proposta adicional NÃO APLICADA, dois arquivos: baseline 25 aprovados/1 falha reproduzida; candidato 26/26 e ampliação 88/88 em cinco suítes. Parecer independente favorável; gates completos ainda necessários após eventual aplicação."
+      ],
+      "humanDecisions": [
+        "Implementação, testes e revisões locais autorizados; sem publicação ou atos reais.",
+        "Usuário autorizou global3 limitada: três arquivos de interpretação/seleção de teste; aplicados por hashes exatos.",
+        "Usuário autorizou global4 limitada: mensagem company_titular_invalid no dicionário; aplicada por hash exato.",
+        "Usuário autorizou global5: aplicar exatamente nove candidatos, preservar verificações e revalidar sem publicar. Aplicados com nove hashes exatos.",
+        "Proposta candidate-apresentacao-capital, dois arquivos fora do escopo global5, aguarda autorização; não aplicada."
+      ],
+      "reviewProcess": {
+        "visual": "Consumidores ativos inspecionados390/1440 em Chrome local com fixtures e redeexternabloqueada; desvio44px registrado. Candidatos finais revalidados:4labelsvisíveis e2botões44px, semoverflow/erroJS, IPTU e titular preservados; quinta label condicional somente revisãoestática. Evidências locais e limitações nos pareceres; servidores/perfis temporários próprios encerrados.",
+        "candidatePessoas": "applied_authorized_exact_hashes; 9 arquivos; focais históricos 103 API/9 web e pareceres independentes favoráveis; gates atuais completos aprovados",
+        "blockingFinding": "Alterar somente capitalSocialPretendido modifica PDF, mas envio antigo ainda pode concluir a apresentação vigente; reprodução isolada confirmou. Correção de pessoas e alvos móveis aprovada no escopo delimitado.",
+        "candidateExtra": "applied authorized exact hashes",
+        "systemic": "not released after four transversal rejections of the same document-versioning defect",
+        "gates": "7 passed",
+        "globalCorrectionsCompleted": 5,
+        "completedReviews": 15,
+        "runtimeRun": "2026-10-24T15-54-47-686Z-7b77d5cc",
+        "status": "escalated",
+        "candidateMessage": "applied authorized exact hash",
+        "mechanicalCheckpoint": "29c012e5d2f5541a8622fd703aa0bb869f71a648",
+        "fingerprintScope": "Fingerprint do snapshot técnico anterior à atualização deste registro. Comparação dos 3881 arquivos em pessoas-post-runtime-preservation.json encontrou diferença somente neste registro; fontes de produto preservadas.",
+        "approvedDomainReviews": 11,
+        "rejectedTransversalReviews": 4,
+        "candidateApresentacao": "isolated, two files, NOT applied; baseline 25 pass/1 fail, expanded candidate88/88; independent-review.md favorable; Jest open-handles warning recorded",
+        "localPostgresStopped": true,
+        "fingerprint": "52affa91a54d5acba179e32841164c8ed7e5ddd5c0e4712091ca94f47f8b70a5"
+      }
+    }
+  ]
+}

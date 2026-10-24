@@ -25,7 +25,7 @@ test('pré-atendimento com IA aproveita volume espontâneo e mantém coleta curt
 });
 test('não sei permanece explícito e não volta como pergunta nem como zero', () => {
  const dados = aplicarCampos('TRANSFERENCIA', { cnpj: '11222333000181', responsavelNome: 'Ana', modalidadeServico: 'RECORRENTE' }, [{ campo: 'qtdFuncionarios', acao: 'set', valor: 'NAO_SEI' }]);
- expect(proximaPergunta({ origem: 'TRANSFERENCIA', dados }).campo).toBe('notasRecebidasMes');
+ expect(proximaPergunta({ origem: 'TRANSFERENCIA', dados }).campo).toBe('notasEmitidasMes');
  expect(normalizarRoteiroAnalise({ dados: dadosAnaliseDaFicha({ dados }) }, 'TRANSFERENCIA').dados).not.toHaveProperty('funcionariosClt');
 });
 

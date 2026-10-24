@@ -43,7 +43,8 @@ export function mensagemDeValor(pre) {
 // O contexto atual da ficha inclui respostas manuais e do link, sem inventar evidências da mensagem.
 export function resumoComFicha(resumo = {}, dados = {}) {
   const atual = { ...resumo };
-  for (const [campo, destino] of Object.entries({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })) {
+  dados = { ...dados, municipioAtendimento: dados.enderecoAbertura?.cidade || dados.municipioAtendimento, pendenciasDeclaradas: dados.pendenciasDeclaradas || dados.motivoTroca };
+  for (const [campo, destino] of Object.entries({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', pendenciasDeclaradas: 'necessidade' })) {
     if (!resumo.evidenciasIa?.[destino] && typeof dados[campo] === 'string' && dados[campo].trim()) atual[destino] = dados[campo];
   }
   for (const campo of ['qtdFuncionarios', 'notasRecebidasMes', 'notasEmitidasMes', 'faturamentoMensal']) {
@@ -67,8 +68,9 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
   const origem = origemDaIntencao(intencao);
   anterior = resumoComFicha(anterior, dadosFicha);
   const pre = { ...enriquecerResumoCadastral(anterior, consultaPublica), versao: 1, intencao, dadosInformados: { ...(anterior.dadosInformados || {}) }, ...(anterior.evidenciasIa ? { evidenciasIa: { ...anterior.evidenciasIa } } : {}), ...(anterior.evidenciasDeclaradas ? { evidenciasDeclaradas: { ...anterior.evidenciasDeclaradas } } : {}) };
-  const campo = anterior.campoEsperado || ({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' })[campoAnterior];
-  const campoFicha = ({ cnpj: 'cnpj', nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: intencao === 'TRANSFERENCIA' ? 'motivoTroca' : null })[campo];
+  const esperado = anterior.campoEsperado || ({ responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', pendenciasDeclaradas: 'necessidade' })[campoAnterior];
+  const campo = ['periodoPendencias', 'tipoPendencias', 'motivoTroca', 'paradaDesde', 'modalidadeServico', 'regimeAtual', 'regimePretendido', 'notasRecebidasMes'].includes(esperado) ? null : esperado;
+  const campoFicha = ({ cnpj: 'cnpj', nome: 'responsavelNome', atividade: 'atividadePretendida', cidade: 'municipioAtendimento', necessidade: ['TRANSFERENCIA', 'INATIVA'].includes(intencao) ? 'pendenciasDeclaradas' : null })[campo];
   const palavraDeEntrada = palavras[raw.toUpperCase()] === intencao;
   const leitura = interpretarColetaComercial({ texto: palavraDeEntrada ? '' : raw, origem: origem || 'ABERTURA', campoEsperado: campoFicha, dadosAtuais: dadosFicha });
   const revisaoIdentidade = /\b(?:mude|mudar|troque|trocar|altere|alterar|vincule|vincular|acesse|acessar|mostre|mostrar|revele|revelar|envie|enviar|mande|mandar|use|usar)\b/.test(t)
@@ -88,12 +90,17 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     if (ia.comportamento === 'RETOMAR') leitura.retomada = true;
   }
   if (ia) {
-    const camposTriagem = { responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', motivoTroca: 'necessidade' };
+    const camposTriagem = { responsavelNome: 'nome', atividadePretendida: 'atividade', municipioAtendimento: 'cidade', pendenciasDeclaradas: 'necessidade' };
     // O extrator antigo não pode gravar uma resposta livre no campo perguntado
     // quando a interpretação com evidência identifica outro significado.
     leitura.operacoes = leitura.operacoes.filter(o => {
       if (o.campo === 'cnpj') return ['DADOS', 'PAUSAR', 'RETOMAR'].includes(ia.comportamento) && o.valor === documentoDeclarado.cnpj;
       if (ia.comportamento !== 'DADOS') return false;
+      // Município de abertura agora é estruturado, mas ainda exige evidência de cidade.
+      if (o.campo === 'enderecoAbertura') {
+        return ia.dados.some(d => d.campo === 'cidade' && d.valor !== null && o.acao === 'set'
+          && normalizar(String(d.valor).split(/[,/]/)[0]) === normalizar(o.valor?.cidade));
+      }
       const campoIa = camposTriagem[o.campo];
       if (!campoIa) return true;
       return ia.dados.some(d => d.campo === campoIa && (o.acao === 'set'
@@ -125,12 +132,12 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
   }
   if (pre.evidenciasIa?.nome?.valor !== null) pre.nome ||= dadosFicha.responsavelNome || nomeConhecido || null;
   if (pre.evidenciasIa?.atividade?.valor !== null) pre.atividade ||= dadosFicha.atividadePretendida || null;
-  if (pre.evidenciasIa?.cidade?.valor !== null) pre.cidade ||= dadosFicha.municipioAtendimento || null;
-  if (pre.evidenciasIa?.necessidade?.valor !== null) pre.necessidade ||= dadosFicha.motivoTroca || null;
+  if (pre.evidenciasIa?.cidade?.valor !== null) pre.cidade ||= dadosFicha.enderecoAbertura?.cidade || dadosFicha.municipioAtendimento || null;
+  if (pre.evidenciasIa?.necessidade?.valor !== null) pre.necessidade ||= dadosFicha.pendenciasDeclaradas || dadosFicha.motivoTroca || null;
   if (capturados.responsavelNome) pre.nome = capturados.responsavelNome;
   if (capturados.atividadePretendida) pre.atividade = capturados.atividadePretendida;
-  if (capturados.municipioAtendimento) pre.cidade = capturados.municipioAtendimento;
-  if (capturados.motivoTroca) pre.necessidade = capturados.motivoTroca;
+  if (capturados.enderecoAbertura?.cidade || capturados.municipioAtendimento) pre.cidade = capturados.enderecoAbertura?.cidade || capturados.municipioAtendimento;
+  if (capturados.pendenciasDeclaradas || capturados.motivoTroca) pre.necessidade = capturados.pendenciasDeclaradas || capturados.motivoTroca;
   const social = leitura.aguardar || leitura.retomada || leitura.humano || leitura.reinicio;
   const duvida = leitura.resposta || responderDuvidaComercial(raw, { origem });
   const desconhecido = Boolean(leitura.desconhecido) || /^(?:(?:eu |ainda )?nao (?:sei|lembro|tenho certeza|tenho ideia)|a definir)(?: dizer| informar| agora| ainda)?[.!]*$/.test(t);
@@ -205,7 +212,7 @@ export function prepararPreatendimento({ texto, intencao, anterior = {}, dadosFi
     nome: 'Como você se chama?',
     atividade: intencao === 'ABERTURA' ? 'Qual atividade você pretende exercer?' : 'Qual é a atividade da sua empresa?',
     cidade: 'Em qual cidade a empresa vai funcionar? Se ainda não definiu, tudo bem.',
-    necessidade: intencao === 'TRANSFERENCIA' ? 'O que você gostaria de melhorar em relação ao contador atual?' : 'O que aconteceu com a empresa e o que você gostaria de resolver?',
+    necessidade: ['TRANSFERENCIA', 'INATIVA'].includes(intencao) ? 'Deseja relatar alguma informação importante sobre a empresa?' : 'O que você gostaria de resolver?',
   };
   const ordem = qualificacaoCompleta ? ordemQualificacao(pre) : intencao === 'ABERTURA' ? ['nome', 'atividade', 'cidade']
     : ['TRANSFERENCIA', 'INATIVA'].includes(intencao) ? ['necessidade', 'nome'] : ['atividade', 'nome'];

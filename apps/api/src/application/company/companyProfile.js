@@ -1,3 +1,4 @@
+import { cpfValido } from '@contabilidade/shared/onboarding-dados';
 import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/documentos-fiscais";
 import { emailValido } from "@contabilidade/shared/email";
 const REGIMES = new Set(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"]);
@@ -52,7 +53,11 @@ function normalizeEndereco(raw) {
   const endereco = raw && typeof raw === "object" ? raw : {};
   const normalized = {
     rua: asString(endereco.rua),
-    numero: asString(endereco.numero),
+    numero: endereco.semNumero === true ? "S/N" : asString(endereco.numero),
+    ...(endereco.semNumero !== undefined ? { semNumero: endereco.semNumero === true } : {}),
+    ...(endereco.inscricaoImobiliaria !== undefined ? { inscricaoImobiliaria: asString(endereco.inscricaoImobiliaria) } : {}),
+    ...(endereco.iptuDesconhecido !== undefined ? { iptuDesconhecido: endereco.iptuDesconhecido === true } : {}),
+    ...(typeof endereco.legado === 'string' ? { legado: endereco.legado } : {}),
     complemento: asString(endereco.complemento) || null,
     bairro: asString(endereco.bairro),
     cidade: asString(endereco.cidade),
@@ -604,6 +609,7 @@ export function validateAndNormalizeCompanyProfile(input) {
   const guideEmailResult = normalizeOptionalNotificationEmail(company.guideNotificationEmail);
   if (!guideEmailResult.ok) return guideEmailResult;
 
+  if (company.titular !== undefined && (!company.titular || typeof company.titular.nome !== "string" || !company.titular.nome.trim() || !cpfValido(company.titular.cpf) || company.socios?.length)) return { ok: false, error: "company_titular_invalid" };
   const sociosResult = normalizeSocios(company.socios);
   if (!sociosResult.ok) return sociosResult;
 
@@ -717,6 +723,7 @@ export function validateAndNormalizeCompanyProfile(input) {
       alteracaoData,
       // null = não veio no payload (não mexer); array = substituir
       socios: sociosResult.data,
+      ...(company.titular ? { titular: { nome: company.titular.nome.trim(), cpf: onlyDigits(company.titular.cpf) } } : {}),
       regimeHistorico: historicoResult.data,
     },
   };

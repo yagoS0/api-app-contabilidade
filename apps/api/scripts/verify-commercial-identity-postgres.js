@@ -55,6 +55,12 @@ try {
   assert.equal(textosEnviados, 1);
   assert.equal(await db.mensagemWhatsapp.count({ where: { turnoIaId: `coleta-comercial:${m.id}`, direcao: "out" } }), 1);
   let ficha = await db.onboarding.findUnique({ where: { id } });
+  assert.equal(ficha.dados.modalidadeServico, undefined, "Mensagem do cliente não define modalidade comercial interna.");
+  ficha = await registrarCampos({ onboardingId: id, versao: ficha.versao, atorId: user.id, client: db, operacoes: [
+    { campo: "modalidadeServico", acao: "set", valor: "AVULSO" },
+    { campo: "enderecoAbertura", acao: "set", valor: { rua: "Rua Sintética", numero: "1", cidade: "Rio de Janeiro", uf: "RJ" } },
+  ] });
+  assert.equal(ficha.fontesDados.modalidadeServico.atorId, user.id);
   assert.equal(ficha.cnpj, null); assert.equal(ficha.dados.modalidadeServico, "AVULSO"); assert.equal(ficha.dados.atividadePretendida, "Medicina");
   assert.equal((await db.conversaWhatsapp.findUnique({ where: { id: c.id } })).portalClientId, empresa.id);
   ok("Cliente com empresa inicia nova abertura, grava campos uma vez e preserva contexto operacional");
@@ -128,7 +134,7 @@ try {
   assert.equal(cnpjConsultado, null);
   assert.equal((await db.onboarding.findUnique({ where: { id: inativa.resultado.onboardingId } })).cnpj, "11222333000181");
   assert.notEqual(cnpjConsultado, empresa.cnpj);
-  assert.ok(inativa.resultado.texto.includes("gostaria de resolver"));
+  assert.ok(inativa.resultado.texto.includes("Deseja relatar alguma informação importante sobre a empresa?"));
   const casoInativa = await db.atendimentoLead.findUnique({ where: { id: inativa.resultado.atendimentoId } });
   assert.equal(casoInativa.representanteVerificadoEm, null); assert.deepEqual(casoInativa.autorizacao, {});
   assert.equal(await db.trabalhoFiscalLead.count({ where: { onboardingId: inativa.resultado.onboardingId } }), 0);

@@ -6,7 +6,7 @@ import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { CATALOGO_SINTETICO as catalogo } from "./fixtures/catalogoSintetico.js";
 
 const decisao = necessaria => ({ necessaria, justificativa: "Conferência sintética de períodos anteriores registrada pelo contador.", condicaoInicioMensal: necessaria ? "APOS_REGULARIZACAO" : "SEM_REGULARIZACAO" });
-const ficha = (dados = {}, origem = "TRANSFERENCIA") => ({ id: "o", versao: 1, origem, status: "RASCUNHO", dados: { modalidadeServico: "RECORRENTE", regimeAtual: "SIMPLES", regimePretendido: "SIMPLES", qtdFuncionarios: 2, notasRecebidasMes: 12, ...dados } });
+const ficha = (dados = {}, origem = "TRANSFERENCIA") => ({ id: "o", versao: 1, origem, status: "RASCUNHO", dados: { modalidadeServico: "RECORRENTE", regimeAtual: "SIMPLES", regimePretendido: "SIMPLES", qtdFuncionarios: 2, notasRecebidasMes: 12, consultoriaMensal: false, ...dados } });
 const calc = ({ dados, origem, ajustes = {}, necessaria = false, diagnostico } = {}) => calcularOpcoes({ ficha: ficha(dados, origem), catalogo, ajustes, diagnostico: diagnostico === undefined ? { regularizacao: decisao(necessaria) } : diagnostico });
 
 test.each([[0, 13711], [2, 13711], [3, 34717], [5, 34717], [6, 56921], [8, 56921]])("piso de toda faixa protege override com %i funcionários", (qtdFuncionarios, piso) => {
@@ -151,4 +151,29 @@ test("serviço pessoal tem só orçamento avulso explícito, sem mensalidade ou 
   expect(r.regularizacaoCentavos).toBeNull();
   expect(r.pendencias).toEqual([]); expect(pendenciasPoliticaComercial(r)).toEqual([]);
   expect(calc({ origem: "PESSOA_FISICA", diagnostico: null }).pendencias).toContain("Definir honorários do serviço avulso.");
+});
+
+test('modalidade ausente aguarda equipe e nunca presume recorrência', () => {
+  const r = calc({ dados: { modalidadeServico: undefined } });
+  expect(r.opcoes).toEqual([]);
+  expect(r.politicaComercial.modalidadeServico).toBeNull();
+  expect(r.pendencias).toContain('A equipe deve definir a modalidade de serviço na proposta.');
+  const definido = calc({ dados: { modalidadeServico: undefined }, ajustes: { modalidadeServico: 'RECORRENTE' } });
+  expect(definido.opcoes.some(o => o.recorrente)).toBe(true);
+});
+
+test('consultoria desconhecida exige decisão interna e conserva null no snapshot', () => {
+  const r = calc({ dados: { consultoriaMensal: undefined } });
+  expect(r.consultoriaMensal).toBeNull();
+  expect(r.pendencias.some(p => /consultoria/i.test(p))).toBe(true);
+  const sem = calc({ dados: { consultoriaMensal: undefined }, ajustes: { consultoriaMensal: false } });
+  const com = calc({ dados: { consultoriaMensal: undefined }, ajustes: { consultoriaMensal: true } });
+  expect(sem.consultoriaMensal).toBe(false); expect(com.consultoriaMensal).toBe(true);
+  expect(sem.pendencias).toEqual([]); expect(com.pendencias).toEqual([]);
+  expect(com.opcoes[0].mensalCentavos - sem.opcoes[0].mensalCentavos).toBe(catalogo.consultoriaCentavos);
+});
+test.each([{ regimeAtual: undefined, regimePretendido: undefined }, { notasRecebidasMes: undefined }, { qtdFuncionarios: null }])('ausência interna não gera mensalidade calculada: %j', dados => {
+  const r = calc({ dados });
+  expect(r.opcoes.find(o => o.recorrente).mensalCentavos).toBeNull();
+  expect(r.pendencias.length).toBeGreaterThan(0);
 });

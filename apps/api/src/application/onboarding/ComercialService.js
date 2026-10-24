@@ -1,3 +1,4 @@
+import { combinarColetaPublica, preservarDadosPersistidos } from '../../../../../packages/shared/src/onboarding/onboardingSpec.js';
 import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import { lerSitfisPosicional } from "../fiscal/serpro/lerRelatorioSitfis.js";
 import crypto from "node:crypto";
@@ -249,9 +250,9 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     let r = link.onboarding;
     if (patch) {
       if (!Number.isInteger(patch.versao) || patch.versao < 0 || Object.keys(patch).some((k) => !["dados", "ultimoPasso", "finalizar", "versao"].includes(k)) || (patch.finalizar !== undefined && typeof patch.finalizar !== "boolean") || (patch.ultimoPasso != null && (typeof patch.ultimoPasso !== "string" || patch.ultimoPasso.length > 60)) || !patch.dados || typeof patch.dados !== "object" || Array.isArray(patch.dados) || JSON.stringify(patch.dados).length > 60000) throw erro("dados_invalidos", "Confira os dados do formulário.");
-      const validacao = validarDadosOnboarding(r.origem, patch.dados);
+      const validacao = validarDadosOnboarding(r.origem, combinarColetaPublica(r.origem, r.dados, patch.dados), { coleta: true, finalizar: patch.finalizar === true && r.status === "RASCUNHO" });
       if (!validacao.ok) throw Object.assign(erro("dados_invalidos", Object.values(validacao.erros)[0]), { erros: validacao.erros });
-      patch = { ...patch, dados: validacao.dados };
+      patch = { ...patch, dados: preservarDadosPersistidos(r.origem, r.dados, validacao.dados) };
       r = await db.$transaction(async (tx) => {
         const atualizado = await tx.onboarding.updateMany({ where: { id: r.id, versao: patch.versao, status: r.status, links: { some: ativo } }, data: { dados: patch.dados, fontesDados: { ...(r.fontesDados || {}), ...Object.fromEntries(Object.keys(patch.dados).filter(k => JSON.stringify(r.dados?.[k]) !== JSON.stringify(patch.dados[k])).map(k => [k, { fonte: "FORMULARIO_PUBLICO", conferido: false, em: instante.toISOString() }])) }, ...extrairColunas(r.origem, patch.dados), ultimoPasso: patch.ultimoPasso || null, origemPreenchimento: "CLIENTE", versao: { increment: 1 }, ...(patch.finalizar && r.status === "RASCUNHO" ? { status: "RECEBIDO", enviadoEm: instante } : {}) } });
         if (atualizado.count !== 1) throw erro("formulario_alterado", "O formulário foi alterado ou o link expirou. Recarregue antes de salvar.", 409);

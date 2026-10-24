@@ -46,8 +46,7 @@ export async function verificarJornadaCanais({ db, user, ok }) {
     const a = await iniciarAtendimento({ conversaId: principal.id, origem: "ABERTURA", atorId: user.id, client: db });
     assert.equal((await iniciarAtendimento({ conversaId: comercial.id, origem: "ABERTURA", atorId: user.id, client: db })).id, a.id);
     const ficha = await registrarCampos({ onboardingId: a.onboardingId, versao: 0, atorId: user.id, client: db, operacoes: [
-      ["responsavelNome", "Pessoa sintética"], ["atividadePretendida", "Consultoria"], ["municipioAtendimento", "Rio de Janeiro/RJ"],
-      ["enderecoPretendido", "Rua Sintética 100"], ["modalidadeServico", "AVULSO"],
+      ["responsavelNome", "Pessoa sintética"], ["atividadePretendida", "Consultoria"], ["enderecoAbertura", { rua: "Rua Sintética", numero: "100", cidade: "Rio de Janeiro", uf: "RJ" }], ["modalidadeServico", "AVULSO"],
     ].map(([campo, valor]) => ({ campo, acao: "set", valor })) });
     const id = ficha.id, chamadas = [];
     const cloud = {

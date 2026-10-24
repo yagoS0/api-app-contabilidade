@@ -5,7 +5,8 @@ test('contexto leva investigação, ordem e relatos sem descartar complementos',
  relatosCliente:[{mensagemId:'m1',texto:'Parei de pagar em 2023'},{mensagemId:'m2',texto:'Também deixei de enviar as declarações'}]};
  const r=contexto({texto:'Quero resolver',intencao:'INATIVA',resumo});
  expect(r.investigacaoPendencias).toBe(true);expect(r.dadosColetados).toMatchObject({periodoPendencias:'desde 2023',tipoPendencias:'guias',situacaoOperacional:'Parada'});
- expect(r.ordemQualificacao.slice(0,5)).toEqual(['cnpj','necessidade','periodoPendencias','tipoPendencias','situacaoOperacional']);
+ expect(r.ordemQualificacao.slice(0,5)).toEqual(['cnpj','necessidade','atividade','cidade','estrutura']);
+ expect(r.ordemQualificacao).not.toEqual(expect.arrayContaining(['periodoPendencias','tipoPendencias']));
  expect(r.dispensados).toEqual(['tipoPendencias']);expect(r.relatosCliente).toEqual(resumo.relatosCliente);
 });
 test('contexto limitado preserva ordem recente e não altera relatos integrais do atendimento',()=>{
