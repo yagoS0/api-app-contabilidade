@@ -1,3 +1,4 @@
+import { listarErrosConsultas } from '../../application/operacoes/OperationsConsultas.js';
 import { Router } from 'express';
 import { lerOperacao, salvarOperacao } from '../../application/operacoes/OperationsService.js';
 import { executarOperacao } from '../../application/operacoes/OperationsExecution.js';
@@ -15,6 +16,7 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess }) {
       res.status(conflict ? 409 : e.status || 503).json({ ok: false, message: conflict ? 'Houve uma alteração simultânea. Atualize e confira antes de continuar.' : e.status ? e.message : 'Não foi possível confirmar o resultado. Atualize para conferir o que foi salvo.' });
     }
   };
+  router.get('/operacoes/consultas', run(async req => listarErrosConsultas(prisma, await empresasVisiveis(req), req.query.competencia)));
   const base = '/companies/:companyId/operacoes/:competencia';
   router.get('/operacoes/inss-manual', run(async req => {
     const ids = await empresasVisiveis(req);

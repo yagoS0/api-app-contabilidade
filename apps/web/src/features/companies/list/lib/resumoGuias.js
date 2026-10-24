@@ -7,13 +7,15 @@ export function resumirGuias(compliance) {
   const known = compliance && !compliance.erro && !compliance.error
     && ['das', 'inss', 'irpj', 'csll', 'pisCofins', 'iss'].some(key => typeof compliance[key]?.required === 'boolean');
   const items = tags.map(tag => {
-    const state = tag.state;
+    const node = compliance?.[tag.key];
+    const state = node && !node.state && typeof node.ok !== 'boolean' ? 'unknown' : tag.state;
+    const paga = String(node?.paymentStatus || '').toUpperCase() === 'PAID';
     const dispensada = ['vazio', 'na'].includes(state);
     const disponivel = ['gerada', 'enviada', 'falhou'].includes(state);
-    const enviada = state === 'enviada';
-    const falha = state === 'falhou';
+    const enviada = (node?.communicationState || state) === 'enviada';
+    const falha = (node?.communicationState || state) === 'falhou';
     const revisar = !['vazio', 'na', 'missing', 'gerada', 'enviada', 'falhou'].includes(state);
-    return { ...tag, dispensada, disponivel, enviada, falha, revisar,
+    return { ...tag, state, paga, pagamento: paga ? 'Confirmado' : 'Não confirmado', grupo: paga ? 'paga' : enviada ? 'enviada' : disponivel ? 'disponivel' : state === 'missing' ? 'pendente' : 'verificar', dispensada, disponivel, enviada, falha, revisar,
       faltante: state === 'missing',
       envioPendente: disponivel && !enviada,
       documento: dispensada ? 'Dispensado' : disponivel ? 'Disponível' : state === 'missing' ? 'Faltante' : 'A conferir',

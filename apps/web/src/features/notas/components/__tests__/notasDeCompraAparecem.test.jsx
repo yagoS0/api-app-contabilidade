@@ -1,251 +1,73 @@
-// AS NOTAS DE COMPRA APARECEM — os dois defeitos que as escondiam, travados.
-//
-// Medido em produção em 23/08/2026, e é o que dá o peso a este arquivo:
-//   • 47 NF-e na base, **todas `papel: "DEST"`** (compras) e **nenhuma com `xmlRaw`**;
-//   • as 3 — e únicas — empresas com NF-e (SINTROPIA 34, LENTE 11, ALBATROZ 2) **não têm
-//     inscrição estadual**, porque RECEBER NF-e não exige IE (emitir é que exige);
-//   • a única empresa com IE (VAGALO) tem **zero** NF-e.
-//
-// Ou seja, os dois defeitos se somavam para o mesmo resultado: a janela de NF-e aparecia
-// exatamente para quem não tinha nota de compra e sumia exatamente para quem tinha — e, quando
-// aparecia, vinha vazia porque o papel estava em EMIT.
-//
-// ⚠ Se algum destes testes ficar vermelho, a pergunta não é "como faço passar": é se as notas de
-// compra voltaram a ficar invisíveis para o contador.
-
-import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import "@testing-library/jest-dom";
-import { NotasFiscaisTab } from "../renderNotasFiscaisTab";
-jest.mock("../../../../api/client", () => ({ createApiClient: () => ({ getPerfilFiscal: async () => ({ candidatos: [{ tipoReceita: "SERVICO_FATOR_R" }] }) }) }));
-
-// Uma NF-e de COMPRA como as da produção: sem XML, sem itens, com emitente/valor/data/chave.
-const NFE_COMPRA = {
-  id: "nfe-1",
-  type: "NFE",
-  papel: "DEST",
-  numero: "12345",
-  serie: "1",
-  chaveAcesso: "33260812345678000199550010000123451000123456",
-  issueDate: "2026-08-10T00:00:00.000Z",
-  total: "1500.00",
-  emitenteNome: "FORNECEDOR DE MERCADORIA LTDA",
-  emitenteDoc: "12345678000199",
-  tomadorNome: "SINTROPIA TECNOLOGIA LTDA",
-  statusEfetivo: "autorizada",
-};
-
-const NFSE_RECEBIDA = {
-  ...NFE_COMPRA,
-  id: "nfse-1",
-  type: "NFSE",
-  numero: "77",
-  emitenteNome: "PRESTADOR DE SERVICO LTDA",
-};
-
-function montar(overrides = {}, props = {}) {
-  const setNotasFilters = jest.fn();
-  const notasPanel = {
-    loading: false,
-    error: null,
-    reload: jest.fn(),
-    dfeState: null, dfeSyncing: false, syncDfe: jest.fn(), clearDfeError: jest.fn(),
-    adnState: null, adnSyncing: false, syncAdn: jest.fn(), clearAdnError: jest.fn(),
-    companyId: "empresa-1",
-    notas: [NFE_COMPRA, NFSE_RECEBIDA],
-    notasTotal: 1,
-    // O padrão do hook: papel EMIT, que é o que esvaziava a janela de NF-e.
-    notasFilters: { papel: "EMIT", type: "NFSE", competencia: "2026-08", search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 },
-    setNotasFilters,
-    notasSummary: { ano: 2026, totals: { totalNotas: 2, totalEmitido: 0, totalRecebido: 1500, countNfe: 1, countNfse: 1, countCanceladas: 0 } },
-    // O resumo NOVO: `papel: "DEST"`, sem `type` — as duas espécies recebidas.
-    notasRecebidas: { ano: 2026, totals: { totalNotas: 2, totalEmitido: 0, totalRecebido: 2500, countNfe: 34, countNfse: 248, countCanceladas: 0 } },
-    loadingNotas: false, loadNotas: jest.fn(),
-    importing: false, importNotas: jest.fn(),
-    marcarNotaStatus: jest.fn(),
-    notaAbertaId: null, notaAberta: null, notaLoading: false, notaError: null,
-    abrirNota: jest.fn(), fecharNota: jest.fn(),
-    ...overrides,
-  };
-  render(<NotasFiscaisTab notasPanel={notasPanel} competencia="2026-08" {...props} />);
-  return { setNotasFilters, notasPanel };
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import { NotasFiscaisTab } from '../renderNotasFiscaisTab';
+jest.mock('../../../../api/client', () => ({ createApiClient: () => ({ getPerfilFiscal: async () => ({ candidatos: [{ tipoReceita: 'SERVICO_FATOR_R' }] }) }) }));
+const compra = { id: 'nfe-1', type: 'NFE', papel: 'DEST', numero: '12345', serie: '1', status: 'EMITIDA', statusEfetivo: 'autorizada', emitenteNome: 'FORNECEDOR', total: '1500', issueDate: '2026-08-10T12:00:00Z' };
+const servico = { ...compra, id: 'nfse-1', type: 'NFSE', numero: '77', emitenteNome: 'PRESTADOR' };
+function montar(over = {}, props = {}) {
+  const panel = { companyId: 'A', notas: [compra, servico], notasTotal: 282,
+    notasFilters: { papel: 'EMIT', type: '', competencia: '2026-08', incluirCanceladas: '1', limit: 100, offset: 0 },
+    setNotasFilters: jest.fn(), loadNotas: jest.fn(), reload: jest.fn(), syncDfe: jest.fn(), syncAdn: jest.fn(), importNotas: jest.fn(), marcarNotaStatus: jest.fn(), abrirNota: jest.fn(),
+    notasSummary: { lista: { EMIT: { count: 150, valor: 3500 } } }, notasRecebidas: { lista: { DEST: { count: 282, valor: 2500 } } }, ...over };
+  render(<NotasFiscaisTab notasPanel={panel} competencia="2026-08" {...props} />);
+  return panel;
 }
-
-it("erro de listagem oferece retry da lista separado do estado da captura", () => {
-  const { notasPanel } = montar({ erroNotas: "Lista indisponível", erroCaptura: "Captura indisponível", error: "Captura indisponível" });
-  fireEvent.click(screen.getByRole("button", { name: "Tentar carregar notas novamente" }));
-  expect(notasPanel.loadNotas).toHaveBeenCalledTimes(1);
-  expect(notasPanel.reload).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Recarregar estado da captura" }));
-  expect(notasPanel.reload).toHaveBeenCalledTimes(1);
+it('cartões mostram totais do servidor além da página e abrem as duas espécies recebidas', () => {
+  const panel = montar();
+  const resumo = screen.getByRole('region', { name: 'Indicadores das notas' });
+  expect(within(resumo).getByText('282 notas no filtro')).toBeInTheDocument();
+  expect(within(resumo).getByText(/2\.500,00/)).toBeInTheDocument();
+  fireEvent.click(within(resumo).getByRole('button', { name: /Recebidas/ }));
+  expect(panel.setNotasFilters).toHaveBeenLastCalledWith(expect.objectContaining({ papel: 'DEST', type: '', offset: 0 }));
+  expect(screen.getByText('FORNECEDOR')).toBeInTheDocument();
+  expect(screen.getByText('PRESTADOR')).toBeInTheDocument();
 });
-
-it("empresa com IE mantém vendas e encaminha XML/ZIP ao importador NF-e", async () => {
-  const { notasPanel } = montar({}, { inscricaoEstadual: "123.456.789" });
-  fireEvent.click(screen.getByRole("button", { name: "Notas de venda e compra (NF-e)" }));
-  await waitFor(() => expect(screen.getByRole("option", { name: "Emitidas", exact: true })).toBeInTheDocument());
-  const arquivos = [new File(["<NFe/>"], "vendas.xml", { type: "application/xml" }), new File(["zip"], "vendas.zip")];
-  fireEvent.change(screen.getByLabelText("Importar XML ou ZIP de NF-e"), { target: { files: arquivos } });
-  expect(notasPanel.importNotas).toHaveBeenCalledWith(arquivos, { type: "NFE" });
-  expect(screen.queryByRole("button", { name: /Emitir nota/ })).not.toBeInTheDocument();
+it.each([['', 'Ambas'], ['NFSE', 'NFS'], ['NFE', 'NF']])('recebidas filtra %s sem inferir inscrição estadual', (type, label) => {
+  const panel = montar({ notasFilters: { papel: 'DEST', type: '', competencia: '2026-08' } }, { inscricaoEstadual: '' });
+  fireEvent.click(within(screen.getByRole('group', { name: 'Tipo de nota recebida' })).getByRole('button', { name: label, exact: true }));
+  expect(panel.setNotasFilters).toHaveBeenLastCalledWith(expect.objectContaining({ papel: 'DEST', type, offset: 0 }));
+  expect(screen.queryByRole('button', { name: /Emitir nota/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Marcar como cancelada|Reativar/ })).not.toBeInTheDocument();
 });
-
-it("empresa apenas de serviços sem IE mantém compras e importação, sem vendas", async () => {
-  montar({}, { inscricaoEstadual: "" });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Notas de compra (NF-e)" })).toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: "Notas de compra (NF-e)" }));
-  expect(screen.queryByRole("option", { name: "Emitidas", exact: true })).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Importar XML ou ZIP de NF-e")).toBeEnabled();
+it('direção limpa filtro NF que ficaria oculto e reseta a página', () => {
+  const panel = montar({ notasFilters: { papel: 'DEST', type: 'NFE', competencia: '2026-08', offset: 100 } });
+  fireEvent.change(screen.getByLabelText('Direção das notas'), { target: { value: 'EMIT' } });
+  expect(panel.setNotasFilters).toHaveBeenLastCalledWith(expect.objectContaining({ papel: 'EMIT', type: '', offset: 0 }));
 });
-
-it("exibe o arquivo incompatível e o destino correto no resultado da importação", () => {
-  montar({ importResult: { type: "NFSE", falhou: true, mensagem: "1 não importada.", problemas: [{ arquivo: "venda.xml", mensagem: "Este XML é de NF-e. Importe na área de NF-e." }] } });
-  const resultado = screen.getByRole("region", { name: "Resultado da importação" });
-  expect(within(resultado).getByRole("alert")).toHaveTextContent("1 não importada");
-  expect(resultado).toHaveTextContent("venda.xml");
-  expect(resultado).toHaveTextContent("Importe na área de NF-e");
+it('Emitidas abre ambas as espécies, sem deixar o filtro de compras oculto', () => {
+  const panel = montar({ notasFilters: { papel: 'DEST', type: 'NFE', competencia: '2026-08' } });
+  fireEvent.click(screen.getByRole('button', { name: /^Emitidas/ }));
+  expect(panel.setNotasFilters).toHaveBeenLastCalledWith(expect.objectContaining({ papel: 'EMIT', type: '', offset: 0 }));
 });
-
-describe("as notas de compra (NF-e) aparecem para quem as tem", () => {
-  // ── DEFEITO 1: a janela sumia sem inscrição estadual ─────────────────────────────────────────
-  it("a janela de NF-e existe SEM inscrição estadual — a aba nem recebe mais essa informação", () => {
-    montar();
-    // Nenhuma prop de IE é passada, e a janela tem de estar lá assim mesmo.
-    expect(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Notas de serviço \(NFS-e\)/i })).toBeInTheDocument();
-  });
-
-  // ── DEFEITO 2: a janela abria vazia porque o papel ficava em EMIT ────────────────────────────
-  it("entrar na janela de NF-e leva o papel para DEST — senão ela lista zero linhas", () => {
-    const { setNotasFilters } = montar();
-
-    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i }));
-
-    // ⚠ Os DOIS campos no MESMO patch: em duas chamadas haveria uma carga intermediária
-    // (NF-e + EMIT), que é justamente a consulta vazia que o conserto evita.
-    expect(setNotasFilters).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "NFE", papel: "DEST", offset: 0 }),
-    );
-  });
-
-  it("voltar para NFS-e NÃO força o papel — a escolha de quem estava em Recebidas sobrevive", () => {
-    const { setNotasFilters } = montar({
-      notasFilters: { papel: "EMIT", type: "NFE", competencia: "2026-08", search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /Notas de serviço \(NFS-e\)/i }));
-
-    expect(setNotasFilters).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "NFSE", papel: "EMIT" }),
-    );
-  });
+it('seleção de tipo para ação encaminha XML e ZIP para importação NF-e sem emitir', () => {
+  const panel = montar();
+  fireEvent.change(screen.getByLabelText('Tipo para buscar ou importar'), { target: { value: 'NFE' } });
+  const files = [new File(['<NFe/>'], 'venda.xml'), new File(['zip'], 'vendas.zip')];
+  fireEvent.change(screen.getByLabelText('Importar XML ou ZIP de NF-e'), { target: { files } });
+  expect(panel.importNotas).toHaveBeenCalledWith(files, { type: 'NFE' });
+  expect(screen.queryByRole('button', { name: /Emitir nota/ })).not.toBeInTheDocument();
 });
-
-describe("as recebidas foram ABSORVIDAS pela faixa única — duas espécies, separadas e somadas", () => {
-  // ⚠ Eram DUAS faixas empilhadas até 23/08/2026, e o bloco "Notas recebidas" tinha região própria
-  // (`Notas recebidas pela empresa`). O dono mandou absorvê-lo: *"esse notas recebidas em cima tem
-  // que ser absorvido para junto das outras caixas"*. As provas continuam as MESMAS — o que mudou
-  // foi onde elas moram.
-  const faixa = () => screen.getByRole("region", { name: /Resumo de notas .* e notas recebidas/i });
-
-  it("⚠ existe UMA faixa só — a de cima não sobrou em lugar nenhum", () => {
-    montar();
-    expect(screen.queryByRole("region", { name: /Notas recebidas pela empresa/i })).toBeNull();
-    expect(faixa()).toBeInTheDocument();
-  });
-
-  it("mostra cada espécie com o próprio número, uma ao lado da outra", () => {
-    montar();
-    expect(within(faixa()).getByText(/Recebidas NFS-e/i)).toBeInTheDocument();
-    expect(within(faixa()).getByText("248")).toBeInTheDocument();
-    expect(within(faixa()).getByText(/Recebidas NF-e/i)).toBeInTheDocument();
-    expect(within(faixa()).getByText("34")).toBeInTheDocument();
-  });
-
-  it("a SOMA continua na tela e DIZ que soma espécies diferentes", () => {
-    // ⚠ Ela saiu de uma caixa própria e foi para o subtítulo de "Recebidas" — mas NÃO sumiu: foi
-    // pedida pelo dono antes. E o rótulo é a metade que importa: "282" sozinho soma nota de
-    // mercadoria com nota de serviço, que vão para contas diferentes.
-    montar();
-    expect(within(faixa()).getByText(/282 nota\(s\) · NFS-e \+ NF-e/i)).toBeInTheDocument();
-  });
-
-  it("⚠⚠ o VALOR de 'Recebidas' vem do resumo das DUAS espécies, nunca do resumo da janela", () => {
-    // É a armadilha da absorção. `notasSummary.totalRecebido` é 1500 (só a janela ativa);
-    // `notasRecebidas.totalRecebido` é 2500 (as duas espécies). Ler o primeiro mostraria metade
-    // do que a caixa afirma, e ninguém perceberia enquanto a empresa não tivesse NF-e recebida.
-    montar();
-    expect(within(faixa()).getByText(/2\.500,00/)).toBeInTheDocument();
-    expect(within(faixa()).queryByText(/1\.500,00/)).toBeNull();
-  });
-
-  it("⚠ e ele NÃO é clicável — a tabela mostra UMA espécie, o número afirma DUAS", () => {
-    montar();
-    const caixas = within(faixa()).getAllByRole("button").map((b) => b.textContent);
-    expect(caixas.some((t) => /^Recebidas\b/.test(t) && !/NFS-e|NF-e/.test(t))).toBe(false);
-  });
-
-  it("clicar numa espécie abre a janela dela JÁ em Recebidas — é assim que o número se confere", () => {
-    const { setNotasFilters } = montar();
-
-    fireEvent.click(within(faixa()).getByRole("button", { name: /Recebidas NF-e/i }));
-    expect(setNotasFilters).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "NFE", papel: "DEST", offset: 0 }),
-    );
-
-    fireEvent.click(within(faixa()).getByRole("button", { name: /Recebidas NFS-e/i }));
-    // ⚠ Aqui o papel é FORÇADO a DEST mesmo indo para a NFS-e: o número clicado é de recebidas,
-    // e abrir a lista em "Emitidas" faria a tela contradizer a caixa que o contador acabou de
-    // clicar. É o caso que o `papelForcado` existe para cobrir.
-    expect(setNotasFilters).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "NFSE", papel: "DEST", offset: 0 }),
-    );
-  });
+it('nota de compra sem XML permanece visível e tem tipo explícito', () => {
+  montar({ notas: [compra], notasFilters: { papel: 'DEST', type: 'NFE', competencia: '2026-08' } });
+  expect(screen.getByText('FORNECEDOR')).toBeInTheDocument();
+  expect(screen.getByText('NF-e')).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Estado de emissão' })).toBeInTheDocument();
 });
-
-describe("nota recebida não se cancela", () => {
-  it("na direção combinada a recebida não ganha ajuste local", () => {
-    montar({ notas: [NFSE_RECEBIDA], notasFilters: { papel: "", type: "NFSE", competencia: "2026-08", limit: 100, offset: 0 } });
-    expect(screen.getByText(/PRESTADOR DE SERVICO LTDA/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Marcar como cancelada|Reativar/i })).not.toBeInTheDocument();
-  });
-  it("em Recebidas, a coluna 'Marcar como cancelada' NÃO é oferecida", () => {
-    // ⚠ `type: "NFSE"` porque a janela nasce em NFS-e — e a linha PRECISA estar na tela para o
-    // teste valer. Sem a linha, "o botão não existe" passaria por lista vazia, e o teste diria
-    // que a porta está fechada quando ela só não tinha sido aberta.
-    montar({
-      notas: [NFSE_RECEBIDA],
-      notasFilters: { papel: "DEST", type: "NFSE", competencia: "2026-08", search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 },
-    });
-
-    expect(screen.getByText(/PRESTADOR DE SERVICO LTDA/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Marcar como cancelada/i })).not.toBeInTheDocument();
-  });
-
-  it("em Emitidas o botão continua existindo — o corte é do papel, não da funcionalidade", () => {
-    montar({
-      notas: [{ ...NFSE_RECEBIDA, papel: "EMIT" }],
-      notasFilters: { papel: "EMIT", type: "NFSE", competencia: "2026-08", search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 },
-    });
-
-    expect(screen.getByRole("button", { name: /Marcar como cancelada/i })).toBeInTheDocument();
-  });
+it('ajuste local permanece individual e nunca é oferecido para recebida na lista mista', () => {
+  montar({ notas: [compra, { ...servico, papel: 'EMIT' }], notasFilters: { papel: '', type: '', competencia: '2026-08' } });
+  expect(screen.getAllByRole('button', { name: 'Marcar como cancelada' })).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
 });
-
-describe("a linha de NF-e sem XML não some — e não promete o que não tem", () => {
-  it("a nota de compra é listada mesmo sem xmlRaw", () => {
-    montar({
-      notas: [NFE_COMPRA],
-      notasFilters: { papel: "DEST", type: "NFE", competencia: "2026-08", search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 },
-    });
-
-    // ⚠ QUEM DECIDE O QUE A TABELA MOSTRA É A JANELA (estado local), não `notasFilters.type` — o
-    // effect sincroniza o filtro A PARTIR da janela. Por isso é preciso ENTRAR na janela de NF-e;
-    // montar com `type: "NFE"` e a janela em NFS-e é um estado que a tela nunca produz sozinha.
-    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i }));
-
-    // ⚠ 47 de 47 NF-e da base são resumo (`resNFe`), sem XML e sem itens. Sumir com a linha por
-    // isso esconderia a compra inteira; o que falta é dito no detalhe da nota
-    // (`BlocoXml`/`podeGerarDanfse`), não com a ausência da linha.
-    expect(screen.getByText(/FORNECEDOR DE MERCADORIA LTDA/i)).toBeInTheDocument();
-  });
+it('falha da lista e falha da captura têm recuperações separadas', () => {
+  const panel = montar({ erroNotas: 'Lista indisponível', erroCaptura: 'Captura indisponível' });
+  fireEvent.click(screen.getByRole('button', { name: 'Tentar carregar notas novamente' }));
+  expect(panel.loadNotas).toHaveBeenCalledTimes(1); expect(panel.reload).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Recarregar estado da captura' }));
+  expect(panel.reload).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Nenhuma nota encontrada.')).not.toBeInTheDocument();
+  expect(screen.queryByText('FORNECEDOR')).not.toBeInTheDocument();
+});
+it('resultado parcial da importação preserva motivo e destino correto', () => {
+  montar({ importResult: { type: 'NFSE', falhou: true, mensagem: '1 não importada.', problemas: [{ arquivo: 'venda.xml', mensagem: 'Este XML é de NF-e. Importe na área de NF-e.' }] } });
+  expect(screen.getByRole('region', { name: 'Resultado da importação' })).toHaveTextContent('venda.xml');
+  expect(screen.getByRole('region', { name: 'Resultado da importação' })).toHaveTextContent('Importe na área de NF-e');
 });

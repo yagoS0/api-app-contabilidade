@@ -128,7 +128,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
         status: "PROCESSED",
       },
       select: {
-        portalClientId: true, id: true, emailStatus: true, emailSentAt: true,
+        portalClientId: true, id: true, paymentStatus: true, emailStatus: true, emailSentAt: true,
         // O motivo da falha de envio, para o chip poder dizer POR QUE não saiu (ver `resolveNode`).
         emailLastError: true, emailAttempts: true,
         numeroParcela: true, quantidadeParcelas: true,
@@ -151,6 +151,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       const exibirParc = envioParaExibir(enviosParc);
       parcGuiaByPortal.set(g.portalClientId, {
         guideId: g.id,
+      paymentStatus: g.paymentStatus || null,
         enviada: foiEnviadaComLegado(enviosParc, g),
         canalEnvio: exibirParc?.canal || null,
         canaisEnviados: canaisEnviadosComLegado(enviosParc, g),
@@ -263,7 +264,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
     // saber quais. Nenhuma query nova: são colunas a mais na que já existia.
     select: {
       portalClientId: true, tipo: true, status: true, extracted: true,
-      id: true, emailStatus: true, emailSentAt: true,
+      id: true, paymentStatus: true, emailStatus: true, emailSentAt: true,
       // O motivo da falha de envio, para o chip poder dizer POR QUE não saiu (ver `resolveNode`).
       emailLastError: true, emailAttempts: true,
       vazioEm: true, vazioPor: true, vazioMotivo: true,
@@ -329,6 +330,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
     const exibir = envioParaExibir(envios);
     const stamp = {
       guideId: g.id,
+      paymentStatus: g.paymentStatus || null,
       // A resposta agora vem dos envios; `emailStatus` continua no carimbo só como detalhe de
       // transporte, para quem ainda quiser saber especificamente do e-mail.
       // Tolera guia ainda não convertida pelo backfill — ver `foiEnviadaComLegado`. Sem isto, a

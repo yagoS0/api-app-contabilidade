@@ -39,7 +39,7 @@ test('detalhe exibe contexto preservado sem inferir pelo cadastro atual', () => 
 });
 
 test.each(["2026-08-19", "2026-08-19T00:00:00.000Z", "2026-08-19T00:30:00-03:00"])("detalhe conserva a data civil da emissão %s", issueDate => {
-  render(<NotaDetailModal nota={{ ...paginaDe(1)[0], issueDate }} onClose={noop} />);
+  render(<NotaDetailModal nota={{ ...paginaDe(1)[0], issueDate, dataEmissao: { civil: "2026-08-19", motivo: null, evidencia: { original: issueDate, caminho: "NFe/infNFe/ide/dhEmi" } } }} onClose={noop} />);
   const campo = screen.getByText("Data de emissão").parentElement;
   expect(within(campo).getByText("19/08/2026")).toBeInTheDocument();
 });
@@ -134,7 +134,7 @@ describe("truncamento nunca é silencioso", () => {
       />,
     );
 
-    expect(screen.getByText(/todas as da competência/i)).toBeInTheDocument();
+    expect(screen.getByText(/todas as do filtro/i)).toBeInTheDocument();
     expect(screen.queryByText(/Há mais notas/i)).not.toBeInTheDocument();
     // Sem página seguinte, não há por que oferecer navegação.
     expect(screen.queryByRole("button", { name: /Próxima/ })).not.toBeInTheDocument();

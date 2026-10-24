@@ -1,3 +1,6 @@
+import { consultarPendenciaSync, recuperarDocumentoSync } from '../../application/sync/RecuperacaoDocumentoSyncService.js';
+import { projetarDataEmissao, selectDataEmissao } from "../../application/notas/dataEmissaoNota.js";
+import { raizDoXml } from '../../application/notas/importXml/loteNfe.js';
 import { destaqueIbscbs } from '../../application/nfse/destaqueIbscbs.js';
 import { contextoEmissaoRegistrado } from '../../application/nfse/contextoEmissaoRegistrado.js';
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
@@ -41,6 +44,30 @@ import { baixarNotasSelecionadas } from "../../application/notas/download/NotasS
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
+
+// Inclusive civil dates from the source document, independent of timezone and competência.
+export function filtrosAdicionaisNotas(query, where) {
+  const dates = {};
+  for (const key of ['dataInicio', 'dataFim']) {
+    if (!query[key]) continue;
+    const value = String(query[key]);
+    const date = new Date(value + 'T00:00:00.000Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) return 'Data de emissão inválida.';
+    dates[key] = value;
+  }
+  if (dates.dataInicio && dates.dataFim && dates.dataInicio > dates.dataFim) return 'A data inicial deve ser anterior à final.';
+  if (Object.keys(dates).length) {
+    where.dataEmissaoCivil = {};
+    if (dates.dataInicio) where.dataEmissaoCivil.gte = dates.dataInicio;
+    if (dates.dataFim) where.dataEmissaoCivil.lte = dates.dataFim;
+  }
+  if (query.situacao) {
+    // Substitution is derived from events/links, not a persisted statusEfetivo.
+    if (!['autorizada', 'cancelada', 'rejeitada'].includes(query.situacao)) return 'Situação inválida.';
+    where.statusEfetivo = query.situacao;
+  }
+  return null;
+}
 // Nomes sem dígitos não podem produzir contains:"", que aceitaria todos os documentos.
 function filtroBuscaNotas(search) {
   const texto = String(search || "").trim();
@@ -112,6 +139,28 @@ function serializePendencia(p) {
 
 export function createNotasRouter({ log }) {
   const router = Router({ mergeParams: true });
+  const syncError = (res, error) => res.status(error.status || 500).json({ ok: false,
+    error: error.status ? error.code : 'RECUPERACAO_LOCAL_FALHOU',
+    ...(error.auditError ? { auditoria: 'PENDENTE', erroOriginal: error.code || 'INFRAESTRUTURA', erroAuditoria: error.auditError } : {}) });
+  router.get('/notas/sincronizacao/pendencia', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!req.auth?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+    try { return res.json({ ok: true, pendencia: await consultarPendenciaSync(prisma, { clientId: String(req.params.companyId) }) }); }
+    catch (error) { return syncError(res, error); }
+  });
+  router.get('/notas/sincronizacao/pendencias/:pendenciaId', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!req.auth?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+    try { return res.json({ ok: true, pendencia: await consultarPendenciaSync(prisma, {
+      clientId: String(req.params.companyId), pendenciaId: String(req.params.pendenciaId) }) }); }
+    catch (error) { return syncError(res, error); }
+  });
+  router.post('/notas/sincronizacao/pendencias/:pendenciaId/recuperar', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { return res.json(await recuperarDocumentoSync(prisma, { clientId: String(req.params.companyId),
+      pendenciaId: String(req.params.pendenciaId), actorId: req.auth?.user?.id, pedido: req.body })); }
+    catch (error) { return syncError(res, error); }
+  });
   router.post("/notas/download-selecionadas", requireFirmCompanyAccess(), async (req, res) => {
     try {
       const out = await baixarNotasSelecionadas({ portalClientId: String(req.params.companyId), notaIds: req.body?.notaIds, formato: req.body?.formato });
@@ -460,20 +509,22 @@ export function createNotasRouter({ log }) {
     if (search && String(search).trim()) {
       where.OR = filtroBuscaNotas(search);
     }
+    const filtroErro = filtrosAdicionaisNotas(req.query, where);
+    if (filtroErro) return res.status(400).json({ error: 'filtro_invalido', message: filtroErro });
     await applyAtividadeFilter(where, { cfop, servico });
 
     // Esconde CANCELADAS por padrão (via AND pra não conflitar com o OR do search). ?incluirCanceladas=1 mostra.
-    if (String(req.query.incluirCanceladas || "") !== "1") {
+    if (!req.query.situacao && String(req.query.incluirCanceladas || "") !== "1") {
       where.AND = [...(where.AND || []), { OR: [{ statusEfetivo: null }, { statusEfetivo: { not: "cancelada" } }] }];
     }
 
-    const [notas, total] = await Promise.all([
+    const [notas, total, datasIndeterminadas] = await Promise.all([
       prisma.portalInvoice.findMany({
-        where, orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
+        where, orderBy: [{ dataEmissaoCivil: { sort: "desc", nulls: "last" } }, { id: "asc" }],
         take: limit, skip: offset,
         select: {
           id: true, type: true, papel: true, statusEfetivo: true, status: true,
-          chaveAcesso: true, numero: true, serie: true, competencia: true, issueDate: true,
+          chaveAcesso: true, numero: true, serie: true, competencia: true, issueDate: true, ...selectDataEmissao,
           total: true, emitenteNome: true, emitenteDoc: true,
           tomadorNome: true, tomadorDoc: true,
           competenciaPosFechamento: true,
@@ -481,6 +532,7 @@ export function createNotasRouter({ log }) {
         },
       }),
       prisma.portalInvoice.count({ where }),
+      prisma.portalInvoice.count({ where: { ...where, dataEmissaoCivil: null } }),
     ]);
 
     // ── O CICLO DE VIDA VIAJA JUNTO — em DUAS consultas para a página inteira, nunca N ──────────
@@ -517,11 +569,11 @@ export function createNotasRouter({ log }) {
     const comCiclo = montarIndiceDeCiclo({ notas, eventos, relacionadas });
 
     return res.json({
-      ok: true, total, limit, offset,
-      notas: comCiclo.map((n) => ({
-        ...n,
-        total: n.total != null ? n.total.toString() : null,
-      })),
+      ok: true, total, limit, offset, datasIndeterminadas,
+      notas: comCiclo.map((n) => {
+        const { provenienciaDfe, client, xmlResumo, ...publica } = n;
+        return { ...publica, ...projetarDataEmissao(n), total: n.total != null ? n.total.toString() : null };
+      }),
     });
   });
 
@@ -564,13 +616,15 @@ export function createNotasRouter({ log }) {
     if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
       const [y, m] = competencia.split("-").map(Number);
       where.competencia = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
-    } else if (!papel && !type && !search && !temAtividade) {
+    } else if (!papel && !type && !search && !temAtividade && !req.query.dataInicio && !req.query.dataFim && !req.query.situacao && !req.query.incluirCanceladas) {
       // Sem nenhum filtro? Limita ao ano pra não trazer histórico todo
       where.competencia = { gte: new Date(Date.UTC(ano, 0, 1)), lt: new Date(Date.UTC(ano + 1, 0, 1)) };
     }
     if (search && String(search).trim()) {
       where.OR = filtroBuscaNotas(search);
     }
+    const filtroErro = filtrosAdicionaisNotas(req.query, where);
+    if (filtroErro) return res.status(400).json({ error: 'filtro_invalido', message: filtroErro });
     await applyAtividadeFilter(where, { cfop, servico });
 
     const notas = await prisma.portalInvoice.findMany({
@@ -578,8 +632,20 @@ export function createNotasRouter({ log }) {
       select: { type: true, papel: true, statusEfetivo: true, competencia: true, total: true },
     });
 
+    const unknownWhere = { ...where, dataEmissaoCivil: null };
+    if (!req.query.situacao && String(req.query.incluirCanceladas || "") !== "1") unknownWhere.AND = [...(unknownWhere.AND || []), { OR: [{ statusEfetivo: null }, { statusEfetivo: { not: "cancelada" } }] }];
+    const datasIndeterminadas = await prisma.portalInvoice.count({ where: unknownWhere });
     // Agrega em memória — totals refletem o filtro completo (todas as N
     // que casam, ignorando paginação do /notas).
+    // List counters include the exact visible population; fiscal totals remain compatible.
+    const lista = { EMIT: { count: 0, valor: 0, valorCompleto: true }, DEST: { count: 0, valor: 0, valorCompleto: true }, OUTROS: { count: 0, valor: 0, valorCompleto: true } };
+    for (const n of notas) {
+      if (!req.query.situacao && String(req.query.incluirCanceladas || '') !== '1' && n.statusEfetivo === 'cancelada') continue;
+      const bucket = lista[n.papel] || lista.OUTROS;
+      bucket.count++;
+      if (n.total == null || !Number.isFinite(Number(n.total))) bucket.valorCompleto = false;
+      else bucket.valor += Number(n.total);
+    }
     const byMonth = {};
     let totalNotas = 0, totalEmitido = 0, totalRecebido = 0;
     let countNfe = 0, countNfse = 0;
@@ -602,8 +668,9 @@ export function createNotasRouter({ log }) {
       else totalEmitido += val;
     }
     return res.json({
-      ok: true, ano,
-      filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null, cfop: cfop || null, servico: servico || null },
+      ok: true, ano, lista, datasIndeterminadas,
+      filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null, cfop: cfop || null, servico: servico || null,
+        dataInicio: req.query.dataInicio || null, dataFim: req.query.dataFim || null, situacao: req.query.situacao || null, incluirCanceladas: String(req.query.incluirCanceladas || '') === '1' },
       totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
       byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
     });
@@ -656,7 +723,7 @@ export function createNotasRouter({ log }) {
 
     const nota = await prisma.portalInvoice.findFirst({
       where: { id: notaId, clientId: portalClientId },
-      include: { itens: { orderBy: { id: "asc" } } },
+      include: { itens: { orderBy: { id: "asc" } }, client: { select: { cnpj: true } } },
     });
     if (!nota) return bad(res, 404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
 
@@ -693,8 +760,9 @@ export function createNotasRouter({ log }) {
     // que a base ainda não tem (NF-e com muitos itens) — e, estourando, a resposta DIZ que existe
     // e não coube, em vez de responder `null` como se não houvesse XML.
     const XML_MAX_BYTES = 1_000_000;
-    const xmlBytes = nota.xmlRaw ? Buffer.byteLength(nota.xmlRaw, "utf8") : null;
-    const xmlCabe = Boolean(nota.xmlRaw) && xmlBytes <= XML_MAX_BYTES;
+    const xmlCompleto = Boolean(nota.xmlRaw) && String(raizDoXml(nota.xmlRaw)).toLowerCase() !== 'resnfe';
+    const xmlBytes = xmlCompleto ? Buffer.byteLength(nota.xmlRaw, "utf8") : null;
+    const xmlCabe = xmlCompleto && xmlBytes <= XML_MAX_BYTES;
 
     return res.json({
       ok: true,
@@ -708,7 +776,7 @@ export function createNotasRouter({ log }) {
         idNfse: nota.idNfse,
         idDps: nota.idDps,
         competencia: nota.competencia,
-        issueDate: nota.issueDate,
+        issueDate: nota.issueDate, ...projetarDataEmissao(nota),
         status: nota.status,
         statusEfetivo: nota.statusEfetivo,
         // ⚠ `ciclo` é o que a tela deve ler para NOMEAR o que aconteceu (cancelada × substituída ×
@@ -751,11 +819,11 @@ export function createNotasRouter({ log }) {
         destaqueIbscbs: nota.type === "NFSE" ? destaqueIbscbs(xmlCabe ? nota.xmlRaw : null) : null,
         contextoEmissao: await contextoEmissaoRegistrado(nota, portalClientId),
         xml: {
-          disponivel: Boolean(nota.xmlRaw),
+          disponivel: xmlCompleto,
           bytes: xmlBytes,
           conteudo: xmlCabe ? nota.xmlRaw : null,
           // Só quando existe E não coube. Ausência de XML não é truncamento.
-          truncadoPorTamanho: Boolean(nota.xmlRaw) && !xmlCabe,
+          truncadoPorTamanho: xmlCompleto && !xmlCabe,
         },
       },
     });

@@ -1,3 +1,5 @@
+import { bloquearDocumentosDaEmpresa } from "../application/notas/persistirDocumentoNota.js";
+import { projetarDataEmissao, selectDataEmissao, projetarEmissaoServico, evidenciaDaNota, camposDataEmissao, dataCivilValida } from "../application/notas/dataEmissaoNota.js";
 import { Router } from "express";
 import { createHash } from "node:crypto";
 import { respondWithTask } from "../application/tasks/ManualTaskService.js";
@@ -8,7 +10,6 @@ import { uploadNotas } from "./middlewares/uploadNotas.js";
 import archiver from "archiver";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { decimalToNumber, dateToIso } from "../utils/serializers.js";
-import { parseDate } from "../utils/date.js";
 import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
 import { tomadorDoModelo } from "../application/nfse/tomadorDoModelo.js";
 import { XMLValidator } from "fast-xml-parser";
@@ -73,19 +74,19 @@ function safeFilePart(value) {
     .replace(/^_+|_+$/g, "");
 }
 
-function serializeInvoice(inv) {
+function serializeInvoice(inv, documentoEmpresa) {
   return {
     invoiceId: inv.id,
     type: inv.type,
     numero: inv.numero || null,
     competencia: formatCompetencia(inv.competencia),
-    issueDate: dateToIso(inv.issueDate),
+    issueDate: dateToIso(inv.issueDate), ...projetarDataEmissao(inv, documentoEmpresa),
     status: inv.status,
     total: decimalToNumber(inv.total),
     emitente: { nome: inv.emitenteNome || null, cnpj: inv.emitenteDoc || null },
     tomador: { nome: inv.tomadorNome || null, cnpjCpf: inv.tomadorDoc || null },
     updatedAt: dateToIso(inv.updatedAt),
-    hasXml: Boolean(inv.xmlRaw),
+    hasXml: Boolean(inv.xmlRaw) && String(raizDoXml(inv.xmlRaw)).toLowerCase() !== 'resnfe',
     hasPdf: Boolean(inv.pdfUrl),
     // ⚠⚠ A DESCRIÇÃO DO SERVIÇO — e ela sai de COLUNA, não de XML parseado na listagem.
     //
@@ -160,9 +161,8 @@ function serializeInvoice(inv) {
  * status novo aqui (`"PENDENTE"`, `"AGUARDANDO"`) faria a tela pintá-la como rascunho ou como
  * erro, e ela não é nem um nem outro.
  *
- * ⚠ `issueDate` sai de `createdAt` — o instante em que a linha foi criada É o da emissão (a reserva
- * de numeração e o envio acontecem na mesma chamada). Quando o ADN devolver a nota, a data passa a
- * ser a do documento, que é a autoridade.
+ * `issueDate` conserva o contrato legado de criação, que não comprova emissão.
+ * A apresentação e o filtro usam somente dataEmissao, derivada do documento identificado.
  */
 function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
   return {
@@ -170,7 +170,7 @@ function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
     type: "NFSE",
     numero: si.numeroNfse || null,
     competencia: formatCompetencia(si.competencia),
-    issueDate: dateToIso(si.createdAt),
+    issueDate: dateToIso(si.createdAt), ...{ dataEmissao: projetarEmissaoServico(si, emitenteDoc).dataEmissao },
     /**
      * ⚠⚠ O STATUS SAI DO NOSSO REGISTRO — era `"EMITIDA"` CRAVADO até 31/08/2026.
      *
@@ -260,10 +260,12 @@ function buildWhereFilters({
   }
 
   if (from || to) {
+    if (from && to && String(from).slice(0, 10) > String(to).slice(0, 10)) throw Object.assign(new Error("Intervalo de emissão inválido"), { status: 400 });
+    if ([from, to].filter(Boolean).some(d => !dataCivilValida(String(d)))) throw Object.assign(new Error("Data de emissão inválida"), { status: 400 });
     and.push({
-      issueDate: {
-        ...(from ? { gte: parseDate(from) } : {}),
-        ...(to ? { lte: parseDate(to) } : {}),
+      dataEmissaoCivil: {
+        ...(from ? { gte: String(from).slice(0, 10) } : {}),
+        ...(to ? { lte: String(to).slice(0, 10) } : {}),
       },
     });
   }
@@ -323,17 +325,10 @@ function emitidaPassaNoFiltro(si, { competencia, from, to, status, type, search,
     if (formatCompetencia(si.competencia) !== String(competencia)) return false;
   }
 
-  // ⚠ A data comparada é a MESMA que sai em `issueDate` (`createdAt`) — comparar por um campo e
-  // exibir outro faria a nota sumir de um intervalo que a mostra.
-  const data = si.createdAt ? new Date(si.createdAt) : null;
-  if (from) {
-    const ini = parseDate(from);
-    if (!data || (ini && data < ini)) return false;
-  }
-  if (to) {
-    const fim = parseDate(to);
-    if (!data || (fim && data > fim)) return false;
-  }
+  const civil = projetarEmissaoServico(si, clientCnpj).dataEmissao.civil;
+  if ((from || to) && !civil) return false;
+  if (from && civil < String(from).slice(0, 10)) return false;
+  if (to && civil > String(to).slice(0, 10)) return false;
 
   const q = String(search || "").trim();
   if (q) {
@@ -353,7 +348,14 @@ function emitidaPassaNoFiltro(si, { competencia, from, to, status, type, search,
 
 /** O valor pelo qual a lista está ordenada, para uma linha já SERIALIZADA (dos dois lados). */
 function chaveDeOrdenacao(linha, sortKey) {
-  return String((sortKey === "issueDate" ? linha.issueDate : linha.updatedAt) || "");
+  return String((sortKey === "issueDate" ? linha.dataEmissao?.civil : linha.updatedAt) || "");
+}
+
+function compararNotas(a, b, sortKey, ordem) {
+  const left = chaveDeOrdenacao(a, sortKey), right = chaveDeOrdenacao(b, sortKey);
+  if (!left !== !right) return left ? -1 : 1;
+  return (ordem === 'asc' ? 1 : -1) * left.localeCompare(right)
+    || String(a.invoiceId).localeCompare(String(b.invoiceId));
 }
 
 /**
@@ -362,14 +364,12 @@ function chaveDeOrdenacao(linha, sortKey) {
  * confirmada é a que vale.
  */
 function intercalar(doAdn, nossas, sortKey, ordem) {
-  const sinal = ordem === "asc" ? 1 : -1;
+
   const out = [];
   let i = 0;
   let j = 0;
   while (i < doAdn.length && j < nossas.length) {
-    const a = chaveDeOrdenacao(doAdn[i], sortKey);
-    const b = chaveDeOrdenacao(nossas[j], sortKey);
-    if (a === b || sinal * a.localeCompare(b) <= 0) out.push(doAdn[i++]);
+    if (compararNotas(doAdn[i], nossas[j], sortKey, ordem) <= 0) out.push(doAdn[i++]);
     else out.push(nossas[j++]);
   }
   while (i < doAdn.length) out.push(doAdn[i++]);
@@ -468,11 +468,15 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       // "emitidas e ainda não capturadas", que numa carteira saudável é zero ou poucas unidades
       // (a captura roda de hora em hora). O teto está em `TETO_EMITIDAS`.
       let nossas = [];
+      let nossasDatasIndeterminadas = 0;
       if (incluirEmitidasNaoConfirmadas && portalClient?.companyId && filtroAlcancavel({ direcao: invoiceDirection })) {
         const cruas = await lerEmitidasNaoConfirmadas({
           legacyCompanyId: portalClient.companyId,
           portalClientId: String(clientId),
+          limite: 20001,
         });
+        if (cruas.length >= 20001) return res.status(422).json({ error: "EMISSOES_LIMIT_EXCEEDED", message: "O conjunto de emissões excede o limite de leitura segura. A contagem está indisponível." });
+        nossasDatasIndeterminadas = cruas.filter(si => emitidaPassaNoFiltro(si, { competencia, status, type, search, clientCnpj, emitenteNome: portalClient?.razao }) && !projetarEmissaoServico(si, clientCnpj).dataEmissao.civil).length;
         nossas = cruas
           .filter((si) => emitidaPassaNoFiltro(si, {
             competencia, from, to, status, type, search,
@@ -483,8 +487,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
             emitenteDoc: clientCnpj,
           }))
           .sort((a, b) => {
-            const cmp = chaveDeOrdenacao(a, sortKey).localeCompare(chaveDeOrdenacao(b, sortKey));
-            return sortOrder === "asc" ? cmp : -cmp;
+            return compararNotas(a, b, sortKey, sortOrder);
           });
       }
 
@@ -495,13 +498,15 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       // `M[skip .. skip+take)`. (No máximo `n` linhas nossas podem se antepor à fatia, e
       // `inicioP + n ≤ skip` sempre que `skip ≥ n`; quando `skip < n`, `inicioP = 0` e a fatia já
       // é o prefixo verdadeiro.) Sem isso, a página 2 pularia tantas notas quantas fossem as nossas.
+      const unknownWhere = { ...where, AND: (where.AND || []).filter(condition => !condition.dataEmissaoCivil), dataEmissaoCivil: null };
+      const datasIndeterminadas = await prisma.portalInvoice.count({ where: unknownWhere }) + nossasDatasIndeterminadas;
       const inicioP = Math.max(0, skip - nossas.length);
       const tamanhoP = skip + take - inicioP;
 
       const [items, total, totals, sync] = await prisma.$transaction([
         prisma.portalInvoice.findMany({
           where,
-          orderBy: { [sortKey]: sortOrder },
+          orderBy: [{ [sortKey === "issueDate" ? "dataEmissaoCivil" : sortKey]: sortKey === "issueDate" ? { sort: sortOrder, nulls: "last" } : sortOrder }, { id: "asc" }],
           skip: inicioP,
           take: tamanhoP,
         }),
@@ -587,7 +592,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         )
         : new Set();
 
-      const capturadas = comCiclo.map(serializeInvoice).map((item, i) => {
+      const capturadas = comCiclo.map(inv => serializeInvoice(inv, clientCnpj)).map((item, i) => {
         const cru = comCiclo[i];
         const cancelamentoEnviado = String(cru.papel || "").toUpperCase() === "EMIT"
           && cancelamentosNossos.has(cru.chaveAcesso)
@@ -612,9 +617,9 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         data,
         page: pageNum,
         limit: take,
-        total: totalGeral,
+        total: totalGeral, datasIndeterminadas,
         summary: {
-          totalInvoices: totalGeral,
+          totalInvoices: totalGeral, datasIndeterminadas,
           totalAmount: sumFiltered || 0,
           pageAmount,
         },
@@ -628,6 +633,8 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
           : { lastSyncAt: null, state: "OK", stale: true, canSync: true },
       });
     } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: "filtro_invalido", message: err.message });
+      if (err.status === 400) return res.status(400).json({ error: "filtro_invalido", message: err.message });
       log.error({ err, clientId }, "Falha ao listar invoices do portal");
       return res.status(500).json({ error: "internal_error" });
     }
@@ -642,6 +649,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       if (!access.ok) return;
       const inv = await prisma.portalInvoice.findFirst({
         where: { id: String(invoiceId), clientId: String(clientId) },
+        include: { client: { select: { cnpj: true } } },
       });
       if (!inv && incluirEmitidasNaoConfirmadas) {
         const portal = await prisma.portalClient.findUnique({ where: { id: String(clientId) }, select: { companyId: true, razao: true, cnpj: true } });
@@ -661,7 +669,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         type: inv.type,
         numero: inv.numero || null,
         competencia: formatCompetencia(inv.competencia),
-        issueDate: dateToIso(inv.issueDate),
+        issueDate: dateToIso(inv.issueDate), ...projetarDataEmissao(inv),
         status: inv.status,
         total: decimalToNumber(inv.total),
         emitente: { nome: inv.emitenteNome || null, cnpj: inv.emitenteDoc || null, im: null },
@@ -671,7 +679,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         descricao: inv.xDescServ || null,
         items: [],
         taxes: null,
-        storage: { xml: Boolean(inv.xmlRaw), pdf: Boolean(inv.pdfUrl) },
+        storage: { xml: Boolean(inv.xmlRaw) && String(raizDoXml(inv.xmlRaw)).toLowerCase() !== 'resnfe', pdf: Boolean(inv.pdfUrl) },
         sync: {
           lastSyncAt: dateToIso(sync?.lastSyncAt),
           stale: !sync?.lastSyncAt || sync?.state !== "OK",
@@ -693,7 +701,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       where: { id: String(invoiceId), clientId: String(clientId) },
       select: { xmlRaw: true, id: true },
     });
-    if (!inv?.xmlRaw) return res.status(404).json({ error: "XML_NOT_FOUND" });
+    if (!inv?.xmlRaw || String(raizDoXml(inv.xmlRaw)).toLowerCase() === 'resnfe') return res.status(404).json({ error: "XML_NOT_FOUND" });
     res.setHeader("content-type", "application/xml; charset=utf-8");
     res.setHeader("content-disposition", `attachment; filename=\"invoice-${inv.id}.xml\"`);
     return res.status(200).send(inv.xmlRaw);
@@ -709,7 +717,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       where: { id: String(invoiceId), clientId: String(clientId) },
       select: { xmlRaw: true },
     });
-    if (!inv?.xmlRaw) return res.status(404).json({ error: "XML_NOT_FOUND" });
+    if (!inv?.xmlRaw || String(raizDoXml(inv.xmlRaw)).toLowerCase() === 'resnfe') return res.status(404).json({ error: "XML_NOT_FOUND" });
     return res.json({ xml: inv.xmlRaw });
   });
 
@@ -768,7 +776,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
           id: true,
           numero: true,
           chaveAcesso: true,
-          issueDate: true,
+          issueDate: true, ...selectDataEmissao,
           xmlRaw: true,
         },
       });
@@ -797,10 +805,10 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       archive.pipe(res);
 
       for (const inv of invoices) {
-        if (!inv.xmlRaw) continue;
+        if (!inv.xmlRaw || String(raizDoXml(inv.xmlRaw)).toLowerCase() === 'resnfe') continue;
         const n = safeFilePart(inv.numero || "");
         const ch = safeFilePart(inv.chaveAcesso || "");
-        const date = inv.issueDate ? safeFilePart(dateToIso(inv.issueDate)?.slice(0, 10)) : "";
+        const date = safeFilePart(projetarDataEmissao(inv).dataEmissao.civil || "data-a-verificar");
         const base = n || ch || safeFilePart(inv.id);
         const entryName = `${base}${date ? `_${date}` : ""}.xml`;
         archive.append(inv.xmlRaw, { name: entryName });
@@ -962,6 +970,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         const cruas = await lerEmitidasNaoConfirmadas({
           legacyCompanyId: portalClient.companyId,
           portalClientId: String(clientId),
+          limite: 20001,
         });
         for (const si of cruas) {
           if (!emitidaPassaNoFiltro(si, {
@@ -1035,48 +1044,40 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     try {
       const access = await ensurePortalClientAccess(req, res, clientId);
       if (!access.ok) return;
-      const inv = await prisma.portalInvoice.findFirst({
+      const outcome = await prisma.$transaction(async tx => {
+      await bloquearDocumentosDaEmpresa(tx, String(clientId));
+      const inv = await tx.portalInvoice.findFirst({
         where: { id: String(invoiceId), clientId: String(clientId) },
       });
       if (!inv) return res.status(404).json({ error: "not_found" });
       if (!inv.xmlRaw) return res.status(404).json({ error: "XML_NOT_FOUND" });
 
-      // Por enquanto apenas NFSe (usa parser já existente)
-      const meta = parseXmlMetadata(inv.xmlRaw);
-      const updatedFields = [];
-      const update = {};
-      if (meta?.tomadorNome && meta.tomadorNome !== inv.tomadorNome) {
-        update.tomadorNome = meta.tomadorNome;
-        updatedFields.push("tomador.nome");
+      // Origin correction only: never changes fiscal period, revenue or legacy dates.
+      const company = tx.portalClient?.findUnique
+        ? await tx.portalClient.findUnique({ where: { id: String(clientId) }, select: { cnpj: true } }) : null;
+      const evidence = evidenciaDaNota(inv, { documentoEmpresa: company?.cnpj });
+      if (evidence.motivo) return res.status(409).json({ error: 'DOCUMENT_ORIGIN_UNCERTAIN', motivo: evidence.motivo });
+      const update = camposDataEmissao(evidence);
+      const unchanged = inv.dataEmissaoEvidencia?.hash === evidence.hash
+        && inv.dataEmissaoEvidencia?.versaoExtrator === evidence.versaoExtrator
+        && inv.dataEmissaoCivil === evidence.civil;
+      const updatedFields = unchanged ? [] : Object.keys(update);
+      if (!unchanged) {
+        update.dataEmissaoEvidencia = { ...evidence, historico: [
+          ...(inv.dataEmissaoEvidencia?.historico || []),
+          { acao: 'RELEITURA_ORIGEM', autor: req.auth?.user?.id || req.user?.id || null, instante: new Date().toISOString(),
+            notaId: inv.id, clientId: inv.clientId, revisaoAnterior: dateToIso(inv.updatedAt),
+            anterior: inv.dataEmissaoEvidencia ? { ...inv.dataEmissaoEvidencia, historico: undefined } : null,
+            motivo: 'Correção da projeção documental sem alteração fiscal' },
+        ] };
+        // CAS protects a source concurrently recaptured/backfilled; no read can overwrite it.
+        const result = await tx.portalInvoice.updateMany({ where: { id: inv.id, clientId: String(clientId),
+          updatedAt: inv.updatedAt, xmlRaw: inv.xmlRaw }, data: update });
+        if (result.count !== 1) return res.status(409).json({ error: 'SOURCE_CHANGED' });
       }
-      if (meta?.cnpjTomador && meta.cnpjTomador !== inv.tomadorDoc) {
-        update.tomadorDoc = meta.cnpjTomador;
-        updatedFields.push("tomador.doc");
-      }
-      if (meta?.cnpjPrestador && meta.cnpjPrestador !== inv.emitenteDoc) {
-        update.emitenteDoc = meta.cnpjPrestador;
-        updatedFields.push("emitente.doc");
-      }
-      if (meta?.prestadorNome && meta.prestadorNome !== inv.emitenteNome) {
-        update.emitenteNome = meta.prestadorNome;
-        updatedFields.push("emitente.nome");
-      }
-      if (meta?.competencia && dateToIso(meta.competencia) !== dateToIso(inv.competencia)) {
-        update.competencia = meta.competencia;
-        updatedFields.push("competencia");
-      }
-      if (meta?.dataEmissao && dateToIso(meta.dataEmissao) !== dateToIso(inv.issueDate)) {
-        update.issueDate = meta.dataEmissao;
-        updatedFields.push("issueDate");
-      }
-      if (meta?.numeroNfse && meta.numeroNfse !== inv.numero) {
-        update.numero = meta.numeroNfse;
-        updatedFields.push("numero");
-      }
-      if (Object.keys(update).length) {
-        await prisma.portalInvoice.update({ where: { id: inv.id }, data: update });
-      }
-      return res.json({ ok: true, updatedFields });
+      return { ok: true, updatedFields };
+      });
+      if (!res.headersSent) return res.json(outcome);
     } catch (err) {
       log.error({ err, clientId, invoiceId }, "Falha ao reparse invoice");
       return res.status(500).json({ error: "internal_error" });

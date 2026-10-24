@@ -46,3 +46,15 @@ test('parcelas não alteram cobertura de obrigações e documentos repetidos sã
   expect(r).toMatchObject({ esperadas: 1, disponiveis: 1, documentosParcelamento: 1, unidade: 'obrigações com guia' });
   expect(r.parcelas).toEqual(parcelas);
 });
+
+it('pagamento prevalece no grupo sem fabricar envio e falha conserva documento', () => {
+  const r = resumirGuias({ das: { ...node('gerada', 'paga'), paymentStatus: 'PAID' }, inss: node('falhou', 'falha'), iss: node('missing'), irpj: node('enviada', 'enviada') });
+  expect(r.items.map(i => i.grupo).sort()).toEqual(['disponivel', 'enviada', 'paga', 'pendente']);
+  expect(r.items.find(i => i.key === 'das')).toMatchObject({ paga: true, enviada: false, pagamento: 'Confirmado', comunicacao: 'Pendente' });
+  expect(r.items.find(i => i.key === 'inss')).toMatchObject({ grupo: 'disponivel', documento: 'Disponível', comunicacao: 'Falhou' });
+});
+it('dispensa e débito automático de parcela ficam fora dos faltantes; desconhecido fica em revisão', () => {
+  const r = resumirGuias({ das: node('vazio'), inss: { required: true }, parcDas: { required: true, state: 'debito_automatico' } });
+  expect(r.faltantes).toBe(0); expect(r.revisoes).toBe(1); expect(r.completo).toBe(false);
+  expect(r.items.find(i => i.key === 'inss').grupo).toBe('verificar');
+});

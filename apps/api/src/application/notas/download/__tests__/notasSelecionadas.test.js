@@ -1,3 +1,5 @@
+import { extrairDataEmissao } from "../../dataEmissaoNota.js";
+import { xmlNfseData, CHAVE_NFSE, CNPJ_DATAS } from "../../__fixtures__/dataEmissaoNotas.js";
 import { baixarNotasSelecionadas, gerarDanfeNfe } from "../NotasSelecionadasService.js";
 import { xmlParaDanfe } from "./danfeFixture.js";
 
@@ -6,7 +8,8 @@ function db(notas = []) { return {
   portalClient: { findUnique: jest.fn().mockResolvedValue({ companyId: "legada-a" }) },
   serviceInvoice: { findMany: jest.fn().mockResolvedValue([]) },
 }; }
-const nota = { id: "n1", numero: "101", type: "NFE", xmlRaw: xmlParaDanfe() };
+const nf = extrairDataEmissao(xmlParaDanfe());
+const nota = { id: "n1", numero: "101", type: "NFE", xmlRaw: xmlParaDanfe(), chaveAcesso: nf.identidade, emitenteDoc: nf.emitenteDoc };
 it("baixa XMLs completos uma vez e inclui diagnóstico de arquivo indisponível", async () => {
   const client = db([nota, { id: "n2", type: "NFE", xmlRaw: "<resNFe/>" }]);
   const out = await baixarNotasSelecionadas({ portalClientId: "pc-a", notaIds: ["n1", "n1", "n2"], formato: "XML", client });
@@ -34,7 +37,7 @@ it("informa falha total sem gerar um ZIP vazio", async () => {
 it("usa o gerador correto e marca NF-e cancelada", async () => {
   const gerarNfe = jest.fn().mockResolvedValue(Buffer.from("pdf"));
   const gerarNfse = jest.fn().mockResolvedValue({ pdf: Buffer.from("pdf") });
-  const client = db([{ ...nota, statusEfetivo: "cancelada" }, { id: "ns", type: "NFSE", xmlRaw: "<NFSe/>" }]);
+  const client = db([{ ...nota, statusEfetivo: "cancelada" }, { id: "ns", type: "NFSE", xmlRaw: xmlNfseData(), chaveAcesso: CHAVE_NFSE, emitenteDoc: CNPJ_DATAS }]);
   const out = await baixarNotasSelecionadas({ portalClientId: "pc-a", notaIds: ["n1", "ns"], formato: "PDF", client, gerarNfe, gerarNfse });
   expect(out.geradas).toBe(2);
   expect(gerarNfe).toHaveBeenCalledWith({ xml: nota.xmlRaw, cancelada: true });

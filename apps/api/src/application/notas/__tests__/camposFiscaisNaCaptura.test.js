@@ -306,7 +306,7 @@ describe("recaptura", () => {
 // São TRÊS os escritores de `PortalInvoice` com `type:"NFSE"`. Dois deles passam por
 // `notas/ingestaoNfse.js` (captura do ADN + import da tela); o terceiro, `sync/InvoiceSyncEngine.js`
 // (rota legada `POST /clients/:id/invoices/sync/start`, montada também em `/firm` e `/client`),
-// grava direto. Um caminho esquecido faz a coluna voltar a envelhecer por ele — e o defeito fica
+// delega ao processador local. Um caminho esquecido faz a coluna voltar a envelhecer — e o defeito fica
 // mais difícil de achar da segunda vez, porque as outras notas estarão certas.
 describe("os caminhos de entrada estão todos ligados", () => {
   const ler = (...partes) => fs.readFileSync(path.join(__dirname, "..", "..", "..", ...partes), "utf-8");
@@ -317,10 +317,13 @@ describe("os caminhos de entrada estão todos ligados", () => {
     expect(fonte).toContain("camposFiscaisParaPersistir(xmlPlain)");
   });
 
-  it("o motor de sync legado (`InvoiceSyncEngine`) também chama", () => {
-    const fonte = ler("application", "sync", "InvoiceSyncEngine.js");
-    expect(fonte).toContain('from "../nfse/camposFiscaisNfse.js"');
-    expect(fonte).toContain("camposFiscaisParaPersistir(xmlRaw)");
+  it("o motor de sync legado delega ao processador local que chama o extrator fiscal", () => {
+    const engine = ler("application", "sync", "InvoiceSyncEngine.js");
+    const processador = ler("application", "sync", "ProcessadorDocumentoSyncLocal.js");
+    expect(engine).toContain("import { processarDocumentoSyncLocal } from './ProcessadorDocumentoSyncLocal.js'");
+    expect(engine).toContain("processarDocumentoSyncLocal(tx, documentoEmProcessamento)");
+    expect(processador).toContain('import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js"');
+    expect(processador).toContain("camposFiscaisParaPersistir(xmlRaw)");
   });
 
   it("⚠ a NF-e NÃO é tocada — leiaute diferente, tudo sairia nulo com carimbo de 'olhamos'", () => {
@@ -335,6 +338,7 @@ describe("os caminhos de entrada estão todos ligados", () => {
     for (const fonte of [
       ler("application", "notas", "ingestaoNfse.js"),
       ler("application", "sync", "InvoiceSyncEngine.js"),
+      ler("application", "sync", "ProcessadorDocumentoSyncLocal.js"),
     ]) {
       expect(fonte).not.toContain("cTribNac");
       expect(fonte).not.toContain("pAliqAplic");

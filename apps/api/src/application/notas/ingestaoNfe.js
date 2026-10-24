@@ -13,8 +13,10 @@
 //   • import ZIP   → titularidade (`nota_nao_pertence`), papel medido, contagem por arquivo.
 // O que os dois compartilham é ISTO: a linha em `PortalInvoice` e os itens.
 
+import { prepararDocumentoNota, bloquearDocumentosDaEmpresa } from "./persistirDocumentoNota.js";
 import { situacaoDoPeriodo, registrarPendenciaDoPeriodo } from "./pendenciasDoPeriodo.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
+import { provaDaCapturaDfe } from './dfe/provenienciaDfe.js';
 
 /**
  * Decide se a competência da nota está FECHADA. Se sim, não atualiza base —
@@ -36,11 +38,12 @@ export async function isCompetenciaFechada(tx, { portalClientId, competenciaDate
  * do Fisco Fácil pode vir legitimamente vazio, e sem os contadores o dono não distingue
  * "não veio nada" de "deu erro". A captura ignora o campo; nada mudou para ela.
  */
-export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items }) {
+export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items, capturaDfe }) {
   if (!parsed.chaveAcesso) return { skipped: true, reason: "no_chave" };
 
+  await bloquearDocumentosDaEmpresa(tx, portalClientId);
   // Confere competência fechada
-  const fechada = await isCompetenciaFechada(tx, {
+  let fechada = await isCompetenciaFechada(tx, {
     portalClientId, competenciaDate: parsed.competencia,
   });
 
@@ -48,11 +51,26 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   // statusEfetivo="cancelada"). O resumo/nota da NF-e traz statusEfetivo hardcoded "autorizada";
   // sem isso, uma re-captura da nota reverteria o cancelamento.
   const wKey = { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } };
-  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { id: true, statusEfetivo: true } });
+  // Import/capture callers supply a transaction; serialize the same fiscal identity before reading evidence.
+  if (typeof tx.$queryRaw === 'function') {
+    const identity = `${portalClientId}:${parsed.chaveAcesso}`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${identity}))::text AS lock_result`;
+  }
+  const existente = await tx.portalInvoice.findUnique({ where: wKey });
+  if (existente?.competencia) fechada = fechada || await isCompetenciaFechada(tx, { portalClientId, competenciaDate: existente.competencia });
   const existia = Boolean(existente);
+  const portal = tx.portalClient?.findUnique
+    ? await tx.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } }) : null;
+  const provenienciaDfe = provaDaCapturaDfe(capturaDfe, { clientId: portalClientId,
+    cnpj: portal?.cnpj, chave: parsed.chaveAcesso, xml: parsed.xmlRaw || parsed.xmlResumo });
+  // Never accept a proof nested in parsed (the importer's shared DTO).
+  const { documentoPreservado, ...documento } = prepararDocumentoNota(existente,
+    { ...parsed, clientId: portalClientId, provenienciaDfe }, portal?.cnpj);
   const statusEfetivo = existente?.statusEfetivo === "cancelada" ? "cancelada" : (parsed.statusEfetivo || null);
 
   const dataToWrite = {
+    ...documento,
+
     type: parsed.type,
     numero: parsed.numero || null,
     serie: parsed.serie || null,
@@ -65,7 +83,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
     emitenteDoc: parsed.emitenteDoc || null,
     tomadorNome: parsed.tomadorNome || null,
     tomadorDoc: parsed.tomadorDoc || null,
-    xmlRaw: parsed.xmlRaw || null,
+
     papel: parsed.papel || null,
     statusEfetivo,
     competenciaPosFechamento: fechada,
@@ -90,7 +108,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   const nota = await tx.portalInvoice.upsert({
     where: wKey,
     create: { clientId: portalClientId, ...dataToWrite },
-    update: dataToWrite,
+    update: documentoPreservado ? { ...documento, statusEfetivo } : { ...dataToWrite, issueDate: existente ? existente.issueDate : dataToWrite.issueDate, competencia: existente ? existente.competencia : dataToWrite.competencia },
   });
 
   // Substitui itens (full overwrite): mais simples + idempotente. Volume é pequeno.
@@ -99,7 +117,7 @@ export async function upsertNfeFromParsed(tx, { portalClientId, parsed, items })
   // `anexoResolvido`, `classificadoEm` e `sujeitoFatorR` de todo item, em silêncio. A recaptura
   // corrige a nota; ela não pode desfazer a classificação. O casamento item-antigo × item-novo e o
   // motivo do critério estão em `./notaItens.js`.
-  if (items && items.length > 0) {
+  if (!documentoPreservado && items && items.length > 0) {
     await substituirItensPreservandoClassificacao(tx, { notaId: nota.id, itens: items });
   }
   return { created: nota.id, notaId: nota.id, existia, status: "upserted" };

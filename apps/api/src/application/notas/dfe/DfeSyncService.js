@@ -20,6 +20,7 @@ import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
 import { upsertNfeFromParsed } from "../ingestaoNfe.js";
+import { ambienteDfeConfigurado, criarCapturaDfe } from './provenienciaDfe.js';
 
 const MAX_ITERATIONS = 10;
 const BACKOFF_MINUTES_ON_ERROR = 15;
@@ -258,7 +259,8 @@ async function applyEvent(tx, { portalClientId, ev }) {
  * @param {string} opts.portalClientId
  * @param {"prod"|"hom"} [opts.env="prod"]
  */
-export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
+export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfigurado() }) {
+  if (env !== ambienteDfeConfigurado()) throw new DfeSyncError('DFE_AMBIENTE_DIVERGENTE', 'Ambiente diferente da configuração do serviço');
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
     select: { id: true, razao: true, cnpj: true, uf: true, status: true },
@@ -332,7 +334,7 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
         env,
         uf,
       });
-      if (status >= 500) {
+      if (status < 200 || status >= 300) {
         throw new DfeClientError("HTTP_5XX", `SEFAZ retornou HTTP ${status}`);
       }
 
@@ -379,6 +381,8 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
           if (parsed.type === "nfe_summary" || parsed.type === "nfe_full") {
             const r = await upsertNfeFromParsed(tx, {
               portalClientId, parsed: parsed.parsed, items: parsed.items,
+              capturaDfe: criarCapturaDfe({ clientId: portalClientId, cnpj: portal.cnpj,
+                ambiente: env, nsu: docZip.nsu, chave: parsed.parsed.chaveAcesso, xml: docZip.xml }),
             });
             if (r.status === "pendencia_criada") byType.pendencias++;
             // Marca pra manifestação se DEST + só resumo (procNFe já veio completo)

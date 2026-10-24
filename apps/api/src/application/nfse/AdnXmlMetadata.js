@@ -1,5 +1,6 @@
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
 import { DOMParser } from "@xmldom/xmldom";
+import { XMLValidator } from 'fast-xml-parser';
 import { parseDate } from "../../utils/date.js";
 import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
 
@@ -15,8 +16,32 @@ function normalizeName(value) {
   return text ? text : null;
 }
 
+// Competence evidence is scoped to the document, never an arbitrary descendant.
+// Keep the literal so callers can validate civil dates before parseDate normalizes them.
+function competenciaDocumental(doc) {
+  const at = (node, path) => path.reduce((nodes, name) => nodes.flatMap(parent =>
+    Array.from(parent.childNodes || []).filter(child => child.localName === name)), [node]);
+  const paths = [
+    ['NFSe', 'infNFSe', 'DPS', 'infDPS', 'dCompet'],
+    ['CompNfse', 'Nfse', 'InfNfse', 'Competencia'],
+    ['CompNfse', 'Nfse', 'InfNfse', 'DeclaracaoPrestacaoServico', 'InfDeclaracaoPrestacaoServico', 'Competencia'],
+  ];
+  for (const root of ['ConsultarNfseResposta', 'ConsultarNfseServicoPrestadoResposta', 'ConsultarNfseServicoTomadoResposta']) {
+    for (const path of paths.slice(1, 3)) paths.push([root, 'ListaNfse', ...path]);
+  }
+  const nodes = paths.flatMap(path => at(doc, path));
+  if (!nodes.length) return { competenciaOriginal: null, competenciaFormato: null };
+  if (nodes.length !== 1 || Array.from(nodes[0].childNodes || []).some(n => n.nodeType === 1)) {
+    return { competenciaOriginal: null, competenciaErro: 'ESTRUTURA_AMBIGUA' };
+  }
+  return { competenciaOriginal: nodes[0].textContent.trim(), competenciaFormato: nodes[0].localName };
+}
+
 export function parseXmlMetadata(xmlPlain) {
   if (!xmlPlain) return {};
+  if (/<!DOCTYPE|<!ENTITY/i.test(xmlPlain) || XMLValidator.validate(xmlPlain) !== true) {
+    return { competenciaOriginal: null, competenciaErro: 'XML_INVALIDO' };
+  }
   const doc = new DOMParser().parseFromString(xmlPlain, "text/xml");
   const infNfse = findFirstByLocalName(doc, "InfNfse") || doc;
   const prestadorNode =
@@ -37,8 +62,8 @@ export function parseXmlMetadata(xmlPlain) {
   const cnpjAutor =
     getTextByLocalNames(doc, ["CNPJAutor", "CNPJ", "CPFAutor", "CPF"]) ||
     getTextByLocalNames(infNfse, ["CNPJAutor", "CNPJ", "CPFAutor", "CPF"]);
-  const competencia =
-    getTextByLocalNames(infNfse, ["Competencia", "dCompet"]) ||
+  const competencia = competenciaDocumental(doc);
+  const competenciaLegada = getTextByLocalNames(infNfse, ["Competencia", "dCompet"]) ||
     getTextByLocalNames(doc, ["Competencia", "dCompet"]);
   const dataEmissao =
     getTextByLocalNames(infNfse, ["DataEmissao", "dhEmi", "dEmi", "dhProc"]) ||
@@ -117,7 +142,8 @@ export function parseXmlMetadata(xmlPlain) {
     cnpjTomador: normalizeDoc(cnpjTomador),
     prestadorNome: normalizeName(prestadorNome),
     tomadorNome: normalizeName(tomadorNome),
-    competencia: parseDate(competencia),
+    ...competencia,
+    competencia: parseDate(competenciaLegada),
     dataEmissao: parseDate(dataEmissao),
     numeroNfse: numeroNfse ? String(numeroNfse) : null,
     valorServicos:

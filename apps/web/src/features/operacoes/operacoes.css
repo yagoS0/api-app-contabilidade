@@ -89,3 +89,32 @@
 .operacoes-resumo { border-radius: var(--radius); padding: var(--space-4); }
 .operacoes > h3 { font-size: 1rem; margin: var(--space-5) 0 var(--space-3); }
 @media(max-width:600px) { .operacoes-indicadores { grid-template-columns: repeat(2,minmax(0,1fr)); } .operacoes-fila { padding: var(--space-3); } }
+
+/* Centro de Operações: charts size independently of the tracking column. */
+.operacoes-distribuicoes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.35fr); gap:12px; align-items:start; margin:20px 0; }
+.operacoes-distribuicao,.operacoes-acompanhamento { min-width:0; border:1px solid var(--border); background:var(--bg-surface); padding:17px 14px; border-radius:12px; }
+.operacoes-distribuicao h3,.operacoes-acompanhamento h3 { margin:0 0 6px; font-size:.95rem; }
+.operacoes-pizza { width:136px; height:136px; border-radius:50%; margin:20px auto; }
+.operacoes-barra { height:10px; border-radius:6px; margin:14px 0; }
+.operacoes-distribuicao-legenda { display:grid; gap:6px; }
+.operacoes-distribuicao-legenda button { display:flex; align-items:center; gap:8px; border:0; background:transparent; color:var(--text); font:inherit; font-size:.8rem; min-height:34px; text-align:left; cursor:pointer; }
+.operacoes-distribuicao-legenda i { width:8px; height:8px; border-radius:50%; flex:none; }
+.operacoes-distribuicao-legenda strong { margin-left:auto; font-weight:600; }
+.operacoes-distribuicao-barra + .operacoes-distribuicao-barra { border-top:1px solid var(--border); margin-top:18px; padding-top:18px; }
+.operacoes .operacoes-rotinas-contadores { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.operacoes-procuracoes { display:flex; gap:12px; margin-top:12px; }
+.operacoes-procuracoes button { background:transparent; border:0; color:var(--text); font:inherit; cursor:pointer; }
+.operacoes-procuracoes strong { display:block; font-size:1.4rem; font-weight:600; }
+.operacoes-filas summary { cursor:pointer; padding:12px 0; }
+.operacoes .operacoes-rotinas-contadores > .operacoes-quadro { display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:10px; padding:18px 16px; }
+.operacoes .operacoes-rotinas-contadores > button strong { font-size:2rem; font-weight:600; }
+.operacoes .operacoes-procuracoes { width:100%; margin-top:0; }
+.operacoes .operacoes-procuracoes button { min-width:0; min-height:44px; flex:1 1 0; padding:0; }
+.operacoes .operacoes-procuracao-incerta { border:0; background:transparent; color:var(--text-muted); font:inherit; font-size:.8rem; min-height:32px; flex:0 0 auto; padding:0; cursor:pointer; }
+@media(max-width:1000px) { .operacoes-distribuicoes,.operacoes .operacoes-rotinas-contadores { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .operacoes-distribuicoes,.operacoes .operacoes-rotinas-contadores { grid-template-columns:1fr; } .operacoes-distribuicao-legenda button,.operacoes-procuracoes button { min-height:44px; } }
+@media (max-width: 600px) {
+ .operacoes .operacoes-rotinas-contadores > button.operacoes-quadro { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 14px; min-height: 44px; }
+ .operacoes .operacoes-rotinas-contadores > button.operacoes-quadro > strong { margin-top: 0; }
+ .operacoes .operacoes-rotinas-contadores > button.operacoes-quadro > small { grid-column: 1 / -1; }
+}

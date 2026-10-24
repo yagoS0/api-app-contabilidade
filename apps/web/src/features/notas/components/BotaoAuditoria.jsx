@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 
-export function BotaoAuditoria({ api, companyId, competencia, revisao, href, onAbrir }) {
+export function BotaoAuditoria({ api, companyId, competencia, revisao, href, onAbrir, card = false }) {
   const [estado, setEstado] = useState({ carregando: true });
   useEffect(() => {
     let cancelado = false;
@@ -18,18 +18,21 @@ export function BotaoAuditoria({ api, companyId, competencia, revisao, href, onA
       const a = auditoria.status === "fulfilled" ? auditoria.value?.auditoria : null;
       const p = pendencias.status === "fulfilled" ? pendencias.value : null;
       setEstado({
-        quantidade: Number(a?.totalAchados || 0) + Number(a?.foraDaConferencia?.total || 0) + (Array.isArray(p) ? p.length : 0),
-        indisponivel: !a || !Array.isArray(p),
+        quantidade: Number.isFinite(a?.totalAchados) ? a.totalAchados : null,
+        fora: Number.isFinite(a?.foraDaConferencia?.total) ? a.foraDaConferencia.total : null,
+        posteriores: Array.isArray(p) ? p.length : null,
+        indisponivel: !a || !Number.isFinite(a.totalAchados) || !Array.isArray(p),
       });
     });
     return () => { cancelado = true; };
   }, [api, companyId, competencia, revisao]);
   const texto = estado.carregando ? "Conferindo…" : estado.quantidade > 0
-    ? `${estado.quantidade} pendência(s)${estado.indisponivel ? " · conferência parcial" : ""}` : estado.indisponivel ? "Conferência indisponível" : "Sem pendências";
-  return <a className="btn btn-secondary btn-md" href={href} onClick={(e) => {
+    ? `${estado.quantidade} achado(s) na competência${estado.indisponivel ? " · conferência parcial" : ""}` : estado.indisponivel ? "Conferência indisponível" : "Sem achados na competência";
+  return <a className={card ? "notas-indicador notas-auditoria" : "btn btn-secondary btn-md"} href={href} onClick={(e) => {
     if (oNavegadorAssumeOClique(e)) return;
-    e.preventDefault(); onAbrir?.();
+    if (onAbrir) { e.preventDefault(); onAbrir(); }
   }} style={{ gap: 8 }}>
-    Auditoria <span style={{ fontSize: 12, color: estado.quantidade > 0 ? "var(--state-warn)" : "var(--text-muted)" }}>{texto}</span>
+    Auditoria {card && <strong>{estado.carregando ? "…" : estado.indisponivel ? "—" : estado.quantidade}</strong>}<span style={{ fontSize: 12, color: estado.quantidade > 0 ? "var(--state-warn)" : "var(--text-muted)" }}>{texto}</span>
+    {!estado.carregando && <small>{estado.fora == null ? 'Fora da conferência: indisponível' : `${estado.fora} fora da conferência`} · {estado.posteriores ?? '—'} pendências pós-fechamento em todas as competências. Conjuntos podem se sobrepor.</small>}
   </a>;
 }

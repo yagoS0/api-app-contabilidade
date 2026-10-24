@@ -2,9 +2,10 @@ import archiver from "archiver";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { gerarPDF } from "nfe-danfe-pdf";
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { lerEnvelopeXml, raizDoXml } from "../../nfse/lerEnvelopeXml.js";
+import { raizDoXml } from "../../nfse/lerEnvelopeXml.js";
 import { gerarDanfseDaNota } from "../../nfse/danfse/danfseDaNotaDoPortal.js";
 import { safeFilePart } from "../../nfse/danfse/loteDanfseDoPortal.js";
+import { projetarEmissaoServico, evidenciaDaNota } from '../dataEmissaoNota.js';
 
 export const MAX_NOTAS_SELECIONADAS = 100;
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -33,19 +34,22 @@ export async function baixarNotasSelecionadas({ portalClientId, notaIds, formato
   }
   if (!["XML", "PDF"].includes(formato)) throw falha("Escolha XML ou PDF.");
   const ids = [...new Set(notaIds)];
+  const portal = await client.portalClient.findUnique({ where: { id: portalClientId }, select: { companyId: true, cnpj: true } });
   const notas = await client.portalInvoice.findMany({
     where: { clientId: portalClientId, id: { in: ids } },
-    select: { id: true, type: true, numero: true, xmlRaw: true, status: true, statusEfetivo: true },
+    select: { id: true, type: true, numero: true, xmlRaw: true, chaveAcesso: true, emitenteDoc: true, status: true, statusEfetivo: true },
   });
   const byId = new Map(notas.map(n => [n.id, n]));
   const faltantes = ids.filter(id => !byId.has(id));
   if (faltantes.length) {
-    const portal = await client.portalClient.findUnique({ where: { id: portalClientId }, select: { companyId: true } });
     const emitidas = portal?.companyId ? await client.serviceInvoice.findMany({
       where: { companyId: portal.companyId, id: { in: faltantes } },
-      select: { id: true, numeroNfse: true, xml: true, status: true },
+      select: { id: true, numeroNfse: true, chaveAcesso: true, xml: true, status: true },
     }) : [];
-    for (const n of emitidas) byId.set(n.id, { ...n, type: "NFSE", numero: n.numeroNfse, xmlRaw: lerEnvelopeXml(n.xml).xml });
+    for (const n of emitidas) {
+      const projection = projetarEmissaoServico(n, portal.cnpj);
+      byId.set(n.id, { ...n, type: 'NFSE', numero: n.numeroNfse, xmlRaw: projection.xml, evidencia: projection.evidencia });
+    }
   }
   // IDs fora da empresa e IDs inexistentes produzem exatamente a mesma resposta.
   if (ids.some(id => !byId.has(id))) throw falha("Uma ou mais notas não foram encontradas nesta empresa. Atualize a lista.", 404);
@@ -57,6 +61,8 @@ export async function baixarNotasSelecionadas({ portalClientId, notaIds, formato
       const xml = n.xmlRaw;
       const raiz = raizDoXml(xml);
       if (!xml || !["NFSe", "NFe", "nfeProc"].includes(raiz)) throw falha("XML completo indisponível; o resumo da captura não substitui o documento.");
+      const evidence = n.evidencia || evidenciaDaNota(n, { documentoEmpresa: portal?.cnpj });
+      if (!evidence.identidadeConferida) throw falha('A identidade do documento precisa ser conferida antes do download.');
       const conteudo = formato === "XML" ? Buffer.from(xml, "utf8") : n.type === "NFE"
         ? await gerarNfe({ xml, cancelada: ["cancelada", "cancelled"].includes(String(n.statusEfetivo || n.status).toLowerCase()) })
         : (await gerarNfse({ portalClientId, notaId: id, client })).pdf;

@@ -1,33 +1,11 @@
-import { registrarPendenciaDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
-import crypto from "node:crypto";
-import { gunzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { AdnSyncService } from "../nfse/AdnSyncService.js";
-import { parseXmlMetadata } from "../nfse/AdnXmlMetadata.js";
-import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
-import { parseDate } from "../../utils/date.js";
 import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
 import { decryptSecret } from "../../utils/crypto.js";
-
-function normalizeCnpj(value) {
-  return String(value || "").replace(/\D+/g, "");
-}
-
-function sha256(text) {
-  if (!text) return null;
-  return crypto.createHash("sha256").update(String(text), "utf8").digest("hex");
-}
-
-function decodeXml(arquivoXml) {
-  if (!arquivoXml) return null;
-  const raw = Buffer.from(String(arquivoXml), "base64");
-  try {
-    return gunzipSync(raw).toString("utf-8");
-  } catch {
-    return raw.toString("utf-8");
-  }
-}
-
+import { processarDocumentoSyncLocal } from './ProcessadorDocumentoSyncLocal.js';
+import { registrarDocumentoRecusado } from './RecuperacaoDocumentoSyncService.js';
+export { upsertPortalInvoiceSafe } from './ProcessadorDocumentoSyncLocal.js';
+function normalizeCnpj(value) { return String(value || '').replace(/\D+/g, ''); }
 function parseLoteResponse(data) {
   if (!data || typeof data !== "object") return { status: null, items: [], errors: [] };
   const status =
@@ -49,169 +27,6 @@ function parseLoteResponse(data) {
     items: Array.isArray(items) ? items : [items],
     errors,
   };
-}
-
-function mapInvoiceStatusFromAdn({ tipoDocumento, tipoEvento, situacao, statusNormalized }) {
-  const td = String(tipoDocumento || "").toUpperCase();
-  const te = String(tipoEvento || "").toUpperCase();
-  const si = String(situacao || "").trim().toLowerCase();
-  const st = String(statusNormalized || "").toLowerCase();
-
-  // EVENTOS devem ter prioridade sobre qualquer cStat/situacao do XML.
-  if (te.includes("E105102")) return "SUBSTITUIDA";
-  if (te.includes("E101101")) return "CANCELADA";
-  if (td === "EVENTO") {
-    if (te.includes("SUBSTIT")) return "SUBSTITUIDA";
-    if (te.includes("CANCEL")) return "CANCELADA";
-    if (te.includes("REJEIT") || te.includes("REJECT")) return "REJEITADA";
-  }
-
-  if (st === "cancelled_substitution") return "SUBSTITUIDA";
-  if (st === "cancelled") return "CANCELADA";
-  if (st === "rejected") return "REJEITADA";
-  if (st === "authorized") return "EMITIDA";
-
-  // cStat comum em retornos XML transformados
-  // 100: autorizada
-  // 101/102: cancelamento (varia por implementação/provedor)
-  if (si === "100") return "EMITIDA";
-  if (si === "101" || si === "102") return "CANCELADA";
-
-  if (si === "2") return "CANCELADA";
-  if (si === "1") return "EMITIDA";
-
-  if (si.includes("substit")) return "SUBSTITUIDA";
-  if (si.includes("cancel")) return "CANCELADA";
-  if (si.includes("rejeit") || si.includes("reject")) return "REJEITADA";
-  if (si.includes("autoriz") || si.includes("normal")) return "EMITIDA";
-
-  return "PENDENTE";
-}
-
-function mergeStatus(existing, incoming) {
-  const ex = String(existing || "").toUpperCase();
-  const inc = String(incoming || "").toUpperCase();
-  const priority = ["SUBSTITUIDA", "CANCELADA", "REJEITADA", "EMITIDA", "PENDENTE"];
-  const exP = priority.indexOf(ex);
-  const incP = priority.indexOf(inc);
-  if (exP === -1) return inc || existing || "PENDENTE";
-  if (incP === -1) return existing || "PENDENTE";
-  return exP <= incP ? ex : inc;
-}
-
-async function findExistingPortalInvoice({ clientId, data }) {
-  if (data.idDps) {
-    const byIdDps = await prisma.portalInvoice.findUnique({
-      where: { clientId_idDps: { clientId, idDps: data.idDps } },
-    });
-    if (byIdDps) return byIdDps;
-  }
-  if (data.chaveAcesso) {
-    const byChave = await prisma.portalInvoice.findUnique({
-      where: { clientId_chaveAcesso: { clientId, chaveAcesso: data.chaveAcesso } },
-    });
-    if (byChave) return byChave;
-  }
-  if (data.idNfse) {
-    const byIdNfse = await prisma.portalInvoice.findUnique({
-      where: { clientId_idNfse: { clientId, idNfse: data.idNfse } },
-    });
-    if (byIdNfse) return byIdNfse;
-  }
-  return null;
-}
-
-async function buildSafeUpdateData({ clientId, existing, data }) {
-  const update = { ...data };
-  const uniqueKeys = ["idDps", "chaveAcesso", "idNfse"];
-
-  for (const key of uniqueKeys) {
-    const current = existing?.[key] || null;
-    const incoming = data?.[key] || null;
-
-    // Nunca apaga chave única existente
-    if (!incoming) {
-      delete update[key];
-      continue;
-    }
-
-    // Se já existe e mudou, não substitui (evita colisões)
-    if (current && current !== incoming) {
-      delete update[key];
-      continue;
-    }
-
-    // Se não existe no registro, só seta se não estiver ocupada por outro registro
-    if (!current && incoming) {
-      let occupiedByAnother = false;
-      if (key === "idDps") {
-        const found = await prisma.portalInvoice.findUnique({
-          where: { clientId_idDps: { clientId, idDps: incoming } },
-          select: { id: true },
-        });
-        occupiedByAnother = Boolean(found && found.id !== existing.id);
-      } else if (key === "chaveAcesso") {
-        const found = await prisma.portalInvoice.findUnique({
-          where: { clientId_chaveAcesso: { clientId, chaveAcesso: incoming } },
-          select: { id: true },
-        });
-        occupiedByAnother = Boolean(found && found.id !== existing.id);
-      } else if (key === "idNfse") {
-        const found = await prisma.portalInvoice.findUnique({
-          where: { clientId_idNfse: { clientId, idNfse: incoming } },
-          select: { id: true },
-        });
-        occupiedByAnother = Boolean(found && found.id !== existing.id);
-      }
-
-      if (occupiedByAnother) {
-        delete update[key];
-      }
-    }
-  }
-
-  return update;
-}
-
-async function upsertPortalInvoiceSafe({ clientId, data }) {
-  const existing = await findExistingPortalInvoice({ clientId, data });
-  if (existing) {
-    const safeUpdate = await buildSafeUpdateData({ clientId, existing, data });
-    await prisma.portalInvoice.update({
-      where: { id: existing.id },
-      data: safeUpdate,
-    });
-    return { action: "updated", invoiceId: existing.id, invoice: { ...existing, ...safeUpdate } };
-  }
-
-  try {
-    const created = await prisma.$transaction(async tx => {
-      const nota = await tx.portalInvoice.create({ data });
-      await registrarPendenciaDoPeriodo(tx, { portalClientId: clientId, competencia: nota.competencia,
-        chaveAcesso: nota.chaveAcesso, notaId: nota.id, papel: nota.papel, valor: nota.total, origem: 'SINCRONIZACAO' });
-      return nota;
-    });
-    return { action: "created", invoiceId: created.id, invoice: created };
-  } catch (err) {
-    if (err?.code === "P2002") {
-      // concorrência de chave única: tenta reaprender o registro algumas vezes
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        if (attempt > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 60 * attempt));
-        }
-        const concurrent = await findExistingPortalInvoice({ clientId, data });
-        if (concurrent) {
-          await prisma.portalInvoice.update({
-            where: { id: concurrent.id },
-            data,
-          });
-          return { action: "updated", invoiceId: concurrent.id, invoice: { ...concurrent, ...data } };
-        }
-      }
-      return { action: "duplicate", invoiceId: null, invoice: null };
-    }
-    throw err;
-  }
 }
 
 async function resolveCompanyCert(company) {
@@ -249,6 +64,8 @@ export class InvoiceSyncEngine {
     }
 
     const state = await this.ensureState(portalClient.id);
+    if (state.documentoRecusado) return { jobId: null, state: 'ERROR', queued: false,
+      reason: 'DOCUMENTO_RECUSADO_PENDENTE', sync: { lastSyncAt: state.lastSyncAt, stale: true } };
     const iterations = Math.min(Math.max(Number(maxIterations) || this.MAX_ITERATIONS, 1), 1000);
     const now = Date.now();
 
@@ -328,6 +145,11 @@ export class InvoiceSyncEngine {
   }
 
   static async runJob({ clientId, jobId, maxIterations = InvoiceSyncEngine.MAX_ITERATIONS }) {
+    const pending = await this.ensureState(String(clientId));
+    if (pending.documentoRecusado) {
+      await prisma.portalInvoiceSyncJob.update({ where: { id: jobId }, data: { state: 'ERROR', lastMessage: 'Documento recusado pendente de conferência; nenhuma nova consulta realizada.' } });
+      return;
+    }
     const portalClient = await prisma.portalClient.findUnique({
       where: { id: String(clientId) },
       include: { integrationSettings: true },
@@ -368,6 +190,7 @@ export class InvoiceSyncEngine {
     let cursor = state.lastCursor ?? BigInt(0);
     let maxNSU = cursor;
     const counters = { processed: 0, created: 0, updated: 0, duplicates: 0, errors: 0 };
+    let documentoEmProcessamento = null;
 
     try {
       for (let i = 0; i < maxIterations; i += 1) {
@@ -389,118 +212,24 @@ export class InvoiceSyncEngine {
         if (!items.length) break;
 
         for (const item of items) {
-          const nsuRaw = item.NSU || item.nsu || item.Nsu;
-          if (!nsuRaw) continue;
-          const nsuValue = BigInt(nsuRaw);
+          documentoEmProcessamento = { clientId: portalClient.id, cursor: cursor.toString(),
+            origem: 'ADN_SYNC', item, recebidoEm: new Date().toISOString() };
+          let result;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              result = await prisma.$transaction(tx => processarDocumentoSyncLocal(tx, documentoEmProcessamento));
+              break;
+            } catch (error) {
+              if (!['P2002', 'P2034', 'FONTE_ALTERADA'].includes(error?.code) || attempt === 2) throw error;
+            }
+          }
+          const nsuValue = BigInt(result.nsu);
           if (nsuValue > maxNSU) maxNSU = nsuValue;
-
-          const tipoDocumento = item.TipoDocumento || item.tipoDocumento || null;
-          const tipoEvento = item.TipoEvento || item.tipoEvento || null;
-          const dataHoraGeracao = item.DataHoraGeracao || item.dataHoraGeracao || null;
-          const chaveAcesso = item.ChaveAcesso || item.chaveAcesso || null;
-          const arquivoXml = item.ArquivoXml || item.arquivoXml || null;
-
-          let xmlRaw = null;
-          let metadata = {};
-          if (arquivoXml) {
-            xmlRaw = decodeXml(arquivoXml);
-            metadata = parseXmlMetadata(xmlRaw);
-          }
-
-          const invoiceStatus = mapInvoiceStatusFromAdn({
-            tipoDocumento,
-            tipoEvento,
-            situacao: metadata?.situacao,
-            statusNormalized: null,
-          });
-
-          const baseData = {
-            clientId: portalClient.id,
-            type: "NFSE",
-            numero: metadata?.numeroNfse || null,
-            serie: null,
-            chaveAcesso: chaveAcesso ? String(chaveAcesso) : null,
-            idNfse: metadata?.numeroNfse || null,
-            idDps: null,
-            competencia: metadata?.competencia || null,
-            issueDate: metadata?.dataEmissao || null,
-            status: invoiceStatus,
-            total: metadata?.valorServicos ?? null,
-            emitenteNome: metadata?.prestadorNome || null,
-            emitenteDoc: metadata?.cnpjPrestador || null,
-            tomadorNome: metadata?.tomadorNome || null,
-            tomadorDoc: metadata?.cnpjTomador || null,
-            xmlRaw,
-            xmlHash: sha256(xmlRaw || ""),
-            lastSyncAt: null,
-          };
-
-          const isEvento = String(tipoDocumento || "").toUpperCase() === "EVENTO";
-          if (isEvento) {
-            if (!baseData.chaveAcesso) {
-              counters.errors += 1;
-              continue;
-            }
-            const existing = await findExistingPortalInvoice({
-              clientId: portalClient.id,
-              data: baseData,
-            });
-            const mergedStatus = mergeStatus(existing?.status, baseData.status);
-            const invResult = await upsertPortalInvoiceSafe({
-              clientId: portalClient.id,
-              data: { ...baseData, status: mergedStatus },
-            });
-            if (invResult.action === "duplicate" || !invResult.invoiceId) {
-              counters.duplicates += 1;
-              continue;
-            }
-
-            await prisma.portalInvoiceEvent.create({
-              data: {
-                clientId: portalClient.id,
-                invoiceId: invResult.invoiceId,
-                type: mergedStatus,
-                date: dataHoraGeracao ? parseDate(dataHoraGeracao) : null,
-                payloadRaw: { tipoDocumento, tipoEvento, nsu: nsuValue.toString() },
-              },
-            });
-
-            counters.processed += 1;
-            counters.updated += 1;
-            continue;
-          }
-
-          // Documento NFSe
-          const existing = await findExistingPortalInvoice({
-            clientId: portalClient.id,
-            data: baseData,
-          });
-          const mergedStatus = mergeStatus(existing?.status, baseData.status);
-          // ⚠ O TERCEIRO CAMINHO DE ENTRADA DE NFS-e, e ele também precisa preencher as colunas
-          // fiscais — senão a coluna volta a envelhecer por aqui, num motor que quase ninguém olha.
-          // Esta rota (`POST /clients/:id/invoices/sync/start`, montada também em `/firm` e
-          // `/client`) grava `PortalInvoice` DIRETO, sem passar por `notas/ingestaoNfse.js`.
-          //
-          // ⚠ Mesmo extrator, mesma regra: nada é reescrito aqui, e a leitura sai do `xmlRaw` que
-          // esta mesma escrita persiste.
-          //
-          // ⚠ **O RAMO DE EVENTO ACIMA NÃO RECEBE ISTO, DE PROPÓSITO.** Lá o `xmlPlain` é o XML do
-          // EVENTO, não o da nota — extrair dele devolveria `NAO_E_NFSE` e ZERARIA as colunas de uma
-          // nota que está correta. Apagar campo fiscal por causa de um cancelamento é exatamente o
-          // "recaptura apaga o que já estava lá" que este projeto já pagou uma vez.
-          const data = {
-            ...baseData,
-            status: mergedStatus,
-            ...camposFiscaisParaPersistir(xmlRaw),
-          };
-          const result = await upsertPortalInvoiceSafe({
-            clientId: portalClient.id,
-            data,
-          });
           counters.processed += 1;
-          if (result.action === "updated") counters.updated += 1;
-          else if (result.action === "created") counters.created += 1;
+          if (result.action === 'created') counters.created += 1;
+          else if (result.action === 'updated') counters.updated += 1;
           else counters.duplicates += 1;
+          documentoEmProcessamento = null;
         }
 
         cursor = maxNSU + BigInt(1);
@@ -563,14 +292,13 @@ export class InvoiceSyncEngine {
         return;
       }
 
-      await prisma.portalSyncState.update({
-        where: { clientId: portalClient.id },
-        data: {
-          state: "ERROR",
-          lastError: err?.code || err?.message || "sync_failed",
-          lockUntil: null,
-        },
-      });
+      if (documentoEmProcessamento) {
+        await registrarDocumentoRecusado(prisma, { ...documentoEmProcessamento,
+          motivo: err?.code || 'SYNC_FAILED' });
+      } else {
+        await prisma.portalSyncState.update({ where: { clientId: portalClient.id },
+          data: { state: 'ERROR', lastError: err?.code || 'SYNC_FAILED', lockUntil: null } });
+      }
       const errorCode = err?.code || "unknown_error";
       const errorMessage = err?.message ? String(err.message) : null;
       await prisma.portalInvoiceSyncJob.update({

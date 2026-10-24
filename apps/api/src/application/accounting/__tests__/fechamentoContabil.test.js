@@ -13,11 +13,27 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { competenciasFechadas, isMonthClosed } from "../fechamentoContabil.js";
+import { competenciasFechadas, isMonthClosed, bloquearFechamentoContabil } from "../fechamentoContabil.js";
 
 const FECHADA = new Date("2026-08-01T12:00:00.000Z");
 
 beforeEach(() => jest.clearAllMocks());
+
+describe('proteção transacional do fechamento e da captura', () => {
+  test('empresa inexistente não permite escrita sem proteção', async () => {
+    const tx = { $executeRaw: jest.fn(async () => 0) };
+    await expect(bloquearFechamentoContabil(tx, 'ausente')).rejects.toMatchObject({ code: 'CLIENT_NOT_FOUND', status: 404 });
+  });
+  test.each(['40001', '40P01'])('conflito SQL %s exige nova transação', async code => {
+    const tx = { $executeRaw: jest.fn(async () => { throw Object.assign(Error('conflito'), { code: 'P2010', meta: { code } }); }) };
+    await expect(bloquearFechamentoContabil(tx, 'empresa')).rejects.toMatchObject({ code: 'P2034', status: 409 });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+  test('indisponibilidade do banco nunca vira passagem livre', async () => {
+    const error = Error('offline');
+    await expect(bloquearFechamentoContabil({ $executeRaw: async () => { throw error; } }, 'empresa')).rejects.toBe(error);
+  });
+});
 
 describe("isMonthClosed", () => {
   it("fechada quando `fechadoContabilEm` existe", async () => {

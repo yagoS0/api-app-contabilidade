@@ -57,6 +57,7 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
   // Q12.C.1: listagem de notas + resumo
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
+  const [datasIndeterminadas, setDatasIndeterminadas] = useState(null);
   const [notasSummary, setNotasSummary] = useState(null);
   // ⚠ SEGUNDO resumo, e ele responde OUTRA pergunta — por isso não dá para reusar o de cima.
   // `notasSummary` é da JANELA ativa (`type` fixo, `papel` livre, porque as caixas Emitidas/
@@ -72,7 +73,7 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
   // `incluirCanceladas`: a listagem esconde canceladas por padrão (não são faturamento), mas
   // precisamos conseguir VER quais foram canceladas pra conferir o cancelamento — senão o
   // contador de canceladas do resumo aponta para notas invisíveis.
-  const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 });
+  const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", incluirCanceladas: "1", dataInicio: "", dataFim: "", situacao: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
   // Íntegra de UMA nota (clique na linha). Estado próprio: a lista é enxuta de propósito, e o
   // detalhe carrega itens + XML, que não cabem — nem devem caber — em toda linha da tabela.
@@ -116,25 +117,21 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
     setErroNotas(null);
     try {
       const f = filtersOverride || notasFilters;
-      // Listagem + summary em paralelo com os mesmos filtros — MENOS `papel`: as caixas
-      // Emitidas/Recebidas SÃO o seletor de papel, então precisam continuar mostrando os dois
-      // valores. Se o summary respeitasse o papel, clicar em "Emitidas" zerava a caixa de
-      // "Recebidas" e não dava mais pra voltar por ela.
-      const summaryArgs = { ano, type: f.type, competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
-      // ⚠ MESMOS filtros de texto/atividade da tabela, e NENHUM `type`: o bloco "Notas recebidas"
-      // conta as DUAS espécies. Se ele ignorasse `search`/`cfop`/`servico`, o número da tela
-      // deixaria de fechar com as linhas no instante em que alguém digitasse na busca — e total
-      // que não fecha com a lista é pior que total nenhum (regra escrita em `resumoDaEmissao`).
-      const recebidasArgs = { ano, papel: "DEST", competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
+      // Cada cartão antecipa exatamente o conjunto aberto pelo seu clique. Datas,
+      // situação, busca e atividade são comuns; Emitidas limpa a espécie e Recebidas
+      // conserva a espécie ativa somente quando já estamos nessa direção.
+      const summaryArgs = { ...f, ano, papel: "EMIT", type: "" };
+      const recebidasArgs = { ...f, ano, papel: "DEST", type: f.papel === 'DEST' ? f.type : '' };
       const [out, summary, recebidas] = await Promise.all([
         api.listNotas(companyId, f),
         api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),
         api.getNotasSummary ? api.getNotasSummary(companyId, recebidasArgs) : Promise.resolve(null),
       ]);
       if (!atual()) return;
-      if (!out || !Array.isArray(out.notas)) throw new Error("Não foi possível confirmar a lista de notas.");
+      if (!out || out.ok === false || !Array.isArray(out.notas) || !Number.isInteger(out.total) || out.total < 0) throw new Error("Não foi possível confirmar a lista de notas.");
       setNotas(out?.notas || []);
       setNotasTotal(out?.total || 0);
+      setDatasIndeterminadas(Number.isInteger(out.datasIndeterminadas) ? out.datasIndeterminadas : null);
       setNotasSummary(summary);
       setNotasRecebidas(recebidas);
       setEmpresaDaLista(companyId);
@@ -405,6 +402,7 @@ export function useNotasFiscais({ api, companyId, companyName, feedback }) {
     adnState: empresaDaCaptura === companyId ? adnState : null, adnSyncing, adnLastResult, syncAdn, clearAdnError,
     // Q12.C.1: listagem de notas
     notas: empresaDaLista === companyId ? notas : [], notasTotal: empresaDaLista === companyId ? notasTotal : 0,
+    datasIndeterminadas: empresaDaLista === companyId ? datasIndeterminadas : null,
     notasSummary: empresaDaLista === companyId ? notasSummary : null, notasRecebidas: empresaDaLista === companyId ? notasRecebidas : null,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas, marcarNotaStatus,

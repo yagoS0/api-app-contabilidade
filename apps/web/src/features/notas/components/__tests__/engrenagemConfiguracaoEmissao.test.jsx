@@ -26,7 +26,7 @@ function painelDeNotas() {
     adnState: null, adnSyncing: false, syncAdn: jest.fn(), clearAdnError: jest.fn(),
     companyId: "empresa-1",
     notas: [], notasTotal: 0,
-    notasFilters: { type: "NFSE", papel: "EMIT", competencia: "2026-08", offset: 0, limit: 100 },
+    notasFilters: { type: "", papel: "EMIT", competencia: "2026-08", offset: 0, limit: 100 },
     setNotasFilters: jest.fn(),
     notasSummary: null, loadingNotas: false, loadNotas: jest.fn(),
     importing: false, importNotas: jest.fn(), marcarNotaStatus: jest.fn(),
@@ -121,7 +121,7 @@ describe("ela pertence à janela de NFS-e", () => {
     // (nenhuma tem IE). O rótulo mudou junto: "venda" → "compra", porque 47 de 47 NF-e da base
     // são `papel: "DEST"`. Ver o cabeçalho de `renderNotasFiscaisTab.jsx`.
     abrirAba();
-    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra/ }));
+    fireEvent.change(screen.getByLabelText("Tipo para buscar ou importar"), { target: { value: "NFE" } });
     expect(screen.queryByTestId("engrenagem-emissao-nfse")).not.toBeInTheDocument();
   });
 });

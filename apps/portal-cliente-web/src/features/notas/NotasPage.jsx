@@ -1,3 +1,4 @@
+import { dataEmissaoDaNota } from "./lib/dataEmissaoDaNota";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../components/ui";
@@ -513,6 +514,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                 {oferta.motivo ? <span className="meta"> {oferta.motivo}</span> : null}
               </p>
             ) : null}
+            {resposta?.summary?.datasIndeterminadas > 0 ? <p role="status">{resposta.summary.datasIndeterminadas} nota(s) com data de emissão a verificar.</p> : null}
             <table className="table">
               <thead>
                 <tr>
@@ -582,7 +584,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       </td>
                       <td>{texto(nota.numero)}</td>
                       <td>{texto(nota.type)}</td>
-                      <td>{fmtDateBr(nota.issueDate)}</td>
+                      <td>{dataEmissaoDaNota(nota)}</td>
                       <td>{fmtCompetencia(nota.competencia)}</td>
                       <td>
                         <span className="truncar" title={texto(nota.tomador?.nome)}>

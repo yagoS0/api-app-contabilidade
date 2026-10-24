@@ -88,13 +88,22 @@ beforeEach(() => {
   jest.clearAllMocks();
   cenario.emitidas = [];
   cenario.projecao = [];
-  prisma.serviceInvoice.findMany.mockImplementation(async () => cenario.emitidas);
-  prisma.portalInvoice.findMany.mockImplementation(async () => cenario.projecao);
+  const selectRows = (rows, select) => rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !select || select[key])));
+  prisma.serviceInvoice.findMany.mockImplementation(async ({ select }) => selectRows(cenario.emitidas, select));
+  prisma.portalInvoice.findMany.mockImplementation(async ({ select }) => selectRows(cenario.projecao, select));
 });
 
 async function rodar() {
   return lerEmitidasNaoConfirmadas({ legacyCompanyId: LEGACY, portalClientId: PORTAL });
 }
+
+test('o select real transporta o envelope sem inventar emissão por criação', async () => {
+  cenario.emitidas = [emissao({ xml: '<DPS/>', campoNaoSelecionado: 'não deve viajar' })];
+  const rows = await rodar();
+  expect(prisma.serviceInvoice.findMany.mock.calls[0][0].select.xml).toBe(true);
+  expect(rows[0].xml).toBe('<DPS/>');
+  expect(rows[0]).not.toHaveProperty('campoNaoSelecionado');
+});
 
 describe("⚠⚠ prova 1 — `chaveAcesso`", () => {
   it("mesma chave dos dois lados ⇒ é a MESMA nota (não aparece duas vezes)", async () => {

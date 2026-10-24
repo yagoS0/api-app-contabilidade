@@ -1,3 +1,6 @@
+import { camposDataEmissao, evidenciaDaNota } from "../../application/notas/dataEmissaoNota.js";
+import { gzipSync } from "node:zlib";
+import { xmlNfseData, CHAVE_NFSE } from "../../application/notas/__fixtures__/dataEmissaoNotas.js";
 // A LISTA DO CLIENTE JUNTANDO AS DUAS FONTES — `GET /client/companies/:id/invoices`.
 //
 // > Pedido do dono (19/08/2026): *"ao emitir uma nota, ela deve aparecer para o cliente, e depois
@@ -59,7 +62,7 @@ describe('detalhe para modelo preserva a origem do tomador', () => {
     prisma.portalInvoice.findFirst.mockResolvedValue({ ...pi(1), xmlRaw: xml });
     const r = await request(montarApp()).get(`/clients/${CLIENT}/invoices/pi-1`);
     expect(r.status).toBe(200);
-    expect(prisma.portalInvoice.findFirst).toHaveBeenCalledWith({ where: { id: 'pi-1', clientId: CLIENT } });
+    expect(prisma.portalInvoice.findFirst).toHaveBeenCalledWith({ where: { id: 'pi-1', clientId: CLIENT }, include: { client: { select: { cnpj: true } } } });
     expect(r.body.tomador.endereco).toMatchObject({ xLgr: 'Rua Antiga', nro: '007', CEP: '01234000' });
     expect(r.body.descricao).toBe('SERVICO DA NOTA 1');
   });
@@ -81,6 +84,7 @@ describe('detalhe para modelo preserva a origem do tomador', () => {
 
 /** Uma linha do ADN. `updatedAt` é a chave de ordenação padrão. */
 function pi(n) {
+  const chave = CHAVE_NFSE.slice(0, -5) + String(1000 + n).padStart(5, "0");
   const dia = String(n).padStart(2, "0");
   return {
     id: `pi-${n}`, type: "NFSE", numero: `${1000 + n}`,
@@ -90,16 +94,20 @@ function pi(n) {
     emitenteNome: "EMPRESA", emitenteDoc: CNPJ,
     tomadorNome: `TOMADOR ${n}`, tomadorDoc: "11222333000181",
     updatedAt: new Date(`2026-08-${dia}T00:00:00Z`),
-    xmlRaw: "<xml/>", pdfUrl: null,
+    chaveAcesso: chave,
+    xmlRaw: xmlNfseData({ chave, cnpj: CNPJ, data: `2026-08-${dia}T00:00:00Z` }), pdfUrl: null,
+    ...camposDataEmissao(evidenciaDaNota({ chaveAcesso: chave, emitenteDoc: CNPJ, xmlRaw: xmlNfseData({ chave, cnpj: CNPJ, data: `2026-08-${dia}T00:00:00Z` }) })),
     xDescServ: `SERVICO DA NOTA ${n}`,
   };
 }
 
 /** Uma linha NOSSA (`ServiceInvoice`), ainda não confirmada. */
 function si(n, over = {}) {
+  const chave = CHAVE_NFSE.slice(0, -5) + String(2000 + n).padStart(5, "0");
   const dia = String(n).padStart(2, "0");
   return {
-    id: `si-${n}`, chaveAcesso: null, numeroNfse: null,
+    id: `si-${n}`, chaveAcesso: chave, numeroNfse: null,
+    xml: xmlNfseData({ chave, cnpj: CNPJ, data: `2026-08-${dia}T00:00:00Z` }),
     rpsSerie: "00001", rpsNumero: String(n),
     tomadorDoc: "11222333000181", tomadorNome: `TOMADOR NOSSO ${n}`,
     valorServicos: 500,
@@ -146,8 +154,9 @@ beforeEach(() => {
   // aparecer como substituta de si mesma.
   prisma.portalInvoice.findMany.mockImplementation(async ({ orderBy, skip = 0, take = 25 }) => {
     if (!orderBy) return cenario.relacionadas;
-    const chave = Object.keys(orderBy)[0];
-    const ordem = orderBy[chave];
+    const clause = Array.isArray(orderBy) ? orderBy[0] : orderBy;
+    const chave = Object.keys(clause)[0];
+    const ordem = clause[chave]?.sort || clause[chave];
     const lista = [...cenario.doAdn].sort((a, b) => {
       const cmp = new Date(a[chave]) - new Date(b[chave]);
       return ordem === "asc" ? cmp : -cmp;
@@ -338,10 +347,13 @@ describe("⚠ o MESMO recorte das duas metades (o gêmeo de `buildWhereFilters`)
     expect(r.body.data).toHaveLength(0);
   });
 
-  it("intervalo `from`/`to` usa a MESMA data que sai em `issueDate`", async () => {
-    cenario.nossas = [si(9)];
+  it.each(['plain', 'base64', 'gzip'])('intervalo usa data documental, envelope %s e criação em outro mês', async envelope => {
+    const xml = xmlNfseData({ cnpj: CNPJ, data: '2026-08-09T23:00:00-03:00' });
+    const encoded = envelope === 'plain' ? xml : envelope === 'base64' ? Buffer.from(xml).toString('base64') : gzipSync(xml).toString('base64');
+    cenario.nossas = [si(9, { chaveAcesso: CHAVE_NFSE, xml: encoded, createdAt: new Date('2026-10-01T00:00:00Z') })];
     const dentro = await listar("?from=2026-08-01&to=2026-08-31");
     expect(dentro.body.data).toHaveLength(1);
+    expect(dentro.body.data[0].dataEmissao.civil).toBe("2026-08-09");
     const fora = await listar("?from=2026-09-01&to=2026-09-30");
     expect(fora.body.data).toHaveLength(0);
   });
@@ -372,6 +384,7 @@ describe("⚠ A FLAG É OPT-IN — `/firm` e o legado não mudam de comportament
     expect(lerEmitidasNaoConfirmadas).toHaveBeenCalledWith({
       legacyCompanyId: LEGACY,
       portalClientId: CLIENT,
+      limite: 20001,
     });
   });
 });
@@ -553,4 +566,15 @@ describe("⚠⚠ a capturada que nós cancelamos diz CANCELAMENTO_ENVIADO", () =
     const r = await listar();
     expect(r.body.data[0].status).toBe("EMITIDA");
   });
+});
+
+test.each([null, '<DPS><infDPS><dhEmi>2026-08-09T00:00:00Z</dhEmi></infDPS></DPS>', 'ilegivel'])('origem indeterminada não desaparece sem filtro: %s', async xml => {
+  cenario.nossas = [si(9, { xml })];
+  const all = await listar();
+  expect(all.body.data).toHaveLength(1);
+  expect(all.body.data[0].dataEmissao.civil).toBeNull();
+  expect(all.body.summary.datasIndeterminadas).toBe(1);
+  const filtered = await listar('?from=2026-08-01&to=2026-08-31');
+  expect(filtered.body.data).toHaveLength(0);
+  expect(filtered.body.summary.datasIndeterminadas).toBe(1);
 });

@@ -1,4 +1,5 @@
 import { Button } from "../../../components/ui/Button";
+import '../notas.css';
 
 import { PANEL, fmtDate, fmtMoney } from "./notasStyles.shared.js";
 import { FRASE_MOTIVO_PENDENCIA } from "../lib/auditoriaTela";
@@ -34,7 +35,7 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
   const comAcoes = Boolean(onReabrir || onResolver || onAbrirNota);
 
   return (
-    <section style={{
+    <section className="notas-pendencias" aria-busy={Boolean(saving)} style={{
       background: "var(--state-warn-surface)",
       border: "1px solid var(--state-warn)",
       borderRadius: 8, padding: 16, marginBottom: 16, minWidth: 0,
@@ -47,14 +48,14 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver, onAb
       <div style={{ color: PANEL.muted, fontSize: "0.8rem", marginBottom: 12 }}>
         {rodape || "Nota que chegou depois de a competência ter sido fechada."}
       </div>
-      <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+      <div className="notas-pendencias__scroll" role="region" aria-label={titulo || 'Pendências pós-fechamento'} tabIndex={0}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
         <thead>
           <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
             <th style={{ padding: 6 }}>Competência</th>
             <th style={{ padding: 6 }}>Motivo</th>
             <th style={{ padding: 6 }}>Detectada em</th>
-            {comAcoes ? <th style={{ padding: 6 }}></th> : null}
+            {comAcoes ? <th style={{ padding: 6 }}>Ações</th> : null}
           </tr>
         </thead>
         <tbody>

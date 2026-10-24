@@ -106,3 +106,23 @@ test("captura parcial conserva contagem e alerta após recarregar lista", async 
  expect(result.current.erroCaptura).not.toMatch(/bad record mac/);
  expect(feedback.notifySuccess).not.toHaveBeenCalled();expect(api.syncAdn).toHaveBeenCalledTimes(1);
 });
+
+test('filtros completos chegam à lista/resumo; cartão recebido respeita espécie ativa', async () => {
+  const api = { ...apiBase(), getNotasSummary: jest.fn(async () => ({ lista: { EMIT: { count: 0 }, DEST: { count: 0 } } })) };
+  const { result } = renderHook(() => useNotasFiscais({ api, companyId: 'A' }));
+  await waitFor(() => expect(result.current.loadingNotas).toBe(false));
+  const filters = { ...result.current.notasFilters, papel: 'DEST', type: 'NFE', dataInicio: '2026-01-01', dataFim: '2026-01-20', situacao: 'cancelada', search: '123', offset: 100 };
+  await act(async () => result.current.setNotasFilters(filters));
+  await waitFor(() => expect(api.listNotas).toHaveBeenLastCalledWith('A', filters));
+  expect(api.getNotasSummary).toHaveBeenCalledWith('A', expect.objectContaining({ ...filters, type: 'NFE', papel: 'DEST' }));
+  expect(api.getNotasSummary).toHaveBeenCalledWith('A', expect.objectContaining({ ...filters, type: '', papel: 'EMIT' }));
+});
+test('resposta antiga não restaura lista, total ou resumo após mudar filtros', async () => {
+  const old = pendente();
+  const api = { ...apiBase(), listNotas: jest.fn((_id, f) => f.search === 'novo' ? Promise.resolve({ notas: [{ id: 'nova' }], total: 150 }) : old.promise) };
+  const { result } = renderHook(() => useNotasFiscais({ api, companyId: 'A' }));
+  await act(async () => result.current.setNotasFilters({ ...result.current.notasFilters, search: 'novo' }));
+  await waitFor(() => expect(result.current.notasTotal).toBe(150));
+  await act(async () => old.resolve({ notas: [{ id: 'antiga' }], total: 1 }));
+  expect(result.current.notas).toEqual([{ id: 'nova' }]); expect(result.current.notasTotal).toBe(150);
+});

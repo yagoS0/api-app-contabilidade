@@ -1339,7 +1339,7 @@ const MOCK_XML_NFSE = [
   '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">',
   "  <infNFSe>",
   "    <nNFSe>__NUMERO__</nNFSe>",
-  "    <dhProc>2026-06-__DIA__T09:14:22-03:00</dhProc>",
+  "    <dhProc>__DATA__T09:14:22-03:00</dhProc>",
   "    <emit><CNPJ>00000000000191</CNPJ><xNome>EMPRESA EXEMPLO MOCK LTDA</xNome></emit>",
   "    <valores><vServ>__VALOR__</vServ></valores>",
   "    <serv><cTribNac>080201</cTribNac><xDescServ>__DESCRICAO__</xDescServ></serv>",
@@ -1350,7 +1350,7 @@ const MOCK_XML_NFSE = [
 function mockXmlDaNota(n) {
   return MOCK_XML_NFSE
     .replace("__NUMERO__", n.numero || "")
-    .replace("__DIA__", String(new Date(n.issueDate).getUTCDate()).padStart(2, "0"))
+    .replace("__DATA__", String(n.issueDate).slice(0, 10))
     .replace("__VALOR__", n.total || "0.00")
     .replace("__DESCRICAO__", (n.__descricao || "").slice(0, 60));
 }
@@ -1581,31 +1581,75 @@ const mockNotas = (() => {
 
 // Aplica os MESMOS filtros da rota real — sem isso o mock "pagina" sobre um universo diferente do
 // que o resumo conta, e as duas caixas discordariam offline como já discordaram em produção.
-function mockFiltrarNotas(filters = {}) {
+function mockFiltrarNotas(filters = {}, companyId) {
   const { papel, type, search, incluirCanceladas, competencia } = filters;
   const s = String(search || "").trim().toLowerCase();
-  return mockNotas.filter((n) => {
+  const invalid = message => { throw Object.assign(new Error(message), { status: 400, code: 'filtro_invalido' }); };
+  for (const key of ['dataInicio', 'dataFim']) {
+    if (!filters[key]) continue;
+    const value = String(filters[key]);
+    const date = new Date(value + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) invalid('Data de emissão inválida.');
+  }
+  if (filters.dataInicio && filters.dataFim && filters.dataInicio > filters.dataFim) invalid('A data inicial deve ser anterior à final.');
+  if (filters.situacao && !['autorizada', 'cancelada', 'rejeitada'].includes(filters.situacao)) invalid('Situação inválida.');
+  return notasMockDaEmpresa(companyId).filter((n) => {
     // ⚠ A competência FILTRA de verdade. Ignorá-la faria a mesma lista aparecer em todo mês, e o
     // seletor do header pareceria funcionar sem funcionar — o mock tem de errar onde o real erra.
     if (competencia && /^\d{4}-\d{2}$/.test(competencia) && !String(n.competencia).startsWith(competencia)) return false;
     if (papel && n.papel !== String(papel).toUpperCase()) return false;
     if (type && n.type !== String(type).toUpperCase()) return false;
-    if (String(incluirCanceladas || "") !== "1" && n.statusEfetivo === "cancelada") return false;
+    if ((filters.dataInicio || filters.dataFim) && !mockDataEmissao(n).civil) return false;
+    if (filters.dataInicio && mockDataEmissao(n).civil < filters.dataInicio) return false;
+    if (filters.dataFim && mockDataEmissao(n).civil > filters.dataFim) return false;
+    if (filters.situacao && n.statusEfetivo !== filters.situacao) return false;
+    if (!filters.situacao && String(incluirCanceladas || "") !== "1" && n.statusEfetivo === "cancelada") return false;
     if (s) {
-      const alvo = [n.chaveAcesso, n.numero, n.emitenteNome, n.emitenteDoc, n.tomadorNome]
+      const alvo = [n.chaveAcesso, n.numero, n.emitenteNome, n.tomadorNome]
         .filter(Boolean).join(" ").toLowerCase();
-      if (!alvo.includes(s)) return false;
+      const digits = s.replace(/\D/g, '');
+      if (!alvo.includes(s) && !(digits && [n.emitenteDoc, n.tomadorDoc].some(doc => String(doc || '').replace(/\D/g, '').includes(digits)))) return false;
     }
+    if (filters.cfop && !String(n.__cfop || '').includes(String(filters.cfop))) return false;
+    if (filters.servico && ![n.__codigoServico, n.__descricao].some(value => String(value || '').toLowerCase().includes(String(filters.servico).trim().toLowerCase()))) return false;
     return true;
   });
 }
 
+// Synthetic fixtures have independent identities per company. An ID obtained in A
+// can never open/download a note in B, even though both use the same demo scenarios.
+const mockNotasPorEmpresa = new Map();
+function notasMockDaEmpresa(companyId) {
+  if (!companyId) return [];
+  if (!mockNotasPorEmpresa.has(companyId)) {
+    const prefix = encodeURIComponent(companyId) + '::';
+    mockNotasPorEmpresa.set(companyId, mockNotas.map(n => ({ ...n, id: prefix + n.id,
+      ciclo: { ...n.ciclo,
+        substitui: n.ciclo?.substitui ? { ...n.ciclo.substitui, notaId: n.ciclo.substitui.notaId ? prefix + n.ciclo.substitui.notaId : null } : null,
+        substituidaPor: n.ciclo?.substituidaPor ? { ...n.ciclo.substituidaPor, notaId: n.ciclo.substituidaPor.notaId ? prefix + n.ciclo.substituidaPor.notaId : null } : null,
+      } })));
+  }
+  return mockNotasPorEmpresa.get(companyId);
+}
+function notaMockDaEmpresa(companyId, id) {
+  // Old synthetic audit references predate scoped IDs; resolve them within this
+  // company's own fixture. Scoped IDs from another company are always refused.
+  return notasMockDaEmpresa(companyId).find(n => n.id === id || (!String(id).includes('::') && n.id === encodeURIComponent(companyId) + '::' + id));
+}
+
 // A listagem devolve só as colunas da rota real — os campos `__*` e os da íntegra ficam de fora.
+function mockDataEmissao(n) {
+  if (!n.__temXml || n.type !== 'NFSE') return { civil: null, instante: null, evidencia: null, motivo: 'LEGADO_SEM_ORIGEM' };
+  // Exact path from the synthetic national XML. No fallback from legacy DateTime.
+  const original = mockXmlDaNota(n).match(/<dhProc>([^<]+)<\/dhProc>/)?.[1];
+  return { civil: original?.slice(0, 10) || null, instante: original ? new Date(original).toISOString() : null, motivo: original ? null : 'DATA_AUSENTE',
+    evidencia: { origem: 'NFSE_NACIONAL', caminho: 'NFSe/infNFSe/dhProc', original, precisao: 'INSTANTE', offset: '-03:00', versaoDocumento: '1.00', versaoExtrator: 1, sintetica: true } };
+}
 function mockNotaDeLista(n) {
   return {
     id: n.id, type: n.type, papel: n.papel, statusEfetivo: n.statusEfetivo, status: n.status,
     chaveAcesso: n.chaveAcesso, numero: n.numero, serie: n.serie,
-    competencia: n.competencia, issueDate: n.issueDate, total: n.total,
+    competencia: n.competencia, issueDate: n.issueDate, dataEmissao: mockDataEmissao(n), total: n.total,
     emitenteNome: n.emitenteNome, emitenteDoc: n.emitenteDoc,
     tomadorNome: n.tomadorNome, tomadorDoc: n.tomadorDoc,
     competenciaPosFechamento: n.competenciaPosFechamento,
@@ -5399,6 +5443,11 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay();
       return mockCarregarRotinas(mockCompanies);
     },
+    async getOperationConsultas(competencia) {
+      await delay(60);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw Object.assign(new Error('Competência inválida.'), { status: 422 });
+      return { ok: true, items: [], total: 0, competencia };
+    },
     async getOperationRoutines() {
       await delay();
       const data = mockCarregarRotinas(mockCompanies);
@@ -8402,9 +8451,20 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     // "mostrando 1–100 de 247" eram inalcançáveis offline — e truncar em silêncio foi exatamente
     // o defeito relatado. `total` é o do UNIVERSO filtrado, nunca o tamanho da página: é essa
     // diferença que a tela precisa mostrar.
+    async marcarNotaStatus(companyId, notaId, statusEfetivo) {
+      await delay(60);
+      const nota = notaMockDaEmpresa(companyId, notaId);
+      if (!nota) throw Object.assign(new Error('Nota não encontrada nesta empresa.'), { status: 404, code: 'nota_nao_encontrada' });
+      if (nota.papel !== 'EMIT') throw Object.assign(new Error('O ajuste local está disponível somente para notas emitidas.'), { status: 409 });
+      if (!['autorizada', 'cancelada'].includes(statusEfetivo)) throw Object.assign(new Error('Situação inválida.'), { status: 400 });
+      nota.statusEfetivo = statusEfetivo;
+      nota.status = statusEfetivo === 'cancelada' ? 'CANCELADA' : 'EMITIDA';
+      nota.ciclo = { ...nota.ciclo, situacao: statusEfetivo, eventoRegistrado: false };
+      return { ok: true, nota: { id: nota.id, statusEfetivo, status: nota.status } };
+    },
     async listNotas(_companyId, filters = {}) {
       await delay(60);
-      const universo = mockFiltrarNotas(filters);
+      const universo = mockFiltrarNotas(filters, _companyId);
       const limit = Math.min(Number(filters.limit) || 100, 500);
       const offset = Math.max(Number(filters.offset) || 0, 0);
       // Mesma ordenação da rota real: emissão desc.
@@ -8412,7 +8472,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         (a, b) => new Date(b.issueDate) - new Date(a.issueDate) || String(a.id).localeCompare(String(b.id)),
       );
       return {
-        ok: true, total: universo.length, limit, offset,
+        ok: true, total: universo.length, limit, offset, datasIndeterminadas: mockFiltrarNotas({ ...filters, dataInicio: "", dataFim: "" }, _companyId).filter(n => !mockDataEmissao(n).civil).length,
         notas: ordenadas.slice(offset, offset + limit).map(mockNotaDeLista),
       };
     },
@@ -8420,7 +8480,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     // NF-e sem XML e sem nenhum item, nota sem chave identificada só pelo `idNfse`.
     async getNota(_companyId, notaId) {
       await delay(60);
-      const n = mockNotas.find((x) => x.id === notaId);
+      const n = notaMockDaEmpresa(_companyId, notaId);
       if (!n) {
         const err = new Error("Nota não encontrada nesta empresa.");
         err.code = "nota_nao_encontrada";
@@ -8470,7 +8530,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       const { zipDeExemplo } = await import("./zipDeExemplo");
       const arquivos = [], falhas = [];
       for (const id of [...new Set(notaIds)]) {
-        const n = mockNotas.find(n => n.id === id);
+        const n = notaMockDaEmpresa(_companyId, id);
         if (!n?.__temXml || (formato === "PDF" && !n.chaveAcesso)) { falhas.push(`Nota ${n?.numero || id}: XML completo indisponível.`); continue; }
         const xml = mockXmlDaNota(n);
         const pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
@@ -8483,7 +8543,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     },
     async fetchDanfseBlob(_companyId, notaId) {
       await delay(120);
-      const n = mockNotas.find((x) => x.id === notaId);
+      const n = notaMockDaEmpresa(_companyId, notaId);
       if (!n) {
         const err = new Error("Nota não encontrada nesta empresa.");
         err.code = "nota_nao_encontrada";
@@ -8513,6 +8573,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);
+      if (typeof filtros === 'number') filtros = { ano: filtros };
       // ⚠ Sai do MESMO conjunto que a tabela pagina. Antes eram números fixos (14 notas) — com a
       // tabela mostrando 247, as caixas do resumo e o rodapé se contradiziam dentro da mesma tela,
       // e offline não dava pra distinguir "o resumo está errado" de "o mock é grosseiro".
@@ -8523,7 +8584,16 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       // aqui fazia o mock devolver EMIT+DEST para uma pergunta que só pediu DEST — offline, o
       // bloco mostraria número maior que a lista, que é exatamente o defeito que ele existe para
       // não ter. (Quarta vez que um ramo inalcançável/infiel no mock morde este projeto.)
-      const universo = mockFiltrarNotas({ ...filtros, papel: filtros.papel || null, incluirCanceladas: "1" });
+      const annual = !['competencia', 'papel', 'type', 'search', 'cfop', 'servico', 'dataInicio', 'dataFim', 'situacao', 'incluirCanceladas'].some(key => filtros[key]);
+      const inYear = n => !annual || String(n.competencia || '').startsWith(String(filtros.ano || new Date().getUTCFullYear()));
+      const universo = mockFiltrarNotas({ ...filtros, papel: filtros.papel || null, incluirCanceladas: "1" }, _companyId).filter(inYear);
+      const lista = { EMIT: { count: 0, valor: 0, valorCompleto: true }, DEST: { count: 0, valor: 0, valorCompleto: true }, OUTROS: { count: 0, valor: 0, valorCompleto: true } };
+      for (const n of mockFiltrarNotas(filtros, _companyId).filter(inYear)) {
+        const bucket = lista[n.papel] || lista.OUTROS;
+        bucket.count++;
+        if (n.total == null || !Number.isFinite(Number(n.total))) bucket.valorCompleto = false;
+        else bucket.valor += Number(n.total);
+      }
       let totalNotas = 0, totalEmitido = 0, totalRecebido = 0, countNfe = 0, countNfse = 0, countCanceladas = 0;
       for (const n of universo) {
         if (n.statusEfetivo === "cancelada") { countCanceladas++; continue; }
@@ -8535,8 +8605,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       return {
         ok: true,
         ano: filtros.ano || new Date().getUTCFullYear(),
-        filtersApplied: { papel: filtros.papel || null, type: filtros.type || null, competencia: filtros.competencia || null },
-        totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
+        filtersApplied: { papel: filtros.papel || null, type: filtros.type || null, competencia: filtros.competencia || null, search: filtros.search || null, cfop: filtros.cfop || null, servico: filtros.servico || null,
+          dataInicio: filtros.dataInicio || null, dataFim: filtros.dataFim || null, situacao: filtros.situacao || null, incluirCanceladas: String(filtros.incluirCanceladas || '') === '1' },
+        lista, datasIndeterminadas: mockFiltrarNotas({ ...filtros, dataInicio: "", dataFim: "" }, _companyId).filter(n => !mockDataEmissao(n).civil).length, totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
         byMonth: [],
       };
     },

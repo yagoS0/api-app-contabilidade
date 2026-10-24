@@ -16,7 +16,8 @@
 
 import { useState } from "react";
 
-import { PANEL, fmtMoney, fmtDate } from "./notasStyles.shared.js";
+import { formatarDataEmissao } from "../lib/dataEmissaoNota";
+import { PANEL, fmtMoney } from "./notasStyles.shared.js";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota, temHistoria } from "../lib/cicloNotaTela";
@@ -26,11 +27,6 @@ import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "../lib/da
 const TIPO_LABEL = { NFSE: "Nota de serviço (NFS-e)", NFE: "Nota de venda (NF-e)" };
 const PAPEL_LABEL = { EMIT: "Emitida pela empresa", DEST: "Recebida pela empresa" };
 
-// Emissão é uma data civil do documento. Meia-noite UTC não deve virar o dia anterior no Brasil.
-function dataCivilDaNota(valor) {
-  const partes = String(valor || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
-  return partes ? `${partes[3]}/${partes[2]}/${partes[1]}` : fmtDate(valor);
-}
 
 // A frase única de ausência. Uma só, para não virar quatro sinônimos pela tela.
 function SemDado({ children = "não temos este dado" }) {
@@ -618,7 +614,9 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
             <Secao titulo="Valores e datas">
               <div style={GRADE}>
                 <Campo rotulo="Valor total" valor={nota.total == null ? null : fmtMoney(nota.total)} mono />
-                <Campo rotulo="Data de emissão" valor={nota.issueDate ? dataCivilDaNota(nota.issueDate) : null} />
+                <Campo rotulo="Data de emissão" valor={formatarDataEmissao(nota)} />
+                <Campo rotulo="Origem da data" valor={nota.dataEmissao?.evidencia?.caminho || "Origem não comprovada"} />
+                <Campo rotulo="Precisão da data" valor={nota.dataEmissao?.evidencia?.precisao || nota.dataEmissao?.motivo || "A verificar"} />
                 <Campo rotulo="Competência" valor={fmtCompetencia(nota.competencia)} />
               </div>
               {!nota.competencia && <p style={{ color: PANEL.muted, fontSize: "0.82rem" }}>Competência não informada: confira o XML e o documento de origem. Se necessário, corrija a informação na origem e reimporte o XML. A data de emissão não será usada automaticamente como competência.</p>}
@@ -679,6 +677,9 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
               aviso="Quando esta nota entrou na nossa base — não é a data da nota, é a data em que a capturamos."
             >
               <div style={GRADE}>
+                <Campo rotulo="Data legada (sem comprovação de origem)" valor={String(nota.issueDate || "—")} />
+                <Campo rotulo="Valor original da data" valor={nota.dataEmissao?.evidencia?.original} />
+                <Campo rotulo="Hash da evidência de data" valor={nota.dataEmissao?.evidencia?.hash} mono quebra />
                 <Campo rotulo="Registrada em" valor={fmtDataHora(nota.createdAt)} />
                 <Campo rotulo="Atualizada em" valor={fmtDataHora(nota.updatedAt)} />
                 <Campo rotulo="Última sincronização" valor={fmtDataHora(nota.lastSyncAt)} />

@@ -44,6 +44,7 @@ export function resolveNode(node, presente, vazio, { semFaturamento = false, fat
     return {
       ...node, ok: true, state,
       guideId: presente.guideId,
+      paymentStatus: presente.paymentStatus || null,
       canalEnvio: presente.canalEnvio,
       canaisEnviados: presente.canaisEnviados || [],
       envioStatus: presente.envioStatus,

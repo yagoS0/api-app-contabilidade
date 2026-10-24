@@ -1283,6 +1283,21 @@ function criarEstado() {
     ],
   ]);
 
+  // Explicit synthetic document source; never derive emission from issueDate/reservation.
+  for (const [index, nota] of notas.entries()) {
+    const civil = `${nota.competencia}-15`;
+    const known = nota.hasXml && /^\d{4}-\d{2}$/.test(nota.competencia || '');
+    const key = String(index + 1).padStart(nota.type === 'NFE' ? 44 : 50, '0');
+    nota.chaveAcesso = key;
+    const emitenteDoc = String(nota.emitente?.cnpj || "").replace(/\D/g, "");
+    const original = `${civil}T00:00:00Z`;
+    nota._xmlData = known ? nota.type === 'NFE'
+      ? `<NFe><infNFe Id="NFe${key}" versao="4.00"><ide><dhEmi>${original}</dhEmi></ide><emit><CNPJ>${emitenteDoc}</CNPJ></emit></infNFe></NFe>`
+      : `<NFSe versao="1.00"><infNFSe Id="NFS${key}"><dhProc>${original}</dhProc><emit><CNPJ>${emitenteDoc}</CNPJ></emit></infNFSe></NFSe>` : null;
+    nota.dataEmissao = { civil: known ? civil : null, instante: known ? original : null,
+      motivo: known ? null : 'XML_AUSENTE', evidencia: known ? { origem: nota.type === 'NFE' ? 'NFE_COMPLETA' : 'NFSE_NACIONAL',
+        identidade: key, identidadeConferida: true, versaoExtrator: 2, caminho: nota.type === 'NFE' ? 'NFe/infNFe/ide/dhEmi' : 'NFSe/infNFSe/dhProc', original, precisao: 'INSTANTE', offset: 'Z' } : null };
+  }
   return {
     empresas,
     usuarios,
@@ -1693,13 +1708,13 @@ export function createMockApi() {
       if (!nota) throw new ApiError(404, "not_found", "Nota não encontrada.");
       return JSON.parse(JSON.stringify(nota));
     },
-    async getInvoices(companyId, { competencia, direcao = "emitidas", page = 1, limit = 25 } = {}) {
+    async getInvoices(companyId, { competencia, direcao = "emitidas", page = 1, limit = 25, from, to, status, type, search, sort, order = "desc", incluirCanceladas = false } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
       const pageNum = Math.max(Number(page) || 1, 1);
 
-      const filtradas = estado.notas
+      const recorte = estado.notas
         .filter((n) => n.clientId === id)
         // ⚠⚠ O FILTRO DE DIREÇÃO PASSOU A EXISTIR AQUI (20/08/2026). O comentário que estava nesta
         // linha dizia *"no mock toda nota é emitida pela própria empresa"* — e isso deixou de ser
@@ -1724,8 +1739,17 @@ export function createMockApi() {
         })
         .filter((n) => (competencia ? n.competencia === competencia : true))
         // O backend esconde canceladas por padrão (e elas não somam).
-        .filter((n) => n._statusEfetivo !== "cancelada")
-        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+        .filter((n) => incluirCanceladas || n._statusEfetivo !== "cancelada")
+        .filter(n => (!type || n.type === type) && (!status || n.status === status))
+        .filter(n => !search || [n.numero, n.emitente?.nome, n.emitente?.cnpj, n.tomador?.nome, n.tomador?.cnpjCpf].some(v => String(v || '').toLowerCase().includes(String(search).toLowerCase())));
+      const datasIndeterminadas = recorte.filter(n => !n.dataEmissao?.civil).length;
+      const filtradas = recorte.filter(n => !(from || to) || (n.dataEmissao?.civil && (!from || n.dataEmissao.civil >= from) && (!to || n.dataEmissao.civil <= to)))
+        .sort((a, b) => {
+          const l = sort === 'issueDate' ? a.dataEmissao?.civil : a.updatedAt;
+          const r = sort === 'issueDate' ? b.dataEmissao?.civil : b.updatedAt;
+          if (!l !== !r) return l ? -1 : 1;
+          return (order === 'asc' ? 1 : -1) * String(l || '').localeCompare(String(r || '')) || a.invoiceId.localeCompare(b.invoiceId);
+        });
 
       const total = filtradas.length;
       const inicio = (pageNum - 1) * take;
@@ -1734,12 +1758,13 @@ export function createMockApi() {
       const pageAmount = pagina.reduce((s, n) => s + n.total, 0);
 
       return {
-        data: pagina.map(({ clientId, _statusEfetivo, _semQrCode, ...rest }) => rest),
+        data: pagina.map(({ clientId, _statusEfetivo, _semQrCode, _xmlData, ...rest }) => rest),
         page: pageNum,
         limit: take,
         total,
         summary: {
           totalInvoices: total,
+          datasIndeterminadas,
           totalAmount: Number(totalAmount.toFixed(2)),
           pageAmount: Number(pageAmount.toFixed(2)),
         },
