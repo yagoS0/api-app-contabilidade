@@ -12,6 +12,7 @@
   ],
   "risk": "high",
   "humanDecisions": [
+    "24/10/2026: usuário autorizou aplicar exatamente os seis scripts do candidato ci-compat e revalidar; integração/publicação permanecem condicionadas ao CI e revisões aprovados.",
     "Implementação, testes e revisões locais autorizados; sem publicação ou atos reais.",
     "Usuário autorizou global3 limitada: três arquivos de interpretação/seleção de teste; aplicados por hashes exatos.",
     "Usuário autorizou global4 limitada: mensagem company_titular_invalid no dicionário; aplicada por hash exato.",
@@ -21,6 +22,8 @@
     "24/10/2026: usuário autorizou abrir PR, integrar main somente após CI aprovado, publicar em produção e conferir onboarding/Comercial sem alterar atendimentos reais."
   ],
   "reviewProcess": {
+    "ciCompatibility": "Seis scripts aplicados pelos hashes do manifesto a572e4029a16c84be1f5bcd3d5d18716ad242a09007b2bb17d205c542f6c33c4, com revisão independente favorável da proposta e conferência estática após aplicação. Candidato isolado passou 143 cenários em sete execuções PostgreSQL. Revalidação ativa sem loader registrou PENDENTE em vez de CONCLUIDO no primeiro trabalho fiscal simulado de verify-commercial-lead-postgres:189; diagnóstico em curso, publicação bloqueada. Nenhuma alteração de produto, guards ou gates. Regra vigente seção29/T87/T92/T94 preservada; sem mudança operacional.",
+    "releaseCi": "PR #244, head 9ae9a69fe4913dde64e010f394a312d3b4041100: publicação bloqueada pelo CI. Registro principal completado com documentation após reprovação Missing affected domains; revisão independente release_check favorável, sem alterar gates ou registro runtime derivado. Dois scripts PostgreSQL comerciais também falharam; diagnóstico/candidato isolado em preparação, sem aplicação funcional ou publicação.",
     "visual": "Consumidores ativos inspecionados390/1440 em Chrome local com fixtures e redeexternabloqueada; desvio44px registrado. Candidatos finais revalidados:4labelsvisíveis e2botões44px, semoverflow/erroJS, IPTU e titular preservados; quinta label condicional somente revisãoestática. Evidências locais e limitações nos pareceres; servidores/perfis temporários próprios encerrados.",
     "candidatePessoas": "applied_authorized_exact_hashes; 9 arquivos; focais históricos 103 API/9 web e pareceres independentes favoráveis; gates atuais completos aprovados",
     "blockingFinding": "Resolvido e aprovado: a projeção exige identidade documental vigente ao reconhecer envio; mudança material invalida conclusão antiga sem apagar evidência histórica. Nenhum bloqueio técnico remanescente apontado pelos dezesseis pareceres.",
@@ -77,6 +80,7 @@
     "commercial",
     "communication",
     "data",
+    "documentation",
     "fiscal",
     "governance",
     "guides",

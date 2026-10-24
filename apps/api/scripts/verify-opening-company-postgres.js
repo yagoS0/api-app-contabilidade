@@ -56,11 +56,20 @@ try {
   atendimento = await iniciarAtendimento({ conversaId: chat.id, origem: "ABERTURA", atorId: user.id, client: db });
   const id = atendimento.onboardingId;
   let ficha = await registrarCampos({ onboardingId: id, versao: 0, mensagemId: msg.id, atorId: user.id, client: db, operacoes: [{ campo: "responsavelNome", acao: "set", valor: "Marina Exemplo" }, { campo: "atividadePretendida", acao: "set", valor: "Consultoria em gestão empresarial" }, { campo: "modalidadeServico", acao: "set", valor: "RECORRENTE" }] });
+  assert.equal(ficha.dados.modalidadeServico, undefined, "A conversa não define a modalidade interna.");
+  ficha = await registrarCampos({ onboardingId: id, versao: ficha.versao, atorId: user.id, client: db, operacoes: [
+    { campo: "modalidadeServico", acao: "set", valor: "RECORRENTE" },
+    { campo: "regimePretendido", acao: "set", valor: "SIMPLES" },
+    { campo: "notasRecebidasMes", acao: "set", valor: 5 },
+    { campo: "consultoriaMensal", acao: "set", valor: false },
+  ] });
+  assert.equal(ficha.dados.modalidadeServico, "RECORRENTE");
+  assert.equal(ficha.fontesDados.modalidadeServico.atorId, user.id);
   ok("Contato de abertura cria atendimento e preenche a mesma ficha a partir da conversa");
   const comercial = criarServicoComercial({ db }), propostas = criarPropostasComerciais({ db }), recursos = criarRecursosComerciais({ db });
   const link = await comercial.emitirLink(id, user);
   ficha = await db.onboarding.findUnique({ where: { id } });
-  const dados = { ...ficha.dados, razaoSocial: "SIMULAÇÃO AURORA CONSULTORIA LTDA", tipoEmpresa: "LTDA", responsavelEmail: owner.email, responsavelTelefone: "11900000001", responsavelCargo: "Sócia administradora", municipioAtendimento: "São Paulo/SP", municipioPretendido: "São Paulo/SP", enderecoPretendido: "Rua de Teste, 100, Centro, São Paulo/SP", capitalSocialPretendido: "25.000,50", socios: [{ nome: "Marina Exemplo", cpf: "52998224725", participacao: "60,5" }, { nome: "Paulo Exemplo", cpf: "11144477735", participacao: "39,5" }], regimePretendido: "SIMPLES", temProLabore: true, qtdFuncionarios: 0, notasRecebidasMes: 5, consultoriaMensal: false };
+  const dados = { ...ficha.dados, razaoSocial: "SIMULAÇÃO AURORA CONSULTORIA LTDA", tipoEmpresa: "LTDA", responsavelEmail: owner.email, responsavelTelefone: "11900000001", responsavelCargo: "Sócia administradora", enderecoAbertura: { rua: "Rua de Teste", numero: "100", bairro: "Centro", cidade: "São Paulo", uf: "SP" }, capitalSocialPretendido: "25.000,50", socios: [{ nome: "Marina Exemplo", cpf: "52998224725", participacao: "60,5" }, { nome: "Paulo Exemplo", cpf: "11144477735", participacao: "39,5" }], regimePretendido: "SIMPLES", temProLabore: true, qtdFuncionarios: 0, notasRecebidasMes: 5, consultoriaMensal: false };
   await comercial.publico(link.token, { versao: ficha.versao, dados, finalizar: true });
   ficha = await db.onboarding.findUnique({ where: { id } });
   assert.equal(ficha.status, "RECEBIDO"); assert.equal(ficha.cnpj, null); assert.equal(ficha.dados.socios.length, 2);
