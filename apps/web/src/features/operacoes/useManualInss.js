@@ -19,7 +19,7 @@ export function useManualInss(api, competencia, companies) {
     return () => { generationDaExecucao.current++; };
   }, [api, competencia, companies, retry]);
   const current = result?.competencia === competencia ? result : null;
-  return { ...current, reload: () => setRetry(value => value + 1) };
+  return { ...current, loading: Boolean(api?.getOperationManualInss) && (!current || Boolean(current.loading)), reload: () => setRetry(value => value + 1) };
 }
 
 export function incorporarInssManual(projection, items = []) {
@@ -37,7 +37,7 @@ export function incorporarInssManual(projection, items = []) {
     tasks.push({ ...row, id: `${row.company.companyId}:inss-manual`, tipo: 'pendencias', categoria: manual.status === 'DOCUMENT_REVIEW' ? 'revisoes' : 'faltantes', manualInss: manual,
       titulo: manual.status === 'DOCUMENT_REVIEW' ? 'INSS · documento para revisão' : 'INSS · aguardando guia manual' });
   }
-  const pendingCompanies = new Set(tasks.filter(t => t.manualInss).map(t => t.company.companyId));
+  const pendingCompanies = new Set(items.filter(item => ['PENDING_DOCUMENT', 'DOCUMENT_REVIEW'].includes(item.status)).map(item => item.companyId));
   return { ...projection, tasks, groups: { ...projection.groups,
     concluidas: projection.groups.concluidas.filter(row => !pendingCompanies.has(row.company.companyId)),
     ...agruparPendencias(tasks),

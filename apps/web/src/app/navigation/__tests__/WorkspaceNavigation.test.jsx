@@ -68,7 +68,7 @@ test("logo preserva Tabela; novo login restaura Calendário e limite de históri
   fireEvent.click(screen.getByRole("link", { name: "Altan — página principal" }));
   expect(screen.getByLabelText("visão")).toHaveTextContent("tabela");
   fireEvent.click(screen.getByText("Novo login"));
-  expect(screen.getByLabelText("visão")).toHaveTextContent("calendario");
+  expect(screen.getByLabelText("visão")).toHaveTextContent("operacoes");
   fireEvent.click(screen.getByText("Voltar"));
   expect(screen.getByLabelText("rota").textContent).toBe("/companies");
 });

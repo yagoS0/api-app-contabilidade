@@ -5450,6 +5450,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay();
       return mockCarregarRotinas(mockCompanies);
     },
+    async getOperationEvidence() {
+      throw new Error('Conferência de revisões indisponível na demonstração. Nenhuma aprovação simulada.');
+    },
     async getOperationConsultas(competencia) {
       await delay(60);
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw Object.assign(new Error('Competência inválida.'), { status: 422 });
@@ -5464,7 +5467,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         return { companyId: c.companyId, ...applicability, storedEnabledKeys, enabledKeys: storedEnabledKeys.filter(key => applicability.applicableKeys.includes(key)) };
       }) };
     },
-    async getOperationAlerts() {
+    async getOperationAlerts(offset = 0) {
       // Same synthetic evidence as listPendenciasPosFechamento, including recognition.
       const items = mockCompanies.filter(company => !pendenciasConferidas.has(`${company.companyId}|mock-pend-1`)).map(company => ({
         id: `${company.companyId}:mock-pend-1`, portalClientId: company.companyId,
@@ -5472,7 +5475,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         situacaoPeriodo: 'FECHADA', createdAt: '2026-08-14T11:20:00.000Z',
         observacoes: 'NFS-e 33045572255387580000103000000013006 chegou para 2026-05 (competência já fechada).',
       }));
-      return { ok: true, total: items.length, items };
+      return { ok: true, total: items.length, items: items.slice(offset, offset + 200), offset };
     },
     async saveRotinas(input = {}) {
       await delay(400);

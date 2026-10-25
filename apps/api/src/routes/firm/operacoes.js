@@ -1,4 +1,4 @@
-import { listarErrosConsultas } from '../../application/operacoes/OperationsConsultas.js';
+import { listarErrosConsultas, listarEvidenciasOperacoes } from '../../application/operacoes/OperationsConsultas.js';
 import { Router } from 'express';
 import { lerOperacao, salvarOperacao } from '../../application/operacoes/OperationsService.js';
 import { executarOperacao } from '../../application/operacoes/OperationsExecution.js';
@@ -17,6 +17,10 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess }) {
     }
   };
   router.get('/operacoes/consultas', run(async req => listarErrosConsultas(prisma, await empresasVisiveis(req), req.query.competencia)));
+  router.get('/operacoes/evidencias', run(async req => {
+    const ids = await empresasVisiveis(req);
+    return prisma.$transaction(tx => listarEvidenciasOperacoes(tx, ids, req.query.competencia), { isolationLevel: 'RepeatableRead', timeout: 20000 });
+  }));
   const base = '/companies/:companyId/operacoes/:competencia';
   router.get('/operacoes/inss-manual', run(async req => {
     const ids = await empresasVisiveis(req);
@@ -26,12 +30,14 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess }) {
   router.put(`${base}/inss-manual`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarInssManual(prisma, req.params.companyId, req.params.competencia, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));
   router.get('/operacoes/avisos', run(async req => {
     const ids = await empresasVisiveis(req);
+    const offset = Number(req.query.offset || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw Object.assign(new Error('Página inválida.'), { status: 422 });
     const where = { portalClientId: { in: ids }, resolvida: false };
     const [items, total] = await Promise.all([
-      prisma.pendenciaPosFechamento.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200, select: { id: true, portalClientId: true, competencia: true, observacoes: true, createdAt: true, situacaoPeriodo: true, portalClient: { select: { razao: true } } } }),
+      prisma.pendenciaPosFechamento.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: offset, take: 200, select: { id: true, portalClientId: true, competencia: true, observacoes: true, createdAt: true, situacaoPeriodo: true, portalClient: { select: { razao: true } } } }),
       prisma.pendenciaPosFechamento.count({ where }),
     ]);
-    return { items, total };
+    return { items, total, offset };
   }));
   router.get(base, requireFirmCompanyAccess(), run(req => prisma.$transaction(tx => lerOperacao(tx, req.params.companyId, req.params.competencia), { isolationLevel: 'RepeatableRead', timeout: 20000 })));
   router.put(base, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarOperacao(prisma, req.params.companyId, req.params.competencia, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));

@@ -37,14 +37,13 @@ test('reutiliza o status da tabela Empresas, sem duplicar ou misturar competênc
 test('quadros abrem detalhes locais e links preservam empresa e competência', () => {
   const onRefresh = jest.fn(), onChangeCompetencia = jest.fn();
   render(<OperationsPage companies={[company]} competencia="2026-09" onRefresh={onRefresh} onChangeCompetencia={onChangeCompetencia} />);
-  fireEvent.click(screen.getByRole('button', { name: /Revisões pendentes/ }));
-  fireEvent.click(screen.getByText('Ver detalhes'));
-  expect(screen.getByText('Apurado')).toBeInTheDocument();
-  expect(screen.getByText('Abrir Guias e corrigir')).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
+  fireEvent.click(screen.getByRole('button', { name: /Disponível 0\/1/ }));
+  expect(screen.getByText('Cobertura a verificar')).toBeInTheDocument();
+  expect(screen.getByText('Abrir Guias')).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
   fireEvent.keyDown(document, { key: 'Escape' });
-  fireEvent.click(screen.getByText('Atualizar empresas'));
+  fireEvent.click(screen.getByRole('button',{name:/Recarregar a lista/}));
   expect(onRefresh).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-10' } });
+  fireEvent.click(screen.getByRole('button',{name:'Próximo mês'}));
   expect(onChangeCompetencia).toHaveBeenCalledWith('2026-10');
 });
 test('falha da carteira não fabrica zeros nem exibe dados antigos como atuais', () => {
@@ -59,7 +58,7 @@ test('erro usa o mesmo estado das guias; abrir não envia e novo envio exige con
   render(<OperationsPage companies={[failed]} competencia="2026-09" acoesGuia={{onEnviarWhatsapp: send}} />);
   fireEvent.click(screen.getByRole('button', { name: /Erros de envio de guias/ }));
   fireEvent.click(screen.getByText('Ver detalhes'));
-  expect(screen.getAllByText('Destino inválido')).toHaveLength(2);
+  expect(screen.getAllByText('Destino inválido')).toHaveLength(1);
   expect(screen.getByText('Apurado')).toBeInTheDocument();
   expect(send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Conferir novo envio'));

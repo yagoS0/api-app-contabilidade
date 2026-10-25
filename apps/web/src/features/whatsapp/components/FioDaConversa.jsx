@@ -17,14 +17,14 @@ import { AcoesRapidas } from "./AcoesRapidas";
 import { CompositorConversa } from "./CompositorConversa";
 import { MensagemIndisponivel } from "./MensagemIndisponivel";
 import { mensagemIndisponivel, PEDIDO_REENVIO } from "../lib/mensagemIndisponivel";
-import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota } from "../lib/identidadeAtendimento";
+import { relacionamentoDaConversa, podeAtendimentoComercial, escoposDeNota, canaisDaConversa } from "../lib/identidadeAtendimento";
 import { rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { NotaDaMensagem } from "./NotaDaMensagem";
 import { PainelAtendimento } from "./PainelAtendimento";
 import { AtualizacaoAtendimento } from './AtendimentoComercial.shared.js';
 import { ContingenciaIa } from "./ContingenciaIa";
 import { EmissoesInterrompidas } from './EmissoesInterrompidas';
-import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useMemo, useCallback } from "react";
 import { AvatarConversa, SituacaoConversa, SituacaoIdentificacao, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
@@ -80,8 +80,13 @@ export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
   );
 }
 
-export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, pedidoCanal = null, atualizacaoComercialExterna = null, usuarioId = null, onVirarAnotacao = null }) {
+export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false, onCanalSelecionado = null, pedidoCanal = null, atualizacaoComercialExterna = null, usuarioId = null, onVirarAnotacao = null, sugestaoMensagem = null }) {
   const { conversa } = fio;
+  const [sugestaoEditada, setSugestaoEditada] = useState(sugestaoMensagem || '');
+  const [canalPreparado, setCanalPreparado] = useState(null);
+  const registrarCanalPreparado = useCallback(canal => { setCanalPreparado(previous => JSON.stringify(previous) === JSON.stringify(canal) ? previous : canal); onCanalSelecionado?.(canal); }, [onCanalSelecionado]);
+  const podePrepararSugestao = Boolean(canalPreparado?.conversaId && canalPreparado?.canalId && canalPreparado.interlocutorId === (conversa.interlocutorId || conversa.id)
+    && canaisDaConversa(conversa).some(c => c.id === canalPreparado.canalId && c.podeResponder !== false && (c.conversaId || conversa.id) === canalPreparado.conversaId));
   const mensagens = useMemo(() => [...fio.mensagens, ...(fio.notasInternas || []).map(n => ({ ...n, id: `nota-${n.id}`, tipo: "nota_interna", corpo: n.texto, registradaEm: n.criadaEm || n.createdAt }))].sort((a,b) => String(a.registradaEm).localeCompare(String(b.registradaEm)) || String(a.id).localeCompare(String(b.id))), [fio.mensagens, fio.notasInternas]);
   const relacionamento = relacionamentoDaConversa(conversa);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
@@ -112,7 +117,9 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
     && escoposDeNota(conversa).length > 0 && typeof hook.salvarNota === "function" && typeof hook.api?.criarNotaInternaWhatsapp === "function";
   const podeAnotacaoLegada = !somenteLeitura && !conversa.interlocutorId && typeof onVirarAnotacao === "function";
   const contextoDaNota = `${conversa.id}:${usuarioId || ""}`;
-  useEffect(() => { setAcoesDaMensagem(null); setFonteDaNota(null); setPedidoResposta(null); }, [contextoDaNota]);
+  // Clear the previous context before the new composer becomes interactive. A
+  // deferred reset must not discard a preparation clicked in the new contact.
+  useLayoutEffect(() => { setAcoesDaMensagem(null); setFonteDaNota(null); setPedidoResposta(null); }, [contextoDaNota]);
 
   function criarNota(mensagem) {
     setAcoesDaMensagem(null);
@@ -285,7 +292,12 @@ export function FioDaConversa({ visivel = true, fio, hook, slotVincular = null, 
       {buscando && <BuscaMensagens api={hook.api} conversaId={conversa.id} onFechar={() => setBuscando(false)} onIr={async m => { await hook.abrirMensagem?.(m.id); setBuscando(false); requestAnimationFrame(() => document.querySelector(`[data-mensagem-id="${CSS.escape(m.id)}"]`)?.scrollIntoView({ block: "center" })); }} />}
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
       {podeNotaInterna && fonteDaNota?.contexto === contextoDaNota && <NotaDaMensagem key={`${contextoDaNota}:${fonteDaNota.mensagem.id}`} conversa={conversa} mensagem={fonteDaNota.mensagem} hook={hook} aoFechar={() => setFonteDaNota(null)} />}
-      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} pedidoResposta={pedidoResposta} aoConsumirPedidoResposta={() => setPedidoResposta(null)} slotAcoes={slotAcoes || (empresasDaAcao.length && hook.api?.getCompanyGuides ? acoesCompartilhadas : null)} onCanalSelecionado={onCanalSelecionado} pedidoCanal={pedidoCanal} usuarioId={usuarioId} /> : null}
+      {sugestaoMensagem && !somenteLeitura && <section className="wa-notice"><label>Mensagem sugerida<textarea value={sugestaoEditada} onChange={e => setSugestaoEditada(e.target.value)} rows={3} style={{ width: '100%', boxSizing: 'border-box' }} /></label><Button variant="secondary" disabled={!podePrepararSugestao || !sugestaoEditada.trim()} onClick={() => {
+        const canal = canalPreparado;
+        if (!canal || canal.interlocutorId !== (conversa.interlocutorId || conversa.id)) return;
+        setPedidoResposta({ ...canal, texto: sugestaoEditada });
+      }}>Preparar mensagem no compositor</Button>{!podePrepararSugestao && <p role="status">Selecione um canal disponível no compositor e confira o destinatário para preparar a mensagem.</p>}<p>Revise o destinatário e o canal. Nenhum envio é feito ao preparar; rascunhos existentes são preservados.</p></section>}
+      {!somenteLeitura ? <CompositorConversa conversa={conversa} hook={hook} pedidoResposta={pedidoResposta} aoConsumirPedidoResposta={() => setPedidoResposta(null)} slotAcoes={slotAcoes || (empresasDaAcao.length && hook.api?.getCompanyGuides ? acoesCompartilhadas : null)} onCanalSelecionado={registrarCanalPreparado} pedidoCanal={pedidoCanal} usuarioId={usuarioId} /> : null}
       {escolherEmpresa && <Modal titulo="Abrir empresa deste contato" tamanho="sm" aoFechar={() => setEscolherEmpresa(false)}><p>O histórico continua sendo único para esta pessoa.</p>{conversa.empresas.map(e => <p key={e.id}><a href={hrefDaEmpresa(e.id)}>{e.razao}</a> · <CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</Modal>}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
         rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>

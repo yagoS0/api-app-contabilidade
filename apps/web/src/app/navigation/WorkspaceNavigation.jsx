@@ -23,7 +23,7 @@ export function WorkspaceNavigationProvider({ children }) {
   const navigate = useNavigate();
   const companyRoute = /^\/companies\/[^/]+\/.+/.test(location.pathname);
   const history = useRef({ entries: [], index: -1 });
-  const [modoVisao, guardarModoVisao] = useState("calendario");
+  const [modoVisao, guardarModoVisao] = useState("operacoes");
   useLayoutEffect(() => {
     const modo = new URLSearchParams(location.search).get('visao');
     if (location.pathname === '/companies' && ['calendario', 'operacoes', 'tabela'].includes(modo)) guardarModoVisao(modo);
@@ -57,9 +57,9 @@ export function WorkspaceNavigationProvider({ children }) {
   }, [navigate]);
   const resetSession = useCallback(() => {
     history.current = { entries: [], index: -1 };
-    guardarModoVisao("calendario");
+    guardarModoVisao("operacoes");
   }, []);
-  return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
+  return <WorkspaceNavigation.Provider value={{ goBack, navigate, location, modoVisao, setModoVisao, resetSession }}>
     {/* A estrutura precisa permanecer a mesma: inserir/remover este div desmontava a sessão,
         os hooks e as tarefas ao passar entre a carteira e uma empresa. Só a classe muda. */}
     <div className={companyRoute ? "company-workspace" : undefined}>{children}</div>

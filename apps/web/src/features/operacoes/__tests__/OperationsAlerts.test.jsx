@@ -37,3 +37,17 @@ test('falha de atualização não aparece como ausência de pendência', async (
   fireEvent.click(screen.getByRole('button', { name: /Notas para revisão/ }));
   await screen.findByRole('alert'); expect(screen.queryByText(/Nenhum aviso/)).not.toBeInTheDocument();
 });
+
+test('aviso de outra competência permanece acessível além da primeira página',async()=>{
+ const api={getOperationAlerts:jest.fn(async(offset=0)=>({total:201,offset,items:[{id:String(offset),portalClientId:'a',competencia:offset?'2026-08':'2026-09',portalClient:{razao:offset?'Página seguinte':'Primeira página'}}]}))};
+ render(<OperationsAlerts api={api} compact/>);fireEvent.click(screen.getByRole('button',{name:/Avisos de apuração/}));await screen.findByText('Primeira página');fireEvent.click(screen.getByRole('button',{name:'Próxima'}));await screen.findByText('Página seguinte');expect(api.getOperationAlerts).toHaveBeenLastCalledWith(200);expect(screen.getByRole('link',{name:'Revisar competência 2026-08'})).toHaveAttribute('href','/companies/a/auditoria?competencia=2026-08');
+});
+
+test('aviso compacto oculta somente zero confirmado e preserva falha de atualização',async()=>{
+ const api={getOperationAlerts:jest.fn().mockResolvedValue({total:0,items:[]})};
+ render(<OperationsAlerts api={api} compact/>);
+ await waitFor(()=>expect(screen.queryByRole('button',{name:/Avisos de apuração/})).not.toBeInTheDocument());
+ api.getOperationAlerts.mockRejectedValueOnce(Error('offline'));fireEvent(window,new Event('focus'));
+ await screen.findByRole('button',{name:/Avisos de apuração indisponíveis/});
+ expect(screen.getByText('Leitura indisponível')).toBeInTheDocument();
+});

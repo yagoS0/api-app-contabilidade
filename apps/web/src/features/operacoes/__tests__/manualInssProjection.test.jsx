@@ -46,8 +46,8 @@ test('manual INSS opens existing guide modal with compact summary and configurat
   const manual = { companyId: 'a', competencia: '2026-09', revision: 'a'.repeat(64), hasProlabore: true, status: 'PENDING_DOCUMENT', guides: [], state: { applicable: null, responsible: 'Equipe fiscal', dueDate: null, note: '', reason: '' } };
   const api = { getOperationManualInss: jest.fn(async () => ({ items: [manual] })), getCompanyManualInss: jest.fn(async () => manual) };
   render(<OperationsPage api={api} companies={[{ ...company, razao: 'Empresa exemplo', guideCompliance: { competencia: '2026-09', inss: { required: true, state: 'missing', ok: false } } }]} competencia="2026-09" />);
-  fireEvent.click(await screen.findByRole('button', { name: /Guias faltantes 1/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Disponível 0\/1/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes do INSS manual' }));
   expect(await screen.findByText('Equipe fiscal')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Configurar INSS manual' })).toHaveAttribute('href', '/companies/a/automacao?competencia=2026-09');
   expect(screen.queryByRole('textbox', { name: 'Responsável' })).not.toBeInTheDocument();
@@ -57,13 +57,13 @@ test('manual INSS opens existing guide modal with compact summary and configurat
 test('batch failure is not displayed as zero pendencies or success', async () => {
   render(<OperationsPage api={{ getOperationManualInss: async () => { throw Error('offline'); } }} companies={[company]} competencia="2026-09" />);
   expect(await screen.findByText(/Não foi possível conferir o INSS manual/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Guias faltantes —/ })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /Disponível —/ })).toBeDisabled();
 });
 
 test('resposta vazia do controle mensal não é uma lista confirmada sem pendências', async () => {
   render(<OperationsPage api={{ getOperationManualInss: async () => ({ ok: false }) }} companies={[company]} competencia="2026-09" />);
   expect(await screen.findByText(/Não foi possível conferir o INSS manual/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Guias faltantes —/ })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /Disponível —/ })).toBeDisabled();
 });
 
 

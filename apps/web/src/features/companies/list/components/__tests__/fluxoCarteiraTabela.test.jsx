@@ -44,7 +44,7 @@ test('procuração salva aparece sem executar consulta e muda na releitura', () 
 test('DAS disponível mostra conferência preservando o acesso às tarefas', () => {
  const c = {...company, apuracao:{competencia:'2026-09'}, guideCompliance:{competencia:'2026-09', das:{required:true, ok:true, state:'gerada', guideId:'das'}}};
  render(<CompaniesTable companies={[c]} competencia="2026-09" />);
- expect(screen.getByRole('button', {name:'Ver tarefas de Empresa Teste: Conferir apuração'})).toBeInTheDocument();
+ expect(screen.getByRole('button', {name:'Ver tarefas de Empresa Teste: Apurar'})).toBeInTheDocument();
  expect(screen.queryByText('Transmitido')).not.toBeInTheDocument();
  const detalhe = screen.getByText(/O DAS desta competência está disponível/);
  expect(detalhe).not.toBeVisible();

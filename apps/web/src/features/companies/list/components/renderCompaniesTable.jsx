@@ -1,6 +1,8 @@
 import { marcadorProcuracao } from "../../../fiscal/serpro/lib/procuracao";
-import { fluxoDaEmpresa, ETAPAS_CARTEIRA } from "@contabilidade/shared/fluxo-carteira";
+import { fluxoDaEmpresa, ETAPAS_APRESENTACAO, statusApresentacao } from "@contabilidade/shared/fluxo-carteira";
 import { temPendenciaParcelamento } from "../lib/pendenciaParcelamento";
+import { resumirEtapasOperacoes } from "../../../operacoes/operacoes";
+import { useManualInss } from "../../../operacoes/useManualInss";
 // A carteira em TABELA — a visão padrão no desktop.
 //
 // POR QUE ELA EXISTE
@@ -134,7 +136,7 @@ function PopoverConfig({ company, onFechar }) {
  * parcelamento.
  */
 
-function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
+function Linha({ pendencias = 0, company, presentation, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao, onFluxo }) {
   const [config, setConfig] = useState(false);
   const [guiasAbertas, setGuiasAbertas] = useState(false);
   const detalheGuiasId = useId();
@@ -143,7 +145,8 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
   const fluxo = fluxoDaEmpresa(company);
   const apuracao = fluxo.apuracao;
   const procuracao = marcadorProcuracao(company.serproStatus);
-  const fechada = fluxo.status.chave === "concluido";
+  const apresentacao = presentation || statusApresentacao(fluxo);
+  const fechada = apresentacao.chave === "concluido";
   const tags = getComplianceTags(company.guideCompliance);
   const fiscal = situacaoFiscalDaLinha(company);
   const rotuloFiscal = fiscal.estado.chave === 'pendencia' ? 'Pendente' : fiscal.rotulo;
@@ -294,7 +297,7 @@ function Linha({ pendencias = 0, company, competencia, onOpenCompany, acoesGuia,
 
       {/* APURAÇÃO — o pipeline do mês. Um chip, quatro estados possíveis, nada empilhado. */}
       <td data-label="Status" style={CELULA}>
-        <button type="button" onClick={() => onFluxo?.(company)} className={`carteira-tag carteira-tag--${fechada ? 'ok' : 'neutro'}`} aria-label={`Ver tarefas de ${nome}: ${fluxo.status.rotulo}`}>{fluxo.status.rotulo}</button>
+        <button type="button" onClick={() => onFluxo?.(company)} className={`carteira-tag carteira-tag--${fechada ? 'ok' : 'neutro'}`} aria-label={`Ver tarefas de ${nome}: ${apresentacao.rotulo}`}>{apresentacao.rotulo}</button>
       </td>
       <td data-label="Apuração" style={CELULA}>
         {apuracao.documentoDisponivel ? <details className="carteira-procuracao">
@@ -426,6 +429,13 @@ export function CompaniesTable({ api,
   onSelecionarTodos = null,
   onFluxo = null,
 }) {
+  const manualInss = useManualInss(api, competencia, companies);
+  const presentations = useMemo(() => {
+    const rows = (companies || []).map(company => ({ company, fluxo: fluxoDaEmpresa(company) }));
+    return new Map(resumirEtapasOperacoes(rows, [], manualInss.items).items.map(row => [row.company.companyId,
+      manualInss.loading || manualInss.error
+        ? statusApresentacao(row.fluxo, { guiasConhecidas: false }) : row.presentation]));
+  }, [companies, manualInss.items, manualInss.loading, manualInss.error]);
   const [ordem, setOrdem] = useState({ campo: "urgencia", asc: true });
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const corpoRef = useRef(null);
@@ -473,17 +483,17 @@ export function CompaniesTable({ api,
         // empresa apurada e fechada no prazo, mas com pendência na Receita, precisa subir — ordenar
         // só pelo mês a esconderia no meio da lista. Desempate alfabético para a ordem não "dançar"
         // entre recargas.
-        const p = ordem.campo === "contabilizacao" ? ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(a).contabilizacao.chave) - ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(b).contabilizacao.chave) : ETAPAS_CARTEIRA.indexOf(fluxoDaEmpresa(a).status.chave) - ETAPAS_CARTEIRA.indexOf(fluxoDaEmpresa(b).status.chave);
+        const p = ordem.campo === "contabilizacao" ? ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(a).contabilizacao.chave) - ["aberto","fechado","importado"].indexOf(fluxoDaEmpresa(b).contabilizacao.chave) : ETAPAS_APRESENTACAO.indexOf(presentations.get(a.companyId)?.chave) - ETAPAS_APRESENTACAO.indexOf(presentations.get(b.companyId)?.chave);
         return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
       });
       return copia;
     };
-    const ehFechada = (c) => fluxoDaEmpresa(c).status.chave === "concluido" && situacaoFiscalDaLinha(c).estado.severidade !== 0 && !temPendenciaParcelamento(c);
+    const ehFechada = (c) => presentations.get(c.companyId)?.chave === "concluido" && situacaoFiscalDaLinha(c).estado.severidade !== 0 && !temPendenciaParcelamento(c);
     return {
       abertas: ordenar((companies || []).filter((c) => !ehFechada(c))),
       fechadas: ordenar((companies || []).filter(ehFechada)),
     };
-  }, [companies, ordem]);
+  }, [companies, ordem, presentations]);
 
   function alternarOrdem(campo) {
     setOrdem((o) => (o.campo === campo ? { campo, asc: !o.asc } : { campo, asc: true }));
@@ -659,7 +669,7 @@ export function CompaniesTable({ api,
 
           {abertas.map((c) => (
             <Linha
-              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
+              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} presentation={presentations.get(c.companyId)} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
               selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />
@@ -687,7 +697,7 @@ export function CompaniesTable({ api,
           )}
           {fechadasVisiveis && fechadas.map((c) => (
             <Linha
-              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
+              pendencias={avisos[c.companyId] || 0} key={c.companyId} company={c} presentation={presentations.get(c.companyId)} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
               selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao} onFluxo={onFluxo}
             />

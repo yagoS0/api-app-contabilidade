@@ -1,4 +1,3 @@
-import { marcadorProcuracao } from '../fiscal/serpro/lib/procuracao';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -6,10 +5,11 @@ import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 
 const name = c => c.razao || c.razaoSocial || c.nome || c.cnpj || 'Empresa';
+const EMPTY_COMPANIES = [];
 
-export function OperationsRoutineCompanies({ api, companies = [], competencia, loading = false, error: companyError, onRefreshCompanies }) {
+export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, competencia, loading = false, error: companyError, onRefreshCompanies }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [pending, setPending] = useState(true);
-  const [group, setGroup] = useState(null), [query, setQuery] = useState(''), [routine, setRoutine] = useState('');
+  const [group, setGroup] = useState(null), [query, setQuery] = useState('');
   const [consultas, setConsultas] = useState(null);
   const [consultaError, setConsultaError] = useState('');
   const [consultaRetry, setConsultaRetry] = useState(0);
@@ -58,44 +58,45 @@ export function OperationsRoutineCompanies({ api, companies = [], competencia, l
     .map(c => ({ ...c, keys: indexed.get(c.companyId)?.enabledKeys, applicableKeys: indexed.get(c.companyId)?.applicableKeys,
       unavailableReason: indexed.get(c.companyId)?.unavailableReason, known: Array.isArray(indexed.get(c.companyId)?.enabledKeys) }))
     .sort((a, b) => name(a).localeCompare(name(b), 'pt-BR'));
-  const enabled = c => routine ? c.keys?.includes(routine) : c.keys?.length > 0;
-  const applicable = c => c.known && !c.unavailableReason && (c.applicableKeys ? (routine ? c.applicableKeys.includes(routine) : c.applicableKeys.length > 0) : true);
+  const applicable = c => c.known && !c.unavailableReason && Array.isArray(c.applicableKeys) && c.applicableKeys.length > 0;
+  const enabled = c => applicable(c) && c.applicableKeys.every(key => c.keys.includes(key));
   const count = state => rows.filter(c => applicable(c) && enabled(c) === state).length;
-  const procura = key => rows.filter(c => marcadorProcuracao(c.serproStatus).chave === key);
-  const consultaItems = competencia && consultas?.competencia === competencia && Array.isArray(consultas?.items) ? consultas.items.filter(item => rows.some(c => c.companyId === item.companyId)) : null;
-  const source = group === 'procUnknown' ? rows.filter(c => !['ativa', 'regularizar'].includes(marcadorProcuracao(c.serproStatus).chave)) : group === 'procEnabled' ? procura('ativa') : group === 'procDisabled' ? procura('regularizar') : rows.filter(c => applicable(c) && enabled(c) === (group === 'enabled'));
+  const unknown = rows.filter(c => !applicable(c));
+  const consultaItems = competencia && consultas?.competencia === competencia ? consultas.items.filter(item => rows.some(c => c.companyId === item.companyId)) : null;
+  const source = rows.filter(c => applicable(c) && enabled(c) === (group === 'enabled'));
   const visible = source.filter(c => `${name(c)} ${c.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-  const open = state => { setGroup(state); setQuery(''); };
-  return <section className="operacoes-rotinas-resumo" aria-label="Empresas nas rotinas">
-    <div className="operacoes-cabecalho"><h3>Consultas</h3><label>Rotina <select value={routine} onChange={e => setRoutine(e.target.value)} disabled={unavailable}>
-      <option value="">Todas as rotinas</option>{data?.routines.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-    </select></label></div>
-    <div className="operacoes-rotinas-contadores">
-      <button type="button" className="operacoes-quadro" disabled={unavailable} aria-haspopup="dialog" onClick={() => open('enabled')}><span>Habilitadas</span><strong>{unavailable ? '—' : count(true)}</strong></button>
-      <button type="button" className="operacoes-quadro" aria-label={`Rotinas: Não habilitadas ${unavailable ? '—' : count(false)}`} disabled={unavailable} aria-haspopup="dialog" onClick={() => open('disabled')}><span>Não habilitadas</span><strong>{unavailable ? '—' : count(false)}</strong></button>
-      <button type="button" className="operacoes-quadro" disabled={loading || !!companyError || !consultaItems}
-        onClick={() => open('errors')}><span>Erros</span><strong className="operacoes-erro">{consultaItems ? consultaItems.length : '—'}</strong><small>consultas com erro</small></button>
-      <div className="operacoes-quadro"><span>Empresas com procuração</span><div className="operacoes-procuracoes" role="group" aria-label="Procurações">
-        <button type="button" disabled={loading || !!companyError} onClick={() => open('procEnabled')}>Habilitadas <strong>{loading || companyError ? '—' : procura('ativa').length}</strong></button>
-        <button type="button" disabled={loading || !!companyError} onClick={() => open('procDisabled')}>Não habilitadas <strong>{loading || companyError ? '—' : procura('regularizar').length}</strong></button>
-      </div><button type="button" className="operacoes-procuracao-incerta" disabled={loading || !!companyError} onClick={() => open('procUnknown')}>{loading || companyError ? '—' : rows.filter(c => !['ativa','regularizar'].includes(marcadorProcuracao(c.serproStatus).chave)).length} a verificar</button></div>
-    </div>
-    {consultaError && <p role={api?.getOperationConsultas ? 'alert' : 'status'}>{consultaError} {api?.getOperationConsultas && <Button size="sm" variant="secondary" onClick={() => setConsultaRetry(n => n + 1)}>Atualizar erros de consultas</Button>}</p>}
+  const errors = consultaItems?.filter(item => name(rows.find(c => c.companyId === item.companyId)).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const tabs = [['errors', 'Erros', consultaItems?.length], ['disabled', 'Desabilitadas', unavailable ? null : count(false)], ['enabled', 'Habilitadas', unavailable ? null : count(true)]];
+  const total = count(true) + count(false);
+  function keyboard(event, index) {
+    const next = event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : event.key === 'Home' ? 0 : event.key === 'End' ? 2 : null;
+    if (next == null) return;
+    event.preventDefault(); setGroup(tabs[next][0]);
+    event.currentTarget.parentElement.children[next].focus();
+  }
+  return <section className="operacoes-rotinas-unico" aria-label="Rotinas">
+    <button type="button" className="operacoes-rotinas-card" aria-haspopup="dialog" onClick={() => { setGroup('errors'); setQuery(''); }}>
+      <span className="operacoes-cabecalho"><strong>Rotinas</strong><span className="operacoes-erro" aria-label="Consultas com erro">{consultaItems?.length ? `⚠ ${consultaItems.length}` : consultaItems ? '' : '—'}</span></span>
+      <span className="operacoes-pizza" aria-hidden="true" style={{ background: unavailable || !total ? 'var(--border)' : `conic-gradient(var(--state-ok) ${count(true) / total * 100}%, var(--state-danger) 0)` }} />
+      <span>Habilitadas / desabilitadas</span><strong>{unavailable ? '— / —' : `${count(true)} / ${count(false)}`}</strong>
+      {!unavailable && unknown.length > 0 && <small>{unknown.length} a verificar</small>}
+    </button>
+    <small>Seleção por empresa. Agenda global e pausa SERPRO permanecem independentes.</small>
     {pending && <p role="status">Carregando rotinas…</p>}
     {(error || companyError) && <p role="alert">{error || companyError} {retryButton}</p>}
-    {!unavailable && rows.some(c => !c.known) && <p role="status">Algumas empresas não têm configuração disponível nesta leitura.</p>}
-    {!unavailable && rows.some(c => c.unavailableReason) && <p role="status">Empresas com regime não confirmado ficam fora das contagens. Confira o regime no cadastro dessas empresas.</p>}
-    {group && <Modal titulo={group === 'errors' ? 'Consultas com erro' : group === 'procUnknown' ? 'Procuração a verificar' : group === 'procEnabled' ? 'Procuração habilitada' : group === 'procDisabled' ? 'Procuração não habilitada' : group === 'enabled' ? 'Empresas habilitadas' : 'Empresas não habilitadas'} aoFechar={() => setGroup(null)} tamanho="md" className="operacoes-dialogo" rodape={<Button variant="secondary" onClick={() => setGroup(null)}>Fechar</Button>}>
-      <div className="operacoes"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
-        {group === 'errors' ? <><p>Competência {competencia} · último resultado efetivo da mesma consulta SERPRO. Recusas e tentativas incertas não resolvem erros anteriores. Não inclui chamadas sem competência registrada nem emissão, transmissão ou envio.</p>
-          {!consultaItems || loading || companyError ? <p role="alert">{consultaError || companyError || 'Carregando consultas…'}</p> : <ul className="operacoes-lista-modal">{consultaItems.filter(item => `${name(rows.find(c => c.companyId === item.companyId))} ${rows.find(c => c.companyId === item.companyId)?.cnpj || ''}`.toLowerCase().includes(query.toLowerCase())).map(item =>
-            <li key={item.id}><div><strong>{name(rows.find(c => c.companyId === item.companyId))}</strong><small>{item.action} · {item.errorMessage || 'Erro sem detalhe registrado'}</small>{item.tentativaPosterior && <small>{item.tentativaPosterior.situacao === 'incerta' ? 'Tentativa posterior com resultado incerto' : item.tentativaPosterior.situacao === 'em_processamento' ? 'Tentativa posterior em processamento' : 'Tentativa posterior bloqueada'} · erro anterior preservado</small>}</div>
-              <InternalLink href={companyTabPath(item.companyId, 'automacao') + '?competencia=' + encodeURIComponent(competencia)}>Configurar consultas</InternalLink></li>)}</ul>}
-          {consultaItems?.length === 0 && <p>Nenhuma consulta com erro neste recorte.</p>}
-        </> : (group.startsWith('proc') ? loading || companyError : unavailable) ? <div><p role={error || companyError ? "alert" : "status"}>{pending || loading ? "Atualizando empresas e rotinas…" : error || companyError || "Configuração indisponível. Atualize as rotinas para conferir as empresas."}</p>{retryButton}</div> : <ul className="operacoes-lista-modal">{visible.map(c => <li key={c.companyId}>
-          <div><InternalLink href={companyTabPath(c.companyId, 'cadastro')}>{name(c)}</InternalLink><small>{c.cnpj}</small></div>
-          <InternalLink className="btn btn-secondary btn-sm" href={companyTabPath(c.companyId, 'automacao')}>Configurar rotinas</InternalLink>
-        </li>)}{!visible.length && <li>Nenhuma empresa neste filtro.</li>}</ul>}
+    {consultaError && <p role="alert">{consultaError} <Button size="sm" variant="secondary" onClick={() => setConsultaRetry(n => n + 1)}>Atualizar erros de consultas</Button></p>}
+    {group && <Modal titulo="Rotinas" aoFechar={() => setGroup(null)} tamanho="lg" className="operacoes-dialogo" rodape={<Button variant="secondary" onClick={() => setGroup(null)}>Fechar</Button>}>
+      <div className="app-tabs" role="tablist" aria-label="Situação das rotinas">{tabs.map(([key, label, count], index) => <button type="button" role="tab" id={`rotinas-tab-${key}`} aria-selected={group === key} aria-controls="rotinas-painel" tabIndex={group === key ? 0 : -1} className={`app-tab${group === key ? ' is-active' : ''}`} key={key} onKeyDown={e => keyboard(e, index)} onClick={() => setGroup(key)}>{label} · {count ?? '—'}</button>)}</div>
+      <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <div role="tabpanel" id="rotinas-painel" aria-labelledby={`rotinas-tab-${group}`} tabIndex={0}>
+        {group === 'errors' ? <>
+          <p>Competência {competencia || 'não selecionada'} · Consultas SERPRO. Tentativas incertas ou bloqueadas não resolvem erros anteriores.</p>
+          {!consultaItems || loading || companyError ? <p role="status">{consultaError || companyError || 'Carregando consultas…'}</p> : <ul className="operacoes-lista-modal">{errors.map(item => <li key={item.id}>
+            <div><strong>{name(rows.find(c => c.companyId === item.companyId))}</strong><small>Etapa interrompida: {item.action}</small><p>{item.errorMessage || 'Erro sem detalhe registrado'}</p>{item.tentativaPosterior && <small>Tentativa posterior {item.tentativaPosterior.situacao} · erro anterior preservado</small>}</div>
+            <InternalLink href={companyTabPath(item.companyId, ['certificado', 'automacao', 'sitfis', 'cadastroFiscal', 'guides', 'lancamentos'].includes(item.correctionTab) ? item.correctionTab : 'automacao') + '?competencia=' + encodeURIComponent(competencia)}>Corrigir erro</InternalLink>
+          </li>)}{!errors.length && <li>Nenhuma consulta com erro neste recorte.</li>}</ul>}
+        </> : unavailable ? <p role="status">{error || companyError || 'Atualizando rotinas…'}</p> : <ul className="operacoes-lista-modal">{visible.map(c => <li key={c.companyId}><strong>{name(c)}</strong><InternalLink href={companyTabPath(c.companyId, 'automacao')}>Abrir configurações</InternalLink></li>)}{!visible.length && <li>Nenhuma empresa neste filtro.</li>}</ul>}
+        {!unavailable && unknown.length > 0 && <details><summary>A verificar · {unknown.length}</summary><p>Aplicabilidade ou configuração indisponível. Essas empresas não contam como desabilitadas.</p><ul>{unknown.map(c => <li key={c.companyId}>{name(c)} · <InternalLink href={companyTabPath(c.companyId, 'automacao')}>Conferir configuração</InternalLink></li>)}</ul></details>}
       </div>
     </Modal>}
   </section>;

@@ -192,3 +192,28 @@ test.each([
 ])('evidência insuficiente não muda orientação: %j', guideCompliance => {
   expect(projetarFluxoCarteira(empresa({ guideCompliance }), contexto()).apuracao.rotulo).toBe('A apurar');
 });
+
+import { statusApresentacao } from '../../../../../../packages/shared/src/accounting/fluxoCarteira.js';
+test.each([['apuracao','apurar'],['obrigacoes','apurar'],['importacao','contabilizacao'],['contabilizacao','contabilizacao'],['guias','guias'],['concluido','concluido']])('agrupa %s preservando etapa e evidência originais', (original, group)=>{
+ const f={status:{chave:original},tarefas:[{chave:'transmitir',concluida:false}]};const before=JSON.stringify(f);expect(statusApresentacao(f)).toMatchObject({chave:group,etapaOriginal:original});expect(JSON.stringify(f)).toBe(before);
+});
+test('ausência ou erro no compliance não encerra envio nem fluxo',()=>{
+ for(const guideCompliance of [{}, {error:true,das:{required:false}}, {erro:true,das:{required:false}}]) {
+  const f=projetarFluxoCarteira(empresa({apuracao:{estado:'transmitida'},fechamentoContabil:{fechado:true},guideCompliance}),contexto({lancamentos:{total:0,importados:0}}));
+  expect(f.guiasConhecidas).toBe(false);expect(f.status.chave).not.toBe('concluido');expect(f.tarefas.find(t=>t.chave==='enviar_guias').concluida).toBe(false);
+ }
+});
+test('conclusão mensal não exige pagamento de guia entregue',()=>{
+ const f=projetarFluxoCarteira(empresa({apuracao:{estado:'transmitida'},fechamentoContabil:{fechado:true},guideCompliance:{das:{required:true,state:'enviada',paymentStatus:'UNPAID'}}}),contexto({lancamentos:{total:0,importados:0}}));expect(f.status.chave).toBe('concluido');
+});
+
+test.each(['guias','contabilizacao','importacao','concluido'])('evidência documental vigente impede apresentação posterior em %s sem alterar fatos', etapa => {
+ const fluxo={status:{chave:etapa},tarefas:[{chave:'importar',concluida:true}]};
+ const original=JSON.stringify(fluxo);
+ expect(statusApresentacao(fluxo,{guiasPendentes:true,guiasConhecidas:false})).toMatchObject({chave:'guias',etapaOriginal:etapa});
+ expect(statusApresentacao(fluxo,{guiasConhecidas:false}).chave).toBe('verificar');
+ expect(JSON.stringify(fluxo)).toBe(original);
+});
+test.each(['apuracao','obrigacoes'])('pendência documental não oculta a etapa anterior %s', etapa => {
+ expect(statusApresentacao({status:{chave:etapa}},{guiasPendentes:true,guiasConhecidas:false}).chave).toBe('apurar');
+});

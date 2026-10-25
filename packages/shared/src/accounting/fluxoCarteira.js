@@ -2,6 +2,19 @@
 import { projetarChecklistFechamento } from './fechamentoBlockers.js';
 export const ETAPAS_CARTEIRA = ['apuracao', 'obrigacoes', 'guias', 'contabilizacao', 'importacao', 'concluido'];
 export const ROTULOS_ETAPA = { apuracao: 'Apuração', obrigacoes: 'Obrigações', guias: 'Guias', contabilizacao: 'Contabilização', importacao: 'Importação', concluido: 'Concluído' };
+// Presentation only: the underlying tasks, evidence and commands retain their stages.
+export const ETAPAS_APRESENTACAO = ['apurar', 'guias', 'contabilizacao', 'concluido'];
+export function statusApresentacao(fluxo, evidencias = {}) {
+  const original = fluxo?.status?.chave;
+  let chave = ({ apuracao: 'apurar', obrigacoes: 'apurar', guias: 'guias', contabilizacao: 'contabilizacao', importacao: 'contabilizacao', concluido: 'concluido' })[original] || 'verificar';
+  // A later stage cannot hide newer document evidence. This only changes the
+  // presentation; fiscal tasks, receipts and accounting closure remain intact.
+  if (['guias', 'contabilizacao', 'concluido'].includes(chave)) {
+    if (evidencias.guiasPendentes === true) chave = 'guias';
+    else if (evidencias.guiasConhecidas === false) chave = 'verificar';
+  }
+  return { chave, rotulo: ({ apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', verificar: 'A verificar' })[chave], etapaOriginal: original };
+}
 export const ROTINAS_CARTEIRA = [
   { chave: 'apurar', titulo: 'Apurar e conferir', etapa: 'apuracao', depende: [] },
   { chave: 'transmitir', titulo: 'Transmitir apuração', etapa: 'obrigacoes', depende: ['apurar'] },
@@ -57,7 +70,9 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   if (!apuracao.porFora && (apuracao.transmitida || prova('transmitir'))) Object.assign(apuracao, { apurada: true, transmitida: true, chave: 'transmitido', rotulo: 'Transmitido' });
   if (!apuracao.apurada && dasDisponivel) Object.assign(apuracao, { rotulo: 'Conferir apuração', documentoDisponivel: true });
   const guias = Object.values(company.guideCompliance || {}).filter(g => g && typeof g === 'object' && g.required);
-  const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro;
+  const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro && !company.guideCompliance.error
+    && Object.values(company.guideCompliance).some(g => g && typeof g === 'object' && typeof g.required === 'boolean')
+    && (!company.guideCompliance.competencia || company.guideCompliance.competencia === competencia);
   const disponiveis = guiasConhecidas && guias.every(g => ['gerada', 'enviada', 'falhou', 'vazio', 'present'].includes(g.state));
   // A pendência financeira/contábil da parcela permanece no compliance. Não desfaz
   // uma entrega comprovada nem cria envio para débito automático sem documento exigível.

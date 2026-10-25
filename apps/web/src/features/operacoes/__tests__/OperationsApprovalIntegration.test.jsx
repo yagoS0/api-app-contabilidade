@@ -15,6 +15,7 @@ function fixture(status = 'CONFIRMED') {
   let current = { companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { dasValor: 100 } };
   const api = {
     getCompanyOperation: jest.fn(async () => current),
+    getOperationEvidence: jest.fn(async () => ({items:[current], total:1, competencia:'2026-09'})),
     saveCompanyOperation: jest.fn(async () => {
       current = { ...current, status: 'RELEASED', revision: 'r2' };
       return current;
@@ -26,7 +27,9 @@ function fixture(status = 'CONFIRMED') {
 }
 
 async function openApprovals() {
-  fireEvent.click(screen.getByRole('button', { name: 'Conferir e liberar apurações' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apuração' }));
+  await waitFor(() => expect(screen.getByRole('button', {name:'Conferir e continuar rotina'})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', {name:'Conferir e continuar rotina'}));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled());
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
 }
