@@ -1,4 +1,7 @@
 jest.mock('../../../infrastructure/db/prisma.js', () => ({ prisma: { companyFirmAccess: { findUnique: jest.fn() } } }));
+jest.mock('../../../application/notas/apuracao/v2/FechamentoService.js', () => ({
+  faturamentoEmitDaCompetencia: jest.fn(async () => null),
+}));
 jest.mock('../../../application/accounting/CorrecaoMesContabilService.js', () => ({
   corrigirMesFechado: jest.fn(), listarCorrecoesContabeis: jest.fn(), estadoCorrecaoTx: jest.fn(),
   CorrecaoContabilError: jest.requireActual('../../../application/accounting/CorrecaoMesContabilService.js').CorrecaoContabilError,
@@ -18,6 +21,45 @@ function app(user = { id: 'u', role: 'firm', name: 'Contador Teste' }) {
 }
 beforeEach(() => { jest.clearAllMocks(); prisma.companyFirmAccess.findUnique.mockResolvedValue({ role: 'ACCOUNTANT', status: 'ACTIVE', scopes: [] }); });
 const url = '/firm/companies/emp/fechamento-contabil/2026-09/reabrir';
+
+test.each(['manual', 'automatico', 'correcao', 'conferida', 'ausente', 'bloqueado'])(
+  'GET preserva o contrato dos cinco controles: %s', async modo => {
+    const chaves = ['folhaProlabore', 'despesas', 'receitas', 'provisoes', 'pagamentos'];
+    const campos = Object.fromEntries(chaves.map(k => [`${k}Ok`, true]));
+    const circular = modo === 'ausente' ? null : campos;
+    const entries = ['ausente', 'manual'].includes(modo) ? [] : ['FOLHA', 'DESPESA', 'RECEITA', 'PROVISAO', 'BAIXA'].map(tipo => ({
+      id: tipo, tipo, competencia: '2026-09', lines: [
+        { conta: '100', tipo: 'D', valor: 10 }, { conta: '200', tipo: 'C', valor: 10 },
+      ],
+    }));
+    if (modo === 'bloqueado') entries[0].lines = [];
+    prisma.companyMonthlyCircular = { findUnique: jest.fn(async () => modo === 'automatico' ? {} : circular) };
+    prisma.accountingEntry = { findMany: jest.fn(async ({ where }) => where.origem ? [] : entries) };
+    prisma.apuracaoSnapshot = { findUnique: jest.fn(async () => null) };
+    prisma.portalClient = { findUnique: jest.fn(async () => null) };
+    const corrigindo = ['correcao', 'conferida'].includes(modo);
+    estadoCorrecaoTx.mockResolvedValue({
+      versao: 'revisao-atual', correcao: corrigindo ? { id: 'c' } : null,
+      conferencia: { valida: modo === 'conferida', campos: modo === 'conferida' ? campos : {} },
+    });
+    const r = await request(app()).get('/firm/companies/emp/fechamento-contabil/2026-09');
+    const concluido = !['correcao', 'ausente'].includes(modo);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({
+      ok: true, competencia: '2026-09', fechado: false, versao: 'revisao-atual',
+      checklist: Object.fromEntries(chaves.map(k => [k, concluido])),
+      folhaProlaboreOk: concluido, conferenciaDesatualizada: modo === 'correcao',
+      podeFechar: concluido && modo !== 'bloqueado',
+    });
+    expect(r.body.checklistPendentes).toHaveLength(concluido ? 0 : 5);
+    if (corrigindo) expect(r.body.checklistAutomatico).toEqual({});
+    if (modo === 'bloqueado') expect(r.body.blockers).toEqual([expect.objectContaining({ motivo: 'em_branco' })]);
+    expect(estadoCorrecaoTx).toHaveBeenCalledWith(prisma, 'emp', '2026-09');
+    expect(prisma.accountingEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { portalClientId: 'emp', competencia: '2026-09', tipo: { not: 'PARCELA' } },
+    }));
+  },
+);
 test('reabertura passa empresa, motivo, versão e ator autenticado ao serviço', async () => {
   corrigirMesFechado.mockResolvedValue({ ok: true, fechado: false, correcao: { id: 'c' } });
   const r = await request(app()).post(url).send({ motivo: 'Corrigir duplicidade', versao: 'v1', autor: { id: 'forjado' } });

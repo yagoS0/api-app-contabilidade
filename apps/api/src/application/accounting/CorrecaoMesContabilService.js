@@ -9,7 +9,8 @@ export class CorrecaoContabilError extends Error {
 }
 const fail = (code, message, status) => { throw new CorrecaoContabilError(code, message, status); };
 const PREFIX = 'contabil:correcao:v1:';
-const keyFor = (companyId, competencia) => `${PREFIX}${encodeURIComponent(companyId)}:${competencia}`;
+export const chaveCorrecaoContabil = (companyId, competencia) => `${PREFIX}${encodeURIComponent(companyId)}:${competencia}`;
+const keyFor = chaveCorrecaoContabil;
 function validar(companyId, competencia) {
   if (!companyId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) fail('competencia_invalida', 'Informe a empresa e competência válidas.', 400);
 }
@@ -17,6 +18,9 @@ export async function snapshotMesTx(tx, companyId, competencia) {
   validar(companyId, competencia);
   const circular = await tx.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } } });
   const entries = await tx.accountingEntry.findMany({ where: { portalClientId: companyId, competencia }, include: { lines: { orderBy: { ordem: 'asc' } } }, orderBy: { id: 'asc' } });
+  return snapshotMesDosDados(circular, entries);
+}
+export function snapshotMesDosDados(circular, entries) {
   // Campos fiscais não são mutados nem participam do token contábil.
   const campos = ['id', 'fechadoContabilEm', 'fechadoContabilPor', ...Object.values(CHECKLIST_FECHAMENTO).map((c) => c.campo)];
   return jsonSnapshot({ circular: circular ? Object.fromEntries(campos.map((k) => [k, circular[k] ?? null])) : null, entries: ordenarLancamentos(entries) });
@@ -59,8 +63,12 @@ async function salvar(tx, leitura, state) {
 export async function estadoCorrecaoTx(tx, companyId, competencia) {
   const atual = await snapshotMesTx(tx, companyId, competencia);
   const leitura = await ler(tx, companyId, competencia);
-  return { versao: hashSnapshot({ atual, revision: leitura.state.revision }), correcao: leitura.state.active, atual,
-    conferencia: conferenciaEfetiva(leitura.state.active, atual, companyId, competencia) };
+  return estadoCorrecaoDosDados(atual, leitura.state, companyId, competencia);
+}
+export function estadoCorrecaoDosDados(atual, state, companyId, competencia) {
+  state = state || { revision: 0, active: null, history: [] };
+  return { versao: hashSnapshot({ atual, revision: state.revision }), correcao: state.active, atual,
+    conferencia: conferenciaEfetiva(state.active, atual, companyId, competencia) };
 }
 
 export async function corrigirMesFechado({ companyId, competencia, motivo, versao, autor }, db = prisma) {

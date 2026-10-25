@@ -40,6 +40,20 @@ export function checklistPendentes(circular, automatico = {}) {
     .map(([chave, c]) => ({ chave, label: c.label }));
 }
 
+/** Mesma composição do GET do fechamento, sem alterar seus gates ou estados gerais. */
+export function projetarChecklistFechamento(circular, automatico = {}, correcaoEstado = {}) {
+  const checklistAutomatico = correcaoEstado.correcao ? {} : automatico;
+  const flags = correcaoEstado.correcao ? correcaoEstado.conferencia?.campos : circular;
+  const checklist = Object.fromEntries(Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) =>
+    [chave, flags?.[c.campo] === true || Boolean(checklistAutomatico[chave])]));
+  return {
+    checklist,
+    checklistAutomatico,
+    checklistPendentes: checklistPendentes(flags, checklistAutomatico),
+    conferenciaDesatualizada: Boolean(correcaoEstado.correcao && !correcaoEstado.conferencia?.valida),
+  };
+}
+
 const ehFolhaEmLote = (e) => e.tipo === "FOLHA" && /^(FOLHA|PROLABORE)-/.test(String(e.loteImportacao || ""));
 
 function somaDosLados(entries) {

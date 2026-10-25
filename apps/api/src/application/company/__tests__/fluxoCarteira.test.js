@@ -6,6 +6,20 @@ const empresa = (patch={}) => ({ companyId:'a', legacyCompany:{regimeTributario:
 const contexto = (patch={}) => ({competencia:'2026-09',lancamentos:{total:2,importados:0},...patch});
 const tarefa=(chave,patch={})=>({chave,versao:0,hash:'atual',dados:{},...patch});
 
+test('cinco controles não mudam status geral, fechamento ou importação', () => {
+  const c = empresa({ apuracao: { estado: 'transmitida' }, guideCompliance: { das: { required: true, state: 'enviada' } } });
+  const antes = projetarFluxoCarteira(c, contexto());
+  const checklist = { folhaProlabore: true, despesas: true, receitas: true, provisoes: true, pagamentos: true };
+  const depois = projetarFluxoCarteira(c, contexto({ conferenciaContabil: { checklist, versao: 'atual' } }));
+  expect(depois.contabilizacao.checklist).toEqual(checklist);
+  expect(depois.contabilizacao.chave).toBe('aberto');
+  expect(depois.status).toEqual(antes.status);
+  expect(depois.tarefas).toEqual(antes.tarefas);
+  expect(antes.contabilizacao.checklistPendentes).toHaveLength(5);
+  expect(Object.values(antes.contabilizacao.checklist)).toEqual([false, false, false, false, false]);
+  expect(antes.contabilizacao.versao).toBeNull();
+});
+
 test.each([
   ['enviada aguarda pagamento', { enviada: true, estado: 'CONSULTAR_PAGAMENTO' }, true],
   ['documento faltante', { guideId: null, enviada: false, estado: 'OBTER_GUIA' }, false],

@@ -1,0 +1,42 @@
+{
+  "summary": "Incremento independente das oito decisões pendentes, autorizado em 24/10/2026 pelo usuário: seguir pelo Orquestrador no que está definido, sem publicar nem emitir notas reais.\n\nObjetivo concreto restrito: tornar os cinco controles contábeis já existentes em Lançamentos disponíveis na projeção mensal compartilhada fluxoCarteira.contabilizacao, para que Operações use exatamente os mesmos estados. NÃO criar novo checklist/regra de fechamento. Inspecionar o endpoint GET de fechamento em apps/api/src/routes/firm/accountingEntries.js e o shared fechamento-contabil, inclusive a correção de mês fechado. Reutilizar a regra efetiva de marcações manuais/automáticas, período e revisão; erro/ausência não equivale a concluído. Preferir extração pequena de função pura compartilhada se necessário, sem duplicar política e sem alterar semântica do endpoint atual. Adaptar testes de contrato/regressão significativos.\n\nEste incremento é backend/projeção, não implementa novo layout. NÃO alterar rótulo Pagamentos para Impostos, não alterar status geral, bloqueios de fechamento, dados existentes, permissão, matriz fiscal, liberação de rotina, agenda ou notificações. Não fazer consultas externas. Não executar worker, banco real, atos fiscais ou envio. Não modificar docs de governança, AGENTS, CLAUDE, package/configuração. Principal registra o impacto posteriormente. Impacto operacional: reaproveitamento de evidências existentes R01/R02/R19/R21/R26, sem nova política de negócio.\n\nBase main fe2c9f111cec3293a6c63cdf658c70d4d190f523, checkout isolado altan-atualizacao-pacotes-20261024. Ler regras completas canônicas e locais, AGENTS e CLAUDE aplicáveis. Não tocar outros worktrees.\n\nCritérios: checklist existente manual; reconhecimento automático já implementado; competência correta; correção de mês fechado invalida automação e usa conferência da revisão correspondente; versão antiga/dados desconhecidos; estado geral/fechamento/importação inalterados. Evitar consulta individual por empresa para a carteira. Nenhuma nova rota pública ou escrita operacional é necessária. Se a integração completa exigir decisão nova, delimitar problema em vez de inventar regra.\n\nRetomada de ambiente: candidato real preservado em .altan-governance/candidato-contabil.patch. O baseline foi restaurado sem mudanças alheias. Aplique esse candidato, confira e complete testes necessários dentro do plano. A tentativa anterior parou por variável PostgreSQL ausente; agora há banco loopback novo, migrado e descartável. Nenhum teste deve ser removido ou afrouxado. Preserve o candidato e as verificações. Não é nova decisão de negócio.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-24T20-35-48-456Z-82a2535c",
+  "tests": [
+    "governance-engine: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-governance-engine",
+    "api-regression: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-api-regression",
+    "web-regression: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-web-regression",
+    "portal-regression: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-portal-regression",
+    "web-build: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-web-build",
+    "portal-build: passed against 9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-24T20-35-48-456Z-82a2535c\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-24T20-35-48-456Z-82a2535c; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "9f73cf66ac7520b084094f352bdc914c4933b672bd23bd032a6250bf11b625a1",
+  "sourcePaths": [
+    "apps/api/src/application/accounting/CorrecaoMesContabilService.js",
+    "apps/api/src/application/accounting/__tests__/checklistAutomatico.test.js",
+    "apps/api/src/application/company/FluxoCarteiraService.js",
+    "apps/api/src/application/company/__tests__/fluxoCarteira.test.js",
+    "apps/api/src/application/company/__tests__/obrigacoesCarteira.test.js",
+    "apps/api/src/routes/firm/__tests__/correcaoMesContabil.test.js",
+    "apps/api/src/routes/firm/accountingEntries.js",
+    "packages/shared/src/accounting/fechamentoBlockers.js",
+    "packages/shared/src/accounting/fluxoCarteira.js"
+  ],
+  "runId": "2026-10-24T20-35-48-456Z-82a2535c"
+}

@@ -1,4 +1,5 @@
 // Projeção única do trabalho mensal. Ler o fluxo nunca executa uma operação fiscal.
+import { projetarChecklistFechamento } from './fechamentoBlockers.js';
 export const ETAPAS_CARTEIRA = ['apuracao', 'obrigacoes', 'guias', 'contabilizacao', 'importacao', 'concluido'];
 export const ROTULOS_ETAPA = { apuracao: 'Apuração', obrigacoes: 'Obrigações', guias: 'Guias', contabilizacao: 'Contabilização', importacao: 'Importação', concluido: 'Concluído' };
 export const ROTINAS_CARTEIRA = [
@@ -65,7 +66,8 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   const lancamentos = contexto.lancamentos || { total: null, importados: 0 };
   const importado = fechado && lancamentos.total > 0 && lancamentos.importados === lancamentos.total;
   const semLancamentos = fechado && lancamentos.total === 0;
-  const contabilizacao = { chave: importado ? 'importado' : fechado ? 'fechado' : 'aberto', rotulo: importado ? 'Importado' : fechado ? 'Fechado' : 'Aberto', ...lancamentos };
+  const contabilizacao = { chave: importado ? 'importado' : fechado ? 'fechado' : 'aberto', rotulo: importado ? 'Importado' : fechado ? 'Fechado' : 'Aberto', ...lancamentos,
+    ...(contexto.conferenciaContabil || { ...projetarChecklistFechamento(null), versao: null }) };
   const obrigacoes = (contexto.obrigacoes || []).map(o => o.verificador === 'APURACAO_TRANSMITIDA' ? { ...o, concluida: apuracao.transmitida } : o);
   // Mês fechado é observado em sua própria etapa, não cria dependência circular.
   const fiscais = obrigacoes.filter(o => o.verificador !== 'MES_FECHADO');
