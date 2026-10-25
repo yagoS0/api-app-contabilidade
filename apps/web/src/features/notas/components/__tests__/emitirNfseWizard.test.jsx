@@ -428,7 +428,7 @@ describe("depois de emitida, a tela não promete o que não pode acontecer", () 
     expect(screen.queryByText(/aparece na lista assim que houver resposta/)).not.toBeInTheDocument();
     expect(screen.getByText(/Esta nota ainda não aparece na lista/)).toBeInTheDocument();
     expect(screen.getByText(/Padrão Nacional \(ADN\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Buscar NFS-e/)).toBeInTheDocument();
+    expect(screen.getByText(/Buscar.*com NFS-e selecionada/)).toBeInTheDocument();
   });
 
   // ⚠ Quando o SERVIDOR diz que nada saiu, é o servidor que fala — o recado não pode ser trocado

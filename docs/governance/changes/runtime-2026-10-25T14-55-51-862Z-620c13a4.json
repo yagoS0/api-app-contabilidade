@@ -1,0 +1,35 @@
+{
+  "summary": "CONTINUIDADE N1 AUTORIZADA — 25/10/2026\nUsuário reafirmou implementar TODOS os pacotes pelo Orquestrador, não somente Integrações. Nesta execução concluir NotasN1. Base44f422bd9 contém18arquivos N1 checkpointa1b8ec8dd AINDA semgatesglobais + correção de fixture compartilhada jáaprovada emA01d818db2. Preservar todas as fontes anteriores e trabalhos alheios.\nLer integralmente pedido ../output/plano-atualizacao-20261024/PEDIDO-ETAPA-NOTAS-N1-EXECUCAO.txt e plano anterior .altan-governance/runs/2026-10-25T12-46-27-807Z-8407b4ce/001-altan_orchestrator.result.json. Os quatro arquivos textuais foram incluídos nesse plano antes da execução e não implementados. Aplicar EXATAMENTE candidato .altan-governance/candidate-notas-n1-textos/candidate.patch, hashesmanifest, parecerreview-principal. Apenas5substituiçõesliterais: 3orientações+2regex, semalterartravasnemassertivas.\nALLOWLIST4:\napps/web/src/features/notas/components/EmitirNfseWizard.jsx\napps/web/src/features/notas/lib/rejeicaoDaEmissao.js\napps/web/src/features/notas/components/__tests__/emitirNfseWizard.test.jsx\napps/web/src/features/notas/components/__tests__/espelhoAoVivoERejeicao.test.jsx\nRevisar TODO N1 desde fe31369c1 até atual, não apenas4textos. QA .altan-governance/visual-notas-n1/RELATORIO.txt:84cenários,58interações,22checks, zeroJS/overflow; visual-app/notes-n1-shell-round0. Testesfocais98/10e lint0/0. Evidências sintéticas limitadas; não atribuir aprovação de gates. Runtimeanterior interrompido peloPrincipalpara serializartestes, não concluído. FalhaconexãoPGantiga seguida32/32isolado não aprova gate; executar TODOSgatesnovamente noPGdescartável. Nãoalterar fontesAPI/Operações/gates/política/configurações para contornar falha.\nHá candidato documental em árvoreA, mas canônica/local aindaiguais e decisões atuais do usuário prevalecem; Principal concilia documentos fora runtimeativo. HistóricoCLAUDEdeConformidadenaBarra substituído por decisãoatual de remover somenteUI/leitura, preservarvalidaçõesfiscais.\nSem publicação/merge/push/emissão/cancelamento/consultapaga/mensagens/dadosreais. Guruconferência, eNotasintacto, benefíciopendente. N2documentos/açõesfiscais eN3dataspermanecempróximasetapas, assimcomoSolicitações/Comercial/Guru; N1 não as conclui. Semcommitexecutor. Limitesdasrodadaspreservados; nenhum gatealterado. ImpactoR01/R02/R19/R21/R22, nenhuma nova regra fiscal.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-25T14-55-51-862Z-620c13a4",
+  "tests": [
+    "governance-engine: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-governance-engine",
+    "api-regression: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-api-regression",
+    "web-regression: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-web-regression",
+    "portal-regression: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-portal-regression",
+    "web-build: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-web-build",
+    "portal-build: passed against 0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T14-55-51-862Z-620c13a4\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-25T14-55-51-862Z-620c13a4; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "0f768fa678c582b3f7cc53569074a4ee84f1532df2dd39d52144e374e4cbf509",
+  "sourcePaths": [
+    "apps/web/src/features/notas/components/EmitirNfseWizard.jsx",
+    "apps/web/src/features/notas/components/__tests__/emitirNfseWizard.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/espelhoAoVivoERejeicao.test.jsx",
+    "apps/web/src/features/notas/lib/rejeicaoDaEmissao.js"
+  ],
+  "runId": "2026-10-25T14-55-51-862Z-620c13a4"
+}
