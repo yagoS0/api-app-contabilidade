@@ -940,6 +940,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  solicitacoes EncaminhamentoSuporte[]
   implantacaoTarefas ImplantacaoTarefa[]
   reformaRevisoes ReformaFiscalRevisao[]
   reformaVerificacoes ReformaNfseVerificacao[]
@@ -1183,6 +1184,7 @@ model CompanyDocument {
 /// `fixada` é EXCLUSIVA: fixar uma desafixa a anterior (ver CompanyNotesService). A fixada aparece
 /// sempre no topo, independente da ordenação escolhida.
 model CompanyNote {
+  solicitacoes EncaminhamentoSuporte[]
   id             String   @id @default(uuid())
   portalClientId String
   texto          String
@@ -1557,6 +1559,7 @@ model ConversaWhatsapp {
 
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
+  solicitacoesVinculos SolicitacaoMensagem[]
   intencaoEnvioId String? @unique
   contexto ResolucaoContextoWhatsapp?
   /// Opções efetivamente oferecidas pelo atendimento, com empresa/versão e validade.
@@ -1952,8 +1955,8 @@ model EtapaEmissaoWhatsapp {
 /// contar, não se chama. Custo em CENTAVOS DE DÓLAR, ESTIMADO pela tabela de `precosIa.js`.
 model EncaminhamentoSuporte {
   id String @id @default(uuid())
-  conversaId String
-  mensagemId String @unique
+  conversaId String?
+  mensagemId String? @unique
   estado String @default("AGUARDANDO")
   motivo String
   resumo String
@@ -1961,9 +1964,69 @@ model EncaminhamentoSuporte {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   resolvidoEm DateTime?
-  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  /// Null preserves the legacy contract; S1 never adopts legacy records implicitly.
+  contratoVersao Int?
+  revisao Int @default(0)
+  portalClientId String?
+  titulo String?
+  prioridade String?
+  prazoCivil String? @db.VarChar(10)
+  origem String?
+  criadorId String?
+  concluidoPorId String?
+  concluidoEm DateTime?
+  observacaoConclusao String?
+  anotacaoId String?
+  conversa ConversaWhatsapp? @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  anotacao CompanyNote? @relation(fields: [anotacaoId], references: [id], onDelete: Restrict)
+  eventos SolicitacaoEvento[]
+  comandos SolicitacaoComando[]
+  mensagens SolicitacaoMensagem[]
+  @@index([portalClientId, estado, createdAt, id], map: "solicitacao_empresa_estado_data")
+  @@index([prazoCivil, estado], map: "solicitacao_prazo_estado")
+  @@index([conversaId, estado], map: "solicitacao_conversa_estado")
   @@index([estado, createdAt], map: "encaminhamento_estado_data")
   @@map("encaminhamentos_suporte")
+}
+
+/// Append-only evidence; not a second operational queue.
+model SolicitacaoEvento {
+  id String @id @default(uuid())
+  solicitacaoId String
+  revisao Int
+  tipo String
+  atorId String
+  ocorridoEm DateTime @default(now())
+  antes Json?
+  depois Json
+  solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
+  @@unique([solicitacaoId, revisao])
+  @@map("solicitacoes_eventos")
+}
+
+model SolicitacaoComando {
+  id String @id @default(uuid())
+  atorId String
+  chave String
+  fingerprint String
+  solicitacaoId String
+  resultado Json
+  createdAt DateTime @default(now())
+  solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
+  @@unique([atorId, chave])
+  @@map("solicitacoes_comandos")
+}
+
+model SolicitacaoMensagem {
+  mensagemId String @id
+  solicitacaoId String
+  atorId String
+  createdAt DateTime @default(now())
+  mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
+  solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
+  @@index([solicitacaoId])
+  @@map("solicitacoes_mensagens")
 }
 
 model ChamadaIa {
