@@ -13,6 +13,17 @@ export function statusApresentacao(fluxo, evidencias = {}) {
     if (evidencias.guiasPendentes === true) chave = 'guias';
     else if (evidencias.guiasConhecidas === false) chave = 'verificar';
   }
+  // A reconciled monthly guide axis replaces only the two standard guide tasks.
+  // Extra tasks and every fiscal/accounting prerequisite remain authoritative.
+  if (chave === 'guias' && evidencias.guiasConhecidas === true && evidencias.guiasPendentes === false
+    && Array.isArray(fluxo?.tarefas) && Array.isArray(fluxo?.obrigacoes)
+    && ['apurar', 'transmitir', 'contabilizar', 'importar'].every(k => fluxo.tarefas.some(t => t.chave === k))) {
+    const pending = fluxo.tarefas.filter(t => !['obter_guias', 'enviar_guias'].includes(t.chave) && t.concluida !== true);
+    const fiscalPending = fluxo.obrigacoes.some(o => o.verificador !== 'MES_FECHADO' && o.concluida !== true);
+    const unknownStage = pending.some(t => !ETAPAS_CARTEIRA.includes(t.etapa));
+    const next = ETAPAS_CARTEIRA.find(e => (e === 'obrigacoes' && fiscalPending) || pending.some(t => t.etapa === e));
+    chave = unknownStage || next === 'concluido' ? 'verificar' : ({ apuracao: 'apurar', obrigacoes: 'apurar', guias: 'guias', contabilizacao: 'contabilizacao', importacao: 'contabilizacao' })[next] || 'concluido';
+  }
   return { chave, rotulo: ({ apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', verificar: 'A verificar' })[chave], etapaOriginal: original };
 }
 export const ROTINAS_CARTEIRA = [

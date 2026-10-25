@@ -45,7 +45,7 @@ test('old month response cannot replace current month and retry only reloads loc
 test('manual INSS opens existing guide modal with compact summary and configuration link', async () => {
   const manual = { companyId: 'a', competencia: '2026-09', revision: 'a'.repeat(64), hasProlabore: true, status: 'PENDING_DOCUMENT', guides: [], state: { applicable: null, responsible: 'Equipe fiscal', dueDate: null, note: '', reason: '' } };
   const api = { getOperationManualInss: jest.fn(async () => ({ items: [manual] })), getCompanyManualInss: jest.fn(async () => manual) };
-  render(<OperationsPage api={api} companies={[{ ...company, razao: 'Empresa exemplo', guideCompliance: { competencia: '2026-09', inss: { required: true, state: 'missing', ok: false } } }]} competencia="2026-09" />);
+  render(<OperationsPage api={api} companies={[{ ...company, razao: 'Empresa exemplo', apuracao: { competencia: '2026-09' }, guideCompliance: { competencia: '2026-09', inss: { required: true, state: 'missing', ok: false } } }]} competencia="2026-09" />);
   fireEvent.click(await screen.findByRole('button', { name: /Disponível 0\/1/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes do INSS manual' }));
   expect(await screen.findByText('Equipe fiscal')).toBeInTheDocument();
