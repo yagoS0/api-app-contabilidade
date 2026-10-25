@@ -1,0 +1,25 @@
+{
+  "summary": "Consolida na seção 30 as decisões já aprovadas para os quatro pacotes e Notas; preserva histórico e limites de desenvolvimento.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance"
+  ],
+  "operationalImpact": "Registra as decisões expressas do usuário sobre Operações, Solicitações/Anotações, Comercial/Onboarding, Guru e Notas. Não altera gates, permissões de publicação ou guardas fiscais. Não declara implementação completa. Canônica e snapshots A/B foram conciliados.",
+  "tests": [
+    "SHA-256 anterior 6e8a39ed60c25550924b2ebf5459823c1125de356c21db715444baaa3f9ac17b; novo f92549efa7b1b6a7041142cd0ea7610feec8848c92380dffbcf0e0980fa399cd, candidato revisado independentemente.",
+    "Resolução operacional canônica e fallback conferida nas duas árvores: quatro verificações com o novo hash.",
+    "Governança: 72 testes aprovados, zero falhas ou pendentes; nenhum código de gate alterado.",
+    "Inspeção independente confirmou histórico preservado, decisões aprovadas e nenhuma proposta pendente promovida a regra.",
+    "Helper recusou aplicação com controlador ativo. Aplicação realizada somente após encerramento, inspeção dos processos históricos e backup dos cinco arquivos; locks alheios preservados.",
+    "Normalização somente do apêndice para LF revisada independentemente; base histórica preservada byte a byte, texto completo idêntico após normalização."
+  ],
+  "rollback": "Restaurar de forma coordenada somente os cinco arquivos documentais a partir do backup local documentation-candidate/backup-1792943142637, com conferência dos hashes e sem controlador ativo. Nenhum dado operacional foi migrado.",
+  "humanDecisions": [
+    "Implementação local de todos os pacotes autorizada pelo usuário; sem publicação, migração produtiva, mensagens ou atos fiscais reais. Guru em conferência, eNotas preservado e benefício pendente."
+  ],
+  "evidence": {
+    "review": "Revisor independente revisao_sistemica_operacoes_final; pareceres locais documentation-candidate/review-20261025-final.txt e helper-review-20261025.txt. Complemento: format-only-review-20261025.txt.",
+    "canonicalSha256": "f92549efa7b1b6a7041142cd0ea7610feec8848c92380dffbcf0e0980fa399cd"
+  }
+}
