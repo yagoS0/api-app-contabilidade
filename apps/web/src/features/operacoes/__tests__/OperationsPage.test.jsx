@@ -126,15 +126,16 @@ it('INSS em revisão concorda entre Empresas, progresso e filtros sem apagar fec
  expect(company.fluxoCarteira.status.chave).toBe('concluido');
  expect(company.guideCompliance.inss.state).toBe('enviada');
 });
-it('barras independem da posição e explicam o filtro superior e os desconhecidos',()=>{
+it('barras independem da posição e explicam o filtro superior e os desconhecidos',async()=>{
+ const api={getOperationEvidence:async()=>({ok:true,competencia:'2026-10',items:[],total:0})};
  const company={...companies[0],fluxoCarteira:{...companies[0].fluxoCarteira,status:{chave:'apuracao'},tarefas:[{etapa:'apuracao',concluida:false},{etapa:'contabilizacao',concluida:true},{etapa:'importacao',concluida:true}]}};
- const view=render(<OperationsPage companies={[company]} competencia="2026-10"/>);
+ const view=render(<OperationsPage api={api} companies={[company]} competencia="2026-10"/>);
  const progress=screen.getByRole('button',{name:'Contabilização 1/1 empresas'});
  expect(progress).toHaveAttribute('aria-description',expect.stringContaining('posição atual'));
  fireEvent.click(progress);expect(screen.queryByText('Alfa')).not.toBeInTheDocument();
  view.unmount();
- render(<OperationsPage companies={[company]} competencia="2026-10"/>);
- expect(screen.getByRole('button',{name:'Confirmado 0/1 empresas'})).toHaveAttribute('aria-description',expect.stringContaining('1 a verificar'));
+ render(<OperationsPage api={api} companies={[company]} competencia="2026-10"/>);
+ expect(await screen.findByRole('button',{name:'Confirmado 0/1 empresas'})).toHaveAttribute('aria-description',expect.stringContaining('1 a verificar'));
  fireEvent.click(screen.getByRole('button',{name:'Contabilização'}));expect(within(screen.getByRole('dialog')).getByText('Alfa')).toBeInTheDocument();
  company.fluxoCarteira.tarefas[2].concluida=false;
  expect(resumirEtapasOperacoes([{company,fluxo:company.fluxoCarteira}]).metrics.contabilizacao.done).toHaveLength(0);
@@ -163,4 +164,13 @@ it.each([
  const company = {legacyCompany:{certStorageKey:'fixture',certExpiresAt:expiry},serproStatus:{procurationStatus:'ATIVA',vinculoConfirmado:true,checkedAt:'2026-10-20T12:00:00Z',validUntil:expiry}};
  const result = distribuicoesCadastrais([{company}], Date.parse(now));
  for(const axis of ['certificado','procuracao']) expect(result[axis].find(g=>g.key===expected).items).toHaveLength(1);
+});
+
+it('sem API de evidências mantém Confirmado indisponível e não oferece aprovação',async()=>{
+ render(<OperationsPage companies={companies} competencia="2026-10"/>);
+ await screen.findByText('Conferências indisponíveis neste ambiente.',{exact:false});
+ const confirmado=screen.getByRole('button',{name:'Confirmado — empresas'});
+ expect(confirmado).toBeDisabled();
+ expect(confirmado).toHaveAttribute('aria-description',expect.stringContaining('Informação indisponível'));
+ expect(screen.queryByRole('button',{name:'Confirmado 0/1 empresas'})).not.toBeInTheDocument();
 });

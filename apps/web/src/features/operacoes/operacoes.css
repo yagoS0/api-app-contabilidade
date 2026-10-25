@@ -164,3 +164,30 @@
 @media(max-width:1100px) { .operacoes-layout { grid-template-columns:minmax(0,1fr) 180px; gap:12px; }.operacoes-quatro-pizzas { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:800px) { .operacoes-layout { grid-template-columns:1fr; }.operacoes-rotinas-card { grid-template-columns:1fr 1fr; align-items:center; }.operacoes-rotinas-card .operacoes-pizza { grid-column:2; grid-row:1 / span 3; }.operacoes-quatro-etapas { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:580px) { .operacoes-etapas-pizzas { grid-template-columns:1fr; }.operacoes-apuracao,.operacoes-guias,.operacoes-contabilizacao,.operacoes-quatro-pizzas { grid-column:1; grid-row:auto; }.operacoes-quatro-pizzas { grid-template-columns:repeat(2,minmax(0,1fr)); }.operacoes-checklists { grid-template-columns:1fr; }.operacoes-progress { min-height:64px; }.operacoes-titulo { min-height:44px; }.operacoes-total small { display:block; } }
+
+/* Isolated visual candidate: preserve domain logic, theme and focus behavior. */
+.operacoes-progress { border:1px solid var(--border); border-radius:var(--radius); padding:10px; margin:0 0 10px; min-height:64px; gap:8px; }
+.operacoes-progress:hover:not(:disabled),.operacoes-titulo:hover:not(:disabled) { border-color:var(--accent-purple); }
+.operacoes-progress-label { min-width:0; overflow-wrap:anywhere; }
+.operacoes-progress strong { justify-self:end; }
+.operacoes-progress-stage { border:0; padding:0; margin:0; grid-template-columns:minmax(0,1fr) auto; gap:0; }
+.operacoes-progress-stage .operacoes-track { grid-row:1; margin-bottom:12px; }
+.operacoes-progress-stage .operacoes-progress-label,.operacoes-progress-stage > strong { grid-row:2; border:1px solid var(--border); padding:10px; min-height:44px; box-sizing:border-box; display:flex; align-items:center; }
+.operacoes-progress-stage .operacoes-progress-label { border-right:0; border-radius:var(--radius) 0 0 var(--radius); }
+.operacoes-progress-stage > strong { border-left:0; border-radius:0 var(--radius) var(--radius) 0; }
+.operacoes-progress-stage > small { padding-top:6px; }
+.operacoes-titulo { display:flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:var(--radius); padding:8px 10px; margin-bottom:10px; font-weight:500; }
+.operacoes-titulo::after { content:'↗'; color:var(--text-muted); margin-left:auto; }
+.operacoes-status-com-aviso { display:block; position:relative; }
+.operacoes-status-com-aviso .operacoes-progress-label { padding-right:56px; }
+.operacoes-status-com-aviso > .operacoes-avisos,.operacoes-status-com-aviso > .operacoes-aviso-etapa { position:absolute; top:0; right:58px; width:52px; max-width:52px; }
+.operacoes-status-com-aviso .operacoes-aviso-etapa { padding:0; min-height:44px; justify-content:center; font-size:.75rem; gap:0; }
+.operacoes-status-com-aviso .operacoes-aviso-etapa small { font-size:.65rem; line-height:1.15; text-align:center; overflow-wrap:anywhere; }
+.operacoes-status-com-aviso:has(.operacoes-aviso-etapa small) .operacoes-progress { padding-top:14px; min-height:102px; align-content:space-between; }
+.operacoes-feedback-compact { font-size:.8rem; line-height:1.4; margin:4px 0 0; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.operacoes-feedback-compact .btn { min-height:44px; }
+
+.operacoes-progress:disabled .operacoes-track > span { visibility:hidden; }
+.operacoes-status-com-aviso > .operacoes-avisos:has(small) { width:80px; max-width:80px; right:48px; }
+.operacoes-status-com-aviso .operacoes-aviso-etapa small { overflow-wrap:normal; }
+@media(max-width:420px) { .operacoes-quatro-etapas { grid-template-columns:1fr; } }
