@@ -1,0 +1,27 @@
+{
+  "summary": "RODADA AUTORIZADA 25/10/2026: usuário aprovou aplicar candidato e revalidar, sem publicar. ÚNICO caminho de escrita: apps/web/src/features/companies/list/components/__tests__/selecaoNaTabela.test.jsx. Aplicar exatamente .altan-governance/candidate-selection-fixture/candidate.patch/candidate.jsx, conferindo manifest.json. Preservar TODAS as assertivas e pagamento UNPAID. Não alterar outros arquivos, gates, políticas ou fontes do produto. Sem commit/push/publicação/atos reais/rede externa. Guru conferência, eNotas intacto, benefício pendente.\nBase limpa c0d41889b preserva o segundo candidato de cinco arquivos, ainda não aprovado globalmente. Nenhuma nova regra operacional; apenas corrigir precondição de fixture para empresa concluída com guia enviada, pagamento não confirmado. R01/R11/R12/R19/R21 preservadas.\nLer AGENTS, políticas e referência operacional; revisar conjunto Operações desde ec312f047. Último run 6d6fd5de terminou escalated: API11668, portal1586, governance72 e builds passaram, web falhou somente seleção. Diagnóstico complementar web lotes6–22 completo,4373 passaram; não substitui novo gate integral. Executar gates aplicáveis completos na árvore final. Parecer isolado favorável em candidate-selection-fixture/review.txt,31/31; não é aprovação final.\nEVIDÊNCIAS ADICIONAIS QUE REVISÃO ANTERIOR NÃO LEU: .altan-governance/visual-status-round4/RESULTADO.txt e results.json,20capturas4cenários1440/390 com8fechamentos/focoretornado,trocaempresa/competência; visual-operations/applied-five-matrix e applied-five-states; visual-operations/repro-url-applied-five.json; visual-app/operations-combined-final. Hashes produto preservados. .altan-governance/inss-context-audit/RELATORIO.txt e context-results.json:8/8casos trocaAPI/empresa com sucesso/erro tardio semvazamento/mutação. Primeiraexecução4/8falhou por expectativa deuma leitura; segunda comprova isolamento mas registra explicitamente2GETslocais à mesmaempresa ao trocarAPI e reabrir. Observação menor de leitura redundante, não corrigir foraescopo. Não ocultar limitação. Zoomnativo e transporte externo não testados, não afirmar aprovação deles. Produto não muda neste candidato; QA correspondente anterior continua identificada porhash, não por mera declaração.\nmaxCorrections0: quaisquer outros defeitos devem ser relatados, não corrigidos fora da autorização. Revisões devem distinguir defeito fundamentado, evidência existente e limitação. Sem alterar classificação/gates para aprovar. Demais etapas continuam planejadas, não declarar pacote completo.\r\n",
+  "risk": "high",
+  "domains": [
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-25T13-53-21-351Z-0fd3c50f",
+  "tests": [
+    "governance-engine: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-governance-engine",
+    "api-regression: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-api-regression",
+    "web-regression: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-web-regression",
+    "portal-regression: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-portal-regression",
+    "web-build: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-web-build",
+    "portal-build: passed against 8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T13-53-21-351Z-0fd3c50f\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-25T13-53-21-351Z-0fd3c50f; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "8c0f1b93ea11b399a8bf698e484e0e4173643e6aa7a244ea206df59b51a2767a",
+  "sourcePaths": [
+    "apps/web/src/features/companies/list/components/__tests__/selecaoNaTabela.test.jsx"
+  ],
+  "runId": "2026-10-25T13-53-21-351Z-0fd3c50f"
+}
