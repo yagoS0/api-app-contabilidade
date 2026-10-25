@@ -5,18 +5,6 @@ import { mensagemCapturaAdn } from "../lib/mensagemCapturaAdn";
 import { PANEL } from "./notasStyles.shared.js";
 import { Button } from "../../../components/ui/Button";
 
-// "há 20 minutos" / "há 3 dias" — a idade importa mais que o timestamp exato: é ela que separa
-// "acabou de acontecer" de "isto é história".
-function idade(quando) {
-  if (!quando) return null;
-  const min = Math.floor((Date.now() - new Date(quando).getTime()) / 60000);
-  if (!Number.isFinite(min) || min < 0) return null;
-  if (min < 1) return "agora há pouco";
-  if (min < 60) return `há ${min} min`;
-  if (min < 60 * 48) return `há ${Math.floor(min / 60)}h`;
-  return `há ${Math.floor(min / 1440)} dias`;
-}
-
 // ⚠⚠ O SELETOR "Produção / Homologação" SAIU DA TELA (dono, 23/08/2026: *"tire também essa escolha
 // em produção e homologação da tela"*), e a captura é SEMPRE em PRODUÇÃO.
 //
@@ -40,14 +28,13 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError, mo
   // Sem dizer isso, a tela mentia por omissão: um 429 de um dia aparecia idêntico a um 429
   // acontecendo agora, em toda empresa, e o contador lia "o sistema está quebrado" quando a captura
   // já havia voltado ao normal. Datar o erro é o que transforma um alarme perpétuo em informação.
-  const tentativaEm = idade(adnState?.adnLastAttemptAt);
-  const capturaEm = idade(adnState?.adnLastSyncAt);
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {!somenteStatus && <Button variant="secondary" onClick={() => onSync({ env: AMBIENTE })} disabled={adnSyncing || inBackoff}>
-          {adnSyncing ? "Capturando…" : "🔄 Buscar NFS-e"}
+        {!somenteStatus && <Button variant="secondary" onClick={() => onSync({ env: AMBIENTE })} aria-label={adnSyncing ? "Capturando NFS-e…" : "Buscar NFS-e"} aria-busy={Boolean(adnSyncing)} aria-describedby={inBackoff ? "adn-bloqueio" : undefined} disabled={adnSyncing || inBackoff}>
+          {adnSyncing ? "Capturando…" : "Buscar"}
         </Button>}
         {mostrarStatus && (hasError || inBackoff) && onClearError && (
           // ⚠ O `title` diz mais que o rótulo ("e backoff"), e `title` NÃO é tooltip de verdade:
@@ -64,35 +51,11 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError, mo
           <span style={{ color: "var(--danger)", fontSize: "0.78rem", maxWidth: 520 }} >
             {/* Normaliza também erros técnicos legados já persistidos no banco. */}
             {mensagemCapturaAdn(adnState.adnLastError)}
-            {tentativaEm && (
-              <span style={{ color: PANEL.muted, marginLeft: 6 }}>
-                (da tentativa de {tentativaEm} — abrir a aba não consulta o ADN)
-              </span>
-            )}
           </span>
         )}
       </div>
 
-      {/* ⚠ O AVISO DA ÚLTIMA BUSCA DESCEU PARA CÁ, mais apagado — dono, 23/08/2026: *"esse aviso da
-          última vez buscada, coloque ele em lugar mais discreto"*. Ele estava no meio da barra de
-          ações, competindo com os botões.
-
-          ⚠⚠ MAS ELE NÃO VIROU `title`, E ISSO É DELIBERADO. `title` não aparece no teclado nem no
-          toque — o próprio `CLAUDE.md` do outro portal já registra esse limite. E esta frase carrega
-          informação que a ausência de notas não carrega: *"sem nota na tela, o contador precisa
-          saber se ninguém olhou, se olharam e não veio nada, ou se deu erro — os três eram o mesmo
-          vazio"*. Discreto é ficar mais quieto, não sumir.
-
-          ⚠ `--text-faint` e não `PANEL.muted`: é o token que este app mede em 5,79:1 sobre o fundo,
-          ou seja, apagado E ainda legível. O `#6b7280` que pareceria "mais discreto" está proibido
-          por escrito aqui (3,10:1). */}
-      {mostrarStatus && !hasError && (
-        <span style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>
-          {tentativaEm
-            ? `Última busca ${tentativaEm}${capturaEm ? ` · última nota nova ${capturaEm}` : " · nenhuma nota nova até agora"}`
-            : "Esta empresa ainda não foi consultada no ADN."}
-        </span>
-      )}
+      {mostrarStatus && inBackoff && <span id="adn-bloqueio">Busca em espera após erro. Confira o motivo antes de limpar o bloqueio.</span>}
     </div>
   );
 }

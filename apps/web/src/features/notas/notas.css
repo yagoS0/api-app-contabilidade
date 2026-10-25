@@ -28,3 +28,16 @@
   .notas-indicador { padding:14px; }
   .notas-tipos button,.notas-data summary { min-height:44px; }
 }
+
+.notas-toolbar,.notas-toolbar-acoes,.notas-toolbar-config { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
+.notas-toolbar { justify-content:space-between; gap:16px; margin-bottom:16px; }
+.notas-toolbar select { background:var(--bg-surface); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); min-height:44px; padding:8px; }
+.notas-toolbar .btn,.notas-captura-avisos button { min-height:44px; }
+.notas-captura-avisos { font-size:.8rem; overflow-wrap:anywhere; margin-bottom:12px; }
+.notas-data { min-width:0; max-width:100%; }
+.notas-data summary { flex-wrap:wrap; gap:4px; }
+.notas-data p { max-width:40ch; font-size:.8rem; color:var(--text-muted); }
+.notas-data-aviso { color:var(--state-warn); }
+.notas-indicador { padding:14px; gap:6px; }
+.notas-captura-resumo { overflow-wrap:anywhere; }
+@media(max-width:600px) { .notas-toolbar-config { width:100%; } .notas-toolbar-acoes .btn { flex-shrink:0; } }

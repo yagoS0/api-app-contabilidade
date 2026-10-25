@@ -49,7 +49,7 @@ it('seleção de tipo para ação encaminha XML e ZIP para importação NF-e sem
 it('nota de compra sem XML permanece visível e tem tipo explícito', () => {
   montar({ notas: [compra], notasFilters: { papel: 'DEST', type: 'NFE', competencia: '2026-08' } });
   expect(screen.getByText('FORNECEDOR')).toBeInTheDocument();
-  expect(screen.getByText('NF-e')).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByText('NF-e')).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Estado de emissão' })).toBeInTheDocument();
 });
 it('ajuste local permanece individual e nunca é oferecido para recebida na lista mista', () => {

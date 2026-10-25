@@ -1,5 +1,5 @@
 import { PendenciasPeriodoBanner } from './PendenciasPeriodoBanner';
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FerramentasNfse } from './FerramentasNfse';
 
 import { PANEL } from "./notasStyles.shared.js";
@@ -15,6 +15,7 @@ import { Button } from "../../../components/ui/Button";
 // A MESMA regra de clique das abas — ver `cliqueDeLink.js`. A engrenagem é um link de verdade.
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { modeloDeEmissaoDaNota } from "../lib/reaproveitarNota";
+import { resumoCapturaNotas } from "../lib/resumoCapturaNotas";
 import { BotaoAuditoria } from "./BotaoAuditoria";
 
 
@@ -62,6 +63,7 @@ export function NotasFiscaisTab({
   } = notasPanel;
 
   // The list accepts both species. Capture/import still require an explicit species.
+  const inputImportacao = useRef(null);
   const [tipoAcao, setTipoAcao] = useState("NFSE");
   const somenteRecebidas = false;
   const [emissao, setEmissao] = useState(null);
@@ -109,6 +111,7 @@ export function NotasFiscaisTab({
       </div>}
 
       <NotasResumo summary={notasSummary} resumoRecebidas={notasRecebidas}
+        captura={resumoCapturaNotas({ tipo: janelaAtiva, adnState, dfeState, loading, error: erroCaptura || (erroCaptura === undefined && erroNotas === undefined && error) })}
         loading={loadingNotas} error={erroNotas} papel={notasFilters.papel}
         onSelectPapel={papel => setNotasFilters({ ...notasFilters, papel, type: papel === 'DEST' && notasFilters.papel === 'DEST' ? notasFilters.type : '', offset: 0 })}
         auditoria={hrefAuditoria && <BotaoAuditoria card api={nfseApi} companyId={companyId}
@@ -122,12 +125,8 @@ export function NotasFiscaisTab({
           A aba nasceu só para CAPTURAR nota que já existe, e emitir — que é o que a empresa faz
           para faturar — não tinha porta nenhuma na tela, embora o backend (`POST /nfse/issue`)
           esteja de pé há tempos. Só na janela de NFS-e: NF-e de venda não se emite por aqui. */}
-      <div aria-label="Ações das notas" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        {!notasFilters.type && <label className="notas-tipo-acao">Buscar / importar
-          <select aria-label="Tipo para buscar ou importar" value={tipoAcao} onChange={e => setTipoAcao(e.target.value)}>
-            <option value="NFSE">NFS-e</option><option value="NFE">NF-e</option>
-          </select>
-        </label>}
+      <div className="notas-toolbar">
+        <div className="notas-toolbar-acoes" role="group" aria-label="Ações das notas">
         {janelaAtiva === "NFSE" ? (
           <>
             {/* ⚠ Era ciano (`--accent-cyan`). Ciano é a cor de CATEGORIA do Simples Nacional
@@ -143,16 +142,19 @@ export function NotasFiscaisTab({
 
           </>
         ) : (
-          <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
+          <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} mostrarStatus={false} />
         )}
-        <label className="btn btn-secondary btn-md" style={{ cursor: importing ? "default" : "pointer", opacity: importing ? 0.7 : 1 }}>
-          {importing ? "Importando…" : janelaAtiva === "NFE" ? "⬆️ Importar XML / ZIP" : "⬆️ Importar XML"}
-          <input aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
-        </label>
+        <Button variant="secondary" title={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} disabled={importing} onClick={() => inputImportacao.current?.click()}>{importing ? "Importando…" : "Importar"}</Button>
+        <input ref={inputImportacao} aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} hidden />
+        </div>
+        <div className="notas-toolbar-config" role="group" aria-label="Configuração das notas">
+          <select aria-label="Tipo para buscar ou importar" value={janelaAtiva} disabled={Boolean(notasFilters.type)} onChange={e => setTipoAcao(e.target.value)}>
+            <option value="NFSE">NFS-e</option><option value="NFE">NF-e</option>
+          </select>
       {janelaAtiva === 'NFSE' && <FerramentasNfse api={nfseApi} companyId={companyId}
         revisao={Boolean(emissao)} revisaoNotas={notas} competencia={notasFilters.competencia} onAbrirNota={abrirNota} />}
-      {janelaAtiva === 'NFSE' && hrefIntegracoes && <a className="btn btn-secondary btn-md" href={hrefIntegracoes}
-        onClick={e => { if (onAbrirIntegracoes && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) { e.preventDefault(); onAbrirIntegracoes(); } }}>Guru em Integrações</a>}
+      {hrefIntegracoes && <a className="btn btn-secondary btn-md" href={hrefIntegracoes}
+        onClick={e => { if (onAbrirIntegracoes && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) { e.preventDefault(); onAbrirIntegracoes(); } }}>Integrações</a>}
         {janelaAtiva === "NFSE" && hrefConfiguracaoEmissao && (
           /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
              cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
@@ -166,12 +168,12 @@ export function NotasFiscaisTab({
             data-testid="engrenagem-emissao-nfse"
             onClick={(event) => {
               // Ctrl/Cmd/Shift/Alt e botão do meio: o navegador assume e abre em outra guia.
-              if (oNavegadorAssumeOClique(event)) return;
+              if (oNavegadorAssumeOClique(event) || !onAbrirConfiguracaoEmissao) return;
               event.preventDefault();
               onAbrirConfiguracaoEmissao?.();
             }}
             style={{
-              marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 36, minHeight: 36, boxSizing: "border-box",
+              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 44, minHeight: 44, boxSizing: "border-box",
               padding: "8px 11px", borderRadius: 6, border: "1px solid var(--border)",
               background: "transparent", color: "var(--text-faint)", textDecoration: "none",
               fontSize: "0.85rem", fontWeight: 600, lineHeight: 1,
@@ -183,6 +185,7 @@ export function NotasFiscaisTab({
             <span aria-hidden="true" style={{ fontSize: "1.05rem" }}>⚙</span>
           </a>
         )}
+        </div>
       </div>
       {nfseApi.mode === "mock" && <div style={{ marginBottom: 12 }}><Button variant="ghost" size="sm" disabled={importing} onClick={() => {
         const quantidade = janelaAtiva === "NFE" ? 25 : 55;
@@ -194,14 +197,14 @@ export function NotasFiscaisTab({
         {importResult.problemas?.length > 0 && <ul>{importResult.problemas.map((p, i) => <li key={i}><strong>{p.arquivo || "Arquivo"}:</strong> {p.mensagem}</li>)}</ul>}
         {importResult.detalhesTruncados && <p>O total inclui todo o lote; a lista exibe apenas os primeiros arquivos com detalhes disponíveis.</p>}
       </section>}
-      {janelaAtiva === "NFSE" && <div style={{ marginTop: -8, marginBottom: 16 }}>
-        <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onClearError={clearAdnError} somenteStatus />
-      </div>}
-
-
-      {!loadingNotas && !erroNotas && notasPanel.datasIndeterminadas > 0 && <p role="status">{notasPanel.datasIndeterminadas} nota(s) com data de emissão a verificar no restante dos filtros. {notasFilters.dataInicio || notasFilters.dataFim ? "Não incluídas no intervalo de datas; remova o intervalo para conferi-las." : "Confira a origem no detalhe."}</p>}
+      <div className="notas-captura-avisos" aria-label="Avisos da captura">
+        {janelaAtiva === "NFSE"
+          ? <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onClearError={clearAdnError} somenteStatus />
+          : <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onClearError={clearDfeError} somenteStatus />}
+      </div>
       <NotasList
         key={companyId}
+        datasIndeterminadas={loadingNotas || erroNotas ? null : notasPanel.datasIndeterminadas}
         somenteRecebidas={somenteRecebidas}
         onBaixarSelecionadas={(ids, formato) => nfseApi.baixarNotasSelecionadas(companyId, ids, formato)}
         notas={erroNotas || loadingNotas ? [] : notasDaJanela}

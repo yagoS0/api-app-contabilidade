@@ -28,11 +28,12 @@ export function BotaoAuditoria({ api, companyId, competencia, revisao, href, onA
   }, [api, companyId, competencia, revisao]);
   const texto = estado.carregando ? "Conferindo…" : estado.quantidade > 0
     ? `${estado.quantidade} achado(s) na competência${estado.indisponivel ? " · conferência parcial" : ""}` : estado.indisponivel ? "Conferência indisponível" : "Sem achados na competência";
-  return <a className={card ? "notas-indicador notas-auditoria" : "btn btn-secondary btn-md"} href={href} onClick={(e) => {
+  const detalhe = estado.carregando ? undefined : (estado.fora == null ? 'Fora da conferência: indisponível' : estado.fora + ' fora da conferência') + ' · ' + (estado.posteriores ?? '—') + ' pendências pós-fechamento em todas as competências. Conjuntos podem se sobrepor.';
+  return <a aria-description={card ? detalhe : undefined} className={card ? "notas-indicador notas-auditoria" : "btn btn-secondary btn-md"} href={href} onClick={(e) => {
     if (oNavegadorAssumeOClique(e)) return;
     if (onAbrir) { e.preventDefault(); onAbrir(); }
   }} style={{ gap: 8 }}>
-    Auditoria {card && <strong>{estado.carregando ? "…" : estado.indisponivel ? "—" : estado.quantidade}</strong>}<span style={{ fontSize: 12, color: estado.quantidade > 0 ? "var(--state-warn)" : "var(--text-muted)" }}>{texto}</span>
-    {!estado.carregando && <small>{estado.fora == null ? 'Fora da conferência: indisponível' : `${estado.fora} fora da conferência`} · {estado.posteriores ?? '—'} pendências pós-fechamento em todas as competências. Conjuntos podem se sobrepor.</small>}
+    Auditoria {card && <strong>{estado.carregando ? "…" : estado.quantidade == null ? "—" : estado.quantidade}</strong>}<span style={{ fontSize: 12, color: estado.quantidade > 0 ? "var(--state-warn)" : "var(--text-muted)" }}>{card ? (estado.carregando ? "Carregando…" : estado.indisponivel ? (estado.quantidade == null ? "Conferência indisponível" : "Conferência parcial") : "Achados na competência") : texto}</span>
+    {!card && !estado.carregando && <small>{estado.fora == null ? 'Fora da conferência: indisponível' : `${estado.fora} fora da conferência`} · {estado.posteriores ?? '—'} pendências pós-fechamento em todas as competências. Conjuntos podem se sobrepor.</small>}
   </a>;
 }

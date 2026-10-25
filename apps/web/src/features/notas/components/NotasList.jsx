@@ -103,7 +103,7 @@ function Paginacao({ total, offset, limit, carregados, loading, onOffset }) {
   );
 }
 
-function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebidas = false }) {
+function FilterBar({ filters, onChange, onApply, loading, total, datasIndeterminadas, somenteRecebidas = false }) {
   // `local` é o RASCUNHO dos campos que só valem depois de "Filtrar" (hoje, a busca textual).
   // ⚠ Ele é uma cópia feita no MOUNT e nunca ressincroniza. Isso é de propósito para o rascunho —
   // digitar não pode ser desfeito por um render —, mas é veneno para campo que muda de FORA: a
@@ -128,7 +128,9 @@ function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebida
           dentro da MESMA tela. O valor continua à vista, como rótulo, porque filtro ativo sem
           rastro visível é o "filtro fantasma" que a listagem já teve de resolver. */}
       <details className="notas-data">
-        <summary>Data de emissão{(filters.dataInicio || filters.dataFim) && ` · ${filters.dataInicio ? filters.dataInicio.split('-').reverse().join('/') : 'Sem início'} até ${filters.dataFim ? filters.dataFim.split('-').reverse().join('/') : 'Sem fim'}`}</summary>
+        <summary>Data de emissão{(filters.dataInicio || filters.dataFim) && ` · ${filters.dataInicio ? filters.dataInicio.split('-').reverse().join('/') : 'Sem início'} até ${filters.dataFim ? filters.dataFim.split('-').reverse().join('/') : 'Sem fim'}`}{(!Number.isFinite(datasIndeterminadas) || datasIndeterminadas > 0) && <span className="notas-data-aviso" aria-label={Number.isFinite(datasIndeterminadas) ? datasIndeterminadas + ' notas com data de emissão a verificar' : 'Contagem de datas indeterminadas indisponível'}> ⓘ</span>}</summary>
+        <p>{Number.isFinite(datasIndeterminadas) ? datasIndeterminadas + ' nota(s) com data de emissão a verificar no restante dos filtros.' : 'Contagem de datas indeterminadas indisponível.'} Confira a origem no detalhe. {(filters.dataInicio || filters.dataFim) && 'Notas com data indeterminada não são incluídas no intervalo de datas.'}</p>
+        {(filters.dataInicio || filters.dataFim) && <Button variant="secondary" size="sm" onClick={() => onChange({ ...filters, dataInicio: '', dataFim: '', offset: 0 })}>Limpar intervalo para conferir</Button>}
         <label>De<input type="date" value={filters.dataInicio || ""} max={filters.dataFim || undefined}
           onChange={e => onChange({ ...filters, dataInicio: e.target.value, offset: 0 })} /></label>
         <label>Até<input type="date" value={filters.dataFim || ""} min={filters.dataInicio || undefined}
@@ -167,7 +169,7 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false, error }) {
+export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false, error, datasIndeterminadas }) {
   const [selecionadas, setSelecionadas] = useState([]);
   const [baixando, setBaixando] = useState(false);
   const [resultadoDownload, setResultadoDownload] = useState(null);
@@ -206,7 +208,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total} somenteRecebidas={somenteRecebidas} />
+      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total} datasIndeterminadas={datasIndeterminadas} somenteRecebidas={somenteRecebidas} />
       {onBaixarSelecionadas && (selecionadas.length > 0 || resultadoDownload) && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
         <span style={{ color: PANEL.muted, fontSize: "0.8rem" }}>{selecionadas.length} selecionada(s) nesta página</span>
         <Button variant="secondary" size="sm" disabled={!selecionadas.length || baixando || loading} onClick={() => baixar("XML")}>Baixar XML</Button>

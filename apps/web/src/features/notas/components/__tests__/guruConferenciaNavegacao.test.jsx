@@ -26,18 +26,19 @@ const panel = companyId => ({ companyId, loading: false, error: null, notas: [],
 test('atalho de Notas abre Integrações sem duplicar painel e preserva ferramentas/contexto', () => {
   const api = createApiClient(), abrir = jest.fn();
   const { rerender } = render(<NotasFiscaisTab notasPanel={panel('empresa-a')} hrefIntegracoes="/companies/empresa-a/integracoes" onAbrirIntegracoes={abrir} />);
-  const entrada = screen.getByRole('link', { name: 'Guru em Integrações' });
+  const entrada = screen.getByRole('link', { name: 'Integrações' });
   expect(entrada).toHaveAttribute('href', '/companies/empresa-a/integracoes');
   fireEvent.click(entrada);
   expect(abrir).toHaveBeenCalledTimes(1);
   expect(api.listarGuruConferencia).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: /Emitir nota/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Notas recorrentes' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Verificar conformidade' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Verificar conformidade' })).not.toBeInTheDocument();
+  expect(api.getVerificacaoNfse).not.toHaveBeenCalled();
   expect(api.importarGuruConferencia).not.toHaveBeenCalled(); expect(api.emitirNfse).not.toHaveBeenCalled();
   rerender(<NotasFiscaisTab notasPanel={panel('empresa-b')} hrefIntegracoes="/companies/empresa-b/integracoes" onAbrirIntegracoes={abrir} />);
-  expect(screen.getByRole('link', { name: 'Guru em Integrações' })).toHaveAttribute('href', '/companies/empresa-b/integracoes');
+  expect(screen.getByRole('link', { name: 'Integrações' })).toHaveAttribute('href', '/companies/empresa-b/integracoes');
   expect(screen.queryByText(/Conexão pendente/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('link', { name: 'Guru em Integrações' }), { ctrlKey: true });
+  fireEvent.click(screen.getByRole('link', { name: 'Integrações' }), { ctrlKey: true });
   expect(abrir).toHaveBeenCalledTimes(1);
 });
