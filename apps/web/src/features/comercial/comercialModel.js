@@ -4,6 +4,7 @@ export const ETAPAS = [
 ];
 export function etapaDaOportunidade(item) {
   if (item.status === 'DESISTIU') return 'DESISTIU';
+  if (item.status === 'CONVERTIDO' && item.comercial?.contratacao?.politica) return item.comercial.contratacao.ganha ? 'GANHA' : 'CONTRATADO';
   if (['CONVERTIDO', 'CONCLUIDO_AVULSO'].includes(item.status)) return 'CONCLUIDO';
   if (item.comercial?.contratacao?.ganha) return 'GANHA';
   return ({ cadastro: 'LEAD', publica: 'ANALISE', autorizacao: 'ANALISE', fiscal: 'ANALISE', diagnostico: 'ANALISE', devolutiva: 'ANALISE', proposta: 'PROPOSTA', contrato: 'CONTRATADO', pagamento: 'CONTRATADO', conclusao: 'CONCLUSAO' })[item.comercial?.atual] || 'INDISPONIVEL';

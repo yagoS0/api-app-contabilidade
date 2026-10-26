@@ -172,7 +172,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
       <div className="onboarding-conversion">
         <div className="onboarding-panel">
           <strong>Requisitos e efeitos de adicionar à carteira</strong>
-          <p>Com proposta registrada, o servidor exige proposta aceita, contrato recorrente da opção aceita com assinatura conferida e pagamento desse contrato conferido.</p>
+          <p>O servidor confere a proposta aceita, o contrato recorrente vigente e os requisitos cadastrais. Na nova política, o recebimento pode ficar pendente somente com condição de pagamento futuro registrada e conferida nesse contrato. Entrar na carteira não confirma pagamento nem torna a oportunidade ganha.</p>
           <p>Sem contratação confirmada, a entrada normal fica bloqueada. O cadastro definitivo e as permissões são validados ao confirmar.</p>
           {externa && !excecaoAplicavel && <p role="status">A contratação mudou e a exceção não está mais disponível. Feche este modal e confira a contratação atual antes de continuar.</p>}
           {excecaoAplicavel && <fieldset disabled={enviando}>

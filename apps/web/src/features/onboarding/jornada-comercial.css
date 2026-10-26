@@ -6,6 +6,12 @@
 .commercial-contract-form label { display: grid; gap: 6px; margin-block: 8px; font-size: .875rem; }
 .commercial-contract-form input, .commercial-contract-form select, .commercial-contract-form textarea { display: block; box-sizing: border-box; min-width: 0; width: 100%; max-width: 100%; min-height: 40px; padding: 10px; font: inherit; color: var(--text); background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .commercial-contract-form textarea { resize: vertical; }
+.commercial-contract-form .commercial-future-payment { grid-template-columns: minmax(0, 1fr); }
+.commercial-future-payment-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px 16px; align-items: start; }
+.commercial-contract-form .commercial-future-payment > p { grid-column: 1 / -1; margin: 0; }
+.commercial-contract-form .commercial-future-payment-option { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; cursor: pointer; }
+.commercial-contract-form .commercial-future-payment-option input[type="checkbox"] { flex: 0 0 20px; width: 20px; height: 20px; min-height: 20px; padding: 0; margin: 0; }
+.commercial-contract-form .commercial-future-payment-option span { min-width: 0; }
 .commercial-contract-form :is(input, select, textarea):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .commercial-contract-form [aria-invalid="true"] { border-color: var(--state-warn); }
 .commercial-contract-form small { display: block; line-height: 1.5; color: var(--text); }

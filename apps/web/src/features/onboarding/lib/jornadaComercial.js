@@ -25,7 +25,7 @@ export function montarJornada(estado, agora = Date.now()) {
   const publica = analises.find(a => a.tipo === "PUBLICA" && a.status === "CONCLUIDA");
   const fiscal = analises.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
   const cadastroConferido = Boolean(j.publicaConferida && (publica || j.publicaConferencia?.cnpj === o.cnpj));
-  const contratacao = projetarContratacao(estado);
+  const contratacao = projetarContratacao({ ...estado, onboarding: { ...o, etapas: j.etapasConstituicao || o.etapas } });
   const { proposta, contrato, pagamento } = contratacao;
   const aceita = proposta?.status === "ACEITA";
   const contratoAprovado = contratoAptoPagamento(proposta, contrato);

@@ -41,3 +41,34 @@ test('T35/T37: atualização da versão preserva textos e exige nova confirmaç�
   fireEvent.click(screen.getByRole('button', { name: 'Vincular ao existente' }));
   await waitFor(() => expect(vincular).toHaveBeenCalledWith('empresa', '', expect.objectContaining({ contratacaoExterna: expect.objectContaining({ versao: 4, confirmada: true }) })));
 });
+
+test('C1: carteira antecipada continua sem Ganha; recebimento posterior muda só projeção comercial', () => {
+  const item = { ...ficha, status: 'CONVERTIDO', comercial: { contratacao: { politica: 'COMERCIAL_2026_10_V1', ganha: false } } };
+  expect(etapaDaOportunidade(item)).toBe('CONTRATADO');
+  item.comercial.contratacao.ganha = true;
+  expect(etapaDaOportunidade(item)).toBe('GANHA');
+});
+
+
+import { OnboardingDetailPage } from '../../pages/renderOnboardingDetailPage';
+import { projetarContratacao, resumirContratacao } from '../../../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
+
+test.each([false, true])('detalhe distingue assinatura histórica de recebimento confirmado (%s)', async pago => {
+  const proposta = { id: 'p', versao: 1, status: 'ACEITA', opcaoAceita: 'mensal', snapshot: {} };
+  const contrato = { id: 'c', propostaId: 'p', status: 'ASSINADO_CONFERIDO', dados: { opcao: { chave: 'mensal', recorrente: true } } };
+  const { contextoContrato } = await import('../../../../../../../packages/shared/src/onboarding/contratacaoComercial.js');
+  const o = { ...ficha, politicaComercial: pago ? 'COMERCIAL_2026_10_V1' : null, etapas: [] };
+  const marcos = pago ? [{ tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO', atorId: 'contador', dados: { politica: 'R35', contratoId: 'c', confirmadoEm: '2026-10-25', contextoContrato: contextoContrato(proposta, contrato) } }] : [];
+  const contratacao = resumirContratacao(projetarContratacao({ onboarding: o, propostas: [proposta], contratos: [contrato], marcos }));
+  expect(contratacao).toMatchObject({ ganha: true, pagamentoConferido: pago });
+  const api = { getOnboarding: jest.fn().mockResolvedValue({ onboarding: { ...o, comercial: { contratacao } } }) };
+  render(<OnboardingDetailPage api={api} onboardingId="o" onVoltar={() => {}} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Implantação', exact: true }));
+  if (pago) {
+    expect(screen.getByText(/^Recebimento confirmado\./)).toBeVisible();
+    expect(screen.queryByText(/Contratação confirmada por assinatura na política histórica/)).not.toBeInTheDocument();
+  } else {
+    expect(screen.getByText(/Contratação confirmada por assinatura na política histórica; recebimento não confirmado/)).toBeVisible();
+    expect(screen.queryByText(/^Recebimento confirmado\./)).not.toBeInTheDocument();
+  }
+});

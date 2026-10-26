@@ -1,3 +1,4 @@
+import { POLITICA_COMERCIAL_C1 } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { exigirEscopo } from "./ComercialService.js";
 import { ORIGENS, OnboardingError, extrairColunas } from "./OnboardingService.js";
@@ -17,7 +18,7 @@ export async function criarDemandaRelacionada(id, body, user, db = prisma) {
     }
     const dados = Object.fromEntries(["responsavelNome", "responsavelEmail", "responsavelTelefone"].map(c => [c, origem[c] || origem.dados?.[c] || ""]));
     if (body.origem !== 'PESSOA_FISICA') dados.cartoesPessoas = 2;
-    const criada = await tx.onboarding.create({ data: { origem: body.origem, status: "RASCUNHO", origemPreenchimento: "ESCRITORIO", criadoPorId: origem.criadoPorId || user.id, dados, ...extrairColunas(body.origem, dados), eventos: { create: { tipo: "DEMANDA_ORIGEM", atorId: user.id, dados: { onboardingId: id, origem: origem.origem } } } } });
+    const criada = await tx.onboarding.create({ data: { politicaComercial: POLITICA_COMERCIAL_C1, origem: body.origem, status: "RASCUNHO", origemPreenchimento: "ESCRITORIO", criadoPorId: origem.criadoPorId || user.id, dados, ...extrairColunas(body.origem, dados), eventos: { create: { tipo: "DEMANDA_ORIGEM", atorId: user.id, dados: { onboardingId: id, origem: origem.origem } } } } });
     await tx.onboardingEvento.create({ data: { onboardingId: id, tipo: "DEMANDA_RELACIONADA_CRIADA", atorId: user.id, dados: { onboardingId: criada.id, origem: body.origem, versaoOrigem: body.versao, chaveSolicitacao: body.chaveSolicitacao || null } } });
     return criada;
   });

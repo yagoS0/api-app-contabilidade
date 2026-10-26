@@ -20,7 +20,10 @@ function resumirComercial(ficha, jornada, propostas, contratos, marcos, atendime
   const atual = projecao.passos.find(p => p.id === projecao.atual);
   return {
     contratacao: projecao.contratacao,
-    atual: projecao.atual, titulo: ({ CONVERTIDO: 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[ficha.status] || (projecao.contratacao.ganha ? 'Ganha · ' + (projecao.contratacao.carteiraPermitida ? 'entrada na carteira disponível' : projecao.contrato?.dados?.opcao?.recorrente === false ? 'execução do serviço' : 'carteira pendente de pagamento') : atual?.titulo) || 'Execução e conclusão',
+    atual: projecao.atual, titulo: (ficha.status === 'CONVERTIDO' && projecao.contratacao.politica ? (projecao.contratacao.ganha ? 'Ganha · na carteira' : 'Na carteira · recebimento pendente') : null)
+      || ({ CONVERTIDO: 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[ficha.status]
+      || (projecao.contratacao.ganha ? 'Ganha · ' + (projecao.contratacao.carteiraPermitida ? 'entrada na carteira disponível' : 'confira os requisitos do atendimento')
+        : projecao.contratacao.carteiraPermitida ? 'Carteira disponível · pagamento futuro contratado' : atual?.titulo) || 'Execução e conclusão',
     pendencias: projecao.pendencias, encerrado: projecao.encerrado,
     passos: projecao.passos.map(({ id, titulo, concluido }) => ({ id, titulo, concluido })),
     evidencias: evidenciasDiagnostico(ficha, jornada, atendimento),

@@ -1,6 +1,42 @@
 const canonico = valor => JSON.stringify(valor, (_, v) => v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 
+export const POLITICA_COMERCIAL_C1 = 'COMERCIAL_2026_10_V1';
+export function politicaComercial(onboarding = {}) {
+  const politica = onboarding.politicaComercial;
+  if (politica == null) return null;
+  if (politica !== POLITICA_COMERCIAL_C1) {
+    const erro = new Error('Política comercial desconhecida. Confira a versão do atendimento.');
+    erro.code = 'politica_comercial_desconhecida'; erro.status = 409;
+    throw erro;
+  }
+  return politica;
+}
+
+// A condição é declaração estruturada do gestor sobre cláusula do documento congelado.
+// Não interpretamos texto livre nem acrescentamos cláusulas ao modelo aprovado.
+export function condicaoFuturaValida(condicao, texto) {
+  return Boolean(condicao && condicao.versao === 1 && condicao.tipo === 'PAGAMENTO_FUTURO'
+    && condicao.carteiraAntesDoPagamento === true
+    && typeof condicao.vencimento === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(condicao.vencimento)
+    && Number.isFinite(Date.parse(condicao.vencimento))
+    && new Date(condicao.vencimento).toISOString().slice(0, 10) === condicao.vencimento
+    && typeof condicao.clausula === 'string' && condicao.clausula.trim().length >= 10
+    && condicao.clausula.length <= 2000 && typeof texto === 'string' && texto.includes(condicao.clausula));
+}
+export function pagamentoFuturoDoContrato(onboarding, proposta, contrato) {
+  const c = contrato?.dados?.condicaoPagamento;
+  return Boolean(politicaComercial(onboarding) === POLITICA_COMERCIAL_C1
+    && contratoAptoPagamento(proposta, contrato) && contrato.aprovadoEm && contrato.aprovadoPor
+    && condicaoFuturaValida(c, contrato.texto) && c.propostaId === proposta.id && c.propostaVersao === proposta.versao
+    && Number.isFinite(new Date(contrato.aprovadoEm).getTime()) && c.vencimento > new Date(contrato.aprovadoEm).toISOString().slice(0, 10));
+}
+
+export function aberturaConstituida(onboarding = {}) {
+  return Boolean(/^\d{14}$/.test(onboarding.cnpj || '') && ['viabilidade_registro', 'cnpj_definitivo'].every(chave =>
+    onboarding.etapas?.some(e => e.chave === chave && e.concluidaEm && e.concluidaPorId)));
+}
+
 export function urlCobrancaSegura(valor) {
   try {
     const u = new URL(valor);
@@ -33,17 +69,24 @@ export function pagamentoDoContrato(proposta, contrato, marcos = []) {
 
 // Projeção de fatos persistidos. Legados mantêm sua política; não há backfill.
 export function projetarContratacao({ onboarding = {}, propostas = [], contratos = [], marcos = [] } = {}) {
+  const politica = politicaComercial(onboarding);
+  const nova = politica === POLITICA_COMERCIAL_C1;
   const proposta = propostas.find(p => p.status === 'ACEITA' && !p.revogadaEm) || propostas.find(p => !p.revogadaEm);
   const corresponde = c => contratoCorresponde(proposta, c);
   const contrato = contratos.find(c => corresponde(c) && c.status === 'ASSINADO_CONFERIDO') || contratos.find(c => corresponde(c));
-  const pagamento = pagamentoDoContrato(proposta, contrato, marcos);
-  const ganha = Boolean(pagamento || contrato?.status === 'ASSINADO_CONFERIDO' && contrato.dados?.politicaContratacao !== 'R35');
+  const pagamento = pagamentoDoContrato(proposta, contrato, nova ? marcos.filter(m => m.dados?.politica === 'R35') : marcos);
+  const ganha = Boolean(pagamento || !nova && contrato?.status === 'ASSINADO_CONFERIDO' && contrato.dados?.politicaContratacao !== 'R35');
+  const pagamentoFuturo = pagamentoFuturoDoContrato(onboarding, proposta, contrato);
+  const constituida = onboarding.origem !== 'ABERTURA' || aberturaConstituida(onboarding);
   const externa = marcos.find(m => m.tipo === 'CONVERTIDO' && m.dados?.contratacao?.origem === 'EXTERNA')?.dados.contratacao || null;
   return {
-    proposta, contrato, pagamento, ganha, externa,
-    implantacaoPermitida: ganha || Boolean(externa),
+    proposta, contrato, pagamento, ganha, externa, politica, pagamentoFuturo,
+    // C5 resolve requisitos por atividade. Capacidade não materializa execução ou entrega.
+    execucaoIndependePagamento: nova,
+    implantacaoPermitida: nova ? onboarding.origem !== 'PESSOA_FISICA' && constituida : ganha || Boolean(externa),
     naCarteira: onboarding.status === 'CONVERTIDO',
-    carteiraPermitida: onboarding.origem !== 'PESSOA_FISICA' && ganha && contrato.dados?.opcao?.recorrente === true && Boolean(pagamento)
+    carteiraPermitida: onboarding.origem !== 'PESSOA_FISICA' && (!nova || constituida)
+      && contrato?.dados?.opcao?.recorrente === true && (nova ? Boolean(pagamento) || pagamentoFuturo : ganha && Boolean(pagamento))
       && (onboarding.dados?.cadastroRevisao || 0) === (proposta?.snapshot?.cadastroRevisao || 0),
     excecaoAplicavel: onboarding.origem !== 'PESSOA_FISICA' && !['CONVERTIDO', 'DESISTIU', 'CONCLUIDO_AVULSO'].includes(onboarding.status) && propostas.length === 0 && contratos.length === 0,
   };
@@ -62,6 +105,8 @@ export function validarContratacaoExterna(valor, versao) {
 export function resumirContratacao(c) {
   const e = c.externa;
   return {
+    politica: c.politica, pagamentoFuturo: c.pagamentoFuturo,
+    execucaoIndependePagamento: c.execucaoIndependePagamento,
     ganha: c.ganha, implantacaoPermitida: c.implantacaoPermitida,
     naCarteira: c.naCarteira, carteiraPermitida: c.carteiraPermitida, excecaoAplicavel: c.excecaoAplicavel,
     propostaId: c.proposta?.id || null, contratoId: c.contrato?.id || null,

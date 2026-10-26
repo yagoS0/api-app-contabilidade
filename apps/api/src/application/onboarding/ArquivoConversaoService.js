@@ -4,7 +4,7 @@ import { GuideStorageService } from "../guides/GuideStorageService.js";
 import { gerarPropostaPdf, propostaParaCliente } from "./PropostaComercialPdf.js";
 import { gerarContratoPdf } from "./ContratoComercialPdf.js";
 import { OnboardingError } from "./OnboardingService.js";
-import { pagamentoDoContrato } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
+import { pagamentoDoContrato, pagamentoFuturoDoContrato } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 
 const hash = valor => crypto.createHash("sha256").update(valor).digest("hex");
 const assinatura = documentos => documentos.map(d => `${d.id}:${d.sha256}`).sort().join("|");
@@ -13,7 +13,7 @@ const assinatura = documentos => documentos.map(d => `${d.id}:${d.sha256}`).sort
 // uma empresa criada sem documentos. Chaves pelo conteúdo tornam a preparação repetível.
 // Se a transação falhar, só os objetos preparados ficam no storage, sem documentos visíveis;
 // as fontes cifradas continuam intactas e a próxima tentativa pode reaproveitá-las.
-export async function prepararArquivoConversao({ db, onboardingId, proposta, contrato, storage = new GuideStorageService(), decifrar = decryptSecret }) {
+export async function prepararArquivoConversao({ db, onboardingId, onboarding = {}, proposta, contrato, storage = new GuideStorageService(), decifrar = decryptSecret }) {
   const fontes = await db.documentoOnboarding.findMany({ where: { onboardingId }, orderBy: { id: "asc" } });
   const documentos = [];
   async function guardar(origem, nome, buffer, uploadedById, createdAt) {
@@ -26,7 +26,7 @@ export async function prepararArquivoConversao({ db, onboardingId, proposta, con
     if (contrato?.status === 'ASSINADO_CONFERIDO' && !fontes.some(f => f.id === contrato.documentoAssinadoId)) throw Error("Contrato assinado sem documento de origem.");
     if (contrato && contrato.status !== 'ASSINADO_CONFERIDO') {
       const marcos = await db.onboardingEvento.findMany({ where: { onboardingId, tipo: 'PAGAMENTO_HONORARIOS_CONFERIDO' } });
-      if (contrato.dados?.politicaContratacao !== 'R35' || !pagamentoDoContrato(proposta, contrato, marcos)) throw Error('Contrato sem assinatura exige recebimento confirmado da revisão correspondente.');
+      if (!pagamentoFuturoDoContrato(onboarding, proposta, contrato) && (contrato.dados?.politicaContratacao !== 'R35' || !pagamentoDoContrato(proposta, contrato, marcos))) throw Error('Contrato sem assinatura exige recebimento confirmado da revisão correspondente.');
     }
     for (const fonte of fontes) {
       const plain = await decifrar(fonte.conteudoCifrado);

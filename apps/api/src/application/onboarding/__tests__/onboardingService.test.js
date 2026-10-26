@@ -38,6 +38,7 @@ import {
   desistir,
   extrairColunas,
   listar,
+  obter,
 } from "../OnboardingService.js";
 import { etapasDaOrigem, ETAPAS_POR_ORIGEM } from "../etapasTemplate.js";
 import { criarPropostasComerciais } from "../PropostasComerciaisService.js";
@@ -514,7 +515,7 @@ describe("listar e descartar", () => {
 describe("criar", () => {
   test("nasce RASCUNHO, ESCRITORIO e com dois cartões sem pessoas persistidas", async () => {
     prisma.onboarding.create.mockResolvedValue({ id: "onb-novo" });
-    await criar({ origem: "abertura", criadoPorId: "u1" });
+    await criar({ origem: "abertura", criadoPorId: "u1", politicaComercial: "adulterada" });
     const { data } = prisma.onboarding.create.mock.calls[0][0];
     expect(data).toEqual({
       origem: "ABERTURA",
@@ -522,6 +523,7 @@ describe("criar", () => {
       origemPreenchimento: "ESCRITORIO",
       dados: { cartoesPessoas: 2 },
       criadoPorId: "u1",
+      politicaComercial: 'COMERCIAL_2026_10_V1',
     });
   });
 
@@ -630,5 +632,41 @@ describe('identificação mínima na conclusão empresarial', () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ dados: { regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15 } }));
     await atualizar('onb-1', { versao: 0, dados: { socios: [{ nome: 'Ana' }] } });
     expect(prisma.onboarding.update.mock.calls[0][0].data.dados).toMatchObject({ regimeAtual: 'SIMPLES', temDebitos: true, notasRecebidasMes: 15, socios: [{ nome: 'Ana' }] });
+  });
+});
+
+test('C1: patch não substitui a política atribuída pelo servidor', async () => {
+  const ficha = fichaSalva({ politicaComercial: 'COMERCIAL_2026_10_V1' });
+  prisma.onboarding.findUnique.mockResolvedValue(ficha);
+  prisma.onboarding.update.mockResolvedValue(ficha);
+  await atualizar(ficha.id, { versao: ficha.versao, politicaComercial: null, ultimoPasso: 'dados' }, { atorId: 'contador' });
+  expect(prisma.onboarding.update.mock.calls[0][0].data).not.toHaveProperty('politicaComercial');
+  expect(ficha.politicaComercial).toBe('COMERCIAL_2026_10_V1');
+});
+
+
+describe('C1: prévia usa a mesma política e evidências do comando', () => {
+  test.each(['futuro', 'abertura', 'legado'])('%s mantém detalhe, capacidade e guarda coerentes', async caso => {
+    const registro = fichaSalva({ politicaComercial: caso === 'legado' ? null : 'COMERCIAL_2026_10_V1',
+      origem: caso === 'abertura' ? 'ABERTURA' : 'TRANSFERENCIA', cnpj: '11222333000181' });
+    const proposta = { id: 'p', versao: 1, status: 'ACEITA', opcaoAceita: 'mensal', snapshot: {} };
+    const contrato = { id: 'c', propostaId: 'p', aprovadoPor: 'contador', aprovadoEm: '2026-10-25T12:00:00Z',
+      status: caso === 'legado' ? 'ASSINADO_CONFERIDO' : 'AGUARDANDO_ASSINATURA', texto: 'Pagamento futuro contratado em 10/11/2026.',
+      dados: { opcao: { chave: 'mensal', recorrente: true }, condicaoPagamento: { versao: 1, tipo: 'PAGAMENTO_FUTURO',
+        carteiraAntesDoPagamento: true, vencimento: '2026-11-10', clausula: 'Pagamento futuro contratado em 10/11/2026.', propostaId: 'p', propostaVersao: 1 } } };
+    prisma.onboarding.findUnique.mockResolvedValue(registro);
+    prisma.propostaComercial.findFirst.mockResolvedValue(proposta);
+    prisma.propostaComercial.findMany.mockResolvedValue([proposta]);
+    prisma.contratoComercial.findFirst.mockResolvedValue(contrato);
+    prisma.contratoComercial.findMany.mockResolvedValue([contrato]);
+    prisma.onboardingEtapa.findMany.mockResolvedValue([]);
+    const detalhe = await obter(registro.id, { role: 'contador' });
+    expect(detalhe.conversao.contratoConferido).toBe(caso === 'futuro');
+    expect(detalhe.comercial.contratacao).toMatchObject({ carteiraPermitida: caso === 'futuro', pagamentoConferido: false, ganha: caso === 'legado' });
+    expect(prisma.onboarding.updateMany).not.toHaveBeenCalled();
+    if (caso !== 'futuro') {
+      await expect(converter(registro.id)).rejects.toMatchObject({ code: caso === 'abertura' ? 'constituicao_pendente' : 'pagamento_pendente' });
+      expect(prisma.onboarding.updateMany).not.toHaveBeenCalled();
+    }
   });
 });

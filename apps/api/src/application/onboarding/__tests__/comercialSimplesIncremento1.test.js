@@ -194,3 +194,57 @@ test('papel de cliente e ficha inexistente não podem confirmar', async () => {
   await expect(t.jornada.confirmarPagamento('outra', user, t.pagamento)).rejects.toMatchObject({ status: 404 });
   expect(t.state.eventos).toEqual([]);
 });
+
+function anteciparC1(t) {
+  t.state.ficha.politicaComercial = 'COMERCIAL_2026_10_V1';
+  t.state.ficha.status = 'CONVERTIDO'; t.state.ficha.portalClientId = 'empresa-sintetica';
+  t.contrato.aprovadoPor = user.id;
+  t.contrato.dados.condicaoPagamento = { versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true,
+    vencimento: '2099-01-01', clausula: t.contrato.texto, propostaId: t.proposta.id, propostaVersao: t.proposta.versao };
+  t.state.eventos.push({ tipo: 'CONVERTIDO', onboardingId: 'o', dados: { contratacao: {
+    contratoId: 'c', propostaId: 'p', contextoContrato: contextoContrato(t.proposta, t.contrato) } } });
+}
+test('C1: após carteira, pagamento concorrente/replay é único e não materializa execução', async () => {
+  const t = setup(); anteciparC1(t);
+  const [a,b] = await Promise.all([t.jornada.confirmarPagamento('o', user, t.pagamento), t.jornada.confirmarPagamento('o', user, t.pagamento)]);
+  expect(a.id).toBe(b.id);
+  expect(t.state.ficha).toMatchObject({ status: 'CONVERTIDO', portalClientId: 'empresa-sintetica', versao: 3 });
+  expect(t.db.onboardingEtapa.createMany).not.toHaveBeenCalled();
+  expect(t.db.onboarding.update).not.toHaveBeenCalled();
+  expect(t.state.eventos.filter(e => e.tipo === 'PAGAMENTO_HONORARIOS_CONFERIDO')).toHaveLength(1);
+  await expect(t.jornada.confirmarPagamento('o', user, { ...t.pagamento, valorCentavos: 999 })).rejects.toMatchObject({ code: 'pagamento_divergente' });
+});
+test('C1: contrato diferente da conversão recusa; auditoria falha reverte confirmação', async () => {
+  const t = setup(); anteciparC1(t);
+  t.state.eventos[0].dados.contratacao.contratoId = 'outro';
+  await expect(t.jornada.confirmarPagamento('o', user, t.pagamento)).rejects.toMatchObject({ code: 'contrato_alterado' });
+  t.state.eventos[0].dados.contratacao.contratoId = 'c';
+  t.db.onboardingEvento.create.mockRejectedValueOnce(Error('auditoria indisponível'));
+  await expect(t.jornada.confirmarPagamento('o', user, t.pagamento)).rejects.toThrow('auditoria indisponível');
+  expect(t.state.ficha).toMatchObject({ versao: 2, status: 'CONVERTIDO' });
+  expect(t.state.eventos).toHaveLength(1);
+});
+test('C1: pagamento de abertura não materializa implantação nem promove rascunho', async () => {
+  const t = setup(); t.state.ficha.politicaComercial = 'COMERCIAL_2026_10_V1'; t.state.ficha.origem = 'ABERTURA';
+  await t.jornada.confirmarPagamento('o', user, t.pagamento);
+  expect(t.state.ficha.status).toBe('RASCUNHO');
+  expect(t.state.etapas).toHaveLength(0);
+  expect(projetarContratacao({ onboarding: t.state.ficha, propostas: [t.proposta], contratos: [t.contrato], marcos: t.state.eventos })).toMatchObject({ ganha: true, implantacaoPermitida: false, carteiraPermitida: false });
+});
+
+test('C1: pagamento de múltiplos serviços preserva etapas históricas sem criar execução fictícia', async () => {
+  const t = setup(); t.state.ficha.politicaComercial = 'COMERCIAL_2026_10_V1';
+  t.contrato.dados.opcao.servicos = ['ABERTURA', 'CONTABILIDADE'];
+  t.state.etapas = [{ chave: 'historica', concluidaEm: '2026-10-01', concluidaPorId: 'autor-anterior' }];
+  const antes = structuredClone(t.state.etapas);
+  await t.jornada.confirmarPagamento('o', user, t.pagamento);
+  expect(t.state.etapas).toEqual(antes);
+  expect(t.db.onboardingEtapa.createMany).not.toHaveBeenCalled();
+  expect(t.state.eventos.map(e => e.tipo)).toEqual(['PAGAMENTO_HONORARIOS_CONFERIDO']);
+});
+
+test('C1: pagamento recusa política desconhecida antes da reserva', async () => {
+  const t = setup(); t.state.ficha.politicaComercial = 'DESCONHECIDA';
+  await expect(t.jornada.confirmarPagamento('o', user, t.pagamento)).rejects.toMatchObject({ code: 'politica_comercial_desconhecida' });
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});

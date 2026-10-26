@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { politicaComercial, condicaoFuturaValida } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { exigirEscopo } from "./ComercialService.js";
@@ -33,6 +34,7 @@ export async function conferirDiagnosticoDaProposta(db, proposta) {
   if (atual?.diagnostico?.id !== proposta.snapshot.diagnosticoId) throw erro("proposta_desatualizada", "O diagnóstico mudou. Peça uma versão revisada da proposta.");
 }
 export async function habilitarImplantacaoContratada(tx, id, contrato, ficha, agora = () => new Date()) {
+      if (politicaComercial(ficha)) return;
       const etapas = contrato.dados.opcao.recorrente ? etapasDaOrigem(ficha.origem) : [{
         chave: "avulso_documentacao",
         titulo: "Conferir documentos do serviço",
@@ -420,7 +422,16 @@ export function criarPropostasComerciais({
     } catch (e) {
       throw erro("contrato_incompleto", e.message);
     }
-    return db.contratoComercial.upsert({
+    const politica = politicaComercial(r);
+    let condicaoPagamento;
+    if (body.condicaoPagamento != null) {
+      if (!politica || opcao?.recorrente !== true || !condicaoFuturaValida(body.condicaoPagamento, texto)) throw erro('condicao_pagamento_invalida', 'Confira a condição estruturada e a cláusula de pagamento futuro no texto do contrato.');
+      condicaoPagamento = { versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true,
+        vencimento: body.condicaoPagamento.vencimento, clausula: body.condicaoPagamento.clausula,
+        propostaId: p.id, propostaVersao: p.versao };
+    }
+    // Never rewrite a previously generated or approved contract.
+    const gerado = await db.contratoComercial.upsert({
       where: {
         propostaId
       },
@@ -433,37 +444,39 @@ export function criarPropostasComerciais({
           variaveis: dados,
           opcao,
           politicaContratacao: 'R35',
+          ...(condicaoPagamento ? { condicaoPagamento } : {}),
           modeloVersao: modelo.versao
         }))
       },
       update: {}
     });
+    const salva = gerado.dados?.condicaoPagamento;
+    if (politica && (Boolean(salva) !== Boolean(condicaoPagamento)
+      || condicaoPagamento && Object.keys(condicaoPagamento).some(k => condicaoPagamento[k] !== salva?.[k]))) {
+      throw erro('contrato_preservado', 'Este contrato já foi gerado com outra condição. O documento original foi preservado; confira a contratação vigente.');
+    }
+    return gerado;
   }
   async function aprovarContrato(id, contratoId, user) {
     exigirGestor(user);
-    const ficha = await exigirEscopo(id, user, db);
-    if (encerrado(ficha)) throw erro('contrato_indisponivel', 'O atendimento está encerrado.');
-    const atual = await db.contratoComercial.findFirst({ where: { id: contratoId, onboardingId: id }, include: { proposta: true } });
-    if (!atual?.proposta) throw erro('contrato_indisponivel', 'Contrato não encontrado.');
-    await conferirDiagnosticoDaProposta(db, atual.proposta);
-    const out = await db.contratoComercial.updateMany({
-      where: {
-        id: contratoId,
-        onboardingId: id,
-        status: "MINUTA",
-        proposta: {
-          revogadaEm: null
-        }
-      },
-      data: {
-        status: "AGUARDANDO_ASSINATURA",
-        aprovadoEm: agora(),
-        aprovadoPor: user.id
-      }
-    });
-    if (!out.count) throw erro("contrato_indisponivel", "Contrato não está em minuta.");
-    await evento(db, id, "CONTRATO_APROVADO", user.id, {
-      contratoId
+    return db.$transaction(async tx => {
+      const ficha = await exigirEscopo(id, user, tx);
+      politicaComercial(ficha);
+      const reserva = await tx.onboarding.updateMany({ where: { id, versao: ficha.versao, status: { notIn: ['CONVERTIDO', 'DESISTIU', 'CONCLUIDO_AVULSO'] } }, data: { updatedAt: agora() } });
+      if (!reserva.count) throw erro('contrato_indisponivel', 'O atendimento mudou ou está encerrado.');
+      const atual = await tx.contratoComercial.findFirst({ where: { id: contratoId, onboardingId: id }, include: { proposta: true } });
+      if (!atual?.proposta || atual.proposta.status !== 'ACEITA' || atual.proposta.revogadaEm) throw erro('contrato_indisponivel', 'Confira a proposta aceita do contrato.');
+      await conferirDiagnosticoDaProposta(tx, atual.proposta);
+      const condicao = atual.dados?.condicaoPagamento;
+      if (condicao && (!politicaComercial(ficha) || !condicaoFuturaValida(condicao, atual.texto)
+        || condicao.propostaId !== atual.proposta.id || condicao.propostaVersao !== atual.proposta.versao
+        || condicao.vencimento <= agora().toISOString().slice(0, 10))) throw erro('condicao_pagamento_invalida', 'Confira a condição de pagamento futuro e a versão do contrato.');
+      const out = await tx.contratoComercial.updateMany({
+        where: { id: contratoId, onboardingId: id, status: 'MINUTA', proposta: { status: 'ACEITA', revogadaEm: null } },
+        data: { status: 'AGUARDANDO_ASSINATURA', aprovadoEm: agora(), aprovadoPor: user.id },
+      });
+      if (!out.count) throw erro('contrato_indisponivel', 'Contrato não está em minuta.');
+      await evento(tx, id, 'CONTRATO_APROVADO', user.id, { contratoId, politicaComercial: ficha.politicaComercial || null, condicaoPagamento: condicao || null });
     });
   }
   async function salvarDocumento(id, user, arquivo) {

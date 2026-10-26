@@ -121,7 +121,7 @@ export function EnviarContratoSimples({ api, onboardingId, contrato, conversaId,
   </div>;
 }
 
-export function PagamentoComercialSimples({ api, estado, jornada, conversaId, ocupado, acao, executar }) {
+export function PagamentoComercialSimples({ api, estado, jornada, conversaId, ocupado, acao, executar, somenteRecebimento = false }) {
   const [valor, setValor] = useState(''), [referencia, setReferencia] = useState(''), [url, setUrl] = useState('');
   const [documentoId, setDocumentoId] = useState(''), [confirmando, setConfirmando] = useState(false);
   const [erro, setErro] = useState(''), [canalExterno, setCanalExterno] = useState('WHATSAPP');
@@ -140,18 +140,19 @@ export function PagamentoComercialSimples({ api, estado, jornada, conversaId, oc
     return u.href;
   }
   return <section aria-label="Pagamento externo">
-    <p>Cadastre a cobrança criada no Asaas. O recebimento será confirmado pelo contador.</p>
+    <p>{somenteRecebimento ? 'Confira o recebimento do contrato vinculado à entrada na carteira.' : 'Cadastre a cobrança criada no Asaas. O recebimento será confirmado pelo contador.'}</p>
     {cobranca?.id && <article aria-label="Cobrança salva"><h4>Cobrança salva</h4><p>{cobranca.dados?.referencia || 'Referência não informada'}{Number.isSafeInteger(cobranca.dados?.valorCentavos) ? ` · ${(cobranca.dados.valorCentavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</p>{cobranca.dados?.url ? <p>{cobranca.dados.url}</p> : <p>{estado.documentos?.find(d => d.id === cobranca.dados?.documentoId)?.nome || 'Documento vinculado à cobrança'}</p>}</article>}
     <div className="lead-company-fields"><label>Valor recebido ou cobrado (R$)<input inputMode="decimal" value={valor} onChange={e => { setValor(e.target.value); setConfirmando(false); }} /></label><label>Referência da cobrança<input value={referencia} onChange={e => { setReferencia(e.target.value); setConfirmando(false); }} /></label></div>
-    <label>Link da cobrança Asaas<input type="url" value={url} onChange={e => setUrl(e.target.value)} /></label>
+    {!somenteRecebimento && <><label>Link da cobrança Asaas<input type="url" value={url} onChange={e => setUrl(e.target.value)} /></label>
     <label>Guia ou comprovante (PDF)<input type="file" accept="application/pdf" disabled={ocupado} onChange={e => { const f = e.target.files?.[0]; if (f) executar(async () => { const r = await api.documentoComercial(o.id, f); setDocumentoId(r.documento.id); }); }} /></label>
     <label>Documento vinculado<select value={documentoId} onChange={e => setDocumentoId(e.target.value)}><option value="">Sem documento</option>{(estado.documentos || []).map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}</select></label>
     {erro && <p role="alert">{erro}</p>}
     <div className="lead-form-actions"><Button variant="secondary" disabled={ocupado || !valido || (!url && !documentoId)} onClick={() => { try { const link = url ? validarLink() : undefined; setErro(''); acao('/jornada/cobranca-externa', { ...body, ...(link ? { url: link } : {}) }); } catch (e) { setErro(e.message); } }}>Salvar cobrança</Button></div>
     <Button variant="secondary" disabled={ocupado || !cobranca?.id || !conversaId} onClick={() => acao('/jornada/cobranca-envio', { versao: o.versao, contratoId: contrato?.id, cobrancaId: cobranca.id, modo: 'ALTAN', conversaId })}>Enviar cobrança ao cliente</Button>
     {cobranca?.id && <><label>Envio realizado por fora<select value={canalExterno} onChange={e => setCanalExterno(e.target.value)}><option value="WHATSAPP">WhatsApp</option><option value="EMAIL">E-mail</option><option value="OUTRO">Outro meio</option></select></label><Button variant="secondary" disabled={ocupado} onClick={() => acao('/jornada/cobranca-envio', { versao: o.versao, contratoId: contrato?.id, cobrancaId: cobranca.id, modo: 'EXTERNO', canal: canalExterno })}>Registrar envio externo</Button></>}
+    </>}
     <p className="onboarding-help">Anexar comprovante ou enviar a cobrança não confirma pagamento.</p>
-    {!confirmando ? <Button disabled={ocupado || !valido} onClick={() => setConfirmando(true)}>Confirmar recebimento</Button> : <div className="lead-payment-confirm"><p>Confirmar o recebimento de {(centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} referente a {referencia}? Isso confirma a contratação e libera o início da implantação.</p><div className="lead-form-actions"><Button disabled={ocupado || !valido} onClick={() => acao('/jornada/pagamento', { ...body, confirmado: true })}>Recebimento conferido por mim</Button><Button variant="secondary" disabled={ocupado} onClick={() => setConfirmando(false)}>Cancelar</Button></div></div>}
+    {!confirmando ? <Button disabled={ocupado || !valido} onClick={() => setConfirmando(true)}>Confirmar recebimento</Button> : <div className="lead-payment-confirm"><p>Confirmar o recebimento de {(centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} referente a {referencia}? Isso confirma a contratação. Execução, constituição e implantação conservam seus requisitos próprios.</p><div className="lead-form-actions"><Button disabled={ocupado || !valido} onClick={() => acao('/jornada/pagamento', { ...body, confirmado: true })}>Recebimento conferido por mim</Button><Button variant="secondary" disabled={ocupado} onClick={() => setConfirmando(false)}>Cancelar</Button></div></div>}
   </section>;
 }
 

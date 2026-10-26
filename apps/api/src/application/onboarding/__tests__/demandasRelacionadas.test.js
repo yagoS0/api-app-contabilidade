@@ -45,3 +45,12 @@ test("gestor preserva o responsável da ficha ao criar demanda relacionada", asy
   const repetida = await criarDemandaRelacionada("alex-irrf", { origem: "TRANSFERENCIA", versao: 7, chaveSolicitacao: "pedido-empresa-gestor" }, { id: "assistente-original", role: "assistente" }, t.db);
   expect(repetida.id).toBe(criada.id);
 });
+
+test('C1: nova demanda recebe política do servidor, sem copiar consentimento/progresso', async () => {
+  const t = setup(); t.original.politicaComercial = null;
+  t.original.dados.consentimento = true; t.original.dados.progresso = 'CONCLUIDO';
+  const criada = await criarDemandaRelacionada('alex-irrf', { origem: 'TRANSFERENCIA', versao: 7, politicaComercial: 'forjada' }, user, t.db);
+  expect(criada.politicaComercial).toBe('COMERCIAL_2026_10_V1');
+  expect(criada.dados.consentimento).toBeUndefined(); expect(criada.dados.progresso).toBeUndefined();
+  expect(t.original.politicaComercial).toBeNull();
+});

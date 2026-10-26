@@ -9,7 +9,7 @@ export function procuracaoManualVigente(ficha, validacao) {
 }
 export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendimento, propostas = [], contratos = [], marcos = [] }, agora = new Date()) {
   const abertura = o.origem === "ABERTURA", pessoaFisica = o.origem === "PESSOA_FISICA";
-  const contratacao = projetarContratacao({ onboarding: o, propostas, contratos, marcos });
+  const contratacao = projetarContratacao({ onboarding: { ...o, etapas: j.etapasConstituicao || o.etapas }, propostas, contratos, marcos });
   const { proposta, contrato, pagamento } = contratacao;
   const aceita = proposta?.status === "ACEITA";
   const contratoAprovado = contratoAptoPagamento(proposta, contrato);
@@ -46,7 +46,10 @@ export function montarJornadaComercial({ onboarding: o, jornada: j = {}, atendim
   const finalPermitida = !encerrado && Boolean(diagnosticoConferido && j.devolutiva?.concluida && ((abertura || pessoaFisica) ? !j.dadosPendentes?.length : cadastroConferido && (dispensa || fiscal && j.fiscalConferido)));
   return { contratacao: resumirContratacao(contratacao), passos, atual: indiceAtual < 0 ? "conclusao" : passos[indiceAtual].id, indiceAtual, abertura, pessoaFisica, nome: { PESSOA_FISICA: "Pessoa física", ABERTURA: "Abertura", TRANSFERENCIA: "Transferência", INATIVA: "Empresa parada" }[o.origem],
     proposta, contrato, pagamento, cobranca, publica, fiscal, encerrado, versao: o.versao, pendencias: indiceAtual < 0 ? [] : passos[indiceAtual].pendencias,
-    comandosPermitidos: { diagnosticoLimitado: !encerrado && !abertura && !pessoaFisica && Boolean(cadastroConferido), gerarRascunho: !encerrado, aprovarProposta: finalPermitida && !aceita, enviarProposta: finalPermitida && !aceita, conferirPagamento: !encerrado && contratoAprovado, concluirAvulso: !encerrado && Boolean(pagamento && contrato?.dados?.opcao?.recorrente === false) } };
+    comandosPermitidos: { diagnosticoLimitado: !encerrado && !abertura && !pessoaFisica && Boolean(cadastroConferido), gerarRascunho: !encerrado, aprovarProposta: finalPermitida && !aceita, enviarProposta: finalPermitida && !aceita,
+      conferirPagamento: contratoAprovado && (!encerrado || Boolean(contratacao.politica && o.status === 'CONVERTIDO' && contratacao.pagamentoFuturo
+        && marcos.some(m => m.tipo === 'CONVERTIDO' && m.dados?.contratacao?.contratoId === contrato.id && m.dados?.contratacao?.contextoContrato === contextoContrato(proposta, contrato)))),
+      concluirAvulso: !encerrado && Boolean(pagamento && contrato?.dados?.opcao?.recorrente === false) } };
 }
 
 export async function exigirPropostaDefinitiva({ db, ficha, user }) {

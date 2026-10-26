@@ -4916,6 +4916,8 @@ model EntregaObrigacaoArquivo {
 /// ⚠ `status` e `origem` são String, não enum do Prisma — é a convenção deste schema
 /// (`PortalClient.status`, `Obrigacao.periodicidade`). Enum transforma cada valor novo em migração.
 model Onboarding {
+  /// Null preserves historical policy; assigned only by server producers.
+  politicaComercial String?
   fichaAvulsa FichaEmpresaAvulsa?
   fontesDados Json @default("{}")
   atendimentosLead AtendimentoLead[]

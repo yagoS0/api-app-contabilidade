@@ -47,3 +47,20 @@ test("erro no arquivo avulso impede gravação cadastral", async () => {
   const dados = { cnpj: "11222333000181", razaoSocial: "Empresa sintética", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua", numero: "1", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } };
   await expect(criarFichaEmpresaAvulsa({ db, preparar }).salvar("o", user, { versao: 1, dados })).rejects.toThrow("storage indisponível"); expect(db.$transaction).not.toHaveBeenCalled();
 });
+
+test('C1: projeção permite só recebimento do contrato vinculado depois da carteira', () => {
+  const onboarding = { id: 'o', status: 'CONVERTIDO', origem: 'TRANSFERENCIA', politicaComercial: 'COMERCIAL_2026_10_V1', portalClientId: 'empresa' };
+  const proposta = { id: 'p', versao: 1, status: 'ACEITA', opcaoAceita: 'mensal', snapshot: {} };
+  const contrato = { id: 'c', propostaId: 'p', status: 'AGUARDANDO_ASSINATURA', aprovadoEm: '2026-10-25', aprovadoPor: 'contador',
+    texto: 'Pagamento contratado para data futura.', dados: { opcao: { chave: 'mensal', recorrente: true }, politicaContratacao: 'R35',
+      condicaoPagamento: { versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true, vencimento: '2099-01-01',
+        clausula: 'Pagamento contratado para data futura.', propostaId: 'p', propostaVersao: 1 } } };
+  const contexto = contextoContratoC1(proposta, contrato);
+  const args = { onboarding, propostas: [proposta], contratos: [contrato], marcos: [{ tipo: 'CONVERTIDO', dados: { contratacao: { contratoId: 'c', propostaId: 'p', contextoContrato: contexto } } }] };
+  const p = montarJornadaComercial(args);
+  expect(p.contratacao).toMatchObject({ ganha: false, naCarteira: true });
+  expect(p.comandosPermitidos).toMatchObject({ conferirPagamento: true, gerarRascunho: false, enviarProposta: false });
+  args.marcos[0].dados.contratacao.contratoId = 'outro';
+  expect(montarJornadaComercial(args).comandosPermitidos.conferirPagamento).toBe(false);
+});
+import { contextoContrato as contextoContratoC1 } from '../../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
