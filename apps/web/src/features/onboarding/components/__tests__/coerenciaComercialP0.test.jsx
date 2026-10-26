@@ -264,21 +264,21 @@ test('contato confirmado invalida os consumidores mesmo sem mudar a versão da f
       if (path === '/recursos') return { recursos: [] };
       if (path === '/canais-comerciais') return { canais: [{ id: 'canal-qa', chave: 'Comercial QA' }] };
       if (path.endsWith('/acompanhamento')) return { versao: ficha.versao, conversaId };
-      if (path.endsWith('/contato') && body) { conversaId = 'vinculo-persistido-qa'; return { conversaId, atendimentoId: 'atendimento-qa' }; }
+      if (path.endsWith('/contato/vincular') && body) { conversaId = 'vinculo-persistido-qa'; return { conversaId, atendimentoId: 'atendimento-qa' }; }
       return painel(ficha);
     }),
   };
   render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId={ficha.id} /></MemoryRouter>);
   const acompanhamento = await screen.findByRole('region', { name: 'Acompanhamento comercial' });
   const local = within(acompanhamento);
-  await waitFor(() => expect(local.getByRole('button', { name: 'Iniciar contato' })).toBeEnabled());
-  fireEvent.click(local.getByRole('button', { name: 'Iniciar contato' }));
+  await waitFor(() => expect(local.getByRole('button', { name: 'Vincular contato' })).toBeEnabled());
+  fireEvent.click(local.getByRole('button', { name: 'Vincular contato' }));
   await local.findByRole('option', { name: 'Comercial QA' });
   fireEvent.change(local.getByLabelText('Nome'), { target: { value: 'Pessoa QA' } });
   fireEvent.change(local.getByLabelText('Telefone com DDI'), { target: { value: '5521999990000' } });
   fireEvent.change(local.getByLabelText('Origem da autorização'), { target: { value: 'Autorização sintética do teste' } });
   fireEvent.click(local.getByRole('checkbox'));
-  fireEvent.click(local.getByRole('button', { name: 'Preparar conversa' }));
+  fireEvent.click(local.getByRole('button', { name: 'Salvar vínculo' }));
   expect(await local.findByRole('link', { name: /Abrir conversa/ })).toHaveAttribute('href', '/comercial/conversas?conversa=vinculo-persistido-qa');
   expect(ficha.versao).toBe(1);
   expect(api.comercial.mock.calls.filter(([path]) => path.endsWith('/acompanhamento')).length).toBeGreaterThan(2);

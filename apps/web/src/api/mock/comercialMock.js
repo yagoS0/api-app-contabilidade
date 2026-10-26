@@ -74,12 +74,11 @@ export function criarMockComercial({
     async baixarTabelaFiscalLead() { throw Error("Demonstração: não há relatório fiscal real para baixar."); },
     async comercial(path, body, method = "POST") {
       if (path === '/canais-comerciais') return { canais: [{ id: 'comercial', chave: 'Comercial · demonstração' }] };
-      const acompanhamento = /^\/onboardings\/([^/]+)\/(acompanhamento|contato|retorno)$/.exec(path);
+      const acompanhamento = /^\/onboardings\/([^/]+)\/(acompanhamento|contato(?:\/vincular)?|retorno)$/.exec(path);
       if (acompanhamento) {
         const id = decodeURIComponent(acompanhamento[1]), o = onboardings.get(id);
         if (!o) throw new Error('Oportunidade não encontrada.');
         if (acompanhamento[2] === 'acompanhamento') {
-          if (o.contatoComercialMock && prepararConversa) prepararConversa(o, o.contatoComercialMock);
           return { retorno: o.retornoComercial || null, conversaId: o.contatoComercialMock ? o.conversaComercialId : null, versao: o.versao || 0 };
         }
         if (['CONVERTIDO', 'DESISTIU', 'CONCLUIDO_AVULSO'].includes(o.status)) throw new Error('Esta oportunidade está encerrada.');
@@ -90,13 +89,20 @@ export function criarMockComercial({
           o.retornoComercial = { dados: { acao: body.acao.trim(), quando: body.quando, responsavelNome: 'Equipe de demonstração' } };
           persistir(); return { retorno: o.retornoComercial, versao: o.versao };
         }
-        if (!body?.autorizado || !body.evidencia?.trim() || !body.nome?.trim() || !/^\d{10,15}$/.test(String(body.telefone).replace(/\D/g, '')) || body.canalId !== 'comercial') throw new Error('Confira o contato, o canal e a autorização.');
+        if (body?.autorizado !== true || String(body.evidencia || '').trim().length < 5 || String(body.evidencia || '').trim().length > 500 || String(body.nome || '').trim().length < 2 || String(body.nome || '').trim().length > 120 || !/^\d{10,15}$/.test(String(body.telefone).replace(/\D/g, '')) || body.canalId !== 'comercial') throw new Error('Confira o contato, o canal e a autorização.');
         if (!prepararConversa) throw new Error('Preparação de conversa indisponível nesta demonstração.');
-        const conversaId = prepararConversa(o, body);
+        const neutro = acompanhamento[2] === 'contato/vincular';
+        const anterior = o.contatoComercialMock;
+        const caso = o.conversaComercialId && atendimentos.get(o.conversaComercialId);
+        if (caso?.triagem?.contatoRevogado) throw new Error('Este contato pediu para não receber mensagens.');
+        if (anterior && (String(anterior.telefone).replace(/\D/g, '') !== String(body.telefone).replace(/\D/g, '') || anterior.canalId !== body.canalId)) throw new Error('Há outro contato vinculado. Confira antes de continuar.');
+        const existente = Boolean(anterior && o.conversaComercialId);
+        const conversaId = prepararConversa(o, body, { neutro });
+        if (existente) return { conversaId, atendimentoId: `caso-${o.id}`, existente: true };
         o.conversaComercialId = conversaId;
-        o.contatoComercialMock = { ...body };
+        o.contatoComercialMock = { ...body, vinculoNeutro: neutro };
         atendimentos.set(conversaId, { id: `caso-${o.id}`, conversaId, onboardingId: o.id, triagem: { contatoAutorizado: body } });
-        persistir(); return { conversaId };
+        persistir(); return { conversaId, atendimentoId: `caso-${o.id}`, existente: false };
       }
       const excluir = /^\/recursos\/([^/]+)$/.exec(path);
       if (method === "DELETE" && excluir) {

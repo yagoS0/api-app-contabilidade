@@ -3863,14 +3863,18 @@ let varreduraAutomaticaDoMock = {
   ultimoErro: null,
 };
 
-const prepararConversaComercialMock = (o, body) => {
+const prepararConversaComercialMock = (o, body, { neutro = body.vinculoNeutro === true } = {}) => {
       const telefone = String(body.telefone).replace(/\D/g, '');
       const anterior = mockConversasWhatsapp.find(c => c.telefoneE164 === telefone && c.canalId === 'comercial');
-      if (anterior && anterior.solicitacaoComercial?.onboardingId !== o.id) throw new Error('Este contato já tem uma oportunidade ativa.');
-      if (anterior) return anterior.id;
+      if (anterior?.excluidaEm || anterior?.escopoVerificado === false && anterior.portalClientId) throw new Error('Confira o histórico e o escopo deste contato.');
+      if (anterior?.solicitacaoComercial && anterior.solicitacaoComercial.onboardingId !== o.id) throw new Error('Este contato já tem uma oportunidade ativa.');
+      if (anterior) {
+        anterior.solicitacaoComercial ||= { id: `caso-${o.id}`, onboardingId: o.id };
+        return anterior.id;
+      }
       const id = `comercial-${o.id}`;
       mockConversasWhatsapp.push({ id, canalId: 'comercial', telefoneE164: telefone, nomePerfilProvedor: body.nome, portalClientId: null, empresa: null,
-        atendidaPor: 'mock-user-1', atendidaDesde: new Date().toISOString(), updatedAt: new Date().toISOString(), mensagens: [],
+        atendidaPor: neutro ? null : 'mock-user-1', atendidaDesde: neutro ? null : new Date().toISOString(), updatedAt: new Date().toISOString(), mensagens: [],
         solicitacaoComercial: { id: `caso-${o.id}`, onboardingId: o.id }, janela: { situacao: 'NUNCA_ABERTA', instante: null }, escopoVerificado: false });
       return id;
     };
