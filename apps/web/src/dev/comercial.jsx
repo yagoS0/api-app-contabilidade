@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, useLocation, useNavigate } from 'react-router-dom';
 import { createMockApi } from '../api/mock/mockApi';
 import { ComercialPage } from '../features/comercial/ComercialPage';
 import { WhatsappPage } from '../features/whatsapp/pages/renderWhatsappPage';
@@ -44,6 +44,10 @@ export function Previa() {
 }
 if (import.meta.env.DEV && import.meta.env.VITE_API_MODE === 'mock') {
   // Esta entrada isolada não autentica nem chama uma API real.
-  if (location.pathname === '/comercial-dev.html') history.replaceState({}, '', '/comercial');
-  createRoot(document.getElementById('root')).render(<BrowserRouter><WorkspaceNavigationProvider><Previa /></WorkspaceNavigationProvider></BrowserRouter>);
+  const router = createBrowserRouter([
+    { path: '*', element: <WorkspaceNavigationProvider><Previa /></WorkspaceNavigationProvider> },
+  ]);
+  // Mantém a normalização anterior (inclusive a remoção de query/hash nessa entrada).
+  if (location.pathname === '/comercial-dev.html') router.navigate('/comercial', { replace: true });
+  createRoot(document.getElementById('root')).render(<RouterProvider router={router} />);
 }
