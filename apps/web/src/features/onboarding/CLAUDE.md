@@ -1,5 +1,19 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Política explícita C1 — decisões de 24/10/2026
+
+Esta seção reconcilia o módulo com a seção 30 da referência operacional canônica e R35/R36; não autoriza publicação, recebimento, envio ou ato fiscal. As descrições antigas abaixo permanecem históricas. Em particular, a exigência universal de assinatura da seção “Fluxo comercial versionado — setembro/2026” não rege os atendimentos identificados pela nova política; o percurso de teste citado em 13/10 não transforma assinatura em requisito universal.
+
+`politicaComercial = COMERCIAL_2026_10_V1` identifica explicitamente novos atendimentos. Ausência preserva a semântica legada; valor desconhecido é conflito, não fallback. Não classificar política por data, aparência da tela ou assinatura. Criações relacionadas preservam vínculo histórico, mas não copiam pagamento, contrato ou condição financeira da outra demanda. A autoridade compartilhada é `packages/shared/src/onboarding/contratacaoComercial.js`, consumida pela API e web; não reproduzir regras divergentes nos cards.
+
+Na política C1, Ganha depende de recebimento conferido pelo contador/administrador, associado à proposta/contrato e contexto vigentes. Assinatura, comprovante anexado, cobrança enviada, entrada na carteira ou condição futura não comprovam recebimento. A assinatura posterior, sozinha, não invalida um recebimento já identificado pela mesma revisão contratual. Políticas legadas mantêm suas evidências anteriores, sem backfill ou reclassificação em massa.
+
+Carteira pode preceder recebimento somente pela condição estruturada de pagamento futuro vinculada ao contrato recorrente conferido e à versão da proposta aceita, com vencimento válido e trecho exato presente no contrato. Checkbox sozinho não libera: preservar os requisitos cadastrais, escopo, permissão, identidade e revalidação no servidor. Não acrescentar cláusula ao modelo nem interpretar texto livre para fabricar autorização. A ficha convertida com recebimento pendente deve continuar mostrando essa distinção e permitir conferência posterior do contrato efetivamente vinculado à conversão; revisão divergente recusa. Confirmar recebimento é ação explícita e idempotente, sem recriar empresa, documentos ou tarefas.
+
+Ganha, carteira, preparação, execução e implantação são dimensões distintas. A capacidade C1 de execução independente de pagamento não materializa fila, tarefa ou entrega: execução por serviço pertence a C5. Para abertura, a projeção confere CNPJ e as evidências identificadas das etapas de registro/CNPJ definitivo; consulta cadastral isolada não comprova constituição. Pessoa física não ganha carteira empresarial ou checklist de implantação por pagamento. Não usar `implantacaoPermitida` como prova de implantação concluída ou autorização para ato externo.
+
+A interface conserva rascunhos, revisão e avisos de consequência. Pagamento futuro usa opção compacta com alvo acessível, vencimento e cláusula agrupados; no celular, campos empilhados. Na ficha já convertida, campos e confirmação de recebimento mantêm tema, espaçamento e estado pendente/erro, sem refresh integral nem sucesso otimista. Resposta perdida exige conferir o estado, não duplicar a confirmação. C2–C5, Biblioteca e documento unificado não ficam entregues por esta reconciliação C1.
+
 ## Interface concisa — 15/10/2026 (local)
 
 Remover explicações genéricas e repetições no detalhe, coleta e implantação. Orientações extensas da jornada ficam recolhidas em Orientações da etapa, sem desmontar formulários. Ações usam Button compartilhado; links de navegação que são ações usam btn. Preservar avisos de consequência, autorização, dados ausentes, validade do link, erros, envio incerto e confirmações contratuais. A ficha convertida mantém a checklist da empresa e o histórico. Prévia local com dados fictícios em .local/onboarding-limpo.html.

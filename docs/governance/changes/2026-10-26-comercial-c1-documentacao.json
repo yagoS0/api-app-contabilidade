@@ -1,0 +1,30 @@
+{
+  "summary": "Reconcilia instruções do onboarding com a política C1 validada localmente, preservando histórico.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Sem regra operacional nova. Documenta recebimento, carteira futura condicionada e preservação do legado já aprovados na seção30. Não implementa C2–C5, não altera gates nem autoriza publicação ou atos externos.",
+  "tests": [
+    "Preimage 2035e9812d0647cb71cc0c31c42472d3a6a44a052e1304d067b9a439dc26082b, candidato d1df26145cb7349f36d7c7632256cd15c1229e79d667669f27494f812e0ce6ad e referência operacional conferidos antes da aplicação.",
+    "Revisão documental independente do Principal favorável em comercial-c1-doc-candidate-20261026/review-principal.txt; candidato elaborado pelo revisor delegado.",
+    "Base funcional 5dc14fc71271f108b508bd4a43c02fa12c633e9d: runtime dba09878 ready_for_human; sete gates e revisão sistêmica aprovados. API11734, web6118, portal1586, governança72; QA324 verificações em componentes reais com dados fictícios e parecer visual independente favorável.",
+    "Mudança somente documental; não repete nem declara nova execução dos testes funcionais."
+  ],
+  "rollback": "Reverter apenas esta documentação e o registro. Baseline documental preservada no candidato local; nenhuma migração ou dado alterado.",
+  "humanDecisions": [
+    "Desenvolvimento completo por etapas autorizado, sem publicação nem atos fiscais reais."
+  ],
+  "evidence": {
+    "functionalCommit": "5dc14fc71271f108b508bd4a43c02fa12c633e9d",
+    "candidateSha256": "d1df26145cb7349f36d7c7632256cd15c1229e79d667669f27494f812e0ce6ad",
+    "review": "Principal, independente do autor documental; review-principal.txt"
+  }
+}
