@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { WhatsappPage } from '../renderWhatsappPage';
 
@@ -8,7 +9,7 @@ test('opções preservam estimativa e reservas sem API detalhada, e aviso offlin
     listarConversasWhatsapp: jest.fn(async () => ({ conversas: [], versaoContrato: 2, consumoIa: { escritorio: { consumoCentavos: 2, reservaCentavos: 5, teto: 100, chamadas: 1 } } })),
   };
   try {
-    render(<WhatsappPage api={api} area="comercial" />);
+    render(<WhatsappPage api={api} area="comercial" />, { wrapper: RouterComercial });
     const consumo = await screen.findByTestId('consumo-ia');
     expect(consumo).toHaveTextContent('US$ 0.05 reservados, ainda sem consumo confirmado');
     expect(consumo).toHaveTextContent('Estimativa por tokens');
@@ -32,3 +33,5 @@ test('opções preservam estimativa e reservas sem API detalhada, e aviso offlin
     else delete navigator.onLine;
   }
 });
+
+function RouterComercial({ children }) { return <MemoryRouter initialEntries={['/comercial/conversas']}>{children}</MemoryRouter>; }

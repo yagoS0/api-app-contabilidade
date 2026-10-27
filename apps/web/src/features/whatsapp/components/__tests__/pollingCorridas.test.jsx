@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { StrictMode } from "react";
 import { act, render, renderHook, fireEvent, screen, within } from "@testing-library/react";
 import { useConversasWhatsapp } from "../../hooks/useConversasWhatsapp";
@@ -16,7 +17,7 @@ test.each([false, true])("lista central sobe nova mensagem e conserva rascunho (
   const b = { ...conversa("Bruno"), relacionamento: { tipo: "LEAD" }, portalClientId: null, ultimaMensagem: { registradaEm: "2026-09-24T11:00:00Z" } };
   const resposta = conversas => ({ conversas, ...(v2 ? { versaoContrato: 2 } : {}) });
   const api = { whatsappContratoV2: v2, listarConversasWhatsapp: jest.fn(async () => resposta([b, a])), getMensagensWhatsapp: jest.fn(async id => fio(id)) };
-  render(<WhatsappPage api={api} />); await flush();
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp }); await flush();
   expect(screen.getAllByTestId(/^conversa-/).map(el => el.dataset.testid)).toEqual(["conversa-Ana", "conversa-Bruno"]);
   fireEvent.click(screen.getByTestId("conversa-Ana")); await flush();
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Rascunho para Ana" } });
@@ -129,3 +130,5 @@ test("StrictMode abre o fio inicial, troca contato e acompanha a troca de empres
   expect(within(screen.getByTestId("fio")).getByTestId("pessoa-da-conversa")).toHaveTextContent("segunda-Ana");
   expect(screen.queryByTestId("chat-abrindo")).toBeNull();
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

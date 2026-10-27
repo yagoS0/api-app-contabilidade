@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WhatsappPage } from "../../pages/renderWhatsappPage";
 import { ContingenciaIa } from "../ContingenciaIa";
@@ -14,7 +15,7 @@ test("pendência permanece mesmo lida; contador assume pelo fio e mantém o hist
     getMensagensWhatsapp: jest.fn(async () => ({ conversa, mensagens: [{ id: "m", direcao: "in", tipo: "text", corpo: "Tenho débitos desde 2024", registradaEm: "2026-10-13T12:00:00Z" }] })),
     assumirConversaWhatsapp: jest.fn(async () => { conversa = { ...conversa, atendidaPor: "contador", atendente: { nome: "Ana" } }; return { ok: true }; }),
   };
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   expect(await screen.findByText("Precisa de atendimento")).toBeVisible();
   fireEvent.click(screen.getByTestId("conversa-cv"));
   expect(await screen.findByText("IA indisponível · atendimento humano necessário")).toBeVisible();
@@ -68,3 +69,5 @@ test("falha antes de classificar intenção ainda preserva resumo para o contado
   expect(screen.getByText("Ana")).toBeVisible();
   expect(screen.getByText("Minha empresa está com problemas")).toBeInTheDocument();
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

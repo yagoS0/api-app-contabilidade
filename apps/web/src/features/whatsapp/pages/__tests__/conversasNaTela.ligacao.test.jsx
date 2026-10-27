@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 // A TELA DE CONVERSAS — a ligação, com o hook de verdade e uma API dublê.
 //
 // O que fica travado: (1) a fila (não vinculada) aparece em DESTAQUE e com a contagem; (2) o fio
@@ -47,7 +48,7 @@ function apiFalso(over = {}) {
 const COMPANIES = [{ companyId: "pc-1", razao: "ACME LTDA" }, { companyId: "pc-2", razao: "BETA LTDA" }];
 
 async function montar(api = apiFalso()) {
-  render(<WhatsappPage api={api} companies={COMPANIES} onBack={() => {}} />);
+  render(<WhatsappPage api={api} companies={COMPANIES} onBack={() => {}} />, { wrapper: RouterWhatsapp });
   await waitFor(() => expect(api.listarConversasWhatsapp).toHaveBeenCalled());
   await screen.findByTestId("conversa-cv1");
   return api;
@@ -283,3 +284,5 @@ describe("⚠ da caixa geral se chega à empresa", () => {
     expect(within(fio).queryByTestId("ir-para-a-empresa")).toBeNull();
   });
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

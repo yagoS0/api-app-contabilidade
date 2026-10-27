@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { WhatsappPage } from "../renderWhatsappPage";
@@ -28,7 +29,7 @@ function apiLocal() {
 }
 
 async function montar(api = apiLocal()) {
-  render(<WhatsappPage api={api} onBack={() => {}} />);
+  render(<WhatsappPage api={api} onBack={() => {}} />, { wrapper: RouterWhatsapp });
   await screen.findByTestId("conversa-a");
   return api;
 }
@@ -103,3 +104,5 @@ test("Enter normal não envia; Ctrl+Enter envia ao contato aberto e falha preser
   expect(api.responderConversaWhatsapp).toHaveBeenCalledTimes(1);
   expect(screen.getByTestId("conversa-a")).toHaveAttribute("aria-current", "true");
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

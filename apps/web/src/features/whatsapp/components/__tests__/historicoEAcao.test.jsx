@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { act, renderHook, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { useConversasWhatsapp } from "../../hooks/useConversasWhatsapp";
 import { WhatsappPage } from "../../pages/renderWhatsappPage";
@@ -22,7 +23,7 @@ test("mais conversas são acumuladas, trocar filtro descarta página antiga",asy
 });
 test("assumir recusado fica visível mesmo com recarga bem sucedida e sem feedback externo",async()=>{
  const api={...apiBase(),assumirConversaWhatsapp:jest.fn(async()=>{throw new Error("Conversa assumida por outra pessoa")})};
- render(<WhatsappPage api={api}/>);fireEvent.click(await screen.findByTestId("conversa-cv"));
+ render(<WhatsappPage api={api}/>, { wrapper: RouterWhatsapp });fireEvent.click(await screen.findByTestId("conversa-cv"));
  fireEvent.click(await screen.findByLabelText("Mais ações da conversa"));
  fireEvent.click(screen.getByRole("button",{name:"Assumir atendimento"}));
  expect(await screen.findByRole("alert")).toHaveTextContent("Conversa assumida por outra pessoa");
@@ -31,3 +32,5 @@ test("balão distingue aceite, entrega, falha e histórico não verificado",()=>
  render(<FioDaConversa fio={{conversa:{...conversa,escopoVerificado:false},mensagens:[mensagem("m1","enviado"),mensagem("m2","entregue"),{...mensagem("m3","falhou"),erroEnvio:{mensagem:"Meta recusou"}}]}} hook={{}}/>);
  expect(screen.getByText(/Aceita pela Meta · aguardando entrega/)).toBeInTheDocument();expect(screen.getByText("Entregue")).toBeInTheDocument();expect(screen.getByText(/Não entregue: Meta recusou/)).toBeInTheDocument();expect(screen.getByText(/Histórico legado sem vínculo verificado/)).toBeInTheDocument();
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

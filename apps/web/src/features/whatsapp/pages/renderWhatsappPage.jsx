@@ -19,6 +19,7 @@ import { AtendimentoAplicativo } from "../components/AtendimentoAplicativo";
 import { haRascunhoPendente } from "../hooks/useRascunhoServidor";
 import { modoAtendimento } from "../lib/atendimentoPwa";
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { relacionamentoDaConversa, chaveDoInterlocutor } from "../lib/identidadeAtendimento";
 import { AvatarConversa, WhatsappIcon, DetalhesConversa } from "../components/ConversaVisual";
 import { AppShell } from "../../../components/layout/AppShell";
@@ -114,7 +115,15 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const [pequena, setPequena] = useState(() => window.matchMedia?.("(max-width: 760px)").matches || false);
   const [notificacaoPendente, setNotificacaoPendente] = useState(null);
   const [aplicativo] = useState(() => modoAtendimento());
-  const abrirRef = useRef(hook.abrir); abrirRef.current = hook.abrir;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [tentativaAbertura, setTentativaAbertura] = useState(0);
+  const rotaDeConversa = ["/whatsapp", "/suporte", "/comercial/conversas"].includes(location.pathname.replace(/\/+$/, "") || "/");
+  const parametroConversa = new URLSearchParams(location.search).get("conversa");
+  const conversaId = rotaDeConversa && /^[a-zA-Z0-9_-]{1,120}$/.test(parametroConversa || "") ? parametroConversa : null;
+  const hookRef = useRef(hook); hookRef.current = hook;
+  const navegacaoRef = useRef(null);
+  navegacaoRef.current = { navigate, location };
   useEffect(() => {
     const manifest = document.querySelector('link[rel="manifest"]'); const anterior = manifest?.getAttribute("href");
     manifest?.setAttribute("href", "/atendimento.webmanifest");
@@ -126,16 +135,29 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
     return () => { if (anterior) manifest?.setAttribute("href", anterior); media?.removeEventListener?.("change", medir); window.visualViewport?.removeEventListener("resize", viewport); window.removeEventListener("resize", viewport); document.documentElement.style.removeProperty("--atendimento-height"); };
   }, []);
   useEffect(() => {
-    const ler = () => { if (!["/whatsapp", "/suporte", "/comercial/conversas"].includes(window.location.pathname)) return; const id = new URLSearchParams(window.location.search).get("conversa"); if (id && /^[a-zA-Z0-9_-]{1,120}$/.test(id)) { setVerChat(true); abrirRef.current(id); } else { setVerChat(false); setDetalhes(false); } };
+    // Só a localização aceita abre o fio. Query/hash alheios não repetem a leitura.
+    setDetalhes(false);
+    setVerChat(Boolean(conversaId));
+    if (conversaId) hookRef.current.abrir(conversaId);
+    else { hookRef.current.fechar(); setListaOculta(false); }
+    return () => hookRef.current.fechar();
+  }, [apiDaArea, usuarioId, location.pathname, conversaId, tentativaAbertura]);
+  useEffect(() => {
     const receber = e => {
       if (e.data?.tipo !== "ABRIR_CONVERSA") return;
-      const url = new URL(e.data.url, window.location.origin);
+      if (typeof e.data.url !== "string") return;
+      let url;
+      try { url = new URL(e.data.url, window.location.origin); } catch { return; }
       if (url.origin !== window.location.origin || url.pathname !== "/whatsapp") return;
-      if (haRascunhoPendente()) { setNotificacaoPendente(url.pathname + url.search); return; }
-      window.history.pushState({}, "", url.pathname + url.search); ler();
+      if (!/^[a-zA-Z0-9_-]{1,120}$/.test(url.searchParams.get("conversa") || "")) return;
+      const destino = url.pathname + url.search + url.hash;
+      if (haRascunhoPendente()) { setNotificacaoPendente(destino); return; }
+      const atual = navegacaoRef.current;
+      if (destino !== atual.location.pathname + atual.location.search + atual.location.hash) atual.navigate(destino);
     };
-    ler(); window.addEventListener("popstate", ler); navigator.serviceWorker?.addEventListener("message", receber);
-    return () => { window.removeEventListener("popstate", ler); navigator.serviceWorker?.removeEventListener("message", receber); };
+    const worker = navigator.serviceWorker;
+    worker?.addEventListener("message", receber);
+    return () => worker?.removeEventListener("message", receber);
   }, []);
   const resumo = useResumoWhatsapp({ api, area: area || '' });
   const { registrarCanal, pedidoCanal, conversaComercial, canalDeEnvio, atualizacaoComercial } = useCanalAtendimento(hook, { mensagemBiblioteca, onMensagemBibliotecaAberta });
@@ -167,10 +189,19 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const termo = normalizar(busca).trim();
   const visiveis = hook.buscaServidor ? lista : lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresas || []).flatMap(e => [e.razao, e.cnpj, ...(e.apelidosWhatsapp || [])]), c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
   const contatosVisiveis = visiveis.filter(c => !relacionamento || relacionamentoDaConversa(c).tipo === relacionamento);
-  const abrir = id => { setDetalhes(false); setVerChat(true); hook.abrir(id); if (!["/whatsapp", "/suporte", "/comercial/conversas"].includes(window.location.pathname)) return; const url = new URL(window.location.href); url.searchParams.set("conversa", id); window.history.pushState({}, "", url.pathname + url.search); };
+  const abrir = id => {
+    if (!rotaDeConversa || typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,120}$/.test(id)) return;
+    if (id === conversaId) {
+      setDetalhes(false); setVerChat(true);
+      if (!hook.aberta && !hook.carregandoFio) setTentativaAbertura(v => v + 1);
+      return;
+    }
+    const search = new URLSearchParams(location.search); search.set("conversa", id);
+    navigate({ pathname: location.pathname, search: `?${search}`, hash: location.hash });
+  };
   const voltar = () => {
-    setVerChat(false); setDetalhes(false); setListaOculta(false);
-    const url = new URL(window.location.href); url.searchParams.delete("conversa"); window.history.replaceState({}, "", url.pathname + url.search);
+    const search = new URLSearchParams(location.search); search.delete("conversa");
+    navigate({ pathname: location.pathname, search: search.size ? `?${search}` : "", hash: location.hash }, { replace: true });
     requestAnimationFrame(() => (listaRef.current?.querySelector('[aria-current="true"]') || listaRef.current?.querySelector("input"))?.focus());
   };
 
@@ -182,7 +213,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
     <PageShell title={area === 'suporte' ? 'Suporte' : area === 'comercial' ? 'Comercial' : 'Atendimento'} subtitle={mensagemBiblioteca ? `Escolha uma conversa para usar “${mensagemBiblioteca.titulo}”.` : null} onBack={onBack}
       actions={area !== "comercial" || listaOculta ? controlesLista : null}>
       <AppShell className="wa-shell">
-        {notificacaoPendente && <p role="status" className="wa-notice">Há uma conversa aberta pela notificação. Salve ou confira seu rascunho antes de mudar. <Button variant="secondary" onClick={() => { if (haRascunhoPendente()) return; window.history.pushState({}, "", notificacaoPendente); window.dispatchEvent(new PopStateEvent("popstate")); setNotificacaoPendente(null); }}>Abrir conversa da notificação</Button><Button variant="secondary" onClick={() => setNotificacaoPendente(null)}>Continuar aqui</Button></p>}
+        {notificacaoPendente && <p role="status" className="wa-notice">Há uma conversa aberta pela notificação. Salve ou confira seu rascunho antes de mudar. <Button variant="secondary" onClick={() => { if (haRascunhoPendente()) return; navigate(notificacaoPendente); setNotificacaoPendente(null); }}>Abrir conversa da notificação</Button><Button variant="secondary" onClick={() => setNotificacaoPendente(null)}>Continuar aqui</Button></p>}
         <div className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${listaOculta ? " wa-workspace--list-hidden" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
           <aside id="wa-lista-contatos" className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef} hidden={listaOculta}>
             <div className="wa-sidebar-top">

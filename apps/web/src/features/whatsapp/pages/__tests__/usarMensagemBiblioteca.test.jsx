@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
@@ -21,7 +22,7 @@ function Caminho({ api, iniciarNaBiblioteca = true, pedidoInicial = null }) {
 beforeEach(() => localStorage.clear());
 
 test("biblioteca leva à escolha do contato e à prévia, e inserir não envia", async () => {
-  const api = apiLocal(); render(<Caminho api={api} />);
+  const api = apiLocal(); render(<Caminho api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByRole("button", { name: "Usar no chat" }));
   expect(screen.getByText('Escolha uma conversa para usar “Conferir empresa”.')).toBeVisible();
   expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/previa"))).toBe(false);
@@ -40,7 +41,7 @@ test("biblioteca leva à escolha do contato e à prévia, e inserir não envia",
 });
 
 test("mensagem pronta não substitui um rascunho existente nem conta uso", async () => {
-  const api = apiLocal(); render(<Caminho api={api} iniciarNaBiblioteca={false} />);
+  const api = apiLocal(); render(<Caminho api={api} iniciarNaBiblioteca={false} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Texto já digitado" } });
   fireEvent.click(screen.getByRole("button", { name: "Ações da mensagem e arquivos" }));
@@ -57,7 +58,7 @@ test("trocar contato durante a preparação descarta a resposta atrasada", async
   const previa = new Promise(resolve => { resolver = resolve; }), api = apiLocal();
   const normal = api.comercial.getMockImplementation();
   api.comercial.mockImplementation((path, body) => path.endsWith("/previa") ? previa : normal(path, body));
-  render(<Caminho api={api} iniciarNaBiblioteca={false} pedidoInicial={{ id: recurso.id, titulo: recurso.titulo }} />);
+  render(<Caminho api={api} iniciarNaBiblioteca={false} pedidoInicial={{ id: recurso.id, titulo: recurso.titulo }} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   await waitFor(() => expect(api.comercial).toHaveBeenCalledWith("/recursos/mensagem-1/previa", expect.anything()));
   fireEvent.click(screen.getByTestId("conversa-b"));
@@ -70,13 +71,15 @@ test("trocar contato durante a preparação descarta a resposta atrasada", async
 test("rascunho da biblioteca não oferece uso e pedido indisponível não gera prévia", async () => {
   const api = apiLocal(), normal = api.comercial.getMockImplementation();
   api.comercial.mockImplementation((path, body) => path === "/recursos" ? Promise.resolve({ recursos: [{ ...recurso, aprovadoEm: null }] }) : normal(path, body));
-  const view = render(<Caminho api={api} />);
+  const view = render(<Caminho api={api} />, { wrapper: RouterWhatsapp });
   const card = (await screen.findByText("Conferir empresa")).closest("article");
   expect(within(card).queryByRole("button", { name: "Usar no chat" })).not.toBeInTheDocument();
   view.unmount();
-  render(<Caminho api={api} iniciarNaBiblioteca={false} pedidoInicial={{ id: recurso.id, titulo: recurso.titulo }} />);
+  render(<Caminho api={api} iniciarNaBiblioteca={false} pedidoInicial={{ id: recurso.id, titulo: recurso.titulo }} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   expect(await screen.findByRole("alert")).toHaveTextContent("mensagem não está disponível");
   expect(api.comercial.mock.calls.some(([p]) => p.endsWith("/previa"))).toBe(false);
   expect(api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

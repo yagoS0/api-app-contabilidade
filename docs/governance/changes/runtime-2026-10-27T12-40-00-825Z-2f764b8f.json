@@ -1,0 +1,43 @@
+{
+  "summary": "CONDITIONAL: 42 historical calls; 13 new; proposed total55 requires explicit extra2 authorization. This package was prepared conditionally; execution is permitted only with the Principal authorization.json record validated by the helper against nonce, request hash and actual user reply. Subprocesses must read that current record to determine authorization at execution time; preparation status is not a permanent absence of authorization. No authorization is asserted by this request. Zero corrections, timeout600000. Preserve rejected ab81 and all earlier history.\nPrincipal executed check.mjs plan on clean baseline with exit0 and versioned plan API over exact13 paths. Read pinned C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\diagnostico-eperm-principal-20261027/impact.json and evidence.json. Executor MUST read that evidence instead of attempting Node in Windows workspace-write sandbox: ab81 Node failed before loading main (EPERM lstat user profile). Do not alter sandbox/permissions. Read rules and copy exact final-source bytes using PowerShell file APIs permitted by the sandbox; no Node/tests/PG/controller from delegated agents. Any denied operation escalates without bypass. This plan evidence is not product validation.\nPLANNER: exatamente13paths abaixo. EXECUTOR: copiar bytes de C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\c2b-h-trailing-retomada-condicional-20261027\\final-sources para os mesmos caminhos;11fontes H atuais intactas, somente produto+teste trailingV3sobrepostos. Não reimplementar/corrigir outrosbytes. Hashesfinais exigidos antesgatesoriginais/revisorescompletos. Falha escalona; nenhumteste/PGporcontaprópria.\napps/web/src/features/whatsapp/pages/renderWhatsappPage.jsx\napps/web/src/features/whatsapp/pages/__tests__/canalAtendimentoJornada.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/inboxIdentidade.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/atualizacaoConversaPendente.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/historicoLixeira.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/listaContatos.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/usarMensagemBiblioteca.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/opcoesLateral.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/whatsappRedesign.test.jsx\napps/web/src/features/whatsapp/pages/__tests__/conversasNaTela.ligacao.test.jsx\napps/web/src/features/whatsapp/components/__tests__/pollingCorridas.test.jsx\napps/web/src/features/whatsapp/components/__tests__/historicoEAcao.test.jsx\napps/web/src/features/whatsapp/components/__tests__/contingenciaIa.test.jsx\n\nLeia integralmente os3pedidosABSOLUTOS (no workspacepai, NÃO checkout):\nC:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\output\\plano-atualizacao-20261024\\PEDIDO-COMERCIAL-C2B-H-FINAL-20261026.txt SHA 13e6107dbe77acd0c61b204836d34dc21859e35a61d5f1b96c1ac890ecc979eb\nC:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\output\\plano-atualizacao-20261024\\PEDIDO-COMERCIAL-C2B-GUARDA-PROPOSTA-20261026.txt SHA 724d2b2e38451617a458030260f7cd1904b36e5c1c14e1bfafcf58a3849334f1\nC:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\output\\plano-atualizacao-20261024\\PEDIDO-COMERCIAL-C2B-RECONCILIADO-20261026.txt SHA bc487f9644a096c8786146581a3b99b49586d970a97ea15055172050fd9246f0\nReferência operacional C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-regras-operacionais\\REGRAS_OPERACIONAIS.md.\nEscopo: normalizar sórotaDeConversa para barrasfinais aceitas pelo app; manterpathname/query/hash viaRouter e validaçãoSWexata. Preservar20cenáriosV3/128expects, entrada inicial, clique/POP/REPLACE/repetição e semAtos. Prova focal positiva20pass e negativa manual são evidência limitada, não gate/revisãofinal. ComercialPage trailing preexistente foraescopo;G/W/Npendentes.\nSempublicar/emitir/cancelar/consultafiscalpaga/envioreal; eNotasativo,Guruconferência,benefíciopendente. DependênciaA NOVA execução deve terminar ePGstop0 antespermit; estadoantigo f389não autoriza executar emparalelo. Root preencherá identidades/hashesterminais e solicitará revisãododelta.\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-27T12-40-00-825Z-2f764b8f",
+  "tests": [
+    "governance-engine: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-governance-engine",
+    "api-regression: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-api-regression",
+    "web-regression: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-web-regression",
+    "portal-regression: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-portal-regression",
+    "web-build: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-web-build",
+    "portal-build: passed against f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T12-40-00-825Z-2f764b8f\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-27T12-40-00-825Z-2f764b8f; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "f65576132285c224676e47548ea37a2d574cad71792905a28ba4e25a4014bb67",
+  "sourcePaths": [
+    "apps/web/src/features/whatsapp/components/__tests__/contingenciaIa.test.jsx",
+    "apps/web/src/features/whatsapp/components/__tests__/historicoEAcao.test.jsx",
+    "apps/web/src/features/whatsapp/components/__tests__/pollingCorridas.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/atualizacaoConversaPendente.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/canalAtendimentoJornada.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/conversasNaTela.ligacao.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/historicoLixeira.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/inboxIdentidade.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/listaContatos.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/opcoesLateral.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/usarMensagemBiblioteca.test.jsx",
+    "apps/web/src/features/whatsapp/pages/__tests__/whatsappRedesign.test.jsx",
+    "apps/web/src/features/whatsapp/pages/renderWhatsappPage.jsx"
+  ],
+  "runId": "2026-10-27T12-40-00-825Z-2f764b8f"
+}
