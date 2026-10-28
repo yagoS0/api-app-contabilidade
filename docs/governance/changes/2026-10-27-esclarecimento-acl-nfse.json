@@ -1,0 +1,25 @@
+{
+  "operationalImpact": "Preservar política existente admin/contador global na conferência interna NFS-e, demais vínculos/guardas intactos. Sem alterar runtime ou regras da carteira.",
+  "rollback": "Reverter somente adendo documental mediante nova decisão, sem modificar permissões de produto ou apagar registros históricos.",
+  "evidence": {
+    "source": "Chat atual, resposta call_d10a73aebf684379a02ba133a7dbff63",
+    "note": "Baseline documental D56b0 do Comercial; não altera ACL do Comercial, não aprova G15 nem transporta aprovação funcional de Notas.",
+    "canonicalSHA": "68caf8f5d9b1710064132bb12d012491773825432542895daa65b7331d6e21ef"
+  },
+  "domains": [
+    "api",
+    "fiscal",
+    "data",
+    "governance",
+    "documentation"
+  ],
+  "risk": "high",
+  "summary": "Registrar esclarecimento aprovado da ACL interna NFS-e sem alterar código",
+  "humanDecisions": [
+    "27/10/2026: Preservar NFS-e: admin e contador em todas as empresas. Não autoriza publicação/atos fiscais."
+  ],
+  "tests": [
+    "Revisão independente /root/preparo_s3_retomada: somente seção31; canônica e D SHA68caf; pin operacional0e85 atualizado sem engine/gates. Nenhum teste de produto exigido para transporte documental já validado em B.",
+    "Principal: conferir estrutura/impacto e diff antes do checkpoint; preservar origem funcional56b0 e atualizar futuro helper G15 sem executar."
+  ]
+}
