@@ -32,6 +32,18 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
   const locks = useRef(new Set());
   const filtros = useRef(null);
   const linhas = useRef(new Map());
+  const focosDeGravacao = useRef(new Map());
+  useEffect(() => {
+    const focos = focosDeGravacao.current;
+    function acompanharFoco(evento) {
+      for (const [chave, origem] of focos) {
+        // O refúgio ocupado do Modal conserva a origem; outra intenção a revoga.
+        if (evento.target !== origem.caixa && !origem.linha.contains(evento.target)) focos.delete(chave);
+      }
+    }
+    document.addEventListener('focusin', acompanharFoco);
+    return () => { document.removeEventListener('focusin', acompanharFoco); focos.clear(); };
+  }, []);
   const [erros, setErros] = useState({});
   useEffect(() => { if (!locks.current.size) { confirmado.current = original; setAtual(original); } }, [original]);
   const empresas = linhasDe(atual);
@@ -43,6 +55,10 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
     const companyId = empresa.companyId ?? null;
     const chave = companyId || 'pessoal';
     if (locks.current.has(chave)) return;
+    const linhaDeOrigem = linhas.current.get(chave);
+    if (linhaDeOrigem?.contains(document.activeElement)) {
+      focosDeGravacao.current.set(chave, { linha:linhaDeOrigem, caixa:linhaDeOrigem.closest('.modal-caixa') });
+    }
     locks.current.add(chave); setSalvando(new Set(locks.current));
     setErros(e => ({ ...e, [chave]:'' }));
     setAtual(a => atualizar(a, companyId, subtarefa?.id, valor));
@@ -59,7 +75,10 @@ export function PainelTarefaCalendario({ item, api, onFechar, onChanged, onEdita
       const filtroPendente = filtros.current?.querySelector('[data-filter="pending"][aria-pressed="true"]');
       const linha = linhas.current.get(chave);
       const empresaConfirmada = linhasDe(confirmado.current).find(e => (e.companyId ?? null) === companyId);
-      if (filtroPendente && empresaConcluida(empresaConfirmada || {}) && linha?.contains(document.activeElement)) filtroPendente.focus();
+      const origem = focosDeGravacao.current.get(chave);
+      const focoNoRefugio = origem?.linha === linha && linha?.isConnected && origem.caixa === document.activeElement;
+      if (filtroPendente && empresaConcluida(empresaConfirmada || {}) && (linha?.contains(document.activeElement) || focoNoRefugio)) filtroPendente.focus();
+      focosDeGravacao.current.delete(chave);
       locks.current.delete(chave); setSalvando(new Set(locks.current));
     }
   }

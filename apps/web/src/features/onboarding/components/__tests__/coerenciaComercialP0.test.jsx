@@ -1,3 +1,4 @@
+const { createMockApi } = require('../../../../api/mock/mockApi');
 import { AtendimentoComercial } from '../../../whatsapp/components/AtendimentoComercial';
 import { waitFor, render, screen } from '@testing-library/react';
 import { CardEtapa } from '../ChecklistEtapas';
@@ -34,7 +35,6 @@ import { OnboardingsPage } from '../../pages/renderOnboardingsPage';
 import { within } from '@testing-library/react';
 
 test('mock real mantém a mesma jornada na lista, ficha e conversa após salvar e recarregar', async () => {
-  const { createMockApi } = require('../../../../api/mock/mockApi');
   const api = createMockApi();
   const { onboarding: criada } = await api.criarOnboarding('ABERTURA');
   const id = criada.id;
@@ -64,7 +64,7 @@ test('mock real mantém a mesma jornada na lista, ficha e conversa após salvar 
   }
   expect(criada.comercial.titulo).toBe('Entender a abertura');
   await conferirSuperficies('Entender a abertura');
-  const { onboarding: salva } = await api.salvarOnboarding(id, {
+  const { onboarding: salva } = await api.salvarOnboarding(id, { versao: criada.versao,
     finalizar: true, dados: { responsavelNome: `Pessoa fictícia ${id}`, socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] },
   });
   expect(salva.comercial).toEqual(criada.comercial);

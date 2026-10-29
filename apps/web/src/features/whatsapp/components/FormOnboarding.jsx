@@ -45,6 +45,8 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
         const atualizada = await api.getOnboarding(registro.current.id);
         if (atualizada?.onboarding?.id !== registro.current.id) throw new Error("Não foi possível conferir o rascunho antes de tentar novamente.");
         const ficha = atualizada.onboarding;
+        if (!Number.isInteger(ficha.versao)) throw new Error("Não foi possível conferir a revisão do rascunho. Abra a ficha antes de continuar.");
+        registro.current = ficha;
         if (Object.keys(ficha.dados || {}).length || (ficha.status && ficha.status !== "RASCUNHO")) {
           setCriado(ficha);
           onCriado?.();
@@ -52,8 +54,10 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
         }
       }
       // Se o PATCH falhar, a próxima tentativa usa este MESMO id, sem criar outra ficha.
-      const r = await api.salvarOnboarding(registro.current.id, { dados });
-      if (!r?.onboarding?.id) throw new Error("Não foi possível confirmar o preenchimento da ficha.");
+      if (!Number.isInteger(registro.current.versao)) throw new Error("Não foi possível conferir a revisão do rascunho. Abra a ficha antes de continuar.");
+      const revisaoEnviada = registro.current.versao;
+      const r = await api.salvarOnboarding(registro.current.id, { dados, versao: revisaoEnviada });
+      if (r?.onboarding?.id !== registro.current.id || !Number.isInteger(r.onboarding.versao) || r.onboarding.versao <= revisaoEnviada) throw new Error("Não foi possível confirmar o preenchimento da ficha.");
       setCriado(r.onboarding);
       onCriado?.();
     } catch (err) { setErro(err?.message || "Não foi possível criar o onboarding."); }

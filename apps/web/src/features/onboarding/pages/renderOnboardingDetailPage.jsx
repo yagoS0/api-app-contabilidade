@@ -1,3 +1,4 @@
+import { useWorkspaceNavigation } from "../../../app/navigation/WorkspaceNavigation.shared";
 import { AcoesOportunidade } from '../components/AcoesOportunidade';
 import { nomeDaOportunidade } from '../../comercial/comercialModel';
 import { etapaSatisfeita } from '../lib/jornadaComercial';
@@ -29,6 +30,7 @@ export function OnboardingDetailPage(props) {
   return <ProtecaoEdicao><OnboardingDetailContent {...props} /></ProtecaoEdicao>;
 }
 function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, onAbrirConversa, preenchimentoInicial = false }) {
+  const workspace = useWorkspaceNavigation();
   const confirmarSaida = useConfirmarSaida();
   const [onboarding, setOnboarding] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -69,7 +71,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     if (saidaEmCurso.current) return;
     saidaEmCurso.current = true;
     try {
-      if (editando) await salvarAntesDeSair.current?.();
+      if (editando && !workspace) await salvarAntesDeSair.current?.();
       confirmarSaida(() => destino?.());
     } catch (e) { setAviso(`Não foi possível salvar. Seus dados continuam nesta tela. ${e.message}`); }
     finally { saidaEmCurso.current = false; }
@@ -82,12 +84,16 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   });
 
   useEffect(() => {
-    const abrirDestino = () => { if (window.location.hash === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' }); };
+    const abrirDestino = () => { if ((workspace?.location.hash ?? window.location.hash) === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' }); };
     setEditando(preenchimentoInicial); setAreaEscolhida(null); setOcupada(false); setAviso(null); setModalAberto(false);
     abrirDestino();
     window.addEventListener('hashchange', abrirDestino);
     return () => window.removeEventListener('hashchange', abrirDestino);
   }, [onboardingId, preenchimentoInicial]);
+
+  useEffect(() => {
+    if (workspace?.location.hash === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' });
+  }, [onboardingId, workspace?.location.hash]);
 
   async function continuarAtendimento() {
     const id = onboardingId, pedido = ++leitura.current;

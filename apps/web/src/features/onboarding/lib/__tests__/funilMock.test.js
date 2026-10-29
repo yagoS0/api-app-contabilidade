@@ -56,7 +56,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     expect(criada.onboarding.status).toBe("RASCUNHO");
     const id = criada.onboarding.id;
 
-    const p1 = await api.salvarOnboarding(id, {
+    const p1 = await api.salvarOnboarding(id, { versao: criada.onboarding.versao,
       dados: {
         razaoSocial: "EMPRESA QUE TROCA DE CONTADOR LTDA",
         cnpj: "11.222.333/0001-81",
@@ -67,7 +67,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     expect(p1.onboarding.razaoSocial).toBe("EMPRESA QUE TROCA DE CONTADOR LTDA");
     expect(p1.onboarding.cnpj).toBe("11222333000181");
 
-    await api.salvarOnboarding(id, {
+    const p2 = await api.salvarOnboarding(id, { versao: p1.onboarding.versao,
       dados: {
         razaoSocial: "EMPRESA QUE TROCA DE CONTADOR LTDA",
         cnpj: "11.222.333/0001-81",
@@ -78,7 +78,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
       ultimoPasso: "responsavel",
     });
 
-    const fim = await api.salvarOnboarding(id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
+    const fim = await api.salvarOnboarding(id, { versao: p2.onboarding.versao, dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
     expect(fim.onboarding.status).toBe("RECEBIDO");
     expect(fim.onboarding.enviadoEm).toBeTruthy();
     expect(fim.onboarding.etapas.length).toBeGreaterThan(0);
@@ -97,7 +97,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     expect(convertida.onboarding.portalClientId).toBeTruthy();
 
     // Convertido é somente leitura, e o mock repete a trava.
-    await expect(api.salvarOnboarding(id, { dados: { razaoSocial: "OUTRA" } })).rejects.toMatchObject({
+    await expect(api.salvarOnboarding(id, { versao: convertida.onboarding.versao, dados: { razaoSocial: "OUTRA" } })).rejects.toMatchObject({
       code: "onboarding_convertido",
     });
   });
@@ -113,7 +113,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
     const { onboarding: o } = await api.criarOnboarding('ABERTURA');
     const { onboarding: outra } = await api.criarOnboarding('ABERTURA');
     const base = `/onboardings/${o.id}`;
-    await api.salvarOnboarding(o.id, { dados: { modalidadeServico: "RECORRENTE", consultoriaMensal: false, regimePretendido: "SIMPLES", notasRecebidasMes: 10 } });
+    await api.salvarOnboarding(o.id, { versao: o.versao, dados: { modalidadeServico: "RECORRENTE", consultoriaMensal: false, regimePretendido: "SIMPLES", notasRecebidasMes: 10 } });
     const { proposta } = await api.comercial(`${base}/propostas`, {});
     await recarregar();
     expect((await api.getOnboarding(o.id)).onboarding.comercial.contratacao.excecaoAplicavel).toBe(false);
@@ -176,11 +176,11 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
   // ⚠ A regra que o mock TEM de implementar de verdade: trocar de origem zera `dados`.
   test("trocar de origem zera o rascunho no mock, não só na tela", async () => {
     const { onboarding } = await api.criarOnboarding("ABERTURA");
-    await api.salvarOnboarding(onboarding.id, {
+    const preenchida = await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao,
       dados: { razaoSocial: "NOME PRETENDIDO", tipoEmpresa: "LTDA", socios: [{ nome: "Ana" }] },
     });
 
-    const trocada = await api.salvarOnboarding(onboarding.id, { origem: "TRANSFERENCIA" });
+    const trocada = await api.salvarOnboarding(onboarding.id, { versao: preenchida.onboarding.versao, origem: "TRANSFERENCIA" });
 
     expect(trocada.onboarding.origem).toBe("TRANSFERENCIA");
     expect(trocada.onboarding.dados).toEqual({});
@@ -191,12 +191,12 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
   // ⚠ A outra: finalizar duas vezes não duplica a checklist.
   test("finalizar duas vezes mantém a checklist e as marcações", async () => {
     const { onboarding } = await api.criarOnboarding("INATIVA");
-    const primeira = await api.salvarOnboarding(onboarding.id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
+    const primeira = await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao, dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
     const quantidade = primeira.onboarding.etapas.length;
     expect(quantidade).toBeGreaterThan(0);
 
     await api.salvarEtapaOnboarding(onboarding.id, primeira.onboarding.etapas[0].id, { concluida: true });
-    const segunda = await api.salvarOnboarding(onboarding.id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
+    const segunda = await api.salvarOnboarding(onboarding.id, { versao: primeira.onboarding.versao, dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
 
     expect(segunda.onboarding.etapas).toHaveLength(quantidade);
     // e a marcação sobreviveu — uma segunda cópia viria com tudo desmarcado
@@ -206,7 +206,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
   test("a lista esconde rascunho por padrão e o toggle o traz de volta", async () => {
     await api.criarOnboarding("ABERTURA");
     const { onboarding } = await api.criarOnboarding("INATIVA");
-    await api.salvarOnboarding(onboarding.id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
+    await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao, dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
 
     const padrao = await api.listarOnboardings({});
     expect(padrao.itens).toHaveLength(1);
@@ -218,7 +218,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
 
   test("busca casa por nome, por CNPJ e por responsável", async () => {
     const { onboarding } = await api.criarOnboarding("TRANSFERENCIA");
-    await api.salvarOnboarding(onboarding.id, {
+    await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao,
       dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }], razaoSocial: "PADARIA DO ZE LTDA", cnpj: "11222333000181", responsavelNome: "Zé" },
       finalizar: true,
     });
@@ -229,7 +229,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
 
   test("descartar só vale para rascunho", async () => {
     const { onboarding } = await api.criarOnboarding("ABERTURA");
-    await api.salvarOnboarding(onboarding.id, { dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
+    await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao, dados: { socios: [{ nome: "Pessoa Teste", cpf: "52998224725" }] }, finalizar: true });
     await expect(api.descartarOnboarding(onboarding.id, onboarding.versao || 0)).rejects.toMatchObject({
       code: "somente_rascunho_pode_ser_descartado",
     });
@@ -263,7 +263,7 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
       razaoSocial: "MEI DO JOAO",
       socios: [{ nome: "Joao" }],
     };
-    await api.salvarOnboarding(onboarding.id, { dados: podarInvisiveis("ABERTURA", rascunho) });
+    await api.salvarOnboarding(onboarding.id, { versao: onboarding.versao, dados: podarInvisiveis("ABERTURA", rascunho) });
     const lido = await api.getOnboarding(onboarding.id);
     expect(lido.onboarding.dados.socios).toEqual([{ nome: "Joao" }]);
     expect(lido.onboarding.dados.razaoSocial).toBe("MEI DO JOAO");

@@ -3,6 +3,7 @@
 .onboarding-emissao-link:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 3px; }
 body:has(.onboarding-workspace) { min-width: 0; }
 .onboarding-workspace .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-height: 40px; }
+.onboarding-workspace .btn.onboarding-recovery-action { min-width: 44px; min-height: 44px; }
 .onboarding-workspace :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--border-focus, var(--accent-purple)); outline-offset: 3px; }
 .onboarding-workspace :is(p, strong, h2, h3, legend) { overflow-wrap: anywhere; }
 .page-shell:has(> .onboarding-workspace) .page-shell__title-block { min-width: 0; overflow-wrap: anywhere; }

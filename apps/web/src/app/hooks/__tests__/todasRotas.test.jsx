@@ -1,6 +1,7 @@
+import { Request } from 'node-fetch/lib/index.js';
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useNavigate, useLocation } from 'react-router-dom';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider, useNavigate, useLocation } from 'react-router-dom';
 import App from '../../../App';
 import { createApiClient } from '../../../api/client';
 import { TAB_TO_SEGMENT } from '../../../features/companies/detail/lib/rotasDaEmpresa';
@@ -25,7 +26,7 @@ test('todas as abas canônicas abrem e alternam no app completo para Simples e P
   const empresas = await api.listCompanies('2026-09');
   const selecionadas = ['SIMPLES', 'PRESUMIDO'].map(regime => empresas.find(c => String(c.legacyCompany?.regimeTributario || c.regimeTributario).includes(regime)));
   expect(selecionadas.every(Boolean)).toBe(true);
-  render(<MemoryRouter initialEntries={['/companies']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Caminho/><App/></MemoryRouter>);
+  mountRouter(<><Caminho/><App/></>, ['/companies']);
   await screen.findByRole('button', { name: 'Empresas', exact: true }, { timeout: 10000 });
   for (const empresa of selecionadas) {
     for (const segmento of Object.values(TAB_TO_SEGMENT)) {
@@ -57,4 +58,21 @@ test('todas as abas canônicas abrem e alternam no app completo para Simples e P
   const falhas = erros.mock.calls.flat().filter(x => x instanceof Error);
   erros.mockRestore();
   expect(falhas).toEqual([]);
+});
+
+const mountedRouters = [];
+function mountRouter(element, initialEntries) {
+  const router = createMemoryRouter([{ path: '*', element }], { initialEntries });
+  mountedRouters.push(router);
+  const view = render(<RouterProvider router={router} />);
+  return { ...view, unmount: () => { view.unmount(); router.dispose(); } };
+}
+afterEach(() => { cleanup(); mountedRouters.splice(0).forEach(router => router.dispose()); });
+
+// Same installed Request implementation as bootstrapDataRouter; no router mock or fetch replacement.
+const requestDescriptorBeforeSuite = Object.getOwnPropertyDescriptor(globalThis, 'Request');
+beforeEach(() => { Object.defineProperty(globalThis, 'Request', { configurable: true, writable: true, value: Request }); });
+afterEach(() => {
+  if (requestDescriptorBeforeSuite) Object.defineProperty(globalThis, 'Request', requestDescriptorBeforeSuite);
+  else delete globalThis.Request;
 });

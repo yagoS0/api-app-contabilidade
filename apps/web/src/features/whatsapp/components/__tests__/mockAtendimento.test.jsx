@@ -21,7 +21,7 @@ test("rascunho mock sobrevive ao link que recarrega a página", async () => {
   jest.useFakeTimers();
   const api = createMockApi();
   const criacao = api.criarOnboarding("ABERTURA"); await jest.runAllTimersAsync(); const { onboarding } = await criacao;
-  const salvar = api.salvarOnboarding(onboarding.id, { dados: { responsavelNome: "Carlos", responsavelTelefone: "+5511977776666" } });
+  const salvar = api.salvarOnboarding(onboarding.id, { versao: onboarding.versao, dados: { responsavelNome: "Carlos", responsavelTelefone: "+5511977776666" } });
   await jest.runAllTimersAsync(); await salvar;
   // Reload business state and read sessionStorage again. Keep only the real external
   // Faker module: importing its locale graph costs seconds; mockApi still seeds it anew.

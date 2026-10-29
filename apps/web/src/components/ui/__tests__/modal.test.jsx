@@ -174,3 +174,93 @@ it('ignora campos desabilitados pelo fieldset no foco inicial e Tab', () => {
 });
 
 it('pode preservar fechamento explícito sem Escape', () => { const fechar=jest.fn(); abrir({aoFechar:fechar,fecharAoEscape:false}); fireEvent.keyDown(document,{key:'Escape'}); expect(fechar).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button',{name:'Fechar'})); expect(fechar).toHaveBeenCalledTimes(1); });
+
+describe('Modal — foco durante gravação e retorno após erro', () => {
+  function Conteudo({ ocupado = false, suspenso = false, aoFechar = () => {}, fieldset = false }) {
+    return <Modal titulo="Edição" ocupado={ocupado} suspenso={suspenso} aoFechar={aoFechar}
+      rodape={fieldset
+        ? <fieldset disabled={ocupado}><button>Guardar</button></fieldset>
+        : <button disabled={ocupado}>Guardar</button>}>
+      <p>{ocupado ? 'Guardando' : 'Confira os dados'}</p>
+      {!ocupado && <p role="alert">Falha recuperável</p>}
+    </Modal>;
+  }
+
+  it.each([false, true])('ação desabilitada transfere foco sem Tab e volta após erro; fieldset=%s', fieldset => {
+    const fechar = jest.fn();
+    const { container, rerender } = render(<Conteudo fieldset={fieldset} aoFechar={fechar}/>);
+    const guardar = screen.getByRole('button', { name: 'Guardar' });
+    guardar.focus();
+    rerender(<Conteudo fieldset={fieldset} ocupado aoFechar={fechar}/>);
+    const caixa = container.querySelector('.modal-caixa');
+    expect(document.activeElement).toBe(caixa);
+    expect(guardar).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Fechar' })).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(container.querySelector('.modal-fundo'));
+    expect(fechar).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(caixa);
+    rerender(<Conteudo fieldset={fieldset} aoFechar={fechar}/>);
+    expect(document.activeElement).toBe(guardar);
+    expect(guardar).not.toBeDisabled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(fechar).not.toHaveBeenCalled();
+  });
+
+  it('Fechar removido em ocupado não deixa foco no body nem recupera elemento desconectado', () => {
+    const { container, rerender } = render(<Conteudo/>);
+    const fechar = screen.getByRole('button', { name: 'Fechar' });
+    fechar.focus();
+    rerender(<Conteudo ocupado/>);
+    const caixa = container.querySelector('.modal-caixa');
+    expect(fechar.isConnected).toBe(false);
+    expect(document.activeElement).toBe(caixa);
+    rerender(<Conteudo/>);
+    expect(document.activeElement).toBe(caixa);
+    expect(screen.getByRole('button', { name: 'Fechar' })).not.toBe(fechar);
+  });
+
+  it('foco perdido para body antes de busy é recuperado sem uma tecla artificial', () => {
+    const { container, rerender } = render(<Conteudo/>);
+    const guardar = screen.getByRole('button', { name: 'Guardar' });
+    guardar.focus();
+    // jsdom não reproduz todos os blurs nativos ao desabilitar um controle.
+    guardar.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerender(<Conteudo ocupado/>);
+    expect(document.activeElement).toBe(container.querySelector('.modal-caixa'));
+  });
+
+  it('não rouba foco de outro controle significativo fora do diálogo', () => {
+    const view = ocupado => <><input aria-label="Outra área"/><Conteudo ocupado={ocupado}/></>;
+    const { rerender } = render(view(false));
+    screen.getByRole('button', { name: 'Guardar' }).focus();
+    const externo = screen.getByLabelText('Outra área');externo.focus();
+    rerender(view(true));
+    expect(document.activeElement).toBe(externo);
+    rerender(view(false));
+    expect(document.activeElement).toBe(externo);
+  });
+
+  it.each([false, true])('confirmação irmã mantém foco com pai suspenso=%s', suspenso => {
+    const view = ocupado => <><Conteudo ocupado={ocupado} suspenso={suspenso}/>
+      <Modal titulo="Confirmação" aoFechar={() => {}}><input aria-label="Confirmação atual"/></Modal></>;
+    const { rerender } = render(view(false));
+    const atual = screen.getByLabelText('Confirmação atual');atual.focus();
+    rerender(view(true));
+    expect(document.activeElement).toBe(atual);
+    rerender(view(false));
+    expect(document.activeElement).toBe(atual);
+  });
+
+  it('campo interno habilitado conserva seu foco durante a gravação', () => {
+    const view = ocupado => <Modal titulo="Campo mantido" aoFechar={() => {}} ocupado={ocupado}>
+      <input aria-label="Campo habilitado"/>
+    </Modal>;
+    const { rerender } = render(view(false));
+    const input = screen.getByLabelText('Campo habilitado');input.focus();
+    rerender(view(true));expect(document.activeElement).toBe(input);
+    rerender(view(false));expect(document.activeElement).toBe(input);
+  });
+});

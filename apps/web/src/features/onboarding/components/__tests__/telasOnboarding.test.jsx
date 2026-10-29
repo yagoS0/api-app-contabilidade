@@ -16,7 +16,7 @@ function apiFalsa(overrides = {}) {
     getOnboarding: jest.fn(async () => ({
       ok: true,
       onboarding: {
-        id: "onb-1", origem: "TRANSFERENCIA", status: "RASCUNHO",
+        id: "onb-1", versao: 0, origem: "TRANSFERENCIA", status: "RASCUNHO",
         origemPreenchimento: "ESCRITORIO", dados: {}, ultimoPasso: "identificacao",
         etapas: [],
       },
@@ -24,7 +24,7 @@ function apiFalsa(overrides = {}) {
     salvarOnboarding: jest.fn(async (id, patch) => ({
       ok: true,
       onboarding: {
-        id, origem: patch.origem || "TRANSFERENCIA", status: "RASCUNHO",
+        id, versao: patch.versao + 1, origem: patch.origem || "TRANSFERENCIA", status: "RASCUNHO",
         origemPreenchimento: "ESCRITORIO", dados: patch.dados || {}, ultimoPasso: patch.ultimoPasso || null,
         etapas: [],
       },
@@ -34,7 +34,7 @@ function apiFalsa(overrides = {}) {
 }
 
 test("voltar aguarda salvar e permanece no wizard quando o servidor recusa", async () => {
-  const api = apiFalsa({ salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: { id: "onb-1", origem: "TRANSFERENCIA", dados: {} } }) });
+  const api = apiFalsa({ salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: { id: "onb-1", versao: 1, origem: "TRANSFERENCIA", dados: {} } }) });
   const voltar = jest.fn();
   render(<OnboardingWizardPage api={api} onboardingId="onb-1" onVoltar={voltar} />);
   await screen.findByRole("button", { name: "Onboardings" });
@@ -42,11 +42,19 @@ test("voltar aguarda salvar e permanece no wizard quando o servidor recusa", asy
   await screen.findByRole("alert");
   expect(voltar).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Onboardings" }));
+  expect(voltar).not.toHaveBeenCalled();
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Conferir dados vigentes" }));
+  const adopt = await screen.findByRole("button", { name: "Usar dados vigentes e descartar edição local" });
+  fireEvent.click(adopt);
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Conferir salvamento incerto" })).not.toBeInTheDocument());
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Onboardings" }));
   await waitFor(() => expect(voltar).toHaveBeenCalledTimes(1));
 });
 
 test("trocar origem mostra perda de campos e cancelar preserva o rascunho", async () => {
-  const api = apiFalsa({ getOnboarding: jest.fn(async () => ({ onboarding: { id: "onb-1", origem: "TRANSFERENCIA", dados: { razaoSocial: "Empresa existente" }, ultimoPasso: "origem" } })) });
+  const api = apiFalsa({ getOnboarding: jest.fn(async () => ({ onboarding: { id: "onb-1", versao: 0, origem: "TRANSFERENCIA", dados: { razaoSocial: "Empresa existente" }, ultimoPasso: "origem" } })) });
   render(<OnboardingWizardPage api={api} onboardingId="onb-1" onVoltar={jest.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: /Vai abrir a empresa/ }));
   const dialogo = screen.getByRole("dialog");
@@ -176,7 +184,7 @@ describe("Wizard — a origem manda no formulário", () => {
       getOnboarding: jest.fn(async () => ({
         ok: true,
         onboarding: {
-          id: "onb-1", origem: "ABERTURA", status: "RASCUNHO", origemPreenchimento: "ESCRITORIO",
+          id: "onb-1", versao: 0, origem: "ABERTURA", status: "RASCUNHO", origemPreenchimento: "ESCRITORIO",
           dados: { tipoEmpresa: "MEI" }, ultimoPasso: "identificacao", etapas: [],
         },
       })),
@@ -202,4 +210,32 @@ describe("Wizard — a origem manda no formulário", () => {
     // ⚠ e o que foi salvo passou pela PODA: `dados` não carrega campo de outra origem.
     expect(patch.dados.paradaDesde).toBeUndefined();
   });
+});
+
+test.each([
+  [false, 'manter'], [true, 'manter'], [false, 'usar remoto'], [true, 'usar remoto'],
+])('wizard embedded=%s recupera por %s com foco persistente e sem repetir ação incerta', async (embedded, choice) => {
+  const api = apiFalsa({ salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error('Resposta perdida')) });
+  const voltar = jest.fn();
+  render(<OnboardingWizardPage api={api} onboardingId="onb-1" onVoltar={voltar} embedded={embedded} />);
+  // Avançar exists in both shells and submits the same real hook draft path.
+  fireEvent.click(await screen.findByRole('button', { name: 'Avançar' }));
+  await screen.findByRole('region', { name: 'Conferir salvamento incerto' });
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir dados vigentes' }));
+  await screen.findByRole('button', { name: 'Manter minha edição e salvar novo rascunho' });
+  expect(screen.getByText('Ver dados vigentes')).toBeInTheDocument();
+  expect(screen.getByText('Ver minha edição local')).toBeInTheDocument();
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
+  api.salvarOnboarding.mockImplementationOnce(async (id, patch) => ({ onboarding: { id, versao: 1, origem: 'TRANSFERENCIA', status: 'RASCUNHO', dados: patch.dados } }));
+  const button = screen.getByRole('button', { name: choice === 'manter' ? 'Manter minha edição e salvar novo rascunho' : 'Usar dados vigentes e descartar edição local' });
+  button.focus();
+  expect(button).toHaveFocus();
+  fireEvent.click(button);
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Conferir salvamento incerto' })).not.toBeInTheDocument());
+  expect(button).not.toBeInTheDocument();
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(choice === 'manter' ? 2 : 1);
+  if (choice === 'manter') expect(Object.keys(api.salvarOnboarding.mock.calls[1][1]).sort()).toEqual(['dados', 'versao']);
+  expect(voltar).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByText('rascunho salvo')).toHaveFocus());
+  expect(document.activeElement).not.toBe(document.body);
 });

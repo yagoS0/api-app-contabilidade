@@ -6,7 +6,8 @@ import { errosConclusaoPessoas } from '@contabilidade/shared/onboarding-dados';
 //
 // O rascunho é salvo antes de navegar e com debounce; ao fechar com pendência há aviso nativo.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspaceEditor } from "../../../app/navigation/WorkspaceNavigation.shared";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { useConfirmacao } from "../../../components/ui/useConfirmacao";
@@ -14,7 +15,7 @@ import { CampoOnboarding } from "../components/CampoOnboarding";
 import { ConsultaCnpjOnboarding } from "../components/ConsultaCnpjOnboarding";
 import { useConsultaCnpjOnboarding } from "../hooks/useConsultaCnpjOnboarding";
 import { PassoOrigem } from "../components/PassoOrigem";
-import { PassoRevisao } from "../components/PassoRevisao";
+import { PassoRevisao, FichaDeclarada } from "../components/PassoRevisao";
 import { TrilhaPassos } from "../components/TrilhaPassos";
 import { useOnboardingRascunho } from "../hooks/useOnboardingRascunho";
 
@@ -37,7 +38,27 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const rascunho = useOnboardingRascunho({ api, onboardingId });
   const { onboarding, dados, estadoSalvamento, salvarAgora } = rascunho;
+  const workspace = useWorkspaceEditor(rascunho.editor);
+  const activeAction = useMemo(() => ({ current: false }), [rascunho.editor.context]);
   const origem = onboarding?.origem || null;
+  const recovery = rascunho.recuperacao;
+  const [recoveryError, setRecoveryError] = useState(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const saveLabel = useRef(null);
+  const checked = recovery?.conferido;
+  const staleCheck = !checked || checked.edit !== recovery?.edit;
+  const changedContext = checked && (checked.record.origem !== origem || !checked.record.status || checked.record.status !== onboarding?.status);
+  async function escolherRecuperacao(keep) {
+    if (recoveryBusy || !recovery || staleCheck) return;
+    setRecoveryBusy(true); setRecoveryError(null);
+    try {
+      const record = await (keep ? recovery.manterEdicao(checked) : recovery.usarRemoto(checked));
+      if (!rascunho.isCurrent()) return;
+      if (!keep) { setPasso(record.ultimoPasso || 'origem'); setErrosDoPasso({}); }
+      saveLabel.current?.focus();
+    } catch (error) { if (rascunho.isCurrent()) setRecoveryError(error); }
+    finally { if (rascunho.isCurrent()) setRecoveryBusy(false); }
+  }
 
   const [passo, setPasso] = useState("origem");
   const [errosDoPasso, setErrosDoPasso] = useState({});
@@ -45,15 +66,20 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const [finalizando, setFinalizando] = useState(false);
   const [navegando, setNavegando] = useState(false);
   useEffect(() => {
+    setPasso('origem'); setErrosDoPasso({}); setFinalizando(false); setNavegando(false); setRecoveryError(null); setRecoveryBusy(false);
+  }, [rascunho.editor.context]);
+  useEffect(() => {
+    if (workspace) return undefined;
     onRegistrarSaida?.(() => salvarAgora({ ultimoPasso: passo }));
     return () => onRegistrarSaida?.(null);
-  }, [onRegistrarSaida, salvarAgora, passo]);
+  }, [onRegistrarSaida, salvarAgora, passo, workspace]);
 
   useEffect(() => {
+    if (workspace) return undefined;
     const proteger = event => event.detail.push(() => salvarAgora({ ultimoPasso: passo }));
     window.addEventListener('altan:onboarding-antes-de-navegar', proteger);
     return () => window.removeEventListener('altan:onboarding-antes-de-navegar', proteger);
-  }, [salvarAgora, passo]);
+  }, [salvarAgora, passo, workspace]);
 
   // Reabre onde o preenchimento parou — é para isso que `ultimoPasso` existe.
   useEffect(() => {
@@ -78,22 +104,25 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const ehUltimo = indice === passos.length - 1;
 
   async function irPara(destino) {
-    if (navegando) return;
+    if (navegando || activeAction.current || !rascunho.isCurrent() || rascunho.editor.context.suspended) return;
+    activeAction.current = true;
     setNavegando(true);
     try {
       if (origem) await rascunho.salvarAgora({ ultimoPasso: destino });
+      if (!rascunho.isCurrent() || rascunho.editor.context.suspended) return;
       setErrosDoPasso({});
       setPasso(destino);
     } catch { /* Mantém passo e campos para nova tentativa. */ }
-    finally { setNavegando(false); }
+    finally { activeAction.current = false; if (rascunho.isCurrent()) setNavegando(false); }
   }
 
   async function salvarEVoltar() {
-    if (navegando) return;
+    if (workspace) { workspace.confirmarSaida(() => onVoltar?.()); return; }
+    if (navegando || activeAction.current || !rascunho.isCurrent() || rascunho.editor.context.suspended) return;
     setNavegando(true);
     try {
       await rascunho.salvarAgora({ ultimoPasso: passo });
-      onVoltar?.();
+      if (rascunho.isCurrent()) onVoltar?.();
     } catch { /* A mensagem persistente explica por que a página continua aberta. */ }
     finally { setNavegando(false); }
   }
@@ -111,12 +140,17 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   }
 
   async function escolherOrigem(nova) {
+    if (activeAction.current || navegando || !rascunho.isCurrent() || rascunho.editor.context.suspended) return;
+    activeAction.current = true;
+    try {
     if (!origem) {
       await rascunho.trocarOrigem(nova);
+      activeAction.current = false;
       await irPara("identificacao");
       return;
     }
     if (nova === origem) {
+      activeAction.current = false;
       await irPara("identificacao");
       return;
     }
@@ -128,24 +162,29 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     const nomeNova = ONBOARDING_ORIGENS.find((o) => o.chave === nova)?.titulo || nova;
     if (preenchidos > 0) {
       const ok = await confirmar({ titulo: "Trocar origem do onboarding", texto: `Trocar para “${nomeNova}” apaga ${preenchidos} campo(s) preenchido(s) nesta ficha, porque cada origem faz perguntas diferentes.`, acao: "Trocar e limpar ficha", perigo: true });
-      if (!ok) return;
+      if (!ok || !rascunho.isCurrent() || rascunho.editor.context.suspended) return;
     }
     await rascunho.trocarOrigem(nova);
-
+    activeAction.current = false;
     await irPara("identificacao");
+    } catch { /* A falha persistente do rascunho mantém a ficha aberta. */ }
+    finally { activeAction.current = false; }
   }
 
   async function finalizar() {
+    if (activeAction.current || navegando || !rascunho.isCurrent() || rascunho.editor.context.suspended) return;
     const erros = origem === "PESSOA_FISICA" ? {} : errosConclusaoPessoas(dados);
     if (Object.keys(erros).length) { await irPara("identificacao"); setErrosDoPasso(erros); return; }
+    activeAction.current = true;
     setFinalizando(true);
     try {
       const registro = await rascunho.finalizar();
-      await onAbrirDetalhe?.(registro?.id || onboardingId);
+      if (rascunho.isCurrent() && !rascunho.editor.context.suspended) await onAbrirDetalhe?.(registro?.id || onboardingId);
     } catch {
       // o estado de erro já aparece no selo de salvamento
     } finally {
-      setFinalizando(false);
+      activeAction.current = false;
+      if (rascunho.isCurrent()) setFinalizando(false);
     }
   }
 
@@ -177,14 +216,33 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
       onBack={salvarEVoltar}
       backLabel="Onboardings"
       actions={
-        <span style={{ fontSize: 12, color: estadoSalvamento === "erro" ? "var(--state-warn)" : "var(--text-faint)" }}>
+        <span ref={saveLabel} tabIndex={-1} style={{ fontSize: 12, color: estadoSalvamento === "erro" ? "var(--state-warn)" : "var(--text-faint)" }}>
           {ROTULO_SALVAMENTO[estadoSalvamento]}
         </span>
       }
       contentClassName="onboarding-workspace onboarding-wizard"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
-      {estadoSalvamento === "erro" && <p role="alert" style={{ color: "var(--state-warn)" }}>Não foi possível salvar. Seus campos continuam nesta tela. Tente novamente antes de sair. {rascunho.erro?.message}</p>}
+      {estadoSalvamento === "erro" && <p role="alert" style={{ color: "var(--state-warn)" }}>Não foi possível confirmar o salvamento. Seus campos continuam nesta tela. {recovery ? 'Confira os dados vigentes antes de escolher como continuar.' : 'Corrija os dados e tente novamente antes de sair.'} {rascunho.erro?.message}</p>}
+      {recovery && <section aria-label="Conferir salvamento incerto" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+        <p>A resposta da tentativa na versão {recovery.tentativa?.revision} não foi confirmada. Consultar a ficha não comprova quem gravou nem repete conclusão ou troca de origem.</p>
+        <Button className="onboarding-recovery-action" type="button" variant="secondary" disabled={recovery.conferindo || recoveryBusy} onClick={() => { setRecoveryError(null); recovery.conferirRemoto(); }}>
+          {recovery.conferindo ? 'Conferindo…' : 'Conferir dados vigentes'}
+        </Button>
+        {(recovery.erro || recoveryError) && <p role="alert">{(recovery.erro || recoveryError).message} Sua edição local foi preservada.</p>}
+        {checked && <>
+          <p>Dados consultados: versão {checked.record.versao} · origem {checked.record.origem} · situação {checked.record.status || 'não informada'}.</p>
+          <details><summary>Ver dados vigentes</summary><FichaDeclarada origem={checked.record.origem} dados={checked.record.dados} origemPreenchimento={checked.record.origemPreenchimento} compacta /></details>
+          <details><summary>Ver minha edição local</summary><FichaDeclarada origem={origem} dados={dados} origemPreenchimento={onboarding?.origemPreenchimento} compacta /></details>
+          {staleCheck && <p role="status">A edição mudou desde a consulta. Confira novamente antes de escolher.</p>}
+          {changedContext && <p>A origem ou a situação mudou. Não enviaremos sua edição sobre esse contexto diferente. Confira os dados antes de descartar a edição local.</p>}
+          <p>Usar os dados vigentes descarta apenas a edição nesta tela, sem gravar. Manter minha edição envia somente um novo rascunho com a versão consultada; outra alteração pode causar conflito.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            <Button className="onboarding-recovery-action" type="button" variant="secondary" disabled={staleCheck || recoveryBusy || recovery.conferindo} onClick={() => escolherRecuperacao(false)}>Usar dados vigentes e descartar edição local</Button>
+            <Button className="onboarding-recovery-action" type="button" disabled={staleCheck || changedContext || recoveryBusy || recovery.conferindo} onClick={() => escolherRecuperacao(true)}>Manter minha edição e salvar novo rascunho</Button>
+          </div>
+        </>}
+      </section>}
       <TrilhaPassos
         passos={passos}
         passoAtual={passo}
@@ -266,6 +324,11 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   );
 }
 
-function EmbeddedShell({ children }) { return <div className="onboarding-wizard">{children}</div>; }
+function EmbeddedShell({ children, actions }) {
+  return <div className="onboarding-wizard">
+    <div style={{ marginBottom: 'var(--space-2)' }}>{actions}</div>
+    {children}
+  </div>;
+}
 
 export default OnboardingWizardPage;

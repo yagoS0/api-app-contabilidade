@@ -1676,7 +1676,9 @@ const CHAVE_ONBOARDING_MOCK = "mock:onboardings:v1";
 try {
   const salvo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CHAVE_ONBOARDING_MOCK) || "null") : null;
   if (salvo && Array.isArray(salvo.fichas) && Array.isArray(salvo.etapas)) {
-    for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id, ficha);
+    // Apenas o legado sintético sem campo recebe a revisão inicial. Revisões presentes não são reescritas.
+    for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id,
+      ficha && !Object.prototype.hasOwnProperty.call(ficha, 'versao') ? { ...ficha, versao: 0 } : ficha);
     for (const [id, etapas] of salvo.etapas) mockOnboardingEtapas.set(id, etapas);
     mockOnboardingSeq = Number.isSafeInteger(salvo.seq) ? salvo.seq : 0;
     for (const [chave, mapa] of Object.entries(mockContratacao)) {
@@ -11165,6 +11167,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay(180);
       const registro = {
         id: `mock-onb-${++mockOnboardingSeq}`,
+        versao: 0,
         origem: String(origem || "").toUpperCase(),
         status: "RASCUNHO",
         origemPreenchimento: "ESCRITORIO",
@@ -11224,6 +11227,10 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         throw Object.assign(new Error("Este onboarding já virou empresa."), { code: "onboarding_convertido", status: 409 });
       }
 
+      // Mesmo CAS da API real: ausência/tipo incorreto/revisão antiga não grava nem avança a ficha.
+      if (!Number.isInteger(atual.versao) || !Number.isInteger(patch.versao) || patch.versao !== atual.versao) {
+        throw Object.assign(new Error("A ficha mudou. Recarregue antes de salvar para preservar o atendimento."), { code: "formulario_alterado", status: 409 });
+      }
       const validacao = validarDadosOnboarding(patch.origem || atual.origem,
         patch.origem && patch.origem !== atual.origem ? {} : patch.dados === undefined ? atual.dados : combinarFichaInterna(atual.dados, patch.dados),
         { coleta: true, finalizar: patch.finalizar === true && atual.status === 'RASCUNHO' });
@@ -11253,6 +11260,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         mockMaterializarEtapas(atual.id, atual.origem);
       }
 
+      atual.versao += 1;
       atual.updatedAt = new Date().toISOString();
       mockOnboardings.set(atual.id, atual);
       persistirOnboardingsMock();

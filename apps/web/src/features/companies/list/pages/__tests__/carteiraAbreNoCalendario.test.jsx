@@ -1,7 +1,8 @@
+import { Request } from 'node-fetch/lib/index.js';
 // A carteira abre no calendário unificado, com visão mensal e tarefas por empresa.
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { useState } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom';
 import { WorkspaceNavigationProvider } from '../../../../../app/navigation/WorkspaceNavigation';
 import { CompaniesHomePage } from "../renderCompaniesHomePage.jsx";
 
@@ -19,7 +20,7 @@ test('entrada e recarga do deep link restauram competência e modal; seleção s
    <CompaniesHomePage user={{name:'Contador'}} companies={CARTEIRA} api={mockApi} loadingCompanies={false}
     dashboardCompetencia={competencia} onChangeCompetencia={setCompetencia}/></>;
  }
- const mount=url=>render(<MemoryRouter initialEntries={[url]}><WorkspaceNavigationProvider><Harness/></WorkspaceNavigationProvider></MemoryRouter>);
+ const mount=url=>mountRouter(<WorkspaceNavigationProvider><Harness/></WorkspaceNavigationProvider>, [url]);
  const url='/companies?visao=operacoes&operacoesEtapa=calculado&operacoesLista=missing&operacoesCompetencia=2026-08';
  let view=mount(url);
  expect(await screen.findByRole('dialog')).toHaveTextContent('Competência 2026-08');
@@ -190,3 +191,20 @@ describe("ferramentas acompanham o contexto da tela inicial", () => {
   });
 });
 
+
+const mountedRouters = [];
+function mountRouter(element, initialEntries) {
+  const router = createMemoryRouter([{ path: '*', element }], { initialEntries });
+  mountedRouters.push(router);
+  const view = render(<RouterProvider router={router} />);
+  return { ...view, unmount: () => { view.unmount(); router.dispose(); } };
+}
+afterEach(() => { cleanup(); mountedRouters.splice(0).forEach(router => router.dispose()); });
+
+// Same installed Request implementation as bootstrapDataRouter; no router mock or fetch replacement.
+const requestDescriptorBeforeSuite = Object.getOwnPropertyDescriptor(globalThis, 'Request');
+beforeEach(() => { Object.defineProperty(globalThis, 'Request', { configurable: true, writable: true, value: Request }); });
+afterEach(() => {
+  if (requestDescriptorBeforeSuite) Object.defineProperty(globalThis, 'Request', requestDescriptorBeforeSuite);
+  else delete globalThis.Request;
+});

@@ -18,7 +18,7 @@
 //
 // ⚠ TAMANHO INVÁLIDO CAI EM `md`, não em `lg`: diálogo maior que o necessário rouba a tela inteira
 // e some com o contexto de onde a pessoa clicou.
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useProtegerCamposDaRolagem } from './useProtegerCamposDaRolagem';
 
 const LARGURAS = { sm: 460, md: 640, lg: 900 };
@@ -66,6 +66,25 @@ export function Modal({
   useProtegerCamposDaRolagem();
   const caixaRef = useRef(null);
   const gatilhoRef = useRef(null);
+  const ultimoFocoInternoRef = useRef(null);
+
+  // Desabilitar/remover a ação focada pode devolver o foco ao body antes do próximo Tab.
+  // O refúgio pertence somente a este diálogo; uma confirmação irmã não perde seu foco.
+  useLayoutEffect(() => {
+    if (suspenso) return;
+    const caixa = caixaRef.current;
+    if (!caixa) return;
+    const ativo = document.activeElement;
+    const ultimo = ultimoFocoInternoRef.current;
+    const proprio = el => caixa.contains(el) && el.closest('[role="dialog"]') === caixa.parentElement;
+    const focoPerdido = ativo === document.body && ultimo !== null;
+    const focoInvalido = proprio(ativo) && !podeFocar(ativo);
+    if (!ocupado && ativo === caixa && ultimo?.isConnected && proprio(ultimo) && podeFocar(ultimo)) {
+      ultimo.focus({ preventScroll: true });
+    } else if (focoPerdido || focoInvalido) {
+      caixa.focus({ preventScroll: true });
+    }
+  }, [ocupado, suspenso]);
 
   // ⚠ O foco entra ao abrir e VOLTA para quem abriu ao fechar. Sem a volta, fechar o diálogo joga
   // o foco no `<body>` e a próxima tecla do teclado não tem para onde ir — quem navega assim
@@ -154,6 +173,11 @@ export function Modal({
         style={lateral ? undefined : { maxWidth: largura, ...(ancora ? { '--editor-x': `${ancora.x}px`, '--editor-y': `${ancora.y}px` } : {}) }}
         ref={caixaRef}
         tabIndex={-1}
+        onFocusCapture={event => {
+          if (event.target !== event.currentTarget && event.target.closest('[role="dialog"]') === event.currentTarget.parentElement) {
+            ultimoFocoInternoRef.current = event.target;
+          }
+        }}
       >
         <div className="modal-topo">
           <strong className="modal-titulo">{titulo}</strong>
