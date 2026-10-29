@@ -1,0 +1,28 @@
+{
+  "summary": "Executar lotes Jest da interface em duas pistas fixas, com caches privados e cancelamento coordenado; API e portal permanecem sequenciais.",
+  "risk": "high",
+  "domains": [
+    "governance"
+  ],
+  "operationalImpact": "Sem mudança de regra operacional. Preservados todos os testes, descoberta única, lotes de 25 suítes e prazos de 1190000/1200000 ms. Não autoriza atos reais ou publicação sem os gates restantes.",
+  "tests": [
+    "Candidato V3: 48/48 testes isolados aprovados, incluindo falha real, cancelamento de descendentes e cobertura sem duplicação.",
+    "Após aplicação: 85/85 testes de governança aprovados; 0 falhas, cancelamentos, skips ou todos. Evidência local output/retomada-publicacao-20261029/governance-tests.tap.",
+    "Regressão integral da interface com o novo agendador ainda pendente; resultados anteriores de timeout preservados e não convertidos em aprovação."
+  ],
+  "rollback": "Reverter somente este incremento de infraestrutura e seu registro. Não alterar resultados brutos nem as mudanças do produto em outras árvores.",
+  "humanDecisions": [
+    "Usuário autorizou os dois arquivos e validação na resposta call_23c00e65d5a448ba88be83570bd23db3: Autorizar pacote e complemento limitado.",
+    "Continuação G15: 67 chamadas históricas, até 13 adicionais, teto real 80; nenhuma outra correção automática autorizada.",
+    "Publicação condicionada a testes, revisões e CI."
+  ],
+  "sourcePaths": [
+    "scripts/governance/run-jest-batches.mjs",
+    "scripts/governance/run-jest-batches.test.mjs"
+  ],
+  "reviewedCandidate": "output/g15-web-scheduler-candidato-v3-20261029",
+  "limitations": [
+    "O ensaio sintético e a suíte de governança não comprovam duração ou capacidade de memória da regressão completa.",
+    "O CI possui comandos próprios; aprovação local não substitui checks remotos."
+  ]
+}
