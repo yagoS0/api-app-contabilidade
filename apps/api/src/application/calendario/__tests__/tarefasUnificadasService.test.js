@@ -1,5 +1,15 @@
 jest.mock('../../../infrastructure/db/prisma.js',()=>({prisma:{}}));
-import { podeVerTarefa, criarTarefaUnificada, acaoTarefaUnificada, listarTarefasUnificadas } from '../TarefasUnificadasService.js';
+import { podeVerTarefa, criarTarefaUnificada as criar, acaoTarefaUnificada as agir, listarTarefasUnificadas as listar } from '../TarefasUnificadasService.js';
+// Existing fixtures now model the current authenticated actor and empty links.
+function autenticado(db, args) {
+  db.user ??= { findUnique: async ({ where }) => ({ id: where.id, status: 'active', accountType: 'FIRM', role: 'contador' }) };
+  db.portalClient ??= { findMany: async () => args.portalIds.map(id => ({ id })) };
+  db.solicitacaoTarefa ??= { findMany: async () => [], findUnique: async () => null };
+  return db;
+}
+const criarTarefaUnificada = (args, db) => criar(args, autenticado(db, args));
+const listarTarefasUnificadas = (args, db) => listar(args, autenticado(db, args));
+const acaoTarefaUnificada = (args, db) => agir(args, { $transaction: (fn, opts) => db.$transaction(tx => fn(autenticado(tx, args)), opts) });
 import { normalizarTarefaCalendario } from '../../../../../../packages/shared/src/tarefasCalendario.js';
 const task = {id:'t',userId:'u',estados:{},versoes:[],...normalizarTarefaCalendario({titulo:'Apuração',empresasIds:['a','b'],config:{dataInicio:'2026-01-15'}})};
 test('visibility includes every historical company and private tasks stay private',()=>{
@@ -51,7 +61,7 @@ test('duplicação é avulsa pendente, com IDs novos e idempotência por intenç
  expect(first).toMatchObject({titulo:'Apuração (cópia)',empresasIds:['a','b'],estados:{},versoes:[],config:{recorrencia:'AVULSA'}});
  expect(first.subtarefas[0].id).not.toBe('mit');expect(first.subtarefas[0].concluida).toBeUndefined();
  expect(rows.get('t').estados['2026-01-15'].empresas.a.concluidaEm).toBeTruthy();
- first.excluidaEm=new Date();await expect(acaoTarefaUnificada(input,db)).rejects.toMatchObject({status:409});
+ rows.get(first.id).excluidaEm=new Date();await expect(acaoTarefaUnificada(input,db)).rejects.toMatchObject({status:409});
  expect(tx.tarefaCalendario.create).toHaveBeenCalledTimes(1);
 });
 test('duplicação recusa tentativa sem identidade, ocorrência inválida e escopo alheio',async()=>{

@@ -1,7 +1,32 @@
-import { normalizarTarefaCalendario, expandirTarefaCalendario, aplicarAcaoTarefaCalendario } from '../../../../../../packages/shared/src/tarefasCalendario.js';
+import { normalizarTarefaCalendario, expandirTarefaCalendario, aplicarAcaoTarefaCalendario, responsavelPodeVerSerie } from '../../../../../../packages/shared/src/tarefasCalendario.js';
 const tarefa = (config = {}, extra = {}) => ({ id:'t',userId:'u',estados:{},versoes:[], ...normalizarTarefaCalendario({titulo:'Apuração',empresasIds:['a','b'],subtarefas:[{id:'mit',titulo:'MIT'},{id:'efd',titulo:'EFD'}],config:{dataInicio:'2026-01-15',recorrencia:'MENSAL',diaVencimento:31,...config}}),...extra });
 const list = (t,inicio='2026-01-01',fim='2026-03-31')=>expandirTarefaCalendario(t,inicio,fim);
 const act = (t,data)=>({...t,...aplicarAcaoTarefaCalendario(t,{cicloChave:'2026-01',...data},'2026-01-10T10:00:00Z')});
+
+test('historical and occurrence-only responsibility never grants access to the whole personal series', () => {
+  let t = tarefa({}, { empresasIds: [], responsavelId: 'a' });
+  expect(responsavelPodeVerSerie(t, 'a')).toBe(true);
+  t = act(t, { acao: 'EDITAR', alteracoes: { responsavelId: 'b' } });
+  expect(responsavelPodeVerSerie(t, 'b')).toBe(false);
+  expect(responsavelPodeVerSerie(t, 'a')).toBe(false);
+  t = act(t, { acao: 'EDITAR_SERIE', alteracoes: { responsavelId: 'b' } });
+  expect(responsavelPodeVerSerie(t, 'a')).toBe(false);
+  expect(responsavelPodeVerSerie(t, 'b')).toBe(true);
+  t = act(t, { acao: 'EDITAR_SERIE', alteracoes: { responsavelId: null } });
+  expect(responsavelPodeVerSerie(t, 'b')).toBe(false);
+  expect(t.responsavelId).toBe('a');
+});
+
+test('responsável atravessa expansão e edição parcial/série, null explícito limpa', () => {
+  let t = tarefa({}, { responsavelId: 'responsavel' });
+  t = act(t, { acao: 'EDITAR', alteracoes: { titulo: 'Novo título' } });
+  expect(list(t)[0].responsavelId).toBe('responsavel');
+  t = act(t, { acao: 'EDITAR_SERIE', alteracoes: { descricao: 'Nova descrição' } });
+  expect(list(t).every(o => o.responsavelId === 'responsavel')).toBe(true);
+  t = act(t, { acao: 'EDITAR', alteracoes: { responsavelId: null } });
+  expect(list(t)[0].responsavelId).toBeNull();
+  expect(list(t)[1].responsavelId).toBe('responsavel');
+});
 test('nominal 31 clamps February including leap year without losing March 31',()=>{
   expect(list(tarefa()).map(o=>o.dataVencimento)).toEqual(['2026-01-31','2026-02-28','2026-03-31']);
   expect(list(tarefa({dataInicio:'2028-01-15'}),'2028-02-01','2028-02-29')[0].dataVencimento).toBe('2028-02-29');

@@ -14,7 +14,7 @@ function setup(patch = {}) {
   }, guide: { findFirst: jest.fn(async () => ({ ...guia })) }, contatoWhatsapp: { findFirst: jest.fn(async () => ({ id: 'ct' })) },
     portalClient: { findUnique: jest.fn(async () => ({ razao: 'Empresa sintética' })) }, feriado: { findMany: jest.fn(async () => []) } };
   const cloud = { enviarTexto: jest.fn(async () => ({ wamid: 'texto' })), enviarBotoes: jest.fn(async () => ({ wamid: 'confirmar' })), enviarGuiaComPagamento: jest.fn(async () => ({ wamid: 'pdf' })) };
-  const enviar = jest.fn(async ({ chamada }) => chamada()), encaminhar = jest.fn(async (_motivo, options) => options?.aoPersistir(client, { id: 'suporte', conversaId: 'cv' }));
+  const enviar = jest.fn(async ({ chamada }) => chamada()), encaminhar = jest.fn(async (_motivo, options) => options?.aoPersistir?.(client, { id: 'suporte', conversaId: 'cv' }));
   const deps = { recalcular: jest.fn(async () => { guia = { ...guia, hash: 'recalculada', valor: 110 }; return guia; }),
     carregarPdf: jest.fn(async () => Buffer.from('%PDF synthetic')), prepararPagamento: jest.fn(async () => ({ somenteDocumento: true })) };
   const args = { id, conversa: { id: 'cv', portalClientId: 'c', telefoneE164: token.telefone }, mensagem: { id: 'in', direcao: 'in', conversaId: 'cv' },

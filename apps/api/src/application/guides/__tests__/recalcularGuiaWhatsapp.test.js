@@ -1,5 +1,6 @@
 import { versaoPagamentoGuia } from '../ConfirmacaoPagamentoClienteService.js';
 import { recalcularGuiaWhatsapp } from '../RecalcularGuiaWhatsappService.js';
+import { chaveOrigemRecalculo } from '../../solicitacoes/SolicitacoesOrigemWhatsappService.js';
 
 const ID = 'altan.payment.recalculate.11111111-1111-4111-8111-111111111111';
 function cenario() {
@@ -21,7 +22,7 @@ function cenario() {
     enviarGuiaComPagamento: jest.fn(async () => { ordem.push('PDF_E_CODIGO'); return { wamid: 'pdf' }; }) };
   const deps = { recalcular: jest.fn(async () => { ordem.push('RECALCULO'); return { ...guia }; }), carregarPdf: jest.fn(async () => Buffer.from('PDF')), prepararPagamento: jest.fn(async () => ({ linhaDigitavel: '8' + '0'.repeat(47) })) };
   const args = { id: ID, conversa: { id: 'cv', portalClientId: 'c', telefoneE164: token.telefone }, mensagem: { id: 'm', direcao: 'in', conversaId: 'cv' }, client, cloud,
-    enviar: jest.fn(async ({ chamada }) => chamada()), encaminhar: jest.fn(async (_motivo, options) => { await options?.aoPersistir(client, { id: 'suporte', conversaId: 'cv' }); }), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
+    enviar: jest.fn(async ({ chamada }) => chamada()), encaminhar: jest.fn(async (_motivo, options) => { await options?.aoPersistir?.(client, { id: 'suporte', conversaId: 'cv' }); }), conferirAcesso: jest.fn(async () => {}), agora: new Date('2026-10-19T12:00:00Z') };
   return { guia, token, records, client, cloud, deps, args, ordem, run: () => recalcularGuiaWhatsapp(args, deps) };
 }
 
@@ -87,6 +88,21 @@ test('guia sem recálculo automático registra pedido antes de avisar, sem custo
  expect(f.args.encaminhar).toHaveBeenCalledWith(expect.stringContaining('g: atualização pelo contador'), expect.objectContaining({ aoPersistir: expect.any(Function) }));
  expect(f.ordem[0]).toBe('CONTADOR'); expect(f.ordem[1]).toContain('Solicitei ao contador');
  expect(f.deps.recalcular).not.toHaveBeenCalled(); expect(f.deps.carregarPdf).not.toHaveBeenCalled();
+});
+
+test('reserva manual e origem compartilham a revisão e callback repetido não recria reserva', async () => {
+  const f = cenario(); f.guia.source = 'MANUAL'; f.guia.tipo = 'GUIA_AVULSA';
+  f.args.encaminhar = jest.fn(async (_motivo, options) => {
+    expect(options.origem).toEqual({ tipo: 'RECALCULO_GUIA', guideId: f.guia.id, chave: chaveOrigemRecalculo(f.guia, true) });
+    await options.aoPersistir(f.client, { id: 'suporte', conversaId: 'cv' });
+    await options.aoPersistir(f.client, { id: 'suporte', conversaId: 'cv' });
+    expect(f.cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  expect(await f.run()).toMatchObject({ encaminhado: true });
+  expect(f.client.appSetting.create).toHaveBeenCalledTimes(1);
+  const reserva = f.records.get(chaveOrigemRecalculo(f.guia, true)).value;
+  expect(reserva).toMatchObject({ hash: f.guia.hash, vencimento: f.guia.vencimento, versaoPagamento: versaoPagamentoGuia(f.guia), suporteId: 'suporte' });
+  expect(f.deps.recalcular).not.toHaveBeenCalled();
 });
 test('não afirma encaminhamento quando o registro falha', async () => {
  const f = cenario(); f.guia.source = 'MANUAL'; f.guia.tipo = 'GUIA_AVULSA';

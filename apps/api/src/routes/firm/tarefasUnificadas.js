@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { empresasVisiveis } from './empresasVisiveis.js';
+import { obterTarefaUnificada } from '../../application/calendario/TarefasUnificadasService.js';
 import { TarefaCalendarioError, listarTarefasUnificadas, criarTarefaUnificada, acaoTarefaUnificada } from '../../application/calendario/TarefasUnificadasService.js';
 export function createTarefasUnificadasRouter({ log } = {}) {
   const router = Router();
@@ -16,6 +17,10 @@ export function createTarefasUnificadasRouter({ log } = {}) {
   };
   router.get('/agenda/unificada',rota((req,ctx)=>listarTarefasUnificadas({...ctx,inicio:req.query.inicio,fim:req.query.fim,companyId:req.query.companyId})));
   router.post('/agenda/unificada',rota(async(req,ctx)=>({tarefa:await criarTarefaUnificada({...ctx,dados:req.body || {}})})));
+  router.get('/agenda/unificada/:id',rota(async(req,ctx)=>{
+    if (Object.keys(req.query).some(k=>k !== 'cicloChave') || (req.query.cicloChave !== undefined && typeof req.query.cicloChave !== 'string')) throw new TarefaCalendarioError('Consulta inválida.');
+    return { tarefa:await obterTarefaUnificada({...ctx,id:req.params.id,cicloChave:req.query.cicloChave}) };
+  }));
   router.post('/agenda/unificada/:id/acao',rota(async(req,ctx)=>({tarefa:await acaoTarefaUnificada({...ctx,id:req.params.id,dados:req.body || {}})})));
   return router;
 }

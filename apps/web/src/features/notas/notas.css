@@ -41,3 +41,13 @@
 .notas-indicador { padding:14px; gap:6px; }
 .notas-captura-resumo { overflow-wrap:anywhere; }
 @media(max-width:600px) { .notas-toolbar-config { width:100%; } .notas-toolbar-acoes .btn { flex-shrink:0; } }
+
+/* Document actions retain a 44px target inside the locally scrolling table. */
+.nota-acoes { max-width: 280px; font-size: .8125rem; }
+.nota-acoes__botoes { display: flex; align-items: center; gap: 2px; }
+.nota-acao { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.nota-acao:hover { background: var(--bg-page); color: var(--text); }
+.nota-acao:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: -2px; }
+.nota-acao[aria-disabled="true"] { opacity: .55; cursor: default; }
+.nota-acoes [role="alert"] { display: block; color: var(--state-danger); overflow-wrap: anywhere; }
+.nota-acoes [role="status"] { display: block; white-space: normal; }

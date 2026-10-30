@@ -11,13 +11,17 @@ function fixture() {
   let rows = [], commands = [], events = [];
   const now = new Date('2026-10-25T12:00:00Z');
   const tx = {
-    user: { findUnique: jest.fn(async () => ({ id: 'u', role: 'contador', accountType: 'FIRM', status: 'active' })) },
-    portalClient: { findMany: async () => [{ id: 'pc1' }] },
+    solicitacaoTarefa: { findMany: async () => [], findUnique: async () => null },
+    user: { findUnique: jest.fn(async () => ({ id: 'u', role: 'contador', accountType: 'FIRM', status: 'active' })),
+      findMany: jest.fn(async () => [{ id: 'u', name: 'Criador' }, { id: 'outro', name: 'Responsável' }]) },
+    portalClient: { findMany: jest.fn(async () => [{ id: 'pc1', razao: 'Empresa' }]) },
     companyFirmAccess: { findUnique: async () => null },
     encaminhamentoSuporte: {
       fields: { concluidoEm: 'concluidoEm' },
+      findMany: jest.fn(async () => rows.map(r => ({ ...r, conversa: null, mensagens: [] }))),
       findUnique: jest.fn(async ({ where }) => rows.find(r => where.id ? r.id === where.id : r.mensagemId === where.mensagemId) || null),
       findFirst: jest.fn(async ({ where }) => rows.find(r => r.id === where.AND[0].id) || null),
+      count: jest.fn(async () => rows.length),
       create: jest.fn(async ({ data }) => { const row = { concluidoPorId: null, concluidoEm: null, observacaoConclusao: null, resolvidoEm: null, ...data }; rows.push(row); return row; }),
       updateMany: jest.fn(async ({ where, data }) => {
         const i = rows.findIndex(r => r.id === where.id && r.estado === where.estado && r.responsavelId === where.responsavelId && r.revisao === where.revisao);
@@ -91,13 +95,64 @@ test('detalhe sem escopo recusa antes de consultar registros', async () => {
   expect(f.tx.encaminhamentoSuporte.findFirst).not.toHaveBeenCalled();
 });
 test('repositório agrega conjunto completo, separa cursor e usa snapshot serializável', async () => {
-  const rows = Array.from({ length: 3 }, (_, i) => ({ id: `s${i}`, estado: 'AGUARDANDO', createdAt: new Date('2026-10-25'), updatedAt: new Date('2026-10-25') }));
-  const tx = { encaminhamentoSuporte: { fields: { concluidoEm: 'field' }, findMany: jest.fn(async () => rows), count: jest.fn(async () => 151) } };
+  const rows = Array.from({ length: 3 }, (_, i) => ({ id: `s${i}`, portalClientId: 'pc1', mensagens: [], estado: 'AGUARDANDO', createdAt: new Date('2026-10-25'), updatedAt: new Date('2026-10-25') }));
+  const tx = { portalClient: { findMany: async () => [{ id: 'pc1' }] }, solicitacaoTarefa: { findMany: async () => [] }, encaminhamentoSuporte: { fields: { concluidoEm: 'field' }, findMany: jest.fn(async () => rows), count: jest.fn(async () => 151) } };
   const repo = new SolicitacoesRepository({ $transaction: async fn => fn(tx) });
   const first = await repo.listar(tx, { empresas: ['pc1'] }, {}, '2026-10-25', { limite: 2 });
   expect(first.total).toBe(151); expect(first.itens).toHaveLength(2); expect(first.resumo.novas).toBe(151);
+  expect(first.itens[0].apresentacao.empresa).toEqual({ id: 'pc1', nome: null });
   const base = tx.encaminhamentoSuporte.count.mock.calls[0][0].where;
   expect(tx.encaminhamentoSuporte.count.mock.calls[1][0].where.AND[0]).toEqual(base);
   await repo.listar(tx, { empresas: ['pc1'] }, {}, '2026-10-25', { limite: 2, cursor: first.proximoCursor });
   expect(tx.encaminhamentoSuporte.count.mock.calls[9][0].where).toEqual(base);
+});
+
+test('nomes são exclusivos das leituras e não mudam versão, autoria, auditoria ou replay', async () => {
+  const f = fixture();
+  const criado = await f.service.criar(f.create);
+  const lista = await f.service.listar({ contexto: f.contexto });
+  const detalhe = await f.service.detalhar({ contexto: f.contexto, id: criado.id });
+  expect(lista.itens[0].apresentacao).toEqual(detalhe.apresentacao);
+  expect(detalhe.apresentacao).toEqual({ empresa: { id: 'pc1', nome: 'Empresa' },
+    responsavel: { id: 'u', nome: 'Criador' }, criador: { id: 'u', nome: 'Criador' } });
+  f.tx.user.findMany.mockResolvedValue([{ id: 'u', name: 'Nome atualizado' }, { id: 'outro', name: 'Responsável' }]);
+  f.tx.portalClient.findMany.mockResolvedValue([{ id: 'pc1', razao: 'Nova razão' }]);
+  const atualizado = await f.service.detalhar({ contexto: f.contexto, id: criado.id });
+  expect(atualizado.versao).toBe(criado.versao);
+  expect(atualizado.apresentacao.criador.nome).toBe('Nome atualizado');
+  const editado = await f.service.editar({ contexto: f.contexto, chave: 'atribuir', id: criado.id,
+    versao: detalhe.versao, dados: { responsavelId: 'outro' } });
+  expect(editado).toMatchObject({ criadorId: 'u', responsavelId: 'outro' });
+  expect(editado).not.toHaveProperty('apresentacao');
+  const apos = await f.service.detalhar({ contexto: f.contexto, id: criado.id });
+  expect(apos.apresentacao.criador.id).toBe('u');
+  expect(apos.apresentacao.responsavel.id).toBe('outro');
+  expect(await f.service.criar(f.create)).toEqual(criado);
+  for (const row of f.rows()) expect(row).not.toHaveProperty('apresentacao');
+  for (const command of f.commands()) expect(command.resultado).not.toHaveProperty('apresentacao');
+  for (const event of f.events()) {
+    expect(event.depois).not.toHaveProperty('apresentacao');
+    if (event.antes) expect(event.antes).not.toHaveProperty('apresentacao');
+  }
+  f.tx.user.findUnique.mockResolvedValue({ id: 'u', status: 'inactive', role: 'contador', accountType: 'FIRM' });
+  f.tx.user.findMany.mockClear();
+  await expect(f.service.detalhar({ contexto: f.contexto, id: criado.id })).rejects.toThrow('ator_nao_autorizado');
+  await expect(f.service.listar({ contexto: f.contexto })).rejects.toThrow('ator_nao_autorizado');
+  await expect(f.service.criar(f.create)).rejects.toThrow('ator_nao_autorizado');
+  expect(f.tx.user.findMany).not.toHaveBeenCalled();
+});
+
+test('listagem e detalhe apresentam PortalClient efetivo do legado sem atribuir criador', async () => {
+  const f = fixture();
+  const criado = await f.service.criar(f.create);
+  Object.assign(f.rows()[0], { contratoVersao: null, portalClientId: null, conversaId: 'conversa', criadorId: null, responsavelId: null });
+  f.tx.encaminhamentoSuporte.findMany.mockImplementation(async () => f.rows().map(row => ({ ...row, mensagens: [],
+    conversa: { id: 'conversa', portalClientId: 'pc1' } })));
+  const lista = await f.service.listar({ contexto: f.contexto });
+  const detalhe = await f.service.detalhar({ contexto: f.contexto, id: criado.id });
+  expect(lista.itens[0].portalClientId).toBe('pc1');
+  expect(detalhe.apresentacao).toEqual({ empresa: { id: 'pc1', nome: 'Empresa' }, criador: null, responsavel: null });
+  expect(lista.itens[0].apresentacao).toEqual(detalhe.apresentacao);
+  expect(f.rows()[0].portalClientId).toBeNull();
+  expect(f.tx.user.findMany).not.toHaveBeenCalled();
 });

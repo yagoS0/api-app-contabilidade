@@ -58,7 +58,7 @@ export function NotasFiscaisTab({
     companyId,
     notas, notasTotal, notasFilters, setNotasFilters, notasSummary, notasRecebidas,
     loadingNotas, loadNotas,
-    importing, importResult, importNotas, marcarNotaStatus,
+    importing, importResult, importNotas,
     notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
   } = notasPanel;
 
@@ -204,6 +204,7 @@ export function NotasFiscaisTab({
       </div>
       <NotasList
         key={companyId}
+        companyId={companyId} api={nfseApi}
         datasIndeterminadas={loadingNotas || erroNotas ? null : notasPanel.datasIndeterminadas}
         somenteRecebidas={somenteRecebidas}
         onBaixarSelecionadas={(ids, formato) => nfseApi.baixarNotasSelecionadas(companyId, ids, formato)}
@@ -219,16 +220,6 @@ export function NotasFiscaisTab({
         onFiltersChange={setNotasFilters}
         onApply={(f) => loadNotas(f)}
         loading={loadingNotas}
-        /* ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — e esta janela é a que mais recebe.
-           > Dono: *"as notas recebidas não devem ter opção de emitir elas, nem cancelar. Nota
-           > recebida foi emitida PARA NÓS — não temos controle sobre esse tipo de nota."*
-           Sem `onMarcarStatus` o `NotasList` não renderiza a coluna de ação (ele já condiciona a
-           `<th>` e a `<td>` à prop) — nada fica desabilitado sem explicação nem meio oferecido.
-           ⚠ Isto NÃO é o cancelamento fiscal: o botão chama `PATCH .../notas/:id/status`, que só
-           escreve na NOSSA linha. Mas era a porta que a regra do dono fecha, e ela estava aberta
-           em "Recebidas" desde antes — a janela de NF-e (agora visível) só a tornaria óbvia, com
-           47 notas de compra. Emitidas seguem com o botão, que é onde ele faz sentido. */
-        onMarcarStatus={notasFilters.papel === "DEST" ? undefined : marcarNotaStatus}
         onAbrirNota={abrirNota}
       />
 
@@ -259,15 +250,8 @@ export function NotasFiscaisTab({
             fecharNota();
             setEmissao({ modelo });
           }}
-          /* O DANFSe: PDF gerado sob demanda pelo backend. ⚠ Vem por `fetch` com Bearer (Blob) —
-             um `<a href>` não leva o token. A recusa nomeada (503 `danfse_sem_qrcode`) sobe com
-             `code`/`motivo` e é o modal que a explica. Ausente na API = o botão diz que esta tela
-             não baixa, em vez de falhar no clique. */
-          onBaixarDanfse={
-            nfseApi.fetchDanfseBlob
-              ? (notaId) => nfseApi.fetchDanfseBlob(companyId, notaId)
-              : undefined
-          }
+          companyId={companyId} api={nfseApi}
+
         />
       )}
 

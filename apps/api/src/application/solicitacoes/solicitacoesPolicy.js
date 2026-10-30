@@ -1,3 +1,5 @@
+import { mensagemNoSegmento, segmentoAutorizado } from './solicitacoesEscopoWhatsapp.js';
+
 export class SolicitacaoError extends Error {
   constructor(code, status = 400) { super(code); this.code = code; this.status = status; }
 }
@@ -19,6 +21,31 @@ export function interno(user) {
 }
 export function gestor(user) { return interno(user) && ['admin', 'contador'].includes(user.role); }
 
+// SQL equivalent of interno + the responsible-user branch of validarVinculos.
+// CompanyFirmAccess.companyId identifies PortalClient, not Company.
+export function responsaveisElegiveisWhere(portalClientId) {
+  return { AND: [
+    { status: 'active', OR: [{ accountType: 'FIRM' }, { role: 'admin' }] },
+    { OR: [
+      { role: { in: ['admin', 'contador'] } },
+      ...(portalClientId ? [{ companyFirmAccess: { some: {
+        companyId: portalClientId, status: 'ACTIVE', role: { in: ['STAFF', 'ACCOUNTANT', 'FIRM_ADMIN'] },
+      } } }] : []),
+    ] },
+  ] };
+}
+
+export function normalizarConsultaResponsaveis(query = {}) {
+  exigir(query && typeof query === 'object' && !Array.isArray(query), 'query_invalida');
+  exigir(Object.keys(query).every(key => ['busca', 'limite', 'cursor'].includes(key)), 'campo_nao_permitido');
+  exigir(Object.values(query).every(value => typeof value === 'string'), 'query_invalida');
+  const busca = (query.busca ?? '').trim();
+  exigir(busca.length <= 200 && !/[\u0000-\u001f]/.test(query.busca ?? ''), 'busca_invalida');
+  exigir(query.limite === undefined || /^(?:[1-9][0-9]?|100)$/.test(query.limite), 'limite_invalido');
+  exigir(query.cursor === undefined || (query.cursor.length > 0 && query.cursor.length <= 1999), 'cursor_invalido');
+  return { busca, limite: query.limite === undefined ? 50 : Number(query.limite), cursor: query.cursor ?? null };
+}
+
 // Context comes from authenticated internal code, never from the command payload.
 // Roles, activity and membership are always reloaded inside the transaction.
 export async function carregarEscopo(tx, contexto) {
@@ -36,23 +63,17 @@ export function exigirEmpresa(escopo, portalClientId) {
   exigir(portalClientId ? escopo.empresas.includes(portalClientId) : escopo.triagem, 'solicitacao_nao_encontrada', 404);
 }
 
-// S1 intentionally excludes protected identity groups. S2 must adapt these readers
-// with the complete person/group authorization before exposing the new service.
-export function conversaPermitida(conversa, portalClientId) {
-  return Boolean(conversa && !conversa.excluidaEm && !conversa.atendimentoId && !conversa.vinculoNumeroId
-    && !conversa.chaveEscopo?.startsWith('legado:') && conversa.portalClientId === portalClientId);
-}
-
 export async function validarVinculos(tx, escopo, data) {
   exigirEmpresa(escopo, data.portalClientId);
   if (data.conversaId) {
     const conversa = await tx.conversaWhatsapp.findUnique({ where: { id: data.conversaId } });
-    exigir(conversaPermitida(conversa, data.portalClientId), 'vinculo_conversa_invalido', 404);
+    exigir(conversa?.portalClientId === data.portalClientId && await segmentoAutorizado(tx, escopo, conversa), 'vinculo_conversa_invalido', 404);
   }
   if (data.mensagemId) {
     exigir(Boolean(data.conversaId), 'mensagem_sem_conversa');
-    const mensagem = await tx.mensagemWhatsapp.findUnique({ where: { id: data.mensagemId } });
-    exigir(mensagem?.conversaId === data.conversaId, 'vinculo_mensagem_invalido', 404);
+    const mensagem = await tx.mensagemWhatsapp.findUnique({ where: { id: data.mensagemId }, include: { contexto: true } });
+    const conversa = await tx.conversaWhatsapp.findUnique({ where: { id: data.conversaId } });
+    exigir(mensagemNoSegmento(mensagem, conversa), 'vinculo_mensagem_invalido', 404);
   }
   if (data.anotacaoId) {
     const anotacao = await tx.companyNote.findUnique({ where: { id: data.anotacaoId } });

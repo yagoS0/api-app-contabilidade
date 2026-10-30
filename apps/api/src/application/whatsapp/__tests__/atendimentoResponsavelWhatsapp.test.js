@@ -60,7 +60,7 @@ function casa(row, where) {
 }
 
 function banco() {
-  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [], encaminhamentoSuporte: [], eventoPushAtendimento: [], appSetting: [], guide: [], envioGuia: [], envioGuiaTentativa: [] };
+  const rows = { conversaWhatsapp: [], mensagemWhatsapp: [], atendimentoResponsavelWhatsapp: [], resolucaoContextoWhatsapp: [], rascunhoEmissaoWhatsapp: [], acaoPendenteWhatsapp: [], turnoIaWhatsapp: [], encaminhamentoSuporte: [], solicitacaoComando: [], solicitacaoEvento: [], solicitacaoMensagem: [], eventoPushAtendimento: [], appSetting: [], guide: [], envioGuia: [], envioGuiaTentativa: [] };
   const hooks = {};
   let sequencia = 0;
   const defaults = name => name === "conversaWhatsapp" ? { portalClientId: null, atendimentoId: null, atendidaPor: null, atendidaDesde: null, excluidaEm: null, automacaoInvalidadaEm: null }
@@ -70,12 +70,12 @@ function banco() {
   const expandir = (name, row) => {
     if (!row) return null;
     if (name === "conversaWhatsapp") return { ...row, portalClient: EMPRESAS.find(e => e.portalClientId === row.portalClientId) ? { id: row.portalClientId, ...EMPRESAS.find(e => e.portalClientId === row.portalClientId) } : null };
-    if (name === "mensagemWhatsapp" || name === "acaoPendenteWhatsapp") return { ...row, conversa: rows.conversaWhatsapp.find(c => c.id === row.conversaId) || null };
+    if (name === "mensagemWhatsapp" || name === "acaoPendenteWhatsapp") return { ...row, contexto: rows.resolucaoContextoWhatsapp.find(c => c.mensagemId === row.id) || null, conversa: rows.conversaWhatsapp.find(c => c.id === row.conversaId) || null };
     return row;
   };
   const client = { rows, hooks };
   for (const name of Object.keys(rows)) {
-    const normalizarWhere = where => where?.canal_telefoneE164 || where || {};
+    const normalizarWhere = where => where?.canal_telefoneE164 || where?.sistemaId_chave || where?.solicitacaoId_mensagemId || where || {};
     const encontrar = where => rows[name].find(row => casa(expandir(name, row), normalizarWhere(where)));
     const criar = async data => {
       const row = atribuir({ id: `${name}-${++sequencia}`, ...defaults(name) }, data);

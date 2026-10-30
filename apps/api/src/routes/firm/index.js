@@ -1,3 +1,4 @@
+import { createSolicitacoesRouter } from './solicitacoes.js';
 import { travarPessoasDoCadastro, exigirPessoasCompativeis } from '../../application/company/pessoasDoCadastro.js';
 import { createReclassificarDocumentoGuiaRouter } from './reclassificarDocumentoGuia.js';
 import { travarGuiaArrecadatoria } from '../../application/guides/lib/documentoNaoArrecadatorio.js';
@@ -599,6 +600,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) { next(err); }
   }
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(createSolicitacoesRouter());
   router.use(criarRotasConsultaCnpj({ empresaAccess: requireFirmCompanyAccess(), permitirCadastro: true }));
   router.use(createReformaFiscalRouter({ prisma, requireFirmCompanyAccess }));
   router.use(createApuracaoConsumoRouter({ prisma, requireFirmCompanyAccess, cbsDeps: criarRuntimeCbsDoAmbiente({ db: prisma }) }));

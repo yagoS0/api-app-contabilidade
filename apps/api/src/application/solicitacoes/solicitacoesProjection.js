@@ -12,7 +12,7 @@ export const json = value => JSON.parse(JSON.stringify(value));
 
 // Includes fields modified by legacy writers, not just S1's revision counter.
 export function versao(row) {
-  const { eventos, mensagens, comandos, conversa, portalClient, anotacao, ...persistido } = row;
+  const { eventos, mensagens, comandos, conversa, portalClient, anotacao, tarefaVinculo, _empresaEfetiva, ...persistido } = row;
   return hash(persistido);
 }
 export function comprovadamenteConcluida(row) {
@@ -23,9 +23,10 @@ export function projetar(row) {
   const comprovada = comprovadamenteConcluida(row);
   const situacao = row.estado === 'RESOLVIDO' ? (comprovada ? 'CONCLUIDA' : 'ENCERRADA_LEGADO')
     : ({ AGUARDANDO: 'NOVA', EM_ATENDIMENTO: 'EM_ATENDIMENTO', AGUARDANDO_CLIENTE: 'AGUARDANDO_CLIENTE' }[row.estado] || 'A_VERIFICAR');
-  return json({ id: row.id, portalClientId: row.portalClientId, triagem: !row.portalClientId,
+  const empresa = row._empresaEfetiva ?? row.portalClientId;
+  return json({ id: row.id, portalClientId: empresa, triagem: !empresa,
     titulo: row.titulo ?? null, resumo: row.resumo, motivo: row.motivo, situacao, estadoLegado: row.estado,
-    prioridade: row.prioridade ?? null, prazoCivil: row.prazoCivil ?? null, origem: row.origem ?? 'LEGADO',
+    prioridade: row.prioridade ?? null, prazoCivil: row.prazoCivil ?? null, origem: row.origem ?? 'LEGADO', origemDados: row.origemDados ?? null,
     responsavelId: row.responsavelId, criadorId: row.criadorId ?? null,
     concluidoPorId: comprovada ? row.concluidoPorId : null, concluidoEm: comprovada ? row.concluidoEm : null,
     observacaoConclusao: comprovada ? row.observacaoConclusao : null, resolvidoEmLegado: row.resolvidoEm,
@@ -66,11 +67,24 @@ export function predicado(escopo, filtros, hoje, fields) {
   // An empty boolean group can be elided by Prisma; an empty ID set cannot match.
   const scope = !escopo.empresas.length && !escopo.triagem ? { id: { in: [] } }
     : { OR: [...escopo.empresas.map(dominio), ...(escopo.triagem ? [dominio(null)] : [])] };
-  const and = [scope];
-  if (filtros.portalClientId) and.push({ portalClientId: filtros.portalClientId });
-  if ('triagem' in filtros) and.push({ portalClientId: filtros.triagem ? null : { not: null } });
+  const and = [escopo.solicitacaoIds ? { id: { in: escopo.solicitacaoIds } } : scope];
+  if (escopo.solicitacaoIds) {
+    if (filtros.portalClientId || 'triagem' in filtros) and.push({ id: { in: escopo.solicitacaoIds.filter(id => {
+      const empresa = escopo.empresasEfetivas[id];
+      return (!filtros.portalClientId || empresa === filtros.portalClientId) && (!('triagem' in filtros) || Boolean(!empresa) === filtros.triagem);
+    }) } });
+  } else {
+    if (filtros.portalClientId) and.push({ portalClientId: filtros.portalClientId });
+    if ('triagem' in filtros) and.push({ portalClientId: filtros.triagem ? null : { not: null } });
+  }
   for (const key of ['prioridade', 'responsavelId']) if (key in filtros) and.push({ [key]: filtros[key] });
-  if (filtros.busca) and.push({ OR: [...['titulo', 'resumo'].map(k => ({ [k]: { contains: filtros.busca, mode: 'insensitive' } })), { portalClient: { is: { razao: { contains: filtros.busca, mode: 'insensitive' } } } }] });
+  if (filtros.busca) {
+    const nome = { contains: filtros.busca, mode: 'insensitive' };
+    and.push({ OR: [...['titulo', 'resumo'].map(k => ({ [k]: nome })),
+      { portalClient: { is: { razao: nome } } },
+      { contratoVersao: null, portalClientId: null, conversa: { is: { portalClient: { is: { razao: nome } } } } },
+    ] });
+  }
   const prova = { contratoVersao: 1, concluidoPorId: { not: null }, concluidoEm: { not: null }, resolvidoEm: { equals: fields.concluidoEm } };
   const states = {
     NOVA: { estado: 'AGUARDANDO' }, EM_ATENDIMENTO: { estado: 'EM_ATENDIMENTO' }, AGUARDANDO_CLIENTE: { estado: 'AGUARDANDO_CLIENTE' },

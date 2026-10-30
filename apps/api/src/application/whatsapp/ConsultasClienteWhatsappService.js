@@ -127,7 +127,7 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     const ferramenta = meta.recalculo ? 'preparar_recalculo' : 'enviar_pdf_da_guia';
     if (meta.recalculo) {
       const r = await chamar(ferramenta, { guideId: guia.guideId });
-      if (r.encaminharEscritorio) await encaminhar(r.motivoEncaminhamento || r.mensagem);
+      if (r.encaminharEscritorio) await encaminhar(r.motivoEncaminhamento || r.mensagem, { origem: { tipo: 'HANDOFF_MENSAGEM', ferramenta: 'preparar_recalculo' } });
       await texto(r.texto || r.textoDeConfirmacao || r.mensagem || 'Não consegui preparar a atualização dessa guia. A equipe pode conferir.', undefined, ferramenta);
       return;
     }
@@ -187,7 +187,7 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
       } });
       if (!r.ok) {
         if (['DOCUMENTO_NAO_ENCONTRADO', 'DOCUMENTO_INDISPONIVEL'].includes(r.motivo)) {
-          await encaminhar(`Documento indisponível: ${String(documento.nome).slice(0, 200)}. Conferir o arquivo cadastrado e enviar ao cliente.`);
+          await encaminhar(`Documento indisponível: ${String(documento.nome).slice(0, 200)}. Conferir o arquivo cadastrado e enviar ao cliente.`, { origem: { tipo: 'DOCUMENTO_INDISPONIVEL', documentId: documento.documentId } });
           await texto('Não consegui acessar esse arquivo. Avisei a equipe para conferir e enviar o documento para você.');
         } else await texto(r.mensagem || 'Não consegui enviar o documento agora. Escreva “equipe” para pedir ajuda.');
       }

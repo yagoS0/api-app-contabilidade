@@ -32,3 +32,15 @@ test('predicado vazio nega acesso; mesmos filtros sustentam listas e recortes', 
   expect(JSON.stringify(where)).toContain('atendimentoId');
   expect(() => normalizarFiltros({ limite: 1 })).toThrow('filtro_invalido');
 });
+
+test('escopo materializado filtra pela empresa efetiva sem perder legado após migration', () => {
+  const scope = { empresas: ['pc1'], triagem: true, solicitacaoIds: ['legado', 'novo', 'triagem'], empresasEfetivas: { legado: 'pc1', novo: 'pc1', triagem: null } };
+  const fields = { concluidoEm: 'field-reference' };
+  expect(predicado(scope, { portalClientId: 'pc1' }, '2026-10-25', fields).AND).toEqual([
+    { id: { in: ['legado', 'novo', 'triagem'] } }, { id: { in: ['legado', 'novo'] } },
+  ]);
+  expect(predicado({ ...scope, solicitacaoIds: [] }, {}, '2026-10-25', fields).AND[0]).toEqual({ id: { in: [] } });
+  const legado = { ...row, portalClientId: null, _empresaEfetiva: 'pc1' };
+  expect(projetar(legado)).toMatchObject({ portalClientId: 'pc1', triagem: false, situacao: 'ENCERRADA_LEGADO' });
+  expect(versao(legado)).toBe(versao({ ...legado, _empresaEfetiva: 'outra' }));
+});

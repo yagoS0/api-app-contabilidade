@@ -20,6 +20,7 @@ const OFFICE_AREAS = [
     id: "suporte", label: "Suporte", to: "/suporte",
     links: [
       { label: "Atendimento", to: "/suporte", paths: ["/suporte", "/whatsapp"], exact: true },
+      { label: "Solicitações", to: "/solicitacoes" },
       { label: "Comunicados", to: "/whatsapp/comunicados" },
       { label: "Pendências de e-mail", to: "/guides/pending", paths: ["/guides/pending", "/guides/batch-email"] },
     ],

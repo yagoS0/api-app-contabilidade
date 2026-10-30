@@ -1,5 +1,6 @@
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { chaveOrigemRecalculo } from '../solicitacoes/SolicitacoesOrigemWhatsappService.js';
 import { canGuideRecalculate, especieDoRecalculo, ESPECIE_RECALCULO, traduzirRecusaParaCliente } from './lib/recalculoDaGuia.js';
 import { calendarioAvisosGuia, hojeSaoPaulo } from './calendarioAvisosGuia.js';
 import { prepararGuiaPagamentoWhatsapp } from '../whatsapp/PrepararGuiaPagamentoWhatsapp.js';
@@ -63,10 +64,9 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     const vencimento = calendarioAvisosGuia(guia.vencimento, feriados, company?.municipio)?.vencimento;
     if (!vencimento || vencimento >= hojeSaoPaulo(agora)) throw recusar();
     const manual = !canGuideRecalculate(guia);
-    const identidade = [token.companyId, guia.id, guia.hash || null, guia.vencimento];
-    const chaveLegada = 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify(identidade)).digest('hex');
-    const key = manual ? 'recalculo_whatsapp:' + createHash('sha256').update(JSON.stringify([...identidade, versaoPagamentoGuia(guia)])).digest('hex') : chaveLegada;
-    const value = { status: 'RESERVADO', guideId: guia.id, companyId: token.companyId, competencia: guia.competencia, tipo: guia.tipo, versaoPagamento: versaoPagamentoGuia(guia), mensagemId: mensagem.id, criadoEm: agora.toISOString() };
+    const chaveLegada = chaveOrigemRecalculo(guia);
+    const key = manual ? chaveOrigemRecalculo(guia, true) : chaveLegada;
+    const value = { status: 'RESERVADO', guideId: guia.id, companyId: token.companyId, competencia: guia.competencia, tipo: guia.tipo, hash: guia.hash || null, vencimento: guia.vencimento, versaoPagamento: versaoPagamentoGuia(guia), mensagemId: mensagem.id, criadoEm: agora.toISOString() };
     if (manual) {
       const anterior = (await client.appSetting.findUnique({ where: { key } }))?.value;
       const legado = (await client.appSetting.findUnique({ where: { key: chaveLegada } }))?.value;
@@ -82,9 +82,16 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
       // A reserva, demanda, aviso e pausa compartilham a transação do Menu.
       // Uma rejeição/rollback não deixa uma reserva órfã bloqueando o próximo pedido.
       await encaminhar(`Atualizar guia ${guia.tipo} · ${guia.competencia} · ${guia.id}: atualização pelo contador`, {
+        origem: { tipo: 'RECALCULO_GUIA', guideId: guia.id, chave: key },
         aoPersistir: async (tx, suporte) => {
           if (!suporte?.id || suporte.conversaId !== conversa.id) throw Object.assign(new Error('Encaminhamento não comprovado.'), { code: 'ENCAMINHAMENTO_NAO_COMPROVADO' });
-          await tx.appSetting.create({ data: { key, value: { ...value, status: 'ENCAMINHADO_CONTADOR', suporteId: suporte.id } } });
+          const anterior = (await tx.appSetting.findUnique({ where: { key } }))?.value;
+          if (anterior) {
+            if (anterior.status !== 'ENCAMINHADO_CONTADOR' || anterior.suporteId !== suporte.id
+              || anterior.companyId !== value.companyId || anterior.guideId !== value.guideId || anterior.versaoPagamento !== value.versaoPagamento) {
+              throw Object.assign(new Error('Reserva anterior exige conferência.'), { code: 'ENCAMINHAMENTO_NAO_COMPROVADO' });
+            }
+          } else await tx.appSetting.create({ data: { key, value: { ...value, status: 'ENCAMINHADO_CONTADOR', suporteId: suporte.id } } });
           persistido = true;
         },
       });
@@ -131,7 +138,7 @@ export async function recalcularGuiaWhatsapp({ id, conversa, mensagem, client, c
     return { tratado: true, acao: 'RECALCULAR_GUIA', codigo };
   } catch (e) {
     if (reserva) await client.appSetting.update({ where: { key: reserva.key }, data: { value: { ...reserva.value, status: iniciouRecalculo ? 'CONFERENCIA_NECESSARIA' : 'FALHOU', motivo: e.code || e.codigo || 'RECALCULO_FALHOU' } } });
-    if (iniciouRecalculo) await encaminhar(`Atualizar guia ${guiaDoPedido.tipo} · ${guiaDoPedido.competencia} · ${guiaDoPedido.id}: falha automática; conferir antes de repetir.`);
+    if (iniciouRecalculo) await encaminhar(`Atualizar guia ${guiaDoPedido.tipo} · ${guiaDoPedido.competencia} · ${guiaDoPedido.id}: falha automática; conferir antes de repetir.`, { origem: { tipo: 'RECALCULO_GUIA', guideId: guiaDoPedido.id, chave: reserva.key } });
     const resposta = e.code === 'RECALCULO_RECUSADO' ? e.message : iniciouRecalculo
       ? 'Não consegui concluir a entrega da guia atualizada. Avisei o contador para conferir o pedido e retornar por aqui.'
       : traduzirRecusaParaCliente(e).mensagem;

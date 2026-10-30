@@ -1,3 +1,4 @@
+import { AcoesNota } from "./AcoesNota";
 // Tabela paginada de NF-e/NFS-e; filtros e totais vêm do servidor.
 
 import { useEffect, useRef, useState } from "react";
@@ -169,7 +170,7 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false, error, datasIndeterminadas }) {
+export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, companyId, api, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false, error, datasIndeterminadas }) {
   const [selecionadas, setSelecionadas] = useState([]);
   const [baixando, setBaixando] = useState(false);
   const [resultadoDownload, setResultadoDownload] = useState(null);
@@ -207,7 +208,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
   }
 
   return (
-    <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+    <section style={{ minWidth: 0, maxWidth: "100%", background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
       <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total} datasIndeterminadas={datasIndeterminadas} somenteRecebidas={somenteRecebidas} />
       {onBaixarSelecionadas && (selecionadas.length > 0 || resultadoDownload) && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
         <span style={{ color: PANEL.muted, fontSize: "0.8rem" }}>{selecionadas.length} selecionada(s) nesta página</span>
@@ -238,7 +239,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                 <th style={{ ...th, textAlign: "right" }}>Valor</th>
                 <th style={th}>Status</th>
                 <th style={th}>Chave</th>
-                {onMarcarStatus && <th style={th}>Ajustes na base</th>}
+                <th style={th}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -323,47 +324,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                         </span>
                       ) : "—"}
                     </td>
-                    {onMarcarStatus && (
-                      /* ⚠ A célula de ação PARA o clique antes de ele subir para a linha: senão
-                         cancelar uma nota abriria o detalhe por cima do confirm. */
-                      <td style={td} onClick={(e) => e.stopPropagation()}>
-                        {n.papel !== "EMIT" ? <span style={{ color: PANEL.muted }}>—</span> : String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
-                          <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
-                            Reativar
-                          </button>
-                        ) : (
-                          /* ⚠ CHAMAVA-SE "Cancelar", EM VERMELHO — e não cancela nada.
-                             Rastreado em 18/08/2026, a pedido do dono ("o ato de clicar em cancelar
-                             na nota envia um cancelamento para o portal?"): este botão chama
-                             `PATCH /firm/companies/:id/notas/:notaId/status`, que faz UM
-                             `portalInvoice.update` na nossa linha e mais nada. Zero chamada ao ADN,
-                             ao sistema nacional ou ao SERPRO. A própria rota diz para que nasceu:
-                             *"Bridge manual enquanto a auto-detecção de cancelamento de NFS-e
-                             Nacional não é implementada"* — ela REGISTRA um cancelamento feito fora.
-
-                             Para um contador, "cancelar a nota" é o ato fiscal. Os dois erros
-                             possíveis eram caros e opostos: clicar achando que cancelou na
-                             prefeitura (a nota segue válida perante o fisco e some da nossa
-                             apuração), ou evitar um ajuste legítimo de escrituração com medo de
-                             disparar algo irreversível.
-
-                             ⚠ E a ação é REVERSÍVEL — o "Reativar" ao lado a desfaz. Vermelho, no
-                             vocabulário deste app, é o que BLOQUEIA o fechamento. Um botão vermelho
-                             ao lado de um verde que o desfaz é o contrário da régua de cor.
-                             Decisão do dono: rótulo "Marcar como cancelada". */
-                          <button onClick={() => { if (window.confirm(`Marcar a nota ${n.numero || ""} como CANCELADA aqui no portal?
-
-Ela sai do faturamento e da apuração.
-
-⚠ NADA é enviado à prefeitura nem ao sistema nacional — o cancelamento perante o fisco continua sendo feito por você, fora daqui. Esta marcação é reversível pelo botão Reativar.`)) onMarcarStatus(n.id, "cancelada"); }}
-                            title="Marca como cancelada NA NOSSA BASE (sai do faturamento/apuração). Não envia cancelamento à prefeitura."
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
-                            Marcar como cancelada
-                          </button>
-                        )}
-                      </td>
-                    )}
+                    <td style={td}><AcoesNota nota={n} companyId={companyId} api={api} contexto={pagina} /></td>
                   </tr>
                 );
               })}

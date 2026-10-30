@@ -13,7 +13,7 @@ export function destinoInternoSeguro(raw, fallback = "/companies") {
   if (!raw || typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//") || Array.from(raw).some(char => char === '\\' || char.charCodeAt(0) < 32)) return fallback;
   try {
     const url = new URL(raw, "https://altan.invalid");
-    if (url.origin !== "https://altan.invalid" || !/^\/(whatsapp(?:\/comunicados)?|suporte|comercial(?:\/(?:conversas|oportunidades))?|companies(?:\/[^/]+(?:\/[^/]+)?)?|onboardings(?:\/[^/]+(?:\/editar)?)?|biblioteca|configuracoes(?:\/atendimento)?|rotinas|obrigacoes|guides\/[^/]+|firm-settings\/[^/]+|apuracao|planejamento|funcoes-serpro|laboratorio)\/?$/.test(url.pathname)) return fallback;
+    if (url.origin !== "https://altan.invalid" || !/^\/(whatsapp(?:\/comunicados)?|suporte|solicitacoes|comercial(?:\/(?:conversas|oportunidades))?|companies(?:\/[^/]+(?:\/[^/]+)?)?|onboardings(?:\/[^/]+(?:\/editar)?)?|biblioteca|configuracoes(?:\/atendimento)?|rotinas|obrigacoes|guides\/[^/]+|firm-settings\/[^/]+|apuracao|planejamento|funcoes-serpro|laboratorio)\/?$/.test(url.pathname)) return fallback;
     return url.pathname + url.search;
   } catch { return fallback; }
 }

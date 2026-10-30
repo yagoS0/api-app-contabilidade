@@ -1,8 +1,9 @@
+import { criarSolicitacoesMock } from './solicitacoesMock';
 const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
 import { validarContratacaoExterna } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
-import { exigirDadosOnboarding, validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import { combinarColetaPublica, combinarFichaInterna, preservarDadosPersistidos } from "@contabilidade/shared/onboarding";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
@@ -3886,6 +3887,8 @@ const prepararConversaComercialMock = (o, body, { neutro = body.vinculoNeutro ==
 import { criarGuruConferenciaMock } from './guruConferenciaMock';
 
 export function createMockApi({ delay = defaultDelay } = {}) {
+  const estadoTarefasSolicitacoes = { tarefas: [], vinculos: new Map() };
+  const calendarioSolicitacoes = criarMockTarefasCalendario(mockCompanies, estadoTarefasSolicitacoes);
   for (const o of mockOnboardings.values()) {
     if (o.contatoComercialMock) prepararConversaComercialMock(o, o.contatoComercialMock);
   }
@@ -3925,8 +3928,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     ...criarApuracaoConsumoMock(),
     ...createPendenciasManuaisMock(),
     ...comercialMock,
+    ...criarSolicitacoesMock(mockCompanies, estadoTarefasSolicitacoes, calendarioSolicitacoes),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
-    ...criarMockTarefasCalendario(mockCompanies),
+    ...calendarioSolicitacoes,
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
@@ -8556,6 +8560,29 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       const geradas = arquivos.length;
       arquivos.push(["RELATORIO.txt", `PREVIEW: arquivos de exemplo, sem validade fiscal.\n${geradas} arquivos; ${falhas.length} indisponíveis.\n${falhas.join("\n")}`]);
       return { blob: zipDeExemplo(arquivos), geradas, falhas: falhas.length };
+    },
+    async getAcoesNota(companyId, notaId) {
+      const n = notaMockDaEmpresa(companyId, notaId);
+      if (!n) throw Object.assign(new Error('Nota não encontrada nesta empresa.'), { status: 404 });
+      const XML = n.type === 'NFSE' && n.__temXml ? { estado: 'disponivel', motivo: null } : { estado: 'indisponivel', motivo: 'XML completo indisponível nesta demonstração.' };
+      const PDF = n.type === 'NFSE' && n.__temXml && n.chaveAcesso ? { estado: 'disponivel', motivo: null } : { estado: 'indisponivel', motivo: 'Documento auxiliar indisponível nesta demonstração.' };
+      return { revisao: `mock-${companyId}-${notaId}`, XML, PDF, cancelar: { estado: 'indisponivel', motivo: 'Cancelamento fiscal indisponível nesta etapa.' } };
+    },
+    async fetchDocumentoNota(companyId, notaId, formato) {
+      const n = notaMockDaEmpresa(companyId, notaId);
+      if (!n) throw Object.assign(new Error('Nota não encontrada nesta empresa.'), { status: 404 });
+      if (!['PDF', 'XML'].includes(formato) || n.type !== 'NFSE' || !n.__temXml || (formato === 'PDF' && !n.chaveAcesso)) throw new Error('Documento indisponível nesta demonstração.');
+      let conteudo = mockXmlDaNota(n);
+      if (formato === 'PDF') {
+        // Valid, synthetic one-page PDF with byte offsets; never a fiscal document.
+        const stream = 'BT /F1 16 Tf 50 750 Td (DEMONSTRACAO - SEM VALOR FISCAL) Tj ET';
+        const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+        conteudo = '%PDF-1.4\n'; const offsets = [0];
+        objects.forEach((obj, i) => { offsets.push(conteudo.length); conteudo += `${i + 1} 0 obj\n${obj}\nendobj\n`; });
+        const start = conteudo.length;
+        conteudo += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+      }
+      return { blob: new Blob([conteudo], { type: formato === 'PDF' ? 'application/pdf' : 'application/xml' }), nome: `demonstracao-${String(n.id).replace(/[^\w.-]/g, '_')}.${formato.toLowerCase()}` };
     },
     async fetchDanfseBlob(_companyId, notaId) {
       await delay(120);

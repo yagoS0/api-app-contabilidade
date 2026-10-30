@@ -1,3 +1,4 @@
+import { clienteHandoffSuporte } from '../solicitacoes/SolicitacoesOrigemWhatsappService.js';
 import { enviarDanfseWhatsapp, emissaoConfirmada } from '../whatsapp/EnvioDanfseWhatsappService.js';
 // Turnos duráveis, lease com posse, escopo verificado e guardas refeitas antes de cada efeito.
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -206,17 +207,19 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       }
       return atual;
     };
-    const encaminharParaEquipe = async (motivo = 'Atendimento precisa da equipe') => {
+    const encaminharParaEquipe = async (motivo = 'Atendimento precisa da equipe', { origem = { tipo: 'HANDOFF_MENSAGEM' } } = {}) => {
       await conferirPortao();
+      const handoffClient = clienteHandoffSuporte(client);
       const quando = new Date();
-      const registrar = (tx) => (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) || motivo.startsWith('Atualizar guia ')
-        ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora: quando }) : Promise.resolve();
+      const registrar = (tx) => (deps.usarOpenAI ?? IA_SUPORTE_OPENAI) || origem.tipo === 'RECALCULO_GUIA'
+        || (origem.tipo === 'HANDOFF_MENSAGEM' && origem.ferramenta === 'preparar_recalculo')
+        ? registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, origem, client: tx, agora: quando }) : Promise.resolve();
       if (conversa.atendimentoId || conversa.vinculoNumeroId) {
-        await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client, quando, aoEncaminhar: registrar });
+        await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client: handoffClient, quando, aoEncaminhar: registrar });
         encaminhamentoDoTurno = quando;
         return;
       }
-      const r = await client.$transaction(async tx => {
+      const r = await handoffClient.$transaction(async tx => {
       const mudou = await tx.conversaWhatsapp.updateMany({ where: {
         id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
         excluidaEm: null, atendidaPor: null, atendidaDesde: null,
@@ -460,7 +463,8 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         const resultado = await executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
         if (resultado?.respostaObrigatoria && resultado.encaminharEscritorio) respostaEncaminhamentoObrigatoria = resultado.respostaObrigatoria;
         if (resultado?.encaminharEscritorio === true || resultado?.motivo === 'FERRAMENTA_FALHOU') {
-          chamouEscritorio = { motivo: resultado.motivoEncaminhamento || resultado.mensagem || 'A operação precisa de análise da equipe', respostaObrigatoria: resultado.respostaObrigatoria };
+          chamouEscritorio = { motivo: resultado.motivoEncaminhamento || resultado.mensagem || 'A operação precisa de análise da equipe', respostaObrigatoria: resultado.respostaObrigatoria,
+            origem: { tipo: 'HANDOFF_MENSAGEM', ...(nome === 'preparar_recalculo' ? { ferramenta: nome } : {}) } };
         }
         if (nome === "preparar_emissao" && resultado?.motivo === "ESCOLHER_PERFIL_EMISSAO") escolhaDePerfilDoTurno = resultado;
         return resultado;
@@ -480,7 +484,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
-    if (chamouEscritorio) await encaminharParaEquipe(chamouEscritorio.motivo);
+    if (chamouEscritorio) await encaminharParaEquipe(chamouEscritorio.motivo, { origem: chamouEscritorio.origem });
     const ultimaPreparacao = pendenciasDoTurno.at(-1);
     const lerPreparacaoVigente = async () => {
       await conferirSessaoNaoAlterada();

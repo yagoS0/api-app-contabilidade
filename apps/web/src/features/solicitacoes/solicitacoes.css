@@ -1,0 +1,29 @@
+.solicitacoes { min-width: 0; box-sizing: border-box; padding: var(--space-5); color: var(--text); }
+.solicitacoes__filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; }
+.solicitacoes__filters label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; min-width: 0; max-width: 100%; }
+.solicitacoes__filters select, .solicitacoes__filters input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.solicitacoes__search { display: flex; align-items: end; gap: 8px; flex: 1 1 280px; min-width: 0; }
+.solicitacoes__search label { flex: 1; }
+.solicitacoes .btn { min-height: 44px; white-space: normal; }
+.solicitacoes__status { min-height: 24px; margin-bottom: 12px; color: var(--text-muted); }
+.solicitacoes__error { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+.solicitacoes__table-scroll { overflow: auto; max-height: 65vh; width: 100%; border: 1px solid var(--border); border-radius: 8px; }
+.solicitacoes__table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
+.solicitacoes__table th, .solicitacoes__table td { padding: 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); font-weight: 400; }
+.solicitacoes__table th { position: sticky; top: 0; background: var(--bg-surface); font-weight: 600; z-index: 1; }
+.solicitacoes__table th:first-child { width: 27%; }
+.solicitacoes__table th:nth-child(2) { width: 20%; }
+.solicitacoes__title { font-weight: 500; }
+.solicitacoes__description { display: block; margin-top: 4px; color: var(--text-muted); font-size: 0.875rem; }
+.solicitacoes__attention { color: var(--state-warn); }
+.solicitacoes__pagination { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.solicitacoes :is(input, select, button, [tabindex]):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .solicitacoes__filters > label { flex: 1 1 140px; }
+  .solicitacoes__search { flex-basis: 100%; }
+  .solicitacoes__table { min-width: 850px; }
+}
+
+@media (max-width: 720px) {
+  .solicitacoes { padding: var(--space-4); }
+}

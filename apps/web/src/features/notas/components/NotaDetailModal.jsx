@@ -1,3 +1,4 @@
+import { AcoesNota } from "./AcoesNota";
 // A ÍNTEGRA DE UMA NOTA — abre ao clicar na linha da tabela.
 //
 // A aba continua ENXUTA (2 janelas, sem stats/legendas/rodapé): o pedido era profundidade ao
@@ -22,7 +23,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota, temHistoria } from "../lib/cicloNotaTela";
 import { podeReaproveitar } from "../lib/reaproveitarNota";
-import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "../lib/danfseDaNota";
+
 
 const TIPO_LABEL = { NFSE: "Nota de serviço (NFS-e)", NFE: "Nota de venda (NF-e)" };
 const PAPEL_LABEL = { EMIT: "Emitida pela empresa", DEST: "Recebida pela empresa" };
@@ -162,7 +163,7 @@ function BlocoXml({ xml, nota }) {
     return (
       <Secao
         titulo="XML do documento"
-        aviso={`O XML existe (${fmtBytes(xml.bytes) || "tamanho desconhecido"}) mas é grande demais para ser exibido aqui. Ele continua guardado — use o download de notas em lote.`}
+        aviso={`O XML existe (${fmtBytes(xml.bytes) || "tamanho desconhecido"}) mas é grande demais para ser exibido aqui. Ele continua guardado — use a ação Baixar XML desta nota.`}
       >
         <SemDado>conteúdo não carregado por tamanho</SemDado>
       </Secao>
@@ -206,75 +207,20 @@ function BlocoXml({ xml, nota }) {
 // ⚠ BOTÃO IMPOSSÍVEL NÃO SOME — fica desabilitado DIZENDO POR QUÊ, em texto (não em `title`:
 // `title` não é descobrível, some ao mover o mouse e não existe no toque). Botão ausente é
 // indistinguível de "esta versão do app não faz isso", e a diferença é justamente a informação.
-function BlocoAcoes({ nota, onReaproveitar, onBaixarDanfse }) {
-  const [danfse, setDanfse] = useState({ estado: "ocioso", recusa: null });
-
+function BlocoAcoes({ nota, onReaproveitar, companyId, api }) {
   const reuso = podeReaproveitar(nota);
-  const danfsePode = nota.type === "NFE"
-    ? { pode: false, texto: "Para baixar o DANFE desta NF-e, selecione a nota na lista e use Baixar DANFE / DANFSe. É necessário ter o XML completo guardado." }
-    : podeGerarDanfse(nota);
-  const gerando = danfse.estado === "gerando";
-
-  async function baixarDanfse() {
-    if (!onBaixarDanfse || !nota?.id) return;
-    setDanfse({ estado: "gerando", recusa: null });
-    try {
-      const blob = await onBaixarDanfse(nota.id);
-      // Mesmo caminho do "Baixar XML" logo abaixo e do download de Documentos da empresa: o token
-      // não viaja num `<a href>`, então o arquivo vem por `fetch` com Bearer e é entregue por um
-      // link temporário. ⚠ O `revoke` é adiado — revogar no mesmo tick corta o download em alguns
-      // browsers antes de ele começar.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = nomeDoArquivoDanfse(nota);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setDanfse({ estado: "pronto", recusa: null });
-    } catch (err) {
-      // ⚠ A RECUSA APARECE INTEIRA, com o motivo do servidor. Tela em branco ou "falha ao baixar"
-      // aqui esconderia justamente o que o 503 existe para dizer.
-      setDanfse({ estado: "recusado", recusa: lerRecusaDanfse(err) });
-    }
-  }
-
-  function baixarXml() {
-    const url = URL.createObjectURL(new Blob([nota.xml.conteudo], { type: "application/xml" }));
-    const a = document.createElement("a"); a.href = url;
-    a.download = `${nota.type}-${nota.numero || nota.id}.xml`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
-  return (
-    <section aria-label="Ações da nota" style={{ padding: "14px 0", borderTop: `1px solid ${PANEL.border}`, borderBottom: `1px solid ${PANEL.border}`, marginBottom: 20 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Button disabled={!reuso.pode || !onReaproveitar}
-          title={!reuso.pode ? reuso.texto : "Abre uma nova emissão com os dados desta nota"}
-          onClick={() => onReaproveitar?.(nota)}>Emitir outra a partir desta</Button>
-        <Button variant="secondary" disabled={!danfsePode.pode || !onBaixarDanfse || gerando}
-          title={!danfsePode.pode ? danfsePode.texto : "Baixar o documento auxiliar em PDF"}
-          onClick={baixarDanfse}>{gerando ? "Gerando o DANFSe…" : "Baixar DANFSe (PDF)"}</Button>
-        <Button variant="secondary" disabled={!nota.xml?.conteudo || nota.xml?.truncadoPorTamanho}
-          title={!nota.xml?.conteudo ? "XML completo indisponível nesta visualização; use o download em lote" : "Baixar XML"}
-          onClick={baixarXml}>Baixar XML</Button>
-      </div>
-      <details style={{ marginTop: 8, color: PANEL.muted, fontSize: "0.76rem" }}>
-        <summary style={{ cursor: "pointer" }}>Sobre as ações</summary>
-        <p>Emitir outra abre uma nota nova; a original continua exatamente como está.</p>
-        {!reuso.pode && <p>{reuso.texto}</p>}
-        <p>O PDF é gerado na hora a partir do XML e não fica guardado.</p>
-        {!danfsePode.pode && <p>{danfsePode.texto}</p>}
-      </details>
-      {danfse.estado === "recusado" && danfse.recusa && <div role="alert" style={{ marginTop: 10, color: "var(--state-danger)" }}>
-        <strong>{danfse.recusa.titulo}</strong> — {danfse.recusa.texto}
-        {danfse.recusa.motivo && <p>{danfse.recusa.motivo}</p>}
-        {danfse.recusa.porQue && <p>{danfse.recusa.porQue}</p>}
-      </div>}
-      {danfse.estado === "pronto" && <small role="status" style={{ color: "var(--state-ok)" }}>DANFSe gerado e baixado.</small>}
-    </section>
-  );
+  return <section aria-label="Ações da nota" style={{ padding: '14px 0', borderTop: `1px solid ${PANEL.border}`, borderBottom: `1px solid ${PANEL.border}`, marginBottom: 20 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <Button disabled={!reuso.pode || !onReaproveitar} title={!reuso.pode ? reuso.texto : 'Abre uma nova emissão com os dados desta nota'} onClick={() => onReaproveitar?.(nota)}>Emitir outra a partir desta</Button>
+      <AcoesNota nota={nota} companyId={companyId} api={api} />
+    </div>
+    <details style={{ marginTop: 8, color: PANEL.muted, fontSize: '0.76rem' }}>
+      <summary>Sobre as ações</summary>
+      <p>Emitir outra abre uma nota nova; a original continua exatamente como está.</p>
+      {!reuso.pode && <p>{reuso.texto}</p>}
+      <p>O PDF é gerado na hora a partir do XML e não fica guardado. Use o visualizador do navegador para imprimir.</p>
+    </details>
+  </section>;
 }
 
 function BlocoItens({ itens, nota }) {
@@ -544,7 +490,7 @@ function BlocoCiclo({ nota, ciclo, onAbrirNota }) {
   );
 }
 
-export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, onReaproveitar, onBaixarDanfse }) {
+export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, onReaproveitar, companyId, api }) {
   const titulo = nota
     ? `${TIPO_LABEL[nota.type] || nota.type || "Nota"} nº ${nota.numero || "—"}`
     : "Nota fiscal";
@@ -589,7 +535,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
         {!loading && nota && (
           <>
             {/* Primeiro o que se pode FAZER, depois a ficha para conferir. */}
-            <BlocoAcoes key={nota.id} nota={nota} onReaproveitar={onReaproveitar} onBaixarDanfse={onBaixarDanfse} />
+            <BlocoAcoes key={nota.id} nota={nota} onReaproveitar={onReaproveitar} companyId={companyId} api={api} />
 
             <Secao titulo="Identificação">
               <div style={GRADE}>

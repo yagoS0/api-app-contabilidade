@@ -35,8 +35,9 @@ it("informa falha total sem gerar um ZIP vazio", async () => {
   await expect(baixarNotasSelecionadas({ portalClientId: "pc-a", notaIds: ["n1"], formato: "PDF", client: db([{ ...nota, xmlRaw: null }]) })).rejects.toMatchObject({ status: 422 });
 });
 it("usa o gerador correto e marca NF-e cancelada", async () => {
-  const gerarNfe = jest.fn().mockResolvedValue(Buffer.from("pdf"));
-  const gerarNfse = jest.fn().mockResolvedValue({ pdf: Buffer.from("pdf") });
+  const pdf = await gerarDanfeNfe({ xml: xmlParaDanfe() });
+  const gerarNfe = jest.fn().mockResolvedValue(pdf);
+  const gerarNfse = jest.fn().mockResolvedValue({ pdf });
   const client = db([{ ...nota, statusEfetivo: "cancelada" }, { id: "ns", type: "NFSE", xmlRaw: xmlNfseData(), chaveAcesso: CHAVE_NFSE, emitenteDoc: CNPJ_DATAS }]);
   const out = await baixarNotasSelecionadas({ portalClientId: "pc-a", notaIds: ["n1", "ns"], formato: "PDF", client, gerarNfe, gerarNfse });
   expect(out.geradas).toBe(2);
@@ -48,4 +49,15 @@ it("gera DANFE de uma NF-e completa e recusa resumo ou XML sem autorização", a
   expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
   await expect(gerarDanfeNfe({ xml: "<resNFe/>" })).rejects.toThrow("XML completo");
   await expect(gerarDanfeNfe({ xml: xmlParaDanfe().replace("<cStat>100", "<cStat>110") })).rejects.toThrow("autorização");
+});
+
+it('pré-checa todos os IDs antes de produzir arquivo e preserva limite acumulado de 50 MiB', async () => {
+  const gerarNfe = jest.fn();
+  await expect(baixarNotasSelecionadas({ portalClientId: 'a', notaIds: ['n1', 'outra'], formato: 'PDF', client: db([nota]), gerarNfe })).rejects.toMatchObject({ status: 404 });
+  expect(gerarNfe).not.toHaveBeenCalled();
+  const pdf = await gerarDanfeNfe({ xml: nota.xmlRaw });
+  // Valid PDF followed by whitespace: tests the cumulative limit, not a fake JSON blob.
+  const grande = Buffer.concat([pdf, Buffer.alloc(26 * 1024 * 1024, 32)]);
+  gerarNfe.mockResolvedValue(grande);
+  await expect(baixarNotasSelecionadas({ portalClientId: 'a', notaIds: ['n1', 'n2'], formato: 'PDF', client: db([nota, { ...nota, id: 'n2' }]), gerarNfe })).rejects.toMatchObject({ status: 413 });
 });

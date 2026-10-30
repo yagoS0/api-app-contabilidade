@@ -38,6 +38,7 @@ import { calcularApuracaoParaCompetencia } from "../../application/notas/apuraca
 import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
 import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConferenciaService.js";
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
+import { documentoNota, acoesDocumentoNota } from "../../application/notas/download/DocumentoNotaService.js";
 import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
 import { auditarCompetencia } from "../../application/notas/auditoria/AuditoriaNotasService.js";
 import { baixarNotasSelecionadas } from "../../application/notas/download/NotasSelecionadasService.js";
@@ -139,6 +140,29 @@ function serializePendencia(p) {
 
 export function createNotasRouter({ log }) {
   const router = Router({ mergeParams: true });
+
+  router.get('/notas/:notaId/acoes', requireFirmCompanyAccess(), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      return res.json(await acoesDocumentoNota({ portalClientId: String(req.params.companyId), notaId: String(req.params.notaId) }));
+    } catch (err) {
+      if (responderErroDanfse(res, err)) return;
+      return res.status(err.status || 500).json({ ok: false, error: err.code || 'DOCUMENTO_ERRO', message: err.status ? err.message : 'Não foi possível conferir os documentos.' });
+    }
+  });
+  router.get('/notas/:notaId/documento', requireFirmCompanyAccess(), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const out = await documentoNota({ portalClientId: String(req.params.companyId), notaId: String(req.params.notaId), formato: req.query.formato });
+      res.setHeader('Content-Type', out.mime);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.nome}"`);
+      return res.send(out.conteudo);
+    } catch (err) {
+      if (responderErroDanfse(res, err)) return;
+      return res.status(err.status || 500).json({ ok: false, error: err.code || 'DOCUMENTO_ERRO', message: err.status ? err.message : 'Não foi possível preparar o documento.' });
+    }
+  });
   const syncError = (res, error) => res.status(error.status || 500).json({ ok: false,
     error: error.status ? error.code : 'RECUPERACAO_LOCAL_FALHOU',
     ...(error.auditError ? { auditoria: 'PENDENTE', erroOriginal: error.code || 'INFRAESTRUTURA', erroAuditoria: error.auditError } : {}) });

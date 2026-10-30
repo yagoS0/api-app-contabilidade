@@ -1,4 +1,4 @@
-import { carregarEscopo, conversaPermitida, dataCivil, normalizarDados, validarVinculos } from '../solicitacoesPolicy.js';
+import { carregarEscopo, dataCivil, normalizarDados, validarVinculos } from '../solicitacoesPolicy.js';
 
 const contexto = { canal: 'INTERNO', atorId: 'u' };
 test.each(['2026-02-29', '2026-04-31', '2026-13-01', '2026-00-01', '2026-1-01', '0000-01-01', '', false, 0])('recusa data civil impossível ou não explícita: %s', value => {
@@ -24,11 +24,16 @@ test('staff usa vínculos do banco; payload de escopo não concede acesso ou tri
   expect(links).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE', userId: 'u' }) }));
   await expect(carregarEscopo(tx, { ...contexto, canal: 'PUBLICO' })).rejects.toMatchObject({ status: 403 });
 });
-test('triagem não expõe atendimento protegido, excluído ou identidade agrupada', () => {
-  const c = { portalClientId: null, chaveEscopo: 'fila:1' };
-  expect(conversaPermitida(c, null)).toBe(true);
-  for (const patch of [{ atendimentoId: 'p' }, { vinculoNumeroId: 'v' }, { excluidaEm: new Date() }, { chaveEscopo: 'legado:1' }, { portalClientId: 'outra' }]) expect(conversaPermitida({ ...c, ...patch }, null)).toBe(false);
+test('triagem recusa recibo protegido, excluído e empresa fora de escopo', async () => {
+  const c={id:'cv',portalClientId:null,chaveEscopo:'sem-empresa:1'};
+  const tx={conversaWhatsapp:{findUnique:jest.fn(async()=>c)}};
+  await validarVinculos(tx,{empresas:[],triagem:true},{portalClientId:null,conversaId:'cv'});
+  for(const patch of [{atendimentoId:'p'},{excluidaEm:new Date()},{chaveEscopo:'empresa-apagada:1'},{portalClientId:'outra'}]) {
+    tx.conversaWhatsapp.findUnique.mockResolvedValue({...c,...patch});
+    await expect(validarVinculos(tx,{empresas:[],triagem:true},{portalClientId:null,conversaId:'cv'})).rejects.toThrow('vinculo_conversa_invalido');
+  }
 });
+
 test('responsável pode ser o criador, mas deve estar ativo e autorizado na empresa', async () => {
   const user = { id: 'u', accountType: 'FIRM', role: 'user', status: 'active' };
   const tx = { user: { findUnique: async () => user }, companyFirmAccess: { findUnique: jest.fn(async () => ({ status: 'ACTIVE', role: 'STAFF' })) } };

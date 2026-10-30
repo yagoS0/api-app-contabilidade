@@ -39,14 +39,17 @@ suite('Solicitações S1 — PostgreSQL descartável, sem transporte', () => {
     const b = await f.service.criar(f.args('b', { conversaId: f.cv.id, mensagemId: m2.id, titulo: 'Outro assunto' }));
     expect(a.id).not.toBe(b.id);
     expect(await f.service.criar(f.args('a', { conversaId: f.cv.id, mensagemId: m1.id, anotacaoId: note.id }))).toEqual(a);
-    await expect(f.service.criar(f.args('repetida', { conversaId: f.cv.id, mensagemId: m1.id }))).rejects.toMatchObject({ code: 'mensagem_ja_vinculada' });
+    const outroAssunto = await f.service.criar(f.args('repetida', { conversaId: f.cv.id, mensagemId: m1.id }));
+    expect(outroAssunto.id).not.toBe(a.id); expect(outroAssunto.mensagemId).toBeNull();
+    expect(await db.solicitacaoMensagem.count({ where: { mensagemId: m1.id } })).toBe(2);
     const extended = await f.service.editar({ contexto: f.contexto, id: a.id, versao: a.versao, chave: 'complemento', dados: { mensagemComplementarId: m3.id } });
     expect(extended.mensagemId).toBe(m1.id);
-    await expect(f.service.editar({ contexto: f.contexto, id: b.id, versao: b.versao, chave: 'complemento-indevido', dados: { mensagemComplementarId: m3.id } })).rejects.toThrow('mensagem_ja_vinculada');
+    await expect(f.service.editar({ contexto: f.contexto, id: b.id, versao: b.versao, chave: 'complemento-indevido', dados: { mensagemComplementarId: 'mensagem-fora-da-conversa' } })).rejects.toThrow('vinculo_mensagem_invalido');
+    expect(await db.solicitacaoMensagem.count({ where: { solicitacaoId: b.id, mensagemId: m3.id } })).toBe(0);
     const done = await f.service.concluir({ contexto: f.contexto, id: a.id, versao: extended.versao, chave: 'fim' });
     expect(done).toMatchObject({ situacao: 'CONCLUIDA', observacaoConclusao: null, concluidoPorId: f.admin.id });
     expect((await db.encaminhamentoSuporte.findUnique({ where: { id: b.id } })).estado).toBe('AGUARDANDO');
-    expect((await db.encaminhamentoSuporte.findMany({ where: { conversaId: f.cv.id, estado: { not: 'RESOLVIDO' } } })).map(r => r.id)).toEqual([b.id]);
+    expect((await db.encaminhamentoSuporte.findMany({ where: { conversaId: f.cv.id, estado: { not: 'RESOLVIDO' } } })).map(r => r.id).sort()).toEqual([b.id, outroAssunto.id].sort());
     const reopened = await f.service.reabrir({ contexto: f.contexto, id: a.id, versao: done.versao, chave: 'abrir' });
     expect(reopened.situacao).toBe('NOVA');
     const detail = await f.service.detalhar({ contexto: f.contexto, id: a.id });
@@ -71,8 +74,8 @@ suite('Solicitações S1 — PostgreSQL descartável, sem transporte', () => {
     expect(await db.solicitacaoEvento.count({ where: { solicitacaoId: a.id } })).toBe(2);
     const message = await f.message('Identidade repetida em comandos diferentes');
     const duplicates = await Promise.allSettled(['m1', 'm2'].map(key => f.service.criar(f.args(key, { conversaId: f.cv.id, mensagemId: message.id }))));
-    expect(duplicates.filter(r => r.status === 'fulfilled')).toHaveLength(1);
-    expect(duplicates.find(r => r.status === 'rejected').reason.code).toBe('mensagem_ja_vinculada');
+    expect(duplicates.filter(r => r.status === 'fulfilled')).toHaveLength(2);
+    expect(await db.solicitacaoMensagem.count({ where: { mensagemId: message.id } })).toBe(2);
     expect(await db.encaminhamentoSuporte.count({ where: { mensagemId: message.id } })).toBe(1);
   }, 30000);
 

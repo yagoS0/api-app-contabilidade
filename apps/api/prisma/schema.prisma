@@ -1977,12 +1977,14 @@ model EncaminhamentoSuporte {
   concluidoEm DateTime?
   observacaoConclusao String?
   anotacaoId String?
+  origemDados Json?
   conversa ConversaWhatsapp? @relation(fields: [conversaId], references: [id], onDelete: Restrict)
   portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
   anotacao CompanyNote? @relation(fields: [anotacaoId], references: [id], onDelete: Restrict)
   eventos SolicitacaoEvento[]
   comandos SolicitacaoComando[]
   mensagens SolicitacaoMensagem[]
+  tarefaVinculo SolicitacaoTarefa?
   @@index([portalClientId, estado, createdAt, id], map: "solicitacao_empresa_estado_data")
   @@index([prazoCivil, estado], map: "solicitacao_prazo_estado")
   @@index([conversaId, estado], map: "solicitacao_conversa_estado")
@@ -1996,7 +1998,8 @@ model SolicitacaoEvento {
   solicitacaoId String
   revisao Int
   tipo String
-  atorId String
+  atorId String?
+  sistemaId String?
   ocorridoEm DateTime @default(now())
   antes Json?
   depois Json
@@ -2007,7 +2010,8 @@ model SolicitacaoEvento {
 
 model SolicitacaoComando {
   id String @id @default(uuid())
-  atorId String
+  atorId String?
+  sistemaId String?
   chave String
   fingerprint String
   solicitacaoId String
@@ -2015,17 +2019,20 @@ model SolicitacaoComando {
   createdAt DateTime @default(now())
   solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
   @@unique([atorId, chave])
+  @@unique([sistemaId, chave])
   @@map("solicitacoes_comandos")
 }
 
 model SolicitacaoMensagem {
-  mensagemId String @id
+  mensagemId String
   solicitacaoId String
-  atorId String
+  atorId String?
+  sistemaId String?
   createdAt DateTime @default(now())
   mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
   solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
   @@index([solicitacaoId])
+  @@id([solicitacaoId, mensagemId])
   @@map("solicitacoes_mensagens")
 }
 
@@ -6233,6 +6240,8 @@ model ApuracaoCbsArquivo {
 model TarefaCalendario {
   id String @id @default(uuid())
   userId String
+  responsavelId String?
+  solicitacaoVinculo SolicitacaoTarefa?
   titulo String
   descricao String?
   config Json
@@ -6244,7 +6253,20 @@ model TarefaCalendario {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId, excluidaEm])
+  @@index([responsavelId, excluidaEm])
   @@map("tarefas_calendario")
+}
+
+/// Durable 1:1 identity, including soft-deleted tasks. No legacy backfill.
+model SolicitacaoTarefa {
+  solicitacaoId String @id
+  tarefaId String @unique
+  empresaOrigemId String?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  solicitacao EncaminhamentoSuporte @relation(fields: [solicitacaoId], references: [id], onDelete: Restrict)
+  tarefa TarefaCalendario @relation(fields: [tarefaId], references: [id], onDelete: Restrict)
+  @@map("solicitacoes_tarefas")
 }
 
 /// Backup imutável dos cadastros desativados na transição do calendário.

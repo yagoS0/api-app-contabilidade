@@ -38,6 +38,9 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1", per
   const acoes = new Map(pendente ? [[pendente.id, { ...pendente }]] : []);
   const db = {
     encaminhamentoSuporte: { findFirst: jest.fn(async () => null), findUnique: jest.fn(async () => null), create: jest.fn(async ({ data }) => data) },
+    solicitacaoComando: { findUnique: jest.fn(async () => null), create: jest.fn(async ({data}) => data) },
+    solicitacaoEvento: { create: jest.fn(async ({data}) => data) },
+    solicitacaoMensagem: { create: jest.fn(async ({data}) => data) },
     eventoPushAtendimento: { create: jest.fn(async ({ data }) => data) },
     _mensagens: mensagens, _acoes: acoes, _conversa: conversa, _contato: contato, _chamadas: chamadas,
     mensagemWhatsapp: {

@@ -42,6 +42,32 @@ test("excluir demanda atualiza badge da equipe sem marcar mensagens como lidas",
   expect(api.marcarConversaWhatsappLida).not.toHaveBeenCalled();
 });
 
+test('concluir solicitação atualiza o resumo após persistência sem abrir chat ou devolver IA', async () => {
+  let itens = [{ id: 's1', conversaId: 'a', empresa: 'Empresa teste', titulo: 'Primeiro assunto', contratoVersao: 1, versao: 'a'.repeat(64) },
+    { id: 's2', conversaId: 'a', empresa: 'Empresa teste', titulo: 'Segundo assunto', contratoVersao: 1, versao: 'b'.repeat(64) }];
+  const commit = adiada();
+  const api = {
+    getResumoWhatsapp: jest.fn(async () => ({ ok: true, resumo: resumo(2) })),
+    getPendenciasSuporte: jest.fn(async () => ({ ok: true, total: itens.length, itens })),
+    concluirSolicitacao: jest.fn(async id => { await commit.promise; itens = itens.filter(i => i.id !== id); return { ok: true, item: { id } }; }),
+    assumirSolicitacao: jest.fn(), devolverConversaWhatsapp: jest.fn(), marcarConversaWhatsappLida: jest.fn(),
+  };
+  const abrir = jest.fn();
+  const { result } = renderHook(() => useResumoWhatsapp({ api }));
+  render(<PendenciasSuporte api={api} onAbrir={abrir} companyId="pc1" />);
+  await flush();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Concluir solicitação' })[0]);
+  expect(result.current.pendenciasSuporte).toBe(2);
+  await act(async () => { commit.resolve(); });
+  await flush();
+  expect(result.current.pendenciasSuporte).toBe(1);
+  expect(result.current.selo).toBe(2);
+  expect(screen.getByText('Segundo assunto')).toBeTruthy();
+  expect(api.concluirSolicitacao).toHaveBeenCalledWith('s1', { chave: expect.any(String), versao: 'a'.repeat(64) });
+  expect(abrir).not.toHaveBeenCalled(); expect(api.devolverConversaWhatsapp).not.toHaveBeenCalled();
+  expect(api.marcarConversaWhatsappLida).not.toHaveBeenCalled();
+});
+
 test("leitura confirmada atualiza imediatamente lista e selo global sem resolver pendências", async () => {
   const { result, globalApi, inboxApi } = preparar();
   await flush();

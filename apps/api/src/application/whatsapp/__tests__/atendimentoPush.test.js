@@ -181,3 +181,22 @@ test('contingência de outro interlocutor não vaza para identidade atual', asyn
   carregarGrupoIdentidade.mockResolvedValue({ origem: { vinculoNumero: { interlocutor: { id: 'atual' } } }, segmentos: [] });
   expect(await podeNotificarInscricao(s, s)).toBe(false);
 });
+
+test('push de solicitação usa a mesma ACL, inclusive vínculo adicional e mensagem reclassificada', async () => {
+  const s = estado();
+  Object.assign(s.evento, { id: 'suporte:s1', tipo: 'SUPORTE' });
+  const row = { id: 's1', contratoVersao: 1, portalClientId: 'emp1', conversaId: s.conversa.id,
+    mensagemId: null, estado: 'AGUARDANDO', conversa: s.conversa, mensagens: [{ mensagemId: 'm1' }] };
+  s.client.encaminhamentoSuporte = { findUnique: async () => row, findMany: async () => [row] };
+  s.client.mensagemWhatsapp.findMany = async () => [s.mensagem];
+  expect(await podeNotificarInscricao(s, s)).toBe(true);
+  s.mensagem.contexto = { estado: 'RESOLVIDA', conversaId: 'fora', portalClientId: 'outra' };
+  expect(await podeNotificarInscricao(s, s)).toBe(false);
+  s.mensagem.contexto = null;
+  s.client.portalClient.findMany.mockResolvedValue([]);
+  expect(await podeNotificarInscricao(s, s)).toBe(false);
+  s.client.portalClient.findMany.mockResolvedValue([{ id: 'emp1' }]);
+  row.estado = 'RESOLVIDO';
+  expect(await podeNotificarInscricao(s, s)).toBe(false);
+  expect(s.transportar).not.toHaveBeenCalled();
+});

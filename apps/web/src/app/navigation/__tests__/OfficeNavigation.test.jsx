@@ -22,6 +22,19 @@ function setup(route = "/companies", resumoWhatsapp = null) {
   , [route]);
 }
 
+test('Solicitações pertence a Suporte sem quinta área e conserva filtro no destino ativo', () => {
+  setup('/solicitacoes?prioridade=null');
+  const areas = screen.getByRole('navigation', { name: 'Áreas do escritório' });
+  expect(within(areas).getAllByRole('link')).toHaveLength(4);
+  expect(within(areas).getByRole('link', { name: 'Suporte' })).toHaveAttribute('aria-current', 'location');
+  fireEvent.click(screen.getByRole('button', { name: 'Navegar' }));
+  const destinos = screen.getByRole('navigation', { name: 'Navegação de Suporte' });
+  expect(within(destinos).getByRole('link', { name: 'Solicitações' })).toHaveAttribute('aria-current', 'page');
+  expect(within(destinos).getByRole('link', { name: 'Solicitações' })).toHaveAttribute('href', '/solicitacoes');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Navegar' })).toHaveFocus();
+});
+
 test('suporte mantém aviso humano mesmo sem mensagens não lidas', () => {
   setup('/suporte', { selo: null, pendenciasSuporte: 2 });
   expect(screen.getAllByLabelText('2 atendimentos precisam da equipe').length).toBeGreaterThan(0);

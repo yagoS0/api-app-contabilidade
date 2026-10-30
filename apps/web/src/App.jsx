@@ -1,4 +1,5 @@
 import { useProtegerCamposDaRolagem } from './components/ui/useProtegerCamposDaRolagem';
+import { SolicitacoesPage } from './features/solicitacoes/SolicitacoesPage';
 import { modoAtendimento } from "./features/whatsapp/lib/atendimentoPwa";
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
 import { CredenciaisConsumoPage } from "./features/configuracoes/CredenciaisConsumo";
@@ -58,6 +59,7 @@ function AtendimentoMovel({ session, feedback }) {
   return <WhatsappPage api={api} usuarioId={session.user?.id} onSair={session.clearSession} error={feedback.error} onBack={() => session.setPage("companies")} />;
 }
 function AppInterno({ session, feedback }) {
+  const posicoesSolicitacoes = useMemo(() => new Map(), [session.user]);
   const navigate = useNavigate();
   // Só a escolha da mensagem acompanha a navegação. Destinatário e texto são
   // conferidos novamente na conversa, sem enviar ou transportar dados na URL.
@@ -217,6 +219,7 @@ function AppInterno({ session, feedback }) {
     );
   }
 
+  if (session.page === "solicitacoes") return <SolicitacoesPage api={api} usuario={session.user} posicoes={posicoesSolicitacoes} onBack={() => session.goBack()} />;
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
   if (session.page === "credenciaisConsumo") return <CredenciaisConsumoPage key={session.user?.id} api={api} />;
   if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/comercial")} onUsarMensagem={mensagem => { setMensagemBiblioteca(mensagem); navigate("/comercial/conversas"); }} />;

@@ -1,18 +1,27 @@
 import assert from 'node:assert/strict';
-const url = new URL(process.argv[2]);
-if (url.hostname !== '127.0.0.1' || url.username !== 'lead_test' || url.pathname !== '/suporte_comercial_check') throw Error('Somente banco descartável local.');
+const url = new URL(process.argv[2] || process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL);
+if (url.protocol !== 'postgresql:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+  || !url.pathname.endsWith('_governance_test')) throw Error('Somente banco descartável loopback _governance_test.');
 process.env.DATABASE_URL = url.href;
 globalThis.fetch = async () => { throw Error('Rede externa proibida'); };
 const { prisma: db } = await import('../src/infrastructure/db/prisma.js');
 const { registrarEncaminhamentoSuporte, listarEncaminhamentosSuporte, atualizarEncaminhamentosSuporte } = await import('../src/application/whatsapp/EncaminhamentoSuporteService.js');
 const { autorizarChamadaIa, concluirChamadaIa } = await import('../src/application/assistente/GuardaIaService.js');
 const { detalharConsumoIa } = await import('../src/application/assistente/ConsumoIaService.js');
+const { SolicitacoesService } = await import('../src/application/solicitacoes/SolicitacoesService.js');
+const { SolicitacoesRepository } = await import('../src/application/solicitacoes/SolicitacoesRepository.js');
 const checks = [];
 try {
   const empresa = await db.portalClient.create({ data: { razao: 'Empresa sintética', cnpj: '00000000000191' } });
+  const operador = await db.user.create({data:{email:'suporte-s2a@example.invalid',passwordHash:'sem-acesso',role:'user',accountType:'FIRM',status:'active'}});
+  const fora = await db.user.create({data:{email:'suporte-fora-s2a@example.invalid',passwordHash:'sem-acesso',role:'user',accountType:'FIRM',status:'active'}});
+  await db.companyFirmAccess.create({data:{companyId:empresa.id,userId:operador.id,role:'STAFF'}});
+  const ctx = {canal:'INTERNO',atorId:operador.id};
+  const service = new SolicitacoesService({client:db});
+  const repo = new SolicitacoesRepository(db);
   const conversa = await db.conversaWhatsapp.create({ data: { telefoneE164: '5521999991234', chaveEscopo: `empresa:${empresa.id}`, portalClientId: empresa.id, escopoVerificado: true } });
   const mensagem = await db.mensagemWhatsapp.create({ data: { conversaId: conversa.id, direcao: 'in', tipo: 'text', corpo: 'Preciso da equipe', providerMessageId: 'wamid.gpt.local' } });
-  const registrar = async (falhar = false) => db.$transaction(async tx => {
+  const registrar = async (falhar = false) => repo.transacao(async tx => {
     await tx.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: new Date() } });
     const r = await registrarEncaminhamentoSuporte({ conversa, mensagem, client: tx });
     if (falhar) throw Error('rollback'); return r;
@@ -25,13 +34,16 @@ try {
   assert.equal(await db.encaminhamentoSuporte.count(), 1); assert.equal(await db.eventoPushAtendimento.count({ where: { tipo: 'SUPORTE' } }), 1);
   checks.push('Dois encaminhamentos concorrentes não duplicam aviso');
   await db.conversaWhatsapp.update({ where: { id: conversa.id }, data: { lidaAteEm: new Date() } });
-  assert.equal((await listarEncaminhamentosSuporte({ visiveis: [empresa.id], client: db })).total, 1);
-  assert.equal((await listarEncaminhamentosSuporte({ visiveis: [], client: db })).total, 0);
+  assert.equal((await listarEncaminhamentosSuporte({ contexto: ctx, client: db })).total, 1);
+  assert.equal((await listarEncaminhamentosSuporte({ contexto: {canal:'INTERNO',atorId:fora.id}, client: db })).total, 0);
   checks.push('Leitura preserva pendência; carteira oculta dados de outra empresa');
   await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: 'EM_ATENDIMENTO', responsavelId: 'operador-sintetico', client: db });
   await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: 'RESOLVIDO', client: db });
-  assert.equal((await listarEncaminhamentosSuporte({ visiveis: [empresa.id], client: db })).total, 0);
-  checks.push('Assumir e resolver mantêm histórico e removem pendência');
+  const pendente = (await listarEncaminhamentosSuporte({ contexto: ctx, client: db })).itens[0];
+  assert.equal(pendente.estado, 'AGUARDANDO');
+  await service.concluir({ contexto: ctx, id: pendente.id, versao: pendente.versao, chave: 'concluir' });
+  assert.equal((await listarEncaminhamentosSuporte({ contexto: ctx, client: db })).total, 0);
+  checks.push('Atendimento preserva solicitação nova; conclusão individual mantém histórico');
   const args = { portalClientId: empresa.id, conversaId: conversa.id, mensagemId: mensagem.id, finalidade: 'assistente_whatsapp', modelo: 'gpt-5.4-mini', chave: 'fake', reservaCentavos: 5, tetoAcumuladoCentavos: 5, client: db };
   const reservas = await Promise.all([autorizarChamadaIa(args), autorizarChamadaIa(args)]);
   assert.equal(reservas.filter(r => r.ok).length, 1);

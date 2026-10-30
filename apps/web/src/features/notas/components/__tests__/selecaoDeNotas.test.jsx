@@ -57,7 +57,7 @@ it("só esconde emitidas quando todas as atividades são serviços conhecidos e 
 
 it('sem seleção não oferece downloads nem cancelamento fiscal em lote', () => {
   render(<NotasList {...props} onBaixarSelecionadas={jest.fn()} />);
-  expect(screen.queryByRole('button', { name: /Baixar XML|Baixar DANFE|Cancelar/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^(Baixar XML|Baixar DANFE \/ DANFSe|Cancelar)$/ })).not.toBeInTheDocument();
 });
 it('seleção tem teto de 100, limpa por página e filtros de data/situação', () => {
   const many = Array.from({ length: 101 }, (_, i) => ({ ...notas[0], id: String(i), numero: String(1000 + i) }));
