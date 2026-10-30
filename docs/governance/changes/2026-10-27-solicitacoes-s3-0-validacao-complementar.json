@@ -1,0 +1,63 @@
+{
+  "summary": "Solicitações S3.0: nomes mínimos em listagem e detalhe já autorizados, com equivalência mock/real; complemento independente de dados e sistêmico concluído.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "portal",
+    "web",
+    "data"
+  ],
+  "operationalImpact": "Sem nova regra operacional. Apresentação de leitura do contrato aprovado, preservando ACL, empresa efetiva, responsável/criador, versões, auditoria, replay, comandos e vínculo bilateral de tarefas. Não implementa central/ficha S3.1–S3.5.",
+  "tests": [
+    "Gates originais round0: governança72; API11788; web6139; portal1586; builds web e portal aprovados. Fontes idênticas ao candidato final.",
+    "Seis pareceres CLI de domínio/técnicos aprovados; complemento nativo formal de dados e sistêmico aprovados, sobre hashes finais. Rejeição CLI009 documental preservada.",
+    "Lint web em dois arquivos: zero erros/avisos; sintaxe Node nos cinco arquivos API aprovada. Não há mudança visual nesta unidade.",
+    "Round1 não mudou fontes; testes duplicados interrompidos pelo Principal. Banco descartável encerrado, produção e serviços externos intactos."
+  ],
+  "rollback": "Reverter somente os sete caminhos deste incremento e este registro, preservando S2B, dados/histórico e alterações concorrentes. Nenhuma migração de produto foi criada.",
+  "humanDecisions": [
+    "Continuação de desenvolvimento autorizada pelo usuário, sem publicação ou atos reais.",
+    "Integração/publicação não autorizadas neste escopo; Guru em conferência, eNotas intacto e benefício pendente."
+  ],
+  "sourceFingerprint": "72adb79817f16225d6097dc0b3d213108585a507fa085db12b518ec304f91e3b",
+  "sourcePaths": [
+    "apps/api/src/application/solicitacoes/SolicitacoesRepository.js",
+    "apps/api/src/application/solicitacoes/SolicitacoesService.js",
+    "apps/api/src/application/solicitacoes/solicitacoesApresentacao.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesApresentacao.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js",
+    "apps/web/src/api/mock/solicitacoesMock.js",
+    "apps/web/src/api/mock/__tests__/solicitacoesMock.test.js"
+  ],
+  "sourceHashes": {
+    "apps/api/src/application/solicitacoes/SolicitacoesRepository.js": "a271098f61931479ea5ce87e6b3dd2686fbb1b7d5e50ccbefd7b0a6b9e85d6f8",
+    "apps/api/src/application/solicitacoes/SolicitacoesService.js": "ae6f5011db52fefd3cdd9adda5f0c412abe4405a0b38f11e12baf85e8f8a3903",
+    "apps/api/src/application/solicitacoes/solicitacoesApresentacao.js": "d42c9d5d8f868eca61db278c1cdd1aca7a70e8000b4c7cae6ea071041529a95f",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesApresentacao.test.js": "093e163316d33a805d8cbbba7dd246dbcffead858c6a4dc3cfdae0329576a13b",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js": "e0e163e6bca475d12f3031ed38f17a1035ff82902ffbe64fe6619d55961532c6",
+    "apps/web/src/api/mock/solicitacoesMock.js": "09285715c5bfca8230934459baadf68c294856ac2f557eead20babedc4c985f3",
+    "apps/web/src/api/mock/__tests__/solicitacoesMock.test.js": "129288dd6e78f3a3e753f90a90a80ce52ef2fbf44b66b968ce4ed47069ce8a3f"
+  },
+  "evidence": {
+    "originalRun": "2026-10-27T21-26-34-207Z-309d8887",
+    "base": "3ec1df22ca1e1cf325fd813cc07563c6b454040b",
+    "runtimeReadyForHuman": false,
+    "originalStatus": "testing (interrupted by Principal)",
+    "originalStatePreserved": true,
+    "originalStateSHA": "94d1a4a9415f197f8ed70d1beb7397006a8ab9ed85c63c0decd666921c8948c1",
+    "technicalComplement": "approved",
+    "runtimeCalls": 10,
+    "formalNativeReviews": 2,
+    "priorAdvisoryDataReview": 1,
+    "unchangedRuntimeMaxCalls": 40,
+    "correctionsConsumed": 1,
+    "dataReviewSHA": "3f4d47579f0f5809dcc4ea0e2b04a0f0b953e477e6c97fc22b365329bd16b5b2",
+    "systemReviewSHA": "041708d52f6cea9f9a5893aaba204ae19c2602542d5cd1225ff94a196bc89f6f",
+    "impactReviewSHA": "84133f28619fdaa6dbe146d75035741f0ddfa87e84421283675910eb8af86f35",
+    "cleanup": "s3-apresentacao-20261027/execution/preparation.jsonl stop code0; no PostgreSQL residual",
+    "pending": [
+      "S3 central/ficha/editor/responsáveis/indicadores",
+      "Integração entre árvores e validação final conjunta"
+    ]
+  }
+}

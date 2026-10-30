@@ -1,0 +1,88 @@
+{
+  "operationalImpact": "Concretiza R01/R02/R19/R21/R22 e seção30 sem nova regra. Preserva ACL, identidade, histórico, ausência versus erro, filtros e foco. Não entrega ficha/edição S3.2 nem atos operacionais.",
+  "rollback": "Reverter os14caminhos funcionais em conjunto para base5f517933, preservando S3.0, dados/histórico, documentos ACL anteriores e outros chats. Nenhuma migration neste incremento.",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "sourceFingerprint": "648c919c90949e501704a40456c58fd5fdfd90276ae925782dc563fef2447365",
+  "sourceHashes": {
+    "apps/web/src/App.jsx": "8a835dd72443cb4ecbceeef9a862c5f9cf31cbab4817c50cd07a26a9ed0cbe5a",
+    "apps/web/src/app/hooks/useManageAuthSession.js": "93963f4f9e8adf9ee97eb8bb3e2a5f2e1b4e4a36402e58c36b0a0b14d579a030",
+    "apps/web/src/app/navigation/OfficeNavigation.jsx": "1676377cd3271b9426b7569aedfe35e81fbc3fa095e43110250b9ad96a605d52",
+    "apps/web/src/app/hooks/__tests__/mapaRotas.test.jsx": "c33ed0294f1340168d3f26b03d86ff2a7ab9183d460c97edd2224339ef97c600",
+    "apps/web/src/app/navigation/__tests__/OfficeNavigation.test.jsx": "c0d9af81ea94382ba204a11bed0864a827044e0a32cbc1190aec8afbb0fdd493",
+    "apps/web/src/app/hooks/__tests__/solicitacoesNavigation.test.jsx": "62ca247efe83737f530406526172141ac1574e7124e2e8ab130ad66f87e0455e",
+    "apps/web/src/features/solicitacoes/SolicitacoesPage.jsx": "d033c30215c12a20b08b8aa2e0e74205b667fb6faa39693b0dd44a0b3fbf2654",
+    "apps/web/src/features/solicitacoes/components/FiltrosSolicitacoes.jsx": "6a10a7df998d0da438b990d77a4ec53b28c578c45c26837fff4d58c79f9bb7fd",
+    "apps/web/src/features/solicitacoes/components/TabelaSolicitacoes.jsx": "50c59c8ea7fc3e81c1e825f54f162b0c5cbaa04312d9af7b9940dcb990c726a2",
+    "apps/web/src/features/solicitacoes/hooks/useSolicitacoes.js": "b247b2b33a25212c23416797884a6b590b5282e1fa97923b8ce0af60b2762f7b",
+    "apps/web/src/features/solicitacoes/solicitacoes.css": "a36d1a3c09478cebc93e56117bef46df5f339d0e5f5bb81f4b67ff687216525b",
+    "apps/web/src/features/solicitacoes/__tests__/centralLeitura.test.jsx": "293b1513168e9da6ae78d91ced73ba4ab6cb89b9c67e401aceb3a4d0301ce1f5",
+    "apps/web/src/app/navigation/office-navigation.css": "cfac4f7302e8032775585d85eb679af0cd05c8d0167495436ab33cda946ac3d2",
+    "apps/web/src/features/whatsapp/lib/atendimentoPwa.js": "d00d00e361dee56d40da1ad9fbdf860c3c78614da8813c1f06277dbb719ae1b9"
+  },
+  "sourcePaths": [
+    "apps/web/src/App.jsx",
+    "apps/web/src/app/hooks/useManageAuthSession.js",
+    "apps/web/src/app/navigation/OfficeNavigation.jsx",
+    "apps/web/src/app/hooks/__tests__/mapaRotas.test.jsx",
+    "apps/web/src/app/navigation/__tests__/OfficeNavigation.test.jsx",
+    "apps/web/src/app/hooks/__tests__/solicitacoesNavigation.test.jsx",
+    "apps/web/src/features/solicitacoes/SolicitacoesPage.jsx",
+    "apps/web/src/features/solicitacoes/components/FiltrosSolicitacoes.jsx",
+    "apps/web/src/features/solicitacoes/components/TabelaSolicitacoes.jsx",
+    "apps/web/src/features/solicitacoes/hooks/useSolicitacoes.js",
+    "apps/web/src/features/solicitacoes/solicitacoes.css",
+    "apps/web/src/features/solicitacoes/__tests__/centralLeitura.test.jsx",
+    "apps/web/src/app/navigation/office-navigation.css",
+    "apps/web/src/features/whatsapp/lib/atendimentoPwa.js"
+  ],
+  "evidence": {
+    "functionalBase": "5f517933df549c3f4d81d2fe37e1fb7cf4dbe7a8",
+    "pending": [
+      "S3.2 diretório/ficha/aba da empresa",
+      "S3.3 anotações/criação",
+      "S3.4 editor e vínculo de tarefa na interface",
+      "S3.5 indicadores em Operações",
+      "Integração final entre árvores e CI/publicação condicionada"
+    ],
+    "rawStatesPreserved": true,
+    "priorAclDocuments": "Three existing documents between UI base and functional base are separate approved NFS-e section31 evidence, not hidden S3.1 functional changes.",
+    "wipCheckpoint": "517ea237668a1f873224c0563421f3e6257b8dca",
+    "technicalComplement": "approved",
+    "cssComplementaryReviews": 2,
+    "integralComplementaryReviews": 3,
+    "uiUxSHA": "3608dd7319306b15a0ec6d1b1fbf0087d59f33bf520e7659fd7f4ac8960a18aa",
+    "formalCallsIncludingComplements": 38,
+    "systemicSHA": "15fab72d94bcdf4506c06ff0e9816b6577485db917c34c516ef4b88fb9c68103",
+    "qaResultSHA": "e1f4457d425f68250b909b7423624d89ede44988bcd563b8793b42bc6632159d",
+    "runtimeReadyForHuman": false,
+    "domainBackendSHA": "ae99f5d5e7af8f5564c8fde1a23c3ace7daf88bbeeeb369eee78920439e59f47",
+    "historicalRuns": [
+      "fa6a475f",
+      "2026-10-28T00-15-51-020Z-77750073",
+      "2026-10-28T10-19-46-525Z-b71ce081"
+    ],
+    "runtimeCalls": 33,
+    "unchangedMaxCalls": 40,
+    "uiBase": "222df26a1dd666b16a8e0deb756251be8cd662c2"
+  },
+  "summary": "Central de Solicitações S3.1: listagem somente leitura, filtros, paginação e navegação; fechamento integral por evidências complementares, sem reescrever os estados brutos.",
+  "humanDecisions": [
+    "Usuário autorizou o ajuste CSS único e a revalidação em28/10.",
+    "Usuário autorizou posteriormente concluir pacotes, PR/CI/revisões e publicação condicionada do conjunto. Este checkpoint local não publica; sem atos fiscais/mensagens/consultas pagas. Guru em conferência, eNotas preservado, benefício pendente."
+  ],
+  "tests": [
+    "Rodada integral77750073: governança72, API11788, web6178, portal1586 e builds aprovados. Treze fontes permanecem idênticas; apenas CSS autorizado alterado posteriormente.",
+    "Continuação CSSb71ce081: governança72, web6178/541 suítes e build aprovados. Lint dirigido histórico0erros2avisos analisados; lint global preexistente fora do escopo não declarado limpo.",
+    "QA local Chrome:308cenários,266diretos e42compostos com resultado App inconclusivo preservado;3200checks sem falhas;525capturas;zero erros de página/console/rede/drift/casos ausentes ou duplicados. Dados fictícios não provam ACL/autenticação/persistência produtivas.",
+    "Pareceres complementares integrais: domínio/backend (um revisor identificado cobrindo sete domínios), UI/UX e sistêmico aprovados; históricos rejeitados/inconclusivos preservados."
+  ],
+  "risk": "high"
+}
