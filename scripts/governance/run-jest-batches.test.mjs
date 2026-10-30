@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runJestBatches, saveManifestAtomically } from './run-jest-batches.mjs';
+import { runJestBatches, saveManifestAtomically, runBatchQueue, webConcurrency } from './run-jest-batches.mjs';
 
 function manifestFixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'altan-manifest-'));
@@ -85,11 +85,41 @@ test('resultado passed não é retornado quando a gravação final falha', async
   await assert.rejects(fixture(t, 'pass', 1), /final manifest unavailable/);
 });
 
-async function fixture(t, mode, count = 26) {
+async function fixture(t, mode, count = 26, workspace = null) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'altan-jest-batches-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const cwd = path.join(root, 'app with spaces');
-  fs.mkdirSync(cwd);
+  const cleanupToken = path.basename(root) + '-owned-cleanup';
+  const cleanupFile = path.join(root, 'owned-shutdown.json');
+  if (mode === 'abort-real') {
+    // Cooperative capability is unique to this fixture directory. Never kill by PID.
+    // This hook runs AFTER the original ESRCH assertions, so it cannot make a failed
+    // cancellation test pass. Keep the small evidence directory even on success.
+    t.after(async () => {
+      const records = fs.readdirSync(root).filter(name => /^started-\d+\.json$/.test(name) || name === 'sibling.json')
+        .map(name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8')));
+      const pids = [...new Set(records.flatMap(record => [record.pid, record.descendantPid]).filter(pid => Number.isInteger(pid) && pid > 0))];
+      const alive = pid => {
+        try { process.kill(pid, 0); return true; }
+        catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+      };
+      const before = pids.filter(alive);
+      fs.writeFileSync(path.join(root, 'fallback-before.json'), JSON.stringify({ root, records, livePids: before }));
+      fs.writeFileSync(cleanupFile, JSON.stringify({ token: cleanupToken }));
+      const deadline = Date.now() + 2000;
+      let remaining = pids.filter(alive);
+      while (remaining.length && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+        remaining = pids.filter(alive);
+      }
+      fs.writeFileSync(path.join(root, 'fallback-cleanup.json'), JSON.stringify({
+        root, method: 'cooperative-owned-file-capability', before, remaining,
+        passed: remaining.length === 0, evidencePreserved: true, signalsSentToPids: false,
+      }));
+      assert.deepEqual(remaining, [], 'Fallback do fixture falhou; evidência e diretório preservados: ' + root);
+    });
+  } else t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cwd = workspace ? path.join(root, 'apps', workspace) : path.join(root, 'app with spaces');
+  fs.mkdirSync(cwd, { recursive: true });
+  if (workspace) fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: workspace === 'web' ? '@contabilidade/web' : '@contabilidade/' + workspace }));
   const files = Array.from({ length: count }, (_, i) => path.join(cwd, `${i === 0 ? '-' : ''}suíte ${i}.test.js`));
   files.forEach(file => fs.writeFileSync(file, '// fixture'));
   const jestPath = path.join(root, 'jest-fixture.cjs');
@@ -104,6 +134,31 @@ if (args.includes('--listTests')) {
   const list = mode === 'empty' ? [] : mode === 'duplicate' ? [files[0], files[0]] : mode === 'outside' ? [__filename] : mode === 'relative' ? ['a.test.js'] : mode === 'not-found' ? [files[0] + '.absent'] : files;
   if (mode === 'unicode') { const bytes = Buffer.from(JSON.stringify(list)); const cut = bytes.indexOf(0xc3) + 1; process.stdout.write(bytes.subarray(0, cut)); setTimeout(() => { process.stdout.write(bytes.subarray(cut)); }, 20); return; }
   console.log(JSON.stringify(list)); process.exit(0);
+}
+if (mode === 'abort-real') {
+  const cleanupFile = ${JSON.stringify(cleanupFile)};
+  const cleanupToken = ${JSON.stringify(cleanupToken)};
+  const ownedShutdown = () => {
+    if (!fs.existsSync(cleanupFile)) return;
+    try { if (JSON.parse(fs.readFileSync(cleanupFile, 'utf8')).token === cleanupToken) process.exit(91); }
+    catch { /* Partial/invalid signal is not authority to exit. */ }
+  };
+  setInterval(ownedShutdown, 20);
+  const { spawn } = require('node:child_process');
+  const first = path.resolve(args[args.indexOf('--runTestsByPath') + 1]);
+  const index = files.indexOf(first);
+  fs.writeFileSync(path.join(__dirname, 'started-' + index + '.json'), JSON.stringify({ pid: process.pid }));
+  if (index === 0) {
+    const timer = setInterval(() => {
+      if (fs.existsSync(path.join(__dirname, 'sibling.json'))) { clearInterval(timer); process.exit(17); }
+    }, 10);
+  } else {
+    const descendantCode = 'const fs=require("node:fs"); const file=' + JSON.stringify(cleanupFile) + '; const token=' + JSON.stringify(cleanupToken) + '; setInterval(()=>{if(!fs.existsSync(file))return;try{if(JSON.parse(fs.readFileSync(file,"utf8")).token===token)process.exit(91)}catch{}},20);';
+    const descendant = spawn(process.execPath, ['-e', descendantCode], { stdio: 'ignore' });
+    fs.writeFileSync(path.join(__dirname, 'sibling.json'), JSON.stringify({ pid: process.pid, descendantPid: descendant.pid }));
+    setInterval(() => {}, 1000);
+  }
+  return;
 }
 if (mode === 'crash') process.exit(2);
 if (mode === 'timeout') { setInterval(() => {}, 1000); return; }
@@ -132,6 +187,20 @@ fs.writeFileSync(args[args.indexOf('--outputFile') + 1], mode === 'invalid-resul
   const result = await runJestBatches({ cwd, jestPath, evidenceRoot: path.join(root, 'evidence'), timeoutMs: mode === 'timeout' ? 800 : 10000 });
   const evidence = path.join(root, 'evidence', fs.readdirSync(path.join(root, 'evidence'))[0]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(evidence, 'manifest.json'))), result);
+  if (mode === 'abort-real') {
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, /batch-1: exit=17/);
+    assert.equal(result.totals, undefined);
+    assert.equal(result.batches.length, 2);
+    assert.equal(fs.existsSync(path.join(root, 'started-50.json')), false);
+    const sibling = JSON.parse(fs.readFileSync(path.join(root, 'sibling.json')));
+    const failed = JSON.parse(fs.readFileSync(path.join(root, 'started-0.json')));
+    for (const pid of [failed.pid, sibling.pid, sibling.descendantPid]) {
+      assert.ok(Number.isInteger(pid) && pid > 0);
+      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'Nenhum processo do fixture permanece ativo após o resultado terminal');
+    }
+    assert.equal(JSON.parse(fs.readFileSync(path.join(evidence, 'manifest.json'))).status, 'failed');
+  }
   return result;
 }
 
@@ -171,3 +240,99 @@ for (const mode of ['global-setup', 'projects', 'coverage', 'empty', 'invalid', 
     assert.equal(result.totals, undefined);
   });
 }
+
+// These tests exercise scheduling without running any product suite or changing its assertions.
+test('fila limita dois filhos, cobre todos os itens uma vez e espera encerramento', async () => {
+  let active = 0, maximum = 0;
+  const started = [], finished = [];
+  let release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  await runBatchQueue([0, 1, 2, 3], 2, async (item, index, lane) => {
+    active++; maximum = Math.max(maximum, active); started.push(item);
+    assert.ok(lane === 0 || lane === 1); assert.equal(item, index);
+    if (started.length === 2) release();
+    await barrier;
+    await new Promise(resolve => setTimeout(resolve, 1));
+    finished.push(item); active--;
+  });
+  assert.equal(maximum, 2); assert.equal(active, 0);
+  assert.deepEqual(started, [0, 1, 2, 3]);
+  assert.deepEqual(finished.slice().sort(), [0, 1, 2, 3]);
+});
+
+test('primeira falha aborta irmão, aguarda close simulado e não inicia terceiro', async () => {
+  const started = [];
+  let siblingClosed = false, releaseFailure;
+  const siblingStarted = new Promise(resolve => { releaseFailure = resolve; });
+  await assert.rejects(runBatchQueue([0, 1, 2], 2, async item => {
+    started.push(item);
+    if (item === 0) { await siblingStarted; throw new Error('falha original'); }
+    releaseFailure();
+    // The tested callback receives the exact shared cancellation signal below.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    siblingClosed = true;
+  }), /falha original/);
+  assert.deepEqual(started, [0, 1]); assert.equal(siblingClosed, true);
+});
+
+test('cancelamento propagado espera confirmação assíncrona de encerramento do irmão', async () => {
+  let ready, closed = false, observedAbort = false;
+  const running = new Promise(resolve => { ready = resolve; });
+  await assert.rejects(runBatchQueue([0, 1, 2], 2, async (item, index, lane, signal) => {
+    if (item === 0) { await running; throw new Error('recusa'); }
+    await new Promise(resolve => {
+      signal.addEventListener('abort', () => {
+        observedAbort = true;
+        setTimeout(() => { closed = true; resolve(); }, 5);
+      }, { once: true });
+      ready();
+    });
+  }), /recusa/);
+  assert.equal(observedAbort, true); assert.equal(closed, true);
+});
+
+test('fila sequencial preserva execução API/portal e rejeita concorrência arbitrária', async () => {
+  let active = 0, maximum = 0;
+  await runBatchQueue([0, 1, 2], 1, async () => {
+    active++; maximum = Math.max(maximum, active);
+    await Promise.resolve(); active--;
+  });
+  assert.equal(maximum, 1);
+  await assert.rejects(runBatchQueue([0], 3, async () => assert.fail('não executar')), /Concorrência inválida/);
+});
+
+test('workspace web real usa dois lotes; API e portal permanecem sequenciais', async t => {
+  const web = await fixture(t, 'pass', 61, 'web');
+  assert.equal(web.concurrency, 2); assert.equal(web.status, 'passed');
+  assert.deepEqual(web.batches.map(batch => batch.files.length), [25, 25, 11]);
+  assert.equal(web.totals.numPassedTests, 61);
+  for (const workspace of ['api', 'portal-cliente-web']) {
+    const result = await fixture(t, 'pass', 26, workspace);
+    assert.equal(result.concurrency, 1); assert.equal(result.totals.numPassedTests, 26);
+  }
+});
+
+for (const mode of ['duplicate-result', 'omitted', 'extra', 'assertion-failed', 'counts', 'timeout']) {
+  test(`web concorrente conserva recusa ${mode}`, async t => {
+    const result = await fixture(t, mode, 51, 'web');
+    assert.equal(result.concurrency, 2);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.totals, undefined);
+  });
+}
+
+test('nome web isolado ou identidade de pacote diferente não habilita concorrência', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'altan-workspace-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const nested = path.join(root, 'apps', 'web');
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'package.json'), JSON.stringify({ name: '@contabilidade/api' }));
+  assert.equal(webConcurrency(nested), 1);
+  assert.equal(webConcurrency(path.join(root, 'web')), 1);
+});
+test('falha real encerra e aguarda filho e descendente ativos sem TypeError no close', async t => {
+  const result = await fixture(t, 'abort-real', 51, 'web');
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /exit=17/);
+  assert.equal(result.totals, undefined);
+});

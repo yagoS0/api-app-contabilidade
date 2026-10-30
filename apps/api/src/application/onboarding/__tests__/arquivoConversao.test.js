@@ -50,3 +50,17 @@ test('abertura com titular chega ao contrato de provisionamento com IPTU e legad
   expect(perfil.data.inscricaoMunicipal).toBeNull();
   expect(ficha.dados.enderecoAbertura).toEqual(endereco);
 });
+
+test('C1: arquiva contrato futuro conferido sem pagamento; versão divergente mantém bloqueio', async () => {
+  const onboarding = { politicaComercial: 'COMERCIAL_2026_10_V1' };
+  const proposta = { id: 'p', versao: 1, status: 'ACEITA', opcaoAceita: 'mensal' };
+  const contrato = { id: 'c', propostaId: 'p', status: 'AGUARDANDO_ASSINATURA', aprovadoPor: 'contador', aprovadoEm: '2026-10-25', texto: 'Pagamento previsto em data futura.',
+    dados: { politicaContratacao: 'R35', opcao: { chave: 'mensal' }, condicaoPagamento: {
+      versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true, vencimento: '2099-01-01',
+      clausula: 'Pagamento previsto em data futura.', propostaId: 'p', propostaVersao: 1 } } };
+  const db = { documentoOnboarding: { findMany: async () => [] }, onboardingEvento: { findMany: async () => [] } };
+  const storage = { upload: jest.fn(async () => {}) };
+  expect((await prepararArquivoConversao({ db, onboardingId: 'o', onboarding, proposta, contrato, storage })).documentos).toHaveLength(2);
+  contrato.dados.condicaoPagamento.propostaVersao = 0;
+  await expect(prepararArquivoConversao({ db, onboardingId: 'o', onboarding, proposta, contrato, storage })).rejects.toMatchObject({ code: 'arquivo_conversao_indisponivel' });
+});

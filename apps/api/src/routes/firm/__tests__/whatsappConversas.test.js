@@ -1,3 +1,4 @@
+import { SolicitacoesService } from '../../../application/solicitacoes/SolicitacoesService.js';
 // AS ROTAS DE CONVERSAS DE WHATSAPP — a porta do escritório (F5, 02/09/2026).
 //
 // O que fica travado: (1) o escopo por CARTEIRA (fio de empresa fora da carteira é 404, nunca
@@ -22,7 +23,9 @@ let mockAtendimento = null;
 
 jest.mock("../../../infrastructure/db/prisma.js", () => {
   const prisma = {
-    encaminhamentoSuporte: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+    user: { findUnique: jest.fn(async ({where}) => ({ id: where.id, role: where.id === 'u-contador' ? 'contador' : 'user', accountType: 'FIRM', status: 'active' })) },
+    encaminhamentoSuporte: { fields: {concluidoEm:'concluidoEm'}, findUnique: jest.fn(), findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+    solicitacaoEvento: { create: jest.fn(async ({ data }) => data) },
     rascunhoAtendimento: {
       create:jest.fn(async({data})=>{if(mockRascunhos.some(r=>r.userId===data.userId && r.chaveEscopo===data.chaveEscopo)) throw Object.assign(new Error('unique'),{code:'P2002'});const r={id:`d${mockRascunhos.length}`,...data};mockRascunhos.push(r);return{...r};}),
       findUnique:jest.fn(async({where:{userId_chaveEscopo:k}})=>{const r=mockRascunhos.find(r=>r.userId===k.userId && r.chaveEscopo===k.chaveEscopo);return r?{...r}:null;}),
@@ -204,16 +207,17 @@ describe('pendências humanas do suporte', () => {
   test('lista aplica carteira e exige usuário do escritório', async () => {
     const r = await request(montarApp()).get('/firm/whatsapp/suporte/pendencias');
     expect(r.status).toBe(200); expect(r.body).toMatchObject({ ok: true, total: 0 });
-    expect(prisma.encaminhamentoSuporte.count).toHaveBeenCalledWith({ where: expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: { in: ['pc-1'] } }) }) });
-    expect((await request(montarApp({ id: 'u', role: 'staff' })).get('/firm/whatsapp/suporte/pendencias')).status).toBe(403);
+    expect(prisma.encaminhamentoSuporte.count).toHaveBeenCalledWith({ where: expect.objectContaining({ AND: expect.arrayContaining([{id:{in:[]}}]) }) });
+    const staff = await request(montarApp({ id: 'u', role: 'staff' })).get('/firm/whatsapp/suporte/pendencias');
+    expect(staff.status).toBe(200); expect(staff.body.total).toBe(0);
   });
-  test('resumo de pendências retorna contagem por empresa e filtra a seleção', async () => {
-    prisma.conversaWhatsapp.findMany.mockResolvedValueOnce([{portalClientId:'pc-1',_count:{encaminhamentosSuporte:2}}]);
-    const r=await request(montarApp()).get('/firm/whatsapp/suporte/pendencias?companyId=pc-1');
-    expect(r.status).toBe(200);expect(r.body.porEmpresa).toEqual({'pc-1':2});
-    expect(prisma.conversaWhatsapp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({where:expect.objectContaining({portalClientId:{in:['pc-1']}})}));
-    await request(montarApp()).get('/firm/whatsapp/suporte/pendencias?companyId=pc-2');
-    expect(prisma.encaminhamentoSuporte.count).toHaveBeenLastCalledWith({where:expect.objectContaining({conversa:expect.objectContaining({portalClientId:{in:[]}})})});
+  test('resumo conserva envelope da fonte individual e encaminha filtro validado', async () => {
+    const listar = jest.spyOn(SolicitacoesService.prototype, 'listar').mockResolvedValue({total:151,porEmpresa:{'pc-1':151},itens:[]});
+    try {
+      const r=await request(montarApp()).get('/firm/whatsapp/suporte/pendencias?companyId=pc-1');
+      expect(r.status).toBe(200);expect(r.body.porEmpresa).toEqual({'pc-1':151});expect(r.body.total).toBe(151);
+      expect(listar).toHaveBeenLastCalledWith({contexto:{canal:'INTERNO',atorId:'u-contador'},filtros:{situacao:'ABERTAS',portalClientId:'pc-1'},limite:100,cursor:null});
+    } finally {listar.mockRestore();}
   });
   test('resolver exige carteira e posse; mantém IA pausada até devolução explícita', async () => {
     const app = montarApp();
@@ -1094,14 +1098,18 @@ describe('contingência comercial na devolução', () => {
 describe('excluir demanda de suporte preserva o atendimento', () => {
   let demanda;
   beforeEach(() => {
-    demanda = { id: 'p1', conversaId: 'cv1', estado: 'AGUARDANDO' };
+    demanda = { id: 'p1', conversaId: 'cv1', estado: 'AGUARDANDO', contratoVersao: null, revisao: 0, updatedAt: new Date(), resolvidoEm: null, responsavelId: null };
     prisma.encaminhamentoSuporte.findFirst.mockImplementation(async ({ where }) => demanda.id === where.id && demanda.conversaId === where.conversaId && (!where.estado || demanda.estado === where.estado) ? { ...demanda } : null);
+    prisma.encaminhamentoSuporte.findUnique.mockImplementation(async () => ({ ...demanda }));
+    prisma.encaminhamentoSuporte.findMany.mockImplementation(async () => [{ ...demanda, conversa: mockConversas.get('cv1'), mensagens: [] }]);
+    prisma.solicitacaoEvento.create.mockClear();
     prisma.encaminhamentoSuporte.updateMany.mockReset().mockImplementation(async ({ where, data }) => {
-      if (where.id !== demanda.id || where.conversaId !== demanda.conversaId || demanda.estado === 'RESOLVIDO') return { count: 0 };
-      Object.assign(demanda, data); return { count: 1 };
+      if (where.id !== demanda.id || where.conversaId !== demanda.conversaId || demanda.estado === 'RESOLVIDO'
+        || where.contratoVersao !== demanda.contratoVersao || where.revisao !== demanda.revisao || where.updatedAt !== demanda.updatedAt) return { count: 0 };
+      Object.assign(demanda, data, { revisao: demanda.revisao + data.revisao.increment }); return { count: 1 };
     });
   });
-  afterEach(() => { prisma.encaminhamentoSuporte.findFirst.mockReset().mockResolvedValue(null); prisma.encaminhamentoSuporte.updateMany.mockReset().mockResolvedValue({ count: 0 }); });
+  afterEach(() => { prisma.encaminhamentoSuporte.findMany.mockReset().mockResolvedValue([]); prisma.encaminhamentoSuporte.findFirst.mockReset().mockResolvedValue(null); prisma.encaminhamentoSuporte.updateMany.mockReset().mockResolvedValue({ count: 0 }); });
   const url = '/firm/whatsapp/conversas/cv1/suporte/p1/excluir';
   test('exige perfil autorizado, carteira e vínculo da demanda', async () => {
     expect((await request(montarApp({ id: 'u', role: 'staff' })).post(url)).status).toBe(403);
@@ -1115,11 +1123,15 @@ describe('excluir demanda de suporte preserva o atendimento', () => {
     expect((await request(montarApp()).post(url)).status).toBe(200);
     expect(demanda).toMatchObject({ estado: 'RESOLVIDO', responsavelId: 'u-contador' });
     expect(demanda.resolvidoEm).toBeInstanceOf(Date);
+    expect(demanda.revisao).toBe(1);
+    expect(demanda.concluidoPorId).toBeUndefined();
+    expect(prisma.solicitacaoEvento.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tipo: 'LEGADO_ARQUIVADO', revisao: 1, atorId: 'u-contador', antes: expect.objectContaining({ estado: 'AGUARDANDO' }), depois: expect.objectContaining({ estado: 'RESOLVIDO' }) }) });
     expect(prisma.encaminhamentoSuporte.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'p1', conversaId: 'cv1', conversa: expect.objectContaining({ excluidaEm: null, portalClientId: { in: ['pc-1'] } }) }) }));
     expect(mockConversas.get('cv1')).toEqual(conversa); expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
     expect(prisma.mensagemWhatsapp.create).not.toHaveBeenCalled(); expect(cloud.enviarTexto).not.toHaveBeenCalled(); expect(cloud.enviarTemplate).not.toHaveBeenCalled();
     expect((await request(montarApp()).post(url)).status).toBe(200);
     expect(prisma.encaminhamentoSuporte.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.solicitacaoEvento.create).toHaveBeenCalledTimes(1);
   });
   test('não exclui demanda assumida por outro atendente', async () => {
     mockConversas.get('cv1').atendidaPor = 'outro';
@@ -1130,5 +1142,14 @@ describe('excluir demanda de suporte preserva o atendimento', () => {
     prisma.encaminhamentoSuporte.updateMany.mockResolvedValueOnce({ count: 0 });
     expect((await request(montarApp()).post(url)).status).toBe(409);
     expect(demanda.estado).toBe('AGUARDANDO');
+  });
+  test('adoção concorrente impede arquivamento e evento legado', async () => {
+    prisma.encaminhamentoSuporte.updateMany.mockImplementationOnce(async () => {
+      demanda.contratoVersao = 1; demanda.revisao++;
+      return { count: 0 };
+    });
+    expect((await request(montarApp()).post(url)).status).toBe(409);
+    expect(demanda.estado).toBe('AGUARDANDO');
+    expect(prisma.solicitacaoEvento.create).not.toHaveBeenCalled();
   });
 });

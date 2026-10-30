@@ -7,8 +7,16 @@ function cenario() {
  antesDeEnviar:jest.fn(async()=>{}),permitida:()=>true,vincularOpcoes:x=>x,rotular:x=>x,encaminhar,enviar };
 }
 test('menu registra pedido antes de responder ao cliente',async()=>{const c=cenario();await atenderConsultaCliente(c);
- expect(c.encaminhar).toHaveBeenCalledWith('Atualizar guia DAS g1');
+ expect(c.encaminhar).toHaveBeenCalledWith('Atualizar guia DAS g1', {origem:{tipo:'HANDOFF_MENSAGEM',ferramenta:'preparar_recalculo'}});
  expect(c.encaminhar.mock.invocationCallOrder[0]).toBeLessThan(c.enviar.mock.invocationCallOrder[0]);
  expect(c.enviar).toHaveBeenCalledWith(expect.objectContaining({corpo:expect.stringContaining('Solicitei ao contador')}));});
 test('falha ao registrar pedido não confirma encaminhamento',async()=>{const c=cenario();c.encaminhar.mockRejectedValue(Error('banco'));
  await expect(atenderConsultaCliente(c)).rejects.toThrow('banco');expect(c.enviar).not.toHaveBeenCalled();});
+
+test('documento indisponível passa identidade estruturada, sem usar o nome como assunto', async () => {
+ const c=cenario();c.pedido={acao:'OPCAO',opcao:'d1',anterior:{tipo:'DOCUMENTOS',documentos:[{documentId:'doc-1',nome:'Nome mutável'}]}};
+ c.executar.mockResolvedValue({ok:false,motivo:'DOCUMENTO_INDISPONIVEL'});
+ await atenderConsultaCliente(c);
+ expect(c.encaminhar).toHaveBeenCalledWith(expect.stringContaining('Nome mutável'),{origem:{tipo:'DOCUMENTO_INDISPONIVEL',documentId:'doc-1'}});
+ expect(c.encaminhar.mock.invocationCallOrder[0]).toBeLessThan(c.enviar.mock.invocationCallOrder[0]);
+});

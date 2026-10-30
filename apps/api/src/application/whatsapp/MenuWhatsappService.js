@@ -1,3 +1,4 @@
+import { clienteHandoffSuporte } from '../solicitacoes/SolicitacoesOrigemWhatsappService.js';
 import { enviarDanfseWhatsapp, emissaoConfirmada } from './EnvioDanfseWhatsappService.js';
 import { confirmarPagamentoWhatsapp, fluxoPagamentoAtual, ehInteracaoPagamento } from "../guides/ConfirmarPagamentoWhatsappService.js";
 import { recalcularGuiaWhatsapp } from '../guides/RecalcularGuiaWhatsappService.js';
@@ -341,17 +342,19 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     if (janela.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
   };
   const assinatura = JSON.stringify({ ok: sessao.ok, userId: sessao.userId, papel: sessao.papel, permissoes: [...(sessao.permissoesAssistente || [])].sort() });
-  const encaminhar = async (motivo = 'Cliente solicitou atendimento da equipe', { aoPersistir } = {}) => {
+  const encaminhar = async (motivo = 'Cliente solicitou atendimento da equipe', { aoPersistir, origem = { tipo: 'HANDOFF_MENSAGEM' } } = {}) => {
+    const handoffClient = clienteHandoffSuporte(client);
     await antesDeEnviar(null, assinatura);
     const registrar = async tx => {
-      const suporte = (IA_SUPORTE_OPENAI || motivo.startsWith('Atualizar guia ') || motivo.startsWith('Documento indisponível:')) && !comercialPublico && conversa.portalClientId
-        ? await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, client: tx, agora }) : null;
+      const suporte = (IA_SUPORTE_OPENAI || ['RECALCULO_GUIA', 'DOCUMENTO_INDISPONIVEL'].includes(origem.tipo)
+        || (origem.tipo === 'HANDOFF_MENSAGEM' && origem.ferramenta === 'preparar_recalculo')) && !comercialPublico && conversa.portalClientId
+        ? await registrarEncaminhamentoSuporte({ conversa, mensagem, motivo, origem, client: tx, agora }) : null;
       await aoPersistir?.(tx, suporte);
     };
     const r = conversaDaGuarda.atendimentoId || conversaDaGuarda.vinculoNumeroId
-      ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client, quando: agora,
+      ? await encaminharResponsavelParaEquipe({ conversa: conversaDaGuarda, mensagem, contexto: comercialPublico ? null : registro.contexto, client: handoffClient, quando: agora,
         aoEncaminhar: registrar })
-      : await client.$transaction(async tx => {
+      : await handoffClient.$transaction(async tx => {
         const mudou = await marcarHandoff(conversa, agora, tx);
         if (mudou.count) await registrar(tx);
         return mudou;

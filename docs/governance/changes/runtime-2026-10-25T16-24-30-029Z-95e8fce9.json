@@ -1,0 +1,53 @@
+{
+  "summary": "NOTAS N2A — DOCUMENTOS INDIVIDUAIS E AÇÕES — EXECUÇÃO LOCAL AUTORIZADA 25/10/2026\nO usuário reiterou implementar TODOS os pacotes, não só Guru. Neste checkout B, N1 está validado em141e30635 e regrasconciliadas eme3fa7e8ac. Árvorelimpa, dependênciasPrismapróprias. PreservarN1 e decisõesnovas. Ler integralmente PEDIDO-ETAPA-NOTAS-N2.txt e PRONTIDAO-NOTAS-N2A-20261025.txt em ../output/plano-atualizacao-20261024. Seus avisos antigos sobreN1emexecução sãohistóricos; N1agoraaprovado. Implementar SOMENTE N2A completo, semN2Bcancelamento nemN3datas.\nPlanner deve fechar allowlist exata dos16caminhospropostos e testes decompatibilidade indispensáveis ANTES executor; não adicionar governança/config/pacotes/AGENTS/CLAUDE/regras. Um escritor. Principal trata documentação. Atente aos4achados concretos no relatório: identidadeXML antesDANFSePortalInvoice, colunaAçõesindependentedeonMarcarStatus emRecebidas, XMLindividualnãoéDTOtruncado, ServiceInvoicepodebaixardocumentosemdetalhePortalInvoice. Evitarcicloimport ao extrair gerarDanfeNfe; reexportcompatível.\nResultado funcional: coluna Ações comíconesacessíveisPDF/XML/cancelar(indisponívelatéN2B), PDFautenticadoabrevisualizadorcomfallbacksepopupbloqueado; XMLoriginalcompletosemreescrever. Portadocumentalúnicaporempresa/nota/tipo +capacidadeslocaisconservadoras, reutilizadaemlote mantendoZIP/relatório/limites/parcial/segurança. SemN+1automáticolista: carregamentoporintenção/foco/detalhe. NãofazerI/Ofiscal paraavaliardisponibilidade. MIME/assinaturaPDF reais, JSON200/HTMLnão viramarquivo. CNPJ/tenant/identidade/protocolo/marcas/QR preservados. Controle de resposta tardia, cliqueduplo, blobs/limpeza, seleção/teclado, camposfiltros/contadoresN1.\nNão usar PATCHstatuslocal como cancelamento. NenhumPOSTfiscalnesteincremento. Manterendpoint/históricolocalondeoutrosconsumidoresusam. Não confundir impressão solicitada com impressãofísicaconfirmada. Testescom XML/PDFsintéticosválidos, semXMLprodutivo. Preservartodasasasserts/guardas existentes; secompatibilidadeprecisarajustar,incluirnocaminhoplanejadoe verificarequivalência.\nRegras/designAGENTS/CLAUDEaplicáveis obrigatórios,decisõesatuaisprevalecem. Desktop/celular/teclado,44pxáreatoque,íconeslimposalinhados,tablerolagemlocal,semoverflowglobal. PrincipalexecutaráQAvisualapósgatespesados; executorpreparatestado semalegarinspeçãoquenãofez.\nRecursos: helperlocalrevisto usa runtimeversionado/gatesintactos. DepoisexecutoraguardaráruntimeA80e42ae8encerrarantesdosgatesB; nãointerromperfila,nãoeditarhelper,nãorodarregressãopesadaindependente. BancoPGexclusivodescartávelloopback, gerado/aplicadopeloPrincipal. NãoeditarA/outrasárvores. Sempublication/push/PR/merge/deploy, dadosreais, consultapaga,envio,emissão/cancelamento. Guruconferência,eNotasintacto,benefíciopendente. N2A nãoequivaleatodosospacotesconcluídos.CONTROLE DE RECURSOS EXPLÍCITO: planejador, executor e revisores NÃO executam testes (nem focais), Prisma, builds, navegador ou outros gates por conta própria nesta execução. Podem ler e editar somente seus caminhos autorizados; o controlador executará toda a validação após a barreira de recursos. Não iniciar processos filhos pesados nem alterar a fila.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-25T16-24-30-029Z-95e8fce9",
+  "tests": [
+    "governance-engine: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-governance-engine",
+    "api-regression: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-api-regression",
+    "web-regression: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-web-regression",
+    "portal-regression: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-portal-regression",
+    "web-build: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-web-build",
+    "portal-build: passed against e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-notas-n1-20261025\\.altan-governance\\runs\\2026-10-25T16-24-30-029Z-95e8fce9\\round-1-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-25T16-24-30-029Z-95e8fce9; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "e5c586dc3c6f2d35fef3d0603e83dc2140ea571f1836fdcc605d3da48b14f188",
+  "sourcePaths": [
+    "apps/api/src/application/notas/download/DocumentoNotaService.js",
+    "apps/api/src/application/notas/download/NotasSelecionadasService.js",
+    "apps/api/src/application/notas/download/__tests__/documentoNota.test.js",
+    "apps/api/src/application/notas/download/__tests__/notasSelecionadas.test.js",
+    "apps/api/src/routes/__tests__/documentoNotaFirm.test.js",
+    "apps/api/src/routes/firm/notas.js",
+    "apps/web/src/api/mock/mockApi.js",
+    "apps/web/src/api/real/realApi.js",
+    "apps/web/src/features/notas/components/AcoesNota.jsx",
+    "apps/web/src/features/notas/components/NotaDetailModal.jsx",
+    "apps/web/src/features/notas/components/NotasList.jsx",
+    "apps/web/src/features/notas/components/__tests__/acoesNotaDocumentos.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/notasDeCompraAparecem.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/notasDetalheETruncamento.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/reaproveitarNotaEDanfse.test.jsx",
+    "apps/web/src/features/notas/components/__tests__/selecaoDeNotas.test.jsx",
+    "apps/web/src/features/notas/components/renderAuditoriaTab.jsx",
+    "apps/web/src/features/notas/components/renderNotasFiscaisTab.jsx",
+    "apps/web/src/features/notas/lib/__tests__/documentoIndividual.test.js",
+    "apps/web/src/features/notas/lib/documentoIndividual.js",
+    "apps/web/src/features/notas/notas.css"
+  ],
+  "runId": "2026-10-25T16-24-30-029Z-95e8fce9"
+}

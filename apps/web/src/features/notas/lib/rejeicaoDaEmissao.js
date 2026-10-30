@@ -163,7 +163,7 @@ const CONHECIDAS = {
   nfse_falha_transporte: {
     oQueFazer:
       "A comunicação com o sistema nacional falhou DEPOIS do envio: não se sabe se a nota foi "
-      + "autorizada. Antes de emitir de novo, consulte com “🔄 Buscar NFS-e” na aba de notas.",
+      + "autorizada. Antes de emitir de novo, consulte com “Buscar”, com NFS-e selecionada na aba de notas.",
     desfechoDesconhecido: true,
   },
   nfse_numero_em_estado_indeterminado: {

@@ -49,12 +49,14 @@ it('seleção de tipo para ação encaminha XML e ZIP para importação NF-e sem
 it('nota de compra sem XML permanece visível e tem tipo explícito', () => {
   montar({ notas: [compra], notasFilters: { papel: 'DEST', type: 'NFE', competencia: '2026-08' } });
   expect(screen.getByText('FORNECEDOR')).toBeInTheDocument();
-  expect(screen.getByText('NF-e')).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByText('NF-e')).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Estado de emissão' })).toBeInTheDocument();
 });
-it('ajuste local permanece individual e nunca é oferecido para recebida na lista mista', () => {
+it('documentos permanecem individuais e ajuste local não aparece como cancelamento', () => {
   montar({ notas: [compra, { ...servico, papel: 'EMIT' }], notasFilters: { papel: '', type: '', competencia: '2026-08' } });
-  expect(screen.getAllByRole('button', { name: 'Marcar como cancelada' })).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: 'Marcar como cancelada' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /Abrir \/ imprimir PDF/ })).toHaveLength(2);
+  for (const botao of screen.getAllByRole('button', { name: /^Cancelar nota/ })) expect(botao).toHaveAttribute('aria-disabled', 'true');
   expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
 });
 it('falha da lista e falha da captura têm recuperações separadas', () => {

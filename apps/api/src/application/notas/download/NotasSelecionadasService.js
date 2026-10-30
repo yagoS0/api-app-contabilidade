@@ -1,31 +1,12 @@
+import { gerarDanfeNfe, resolverNotasDocumentais, prepararDocumentoNota } from "./DocumentoNotaService.js";
+export { gerarDanfeNfe } from "./DocumentoNotaService.js";
 import archiver from "archiver";
-import { XMLParser, XMLValidator } from "fast-xml-parser";
-import { gerarPDF } from "nfe-danfe-pdf";
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { raizDoXml } from "../../nfse/lerEnvelopeXml.js";
 import { gerarDanfseDaNota } from "../../nfse/danfse/danfseDaNotaDoPortal.js";
-import { safeFilePart } from "../../nfse/danfse/loteDanfseDoPortal.js";
-import { projetarEmissaoServico, evidenciaDaNota } from '../dataEmissaoNota.js';
 
 export const MAX_NOTAS_SELECIONADAS = 100;
 const MAX_BYTES = 50 * 1024 * 1024;
 const falha = (message, status = 400) => Object.assign(new Error(message), { status });
-
-export async function gerarDanfeNfe({ xml, cancelada = false }) {
-  if (XMLValidator.validate(xml) !== true || /<!DOCTYPE|<!ENTITY/i.test(xml)) throw falha("XML de NF-e inválido.");
-  const obj = new XMLParser({ ignoreAttributes: false, parseTagValue: false, removeNSPrefix: true }).parse(xml);
-  const proc = obj.nfeProc;
-  const inf = proc?.NFe?.infNFe;
-  if (!inf || String(inf.ide?.mod) !== "55" || !proc.protNFe?.infProt?.nProt) {
-    throw falha("DANFE requer o XML completo da NF-e com protocolo de autorização. O resumo não contém esses dados.");
-  }
-  if (!["100", "150"].includes(String(proc.protNFe.infProt.cStat))) throw falha("O XML não comprova autorização da NF-e.");
-  const doc = await gerarPDF(xml, { cancelada, textoRodape: "Altan" });
-  // A biblioteca encerra o documento; apenas consumimos o stream.
-  const chunks = [];
-  for await (const chunk of doc) chunks.push(chunk);
-  return Buffer.concat(chunks);
-}
 
 export async function baixarNotasSelecionadas({ portalClientId, notaIds, formato, client = prisma, gerarNfe = gerarDanfeNfe, gerarNfse = gerarDanfseDaNota }) {
   if (!Array.isArray(notaIds) || !notaIds.length || notaIds.length > MAX_NOTAS_SELECIONADAS
@@ -34,41 +15,16 @@ export async function baixarNotasSelecionadas({ portalClientId, notaIds, formato
   }
   if (!["XML", "PDF"].includes(formato)) throw falha("Escolha XML ou PDF.");
   const ids = [...new Set(notaIds)];
-  const portal = await client.portalClient.findUnique({ where: { id: portalClientId }, select: { companyId: true, cnpj: true } });
-  const notas = await client.portalInvoice.findMany({
-    where: { clientId: portalClientId, id: { in: ids } },
-    select: { id: true, type: true, numero: true, xmlRaw: true, chaveAcesso: true, emitenteDoc: true, status: true, statusEfetivo: true },
-  });
-  const byId = new Map(notas.map(n => [n.id, n]));
-  const faltantes = ids.filter(id => !byId.has(id));
-  if (faltantes.length) {
-    const emitidas = portal?.companyId ? await client.serviceInvoice.findMany({
-      where: { companyId: portal.companyId, id: { in: faltantes } },
-      select: { id: true, numeroNfse: true, chaveAcesso: true, xml: true, status: true },
-    }) : [];
-    for (const n of emitidas) {
-      const projection = projetarEmissaoServico(n, portal.cnpj);
-      byId.set(n.id, { ...n, type: 'NFSE', numero: n.numeroNfse, xmlRaw: projection.xml, evidencia: projection.evidencia });
-    }
-  }
-  // IDs fora da empresa e IDs inexistentes produzem exatamente a mesma resposta.
-  if (ids.some(id => !byId.has(id))) throw falha("Uma ou mais notas não foram encontradas nesta empresa. Atualize a lista.", 404);
+  const { byId, portal } = await resolverNotasDocumentais({ portalClientId, ids, client });
   const arquivos = [], falhas = [];
   let bytes = 0;
   for (const id of ids) {
     const n = byId.get(id);
     try {
-      const xml = n.xmlRaw;
-      const raiz = raizDoXml(xml);
-      if (!xml || !["NFSe", "NFe", "nfeProc"].includes(raiz)) throw falha("XML completo indisponível; o resumo da captura não substitui o documento.");
-      const evidence = n.evidencia || evidenciaDaNota(n, { documentoEmpresa: portal?.cnpj });
-      if (!evidence.identidadeConferida) throw falha('A identidade do documento precisa ser conferida antes do download.');
-      const conteudo = formato === "XML" ? Buffer.from(xml, "utf8") : n.type === "NFE"
-        ? await gerarNfe({ xml, cancelada: ["cancelada", "cancelled"].includes(String(n.statusEfetivo || n.status).toLowerCase()) })
-        : (await gerarNfse({ portalClientId, notaId: id, client })).pdf;
+      const { conteudo, nome } = await prepararDocumentoNota({ portalClientId, nota: n, portal, formato, client, gerarNfe, gerarNfse });
       bytes += conteudo.length;
       if (bytes > MAX_BYTES) throw falha("O lote excede 50 MB. Selecione menos notas.", 413);
-      arquivos.push({ nome: `${safeFilePart(n.type)}-${safeFilePart(n.numero) || "sem-numero"}-${safeFilePart(id)}.${formato.toLowerCase()}`, conteudo });
+      arquivos.push({ nome, conteudo });
     } catch (e) {
       if (e.status === 413) throw e;
       falhas.push({ nota: n.numero || id, motivo: e.message || "Não foi possível gerar o arquivo." });

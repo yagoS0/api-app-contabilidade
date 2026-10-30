@@ -6,6 +6,7 @@ export function vencimentoNoMes(mes, dia) {
   return new Date(Date.UTC(y, m - 1, Math.min(dia, new Date(Date.UTC(y, m, 0)).getUTCDate()))).toISOString().slice(0, 10);
 }
 export function normalizarTarefaCalendario(dados = {}) {
+  if (dados.responsavelId != null && (typeof dados.responsavelId !== 'string' || !dados.responsavelId.trim() || dados.responsavelId.length > 200)) throw new Error('Responsável inválido.');
   const titulo = String(dados.titulo || '').trim();
   if (!titulo || titulo.length > 200) throw new Error('Informe um título de até 200 caracteres.');
   const c = dados.config || {};
@@ -24,7 +25,7 @@ export function normalizarTarefaCalendario(dados = {}) {
   if (!Array.isArray(dados.subtarefas || []) || (dados.subtarefas || []).length > 100) throw new Error('Informe até 100 subtarefas.');
   const subtarefas = (dados.subtarefas || []).map(s => ({ id: String(s.id || ''), titulo: String(s.titulo || '').trim() }));
   if (subtarefas.some(s => !/^[\w-]{1,100}$/.test(s.id) || ['__proto__', 'constructor', 'prototype'].includes(s.id) || !s.titulo || s.titulo.length > 200) || new Set(subtarefas.map(s => s.id)).size !== subtarefas.length) throw new Error('Informe subtarefas com identificadores únicos e títulos de até 200 caracteres.');
-  return { titulo, descricao: String(dados.descricao || '').slice(0, 10000), empresasIds: [...new Set(dados.empresasIds || [])], subtarefas, config: { ...base, horarioModo, horaFim, horaInicio: horarioModo === 'FIXO' ? hora : null, horaLimite: horarioModo === 'ATE' ? hora : null, diaVencimento, repetirQuantidade, dataVencimento: c.dataVencimento ? dataAgenda(c.dataVencimento) : null, cor: /^#[0-9a-f]{6}$/i.test(c.cor || '') ? c.cor : null } };
+  return { ...('responsavelId' in dados ? { responsavelId: dados.responsavelId ?? null } : {}), titulo, descricao: String(dados.descricao || '').slice(0, 10000), empresasIds: [...new Set(dados.empresasIds || [])], subtarefas, config: { ...base, horarioModo, horaFim, horaInicio: horarioModo === 'FIXO' ? hora : null, horaLimite: horarioModo === 'ATE' ? hora : null, diaVencimento, repetirQuantidade, dataVencimento: c.dataVencimento ? dataAgenda(c.dataVencimento) : null, cor: /^#[0-9a-f]{6}$/i.test(c.cor || '') ? c.cor : null } };
 }
 function ciclos(c, inicio, fim) {
   const result = [], duration = (+new Date(c.dataFim) - +new Date(c.dataInicio)) / DAY;
@@ -157,4 +158,19 @@ export function aplicarAcaoTarefaCalendario(tarefa, dados, agora = new Date().to
     state.concluidaEm = acao === 'CONCLUIR' && !companyId ? agora : null;
   }
   return { estados: { ...tarefa.estados, [cicloChave]: state } };
+}
+// A historical assignment is not a grant to read the full series. These APIs
+// return the whole model (including history), so an occurrence-only assignment
+// cannot grant series access. Conflicting current overrides fail closed.
+export function responsavelPodeVerSerie(tarefa, userId) {
+  const ultima = [...(tarefa.versoes || [])].sort((a, b) => a.aPartirDe.localeCompare(b.aPartirDe)).at(-1);
+  const modelo = ultima?.dados || tarefa;
+  const boundary = ultima?.aPartirDe || '';
+  if (modelo.config?.recorrencia === 'AVULSA') {
+    const efetivo = { ...modelo, ...tarefa.estados?.[modelo.config.dataInicio]?.alteracoes };
+    return Boolean(userId && efetivo.responsavelId === userId);
+  }
+  return Boolean(userId && modelo.responsavelId === userId
+    && Object.entries(tarefa.estados || {}).filter(([ciclo]) => (ciclo.length === 7 ? `${ciclo}-01` : ciclo) >= boundary)
+      .every(([, estado]) => !Object.hasOwn(estado.alteracoes || {}, 'responsavelId') || estado.alteracoes.responsavelId === userId));
 }

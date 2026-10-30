@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PainelTarefaCalendario } from '../PainelTarefaCalendario';
 import { AtividadeAgenda } from '../AtividadeAgenda';
+import { Modal } from '../../../../components/ui/Modal';
 const item = { id:'t1:2026-10', tarefaId:'t1', unificada:true, tipo:'tarefa', cicloChave:'2026-10', titulo:'Apuração', descricao:'Conferir empresas', dataInicio:'2026-10-15', dataFim:'2026-10-15', dataVencimento:'2026-10-20', alertaVencimento:'AMANHA', horarioModo:'ATE', horaLimite:'18:00', empresas:[{ companyId:'a', nome:'Empresa A', subtarefas:[{id:'mit',titulo:'MIT',concluida:false},{id:'efd',titulo:'EFD',concluida:false}] }, { companyId:'b', nome:'Empresa B', subtarefas:[{id:'mit',titulo:'MIT',concluida:false},{id:'efd',titulo:'EFD',concluida:false}] }] };
 function montar(props = {}) { const api={acaoTarefaCalendario:jest.fn().mockResolvedValue({ok:true})}; const onChanged=jest.fn(); render(<PainelTarefaCalendario item={item} api={api} onChanged={onChanged} onFechar={jest.fn()} onEditar={jest.fn()} {...props}/>); return {api,onChanged}; }
 test('checklists pertencem a cada empresa; conclusão risca somente a empresa correspondente', async () => {
@@ -78,3 +79,49 @@ test('falha mantém empresa pendente e apresenta mensagem humana em vez do códi
  expect(screen.getByRole('alert')).toHaveTextContent('Sem permissão para concluir esta tarefa.');
  expect(screen.queryByText('Todas as empresas concluídas.')).not.toBeInTheDocument();
 });
+
+ test.each(['outra empresa', 'outro modal', 'outra intenção antes de voltar ao refúgio'])('conclusão pendente não rouba foco de %s', async destino => {
+  let terminar;
+  const api={acaoTarefaCalendario:jest.fn(()=>new Promise(resolve=>{terminar=resolve;}))};
+  montar({api,item:{...item,empresas:[{companyId:'a',nome:'Empresa A',subtarefas:[]},{companyId:'b',nome:'Empresa B',subtarefas:[]}]}});
+  fireEvent.click(screen.getByRole('button',{name:'Pendentes'}));
+  const a=screen.getByRole('region',{name:'Empresa A'});
+  const checkbox=within(a).getByRole('checkbox',{name:'Concluir empresa'});
+  checkbox.focus(); fireEvent.click(checkbox);
+  const caixa=a.closest('.modal-caixa');
+  expect(caixa).toHaveFocus();
+  let alvo;
+  if(destino==='outro modal') {
+    render(<Modal titulo="Confirmação independente" aoFechar={jest.fn()}><button>Manter confirmação</button></Modal>);
+    alvo=screen.getByRole('button',{name:'Manter confirmação'});
+    alvo.focus();
+  } else {
+    alvo=within(screen.getByRole('region',{name:'Empresa B'})).getByRole('checkbox',{name:'Concluir empresa'});
+    alvo.focus();
+    if(destino==='outra intenção antes de voltar ao refúgio') {
+      // Voltar à caixa não ressuscita a posse de foco da gravação antiga.
+      caixa.focus();
+      // O Modal pode restaurar este último controle válido ao sair do ocupado.
+    }
+  }
+  await act(async()=>{terminar({ok:true});});
+  expect(screen.queryByRole('region',{name:'Empresa A'})).not.toBeInTheDocument();
+  expect(screen.getByRole('region',{name:'Empresa B'})).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Pendentes'})).not.toHaveFocus();
+  expect(alvo).toHaveFocus();
+  expect(api.acaoTarefaCalendario).toHaveBeenCalledTimes(1);
+ });
+
+ test('falha devolve foco ao checkbox original e preserva a empresa pendente', async () => {
+  let terminar;
+  const api={acaoTarefaCalendario:jest.fn(()=>new Promise(resolve=>{terminar=resolve;}))};
+  montar({api,item:{...item,empresas:[{companyId:'a',nome:'Empresa A',subtarefas:[]}]}});
+  fireEvent.click(screen.getByRole('button',{name:'Pendentes'}));
+  const checkbox=screen.getByRole('checkbox',{name:'Concluir empresa'});
+  checkbox.focus(); fireEvent.click(checkbox);
+  expect(checkbox.closest('.modal-caixa')).toHaveFocus();
+  await act(async()=>{terminar({ok:false,message:'Não foi possível concluir.'});});
+  expect(screen.getByRole('region',{name:'Empresa A'})).toBeInTheDocument();
+  expect(checkbox).toBeEnabled(); expect(checkbox).not.toBeChecked(); expect(checkbox).toHaveFocus();
+  expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível concluir.');
+ });

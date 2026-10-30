@@ -304,3 +304,54 @@ test('mock aceita cadastro e procuração manual sem conversa, preservando ausê
   expect(estado.configuracao.consultasFiscais).toBe(false);
   await expect(api.comercial(`/onboardings/${o.id}/cadastro/consulta`, { cnpj: o.cnpj })).rejects.toThrow('nenhuma consulta CNPJ');
 });
+
+test('C1: recebimento após carteira não oferece upload/envio ou recriação da empresa', () => {
+  const acao = jest.fn();
+  const jornada = { contrato: { id: 'c', aprovadoEm: '2026-10-25T12:00:00Z' }, proposta: { versao: 3 } };
+  render(<PagamentoComercialSimples somenteRecebimento api={{}} estado={{ onboarding: { ...onboarding, status: 'CONVERTIDO' } }} jornada={jornada} acao={acao} executar={executar} />);
+  expect(screen.queryByRole('button', { name: 'Enviar cobrança ao cliente' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Guia ou comprovante (PDF)')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Valor recebido ou cobrado (R$)'), { target: { value: '100,10' } });
+  fireEvent.change(screen.getByLabelText('Referência da cobrança'), { target: { value: 'Pagamento posterior' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }));
+  expect(acao).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Recebimento conferido por mim' }));
+  expect(acao).toHaveBeenCalledWith('/jornada/pagamento', expect.objectContaining({ contratoId: 'c', propostaVersao: 3, valorCentavos: 10010, confirmado: true }));
+});
+
+
+import { FluxoComercial } from '../FluxoComercial';
+
+test('C1: FluxoComercial real mantém formulário pós-carteira e bloqueia campos durante gravação e erro de leitura', async () => {
+  const contrato = { id: 'c', propostaId: 'p', aprovadoEm: '2026-10-25T12:00:00Z', dados: { opcao: { recorrente: true } } };
+  const estado = { onboarding: { ...onboarding, status: 'CONVERTIDO' }, propostas: [], contratos: [contrato],
+    jornada: { projecao: { encerrado: true, atual: 'pagamento', passos: [], contrato, proposta: { id: 'p', versao: 3 },
+      comandosPermitidos: { conferirPagamento: true }, contratacao: { politica: 'COMERCIAL_2026_10_V1', ganha: false } } } };
+  let resolver, falhaLeitura = false;
+  const api = { comercial: jest.fn((path, body) => {
+    if (body) return new Promise(resolve => { resolver = resolve; });
+    if (falhaLeitura && path !== '/recursos') return Promise.reject(Error('Leitura indisponível'));
+    return Promise.resolve(path === '/recursos' ? { recursos: [] } : estado);
+  }) };
+  render(<FluxoComercial api={api} onboardingId={onboarding.id} />);
+  const valor = await screen.findByLabelText('Valor recebido ou cobrado (R$)');
+  const form = screen.getByRole('group', { name: 'Recebimento após entrada na carteira' });
+  expect(form).toHaveClass('lead-actions');
+  expect(form).toContainElement(valor);
+  expect(valor).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Enviar cobrança ao cliente' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Guia ou comprovante (PDF)')).not.toBeInTheDocument();
+  fireEvent.change(valor, { target: { value: '100,10' } });
+  fireEvent.change(screen.getByLabelText('Referência da cobrança'), { target: { value: 'Recebimento posterior' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Recebimento conferido por mim' }));
+  expect(form).toBeDisabled();
+  expect(valor).toBeDisabled();
+  expect(api.comercial).toHaveBeenCalledWith('/onboardings/ficha-a/jornada/pagamento', expect.objectContaining({ confirmado: true, contratoId: 'c', valorCentavos: 10010 }));
+  falhaLeitura = true;
+  await act(async () => resolver({ ok: true }));
+  await waitFor(() => expect(screen.getAllByRole('alert').some(e => e.textContent.includes('Leitura indisponível'))).toBe(true));
+  expect(valor).toBeDisabled();
+  expect(form).toBeDisabled();
+  expect(api.comercial.mock.calls.filter(([, body]) => body)).toHaveLength(1);
+});

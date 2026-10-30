@@ -1,0 +1,761 @@
+{
+  "summary": "Validação local de Solicitações S2a: origem durável no WhatsApp, isolamento, conclusão individual auditada e recuperação de foco; revisões complementares concluídas após pausa solicitada pelo usuário.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementa o recorte S2a aprovado da seção30 e R01/R02/R19–R23: demandas individuais com origem durável e vínculo ao suporte existente, escopo escritório/empresa/conversa/triagem, CAS/idempotência/auditoria e agregados coerentes, compatibilidade legada e conclusão sem reativar IA, enviar mensagens ou alterar outros assuntos. O complemento documental de26/10 não altera regras, código, testes, gates ou limites. Conversão em tarefa, S2b e central S3 permanecem separadas.",
+  "tests": [
+    "Os sete gates originais passaram na mesma fonte: governança72; API11745 testes/681 suítes; web6124/536; portal1586/101; buildsweb/portal; data-postgres. Zero falhas, pendentes ou todo nos resultados das três regressões. São resultados históricos verificados, não testes repetidos pelo complemento.",
+    "Revisão complementar de26/10/2026:12 pareceres aprovados, somados aos3 pareceres concluídos antes da pausa, cobrindo10domínios,backend,dados,UI,UX e sistêmico;15 pareceres sobre o mesmo fingerprint. A chamada006 interrompida não foi contada como aprovação.",
+    "QA de fonte ativa com API fictícia:144/144 verificações de foco e1521/1521 verificações visuais/interativas aprovadas, sem erros ou saídas de rede; capturas desktop/celular inspecionadas pelos revisores. Limites de shell, banco real, leitor de tela e aparelhos físicos explicitados.",
+    "Complemento sem executor, banco ou gates novos; pins/fontes/estado original íntegros antes e depois de cada revisão. Estado original escalated preservado; runtimeReadyForHuman=false."
+  ],
+  "rollback": "Reverter somente o delta S1→S2a dos44 caminhos registrados e este registro, preservando alterações alheias e evidências. Rollback do código não desfaz dados da migração nem autoriza apagar origens, auditoria, histórico ou solicitações. Migração foi ensaiada apenas em PostgreSQL descartável; implantação/reversão produtiva exigem plano próprio e nenhuma foi executada.",
+  "humanDecisions": [
+    "Usuário autorizou aplicar os três novos arquivos e revalidar sem publicar (call31bd5dde90644b56a18a59cdd243fc20); A contém apenas os dois arquivos de foco desse candidato, e o terceiro pertence ao Comercial em outra árvore.",
+    "Após pausa para desligar o computador, usuário solicitou em26/10/2026: volte de onde paramos com o orquestrador. Complemento conclui revisões restantes sem exceder o saldo e sem modificar estado antigo.",
+    "Sem autorização de publicação neste escopo. Não houve PR,push,merge,deploy,atos fiscais reais,consultas pagas,mensagens,alteração de dados reais ou ativação de lembretes. Guru em conferência,eNotas ativo,benefício municipal pendente."
+  ],
+  "evidence": {
+    "type": "pause-resumption-complementary-review",
+    "candidateOnly": false,
+    "originalRun": "2026-10-26T18-13-34-657Z-6d92c871",
+    "originalStatus": "escalated",
+    "originalError": "Codex call 006-altan_domain_reviewer failed (exit 4294967295, timeout false); see C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-26T18-13-34-657Z-6d92c871\\006-altan_domain_reviewer.stderr.log",
+    "originalStatePreserved": true,
+    "originalStateSha256": "daab27e48875f4cbd71382b9ab49f34fef6093009f0d66be3a747f8cddee19d7",
+    "runtimeReadyForHuman": false,
+    "baseline": "d5c0768a19ba80370feb1d1c1765d872fcaad625",
+    "sourceFingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+    "sourceFingerprintExcludesThisRecord": true,
+    "sourcePaths": [
+      "apps/api/prisma/migrations/20261025200000_solicitacoes_s2a_origens/migration.sql",
+      "apps/api/prisma/schema.prisma",
+      "apps/api/scripts/verify-suporte-gpt-postgres.mjs",
+      "apps/api/src/application/assistente/AssistenteService.js",
+      "apps/api/src/application/assistente/__tests__/assistenteService.test.js",
+      "apps/api/src/application/guides/RecalcularGuiaWhatsappService.js",
+      "apps/api/src/application/guides/__tests__/recalcularGuiaTrackingWhatsapp.test.js",
+      "apps/api/src/application/guides/__tests__/recalcularGuiaWhatsapp.test.js",
+      "apps/api/src/application/solicitacoes/SolicitacoesOrigemWhatsappService.js",
+      "apps/api/src/application/solicitacoes/SolicitacoesRepository.js",
+      "apps/api/src/application/solicitacoes/SolicitacoesService.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoes.postgres.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesPolicy.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesProjection.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesS2a.postgres.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesS2aEscopo.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesS2aMigration.postgres.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesS2aOrigem.test.js",
+      "apps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js",
+      "apps/api/src/application/solicitacoes/solicitacoesEscopoWhatsapp.js",
+      "apps/api/src/application/solicitacoes/solicitacoesPolicy.js",
+      "apps/api/src/application/solicitacoes/solicitacoesProjection.js",
+      "apps/api/src/application/whatsapp/AtendimentoPushService.js",
+      "apps/api/src/application/whatsapp/ConsultasClienteWhatsappService.js",
+      "apps/api/src/application/whatsapp/EncaminhamentoSuporteService.js",
+      "apps/api/src/application/whatsapp/MenuWhatsappService.js",
+      "apps/api/src/application/whatsapp/__tests__/atendimentoPush.test.js",
+      "apps/api/src/application/whatsapp/__tests__/atendimentoResponsavelWhatsapp.test.js",
+      "apps/api/src/application/whatsapp/__tests__/atualizacaoGuiaMenu.test.js",
+      "apps/api/src/application/whatsapp/__tests__/encaminhamentoSuporte.test.js",
+      "apps/api/src/application/whatsapp/escopoAtendimentoWhatsapp.js",
+      "apps/api/src/routes/firm/__tests__/solicitacoesRoutes.test.js",
+      "apps/api/src/routes/firm/__tests__/whatsappConversas.test.js",
+      "apps/api/src/routes/firm/index.js",
+      "apps/api/src/routes/firm/solicitacoes.js",
+      "apps/api/src/routes/firm/whatsappAtendimento.js",
+      "apps/api/src/routes/firm/whatsappConversas.js",
+      "apps/web/src/api/mock/mockApi.js",
+      "apps/web/src/api/mock/solicitacoesMock.js",
+      "apps/web/src/api/real/realApi.js",
+      "apps/web/src/dev/comercial.jsx",
+      "apps/web/src/features/whatsapp/components/PendenciasSuporte.jsx",
+      "apps/web/src/features/whatsapp/components/__tests__/leituraAtualizaResumo.test.jsx",
+      "apps/web/src/features/whatsapp/components/__tests__/pendenciasSuporte.test.jsx"
+    ],
+    "complementaryStatePath": ".altan-governance/retomada-revisoes-20261026/execution/state.json",
+    "complementaryStateSha256": "2f7118e4088996c97fffe850567c8b5616235d264e9012b82d661c08a64f6e67",
+    "complementaryManifestPath": ".altan-governance/retomada-revisoes-20261026/manifest.json",
+    "complementaryManifestSha256": "d2017bd53393b571c38a43906e77cfaba9bbf4cbcb94cd8459bd1fa86e04f6eb",
+    "complementaryJournalPath": ".altan-governance/retomada-revisoes-20261026/execution/journal.jsonl",
+    "complementaryJournalSha256": "a647caf58d092ebf7a778b81ed1992cee4d7584fd1280cf9f9bb9387d302204f",
+    "startedAt": "2026-10-26T19:46:03.568Z",
+    "finishedAt": "2026-10-26T20:12:29.269Z",
+    "technicalOutcome": "approved-local-S2a-by-complementary-review",
+    "budget": {
+      "priorHistoricalCalls": 49,
+      "currentRoundMaximum": 18,
+      "originalCallsConsumed": 6,
+      "complementaryCallsConsumed": 12,
+      "totalCurrentRoundCalls": 18,
+      "interruptedCall006Charged": true,
+      "automaticReplay": false,
+      "additionalCorrections": 0
+    },
+    "gates": [
+      {
+        "id": "governance-engine",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-governance-engine.stdout.log",
+            "sha256": "de364e1cfa5ea28a70589752f710639f06932c485900cfbf2c3a92c69b1818e5"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-governance-engine.stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      {
+        "id": "api-regression",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-api-regression.stdout.log",
+            "sha256": "865531f54b3d57543e6c770eaa9b82deb7df9a64373795520a1b39a1282dfd8c"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-api-regression.stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      {
+        "id": "web-regression",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-web-regression.stdout.log",
+            "sha256": "b3c825390c16c10cd67af51e0add2848a7efa8cc2b354e2f98d3e6cbe93d2800"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-web-regression.stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      {
+        "id": "portal-regression",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-portal-regression.stdout.log",
+            "sha256": "fc8914533dd546dd2c9f1a21f88549d10476a66d2ef15f4c622cf3a30d48f778"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-portal-regression.stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      {
+        "id": "web-build",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-web-build.stdout.log",
+            "sha256": "58692d9d677ba59f28df9f1b527db594b8f02c9394b94e49dc609bcd1b04e48e"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-web-build.stderr.log",
+            "sha256": "be165a0c07f7d54fd7e146bc3ceda6c4171599303297c9d62b69acbb69c3865d"
+          }
+        ]
+      },
+      {
+        "id": "portal-build",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-portal-build.stdout.log",
+            "sha256": "10b8a3b0f0ee6a2087f935b70af6337e5b1ae73e6a2519afe4b07061d4c698bf"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-portal-build.stderr.log",
+            "sha256": "769ca5ce68f677b545fc7cc701049b1a70c2588034a567d77385b9931102d03d"
+          }
+        ]
+      },
+      {
+        "id": "data-postgres",
+        "passed": true,
+        "exitCode": 0,
+        "timedOut": false,
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b",
+        "logs": [
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-data-postgres.stdout.log",
+            "sha256": "32996d75ff694bc34b49d42633fd9d30b2895bbea6cc2145acac35b39a678cc2"
+          },
+          {
+            "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/round-0-gate-data-postgres.stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    ],
+    "regressions": [
+      {
+        "directory": ".altan-governance/test-batches/api-0CrcJY",
+        "batches": 28,
+        "totals": {
+          "numPassedTests": 11745,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "numTotalTests": 11745,
+          "numPassedTestSuites": 681,
+          "numFailedTestSuites": 0,
+          "numPendingTestSuites": 0,
+          "numTotalTestSuites": 681
+        },
+        "resultFiles": [
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-1.json",
+            "sha256": "4ffda4ab1557d19f8c9b2ffd95c2ac3771df7e061679495d65dcc22c51e7bd90"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-2.json",
+            "sha256": "2e4b302946a90efb508234720d159b08769264a457b5c3f59f6eeb42530a25b8"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-3.json",
+            "sha256": "ffd322c3b2ca6753ba62b9e102c549cbc0d7e4f85c5c7cf48c23479223961fd3"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-4.json",
+            "sha256": "ec5cbbdf3054ba766b70049490a3a6322084c47228413935c638599d69f4ec1a"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-5.json",
+            "sha256": "364b4eef183db9db2dc83f93fef2caf3062870d9023856d50384732d13d83470"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-6.json",
+            "sha256": "7c713ddca15ac339b3767a4e6c37baa8ac6036bfa8846997897a947184462297"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-7.json",
+            "sha256": "1385d1e5672c6aa5903268aa2d2a397dc1237e9463a6eb3d81d27f425ca5812d"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-8.json",
+            "sha256": "fcba6d11eb465ee26bcbee8c7d7984a4410d33f9d3453c7fe398777bac9e514f"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-9.json",
+            "sha256": "42c31d25282db889d5923b5c5e12344c1f0b32d9a2969f3a10a4ed3cb9a62bc8"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-10.json",
+            "sha256": "56b52baabb0acdf5bb52de16ffd4f8f4cee5cde51e30eab60fdcb7bbf153ae70"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-11.json",
+            "sha256": "409324ba90eafcf83ce1440b4e8b05f44eadc17ac8c88a37c93c94ce3d1d7ce6"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-12.json",
+            "sha256": "30da025203006c3db88839bdf5f830489ce5848b52a4bb5adcfd2bba0a420b4f"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-13.json",
+            "sha256": "232f3e22ffe84459d3569b9c1f08e9efe31bdb3ec3741a7c1c6e749754094ffd"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-14.json",
+            "sha256": "fe9b662cb4b9ed9706a8cfb459879bbeedd575cf158d540a7f68347020b5c77b"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-15.json",
+            "sha256": "bb6096596e997128b8ee6876e0a108478cd499d1ff247a762dbaf6d002d1e70f"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-16.json",
+            "sha256": "348399081c01b0836ed8179b3244ad07fcf2f4b98ff75835806555d500c2e35e"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-17.json",
+            "sha256": "bfb69b991fba75b4098b1f031238c7ec0113d7c44429b8da28fbb4516620c120"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-18.json",
+            "sha256": "4d6c6a68d0647516598f8bc9eb94a7a936c9dea83d2ef0c87f06ed84b3ff7439"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-19.json",
+            "sha256": "053ec155951309998672e2de13afbcaf3625f5557296acf21b03525d57a86686"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-20.json",
+            "sha256": "d0ebe9463ed6a978c5a64dee139b9ebb40223272840e81f4570d19b090db0733"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-21.json",
+            "sha256": "9192003546298d8d68ea3c2c1855e891f604f0180f883aaa715c19f97084862f"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-22.json",
+            "sha256": "f6ecd4687fa723b8dae9983685464c5891d173a1bbba448c451e9d115da3bdca"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-23.json",
+            "sha256": "0e8121461627ffcda81ce824bd03c7ed0d0954af04cf54e97fd720a316a3bfd8"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-24.json",
+            "sha256": "dc859a1c7164553a157acc1116036ab2a46c3371fe73df5f5513ecb2197b049c"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-25.json",
+            "sha256": "5a0ce7b1bdd282ebf15aa92518f2a7f89cf1598df0056bd82d452196a123e26f"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-26.json",
+            "sha256": "ae928175ae87c76d0819604f49b25974e378a72aa4d05130c77fb120e6f62fbb"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-27.json",
+            "sha256": "176fd86d45f08538b7d2aeff8247c4043b038ad05d4c0c211b061ee02f9573ab"
+          },
+          {
+            "path": ".altan-governance/test-batches/api-0CrcJY/batch-28.json",
+            "sha256": "97de8014642d8db0785cdf37484ff666e842616db7d6371f4654c24989cb4941"
+          }
+        ]
+      },
+      {
+        "directory": ".altan-governance/test-batches/web-TPUSGJ",
+        "batches": 22,
+        "totals": {
+          "numPassedTests": 6124,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "numTotalTests": 6124,
+          "numPassedTestSuites": 536,
+          "numFailedTestSuites": 0,
+          "numPendingTestSuites": 0,
+          "numTotalTestSuites": 536
+        },
+        "resultFiles": [
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-1.json",
+            "sha256": "afa1f2cef9f9e79691eaf0c25204fe4067f51595c822cd27154428a3b83e6872"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-2.json",
+            "sha256": "4d25ad7dc728dbd052ccdadd11046ac28f07d44cf9ccc46de0696a6367891fec"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-3.json",
+            "sha256": "f7f8c61a4958396ec11eaec7d90aef01c4e13cfae24e012efb2034d0f15fbf3a"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-4.json",
+            "sha256": "17d8726875550a25941947415389c34e7a69571febd1414f0dba19b2f8d30945"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-5.json",
+            "sha256": "f71b9c9d28257ab85de6f6b0385ca0c306b2c0e8af2d48818cdb791e14fcc4d6"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-6.json",
+            "sha256": "e3462099bd9a7b3a699eac37b14f2eddf90f82867e7ce9db4ba49ca94ba93667"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-7.json",
+            "sha256": "de07308262a1234b1f8cf7ac3289718c80b6bec6e985a38724765fe73b390aa5"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-8.json",
+            "sha256": "ba32994a2bdcd86cacc935cff79dc0682ae09fb98d9e6f641f32b7fe17b99940"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-9.json",
+            "sha256": "c858e0f6a623a857a7d81ed5b7a44412e4c36475fe1e7d2524c92b942e24992a"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-10.json",
+            "sha256": "d4e3af188a6cba3a56e6e380e0031de212b945471b3a85bdce626d85aea31fcd"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-11.json",
+            "sha256": "77f2868f8ad59f456e7b0ae60d871dc78d39cbac4d21d6234597ade8f003ca43"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-12.json",
+            "sha256": "bbe34020f49ad1833f019353e695e14fe8d1b5e706de426dfaebf5d3da46791c"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-13.json",
+            "sha256": "57dba24a7895ec95fec59ee5dc56dcd3d4d293c986cb3be57467fa88caf42f7a"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-14.json",
+            "sha256": "0fb0ed900bb27d9df9a9faa38238bc42886b37a170a70c0a31ed6faf3292d721"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-15.json",
+            "sha256": "e951e43d9159c48809658369c7def7138f160eb1c996d1e945d98253270d3de8"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-16.json",
+            "sha256": "c7cfd01f2cb2ce7eb006684806e98c29ede5667acd6b63e167f07e40f4d23c62"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-17.json",
+            "sha256": "9b3cb75faf2d4283ebeb05e92f7ffed68c2e09115366b539014a2665557a899d"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-18.json",
+            "sha256": "96a382fc1401a8b9b559935b01279362ac68d18b8701d78af98deee24f5ef7d2"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-19.json",
+            "sha256": "4ced2fb3fd08a785ffea500e00a74b5ca3c848ad94163e9fe4e527d68f3e6f95"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-20.json",
+            "sha256": "de7f60b98576ba057328d91eee7737741e13721300ff3daa0d57dcb90aa0ad62"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-21.json",
+            "sha256": "cf4f7723ae772283c129acb312c5451e674b1233ac8e32e9ccd00f1772045099"
+          },
+          {
+            "path": ".altan-governance/test-batches/web-TPUSGJ/batch-22.json",
+            "sha256": "0bca8d9755d55b1fe567657bb7cb2c822d95401a87ce70f28cd80eb1f2c3c326"
+          }
+        ]
+      },
+      {
+        "directory": ".altan-governance/test-batches/portal-cliente-web-obUF75",
+        "batches": 5,
+        "totals": {
+          "numPassedTests": 1586,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTodoTests": 0,
+          "numTotalTests": 1586,
+          "numPassedTestSuites": 101,
+          "numFailedTestSuites": 0,
+          "numPendingTestSuites": 0,
+          "numTotalTestSuites": 101
+        },
+        "resultFiles": [
+          {
+            "path": ".altan-governance/test-batches/portal-cliente-web-obUF75/batch-1.json",
+            "sha256": "d480d6e5e302e3f129bc1ed74f1b167f8e1ae1d66bba1ffb81a8dd9ec2914bdf"
+          },
+          {
+            "path": ".altan-governance/test-batches/portal-cliente-web-obUF75/batch-2.json",
+            "sha256": "f69d71e46c24f228471737fe100bf05caf0b519e33c11349bf8578b0c8ac34b9"
+          },
+          {
+            "path": ".altan-governance/test-batches/portal-cliente-web-obUF75/batch-3.json",
+            "sha256": "65f3622e92770098f6dcefc39be0cc19082ded9f6b3b0767a728c1586c301e1e"
+          },
+          {
+            "path": ".altan-governance/test-batches/portal-cliente-web-obUF75/batch-4.json",
+            "sha256": "037f6cb8a5a97391c0c8e73676b44746281949a8627c4134dc94cc4d832a183a"
+          },
+          {
+            "path": ".altan-governance/test-batches/portal-cliente-web-obUF75/batch-5.json",
+            "sha256": "5f88b97369ab13de5182ccba8db97c9e5777ea64088051197ca88f5d705a171f"
+          }
+        ]
+      }
+    ],
+    "reviews": [
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "accounting"
+        ],
+        "callId": "003-altan_domain_reviewer",
+        "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/003-altan_domain_reviewer.result.json",
+        "sha256": "50564a7c75eb9169c7e03c2b121d9822e8a31b95c5e183d08bad605184d00129",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "api"
+        ],
+        "callId": "004-altan_domain_reviewer",
+        "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/004-altan_domain_reviewer.result.json",
+        "sha256": "323c9f71b1f425c2c9409ad86274e7b9517e9ac03e335534107180a48d0f57af",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "commercial"
+        ],
+        "callId": "005-altan_domain_reviewer",
+        "path": ".altan-governance/runs/2026-10-26T18-13-34-657Z-6d92c871/005-altan_domain_reviewer.result.json",
+        "sha256": "f5dd420c0333c73c9f8527ce88cc0621eb7ea193c914a933c2161336eb91a850",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "communication"
+        ],
+        "callId": "007-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/007-altan_domain_reviewer.result.json",
+        "sha256": "1e6c57185d161c79d2b566611fd3082b05f13b8aedf2e1ab9879d9e75eb8a581",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "data"
+        ],
+        "callId": "008-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/008-altan_domain_reviewer.result.json",
+        "sha256": "cbd922770168efb2b553b4ebd76001a13f49d7389bd5f445ca11fa929f4f0f8d",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "fiscal"
+        ],
+        "callId": "009-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/009-altan_domain_reviewer.result.json",
+        "sha256": "b5e2536812f28699335efbcb4eda125e474a78d3f255dc222a0396d79da09ad0",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "guides"
+        ],
+        "callId": "010-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/010-altan_domain_reviewer.result.json",
+        "sha256": "a8f4e37a9ee350a61dfb5e8bb28b0c0cb5245c7a3dbbf586b7092326fc9b4559",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "operations"
+        ],
+        "callId": "011-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/011-altan_domain_reviewer.result.json",
+        "sha256": "bad849e349a9128e87f6aa47a5b8aca1ecfa6bcb0474153faf168c9a1d9ae3e6",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "portal"
+        ],
+        "callId": "012-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/012-altan_domain_reviewer.result.json",
+        "sha256": "089c7883c322d1206fdf25db9857c4b95499ad56d66bbb74160e2757fde9ebca",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_domain_reviewer",
+        "domains": [
+          "web"
+        ],
+        "callId": "013-altan_domain_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/013-altan_domain_reviewer.result.json",
+        "sha256": "78e0b7d82940ba82c5111686608aee6b13c7073e411d29ae5e146177280b64c1",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_backend_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "data",
+          "fiscal",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "callId": "014-altan_backend_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/014-altan_backend_reviewer.result.json",
+        "sha256": "11c90039339ca5948efe17fa96ad1bf5ce900467812ff969aa95a3590aef3564",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_data_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "data",
+          "fiscal",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "callId": "015-altan_data_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/015-altan_data_reviewer.result.json",
+        "sha256": "98118bf5dcf09462552132a19c54bd03c07ab6dd82842734a54bba0bf02156d4",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_ui_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "data",
+          "fiscal",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "callId": "016-altan_ui_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/016-altan_ui_reviewer.result.json",
+        "sha256": "38057aa043d424d3d71979ba91fc27559f438fe9a97be1bb5fcdd6a087332ae7",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_ux_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "data",
+          "fiscal",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "callId": "017-altan_ux_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/017-altan_ux_reviewer.result.json",
+        "sha256": "8ae1207ecce8f81f05f8cb84cf23c250abe13885e1352123ebb1f93dc289ea68",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      },
+      {
+        "role": "altan_system_reviewer",
+        "domains": [
+          "accounting",
+          "api",
+          "commercial",
+          "communication",
+          "data",
+          "fiscal",
+          "guides",
+          "operations",
+          "portal",
+          "web"
+        ],
+        "callId": "018-altan_system_reviewer",
+        "path": ".altan-governance/retomada-revisoes-20261026/execution/018-altan_system_reviewer.result.json",
+        "sha256": "a942d9beef409b99a1941e273c82aae0dbfe50a0d145e0c3cbaed9d1e416c6bd",
+        "verdict": "approved",
+        "fingerprint": "a5e38d7358101d31cb017cc4ccbe75e748b841db1ffff15c1c6ae19ebb7d015b"
+      }
+    ],
+    "visual": [
+      {
+        "directory": ".altan-governance/candidato-foco-solicitacoes-20261026/qa-fonte-final/run-2026-10-26T18-44-50.516Z",
+        "reportPath": ".altan-governance/candidato-foco-solicitacoes-20261026/qa-fonte-final/run-2026-10-26T18-44-50.516Z/report.json",
+        "reportSha256": "d9d5ef094e5d521104d4b9deabd914fed046f1874931549ef785aa0f748d58dc",
+        "checks": 144,
+        "passed": 144,
+        "errors": 0,
+        "blockedNetwork": 0,
+        "reviewPath": ".altan-governance/candidato-foco-solicitacoes-20261026/qa-fonte-final/run-2026-10-26T18-44-50.516Z/review-visual.txt",
+        "reviewSha256": "72d426a8541cd57bd93cc23edea091bbde95aa35474085dd1734da66b17639c2",
+        "limits": [
+          "Fonte ativa importada diretamente; nenhum alias ou substituição de componente.",
+          "API fictícia; sem validação backend, ACL real, shell ou aplicação do candidato.",
+          "Foco visual exige inspeção nativa das capturas."
+        ]
+      },
+      {
+        "directory": ".altan-governance/visual-solicitacoes-s2a-fonte-final-20261026/run-2026-10-26T18-45-18.000Z",
+        "reportPath": ".altan-governance/visual-solicitacoes-s2a-fonte-final-20261026/run-2026-10-26T18-45-18.000Z/report.json",
+        "reportSha256": "ba4e3420db8b6f6d5811da22c6bd26fbf87aef5317baba3388dfa756ee0abb05",
+        "checks": 1521,
+        "passed": 1521,
+        "errors": 0,
+        "blockedNetwork": 0,
+        "reviewPath": ".altan-governance/visual-solicitacoes-s2a-fonte-final-20261026/run-2026-10-26T18-45-18.000Z/review-visual.txt",
+        "reviewSha256": "ea07b595f9a7c46a12a548433aa932f4709d28f917895cab1d8e64bba365f4a3",
+        "limits": [
+          "API em memória: não comprova ACL, persistência, concorrência ou auditoria reais.",
+          "Sem transporte/IA. Não valida central S3 ou página inteira do suporte.",
+          "720x450 DPR2 é aproximação CSS, não zoom nativo.",
+          "Reabrir não é oferecido pelo componente S2a inspecionado; registrar lacuna, não inventar botão."
+        ]
+      }
+    ],
+    "pending": [
+      "S2b: conversão da solicitação em tarefa com idempotência e vínculo bidirecional, conforme plano separado.",
+      "S3: central/página completa de Solicitações e integração final com Operações.",
+      "Reabrir não é oferecido pelo componenteS2a revisado; não declarar esta ação visual entregue.",
+      "Consolidação dos demais pacotes e validação sistêmica do conjunto,CI da integração futura e autorização humana aplicável; nenhuma publicação."
+    ],
+    "limitations": [
+      "QA visual usa API em memória e componentes isolados; não comprova shell completo,ACL/backend real,leitores de tela ou aparelhos físicos.",
+      "Persistência,concorrência e auditoria possuem ensaios PostgreSQL locais; isso não certifica ambiente produtivo nem transporte real/IA.",
+      "Avisos existentes de tamanho de chunks dos builds não foram suprimidos; os builds concluíram com exit0.",
+      "A execução original permanece escalated devido à interrupção solicitada; este registro descreve aprovação técnica complementar local, sem simular ready_for_human do runtime."
+    ]
+  },
+  "formattingObservation": "git diff --cached --check aponta somente linha vazia no EOF de apps/api/src/application/whatsapp/escopoAtendimentoWhatsapp.js:29. Fonte aprovada preservada; advertência cosmética revisada independentemente por conferencia_comercial_retoma. Não declarar essa checagem aprovada. Checkpoint local normal, sem bypass de hook ou gate."
+}

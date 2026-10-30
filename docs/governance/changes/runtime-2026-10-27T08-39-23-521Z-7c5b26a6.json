@@ -1,0 +1,58 @@
+{
+  "summary": "S2B/A — continuação autorizada em27/10/2026, somente3novos candidatos sobre composição24paths preservada. Registro real da autorização será criado pelo Principal; este pedido não substitui authorization.json nem resources-permit.json. Resposta indicada pelo Principal: call939f792c2881478c8a3be73ee23f47a2 item0, 'Aplicar os cinco arquivos e complementos limitados, sem publicar'; neste checkout abrange somente os3candidatos do recovery.json. Demais2arquivos pertencem aD e não entram emA.\nLeia integralmente pedido anterior C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\s2b-rodada-final-condicional-v3-20261026\\request.txt e referências nele indicadas; regras canônicas C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-regras-operacionais\\REGRAS_OPERACIONAIS.md. FonteA C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024, baseline daf0f0361bab247beb9a5afdc9188303e84a565c. Preservar S2B completo e dois reparos de testes anteriormente aplicados; corrigir somente filtro mock por empresas históricas, acrescentar4regressões sem retirar assertivas e retirar import semuso, como snapshots exatos.\nOrçamento acumulado:41consumidas;42autorizadas antes desta resposta;18novas agora,17extras, total59. maxCorrections0, timeout600000. Não resetar histórico ou abrir autocorreção. Planner/executor/revisores/sistêmico consomem chamadas; gates consomem tempo. Necessidade18=1planner+1executor+11domínios+4técnicos+1sistêmico.\nPLANNER: exatamente24paths abaixo, gates originais e revisores obrigatórios sem redução. EXECUTOR: após restauração governada separada pelo Principal, reaplicar SOMENTE bytes de C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\s2b-mock-continuacao-20261027\\final-sources nos mesmos24caminhos; wrapper exige hashes finais. Nenhuma reimplementação/refatoração/correção adicional. Sem DB/testes pelo executor; wrapper prepara PGloopback após executor e runtime executa gates. Qualquer falha escala. Não editar governança/limites/políticas.\nProvaisoladaV2:18testespositivos, reprodução negativa recebeu conferência manual complementar; helper automático retornou1 por formato insuficiente, não fingir exit0. Ler C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\validacao-isolada-s2b-mock-historico-v2-20261026\\manual-review.json e execution\\isolation-result.json. Não substitui gates completos/revisões. Lint complementar precisa nova conferência; não chamar achado antigo dePASS.\nSem mudança de regra operacional; equivalência mock/backend existente e preservaçãoACL. Sem emitir/cancelar/enviar/consultar pago/publicar/commit. eNotas ativo, Guru conferência, benefício pendente. S3 não está entregue.\nCaminhos:\napps/api/prisma/schema.prisma\napps/api/prisma/migrations/20261026180000_solicitacao_tarefa_vinculo/migration.sql\napps/api/src/application/solicitacoes/SolicitacoesRepository.js\napps/api/src/application/solicitacoes/SolicitacoesService.js\napps/api/src/application/solicitacoes/solicitacoesPolicy.js\napps/api/src/application/solicitacoes/solicitacoesProjection.js\napps/api/src/application/solicitacoes/SolicitacaoTarefaService.js\napps/api/src/application/calendario/TarefasUnificadasService.js\napps/api/src/routes/firm/solicitacoes.js\napps/api/src/routes/firm/tarefasUnificadas.js\npackages/shared/src/tarefasCalendario.js\napps/web/src/api/real/realApi.js\napps/web/src/api/mock/tarefasCalendarioMock.js\napps/web/src/api/mock/solicitacoesMock.js\napps/web/src/api/mock/mockApi.js\napps/api/src/application/solicitacoes/__tests__/solicitacaoTarefa.test.js\napps/api/src/application/solicitacoes/__tests__/solicitacaoTarefa.postgres.test.js\napps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js\napps/api/src/application/calendario/__tests__/tarefasUnificadasService.test.js\napps/api/src/application/calendario/__tests__/tarefasUnificadas.test.js\napps/api/src/routes/firm/__tests__/solicitacoesRoutes.test.js\napps/api/src/routes/firm/__tests__/tarefasUnificadasRoutes.test.js\napps/web/src/api/mock/__tests__/solicitacaoTarefa.test.js\napps/web/src/api/real/__tests__/solicitacaoTarefaContrato.test.js",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-27T08-39-23-521Z-7c5b26a6",
+  "tests": [
+    "governance-engine: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-governance-engine",
+    "api-regression: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-api-regression",
+    "web-regression: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-web-regression",
+    "portal-regression: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-portal-regression",
+    "web-build: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-web-build",
+    "portal-build: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-portal-build",
+    "data-postgres: passed against 53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-27T08-39-23-521Z-7c5b26a6\\round-0-gate-data-postgres"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-27T08-39-23-521Z-7c5b26a6; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "53bfbca02d2d7fd4619c1cdbffbe25022e1e234dbb01a46c60020d639befbdfa",
+  "sourcePaths": [
+    "apps/api/prisma/migrations/20261026180000_solicitacao_tarefa_vinculo/migration.sql",
+    "apps/api/prisma/schema.prisma",
+    "apps/api/src/application/calendario/TarefasUnificadasService.js",
+    "apps/api/src/application/calendario/__tests__/tarefasUnificadas.test.js",
+    "apps/api/src/application/calendario/__tests__/tarefasUnificadasService.test.js",
+    "apps/api/src/application/solicitacoes/SolicitacaoTarefaService.js",
+    "apps/api/src/application/solicitacoes/SolicitacoesRepository.js",
+    "apps/api/src/application/solicitacoes/SolicitacoesService.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacaoTarefa.postgres.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacaoTarefa.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js",
+    "apps/api/src/application/solicitacoes/solicitacoesProjection.js",
+    "apps/api/src/routes/firm/__tests__/solicitacoesRoutes.test.js",
+    "apps/api/src/routes/firm/__tests__/tarefasUnificadasRoutes.test.js",
+    "apps/api/src/routes/firm/solicitacoes.js",
+    "apps/api/src/routes/firm/tarefasUnificadas.js",
+    "apps/web/src/api/mock/__tests__/solicitacaoTarefa.test.js",
+    "apps/web/src/api/mock/mockApi.js",
+    "apps/web/src/api/mock/solicitacoesMock.js",
+    "apps/web/src/api/mock/tarefasCalendarioMock.js",
+    "apps/web/src/api/real/__tests__/solicitacaoTarefaContrato.test.js",
+    "apps/web/src/api/real/realApi.js",
+    "packages/shared/src/tarefasCalendario.js"
+  ],
+  "runId": "2026-10-27T08-39-23-521Z-7c5b26a6"
+}

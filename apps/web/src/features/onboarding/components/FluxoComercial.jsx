@@ -119,11 +119,14 @@ function FluxoDaFicha({ api, onboardingId, conversaId: conversaInformada, janela
   }} />;
   return <section aria-label="Propostas e contratação" className="lead-journey">
     {conversaInformada && <p className="onboarding-help">{nomeDaOportunidade(o)}</p>}
-    {jornada.contratacao?.ganha && !jornada.encerrado && <p role="status">Ganha · contratação confirmada. {servicoAvulso ? 'O serviço avulso segue seu acompanhamento de execução e entrega.' : <>A implantação pode começar; {jornada.contratacao.carteiraPermitida ? 'a entrada na carteira está disponível após conferir o cadastro definitivo.' : 'a entrada na carteira aguarda a conferência do pagamento deste contrato.'}</>}</p>}
+    {jornada.contratacao?.ganha && !jornada.encerrado && <p role="status">Ganha · contratação confirmada. {servicoAvulso ? 'O serviço avulso segue seu acompanhamento de execução e entrega.' : <>Confira os requisitos de execução e implantação; {jornada.contratacao.carteiraPermitida ? 'a entrada na carteira está disponível após conferir o cadastro definitivo.' : 'a entrada na carteira depende da conferência dos requisitos cadastrais e contratuais.'}</>}</p>}
+    {jornada.contratacao?.pagamentoFuturo && !jornada.contratacao?.ganha && <p role="status">Pagamento futuro contratado · recebimento pendente. A carteira não comprova Ganha ou implantação concluída.</p>}
+    {o.status === 'CONVERTIDO' && jornada.comandosPermitidos?.conferirPagamento && !jornada.pagamento && <fieldset className="lead-actions" disabled={ocupado || Boolean(erroLeitura)} aria-label="Recebimento após entrada na carteira"><PagamentoComercialSimples somenteRecebimento api={api} estado={estado} jornada={jornada} ocupado={ocupado || Boolean(erroLeitura)} acao={acao} executar={executar} /></fieldset>}
+    {jornada.contratacao?.execucaoIndependePagamento && !jornada.encerrado && <p className="onboarding-help">Execução depende dos dados e requisitos de cada atividade, sem exigir pagamento ou fim da coleta. Abertura deve ter constituição comprovada antes da implantação.</p>}
     {jornada.contratacao?.externa && <details><summary>Contratação externa registrada</summary><p>{jornada.contratacao.externa.justificativa}</p><p>{jornada.contratacao.externa.evidencia}</p><p>Registrada por {jornada.contratacao.externa.atorId} em {jornada.contratacao.externa.registradaEm}</p></details>}
     {erro && <p role="alert">{erro}</p>}
     {erroLeitura && <p role="alert">Não foi possível atualizar o atendimento. {erroLeitura} <Button variant="secondary" onClick={() => carregar().catch(() => {})}>Atualizar atendimento</Button></p>}
-    {jornada.encerrado ? <><p role="status">{({ CONVERTIDO: 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[o.status] || 'Solicitação encerrada'}. O histórico está preservado.</p>{o.status === "CONCLUIDO_AVULSO" && jornada.abertura && <FichaAvulsa api={api} onboarding={o} somenteLeitura />}</> : <>
+    {jornada.encerrado ? <><p role="status">{({ CONVERTIDO: jornada.contratacao?.politica ? (jornada.contratacao.ganha ? 'Ganha · na carteira' : 'Na carteira · recebimento pendente') : 'Na carteira · implantação em acompanhamento', CONCLUIDO_AVULSO: 'Serviço avulso concluído', DESISTIU: 'Atendimento encerrado por desistência' })[o.status] || 'Solicitação encerrada'}. O histórico está preservado.</p>{o.status === "CONCLUIDO_AVULSO" && jornada.abertura && <FichaAvulsa api={api} onboarding={o} somenteLeitura />}</> : <>
     <ProgressoDoLead jornada={jornada} selecionado={passo} onSelecionar={setPassoEscolhido} ocupado={ocupado} />
     {etapa && passo !== "conclusao" && <header className="lead-current-step">
       <div className="lead-step-meta"><span>{passo === jornada.atual ? "Etapa atual" : etapa.concluido ? "Etapa concluída" : "Etapa selecionada"}</span><small>Passo {jornada.passos.indexOf(etapa) + 1} de {jornada.passos.length}</small></div>
@@ -176,7 +179,7 @@ function FluxoDaFicha({ api, onboardingId, conversaId: conversaInformada, janela
             font: "inherit",
             maxHeight: 360,
             overflow: "auto"
-          }}>{c.texto}</pre><Button variant="secondary" onClick={() => executar(async () => {
+          }}>{c.texto}</pre>{c.dados?.condicaoPagamento && <p>Condição para conferência neste contrato: entrada na carteira antes do recebimento, com vencimento em {c.dados.condicaoPagamento.vencimento}. Não confirma pagamento.</p>}<Button variant="secondary" onClick={() => executar(async () => {
             const url = URL.createObjectURL(await api.baixarContratoComercial(onboardingId, c.id));
             const a = document.createElement("a");
             a.href = url;

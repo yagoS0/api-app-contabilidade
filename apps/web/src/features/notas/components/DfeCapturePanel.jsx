@@ -39,7 +39,7 @@ function horaCurta(value) {
 // Se um dia for preciso, o lugar é a engrenagem de configuração, não a barra de ações.
 const AMBIENTE = "prod";
 
-export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError }) {
+export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError, mostrarStatus = true, somenteStatus = false }) {
   const inBackoff = dfeState?.dfeBackoffUntil && new Date(dfeState.dfeBackoffUntil) > new Date();
   const hasError = Boolean(dfeState?.dfeLastError);
 
@@ -63,23 +63,24 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError }) 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Button onClick={() => onSync({ env: AMBIENTE })} disabled={dfeSyncing || inBackoff || dentroDaJanela} title={tituloBotao}>
-          {dfeSyncing ? "Capturando…" : "🔄 Buscar NF-e"}
-        </Button>
-        {(hasError || inBackoff) && onClearError && (
+        {!somenteStatus && <Button variant="secondary" aria-label={dfeSyncing ? "Capturando NF-e…" : "Buscar NF-e"} aria-busy={Boolean(dfeSyncing)} aria-describedby={dentroDaJanela || inBackoff ? "dfe-bloqueio" : undefined} onClick={() => onSync({ env: AMBIENTE })} disabled={dfeSyncing || inBackoff || dentroDaJanela} title={tituloBotao}>
+          {dfeSyncing ? "Capturando…" : "Buscar"}
+        </Button>}
+        {mostrarStatus && (hasError || inBackoff) && onClearError && (
           <button onClick={onClearError} disabled={dfeSyncing} title="Limpa backoff e último erro"
             style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>
             Limpar erro
           </button>
         )}
-        {hasError && (
+        {mostrarStatus && hasError && (
           <span style={{ color: "var(--danger)", fontSize: "0.78rem" }} title={dfeState.dfeLastError}>
             {dfeState.dfeLastError}
           </span>
         )}
       </div>
-      {dentroDaJanela && (
-        <span style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
+      {mostrarStatus && inBackoff && !dentroDaJanela && <span id="dfe-bloqueio">Busca em espera após erro. Confira o motivo antes de limpar o bloqueio.</span>}
+      {mostrarStatus && dentroDaJanela && (
+        <span id="dfe-bloqueio" style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
           Captura automática ativa: última consulta às {horaCurta(ultimaConsultaEm)}, próxima às{" "}
           {horaCurta(proximaConsultaEm)} (a SEFAZ permite 1 consulta por CNPJ por hora).
         </span>

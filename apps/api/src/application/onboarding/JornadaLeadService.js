@@ -1,7 +1,7 @@
 import { formatarEnderecoAbertura } from '../../../../../packages/shared/src/onboarding/onboardingSpec.js';
 import { createHash } from "node:crypto";
 import { conferenciaPdfVigente, hashApresentacao } from './IdentidadeApresentacao.js';
-import { contratoAptoPagamento, contextoContrato, pagamentoDoContrato, urlCobrancaSegura } from "../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
+import { politicaComercial, pagamentoFuturoDoContrato, contratoAptoPagamento, contextoContrato, pagamentoDoContrato, urlCobrancaSegura } from "../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarServicoComercial, exigirEscopo } from "./ComercialService.js";
 import { exigirGestor } from "./RecursosComerciaisService.js";
@@ -102,7 +102,9 @@ export async function carregarEvidenciasJornada(ficha, db = prisma, leituras = n
       && Number.isInteger(s.referenciaComercial?.fichaVersao)
       && s.referenciaComercial?.apresentacaoChave === hashApresentacao({ ...ficha, versao: s.referenciaComercial.fichaVersao }, diagnostico, fiscalApresentacao)
       && confirmados.has(s.statusEnvio));
-    return { analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
+    const etapasConstituicao = ficha.politicaComercial && ficha.origem === 'ABERTURA'
+      ? await db.onboardingEtapa.findMany({ where: { onboardingId: id, chave: { in: ['viabilidade_registro', 'cnpj_definitivo'] } } }) : [];
+    return { etapasConstituicao, analises, encerrado: encerrado(ficha), dadosPendentes: dadosIniciaisPendentes(ficha), diagnostico,
       diagnosticoPendencias: pendenciasDiagnosticoComercial(diagnostico?.dados, ficha.origem),
       publicaConferida: Boolean(publicaConferencia), publicaConferencia,
       fiscalAlternativa,
@@ -224,14 +226,23 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       || typeof body.referencia !== 'string' || body.referencia.trim().length < 3 || body.referencia.length > 2000
       || typeof body.contratoRevisao !== 'string') throw erro('pagamento_incompleto', 'Confirme o recebimento, valor, referência e revisão do contrato.');
     return db.$transaction(async tx => {
-      const ficha = await exigirEscopo(id, user, tx);
-      const reserva = await tx.onboarding.updateMany({ where: { id, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date() } });
+      let ficha = await exigirEscopo(id, user, tx);
+      const nova = Boolean(politicaComercial(ficha));
+      const reserva = await tx.onboarding.updateMany({ where: { id, status: { notIn: nova ? ["DESISTIU", "CONCLUIDO_AVULSO"] : ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: new Date() } });
       if (!reserva.count) throw erro("atendimento_encerrado", "O atendimento já foi encerrado.");
+      ficha = await exigirEscopo(id, user, tx);
       const c = await tx.contratoComercial.findFirst({ where: { id: body.contratoId, onboardingId: id }, include: { proposta: true } });
       const p = c?.proposta;
       if ((p?.snapshot?.cadastroRevisao || 0) !== (ficha.dados?.cadastroRevisao || 0)) throw erro('contrato_desatualizado', 'O cadastro mudou. Revise a contratação antes de confirmar o recebimento.');
       if (!contratoAptoPagamento(p, c) || p.versao !== body.propostaVersao || !c.aprovadoEm
         || new Date(c.aprovadoEm).toISOString() !== body.contratoRevisao) throw erro('contrato_pendente', 'Confira o contrato aprovado e a revisão da proposta aceita.');
+      if (ficha.status === 'CONVERTIDO') {
+        const conversao = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: 'CONVERTIDO' }, orderBy: { createdAt: 'desc' } });
+        const vinculo = conversao?.dados?.contratacao;
+        if (!ficha.portalClientId || !pagamentoFuturoDoContrato(ficha, p, c)
+          || vinculo?.contratoId !== c.id || vinculo?.propostaId !== p.id
+          || vinculo?.contextoContrato !== contextoContrato(p, c)) throw erro('contrato_alterado', 'Confira o contrato vinculado à entrada antecipada na carteira.');
+      }
       const anterior = await tx.onboardingEvento.findFirst({ where: { onboardingId: id, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: c.id } } });
       if (anterior) {
         if (pagamentoDoContrato(p, c, [anterior]) && (anterior.dados.politica !== 'R35'

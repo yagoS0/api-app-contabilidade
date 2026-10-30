@@ -66,7 +66,7 @@ test('resposta tardia de outra empresa não aparece após troca', async () => {
   await act(async () => resolver({ credenciais: [registro()] }));
   expect(screen.queryByDisplayValue('client-antigo')).not.toBeInTheDocument();
 });
-test('troca de empresa descarta segredo só após confirmação e ignora salvamento tardio', async () => {
+test('troca de empresa exige saída explícita sem confirmar cancelamento da gravação e ignora resposta tardia', async () => {
   const api = criarApi(); let resolver;
   api.createCompanyCredential.mockImplementation(() => new Promise(r => { resolver = r; }));
   const cbs = await abrir(api);
@@ -75,11 +75,21 @@ test('troca de empresa descarta segredo só após confirmação e ignora salvame
   fireEvent.click(cbs.getByRole('button', { name: 'Salvar credenciais CBS' }));
   fireEvent.change(screen.getByLabelText('Empresa'), { target: { value: 'B' } });
   expect(screen.getByRole('dialog')).toBeInTheDocument();
-  fireEvent.click(screen.getByText('Descartar e sair'));
+  const dialogo = within(screen.getByRole('dialog', { name: 'Alterações não salvas', exact: true }));
+  expect(dialogo.getByText(/Gravações já iniciadas podem continuar e não serão canceladas/)).toBeVisible();
+  expect(dialogo.getByText(/Esta confirmação não comprova salvamento nem descarte/)).toBeVisible();
+  expect(screen.getByLabelText('Empresa')).toHaveValue('A');
+  expect(cbs.getByLabelText('Client Secret')).toHaveValue('secret-a');
+  expect(api.createCompanyCredential).toHaveBeenCalledTimes(1);
+  expect(api.createCompanyCredential.mock.calls[0][0]).toBe('A');
+  fireEvent.click(dialogo.getByRole('button', { name: 'Sair sem confirmação', exact: true }));
   const novo = within(await screen.findByRole('region', { name: 'Credenciais CBS' }));
   await act(async () => resolver({ credencial: registro() }));
   expect(novo.getByLabelText('Client ID')).toHaveValue('');
   expect(novo.getByLabelText('Client Secret')).toHaveValue('');
+  expect(screen.getByLabelText('Empresa')).toHaveValue('B');
+  expect(api.createCompanyCredential).toHaveBeenCalledTimes(1);
+  expect(api.updateCompanyCredential).not.toHaveBeenCalled();
 });
 test('erro de listagem bloqueia edição e permite tentar novamente', async () => {
   const api = criarApi(); api.listCompanyCredentials.mockRejectedValueOnce(new Error('segredo que não deve ser exibido'));

@@ -1,0 +1,31 @@
+{
+  "summary": "Reconcilia instruções de Notas N1 e N2A com os incrementos aprovados localmente, preservando histórico.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "commercial",
+    "communication",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Sem regra operacional nova. Documenta a interface e os documentos individuais já implementados; não altera cancelamento, recuperação de datas, gates ou autorização de publicação. Guru em conferência, eNotas intacto e benefício pendente.",
+  "tests": [
+    "Candidato cd911fc805ae6792bb60d14890b467416c851554850b967b5e0ed13097e86859, preimage ecc5f368cef64dd91346b5a75835b04454e05e2e492a6fe3b7081a151da83d21 e hashes das fontes conferidos antes de aplicar.",
+    "Revisão independente documental favorável em notas-n1-n2a-doc-candidate/review-round1.txt; histórico N1 e demais orientações preservados.",
+    "Base funcional 8059844bbbeb91a67b65c1f2f7139de650b1cf8c: runtime95e8fce9 ready_for_human, 19481 testes/verificações e ambos builds aprovados antes desta alteração documental; 244 checks visuais sintéticos e parecer independente favorável.",
+    "A alteração toca apenas instruções e este registro; não repete nem declara uma nova execução da regressão funcional."
+  ],
+  "rollback": "Reverter somente este incremento documental; baseline preservada na pasta local do candidato. Nenhum dado ou schema é alterado.",
+  "humanDecisions": [
+    "Usuário autorizou desenvolvimento completo por etapas, sem publicação nem atos fiscais reais."
+  ],
+  "evidence": {
+    "functionalCommit": "8059844bbbeb91a67b65c1f2f7139de650b1cf8c",
+    "candidateSha256": "cd911fc805ae6792bb60d14890b467416c851554850b967b5e0ed13097e86859",
+    "review": "Revisor independente revisao_sistemica_operacoes_final; review-round1.txt"
+  }
+}

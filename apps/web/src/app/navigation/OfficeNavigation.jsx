@@ -1,5 +1,7 @@
+import { oNavegadorAssumeCliqueNoWorkspace } from "./workspaceLinkClick";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useWorkspaceNavigation } from "./WorkspaceNavigation.shared";
 import { WorkspaceHomeLink } from "./WorkspaceNavigation";
 import { TaskCenterSlot } from "../../features/tasks/TaskCenterPlacement";
 import "./office-navigation.css";
@@ -18,6 +20,7 @@ const OFFICE_AREAS = [
     id: "suporte", label: "Suporte", to: "/suporte",
     links: [
       { label: "Atendimento", to: "/suporte", paths: ["/suporte", "/whatsapp"], exact: true },
+      { label: "Solicitações", to: "/solicitacoes" },
       { label: "Comunicados", to: "/whatsapp/comunicados" },
       { label: "Pendências de e-mail", to: "/guides/pending", paths: ["/guides/pending", "/guides/batch-email"] },
     ],
@@ -49,12 +52,14 @@ function matchesLink(link, pathname) {
 
 // Rendered by the authenticated shell; public forms and login keep their own layout.
 export function OfficeNavigation({ resumoWhatsapp = null, resumoComercial = null }) {
+  const workspace = useWorkspaceNavigation();
   const location = useLocation();
   const navigate = useNavigate();
   const saidaEmCurso = useRef(false);
   async function navegarComRascunho(event) {
+    if (workspace) return;
     const link = event.target.closest('a[href]');
-    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || link.target === '_blank') return;
+    if (!link || oNavegadorAssumeCliqueNoWorkspace(event) || link.target === '_blank') return;
     const destino = new URL(link.href, window.location.href);
     if (destino.origin !== window.location.origin) return;
     const pendencias = [];

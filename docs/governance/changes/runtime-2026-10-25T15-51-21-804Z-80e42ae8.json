@@ -1,0 +1,45 @@
+{
+  "summary": "SOLICITAÇÕES S1 — EXECUÇÃO AUTORIZADA — 25/10/2026\nO usuário reafirmou continuidade de TODOS os pacotes, não só Integrações. Implementar S1 funcional de persistência/serviço, sem expor novas rotas/UI antes S2/S3. Ler integralmente PEDIDO-ETAPA-SOLICITACOES-S1.txt, PRONTIDAO-SOLICITACOES-S1-20261025.txt, PEDIDO-ETAPA-SOLICITACOES.txt, respostas/contratos e regras canônica/local. Operações e NotasN1 estão reunidos em checkpoints locais e validados; não modificar seus arquivos para facilitar testes.\nO planner delimita caminhos completos ANTES do executor: schema/migração ADITIVA, serviço/repositório/política/projeção e testes unitários/PostgreSQL necessários. Um escritor. Sem alterar gates/mapas/config/pacotes/políticas/AGENTS/CLAUDE; caminhos desconhecidos devem ser reportados, não incluir exceção universal. Principal cuida da referência documental.\nEncaminhamentoSuporte é a entidade existente, não criar fila paralela. Backfill empresa somente por relação comprovada com ConversaWhatsapp.portalClientId. Preservar todos os registros/campos/estados legados; mensagem/conversa opcionais apenas para novo fluxo. CompanyNote pertence PortalClient, não confundir com Company fiscal.\nCriar/listar/detalhar/editar/concluir/reabrir individualmente com contexto interno autorizado, empresa/triagem, ator, versão, comando idempotente e eventos atômicos. Solução textual opcional, conclusão registra autor/data. Responsável e criador podem ser a mesma pessoa. Sem prazo/prioridade não inventa atraso/urgência. Agregados completos e predicado único com paginação estável, inclusive acima de100registros. Repetição/chave divergente, concorrência, rollback auditoria, vínculos indevidos e acesso cruzado testados.\nESCRITORES LEGADOS: hoje alteram estado/responsável sem revisão. S1 não muda tráfego e não expõe rotas; não confiar só em revisão nova para proteger registros não adotados. Usar distinção de contrato/adoção e/ou comparação atômica do estado legado observado; nunca converter automaticamente estado RESOLVIDO antigo em conclusão comprovada. Estado legado não pode voltar a parecer aberto aos consumidores existentes. S2 adaptará escritores/produtores antes exposição.\nIdentidade e associação de assunto/mensagem: duas solicitações distintas na mesma conversa são legítimas; deduplicação só por conversa é proibida. Novos vínculos e origem devem preservar documento/mensagem original. Encerrar uma demanda NÃO encerra conversa, outras demandas ou reativa IA. Não dispara mensagem, push novo, consulta, tarefa, emissão ou cobrança.\nHelper local isolado valida Prisma/destino, gera cliente e aplica migração SOMENTE no PostgreSQL descartável após executor. Não usar DB real/env de produção nem escrever scripts de migração produtiva. Não remover verificações existentes. Gates e revisões independentes efetivos; duas rodadas conforme política.\nTESTES adicionais: migration preserva dados legados, backfill comprovado/triagem, mensagem repetida, dois assuntos, replay concorrente, conflito, erro auditoria, responsável inválido, datas impossíveis, conclusão sem texto, reabertura, filtros/total >100, perfil interno permitido versus público/escopo negado, ausência de efeito em conversa/IA/transporte. PG usa somente variáveis do controlador loopback.\nResultado S1 NÃO é pacote de Solicitações completo: S2 consumidores/conversão tarefa e S3 interface/anotações/central/operações vêm em seguida. Não substituir implementação por documento ou esqueletos sem comportamento testado.\nLimites permanentes: sem publicação/push/merge/deploy, dados reais, emissão/cancelamento fiscal, consulta paga ou mensagens. Guru conferência, eNotas ativo/intacto e benefício pendente.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-25T15-51-21-804Z-80e42ae8",
+  "tests": [
+    "governance-engine: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-governance-engine",
+    "api-regression: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-api-regression",
+    "web-regression: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-web-regression",
+    "portal-regression: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-portal-regression",
+    "web-build: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-web-build",
+    "portal-build: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-portal-build",
+    "data-postgres: passed against d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-atualizacao-pacotes-20261024\\.altan-governance\\runs\\2026-10-25T15-51-21-804Z-80e42ae8\\round-1-gate-data-postgres"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-25T15-51-21-804Z-80e42ae8; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "d6be20403a824ddda141635e415c98e364ad2169facc64c6fb8a9bbf57942c1a",
+  "sourcePaths": [
+    "apps/api/prisma/migrations/20261025180000_solicitacoes_base/migration.sql",
+    "apps/api/prisma/schema.prisma",
+    "apps/api/src/application/solicitacoes/SolicitacoesRepository.js",
+    "apps/api/src/application/solicitacoes/SolicitacoesService.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoes.postgres.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesMigration.postgres.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesPolicy.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesProjection.test.js",
+    "apps/api/src/application/solicitacoes/__tests__/solicitacoesService.test.js",
+    "apps/api/src/application/solicitacoes/solicitacoesPolicy.js",
+    "apps/api/src/application/solicitacoes/solicitacoesProjection.js"
+  ],
+  "runId": "2026-10-25T15-51-21-804Z-80e42ae8"
+}

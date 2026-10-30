@@ -119,9 +119,19 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
   const [submittingCompany, setSubmittingCompany] = useState(false);
   // Q17: competência do dashboard (default = mês anterior). Trocar recarrega a lista.
-  const [dashboardCompetencia, setDashboardCompetenciaState] = useState(dashboardPrevMonth());
+  const [dashboardCompetencia, setDashboardCompetenciaState] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const requested = location.pathname === '/companies' && (params.get('competencia') || params.get('operacoesCompetencia'));
+    return /^20\d{2}-(0[1-9]|1[0-2])$/.test(requested || '') ? requested : dashboardPrevMonth();
+  });
+  const leituraEmpresas = useRef(0);
+  const competenciaEmpresas = useRef(dashboardCompetencia);
+  const contextoEmpresas = useRef(null);
+  contextoEmpresas.current = { api, page, companyIdDaUrl };
+  useEffect(() => () => { ++leituraEmpresas.current; }, [api]);
   function changeDashboardCompetencia(comp) {
     const next = comp || dashboardPrevMonth();
+    competenciaEmpresas.current = next;
     setDashboardCompetenciaState(next);
     loadCompanies(next);
   }
@@ -166,14 +176,19 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [companiesLoadError, setCompaniesLoadError] = useState("");
 
   async function loadCompanies(competenciaArg) {
-    if (page === "login") return;
-    const competencia = competenciaArg || dashboardCompetencia;
+    if (contextoEmpresas.current.page === 'login' || api !== contextoEmpresas.current.api) return;
+    const competencia = competenciaArg || competenciaEmpresas.current;
+    if (competencia !== competenciaEmpresas.current) return;
+    const leitura = ++leituraEmpresas.current;
+    const vigente = () => leitura === leituraEmpresas.current && api === contextoEmpresas.current.api
+      && contextoEmpresas.current.page !== 'login' && competencia === competenciaEmpresas.current;
     companiesState.setLoadingCompanies(true);
     setCompaniesLoadStatus("loading");
     setCompaniesLoadError("");
     feedback.clearFeedback();
     try {
       const data = await api.listCompanies(competencia);
+      if (!vigente()) return;
       companiesState.setCompanies(data);
       setCompaniesLoadStatus("ready");
       // ⚠ NUNCA auto-selecionar quando a URL já diz qual empresa é. Este atalho ("nenhuma
@@ -181,15 +196,16 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // `/companies/<X>/apuracao` por link ou refresh começa com o estado vazio, a lista carrega, e
       // o app escolhia a PRIMEIRA empresa da carteira — que não tem nada a ver com a URL. Fora de
       // uma página de empresa o atalho segue valendo, que é para o que ele existe.
-      if (!companyIdDaUrl && !companiesState.selectedCompanyId && data.length > 0) {
+      if (!contextoEmpresas.current.companyIdDaUrl && !companiesState.selectedCompanyId && data.length > 0) {
         companiesState.setSelectedCompanyId(data[0].companyId);
       }
     } catch (err) {
+      if (!vigente()) return;
       setCompaniesLoadStatus("error");
       setCompaniesLoadError(err?.message || "Falha ao carregar empresas");
       feedback.setError(err?.message || "Falha ao carregar empresas");
     } finally {
-      companiesState.setLoadingCompanies(false);
+      if (vigente()) companiesState.setLoadingCompanies(false);
     }
   }
 
@@ -1108,6 +1124,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   function resetWorkspace() {
+    ++leituraEmpresas.current;
+    companiesState.setLoadingCompanies(false);
+    setCompaniesLoadStatus("idle");
+    setCompaniesLoadError("");
     leituraGuias.current += 1;
     cargaInicialGuias.current = false;
     setEnvioGuiasProgresso(null);

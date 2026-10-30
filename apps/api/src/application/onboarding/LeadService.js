@@ -1,3 +1,4 @@
+import { POLITICA_COMERCIAL_C1 } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { exigirDadosOnboarding, respostaEspecial, permiteRespostaEspecial, proximaPerguntaOnboarding } from "@contabilidade/shared/onboarding-dados";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
@@ -136,6 +137,7 @@ export async function iniciarAtendimento({
           origem,
           dados,
           ...extrairColunas(origem, dados),
+          politicaComercial: POLITICA_COMERCIAL_C1,
           origemPreenchimento: atorId ? "ESCRITORIO" : "WHATSAPP",
           criadoPorId: atorId,
           fontesDados: {

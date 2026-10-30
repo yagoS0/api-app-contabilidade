@@ -1,6 +1,6 @@
 import { validarDadosOnboarding, errosConclusaoPessoas } from "@contabilidade/shared/onboarding-dados";
 import { preservarDadosPersistidos, combinarFichaInterna, CAMPOS_INTERNOS, empresaIndividual, pessoaPreenchida } from '@contabilidade/shared/onboarding';
-import { projetarContratacao, contratoAptoPagamento } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
+import { POLITICA_COMERCIAL_C1, politicaComercial, aberturaConstituida, contextoContrato, projetarContratacao, contratoAptoPagamento } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 // ONBOARDING — regras do funil pré-cadastro.
 //
 // ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
@@ -112,6 +112,7 @@ export async function criar({ origem, criadoPorId = null } = {}) {
   return prisma.onboarding.create({
     data: {
       origem: origemNormalizada,
+      politicaComercial: POLITICA_COMERCIAL_C1,
       status: "RASCUNHO",
       origemPreenchimento: "ESCRITORIO",
       dados: origemNormalizada === "PESSOA_FISICA" ? {} : { cartoesPessoas: 2 },
@@ -327,14 +328,14 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     const reserva = await tx.onboarding.updateMany({ where: { id, versao: registro.versao, status: registro.status, portalClientId: null }, data: { versao: registro.versao + 1 } });
     if (reserva.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou durante a conversão. Recarregue antes de continuar.", 409);
     const atual = await conferirContratoDeConversao(tx, id, contexto);
-    if (atual.contrato?.id !== comercial.contrato?.id || atual.proposta?.id !== comercial.proposta?.id) throw new OnboardingError("contrato_alterado", "A contratação mudou. Recarregue antes de converter.", 409);
+    if (atual.contrato?.id !== comercial.contrato?.id || atual.proposta?.id !== comercial.proposta?.id || atual.contextoContrato !== comercial.contextoContrato) throw new OnboardingError("contrato_alterado", "A contratação mudou. Recarregue antes de converter.", 409);
     await conferirFontesDoArquivo(tx, id, arquivo);
     if (arquivo.documentos.length) await tx.companyDocument.createMany({ data: arquivo.documentos.map(d => ({ ...d, portalClientId: criada.portalId })) });
     if (!recuperacao) await salvarContatoDaConversao(tx, registro, payload, criada);
     await tx.onboarding.update({ where: { id }, data: {
       portalClientId: criada.portalId, status: "CONVERTIDO", convertidoEm: new Date(), convertidoPorId: atorId,
       emailJaCadastrado: true,
-      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId, documentos: arquivo.documentos.map(d => d.id), contratacao: comercial.externa ? { ...comercial.externa, portalClientId: criada.portalId, registradaEm: new Date().toISOString() } : { origem: "INTERNA", propostaId: comercial.proposta.id, contratoId: comercial.contrato.id } } } },
+      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId, documentos: arquivo.documentos.map(d => d.id), contratacao: comercial.externa ? { ...comercial.externa, portalClientId: criada.portalId, registradaEm: new Date().toISOString() } : { origem: "INTERNA", propostaId: comercial.proposta.id, contratoId: comercial.contrato.id, contextoContrato: comercial.contextoContrato, politicaComercial: registro.politicaComercial || null } } } },
     } });
     await tx.atendimentoLead.updateMany({ where: { onboardingId: id, encerradoEm: null }, data: { encerradoEm: new Date() } });
     await tx.onboardingEtapa.updateMany({ where: { onboardingId: id, acao: "CONVERSAO" }, data: { concluidaEm: new Date(), concluidaPorId: atorId } });
@@ -387,6 +388,9 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
   const cnpjDigitos = String(
     body?.company?.cnpj ?? body?.cnpj ?? ""
   ).replace(/\D+/g, "");
+  if (politicaComercial(registro) && cnpjDigitos !== registro.cnpj) {
+    throw new OnboardingError('cnpj_divergente', 'O CNPJ da empresa deve corresponder ao cadastro conferido desta contratação.', 409);
+  }
   if (cnpjDigitos.length === 14) {
     const naCarteira = await prisma.portalClient.findUnique({
       where: { cnpj: cnpjDigitos },
@@ -428,6 +432,12 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
 }
 
 async function conferirContratoDeConversao(db, onboardingId, { externa, atorId, registro } = {}) {
+  const politica = politicaComercial(registro);
+  if (politica && registro.origem === "ABERTURA") {
+    const etapas = await db.onboardingEtapa.findMany({ where: { onboardingId } });
+    registro = { ...registro, etapas };
+    if (!aberturaConstituida(registro)) throw new OnboardingError("constituicao_pendente", "Confira o registro e o CNPJ definitivo da abertura antes de adicionar à carteira.", 409);
+  }
   const proposta = await db.propostaComercial.findFirst({ where: { onboardingId, status: "ACEITA", revogadaEm: null }, orderBy: { versao: "desc" } })
     || await db.propostaComercial.findFirst({ where: { onboardingId }, orderBy: { versao: "desc" } });
   if (externa !== undefined) {
@@ -446,8 +456,8 @@ async function conferirContratoDeConversao(db, onboardingId, { externa, atorId, 
   if (!contratoAptoPagamento(proposta, contrato) || contrato.dados?.opcao?.recorrente !== true) throw new OnboardingError("contrato_recorrente_necessario", "Confira o contrato recorrente aprovado da proposta aceita antes de criar a empresa.", 409);
   const pagamento = await db.onboardingEvento.findFirst({ where: { onboardingId, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: contrato.id } } });
   const projecao = projetarContratacao({ onboarding: registro || {}, propostas: [proposta], contratos: [contrato], marcos: pagamento ? [pagamento] : [] });
-  if (!projecao.carteiraPermitida) throw new OnboardingError("pagamento_pendente", "Confira o pagamento deste contrato na jornada antes de criar a empresa.", 409);
-  return { proposta, contrato };
+  if (!projecao.carteiraPermitida) throw new OnboardingError("pagamento_pendente", "Confira o recebimento ou a condição de pagamento futuro do contrato vigente e a revisão cadastral antes de adicionar à carteira.", 409);
+  return { proposta, contrato, onboarding: registro, contextoContrato: contextoContrato(proposta, contrato) };
 }
 
 async function salvarContatoDaConversao(tx, registro, payload, criada) {
@@ -600,7 +610,7 @@ export async function obter(id, user = null) {
   const comercial = await projetarComercial(registro);
   let conversao;
   try {
-    const contrato = await conferirContratoDeConversao(prisma, id);
+    const contrato = await conferirContratoDeConversao(prisma, id, { registro });
     conversao = { contratoConferido: true, semProposta: !contrato.proposta };
   } catch (e) {
     if (!(e instanceof OnboardingError)) throw e;

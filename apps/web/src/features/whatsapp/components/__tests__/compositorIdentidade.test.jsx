@@ -239,3 +239,42 @@ test("ferramentas mostram canal antes das ações e Escape devolve foco preserva
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Mensagem preservada");
   expect(h.responder).not.toHaveBeenCalled();
 });
+
+test("troca de API e sessão não reutiliza texto privado em memória", async () => {
+  let sessao = "primeira";
+  const h = hook(); h.api.getAccessToken = () => sessao;
+  const ui = render(<CompositorConversa conversa={c} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "privado" } });
+  sessao = "segunda"; ui.rerender(<CompositorConversa conversa={c} hook={h} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "segunda edição" } });
+  h.api = { ...h.api }; ui.rerender(<CompositorConversa conversa={c} hook={h} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue(""); expect(h.responder).not.toHaveBeenCalled();
+  await act(async () => {});
+});
+test("PUT de preparação incerto preserva conferência explícita sem transporte", async () => {
+  const h = hook();
+  h.api.getRascunhoWhatsapp = jest.fn(async () => ({ rascunho: null }));
+  h.api.salvarRascunhoWhatsapp = jest.fn().mockRejectedValueOnce(Object.assign(new Error("indisponível"), { status: 503 }))
+    .mockImplementation(async (_, { conteudo, versao }) => ({ rascunho: { conteudo, versao: versao + 1 } }));
+  const ui = render(<CompositorConversa conversa={c} hook={h} />);
+  await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toBeEnabled());
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Preservar mensagem" } });
+  fireEvent.click(screen.getByRole("button", { name: /^(Assumir e responder|Responder)$/i }));
+  await waitFor(() => expect(h.api.salvarRascunhoWhatsapp).toHaveBeenCalledTimes(1));
+  const conferir = await screen.findByRole("button", { name: "Ver versão salva" });
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Preservar mensagem");
+  expect(screen.getByRole("button", { name: /^(Assumir e responder|Responder)$/i })).toBeDisabled();
+  expect(h.responder).not.toHaveBeenCalled(); expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
+  const leiturasAntes = h.api.getRascunhoWhatsapp.mock.calls.length;
+  fireEvent.click(conferir);
+  await screen.findByRole("button", { name: "Conferi: salvar meu texto" });
+  expect(h.api.salvarRascunhoWhatsapp).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Conferi: salvar meu texto" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /^(Assumir e responder|Responder)$/i })).toBeEnabled());
+  expect(h.api.salvarRascunhoWhatsapp).toHaveBeenCalledTimes(2);
+  expect(h.api.getRascunhoWhatsapp).toHaveBeenCalledTimes(leiturasAntes + 1);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Preservar mensagem");
+  expect(h.responder).not.toHaveBeenCalled(); expect(h.api.enviarOrientacaoWhatsapp).not.toHaveBeenCalled();
+  ui.unmount();
+});

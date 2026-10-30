@@ -1,3 +1,4 @@
+import { CompetenciaCarteira, rotuloCompetencia } from '../components/CompetenciaCarteira';
 import { fluxoDaEmpresa } from "@contabilidade/shared/fluxo-carteira";
 import { FluxoCarteiraDetalhe } from "../components/RotinasCarteira";
 import { useWorkspaceNavigation } from '../../../../app/navigation/WorkspaceNavigation.shared.js';
@@ -43,32 +44,6 @@ function hasPendingCompliance(company) {
 // Q17: filtros compactos (campos menores), com competência junto deles.
 const FILTER_LABEL = { display: "grid", gap: 3, fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" };
 const FILTER_CONTROL = { background: "var(--bg-page)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "5px 8px", fontSize: "0.8rem", colorScheme: "dark" };
-// C7: setas de navegação da competência (‹ ›).
-const COMP_ARROW = { ...FILTER_CONTROL, padding: "5px 9px", cursor: "pointer", fontWeight: 700, lineHeight: 1 };
-
-const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
-  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-/** "2026-07" → "julho de 2026". Sem `Date` — a competência é texto, não instante no tempo. */
-function rotuloCompetencia(competencia) {
-  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
-  if (!m) return competencia || "—";
-  const mes = MESES_PT[Number(m[2]) - 1];
-  // Capitaliza só a primeira letra: `text-transform: capitalize` viraria "Julho De 2026".
-  return `${mes.charAt(0).toUpperCase()}${mes.slice(1)} de ${m[1]}`;
-}
-
-// C7: anda N meses na competência YYYY-MM (aceita negativo). Sem dependência de Date pra não
-// escorregar em fuso — é aritmética de ano/mês pura.
-function shiftCompetencia(competencia, delta) {
-  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
-  if (!m) return competencia;
-  const total = Number(m[1]) * 12 + (Number(m[2]) - 1) + delta;
-  const ano = Math.floor(total / 12);
-  const mes = (total % 12) + 1;
-  return `${ano}-${String(mes).padStart(2, "0")}`;
-}
-
 export function CompaniesHomePage({
   user,
   companies,
@@ -83,7 +58,7 @@ export function CompaniesHomePage({
   onOpenCompany,
   globalChartStatus, // Pré-requisito para criar empresa.
   dashboardCompetencia, // Competência do filtro.
-  onChangeCompetencia,
+  onChangeCompetencia: changeCompetencia,
   backgroundJobs, // Processos rodando em segundo plano.
   api, // Visão anual faz sua própria busca.
   message,
@@ -91,7 +66,29 @@ export function CompaniesHomePage({
 }) {
   // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
   const navigation = useWorkspaceNavigation();
-  const [visaoLocal, setVisaoLocal] = useState("calendario");
+  const locationSearch = navigation?.location?.search || '';
+  const restoredSearch = useRef(null);
+  const paramsCompetencia = new URLSearchParams(locationSearch);
+  const requestedCompetencia = paramsCompetencia.get('competencia') || paramsCompetencia.get('operacoesCompetencia');
+  const validRequestedCompetencia = /^20\d{2}-(0[1-9]|1[0-2])$/.test(requestedCompetencia || '') ? requestedCompetencia : null;
+  const restoringCompetencia = Boolean(validRequestedCompetencia && validRequestedCompetencia !== dashboardCompetencia);
+  useEffect(() => {
+    if (restoredSearch.current === locationSearch) return;
+    restoredSearch.current = locationSearch;
+    if (validRequestedCompetencia && validRequestedCompetencia !== dashboardCompetencia) changeCompetencia?.(validRequestedCompetencia);
+  }, [locationSearch, validRequestedCompetencia, dashboardCompetencia, changeCompetencia]);
+  const onChangeCompetencia = next => {
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(next || '')) return;
+    if (navigation?.location?.pathname === '/companies') {
+      const params = new URLSearchParams(locationSearch);
+      params.set('competencia', next);
+      for (const key of ['operacoesEtapa','operacoesLista','operacoesCompetencia']) params.delete(key);
+      restoredSearch.current = `?${params.toString()}`;
+      navigation.navigate(`/companies?${params.toString()}`, {replace:true});
+    }
+    changeCompetencia?.(next);
+  };
+  const [visaoLocal, setVisaoLocal] = useState("operacoes");
   const avisoPlanoGlobal = useRef(null);
   const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
 
@@ -548,8 +545,8 @@ export function CompaniesHomePage({
                 pill={false}
                 size="lg"
                 items={[
-                  { key: "calendario", label: "Calendario" },
                   { key: "operacoes", label: "Operações" },
+                  { key: "calendario", label: "Calendario" },
                   { key: "tabela", label: "Empresas" },
                 ]}
                 active={modoVisao}
@@ -572,37 +569,7 @@ export function CompaniesHomePage({
 
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
-                  <span className="dashboard-home__competencia" hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
-                    <button
-                      type="button"
-                      onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
-                      title="Mês anterior" aria-label="Mês anterior"
-                      style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
-                    >‹</button>
-                    <span style={{ fontSize: "1.05rem", color: "var(--text-muted)", fontWeight: 600, minWidth: 150, textAlign: "center" }}>
-                      {rotuloCompetencia(dashboardCompetencia)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, 1))}
-                      title="Próximo mês" aria-label="Próximo mês"
-                      style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
-                    >›</button>
-                    {/* ⚠ O RECARREGAR MORA AQUI, e não na fileira de atalhos, porque é ESTA lista —
-                        a da competência escrita à esquerda dele — que ele recarrega. Na barra de
-                        botões ele era um "↻" sem contexto no meio de sete rótulos; ao lado do mês,
-                        o que ele atualiza está dito. */}
-                    <Button
-                      variant="secondary"
-                      onClick={onRefreshCompanies}
-                      disabled={loadingCompanies}
-                      title={`Recarregar a lista de ${rotuloCompetencia(dashboardCompetencia)}`}
-                      aria-label={`Recarregar a lista de ${rotuloCompetencia(dashboardCompetencia)}`}
-                      style={{ minHeight: 30, minWidth: 34, padding: "2px 8px", marginLeft: 4, fontSize: "0.9rem" }}
-                    >
-                      <span aria-hidden="true">{loadingCompanies ? "…" : "↻"}</span>
-                    </Button>
-                  </span>
+                  <span hidden={modoVisao !== "tabela"} style={{ display: modoVisao === "tabela" ? "inline-flex" : "none" }}><CompetenciaCarteira competencia={dashboardCompetencia} onChange={onChangeCompetencia} onRefresh={onRefreshCompanies} loading={loadingCompanies} /></span>
                 </div>
               </div>
             </div>
@@ -989,7 +956,7 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            modoVisao === 'operacoes' ? <OperationsPage api={api} onOpenCompany={onOpenCompany} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+            modoVisao === 'operacoes' ? <OperationsPage api={api} onOpenCompany={onOpenCompany} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies || restoringCompetencia} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
               onOpenObligations={onOpenObrigacoes}
               initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}

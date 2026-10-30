@@ -1671,6 +1671,11 @@ th {
   color: var(--text);
 }
 
+.modal-caixa:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
 .modal-topo {
   display: flex;
   align-items: center;
@@ -1746,11 +1751,15 @@ th {
 /* ⚠ Em tela estreita ela vira a tela inteira: uma gaveta de 680px num telefone seria a mesma coisa
    com uma faixa inútil de fundo escuro à esquerda. */
 @media (max-width: 720px) {
-  .modal-fechar { min-width: 44px; min-height: 44px; }
   .modal-caixa--lateral {
     width: 100%;
     max-width: 100%;
   }
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .modal-fechar,
+  .modal-rodape .btn { min-width: 44px; min-height: 44px; }
 }
 
 .modal-rodape {

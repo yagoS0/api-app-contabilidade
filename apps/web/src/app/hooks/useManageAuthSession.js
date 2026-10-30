@@ -8,6 +8,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 // Quando consumimos `page` lemos da URL; quando consumimos `setPage(name)` traduzimos pra URL e chamamos navigate.
 // Isso permite navegação real (deep link, browser back) sem reescrever todos os callsites de setPage de uma vez.
 const PAGE_TO_PATH = {
+  solicitacoes: "/solicitacoes",
   comunicadosWhatsapp: "/whatsapp/comunicados",
   bibliotecaComercial: "/biblioteca",
   configuracoesGerais: "/configuracoes",
@@ -47,6 +48,7 @@ const PAGE_TO_PATH = {
 // forma de essa falha aparecer antes do usuário.
 export function pathToPageName(pathname) {
   pathname = String(pathname || "/").replace(/\/+$/, "") || "/";
+  if (pathname === "/solicitacoes") return "solicitacoes";
   if (pathname === "/configuracoes/cbs-ibs" || pathname === "/configuracoes/cbs-ibs/") return "credenciaisConsumo";
   if (pathname === "/biblioteca" || pathname === "/biblioteca/") return "bibliotecaComercial";
   if (pathname === "/" || pathname === "") return "companies";

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, useLocation, useNavigate } from 'react-router-dom';
 import { createMockApi } from '../api/mock/mockApi';
 import { ComercialPage } from '../features/comercial/ComercialPage';
 import { WhatsappPage } from '../features/whatsapp/pages/renderWhatsappPage';
@@ -17,13 +17,6 @@ import '../features/onboarding/jornada-comercial.css';
 import '../features/whatsapp/whatsapp.css';
 
 const api = createMockApi();
-const pendencias = [{ id: 'suporte-demo-1', conversaId: 'mock-cv-1', estado: 'AGUARDANDO', empresa: 'Empresa de demonstração', motivo: 'Conferir o tomador antes da emissão', resumo: 'Cliente pediu uma nota de R$ 11.000,00 para Gusmed. A equipe precisa conferir o cadastro.' }];
-api.getPendenciasSuporte = async () => ({ ok: true, total: pendencias.filter(p => p.estado !== 'RESOLVIDO').length, itens: pendencias.filter(p => p.estado !== 'RESOLVIDO').map(p => ({ ...p })) });
-api.resolverSuporte = async id => { const p = pendencias.find(p => p.conversaId === id); if (p) p.estado = 'RESOLVIDO'; return { ok: true }; };
-api.excluirDemandaSuporte = async (conversaId, pendenciaId) => { const p = pendencias.find(p => p.id === pendenciaId && p.conversaId === conversaId); if (!p) throw new Error('Demanda não encontrada.'); p.estado = 'RESOLVIDO'; return { ok: true }; };
-const assumirOriginal = api.assumirConversaWhatsapp, devolverOriginal = api.devolverConversaWhatsapp;
-api.assumirConversaWhatsapp = async id => { const r = await assumirOriginal(id); const p = pendencias.find(p => p.conversaId === id); if (p) p.estado = 'EM_ATENDIMENTO'; return r; };
-api.devolverConversaWhatsapp = async id => { const r = await devolverOriginal(id); await api.resolverSuporte(id); return r; };
 api.getConsumoIaDetalhado = async () => ({ ok: true, consumo: { custoUsd: .009, reservaUsd: .05, itens: [{ area: 'Suporte', custoUsd: .0045, chamadas: 2 }, { area: 'Comercial', custoUsd: .0045, chamadas: 1 }] } });
 export function Previa() {
   const resumoSuporte = useResumoWhatsapp({ api, area: 'suporte' });
@@ -44,6 +37,10 @@ export function Previa() {
 }
 if (import.meta.env.DEV && import.meta.env.VITE_API_MODE === 'mock') {
   // Esta entrada isolada não autentica nem chama uma API real.
-  if (location.pathname === '/comercial-dev.html') history.replaceState({}, '', '/comercial');
-  createRoot(document.getElementById('root')).render(<BrowserRouter><WorkspaceNavigationProvider><Previa /></WorkspaceNavigationProvider></BrowserRouter>);
+  const router = createBrowserRouter([
+    { path: '*', element: <WorkspaceNavigationProvider><Previa /></WorkspaceNavigationProvider> },
+  ]);
+  // Mantém a normalização anterior (inclusive a remoção de query/hash nessa entrada).
+  if (location.pathname === '/comercial-dev.html') router.navigate('/comercial', { replace: true });
+  createRoot(document.getElementById('root')).render(<RouterProvider router={router} />);
 }

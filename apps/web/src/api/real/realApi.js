@@ -1,3 +1,4 @@
+import { lerRespostaDocumento } from "../../features/notas/lib/documentoIndividual";
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 import { importarNotasEmLotes } from "./importarNotasEmLotes";
 import { createBackgroundTaskClient } from "./backgroundTasks";
@@ -829,12 +830,13 @@ export function createRealApi() {
     },
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
+    getOperationEvidence: competencia => request('/firm/operacoes/evidencias?competencia=' + encodeURIComponent(competencia)),
     getOperationConsultas: competencia => request('/firm/operacoes/consultas?competencia=' + encodeURIComponent(competencia)),
     getOperationManualInss: competencia => request(`/firm/operacoes/inss-manual?competencia=${encodeURIComponent(competencia)}`),
     getCompanyManualInss: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`),
     saveCompanyManualInss: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`, { method: 'PUT', body: JSON.stringify(input) }),
     getCompanyOperation: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`),
-    getOperationAlerts: () => request('/firm/operacoes/avisos'),
+    getOperationAlerts: (offset = 0) => request('/firm/operacoes/avisos' + (offset ? '?offset=' + encodeURIComponent(offset) : '')),
     executeCompanyOperation: (companyId, competencia, expectedRevision) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/executar`, { method: 'POST', body: JSON.stringify({ expectedRevision, confirmCompetencia: competencia }) }),
     saveCompanyOperation: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`, { method: 'PUT', body: JSON.stringify(input) }),
     saveCompanyAutomation: (companyId, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`, { method: 'PUT', body: JSON.stringify(input) }),
@@ -883,6 +885,12 @@ export function createRealApi() {
     },
     async listarTarefasCalendario({ inicio, fim, companyId } = {}) {
       return request(`/firm/agenda/unificada?${new URLSearchParams({ inicio, fim, ...(companyId ? { companyId } : {}) })}`);
+    },
+    async obterTarefaCalendario(id, { cicloChave } = {}) {
+      return request('/firm/agenda/unificada/' + encodeURIComponent(id) + (cicloChave ? '?' + new URLSearchParams({ cicloChave }) : ''));
+    },
+    async converterSolicitacaoEmTarefa(id, body) {
+      return request('/firm/solicitacoes/' + encodeURIComponent(id) + '/tarefa', { method: 'POST', body: JSON.stringify(body) });
     },
     async criarTarefaCalendario(dados) {
       return request('/firm/agenda/unificada', { method: 'POST', body: JSON.stringify(dados) });
@@ -1171,7 +1179,15 @@ export function createRealApi() {
     async getResumoWhatsapp({ area = '' } = {}) {
       return request(`/firm/whatsapp/resumo${area ? `?area=${encodeURIComponent(area)}` : ''}`);
     },
-    async getPendenciasSuporte(companyId) { return request('/firm/whatsapp/suporte/pendencias' + (companyId ? '?companyId=' + encodeURIComponent(companyId) : '')); },
+    async listarSolicitacoes(filtros = {}) { return request('/firm/solicitacoes?' + new URLSearchParams(Object.entries(filtros).filter(([, value]) => value !== undefined).map(([key, value]) => [key, value === null ? 'null' : String(value)]))); },
+    async detalharSolicitacao(id) { return request('/firm/solicitacoes/' + encodeURIComponent(id)); },
+    async criarSolicitacao(body) { return request('/firm/solicitacoes', { method: 'POST', body: JSON.stringify(body) }); },
+    async editarSolicitacao(id, body) { return request('/firm/solicitacoes/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(body) }); },
+    async assumirSolicitacao(id, body) { return request('/firm/solicitacoes/' + encodeURIComponent(id) + '/assumir', { method: 'POST', body: JSON.stringify(body) }); },
+    async concluirSolicitacao(id, body) { return request('/firm/solicitacoes/' + encodeURIComponent(id) + '/concluir', { method: 'POST', body: JSON.stringify(body) }); },
+    async reabrirSolicitacao(id, body) { return request('/firm/solicitacoes/' + encodeURIComponent(id) + '/reabrir', { method: 'POST', body: JSON.stringify(body) }); },
+    async adotarSolicitacao(id, body) { return request('/firm/solicitacoes/' + encodeURIComponent(id) + '/adotar', { method: 'POST', body: JSON.stringify(body) }); },
+    async getPendenciasSuporte(companyId, { cursor = null } = {}) { const qs = new URLSearchParams(); if (companyId) qs.set('companyId', companyId); if (cursor) qs.set('cursor', cursor); return request('/firm/whatsapp/suporte/pendencias?' + qs); },
     async listarEmissoesInterrompidasWhatsapp(conversaId) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/emissoes-interrompidas`); },
     async conferirEmissaoInterrompidaWhatsapp(conversaId, acaoId, { versao, motivo }) {
       return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/emissoes-interrompidas/${encodeURIComponent(acaoId)}/conferir`, { method: 'POST', body: JSON.stringify({ versao, motivo }) });
@@ -2544,6 +2560,16 @@ export function createRealApi() {
       });
       if (!res.ok) { const erro = await res.json().catch(() => ({})); throw new Error(erro.message || "Não foi possível baixar as notas."); }
       return { blob: await res.blob(), geradas: Number(res.headers.get("X-Notas-Geradas")), falhas: Number(res.headers.get("X-Notas-Falhas")) };
+    },
+    async getAcoesNota(companyId, notaId, { signal } = {}) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/notas/${encodeURIComponent(notaId)}/acoes`, { signal });
+    },
+    async fetchDocumentoNota(companyId, notaId, formato, { signal } = {}) {
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(`${getApiBaseUrl()}/firm/companies/${encodeURIComponent(companyId)}/notas/${encodeURIComponent(notaId)}/documento?formato=${encodeURIComponent(formato)}`, {
+        method: 'GET', signal, cache: 'no-store', headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
+      return lerRespostaDocumento(res, formato);
     },
     async fetchDanfseBlob(companyId, notaId) {
       const baseUrl = getApiBaseUrl();

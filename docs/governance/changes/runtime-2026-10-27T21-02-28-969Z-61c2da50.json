@@ -1,0 +1,22 @@
+{
+  "summary": "CONTINUAÇÃO FINAL DO MENU GESTÃO — MESMO ESCOPO E ORÇAMENTO\nUser autorizou corrigir menu e continuar etapas sem publicar/atos reais. Ler AGENTS/regras operacionais/design aplicáveis. Único path funcional: apps/web/src/app/navigation/office-navigation.css. Nenhuma mudança de lógica, permissões, callbacks, tokens globais ou badges.\nHistórico:742255fe2calls usagefailure;19696558consumiu6calls, gatesround0aprovados(web6194). Revisores inconclusivos por QA ausente. Primeira correção(round1) não alterouCSS e repetiu testes; Principal interrompeu para alimentar QA demonstrada. Registros originais preservados com principal-interruption.json. Total8/40. Esta continuação dispõe32calls e ZERO correções automáticas adicionais: executor aplica segunda e última correção global. Não alterar estados/limites/gates.\nRoot preservou CSSb866/candidato/evidências e restaurou bytesbaselineb079 de source snapshot, HEADaef66704ad52c7577089f8936d3717bf436173d7 limpo.\nEXECUTOR: aplicar candidato exato .altan-governance/menu-gestao-20261027/candidato-final/office-navigation.css SHA cfac4f7302e8032775585d85eb679af0cd05c8d0167495436ab33cda946ac3d2. Inclui ajuste responsivo anterior mais44px de Fechar mobile/coarse e Tarefas coarse. Ler targets44.diff e README. Preservar todo resto. Não executarNode/testes/browser nem editarharness. Principal executa QA através de barreira ambiental antes dos gates.\nEVIDÊNCIA REAL ANTERIOR: .altan-governance/visual-menu-gestao-20261027/run-2026-10-27T20-54-01.926Z/results.json FAILED958checks22falhas exclusivamente targets44,88PNG,0pageerrors,fonteinalterada.16WSloopbackVite bloqueados. Runner corrigido com noop /@vite/client já usado no harnessH, sem liberarWS/rede ou filtrarerros. Parecer em PARECER-VISUAL-AMOSTRAL-FAILED.txt na pasta QA.\nREVISÃO ATUAL: Principal escreverá .altan-governance/menu-gestao-20261027/correcao-visual-final/qa-release.json com caminho do resultado NOVO e parecer visual independente. Revisores devem ler esses resultados/parecer e imagens, não usarFAILED comoaprovação nem afirmarQAausentesemconsultarregistroatual. QA usa componentes reais BrowserRouter com shellCSS/TaskCenter,4larguras320/390/600/1366, toque/mouse,zero/extremo,layout/foco/cliques/teclado/scroll. Não equivale a conteúdoGestão/autenticação/rascunhosAppfull, cuja lógica não mudou. Preservar controles e testes existentes para esses contratos; não impor redesignG15 nesteincrementoCSS.\nGates originais completos e revisões independentes obrigatórios; sem publicação, migração real, mensagens, emissão/cancelamento ou custos externos. Guruconferência/eNotasativo/benefíciopendente. Nenhum impacto operacional.\n",
+  "risk": "medium",
+  "domains": [
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-27T21-02-28-969Z-61c2da50",
+  "tests": [
+    "governance-engine: passed against 9bcad36131d3c60dfb974b9ab85795e25094bae74560df31e84d3ab1364528ac; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T21-02-28-969Z-61c2da50\\round-0-gate-governance-engine",
+    "web-regression: passed against 9bcad36131d3c60dfb974b9ab85795e25094bae74560df31e84d3ab1364528ac; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T21-02-28-969Z-61c2da50\\round-0-gate-web-regression",
+    "web-build: passed against 9bcad36131d3c60dfb974b9ab85795e25094bae74560df31e84d3ab1364528ac; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-27T21-02-28-969Z-61c2da50\\round-0-gate-web-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-27T21-02-28-969Z-61c2da50; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "9bcad36131d3c60dfb974b9ab85795e25094bae74560df31e84d3ab1364528ac",
+  "sourcePaths": [
+    "apps/web/src/app/navigation/office-navigation.css"
+  ],
+  "runId": "2026-10-27T21-02-28-969Z-61c2da50"
+}

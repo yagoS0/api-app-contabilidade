@@ -37,7 +37,7 @@ import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/se
 import { entriesToCsv, preflightExportacao } from "../../application/accounting/exportacao/exportacaoIndividual.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
-  CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes, checklistDosLancamentos,
+  CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes, checklistDosLancamentos, projetarChecklistFechamento,
 } from "../../application/accounting/fechamentoBlockers.js";
 import { INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 // Mesma definição de faturamento que a apuração usa — importada de propósito, não copiada.
@@ -1636,12 +1636,8 @@ export function createAccountingEntriesRouter({ log }) {
         : null;
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
       const correcaoEstado = await estadoCorrecaoTx(prisma, portalClientId, competencia);
-      const automatico = correcaoEstado.correcao ? {} : validation.checklistAutomatico;
-      const flagsEfetivas = correcaoEstado.correcao ? correcaoEstado.conferencia.campos : circular;
-      const pendentes = checklistPendentes(flagsEfetivas, automatico);
-      const checklist = Object.fromEntries(
-        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, flagsEfetivas?.[c.campo] === true || Boolean(automatico[chave])]),
-      );
+      const { checklist, checklistAutomatico: automatico, checklistPendentes: pendentes, conferenciaDesatualizada } =
+        projetarChecklistFechamento(circular, validation.checklistAutomatico, correcaoEstado);
       return res.json({
         ok: true,
         competencia,
@@ -1655,7 +1651,7 @@ export function createAccountingEntriesRouter({ log }) {
         checklistAutomatico: automatico,
         versao: correcaoEstado.versao,
         correcao: correcaoEstado.correcao,
-        conferenciaDesatualizada: Boolean(correcaoEstado.correcao && !correcaoEstado.conferencia.valida),
+        conferenciaDesatualizada,
         checklistPendentes: pendentes,
         podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,

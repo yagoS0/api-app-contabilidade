@@ -3,6 +3,17 @@ import { FluxoCarteiraDetalhe } from '../RotinasCarteira';
 
 const tarefa = (chave, titulo, patch = {}) => ({ chave, titulo, concluida: false, automatica: false, dados: {}, versao: 2, hash: 'base', aguardando: [], ...patch });
 const transmitir = () => tarefa('transmitir', 'Transmitir apuração');
+test('detalhe revalida INSS manual e mantém tarefas fiscais e contábeis persistidas', async () => {
+ const fluxo={competencia:'2026-10',regime:'Simples',status:{chave:'concluido'},tarefas:[tarefa('contabilizar','Contabilizar',{etapa:'contabilizacao',concluida:true,automatica:true})]};
+ const company={companyId:'a',razao:'Alfa',guideCompliance:{competencia:'2026-10',inss:{required:true,state:'enviada',guideId:'g'}}};
+ const api={getFluxoCarteira:jest.fn(async()=>({fluxo,lancamentos:[]})),getOperationManualInss:jest.fn(async()=>({items:[{companyId:'a',competencia:'2026-10',status:'DOCUMENT_REVIEW'}]})),salvarFluxoTarefa:jest.fn()};
+ render(<FluxoCarteiraDetalhe api={api} company={company} competencia="2026-10" onFechar={()=>{}}/>);
+ expect(await screen.findByText('Guias',{selector:'strong'})).toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Conferir Guias'})).toHaveAttribute('href','/companies/a/guides?competencia=2026-10');
+ expect(screen.getByRole('checkbox')).toBeChecked();
+ expect(api.salvarFluxoTarefa).not.toHaveBeenCalled();
+ expect(fluxo.status.chave).toBe('concluido');
+});
 function montar({ chave = 'transmitir', tarefas = [tarefa('apurar', 'Apurar e conferir', { concluida: true }), transmitir(), tarefa('contabilizar', 'Contabilizar e fechar o mês', { automatica: true })], lancamentos = [], salvar } = {}) {
   let detalhe = { fluxo: { regime: 'Simples', status: { rotulo: 'Obrigações' }, tarefas }, lancamentos };
   const api = {

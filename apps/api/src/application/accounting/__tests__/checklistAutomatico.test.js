@@ -1,5 +1,14 @@
-import { checklistDosLancamentos, checklistPendentes } from '../fechamentoBlockers';
+import { checklistDosLancamentos, checklistPendentes, projetarChecklistFechamento } from '../fechamentoBlockers';
 const lancamento = (tipo, extra = {}) => ({ id: tipo, tipo, competencia: '2026-01', lines: [{ conta: '100', tipo: 'D', valor: 100 }, { conta: '200', tipo: 'C', valor: 100 }], ...extra });
+test('composição preserva manual, automático e invalidação por correção', () => {
+  const auto = checklistDosLancamentos([lancamento('BAIXA')]);
+  expect(projetarChecklistFechamento({ receitasOk: true }, auto).checklist).toEqual({ folhaProlabore: false, despesas: false, receitas: true, provisoes: false, pagamentos: true });
+  const corrigindo = projetarChecklistFechamento({ receitasOk: true }, auto, { correcao: { id: 'c' }, conferencia: { valida: false, campos: {} } });
+  expect(corrigindo.checklistAutomatico).toEqual({});
+  expect(corrigindo.checklistPendentes).toHaveLength(5);
+  expect(corrigindo.conferenciaDesatualizada).toBe(true);
+  expect(projetarChecklistFechamento(null).checklistPendentes).toHaveLength(5);
+});
 test('marca somente categorias com lançamentos válidos, não consultas nem placeholders', () => {
   expect(checklistDosLancamentos([]).receitas).toBe(false);
   expect(checklistDosLancamentos([lancamento('RECEITA')])).toMatchObject({ receitas: true, pagamentos: false });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prepararContatoComercial, salvarRetornoComercial } from '../../application/onboarding/ContatoComercialService.js';
+import { prepararContatoComercial, vincularContatoComercial, salvarRetornoComercial } from '../../application/onboarding/ContatoComercialService.js';
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarRecursosComerciais, exigirGestor } from "../../application/onboarding/RecursosComerciaisService.js";
@@ -130,6 +130,7 @@ export function createFluxoComercialRouter({
     return { retorno, versao: ficha.versao, conversaId: atendimento?.conversaId || null };
   }));
   router.post('/onboardings/:id/contato', wrap(async req => prepararContatoComercial({ onboardingId: req.params.id, body: req.body, user: req.auth.user, visiveis: await escopo(req), db })));
+  router.post('/onboardings/:id/contato/vincular', wrap(async req => vincularContatoComercial({ onboardingId: req.params.id, body: req.body, user: req.auth.user, visiveis: await escopo(req), db })));
   router.post('/onboardings/:id/retorno', wrap(async req => salvarRetornoComercial({ onboardingId: req.params.id, body: req.body, user: req.auth.user, db })));
   router.post("/recursos/iniciar", wrap(async req => ({
     recursos: await recursos.iniciarBiblioteca(req.auth.user)

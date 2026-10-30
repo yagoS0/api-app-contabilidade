@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { WhatsappPage } from "../renderWhatsappPage";
@@ -42,7 +43,7 @@ test("empresa mostra Julia atual uma vez e consulta legado sem misturar mensagen
 
 test("central cancela exclusão, depois move só o histórico confirmado e restaura a mesma mensagem", async () => {
   const { api } = fixture();
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   await screen.findByTestId("conversa-atual");
   expect(screen.queryByTestId("conversa-antigo")).not.toBeInTheDocument();
   const filtro = screen.getByLabelText("Filtro das conversas");
@@ -81,7 +82,7 @@ test("exclusão pendente não duplica; falha preserva fio e permite tentar novam
   const { api } = fixture();
   let rejeitar;
   api.excluirConversaWhatsapp.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejeitar = reject; }));
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-atual"));
   await screen.findByTestId("fio");
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto preservado" } });
@@ -111,7 +112,7 @@ test("falha ao restaurar mantém o histórico na lixeira e oferece nova tentativ
   const { api, dados } = fixture();
   dados[1].excluidaEm = "2026-09-07T12:00:00Z";
   api.restaurarConversaWhatsapp.mockRejectedValueOnce(new Error("Não foi possível restaurar agora."));
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   await screen.findByTestId("conversa-atual");
   fireEvent.change(screen.getByLabelText("Filtro das conversas"), { target: { value: "lixeira" } });
   fireEvent.click(await screen.findByTestId("conversa-antigo"));
@@ -124,3 +125,5 @@ test("falha ao restaurar mantém o histórico na lixeira e oferece nova tentativ
   await waitFor(() => expect(screen.queryByTestId("fio")).not.toBeInTheDocument());
   expect(api.restaurarConversaWhatsapp).toHaveBeenCalledTimes(2);
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

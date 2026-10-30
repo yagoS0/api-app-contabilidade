@@ -379,7 +379,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi, podeE
         ? ordenarPerguntas(auditoriaVisivel.perguntas).map((p) => <BlocoDaPergunta key={`${escopo}:${p.id}`} pergunta={p} onAbrirNota={abrirNota} />)
         : null}
 
-      {detalhe && <NotaDetailModal {...detalhe} onClose={fecharNota} onAbrirNota={abrirNota} />}
+      {detalhe && <NotaDetailModal companyId={companyId} api={api} {...detalhe} onClose={fecharNota} onAbrirNota={abrirNota} />}
       {auditoriaVisivel ? (
         <div style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
           {auditoriaVisivel.totalNotas} nota(s) emitida(s) na competência ({auditoriaVisivel.totalNotasApuradas} entram na apuração).

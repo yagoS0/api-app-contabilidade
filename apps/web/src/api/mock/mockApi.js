@@ -1,8 +1,9 @@
+import { criarSolicitacoesMock } from './solicitacoesMock';
 const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
 import { validarContratacaoExterna } from '../../../../../packages/shared/src/onboarding/contratacaoComercial.js';
 import { criarDocumentosEmpresaMock } from './companyDocumentsMock';
-import { exigirDadosOnboarding, validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
+import { validarDadosOnboarding } from "@contabilidade/shared/onboarding-dados";
 import { combinarColetaPublica, combinarFichaInterna, preservarDadosPersistidos } from "@contabilidade/shared/onboarding";
 import {withComposicaoParcelamentoMock} from './composicaoParcelamentoMock';
 import { validarCronogramaParcelamento } from '../../../../../packages/shared/src/accounting/cronogramaParcelamento.js';
@@ -1676,7 +1677,9 @@ const CHAVE_ONBOARDING_MOCK = "mock:onboardings:v1";
 try {
   const salvo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CHAVE_ONBOARDING_MOCK) || "null") : null;
   if (salvo && Array.isArray(salvo.fichas) && Array.isArray(salvo.etapas)) {
-    for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id, ficha);
+    // Apenas o legado sintético sem campo recebe a revisão inicial. Revisões presentes não são reescritas.
+    for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id,
+      ficha && !Object.prototype.hasOwnProperty.call(ficha, 'versao') ? { ...ficha, versao: 0 } : ficha);
     for (const [id, etapas] of salvo.etapas) mockOnboardingEtapas.set(id, etapas);
     mockOnboardingSeq = Number.isSafeInteger(salvo.seq) ? salvo.seq : 0;
     for (const [chave, mapa] of Object.entries(mockContratacao)) {
@@ -3863,14 +3866,18 @@ let varreduraAutomaticaDoMock = {
   ultimoErro: null,
 };
 
-const prepararConversaComercialMock = (o, body) => {
+const prepararConversaComercialMock = (o, body, { neutro = body.vinculoNeutro === true } = {}) => {
       const telefone = String(body.telefone).replace(/\D/g, '');
       const anterior = mockConversasWhatsapp.find(c => c.telefoneE164 === telefone && c.canalId === 'comercial');
-      if (anterior && anterior.solicitacaoComercial?.onboardingId !== o.id) throw new Error('Este contato já tem uma oportunidade ativa.');
-      if (anterior) return anterior.id;
+      if (anterior?.excluidaEm || anterior?.escopoVerificado === false && anterior.portalClientId) throw new Error('Confira o histórico e o escopo deste contato.');
+      if (anterior?.solicitacaoComercial && anterior.solicitacaoComercial.onboardingId !== o.id) throw new Error('Este contato já tem uma oportunidade ativa.');
+      if (anterior) {
+        anterior.solicitacaoComercial ||= { id: `caso-${o.id}`, onboardingId: o.id };
+        return anterior.id;
+      }
       const id = `comercial-${o.id}`;
       mockConversasWhatsapp.push({ id, canalId: 'comercial', telefoneE164: telefone, nomePerfilProvedor: body.nome, portalClientId: null, empresa: null,
-        atendidaPor: 'mock-user-1', atendidaDesde: new Date().toISOString(), updatedAt: new Date().toISOString(), mensagens: [],
+        atendidaPor: neutro ? null : 'mock-user-1', atendidaDesde: neutro ? null : new Date().toISOString(), updatedAt: new Date().toISOString(), mensagens: [],
         solicitacaoComercial: { id: `caso-${o.id}`, onboardingId: o.id }, janela: { situacao: 'NUNCA_ABERTA', instante: null }, escopoVerificado: false });
       return id;
     };
@@ -3880,6 +3887,8 @@ const prepararConversaComercialMock = (o, body) => {
 import { criarGuruConferenciaMock } from './guruConferenciaMock';
 
 export function createMockApi({ delay = defaultDelay } = {}) {
+  const estadoTarefasSolicitacoes = { tarefas: [], vinculos: new Map() };
+  const calendarioSolicitacoes = criarMockTarefasCalendario(mockCompanies, estadoTarefasSolicitacoes);
   for (const o of mockOnboardings.values()) {
     if (o.contatoComercialMock) prepararConversaComercialMock(o, o.contatoComercialMock);
   }
@@ -3919,8 +3928,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     ...criarApuracaoConsumoMock(),
     ...createPendenciasManuaisMock(),
     ...comercialMock,
+    ...criarSolicitacoesMock(mockCompanies, estadoTarefasSolicitacoes, calendarioSolicitacoes),
     ...criarMockAgenda(mockObrigacoes, mockRegras, data => Boolean(MOCK_FERIADOS[data])),
-    ...criarMockTarefasCalendario(mockCompanies),
+    ...calendarioSolicitacoes,
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
@@ -5450,6 +5460,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay();
       return mockCarregarRotinas(mockCompanies);
     },
+    async getOperationEvidence() {
+      throw new Error('Conferência de revisões indisponível na demonstração. Nenhuma aprovação simulada.');
+    },
     async getOperationConsultas(competencia) {
       await delay(60);
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw Object.assign(new Error('Competência inválida.'), { status: 422 });
@@ -5464,7 +5477,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         return { companyId: c.companyId, ...applicability, storedEnabledKeys, enabledKeys: storedEnabledKeys.filter(key => applicability.applicableKeys.includes(key)) };
       }) };
     },
-    async getOperationAlerts() {
+    async getOperationAlerts(offset = 0) {
       // Same synthetic evidence as listPendenciasPosFechamento, including recognition.
       const items = mockCompanies.filter(company => !pendenciasConferidas.has(`${company.companyId}|mock-pend-1`)).map(company => ({
         id: `${company.companyId}:mock-pend-1`, portalClientId: company.companyId,
@@ -5472,7 +5485,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         situacaoPeriodo: 'FECHADA', createdAt: '2026-08-14T11:20:00.000Z',
         observacoes: 'NFS-e 33045572255387580000103000000013006 chegou para 2026-05 (competência já fechada).',
       }));
-      return { ok: true, total: items.length, items };
+      return { ok: true, total: items.length, items: items.slice(offset, offset + 200), offset };
     },
     async saveRotinas(input = {}) {
       await delay(400);
@@ -8548,6 +8561,29 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       arquivos.push(["RELATORIO.txt", `PREVIEW: arquivos de exemplo, sem validade fiscal.\n${geradas} arquivos; ${falhas.length} indisponíveis.\n${falhas.join("\n")}`]);
       return { blob: zipDeExemplo(arquivos), geradas, falhas: falhas.length };
     },
+    async getAcoesNota(companyId, notaId) {
+      const n = notaMockDaEmpresa(companyId, notaId);
+      if (!n) throw Object.assign(new Error('Nota não encontrada nesta empresa.'), { status: 404 });
+      const XML = n.type === 'NFSE' && n.__temXml ? { estado: 'disponivel', motivo: null } : { estado: 'indisponivel', motivo: 'XML completo indisponível nesta demonstração.' };
+      const PDF = n.type === 'NFSE' && n.__temXml && n.chaveAcesso ? { estado: 'disponivel', motivo: null } : { estado: 'indisponivel', motivo: 'Documento auxiliar indisponível nesta demonstração.' };
+      return { revisao: `mock-${companyId}-${notaId}`, XML, PDF, cancelar: { estado: 'indisponivel', motivo: 'Cancelamento fiscal indisponível nesta etapa.' } };
+    },
+    async fetchDocumentoNota(companyId, notaId, formato) {
+      const n = notaMockDaEmpresa(companyId, notaId);
+      if (!n) throw Object.assign(new Error('Nota não encontrada nesta empresa.'), { status: 404 });
+      if (!['PDF', 'XML'].includes(formato) || n.type !== 'NFSE' || !n.__temXml || (formato === 'PDF' && !n.chaveAcesso)) throw new Error('Documento indisponível nesta demonstração.');
+      let conteudo = mockXmlDaNota(n);
+      if (formato === 'PDF') {
+        // Valid, synthetic one-page PDF with byte offsets; never a fiscal document.
+        const stream = 'BT /F1 16 Tf 50 750 Td (DEMONSTRACAO - SEM VALOR FISCAL) Tj ET';
+        const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+        conteudo = '%PDF-1.4\n'; const offsets = [0];
+        objects.forEach((obj, i) => { offsets.push(conteudo.length); conteudo += `${i + 1} 0 obj\n${obj}\nendobj\n`; });
+        const start = conteudo.length;
+        conteudo += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+      }
+      return { blob: new Blob([conteudo], { type: formato === 'PDF' ? 'application/pdf' : 'application/xml' }), nome: `demonstracao-${String(n.id).replace(/[^\w.-]/g, '_')}.${formato.toLowerCase()}` };
+    },
     async fetchDanfseBlob(_companyId, notaId) {
       await delay(120);
       const n = notaMockDaEmpresa(_companyId, notaId);
@@ -11158,6 +11194,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay(180);
       const registro = {
         id: `mock-onb-${++mockOnboardingSeq}`,
+        versao: 0,
         origem: String(origem || "").toUpperCase(),
         status: "RASCUNHO",
         origemPreenchimento: "ESCRITORIO",
@@ -11217,6 +11254,10 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         throw Object.assign(new Error("Este onboarding já virou empresa."), { code: "onboarding_convertido", status: 409 });
       }
 
+      // Mesmo CAS da API real: ausência/tipo incorreto/revisão antiga não grava nem avança a ficha.
+      if (!Number.isInteger(atual.versao) || !Number.isInteger(patch.versao) || patch.versao !== atual.versao) {
+        throw Object.assign(new Error("A ficha mudou. Recarregue antes de salvar para preservar o atendimento."), { code: "formulario_alterado", status: 409 });
+      }
       const validacao = validarDadosOnboarding(patch.origem || atual.origem,
         patch.origem && patch.origem !== atual.origem ? {} : patch.dados === undefined ? atual.dados : combinarFichaInterna(atual.dados, patch.dados),
         { coleta: true, finalizar: patch.finalizar === true && atual.status === 'RASCUNHO' });
@@ -11246,6 +11287,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         mockMaterializarEtapas(atual.id, atual.origem);
       }
 
+      atual.versao += 1;
       atual.updatedAt = new Date().toISOString();
       mockOnboardings.set(atual.id, atual);
       persistirOnboardingsMock();

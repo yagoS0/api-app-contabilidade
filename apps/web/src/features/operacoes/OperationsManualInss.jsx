@@ -1,10 +1,11 @@
 import { previousInssMonth } from './OperationsManualInss.shared.js';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import { dataCivilBR } from '../../lib/dataCivil';
+import { useWorkspaceEditor } from '../../app/navigation/WorkspaceNavigation.shared';
 
 const statuses = { DOCUMENT_ABSENT: 'Ausência de guia confirmada nesta competência', NOT_APPLICABLE: 'Não se aplica nesta competência', PENDING_DOCUMENT: 'Aguardando guia manual', DOCUMENT_REVIEW: 'Guia precisa de revisão', DOCUMENT_AVAILABLE: 'Guia disponível' };
 const empty = { applicable: null, responsible: '', dueDate: null, note: '', reason: '' };
@@ -19,7 +20,17 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
   const [busy, setBusy] = useState(false), [preview, setPreview] = useState(false), [reloadRequired, setReloadRequired] = useState(false);
   const generation = useRef(0), pending = useRef(null), saving = useRef(false);
   const dirty = Boolean(data && JSON.stringify(form) !== JSON.stringify(data.state));
-  useEdicaoPendente(dirty || Boolean(pending.current));
+  // This consumer knows its command state; do not infer it from every legacy boolean.
+  const context = useMemo(() => ({ api, companyId, competencia }), [api, companyId, competencia]);
+  const workspace = useWorkspaceEditor({
+    context,
+    get kind() { return pending.current ? 'operation' : 'legacy'; },
+    get dirty() { return dirty || Boolean(pending.current); },
+    // Pending commands must be resolved in this editor with the existing requestId.
+    // No save/discard callback claims to cancel or acknowledge an in-flight command.
+  });
+  // Preserve the older confirmation contract when mounted outside the workspace.
+  useEdicaoPendente(workspace ? false : dirty || Boolean(pending.current));
   useEffect(() => { onPendingChange?.(dirty || busy); return () => onPendingChange?.(false); }, [dirty, busy, onPendingChange]);
   const reasonRequired = form.applicable !== null || (data?.state.applicable != null && form.applicable !== data.state.applicable);
   const locked = !canEdit || busy || preview || reloadRequired || Boolean(pending.current);

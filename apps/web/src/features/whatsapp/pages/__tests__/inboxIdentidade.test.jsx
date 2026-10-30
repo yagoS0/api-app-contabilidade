@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
 
@@ -7,7 +8,7 @@ const oculto = { ...cliente, id: "cv-raphael", interlocutorId: "raphael", contat
 test("busca consulta servidor além da página carregada e não busca todos os onboardings", async () => {
   const api = { whatsappContratoV2: true, listarOnboardings: jest.fn(),
     listarConversasWhatsapp: jest.fn(async (_f, opts) => ({ versaoContrato: 2, buscaConfigurada: true, conversas: opts.q ? [oculto] : [cliente], temMais: !opts.q, proximoCursor: opts.q ? null : "segunda" })) };
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   await screen.findByTestId("conversa-cv-liz");
   expect(screen.getByTestId("conversa-cv-liz")).toHaveTextContent("Cliente");
   expect(screen.getByTestId("conversa-cv-liz")).not.toHaveTextContent("Nova abertura");
@@ -23,7 +24,7 @@ test("agrupamento usa interlocutor e mantém rascunho quando segmento operaciona
   const api = { whatsappContratoV2: true,
     listarConversasWhatsapp: jest.fn(async () => ({ versaoContrato: 2, buscaConfigurada: true, conversas: [atual], temMais: false })),
     getMensagensWhatsapp: jest.fn(async id => ({ conversa: { ...atual, id }, mensagens: [], notasInternas: [], temMais: false })) };
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-cv-liz"));
   const campo = await screen.findByLabelText("Responder ao cliente");
   fireEvent.change(campo, { target: { value: "Resposta da Liz" } });
@@ -40,7 +41,7 @@ test("cliente pode iniciar outro caso e recolher detalhes preserva o formulário
   getMensagensWhatsapp: jest.fn(async () => ({ conversa: { ...cliente, solicitacaoComercial: null }, mensagens: [], notasInternas: [] })),
   comercial: jest.fn(async (_path, body) => { if (body) throw new Error("Interrupção simulada antes da criação"); return { atendimento: null, anteriores: [] }; })
  };
- render(<WhatsappPage api={api} />);
+ render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
  fireEvent.click(await screen.findByTestId("conversa-cv-liz"));
  await screen.findByTestId("fio"); expect(api.comercial).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
@@ -54,3 +55,5 @@ test("cliente pode iniciar outro caso e recolher detalhes preserva o formulário
  await screen.findByText(/Interrupção simulada antes da criação/);
  expect(api.comercial).toHaveBeenCalledWith("/conversas/cv-liz/iniciar", { origem: "ABERTURA" });
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

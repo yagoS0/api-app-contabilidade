@@ -5,6 +5,8 @@ import { prisma } from '../../infrastructure/db/prisma.js';
 import { projetarFluxoCarteira, ROTINAS_CARTEIRA, ETAPAS_CARTEIRA, chaveDaObrigacaoCarteira } from '../../../../../packages/shared/src/accounting/fluxoCarteira.js';
 import { computeGuideComplianceMap } from '../guides/guideCompliance.js';
 import { dataCivil } from '../obrigacoes/ObrigacoesService.js';
+import { CHECKLIST_SELECT, checklistDosLancamentos, projetarChecklistFechamento } from '../accounting/fechamentoBlockers.js';
+import { chaveCorrecaoContabil, snapshotMesDosDados, estadoCorrecaoDosDados } from '../accounting/CorrecaoMesContabilService.js';
 
 const hash = x => createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const erro = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -22,21 +24,27 @@ export async function contextosCarteira(companies, competencia, db = prisma) {
   if (!ids.length) return new Map();
   const inicio = new Date(`${competencia}-01T00:00:00Z`), fim = new Date(inicio);
   fim.setUTCMonth(fim.getUTCMonth() + 1);
-  const [registros, snapshots, circulares, entries, notas, ocorrencias] = await Promise.all([
+  const [registros, snapshots, circulares, entries, notas, ocorrencias, correcoes] = await Promise.all([
     db.carteiraTarefa.findMany({ where: { portalClientId: { in: ids }, competencia } }),
     db.apuracaoSnapshot.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, estado: true, idempotencyKey: true, transmitidoEm: true, numeroDeclaracao: true } }),
-    db.companyMonthlyCircular.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { portalClientId: true, fechadoContabilEm: true, pgdasNumeroDeclaracao: true } }),
-    db.accountingEntry.findMany({ where: { portalClientId: { in: ids }, competencia, tipo: { not: 'PARCELA' } }, include: { lines: true }, orderBy: { id: 'asc' } }),
+    db.companyMonthlyCircular.findMany({ where: { portalClientId: { in: ids }, competencia }, select: { id: true, portalClientId: true, fechadoContabilEm: true, fechadoContabilPor: true, pgdasNumeroDeclaracao: true, ...CHECKLIST_SELECT } }),
+    // A revisão da correção inclui PARCELA; totais/importação continuam excluindo esse rastreio.
+    db.accountingEntry.findMany({ where: { portalClientId: { in: ids }, competencia }, include: { lines: true }, orderBy: { id: 'asc' } }),
     db.portalInvoice.findMany({ where: { clientId: { in: ids }, competencia: { gte: inicio, lt: fim }, papel: 'EMIT' }, select: { clientId: true, id: true, total: true, statusEfetivo: true, updatedAt: true }, orderBy: { id: 'asc' } }),
     db.ocorrenciaObrigacao.findMany({ where: { competenciaRef: competencia, canceladaEm: null, foraDaRecorrencia: false, obrigacao: { portalClientId: { in: ids }, ativa: true, tipo: 'OBRIGACAO', OR: [{ verificador: null }, { NOT: { verificador: { startsWith: 'CARTEIRA_' } } }] } }, include: { obrigacao: { select: { portalClientId: true, nome: true, verificador: true } } }, orderBy: { id: 'asc' } }),
+    db.appSetting.findMany({ where: { key: { in: ids.map(id => chaveCorrecaoContabil(id, competencia)) } }, select: { key: true, value: true } }),
   ]);
+  const correcoesPorChave = new Map(correcoes.map(row => [row.key, row.value]));
   return new Map(companies.map(company => {
     const id = company.companyId;
     const regs = registros.filter(r => r.portalClientId === id);
     const snapshot = snapshots.find(s => s.portalClientId === id);
     const circular = circulares.find(c => c.portalClientId === id);
     const fechadoEm = circular?.fechadoContabilEm || null;
-    const es = entries.filter(e => e.portalClientId === id);
+    const todos = entries.filter(e => e.portalClientId === id);
+    const es = todos.filter(e => e.tipo !== 'PARCELA');
+    const estado = estadoCorrecaoDosDados(snapshotMesDosDados(circular, todos), correcoesPorChave.get(chaveCorrecaoContabil(id, competencia)), id, competencia);
+    const conferenciaContabil = { ...projetarChecklistFechamento(circular, checklistDosLancamentos(es), estado), versao: estado.versao };
     const registroImportacao = regs.find(r => r.chave === 'importar')?.dados?.importacoes || {};
     const lancamentos = es.map(e => ({ id: e.id, historico: e.historico || 'Sem histórico', status: e.status, hash: hashLancamento(e, fechadoEm), importavel: Boolean(fechadoEm) && e.status === 'EXPORTADO' }));
     for (const e of lancamentos) e.importado = e.importavel && registroImportacao[e.id]?.hash === e.hash;
@@ -46,6 +54,7 @@ export async function contextosCarteira(companies, competencia, db = prisma) {
     const obrigacoes = ocorrencias.filter(o => o.obrigacao.portalClientId === id).map(o => ({ id: o.id, nome: o.obrigacao.nome, verificador: o.obrigacao.verificador, concluida: o.obrigacao.verificador === 'MES_FECHADO' ? Boolean(fechadoEm) : o.obrigacao.verificador === 'APURACAO_TRANSMITIDA' ? ['transmitida','confirmada'].includes(snapshot?.estado) : o.status === 'CONCLUIDA', vencimento: o.dataVencimento, updatedAt: o.updatedAt }));
     const contexto = { competencia, registros: regs, obrigacoes, hashes: { apurar: hash(base), transmitir: hash(base), obrigacoes: hash([base, obrigacoes]), importar: hash(lancamentos) }, lancamentos: { total: es.length, importados: lancamentos.filter(e => e.importado).length } };
     const atual = { ...company, apuracao: { ...company.apuracao, estado: snapshot?.estado || null, numeroDeclaracao: snapshot?.numeroDeclaracao || null, numeroDeclaracaoRfb: circular?.pgdasNumeroDeclaracao || null, transmitidoEm: snapshot?.transmitidoEm || null }, fechamentoContabil: { fechado: Boolean(fechadoEm), fechadoEm } };
+    contexto.conferenciaContabil = conferenciaContabil;
     return [id, { fluxo: projetarFluxoCarteira(atual, contexto), lancamentos, contexto, company: atual }];
   }));
 }

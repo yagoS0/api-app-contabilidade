@@ -3,6 +3,7 @@ import { Button } from "../../../components/ui/Button";
 import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { camposDoContrato, sugerirVariaveisContrato, problemasDosCamposContrato } from "../../../../../../packages/shared/src/onboarding/contratoComercialCampos.js";
 import { motivoIncompatibilidadeContrato } from "../../../../../../packages/shared/src/onboarding/modeloContrato.js";
+import { POLITICA_COMERCIAL_C1, condicaoFuturaValida } from "../../../../../../packages/shared/src/onboarding/contratacaoComercial.js";
 
 export function FormularioContrato(props) {
   return <FormularioDaProposta key={JSON.stringify([props.onboarding.id, props.proposta.id, props.proposta.versao, props.proposta.opcaoAceita])} {...props} />;
@@ -10,6 +11,8 @@ export function FormularioContrato(props) {
 
 function FormularioDaProposta({ onboarding, proposta, recursos, onGerar }) {
   const [edicoes, setEdicoes] = useState({}), [validou, setValidou] = useState(false);
+  const [futuro, setFuturo] = useState(false), [vencimento, setVencimento] = useState(''), [clausula, setClausula] = useState('');
+  const condicaoPagamento = { versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true, vencimento, clausula };
   const raiz = useRef(null);
   const opcao = proposta.snapshot?.opcoes?.find(o => o.chave === proposta.opcaoAceita);
   const compativeis = recursos.filter(modelo => !motivoIncompatibilidadeContrato({ modelo, onboarding, opcao })).sort((a, b) => b.versao - a.versao);
@@ -36,7 +39,8 @@ function FormularioDaProposta({ onboarding, proposta, recursos, onGerar }) {
     setValidou(true);
     if (!modelo?.aprovadoEm) return;
     if (problemas.length) { raiz.current?.querySelector('[name="' + problemas[0].chave + '"]')?.focus(); return; }
-    onGerar({ modeloId: modelo.id, variaveis: Object.fromEntries(campos.filter(c => !c.protegido).map(c => [c.chave, valores[c.chave]])) });
+    if (futuro && !condicaoFuturaValida(condicaoPagamento, previa)) return;
+    onGerar({ modeloId: modelo.id, variaveis: Object.fromEntries(campos.filter(c => !c.protegido).map(c => [c.chave, valores[c.chave]])), ...(futuro ? { condicaoPagamento } : {}) });
   }
   const previa = modelo?.texto.replace(/\{\{([a-zA-Z][a-zA-Z0-9_]*)\}\}/g, (_, k) => {
     const valor = valores[k];
@@ -58,6 +62,13 @@ function FormularioDaProposta({ onboarding, proposta, recursos, onGerar }) {
       {!!protegidos.length && <section aria-label="Dados vinculados à proposta"><strong>Da proposta aceita e do cadastro</strong><dl>{protegidos.map(c => <div key={c.chave}><dt>{c.rotulo}</dt><dd style={{ whiteSpace: "pre-wrap" }}>{valores[c.chave] === 0 ? "0" : valores[c.chave] || "Não informado na proposta"}</dd></div>)}</dl></section>}
       {validou && problemas.length > 0 && <p role="alert">Complete os campos indicados antes de gerar o contrato.{problemas.some(p => campos.find(c => c.chave === p.chave)?.protegido) && " Há dados ausentes na proposta aceita; confira a proposta antes de continuar."}</p>}
       <details><summary>Conferir prévia do texto</summary><pre>{previa}</pre></details>
+      {onboarding.politicaComercial === POLITICA_COMERCIAL_C1 && opcao?.recorrente === true && <fieldset className="commercial-future-payment"><legend>Pagamento futuro no contrato</legend>
+        <label className="commercial-future-payment-option"><input type="checkbox" checked={futuro} onChange={e => setFuturo(e.target.checked)} /><span>O contrato permite entrada na carteira antes do recebimento</span></label>
+        {futuro && <><div className="commercial-future-payment-fields"><label>Vencimento contratado<input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} /></label>
+          <label>Trecho exato da cláusula no contrato<textarea rows={3} maxLength={2000} value={clausula} onChange={e => setClausula(e.target.value)} /></label></div>
+          <p>A condição será congelada nesta versão e dependerá da conferência do contrato. Não confirma recebimento.</p>
+          {validou && !condicaoFuturaValida(condicaoPagamento, previa) && <p role="alert">Informe uma data válida e copie o trecho da cláusula existente na prévia.</p>}</>}
+      </fieldset>}
     </>}
     <Button disabled={!modelo?.aprovadoEm} onClick={gerar}>Gerar contrato da opção aceita</Button>
   </section>;

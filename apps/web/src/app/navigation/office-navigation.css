@@ -137,18 +137,71 @@
 .office-navigation__destinations--popover .office-navigation__destination[aria-current] { background: var(--bg-subtle); }
 
 @media (max-width: 600px) {
-  .office-navigation { padding-inline: 12px; }
-  .office-navigation__top { gap: var(--space-2); }
+  .office-navigation { padding-inline: var(--space-3); }
+  .office-navigation__top {
+    position: relative;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .office-navigation__top > .workspace-home { min-width: 44px; }
   .office-navigation__top > .workspace-home svg { width: 32px; height: auto; }
-  .office-navigation .office-navigation__area { padding-inline: 6px; font-size: 12px; }
-  .office-navigation .office-navigation__trigger { padding-inline: 6px; font-size: 12px; }
-  .office-navigation__areas { gap: 0; }
-  .office-navigation__badge { margin-left: 4px; }
+  /* Keep every area visible; controls follow in DOM/keyboard order on the next row. */
+  .office-navigation__areas {
+    flex: 1 1 calc(100% - 44px - var(--space-2));
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    overflow: visible;
+  }
+  .office-navigation .office-navigation__area,
+  .office-navigation .office-navigation__destination {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .office-navigation .office-navigation__area { padding-inline: var(--space-2); }
+  .office-navigation a,
+  .office-navigation .office-navigation__trigger,
+  .office-navigation .task-center__trigger,
+  .office-navigation .task-center__close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .office-navigation__badge {
+    min-width: 19px;
+    max-width: calc(100% - var(--space-1));
+    height: auto;
+    min-height: 19px;
+    box-sizing: border-box;
+    margin-left: var(--space-1);
+    overflow-wrap: anywhere;
+  }
+  /* Anchor overlays below the entire wrapped header, not over another row. */
+  .office-navigation__disclosure,
+  .office-navigation .task-center { position: static; }
+  .office-navigation__destinations--popover,
+  .office-navigation .task-center__panel {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    max-width: 100%;
+    max-height: calc(100dvh - 100% - var(--space-6));
+    overflow: auto;
+    box-sizing: border-box;
+  }
 }
 
 @media (pointer: coarse) {
   .office-navigation a,
   .office-navigation .office-navigation__trigger { min-height: 44px; }
+  .office-navigation .task-center__trigger,
+  .office-navigation .task-center__close {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 @media print {

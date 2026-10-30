@@ -87,6 +87,13 @@ try {
   const [a, b] = await Promise.all([1, 2].map(() => iniciarAtendimento({ conversaId: c.id, origem: "ABERTURA", atorId: user.id, client: db })));
   assert.equal(a.id, b.id); assert.equal(a.onboardingId, b.onboardingId); assert.equal(await db.onboarding.count(), 1); ok("Criação concorrente humana/IA reutiliza um único atendimento e onboarding");
   const id = a.onboardingId;
+  // Explicit legacy fixture: retain the historical R35 journey assertions below.
+  // The factory still MUST create C1; this local-only setup is not a migration.
+  assert.equal((await db.onboarding.findUnique({ where: { id } })).politicaComercial, 'COMERCIAL_2026_10_V1');
+  await assert.rejects(converter(id, {}, { atorId: user.id }), e => e.code === 'constituicao_pendente');
+  await db.onboarding.update({ where: { id }, data: { politicaComercial: null } });
+  assert.equal((await db.onboarding.findUnique({ where: { id } })).politicaComercial, null);
+  ok("Fixture legada explícita: criação C1 e recusa sem constituição verificadas antes do cenário R35");
   await assert.rejects(db.atendimentoLead.create({ data: { conversaId: c.id } }), e => e.code === "P2002"); ok("Índice parcial impede segundo atendimento ativo");
   const escrever = nome => registrarCampos({ onboardingId: id, versao: 0, mensagemId: msg.id, operacoes: [{ campo: "responsavelNome", acao: "set", valor: nome }], client: db });
   const concurrent = await Promise.allSettled([escrever("Ana"), escrever("Bia")]); assert.equal(concurrent.filter(x => x.status === "fulfilled").length, 1); ok("CAS conserva somente uma escrita de campo por versão");

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { carregarGrupoIdentidade } from "./InboxWhatsappService.js";
+import { escopoDasSolicitacoes } from '../solicitacoes/solicitacoesEscopoWhatsapp.js';
+import { carregarEscopo } from '../solicitacoes/solicitacoesPolicy.js';
 
 const erro = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -98,6 +100,10 @@ export async function podeNotificarInscricao({ inscricao, evento }, { client = p
   if (!conversa || conversa.excluidaEm || String(conversa.chaveEscopo).startsWith("legado:")) return false;
   const encaminhamento = evento.tipo === 'SUPORTE' ? await client.encaminhamentoSuporte.findUnique({ where: { id: evento.id.replace(/^suporte:/, '') } }) : null;
   if (evento.tipo === 'SUPORTE' && (!encaminhamento || encaminhamento.estado === 'RESOLVIDO' || encaminhamento.conversaId !== conversa.id)) return false;
+  if (encaminhamento) {
+    const escopo = await escopoDasSolicitacoes(client, await carregarEscopo(client, { canal: 'INTERNO', atorId: user.id }));
+    if (!escopo.solicitacaoIds.includes(encaminhamento.id)) return false;
+  }
   let comercial = null;
   if (evento.tipo === 'COMERCIAL_CONTINGENCIA') {
     const [prefixo, atendimentoId, mensagemId, extra] = evento.id.split(':');

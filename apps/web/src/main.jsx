@@ -1,22 +1,22 @@
 import './features/whatsapp/comunicados.css';
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
 import './features/onboarding/jornada-comercial.css'
 import App from './App.jsx'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import './styles/conferencia.css'
 
-// Q8.C: BrowserRouter habilita deep links, browser back/forward e refresh sem perder contexto.
+// Uma instância por bootstrap; App continua responsável pelo mapa de telas.
 // A navegação interna usa o adaptador session.page ↔ URL definido em useManageAuthSession.
+const router = createBrowserRouter([
+  { path: '*', element: <ErrorBoundary><App /></ErrorBoundary> },
+])
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 )
 

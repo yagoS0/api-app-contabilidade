@@ -1,6 +1,31 @@
 // Projeção única do trabalho mensal. Ler o fluxo nunca executa uma operação fiscal.
+import { projetarChecklistFechamento } from './fechamentoBlockers.js';
 export const ETAPAS_CARTEIRA = ['apuracao', 'obrigacoes', 'guias', 'contabilizacao', 'importacao', 'concluido'];
 export const ROTULOS_ETAPA = { apuracao: 'Apuração', obrigacoes: 'Obrigações', guias: 'Guias', contabilizacao: 'Contabilização', importacao: 'Importação', concluido: 'Concluído' };
+// Presentation only: the underlying tasks, evidence and commands retain their stages.
+export const ETAPAS_APRESENTACAO = ['apurar', 'guias', 'contabilizacao', 'concluido'];
+export function statusApresentacao(fluxo, evidencias = {}) {
+  const original = fluxo?.status?.chave;
+  let chave = ({ apuracao: 'apurar', obrigacoes: 'apurar', guias: 'guias', contabilizacao: 'contabilizacao', importacao: 'contabilizacao', concluido: 'concluido' })[original] || 'verificar';
+  // A later stage cannot hide newer document evidence. This only changes the
+  // presentation; fiscal tasks, receipts and accounting closure remain intact.
+  if (['guias', 'contabilizacao', 'concluido'].includes(chave)) {
+    if (evidencias.guiasPendentes === true) chave = 'guias';
+    else if (evidencias.guiasConhecidas === false) chave = 'verificar';
+  }
+  // A reconciled monthly guide axis replaces only the two standard guide tasks.
+  // Extra tasks and every fiscal/accounting prerequisite remain authoritative.
+  if (chave === 'guias' && evidencias.guiasConhecidas === true && evidencias.guiasPendentes === false
+    && Array.isArray(fluxo?.tarefas) && Array.isArray(fluxo?.obrigacoes)
+    && ['apurar', 'transmitir', 'contabilizar', 'importar'].every(k => fluxo.tarefas.some(t => t.chave === k))) {
+    const pending = fluxo.tarefas.filter(t => !['obter_guias', 'enviar_guias'].includes(t.chave) && t.concluida !== true);
+    const fiscalPending = fluxo.obrigacoes.some(o => o.verificador !== 'MES_FECHADO' && o.concluida !== true);
+    const unknownStage = pending.some(t => !ETAPAS_CARTEIRA.includes(t.etapa));
+    const next = ETAPAS_CARTEIRA.find(e => (e === 'obrigacoes' && fiscalPending) || pending.some(t => t.etapa === e));
+    chave = unknownStage || next === 'concluido' ? 'verificar' : ({ apuracao: 'apurar', obrigacoes: 'apurar', guias: 'guias', contabilizacao: 'contabilizacao', importacao: 'contabilizacao' })[next] || 'concluido';
+  }
+  return { chave, rotulo: ({ apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', verificar: 'A verificar' })[chave], etapaOriginal: original };
+}
 export const ROTINAS_CARTEIRA = [
   { chave: 'apurar', titulo: 'Apurar e conferir', etapa: 'apuracao', depende: [] },
   { chave: 'transmitir', titulo: 'Transmitir apuração', etapa: 'obrigacoes', depende: ['apurar'] },
@@ -56,7 +81,9 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   if (!apuracao.porFora && (apuracao.transmitida || prova('transmitir'))) Object.assign(apuracao, { apurada: true, transmitida: true, chave: 'transmitido', rotulo: 'Transmitido' });
   if (!apuracao.apurada && dasDisponivel) Object.assign(apuracao, { rotulo: 'Conferir apuração', documentoDisponivel: true });
   const guias = Object.values(company.guideCompliance || {}).filter(g => g && typeof g === 'object' && g.required);
-  const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro;
+  const guiasConhecidas = Boolean(company.guideCompliance) && !company.guideCompliance.erro && !company.guideCompliance.error
+    && Object.values(company.guideCompliance).some(g => g && typeof g === 'object' && typeof g.required === 'boolean')
+    && (!company.guideCompliance.competencia || company.guideCompliance.competencia === competencia);
   const disponiveis = guiasConhecidas && guias.every(g => ['gerada', 'enviada', 'falhou', 'vazio', 'present'].includes(g.state));
   // A pendência financeira/contábil da parcela permanece no compliance. Não desfaz
   // uma entrega comprovada nem cria envio para débito automático sem documento exigível.
@@ -65,7 +92,8 @@ export function projetarFluxoCarteira(company, contexto = {}) {
   const lancamentos = contexto.lancamentos || { total: null, importados: 0 };
   const importado = fechado && lancamentos.total > 0 && lancamentos.importados === lancamentos.total;
   const semLancamentos = fechado && lancamentos.total === 0;
-  const contabilizacao = { chave: importado ? 'importado' : fechado ? 'fechado' : 'aberto', rotulo: importado ? 'Importado' : fechado ? 'Fechado' : 'Aberto', ...lancamentos };
+  const contabilizacao = { chave: importado ? 'importado' : fechado ? 'fechado' : 'aberto', rotulo: importado ? 'Importado' : fechado ? 'Fechado' : 'Aberto', ...lancamentos,
+    ...(contexto.conferenciaContabil || { ...projetarChecklistFechamento(null), versao: null }) };
   const obrigacoes = (contexto.obrigacoes || []).map(o => o.verificador === 'APURACAO_TRANSMITIDA' ? { ...o, concluida: apuracao.transmitida } : o);
   // Mês fechado é observado em sua própria etapa, não cria dependência circular.
   const fiscais = obrigacoes.filter(o => o.verificador !== 'MES_FECHADO');

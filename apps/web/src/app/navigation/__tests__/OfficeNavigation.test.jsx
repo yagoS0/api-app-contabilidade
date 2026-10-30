@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { Request } from 'node-fetch/lib/index.js';
+import { act, fireEvent, cleanup, render, screen, within } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider, useLocation } from "react-router-dom";
 import { OfficeNavigation } from "../OfficeNavigation";
 import { WorkspaceNavigationProvider } from "../WorkspaceNavigation";
 import { useWorkspaceNavigation } from "../WorkspaceNavigation.shared";
@@ -16,10 +17,23 @@ function Context() {
 }
 
 function setup(route = "/companies", resumoWhatsapp = null) {
-  return render(<MemoryRouter initialEntries={[route]}>
+  return mountRouter(
     <WorkspaceNavigationProvider><OfficeNavigation resumoWhatsapp={resumoWhatsapp} /><Context /></WorkspaceNavigationProvider>
-  </MemoryRouter>);
+  , [route]);
 }
+
+test('Solicitações pertence a Suporte sem quinta área e conserva filtro no destino ativo', () => {
+  setup('/solicitacoes?prioridade=null');
+  const areas = screen.getByRole('navigation', { name: 'Áreas do escritório' });
+  expect(within(areas).getAllByRole('link')).toHaveLength(4);
+  expect(within(areas).getByRole('link', { name: 'Suporte' })).toHaveAttribute('aria-current', 'location');
+  fireEvent.click(screen.getByRole('button', { name: 'Navegar' }));
+  const destinos = screen.getByRole('navigation', { name: 'Navegação de Suporte' });
+  expect(within(destinos).getByRole('link', { name: 'Solicitações' })).toHaveAttribute('aria-current', 'page');
+  expect(within(destinos).getByRole('link', { name: 'Solicitações' })).toHaveAttribute('href', '/solicitacoes');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Navegar' })).toHaveFocus();
+});
 
 test('suporte mantém aviso humano mesmo sem mensagens não lidas', () => {
   setup('/suporte', { selo: null, pendenciasSuporte: 2 });
@@ -144,4 +158,50 @@ test.each(["/login", "/onboarding/publico", "/proposta/publica"])("não cria nav
   setup(route);
   expect(screen.queryByRole("link", { name: "Altan — página principal" })).not.toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
+});
+
+const mountedRouters = [];
+function mountRouter(element, initialEntries) {
+  const router = createMemoryRouter([{ path: '*', element }], { initialEntries });
+  mountedRouters.push(router);
+  const view = render(<RouterProvider router={router} />);
+  return { ...view, unmount: () => { view.unmount(); router.dispose(); } };
+}
+afterEach(() => { cleanup(); mountedRouters.splice(0).forEach(router => router.dispose()); });
+
+// Same installed Request implementation as bootstrapDataRouter; no router mock or fetch replacement.
+const requestDescriptorBeforeSuite = Object.getOwnPropertyDescriptor(globalThis, 'Request');
+beforeEach(() => { Object.defineProperty(globalThis, 'Request', { configurable: true, writable: true, value: Request }); });
+afterEach(() => {
+  if (requestDescriptorBeforeSuite) Object.defineProperty(globalThis, 'Request', requestDescriptorBeforeSuite);
+  else delete globalThis.Request;
+});
+function LegacyMetaLocation(){const location=useLocation();return <><output aria-label="rota legado Meta">{location.pathname}</output><input aria-label="rascunho legado Meta" defaultValue="preservar"/></>;}
+async function withOfficePlatformFixture(platform,run){
+ const descriptor=Object.getOwnPropertyDescriptor(navigator,'userAgentData');
+ Object.defineProperty(navigator,'userAgentData',{configurable:true,value:{platform}});
+ try{await run();}finally{cleanup();if(descriptor)Object.defineProperty(navigator,'userAgentData',descriptor);else delete navigator.userAgentData;}
+}
+test.each(['Windows','Linux','Unknown'].flatMap(platform=>[true,false].map(success=>[platform,success])))('legacy OfficeNavigation protects Meta on %s until save success=%s',async(platform,success)=>{
+ await withOfficePlatformFixture(platform,async()=>{
+  let resolve,reject;const save=jest.fn(()=>new Promise((done,fail)=>{resolve=done;reject=fail;}));
+  const pending=event=>event.detail.push(save);window.addEventListener('altan:onboarding-antes-de-navegar',pending);
+  try{
+   mountRouter(<><OfficeNavigation/><LegacyMetaLocation/></>,['/onboardings/qa/editar']);
+   fireEvent.click(screen.getByRole('link',{name:'Suporte'}),{metaKey:true});
+   expect(save).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('rota legado Meta')).toHaveTextContent('/onboardings/qa/editar');
+   expect(screen.getByLabelText('rascunho legado Meta')).toHaveValue('preservar');
+   await act(async()=>{if(success)resolve();else reject(new Error('Não confirmado'));});
+   expect(screen.getByLabelText('rota legado Meta').textContent).toBe(success?'/suporte':'/onboardings/qa/editar');
+   expect(save).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('rascunho legado Meta')).toHaveValue('preservar');
+  }finally{window.removeEventListener('altan:onboarding-antes-de-navegar',pending);}
+ });
+});
+test.each([['macOS',{metaKey:true}],['Windows',{ctrlKey:true}],['Windows',{metaKey:true,shiftKey:true}]])('legacy OfficeNavigation leaves native modifiers to %s',async(platform,event)=>{
+ await withOfficePlatformFixture(platform,async()=>{
+  const pending=jest.fn(),observed=[];window.addEventListener('altan:onboarding-antes-de-navegar',pending);
+  const suppressJsdomDefault=e=>{observed.push(e.defaultPrevented);e.preventDefault();};document.addEventListener('click',suppressJsdomDefault);
+  try{mountRouter(<><OfficeNavigation/><LegacyMetaLocation/></>,['/onboardings/qa/editar']);fireEvent.click(screen.getByRole('link',{name:'Suporte'}),event);expect(observed).toEqual([false]);expect(pending).not.toHaveBeenCalled();expect(screen.getByLabelText('rota legado Meta')).toHaveTextContent('/onboardings/qa/editar');}
+  finally{window.removeEventListener('altan:onboarding-antes-de-navegar',pending);document.removeEventListener('click',suppressJsdomDefault);}
+ });
 });

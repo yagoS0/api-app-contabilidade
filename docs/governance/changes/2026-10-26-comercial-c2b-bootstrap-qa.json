@@ -1,0 +1,49 @@
+{
+  "summary": "Complemento de validação do bootstrap Comercial C2B; não conclui guarda de rascunhos, chat embutido ou redesign final.",
+  "risk": "high",
+  "riskReason": "Elevação semântica pelo Principal e parecer sistêmico: bootstrap compartilhado de autenticação/navegação; piso automático medium preservado no registro original.",
+  "domains": [
+    "web"
+  ],
+  "operationalImpact": "Sem mudança de regra operacional. Somente bootstrap técnico; nenhum ato real, publicação, alteração Guru/eNotas/benefício.",
+  "sourceFingerprint": "43a3437f641c6e7698d45cc61a8a99b387e6f5dd252a05ea76d2d84de96fa27b",
+  "sourcePaths": [
+    "apps/web/src/app/navigation/__tests__/bootstrapDataRouter.test.jsx",
+    "apps/web/src/dev/comercial.jsx",
+    "apps/web/src/main.jsx"
+  ],
+  "runId": "2026-10-26T22-55-32-612Z-4746ac60",
+  "tests": [
+    "Governança:72 aprovados; web:6178 testes/538 suítes; build aprovado; lint dos3arquivos aprovado.",
+    "App local:118 checks; DEV local:70 checks. Navegação, login, páginas públicas com token fictício, POP, recarga e teclado.",
+    "Revisão independente de16 screenshots desktop1366 e celular390; sem erro bloqueante no smoke."
+  ],
+  "evidence": {
+    "app": ".altan-governance/visual-comercial-c2b-bootstrap/run-app-2026-10-26T23-47-55.172Z/results.json",
+    "appSha256": "1e9cc85ce0c3ec217761d675abf161ec2fa9e107785504abd10d25bd7dd0938e",
+    "devSha256": "26010b205a0f301c0b095db11f74c1677279c35987740e0171d8bafd49e4227d",
+    "dev": ".altan-governance/visual-comercial-c2b-bootstrap/run-dev-2026-10-26T23-48-47.580Z/results.json",
+    "visualReview": ".altan-governance/visual-comercial-c2b-bootstrap/visual-review-independent.json",
+    "visualReviewSha256": "45452f33f6af57bf056e3738e34fea1170c9ff80970afa321d50abbbbd56bc28"
+  },
+  "limitations": [
+    "Mock local, não homologação de produção. Leituras podem inicializar dados fictícios em memória; wrappers DEV não têm instrumentação integral.",
+    "Primeiro QA reprovado por leituras mock não previstas; resultado e imagens preservados. Corrigido somente harness, com revisão independente.",
+    "Fragmento de URL no login é removido pelo contrato anterior; preservação SPA de query/hash testada separadamente.",
+    "Menu móvel horizontal corta parcialmente últimos rótulos, comportamento existente; redesign final pendente.",
+    "Smoke não cobre todos os caminhos/viewports do roteiro amplo, novas abas, edição completa, embed ou proteção de rascunhos."
+  ],
+  "rollback": "Reverter somente três fontes e registros deste incremento, preservando demais alterações; baseline c00f66be7d99eb7578963c81ff4a98d15b9c5a74.",
+  "humanDecisions": [
+    "Sem autorização de publicação neste escopo. Integração futura exige revisão do diff e decisão aplicável."
+  ],
+  "budget": {
+    "previousCalls": 2,
+    "bootstrapCalls": 14,
+    "remainingCalls": 24,
+    "globalCalls": 40,
+    "remainingCorrections": 0,
+    "correctionsUsed": 2
+  },
+  "cleanup": "Controlador encerrou exit0; PG stop0 e pg_ctl status3, sem postmaster.pid; servidores QA próprios encerrados, portas5439/5440/52164 sem listener."
+}

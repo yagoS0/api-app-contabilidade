@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
 
@@ -15,7 +16,7 @@ function apiLocal() {
 function respostaPendente() { let resolver; const promessa = new Promise(resolve => { resolver = resolve; }); return { promessa, resolver }; }
 
 test("selecionar outro atendimento fecha os detalhes e permite continuar digitando", async () => {
-  render(<WhatsappPage api={apiLocal()} area="comercial" />);
+  render(<WhatsappPage api={apiLocal()} area="comercial" />, { wrapper: RouterComercial });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   fireEvent.change(await screen.findByLabelText("Responder ao cliente"), { target: { value: "Rascunho A" } });
   fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
@@ -31,7 +32,7 @@ test("selecionar outro atendimento fecha os detalhes e permite continuar digitan
 
 test("orientação enviada em A termina depois da troca para B sem reabrir A nem apagar o rascunho B", async () => {
   const api = apiLocal(), envio = respostaPendente(); api.enviarOrientacaoWhatsapp.mockReturnValue(envio.promessa);
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   fireEvent.click(await screen.findByRole("button", { name: "Ações da mensagem e arquivos" }));
   fireEvent.click(await screen.findByRole("button", { name: "Mensagens rápidas" }));
@@ -55,7 +56,7 @@ test("orientação enviada em A termina depois da troca para B sem reabrir A nem
 test("criação comercial de A concluída após abrir B preserva B e seu rascunho", async () => {
   const api = apiLocal(), criacao = respostaPendente(), original = api.comercial.getMockImplementation();
   api.comercial.mockImplementation((path, body) => path === "/conversas/a/iniciar" ? criacao.promessa : original(path, body));
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-a"));
   fireEvent.click(await screen.findByRole("button", { name: "Detalhes da conversa" }));
   fireEvent.change(await screen.findByLabelText("Motivo do atendimento"), { target: { value: "ABERTURA" } });
@@ -70,3 +71,7 @@ test("criação comercial de A concluída após abrir B preserva B e seu rascunh
   expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Rascunho B");
   expect(api.getMensagensWhatsapp.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }
+
+function RouterComercial({ children }) { return <MemoryRouter initialEntries={['/comercial/conversas']}>{children}</MemoryRouter>; }

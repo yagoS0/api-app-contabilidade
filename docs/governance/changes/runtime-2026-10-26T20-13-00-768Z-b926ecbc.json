@@ -1,0 +1,43 @@
+{
+  "summary": "C2A — rodada extraordinária autorizada call31bd5dde, sem publicar.\nReaplicar EXATAMENTE os12final-sources pinados abaixo sobre C1 a5db27caea3f8d8a29644bc8691655a27322b66e; onze recompõem candidato atual e somente fixture PostgreSQL recebe providerMessageId sintético obrigatório. Foco A2 pertence a outra árvore, não implementar aqui.\nHistórico2+2+6calls preservado; run55c81cd9 escalated não é aprovação. Nova rodada maxCorrections0/maxCalls18/timeout1200000. Nenhum reparo adicional, alteração de assertivas, runtime, gates ou regras.\nLer AGENTS/POLICY/design e referência operacional canônica. Planner allowlist exata12paths, executor confere TODOS hashes e copia bytes; nenhum outro arquivo funcional. Revisão compara diff INTEGRAL C1→final, não apenas fixture. Não alterar pacote ignorado.\nPacote C:/Users/yagoa/Documents/ChatGPT/ALTAN/altan-pacotes-comercial-c2a-20261026/.altan-governance/rodada-foco-wamid-20261026; manifestSHA=cfd0f8c522eab74e961d5cd7466ea6809ce6a89a9a440a3523007cba4731eda8\nExecutor não executa testes, browser, servidor, PG, Prisma, rede ou instalação. Dependências existentes944pacotes, helper ambiental aguarda permit NOVO e recursos A/B/C para gates originais. Teste focal1/1 não substitui regressão.\nPreservar vínculo neutro, autorização/consentimento/revogação/ACL, proteção de estado/concorrência, canais e rascunho/consentimento da UI; sem assumir atendimento, abrir leitura, mensagem ou IA implicitamente. Sem emissão, cancelamento, consulta fiscal paga, dados reais ou publicação. Guru conferência/eNotas ativo/benefício pendente.\nDocumentos/CLAUDE não entram allowlist funcional; registro gerado pelo runtime e documentação Principal separados. Falha não autoriza nova correção automática.\napps/api/src/application/onboarding/ContatoComercialService.js SHA256=ad070ed9ccd82379b41fe73353f7d3aba38a5ab2f4b5e295494f1fb72a855ca8\napps/api/src/application/onboarding/__tests__/vinculoContatoSemTomada.postgres.test.js SHA256=0309df12ad1da63e17e8df702285661705dc3e3c4cd9e93c5e2a9e6cb6edc4f3\napps/api/src/application/onboarding/__tests__/vinculoContatoSemTomada.test.js SHA256=2dc5fd44874dfa0fe34ca9de8c0593b138120d688fdd4bd55760dbb3044a1088\napps/api/src/routes/firm/__tests__/vinculoContatoComercialRotas.test.js SHA256=a10cc4ffa556e23baa61e0ed007f1d1fecc2bc2a8138f7458880524a90d245c1\napps/api/src/routes/firm/fluxoComercial.js SHA256=bac687b9f0bb5841c4775cd2a70c35a2bd3cb4051f0c5f27f7b43af92fe9a9c2\napps/web/src/api/mock/__tests__/vinculoContatoComercial.test.js SHA256=bfe6e4027709c46972fac941af67b3e9fa80367789e9d971b95cf17437bac535\napps/web/src/api/mock/comercialMock.js SHA256=98c49506afd405707b8794286103f7689c56b7ab7a319c52d15d67402d02976a\napps/web/src/api/mock/mockApi.js SHA256=3311f06c9fc7449d7ce208ebb796e8e5833e1e1b1384337dc1c2e9e4aa1ed306\napps/web/src/features/comercial/AcompanhamentoComercial.jsx SHA256=1be52c5e79e281afb6b666aea420798aead19d486043d0a13e45d0bd8e58aec3\napps/web/src/features/comercial/__tests__/AcompanhamentoComercial.test.jsx SHA256=c50c4303b6e1ea47592013a20c7cfbb04f24381f3f0581ca202ddeff4eb7a73f\napps/web/src/features/onboarding/components/__tests__/AutorizacaoDoLead.test.jsx SHA256=8976cede72ea39c15fea20611e5f2d89a08fd6bf0d3bd2e0091d66545bf5c329\napps/web/src/features/onboarding/components/__tests__/coerenciaComercialP0.test.jsx SHA256=293f8d31170821790fb2e80d1334f22e646e17c1a3db50ad3c94f67b0a645d02",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-26T20-13-00-768Z-b926ecbc",
+  "tests": [
+    "governance-engine: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-governance-engine",
+    "api-regression: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-api-regression",
+    "web-regression: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-web-regression",
+    "portal-regression: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-portal-regression",
+    "web-build: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-web-build",
+    "portal-build: passed against f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-pacotes-comercial-c2a-20261026\\.altan-governance\\runs\\2026-10-26T20-13-00-768Z-b926ecbc\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-26T20-13-00-768Z-b926ecbc; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "f77ce7efb54de02da8b921f15e56d1bea57ffc0e40cdba20b4077cc131c51be7",
+  "sourcePaths": [
+    "apps/api/src/application/onboarding/ContatoComercialService.js",
+    "apps/api/src/application/onboarding/__tests__/vinculoContatoSemTomada.postgres.test.js",
+    "apps/api/src/application/onboarding/__tests__/vinculoContatoSemTomada.test.js",
+    "apps/api/src/routes/firm/__tests__/vinculoContatoComercialRotas.test.js",
+    "apps/api/src/routes/firm/fluxoComercial.js",
+    "apps/web/src/api/mock/__tests__/vinculoContatoComercial.test.js",
+    "apps/web/src/api/mock/comercialMock.js",
+    "apps/web/src/api/mock/mockApi.js",
+    "apps/web/src/features/comercial/AcompanhamentoComercial.jsx",
+    "apps/web/src/features/comercial/__tests__/AcompanhamentoComercial.test.jsx",
+    "apps/web/src/features/onboarding/components/__tests__/AutorizacaoDoLead.test.jsx",
+    "apps/web/src/features/onboarding/components/__tests__/coerenciaComercialP0.test.jsx"
+  ],
+  "runId": "2026-10-26T20-13-00-768Z-b926ecbc"
+}

@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { WhatsappPage } from "../renderWhatsappPage";
 
@@ -16,7 +17,7 @@ function apiLocal() {
 beforeEach(() => localStorage.clear());
 
 test("lista mostra somente nome ou telefone, relacionamento e não lidas", async () => {
-  render(<WhatsappPage api={apiLocal()} />);
+  render(<WhatsappPage api={apiLocal()} />, { wrapper: RouterWhatsapp });
   const linha = await screen.findByTestId("conversa-cliente");
   expect(linha).toHaveTextContent("Ana Exemplo"); expect(linha).toHaveTextContent("Cliente");
   expect(linha).not.toHaveTextContent(/sócia|Empresa fictícia|11222333000181|cadastro/);
@@ -27,7 +28,7 @@ test("lista mostra somente nome ou telefone, relacionamento e não lidas", async
 });
 
 test("Ctrl+B e botão visível recolhem a lista sem perder o fio ou rascunho", async () => {
-  render(<WhatsappPage api={apiLocal()} />);
+  render(<WhatsappPage api={apiLocal()} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-cliente"));
   const campo = await screen.findByLabelText("Responder ao cliente");
   fireEvent.change(campo, { target: { value: "Rascunho preservado" } });
@@ -46,7 +47,7 @@ test("Ctrl+B e botão visível recolhem a lista sem perder o fio ou rascunho", a
 });
 
 test("filtros exibem totais globais mesmo quando busca e página não trazem os contatos", async () => {
-  const api = apiLocal(); render(<WhatsappPage api={api} />);
+  const api = apiLocal(); render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   const todos = screen.getByRole("button", { name: "Todos" }), leads = screen.getByRole("button", { name: "Leads" }), clientes = screen.getByRole("button", { name: "Clientes" });
   await waitFor(() => expect(todos).toHaveTextContent("517"));
   expect(leads).toHaveTextContent("109"); expect(clientes).toHaveTextContent("407");
@@ -60,7 +61,7 @@ test("filtros exibem totais globais mesmo quando busca e página não trazem os 
 
 test("indisponibilidade do resumo não vira contagem zero ou contagem da página", async () => {
   const api = apiLocal(); api.getResumoWhatsapp.mockRejectedValue(new Error("Indisponível"));
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   await screen.findByTestId("conversa-cliente");
   expect(within(screen.getByRole("button", { name: "Todos" })).queryByLabelText(/novas mensagens/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Todos" })).toHaveAttribute("title", "Contagem de novas mensagens indisponível");
@@ -86,7 +87,7 @@ test("iniciar o atendimento relê o fio e adota o canal comercial mesmo se a lis
       throw new Error("Detalhes da ficha temporariamente indisponíveis");
     }),
   };
-  render(<WhatsappPage api={api} />);
+  render(<WhatsappPage api={api} />, { wrapper: RouterWhatsapp });
   fireEvent.click(await screen.findByTestId("conversa-inicial"));
   await screen.findByLabelText("Responder ao cliente");
   fireEvent.click(screen.getByRole("button", { name: "Detalhes da conversa" }));
@@ -98,3 +99,5 @@ test("iniciar o atendimento relê o fio e adota o canal comercial mesmo se a lis
   expect(screen.getByTestId("fio")).toHaveTextContent("Comercial");
   expect(api.listarConversasWhatsapp).toHaveBeenCalledTimes(2);
 });
+
+function RouterWhatsapp({ children }) { return <MemoryRouter initialEntries={['/whatsapp']}>{children}</MemoryRouter>; }

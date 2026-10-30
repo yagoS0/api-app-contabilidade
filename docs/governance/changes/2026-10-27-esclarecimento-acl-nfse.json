@@ -1,0 +1,53 @@
+{
+  "operationalImpact": "Preservar política existente admin/contador global na conferência interna NFS-e, demais vínculos/guardas intactos. Sem alterar runtime ou regras da carteira.",
+  "rollback": "Reverter somente adendo documental mediante nova decisão, sem modificar permissões de produto ou apagar registros históricos.",
+  "evidence": {
+    "source": "Chat atual, resposta call_d10a73aebf684379a02ba133a7dbff63",
+    "note": "Composição documental: preserva proveniências Comercial e Solicitações abaixo; não transfere aprovação entre domínios.",
+    "canonicalSHA": "68caf8f5d9b1710064132bb12d012491773825432542895daa65b7331d6e21ef",
+    "provenance": [
+      {
+        "commit": "d8f95db7b9b73eb38412bacce3df0165200cb373",
+        "evidence": {
+          "source": "Chat atual, resposta call_d10a73aebf684379a02ba133a7dbff63",
+          "note": "Baseline documental D56b0 do Comercial; não altera ACL do Comercial, não aprova G15 nem transporta aprovação funcional de Notas.",
+          "canonicalSHA": "68caf8f5d9b1710064132bb12d012491773825432542895daa65b7331d6e21ef"
+        },
+        "tests": [
+          "Revisão independente /root/preparo_s3_retomada: somente seção31; canônica e D SHA68caf; pin operacional0e85 atualizado sem engine/gates. Nenhum teste de produto exigido para transporte documental já validado em B.",
+          "Principal: conferir estrutura/impacto e diff antes do checkpoint; preservar origem funcional56b0 e atualizar futuro helper G15 sem executar."
+        ]
+      },
+      {
+        "commit": "fe5d3eeb59b478cbd040be289cd36fc56bcc750b",
+        "evidence": {
+          "source": "Chat atual, resposta call_d10a73aebf684379a02ba133a7dbff63",
+          "note": "Baseline documental da árvore isolada S3.1; não aprova UI candidata da árvore anterior nem refaz seus resultados.",
+          "canonicalSHA": "68caf8f5d9b1710064132bb12d012491773825432542895daa65b7331d6e21ef"
+        },
+        "tests": [
+          "Revisão independente documental /root/conferencia_comercial_retoma: adendo31 corresponde à decisão humana; prefixo96326bytes F925 preservado; canônica/A/B/D iguais68caf; códigoB9fontes invariável. Sem teste de produto necessário nesta cópia documental.",
+          "Conciliação do pin operacional: revisão independente conferencia_comercial_retoma aprovou atualização de hash/status/instrução, sem mudar engine/gates/caminhos/fallback. Falha inicial do check preservada; revalidação posterior registrada separadamente."
+        ]
+      }
+    ]
+  },
+  "domains": [
+    "api",
+    "fiscal",
+    "data",
+    "governance",
+    "documentation"
+  ],
+  "risk": "high",
+  "summary": "Registrar esclarecimento aprovado da ACL interna NFS-e sem alterar código",
+  "humanDecisions": [
+    "27/10/2026: Preservar NFS-e: admin e contador em todas as empresas. Não autoriza publicação/atos fiscais."
+  ],
+  "tests": [
+    "Revisão independente /root/preparo_s3_retomada: somente seção31; canônica e D SHA68caf; pin operacional0e85 atualizado sem engine/gates. Nenhum teste de produto exigido para transporte documental já validado em B.",
+    "Principal: conferir estrutura/impacto e diff antes do checkpoint; preservar origem funcional56b0 e atualizar futuro helper G15 sem executar.",
+    "Revisão independente documental /root/conferencia_comercial_retoma: adendo31 corresponde à decisão humana; prefixo96326bytes F925 preservado; canônica/A/B/D iguais68caf; códigoB9fontes invariável. Sem teste de produto necessário nesta cópia documental.",
+    "Conciliação do pin operacional: revisão independente conferencia_comercial_retoma aprovou atualização de hash/status/instrução, sem mudar engine/gates/caminhos/fallback. Falha inicial do check preservada; revalidação posterior registrada separadamente."
+  ]
+}

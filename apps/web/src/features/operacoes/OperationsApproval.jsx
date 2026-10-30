@@ -44,6 +44,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
         try {
           const value = await api.getCompanyOperation(id, competencia);
           if (!active) return;
+          if (!value || value.ok === false || value.companyId !== id || value.competencia !== competencia || !value.revision || !Array.isArray(value.pending)) throw Error('Conferência indisponível.');
           setData(old => ({ ...old, [id]: value }));
         } catch { if (active) setError('Algumas empresas não puderam ser conferidas. Atualize antes de liberar.'); }
         if (!active) return;
@@ -69,13 +70,15 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
         let value = action === 'release' && item.status === 'RELEASED' ? item : await api.saveCompanyOperation(item.companyId, competencia, { action, expectedRevision: item.revision, requestId: crypto.randomUUID(), ...(action === 'schedule' ? { schedule: schedule || null } : {}) });
         if (action === 'release' && api.executeCompanyOperation) {
           if (!writable.current.has(item.companyId)) throw Error('Seu acesso mudou. Confira a liberação salva antes de continuar.');
-          await api.executeCompanyOperation(item.companyId, competencia, value.revision);
+          const execution = await api.executeCompanyOperation(item.companyId, competencia, value.revision);
+          if (execution?.ok !== true) throw Error('Resultado da execução não confirmado. Confira Tarefas antes de repetir.');
           value = await api.getCompanyOperation(item.companyId, competencia);
         }
+        if (!value || value.ok === false || value.companyId !== item.companyId || value.competencia !== competencia || !value.revision || !value.status) throw Error('Não foi possível confirmar a alteração persistida.');
         setData(old => ({ ...old, [item.companyId]: value })); count++;
       }
       setMessage(action === 'release' ? `${count} liberação(ões) processada(s). Confira o resultado e os documentos em Tarefas.` : 'Alteração salva.');
-      if (action === 'release') onChanged?.();
+      onChanged?.();
     } catch (e) {
       setError(`${count ? `${count} alteração(ões) salva(s). ` : ''}${e.message || 'Resultado não confirmado.'} Atualize os dados antes de tentar novamente.`);
       // Não reenviar depois de timeout; a leitura recupera o resultado persistido.
@@ -103,6 +106,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
     {batch && <ApprovalDialog focusRef={detailRef} embedded={embedded} className="operacoes-dialogo" titulo="Liberar apurações confirmadas" ocupado={busy} aoFechar={() => { if (!busy) { setBatch(null); setConfirmCompetencia(''); } }} rodape={<><Button variant="secondary" disabled={busy} onClick={() => { setBatch(null); setConfirmCompetencia(''); }}>Cancelar</Button><Button disabled={busy || !canReleaseBatch || confirmCompetencia !== competencia} onClick={() => change(batch, 'release')}>Liberar e executar</Button></>}>
       {!canReleaseBatch && <p role="alert">Seu acesso mudou. Atualize as empresas antes de liberar.</p>}
       <p>Serão revalidadas {batch.length} apurações da competência {competencia}. A ação pode transmitir declarações e buscar documentos faltantes. Dados alterados, notas pendentes ou procuração inválida bloqueiam a execução. DAS e extratos completos serão reutilizados. Retificações não são automáticas.</p>
+      <p>Esta continuação não envia guias ao cliente nem importa lançamentos no ERP. Se uma tentativa anterior terminou sem documento ou com resultado incerto, confira Tarefas e a apuração antes de repetir; esta ação não é uma recuperação documental independente.</p>
       <ul>{batch.map(item => <li key={item.companyId}>{rows.find(r => r.company.companyId === item.companyId)?.company.razao || item.companyId}</li>)}</ul>
       <div className="operacoes-programacao"><label>Digite a competência {competencia} para executar<input value={confirmCompetencia} disabled={busy} onChange={e => setConfirmCompetencia(e.target.value)} placeholder="AAAA-MM" /></label></div>
     </ApprovalDialog>}

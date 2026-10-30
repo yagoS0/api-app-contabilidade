@@ -869,7 +869,7 @@ export function EmitirNfseWizard({
             </strong>
             A lista desta aba mostra o que a captura traz do Padrão Nacional (ADN), não o que sai
             daqui. A nota entra na lista quando o ADN a devolver. Enquanto isso, guarde o número e a
-            chave abaixo; para verificar antes, use <strong>“🔄 Buscar NFS-e”</strong> na aba de
+            chave abaixo; para verificar antes, use <strong>“Buscar”, com NFS-e selecionada</strong> na aba de
             notas — e não emita de novo, para não duplicar.
           </div>
 
@@ -1512,7 +1512,7 @@ export function EmitirNfseWizard({
             {rejeicao.desfechoDesconhecido && (
               <div style={{ color: "var(--state-warn)" }}>
                 O botão Emitir fica travado até você fechar este assistente: reemitir sem consultar
-                pode duplicar a nota. Feche, use <strong>“🔄 Buscar NFS-e”</strong> na aba de notas
+                pode duplicar a nota. Feche, use <strong>“Buscar”, com NFS-e selecionada</strong> na aba de notas
                 e só então decida.
               </div>
             )}

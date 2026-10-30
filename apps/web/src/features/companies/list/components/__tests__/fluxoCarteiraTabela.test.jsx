@@ -2,7 +2,7 @@ import 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CompaniesTable } from '../renderCompaniesTable';
 import { projetarFluxoCarteira } from '@contabilidade/shared/fluxo-carteira';
-const company={companyId:'a',razao:'Empresa Teste',cnpj:'12345678000190',legacyCompany:{regimeTributario:'SIMPLES_NACIONAL'},apuracao:{estado:'transmitida'},fechamentoContabil:{fechado:true},guideCompliance:{das:{required:true,state:'gerada',guideId:'guia'},parcDas:{required:true,state:'missing',quantidade:1}},fiscalSituacao:'COM_PENDENCIA',temParcelamento:true};
+const company={companyId:'a',razao:'Empresa Teste',cnpj:'12345678000190',legacyCompany:{regimeTributario:'SIMPLES_NACIONAL'},apuracao:{estado:'transmitida'},fechamentoContabil:{fechado:true},guideCompliance:{das:{required:true,state:'gerada',guideId:'guia'},parcDas:{required:true,state:'missing',quantidade:1},coberturaParcelamentoMes:[{id:'parcela-atual',numeroParcela:1,mesOperacional:'2026-10',documento:'faltante',comunicacao:'aguarda_documento',pagamentoConfirmado:false}]},fiscalSituacao:'COM_PENDENCIA',temParcelamento:true};
 test('sete colunas, guia disponível e parcelamento sem ocultar a pendência',()=>{
   const onFluxo=jest.fn();
   render(<CompaniesTable companies={[{...company,fluxoCarteira:projetarFluxoCarteira(company,{lancamentos:{total:1,importados:0}})}]} competencia="2026-09" onFluxo={onFluxo}/>);
@@ -44,7 +44,7 @@ test('procuração salva aparece sem executar consulta e muda na releitura', () 
 test('DAS disponível mostra conferência preservando o acesso às tarefas', () => {
  const c = {...company, apuracao:{competencia:'2026-09'}, guideCompliance:{competencia:'2026-09', das:{required:true, ok:true, state:'gerada', guideId:'das'}}};
  render(<CompaniesTable companies={[c]} competencia="2026-09" />);
- expect(screen.getByRole('button', {name:'Ver tarefas de Empresa Teste: Conferir apuração'})).toBeInTheDocument();
+ expect(screen.getByRole('button', {name:'Ver tarefas de Empresa Teste: Apurar'})).toBeInTheDocument();
  expect(screen.queryByText('Transmitido')).not.toBeInTheDocument();
  const detalhe = screen.getByText(/O DAS desta competência está disponível/);
  expect(detalhe).not.toBeVisible();

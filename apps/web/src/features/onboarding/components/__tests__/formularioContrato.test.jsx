@@ -190,3 +190,38 @@ test.each(['versao', 'opcaoAceita'])('mesma ficha com nova %s da proposta descar
   expect(p.onGerar).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Cargo do representante')).toHaveAttribute('aria-invalid', 'true');
 });
+
+test('C1: condição futura explícita exige data e trecho existente, sem inventar cláusula', () => {
+  const p = props(); p.onboarding.politicaComercial = 'COMERCIAL_2026_10_V1';
+  p.recursos[0].texto += ' Pagamento futuro em 10/11/2026.';
+  render(<FormularioContrato {...p} />);
+  fireEvent.change(screen.getByLabelText('Cargo do representante'), { target: { value: 'Sócia' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: /permite entrada na carteira/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar contrato da opção aceita' }));
+  expect(p.onGerar).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Vencimento contratado'), { target: { value: '2026-11-10' } });
+  fireEvent.change(screen.getByLabelText('Trecho exato da cláusula no contrato'), { target: { value: 'Pagamento futuro em 10/11/2026.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar contrato da opção aceita' }));
+  expect(p.onGerar).toHaveBeenCalledWith(expect.objectContaining({ condicaoPagamento: {
+    versao: 1, tipo: 'PAGAMENTO_FUTURO', carteiraAntesDoPagamento: true, vencimento: '2026-11-10', clausula: 'Pagamento futuro em 10/11/2026.' } }));
+});
+
+
+test('C1: desmarcar a condição futura conserva edição local sem enviar autorização no payload', () => {
+  const p = props(); p.onboarding.politicaComercial = 'COMERCIAL_2026_10_V1';
+  p.recursos[0].texto += ' Pagamento futuro em 10/11/2026.';
+  render(<FormularioContrato {...p} />);
+  fireEvent.change(screen.getByLabelText('Cargo do representante'), { target: { value: 'Sócia' } });
+  const opcao = screen.getByRole('checkbox', { name: /permite entrada na carteira/ });
+  fireEvent.click(opcao.closest('label'));
+  expect(opcao).toBeChecked();
+  fireEvent.change(screen.getByLabelText('Vencimento contratado'), { target: { value: '2026-11-10' } });
+  fireEvent.change(screen.getByLabelText('Trecho exato da cláusula no contrato'), { target: { value: 'Pagamento futuro em 10/11/2026.' } });
+  fireEvent.click(opcao);
+  expect(screen.queryByLabelText('Vencimento contratado')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar contrato da opção aceita' }));
+  expect(p.onGerar).toHaveBeenCalledTimes(1);
+  expect(p.onGerar.mock.calls[0][0]).not.toHaveProperty('condicaoPagamento');
+  fireEvent.click(opcao);
+  expect(screen.getByLabelText('Vencimento contratado')).toHaveValue('2026-11-10');
+});

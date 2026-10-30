@@ -1,3 +1,5 @@
+// Synthetic one-page PDF, with complete xref and trailer.
+const PDF_SINTETICO = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n186\n%%EOF\n";
 // A LIGAÇÃO — "clicar numa nota já emitida para copiar dados", e o DANFSe finalmente com porta.
 //
 // As REGRAS estão em `notas/lib/__tests__/reaproveitarNota.test.js` e `.../danfseDaNota.test.js`.
@@ -63,7 +65,11 @@ function abrirDetalhe(nota, props = {}) {
       error={null}
       onClose={noop}
       onReaproveitar={jest.fn()}
-      onBaixarDanfse={jest.fn()}
+      companyId="c-1"
+      api={{
+        getAcoesNota: async () => ({ revisao: 'r1', PDF: { estado: nota.xml?.disponivel ? 'disponivel' : 'indisponivel', motivo: 'Não guardamos o XML; o PDF é gerado a partir dele. Recapture a nota.' }, XML: { estado: nota.xml?.disponivel ? 'disponivel' : 'indisponivel' } }),
+        fetchDocumentoNota: async (_company, id) => ({ blob: await props.onBaixarDanfse?.(id), nome: 'nota.pdf' }),
+      }}
       {...props}
     />,
   );
@@ -78,6 +84,7 @@ beforeEach(() => {
     return "blob:danfse";
   });
   global.URL.revokeObjectURL = jest.fn();
+  window.open = jest.fn(() => null);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,13 +128,13 @@ describe("o detalhe da nota deixou de ser só uma ficha", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("DANFSe — a feature que existia no backend e não tinha porta na tela", () => {
   it("baixa o PDF pelo chamador (fetch com Bearer → Blob), nunca por um <a href> cru", async () => {
-    const onBaixarDanfse = jest.fn(async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+    const onBaixarDanfse = jest.fn(async () => new Blob([PDF_SINTETICO], { type: "application/pdf" }));
     abrirDetalhe(notaEmitida(), { onBaixarDanfse });
 
-    fireEvent.click(screen.getByRole("button", { name: /Baixar DANFSe/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Abrir \/ imprimir PDF/i }));
     await waitFor(() => expect(onBaixarDanfse).toHaveBeenCalledWith("nota-1"));
     await waitFor(() => expect(criados.length).toBe(1));
-    expect(await screen.findByText(/DANFSe gerado e baixado/i)).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Baixar PDF' })).toBeInTheDocument();
   });
 
   // ⚠⚠ O CAMINHO QUE NÃO PODE SER SILENCIOSO. O backend recusa com 503 de propósito.
@@ -139,7 +146,7 @@ describe("DANFSe — a feature que existia no backend e não tinha porta na tela
     const onBaixarDanfse = jest.fn(async () => { throw err; });
 
     abrirDetalhe(notaEmitida({ chaveAcesso: null }), { onBaixarDanfse });
-    fireEvent.click(screen.getByRole("button", { name: /Baixar DANFSe/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Abrir \/ imprimir PDF/i }));
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent(/QR Code/i);
@@ -149,11 +156,15 @@ describe("DANFSe — a feature que existia no backend e não tinha porta na tela
     expect(criados.length).toBe(0);
   });
 
-  it("nota sem XML: o botão fica desabilitado dizendo por que, em vez de sumir", () => {
+  it("nota sem XML: o botão fica desabilitado dizendo por que, em vez de sumir", async () => {
     abrirDetalhe(notaEmitida({ xml: { disponivel: false, bytes: null, conteudo: null } }));
-    expect(screen.getByRole("button", { name: /Baixar DANFSe/i })).toBeDisabled();
+    const botao = screen.getByRole("button", { name: /Abrir \/ imprimir PDF/i });
+    fireEvent.focus(botao);
+    await waitFor(() => expect(botao).toHaveAttribute('aria-disabled', 'true'));
+    fireEvent.click(botao);
+    expect(botao).toHaveAttribute('title', expect.stringMatching(/gerado a partir dele|Recapture a nota/i));
     // A frase aparece no bloco de ações e no bloco do XML — as duas dizem a mesma coisa.
-    expect(screen.getAllByText(/gerado a partir dele|Recapture a nota/i).length).toBeGreaterThan(0);
+    expect(criados).toHaveLength(0);
   });
 
   // Nunca salvo: não há cache a limpar nem botão de "regerar" a oferecer.

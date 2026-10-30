@@ -1,3 +1,4 @@
+import { useWorkspaceNavigation } from "../../../app/navigation/WorkspaceNavigation.shared";
 import { AcoesOportunidade } from '../components/AcoesOportunidade';
 import { nomeDaOportunidade } from '../../comercial/comercialModel';
 import { etapaSatisfeita } from '../lib/jornadaComercial';
@@ -29,6 +30,7 @@ export function OnboardingDetailPage(props) {
   return <ProtecaoEdicao><OnboardingDetailContent {...props} /></ProtecaoEdicao>;
 }
 function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, onAbrirAtendimento, onAbrirConversa, preenchimentoInicial = false }) {
+  const workspace = useWorkspaceNavigation();
   const confirmarSaida = useConfirmarSaida();
   const [onboarding, setOnboarding] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -69,7 +71,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
     if (saidaEmCurso.current) return;
     saidaEmCurso.current = true;
     try {
-      if (editando) await salvarAntesDeSair.current?.();
+      if (editando && !workspace) await salvarAntesDeSair.current?.();
       confirmarSaida(() => destino?.());
     } catch (e) { setAviso(`Não foi possível salvar. Seus dados continuam nesta tela. ${e.message}`); }
     finally { saidaEmCurso.current = false; }
@@ -82,12 +84,16 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
   });
 
   useEffect(() => {
-    const abrirDestino = () => { if (window.location.hash === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' }); };
+    const abrirDestino = () => { if ((workspace?.location.hash ?? window.location.hash) === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' }); };
     setEditando(preenchimentoInicial); setAreaEscolhida(null); setOcupada(false); setAviso(null); setModalAberto(false);
     abrirDestino();
     window.addEventListener('hashchange', abrirDestino);
     return () => window.removeEventListener('hashchange', abrirDestino);
   }, [onboardingId, preenchimentoInicial]);
+
+  useEffect(() => {
+    if (workspace?.location.hash === '#implantacao') setAreaEscolhida({ id: onboardingId, area: 'implantacao' });
+  }, [onboardingId, workspace?.location.hash]);
 
   async function continuarAtendimento() {
     const id = onboardingId, pedido = ++leitura.current;
@@ -400,7 +406,7 @@ function OnboardingDetailContent({ api, onboardingId, onVoltar, onAbrirEmpresa, 
 
       <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label={onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}>
           {!onboarding.portalClientId && <h2>{onboarding.origem === "PESSOA_FISICA" ? "Execução do serviço" : "Implantação"}</h2>}
-          {onboarding.comercial?.contratacao?.ganha && !convertido && <p className="onboarding-help">Contratação confirmada: a implantação pode começar. A entrada na carteira tem requisitos próprios e não conclui estas tarefas.</p>}
+          {onboarding.comercial?.contratacao?.ganha && !convertido && <p className="onboarding-help">{onboarding.comercial.contratacao.pagamentoConferido ? 'Recebimento confirmado.' : 'Contratação confirmada por assinatura na política histórica; recebimento não confirmado.'} Execução e implantação dependem dos requisitos de cada atividade; abertura exige constituição comprovada. A entrada na carteira não conclui estas tarefas.</p>}
           {onboarding.comercial?.contratacao?.externa && <details><summary>Contratação externa registrada</summary><p>{onboarding.comercial.contratacao.externa.justificativa}</p><p>{onboarding.comercial.contratacao.externa.evidencia}</p><p>Registrada por {onboarding.comercial.contratacao.externa.atorId} em {onboarding.comercial.contratacao.externa.registradaEm}</p></details>}
           {proximaEtapa && !encerrado && <div className="onboarding-next-step"><small>Próxima pendência da checklist</small><strong>{proximaEtapa.titulo}</strong><span>{pendentes.length} {pendentes.length === 1 ? "etapa pendente" : "etapas pendentes"}</span></div>}
           {!onboarding.etapas?.length && <p className="onboarding-help">Envie a ficha para criar as etapas.</p>}

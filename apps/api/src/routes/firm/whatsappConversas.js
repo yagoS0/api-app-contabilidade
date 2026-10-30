@@ -42,7 +42,7 @@ import { WhatsappCloudClient, WhatsappError, mascararTelefone } from "../../appl
 import { baixarBuffer, CompanyDocumentError } from "../../application/companies/CompanyDocumentsService.js";
 import { pendenciaAberta } from "../../application/assistente/AcoesPendentesService.js";
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
-import { listarEncaminhamentosSuporte, atualizarEncaminhamentosSuporte } from '../../application/whatsapp/EncaminhamentoSuporteService.js';
+import { listarEncaminhamentosSuporte, atualizarEncaminhamentosSuporte, arquivarEncaminhamentoLegado } from '../../application/whatsapp/EncaminhamentoSuporteService.js';
 import { detalharConsumoIa } from '../../application/assistente/ConsumoIaService.js';
 import { resumoWhatsapp } from "../../application/whatsapp/resumoWhatsapp.js";
 import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsappService.js";
@@ -199,8 +199,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   });
 
   router.get('/whatsapp/suporte/pendencias', async (req, res) => {
-    if (!somenteAdminOuContador(req, res)) return undefined;
-    try { return res.json({ ok: true, ...await listarEncaminhamentosSuporte({ visiveis: await empresasVisiveis(req), companyId: typeof req.query.companyId === "string" ? req.query.companyId : null, client }) }); }
+    if (Object.keys(req.query).some(key => !['companyId', 'cursor'].includes(key)) || Object.values(req.query).some(value => typeof value !== 'string' || !value.trim())) return res.status(400).json({ ok: false, code: 'query_invalida', error: 'query_invalida', motivo: 'query_invalida' });
+    try { return res.json({ ok: true, ...await listarEncaminhamentosSuporte({ contexto: { canal: 'INTERNO', atorId: req.auth.user.id }, companyId: req.query.companyId || null, cursor: req.query.cursor || null, client }) }); }
     catch (err) { return falhar(res, err, { operacao: 'pendencias-suporte' }); }
   });
 
@@ -219,7 +219,9 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       await client.$transaction(async tx => {
         const travada = await tx.conversaWhatsapp.updateMany({ where: { id: conversa.id, atendidaPor: String(req.auth.user.id), excluidaEm: null }, data: { updatedAt: new Date() } });
         if (!travada.count) throw erroAtendimento('ATENDIMENTO_OCUPADO', 'O atendimento mudou. Atualize a conversa.');
-        await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: 'RESOLVIDO', responsavelId: String(req.auth.user.id), client: tx });
+        const individual = await tx.encaminhamentoSuporte.findFirst({ where: { conversaId: conversa.id, contratoVersao: 1, estado: { not: 'RESOLVIDO' } } });
+        if (individual) throw erroAtendimento('SOLICITACAO_INDIVIDUAL_OBRIGATORIA', 'Selecione a solicitação e confirme sua versão para concluir.');
+        await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: 'RESOLVIDO', responsavelId: String(req.auth.user.id), atorId: String(req.auth.user.id), client: tx });
       });
       return res.json({ ok: true });
     } catch (err) { return falhar(res, err, { operacao: 'resolver-suporte' }); }
@@ -234,18 +236,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       if (!conversa || conversa.excluidaEm || !visiveis.includes(conversa.portalClientId)) return res.status(404).json({ ok: false, error: 'demanda_nao_encontrada' });
       const responsavelId = String(req.auth.user.id);
       if (conversa.atendidaPor && conversa.atendidaPor !== responsavelId) return res.status(409).json({ ok: false, error: 'ATENDIMENTO_OCUPADO', message: 'Outro atendente assumiu esta demanda. Combine a revisão antes de excluí-la.' });
-      const pendencia = await client.encaminhamentoSuporte.findFirst({ where: { id: String(req.params.pendenciaId), conversaId: conversa.id } });
-      if (!pendencia) return res.status(404).json({ ok: false, error: 'demanda_nao_encontrada' });
-      if (pendencia.estado === 'RESOLVIDO') return res.json({ ok: true });
-      const resultado = await client.encaminhamentoSuporte.updateMany({
-        where: { id: pendencia.id, conversaId: conversa.id, estado: { not: 'RESOLVIDO' },
-          conversa: { excluidaEm: null, portalClientId: { in: visiveis }, OR: [{ atendidaPor: null }, { atendidaPor: responsavelId }] } },
-        data: { estado: 'RESOLVIDO', responsavelId, resolvidoEm: new Date() },
-      });
-      if (!resultado.count) {
-        const atual = await client.encaminhamentoSuporte.findFirst({ where: { id: pendencia.id, conversaId: conversa.id, estado: 'RESOLVIDO' } });
-        if (!atual) return res.status(409).json({ ok: false, error: 'DEMANDA_ALTERADA', message: 'A demanda mudou. Atualize a fila antes de continuar.' });
-      }
+      await arquivarEncaminhamentoLegado({ contexto: { canal: 'INTERNO', atorId: responsavelId },
+        conversaId: conversa.id, id: String(req.params.pendenciaId), client });
       return res.json({ ok: true });
     } catch (err) { return falhar(res, err, { operacao: 'excluir-demanda-suporte' }); }
   });
@@ -263,6 +255,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
   function falhar(res, err, contexto) {
     const codigo = err?.codigo || err?.code;
+    if (codigo === 'P2034') return res.status(409).json({ ok: false, error: 'DEMANDA_ALTERADA', message: 'O registro mudou. Atualize antes de continuar.' });
     if (err.intencao && !err.status) return res.status(409).json({ok:false,error:codigo || 'ENVIO_INDETERMINADO',message:err.indeterminado ? 'Envio sem confirmação. Consulte esta tentativa antes de reenviar.' : 'Confira o resultado desta tentativa.',intencao:err.intencao});
     if (err?.status && [400,403,404,409,410,413,422,503].includes(err.status)) return res.status(err.status).json({ ok: false, error: codigo, message: err.message, ...(err.intencao ? { intencao: err.intencao } : {}) });
     if (codigo === "FORA_DA_JANELA" && err.janela) return recusarForaDaJanela(res, err.janela);
@@ -308,7 +301,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
   }
 
-  async function alterarHumano(conversa, atendidaPor, atendidaDesde, {preservarContextoOperacional=false}={}) {
+  async function alterarHumano(req, conversa, atendidaPor, atendidaDesde, {preservarContextoOperacional=false}={}) {
     if (conversa.vinculoNumeroId && conversa.grupoHumanoCompleto !== true) throw erroAtendimento('ATENDIMENTO_FORA_DA_CARTEIRA', 'Este atendimento envolve empresas fora da sua carteira. Um responsável com acesso completo deve assumir ou devolver o contato.');
     if (atendidaPor && conversa.atendidaPor && conversa.atendidaPor !== atendidaPor) throw erroAtendimento('ATENDIMENTO_OCUPADO', 'Outro atendente assumiu esta conversa. Combine a transferência antes de responder.');
     if (atendidaPor && conversa.atendidaPor === atendidaPor) return null;
@@ -316,7 +309,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const { alterarAtendimentoHumano } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
       return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, preservarResponsavel: true, preservarContextoOperacional, client,
         aoAlterar: async (tx, ids) => {
-          for (const conversaId of ids) await atualizarEncaminhamentosSuporte({ conversaId, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+          for (const conversaId of ids) await atualizarEncaminhamentosSuporte({ conversaId, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, atorId: String(req.auth.user.id), client: tx });
           if (!atendidaPor) await resolverContingenciasComerciais({ conversaIds: ids, client: tx });
         } });
     }
@@ -326,7 +319,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       data: { atendidaPor, atendidaDesde, automacaoInvalidadaEm: new Date() },
     });
     if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
-    await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, client: tx });
+    await atualizarEncaminhamentosSuporte({ conversaId: conversa.id, estado: atendidaPor ? 'EM_ATENDIMENTO' : 'RESOLVIDO', responsavelId: atendidaPor, atorId: String(req.auth.user.id), client: tx });
     if (!atendidaPor) await resolverContingenciasComerciais({ conversaIds: [conversa.id], client: tx });
     await tx.turnoIaWhatsapp.updateMany({where:{conversaId:conversa.id,status:{in:['pendente','falhou','processando']}},data:{status:'ignorado',motivo:'ASSUMIDA_POR_HUMANO',reservaToken:null,leaseAte:null,concluidoEm:new Date()}});
     await tx.acaoPendenteWhatsapp.updateMany({where:{conversaId:conversa.id,status:'pendente'},data:{status:'cancelada'}});
@@ -335,7 +328,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   }
 
   async function assumirParaEnvio(req, conversa, opcoes={}) {
-    await alterarHumano(conversa, String(req.auth.user.id), new Date(),opcoes);
+    await alterarHumano(req, conversa, String(req.auth.user.id), new Date(),opcoes);
     const atual = await conversaNoEscopo(req, conversa.id, { client });
     if (!atual) throw erroAtendimento('conversa_nao_encontrada', 'Conversa não encontrada.', 404);
     return atual;
@@ -645,7 +638,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      await alterarHumano(conversa, String(req.auth.user.id), new Date());
+      await alterarHumano(req, conversa, String(req.auth.user.id), new Date());
       const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {
@@ -660,7 +653,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      await alterarHumano(conversa, null, null);
+      await alterarHumano(req, conversa, null, null);
       const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {

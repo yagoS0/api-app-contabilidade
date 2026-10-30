@@ -1,0 +1,18 @@
+{
+  "summary": "Adequa quatro fixtures PostgreSQL do PR245: jornadas comerciais legadas explicitas e atores internos com vinculos persistidos no calendario. Nenhuma assertion anterior removida.",
+  "risk": "medium",
+  "domains": ["api", "portal", "web"],
+  "operationalImpact": "Sem mudanca operacional. Preserva politica comercial C1 para novos atendimentos, legado R35, guarda de constituicao e autorizacao por ator ativo/carteira. Somente dados sinteticos dos verificadores foram completados; produto, schema, workflows e gates intactos.",
+  "tests": [
+    "Candidatos aplicados exatamente nos quatro hashes revisados: commercial 83b4adae440e1a1c12fc342f331a6ec78b30109600d9187db20532d29012f3b8; opening 66c1e8cd6d89ccaaf07d9059f598bd230e088c9e24e8542da82bb7ad158597d5; series c0ee55c4ff83a05dd52939f2825a2c3c999a8f9e2d07a18fcd28d4c4d2dde609; duplicate 5a4e257247e3059d3a9166f0856936e3372f82068ca71f7c83e4b6fe43f21ac9.",
+    "Quatro focais em PostgreSQL16 descartavel, sem rede externa: lead46, abertura12, series6, duplicacao11 =75 cenarios aprovados. Codigo zero, snapshots inalterados e encerramento do cluster comprovado por status3.",
+    "Run2026-10-30T19-27-29-414Z-79b8b578 permanece escalated: duas chamadas, seis gates nao executados. O primeiro ambiente focal ativou complemento local opcional checks-onboarding-alinhamento.js, que falhou por fixture LTDA sem socio. Arquivo identico a mainfe2c9f1 e fora do comando CI. Falha preservada como pendencia; nao foi transformada em PASS.",
+    "Lead revalidado com o comando efetivo do CI em lead_flow_check, sem habilitar o complemento opcional. Os testes comerciais antigos explicitam R35 e verificam criacao C1/recusa sem constituicao; nao comprovam sucesso integral de abertura constituida C1. Teste proprio politicaComercialC1.postgres passou no CI anterior.",
+    "Revisao independente estatica dos quatro candidatos e revisao complementar favoraveis ao prosseguimento do PR, condicionado aos focais e CI completo. Aplicativo/configuracao/schema/dependencias iguais a1362cbd6; provas anteriores preservadas, sem declarar nova execucao das baterias intactas. CI sobre o novo SHA ainda pendente neste registro."
+  ],
+  "rollback": "Reverter somente este incremento de fixtures se necessario; nao altera dados reais ou schema. Preservar resultados falhos e a pendencia do complemento local. Integracao da entrega continua dependente do CI e dos pareceres.",
+  "humanDecisions": [
+    "Usuario autorizou aplicar somente os quatro arquivos de teste e revalidar cenarios/CI; publicacao apenas se tudo passar.",
+    "Historico de chamadas preservado:14+6+2=22. Esta rodada nao permitiu novas correcoes automaticas. Nenhum quinto arquivo funcional ou teste foi alterado."
+  ]
+}

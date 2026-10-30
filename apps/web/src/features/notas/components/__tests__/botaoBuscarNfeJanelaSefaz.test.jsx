@@ -34,6 +34,7 @@ describe("janela da SEFAZ na aba Notas Fiscais", () => {
 
     expect(botao).toBeInTheDocument();
     expect(botao).toBeDisabled();
+    expect(botao).toHaveAccessibleDescription(/SEFAZ permite|Busca em espera/);
     // ⚠ O texto tem de dizer que quem consome a janela é o NOSSO sistema — não o contador. Na
     // Situação Fiscal a janela é NOSSA (4 h, chamada paga); aqui é da SEFAZ e quem a gasta é o
     // worker. Sem isso o contador procura culpado (foi o que a mensagem antiga do 656 causou).

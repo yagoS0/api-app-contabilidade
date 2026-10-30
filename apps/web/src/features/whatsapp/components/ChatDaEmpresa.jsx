@@ -30,7 +30,7 @@ import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 export function ChatDaEmpresa(props) {
   return <ChatNoCadastro key={props.companyId} {...props} />;
 }
-function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = null, canalLigado = null, usuarioId = null }) {
+function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = null, canalLigado = null, usuarioId = null, selecionarContato = false, sugestao = null }) {
   const hook = useConversasWhatsapp({ api, feedback, empresa: companyId });
   const [escolhido, setEscolhido] = useState(null);
   const [detalhes, setDetalhes] = useState(false);
@@ -38,7 +38,7 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
 
   const fios = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const escolha = escolhaDoFio(fios);
-  const fio = fios.find(c => chaveDoInterlocutor(c) === escolhido) || fios[0];
+  const fio = fios.find(c => chaveDoInterlocutor(c) === escolhido) || (selecionarContato ? null : fios[0]);
 
   // ⚠ O fio ABERTO (com as mensagens) é OUTRA consulta: a listagem traz só o resumo.
   const aberto = fio && chaveDoInterlocutor(hook.aberta?.conversa) === chaveDoInterlocutor(fio) ? hook.aberta : null;
@@ -67,7 +67,7 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
         <select aria-label="Visualização das conversas da empresa" style={{ ...campo, width: "auto" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setEscolhido(null); tentado.current = null; hook.setFiltro(e.target.value); }}>
           <option value="todas">Conversas atuais</option><option value="historico">Histórico anterior</option><option value="lixeira">Lixeira</option>
         </select>
-        {escolha.situacao === ESCOLHA_DO_FIO.ESCOLHER ? (
+        {escolha.situacao === ESCOLHA_DO_FIO.ESCOLHER || (selecionarContato && fios.length > 0) ? (
           <label style={{ fontSize: "0.76rem", color: "var(--text-muted)", display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
             {hook.filtro === "todas" ? "Falando com" : "Consultar histórico de"}
             <select
@@ -77,6 +77,7 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
               value={chaveDoInterlocutor(fio) || ""}
               onChange={(e) => { const contato = fios.find(c => chaveDoInterlocutor(c) === e.target.value); if (!contato) return; tentado.current = contato.id; setEscolhido(e.target.value); setDetalhes(false); hook.abrir(contato.id); }}
             >
+              {selecionarContato && <option value="">Selecione o contato cadastrado</option>}
               {escolha.fios.map((c) => {
                 const i = identidadeDaConversa(c);
                 return <option key={chaveDoInterlocutor(c)} value={chaveDoInterlocutor(c)}>{i.pessoa}</option>;
@@ -123,6 +124,7 @@ function ChatNoCadastro({ api, companyId, feedback = null, onVirarAnotacao = nul
           usuarioId={usuarioId} onVirarAnotacao={onVirarAnotacao} hrefDaEmpresa={id => companyTabPath(id, "anotacoes")}
           onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes}
           onCanalSelecionado={registrarCanal} pedidoCanal={pedidoCanal} atualizacaoComercialExterna={atualizacaoComercial}
+          sugestaoMensagem={sugestao}
           slotAcoes={conversa => <AcoesRapidas conversa={conversa} mensagens={aberto.mensagens} janela={conversa.janela}
             canalLigado={canalLigado} api={api} companyId={companyId}
             onEnviado={() => hook.atualizarConversa(aberto.conversa.id)} />}

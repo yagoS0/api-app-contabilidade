@@ -174,7 +174,7 @@ describe("4) a recusa do servidor", () => {
     const botao = screen.getByRole("button", { name: /Emitir nota/ });
     expect(botao).toBeDisabled();
     expect(botao).toHaveAttribute("title", expect.stringContaining("consulte antes"));
-    expect(screen.getAllByText(/Buscar NFS-e/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Buscar.*com NFS-e selecionada/).length).toBeGreaterThan(0);
   });
 
   it("E0014 preserva prova oficial e impede segundo envio", async () => {

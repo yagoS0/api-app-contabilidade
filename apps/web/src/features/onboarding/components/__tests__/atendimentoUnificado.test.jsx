@@ -2,12 +2,28 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OnboardingDetailPage } from "../../pages/renderOnboardingDetailPage";
 import { MemoryRouter } from "react-router-dom";
 
+async function conferirEAdotarDadosVigentes(api, callback) {
+  const leiturasAntes = api.getOnboarding.mock.calls.length;
+  fireEvent.click(await screen.findByRole("button", { name: "Conferir dados vigentes" }));
+  const adotar = await screen.findByRole("button", { name: "Usar dados vigentes e descartar edição local" });
+  await waitFor(() => expect(adotar).toBeEnabled());
+  expect(api.getOnboarding).toHaveBeenCalledTimes(leiturasAntes + 1);
+  expect(api.getOnboarding).toHaveBeenLastCalledWith("alex");
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
+  expect(callback).not.toHaveBeenCalled();
+  fireEvent.click(adotar);
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Conferir salvamento incerto" })).not.toBeInTheDocument());
+  expect(screen.getByLabelText(/O que precisa resolver/)).toHaveValue("Resolver IRRF");
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
+  expect(callback).not.toHaveBeenCalled();
+}
+
 test("voltar ao chat salva a edição e só navega para a conversa vinculada após confirmação", async () => {
   const ficha = { id: "alex", origem: "PESSOA_FISICA", versao: 0, status: "RASCUNHO", ultimoPasso: "identificacao", dados: { servicoSolicitado: "Resolver IRRF" }, etapas: [] };
   const api = {
     getOnboarding: jest.fn(async () => ({ onboarding: ficha })),
     comercial: jest.fn(async () => ({ conversaId: "conversa-alex" })),
-    salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: ficha }),
+    salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: { ...ficha, versao: 1 } }),
   };
   const abrir = jest.fn();
   render(<MemoryRouter><OnboardingDetailPage api={api} onboardingId="alex" preenchimentoInicial onAbrirConversa={abrir} /></MemoryRouter>);
@@ -16,8 +32,10 @@ test("voltar ao chat salva a edição e só navega para a conversa vinculada ap�
   await waitFor(() => expect(api.salvarOnboarding).toHaveBeenCalledTimes(1));
   expect(abrir).not.toHaveBeenCalled();
   expect(await screen.findAllByRole("alert")).not.toHaveLength(0);
+  await conferirEAdotarDadosVigentes(api, abrir);
   fireEvent.click(screen.getByRole("button", { name: "Voltar ao chat" }));
   await waitFor(() => expect(abrir).toHaveBeenCalledWith("conversa-alex"));
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(2);
 });
 import { NovaDemanda } from "../NovaDemanda";
 import { ConferirCadastroSalvo } from "../ConferirCadastroSalvo";
@@ -55,7 +73,7 @@ test("nova empresa para Alex usa demanda relacionada e conserva chave no retry",
 
 test("sair da edição integrada aguarda salvar e preserva a tela em caso de falha", async () => {
   const ficha = { id: "alex", origem: "PESSOA_FISICA", versao: 0, status: "RASCUNHO", ultimoPasso: "identificacao", dados: { servicoSolicitado: "Resolver IRRF" }, etapas: [] };
-  const api = { getOnboarding: jest.fn(async () => ({ onboarding: ficha })), salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: ficha }) };
+  const api = { getOnboarding: jest.fn(async () => ({ onboarding: ficha })), salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: { ...ficha, versao: 1 } }) };
   const voltar = jest.fn();
   render(<OnboardingDetailPage api={api} onboardingId="alex" preenchimentoInicial onVoltar={voltar} />);
   await screen.findByLabelText(/O que precisa resolver/);
@@ -63,8 +81,10 @@ test("sair da edição integrada aguarda salvar e preserva a tela em caso de fal
   await waitFor(() => expect(api.salvarOnboarding).toHaveBeenCalledTimes(1));
   expect(voltar).not.toHaveBeenCalled();
   expect(await screen.findAllByRole("alert")).not.toHaveLength(0);
+  await conferirEAdotarDadosVigentes(api, voltar);
   fireEvent.click(screen.getByRole("button", { name: "Entrada de clientes" }));
   await waitFor(() => expect(voltar).toHaveBeenCalledTimes(1));
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(2);
 });
 
 test("consulta salva é revisada sem nova requisição nem confirmação automática", () => {

@@ -2,6 +2,7 @@ import { pathToPageName } from '../useManageAuthSession';
 import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from '../../../features/companies/detail/lib/rotasDaEmpresa';
 
 const rotas = {
+  '/solicitacoes': 'solicitacoes',
   '/login': 'login', '/companies': 'companies', '/companies/new': 'createCompany',
   '/guides/upload': 'companies', '/guides/pending': 'pendingReport', '/guides/batch-email': 'batchEmail',
   '/firm-settings/guides': 'guideSettings', '/firm-settings/chart': 'chartOfAccountsGlobal',

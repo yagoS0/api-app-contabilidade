@@ -32,8 +32,9 @@ export async function saveManifestAtomically(directory, manifest, deadline, {
   }
 }
 
-function command(args, cwd, deadline) {
+function command(args, cwd, deadline, signal) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('Execução interrompida'));
     const remaining = deadline - Date.now();
     if (remaining <= 0) return reject(new Error('Tempo total esgotado'));
     const child = spawn(process.execPath, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32' });
@@ -48,6 +49,7 @@ function command(args, cwd, deadline) {
       child.kill('SIGKILL');
     };
     const stop = () => { failure = new Error('Execução interrompida'); killTree(); };
+    signal?.addEventListener('abort', stop, { once: true });
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
     const timer = setTimeout(() => { failure = new Error('Tempo total esgotado'); killTree(); }, remaining);
@@ -60,11 +62,12 @@ function command(args, cwd, deadline) {
     child.stdout.setEncoding('utf8').on('data', chunk => collect('stdout', chunk));
     child.stderr.setEncoding('utf8').on('data', chunk => collect('stderr', chunk));
     child.on('error', error => { failure = error; });
-    child.on('close', (code, signal) => {
+    child.on('close', (code, exitSignal) => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', stop);
       process.removeListener('SIGTERM', stop);
       process.removeListener('SIGINT', stop);
-      resolve({ code, signal, stdout, stderr, error: failure?.message });
+      resolve({ code, signal: exitSignal, stdout, stderr, error: failure?.message });
     });
   });
 }
@@ -80,17 +83,52 @@ function suitePath(value, cwd) {
   return process.platform === 'win32' ? absolute.toLowerCase() : absolute;
 }
 
+// One process per lane: no shared JS globals, mock storage or process.env.
+// Stop dispatch immediately on failure; await every active command's close before returning.
+export async function runBatchQueue(items, concurrency, work, controller = new AbortController()) {
+  if (![1, 2].includes(concurrency)) throw new Error('Concorrência inválida');
+  let next = 0, failure;
+  const worker = async lane => {
+    while (!controller.signal.aborted) {
+      const index = next++;
+      if (index >= items.length) return;
+      try { await work(items[index], index, lane, controller.signal); }
+      catch (error) {
+        if (!failure) failure = error;
+        controller.abort();
+        return;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, (_, lane) => worker(lane)));
+  if (failure) throw failure;
+  if (controller.signal.aborted) throw new Error('Execução interrompida');
+}
+
+export function webConcurrency(cwd) {
+  // Fixed workspace identity; no CLI flag or environment switch can raise concurrency.
+  if (path.basename(cwd) !== 'web' || path.basename(path.dirname(cwd)) !== 'apps') return 1;
+  const pkg = path.join(cwd, 'package.json');
+  return fs.existsSync(pkg) && JSON.parse(fs.readFileSync(pkg, 'utf8')).name === '@contabilidade/web' ? 2 : 1;
+}
 export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRoot, timeoutMs = TIMEOUT_MS } = {}) {
   cwd = fs.realpathSync(cwd);
   jestPath ??= path.resolve(cwd, '../../node_modules/jest/bin/jest.js');
   evidenceRoot ??= path.resolve(cwd, '../../.altan-governance/test-batches');
   fs.mkdirSync(evidenceRoot, { recursive: true });
   const directory = fs.mkdtempSync(path.join(evidenceRoot, `${path.basename(cwd)}-`));
-  const manifest = { cwd, jestPath, batchSize: BATCH_SIZE, startedAt: new Date().toISOString(), status: 'running', discovered: [], batches: [] };
+  const concurrency = webConcurrency(cwd);
+  const controller = new AbortController();
+  const manifest = { cwd, jestPath, concurrency, batchSize: BATCH_SIZE, startedAt: new Date().toISOString(), status: 'running', discovered: [], batches: [] };
   const deadline = Date.now() + timeoutMs;
-  const save = () => saveManifestAtomically(directory, manifest, deadline);
+  let saveQueue = Promise.resolve();
+  const save = () => {
+    const snapshot = JSON.parse(JSON.stringify(manifest));
+    saveQueue = saveQueue.then(() => saveManifestAtomically(directory, snapshot, deadline));
+    return saveQueue;
+  };
   async function execute(args, label) {
-    const result = await command([jestPath, ...args], cwd, deadline);
+    const result = await command([jestPath, ...args], cwd, deadline, controller.signal);
     fs.writeFileSync(path.join(directory, `${label}.stdout.log`), result.stdout);
     fs.writeFileSync(path.join(directory, `${label}.stderr.log`), result.stderr);
     if (result.error || result.code !== 0 || result.signal) throw new Error(`${label}: ${result.error || `exit=${result.code}, signal=${result.signal}`}`);
@@ -112,15 +150,18 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
     await save();
     const covered = [];
     const totals = { numTotalTestSuites: 0, numPassedTestSuites: 0, numPendingTestSuites: 0, numTotalTests: 0, numPassedTests: 0, numPendingTests: 0, numTodoTests: 0 };
-    for (let offset = 0; offset < discovered.length; offset += BATCH_SIZE) {
+    const offsets = Array.from({ length: Math.ceil(discovered.length / BATCH_SIZE) }, (_, index) => index * BATCH_SIZE);
+    // Private cache per lane avoids concurrent writes to Jest's transform/performance caches.
+    const caches = Array.from({ length: concurrency }, (_, lane) => path.join(directory, `jest-cache-${lane}`));
+    await runBatchQueue(offsets, concurrency, async (offset, index, lane) => {
       const files = discovered.slice(offset, offset + BATCH_SIZE);
-      const label = `batch-${manifest.batches.length + 1}`;
+      const label = `batch-${index + 1}`;
       const outputFile = path.join(directory, `${label}.json`);
       const batch = { files, status: 'running' };
-      manifest.batches.push(batch);
+      manifest.batches[index] = batch;
       await save();
       // Relative argv keeps Windows command length bounded without changing the selected files.
-      await execute(['--runInBand', '--silent', '--json', '--outputFile', outputFile, '--runTestsByPath', ...files.map(file => `.${path.sep}${path.relative(cwd, file)}`)], label);
+      await execute(['--runInBand', ...(concurrency === 2 ? ['--cacheDirectory', caches[lane]] : []), '--silent', '--json', '--outputFile', outputFile, '--runTestsByPath', ...files.map(file => `.${path.sep}${path.relative(cwd, file)}`)], label);
       const report = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
       if (report.success !== true || report.wasInterrupted === true || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0 || !Array.isArray(report.testResults)) throw new Error(`${label}: testes reprovados ou resultado inválido`);
       const assertions = { passed: 0, pending: 0, todo: 0 };
@@ -146,7 +187,7 @@ export async function runJestBatches({ cwd = process.cwd(), jestPath, evidenceRo
       batch.status = 'passed';
       await save();
       console.log(`${label}: ${files.length} suítes; ${covered.length}/${discovered.length}`);
-    }
+    }, controller);
     if (covered.length !== keys.length || new Set(covered).size !== keys.length || totals.numTotalTests === 0) throw new Error('Cobertura final divergente ou nenhum teste contabilizado');
     manifest.status = 'passed';
     manifest.totals = totals;
