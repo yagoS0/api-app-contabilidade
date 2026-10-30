@@ -35,6 +35,17 @@ try {
   ok('sete tabelas legadas permanecem vazias e recusam inserts/updates');
 
   await prisma.portalClient.createMany({ data: portalIds.map((id, index) => ({ id, razao: `Calendário descartável ${index}`, cnpj: id })) });
+  // Current calendar commands reload an active internal actor and persisted scope.
+  // Staff fixtures exercise membership; no admin/accountant bypass is used.
+  const fixtureUserIds = [userId, `${prefix}-outro`];
+  await prisma.user.createMany({ data: fixtureUserIds.map(id => ({
+    id, email: `${id}@example.invalid`, passwordHash: 'disabled-local-fixture',
+    role: 'user', status: 'active', accountType: 'FIRM',
+  })) });
+  await prisma.companyFirmAccess.createMany({ data: [
+    ...portalIds.map(companyId => ({ companyId, userId, role: 'STAFF', status: 'ACTIVE' })),
+    { companyId: portalIds[0], userId: `${prefix}-outro`, role: 'STAFF', status: 'ACTIVE' },
+  ] });
   const tarefa = await criarTarefaUnificada({ userId, portalIds, dados: {
     titulo: 'Conferência diária', empresasIds: portalIds,
     config: { dataInicio: '2026-10-10', dataFim: '2026-10-10', recorrencia: 'DIARIA', repetirQuantidade: 5, horarioModo: 'FIXO', horaInicio: '09:00' },
@@ -83,5 +94,6 @@ try {
   try {
     await prisma.tarefaCalendario.deleteMany({ where: { userId: prefix } });
     await prisma.portalClient.deleteMany({ where: { id: { in: portalIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: [userId, `${prefix}-outro`] } } });
   } finally { await prisma.$disconnect(); }
 }

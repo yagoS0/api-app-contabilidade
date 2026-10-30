@@ -10,6 +10,17 @@ const prefix=`cal-duplicate-${randomUUID()}`,userId=prefix,portalIds=[`${prefix}
 let checks=0;const ok=name=>console.log(`PASS ${++checks}: ${name}`);
 try {
  await prisma.portalClient.createMany({data:portalIds.map(id=>({id,razao:'Empresa fictícia calendário',cnpj:id}))});
+  // Current calendar commands reload an active internal actor and persisted scope.
+  // Staff fixtures exercise membership; no admin/accountant bypass is used.
+  const fixtureUserIds = [userId, `${prefix}-outro`];
+  await prisma.user.createMany({ data: fixtureUserIds.map(id => ({
+    id, email: `${id}@example.invalid`, passwordHash: 'disabled-local-fixture',
+    role: 'user', status: 'active', accountType: 'FIRM',
+  })) });
+  await prisma.companyFirmAccess.createMany({ data: [
+    ...portalIds.map(companyId => ({ companyId, userId, role: 'STAFF', status: 'ACTIVE' })),
+    { companyId: portalIds[0], userId: `${prefix}-outro`, role: 'STAFF', status: 'ACTIVE' },
+  ] });
  const source=await criarTarefaUnificada({userId,portalIds,dados:{titulo:'Tarefa recorrente QA',empresasIds:portalIds,subtarefas:[{id:'modelo',titulo:'Conferir'}],config:{dataInicio:'2026-10-15',dataFim:'2026-10-16',recorrencia:'MENSAL',diaVencimento:31,horarioModo:'FIXO',horaInicio:'10:00',horaFim:'11:00'}}});
  const action=(dados,id=source.id,overrides={})=>acaoTarefaUnificada({userId,portalIds,id,dados,...overrides});
  await Promise.all(portalIds.map(companyId=>action({acao:'CONCLUIR',companyId,cicloChave:'2026-10'})));
@@ -39,6 +50,7 @@ try {
 } finally {
  await prisma.tarefaCalendario.deleteMany({where:{userId:{startsWith:prefix}}});
  await prisma.portalClient.deleteMany({where:{id:{in:portalIds}}});
+ await prisma.user.deleteMany({where:{id:{in:[userId,`${prefix}-outro`]}}});
  assert.equal(await prisma.tarefaCalendario.count({where:{userId:{startsWith:prefix}}}),0);
  await prisma.$disconnect();
 }

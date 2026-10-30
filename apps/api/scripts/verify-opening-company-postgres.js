@@ -55,6 +55,13 @@ try {
   const msg = await entrada("Olá, quero abrir uma empresa de consultoria e contratar a contabilidade. Ainda não tenho CNPJ.");
   atendimento = await iniciarAtendimento({ conversaId: chat.id, origem: "ABERTURA", atorId: user.id, client: db });
   const id = atendimento.onboardingId;
+  // Explicit legacy fixture: retain the historical R35 journey assertions below.
+  // The factory still MUST create C1; this local-only setup is not a migration.
+  assert.equal((await db.onboarding.findUnique({ where: { id } })).politicaComercial, 'COMERCIAL_2026_10_V1');
+  await assert.rejects(converter(id, {}, { atorId: user.id }), e => e.code === 'constituicao_pendente');
+  await db.onboarding.update({ where: { id }, data: { politicaComercial: null } });
+  assert.equal((await db.onboarding.findUnique({ where: { id } })).politicaComercial, null);
+  ok("Fixture legada explícita: criação C1 e recusa sem constituição verificadas antes do cenário R35");
   let ficha = await registrarCampos({ onboardingId: id, versao: 0, mensagemId: msg.id, atorId: user.id, client: db, operacoes: [{ campo: "responsavelNome", acao: "set", valor: "Marina Exemplo" }, { campo: "atividadePretendida", acao: "set", valor: "Consultoria em gestão empresarial" }, { campo: "modalidadeServico", acao: "set", valor: "RECORRENTE" }] });
   assert.equal(ficha.dados.modalidadeServico, undefined, "A conversa não define a modalidade interna.");
   ficha = await registrarCampos({ onboardingId: id, versao: ficha.versao, atorId: user.id, client: db, operacoes: [
