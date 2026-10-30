@@ -1,0 +1,46 @@
+{
+  "summary": "Primeira entrega integrada: Operações por etapa e controles contábeis, central de consulta de Solicitações, barra de Notas e ações individuais PDF/XML, política comercial versionada e proteção/recuperação de rascunhos e navegação. Guru existente permanece em conferência. Gestão completa de Solicitações, novas abas Comercial, cancelamento/datas e Guru novo ficam nas próximas entregas.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "operationalImpact": "Integra decisões operacionais anteriormente aprovadas, incluindo política comercial explícita com preservação do legado e Solicitações auditadas. Documento, envio, pagamento e conclusão mensal permanecem distintos. Sem nova decisão fiscal ou ativação: Guru em conferência, eNotas ativo, benefício municipal pendente, lembretes desligados e Sintropia sem alteração operacional. Sem emissão/cancelamento, consulta fiscal paga ou envio real como teste. Referência operacional canônica SHA256 68caf8f5d9b1710064132bb12d012491773825432542895daa65b7331d6e21ef preservada.",
+  "tests": [
+    "Run141c: API 11.896 testes/693 suítes, portal 1.586/101, governança, PostgreSQL e builds aprovados na fonte b26436979b1dc0793408c2e2d4282931c426f0142dcc998a217a1489e7168780. Web reprovou quatro cenários do teste legado MemoryRouter. O runtime terminou escalated por limite de uso na chamada14; resultado original não foi reescrito.",
+    "Correção limitada: solicitacoesNavigation.test.jsx SHA256 963a682b97b6dc583071c015baf139d30da543c90bca20e523fc45c139456bd9. Preflight cinco testes aprovado, preservando cenários/assertions e o bloqueador real.",
+    "Run9938: regressão web 6.507 testes/551 suítes, governança 85 testes e build web aprovados na fonte 9c110a83a1b87456f19c1432de518b5f9f53ab999949ecbff1cc210790c77671. Rodada concluída ready_for_human, com as quatro revisões aprovadas e seis chamadas; aprovação restrita à compatibilidade do teste.",
+    "Comparação integral de fontes confirma somente o arquivo de teste alterado entre b264 e 9c110; provas API/portal/dados/build portal são reaproveitadas com fontes/configuração/schema/dependências preservadas. Não somar testes sobrepostos nem declarar nova execução dos gates reaproveitados.",
+    "Conferência visual mock em 390/1440: seis percursos aprovados de Operações, Solicitações e Notas; dois de chat inconclusivos por ausência de conversas. Nenhum PDF/XML real baixado ou ato fiscal realizado. Capturas e revisão independente favorável registradas, com limites explícitos.",
+    "Revisões independentes de backend e governança favoráveis em seus recortes; parecer sistêmico agregado favorável e condição técnica da rodada9938 satisfeita. CI obrigatório sobre o SHA final e verificação após deploy continuam pendentes."
+  ],
+  "rollback": "Reverter a integração por PR e republicar a versão anterior validada se necessário, avaliando compatibilidade dos dados já criados. Preservar tabelas/colunas novas, vínculos, autoria e auditorias; não executar down destrutivo nem apagar histórico. Migrações e falhas não podem ser marcadas como concluídas sem execução comprovada.",
+  "humanDecisions": [
+    "Em 30/10/2026 o usuário escolheu publicar por entregas, preservando o restante do plano; publicação condicionada a testes, revisões e CI aprovados.",
+    "Usuário solicitou reduzir repetição e consumo. Esta retomada manteve runtime/catalogo originais e limitou o delta a um teste, sem repetir gates cujas fontes permanecem iguais.",
+    "Autorização de publicação não autoriza emissão/cancelamento fiscal, mensagens reais, ativação de lembretes ou mudanças de atendimento como teste."
+  ],
+  "evidence": {
+    "baseMain": "fe2c9f111cec3293a6c63cdf658c70d4d190f523",
+    "integrationCheckpoint": "a5379287f83236a856d18fbba375966502ea2f96",
+    "initialRun": "2026-10-30T15-52-42-206Z-141c241a",
+    "testCorrectionRun": "2026-10-30T18-28-19-839Z-9938c6fa",
+    "sourceReuseProofSHA256": "5321bf1c1264fee7b165655f635d41997f1e8683b2e691ec29428f484393828b",
+    "historicalCalls": 14,
+    "maximumContinuationCalls": 6,
+    "maximumCombinedCalls": 20,
+    "originalCeiling": 40,
+    "aggregateStatus": "technically_reviewed_pending_ci"
+  }
+}

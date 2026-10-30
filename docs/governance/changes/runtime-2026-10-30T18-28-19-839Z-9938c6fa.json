@@ -1,0 +1,22 @@
+{
+  "summary": "Retomada técnica delimitada da primeira composição. Não relançar controlador/delegar, não publicar e não executar testes manualmente: o runtime original executará seus gates.\nÚNICO caminho editável: apps/web/src/app/hooks/__tests__/solicitacoesNavigation.test.jsx.\nAplicar exatamente o candidato externo C:/Users/yagoa/Documents/ChatGPT/ALTAN/output/release-primeira-entrega-20261030/corrections/solicitacoesNavigation.test.jsx, SHA256 963a682b97b6dc583071c015baf139d30da543c90bca20e523fc45c139456bd9.\nCorrige somente montagem do teste incompatível com useBlocker/data router: createMemoryRouter/RouterProvider, Request disponível em jsdom e descarte de routers. Preservar todos os cinco cenários, assertions, App/provider e navegação real, histórico/POP, login, filtro e scroll. Não mockar guardas nem remover asserts. Não alterar qualquer outro arquivo do produto, configuração, gates, governança ou regras operacionais. Sem impacto operacional.\nHistórico preservado: run2026-10-30T15-52-42-206Z-141c241a escalated após14 chamadas; fonte b26436979b1dc0793408c2e2d4282931c426f0142dcc998a217a1489e7168780, primeiro gate web falhou por quatro cenários deste arquivo. Esta continuação dispõe de no máximo6 chamadas, zero correções automáticas, timeout600000;14+6<=20, dentro do teto histórico40. Não reiniciar nem reescrever orçamento/resultado anterior.\nO conjunto94 caminhos não está aprovado por este pedido. ready_for_human desta execução, se obtido, qualifica apenas o delta de compatibilidade do teste e seus gates/revisões; aprovação agregada da composição permanece própria e pendente. Guru legado e demais módulos não podem ser alterados. Falha ou necessidade de alteração adicional deve ser reportada, sem ampliar escopo.\n",
+  "risk": "medium",
+  "domains": [
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-10-30T18-28-19-839Z-9938c6fa",
+  "tests": [
+    "governance-engine: passed against 9c110a83a1b87456f19c1432de518b5f9f53ab999949ecbff1cc210790c77671; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-g15-scheduler-20261029\\.altan-governance\\runs\\2026-10-30T18-28-19-839Z-9938c6fa\\round-0-gate-governance-engine",
+    "web-regression: passed against 9c110a83a1b87456f19c1432de518b5f9f53ab999949ecbff1cc210790c77671; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-g15-scheduler-20261029\\.altan-governance\\runs\\2026-10-30T18-28-19-839Z-9938c6fa\\round-0-gate-web-regression",
+    "web-build: passed against 9c110a83a1b87456f19c1432de518b5f9f53ab999949ecbff1cc210790c77671; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-comercial-g15-scheduler-20261029\\.altan-governance\\runs\\2026-10-30T18-28-19-839Z-9938c6fa\\round-0-gate-web-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-10-30T18-28-19-839Z-9938c6fa; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "9c110a83a1b87456f19c1432de518b5f9f53ab999949ecbff1cc210790c77671",
+  "sourcePaths": [
+    "apps/web/src/app/hooks/__tests__/solicitacoesNavigation.test.jsx"
+  ],
+  "runId": "2026-10-30T18-28-19-839Z-9938c6fa"
+}

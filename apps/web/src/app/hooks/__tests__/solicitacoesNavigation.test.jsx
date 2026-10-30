@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { Request } from 'node-fetch/lib/index.js';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider, useLocation, useNavigate } from 'react-router-dom';
 import App from '../../../App';
 import { createApiClient } from '../../../api/client';
 import { useManageAuthSession } from '../useManageAuthSession';
@@ -15,6 +16,17 @@ jest.mock('../../../api/client', () => {
   return { createApiClient: jest.fn(() => api) };
 });
 jest.setTimeout(30000);
+const requestBeforeSuite = globalThis.Request;
+const mountedRouters = [];
+beforeAll(() => { globalThis.Request = Request; });
+afterAll(() => { globalThis.Request = requestBeforeSuite; });
+afterEach(() => { cleanup(); mountedRouters.splice(0).forEach(router => router.dispose()); });
+function mountRouter(element, initialEntries) {
+  const router = createMemoryRouter([{ path: '*', element }], { initialEntries });
+  mountedRouters.push(router);
+  const view = render(<RouterProvider router={router} />);
+  return { ...view, unmount: () => { view.unmount(); router.dispose(); } };
+}
 let navigate;
 function Caminho() { navigate = useNavigate(); const location = useLocation(); return <output aria-label="rota integrada">{location.pathname}{location.search}</output>; }
 // Imports transitivos também usam a factory. Espionar a instância compartilhada
@@ -43,7 +55,7 @@ test('destino seguro preserva Solicitações e filtros, recusando redirects exte
   }
 });
 function montar(url = '/solicitacoes?prioridade=null') {
-  return render(<MemoryRouter initialEntries={[url]}><Caminho /><App /></MemoryRouter>);
+  return mountRouter(<><Caminho /><App /></>, [url]);
 }
 
 test('App real monta a central com API, normaliza barra, mantém histórico e restaura scroll ao retornar', async () => {
@@ -99,7 +111,7 @@ test('setPage usa o mapeamento real para Solicitações', async () => {
     const session = useManageAuthSession({ api: fixture, tokenStorageKey: 'portal_firm_access_token', feedback });
     return <button onClick={() => session.setPage('solicitacoes')}>Ir às solicitações</button>;
   }
-  render(<MemoryRouter initialEntries={['/companies']}><WorkspaceNavigationProvider><Caminho /><Navegador /></WorkspaceNavigationProvider></MemoryRouter>);
+  mountRouter(<WorkspaceNavigationProvider><Caminho /><Navegador /></WorkspaceNavigationProvider>, ['/companies']);
   fireEvent.click(screen.getByRole('button', { name: 'Ir às solicitações' }));
   await waitFor(() => expect(screen.getByLabelText('rota integrada').textContent).toBe('/solicitacoes'));
 });
