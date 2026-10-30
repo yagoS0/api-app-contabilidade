@@ -55,6 +55,8 @@ test.each(["sucesso", "erro PUT", "erro DELETE"])("remontagem durante descarte c
   let ui = render(<CompositorConversa conversa={a} hook={hook} />);
   await waitFor(() => expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Texto A"));
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto editado A" } });
+  // Este cenário cobre PUT já em voo; descarte antes de 600ms não inicia PUT.
+  await waitFor(() => expect(api.salvarRascunhoWhatsapp).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByLabelText("Ações da mensagem e arquivos"));
   fireEvent.click(screen.getByRole("button", { name: "Descartar rascunho" }));
   await waitFor(() => expect(api.salvarRascunhoWhatsapp).toHaveBeenCalledTimes(1));

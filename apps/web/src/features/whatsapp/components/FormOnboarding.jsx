@@ -1,18 +1,38 @@
 import { AtendimentoComercial } from "./AtendimentoComercial";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { dadosDoInteressado, fraseDoOnboarding, onboardingDaConversa } from "../lib/onboardingDaConversa";
 
 const ORIGENS = [{ id: "ABERTURA", nome: "Abertura" }, { id: "TRANSFERENCIA", nome: "Transferência" }, { id: "INATIVA", nome: "Empresa inativa" }];
-export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriado, slotEmpresa = null, canalDeEnvio = null }) {
-  const [origem, setOrigem] = useState(null);
-  const [ocupado, setOcupado] = useState(false);
+let proximoContexto = 0;
+const criacoes = new WeakMap();
+export function FormOnboarding(props) {
+  const sessao = props.api?.getAccessToken?.() || null;
+  const contexto = useMemo(() => ++proximoContexto, [props.api, sessao, props.conversa?.id]);
+  return <FormOnboardingContexto key={contexto} {...props} sessao={sessao} />;
+}
+function FormOnboardingContexto({ sessao, api, conversa, mensagens = [], leitura, onCriado, slotEmpresa = null, canalDeEnvio = null }) {
+  let cache = criacoes.get(api);
+  if (!cache || cache.sessao !== sessao) { cache = { sessao, itens: new Map() }; criacoes.set(api, cache); }
+  const chave = conversa?.id;
+  if (!cache.itens.has(chave)) cache.itens.set(chave, { registro: null, incerta: false, emCurso: false, listeners: new Set() });
+  const tentativa = cache.itens.get(chave);
+  const vivo = useRef(true);
+  useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
+  const vigente = useCallback(() => vivo.current && (api?.getAccessToken?.() || null) === sessao, [api, sessao]);
+  const [origem, setOrigem] = useState(tentativa.registro?.origem || tentativa.origem || null);
+  const [ocupado, setOcupado] = useState(tentativa.emCurso);
   const [erro, setErro] = useState(null);
   const [criado, setCriado] = useState(null);
   const [existente, setExistente] = useState(null);
-  const [criacaoIncerta, setCriacaoIncerta] = useState(false);
-  const registro = useRef(null);
+  const [criacaoIncerta, setCriacaoIncerta] = useState(tentativa.incerta);
+  const registro = useRef(tentativa.registro);
   const emCurso = useRef(false);
+  useEffect(() => {
+    const atualizar = () => { if (!vigente()) return; registro.current = tentativa.registro; setCriacaoIncerta(tentativa.incerta); setOcupado(tentativa.emCurso); };
+    tentativa.listeners.add(atualizar);
+    return () => tentativa.listeners.delete(atualizar);
+  }, [tentativa, vigente]);
   const dados = dadosDoInteressado(conversa);
   // A janela consulta o histórico completo; a página pode conter só as últimas 200 mensagens.
   const recebeu = ["ABERTA", "EXPIRADA"].includes(conversa?.janela?.situacao) || mensagens.some((m) => m.direcao === "in");
@@ -23,30 +43,34 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
       : null;
 
   async function criar() {
-    if (emCurso.current || criacaoIncerta || !dados || !origem || !recebeu || (!semFicha && !registro.current)) return;
-    emCurso.current = true; setOcupado(true); setErro(null);
+    if (!vigente() || emCurso.current || tentativa.emCurso || tentativa.incerta || criacaoIncerta || !dados || !origem || !recebeu || (!semFicha && !registro.current)) return;
+    emCurso.current = true; tentativa.emCurso = true; setOcupado(true); setErro(null);
     try {
       if (!registro.current) {
         // Releitura antes de criar evita duplicar uma ficha surgida desde a última atualização.
         const lista = await api.listarOnboardings({ incluirRascunhos: true });
+        if (!vigente()) return;
         if (!Array.isArray(lista?.itens)) throw new Error("Não foi possível conferir os onboardings.");
         const conferida = onboardingDaConversa(conversa, lista.itens);
         if (conferida.situacao !== "SEM_ONBOARDING") { setExistente(conferida); return; }
         // O POST pode ter persistido mesmo se a resposta se perder. Sem id não há
         // retentativa segura: o rascunho ainda não tem telefone para a releitura casar.
-        setCriacaoIncerta(true);
+        tentativa.origem = origem; tentativa.incerta = true; setCriacaoIncerta(true);
         const r = await api.criarOnboarding(origem);
         if (!r?.onboarding?.id) throw new Error("Não foi possível confirmar a criação. Confira a lista de onboardings antes de tentar novamente.");
+        tentativa.registro = r.onboarding; tentativa.incerta = false;
+        if (!vigente()) return;
         registro.current = r.onboarding;
         setCriacaoIncerta(false);
       } else {
         // O rascunho pode ter sido completado noutra aba depois da falha.
         // PATCH substitui dados: não apagar o que alguém já preencheu.
         const atualizada = await api.getOnboarding(registro.current.id);
+        if (!vigente()) return;
         if (atualizada?.onboarding?.id !== registro.current.id) throw new Error("Não foi possível conferir o rascunho antes de tentar novamente.");
         const ficha = atualizada.onboarding;
         if (!Number.isInteger(ficha.versao)) throw new Error("Não foi possível conferir a revisão do rascunho. Abra a ficha antes de continuar.");
-        registro.current = ficha;
+        registro.current = ficha; tentativa.registro = ficha;
         if (Object.keys(ficha.dados || {}).length || (ficha.status && ficha.status !== "RASCUNHO")) {
           setCriado(ficha);
           onCriado?.();
@@ -58,10 +82,12 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
       const revisaoEnviada = registro.current.versao;
       const r = await api.salvarOnboarding(registro.current.id, { dados, versao: revisaoEnviada });
       if (r?.onboarding?.id !== registro.current.id || !Number.isInteger(r.onboarding.versao) || r.onboarding.versao <= revisaoEnviada) throw new Error("Não foi possível confirmar o preenchimento da ficha.");
+      tentativa.registro = r.onboarding;
+      if (!vigente()) return;
       setCriado(r.onboarding);
       onCriado?.();
-    } catch (err) { setErro(err?.message || "Não foi possível criar o onboarding."); }
-    finally { emCurso.current = false; setOcupado(false); }
+    } catch (err) { if (vigente()) setErro(err?.message || "Não foi possível criar o onboarding."); }
+    finally { emCurso.current = false; tentativa.emCurso = false; tentativa.listeners.forEach(fn => fn()); }
   }
   if (api.comercial && conversa.capacidades?.podeCriarCasoComercial !== false) return <AtendimentoComercial api={api} conversa={conversa} onCriado={onCriado} candidatos={leitura?.candidatos || []} slotEmpresa={slotEmpresa} canalDeEnvio={canalDeEnvio} />;
   if (!dados) return null;

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FormOnboarding } from "../FormOnboarding";
 const conversa = { id: "c1", telefoneE164: "5511977776666", nomePerfilProvedor: "Carlos", portalClientId: null };
 const vazio = { situacao: "SEM_ONBOARDING", candidatos: [] };
@@ -173,4 +173,57 @@ test('releitura sem revisão não permite confirmar dados nem reenviar PATCH', a
   expect(api.salvarOnboarding).toHaveBeenCalledTimes(1);
   expect(api.criarOnboarding).toHaveBeenCalledTimes(1);
   expect(onCriado).not.toHaveBeenCalled();
+});
+const respostaAdiada = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+test.each(["listarOnboardings", "criarOnboarding", "salvarOnboarding"])("desmontagem durante %s impede sequência e callback tardios", async etapa => {
+  const api = apiMock(), pendente = respostaAdiada(), onCriado = jest.fn();
+  api[etapa].mockReturnValueOnce(pendente.promise);
+  const ui = montar(api, { onCriado });
+  fireEvent.click(screen.getByRole("button", { name: "Abertura" })); fireEvent.click(screen.getByRole("button", { name: "Virar onboarding" }));
+  await waitFor(() => expect(api[etapa]).toHaveBeenCalledTimes(1)); ui.unmount();
+  await act(async () => { pendente.resolve(etapa === "listarOnboardings" ? { itens: [] } : { onboarding: { id: "o1", versao: etapa === "salvarOnboarding" ? 1 : 0 } }); });
+  expect(onCriado).not.toHaveBeenCalled();
+  expect(api.criarOnboarding).toHaveBeenCalledTimes(etapa === "listarOnboardings" ? 0 : 1);
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(etapa === "salvarOnboarding" ? 1 : 0);
+});
+test.each(["conversa", "api", "sessao"])("lista tardia após troca de %s não inicia POST", async tipo => {
+  let sessao = "A";
+  const api = apiMock(), pendente = respostaAdiada(), onCriado = jest.fn(); api.getAccessToken = () => sessao;
+  api.listarOnboardings.mockReturnValueOnce(pendente.promise);
+  const ui = montar(api, { onCriado });
+  fireEvent.click(screen.getByRole("button", { name: "Abertura" })); fireEvent.click(screen.getByRole("button", { name: "Virar onboarding" }));
+  await waitFor(() => expect(api.listarOnboardings).toHaveBeenCalled());
+  const novaApi = tipo === "api" ? apiMock() : api;
+  if (tipo === "sessao") sessao = null;
+  ui.rerender(<FormOnboarding api={novaApi} conversa={tipo === "conversa" ? { ...conversa, id: "c2" } : conversa} mensagens={[{ direcao: "in" }]} leitura={vazio} onCriado={onCriado} />);
+  await act(async () => { pendente.resolve({ itens: [] }); });
+  expect(api.criarOnboarding).not.toHaveBeenCalled(); expect(novaApi.criarOnboarding).not.toHaveBeenCalled(); expect(onCriado).not.toHaveBeenCalled();
+});
+
+test.each(["conversa", "api", "sessao"].flatMap(tipo => ["criarOnboarding", "salvarOnboarding", "getOnboarding"].map(etapa => [tipo, etapa])))("troca de %s durante %s preserva resultado sem sequência antiga", async (tipo, etapa) => {
+  let sessao = "primeira";
+  const api = apiMock(), pendente = respostaAdiada(), onCriado = jest.fn(); api.getAccessToken = () => sessao;
+  if (etapa === "getOnboarding") api.salvarOnboarding.mockRejectedValueOnce(new Error("rede"));
+  api[etapa].mockReturnValueOnce(pendente.promise);
+  const ui = montar(api, { onCriado });
+  fireEvent.click(screen.getByRole("button", { name: "Abertura" })); fireEvent.click(screen.getByRole("button", { name: "Virar onboarding" }));
+  if (etapa === "getOnboarding") { await screen.findByRole("alert"); fireEvent.click(screen.getByRole("button", { name: "Tentar preencher a ficha novamente" })); }
+  await waitFor(() => expect(api[etapa]).toHaveBeenCalledTimes(1));
+  const novaApi = tipo === "api" ? apiMock() : api; if (tipo === "sessao") sessao = null;
+  ui.rerender(<FormOnboarding api={novaApi} conversa={tipo === "conversa" ? { ...conversa, id: "c2" } : conversa} mensagens={[{ direcao: "in" }]} leitura={vazio} onCriado={onCriado} />);
+  await act(async () => { pendente.resolve({ onboarding: { id: "o1", versao: etapa === "salvarOnboarding" ? 1 : 0, status: "RASCUNHO", dados: {} } }); });
+  expect(onCriado).not.toHaveBeenCalled(); expect(api.criarOnboarding).toHaveBeenCalledTimes(1);
+  expect(api.salvarOnboarding).toHaveBeenCalledTimes(etapa === "criarOnboarding" ? 0 : 1);
+  if (tipo === "api") { expect(novaApi.criarOnboarding).not.toHaveBeenCalled(); expect(novaApi.salvarOnboarding).not.toHaveBeenCalled(); }
+});
+
+test("remontagem durante POST não duplica criação e retoma apenas por escolha com id conhecido", async () => {
+  const api = apiMock(), post = respostaAdiada(), onCriado = jest.fn(); api.criarOnboarding.mockReturnValueOnce(post.promise);
+  const ui = montar(api, { onCriado }); fireEvent.click(screen.getByRole("button", { name: "Abertura" })); fireEvent.click(screen.getByRole("button", { name: "Virar onboarding" }));
+  await waitFor(() => expect(api.criarOnboarding).toHaveBeenCalledTimes(1)); ui.unmount(); montar(api, { onCriado });
+  expect(screen.queryByRole("button", { name: "Virar onboarding" })).not.toBeInTheDocument();
+  await act(async () => { post.resolve({ onboarding: { id: "o1", versao: 0, status: "RASCUNHO" } }); });
+  expect(api.salvarOnboarding).not.toHaveBeenCalled(); expect(onCriado).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", { name: "Tentar preencher a ficha novamente" }));
+  await waitFor(() => expect(onCriado).toHaveBeenCalledTimes(1)); expect(api.criarOnboarding).toHaveBeenCalledTimes(1); expect(api.getOnboarding).toHaveBeenCalledWith("o1");
 });

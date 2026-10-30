@@ -1,3 +1,4 @@
+import { useWorkspaceNavigation } from "../../../app/navigation/WorkspaceNavigation.shared";
 // A TELA MÍNIMA DE CONVERSAS DE WHATSAPP (F5, 02/09/2026) — lista à esquerda, fio à direita.
 //
 // O que ela faz, e só isso: mostra a fila de não vinculados em destaque (é pendência do
@@ -117,13 +118,14 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const [aplicativo] = useState(() => modoAtendimento());
   const location = useLocation();
   const navigate = useNavigate();
+  const workspace = useWorkspaceNavigation();
   const [tentativaAbertura, setTentativaAbertura] = useState(0);
   const rotaDeConversa = ["/whatsapp", "/suporte", "/comercial/conversas"].includes(location.pathname.replace(/\/+$/, "") || "/");
   const parametroConversa = new URLSearchParams(location.search).get("conversa");
   const conversaId = rotaDeConversa && /^[a-zA-Z0-9_-]{1,120}$/.test(parametroConversa || "") ? parametroConversa : null;
   const hookRef = useRef(hook); hookRef.current = hook;
   const navegacaoRef = useRef(null);
-  navegacaoRef.current = { navigate, location };
+  navegacaoRef.current = { navigate, location, workspace };
   useEffect(() => {
     const manifest = document.querySelector('link[rel="manifest"]'); const anterior = manifest?.getAttribute("href");
     manifest?.setAttribute("href", "/atendimento.webmanifest");
@@ -151,7 +153,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
       if (url.origin !== window.location.origin || url.pathname !== "/whatsapp") return;
       if (!/^[a-zA-Z0-9_-]{1,120}$/.test(url.searchParams.get("conversa") || "")) return;
       const destino = url.pathname + url.search + url.hash;
-      if (haRascunhoPendente()) { setNotificacaoPendente(destino); return; }
+      if (!navegacaoRef.current.workspace && haRascunhoPendente()) { setNotificacaoPendente(destino); return; }
       const atual = navegacaoRef.current;
       if (destino !== atual.location.pathname + atual.location.search + atual.location.hash) atual.navigate(destino);
     };
@@ -175,6 +177,32 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const [detalhes, setDetalhes] = useState(false);
   const [verChat, setVerChat] = useState(false);
   const listaRef = useRef(null);
+  const selecaoAceitaAnterior = useRef(conversaId);
+  const focoListaPendente = useRef(false);
+  useEffect(() => {
+    const anterior = selecaoAceitaAnterior.current;
+    selecaoAceitaAnterior.current = conversaId;
+    if (conversaId || !rotaDeConversa) { focoListaPendente.current = false; return; }
+    if (anterior) focoListaPendente.current = true;
+    // Aguarde o fio anterior desmontar e a lista reaparecer antes de decidir
+    // se outro controle legítimo já possui o foco.
+    if (!focoListaPendente.current || verChat || listaOculta || hook.aberta) return;
+    const frame = requestAnimationFrame(() => {
+      focoListaPendente.current = false;
+      const atual = navegacaoRef.current.location;
+      if (atual.pathname !== location.pathname || new URLSearchParams(atual.search).get("conversa")) return;
+      const visivel = el => Boolean(el?.isConnected && !el.closest('[hidden], [inert], [aria-hidden="true"]') && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+      // A decisão foi aceita, mas outro diálogo/controle pode já possuir o foco.
+      if ([...document.querySelectorAll('[role="dialog"]')].some(visivel)) return;
+      const ativo = document.activeElement;
+      if (ativo && ativo !== document.body && ativo !== document.documentElement && !ativo.disabled && visivel(ativo)) return;
+      const lista = listaRef.current;
+      if (!visivel(lista)) return;
+      const alvo = lista.querySelector('[aria-current="true"]') || lista.querySelector("input");
+      if (alvo && !alvo.disabled && visivel(alvo)) alvo.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [conversaId, location.pathname, rotaDeConversa, verChat, listaOculta, hook.aberta]);
   const lista = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const fila = lista.filter((c) => c.relacionamento ? relacionamentoDaConversa(c).tipo === "A_IDENTIFICAR" : situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
   const avisoDaLista = frasePaginacao(hook.temMais);
@@ -202,7 +230,7 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
   const voltar = () => {
     const search = new URLSearchParams(location.search); search.delete("conversa");
     navigate({ pathname: location.pathname, search: search.size ? `?${search}` : "", hash: location.hash }, { replace: true });
-    requestAnimationFrame(() => (listaRef.current?.querySelector('[aria-current="true"]') || listaRef.current?.querySelector("input"))?.focus());
+
   };
 
   const painelComercial = area === "suporte" ? (hook.aberta && !hook.aberta.conversa.portalClientId ? <FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} onVincular={hook.vincular} ocupado={hook.ocupado} /> : null) : hook.aberta ? <><section className="wa-commercial-section"><FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} canalDeEnvio={canalDeEnvio} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraDoCaso(hook.aberta.conversa)} onCriado={() => hook.atualizarConversa(hook.aberta.conversa.id)} /></section></> : null;
@@ -260,3 +288,4 @@ export function WhatsappPage({ onSair, api, companies = [], onBack, onComunicado
 }
 
 export default WhatsappPage;
+
