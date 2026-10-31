@@ -46,7 +46,7 @@ test.each(['DOCUMENT_ABSENT','NOT_APPLICABLE'])('detalhe de %s abre pela empresa
 });
 test('Empresas e Operações exibem a mesma conclusão reconciliada do produtor',async()=>{
  const c=company(),api=apiFor(absence());const table=render(<CompaniesTable api={api} companies={[c]} competencia={comp}/>);
- fireEvent.click(await screen.findByRole('button',{name:/Concluídas \(1\)/}));await waitFor(()=>expect(screen.getByRole('button',{name:'Ver tarefas de Empresa Reconciliada: Concluído'})).toBeInTheDocument());table.unmount();render(<OperationsPage api={api} companies={[c]} competencia={comp}/>);expect(await screen.findByRole('button',{name:'Concluído 1/1 empresas'})).toBeInTheDocument();
+ fireEvent.click(await screen.findByRole('button',{name:/Concluídas \(1\)/}));await waitFor(()=>expect(screen.getByRole('button',{name:'Ver tarefas de Empresa Reconciliada: Concluído'})).toBeInTheDocument());table.unmount();render(<OperationsPage api={api} companies={[c]} competencia={comp}/>);expect(screen.queryByRole('button',{name:'Concluído 1/1 empresas'})).not.toBeInTheDocument();expect(await screen.findByRole('button',{name:'Disponível 1/1 empresas'})).toBeInTheDocument();expect(project(c).metrics.concluido.done).toHaveLength(1);expect(c.fluxoCarteira.status.chave).toBe('guias');
 });
 
 

@@ -67,7 +67,6 @@ export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, c
   const visible = source.filter(c => `${name(c)} ${c.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const errors = consultaItems?.filter(item => name(rows.find(c => c.companyId === item.companyId)).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const tabs = [['errors', 'Erros', consultaItems?.length], ['disabled', 'Desabilitadas', unavailable ? null : count(false)], ['enabled', 'Habilitadas', unavailable ? null : count(true)]];
-  const total = count(true) + count(false);
   function keyboard(event, index) {
     const next = event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : event.key === 'Home' ? 0 : event.key === 'End' ? 2 : null;
     if (next == null) return;
@@ -77,7 +76,6 @@ export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, c
   return <section className="operacoes-rotinas-unico" aria-label="Rotinas">
     <button type="button" className="operacoes-rotinas-card" aria-haspopup="dialog" onClick={() => { setGroup('errors'); setQuery(''); }}>
       <span className="operacoes-cabecalho"><strong>Rotinas</strong><span className="operacoes-erro" aria-label="Consultas com erro">{consultaItems?.length ? `⚠ ${consultaItems.length}` : consultaItems ? '' : '—'}</span></span>
-      <span className="operacoes-pizza" aria-hidden="true" style={{ background: unavailable || !total ? 'var(--border)' : `conic-gradient(var(--state-ok) ${count(true) / total * 100}%, var(--state-danger) 0)` }} />
       <span>Habilitadas / desabilitadas</span><strong>{unavailable ? '— / —' : `${count(true)} / ${count(false)}`}</strong>
       {!unavailable && unknown.length > 0 && <small>{unknown.length} a verificar</small>}
     </button>
@@ -91,12 +89,12 @@ export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, c
       <div role="tabpanel" id="rotinas-painel" aria-labelledby={`rotinas-tab-${group}`} tabIndex={0}>
         {group === 'errors' ? <>
           <p>Competência {competencia || 'não selecionada'} · Consultas SERPRO. Tentativas incertas ou bloqueadas não resolvem erros anteriores.</p>
-          {!consultaItems || loading || companyError ? <p role="status">{consultaError || companyError || 'Carregando consultas…'}</p> : <ul className="operacoes-lista-modal">{errors.map(item => <li key={item.id}>
-            <div><strong>{name(rows.find(c => c.companyId === item.companyId))}</strong><small>Etapa interrompida: {item.action}</small><p>{item.errorMessage || 'Erro sem detalhe registrado'}</p>{item.tentativaPosterior && <small>Tentativa posterior {item.tentativaPosterior.situacao} · erro anterior preservado</small>}</div>
-            <InternalLink href={companyTabPath(item.companyId, ['certificado', 'automacao', 'sitfis', 'cadastroFiscal', 'guides', 'lancamentos'].includes(item.correctionTab) ? item.correctionTab : 'automacao') + '?competencia=' + encodeURIComponent(competencia)}>Corrigir erro</InternalLink>
-          </li>)}{!errors.length && <li>Nenhuma consulta com erro neste recorte.</li>}</ul>}
-        </> : unavailable ? <p role="status">{error || companyError || 'Atualizando rotinas…'}</p> : <ul className="operacoes-lista-modal">{visible.map(c => <li key={c.companyId}><strong>{name(c)}</strong><InternalLink href={companyTabPath(c.companyId, 'automacao')}>Abrir configurações</InternalLink></li>)}{!visible.length && <li>Nenhuma empresa neste filtro.</li>}</ul>}
-        {!unavailable && unknown.length > 0 && <details><summary>A verificar · {unknown.length}</summary><p>Aplicabilidade ou configuração indisponível. Essas empresas não contam como desabilitadas.</p><ul>{unknown.map(c => <li key={c.companyId}>{name(c)} · <InternalLink href={companyTabPath(c.companyId, 'automacao')}>Conferir configuração</InternalLink></li>)}</ul></details>}
+          {!consultaItems || loading || companyError ? <p role="status">{consultaError || companyError || 'Carregando consultas…'}</p> : <div className="operacoes-tabela-scroll" role="region" aria-label="Erros de consultas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th><th>Etapa e causa</th><th>Próxima ação</th></tr></thead><tbody>{errors.map(item => <tr key={item.id}>
+            <th scope="row">{name(rows.find(c => c.companyId === item.companyId))}</th><td><p>Etapa interrompida: {item.action}</p><p>{item.errorMessage || 'Erro sem detalhe registrado'}</p>{item.tentativaPosterior && <p>Tentativa posterior {item.tentativaPosterior.situacao} · erro anterior preservado</p>}</td>
+            <td><InternalLink className="btn btn-secondary btn-sm" href={companyTabPath(item.companyId, ['certificado', 'automacao', 'sitfis', 'cadastroFiscal', 'guides', 'lancamentos'].includes(item.correctionTab) ? item.correctionTab : 'automacao') + '?competencia=' + encodeURIComponent(competencia)}>Corrigir erro</InternalLink></td>
+          </tr>)}</tbody></table>{!errors.length && <p>Nenhuma consulta com erro neste recorte.</p>}</div>}
+        </> : unavailable ? <p role="status">{error || companyError || 'Atualizando rotinas…'}</p> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas nas rotinas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th><th>Configuração</th></tr></thead><tbody>{visible.map(c => <tr key={c.companyId}><th scope="row">{name(c)}</th><td><InternalLink className="btn btn-secondary btn-sm" href={companyTabPath(c.companyId, 'automacao')}>Abrir configurações</InternalLink></td></tr>)}</tbody></table>{!visible.length && <p>Nenhuma empresa neste filtro.</p>}</div>}
+        {!unavailable && unknown.length > 0 && <details><summary>A verificar · {unknown.length}</summary><p>Aplicabilidade ou configuração indisponível. Essas empresas não contam como desabilitadas.</p><div className="operacoes-tabela-scroll" role="region" aria-label="Rotinas a verificar" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th><th>Próxima ação</th></tr></thead><tbody>{unknown.map(c => <tr key={c.companyId}><th scope="row">{name(c)}</th><td><InternalLink className="btn btn-secondary btn-sm" href={companyTabPath(c.companyId, 'automacao')}>Conferir configuração</InternalLink></td></tr>)}</tbody></table></div></details>}
       </div>
     </Modal>}
   </section>;

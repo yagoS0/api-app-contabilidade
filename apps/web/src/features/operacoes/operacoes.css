@@ -121,12 +121,12 @@
 
 /* Four independent tracks; accounting height never pushes the four pies down. */
 .operacoes-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,220px); gap:var(--space-4); align-items:start; margin-top:var(--space-4); }
-.operacoes-etapas-pizzas { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-3); align-items:start; }
+.operacoes-etapas-pizzas { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-3); align-items:stretch; }
 .operacoes-etapa { min-width:0; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius); padding:var(--space-3); }
 .operacoes-apuracao { grid-column:1; grid-row:1; }
 .operacoes-guias { grid-column:2; grid-row:1; }
-.operacoes-contabilizacao { grid-column:3; grid-row:1 / span 2; }
-.operacoes-quatro-pizzas { grid-column:1 / span 2; grid-row:2; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-2); }
+.operacoes-contabilizacao { grid-column:3; grid-row:1; }
+.operacoes-quatro-pizzas { grid-column:1 / -1; grid-row:2; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-2); }
 .operacoes-progresso-total { border:1px solid var(--border); border-radius:var(--radius); padding:var(--space-3); margin-top:var(--space-3); }
 .operacoes-total { text-align:right; margin:0 0 var(--space-2); font-variant-numeric:tabular-nums; }
 .operacoes-total small { display:inline; }
@@ -191,3 +191,47 @@
 .operacoes-status-com-aviso > .operacoes-avisos:has(small) { width:80px; max-width:80px; right:48px; }
 .operacoes-status-com-aviso .operacoes-aviso-etapa small { overflow-wrap:normal; }
 @media(max-width:420px) { .operacoes-quatro-etapas { grid-template-columns:1fr; } }
+
+.operacoes-tabela-scroll { max-width:100%; overflow:auto; margin-block:var(--space-3); }
+.operacoes-tabela-scroll:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.operacoes-tabela { width:100%; border-collapse:collapse; text-align:left; font-size:.9rem; }
+.operacoes-tabela th,.operacoes-tabela td { padding:12px; border-bottom:1px solid var(--border); vertical-align:top; min-width:130px; }
+.operacoes-tabela th { font-weight:500; }
+.operacoes-tabela thead { background:var(--bg-page); }
+.operacoes-tabela p { margin:8px 0; }
+.operacoes-tabela input[type=checkbox] { width:20px; height:20px; }
+.operacoes-dialogo a.btn,.operacoes-dialogo .operacoes-acoes a.btn { text-decoration:none; padding:8px 12px; }
+.operacoes-progress[role=group] { cursor:default; }
+.operacoes-progress[aria-disabled=true] .operacoes-track > span { visibility:hidden; }
+/* Errors have their own flow space, including at zoom; never overlap the label. */
+.operacoes-status-com-aviso { display:flex; flex-direction:column; }
+.operacoes-status-com-aviso .operacoes-progress-label { padding-right:0; }
+.operacoes-status-com-aviso > .operacoes-avisos,.operacoes-status-com-aviso > .operacoes-aviso-etapa,.operacoes-status-com-aviso > .operacoes-avisos:has(small) { position:static; width:auto; max-width:none; }
+.operacoes-status-com-aviso .operacoes-aviso-etapa { font-size:.85rem; gap:8px; padding:4px; }
+.operacoes-status-com-aviso .operacoes-aviso-etapa small { font-size:inherit; line-height:1.4; }
+@media(max-width:580px) { .operacoes-tabela .btn { min-height:44px; } }
+.operacoes-tabela small { display:block; margin-top:4px; color:var(--text-muted); overflow-wrap:anywhere; }
+.operacoes-tabela td,.operacoes-tabela th { overflow-wrap:anywhere; }
+.operacoes-dialogo section > h3 { font-weight:600; }
+
+/* Selection stays compact while its label provides a 44px touch target. */
+.operacoes-tabela .operacoes-coluna-selecao { width:1%; min-width:44px; padding-inline:8px; white-space:nowrap; text-align:center; }
+.operacoes-tabela .operacoes-selecao-alvo { display:inline-flex; align-items:center; justify-content:center; width:44px; min-height:44px; box-sizing:border-box; margin:0; cursor:pointer; }
+.operacoes-tabela .operacoes-selecao-alvo input[type=checkbox] { margin:0; }
+.operacoes-tabela tbody th[scope=row] { font-family:inherit; font-size:inherit; font-weight:500; line-height:inherit; letter-spacing:normal; text-transform:none; color:var(--text); }
+/* Compact stage actions; errors remain fully readable in the company cell. */
+.operacoes-tabela .operacoes-acao-curta { width:1%; min-width:96px; white-space:nowrap; }
+.operacoes-tabela .operacoes-acao-curta .btn { min-height:44px; }
+.operacoes-dialogo .operacoes-revisao-tecnica { overflow-wrap:anywhere; }
+
+/* Keep the short action intact without changing other buttons or table scrolling. */
+.operacoes-tabela .operacoes-acao-curta { min-width:7em; }
+.operacoes-tabela .operacoes-acao-curta .btn { white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+@media(max-width:580px) {
+  /* Only the three-column stage table with its short-action header (Calculado).
+     Transmitido has five columns and keeps its existing horizontal scroll. */
+  .operacoes-tabela:has(> thead > tr > th:nth-child(3):last-child):has(> thead > tr > .operacoes-acao-curta) { min-width:28em; table-layout:fixed; }
+  .operacoes-tabela:has(> thead > tr > th:nth-child(3):last-child):has(> thead > tr > .operacoes-acao-curta) :is(th,td) { min-width:0; padding-inline:8px; }
+  .operacoes-tabela:has(> thead > tr > th:nth-child(3):last-child):has(> thead > tr > .operacoes-acao-curta) .operacoes-acao-curta { width:calc(8em + 16px); }
+  .operacoes-tabela:has(> thead > tr > th:nth-child(3):last-child):has(> thead > tr > .operacoes-acao-curta) th:last-child { width:calc(8em + 16px); }
+}

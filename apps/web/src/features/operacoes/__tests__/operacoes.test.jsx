@@ -34,12 +34,12 @@ test('reutiliza o status da tabela Empresas, sem duplicar ou misturar competênc
   expect(result.metrics[1]).toBe(0);
   expect(company.apuracao.estado).toBeUndefined();
 });
-test('quadros abrem detalhes locais e links preservam empresa e competência', () => {
+test('quadros abrem detalhes locais e links preservam empresa e competência', async () => {
   const onRefresh = jest.fn(), onChangeCompetencia = jest.fn();
   render(<OperationsPage companies={[company]} competencia="2026-09" onRefresh={onRefresh} onChangeCompetencia={onChangeCompetencia} />);
   fireEvent.click(screen.getByRole('button', { name: /Disponível 0\/1/ }));
-  expect(screen.getByText('Cobertura a verificar')).toBeInTheDocument();
-  expect(screen.getByText('Abrir Guias')).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
+  expect(await screen.findByText(/Leitura de guias: Leitura de documentos indisponível/)).toHaveTextContent('não há confirmação de ausência');
+  expect(screen.getByRole('link', { name: 'Abrir Guias — conferir canais e reenvio' })).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
   fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button',{name:/Recarregar a lista/}));
   expect(onRefresh).toHaveBeenCalledTimes(1);

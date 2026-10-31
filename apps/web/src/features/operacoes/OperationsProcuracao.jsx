@@ -8,6 +8,6 @@ export function OperationsProcuracao({ api, company, onClose }) {
   return <Modal titulo={`Pedir procuração · ${name}`} tamanho="lg" className="operacoes-dialogo" aoFechar={onClose}>
     <p>Escolha o contato da empresa e confira o canal. Preparar o texto não envia mensagem nem altera o atendimento.</p>
     <ChatDaEmpresa api={api} companyId={company.companyId} selecionarContato sugestao={`Olá! Precisamos da procuração da empresa ${name} para dar continuidade às rotinas. Poderia providenciá-la, por favor?`} />
-    <InternalLink href={companyTabPath(company.companyId, 'comunicacao')}>Conferir cadastro dos contatos</InternalLink>
+    <InternalLink className="btn btn-secondary btn-sm" href={companyTabPath(company.companyId, 'comunicacao')}>Conferir cadastro dos contatos</InternalLink>
   </Modal>;
 }

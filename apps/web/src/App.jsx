@@ -626,6 +626,7 @@ function AppInterno({ session, feedback }) {
       apiMode={api.mode}
       companies={companiesWorkspace.companiesState.companies}
       loadingCompanies={companiesWorkspace.companiesState.loadingCompanies}
+      companiesLoadError={companiesWorkspace.companiesLoadError}
       onCreateCompany={() => session.setPage("createCompany")}
       onOpenGuideSettings={() => session.setPage("guideSettings")}
       onOpenChartGlobal={() => session.setPage("chartOfAccountsGlobal")}
