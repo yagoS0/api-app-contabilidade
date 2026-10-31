@@ -12,8 +12,11 @@ beforeAll(() => {
 
 function fixture(status = 'CONFIRMED') {
   let resolveExecution, rejectExecution;
-  let current = { companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { dasValor: 100 } };
+  let current = { companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 } };
   const api = {
+    getApuracaoSnapshot: jest.fn(async (id, competencia) => ({ snapshot: { portalClientId: id, competencia, estado: 'calculada', idempotencyKey: 'calculo-1', dasSimuladoSerpro: 100, atividadesEscolhidas: [] } })),
+    getAuditoriaNotas: jest.fn(async (id, competencia) => ({ auditoria: { competencia, totalAchados: 0, perguntas: [] } })),
+    getPgdasHistorico: jest.fn(async (id, competencia) => ({ competencia, versoes: [] })),
     getCompanyOperation: jest.fn(async () => current),
     getOperationEvidence: jest.fn(async () => ({items:[current], total:1, competencia:'2026-09'})),
     saveCompanyOperation: jest.fn(async () => {
@@ -52,7 +55,8 @@ test('a conferência da empresa usa uma só camada de diálogo e não executa ao
 test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupado e não repete execução (%s)', async result => {
   const task = fixture();
   await openApprovals();
-  fireEvent.click(screen.getByRole('button', { name: 'Liberar confirmadas (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar selecionadas (1)' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   const execute = screen.getByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();

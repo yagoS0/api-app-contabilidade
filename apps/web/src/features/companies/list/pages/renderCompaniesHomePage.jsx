@@ -48,6 +48,7 @@ export function CompaniesHomePage({
   user,
   companies,
   loadingCompanies,
+  companiesLoadError,
   onCreateCompany,
   onOpenChartGlobal,
   onRefreshCompanies,
@@ -956,7 +957,7 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            modoVisao === 'operacoes' ? <OperationsPage api={api} onOpenCompany={onOpenCompany} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies || restoringCompetencia} error={error} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+            modoVisao === 'operacoes' ? <OperationsPage api={api} onOpenCompany={onOpenCompany} key={dashboardCompetencia} acoesGuia={acoesGuia} companies={companies} competencia={dashboardCompetencia} loading={loadingCompanies || restoringCompetencia} error={companiesLoadError} onRefresh={onRefreshCompanies} onChangeCompetencia={onChangeCompetencia} /> : <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
               onOpenObligations={onOpenObrigacoes}
               initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}

@@ -1,3 +1,4 @@
+import { operationInstant } from './operationsDetails';
 import { previousInssMonth } from './OperationsManualInss.shared.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -77,7 +78,7 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
         {data.status === 'DOCUMENT_REVIEW' && <p role="alert">Confira a classificação e o documento antes de liberar ao cliente.</p>}
         {[...new Set((data.guides || []).map(g => g.reviewReason).filter(Boolean))].map(reason => <p key={reason}>{reason}</p>)}
       </div>
-      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${dataCivilBR(String(data.absence.at).slice(0, 10))}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
+      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${operationInstant(data.absence.at)}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
       <dl className="operacoes-inss-dados">
         <div><dt>Responsável</dt><dd>{data.state.responsible || 'Não definido'}</dd></div>
         <div><dt>Prazo operacional</dt><dd>{dataCivilBR(data.state.dueDate) || 'Não definido'}</dd>{overdue && <span className="operacoes-erro" role="alert">Prazo operacional vencido</span>}</div>
@@ -95,7 +96,7 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
     {saved && <p role="status">{saved}</p>}
     {data && <>
       <p role="status">{statuses[data.status]}{data.guides?.some(g => g.status !== 'VAZIO') ? ` · ${data.guides.filter(g => g.status !== 'VAZIO').length} guia(s) registrada(s)` : ''}</p>
-      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${dataCivilBR(String(data.absence.at).slice(0, 10))}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
+      {data.absence && <p>Declarada na aba Guias{data.absence.at ? ` em ${operationInstant(data.absence.at)}` : ''}.{data.absence.reason ? ` Motivo: ${data.absence.reason}` : ''}</p>}
       <p>Pró-labore no cadastro: {data.hasProlabore ? 'sim' : 'não'}. {data.applicabilitySource === 'month' ? 'Exceção desta competência.' : 'Aplicação conforme cadastro.'}</p>
       {overdue && <p role="alert">Prazo operacional vencido em {dataCivilBR(data.state.dueDate)}.</p>}
       {data.status === 'DOCUMENT_REVIEW' && <p role="alert">Confira a guia e sua classificação na aba Guias antes de liberá-la ao cliente.</p>}
@@ -122,7 +123,7 @@ export function OperationsManualInss({ api, companyId, competencia, canEdit = fa
       {!canEdit && <p>Seu acesso permite apenas visualizar o controle.</p>}
       {canEdit && dirty && !preview && <Button variant="secondary" disabled={busy} onClick={load}>Descartar alterações</Button>}
       </>}
-      <InternalLink href={`${companyTabPath(companyId, 'guides')}?competencia=${encodeURIComponent(competencia)}`}>Abrir Guias para anexar ou revisar o INSS</InternalLink>
+      <InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(companyId, 'guides')}?competencia=${encodeURIComponent(competencia)}`}>Abrir Guias para anexar ou revisar o INSS</InternalLink>
     </>}
   </section>;
 }
