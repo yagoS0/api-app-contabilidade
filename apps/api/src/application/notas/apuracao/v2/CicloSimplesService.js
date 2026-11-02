@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../../../../infrastructure/db/prisma.js';
 import { hashCalculo } from './CalculoConfirmado.js';
-import { conferirContextoCicloFiscal } from '../../../fiscal/automacaoCicloFiscalContext.js';
+import { conferirContextoCicloFiscal, comVerificacaoTentativaAutomatica } from '../../../fiscal/automacaoCicloFiscalContext.js';
 import { aplicarRegimeRotinas } from '../../../fiscal/serpro/CompanyRoutineApplicability.js';
+
+import { prepararSimplesConsistente, comPreparacaoAutomatica } from './PreparacaoAutomaticaSimples.js';
 
 const keyFor = (id, pa) => `ciclo_simples:${id}:${pa}`;
 const fail = (code, message, status = 409) => Object.assign(new Error(message), { code, status });
@@ -35,6 +37,8 @@ const defaults = {
   conferir: (db, id) => conferirContextoCicloFiscal(db, { requireCompany: true, portalClientId: id }),
   coletarAdn: async args => (await import('../../adn/AdnNotasService.js')).syncAdnNotasForCompany(args),
   coletarDfe: async args => (await import('../../dfe/DfeSyncService.js')).syncDfeForCompany(args),
+  envolverTentativa: comVerificacaoTentativaAutomatica,
+  resolverIdentidade: async (id, db) => (await import('./FechamentoService.js')).resolverCnpjs(id, db),
   getDados: async args => (await import('./FechamentoService.js')).getDadosFechamento(args),
   calcular: async args => (await import('./FechamentoService.js')).calcularFechamento(args),
   contexto: async (args, db) => (await import('./RecuperacaoCalculo.js')).contextoOrigemCalculo(args, db),
@@ -86,7 +90,8 @@ export async function lerCicloSimples(args, dependencies = {}) {
   // A leitura não consulta o Fisco nem altera o cálculo. O vínculo é conferido também pelo fechamento.
   if (saved.status === 'CALCULADO' && saved.contextoHash) {
     const atual = await d.contexto(args, d.db);
-    if (hashCalculo(atual) !== saved.contextoHash) return publicState({ ...saved, status: 'REVISAO_NECESSARIA', reason: 'As notas ou os parâmetros fiscais mudaram após o cálculo. Confira uma nova revisão; nenhuma operação foi repetida.' });
+    const prova = saved.preparacaoHash ? await prepararSimplesConsistente(args, { db: d.db, getDados: d.getDados, contexto: d.contexto, resolverIdentidade: d.resolverIdentidade }) : null;
+    if (hashCalculo(atual) !== saved.contextoHash || prova && prova.hash !== saved.preparacaoHash) return publicState({ ...saved, status: 'REVISAO_NECESSARIA', reason: 'As notas ou os parâmetros fiscais mudaram após o cálculo. Confira uma nova revisão; nenhuma operação foi repetida.' });
   }
   return publicState(saved, d.now());
 }
@@ -157,19 +162,30 @@ export async function executarCicloSimples(args, dependencies = {}) {
     await guard();
     const fresh = await currentInputs(d.db, portalClientId, competencia);
     if (hashCalculo(fresh) !== configHash) throw fail('CICLO_CONFIGURACAO_ALTERADA', 'A configuração mudou durante a coleta. Confira antes de calcular.');
-    const dados = await d.getDados({ portalClientId, competencia });
-    const formulario = validateCalculation(dados, fresh.cadastro, claim.value.revision);
-    const contexto = await d.contexto({ portalClientId, competencia }, d.db);
+    const captureDeps = { db: d.db, getDados: d.getDados, contexto: d.contexto, resolverIdentidade: d.resolverIdentidade, lerInputs: tx => currentInputs(tx, portalClientId, competencia) };
+    const preparo = await prepararSimplesConsistente({ portalClientId, competencia }, captureDeps);
+    if (hashCalculo(preparo.inputs) !== configHash) throw fail('CICLO_CONFIGURACAO_ALTERADA', 'A seleção mudou durante o preparo.');
+    const formulario = validateCalculation(preparo.dados, preparo.inputs.cadastro, claim.value.revision);
+    const contexto = preparo.contexto;
     await guard();
-    if (hashCalculo(await currentInputs(d.db, portalClientId, competencia)) !== configHash) throw fail('CICLO_CONFIGURACAO_ALTERADA', 'A seleção ou o cadastro fiscal mudou durante o preparo. Confira antes de calcular.');
-    await finish({ status: 'CALCULANDO', reason: 'Cálculo reservado. Se o processo for interrompido, confira o resultado salvo antes de qualquer nova tentativa.', contextoHash: hashCalculo(contexto), calculo: { reservedAt: d.now().toISOString(), attemptId: token } });
+    const conferirTentativa = async ({ db = d.db } = {}) => {
+      const state = (await db.appSetting.findUnique({ where: { key } }))?.value;
+      if (!state || state.token !== token || state.revision !== claim.value.revision || state.status !== 'CALCULANDO') throw fail('AUTOMACAO_EMPRESA_TENTATIVA_ALTERADA', 'A tentativa automática mudou. Confira a revisão.');
+      if (hashCalculo(await currentInputs(db, portalClientId, competencia)) !== configHash) throw fail('AUTOMACAO_EMPRESA_SELECAO_ALTERADA', 'A seleção mudou antes do despacho.');
+      // A guarda usa ReadCommitted: a prova fiscal abre sua própria captura RR curta.
+      const atual = await prepararSimplesConsistente({ portalClientId, competencia }, captureDeps);
+      if (hashCalculo(atual.inputs) !== configHash) throw fail('AUTOMACAO_EMPRESA_SELECAO_ALTERADA', 'A seleção ou configuração mudou. Nenhuma simulação foi autorizada.');
+      if (atual.hash !== preparo.hash || hashCalculo(atual.periodosAceitos) !== hashCalculo(preparo.periodosAceitos)) throw fail('AUTOMACAO_EMPRESA_BASE_ALTERADA', 'A base fiscal mudou. Confira antes de simular.');
+    };
+    await finish({ status: 'CALCULANDO', reason: 'Cálculo reservado. Se o processo for interrompido, confira o resultado salvo antes de qualquer nova tentativa.', contextoHash: hashCalculo(contexto), preparacaoHash: preparo.hash, calculo: { reservedAt: d.now().toISOString(), attemptId: token } });
     reserved = true;
-    const result = await d.calcular({ portalClientId, competencia, ...formulario, expectedAutomaticContextHash: hashCalculo(contexto) });
+    const automatico = { ...preparo, formulario, attemptId: token, revision: claim.value.revision };
+    const result = await d.envolverTentativa({ portalClientId, competencia, verificar: conferirTentativa }, () => comPreparacaoAutomatica(automatico, () => d.calcular({ portalClientId, competencia, ...formulario, expectedAutomaticContextHash: hashCalculo(contexto) })));
     if (result?.ok !== true || !result.calculoId || result.dasValor == null || !Number.isFinite(Number(result.dasValor))) throw fail('CICLO_RESULTADO_INCONCLUSIVO', 'O cálculo não retornou resultado comprovado. Confira a tentativa antes de repetir.');
     return publicState(await finish({ status: 'CALCULADO', reason: 'Cálculo disponível para conferência do contador. Não houve transmissão.', calculo: { attemptId: token, calculoId: result.calculoId, dasValor: String(result.dasValor), completedAt: d.now().toISOString() } }));
   } catch (error) {
     // Uma reserva seguida de queda/timeout nunca é liberada por troca de hash ou reinício.
-    const definitive = error?.code === 'RECEITAS_ANTERIORES_NAO_CONVERGIU' || error?.code === 'SERPRO_BUSINESS_ERROR';
+    const definitive = error?.recusaAntesDespacho === true || error?.code === 'RECEITAS_ANTERIORES_NAO_CONVERGIU' || error?.code === 'SERPRO_BUSINESS_ERROR';
     return publicState(await finish({ status: reserved && !definitive ? 'INCERTO' : 'REVISAO_NECESSARIA', reason: String(error?.message || 'Falha na rotina; confira a tentativa.').slice(0, 500), errorCode: error?.code || 'CICLO_FALHA', coleta }));
   }
 }

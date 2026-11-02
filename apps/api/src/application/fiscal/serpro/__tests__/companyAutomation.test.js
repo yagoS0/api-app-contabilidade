@@ -1,7 +1,7 @@
 jest.mock('../SerproRuntimeSettings.js', () => ({ ROTINA_KEYS: ['das', 'inss'] }));
 jest.mock('../../../../infrastructure/db/prisma.js', () => ({ prisma: {} }));
 jest.mock('../CompanyRotinasService.js', () => ({ ROTINA_LABELS: { das: 'DAS', inss: 'INSS' } }));
-import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../CompanyAutomationService.js';
+import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa, identidadeSelecaoCicloSimples } from '../CompanyAutomationService.js';
 
 test.each(['global', 'empresa'])('replay após mudança da pausa %s exige recarga sem regravar histórico', async scope => {
   const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
@@ -37,6 +37,32 @@ function database() {
   db.$transaction = jest.fn(fn => fn(db));
   return db;
 }
+
+test('token interno detecta ABA; no-op e replay preservam token, legado não migra em leitura', async () => {
+  const db = database(), key = 'ciclo_simples_config:a';
+  const legacy = { enabled: true, fontes: ['NFSE', 'NFE'] };
+  await db.appSetting.upsert({ create: { key, value: legacy } });
+  const identity = identidadeSelecaoCicloSimples(legacy);
+  expect(identity).toBe(identidadeSelecaoCicloSimples({ enabled: true, fontes: ['NFE', 'NFSE'] }));
+  expect(identity).toMatch(/^legacy:/);
+  const save = async (cicloSimples, requestId) => { const before = await lerAutomacaoEmpresa(db, 'a'); return salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId, cicloSimples }); };
+  await save({ enabled: true, fontes: ['NFE', 'NFSE'] }, 'noop-legado');
+  expect((await db.appSetting.findUnique({ where: { key } })).value).toEqual(legacy);
+  await save({ enabled: false, fontes: ['NFE', 'NFSE'] }, 'desativacao-token');
+  const disabled = (await db.appSetting.findUnique({ where: { key } })).value;
+  expect(disabled.selectionToken).toMatch(/^[a-f0-9-]{36}$/);
+  await save({ enabled: true, fontes: ['NFE', 'NFSE'] }, 'reativacao-token');
+  const restored = (await db.appSetting.findUnique({ where: { key } })).value;
+  expect(restored.selectionToken).not.toBe(disabled.selectionToken);
+  expect(identidadeSelecaoCicloSimples(restored)).not.toBe(identity);
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: before.revision, requestId: 'noop-token', cicloSimples: { enabled: true, fontes: ['NFSE', 'NFE'] } };
+  const once = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(once);
+  expect((await db.appSetting.findUnique({ where: { key } })).value).toEqual(restored);
+  expect(once.cicloSimples).not.toHaveProperty('selectionToken');
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'token-injetado', cicloSimples: { ...input.cicloSimples, selectionToken: restored.selectionToken } })).rejects.toMatchObject({ code: 'INVALID_AUTOMATION' });
+});
 test('leitura não habilita rotinas nem expõe credenciais', async () => {
   const db = database(), r = await lerAutomacaoEmpresa(db, 'a');
   expect(r.rotinas.every(x => !x.enabled)).toBe(true);

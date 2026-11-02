@@ -5,6 +5,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
     findMany: jest.fn(async () => []),
     aggregate: jest.fn(async () => ({ _sum: { total: 0 } })),
     count: jest.fn(async () => 0),
+    upsert: jest.fn(async ({ create }) => create),
     create: jest.fn(async (args) => ({ id: "novo", ...(args?.data || {}) })),
     updateMany: jest.fn(async () => ({ count: 1 })),
     update: jest.fn(async (args) => ({ id: "existente", ...(args?.data || {}) })),
@@ -12,6 +13,8 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
   return {
     prisma: {
       portalClient: model(),
+      apuracaoPeriodoRecusado: model(),
+      serproChamada: model(),
       entregaObrigacaoArquivo: model(),
       portalInvoice: model(),
       apuracaoSnapshot: model(),
@@ -32,8 +35,9 @@ const mockIndice = jest.fn();
 jest.mock("../../../../fiscal/serpro/PgdasSimulacaoService.js", () => ({
   PgdasSimulacaoService: jest.fn().mockImplementation(() => ({ simular: mockSimular, transmitir: mockTransmitir })),
   parseRetornoSimulacao: jest.fn(),
+  buildDeclaracaoPayload: jest.requireActual("../../../../fiscal/serpro/PgdasSimulacaoService.js").buildDeclaracaoPayload,
 }));
-jest.mock("../../../../fiscal/serpro/SerproPgdasdService.js", () => ({ SerproPgdasdService: jest.fn().mockImplementation(() => ({consultarDeclaracaoIndice: mockIndice})) }));
+jest.mock("../../../../fiscal/serpro/SerproPgdasdService.js", () => ({ SerproPgdasdService: jest.fn().mockImplementation((options) => options?.client ? new (jest.requireActual("../../../../fiscal/serpro/SerproPgdasdService.js").SerproPgdasdService)(options) : ({consultarDeclaracaoIndice: mockIndice})) }));
 jest.mock("../../../../fiscal/serpro/SerproRuntimeSettings.js", () => ({
   getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { hasCertificate: true, document: "11111111111111" } })),
 }));
@@ -62,7 +66,7 @@ jest.mock("../AliquotaResolver.js", () => ({
 
 jest.mock("../../../../guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn() }));
 jest.mock("../RecuperacaoCalculo.js", () => ({ ...jest.requireActual("../RecuperacaoCalculo.js"), contextoOrigemCalculo: jest.fn() }));
-jest.mock("../PeriodosRecusadosService.js", () => ({ executarComRetomada: jest.fn((run, params, { ajustarPeriodos }) => ajustarPeriodos(run, params)) }));
+jest.mock("../PeriodosRecusadosService.js", () => ({ ...jest.requireActual("../PeriodosRecusadosService.js"), executarComRetomada: jest.fn((run, params, { ajustarPeriodos }) => ajustarPeriodos(run, params)) }));
 import { prisma } from "../../../../../infrastructure/db/prisma.js";
 import { calcularFechamento, salvarFechamento, transmitirFechamento, getDadosFechamento } from "../FechamentoService.js";
 import { criarVinculoCalculo } from "../CalculoConfirmado.js";
@@ -71,13 +75,14 @@ import { acquireGuideLease } from "../../../../guides/GuideLockService.js";
 import { montarAtividadesDefault } from "../AtividadeResolver.js";
 import { executarCicloSimples } from '../CicloSimplesService.js';
 import { getRbt12 } from '../RbtExtratoService.js';
+import { getResolvedSerproCredentials } from '../../../../fiscal/serpro/SerproRuntimeSettings.js';
 import * as automaticContext from '../../../../fiscal/automacaoCicloFiscalContext.js';
 const args = { portalClientId: "p1", competencia: "2026-10" };
 const form = { atividades: [{ idAtividade: 1, valorInterno: 100, sujeitoFatorR: false }], folhaMensal12: [], regimeApuracao: "COMPETENCIA" };
 const origem = { versao: 1, hash: "a".repeat(64), contribuinteCnpj: "12345678000190", regimeApuracao: "COMPETENCIA" };
 const lease = { assertActive: jest.fn(), release: jest.fn(async () => {}) };
 
-test('R2A conecta coleta ao preparo real e à gravação do snapshot, sem fechar ou transmitir', async () => {
+test.each(['sucesso', 'base', 'selecao', 'recusa'])('R2A preparo real, snapshot e recusa antes de simulação: %s', async scenario => {
   const policy = jest.spyOn(automaticContext, 'conferirContextoCicloFiscal').mockResolvedValue({ version: 1 });
   try {
     prisma.portalClient.findUnique.mockResolvedValue({ id: 'p1', cnpj: origem.contribuinteCnpj, razao: 'Empresa', companyId: 'company-simples-ficticia' });
@@ -87,20 +92,51 @@ test('R2A conecta coleta ao preparo real e à gravação do snapshot, sem fechar
     prisma.portalInvoice.findMany.mockResolvedValue([{ total: 100, itens: [{ valor: 100, tipoReceita: 'SERVICO', flagExportacao: false }] }]);
     montarAtividadesDefault.mockResolvedValue({ atividades: [{ idAtividade: 1, valorInterno: 100, valorExterno: 0, sujeitoFatorR: false }], semMapeamento: [] });
     getRbt12.mockResolvedValue({ rbt12: 480000, origem: 'EXTRATO_PGDAS', detalhePorMes: [] });
+    if (scenario === 'recusa') {
+      getRbt12.mockResolvedValue({ rbt12: 480000, origem: 'EXTRATO_PGDAS', detalhePorMes: [{ pa: '2026-09', valorInterno: 10, valorExterno: 0 }] });
+      mockSimular.mockRejectedValueOnce(Object.assign(new Error('Foi enviada receita bruta de um período desnecessário: 09/2026.'), { code: 'SERPRO_BUSINESS_ERROR', status: 400 }));
+    }
     const rows = new Map([['ciclo_simples_config:p1', { enabled: true, fontes: ['NFSE'] }]]);
-    const db = { portalClient: prisma.portalClient, cadastroFiscal: prisma.cadastroFiscal, company: prisma.company,
+    if (['base', 'selecao'].includes(scenario)) getResolvedSerproCredentials.mockResolvedValueOnce({ certificate: { hasCertificate: true, document: '11111111111111' } }).mockImplementationOnce(async () => {
+      if (scenario === 'base') contextoOrigemCalculo.mockResolvedValue({ ...origem, hash: 'b'.repeat(64) });
+      else rows.set('ciclo_simples_config:p1', { enabled: false, fontes: ['NFSE'] });
+      return { certificate: { hasCertificate: true, document: '11111111111111' } };
+    });
+    const db = { ...prisma, portalClient: prisma.portalClient, cadastroFiscal: prisma.cadastroFiscal, company: prisma.company,
       regimeHistorico: { findMany: jest.fn(async () => []) },
       $queryRaw: jest.fn(async () => []), appSetting: {
         findUnique: async ({ where }) => rows.has(where.key) ? { value: rows.get(where.key) } : null,
         upsert: async ({ where, create, update }) => { const value = rows.has(where.key) ? update.value : create.value; rows.set(where.key, value); return { value }; },
       } };
     db.$transaction = run => run(db);
-    const result = await executarCicloSimples({ ...args, scheduledAt: '2026-11-08T10:00:00Z' }, { db,
+    prisma.$transaction = run => run(prisma);
+    prisma.appSetting = db.appSetting;
+    prisma.regimeHistorico = db.regimeHistorico;
+    const result = await automaticContext.comAutomacaoCicloFiscal({ version: 0 }, () => automaticContext.comAutomacaoEmpresa('p1', () => executarCicloSimples({ ...args, scheduledAt: '2026-11-08T10:00:00Z' }, { db,
       now: () => new Date('2026-11-08T10:00:00Z'), conferir: automaticContext.conferirContextoCicloFiscal,
       coletarAdn: async () => ({ ok: true, complete: true, totalDocs: 1 }),
       getDados: getDadosFechamento, calcular: calcularFechamento, contexto: contextoOrigemCalculo,
-    });
-    expect(result).toMatchObject({ status: 'CALCULADO', calculo: { calculoId: expect.stringMatching(/^fech:v1:/), dasValor: '6' } });
+    }), db), db);
+    if (scenario === 'recusa') {
+      expect(result).toMatchObject({ status: 'REVISAO_NECESSARIA', errorCode: 'RECEITAS_ANTERIORES_NAO_CONVERGIU' });
+      expect(mockSimular).toHaveBeenCalledTimes(1);
+      expect(prisma.apuracaoPeriodoRecusado.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ portalClientId: 'p1', competencia: '2026-10', lista: 'receitas', pa: '2026-09' }) }));
+      expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+      expect(mockTransmitir).not.toHaveBeenCalled();
+      return;
+    }
+    if (scenario !== 'sucesso') {
+      expect(result).toMatchObject({ status: 'REVISAO_NECESSARIA', canRevise: true });
+      expect(result.errorCode).toMatch(/^AUTOMACAO_EMPRESA_/);
+      expect(mockSimular).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+      expect(mockTransmitir).not.toHaveBeenCalled();
+      return;
+    }
+    expect(result.reason).toBe('Cálculo disponível para conferência do contador. Não houve transmissão.');
+    expect(result).toMatchObject({ status: 'CALCULADO', calculo: { calculoId: expect.stringMatching(/^fech:auto:/), dasValor: '6' } });
     expect(prisma.apuracaoSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ portalClientId: 'p1', competencia: '2026-10', estado: 'calculada', dasSimuladoSerpro: 6 }) }));
     expect(mockSimular).toHaveBeenCalledTimes(1);
     expect(mockTransmitir).not.toHaveBeenCalled();

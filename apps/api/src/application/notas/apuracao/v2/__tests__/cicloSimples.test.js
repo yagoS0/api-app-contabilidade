@@ -16,11 +16,14 @@ function fixture() {
     company: { findUnique: jest.fn(async () => ({ regimeTributario: 'SIMPLES', tipoTributario: null })) },
     user: { findUnique: jest.fn(async () => ({ status: 'active', role: 'user', accountType: 'FIRM' })) },
     companyFirmAccess: { findUnique: jest.fn(async () => ({ status: 'ACTIVE', role: 'ACCOUNTANT' })) },
+    apuracaoPeriodoRecusado: { findMany: jest.fn(async () => []) },
+    serproChamada: { findFirst: jest.fn(async () => null) },
+    rbtExtratoCache: { findUnique: jest.fn(async () => null) },
     $queryRaw: jest.fn(async () => []),
   };
   db.$transaction = run => { const promise = queue.then(() => run(db)); queue = promise.catch(() => {}); return promise; };
-  const dados = { estado: 'aberta', rbt12: 12000, rbt12Origem: 'EXTRATO_PGDAS', origemAtividades: 'notas', semClassificacao: 0, atividades: [{ idAtividade: 1, valorInterno: 100, valorExterno: 0, sujeitoFatorR: false }], faturamento: { total: 100 }, disparidades: [] };
-  const deps = { db, now: () => new Date(args.scheduledAt), conferir: jest.fn(async () => ({ version: 1 })),
+  const dados = { rbtPreparado: { rbt12: 12000, origem: 'EXTRATO_PGDAS', detalhePorMes: [] }, estado: 'aberta', rbt12: 12000, rbt12Origem: 'EXTRATO_PGDAS', origemAtividades: 'notas', semClassificacao: 0, atividades: [{ idAtividade: 1, valorInterno: 100, valorExterno: 0, sujeitoFatorR: false }], faturamento: { total: 100 }, disparidades: [] };
+  const deps = { db, resolverIdentidade: async () => ({ contratanteCnpj: '11111111111111', contribuinteCnpj: '11222333000181' }), envolverTentativa: (_opts, run) => run(), now: () => new Date(args.scheduledAt), conferir: jest.fn(async () => ({ version: 1 })),
     contexto: jest.fn(async ({ portalClientId, competencia }) => ({ versao: 1, hash: `${portalClientId}:${competencia}:notas-v1` })),
     coletarAdn: jest.fn(async () => ({ ok: true, complete: true, totalDocs: 2, newCursor: '20' })),
     coletarDfe: jest.fn(async () => ({ ok: true, complete: true, totalDocs: 1, newCursor: '30' })),
@@ -155,4 +158,21 @@ test.each(['2026-11-09T10:00:00Z', '2026-12-08T10:00:00Z'])('fora da competênci
   const { deps } = fixture(); deps.now = () => new Date(scheduledAt);
   await expect(executarCicloSimples({ ...args, scheduledAt }, deps)).rejects.toMatchObject({ code: 'CICLO_FORA_DA_JANELA' });
   expect(deps.coletarAdn).not.toHaveBeenCalled();
+});
+
+test.each([true, undefined])('Fator R %s exige revisão, sem simular mesmo sem diagnóstico derivado', async sujeito => {
+  const { deps, dados } = fixture();
+  dados.atividades[0].sujeitoFatorR = sujeito;
+  expect(await executarCicloSimples(args, deps)).toMatchObject({ status: 'REVISAO_NECESSARIA', errorCode: 'CICLO_FATOR_R_CONFERENCIA' });
+  expect(deps.calcular).not.toHaveBeenCalled();
+});
+
+test('GET compara prova adicional sem exigir seleção ativa nem repetir cálculo', async () => {
+  const { deps, dados, rows } = fixture();
+  expect(await executarCicloSimples(args, deps)).toMatchObject({ status: 'CALCULADO' });
+  rows.set('ciclo_simples_config:empresa-a', { enabled: false, fontes: ['NFSE'] });
+  expect(await lerCicloSimples(args, deps)).toMatchObject({ status: 'CALCULADO' });
+  dados.atividades[0].anexoImplicito = 'IV';
+  expect(await lerCicloSimples(args, deps)).toMatchObject({ status: 'REVISAO_NECESSARIA', reason: expect.stringContaining('parâmetros fiscais') });
+  expect(deps.calcular).toHaveBeenCalledTimes(1);
 });

@@ -11,8 +11,8 @@ const ANEXOS_VALIDOS = new Set(["I", "II", "III", "IV", "V"]);
 /**
  * Carrega o de-para vigente (idAtividade) indexado por (tipoReceita, mercado).
  */
-export async function carregarAtividades(dataReferencia = new Date()) {
-  const linhas = await prisma.atividadePgdasd.findMany({
+export async function carregarAtividades(dataReferencia = new Date(), db = prisma) {
+  const linhas = await db.atividadePgdasd.findMany({
     where: {
       vigenciaInicio: { lte: dataReferencia },
       OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: dataReferencia } }],
@@ -39,8 +39,8 @@ export async function carregarAtividades(dataReferencia = new Date()) {
  *                   tipoReceita, valorInterno, valorExterno }]
  *   semMapeamento = [{ tipoReceita, mercado, valor }] — receita sem idAtividade (pendência)
  */
-export async function montarAtividadesDefault({ receitaPorTipoMercado, dataReferencia = new Date() }) {
-  const { map } = await carregarAtividades(dataReferencia);
+export async function montarAtividadesDefault({ receitaPorTipoMercado, dataReferencia = new Date(), db = prisma }) {
+  const { map } = await carregarAtividades(dataReferencia, db);
   const porId = new Map(); // idAtividade → atividade agregada
   const semMapeamento = [];
 

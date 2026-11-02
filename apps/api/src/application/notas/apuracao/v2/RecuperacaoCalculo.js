@@ -20,6 +20,7 @@ export function recuperarCalculo(snapshot, dadosAtuais = {}) {
   } catch {
     return indisponivel("Não foi possível comprovar a integridade do cálculo salvo. Confira os dados antes de calcular novamente.");
   }
+  if (vinculo.origemCalculo === 'AUTOMATICO_SIMPLES' && dadosAtuais.preparacaoAtual?.hash !== vinculo.preparacaoAutomatica?.hash) return indisponivel('A prova do preparo automático não foi confirmada. Confira a tentativa antes de continuar.');
   const salvo = { dasValor: Number(snapshot.dasSimuladoSerpro), rbt12: numeroValido(snapshot.rbt12) ? Number(snapshot.rbt12) : null,
     formulario: copia(vinculo.formulario), estado: snapshot.estado, calculadoEm: snapshot.updatedAt || null };
   const apenasLeitura = motivo => ({ ...indisponivel(motivo), calculoSalvo: salvo });

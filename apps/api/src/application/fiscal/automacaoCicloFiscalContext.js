@@ -4,11 +4,62 @@ import { prisma } from '../../infrastructure/db/prisma.js';
 import { conferirPoliticaAutomacao } from './serpro/CompanyAutomationPolicy.js';
 
 const context = new AsyncLocalStorage();
+const verificationContext = new AsyncLocalStorage();
+const dispatchStates = new WeakMap();
+const verificationError = (code, message) => Object.assign(new Error(message), { code });
+
+export function comVerificacaoTentativaAutomatica({ portalClientId, competencia, verificar } = {}, run) {
+  const current = context.getStore();
+  if (!current?.company || current.company.portalClientId !== portalClientId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '') || current.attempt) throw verificationError('AUTOMACAO_EMPRESA_TENTATIVA_INVALIDA', 'A tentativa exige contexto automático empresarial exclusivo.');
+  if (typeof verificar !== 'function') throw verificationError('AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE', 'A tentativa automática não possui verificação de origem.');
+  const attempt = Object.freeze({ portalClientId, competencia, verificar });
+  dispatchStates.set(attempt, { authorized: false });
+  return context.run(Object.freeze({ ...current, attempt }), run);
+}
+
+export async function conferirTentativaAutomaticaDespacho(db, { portalClientId, requireAttempt = false } = {}) {
+  const current = context.getStore();
+  if (!current?.attempt) {
+    if (requireAttempt) throw verificationError('AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE', 'A tentativa automática não possui verificação de origem.');
+    return; // Manual e demais rotinas não ganham uma tentativa de cálculo.
+  }
+  const attempt = current.attempt;
+  if (attempt.portalClientId !== current.company?.portalClientId || attempt.portalClientId !== portalClientId || !dispatchStates.has(attempt)) throw verificationError('AUTOMACAO_EMPRESA_TENTATIVA_INVALIDA', 'A tentativa não pertence à empresa do despacho.');
+  if (typeof attempt.verificar !== 'function') throw verificationError('AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE', 'Verificação da tentativa indisponível.');
+  if (verificationContext.getStore()) throw verificationError('AUTOMACAO_EMPRESA_VERIFICADOR_RECURSIVO', 'A verificação automática não pode executar outra operação fiscal.');
+  try {
+    const result = await verificationContext.run(true, () => attempt.verificar({ db: db || current.db, portalClientId, competencia: attempt.competencia }));
+    if (result === false) throw verificationError('AUTOMACAO_EMPRESA_BASE_ALTERADA', 'A origem da tentativa não foi confirmada.');
+  } catch (error) {
+    if (error?.code?.startsWith('AUTOMACAO_EMPRESA_')) throw error;
+    throw verificationError('AUTOMACAO_EMPRESA_VERIFICACAO_INDISPONIVEL', 'Não foi possível conferir a origem da tentativa antes do despacho.');
+  }
+}
+export function tentativaAutomaticaSemDespacho() {
+  const attempt = context.getStore()?.attempt;
+  return Boolean(attempt && dispatchStates.get(attempt)?.authorized === false);
+}
+// Apenas a conferência local é abrangida. Nunca receber aqui um erro do transporte
+// ou de uma simulação que já retornou: esse resultado pode ser fiscalmente incerto.
+export async function conferirTentativaAutomaticaAntesSimulacao(db, { portalClientId } = {}) {
+  try {
+    return await conferirTentativaAutomaticaDespacho(db, { portalClientId, requireAttempt: true });
+  } catch (error) {
+    const refusal = verificationError(error.code, error.message);
+    refusal.recusaAntesDespacho = tentativaAutomaticaSemDespacho();
+    throw refusal;
+  }
+}
+export function marcarDespachoTentativaAutomatica() {
+  const attempt = context.getStore()?.attempt;
+  if (attempt) dispatchStates.get(attempt).authorized = true;
+}
 // Somente entradas automáticas internas estabelecem o contexto. Corpo HTTP não o controla.
 export function comAutomacaoCicloFiscal(policy, run, db) {
   return context.run(Object.freeze({ version: policy.version, scheduledAt: policy.scheduledAt, db: db || prisma }), run);
 }
 export async function conferirContextoCicloFiscal(db, { requireCompany = false, portalClientId } = {}) {
+  if (verificationContext.getStore()) throw verificationError('AUTOMACAO_EMPRESA_VERIFICADOR_RECURSIVO', 'O verificador deve usar somente leituras locais, sem guarda fiscal ou transporte.');
   const current = context.getStore();
   if (!current) return null; // Ações manuais conservam suas autorizações próprias.
   const database = db || current.db;

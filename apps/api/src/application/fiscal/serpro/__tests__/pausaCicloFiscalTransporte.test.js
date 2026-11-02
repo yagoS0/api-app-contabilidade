@@ -9,7 +9,7 @@ import { autorizarDespacho, concluirChamada } from '../SerproCallGuard.js';
 import * as callGuard from '../SerproCallGuard.js';
 import { lerResposta } from '../SerproRespostaCache.js';
 import { SerproHttpClient } from '../SerproHttpClient.js';
-import { comAutomacaoCicloFiscal, comAutomacaoEmpresa } from '../../automacaoCicloFiscalContext.js';
+import { comAutomacaoCicloFiscal, comAutomacaoEmpresa, comVerificacaoTentativaAutomatica, conferirContextoCicloFiscal, conferirTentativaAutomaticaDespacho, conferirTentativaAutomaticaAntesSimulacao } from '../../automacaoCicloFiscalContext.js';
 const paused = { paused: true, version: 1, reason: 'Pausa', actor: { id: 'u' }, changedAt: '2026-11-01T10:00:00Z', resumedAt: null };
 afterEach(() => jest.restoreAllMocks());
 beforeEach(() => {
@@ -18,6 +18,70 @@ beforeEach(() => {
   prisma.appSetting = { findUnique: jest.fn(async ({ where }) => where.key === 'automacao_ciclo_fiscal' ? { value: paused } : null), create: jest.fn() };
   prisma.serproChamada = { findUnique: jest.fn(async () => ({ id: 'r', status: 'reservada', portalClientId: null })), updateMany: jest.fn(async () => ({ count: 1 })) };
   prisma.$queryRaw = jest.fn(); prisma.$transaction = async run => run(prisma);
+});
+
+function tentativa(verificar, run, id = 'a') {
+  return comAutomacaoCicloFiscal({ version: 0 }, () => comAutomacaoEmpresa(id, () => comVerificacaoTentativaAutomatica({ portalClientId: id, competencia: '2026-10', verificar }, run)));
+}
+function ativo() {
+  prisma.appSetting.findUnique.mockResolvedValue(null);
+  prisma.portalClient = { findUnique: jest.fn(async ({ where }) => ({ id: where.id, cnpj: '12345678000190' })) };
+  prisma.serproChamada.findUnique.mockImplementation(async ({ where }) => ({ id: where.id, status: 'reservada', portalClientId: where.id === 'b' ? 'b' : 'a' }));
+}
+test.each(['AUTOMACAO_EMPRESA_SELECAO_ALTERADA', 'AUTOMACAO_EMPRESA_BASE_ALTERADA'])('autenticação altera seleção/prova: guarda final real preserva %s e não despacha', async code => {
+  ativo(); let token = 'inicial';
+  jest.spyOn(callGuard, 'autorizarChamada').mockResolvedValue({ id: 'a', inicio: Date.now() });
+  const verify = jest.fn(async ({ db, portalClientId, competencia }) => {
+    expect(db).toBe(prisma); expect(portalClientId).toBe('a'); expect(competencia).toBe('2026-10');
+    if (token !== 'inicial') throw Object.assign(new Error('Seleção ou origem mudou'), { code });
+  });
+  const auth = { authenticate: jest.fn(async () => { token = 'alterado'; return {}; }), buildHttpsAgent: jest.fn(async () => ({})) };
+  await expect(tentativa(verify, () => new SerproHttpClient({ authService: auth }).post('/Consultar', { contribuinte: { numero: '12345678000190' } }))).rejects.toMatchObject({ code, recusaAntesDespacho: true });
+  expect(auth.authenticate).toHaveBeenCalledTimes(1); expect(verify).toHaveBeenCalledTimes(1);
+  expect(axios.request).not.toHaveBeenCalled(); expect(prisma.appSetting.create).not.toHaveBeenCalled();
+  expect(prisma.serproChamada.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'abortada_politica', erroCodigo: code }) }));
+});
+test('erro DB do verificador recusa auditado; ausência e recursão também não despacham', async () => {
+  ativo();
+  await expect(tentativa(async () => { throw new Error('DB indisponível'); }, () => autorizarDespacho({ id: 'a', inicio: Date.now() }))).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICACAO_INDISPONIVEL', recusaAntesDespacho: true });
+  await expect(tentativa(undefined, () => autorizarDespacho({ id: 'a', inicio: Date.now() }))).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE' });
+  await expect(comAutomacaoCicloFiscal({ version: 0 }, () => comAutomacaoEmpresa('a', () => conferirTentativaAutomaticaDespacho(prisma, { portalClientId: 'a', requireAttempt: true })))).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE' });
+  await expect(tentativa(() => conferirContextoCicloFiscal(), () => autorizarDespacho({ id: 'a', inicio: Date.now() }))).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICADOR_RECURSIVO', recusaAntesDespacho: true });
+  expect(axios.request).not.toHaveBeenCalled(); expect(prisma.appSetting.create).not.toHaveBeenCalled();
+});
+test('verificadores paralelos isolados por empresa não vazam para manual', async () => {
+  ativo(); const seen = [];
+  const verifier = id => async ({ portalClientId }) => { await Promise.resolve(); expect(portalClientId).toBe(id); seen.push(id); };
+  await Promise.all(['a', 'b'].map(id => tentativa(verifier(id), () => autorizarDespacho({ id, inicio: Date.now() }), id)));
+  expect(seen.sort()).toEqual(['a', 'b']);
+  await autorizarDespacho({ id: 'manual', inicio: Date.now() });
+  expect(seen).toHaveLength(2); expect(prisma.appSetting.create).toHaveBeenCalledTimes(3);
+});
+test('falha depois de autorização anterior nunca recebe classificação de pré-envio', async () => {
+  ativo(); let reject = false;
+  await tentativa(async () => { if (reject) throw Object.assign(new Error('Base mudou depois'), { code: 'AUTOMACAO_EMPRESA_BASE_ALTERADA', recusaAntesDespacho: true }); }, async () => {
+    await autorizarDespacho({ id: 'a', inicio: Date.now() }); reject = true;
+    await expect(autorizarDespacho({ id: 'segunda', inicio: Date.now() })).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_BASE_ALTERADA', recusaAntesDespacho: false });
+  });
+  expect(prisma.appSetting.create).toHaveBeenCalledTimes(1);
+});
+test('conferência local classifica somente recusa comprovada antes de qualquer despacho', async () => {
+  ativo();
+  const original = Object.assign(new Error('Origem alterada'), { code: 'AUTOMACAO_EMPRESA_BASE_ALTERADA' });
+  const verifier = jest.fn(async () => { throw original; });
+  await expect(tentativa(verifier, () => conferirTentativaAutomaticaAntesSimulacao(prisma, { portalClientId: 'a' }))).rejects.toMatchObject({ code: original.code, recusaAntesDespacho: true });
+  expect(original).not.toHaveProperty('recusaAntesDespacho');
+  expect(verifier).toHaveBeenCalledTimes(1);
+  expect(prisma.appSetting.create).not.toHaveBeenCalled(); expect(prisma.serproChamada.updateMany).not.toHaveBeenCalled(); expect(axios.request).not.toHaveBeenCalled();
+  await expect(conferirTentativaAutomaticaAntesSimulacao(prisma, { portalClientId: 'a' })).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICADOR_AUSENTE', recusaAntesDespacho: false });
+});
+test('conferência local não marca como pré-envio depois de autorização real na mesma tentativa', async () => {
+  ativo(); let reject = false;
+  await tentativa(async () => { if (reject) throw Object.assign(new Error('Mudou depois'), { code: 'AUTOMACAO_EMPRESA_BASE_ALTERADA' }); }, async () => {
+    await autorizarDespacho({ id: 'a', inicio: Date.now() }); reject = true;
+    await expect(conferirTentativaAutomaticaAntesSimulacao(prisma, { portalClientId: 'a' })).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_BASE_ALTERADA', recusaAntesDespacho: false });
+  });
+  expect(prisma.appSetting.create).toHaveBeenCalledTimes(1); expect(prisma.serproChamada.updateMany).not.toHaveBeenCalled();
 });
 
 test.each([false, true])('cache exige identidade empresarial antes da leitura; contribuinte correto=%s', async matches => {

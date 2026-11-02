@@ -12,9 +12,9 @@ export function erroCalculoObsoleto() {
 export function exigirRegimeSuportado(regime = 'COMPETENCIA') {
   if ((regime || 'COMPETENCIA') !== 'COMPETENCIA') throw Object.assign(new Error('Apuração por regime de caixa ainda não tem suporte integral neste fluxo. Não foi enviada consulta nem declaração; utilize o fluxo oficial para esta empresa.'), { code: 'REGIME_APURACAO_NAO_SUPORTADO' });
 }
-export function criarVinculoCalculo({ portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, contribuinteCnpj, contratanteCnpj, contextoOrigem }) {
-  const dados = { portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, ...(contribuinteCnpj ? { contribuinteCnpj, contratanteCnpj } : {}), ...(contextoOrigem ? { contextoOrigem } : {}) };
-  return { ...dados, calculoId: `fech:v1:${crypto.randomUUID()}:${hashCalculo(dados)}` };
+export function criarVinculoCalculo({ portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, contribuinteCnpj, contratanteCnpj, contextoOrigem, preparacaoAutomatica }) {
+  const dados = { portalClientId, competencia, formulario, receitasBrutasAnteriores, folhasSalario, ...(contribuinteCnpj ? { contribuinteCnpj, contratanteCnpj } : {}), ...(contextoOrigem ? { contextoOrigem } : {}), ...(preparacaoAutomatica ? { origemCalculo: 'AUTOMATICO_SIMPLES', preparacaoAutomatica } : {}) };
+  return { ...dados, calculoId: `fech:${preparacaoAutomatica ? 'auto' : 'v1'}:${crypto.randomUUID()}:${hashCalculo(dados)}` };
 }
 export function validarCalculoConfirmado(snapshot, { portalClientId, competencia, calculoId, formulario }) {
   const v = snapshot?.simulacaoSerpro?._portalCalculo;
@@ -22,6 +22,8 @@ export function validarCalculoConfirmado(snapshot, { portalClientId, competencia
     || v.portalClientId !== portalClientId || v.competencia !== competencia) throw erroCalculoObsoleto();
   const { calculoId: _, ...dados } = v;
   if (!calculoId.endsWith(`:${hashCalculo(dados)}`)) throw erroCalculoObsoleto();
+  const auto = String(calculoId).startsWith('fech:auto:') || v.origemCalculo === 'AUTOMATICO_SIMPLES';
+  if (auto && (v.origemCalculo !== 'AUTOMATICO_SIMPLES' || v.preparacaoAutomatica?.versao !== 1 || !v.preparacaoAutomatica.attemptId || !v.preparacaoAutomatica.prova || hashCalculo(v.preparacaoAutomatica.prova) !== v.preparacaoAutomatica.hash)) throw erroCalculoObsoleto();
   exigirRegimeSuportado(v.formulario?.regimeApuracao);
   const atual = insumosFormulario({ atividades: snapshot.atividadesEscolhidas, folhaMensal12: snapshot.folhaMensal12, regimeApuracao: v.formulario.regimeApuracao });
   if (hashCalculo(atual) !== hashCalculo(v.formulario) || (formulario && hashCalculo(formulario) !== hashCalculo(v.formulario))) throw erroCalculoObsoleto();

@@ -7,6 +7,14 @@ import { lerPoliticaSerpro, chavePoliticaSerpro, bloquearPoliticaEmpresa } from 
 import { aplicarRegimeRotinas, labelRotinaAplicavel } from './CompanyRoutineApplicability.js';
 
 const fail = (code, message, status = 409) => Object.assign(new Error(message), { code, status });
+const projecaoSelecao = value => ({ enabled: value?.enabled === true, fontes: Array.isArray(value?.fontes) ? [...value.fontes].sort() : [] });
+export function identidadeSelecaoCicloSimples(value) {
+  if (value && Object.hasOwn(value, 'selectionToken')) {
+    if (typeof value.selectionToken !== 'string' || !/^[a-f0-9-]{36}$/i.test(value.selectionToken)) throw fail('AUTOMACAO_EMPRESA_SELECAO_INVALIDA', 'A identidade da seleção automática está inválida. Confira a configuração.');
+    return `token:${value.selectionToken}`;
+  }
+  return `legacy:${createHash('sha256').update(JSON.stringify(projecaoSelecao(value))).digest('hex')}`;
+}
 export async function lerAutomacaoEmpresa(db, companyId) {
   const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { id: true, companyId: true } });
   if (!company) throw fail('COMPANY_NOT_FOUND', 'Empresa não encontrada.', 404);
@@ -94,7 +102,11 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     }
     if (cicloInput) {
       const configKey = `ciclo_simples_config:${companyId}`;
-      await tx.appSetting.upsert({ where: { key: configKey }, create: { key: configKey, value: cicloInput }, update: { value: cicloInput } });
+      const previous = (await tx.appSetting.findUnique({ where: { key: configKey } }))?.value;
+      if (JSON.stringify(projecaoSelecao(previous)) !== JSON.stringify(cicloInput)) {
+        const value = { ...cicloInput, selectionToken: randomUUID() };
+        await tx.appSetting.upsert({ where: { key: configKey }, create: { key: configKey, value }, update: { value } });
+      }
     }
     for (const [rotina, enabled] of Object.entries(rotinas || {})) {
       await tx.companyRotina.upsert({ where: { portalClientId_rotina: { portalClientId: companyId, rotina } }, create: { portalClientId: companyId, rotina, enabled }, update: { enabled } });

@@ -26,7 +26,7 @@ export function pasAnteriores(competencia, n = 12) {
  * Soma local da receita por mês (EMIT/autorizada), segregada interno/externo.
  * Fallback quando não há fonte oficial.
  */
-async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
+async function somarReceitaLocalPorMes({ portalClientId, competencia, db = prisma }) {
   const pas = pasAnteriores(competencia);
   const primeiro = pas[0];
   const [y0, m0] = primeiro.split("-").map(Number);
@@ -34,7 +34,7 @@ async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
   const gte = new Date(Date.UTC(y0, m0 - 1, 1));
   const lt = new Date(Date.UTC(yF, mF - 1, 1)); // até o mês anterior à competência
 
-  const notas = await prisma.portalInvoice.findMany({
+  const notas = await db.portalInvoice.findMany({
     where: {
       clientId: portalClientId, papel: "EMIT", statusEfetivo: "autorizada",
       competencia: { gte, lt },
@@ -68,7 +68,7 @@ async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
   }
   // Extratos do mesmo cliente, incluindo os do ano anterior. O mais recente
   // prevalece por mês (retificadoras); nunca somar extrato e notas do mesmo PA.
-  const extratos = await prisma.companyMonthlyCircular.findMany({
+  const extratos = await db.companyMonthlyCircular.findMany({
     where: { portalClientId, competencia: { gte: primeiro, lte: competencia }, pgdasDeclaracaoFileId: { not: null } },
     orderBy: [{ competencia: "desc" }, { serproLastSyncAt: "desc" }],
     select: { metadata: true },
@@ -94,9 +94,9 @@ async function somarReceitaLocalPorMes({ portalClientId, competencia }) {
  *
  * @returns {Promise<{rbt12, detalhePorMes, origem, capturadoEm}>}
  */
-export async function getRbt12({ portalClientId, competencia, forceRefresh = false, persistir = true }) {
+export async function getRbt12({ portalClientId, competencia, forceRefresh = false, persistir = true, db = prisma }) {
   if (!forceRefresh) {
-    const cached = await prisma.rbtExtratoCache.findUnique({
+    const cached = await db.rbtExtratoCache.findUnique({
       where: { portalClientId_competencia: { portalClientId, competencia } },
     });
     // Totais locais envelhecem quando chegam notas/extratos retroativos.
@@ -110,7 +110,7 @@ export async function getRbt12({ portalClientId, competencia, forceRefresh = fal
     }
   }
   // fallback local
-  const { rbt12, detalhe, origem } = await somarReceitaLocalPorMes({ portalClientId, competencia });
+  const { rbt12, detalhe, origem } = await somarReceitaLocalPorMes({ portalClientId, competencia, db });
   if (!persistir) return { rbt12, detalhePorMes: detalhe, origem, capturadoEm: null };
   const saved = await upsertCache({ portalClientId, competencia, rbt12, detalhePorMes: detalhe, origem });
   return { rbt12: Number(saved.rbt12), detalhePorMes: saved.detalhePorMes, origem: saved.origem, capturadoEm: saved.capturadoEm };
@@ -179,8 +179,8 @@ export async function gravarPeriodosAceitos({ portalClientId, competencia, recei
  * declaração retroativa, o conjunto de períodos "necessários" muda e a lista envelhece. Aí a RFB
  * rejeita de novo, o laço reconverge e regrava — o pior caso volta a ser o de hoje.
  */
-export async function lerPeriodosAceitos({ portalClientId, competencia }) {
-  const c = await prisma.rbtExtratoCache.findUnique({
+export async function lerPeriodosAceitos({ portalClientId, competencia, db = prisma }) {
+  const c = await db.rbtExtratoCache.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
     select: { periodosAceitos: true, periodosAceitosEm: true },
   });

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { conferirContextoCicloFiscal } from '../automacaoCicloFiscalContext.js';
+import { conferirContextoCicloFiscal, conferirTentativaAutomaticaDespacho, tentativaAutomaticaSemDespacho, marcarDespachoTentativaAutomatica } from '../automacaoCicloFiscalContext.js';
 import { bloquearCicloFiscal, AutomacaoCicloFiscalError } from '../AutomacaoCicloFiscalService.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA,
@@ -143,18 +143,20 @@ export async function autorizarDespacho(autorizacao, client = prisma) {
         await conferirContextoCicloFiscal(tx);
         await conferirContextoCicloFiscal(tx, { requireCompany: true, portalClientId: reserva.portalClientId });
         await conferirPoliticaSerpro(tx, reserva.portalClientId);
+        await conferirTentativaAutomaticaDespacho(tx, { portalClientId: reserva.portalClientId });
       }
       catch (error) {
         if (!error.code?.startsWith('SERPRO_') && !error.code?.startsWith('AUTOMACAO_EMPRESA_') && !(error instanceof AutomacaoCicloFiscalError)) throw error;
         const abortada = await tx.serproChamada.updateMany({ where: { id: reserva.id, status: 'reservada' }, data: { status: 'abortada_politica', erroCodigo: error.code, erroMensagem: error.message.slice(0, 300), duracaoMs: Date.now() - autorizacao.inicio } });
         if (abortada.count !== 1) throw new SerproGuardError('SERPRO_REGISTRO_INDETERMINADO', 'Não foi possível confirmar o cancelamento antes do despacho. Confira o registro; nenhuma nova operação foi enviada.');
-        return { recusa: new SerproGuardError(error.code, error.message, error.detalhe) };
+        return { recusa: Object.assign(new SerproGuardError(error.code, error.message, error.detalhe), { recusaAntesDespacho: tentativaAutomaticaSemDespacho() }) };
       }
       await tx.appSetting.create({ data: { key, value: { reservaId: reserva.id, companyId: reserva.portalClientId, authorizedAt: new Date().toISOString() } } });
       return {};
     }, { maxWait: 10000, timeout: 15000, isolationLevel: 'ReadCommitted' });
   } catch (error) { if (error instanceof SerproGuardError) throw error; throw medicaoIndisponivel(); }
   if (desfecho.recusa) throw desfecho.recusa;
+  marcarDespachoTentativaAutomatica();
 }
 export async function concluirChamada(autorizacao, { httpStatus = null, erroCodigo = null, erroMensagem = null, abortadaAuth = false } = {}, client = prisma) {
   if (!autorizacao?.id) throw medicaoIndisponivel();

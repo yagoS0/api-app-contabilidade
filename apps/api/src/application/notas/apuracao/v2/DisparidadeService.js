@@ -13,17 +13,17 @@ import { prisma } from "../../../../infrastructure/db/prisma.js";
  * @param {Object} [opts.receitaPorTipo]     — { TIPO: valor } da classificação das notas
  * @returns {Promise<Array<{ tipo, severidade, descricao }>>}
  */
-export async function detectarDisparidades({ portalClientId, atividadesEscolhidas = [], receitaPorTipo = {} }) {
+export async function detectarDisparidades({ portalClientId, atividadesEscolhidas = [], receitaPorTipo = {}, db = prisma }) {
   const avisos = [];
 
   // 1. CNAE principal sugere um tipoReceita?
-  const cadastro = await prisma.cadastroFiscal.findUnique({
+  const cadastro = await db.cadastroFiscal.findUnique({
     where: { portalClientId },
     select: { cnaePrincipal: true },
   });
   let tipoSugeridoCnae = null;
   if (cadastro?.cnaePrincipal) {
-    const ref = await prisma.cnaeAnexo.findUnique({
+    const ref = await db.cnaeAnexo.findUnique({
       where: { cnae: cadastro.cnaePrincipal },
       select: { tipoReceitaSugerido: true, ambiguo: true, descricao: true },
     });
