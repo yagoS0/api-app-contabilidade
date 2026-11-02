@@ -51,7 +51,7 @@ test('criação elimina identificadores fiscais e exige confirmação', async ()
   const body = { requestId: '12345678-1234-4123-8123-123456789012', dia: 31, inicio: '2026-10-31', confirmada: true, modelo: { ...modelo, retryInvoiceId: 'antiga', numero: 42 } };
   const r = await criarRecorrencia({ companyId: 'empresa', userId: 'u', body, db, hoje: '2026-10-06' });
   expect(r.modelo.retryInvoiceId).toBeUndefined(); expect(r.modelo.numero).toBeUndefined(); expect(r.modelo.competencia).toBeUndefined();
-  await expect(criarRecorrencia({ companyId: 'empresa', userId: 'u', body: { ...body, confirmada: false }, db })).rejects.toThrow('Confirme');
+  await expect(criarRecorrencia({ companyId: 'empresa', userId: 'u', body: { ...body, confirmada: false }, db, hoje: '2026-10-06' })).rejects.toThrow('Confirme');
 });
 test('repetir a solicitação de criação devolve a mesma recorrência', async () => {
   const db = banco(); db.nfseRecorrencia.findUnique.mockResolvedValue(null);

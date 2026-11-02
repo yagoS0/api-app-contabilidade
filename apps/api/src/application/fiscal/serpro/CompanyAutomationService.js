@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { lerPoliticaAutomacao, chavePoliticaAutomacao } from './CompanyAutomationPolicy.js';
+import { lerAutomacaoCicloFiscal } from '../AutomacaoCicloFiscalService.js';
 import { ROTINA_KEYS } from './SerproRuntimeSettings.js';
 import { ROTINA_LABELS } from './CompanyRotinasService.js';
 import { lerPoliticaSerpro, chavePoliticaSerpro, bloquearPoliticaEmpresa } from './CompanySerproPolicy.js';
@@ -20,17 +22,21 @@ export async function lerAutomacaoEmpresa(db, companyId) {
     return [key, r ? { enabled: r.enabled === true && Boolean(valid), day: valid ? Number(r.day) : null, hour: valid ? Number(r.hour) : null, frequency: r.frequency ?? 'MONTHLY' } : null];
   }));
   const serproPolicy = await lerPoliticaSerpro(db, companyId);
+  const automationPolicy = await lerPoliticaAutomacao(db, companyId);
+  const globalAutomationPolicy = await lerAutomacaoCicloFiscal(db);
   const savedReminder = setting?.value?.rotinas?.avisos_guias_whatsapp;
   const integer = (v, min, max) => (typeof v === 'number' || typeof v === 'string' && /^\d+$/.test(v)) && Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
   const validReminder = savedReminder && integer(savedReminder.day, 1, 31) && integer(savedReminder.hour, 0, 23) && (savedReminder.frequency === undefined || savedReminder.frequency === 'DAILY');
   const lembretes = { enabled: rows.some(r => r.rotina === 'avisos_guias_whatsapp' && r.enabled === true),
     agenda: { enabled: savedReminder?.enabled === true && Boolean(validReminder), hour: validReminder ? Number(savedReminder.hour) : null, frequency: 'DAILY', timeZone: 'America/Sao_Paulo' } };
-  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes])).digest('hex');
-  return { companyId, revision, serproPolicy, lembretes, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
+  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes, automationPolicy, globalAutomationPolicy])).digest('hex');
+  return { companyId, revision, serproPolicy, automationPolicy, globalAutomationPolicy,
+    effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE',
+    lembretes, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
 }
 
 export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isAdmin = false } = {}) {
-  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes } = input || {};
+  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes, automationPolicy } = input || {};
   const validReminders = lembretes === undefined || lembretes && !Array.isArray(lembretes) && typeof lembretes === 'object'
     && typeof lembretes.enabled === 'boolean' && Object.keys(lembretes).every(k => k === 'enabled');
   const validRoutines = rotinas === undefined || rotinas && !Array.isArray(rotinas) && typeof rotinas === 'object'
@@ -39,13 +45,18 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     && typeof serproPolicy.paused === 'boolean' && typeof serproPolicy.reason === 'string'
     && serproPolicy.reason.trim().length > 0 && serproPolicy.reason.trim().length <= 300
     && Object.keys(serproPolicy).every(k => ['paused', 'reason'].includes(k));
+  const validAutomationPolicy = automationPolicy === undefined || automationPolicy && !Array.isArray(automationPolicy) && typeof automationPolicy === 'object'
+    && typeof automationPolicy.paused === 'boolean' && typeof automationPolicy.reason === 'string'
+    && automationPolicy.reason.trim().length > 0 && automationPolicy.reason.trim().length <= 300
+    && Object.keys(automationPolicy).every(k => ['paused', 'reason'].includes(k));
   if (!/^[a-f0-9]{64}$/.test(expectedRevision || '') || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId || '')
-    || !validRoutines || !validPolicy || !validReminders || rotinas === undefined && serproPolicy === undefined && lembretes === undefined) {
+    || !validRoutines || !validPolicy || !validReminders || !validAutomationPolicy || rotinas === undefined && serproPolicy === undefined && lembretes === undefined && automationPolicy === undefined) {
     throw fail('INVALID_AUTOMATION', 'Revise as rotinas selecionadas e atualize a configuração antes de salvar.', 422);
   }
   const key = `company_automation_request:${userId}:${requestId}`;
   const policyInput = serproPolicy === undefined ? null : { paused: serproPolicy.paused, reason: serproPolicy.reason.trim() };
-  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null])).digest('hex');
+  const automationInput = automationPolicy === undefined ? null : { paused: automationPolicy.paused, reason: automationPolicy.reason.trim() };
+  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null, automationInput])).digest('hex');
   return db.$transaction(async tx => {
     await bloquearPoliticaEmpresa(tx, companyId);
     if (!isAdmin) {
@@ -55,6 +66,8 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     const saved = await tx.appSetting.findUnique({ where: { key } });
     if (saved) {
       if (saved.value.hash !== hash) throw fail('IDEMPOTENCY_CONFLICT', 'Esta solicitação pertence a outra alteração. Recarregue a configuração.');
+      const current = await lerAutomacaoEmpresa(tx, companyId);
+      if (current.revision !== saved.value.result?.revision) throw fail('AUTOMATION_CHANGED', 'A configuração mudou após este salvamento. Recarregue para conferir o estado atual.');
       return saved.value.result;
     }
     const before = await lerAutomacaoEmpresa(tx, companyId);
@@ -73,8 +86,15 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
       const value = { ...policyInput, updatedAt: new Date().toISOString(), updatedBy: String(userId) };
       await tx.appSetting.upsert({ where: { key: chavePoliticaSerpro(companyId) }, create: { key: chavePoliticaSerpro(companyId), value }, update: { value } });
     }
+    if (automationInput) {
+      const updatedAt = new Date().toISOString();
+      const value = { ...automationInput, version: before.automationPolicy.version + 1, updatedAt, updatedBy: String(userId),
+        resumedAt: !automationInput.paused && before.automationPolicy.paused ? updatedAt : before.automationPolicy.resumedAt };
+      const policyKey = chavePoliticaAutomacao(companyId);
+      await tx.appSetting.upsert({ where: { key: policyKey }, create: { key: policyKey, value }, update: { value } });
+    }
     const result = { ...await lerAutomacaoEmpresa(tx, companyId), savedAt: new Date().toISOString() };
-    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeLembretes: before.lembretes, beforeSerproPolicy: before.serproPolicy, result, eventId: randomUUID() } } });
+    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeLembretes: before.lembretes, beforeSerproPolicy: before.serproPolicy, beforeAutomationPolicy: before.automationPolicy, result, eventId: randomUUID() } } });
     return result;
   }, { isolationLevel: 'Serializable' });
 }

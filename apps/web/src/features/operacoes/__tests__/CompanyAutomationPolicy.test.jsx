@@ -1,7 +1,23 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CompanyAutomation } from '../CompanyAutomation';
 
 const initial = { revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: true }], serproPolicy: { paused: false, reason: '' } };
+
+test('pausa automática separada preserva SERPRO e informa prevalência global', async () => {
+  const data = { ...initial, automationPolicy: { paused: false, version: 0 }, globalAutomationPolicy: { paused: true } };
+  const save = jest.fn(async (_, input) => ({ ...data, revision: 'r2', automationPolicy: { ...input.automationPolicy, version: 1, updatedBy: 'Contador', updatedAt: '2026-11-01T12:00:00Z' } }));
+  setup({ getCompanyAutomation: jest.fn().mockResolvedValue(data), saveCompanyAutomation: save });
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Pausar automações desta empresa' }));
+  expect(screen.getByText('Automações bloqueadas pela pausa geral.')).toBeInTheDocument();
+  expect(screen.getByText('Conferir alterações')).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Motivo da alteração das automações'), { target: { value: 'Conferir ciclo' } });
+  fireEvent.click(screen.getByText('Conferir alterações'));
+  fireEvent.click(screen.getByText('Salvar configuração'));
+  await screen.findByText(/Configuração salva/);
+  expect(save).toHaveBeenCalledWith('a', { expectedRevision: 'r1', requestId: 'policy-request', automationPolicy: { paused: true, reason: 'Conferir ciclo' } });
+  expect(screen.getByRole('checkbox', { name: 'Pausar operações SERPRO' })).not.toBeChecked();
+  expect(screen.getByText('Automações bloqueadas pela pausa geral.')).toBeInTheDocument();
+});
 const setup = (overrides = {}, canEdit = true) => {
   const api = { getCompanyAutomation: jest.fn().mockResolvedValue(initial), saveCompanyAutomation: jest.fn(async (_, input) => ({ ...initial, revision: 'r2', serproPolicy: input.serproPolicy })), getDas: jest.fn(), getExtrato: jest.fn(), ...overrides };
   const view = render(<CompanyAutomation api={api} companyId="a" canEdit={canEdit} />);
@@ -90,4 +106,48 @@ test('regime desconhecido não oferece ativar rotinas mas permite pausa', async 
   await screen.findByText('Regime não confirmado');
   expect(screen.queryByRole('checkbox', { name: /DAS/ })).not.toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Pausar operações SERPRO' })).toBeEnabled();
+});
+
+test('prévia e volta à edição mantêm foco útil sem perder motivo', async()=>{
+ const {api}=setup();await preparePause();
+ expect(screen.getByRole('heading',{name:'Conferir alteração'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'Voltar à edição'}));
+ expect(screen.getByRole('button',{name:'Conferir alterações'})).toHaveFocus();
+ expect(screen.getByLabelText('Motivo da pausa')).toHaveValue('  Conferir dados  ');
+ expect(api.saveCompanyAutomation).not.toHaveBeenCalled();
+});
+test('sucesso da empresa foca confirmação sem executar consultas', async()=>{
+ const {api}=setup();await preparePause();
+ const save=screen.getByRole('button',{name:'Salvar configuração'});save.focus();fireEvent.click(save);
+ await waitFor(()=>expect(screen.getByText(/Configuração salva/)).toHaveFocus());
+ expect(api.saveCompanyAutomation).toHaveBeenCalledTimes(1);
+ expect(api.getDas).not.toHaveBeenCalled();expect(api.getExtrato).not.toHaveBeenCalled();
+});
+test('conflito da empresa foca erro e recarga explícita foca título com versão atual', async()=>{
+ const {api}=setup({saveCompanyAutomation:jest.fn().mockRejectedValue(Object.assign(new Error('Conflito da versão'),{status:409}))});
+ await preparePause();const save=screen.getByRole('button',{name:'Salvar configuração'});save.focus();fireEvent.click(save);
+ await waitFor(()=>expect(screen.getByRole('alert')).toHaveFocus());
+ expect(screen.getByLabelText('Motivo da pausa')).toHaveValue('  Conferir dados  ');
+ expect(screen.getByRole('button',{name:'Salvar configuração'})).toBeDisabled();
+ const reload=screen.getByRole('button',{name:'Recarregar configuração'});reload.focus();fireEvent.click(reload);
+ await waitFor(()=>expect(screen.getByRole('heading',{name:'Automação'})).toHaveFocus());
+ expect(api.getCompanyAutomation).toHaveBeenCalledTimes(2);
+ expect(screen.getByRole('checkbox',{name:'Pausar operações SERPRO'})).not.toBeChecked();
+});
+test('empresa não captura foco movido durante salvamento', async()=>{
+ let finish;const save=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));setup({saveCompanyAutomation:save});await preparePause();
+ const button=screen.getByRole('button',{name:'Salvar configuração'});button.focus();fireEvent.click(button);
+ const other=document.createElement('button');other.textContent='Outra ação';document.body.append(other);other.focus();
+ try{
+  await act(async()=>finish({...initial,revision:'r2',serproPolicy:{paused:true,reason:'Conferir dados'}}));
+  expect(other).toHaveFocus();expect(screen.getByText(/Configuração salva/)).toBeInTheDocument();
+ }finally{other.remove();}
+});
+test('resposta tardia da empresa anterior não muda dados nem foco da nova', async()=>{
+ let finish;const save=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));const {api,view}=setup({saveCompanyAutomation:save});await preparePause();
+ screen.getByRole('button',{name:'Salvar configuração'}).focus();fireEvent.click(screen.getByRole('button',{name:'Salvar configuração'}));
+ view.rerender(<CompanyAutomation api={api} companyId="b" canEdit/>);
+ const checkbox=await screen.findByRole('checkbox',{name:'Pausar operações SERPRO'});await waitFor(()=>expect(checkbox).toBeEnabled());checkbox.focus();
+ await act(async()=>finish({...initial,companyId:'a',revision:'old',serproPolicy:{paused:true,reason:'Resposta antiga'}}));
+ expect(checkbox).toHaveFocus();expect(checkbox).not.toBeChecked();expect(screen.queryByText(/Configuração salva/)).toBeNull();
 });

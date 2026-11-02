@@ -1,4 +1,5 @@
 import { getSerproRuntimeSettings } from '../application/fiscal/serpro/SerproRuntimeSettings.js';
+import { conferirContextoCicloFiscal } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { solicitarPagamentosWhatsapp } from '../application/guides/SolicitarPagamentosWhatsappService.js';
 import { runScheduledRoutine, recordWorkerHeartbeat } from './scheduledRoutineService.js';
 import { log, INTEGRACAO_WHATSAPP } from '../config.js';
@@ -13,6 +14,7 @@ export async function runGuideWhatsappReminderTick({ agora = new Date(), setting
   return schedule('avisos_guias_whatsapp', config, async options => {
     const assertActive = async () => {
       options.assertActive();
+      await conferirContextoCicloFiscal();
       const atual = (await settings()).rotinas?.avisos_guias_whatsapp;
       if (!atual?.enabled || atual.hour !== config.hour) throw Object.assign(new Error('Agenda de avisos alterada.'), { code: 'AGENDA_ALTERADA' });
     };

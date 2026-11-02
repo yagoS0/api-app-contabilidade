@@ -1,6 +1,28 @@
 jest.mock('../SerproRuntimeSettings.js', () => ({ ROTINA_KEYS: ['das', 'inss'] }));
+jest.mock('../../../../infrastructure/db/prisma.js', () => ({ prisma: {} }));
 jest.mock('../CompanyRotinasService.js', () => ({ ROTINA_LABELS: { das: 'DAS', inss: 'INSS' } }));
 import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../CompanyAutomationService.js';
+
+test.each(['global', 'empresa'])('replay após mudança da pausa %s exige recarga sem regravar histórico', async scope => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: before.revision, requestId: 'replay-atual', rotinas: { das: true } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  const audit = structuredClone(db.appSetting.create.mock.calls[0][0]);
+  const key = scope === 'global' ? 'automacao_ciclo_fiscal' : 'company_automation_policy:a';
+  const value = scope === 'global'
+    ? { paused: true, version: 1, reason: 'Conferir', actor: { id: 'outro' }, changedAt: '2026-11-01T10:00:00Z', resumedAt: null }
+    : { paused: true, version: 1, reason: 'Conferir', updatedBy: 'outro', updatedAt: '2026-11-01T10:00:00Z', resumedAt: null };
+  await db.appSetting.upsert({ create: { key, value } });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED', status: 409 });
+  expect(db.appSetting.create).toHaveBeenCalledTimes(1);
+  expect(db.appSetting.create.mock.calls[0][0]).toEqual(audit);
+  expect(db.appSetting.upsert).toHaveBeenCalledTimes(1);
+  expect(db.companyRotina.upsert).toHaveBeenCalledTimes(1);
+  expect(saved.effectiveAutomationState).toBe('SUBJECT_TO_SCHEDULE');
+  const current = await lerAutomacaoEmpresa(db, 'a');
+  expect(current.effectiveAutomationState).toBe(scope === 'global' ? 'GLOBAL_PAUSED' : 'COMPANY_PAUSED');
+  expect(current.rotinas[0].enabled).toBe(true);
+});
 
 function database() {
   const rows = [], settings = new Map([['serpro_runtime_settings', { value: { clientSecret: 'nunca-expor', rotinas: { das: { enabled: true, day: 5, hour: 7 } } } }]]);
@@ -137,4 +159,20 @@ test('agenda global entra na revisão; leitura não salva ou expõe dados privad
   expect(current.lembretes).toMatchObject({ enabled: false, agenda: { enabled: true, hour: 8 } });
   await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'agenda-reminder', lembretes: { enabled: true } })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
   expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('pausa automática própria é auditada, não muda SERPRO, rotinas ou lembretes e replay não repete', async () => {
+  const db = database(), initial = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: initial.revision, requestId: 'automacao-pause', automationPolicy: { paused: true, reason: 'Conferir ciclo' } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(saved.automationPolicy).toMatchObject({ paused: true, version: 1, updatedBy: 'user', reason: 'Conferir ciclo' });
+  expect(saved.effectiveAutomationState).toBe('COMPANY_PAUSED');
+  expect(saved.serproPolicy).toEqual(initial.serproPolicy);
+  expect(saved.rotinas).toEqual(initial.rotinas); expect(saved.lembretes).toEqual(initial.lembretes);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(saved);
+  expect(db.appSetting.upsert).toHaveBeenCalledTimes(1);
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeAutomationPolicy.paused).toBe(false);
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'stale-auto' })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+  db.companyFirmAccess.findUnique.mockResolvedValue({ status: 'REVOKED', role: 'ACCOUNTANT' });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ status: 403 });
 });

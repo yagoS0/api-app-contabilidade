@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../automacaoCicloFiscalContext.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproParcelamentoService } from "./SerproParcelamentoService.js";
@@ -96,7 +97,7 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logge
       if (consultas >= limite) break;
       await assertActive();
       try {
-        const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt });
+        const r = await comAutomacaoEmpresa(p.portalClientId, () => confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt }));
         if (!r.skipped) consultas++;
         const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
         results.push({ companyId: p.portalClientId, razao: p.parcelamento?.portalClient?.razao || null, competencia: p.anoMesParcela,

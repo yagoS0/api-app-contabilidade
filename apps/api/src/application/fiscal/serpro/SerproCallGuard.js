@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { conferirContextoCicloFiscal } from '../automacaoCicloFiscalContext.js';
+import { bloquearCicloFiscal, AutomacaoCicloFiscalError } from '../AutomacaoCicloFiscalService.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA,
   SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA, SERPRO_TETO_MENSAL_MINIMO, SERPRO_TETO_MENSAL_ABSOLUTO, SERPRO_ALERTA_FRACAO } from "../../../config.js";
@@ -71,9 +73,12 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
   try {
     desfecho = await client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(73517001)`;
+      await bloquearCicloFiscal(tx);
+      await conferirContextoCicloFiscal(tx);
       let politicaRecusa = null;
       try {
         base.portalClientId = await empresaDaChamada(tx, payload);
+        await conferirContextoCicloFiscal(tx, { requireCompany: true, portalClientId: base.portalClientId });
         if (base.portalClientId) {
           await bloquearPoliticaEmpresa(tx, base.portalClientId);
           await conferirPoliticaSerpro(tx, base.portalClientId);
@@ -116,7 +121,7 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
       const reserva = await tx.serproChamada.create({ data: { ...base, status: "reservada", forcado } });
       return { autorizacao: { id: reserva.id, inicio: Date.now(), forcado } };
     }, { maxWait: 10000, timeout: 15000, isolationLevel: "ReadCommitted" });
-  } catch (e) { if (e instanceof SerproGuardError) throw e; throw medicaoIndisponivel(); }
+  } catch (e) { if (e instanceof SerproGuardError || e instanceof AutomacaoCicloFiscalError || e.code?.startsWith('AUTOMACAO_EMPRESA_')) throw e; throw medicaoIndisponivel(); }
   if (desfecho.recusa) throw desfecho.recusa;
   return desfecho.autorizacao;
 }
@@ -133,9 +138,14 @@ export async function autorizarDespacho(autorizacao, client = prisma) {
       if (reserva.portalClientId) await bloquearPoliticaEmpresa(tx, reserva.portalClientId);
       const key = `serpro_dispatch:${reserva.id}`;
       if (await tx.appSetting.findUnique({ where: { key } })) throw new SerproGuardError('SERPRO_CHAMADA_EM_ANDAMENTO', 'Esta reserva já foi autorizada para envio. Não será enviada novamente.');
-      try { await conferirPoliticaSerpro(tx, reserva.portalClientId); }
+      try {
+        await bloquearCicloFiscal(tx);
+        await conferirContextoCicloFiscal(tx);
+        await conferirContextoCicloFiscal(tx, { requireCompany: true, portalClientId: reserva.portalClientId });
+        await conferirPoliticaSerpro(tx, reserva.portalClientId);
+      }
       catch (error) {
-        if (!error.code?.startsWith('SERPRO_')) throw error;
+        if (!error.code?.startsWith('SERPRO_') && !error.code?.startsWith('AUTOMACAO_EMPRESA_') && !(error instanceof AutomacaoCicloFiscalError)) throw error;
         const abortada = await tx.serproChamada.updateMany({ where: { id: reserva.id, status: 'reservada' }, data: { status: 'abortada_politica', erroCodigo: error.code, erroMensagem: error.message.slice(0, 300), duracaoMs: Date.now() - autorizacao.inicio } });
         if (abortada.count !== 1) throw new SerproGuardError('SERPRO_REGISTRO_INDETERMINADO', 'Não foi possível confirmar o cancelamento antes do despacho. Confira o registro; nenhuma nova operação foi enviada.');
         return { recusa: new SerproGuardError(error.code, error.message, error.detalhe) };

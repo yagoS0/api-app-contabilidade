@@ -5460,6 +5460,14 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       await delay();
       return mockCarregarRotinas(mockCompanies);
     },
+    async getPausaCicloFiscal() {
+      const { mockLerPausaCicloFiscal } = await import('./rotinasMock');
+      return mockLerPausaCicloFiscal();
+    },
+    async savePausaCicloFiscal(input) {
+      const { mockSalvarPausaCicloFiscal } = await import('./rotinasMock');
+      return mockSalvarPausaCicloFiscal(input);
+    },
     async getOperationEvidence() {
       throw new Error('Conferência de revisões indisponível na demonstração. Nenhuma aprovação simulada.');
     },

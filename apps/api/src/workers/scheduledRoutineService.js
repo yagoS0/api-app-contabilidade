@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { conferirAutomacaoCicloFiscal, lerAutomacaoCicloFiscal } from '../application/fiscal/AutomacaoCicloFiscalService.js';
+import { comAutomacaoCicloFiscal, conferirContextoCicloFiscal } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { prisma } from "../infrastructure/db/prisma.js";
 import { describeSchedule, previousCompetencia } from "./routineSchedule.js";
 
@@ -11,6 +13,7 @@ const jsonValue = (value) => JSON.parse(JSON.stringify(value));
 export async function claimScheduledRun({ routine, config, now = new Date(), db = prisma }) {
   const { dueAt } = describeSchedule(config, now);
   if (!dueAt) return null;
+  const policy = await conferirAutomacaoCicloFiscal({ db, scheduledAt: dueAt });
   const key = `${PREFIX}${routine}:${dueAt}`;
   const existing = await db.appSetting.findUnique({ where: { key } });
   // A reserved slot may already have incurred provider costs, even after a crash.
@@ -21,6 +24,7 @@ export async function claimScheduledRun({ routine, config, now = new Date(), db 
     attempts: 1, startedAt: now.toISOString(),
     leaseUntil: new Date(now.getTime() + LEASE_MS).toISOString(),
     competencia: previousCompetencia(new Date(dueAt)),
+    cicloFiscalVersion: policy.version,
   };
   try { await db.appSetting.create({ data: { key, value } }); }
   catch (err) { if (err?.code === "P2002") return null; throw err; }
@@ -68,8 +72,11 @@ export async function runScheduledRoutine(routine, config, run, { db = prisma, n
   }, 60000);
   timer.unref?.();
   try {
-    const result = await run({ routines: [routine], competencia: claim.value.competencia,
-      scheduledAt: claim.value.scheduledAt, assertActive });
+    const result = await comAutomacaoCicloFiscal({ version: claim.value.cicloFiscalVersion, scheduledAt: claim.value.scheduledAt }, async () => {
+      await conferirContextoCicloFiscal();
+      return run({ routines: [routine], competencia: claim.value.competencia,
+        scheduledAt: claim.value.scheduledAt, assertActive });
+    }, db);
     clearInterval(timer);
     await pending;
     assertActive();
@@ -90,6 +97,8 @@ export async function recordWorkerHeartbeat(worker) {
 }
 
 export async function getRoutineExecutionStatus(settings, now = new Date()) {
+  let policy;
+  try { policy = await lerAutomacaoCicloFiscal(); } catch { policy = null; }
   const workers = {
     das: "SERPRO_PGDASD_WORKER_ENABLED", extrato: "SERPRO_PGDASD_WORKER_ENABLED",
     presumido: "SERPRO_PGDASD_WORKER_ENABLED", parcelamento: "SERPRO_PGDASD_WORKER_ENABLED",
@@ -116,8 +125,9 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
     const overdue = enabled && schedule.previousAt
       && (!latest || latest.value.scheduledAt < schedule.previousAt);
     const interrupted = latest?.value?.status === "RUNNING" && new Date(latest.value.leaseUntil) <= now;
-    const nextEffectiveAt = schedule.nextAt;
+    const nextEffectiveAt = !policy || policy.paused ? null : schedule.nextAt;
     return { routine, ...(avisoWhatsapp ? { label: 'Lembretes de guias no WhatsApp' } : {}), enabled, integrationEnabled, workerEnabled,
+      automationPaused: policy?.paused ?? null, automationPolicyUnavailable: !policy,
       heartbeatAt, alive: Boolean(alive), overdue: Boolean(overdue), interrupted, retryExhausted, maxAttempts: MAX_ATTEMPTS,
       ...schedule, nextEffectiveAt, lastRun: latest ? { ...latest.value, retryAt: null } : null };
   }));

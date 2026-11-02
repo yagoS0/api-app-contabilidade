@@ -1,5 +1,7 @@
 import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "../application/guides/GuiaParcelaEnvioGuard.js";
 import { log } from "../config.js";
+import { conferirAutomacaoCicloFiscal } from '../application/fiscal/AutomacaoCicloFiscalService.js';
+import { comAutomacaoCicloFiscal, comAutomacaoEmpresa, conferirContextoCicloFiscal } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { prisma } from "../infrastructure/db/prisma.js";
 import { reservarSemEntregaExterna } from '../application/guides/EntregaExternaGuiaService.js';
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
@@ -62,6 +64,7 @@ function escapeHtml(text) {
 }
 
 async function processOneGuide({ guide, emailService }) {
+  await conferirContextoCicloFiscal();
   try { await conferirParcelasParaEnvio([guide]); } catch (err) {
     return { guideId: guide.id, status: "SKIPPED", code: err.code, reason: err.message, willRetry: false };
   }
@@ -94,6 +97,7 @@ async function processOneGuide({ guide, emailService }) {
 
   const attempts = Number(guide.emailAttempts || 0) + 1;
   let source;
+  await conferirContextoCicloFiscal();
   try { source = await reservarSemEntregaExterna(prisma, [guide], tx => tx.guide.update({
     where: { id: guide.id },
     data: {
@@ -144,6 +148,7 @@ async function processOneGuide({ guide, emailService }) {
     try {
       await validarDestinatariosAtuais(source.portalClientId, to);
       await conferirParcelasParaEnvio([source]);
+      await conferirContextoCicloFiscal(prisma, { requireCompany: true, portalClientId: source.portalClientId });
       await emailService.send({
         to,
         subject,
@@ -170,7 +175,7 @@ async function processOneGuide({ guide, emailService }) {
     });
     return { guideId: source.id, status: "SENT", to };
   } catch (err) {
-    const canRetry = attempts < MAX_ATTEMPTS;
+    const canRetry = !err?.code?.startsWith('CICLO_FISCAL_') && !err?.code?.startsWith('AUTOMACAO_EMPRESA_') && attempts < MAX_ATTEMPTS;
     await prisma.guide.update({
       where: { id: source.id },
       data: {
@@ -191,6 +196,7 @@ async function processOneGuide({ guide, emailService }) {
 }
 
 export async function runGuideEmailWorkerOnce(options = {}) {
+  const policy = await conferirContextoCicloFiscal();
   const ignoradas = Array.isArray(options.ignorarGuideIds) ? options.ignorarGuideIds.map(String) : [];
   const batchSize = Math.min(
     MAX_BATCH_SIZE,
@@ -210,6 +216,7 @@ export async function runGuideEmailWorkerOnce(options = {}) {
       include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela },
       where: {
         status: "PROCESSED",
+        ...(policy?.resumedAt ? { createdAt: { gt: new Date(policy.resumedAt) } } : {}),
         ...whereGuiaPendenteDeEnvio(now),
         ...(visitadas.size ? { id: { notIn: [...visitadas] } } : {}),
       },
@@ -232,7 +239,11 @@ export async function runGuideEmailWorkerOnce(options = {}) {
     for (const guide of guides) {
       // processa em série para evitar burst no provedor
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService }));
+      try {
+        results.push(await comAutomacaoEmpresa(guide.portalClientId, () => processOneGuide({ guide, emailService }), prisma, { scheduledAt: guide.createdAt }));
+      } catch (err) {
+        results.push({ guideId: guide.id, status: 'ERROR', code: err.code, reason: err.message, willRetry: false });
+      }
     }
 
     return {
@@ -286,7 +297,11 @@ export async function runGuideEmailWorkerSelected({ guideIds }) {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService }));
+      try {
+        results.push(await comAutomacaoEmpresa(guide.portalClientId, () => processOneGuide({ guide, emailService })));
+      } catch (err) {
+        results.push({ guideId: guide.id, status: 'ERROR', code: err.code, reason: err.message, willRetry: false });
+      }
     }
     return {
       skipped: false,
@@ -306,7 +321,8 @@ export async function runGuideEmailWorkerLoop() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
-      const result = await runGuideEmailWorkerOnce();
+      const policy = await conferirAutomacaoCicloFiscal();
+      const result = await comAutomacaoCicloFiscal(policy, () => runGuideEmailWorkerOnce());
       log.info({ result }, "Ciclo do guideEmailWorker concluído");
     } catch (err) {
       log.error({ err: err?.message || err }, "Erro no ciclo do guideEmailWorker");

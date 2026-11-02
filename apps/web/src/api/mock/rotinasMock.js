@@ -1,6 +1,17 @@
 const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp"];
 const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp"];
 let savedCompanies = null;
+let pausa = { paused: false, version: 0, legacy: true, reason: null, actor: null, changedAt: null, resumedAt: null };
+export function mockLerPausaCicloFiscal() { return { ok: true, policy: structuredClone(pausa) }; }
+export function mockSalvarPausaCicloFiscal(input) {
+  if (input.version !== pausa.version) throw new Error('A configuração mudou. Atualize antes de confirmar.');
+  if (typeof input.paused !== 'boolean' || !input.reason?.trim() || input.reason.trim().length > 1000) throw new Error('Informe motivo válido.');
+  if (input.paused !== pausa.paused) {
+    const changedAt = new Date().toISOString();
+    pausa = { paused: input.paused, version: pausa.version + 1, reason: input.reason.trim(), actor: { id: 'demo', name: 'Demonstração' }, changedAt, resumedAt: input.paused ? pausa.resumedAt : changedAt, legacy: false };
+  }
+  return mockLerPausaCicloFiscal();
+}
 let agenda = Object.fromEntries(keys.map(key => [key, { enabled: key !== "avisos_guias_whatsapp", day: key === "conferencia" ? 1 : 10,
   hour: ["pagamento", "avisos_guias_whatsapp"].includes(key) ? 8 : 7, frequency: key === "avisos_guias_whatsapp" ? "DAILY" : "MONTHLY", timeZone: "America/Sao_Paulo" }]));
 

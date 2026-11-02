@@ -1,4 +1,6 @@
 import { travarGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
+import { conferirAutomacaoCicloFiscal } from '../fiscal/AutomacaoCicloFiscalService.js';
+import { conferirContextoCicloFiscal, comAutomacaoAgendada, comAutomacaoEmpresa } from '../fiscal/automacaoCicloFiscalContext.js';
 import { bloqueioEnvioParcela, conferirFormaIndicacaoParaEnvio } from './GuiaParcelaEnvioGuard.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
@@ -42,6 +44,11 @@ export async function transportePadrao() {
 export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId = null, scheduledAt, assertActive = () => {}, agora = new Date() }, deps = {}) {
   if (!scheduledAt) return { status: "IGNORADO", motivo: "CONSULTA_MANUAL" };
   const db = deps.db || prisma;
+  const policy = await conferirAutomacaoCicloFiscal({ db, scheduledAt });
+  const conferirPausa = async () => {
+    await conferirAutomacaoCicloFiscal({ db, version: policy.version, scheduledAt });
+    await conferirContextoCicloFiscal(db);
+  };
   const feriados = deps.feriados ?? await db.feriado.findMany({});
   const carregar = async () => {
     const vinculosDaGuia = { parcela: { include: { parcelamento: true } }, parcelamento: true };
@@ -83,6 +90,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const { p, g, companyId, company, fase } = doc;
   const referencia = p?.anoMesParcela || g?.competencia || p?.competencia;
   if (!companyId || !referencia) return { status: "PENDENTE", motivo: "IDENTIFICACAO_INCOMPLETA" };
+  return comAutomacaoAgendada({ ...policy, scheduledAt }, () => comAutomacaoEmpresa(companyId, async () => {
   const acoes = fase === 'DEPOIS' ? [{ acao: 'recalcular', label: 'Atualizar guia' }] : [];
   // O vínculo posterior pode mudar parcela/contrato; a guia e sua competência preservam a identidade.
   const base = createHash("sha256").update(JSON.stringify([companyId, g.id, g.competencia || referencia, fase, new Date(g.vencimento).toISOString().slice(0, 10)])).digest("hex");
@@ -111,6 +119,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
     const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, revisao, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
     try { await db.$transaction(async tx => {
+      await conferirPausa();
       if (g) await travarGuiaArrecadatoria(tx, g.id, companyId);
       await tx.appSetting.create({ data: { key, value } });
     }); }
@@ -125,13 +134,15 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     }
     let iniciou = false;
     const conferir = async () => {
+      await conferirPausa();
       await assertActive(); const atual = await carregar();
-      if ((atual.p?.id || null) !== (p?.id || null) || versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
+      if (atual.companyId !== companyId || (atual.p?.id || null) !== (p?.id || null) || versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
         || String(atual.g.vencimento) !== String(g.vencimento) || atual.fase !== fase) throw erro('GUIA_ALTERADA', 'A guia mudou durante a preparação do aviso.');
       const cadastro = await transporte.destinatarios(companyId);
       const contatoAtual = cadastro.telefones.find(c => c.id === target.contato.id && c.telefoneE164 === target.destino);
       if (!contatoAtual || (contatoAtual.vinculoNumeroId || null) !== (target.contato.vinculoNumeroId || null)) throw erro("DESTINATARIO_ALTERADO", "Configuração de envio mudou; aviso pendente.");
       await conferirEntregaGuiaWhatsapp(db, atual.g, target.destino, contatoAtual.vinculoNumeroId);
+      await conferirPausa();
     };
     try {
       await conferir();
@@ -158,4 +169,5 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     }
   }
   return { status: resultados.every(r => r.status === "JA_ENVIADO") ? "JA_ENVIADO" : resultados.every(r => ["ENVIADO", "JA_ENVIADO"].includes(r.status)) ? "ENVIADO" : "PENDENTE", companyId, razao: company?.razao, competencia: g.competencia, tipo: g.tipo, mensagem: resultados.filter(r => r.status === 'PENDENTE').map(r => r.mensagem).filter(Boolean).join(' ') || undefined, guideId: g?.id || null, parcelaId: p?.id || null, resultados };
+  }, db), db);
 }

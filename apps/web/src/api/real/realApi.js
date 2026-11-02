@@ -828,6 +828,8 @@ export function createRealApi() {
     async getRotinas() {
       return request(`/firm/rotinas`);
     },
+    getPausaCicloFiscal: () => request('/firm/rotinas/pausa-geral'),
+    savePausaCicloFiscal: input => request('/firm/rotinas/pausa-geral', { method: 'PUT', body: JSON.stringify(input) }),
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
     getOperationEvidence: competencia => request('/firm/operacoes/evidencias?competencia=' + encodeURIComponent(competencia)),

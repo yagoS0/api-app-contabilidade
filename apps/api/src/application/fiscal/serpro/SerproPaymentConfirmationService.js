@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../automacaoCicloFiscalContext.js';
 import { exigirGuiaArrecadatoria } from '../../guides/lib/documentoNaoArrecadatorio.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
@@ -244,7 +245,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
+      const r = await comAutomacaoEmpresa(g.portalClientId, () => confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt }));
       const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
       results.push({ ...contexto, guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
     } catch (err) {

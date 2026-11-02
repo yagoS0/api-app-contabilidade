@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { conferirTransporteCicloFiscal as conferirContextoCicloFiscal } from '../automacaoCicloFiscalContext.js';
 const tokensCompartilhados = new Map();
 import fs from "node:fs";
 import https from "node:https";
@@ -98,6 +99,7 @@ export class SerproAuthService {
   }
 
   async authenticate() {
+    await conferirContextoCicloFiscal();
     const runtime = await getResolvedSerproCredentials();
 
     const chave = crypto.createHash("sha256").update(JSON.stringify([runtime.authUrl, runtime.consumerKey, runtime.consumerSecret, runtime.scope, runtime.certificate])).digest("hex");
@@ -119,6 +121,7 @@ export class SerproAuthService {
     payload.set("grant_type", "client_credentials");
     if (runtime.scope) payload.set("scope", runtime.scope);
 
+    await conferirContextoCicloFiscal();
     try {
       const response = await axios.post(runtime.authUrl, payload.toString(), {
         timeout: runtime.timeoutMs,

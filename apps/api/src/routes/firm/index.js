@@ -157,6 +157,7 @@ import {
   updateGuideRuntimeSettings,
 } from "../../application/guides/GuideRuntimeSettings.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+import { lerAutomacaoCicloFiscal, alterarAutomacaoCicloFiscal } from '../../application/fiscal/AutomacaoCicloFiscalService.js';
 import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
 import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
@@ -2475,6 +2476,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // CompanyRotina. O GET semeia a partir da regra implícita que os workers usavam
   // (Simples→DAS+extrato+parcelamento, LP→presumido, INSS→todas), então a primeira
   // abertura da tela já reflete o que o sistema faz hoje.
+  router.get('/rotinas/pausa-geral', requireAccountType('FIRM'), async (req, res) => {
+    if (!['admin', 'contador'].includes(String(req.auth?.user?.role || '').toLowerCase())) return res.status(403).json({ error: 'forbidden_admin_or_contador_only' });
+    try { return res.json({ ok: true, policy: await lerAutomacaoCicloFiscal() }); }
+    catch (error) { return res.status(error.status || 503).json({ ok: false, error: error.code || 'CICLO_FISCAL_INDISPONIVEL', message: error.message }); }
+  });
+  router.put('/rotinas/pausa-geral', requireAccountType('FIRM'), async (req, res) => {
+    if (!['admin', 'contador'].includes(String(req.auth?.user?.role || '').toLowerCase())) return res.status(403).json({ error: 'forbidden_admin_or_contador_only' });
+    try {
+      const { paused, version, reason } = req.body || {};
+      const policy = await alterarAutomacaoCicloFiscal({ paused, version, reason, actor: req.auth.user });
+      return res.json({ ok: true, policy });
+    } catch (error) { return res.status(error.status || 503).json({ ok: false, error: error.code || 'CICLO_FISCAL_INDISPONIVEL', message: error.status ? error.message : 'Não foi possível salvar a pausa. Atualize para conferir o estado persistido.' }); }
+  });
+
   router.get("/rotinas", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {

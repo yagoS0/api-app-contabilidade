@@ -83,3 +83,66 @@ test('guia corrigida exige novo botão e nova data; token anterior não duplica 
  f.args.id=id;f.args.mensagem.id='velho-apos-reconfirmacao';expect((await f.run()).texto).toContain('Não foi possível');expect(f.tx.guide.updateMany).toHaveBeenCalledTimes(2);
 });
 test('token legado sem versão nunca oferece reconfirmação de pendência R25',async()=>{const f=preparar();await f.run();await f.responder('20/09/2026');f.guia.hash='nova';delete f.value.versaoPagamento;const t=f.rows.get(id);delete t.versaoPagamento;f.args.id=id;f.args.mensagem.id='legado';const r=await f.run();expect(r.texto).toContain('Não foi possível');expect(r.botoes).toBeUndefined();expect(f.tx.guide.updateMany).toHaveBeenCalledTimes(1);});
+
+// T100/R25/R26: serviços de confirmação e baixa reais; somente persistência em memória.
+import { conferirAutomacaoCicloFiscal } from '../../fiscal/AutomacaoCicloFiscalService.js';
+import { conferirPoliticaAutomacao } from '../../fiscal/serpro/CompanyAutomationPolicy.js';
+
+function prepararConfirmacaoPausada(fechado) {
+ const f=preparar(), entries=[];
+ const global={paused:true,version:1,reason:'Manutenção',actor:{id:'contador'},changedAt:'2026-09-24T10:00:00Z',resumedAt:null};
+ const empresa={paused:true,version:1,reason:'Conferência',updatedBy:'contador',updatedAt:'2026-09-24T10:00:00Z',resumedAt:null};
+ f.rows.set('automacao_ciclo_fiscal',global);f.rows.set('company_automation_policy:c',empresa);
+ Object.assign(f.guia,{tipo:'SIMPLES',competencia:'2026-08',hash:'pdf-pausado',valor:115,lancamentoId:null,
+  extracted:{composicao:[{principal:100,juros:10,multa:5,total:115}]}});
+ Object.assign(f.value,{competencia:f.guia.competencia,hash:f.guia.hash,versaoPagamento:versaoPagamentoGuia(f.guia)});
+ const provision={id:'p',portalClientId:'c',tipo:'PROVISAO',eventType:'DAS_SIMPLES',competencia:'2026-08',statusPagamento:'ABERTO',updatedAt:new Date('2026-09-01'),
+  lines:[{tipo:'D',conta:'despesa',valor:100},{tipo:'C',conta:'passivo',valor:100}],baixas:[]};
+ f.tx.portalClient={findUnique:jest.fn(async({where})=>where.id==='c'?{id:'c'}:null)};
+ f.tx.companyMonthlyCircular.findUnique.mockResolvedValue(fechado?{fechadoContabilEm:new Date('2026-09-24')}:null);
+ f.tx.accountingHistorico={findMany:jest.fn(async()=>[])};
+ f.tx.accountingEntryRule={findFirst:jest.fn(async()=>({debitAccountCode:'passivo',creditAccountCode:'banco'}))};
+ f.tx.chartOfAccount={findMany:jest.fn(async({where})=>where.codigo.in.map(codigo=>({codigo,analitica:true,portalClientId:'c'})))};
+ f.tx.accountingEntry={
+  findMany:jest.fn(async({where})=>where.tipo==='PROVISAO'?[provision]:entries.filter(e=>e.portalClientId===where.portalClientId&&(!where.tipo||e.tipo===where.tipo)&&(!where.sourceGuideId||e.sourceGuideId===where.sourceGuideId))),
+  findFirst:jest.fn(async({where})=>where.id==='p'&&where.portalClientId==='c'?provision:null),
+  updateMany:jest.fn(async({where,data})=>{if(where.id!==provision.id||where.portalClientId!=='c'||where.statusPagamento!==provision.statusPagamento)return{count:0};Object.assign(provision,data);return{count:1};}),
+  create:jest.fn(async({data})=>{const entry={...data,id:'baixa-'+entries.length,lines:[]};entries.push(entry);return entry;}),
+  update:jest.fn(async({data})=>{Object.assign(provision,data);return provision;}),
+  findUnique:jest.fn(async({where})=>entries.find(e=>e.id===where.id)||null),
+ };
+ f.tx.accountingEntryLine={createMany:jest.fn(async({data})=>{for(const line of data)entries.find(e=>e.id===line.entryId).lines.push(line);return{count:data.length};})};
+ // Compartilhar os modelos adicionados com o cliente; transações continuam usando tx.
+ Object.assign(f.args.client,f.tx);
+ return{...f,entries,provision,global,empresa};
+}
+
+test.each([false,true])('confirmação WhatsApp preservada sob duas pausas, mês fechado=%s',async fechado=>{
+ const f=prepararConfirmacaoPausada(fechado);
+ await expect(conferirAutomacaoCicloFiscal({db:f.args.client})).rejects.toMatchObject({code:'CICLO_FISCAL_PAUSADO'});
+ await expect(conferirPoliticaAutomacao(f.args.client,'c')).rejects.toMatchObject({code:'AUTOMACAO_EMPRESA_PAUSADA'});
+ const policies=structuredClone([f.global,f.empresa]);
+ expect((await f.run()).texto).toContain('Em que data');
+ const result=await f.responder('20/09/2026');
+ expect(f.args.conferirAcesso).toHaveBeenCalled();
+ expect(f.tx.contatoWhatsapp.findFirst).toHaveBeenCalledWith({where:{id:'ct',portalClientId:'c',telefoneE164:'5511999999999',ativo:true,optInEm:{not:null}}});
+ expect(f.guia).toMatchObject({paymentStatus:'PAID',paymentStatusSource:'CLIENTE',paymentConfirmedAt:new Date('2026-09-20'),baixada:!fechado});
+ const evidence=[...f.rows.values()].filter(v=>v.politica==='R25-2026-10-16');
+ expect(evidence).toHaveLength(1);
+ expect(evidence[0]).toMatchObject({companyId:'c',guideId:'g',versaoGuia:f.value.versaoPagamento,canal:'WHATSAPP',autor:{contatoId:'ct',conversaId:'cv',mensagemId:'r1'},documento:{hash:'pdf-pausado',valor:'115'}});
+ expect(result.confirmacao).toMatchObject(fechado?{estadoBaixa:'PENDENTE',motivo:'MES_FECHADO'}:{estadoBaixa:'CONCLUIDA'});
+ if(fechado){
+  expect(f.entries).toEqual([]);expect(f.tx.accountingEntry.updateMany).not.toHaveBeenCalled();
+  expect(f.provision.statusPagamento).toBe('ABERTO');
+ }else{
+  expect(f.entries.map(e=>e.tipoLinha)).toEqual(['PRINCIPAL','JUROS','MULTA']);
+  expect(f.entries.map(e=>e.lines.find(l=>l.tipo==='D').valor)).toEqual([100,10,5]);
+  expect(f.entries.every(e=>e.origem==='CLIENTE'&&e.sourceGuideId==='g'&&e.competencia==='2026-09')).toBe(true);
+  expect(f.provision.statusPagamento).toBe('PAGO');
+ }
+ const before=structuredClone([...f.rows]), beforeEntries=structuredClone(f.entries);
+ await f.run(); // Mesma mensagem recebida: devolve recibo sem repetir baixa/evento.
+ expect([...f.rows]).toEqual(before);expect(f.entries).toEqual(beforeEntries);
+ expect(f.tx.accountingEntry.create).toHaveBeenCalledTimes(fechado?0:3);
+ expect([f.rows.get('automacao_ciclo_fiscal'),f.rows.get('company_automation_policy:c')]).toEqual(policies);
+});
