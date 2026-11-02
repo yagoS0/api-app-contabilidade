@@ -64,6 +64,7 @@ jest.mock("../AliquotaResolver.js", () => ({
   AliquotaResolverError: class extends Error {},
 }));
 
+jest.mock("../../../../operacoes/OperationsDocuments.js", () => ({ completarDocumentosOperacao: jest.fn(async () => ({ status: "documentos-ficticios" })) }));
 jest.mock("../../../../guides/GuideLockService.js", () => ({ acquireGuideLease: jest.fn() }));
 jest.mock("../RecuperacaoCalculo.js", () => ({ ...jest.requireActual("../RecuperacaoCalculo.js"), contextoOrigemCalculo: jest.fn() }));
 jest.mock("../PeriodosRecusadosService.js", () => ({ ...jest.requireActual("../PeriodosRecusadosService.js"), executarComRetomada: jest.fn((run, params, { ajustarPeriodos }) => ajustarPeriodos(run, params)) }));
@@ -246,4 +247,84 @@ test("DAS zero numérico explícito permanece válido", async () => {
   expect(result).toMatchObject({ ok: true, dasValor: 0, snapshot: { estado: "calculada", dasSimuladoSerpro: 0 } });
   expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledTimes(1);
   expect(mockTransmitir).not.toHaveBeenCalled();
+});
+
+// Complemento: documento criado pelo núcleo real, com sua tentativa persistida.
+// Somente o transporte e os adaptadores de armazenamento são fictícios.
+async function fixtureAutomaticoPersistido() {
+  const policy = jest.spyOn(automaticContext, 'conferirContextoCicloFiscal').mockResolvedValue({ version: 1 });
+  let current = null;
+  const activities = [{ idAtividade: 1, valorInterno: 100, valorExterno: 0, sujeitoFatorR: false }];
+  const rows = new Map([['ciclo_simples_config:p1', { enabled: true, fontes: ['NFSE'] }]]);
+  prisma.portalClient.findUnique.mockResolvedValue({ id: 'p1', cnpj: origem.contribuinteCnpj, razao: 'Empresa', companyId: 'company-simples-ficticia' });
+  prisma.company.findUnique.mockResolvedValue({ regimeTributario: 'SIMPLES', tipoTributario: null });
+  prisma.cadastroFiscal.findUnique.mockResolvedValue({ regime: 'SIMPLES_NACIONAL', regimeApuracao: 'COMPETENCIA', cnaePrincipal: '6201501', usaFatorR: false, dataOpcaoSN: '2020-01-01' });
+  prisma.portalInvoice.findMany.mockResolvedValue([{ total: 100, itens: [{ valor: 100, tipoReceita: 'SERVICO', flagExportacao: false }] }]);
+  montarAtividadesDefault.mockResolvedValue({ atividades: activities, semMapeamento: [] });
+  getRbt12.mockResolvedValue({ rbt12: 480000, origem: 'EXTRATO_PGDAS', detalhePorMes: [] });
+  getResolvedSerproCredentials.mockResolvedValue({ certificate: { hasCertificate: true, document: '11111111111111' } });
+  prisma.apuracaoSnapshot.findUnique.mockImplementation(async () => current);
+  prisma.apuracaoSnapshot.create.mockImplementation(async ({ data }) => (current = { id: 'snapshot-auto-real', ...structuredClone(data) }));
+  prisma.apuracaoSnapshot.updateMany.mockImplementation(async ({ where, data }) => {
+    if (!current || where.id !== current.id || where.idempotencyKey && where.idempotencyKey !== current.idempotencyKey || where.estado && where.estado !== current.estado) return { count: 0 };
+    current = { ...current, ...structuredClone(data) }; return { count: 1 };
+  });
+  prisma.apuracaoSnapshot.update.mockImplementation(async ({ data }) => (current = { ...current, ...structuredClone(data) }));
+  prisma.regimeHistorico = { findMany: jest.fn(async () => []) };
+  prisma.$queryRaw = jest.fn(async () => []);
+  prisma.appSetting = {
+    findUnique: jest.fn(async ({ where }) => rows.has(where.key) ? { value: structuredClone(rows.get(where.key)) } : null),
+    upsert: jest.fn(async ({ where, create, update }) => { const value = structuredClone(rows.has(where.key) ? update.value : create.value); rows.set(where.key, value); return { value }; }),
+  };
+  prisma.$transaction = run => run(prisma);
+  try {
+    const result = await automaticContext.comAutomacaoCicloFiscal({ version: 0 }, () => automaticContext.comAutomacaoEmpresa('p1', () => executarCicloSimples({ ...args, scheduledAt: '2026-11-08T10:00:00Z' }, {
+      db: prisma, now: () => new Date('2026-11-08T10:00:00Z'), conferir: automaticContext.conferirContextoCicloFiscal,
+      coletarAdn: async () => ({ ok: true, complete: true, totalDocs: 1 }),
+      getDados: getDadosFechamento, calcular: calcularFechamento, contexto: contextoOrigemCalculo,
+    }), prisma), prisma);
+    expect(result).toMatchObject({ status: 'CALCULADO', calculo: { calculoId: current?.idempotencyKey } });
+    expect(current.simulacaoSerpro._portalCalculo).toMatchObject({ origemCalculo: 'AUTOMATICO_SIMPLES', preparacaoAutomatica: { versao: 1, attemptId: rows.get('ciclo_simples:p1:2026-10').token } });
+    expect(mockSimular).toHaveBeenCalledTimes(1);
+    return { rows, get snapshot() { return current; }, mutate: change => { current = change(structuredClone(current)); }, formulario: current.simulacaoSerpro._portalCalculo.formulario };
+  } finally { policy.mockRestore(); }
+}
+
+test('snapshot automático íntegro percorre recuperação, confirmação e transmissão fictícia sem nova simulação', async () => {
+  const fixture = await fixtureAutomaticoPersistido();
+  const calculoId = fixture.snapshot.idempotencyKey;
+  const recovered = await getDadosFechamento(args);
+  expect(recovered.calculoRecuperavel).toMatchObject({ calculoId, formulario: fixture.formulario, dasValor: 6 });
+  expect(mockSimular).toHaveBeenCalledTimes(1);
+  expect(mockIndice).not.toHaveBeenCalled(); expect(mockTransmitir).not.toHaveBeenCalled();
+  const confirmed = await salvarFechamento({ ...args, ...fixture.formulario, calculoId, userId: 'contador-ficticio' });
+  expect(confirmed.snapshot).toMatchObject({ estado: 'fechada', idempotencyKey: calculoId });
+  expect(fixture.snapshot).toMatchObject({ estado: 'fechada', fechadaPor: 'contador-ficticio' });
+  mockIndice.mockResolvedValue({ dados: [] });
+  mockTransmitir.mockResolvedValue({ dasValor: 6, numeroDeclaracao: 'DECLARACAO-FICTICIA' });
+  const delivered = await transmitirFechamento({ ...args, calculoId, userId: 'contador-ficticio', somenteDocumentosFaltantes: true });
+  expect(delivered).toMatchObject({ ok: true, numeroDeclaracao: 'DECLARACAO-FICTICIA', snapshot: { estado: 'transmitida', idempotencyKey: calculoId } });
+  expect(mockIndice).toHaveBeenCalledTimes(1);
+  expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  expect(mockTransmitir).toHaveBeenCalledWith(expect.objectContaining({ atividades: fixture.formulario.atividades, competencia: args.competencia }));
+  expect(mockSimular).toHaveBeenCalledTimes(1);
+  expect(fixture.rows.get('ciclo_simples:p1:2026-10').calculo.calculoId).toBe(calculoId);
+});
+
+test.each(['removida', 'alterada', 'versao', 'insumo', 'tentativa'])('consumidores recusam prova automática %s preservando histórico e sem provedor', async scenario => {
+  const fixture = await fixtureAutomaticoPersistido();
+  const calculoId = fixture.snapshot.idempotencyKey;
+  if (scenario === 'removida') fixture.mutate(s => { delete s.simulacaoSerpro._portalCalculo.preparacaoAutomatica; return s; });
+  if (scenario === 'alterada') fixture.mutate(s => { s.simulacaoSerpro._portalCalculo.preparacaoAutomatica.prova.faturamento.total = 999; return s; });
+  if (scenario === 'versao') fixture.mutate(s => { s.simulacaoSerpro._portalCalculo.preparacaoAutomatica.versao = 999; return s; });
+  if (scenario === 'insumo') montarAtividadesDefault.mockResolvedValue({ atividades: fixture.formulario.atividades.map(a => ({ ...a, anexoImplicito: 'IV' })), semMapeamento: [] });
+  if (scenario === 'tentativa') fixture.rows.get('ciclo_simples:p1:2026-10').token = 'outra-tentativa';
+  const before = structuredClone(fixture.snapshot);
+  expect((await getDadosFechamento(args)).calculoRecuperavel).toBeNull();
+  await expect(salvarFechamento({ ...args, ...fixture.formulario, calculoId })).rejects.toMatchObject({ code: 'CALCULO_DESATUALIZADO' });
+  await expect(transmitirFechamento({ ...args, calculoId, somenteDocumentosFaltantes: true })).rejects.toMatchObject({ code: 'CALCULO_DESATUALIZADO' });
+  expect(fixture.snapshot).toMatchObject({ id: before.id, idempotencyKey: calculoId, estado: before.estado, atividadesEscolhidas: before.atividadesEscolhidas, simulacaoSerpro: { _portalCalculo: before.simulacaoSerpro._portalCalculo } });
+  expect(fixture.snapshot.fechadaEm).toBeUndefined(); expect(fixture.snapshot.transmitidoEm).toBeUndefined();
+  expect(mockSimular).toHaveBeenCalledTimes(1);
+  expect(mockIndice).not.toHaveBeenCalled(); expect(mockTransmitir).not.toHaveBeenCalled();
 });

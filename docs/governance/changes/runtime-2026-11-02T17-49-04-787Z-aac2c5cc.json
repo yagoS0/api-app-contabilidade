@@ -1,0 +1,33 @@
+{
+  "summary": "R2A — complemento de cobertura autorizado, um arquivo, sem publicar.\n\nUsuário autorizou aplicar o teste revisado e três chamadas adicionais, teto acumulado43. Foram consumidas28. Este ciclo recebe maxCalls15/maxCorrections0. Não reiniciar contagem, aumentar limites ou alterar gates/política. Sem novas correções automáticas.\n\nCheckout limpo em 0da022e141157a5cc61e5132b35e2642fa0ed386. Esse checkpoint preserva os18arquivos da correção anterior. A base da pausa aprovada é8630808923d0978ce648b2eca8adc3881a8a90bc; revisar a composição R2A inteira, não apenas o teste novo. Nenhum commit foi enviado.\n\nÚNICO caminho para o planejador/executor modificar:\napps/api/src/application/notas/apuracao/v2/__tests__/recuperacaoFechamento.test.js\n\nAplicar bytes exatos do candidato revisado:\nC:/Users/yagoa/Documents/ChatGPT/ALTAN/output/rotinas-simples-20261102/candidato-cobertura/recuperacaoFechamento.test.js\nSHA256 f1ee4b222a89add49b6f31dd45ed363a8dff071bfcd9618d38d2e7e59555b1ff\nAntes:1679c1daa76cf842c3694bd14197e6fb46f0eb31297d49f4ab4ab1add7c599d4.\nParecer independente: candidato-cobertura/PARECER.txt; evidência32/32 em primeira.json/log, dentro da mesma pasta. Preserva assertivas antigas. Acrescenta sequência automática criada pelo núcleo real → GET → salvar/confirmar → transmitir ao provedor fictício sem nova simulação e recusas por prova removida/alterada/versão, insumo mudado e tentativa divergente. Os mocks herdados de origem/RBT/catálogo/armazenamento/provedor continuam; a prova e os consumidores não são mockados. PostgreSQL RR e fronteira de HTTP têm evidências separadas já existentes.\n\nExecutor deve somente copiar os bytes autorizados, conferir hash e relatar. Não corrigir produto, comentários, fixtures adicionais, outros caminhos ou governança. Não instalar dependências. Testes são do controlador; se houver impedimento, retornar ao Principal sem improvisar.\n\nRevisores: todos os seis gates anteriores passaram no fingerprint46b743d023dc205d2234e6bf16fa65ef93a21b3d8c5a22b1f68666d5ec5bd1e1. Run anterior2026-11-02T15-08-17-867Z-34c671c4:85governança,12025API+1pendenteherdado,6631web,1586portal,2builds. Três pareceres inconclusivos apontaram somente lacuna agora coberta. Principal interrompeu revisor006 para economizar; stateescalated/exit4294967295 preservado, não foi falha de produto. Não reclassificar história. O teste comercial pendente é herdado condicionado ALTAN_P0_DATABASE_URL; declarar limite sem afirmar cobertura integral.\n\nInspecionar além deste diff o código de capturaRR, prova automática e seus consumidores, tokenseleção, ALS e SerproCallGuard. Arquivos/política/escopo18 constam no diretório output/rotinas-simples-20261102 e no run anterior. Propostaautorizada PROPOSTA-CONSISTENCIA-R2A.txt. Captura somenteleitura de formulário/origem/payloadfinal incluindo recusas, semauth/HTTP/cachewrite; automatico max1; prova ligada à tentativa e antirremoção; manualv1 preservado; token muda em alteração efetiva; conferência atéautorização pós-auth e distinção recusa prédespacho/incerteza posterior. Reavaliar com o novo teste e os gates atuais. Revisão de código/evidências somente, não repetir testes no sandbox.\n\nReaproveitar visualinalterado25/25 (visual-regime/result.json), focais de captura/transporte intactos e restante de provas compatíveis. Manter todos os gates obrigatórios do catálogo; não editar runtime para evitar execução. Banco descartável loopback54661, altan_rotinas_governance_test, variáveis DATABASE_URL/ALTAN_GOVERNANCE_TEST_DATABASE_URL/TEST_CICLO_PG_URL já definidas.\n\nImpacto operacional: nenhum novo comportamento; completa cobertura de R01/R02/R07/R19/R20/R22/§32. Referência canônica e cópia versão atual iguaisSHA2565b8a7f46c3065e4fc92b7c9611601ac3fd2d086f942b757ed4ef34f4e4f3721b, lidas pelo Principal. Sem publicação/ativação/emissão/consulta paga/mensagem real. Guruconferência,eNotasativo,benefíciopendente,Sintropiaforaativação. R2B/R2C/R2D/design/pendências continuam etapas seguintes. ready_for_human apenas técnico.\r\n",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-11-02T17-49-04-787Z-aac2c5cc",
+  "tests": [
+    "governance-engine: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-governance-engine",
+    "api-regression: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-api-regression",
+    "web-regression: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-web-regression",
+    "portal-regression: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-portal-regression",
+    "web-build: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-web-build",
+    "portal-build: passed against 5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\altan-rotinas-operacoes-r1-final-20261101\\.altan-governance\\runs\\2026-11-02T17-49-04-787Z-aac2c5cc\\round-0-gate-portal-build"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-11-02T17-49-04-787Z-aac2c5cc; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "5de1c4705ee48cdcdeea832715d98fde0ac6e04b60c40ebae9f1983cf2c96379",
+  "sourcePaths": [
+    "apps/api/src/application/notas/apuracao/v2/__tests__/recuperacaoFechamento.test.js"
+  ],
+  "runId": "2026-11-02T17-49-04-787Z-aac2c5cc"
+}
