@@ -90,6 +90,19 @@ beforeEach(() => {
   prisma.portalSyncState.findUnique.mockImplementation(async () => cenario.syncState);
 });
 
+test('R2A diferencia fim da distribuição de completude das receitas emitidas', async () => {
+  const result = await syncDfeForCompany({ portalClientId: 'p1', somenteColeta: true });
+  expect(result).toMatchObject({ ok: true, complete: true, revenueComplete: false, reason: 'DFE_RECEITAS_EMITIDAS_NAO_COMPROVADAS' });
+  expect(fetchDistNSU).toHaveBeenCalledTimes(1);
+});
+
+test('R2A não promove limite de páginas a captura completa', async () => {
+  cenario.respostaDaSefaz = { cStat: '138', ultNSU: 1n, maxNSU: 100n, docs: [{}], error: false };
+  const result = await syncDfeForCompany({ portalClientId: 'p1', somenteColeta: true });
+  expect(result).toMatchObject({ ok: true, complete: false, partial: true, revenueComplete: false, iterations: 10 });
+  expect(fetchDistNSU).toHaveBeenCalledTimes(10);
+});
+
 describe("a janela de 1 hora mora dentro de syncDfeForCompany", () => {
   test("⚠ CASO REAL: worker consultou há 20 min e o contador dá o PRIMEIRO clique — recusa nossa, e nada sai para a SEFAZ", async () => {
     cenario.syncState = {

@@ -69,10 +69,44 @@ import { criarVinculoCalculo } from "../CalculoConfirmado.js";
 import { contextoOrigemCalculo } from "../RecuperacaoCalculo.js";
 import { acquireGuideLease } from "../../../../guides/GuideLockService.js";
 import { montarAtividadesDefault } from "../AtividadeResolver.js";
+import { executarCicloSimples } from '../CicloSimplesService.js';
+import { getRbt12 } from '../RbtExtratoService.js';
+import * as automaticContext from '../../../../fiscal/automacaoCicloFiscalContext.js';
 const args = { portalClientId: "p1", competencia: "2026-10" };
 const form = { atividades: [{ idAtividade: 1, valorInterno: 100, sujeitoFatorR: false }], folhaMensal12: [], regimeApuracao: "COMPETENCIA" };
 const origem = { versao: 1, hash: "a".repeat(64), contribuinteCnpj: "12345678000190", regimeApuracao: "COMPETENCIA" };
 const lease = { assertActive: jest.fn(), release: jest.fn(async () => {}) };
+
+test('R2A conecta coleta ao preparo real e à gravação do snapshot, sem fechar ou transmitir', async () => {
+  const policy = jest.spyOn(automaticContext, 'conferirContextoCicloFiscal').mockResolvedValue({ version: 1 });
+  try {
+    prisma.portalClient.findUnique.mockResolvedValue({ id: 'p1', cnpj: origem.contribuinteCnpj, razao: 'Empresa', companyId: 'company-simples-ficticia' });
+    prisma.company.findUnique.mockResolvedValue({ regimeTributario: 'SIMPLES', tipoTributario: null });
+    prisma.cadastroFiscal.findUnique.mockResolvedValue({ regime: 'SIMPLES_NACIONAL', regimeApuracao: 'COMPETENCIA', cnaePrincipal: '6201501', usaFatorR: false, dataOpcaoSN: '2020-01-01' });
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue(null);
+    prisma.portalInvoice.findMany.mockResolvedValue([{ total: 100, itens: [{ valor: 100, tipoReceita: 'SERVICO', flagExportacao: false }] }]);
+    montarAtividadesDefault.mockResolvedValue({ atividades: [{ idAtividade: 1, valorInterno: 100, valorExterno: 0, sujeitoFatorR: false }], semMapeamento: [] });
+    getRbt12.mockResolvedValue({ rbt12: 480000, origem: 'EXTRATO_PGDAS', detalhePorMes: [] });
+    const rows = new Map([['ciclo_simples_config:p1', { enabled: true, fontes: ['NFSE'] }]]);
+    const db = { portalClient: prisma.portalClient, cadastroFiscal: prisma.cadastroFiscal, company: prisma.company,
+      regimeHistorico: { findMany: jest.fn(async () => []) },
+      $queryRaw: jest.fn(async () => []), appSetting: {
+        findUnique: async ({ where }) => rows.has(where.key) ? { value: rows.get(where.key) } : null,
+        upsert: async ({ where, create, update }) => { const value = rows.has(where.key) ? update.value : create.value; rows.set(where.key, value); return { value }; },
+      } };
+    db.$transaction = run => run(db);
+    const result = await executarCicloSimples({ ...args, scheduledAt: '2026-11-08T10:00:00Z' }, { db,
+      now: () => new Date('2026-11-08T10:00:00Z'), conferir: automaticContext.conferirContextoCicloFiscal,
+      coletarAdn: async () => ({ ok: true, complete: true, totalDocs: 1 }),
+      getDados: getDadosFechamento, calcular: calcularFechamento, contexto: contextoOrigemCalculo,
+    });
+    expect(result).toMatchObject({ status: 'CALCULADO', calculo: { calculoId: expect.stringMatching(/^fech:v1:/), dasValor: '6' } });
+    expect(prisma.apuracaoSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ portalClientId: 'p1', competencia: '2026-10', estado: 'calculada', dasSimuladoSerpro: 6 }) }));
+    expect(mockSimular).toHaveBeenCalledTimes(1);
+    expect(mockTransmitir).not.toHaveBeenCalled();
+    expect(mockIndice).not.toHaveBeenCalled();
+  } finally { policy.mockRestore(); }
+});
 function snapshot(withContext = true) {
   const v = criarVinculoCalculo({ ...args, formulario: form, receitasBrutasAnteriores: [], folhasSalario: [], contribuinteCnpj: origem.contribuinteCnpj, contratanteCnpj: "11111111111111", ...(withContext ? { contextoOrigem: origem } : {}) });
   return { id: "s1", estado: "calculada", atividadesEscolhidas: form.atividades, folhaMensal12: [], idempotencyKey: v.calculoId, dasSimuladoSerpro: 6, rbt12: 100, simulacaoSerpro: { _portalCalculo: v } };

@@ -1,5 +1,5 @@
-const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp"];
-const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp"];
+const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp", "simples_coleta_calculo"];
+const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp", "Coleta e cálculo do Simples"];
 let savedCompanies = null;
 let pausa = { paused: false, version: 0, legacy: true, reason: null, actor: null, changedAt: null, resumedAt: null };
 export function mockLerPausaCicloFiscal() { return { ok: true, policy: structuredClone(pausa) }; }
@@ -14,6 +14,7 @@ export function mockSalvarPausaCicloFiscal(input) {
 }
 let agenda = Object.fromEntries(keys.map(key => [key, { enabled: key !== "avisos_guias_whatsapp", day: key === "conferencia" ? 1 : 10,
   hour: ["pagamento", "avisos_guias_whatsapp"].includes(key) ? 8 : 7, frequency: key === "avisos_guias_whatsapp" ? "DAILY" : "MONTHLY", timeZone: "America/Sao_Paulo" }]));
+agenda.simples_coleta_calculo = { enabled: false, frequency: 'DAILY_UNTIL_DAY', day: 8, hour: 7, timeZone: 'America/Sao_Paulo' };
 
 export function mockExecucoesRotinas() {
   const now = new Date();
@@ -24,6 +25,11 @@ export function mockExecucoesRotinas() {
     let next = new Date(Date.UTC(parts.year, parts.month - 1, cfg.frequency === "DAILY" ? parts.day : Math.min(cfg.day, lastDay), cfg.hour + 3));
     if (next <= now) next = cfg.frequency === "DAILY" ? new Date(+next + 86400000)
       : new Date(Date.UTC(parts.year, parts.month, Math.min(cfg.day, new Date(Date.UTC(parts.year, parts.month + 1, 0)).getUTCDate()), cfg.hour + 3));
+    if (cfg.frequency === 'DAILY_UNTIL_DAY') {
+      next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, cfg.hour + 3));
+      if (next <= now) next = new Date(+next + 86400000);
+      if (parts.day > 8 || next.getUTCDate() > 8) next = new Date(Date.UTC(parts.year, parts.month, 1, cfg.hour + 3));
+    }
     const failed = routine === "parcelamento";
     return { routine, enabled: cfg.enabled, workerEnabled: true, integrationEnabled: true,
       alive: routine !== "conferencia", heartbeatAt: routine === "conferencia" ? null : now.toISOString(),
@@ -40,10 +46,13 @@ export function mockCarregarRotinas(companies) {
       const regime = c.regimeTributario || c.tipoTributario || c.legacyCompany?.regimeTributario || null;
       return { companyId: c.companyId, razao: c.razao, cnpj: c.cnpj,
       status: "ATIVA", regime,
+      cicloSimples: savedCompanies?.find(e => e.companyId === c.companyId)?.cicloSimples || { enabled: false, fontes: [] },
       rotinas: savedCompanies?.find(e => e.companyId === c.companyId)?.rotinas || { das: regime === 'SIMPLES', inss: true, extrato: regime === 'SIMPLES', presumido: regime === 'LUCRO_PRESUMIDO', parcelamento: regime === 'SIMPLES', pagamento: true, conferencia: true } }; }) };
 }
 
 export function mockSalvarRotinas(input) {
+  const ciclo = input.agenda?.simples_coleta_calculo;
+  if (ciclo && (typeof ciclo.enabled !== 'boolean' || ciclo.frequency !== 'DAILY_UNTIL_DAY' || ciclo.day !== 8 || !Number.isInteger(ciclo.hour) || ciclo.hour < 0 || ciclo.hour > 11)) throw new Error('Coleta do Simples exige dias 1 a 8 e horário matinal.');
   agenda = { ...agenda, ...structuredClone(input.agenda || {}) };
   if (Array.isArray(input.empresas)) savedCompanies = structuredClone(input.empresas);
   return { ok: true, atualizadas: savedCompanies?.length || 0, agenda: structuredClone(agenda) };

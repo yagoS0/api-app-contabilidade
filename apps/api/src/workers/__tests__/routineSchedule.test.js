@@ -37,3 +37,12 @@ test("competência acompanha o calendário local na virada UTC", () => {
   expect(previousCompetencia(new Date("2026-10-01T01:00:00Z"))).toBe("2026-08");
   expect(previousCompetencia(new Date("2026-10-01T03:00:00Z"))).toBe("2026-09");
 });
+
+test('ciclo Simples somente manhã dos dias 1–8, sem recuperação fora do minuto', () => {
+  const config = cfg(8, 7, 'DAILY_UNTIL_DAY');
+  expect(describeSchedule(config, new Date('2026-11-08T10:00:40Z')).dueAt).toBe('2026-11-08T10:00:00.000Z');
+  expect(describeSchedule(config, new Date('2026-11-08T10:01:00Z'))).toMatchObject({ dueAt: null, nextAt: '2026-12-01T10:00:00.000Z' });
+  expect(describeSchedule(config, new Date('2026-11-09T10:00:00Z')).dueAt).toBeNull();
+  expect(describeSchedule(cfg(8, 12, 'DAILY_UNTIL_DAY')).nextAt).toBeNull();
+  expect(describeSchedule(cfg(9, 7, 'DAILY_UNTIL_DAY')).nextAt).toBeNull();
+});

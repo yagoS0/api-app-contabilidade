@@ -1,3 +1,4 @@
+import { lerCicloSimples, revisarCicloSimples } from '../../application/notas/apuracao/v2/CicloSimplesService.js';
 import { Router } from 'express';
 import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../../application/fiscal/serpro/CompanyAutomationService.js';
 import { empresasVisiveis } from './empresasVisiveis.js';
@@ -18,5 +19,8 @@ export function createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess
   router.get('/operacoes/rotinas', run(async req => listarRotinasOperacoes(prisma, await empresasVisiveis(req))));
   router.get(base, requireFirmCompanyAccess(), run(req => lerAutomacaoEmpresa(prisma, req.params.companyId)));
   router.put(base, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarAutomacaoEmpresa(prisma, req.params.companyId, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));
+  const ciclo = '/companies/:companyId/operacoes/:competencia/ciclo-simples';
+  router.get(ciclo, requireFirmCompanyAccess(), run(req => lerCicloSimples({ portalClientId: req.params.companyId, competencia: req.params.competencia }, { db: prisma })));
+  router.post(`${ciclo}/revisao`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => revisarCicloSimples({ portalClientId: req.params.companyId, competencia: req.params.competencia, expectedRevision: req.body?.expectedRevision, motivo: req.body?.motivo, userId: req.auth.user.id }, { db: prisma })));
   return router;
 }

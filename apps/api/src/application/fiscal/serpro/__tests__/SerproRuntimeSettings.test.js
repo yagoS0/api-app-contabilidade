@@ -91,3 +91,13 @@ test("agenda de avisos não herda nem altera a consulta fiscal mensal", async ()
  expect(after.rotinas.avisos_guias_whatsapp).toMatchObject({enabled:true,hour:9,cron:"0 9 * * *"});
  expect(ROTINA_KEYS).not.toContain("avisos_guias_whatsapp");
 });
+
+test('agenda coleta Simples é independente e exige seleção explícita matinal 1–8', async () => {
+  expect(ROTINA_KEYS).not.toContain('simples_coleta_calculo');
+  expect((await getSerproRuntimeSettings()).rotinas.simples_coleta_calculo).toMatchObject({ enabled: false, frequency: 'DAILY_UNTIL_DAY', day: 8, hour: 7 });
+  for (const config of [{ enabled: true, day: 8, hour: 7 }, { enabled: true, day: 9, hour: 7, frequency: 'DAILY_UNTIL_DAY' }, { enabled: true, day: 8, hour: 12, frequency: 'DAILY_UNTIL_DAY' }]) {
+    await expect(updateSerproRuntimeSettings({ rotinas: { simples_coleta_calculo: config } })).rejects.toMatchObject({ code: 'SERPRO_ROTINA_AGENDA_INVALIDA' });
+  }
+  await updateSerproRuntimeSettings({ rotinas: { simples_coleta_calculo: { enabled: true, day: 8, hour: 7, frequency: 'DAILY_UNTIL_DAY' } } });
+  expect((await getSerproRuntimeSettings()).rotinas.simples_coleta_calculo).toMatchObject({ enabled: true, cron: '0 7 1-8 * *' });
+});

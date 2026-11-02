@@ -75,10 +75,10 @@ function deriveMonthlyCron(day, hour) {
 // separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
 export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
 
-export const AGENDA_KEYS = [...ROTINA_KEYS, "avisos_guias_whatsapp"];
+export const AGENDA_KEYS = [...ROTINA_KEYS, "avisos_guias_whatsapp", "simples_coleta_calculo"];
 
 // Sugestões de preenchimento não autorizam execução nem herdam a agenda global.
-const SUGESTOES_POR_ROTINA = { avisos_guias_whatsapp: { day: 1, hour: 8 }, conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
+const SUGESTOES_POR_ROTINA = { simples_coleta_calculo: { day: 8, hour: 7 }, avisos_guias_whatsapp: { day: 1, hour: 8 }, conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
 const objeto = value => value != null && typeof value === "object" && !Array.isArray(value);
 function inteiroExplicito(value, min, max) {
   if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) return null;
@@ -86,6 +86,7 @@ function inteiroExplicito(value, min, max) {
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
 function frequenciaValida(key, value) {
+  if (key === "simples_coleta_calculo") return value === "DAILY_UNTIL_DAY";
   if (key === "avisos_guias_whatsapp") return value === undefined || value === "DAILY";
   return value === undefined || value === "MONTHLY" || (key === "pagamento" && value === "DAILY");
 }
@@ -94,13 +95,13 @@ function resolveRotinas(stored) {
   return Object.fromEntries(AGENDA_KEYS.map(key => {
     const salva = objeto(salvas[key]) ? salvas[key] : {};
     const sugestao = SUGESTOES_POR_ROTINA[key] || { day: 5, hour: 7 };
-    const diaSalvo = inteiroExplicito(salva.day, 1, 31);
-    const horaSalva = inteiroExplicito(salva.hour, 0, 23);
+    const diaSalvo = inteiroExplicito(salva.day, key === "simples_coleta_calculo" ? 8 : 1, key === "simples_coleta_calculo" ? 8 : 31);
+    const horaSalva = inteiroExplicito(salva.hour, 0, key === "simples_coleta_calculo" ? 11 : 23);
     const day = diaSalvo ?? sugestao.day, hour = horaSalva ?? sugestao.hour;
-    const frequency = key === "avisos_guias_whatsapp" || (key === "pagamento" && salva.frequency === "DAILY") ? "DAILY" : "MONTHLY";
+    const frequency = key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : key === "avisos_guias_whatsapp" || (key === "pagamento" && salva.frequency === "DAILY") ? "DAILY" : "MONTHLY";
     return [key, { enabled: salva.enabled === true && diaSalvo !== null && horaSalva !== null && frequenciaValida(key, salva.frequency),
       day, hour, frequency, timeZone: "America/Sao_Paulo",
-      cron: frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour) }];
+      cron: frequency === "DAILY_UNTIL_DAY" ? `0 ${hour} 1-8 * *` : frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour) }];
   }));
 }
 function erroAgenda(key, field) {
@@ -132,6 +133,7 @@ function atualizarRotinas(stored, input) {
     if (merged.enabled === true && (inteiroExplicito(merged.day, 1, 31) === null || inteiroExplicito(merged.hour, 0, 23) === null || !frequenciaValida(key, merged.frequency))) {
       throw erroAgenda(key, "habilitar exige dia e hora válidos explicitamente informados");
     }
+    if (key === "simples_coleta_calculo" && ((merged.day !== undefined && merged.day !== 8) || (merged.hour !== undefined && merged.hour > 11))) throw erroAgenda(key, "coleta exige dias 1 a 8 e horário matinal entre 0 e 11");
     next[key] = merged;
   }
   return next;

@@ -30,6 +30,7 @@ const DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => {
 });
 
 const ROTINA_HINT = {
+  simples_coleta_calculo: "Coleta do dia 1 ao dia 8; cálculo após a coleta final completa, aguardando conferência do contador. Seleção e fontes em Automação da empresa.",
   das: "Guia do DAS (Simples Nacional)",
   inss: "Guia do INSS (DCTFWeb)",
   extrato: "Extrato do PGDAS-D — gera os lançamentos",
@@ -195,10 +196,10 @@ export function RotinasPage({
       for (const r of rotinas) {
         const cfg = agenda[r.key] || {};
         payloadAgenda[r.key] = {
-          enabled: cfg.enabled !== false,
-          day: Number(cfg.day) || 5,
+          enabled: r.key === "simples_coleta_calculo" ? cfg.enabled === true : cfg.enabled !== false,
+          day: r.key === "simples_coleta_calculo" ? 8 : Number(cfg.day) || 5,
           hour: cfg.hour == null || cfg.hour === "" ? 7 : Number(cfg.hour),
-          frequency: cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
+          frequency: r.key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
         };
       }
       const out = await api.saveRotinas({
@@ -265,7 +266,7 @@ export function RotinasPage({
   // Quantas empresas fazem cada rotina — cabeçalho mostra o alcance de cada uma.
   const contagem = useMemo(() => {
     const out = {};
-    for (const r of rotinas) out[r.key] = empresas.filter((e) => r.key === "avisos_guias_whatsapp" ? (e.lembretes?.enabled ?? e.rotinas?.avisos_guias_whatsapp) === true : e.rotinas?.[r.key]).length;
+    for (const r of rotinas) out[r.key] = empresas.filter((e) => r.key === "simples_coleta_calculo" ? e.cicloSimples?.enabled === true : r.key === "avisos_guias_whatsapp" ? (e.lembretes?.enabled ?? e.rotinas?.avisos_guias_whatsapp) === true : e.rotinas?.[r.key]).length;
     return out;
   }, [rotinas, empresas]);
 
@@ -345,7 +346,7 @@ export function RotinasPage({
                   <tbody>
                     {rotinas.map((r) => {
                       const cfg = agenda[r.key] || {};
-                      const ligada = cfg.enabled !== false;
+                      const ligada = r.key === "simples_coleta_calculo" ? cfg.enabled === true : cfg.enabled !== false;
                       return (
                         <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: ligada ? 1 : 0.55 }}>
                           <td style={{ padding: "6px", color: "var(--text)" }}>
@@ -370,7 +371,7 @@ export function RotinasPage({
                             />
                           </td>
                           <td style={td}>
-                            {r.key === "avisos_guias_whatsapp" ? <span>Diariamente</span> : <select
+                            {r.key === "simples_coleta_calculo" ? <span>Dias 1 a 8</span> : r.key === "avisos_guias_whatsapp" ? <span>Diariamente</span> : <select
                               value={String(cfg.day ?? 5)}
                               disabled={!ligada || cfg.frequency === "DAILY"}
                               aria-label={`Dia de ${r.label}`}
@@ -384,15 +385,17 @@ export function RotinasPage({
                             <input
                               type="time"
                               step="3600"
+                              min={r.key === "simples_coleta_calculo" ? "00:00" : undefined}
+                              max={r.key === "simples_coleta_calculo" ? "11:00" : undefined}
                               aria-label={`Horário de ${r.label}`}
                               value={`${pad2(cfg.hour ?? 7)}:00`}
                               disabled={!ligada}
-                              onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(23, Number(String(e.target.value || "07:00").split(":")[0]))))}
+                              onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(r.key === "simples_coleta_calculo" ? 11 : 23, Number(String(e.target.value || "07:00").split(":")[0]))))}
                               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             />
                           </td>
                           <td style={{ padding: "6px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                            {contagem[r.key] || 0} de {empresas.length}
+                            {r.key === "simples_coleta_calculo" && empresas.some(e => typeof e.cicloSimples?.enabled !== 'boolean') ? 'Seleção a verificar' : `${contagem[r.key] || 0} de ${empresas.length}`}
                           </td>
                         </tr>
                       );

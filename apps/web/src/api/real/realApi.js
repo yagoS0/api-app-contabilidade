@@ -831,6 +831,8 @@ export function createRealApi() {
     getPausaCicloFiscal: () => request('/firm/rotinas/pausa-geral'),
     savePausaCicloFiscal: input => request('/firm/rotinas/pausa-geral', { method: 'PUT', body: JSON.stringify(input) }),
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
+    getCompanySimplesCycle: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples`),
+    reviseCompanySimplesCycle: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples/revisao`, { method: 'POST', body: JSON.stringify(input) }),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
     getOperationEvidence: competencia => request('/firm/operacoes/evidencias?competencia=' + encodeURIComponent(competencia)),
     getOperationConsultas: competencia => request('/firm/operacoes/consultas?competencia=' + encodeURIComponent(competencia)),

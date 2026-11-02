@@ -5,6 +5,9 @@ jest.mock("../../../application/security/CertAccessAudit.js", () => ({ auditCert
 jest.mock("../../../application/fiscal/serpro/SerproConfig.js", () => ({ getSerproConfig: jest.fn(() => ({})) }));
 import fs from "node:fs";
 import path from "node:path";
+import { listCompanyRotinas, ROTINA_LABELS } from "../../../application/fiscal/serpro/CompanyRotinasService.js";
+import { AGENDA_KEYS } from "../../../application/fiscal/serpro/SerproRuntimeSettings.js";
+import { prisma } from "../../../infrastructure/db/prisma.js";
 import { validarAgendaRotinas } from "../../../application/fiscal/serpro/SerproRuntimeSettings.js";
 
 // Executa o handler efetivamente registrado, isolando integrações não relacionadas da rota firm.
@@ -38,4 +41,24 @@ test("habilitação parcial aceita agenda já persistida, mas não sugestões", 
   const test = setup({ rotinas: { das: { enabled: false, day: 5, hour: 0 } } });
   await test.run({ empresas: [{}], agenda: { das: { enabled: true } } });
   expect(test.save).toHaveBeenCalledTimes(1);
+});
+
+test('GET registrado retorna label e empresas opt-in do ciclo sem duplicar seleção fiscal', async () => {
+ prisma.portalClient = { findMany: jest.fn(async () => [{ id: 'p', companyId: 'c', razao: 'Fictícia' }]) };
+ prisma.company = { findMany: jest.fn(async () => [{ id: 'c', regimeTributario: 'SIMPLES' }]) };
+ prisma.companyRotina = { findMany: jest.fn(async () => []) };
+ prisma.appSetting = { findMany: jest.fn(async () => [{ key: 'ciclo_simples_config:p', value: { enabled: true, fontes: ['NFSE'] } }]) };
+ const start = source.indexOf('router.get("/rotinas"');
+ const finish = source.indexOf('router.put("/rotinas"', start);
+ let handler;
+ new Function('router', 'requireAccountType', 'listCompanyRotinas', 'getSerproRuntimeSettings', 'AGENDA_KEYS', 'ROTINA_LABELS', 'getRoutineExecutionStatus', source.slice(start, finish))({ get: (_p, _g, h) => { handler = h; } }, () => null, listCompanyRotinas, async () => ({ rotinas: {} }), AGENDA_KEYS, ROTINA_LABELS, async () => ({}));
+ const res = { json: jest.fn() };
+ await handler({ auth: { user: { role: 'contador' } } }, res);
+ const payload = res.json.mock.calls[0][0];
+ expect(payload.rotinas.find(r => r.key === 'simples_coleta_calculo')).toEqual({ key: 'simples_coleta_calculo', label: 'Coleta e cálculo do Simples' });
+ expect(payload.empresas[0].cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: true, configurationValid: true });
+ expect(payload.empresas[0].rotinas.simples_coleta_calculo).toBeUndefined();
+ prisma.company.findMany.mockResolvedValue([{ id: 'c', regimeTributario: 'LUCRO_PRESUMIDO' }]);
+ await handler({ auth: { user: { role: 'contador' } } }, res);
+ expect(res.json.mock.calls[1][0].empresas[0].cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: false, configurationValid: true });
 });

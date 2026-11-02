@@ -1,5 +1,6 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { ROTINA_KEYS } from "./SerproRuntimeSettings.js";
+import { aplicarRegimeRotinas } from './CompanyRoutineApplicability.js';
 
 /**
  * Quais rotinas de captura cada empresa faz.
@@ -17,6 +18,7 @@ import { ROTINA_KEYS } from "./SerproRuntimeSettings.js";
  */
 
 export const ROTINA_LABELS = {
+  simples_coleta_calculo: "Coleta e cálculo do Simples",
   das: "DAS",
   inss: "INSS",
   extrato: "Extrato",
@@ -85,6 +87,8 @@ export async function listCompanyRotinas() {
     select: { id: true, razao: true, cnpj: true, status: true, companyId: true },
     orderBy: { razao: "asc" },
   });
+  const configs = await prisma.appSetting.findMany({ where: { key: { in: portalRows.map(p => `ciclo_simples_config:${p.id}`) } }, select: { key: true, value: true } });
+  const configMap = new Map(configs.map(r => [r.key, r.value]));
   const legacyIds = portalRows.map((p) => p.companyId).filter(Boolean);
   const legacy = legacyIds.length > 0
     ? await prisma.company.findMany({
@@ -105,6 +109,10 @@ export async function listCompanyRotinas() {
 
   return portalRows.map((p) => {
     const marcadas = porEmpresa.get(p.id) || {};
+    const config = configMap.get(`ciclo_simples_config:${p.id}`);
+    const valid = Array.isArray(config?.fontes) && config.fontes.length > 0 && config.fontes.every(f => ['NFE', 'NFSE'].includes(f)) && new Set(config.fontes).size === config.fontes.length;
+    const cicloSimples = { enabled: config?.enabled === true, fontes: valid ? [...config.fontes].sort() : [],
+      applicableCurrentRegime: aplicarRegimeRotinas(legacyMap.get(p.companyId)).regime === 'SIMPLES', configurationValid: valid };
     const rotinas = {};
     for (const key of ROTINA_KEYS) rotinas[key] = marcadas[key] === true;
     return {
@@ -114,6 +122,7 @@ export async function listCompanyRotinas() {
       status: p.status,
       regime: normalizaRegime(p.companyId ? legacyMap.get(p.companyId) : null) || null,
       rotinas,
+      cicloSimples,
       lembretes: { enabled: marcadas.avisos_guias_whatsapp === true },
     };
   });

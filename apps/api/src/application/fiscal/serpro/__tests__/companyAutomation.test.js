@@ -176,3 +176,58 @@ test('pausa automática própria é auditada, não muda SERPRO, rotinas ou lembr
   db.companyFirmAccess.findUnique.mockResolvedValue({ status: 'REVOKED', role: 'ACCOUNTANT' });
   await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ status: 403 });
 });
+
+test('ciclo opt-in mantém uma fonte de configuração e revisão auditada', async () => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  expect(before.cicloSimples).toEqual({ enabled: false, fontes: [], applicableCurrentRegime: true, configurationValid: false });
+  const input = { expectedRevision: before.revision, requestId: 'ciclo-pedido-123', cicloSimples: { enabled: true, fontes: ['NFSE'] } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(saved.cicloSimples).toEqual({ ...input.cicloSimples, applicableCurrentRegime: true, configurationValid: true });
+  expect(saved.revision).not.toBe(before.revision);
+  expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeCicloSimples).toEqual(before.cicloSimples);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(saved);
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'ciclo-pedido-456' })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+});
+test.each([{ enabled: true, fontes: [] }, { enabled: true, fontes: ['NFE', 'NFE'] }, { enabled: true, fontes: ['OUTRA'] }])('recusa fontes não explícitas ou inválidas %j', async cicloSimples => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'ciclo-invalido', cicloSimples })).rejects.toMatchObject({ status: 422 });
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('seleção anterior permanece visível fora do regime atual e pode ser desativada com auditoria', async () => {
+  const db = database();
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: { enabled: true, fontes: ['NFSE'] } } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  expect(before.cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: false, configurationValid: true });
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+  const result = await salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'desativar-ciclo-legado', cicloSimples: { enabled: false, fontes: ['NFSE'] } });
+  expect(result.cicloSimples).toEqual({ ...before.cicloSimples, enabled: false });
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeCicloSimples).toEqual(before.cicloSimples);
+});
+
+test.each([
+  { anterior: { enabled: false, fontes: ['NFSE'] }, novo: { enabled: true, fontes: ['NFSE'] } },
+  { anterior: { enabled: true, fontes: ['NFSE'] }, novo: { enabled: true, fontes: ['NFSE', 'NFE'] } },
+  { anterior: { enabled: true, fontes: ['NFSE'] }, novo: { enabled: false, fontes: ['NFSE', 'NFE'] } },
+])('fora do regime atual recusa ativação ou ampliação, preservando seleção: %j', async ({ anterior, novo }) => {
+  const db = database();
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: anterior } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  db.appSetting.upsert.mockClear();
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'bloqueio-ciclo-legado', cicloSimples: novo })).rejects.toMatchObject({ code: 'ROUTINE_NOT_APPLICABLE' });
+  expect(db.appSetting.upsert).not.toHaveBeenCalled();
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('salvar outros controles fora do regime preserva ciclo selecionado sem reativar', async () => {
+  const db = database(), selected = { enabled: true, fontes: ['NFSE'] };
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: selected } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  const result = await salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'manter-ciclo-legado', cicloSimples: selected, lembretes: { enabled: false } });
+  expect(result.cicloSimples).toEqual(before.cicloSimples);
+  expect(result.lembretes.enabled).toBe(false);
+});

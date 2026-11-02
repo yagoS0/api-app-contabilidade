@@ -83,6 +83,20 @@ beforeEach(() => {
   });
 });
 
+test('R2A exige término explícito: vazio sem status e documento sem XML não são completos', async () => {
+  fetchDfeNFSe.mockResolvedValueOnce({ status: 'DESCONHECIDO', items: [] });
+  expect(await syncAdnNotasForCompany({ portalClientId: 'p1', somenteColeta: true })).toMatchObject({ ok: false, reason: 'ADN_RESPOSTA_INCONCLUSIVA' });
+  fetchDfeNFSe.mockResolvedValueOnce({ status: 'DOCUMENTOS_LOCALIZADOS', items: [{ NSU: '1' }] });
+  expect(await syncAdnNotasForCompany({ portalClientId: 'p1', somenteColeta: true })).toMatchObject({ ok: true, complete: false, partial: true });
+});
+
+test('R2A reconhece fim explícito sem documento, sem declarar ausência de receita', async () => {
+  fetchDfeNFSe.mockResolvedValue({ status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [] });
+  const result = await syncAdnNotasForCompany({ portalClientId: 'p1', somenteColeta: true });
+  expect(result).toMatchObject({ ok: true, complete: true, totalDocs: 0 });
+  expect(result).not.toHaveProperty('semMovimento');
+});
+
 describe("cursor NSU do ADN", () => {
   it("o cursor guarda o ÚLTIMO NSU recebido, nunca o seguinte", async () => {
     adnCom([1, 2, 3]);

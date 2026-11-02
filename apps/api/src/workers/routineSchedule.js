@@ -25,12 +25,18 @@ function localInstant(year, month, day, hour) {
 
 export function scheduleSlots(config, now = new Date()) {
   if (config?.enabled !== true || !Number.isInteger(config.hour) || config.hour < 0 || config.hour > 23) return [];
-  if (config.frequency != null && !["DAILY", "MONTHLY"].includes(config.frequency)) return [];
+  if (config.frequency != null && !["DAILY", "MONTHLY", "DAILY_UNTIL_DAY"].includes(config.frequency)) return [];
   if (config.frequency !== "DAILY" && (!Number.isInteger(config.day) || config.day < 1 || config.day > 31)) return [];
+  if (config.frequency === "DAILY_UNTIL_DAY" && (config.day !== 8 || config.hour > 11)) return [];
   const p = localCalendar(now);
   const hour = config.hour;
   const slots = [];
-  if (config.frequency === "DAILY") {
+  if (config.frequency === "DAILY_UNTIL_DAY") {
+    for (let delta = -1; delta <= 1; delta += 1) {
+      const month = new Date(Date.UTC(p.year, p.month - 1 + delta, 1));
+      for (let day = 1; day <= config.day; day += 1) slots.push(localInstant(month.getUTCFullYear(), month.getUTCMonth() + 1, day, hour));
+    }
+  } else if (config.frequency === "DAILY") {
     for (let delta = -2; delta <= 2; delta += 1) {
       const d = new Date(Date.UTC(p.year, p.month - 1, p.day + delta));
       slots.push(localInstant(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), hour));

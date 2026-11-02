@@ -68,10 +68,16 @@ suite('authenticated capture service, simulated transport and actual PostgreSQL'
       expect(saved.xmlRaw).toBe(xmlNfeData()); expect(saved.provenienciaDfe).toEqual({});
       expect(await prisma.companyMonthlyCircular.findUnique({ where: { id: circular.id } })).toEqual(circular);
       expect(fetchDistNSU).toHaveBeenCalledWith(expect.objectContaining({ cnpj: recipient, env: 'prod', pfxBuffer: expect.any(Buffer) }));
+      expect(fetchDistNSU).toHaveBeenCalledTimes(1); // ultNSU alcançou maxNSU; não consome o 137 adicional.
       const beforeError = saved;
       await prisma.portalSyncState.update({ where: { clientId: id }, data: { dfeLastAttemptAt: null, dfeBackoffUntil: null } });
+      // A chamada anterior já foi conferida. A nova consulta recebe somente a recusa 593,
+      // sem herdar resposta 137 não consumida da consulta encerrada por maxNSU.
+      fetchDistNSU.mockReset();
       fetchDistNSU.mockResolvedValueOnce({ status: 200, xml: envelope(context.xml, '2', '593') });
-      expect(await syncDfeForCompany({ portalClientId: id })).toMatchObject({ ok: false });
+      expect(await syncDfeForCompany({ portalClientId: id })).toMatchObject({ ok: false, reason: 'CERT_CNPJ_MISMATCH' });
+      expect(fetchDistNSU).toHaveBeenCalledTimes(1);
+      expect(fetchDistNSU).toHaveBeenCalledWith(expect.objectContaining({ cnpj: recipient, ultNSU: 1n, env: 'prod' }));
       expect(await prisma.portalInvoice.findUnique({ where: { id: saved.id } })).toEqual(beforeError);
     } catch (error) { errors.push(error); }
     finally {

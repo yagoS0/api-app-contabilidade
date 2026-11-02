@@ -1,8 +1,93 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useInRouterContext, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { useEdicaoPendente } from '../configuracoes/ProtecaoEdicao.shared.js';
 import './operacoes.css';
 import { CompanyManualInss } from './OperationsManualInss';
+import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
+
+const cycleLabels = { NAO_INICIADO: 'Não iniciado', COLETANDO: 'Coletando notas', COLETA_PARCIAL: 'Coleta incompleta', AGUARDANDO_COLETA_FINAL: 'Aguardando coleta final', REVISAO_NECESSARIA: 'Revisão necessária', CALCULANDO: 'Calculando', CALCULADO: 'Calculado · aguardando contador', INCERTO: 'Resultado incerto · conferir tentativa' };
+function cycleMoney(value) {
+  if (value == null || !/^\d+(\.\d{1,2})?$/.test(String(value))) return 'A verificar';
+  const [whole, fraction = ''] = String(value).split('.');
+  return `R$ ${whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${fraction.padEnd(2, '0')}`;
+}
+function cycleDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'A verificar';
+}
+function OpenCycleApuracao({ companyId, disabled }) {
+  const navigate = useNavigate();
+  const destination = companyTabPath(companyId, 'cadastroFiscal');
+  return <Button variant="secondary" disabled={disabled || !destination} onClick={() => navigate(destination)}>Abrir Apuração</Button>;
+}
+function previousMonth() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  return `${Number(parts.month) === 1 ? Number(parts.year) - 1 : parts.year}-${String(Number(parts.month) === 1 ? 12 : Number(parts.month) - 1).padStart(2, '0')}`;
+}
+export function CompanySimplesCycle({ api, companyId, canEdit, configurationPending = false }) {
+  const routed = useInRouterContext();
+  const [competencia, setCompetencia] = useState(previousMonth);
+  const [cycle, setCycle] = useState(null), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false), [motivo, setMotivo] = useState(''), [review, setReview] = useState(false);
+  const [needsReload, setNeedsReload] = useState(false);
+  const generation = useRef(0), working = useRef(false), focus = useRef(null), resultRef = useRef(null), reasonRef = useRef(null), confirmationRef = useRef(null);
+  useEdicaoPendente(Boolean(motivo.trim()));
+  useEffect(() => {
+    if (busy || !focus.current) return;
+    const requested = focus.current; focus.current = null;
+    if (requested.generation === generation.current && [document.body, requested.origin].includes(document.activeElement)) (requested.reason ? reasonRef : requested.confirmation ? confirmationRef : resultRef).current?.focus();
+  }, [busy, cycle, error, notice, review]);
+  const valid = value => value && value.ok !== false && value.portalClientId === companyId && value.competencia === competencia && Number.isInteger(value.revision) && cycleLabels[value.status];
+  const load = useCallback(async (event) => {
+    const ticket = ++generation.current;
+    focus.current = event?.type ? { generation: ticket, origin: document.activeElement } : null;
+    working.current = true; setBusy(true); setCycle(null); setError(''); setNotice(''); setReview(false); setNeedsReload(false);
+    try {
+      if (!api.getCompanySimplesCycle) throw new Error('Consulta do ciclo indisponível nesta conexão.');
+      const value = await api.getCompanySimplesCycle(companyId, competencia);
+      if (ticket !== generation.current) return;
+      if (!value || value.ok === false || value.portalClientId !== companyId || value.competencia !== competencia || !Number.isInteger(value.revision) || !cycleLabels[value.status]) throw new Error('Não foi possível confirmar o ciclo desta empresa e competência.');
+      setCycle(value);
+    } catch (e) { if (ticket === generation.current) setError(e.message || 'Não foi possível carregar o ciclo.'); }
+    finally { if (ticket === generation.current) { working.current = false; setBusy(false); } }
+  }, [api, companyId, competencia]);
+  useEffect(() => { setMotivo(''); load(); return () => { generation.current++; }; }, [load]);
+  async function revise() {
+    if (working.current || !review || !canEdit || configurationPending || needsReload || !cycle?.canRevise || motivo.trim().length < 3 || ['INCERTO', 'CALCULANDO', 'COLETANDO'].includes(cycle.status)) return;
+    const ticket = generation.current;
+    focus.current = { generation: ticket, origin: document.activeElement };
+    working.current = true; setBusy(true); setError(''); setNotice('');
+    try {
+      const value = await api.reviseCompanySimplesCycle(companyId, competencia, { expectedRevision: cycle.revision, motivo: motivo.trim() });
+      if (ticket !== generation.current) return;
+      if (!valid(value) || value.revision !== cycle.revision + 1) throw new Error('Não foi possível confirmar a nova revisão. Recarregue antes de continuar.');
+      setCycle(value); setMotivo(''); setReview(false); setNotice('Revisão registrada. Nenhum cálculo ou transmissão foi iniciado agora. A janela automática vai do dia 1 ao dia 8 do mês seguinte à competência; fora dela, prossiga pela Apuração.');
+    } catch (e) { if (ticket === generation.current) { setError(e.message || 'Não foi possível confirmar a revisão. Recarregue antes de continuar.'); setNeedsReload(true); } }
+    finally { if (ticket === generation.current) { working.current = false; setBusy(false); } }
+  }
+  const locked = busy || configurationPending;
+  return <section className="operacoes-previa" aria-label="Ciclo do Simples por competência" style={{ marginBlock: 20 }}>
+    <h3>Ciclo por competência</h3>
+    <label>Competência <input type="month" value={competencia} disabled={locked || Boolean(motivo.trim())} onChange={e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setCompetencia(e.target.value); }} /></label>{' '}
+    <Button variant="secondary" disabled={locked} onClick={load}>Atualizar ciclo</Button>
+    <div ref={resultRef} tabIndex={-1} role={error ? 'alert' : 'status'}>
+      {busy ? <p>Carregando ciclo…</p> : error ? <p>{error}</p> : cycle && <><p><strong>{cycleLabels[cycle.status]}</strong> · Revisão {cycle.revision}</p>{cycle.reason && <p>{cycle.reason}</p>}</>}
+      {notice && <p>{notice}</p>}
+    </div>
+    {cycle && !busy && <>
+      {cycle.coleta && <ul>{Object.entries(cycle.coleta).map(([fonte, value]) => <li key={fonte}>{fonte === 'NFE' ? 'NF-e' : fonte === 'NFSE' ? 'NFS-e' : fonte}: {value.complete ? 'coleta completa' : 'coleta incompleta'}{Number.isInteger(value.totalDocs) ? ` · ${value.totalDocs} documentos` : ''}{value.reason ? ` · ${value.reason}` : ''}</li>)}</ul>}
+      {cycle.calculo?.calculoId && <><p>Imposto calculado: <strong>{cycleMoney(cycle.calculo.dasValor)}</strong></p><p>Calculado em {cycleDate(cycle.calculo.completedAt)} · Brasília. Confira os valores e as notas na Apuração antes de confirmar.</p></>}
+      {routed && <><p>Na Apuração, confira a competência {competencia.split('-').reverse().join('/')} no seletor da empresa.</p><OpenCycleApuracao companyId={companyId} disabled={locked || Boolean(motivo.trim())} /></>}
+      {cycle.status === 'INCERTO' && <p>Confira o resultado da tentativa antes de uma nova revisão. Não haverá repetição automática.</p>}
+      {canEdit && cycle.canRevise && !['INCERTO', 'CALCULANDO', 'COLETANDO'].includes(cycle.status) && <>
+        <label style={{ display: 'grid', gap: 8 }}>Motivo da nova revisão<textarea ref={reasonRef} value={motivo} rows={2} maxLength={500} disabled={locked || review || needsReload} onChange={e => setMotivo(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', font: 'inherit' }} /></label>
+        {review ? <><p ref={confirmationRef} tabIndex={-1}>Registrar uma nova revisão após a correção? O histórico será preservado. A janela automática vai do dia 1 ao dia 8 do mês seguinte à competência. Fora dela, prossiga pela Apuração; horários perdidos não são recuperados.</p><Button disabled={locked || needsReload || motivo.trim().length < 3} onClick={revise}>Registrar nova revisão</Button>{' '}<Button variant="secondary" disabled={busy} onClick={() => { focus.current = { generation: generation.current, origin: document.activeElement, reason: true }; setReview(false); }}>Voltar ao motivo</Button></> : <Button disabled={locked || needsReload || motivo.trim().length < 3} onClick={() => { focus.current = { generation: generation.current, origin: document.activeElement, confirmation: true }; setReview(true); }}>Conferir nova revisão</Button>}
+      </>}
+      {configurationPending && <p>Conclua ou descarte as alterações da configuração antes de revisar o ciclo.</p>}
+    </>}
+  </section>;
+}
 
 export function CompanyAutomation({ api, companyId, canEdit }) {
   const [data, setData] = useState(null), [values, setValues] = useState({});
@@ -11,6 +96,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const [paused, setPaused] = useState(false), [reason, setReason] = useState('');
   const [automationPaused, setAutomationPaused] = useState(false), [automationReason, setAutomationReason] = useState('');
   const [reminders, setReminders] = useState(false);
+  const [cicloSimples, setCicloSimples] = useState({ enabled: false, fontes: [] });
   const [reloadRequired, setReloadRequired] = useState(false);
   const generation = useRef(0), pending = useRef(null);
   const focusRequest = useRef(null);
@@ -31,7 +117,10 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const policyChanged = paused !== (data?.serproPolicy?.paused === true);
   const automationChanged = automationPaused !== (data?.automationPolicy?.paused === true);
   const remindersChanged = reminders !== (data?.lembretes?.enabled === true);
-  const hasChanges = !!data && (changes.length > 0 || policyChanged || remindersChanged || automationChanged);
+  const cicloApplicable = data?.cicloSimples?.applicableCurrentRegime ?? data?.regime === 'SIMPLES';
+  const cicloChanged = cicloSimples.enabled !== (data?.cicloSimples?.enabled === true) || JSON.stringify([...cicloSimples.fontes].sort()) !== JSON.stringify([...(data?.cicloSimples?.fontes || [])].sort());
+  const cicloInvalid = cicloSimples.enabled && !cicloSimples.fontes.length;
+  const hasChanges = !!data && (changes.length > 0 || policyChanged || remindersChanged || automationChanged || cicloChanged);
   const locked = !canEdit || busy || preview || !!pending.current || reloadRequired;
   useEdicaoPendente(hasChanges);
   const load = useCallback(async (event) => {
@@ -46,16 +135,18 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
       setData(r); setValues(Object.fromEntries(r.rotinas.map(x => [x.key, x.enabled]))); pending.current = null;
       setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true);
       setAutomationPaused(r.automationPolicy?.paused === true); setAutomationReason('');
+      setCicloSimples({ enabled: r.cicloSimples?.enabled === true, fontes: r.cicloSimples?.fontes || [] });
     } catch (e) { if (generation.current === current) setError(e.message || 'Não foi possível carregar a configuração.'); }
     finally { if (generation.current === current) setBusy(false); }
   }, [api, companyId]);
   useEffect(() => { const generationDaExecucao = generation; setData(null); setSaved(''); load(); return () => { generationDaExecucao.current++; }; }, [load, companyId, api]);
   async function save() {
-    if (!canEdit || busy || reloadRequired || !preview || !hasChanges || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())) return;
+    if (!canEdit || busy || reloadRequired || !preview || !hasChanges || cicloInvalid || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())) return;
     const current = generation.current;
     const input = pending.current || { expectedRevision: data.revision, requestId: crypto.randomUUID(),
       ...(automationChanged ? { automationPolicy: { paused: automationPaused, reason: automationReason.trim() } } : {}),
       ...(remindersChanged ? { lembretes: { enabled: reminders } } : {}),
+      ...(cicloChanged ? { cicloSimples } : {}),
       ...(changes.length ? { rotinas: Object.fromEntries(changes.map(r => [r.key, values[r.key]])) } : {}),
       ...(policyChanged ? { serproPolicy: { paused, reason: reason.trim() } } : {}) };
     requestFocus('saved');
@@ -64,11 +155,13 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
       const r = await api.saveCompanyAutomation(companyId, input);
       if (generation.current !== current) return;
       if (input.lembretes && r?.lembretes?.enabled !== input.lembretes.enabled) throw new Error('Não foi possível confirmar os lembretes salvos. Recarregue para conferir.');
+      if (input.cicloSimples && (r?.cicloSimples?.enabled !== input.cicloSimples.enabled || JSON.stringify([...(r?.cicloSimples?.fontes || [])].sort()) !== JSON.stringify([...input.cicloSimples.fontes].sort()))) throw new Error('Não foi possível confirmar as fontes salvas. Recarregue para conferir.');
       if (input.automationPolicy && (r?.automationPolicy?.paused !== input.automationPolicy.paused || !r.automationPolicy.updatedAt || !r.automationPolicy.updatedBy)) throw new Error('Não foi possível confirmar a pausa empresarial salva. Recarregue para conferir.');
       if (!r || r.ok === false || !r.revision || !Array.isArray(r.rotinas) || (r.companyId && r.companyId !== companyId)) throw new Error('Não foi possível confirmar a configuração desta empresa. Recarregue para conferir.');
       setData(r); setValues(Object.fromEntries(r.rotinas.map(x => [x.key, x.enabled]))); pending.current = null; setPreview(false);
       setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true);
       setSaved('Configuração salva. Nenhuma consulta ou mensagem foi iniciada agora.');
+      setCicloSimples({ enabled: r.cicloSimples?.enabled === true, fontes: r.cicloSimples?.fontes || [] });
       setAutomationPaused(r.automationPolicy?.paused === true); setAutomationReason('');
     } catch (e) { if (generation.current === current) {
       setError(e.message || 'Não foi possível confirmar o salvamento. Confira a configuração antes de continuar.');
@@ -99,6 +192,16 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         {automationChanged && <label style={{ display: 'grid', gap: 8 }}>Motivo da alteração das automações
           <textarea value={automationReason} maxLength={300} rows={2} disabled={locked} onChange={e => setAutomationReason(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', font: 'inherit' }} />
         </label>}
+      </section>
+      <section className="operacoes-previa" aria-label="Coleta e cálculo do Simples" style={{ marginBlock: 20 }}>
+        <h3>Coleta e cálculo do Simples</h3>
+        {!cicloApplicable && <p>O cadastro atual não confirma Simples Nacional. A seleção salva é preservada: o histórico fiscal determina se uma competência passada pode executar. Você pode desativar a seleção; nova ativação e alteração das fontes exigem conferência do cadastro atual.</p>}
+          <label className="operacoes-rotina"><input type="checkbox" checked={cicloSimples.enabled} disabled={locked || !data.cicloSimples || (!cicloApplicable && !data.cicloSimples.enabled)} onChange={e => { setCicloSimples(v => ({ ...v, enabled: e.target.checked })); setSaved(''); }} /><span>Selecionar empresa para coleta e cálculo</span></label>
+          {!data.cicloSimples && <p>Configuração indisponível. Recarregue antes de alterar.</p>}
+          <fieldset disabled={locked || !data.cicloSimples || !cicloApplicable}><legend>Fontes de notas</legend>{[['NFE', 'NF-e'], ['NFSE', 'NFS-e']].map(([key, label]) => <label className="operacoes-rotina" key={key}><input type="checkbox" checked={cicloSimples.fontes.includes(key)} onChange={e => { setCicloSimples(v => ({ ...v, fontes: e.target.checked ? [...v.fontes, key] : v.fontes.filter(f => f !== key) })); setSaved(''); }} /><span>{label}</span></label>)}</fieldset>
+          {cicloInvalid && <p role="alert">Selecione ao menos uma fonte para ativar.</p>}
+          <p>Coleta matinal do dia 1 ao dia 8. Após a coleta final completa, um cálculo por revisão fica aguardando conferência do contador. Dados incompletos ou erros exigem revisão; não há transmissão nesta etapa.</p>
+          <p>Agenda compartilhada em Rotinas → Configuração. Selecionar esta empresa não liga a agenda nem remove as pausas.</p>
       </section>
       <section className="operacoes-previa" aria-label="Lembretes de guias" style={{ marginBlock: 20 }}>
         <h3>Lembretes de guias</h3>
@@ -137,12 +240,14 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         <h3 ref={previewRef} tabIndex={-1}>Conferir alteração</h3>
         {automationChanged && <p>{automationPaused ? 'Pausar automações desta empresa.' : 'Retomar automações desta empresa conforme pausa geral, seleções e agendas salvas.'} Motivo: {automationReason.trim()}</p>}
         {remindersChanged && <p>Lembretes de guias: {reminders ? 'selecionar esta empresa' : 'desativar nesta empresa'}. A agenda global permanece como está.</p>}
+        {cicloChanged && <p>Coleta e cálculo: {cicloSimples.enabled ? 'selecionar esta empresa' : 'desativar nesta empresa'}. Fontes: {cicloSimples.fontes.map(f => f === 'NFE' ? 'NF-e' : 'NFS-e').join(', ') || 'nenhuma'}. A agenda global permanece como está.</p>}
         <ul>{changes.map(r => <li key={r.key}>{r.label}: {values[r.key] ? 'ativar nesta empresa' : 'desativar nesta empresa'}</li>)}</ul>
         {policyChanged && <><p>{paused ? 'Pausar novas consultas e transmissões SERPRO desta empresa.' : 'Retomar operações SERPRO conforme permissões, procurações e rotinas habilitadas.'}</p><p>Motivo: {reason.trim()}</p></>}
         <p>Salvar não envia mensagens, executa consultas ou altera o fechamento. Uma operação já iniciada pode terminar.</p>
         <Button onClick={save} disabled={busy || reloadRequired}>{busy ? 'Salvando…' : 'Salvar configuração'}</Button>{' '}
         <Button variant="secondary" disabled={busy || !!pending.current} onClick={() => { requestFocus('review'); setPreview(false); }}>Voltar à edição</Button>
-      </div> : <Button ref={reviewRef} disabled={busy || reloadRequired || !hasChanges || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())} onClick={() => { requestFocus('preview'); setPreview(true); }}>Conferir alterações</Button>}
+      </div> : <Button ref={reviewRef} disabled={busy || reloadRequired || !hasChanges || cicloInvalid || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())} onClick={() => { requestFocus('preview'); setPreview(true); }}>Conferir alterações</Button>}
+      {(data.cicloSimples || data.regime === 'SIMPLES') && <CompanySimplesCycle key={companyId} api={api} companyId={companyId} canEdit={canEdit} configurationPending={hasChanges || busy} />}
     </>}
     <CompanyManualInss key={companyId} api={api} companyId={companyId} canEdit={canEdit} />
   </section>;

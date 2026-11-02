@@ -12,6 +12,7 @@ import { criarVinculoCalculo, validarCalculoConfirmado, insumosFormulario, exigi
 import { acquireGuideLease } from '../../../guides/GuideLockService.js';
 import { contextoOrigemCalculo, recuperarCalculo } from './RecuperacaoCalculo.js';
 import { executarComRetomada } from './PeriodosRecusadosService.js';
+import { conferirContextoCicloFiscal } from '../../../fiscal/automacaoCicloFiscalContext.js';
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { derivarFolha12m } from "./FolhaDerivadaService.js";
@@ -704,13 +705,16 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
 export async function calcularFechamento(params) {
+  // A origem automática vem do contexto interno, nunca de um campo HTTP.
+  // Revalida também a identidade empresarial antes de reservar o cálculo.
+  const automatico = Boolean(await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId: params.portalClientId }));
   const lease = await acquireGuideLease(`apuracao-calculo:${params.portalClientId}:${params.competencia}`);
   if (!lease) throw new FechamentoError('CALCULO_EM_ANDAMENTO', 'Já existe um cálculo em andamento para esta empresa e competência. Acompanhe a tarefa antes de tentar novamente.');
-  try { return await calcularFechamentoReservado(params, lease); }
+  try { return await calcularFechamentoReservado(params, lease, { automatico }); }
   finally { await lease.release(); }
 }
 
-async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }, lease) {
+async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash }, lease, { automatico = false } = {}) {
   exigirRegimeSuportado(regimeApuracao);
   const regimeCadastrado = await prisma.cadastroFiscal.findUnique({ where: { portalClientId }, select: { regimeApuracao: true } });
   exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
@@ -776,6 +780,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   const rbt = await getRbt12({ portalClientId, competencia });
 
   const contextoOrigem = await contextoOrigemCalculo({ portalClientId, competencia });
+  if (automatico && expectedAutomaticContextHash && hashCalculo(contextoOrigem) !== expectedAutomaticContextHash) throw erroCalculoObsoleto();
   const recuperacao = recuperarCalculo(anterior, { portalClientId, competencia, cnpj: contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA', contextoOrigem });
   const salvo = recuperacao.calculoRecuperavel;
   if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao }))) {
@@ -808,7 +813,11 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   const folhasIniciais = podar(folhasSalario, aceitos?.folhas);
 
   const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await executarComRetomada(
-    (p) => { lease.assertActive(); return sim.simular(p); },
+    async (p) => {
+      lease.assertActive();
+      await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId });
+      return sim.simular(p);
+    },
     {
       contratanteCnpj, contribuinteCnpj, competencia,
       regimeApuracao: regimeApuracao || "COMPETENCIA",
@@ -817,7 +826,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
       folhasSalario: folhasIniciais,
       permitirSemMovimento: semMovimento && semAtividades,
     },
-    { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos },
+    { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos, tentativaUnica: automatico },
   ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
   // HTTP 200 não comprova um cálculo utilizável. Zero explícito é válido.
