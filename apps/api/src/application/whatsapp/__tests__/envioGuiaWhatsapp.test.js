@@ -797,3 +797,19 @@ describe("⚠⚠ guia sem valor não vira R$ 0,00", () => {
     expect(cliente.enviarGuia).toHaveBeenCalled();
   });
 });
+
+describe('guarda do envio automático no consumidor WhatsApp',()=>{
+ test('pausa antes do preparo impede reserva e transporte',async()=>{
+  cenarioLimpo();const cliente=clienteFalso();
+  await expect(enviarGuiaPorWhatsapp({guide:GUIA,contato:CONTATO,canal:TEMPLATE_APROVADO,cliente,carregarPdf:pdf,automacao:{beforeDispatch:async()=>{throw new Error('pausa');}}})).rejects.toThrow('pausa');
+  expect(cliente.enviarGuia).not.toHaveBeenCalled();expect(prisma.envioGuiaTentativa.create).not.toHaveBeenCalled();
+ });
+ test('desativação após upload bloqueia template inclusive no modo legado de identidade',async()=>{
+  cenarioLimpo();let uploaded=false,templates=0;
+  const cliente={enviarGuia:jest.fn(async({antesDoTemplate})=>{uploaded=true;await antesDoTemplate();templates++;return {wamid:'não-deve-ocorrer'};})};
+  const beforeDispatch=jest.fn(async()=>{if(uploaded)throw new Error('seleção desativada após upload');});
+  const result=await enviarGuiaPorWhatsapp({guide:GUIA,contato:CONTATO,canal:TEMPLATE_APROVADO,cliente,carregarPdf:pdf,automacao:{beforeDispatch}});
+  expect(uploaded).toBe(true);expect(templates).toBe(0);expect(result.enviada).not.toBe(true);
+  expect(beforeDispatch.mock.calls.length).toBeGreaterThan(2);
+ });
+});

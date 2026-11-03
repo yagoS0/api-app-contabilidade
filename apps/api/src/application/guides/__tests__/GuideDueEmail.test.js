@@ -22,7 +22,11 @@ beforeEach(() => {
   let reservaEm;
   prisma.guide.findMany.mockImplementation(async (query) => query.select?.updatedAt && !query.select?.portalClientId
     ? guides.map((g) => ({ ...g, updatedAt: reservaEm })) : guides);
-  prisma.guide.updateMany.mockImplementation(async (query) => { if (query.data.emailStatus === "SENDING") reservaEm = query.data.updatedAt; return { count: 2 }; });
+  prisma.guide.updateMany.mockImplementation(async (query) => {
+    if (query.data.emailStatus === "SENDING") reservaEm = query.data.updatedAt;
+    const ids = typeof query.where.id === "string" ? [query.where.id] : query.where.id?.in || [];
+    return { count: guides.filter(g => ids.includes(g.id)).length };
+  });
   prisma.$transaction.mockImplementation((fn) => fn(prisma));
   EmailService.mockImplementation(() => ({ send }));
 });
@@ -55,6 +59,9 @@ test("envio automático não inclui PDF não conferido e não esconde motivo", a
  await expect(sendLatestGuidesEmailByCompany({ portalClientId: "c", to: "teste@example.com" })).resolves.toMatchObject({ sentNow: 1, bloqueadas: [{ code: "PARCELA_DOCUMENTO_PENDENTE" }] });
  expect(send).toHaveBeenCalledTimes(1);
  expect(send.mock.calls[0][0].attachments).toHaveLength(1);
+ const reserva = prisma.guide.updateMany.mock.calls.find(([query]) => query.data.emailStatus === "SENDING")[0];
+ expect(reserva.where.id.in).toEqual([guides[1].id]);
+ expect(prisma.guide.updateMany.mock.calls.some(([query]) => query.where.id === bloqueada.id || query.where.id?.in?.includes(bloqueada.id))).toBe(false);
 });
 test("envio automático apenas com débito automático recusa sem reservar ou enviar", async () => {
  prisma.guide.findMany.mockResolvedValue([{ ...guides[0], parcelamentoId: "p", parcelamento: { formaPagamento: "DEBITO_AUTOMATICO" } }]);

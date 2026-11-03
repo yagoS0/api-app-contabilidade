@@ -257,3 +257,22 @@ test('salvar outros controles fora do regime preserva ciclo selecionado sem reat
   expect(result.cicloSimples).toEqual(before.cicloSimples);
   expect(result.lembretes.enabled).toBe(false);
 });
+
+test('envio de guias nasce desligado, salva seleção independente com token e recibo, e não ativa lembretes', async () => {
+ const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+ expect(before.envioGuias.enabled).toBe(false);
+ const input = { expectedRevision: before.revision, requestId: 'envio-guias-teste', envioGuias: { enabled: true } };
+ const result = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+ expect(result.envioGuias.enabled).toBe(true); expect(result.lembretes.enabled).toBe(false);
+ expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+ const saved = (await db.appSetting.findUnique({ where: { key: 'envio_guias_config:a' } })).value;
+ expect(saved).toMatchObject({ enabled: true, selectionToken: expect.any(String), updatedBy: 'user' });
+ expect(db.appSetting.create.mock.calls[0][0].data.value.beforeEnvioGuias.enabled).toBe(false);
+ expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(result);
+ expect(result.envioGuias).not.toHaveProperty('selectionToken');
+});
+test.each([{enabled:'true'}, {enabled:true, token:'externo'}, null])('envio rejeita configuração inválida %j', async envioGuias => {
+ const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+ await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'envio-invalido', envioGuias })).rejects.toMatchObject({ status: 422 });
+ expect(db.appSetting.create).not.toHaveBeenCalled();
+});

@@ -3386,7 +3386,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     try {
       const portal = await prisma.portalClient.findUnique({
         where: { id: portalClientId },
-        select: { id: true, hasProlabore: true, empresaZerada: true, companyId: true },
+        select: { id: true, hasProlabore: true, temFolha: true, empresaZerada: true, companyId: true },
       });
       if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
       const legacy = portal.companyId
@@ -3396,7 +3396,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           })
         : null;
       const map = await computeGuideComplianceMap(
-        [{ portalId: portal.id, hasProlabore: Boolean(portal.hasProlabore), empresaZerada: portal.empresaZerada, legacy }],
+        [{ portalId: portal.id, hasProlabore: Boolean(portal.hasProlabore), temFolha: Boolean(portal.temFolha), empresaZerada: portal.empresaZerada, legacy }],
         competencia,
       );
       const compliance = map.get(portal.id) || null;

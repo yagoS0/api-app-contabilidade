@@ -1,3 +1,9 @@
+jest.mock('../../fiscal/serpro/CompanyAutomationService.js', () => ({ lerAutomacaoEmpresa: jest.fn(async () => ({ automationPolicy: { paused: false }, globalAutomationPolicy: { paused: false } })) }));
+jest.mock('../../operacoes/OperationsManualInss.js', () => ({ lerInssManual: jest.fn(async () => ({ applicabilitySource: 'month', changedBy: 'contador-ficticio', changedAt: '2026-11-08T10:00:00Z', applicable: true, status: 'DOCUMENT_AVAILABLE' })) }));
+jest.mock('../../whatsapp/ContatoWhatsappService.js', () => ({ destinatariosDeEnvio: jest.fn() }));
+jest.mock('../../whatsapp/EnvioGuiaWhatsappService.js', () => ({ carregarCanal: jest.fn(), enviarGuiaPorWhatsapp: jest.fn() }));
+jest.mock('../GuideCompanyEmailService.js', () => ({ enviarGuiasExatasDoCiclo: jest.fn() }));
+import { createCicloEnvioGuiasService } from '../CicloEnvioGuiasService.js';
 // O CICLO DE VIDA da guia, que é o que o chip da listagem desenha.
 //
 //                       ┌─→ gerada ─→ enviada        (terminais bons)
@@ -13,7 +19,41 @@
 // canal (`foiEnviadaComLegado`) — e o teste continuou verde o tempo todo, protegendo uma regra que
 // não era mais a do sistema. Hoje a função é EXPORTADA e importada aqui; a classe de problema
 // acabou junto com a cópia.
-import { resolveNode } from "../guideCompliance.js";
+jest.mock('../../../infrastructure/db/prisma.js', () => ({ prisma: {
+  guide: { findMany: jest.fn(async () => []) },
+  companyMonthlyCircular: { findMany: jest.fn(async () => []) },
+  envioGuia: { findMany: jest.fn(async () => []) },
+} }));
+jest.mock('../../accounting/parcelamento/ParcelamentoAcompanhamentoService.js', () => ({
+  listarPendenciasParcelamento: jest.fn(async () => ({ itens: [] })),
+}));
+jest.mock('../../notas/apuracao/v2/FechamentoService.js', () => ({
+  faturamentoEmitPorEmpresa: jest.fn(async () => new Map()),
+}));
+import { prisma } from '../../../infrastructure/db/prisma.js';
+import { computeGuideComplianceMap, resolveNode } from "../guideCompliance.js";
+
+describe('INSS por folha ou pró-labore na projeção real', () => {
+  beforeEach(() => {
+    prisma.guide.findMany.mockResolvedValue([]);
+    prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);
+    prisma.envioGuia.findMany.mockResolvedValue([]);
+  });
+  test.each([[true, false], [false, true], [true, true]])('folha=%s pró-labore=%s exige INSS sem inventar documento', async (temFolha, hasProlabore) => {
+    const result = (await computeGuideComplianceMap([{ portalId: 'sintetica', temFolha, hasProlabore, legacy: { regimeTributario: 'SIMPLES' } }], '2026-10')).get('sintetica');
+    expect(result.inss).toMatchObject({ required: true, ok: false, state: 'missing' });
+    expect(result.inss.guideId).toBeUndefined();
+    expect(result.das).toMatchObject({ required: true, state: 'missing' });
+  });
+  test('dispensa mensal comprovada de INSS permanece distinta da folha cadastral', async () => {
+    prisma.guide.findMany.mockImplementation(async ({ where }) => where.parcelamentoId === null
+      ? [{ id: 'vazio-outubro', portalClientId: 'sintetica', tipo: 'INSS', status: 'VAZIO', competencia: '2026-10', vazioPor: 'contador' }] : []);
+    const result = (await computeGuideComplianceMap([{ portalId: 'sintetica', temFolha: true, hasProlabore: false, legacy: { regimeTributario: 'SIMPLES' } }], '2026-10')).get('sintetica');
+    expect(result.inss).toMatchObject({ required: true, state: 'vazio', ok: true });
+    expect(result.das.state).toBe('missing');
+    expect(prisma.guide.findMany.mock.calls.every(([query]) => query.where.competencia === '2026-10')).toBe(true);
+  });
+});
 
 const exigido = { required: true, ok: false, state: "missing" };
 const naoExigido = { required: false, ok: true, state: "na" };
@@ -171,4 +211,32 @@ describe("falhou por WhatsApp — a segunda fonte do mesmo estado", () => {
     const r = resolveNode(exigido, { guideId: "g1", enviada: true, canalEnvio: "EMAIL", envioStatus: "enviado" }, undefined);
     expect(r.state).toBe("enviada");
   });
+});
+
+describe('ciclo e projeção real compartilham o regime da competência',()=>{
+ async function lerComHistoria(history){
+  const guide={id:'inss-temporal',portalClientId:'temporal',competencia:'2026-10',tipo:'INSS',status:'PROCESSED',valor:'100',hash:'sintetico',pdfBytes:Buffer.from('%PDF-sintetico'),vencimento:new Date('2026-11-20'),emailStatus:'PENDING',paymentStatus:'OPEN'};
+  Object.assign(prisma,{
+   portalClient:{findUnique:jest.fn(async()=>({id:'temporal',companyId:'legacy-temporal',status:'ATIVA',hasProlabore:true,temFolha:false}))},
+   company:{findUnique:jest.fn(async()=>({regimeTributario:'LUCRO_PRESUMIDO'}))},
+   regimeHistorico:{findMany:jest.fn(async()=>history)},feriado:{findMany:jest.fn(async()=>[])},
+   appSetting:{findUnique:jest.fn(async({where})=>where.key==='envio_guias_config:temporal'?{value:{enabled:true,selectionToken:'fixture'}}:where.key==='serpro_runtime_settings'?{value:{rotinas:{simples_envio_guias:{enabled:true,frequency:'DAILY',hour:8}}}}:where.key==='operations_manual_inss:v1:temporal:2026-10'?{value:{fixture:true}}:null)},
+  });
+  prisma.guide.findMany.mockImplementation(async({where})=>where.OR||where.tipo?.in?[guide]:[]);
+  prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);prisma.envioGuia.findMany.mockResolvedValue([]);
+  const email=jest.fn();
+  const service=createCicloEnvioGuiasService({db:prisma,now:()=>new Date('2026-11-08T10:00:00Z'),contatos:async()=>({emails:['fixture@example.test'],telefones:[]}),canal:async()=>({disponivel:false}),email});
+  const dto=await service.ler({portalClientId:'temporal',competencia:'2026-10'});
+  expect(email).not.toHaveBeenCalled();return dto;
+ }
+ test('cadastro atual Presumido não dispensa DAS de competência comprovadamente Simples',async()=>{
+  const dto=await lerComHistoria([{regime:'SIMPLES',vigenciaInicio:new Date('2020-01-01'),vigenciaFim:new Date('2026-10-31')}]);
+  expect(dto.expectation).toMatchObject({state:'KNOWN',requiredCount:2,availableCount:1});
+  expect(dto.expectation.missing).toEqual(expect.arrayContaining([expect.objectContaining({obligationKey:'das',label:'DAS'})]));
+  expect(dto.decision.kind).toBe('WAIT');expect(dto.items.map(g=>g.guideId)).toEqual(['inss-temporal']);
+ });
+ test('história fiscal sobreposta não ganha cobertura conhecida nem envio completo',async()=>{
+  const dto=await lerComHistoria([{regime:'SIMPLES',vigenciaInicio:new Date('2020-01-01')},{regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2026-10-01')}]);
+  expect(dto.expectation.state).toBe('REVIEW');expect(dto.decision.kind).toBe('REVIEW');expect(dto.items[0].reason).toContain('regime tributário');
+ });
 });

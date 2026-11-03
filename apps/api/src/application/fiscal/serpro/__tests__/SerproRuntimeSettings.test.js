@@ -101,3 +101,9 @@ test('agenda coleta Simples é independente e exige seleção explícita matinal
   await updateSerproRuntimeSettings({ rotinas: { simples_coleta_calculo: { enabled: true, day: 8, hour: 7, frequency: 'DAILY_UNTIL_DAY' } } });
   expect((await getSerproRuntimeSettings()).rotinas.simples_coleta_calculo).toMatchObject({ enabled: true, cron: '0 7 1-8 * *' });
 });
+
+test('agenda própria de envio é desligada, diária e independente do ciclo fiscal',async()=>{
+ const before=await getSerproRuntimeSettings();expect(before.rotinas.simples_envio_guias).toMatchObject({enabled:false,frequency:'DAILY',hour:8});
+ await updateSerproRuntimeSettings({rotinas:{simples_envio_guias:{enabled:true,frequency:'DAILY',day:1,hour:8}}});
+ const after=await getSerproRuntimeSettings();expect(after.rotinas.simples_envio_guias.enabled).toBe(true);expect(after.rotinas.simples_coleta_calculo.enabled).toBe(false);expect(after.rotinas.avisos_guias_whatsapp.enabled).toBe(false);
+});

@@ -68,3 +68,11 @@ test('replay não devolve pausa global antiga nem altera escolhas salvas', async
   mockSalvarPausaCicloFiscal({paused:before.paused,version:current.version,reason:'Restaurar cenário'});
  }
 });
+test('mock de envio é independente, inicia desligado e não dispara ao consultar',async()=>{
+ const id='envio-guias-mock-novo';const api=criarCompanyAutomationMock([{companyId:id,razao:'Teste',regimeTributario:'SIMPLES'}]);
+ const first=await api.getCompanyAutomation(id);expect(first.envioGuias.enabled).toBe(false);
+ const saved=await api.saveCompanyAutomation(id,{expectedRevision:first.revision,requestId:'envio-mock-request',envioGuias:{enabled:true}});
+ expect(saved.envioGuias.enabled).toBe(true);expect(saved.lembretes.enabled).toBe(false);
+ const delivery=await api.getCompanyGuideDelivery(id,'2026-10');expect(delivery.status).toBe('DISABLED');expect(delivery.items).toEqual([]);
+ expect(delivery.warnings[0].message).toContain('nenhum envio real');
+});

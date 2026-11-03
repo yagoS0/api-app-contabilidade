@@ -20,10 +20,11 @@ export function criarCompanyAutomationMock(companies) {
     const automationPolicy = automationPolicies.get(companyId) || { paused: false, version: 0, reason: '', updatedAt: null, updatedBy: null, resumedAt: null };
     const globalAutomationPolicy = mockLerPausaCicloFiscal().policy;
     const applicability = aplicabilidadeRotinasMock(companies.find(c => c.companyId === companyId));
-    const rotinas = data.rotinas.filter(r => !['avisos_guias_whatsapp', 'simples_coleta_calculo'].includes(r.key)).map(r => ({ ...r, label: r.key === 'parcelamento' ? 'Parcelamento do Simples' : r.label, applicable: applicability.applicableKeys.includes(r.key), enabled: company.rotinas[r.key] === true, agenda: data.agenda[r.key] }));
+    const rotinas = data.rotinas.filter(r => !['avisos_guias_whatsapp', 'simples_coleta_calculo', 'simples_envio_guias'].includes(r.key)).map(r => ({ ...r, label: r.key === 'parcelamento' ? 'Parcelamento do Simples' : r.label, applicable: applicability.applicableKeys.includes(r.key), enabled: company.rotinas[r.key] === true, agenda: data.agenda[r.key] }));
+    const envioGuias = { ...(company.envioGuias || { enabled: false }), applicableCurrentRegime: applicability.regime === 'SIMPLES', configurationValid: true };
     const cicloSimples = company.cicloSimples || { enabled: false, fontes: [] };
     const lembretes = { enabled: company.rotinas.avisos_guias_whatsapp === true, agenda: data.agenda.avisos_guias_whatsapp };
-    return structuredClone({ companyId, revision: JSON.stringify([rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples]), rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples,
+    return structuredClone({ companyId, revision: JSON.stringify([rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias]), rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias,
       effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE', lembretes, ...applicability });
   }
   async function getCompanySimplesCycle(companyId, competencia) {
@@ -31,7 +32,12 @@ export function criarCompanyAutomationMock(companies) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw fail('Competência inválida.', 422);
     return structuredClone(ciclos.get(`${companyId}:${competencia}`) || { portalClientId: companyId, competencia, revision: 0, status: 'NAO_INICIADO', reason: null, coleta: null, calculo: null, updatedAt: null, canRevise: false });
   }
-  return { getCompanyAutomation, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
+  async function getCompanyGuideDelivery(companyId, competencia) {
+    const data = await getCompanyAutomation(companyId);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw fail('Competência inválida.', 422);
+    return { ok: true, portalClientId: companyId, competencia, revision: 0, status: 'DISABLED', enabled: false, paused: data.automationPolicy.paused || data.globalAutomationPolicy.paused, cutoffDate: null, expectation: { state: 'REVIEW', missing: [], requiredCount: 0, availableCount: 0 }, items: [], warnings: [{ id: 'demo', message: 'Demonstração: nenhum envio real é realizado.' }], lastAttempt: null };
+  }
+  return { getCompanyAutomation, getCompanyGuideDelivery, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
     const current = await getCompanySimplesCycle(companyId, competencia);
     if (input.expectedRevision !== current.revision || !current.canRevise) throw fail('Confira a tentativa antes de registrar nova revisão.');
     if (typeof input.motivo !== 'string' || input.motivo.trim().length < 3 || input.motivo.trim().length > 500) throw fail('Informe o motivo da revisão.', 422);
@@ -49,6 +55,7 @@ export function criarCompanyAutomationMock(companies) {
     }
     const current = await getCompanyAutomation(companyId);
     if (current.revision !== input.expectedRevision) throw fail('A configuração mudou em outra sessão. Recarregue antes de salvar.');
+    if (input.envioGuias !== undefined && (!input.envioGuias || Array.isArray(input.envioGuias) || typeof input.envioGuias.enabled !== 'boolean' || Object.keys(input.envioGuias).some(k => k !== 'enabled') || input.envioGuias.enabled && !current.envioGuias.enabled && current.regime !== 'SIMPLES')) throw fail('Revise a seleção do envio automático.', 422);
     if (input.cicloSimples !== undefined && (!input.cicloSimples || Array.isArray(input.cicloSimples) || typeof input.cicloSimples.enabled !== 'boolean' || !Array.isArray(input.cicloSimples.fontes)
       || input.cicloSimples.fontes.some(f => !['NFE', 'NFSE'].includes(f)) || new Set(input.cicloSimples.fontes).size !== input.cicloSimples.fontes.length
       || Object.keys(input.cicloSimples).some(k => !['enabled', 'fontes'].includes(k)) || (input.cicloSimples.enabled && (!input.cicloSimples.fontes.length || current.regime !== 'SIMPLES')))) throw fail('Revise as fontes e o regime do ciclo do Simples.', 422);
@@ -67,6 +74,10 @@ export function criarCompanyAutomationMock(companies) {
       mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, rotinas: { ...c.rotinas, avisos_guias_whatsapp: input.lembretes.enabled } } : c) });
     }
     if (input.serproPolicy) policies.set(companyId, { paused: input.serproPolicy.paused, reason: input.serproPolicy.reason.trim(), updatedAt: new Date().toISOString(), updatedBy: 'mock-user' });
+    if (input.envioGuias !== undefined) {
+      const data = mockCarregarRotinas(companies);
+      mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, envioGuias: structuredClone(input.envioGuias) } : c) });
+    }
     if (input.cicloSimples !== undefined) {
       const data = mockCarregarRotinas(companies);
       mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, cicloSimples: structuredClone(input.cicloSimples) } : c) });

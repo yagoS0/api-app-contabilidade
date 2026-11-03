@@ -1,3 +1,4 @@
+import { lerCicloEnvioGuias } from '../../application/guides/CicloEnvioGuiasService.js';
 import { lerCicloSimples, revisarCicloSimples } from '../../application/notas/apuracao/v2/CicloSimplesService.js';
 import { Router } from 'express';
 import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../../application/fiscal/serpro/CompanyAutomationService.js';
@@ -22,5 +23,6 @@ export function createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess
   const ciclo = '/companies/:companyId/operacoes/:competencia/ciclo-simples';
   router.get(ciclo, requireFirmCompanyAccess(), run(req => lerCicloSimples({ portalClientId: req.params.companyId, competencia: req.params.competencia }, { db: prisma })));
   router.post(`${ciclo}/revisao`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => revisarCicloSimples({ portalClientId: req.params.companyId, competencia: req.params.competencia, expectedRevision: req.body?.expectedRevision, motivo: req.body?.motivo, userId: req.auth.user.id }, { db: prisma })));
+  router.get('/companies/:companyId/operacoes/:competencia/envio-guias', requireFirmCompanyAccess(), run(req => lerCicloEnvioGuias({ portalClientId: req.params.companyId, competencia: req.params.competencia }, { db: prisma })));
   return router;
 }

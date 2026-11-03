@@ -1,3 +1,5 @@
+jest.mock('../../../application/guides/CicloEnvioGuiasService.js', () => ({ lerCicloEnvioGuias: jest.fn() }));
+import { lerCicloEnvioGuias } from '../../../application/guides/CicloEnvioGuiasService.js';
 jest.mock('../../../application/notas/apuracao/v2/CicloSimplesService.js', () => ({ lerCicloSimples: jest.fn(), revisarCicloSimples: jest.fn() }));
 import { lerCicloSimples, revisarCicloSimples } from '../../../application/notas/apuracao/v2/CicloSimplesService.js';
 jest.mock('../../../infrastructure/db/prisma.js', () => ({ prisma: { companyFirmAccess: { findUnique: jest.fn() } } }));
@@ -58,4 +60,17 @@ test('ciclo não concede revisão a usuário sem vínculo atual', async () => {
  prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
  expect((await request(mount()).post('/companies/a/operacoes/2026-10/ciclo-simples/revisao').send({ expectedRevision: 1, motivo: 'Conferido' })).status).toBe(403);
  expect(revisarCicloSimples).not.toHaveBeenCalled();
+});
+
+test('envio automático tem apenas leitura protegida por empresa, sem executar transporte', async () => {
+ lerCicloEnvioGuias.mockResolvedValue({ status: 'DISABLED', items: [], warnings: [] });
+ const app = mount();
+ const response = await request(app).get('/companies/a/operacoes/2026-10/envio-guias');
+ expect(response.status).toBe(200); expect(response.headers['cache-control']).toBe('no-store');
+ expect(lerCicloEnvioGuias).toHaveBeenCalledWith({ portalClientId: 'a', competencia: '2026-10' }, { db: prisma });
+ expect((await request(app).post('/companies/a/operacoes/2026-10/envio-guias').send({ enabled: true })).status).toBe(404);
+ expect(salvarAutomacaoEmpresa).not.toHaveBeenCalled();
+ prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+ expect((await request(app).get('/companies/b/operacoes/2026-10/envio-guias')).status).toBe(403);
+ expect(lerCicloEnvioGuias).toHaveBeenCalledTimes(1);
 });

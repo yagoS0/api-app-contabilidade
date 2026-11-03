@@ -100,6 +100,7 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
   let policy;
   try { policy = await lerAutomacaoCicloFiscal(); } catch { policy = null; }
   const workers = {
+    simples_envio_guias: "SIMPLES_ENVIO_GUIAS_WORKER_ENABLED",
     simples_coleta_calculo: "SIMPLES_COLETA_CALCULO_WORKER_ENABLED",
     das: "SERPRO_PGDASD_WORKER_ENABLED", extrato: "SERPRO_PGDASD_WORKER_ENABLED",
     presumido: "SERPRO_PGDASD_WORKER_ENABLED", parcelamento: "SERPRO_PGDASD_WORKER_ENABLED",
@@ -119,7 +120,7 @@ export async function getRoutineExecutionStatus(settings, now = new Date()) {
     const schedule = describeSchedule(config, now);
     const integrationEnabled = routine !== "parcelamento" || process.env.INTEGRACAO_SERPRO_PARCELAMENTO === "1";
     const enabled = integrationEnabled && workerEnabled && config.enabled === true
-      && (avisoWhatsapp || routine === "conferencia" || routine === "simples_coleta_calculo" || settings.enabled);
+      && (avisoWhatsapp || routine === "conferencia" || routine === "simples_coleta_calculo" || routine === "simples_envio_guias" || settings.enabled);
     const heartbeatAt = heartbeat?.value?.observedAt || null;
     const alive = heartbeatAt && now - new Date(heartbeatAt) < 180000;
     const retryExhausted = latest?.value?.status === "FAILED" && Number(latest.value.attempts) >= MAX_ATTEMPTS;

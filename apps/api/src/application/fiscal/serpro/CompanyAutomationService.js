@@ -29,6 +29,11 @@ export async function lerAutomacaoEmpresa(db, companyId) {
     const valid = r && integer(r.day, 1, 31) && integer(r.hour, 0, 23) && (r.frequency == null || r.frequency === 'MONTHLY' || key === 'pagamento' && r.frequency === 'DAILY');
     return [key, r ? { enabled: r.enabled === true && Boolean(valid), day: valid ? Number(r.day) : null, hour: valid ? Number(r.hour) : null, frequency: r.frequency ?? 'MONTHLY' } : null];
   }));
+  const envioRow = await db.appSetting.findUnique({ where: { key: `envio_guias_config:${companyId}` } });
+  const envioSaved = envioRow?.value;
+  const envioGuias = { enabled: envioSaved?.enabled === true, applicableCurrentRegime: applicability.regime === 'SIMPLES',
+    configurationValid: envioSaved == null || typeof envioSaved.enabled === 'boolean',
+    blockers: applicability.regime === 'SIMPLES' ? [] : ['Confira o regime antes de habilitar novos envios automáticos.'] };
   const cicloRow = await db.appSetting.findUnique({ where: { key: `ciclo_simples_config:${companyId}` } });
   const cicloSaved = cicloRow?.value;
   const fontesValidas = Array.isArray(cicloSaved?.fontes) && cicloSaved.fontes.length > 0 && cicloSaved.fontes.every(f => ["NFE", "NFSE"].includes(f)) && new Set(cicloSaved.fontes).size === cicloSaved.fontes.length;
@@ -42,14 +47,15 @@ export async function lerAutomacaoEmpresa(db, companyId) {
   const validReminder = savedReminder && integer(savedReminder.day, 1, 31) && integer(savedReminder.hour, 0, 23) && (savedReminder.frequency === undefined || savedReminder.frequency === 'DAILY');
   const lembretes = { enabled: rows.some(r => r.rotina === 'avisos_guias_whatsapp' && r.enabled === true),
     agenda: { enabled: savedReminder?.enabled === true && Boolean(validReminder), hour: validReminder ? Number(savedReminder.hour) : null, frequency: 'DAILY', timeZone: 'America/Sao_Paulo' } };
-  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes, automationPolicy, globalAutomationPolicy, cicloSaved ?? null])).digest('hex');
+  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes, automationPolicy, globalAutomationPolicy, cicloSaved ?? null, envioSaved ?? null])).digest('hex');
   return { companyId, revision, serproPolicy, automationPolicy, globalAutomationPolicy,
     effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE',
-    lembretes, cicloSimples, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
+    lembretes, cicloSimples, envioGuias, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
 }
 
 export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isAdmin = false } = {}) {
-  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes, automationPolicy, cicloSimples } = input || {};
+  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes, automationPolicy, cicloSimples, envioGuias } = input || {};
+  const validEnvio = envioGuias === undefined || envioGuias && !Array.isArray(envioGuias) && typeof envioGuias === 'object' && typeof envioGuias.enabled === 'boolean' && Object.keys(envioGuias).every(k => k === 'enabled');
   const validCiclo = cicloSimples === undefined || cicloSimples && !Array.isArray(cicloSimples) && typeof cicloSimples === "object" && typeof cicloSimples.enabled === "boolean"
     && Object.keys(cicloSimples).every(k => ["enabled", "fontes"].includes(k)) && Array.isArray(cicloSimples.fontes)
     && cicloSimples.fontes.every(f => ["NFE", "NFSE"].includes(f)) && new Set(cicloSimples.fontes).size === cicloSimples.fontes.length
@@ -67,14 +73,14 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     && automationPolicy.reason.trim().length > 0 && automationPolicy.reason.trim().length <= 300
     && Object.keys(automationPolicy).every(k => ['paused', 'reason'].includes(k));
   if (!/^[a-f0-9]{64}$/.test(expectedRevision || '') || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId || '')
-    || !validCiclo || !validRoutines || !validPolicy || !validReminders || !validAutomationPolicy || rotinas === undefined && serproPolicy === undefined && lembretes === undefined && automationPolicy === undefined && cicloSimples === undefined) {
+    || !validEnvio || !validCiclo || !validRoutines || !validPolicy || !validReminders || !validAutomationPolicy || rotinas === undefined && serproPolicy === undefined && lembretes === undefined && automationPolicy === undefined && cicloSimples === undefined && envioGuias === undefined) {
     throw fail('INVALID_AUTOMATION', 'Revise as rotinas selecionadas e atualize a configuração antes de salvar.', 422);
   }
   const key = `company_automation_request:${userId}:${requestId}`;
   const policyInput = serproPolicy === undefined ? null : { paused: serproPolicy.paused, reason: serproPolicy.reason.trim() };
   const automationInput = automationPolicy === undefined ? null : { paused: automationPolicy.paused, reason: automationPolicy.reason.trim() };
   const cicloInput = cicloSimples === undefined ? null : { enabled: cicloSimples.enabled, fontes: [...cicloSimples.fontes].sort() };
-  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null, automationInput, cicloInput])).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null, automationInput, cicloInput, envioGuias ?? null])).digest('hex');
   return db.$transaction(async tx => {
     await bloquearPoliticaEmpresa(tx, companyId);
     if (!isAdmin) {
@@ -98,6 +104,14 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
       if (cicloInput.enabled && (!before.cicloSimples.enabled || !mesmasFontes)
         || !cicloInput.enabled && cicloInput.fontes.some(f => !before.cicloSimples.fontes.includes(f))) {
         throw fail('ROUTINE_NOT_APPLICABLE', 'O regime atual não permite nova ativação ou alteração de fontes do Simples. A seleção anterior pode ser desativada; a execução histórica depende da competência.', 422);
+      }
+    }
+    if (envioGuias !== undefined) {
+      if (envioGuias.enabled && before.regime !== 'SIMPLES' && !before.envioGuias.enabled) throw fail('ROUTINE_NOT_APPLICABLE', 'Confira o regime antes de habilitar envios automáticos.', 422);
+      if (envioGuias.enabled !== before.envioGuias.enabled) {
+        const configKey = `envio_guias_config:${companyId}`;
+        const value = { enabled: envioGuias.enabled, selectionToken: randomUUID(), updatedAt: new Date().toISOString(), updatedBy: String(userId) };
+        await tx.appSetting.upsert({ where: { key: configKey }, create: { key: configKey, value }, update: { value } });
       }
     }
     if (cicloInput) {
@@ -127,7 +141,7 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
       await tx.appSetting.upsert({ where: { key: policyKey }, create: { key: policyKey, value }, update: { value } });
     }
     const result = { ...await lerAutomacaoEmpresa(tx, companyId), savedAt: new Date().toISOString() };
-    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeLembretes: before.lembretes, beforeCicloSimples: before.cicloSimples, beforeSerproPolicy: before.serproPolicy, beforeAutomationPolicy: before.automationPolicy, result, eventId: randomUUID() } } });
+    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeEnvioGuias: before.envioGuias, beforeLembretes: before.lembretes, beforeCicloSimples: before.cicloSimples, beforeSerproPolicy: before.serproPolicy, beforeAutomationPolicy: before.automationPolicy, result, eventId: randomUUID() } } });
     return result;
   }, { isolationLevel: 'Serializable' });
 }

@@ -1,3 +1,4 @@
+import { CompanyGuideDelivery } from './CompanyGuideDelivery';
 import { Button } from '../../components/ui/Button';
 import { useEffect, useState } from 'react';
 import { InternalLink } from '../../components/ui/InternalLink';
@@ -43,6 +44,7 @@ export function OperationsGuides({ api, rows, competencia, stage, onManualInss }
         })}</tbody></table></div>
         {!documents.length && <p>{stage === 'pago' ? 'Nenhuma guia paga identificada neste retorno.' : 'Nenhum documento identificado nesta competência.'} Isso não dispensa obrigações.</p>}
         {result.missing.length > 0 && <p>Cobertura sem documento reconciliado por identidade: {result.missing.map(item => item.label || item.key).join(', ')}. Confira documentos faltantes, vigência e eventual débito automático em Guias.</p>}</>}
+        {api?.getCompanyGuideDelivery && <CompanyGuideDelivery api={api} companyId={company.companyId} competencia={competencia} />}
         <InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(company.companyId, 'guides')}?competencia=${encodeURIComponent(competencia)}`}>Abrir Guias — conferir canais e reenvio</InternalLink>
       </section>;
     })}

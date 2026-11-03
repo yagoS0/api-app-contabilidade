@@ -361,13 +361,15 @@ export async function enviarGuiaPorWhatsapp({
   carregarPdf = carregarPdfDaGuia,
   log = logPadrao,
   reenviar = false,
+  automacao = null,
 }) {
+  if (automacao) await automacao.beforeDispatch({ stage: "prepare", guide, contato });
   try { await conferirParcelasParaEnvio([guide]); } catch (err) {
     return { ok: false, estado: "bloqueado", enviada: false, guideId: guide.id, motivo: err.code, mensagem: err.message, podeTentarDeNovo: false };
   }
   const { materializou } = await materializarEnvioDeEmailLegado(guide);
 
-  const { envio, jaEnviado, emAndamento } = await registrarEnvio({
+  const { envio, jaEnviado, emAndamento } = automacao?.reservation || await registrarEnvio({
     guideId: guide.id,
     canal: CANAL.WHATSAPP,
     destino: contato.telefoneE164,
@@ -386,7 +388,7 @@ export async function enviarGuiaPorWhatsapp({
     mensagem: "Existe uma tentativa sem desfecho confirmado. Confira o histórico antes de qualquer novo envio.", podeTentarDeNovo: false,
   };
 
-  const { reservado, tentativaId } = await reservarSemEntregaExterna(prisma, [guide], tx => marcarEnviando(envio.id, tx), reenviar === true);
+  const { reservado, tentativaId } = automacao?.reservation || await reservarSemEntregaExterna(prisma, [guide], tx => marcarEnviando(envio.id, tx), reenviar === true);
   if (!reservado) {
     // Outra requisição já está mandando ESTA guia. Recusar aqui é o que impede a segunda cópia de
     // chegar ao cliente — e é recusa nomeada, não erro genérico.
@@ -408,6 +410,7 @@ export async function enviarGuiaPorWhatsapp({
   let aceitoWamid = null;
   let vinculoReservado = null, conversaReservada = null;
   const conferirDestinatario = async () => {
+    if (automacao) await automacao.beforeDispatch({ stage: "dispatch", guide, contato });
     await conferirParcelasParaEnvio([guide]);
     if (!identidadeWhatsappV2Ativa()) return;
     const atual = await prisma.contatoWhatsapp.findFirst({ where: { id: contato.id, ativo: true, portalClientId: guide.portalClientId, telefoneE164: contato.telefoneE164 } });

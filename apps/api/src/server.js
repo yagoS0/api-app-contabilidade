@@ -1,3 +1,4 @@
+import { runSimplesEnvioGuiasWorkerLoop } from './workers/simplesEnvioGuiasWorker.js';
 import { runSimplesColetaCalculoWorkerLoop } from "./workers/simplesColetaCalculoWorker.js";
 import { encerrarPoolEmissaoLocks } from './infrastructure/db/prismaEmissaoLocks.js';
 import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
@@ -257,4 +258,8 @@ if (CONFERENCIA_ADN_WORKER_ENABLED) {
 // Opt-in explicito: publicar nao habilita coleta nem calculo.
 if (process.env.SIMPLES_COLETA_CALCULO_WORKER_ENABLED === "1") {
   runSimplesColetaCalculoWorkerLoop().catch(err => log.error({ error: err.message }, "Ciclo do Simples interrompido"));
+}
+
+if (process.env.SIMPLES_ENVIO_GUIAS_WORKER_ENABLED === "1") {
+  runSimplesEnvioGuiasWorkerLoop().catch(err => log.error({ error: err.message }, "Envio automático de guias interrompido"));
 }

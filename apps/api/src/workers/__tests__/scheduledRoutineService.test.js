@@ -71,3 +71,12 @@ test.each([{ parcelasErro: 1 }, { extratoErro: 1 }, { errors: 2 }, { naoConferiv
   await finishScheduledRun(claim, result, null, { db, now });
   expect(db.rows.get(claim.key).value.status).toBe("FAILED");
 });
+
+test('envio diário reserva uma vez e pausa/retomada não recuperam slots anteriores',async()=>{
+ const db=memoryDb(),daily={enabled:true,frequency:'DAILY',day:1,hour:7};
+ const claim=await claimScheduledRun({routine:'simples_envio_guias',config:daily,now,db});expect(claim).toBeTruthy();
+ await finishScheduledRun(claim,null,new Error('transporte incerto'),{db,now});
+ expect(await claimScheduledRun({routine:'simples_envio_guias',config:daily,now:new Date(now.getTime()+60000),db})).toBeNull();
+ expect(await claimScheduledRun({routine:'simples_envio_guias',config:{...daily,enabled:false},now:new Date('2026-09-10T10:00:00Z'),db})).toBeNull();
+ expect(await claimScheduledRun({routine:'simples_envio_guias',config:daily,now:new Date('2026-09-10T12:00:00Z'),db})).toBeNull();
+});

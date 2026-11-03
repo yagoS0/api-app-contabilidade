@@ -30,6 +30,7 @@ const DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => {
 });
 
 const ROTINA_HINT = {
+  simples_envio_guias: "Envio das guias válidas completas ou parcial no limite do dia 13 útil anterior. Seleção independente na Automação da empresa. Erros exigem conferência.",
   simples_coleta_calculo: "Coleta do dia 1 ao dia 8; cálculo após a coleta final completa, aguardando conferência do contador. Seleção e fontes em Automação da empresa.",
   das: "Guia do DAS (Simples Nacional)",
   inss: "Guia do INSS (DCTFWeb)",
@@ -196,10 +197,10 @@ export function RotinasPage({
       for (const r of rotinas) {
         const cfg = agenda[r.key] || {};
         payloadAgenda[r.key] = {
-          enabled: r.key === "simples_coleta_calculo" ? cfg.enabled === true : cfg.enabled !== false,
+          enabled: ["simples_coleta_calculo", "simples_envio_guias"].includes(r.key) ? cfg.enabled === true : cfg.enabled !== false,
           day: r.key === "simples_coleta_calculo" ? 8 : Number(cfg.day) || 5,
           hour: cfg.hour == null || cfg.hour === "" ? 7 : Number(cfg.hour),
-          frequency: r.key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
+          frequency: r.key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : r.key === "simples_envio_guias" || cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
         };
       }
       const out = await api.saveRotinas({
@@ -266,7 +267,7 @@ export function RotinasPage({
   // Quantas empresas fazem cada rotina — cabeçalho mostra o alcance de cada uma.
   const contagem = useMemo(() => {
     const out = {};
-    for (const r of rotinas) out[r.key] = empresas.filter((e) => r.key === "simples_coleta_calculo" ? e.cicloSimples?.enabled === true : r.key === "avisos_guias_whatsapp" ? (e.lembretes?.enabled ?? e.rotinas?.avisos_guias_whatsapp) === true : e.rotinas?.[r.key]).length;
+    for (const r of rotinas) out[r.key] = empresas.filter((e) => r.key === "simples_envio_guias" ? e.envioGuias?.enabled === true : r.key === "simples_coleta_calculo" ? e.cicloSimples?.enabled === true : r.key === "avisos_guias_whatsapp" ? (e.lembretes?.enabled ?? e.rotinas?.avisos_guias_whatsapp) === true : e.rotinas?.[r.key]).length;
     return out;
   }, [rotinas, empresas]);
 
@@ -346,7 +347,7 @@ export function RotinasPage({
                   <tbody>
                     {rotinas.map((r) => {
                       const cfg = agenda[r.key] || {};
-                      const ligada = r.key === "simples_coleta_calculo" ? cfg.enabled === true : cfg.enabled !== false;
+                      const ligada = ["simples_coleta_calculo", "simples_envio_guias"].includes(r.key) ? cfg.enabled === true : cfg.enabled !== false;
                       return (
                         <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: ligada ? 1 : 0.55 }}>
                           <td style={{ padding: "6px", color: "var(--text)" }}>
@@ -371,7 +372,7 @@ export function RotinasPage({
                             />
                           </td>
                           <td style={td}>
-                            {r.key === "simples_coleta_calculo" ? <span>Dias 1 a 8</span> : r.key === "avisos_guias_whatsapp" ? <span>Diariamente</span> : <select
+                            {r.key === "simples_coleta_calculo" ? <span>Dias 1 a 8</span> : ["avisos_guias_whatsapp", "simples_envio_guias"].includes(r.key) ? <span>Diariamente</span> : <select
                               value={String(cfg.day ?? 5)}
                               disabled={!ligada || cfg.frequency === "DAILY"}
                               aria-label={`Dia de ${r.label}`}

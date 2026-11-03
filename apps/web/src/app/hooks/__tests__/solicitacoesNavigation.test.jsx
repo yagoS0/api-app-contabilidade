@@ -84,6 +84,17 @@ test('App real monta a central com API, normaliza barra, mantém histórico e re
 });
 
 test('entrada sem sessão conserva filtros no login e login retorna à central', async () => {
+  const chamadasGlobais = [];
+  const originalFila = api.getPendenciasSuporte;
+  // O contador usa o mesmo método de lista no mock. Registre somente chamadas
+  // originadas sincronicamente por esse consumidor, sem desativá-lo ou trocar seus dados.
+  const filaGlobal = jest.spyOn(api, 'getPendenciasSuporte').mockImplementation(function (...args) {
+    const inicio = leitura.mock.calls.length;
+    const resultado = originalFila.apply(this, args);
+    chamadasGlobais.push(...leitura.mock.calls.slice(inicio));
+    return resultado;
+  });
+  try {
   localStorage.removeItem('portal_firm_access_token');
   montar('/solicitacoes?busca=A%C3%A7%C3%A3o&responsavelId=null');
   await screen.findByRole('button', { name: 'Entrar' });
@@ -94,7 +105,20 @@ test('entrada sem sessão conserva filtros no login e login retorna à central',
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'fixture-local' } });
   fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
   await screen.findByText('Pedido integrado', {}, { timeout: 10000 });
-  expect(leitura).toHaveBeenLastCalledWith({ limite: 100, situacao: 'ABERTAS', busca: 'Ação', responsavelId: null });
+  await waitFor(() => expect(filaGlobal).toHaveBeenCalled(), { timeout: 10000 });
+  await act(async () => { await Promise.all(filaGlobal.mock.results.filter(r => r.type === 'return').map(r => r.value)); });
+  expect(chamadasGlobais.length).toBeGreaterThan(0);
+  for (const call of chamadasGlobais) expect(call).toEqual([{ limite: 100, situacao: 'ABERTAS', cursor: null }]);
+  const chamadasDaCentral = leitura.mock.calls.filter(call => !chamadasGlobais.includes(call));
+  expect(chamadasDaCentral.length).toBeGreaterThan(0);
+  const esperado = { limite: 100, situacao: 'ABERTAS', busca: 'Ação', responsavelId: null };
+  expect(chamadasDaCentral.at(-1)).toEqual([esperado]);
+  for (const call of chamadasDaCentral) expect(call).toEqual([esperado]);
+  expect(screen.getByLabelText('rota integrada').textContent).toBe('/solicitacoes?busca=A%C3%A7%C3%A3o&responsavelId=null');
+  expect(screen.getByLabelText('Buscar empresa ou assunto')).toHaveValue('Ação');
+  expect(screen.getByLabelText('Responsável')).toHaveValue('null');
+  expect(screen.getByRole('region', { name: 'Lista de solicitações' })).toHaveTextContent('Pedido integrado');
+  } finally { filaGlobal.mockRestore(); }
 });
 
 test('entrada direta tem Voltar seguro para o workspace sem histórico externo', async () => {

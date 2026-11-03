@@ -18,6 +18,7 @@ import { aplicarRegimeRotinas } from './CompanyRoutineApplicability.js';
  */
 
 export const ROTINA_LABELS = {
+  simples_envio_guias: "Envio automático de guias",
   simples_coleta_calculo: "Coleta e cálculo do Simples",
   das: "DAS",
   inss: "INSS",
@@ -87,7 +88,7 @@ export async function listCompanyRotinas() {
     select: { id: true, razao: true, cnpj: true, status: true, companyId: true },
     orderBy: { razao: "asc" },
   });
-  const configs = await prisma.appSetting.findMany({ where: { key: { in: portalRows.map(p => `ciclo_simples_config:${p.id}`) } }, select: { key: true, value: true } });
+  const configs = await prisma.appSetting.findMany({ where: { key: { in: portalRows.flatMap(p => [`ciclo_simples_config:${p.id}`, `envio_guias_config:${p.id}`]) } }, select: { key: true, value: true } });
   const configMap = new Map(configs.map(r => [r.key, r.value]));
   const legacyIds = portalRows.map((p) => p.companyId).filter(Boolean);
   const legacy = legacyIds.length > 0
@@ -123,6 +124,7 @@ export async function listCompanyRotinas() {
       regime: normalizaRegime(p.companyId ? legacyMap.get(p.companyId) : null) || null,
       rotinas,
       cicloSimples,
+      envioGuias: { enabled: configMap.get(`envio_guias_config:${p.id}`)?.enabled === true },
       lembretes: { enabled: marcadas.avisos_guias_whatsapp === true },
     };
   });

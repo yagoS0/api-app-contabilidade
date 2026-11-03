@@ -75,10 +75,10 @@ function deriveMonthlyCron(day, hour) {
 // separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
 export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
 
-export const AGENDA_KEYS = [...ROTINA_KEYS, "avisos_guias_whatsapp", "simples_coleta_calculo"];
+export const AGENDA_KEYS = [...ROTINA_KEYS, "avisos_guias_whatsapp", "simples_coleta_calculo", "simples_envio_guias"];
 
 // Sugestões de preenchimento não autorizam execução nem herdam a agenda global.
-const SUGESTOES_POR_ROTINA = { simples_coleta_calculo: { day: 8, hour: 7 }, avisos_guias_whatsapp: { day: 1, hour: 8 }, conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
+const SUGESTOES_POR_ROTINA = { simples_envio_guias: { day: 1, hour: 8 }, simples_coleta_calculo: { day: 8, hour: 7 }, avisos_guias_whatsapp: { day: 1, hour: 8 }, conferencia: { day: 1, hour: 6 }, pagamento: { day: 10, hour: 8 } };
 const objeto = value => value != null && typeof value === "object" && !Array.isArray(value);
 function inteiroExplicito(value, min, max) {
   if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) return null;
@@ -87,7 +87,7 @@ function inteiroExplicito(value, min, max) {
 }
 function frequenciaValida(key, value) {
   if (key === "simples_coleta_calculo") return value === "DAILY_UNTIL_DAY";
-  if (key === "avisos_guias_whatsapp") return value === undefined || value === "DAILY";
+  if (["avisos_guias_whatsapp", "simples_envio_guias"].includes(key)) return value === undefined || value === "DAILY";
   return value === undefined || value === "MONTHLY" || (key === "pagamento" && value === "DAILY");
 }
 function resolveRotinas(stored) {
@@ -98,7 +98,7 @@ function resolveRotinas(stored) {
     const diaSalvo = inteiroExplicito(salva.day, key === "simples_coleta_calculo" ? 8 : 1, key === "simples_coleta_calculo" ? 8 : 31);
     const horaSalva = inteiroExplicito(salva.hour, 0, key === "simples_coleta_calculo" ? 11 : 23);
     const day = diaSalvo ?? sugestao.day, hour = horaSalva ?? sugestao.hour;
-    const frequency = key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : key === "avisos_guias_whatsapp" || (key === "pagamento" && salva.frequency === "DAILY") ? "DAILY" : "MONTHLY";
+    const frequency = key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : ["avisos_guias_whatsapp", "simples_envio_guias"].includes(key) || (key === "pagamento" && salva.frequency === "DAILY") ? "DAILY" : "MONTHLY";
     return [key, { enabled: salva.enabled === true && diaSalvo !== null && horaSalva !== null && frequenciaValida(key, salva.frequency),
       day, hour, frequency, timeZone: "America/Sao_Paulo",
       cron: frequency === "DAILY_UNTIL_DAY" ? `0 ${hour} 1-8 * *` : frequency === "DAILY" ? `0 ${hour} * * *` : deriveMonthlyCron(day, hour) }];

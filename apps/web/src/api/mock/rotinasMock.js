@@ -1,5 +1,5 @@
-const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp", "simples_coleta_calculo"];
-const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp", "Coleta e cálculo do Simples"];
+const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp", "simples_coleta_calculo", "simples_envio_guias"];
+const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp", "Coleta e cálculo do Simples", "Envio automático de guias"];
 let savedCompanies = null;
 let pausa = { paused: false, version: 0, legacy: true, reason: null, actor: null, changedAt: null, resumedAt: null };
 export function mockLerPausaCicloFiscal() { return { ok: true, policy: structuredClone(pausa) }; }
@@ -14,6 +14,7 @@ export function mockSalvarPausaCicloFiscal(input) {
 }
 let agenda = Object.fromEntries(keys.map(key => [key, { enabled: key !== "avisos_guias_whatsapp", day: key === "conferencia" ? 1 : 10,
   hour: ["pagamento", "avisos_guias_whatsapp"].includes(key) ? 8 : 7, frequency: key === "avisos_guias_whatsapp" ? "DAILY" : "MONTHLY", timeZone: "America/Sao_Paulo" }]));
+agenda.simples_envio_guias = { enabled: false, frequency: 'DAILY', day: 1, hour: 8, timeZone: 'America/Sao_Paulo' };
 agenda.simples_coleta_calculo = { enabled: false, frequency: 'DAILY_UNTIL_DAY', day: 8, hour: 7, timeZone: 'America/Sao_Paulo' };
 
 export function mockExecucoesRotinas() {
@@ -46,11 +47,14 @@ export function mockCarregarRotinas(companies) {
       const regime = c.regimeTributario || c.tipoTributario || c.legacyCompany?.regimeTributario || null;
       return { companyId: c.companyId, razao: c.razao, cnpj: c.cnpj,
       status: "ATIVA", regime,
+      envioGuias: savedCompanies?.find(e => e.companyId === c.companyId)?.envioGuias || { enabled: false },
       cicloSimples: savedCompanies?.find(e => e.companyId === c.companyId)?.cicloSimples || { enabled: false, fontes: [] },
       rotinas: savedCompanies?.find(e => e.companyId === c.companyId)?.rotinas || { das: regime === 'SIMPLES', inss: true, extrato: regime === 'SIMPLES', presumido: regime === 'LUCRO_PRESUMIDO', parcelamento: regime === 'SIMPLES', pagamento: true, conferencia: true } }; }) };
 }
 
 export function mockSalvarRotinas(input) {
+  const envio = input.agenda?.simples_envio_guias;
+  if (envio && (typeof envio.enabled !== 'boolean' || envio.frequency !== 'DAILY' || !Number.isInteger(envio.hour) || envio.hour < 0 || envio.hour > 23)) throw new Error('Envio de guias exige agenda diária válida.');
   const ciclo = input.agenda?.simples_coleta_calculo;
   if (ciclo && (typeof ciclo.enabled !== 'boolean' || ciclo.frequency !== 'DAILY_UNTIL_DAY' || ciclo.day !== 8 || !Number.isInteger(ciclo.hour) || ciclo.hour < 0 || ciclo.hour > 11)) throw new Error('Coleta do Simples exige dias 1 a 8 e horário matinal.');
   agenda = { ...agenda, ...structuredClone(input.agenda || {}) };
