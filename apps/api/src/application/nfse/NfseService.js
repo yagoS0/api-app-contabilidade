@@ -2020,6 +2020,11 @@ export class NfseService {
     // O histórico confirmado resolve o regime da competência, sem usar o cadastro atual como passado.
     const regimeVigente = regimeDaCompetencia({ historico: company.regimeHistorico, competencia: data.competencia });
     if (!regimeVigente.ok) return recusaAntesDeEscrever(Object.assign(new Error(regimeVigente.message), { code: regimeVigente.codigo, correcao: regimeVigente.correcao }), 'histórico de regime');
+    // O lote relê Date como ISO no JSON. Todos os consumidores seguintes devem
+    // receber o mesmo dia já validado, sem converter fuso nem alterar o pedido.
+    // Mês informado continua mensal, inclusive na revalidação antes do envio.
+    const competenciaMensal = typeof data.competencia === 'string' && /^\d{4}-\d{2}$/.test(data.competencia);
+    data = { ...data, competencia: competenciaMensal ? data.competencia : regimeVigente.competenciaInicio };
     const regime = regimeVigente.regime;
 
     // ⚠⚠ O PERFIL DE EMISSÃO — `null` com a flag desligada, que é o caminho de hoje. Carregado

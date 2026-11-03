@@ -1,0 +1,78 @@
+{
+  "summary": "Corrige competência válida rejeitada na emissão de NFS-e em lote após serialização JSON de Date. A normalização é restrita à competência recebida e preserva regime histórico, dia civil e precisão mensal.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Correção técnica sob R01/R02/R07/R19/R20, sem regra operacional nova, migração ou atos fiscais reais. O objeto recebido não é modificado; ausência, data impossível e regime ambíguo continuam bloqueados. diaFiscal permanece estrito para vigências e demais consumidores. Referência operacional versionada conciliada byte a byte com a canônica (seção32 já aprovada), com hash atualizado, sem alterar gates/runtime.",
+  "tests": [
+    "Antes da correção: 6 falhas/183 aprovados em 3 suítes focadas; reproduzida mensagem NFSE_REGIME_COMPETENCIA_INVALIDA após serialização JSON.",
+    "Rodada final: 195/195 testes focados e 79/79 consumidores municipais/laboratório aprovados. 138/138 guardas de emissão, conciliação e rotas aprovados na correção complementar.",
+    "Portal cliente completo: 1586/1586 testes em 101/101 suítes aprovados.",
+    "Governança: 85/85 testes aprovados. Builds web e portal cliente aprovados.",
+    "Escritório completo: 6595/6595 testes em 557/557 suítes aprovados. API com PostgreSQL descartável: 250 suítes concluídas antes de falhar no batch11; fixture preexistente nfseRecorrenciaService.test.js:54 usa início2026-10-31 sem injetar hoje. Reprodução isolada:1falha/13passam, NfseService mockado e arquivos de recorrência sem diff. Gate global reprovado; não declarar ready_for_human.",
+    "Retomada: fixture nfseRecorrenciaService.test.js:54 injeta hoje2026-10-06 igualmente à primeira chamada;14/14 testes aprovados, assert Confirme preservado. Sem alteração de produto ou gates. API completa retomada com PostgreSQL descartável; CI do PR ainda obrigatória antes de merge."
+  ],
+  "rollback": "Reverter somente o diff deste incremento no checkout isolado; não tocar alterações de outros chats, dados, notas ou documentos existentes. Reverter conciliação documental separadamente somente mantendo referência canônica íntegra.",
+  "humanDecisions": [
+    "Pedido autoriza diagnóstico e correção local; não autoriza integração, publicação ou emissão real. Não foi realizada emissão de teste contra provedor nem acesso aos dados produtivos da Sincrosat.",
+    "03/11/2026: usuário solicitou explicitamente corrigir e publicar as correções. Autoriza corrigir fixture bloqueadora, PR, merge após checks e publicação; não autoriza emissão de notas reais como teste."
+  ],
+  "sourcePaths": [
+    "apps/api/src/application/nfse/regimeDaCompetencia.js",
+    "apps/api/src/application/nfse/NfseService.js",
+    "apps/api/src/application/nfse/__tests__/historicoMunicipal.test.js",
+    "apps/api/src/application/nfse/__tests__/emissaoDps.test.js",
+    "apps/api/src/application/nfse/lote/__tests__/emissaoLote.test.js",
+    "REGRAS_OPERACIONAIS.md",
+    "docs/governance/operational-reference.json",
+    "apps/api/src/application/nfse/__tests__/nfseRecorrenciaService.test.js"
+  ],
+  "reviews": [
+    {
+      "reviewer": "/root/revisao_referencia",
+      "scope": "domínio fiscal/API e consumidores; conciliação documental separada",
+      "verdict": "approved",
+      "basis": "Rodada2: diaFiscal original, ISO privado somente competência, histórico e mensalidade preservados; logs focados inspecionados."
+    },
+    {
+      "reviewer": "/root/revisao_sistemica",
+      "scope": "sistêmica/técnica/UI/UX",
+      "verdict": "approved",
+      "basis": "Achado compartilhado corrigido; sem alteração visual. Prontidão global depende dos gates e registro final."
+    },
+    {
+      "reviewer": "/root/revisao_publicacao",
+      "scope": "Final: produto, quatro testes e conciliação documental",
+      "verdict": "approved",
+      "basis": "03/11/2026: hashes finais conferidos, fixture temporal corrigida mantendo assert; sem achados. CI no SHA final obrigatória antes da publicação autorizada."
+    }
+  ],
+  "sourceHashes": {
+    "apps/api/src/application/nfse/NfseService.js": "3e9da4b61a3aaafa9492c1070a241ca8c81f722cb7b8ab6301024771d38850d2",
+    "apps/api/src/application/nfse/regimeDaCompetencia.js": "285aa27e4c9a3ec625ebb6d2e7b47c4578d9671c32247b79f20f17ed6d1536de"
+  },
+  "controller": {
+    "run": "2026-11-03T14-00-12-976Z-1a94be80",
+    "status": "interrupted_after_failed_api_gate",
+    "reason": "Primeiro candidato apresentou 1 falha/1729 aprovados; principal encerrou rodada já reprovada, corrigiu via executor nativo e obteve revisões independentes. Journal bruto preservado; não atribuir ready_for_human retroativo. Execuções paralelas posteriores foram interrompidas por pressão de memória e substituídas pelos mesmos gates sequenciais, sem reduzir cobertura ou alterar limites."
+  },
+  "evidenceDirectory": "../output/competencia-lote-20261103",
+  "limitations": [
+    "Dados específicos da Sincrosat não foram consultados; causa reproduzida com dados sintéticos e transporte simulado.",
+    "Resultados históricos reprovados/interrompidos permanecem preservados e não são aprovação. Fixture temporal corrigida na retomada; aguardar gates finais e CI.",
+    "Nenhuma emissão real, migração produtiva ou ativação de automação integra este incremento."
+  ],
+  "deliveryStatus": "reviewed_candidate_publication_authorized_subject_to_final_checks",
+  "environment": "PostgreSQL16 próprio em127.0.0.1:55463, banco competencia_lote_governance_test; migrations aplicadas; serviço de teste encerrado após testes. Sem acesso a banco produtivo."
+}

@@ -1,4 +1,4 @@
-import { regimeDaCompetencia } from '../regimeDaCompetencia.js';
+import { diaFiscal, regimeDaCompetencia } from '../regimeDaCompetencia.js';
 import { incidenciaMunicipal } from '../incidenciaMunicipal.js';
 import { resolverContextoFiscalDaNota } from '../resolverContextoFiscalDaNota.js';
 import { snapshotFiscal } from '../snapshotFiscal.js';
@@ -8,6 +8,36 @@ const historico = [
 ];
 test.each([['2025-12-31','SIMPLES'],['2026-01-01','LUCRO_PRESUMIDO'],['2025-12','SIMPLES']])('regime por competência %s', (competencia, regime) => {
   expect(regimeDaCompetencia({ historico, competencia })).toMatchObject({ ok: true, regime, fonte: 'REGIME_HISTORICO' });
+});
+
+test.each(['2025-12-31T00:00:00.000Z', '2025-12-31T23:59:59.999Z', '2026-01-01T00:00:00.000Z'])('serialização JSON conserva o dia e o regime: %s', iso => {
+  const competencia = new Date(iso);
+  expect(regimeDaCompetencia({ historico, competencia: JSON.parse(JSON.stringify(competencia)) }))
+    .toEqual(regimeDaCompetencia({ historico, competencia }));
+});
+
+test('aceitar ISO na competência não amplia o contrato público de diaFiscal', () => {
+  const iso = '2025-12-31T00:00:00.000Z';
+  expect(diaFiscal(iso)).toBeNull();
+  expect(diaFiscal(new Date(iso))).toBe('2025-12-31');
+  expect(diaFiscal('2025-12-31')).toBe('2025-12-31');
+  expect(regimeDaCompetencia({ historico, competencia: iso })).toMatchObject({
+    ok: true, competenciaInicio: '2025-12-31', competenciaFim: '2025-12-31',
+  });
+});
+
+test.each(['vigenciaInicio', 'vigenciaFim'])('vigência %s continua recusando string ISO', campo => {
+  const periodo = { ...historico[0], [campo]: campo === 'vigenciaInicio'
+    ? '2025-01-01T00:00:00.000Z' : '2025-12-31T00:00:00.000Z' };
+  expect(regimeDaCompetencia({ historico: [periodo], competencia: '2025-12-31T00:00:00.000Z' }))
+    .toMatchObject({ ok: false, codigo: 'NFSE_REGIME_HISTORICO_INVALIDO' });
+});
+
+test.each([null, undefined, '', 202601, {}, [], new Date(NaN), '2026-00', '2026-13',
+  '2026-02-29T00:00:00.000Z', '2026-02-30T00:00:00.000Z', '2026-01-01T24:00:00.000Z',
+  '2026-01-01T00:60:00.000Z', '2026-01-01T00:00:00.000Zextra', '2026-01-01T00:00:00'])
+('entrada inválida não vira competência: %s', competencia => {
+  expect(regimeDaCompetencia({ historico, competencia }).codigo).toBe('NFSE_REGIME_COMPETENCIA_INVALIDA');
 });
 test.each([[[]], [[historico[1]]]])('não inventa passado sem cobertura', periodos => {
   expect(regimeDaCompetencia({ historico: periodos, competencia: '2025-12-01' }).codigo).toBe('NFSE_REGIME_SEM_VIGENCIA');
