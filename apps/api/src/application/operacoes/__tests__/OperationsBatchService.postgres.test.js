@@ -163,7 +163,7 @@ test.each(['existing-declaration', 'changed-declaration-after-extract'])('Postgr
     console.info('R2B_DECLARACAO_DIAGNOSTICO', JSON.stringify({ mode, id, requests: requests.filter(r => r.id === id), attempt,
       circular: circularDiagnostic(await pg.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } })),
       fiscal: await pg.serproChamada.findMany({ where: { portalClientId: id }, select: { rota: true, status: true, erroCodigo: true } }) }));
-    expect(attempt.evolucaoDocumental.documento.numeroDeclaracao).toBe(`existing-${id}`);
+    expect(attempt).toMatchObject({ evolucaoDocumental: { documento: { numeroDeclaracao: `existing-${id}` } } });
     const dasRequests = requests.filter(r => r.id === id && ['GERARDAS12', 'GERARDASCOBRANCA17'].includes(r.service));
     if (mode === 'existing-declaration') {
       expect(dasRequests).toHaveLength(1);
