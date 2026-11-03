@@ -59,6 +59,7 @@ function AtendimentoMovel({ session, feedback }) {
   return <WhatsappPage api={api} usuarioId={session.user?.id} onSair={session.clearSession} error={feedback.error} onBack={() => session.setPage("companies")} />;
 }
 function AppInterno({ session, feedback }) {
+  const accountingNavigation = useLocation();
   const posicoesSolicitacoes = useMemo(() => new Map(), [session.user]);
   const navigate = useNavigate();
   // Só a escolha da mensagem acompanha a navegação. Destinatário e texto são
@@ -111,6 +112,7 @@ function AppInterno({ session, feedback }) {
     },
   });
   const accountingWorkspace = useManageAccountingWorkspace({
+    navigation: accountingNavigation,
     api,
     page: session.page,
     selectedCompanyId: companiesWorkspace.companiesState.selectedCompanyId,

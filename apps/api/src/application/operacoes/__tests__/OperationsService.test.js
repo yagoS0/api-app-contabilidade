@@ -45,3 +45,18 @@ test('acesso revogado, datas impossíveis e colisão de idempotência são bloqu
   db.companyFirmAccess.findUnique.mockResolvedValue({ status: 'REVOKED' });
   await expect(save(db, 'review')).rejects.toMatchObject({ status: 403 });
 });
+
+test('prova automática usa raiz explícita, recusa captura divergente e não aceita tx como raiz', async () => {
+  const db = database();
+  const snapshot = { estado: 'calculada', idempotencyKey: 'fech:auto:test', simulacaoSerpro: { _portalCalculo: { origemCalculo: 'AUTOMATICO_SIMPLES' } } };
+  db.apuracaoSnapshot.findUnique.mockResolvedValue(snapshot);
+  const root = { $transaction: jest.fn(), apuracaoSnapshot: { findUnique: jest.fn(async () => snapshot) } };
+  const proof = jest.fn(async () => ({ contexto: { hash: 'original' }, hash: 'proof' }));
+  expect((await lerOperacao(db, 'a', '2026-09', { rootDb: root, conferirProva: proof })).blocked).toBeNull();
+  expect(proof).toHaveBeenCalledWith(snapshot, { portalClientId: 'a', competencia: '2026-09' }, { db: root });
+  root.apuracaoSnapshot.findUnique.mockResolvedValue({ ...snapshot, idempotencyKey: 'outra-revisao' });
+  expect((await lerOperacao(db, 'a', '2026-09', { rootDb: root, conferirProva: proof })).blocked).toMatch(/prova/);
+  proof.mockClear();
+  expect((await lerOperacao(db, 'a', '2026-09', { rootDb: {}, conferirProva: proof })).blocked).toMatch(/prova/);
+  expect(proof).not.toHaveBeenCalled();
+});

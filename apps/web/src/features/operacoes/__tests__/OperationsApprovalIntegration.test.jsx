@@ -14,6 +14,9 @@ function fixture(status = 'CONFIRMED') {
   let resolveExecution, rejectExecution;
   let current = { companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 } };
   const api = {
+    listOperationsBatches: jest.fn(async () => ({ ok: true, items: [] })),
+    previewOperationsBatch: jest.fn(async () => ({ ok: true, preview: { id: 'preview-batch', competencia: '2026-09', items: [{ companyId: 'a', name: 'CDA' }], blocked: [] } })),
+    acceptOperationsBatch: jest.fn(async () => ({ ok: true, batch: { id: 'batch', competencia: '2026-09', items: [] } })),
     getApuracaoSnapshot: jest.fn(async (id, competencia) => ({ snapshot: { portalClientId: id, competencia, estado: 'calculada', idempotencyKey: 'calculo-1', dasSimuladoSerpro: 100, atividadesEscolhidas: [] } })),
     getAuditoriaNotas: jest.fn(async (id, competencia) => ({ auditoria: { competencia, totalAchados: 0, perguntas: [] } })),
     getPgdasHistorico: jest.fn(async (id, competencia) => ({ competencia, versoes: [] })),
@@ -37,6 +40,28 @@ async function openApprovals() {
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
 }
 
+test('acompanhamento integrado anuncia falha de atualização sem perder o último resultado', async () => {
+  const { api } = fixture();
+  api.listOperationsBatches.mockResolvedValue({ ok: true, items: [{ id: 'batch', competencia: '2026-09', taskId: 'task-1', items: [
+    { companyId: 'a', name: 'CDA', state: 'ATTENTION', message: 'Resultado incerto.' },
+  ] }] });
+  api.getBackgroundTask = jest.fn().mockResolvedValueOnce({ task: {
+    jobId: 'task-1', competencia: '2026-09', status: 'interrupted', total: 1, processadas: 0,
+  } }).mockRejectedValueOnce(new Error('Falha ao atualizar acompanhamento'));
+  await openApprovals();
+  fireEvent.click(await screen.findByRole('button', { name: 'Acompanhar tarefa' }));
+  const detail = await screen.findByRole('region', { name: 'Acompanhamento da tarefa' });
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(within(detail).getByRole('heading', { name: 'Acompanhamento da tarefa' })).toHaveFocus();
+  fireEvent.click(within(detail).getByRole('button', { name: 'Atualizar tarefa' }));
+  expect(await within(detail).findByRole('alert')).toHaveTextContent('Falha ao atualizar acompanhamento');
+  expect(within(detail).getByText('0/1 itens processados')).toBeInTheDocument();
+  expect(within(detail).getByText(/Interrompida/)).toBeInTheDocument();
+  expect(api.getBackgroundTask).toHaveBeenCalledTimes(2);
+  expect(api.acceptOperationsBatch).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
 test('a conferência da empresa usa uma só camada de diálogo e não executa ao abrir', async () => {
   const { api } = fixture('PENDING');
   await openApprovals();
@@ -52,11 +77,39 @@ test('a conferência da empresa usa uma só camada de diálogo e não executa ao
   expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
 
+test('rotina integrada usa uma camada, retorna foco e bloqueia Escape durante aceite', async () => {
+  const { api } = fixture();
+  let finish;
+  api.acceptOperationsBatch.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await openApprovals();
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
+  const preview = await screen.findByRole('region', { name: 'Liberar rotina de transmissão' });
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Liberar rotina de transmissão' })).toHaveFocus());
+  fireEvent.click(within(preview).getByRole('button', { name: 'Cancelar' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Liberar rotina' })).toHaveFocus());
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
+  const input = await screen.findByLabelText('Digite a competência 2026-09');
+  fireEvent.change(input, { target: { value: '2026-09' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
+  await waitFor(() => expect(api.acceptOperationsBatch).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: 'Fechar' })).toBeDisabled();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(screen.getByRole('dialog')).toContainElement(document.activeElement);
+  await act(async () => finish({ ok: true, batch: { id: 'batch', competencia: '2026-09', items: [] } }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Liberar rotina' })).toHaveFocus());
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
 test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupado e não repete execução (%s)', async result => {
   const task = fixture();
   await openApprovals();
   fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Liberar selecionadas (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas (1)' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   const execute = screen.getByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();

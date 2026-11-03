@@ -19,7 +19,7 @@ test('confirmação e liberação são separadas e exigem prévia explícita', a
   await waitFor(() => expect(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' }));
   expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole('button', { name: 'Liberar selecionadas (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas (1)' }));
   expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('button', { name: 'Liberar e executar' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'), { target: { value: '2026-09' } });
@@ -58,7 +58,7 @@ test.each(['STAFF', 'VIEWER', undefined])('papel %s mantém leitura sem ações 
   const api = fixture({ status: 'CONFIRMED' });
   render(<OperationsApproval api={api} rows={[{ company: { ...rows[0].company, myRole } }]} competencia="2026-09" />);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled());
-  expect(screen.queryByRole('button', { name: /Liberar selecionadas/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Transmitir selecionadas/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Conferir' }));
   expect(screen.getByRole('link', { name: 'Revisar notas da competência' })).toBeInTheDocument();
   expect(screen.getByText('Seu acesso permite somente consultar esta apuração.')).toBeInTheDocument();
@@ -71,7 +71,7 @@ test('permissão retirada com prévia aberta bloqueia execução', async () => {
   const view = render(<OperationsApproval api={api} rows={rows} competencia="2026-09" />);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Liberar selecionadas (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas (1)' }));
   fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'), { target: { value: '2026-09' } });
   view.rerender(<OperationsApproval api={api} rows={[{ company: { ...rows[0].company, myRole: 'STAFF' } }]} competencia="2026-09" />);
   expect(screen.getByRole('button', { name: 'Liberar e executar' })).toBeDisabled();
@@ -84,7 +84,7 @@ test('detalhe embutido direciona foco e retorna à empresa sem criar modal extra
  render(<OperationsApproval embedded api={fixture()} rows={rows} competencia="2026-09"/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Conferir'}));expect(screen.getByRole('heading',{name:'Conferir CDA'})).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));expect(screen.getByRole('button',{name:'Conferir'})).toHaveFocus();
 });
 test('lote embutido recebe foco e cancelar retorna ao acionador',async()=>{
- render(<OperationsApproval embedded api={fixture({status:'CONFIRMED'})} rows={rows} competencia="2026-09"/>);const select=await screen.findByRole('button',{name:'Selecionar elegíveis (1)'});await waitFor(()=>expect(select).toBeEnabled());fireEvent.click(select);const btn=screen.getByRole('button',{name:'Liberar selecionadas (1)'});fireEvent.click(btn);expect(screen.getByRole('heading',{name:'Liberar apurações confirmadas'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Liberar selecionadas (1)'})).toHaveFocus();
+ render(<OperationsApproval embedded api={fixture({status:'CONFIRMED'})} rows={rows} competencia="2026-09"/>);const select=await screen.findByRole('button',{name:'Selecionar elegíveis (1)'});await waitFor(()=>expect(select).toBeEnabled());fireEvent.click(select);const btn=screen.getByRole('button',{name:'Transmitir selecionadas (1)'});fireEvent.click(btn);expect(screen.getByRole('heading',{name:'Liberar apurações confirmadas'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Transmitir selecionadas (1)'})).toHaveFocus();
 });
 
 test('seleção explícita libera somente o subconjunto e resposta vazia não executa', async () => {
@@ -95,9 +95,9 @@ test('seleção explícita libera somente o subconjunto e resposta vazia não ex
   render(<OperationsApproval api={api} rows={[...rows,{company:{companyId:'b',razao:'Beta',myRole:'ACCOUNTANT'}}]} competencia="2026-09" />);
   await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());
   expect(api.saveCompanyOperation).not.toHaveBeenCalled();
-  expect(screen.getByRole('button',{name:'Liberar selecionadas (0)'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Transmitir selecionadas (0)'})).toBeDisabled();
   fireEvent.click(screen.getByLabelText('Selecionar CDA'));
-  fireEvent.click(screen.getByRole('button',{name:'Liberar selecionadas (1)'}));
+  fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas (1)'}));
   fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'),{target:{value:'2026-09'}});
   fireEvent.click(screen.getByRole('button',{name:'Liberar e executar'}));
   await screen.findByRole('alert');
@@ -114,7 +114,7 @@ test('troca de competência durante gravação impede execução tardia', async 
   const view=render(<OperationsApproval api={api} rows={rows} competencia="2026-09" />);
   await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());
   fireEvent.click(screen.getByLabelText('Selecionar CDA'));
-  fireEvent.click(screen.getByRole('button',{name:'Liberar selecionadas (1)'}));
+  fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas (1)'}));
   fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'),{target:{value:'2026-09'}});
   fireEvent.click(screen.getByRole('button',{name:'Liberar e executar'}));
   view.rerender(<OperationsApproval api={api} rows={rows} competencia="2026-10" />);
@@ -139,7 +139,7 @@ test.each([
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled());
   expect(screen.getByLabelText('Selecionar CDA')).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Selecionar elegíveis (0)' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Liberar selecionadas (0)' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Transmitir selecionadas (0)' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Conferir' }));
   expect(screen.getByRole('button', { name: 'Confirmar apuração' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar apuração' }));

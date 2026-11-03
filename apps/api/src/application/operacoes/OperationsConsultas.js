@@ -2,7 +2,7 @@ import { lerOperacao, validarCompetencia } from './OperationsService.js';
 
 // Batch the inputs of the existing revision/fingerprint verifier. The adapter only
 // supplies its exact selects; adding grouping fields to a hash would invalidate it.
-export async function listarEvidenciasOperacoes(db, companyIds, competencia) {
+export async function listarEvidenciasOperacoes(db, companyIds, competencia, { rootDb = db } = {}) {
   validarCompetencia(competencia);
   if (!companyIds.length) return { items: [], total: 0, competencia };
   const [ano, mes] = competencia.split('-').map(Number);
@@ -31,7 +31,7 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia) {
       portalInvoice: many(notas.filter(n => n.clientId === companyId)), accountingEntry: many(folha.filter(e => e.portalClientId === companyId)),
       pendenciaPosFechamento: many(pendencias.filter(p => p.portalClientId === companyId)),
     };
-    const evidence = await lerOperacao(adapter, companyId, competencia);
+    const evidence = await lerOperacao(adapter, companyId, competencia, { rootDb });
     items.push(evidence);
   }
   return { items, total: items.length, competencia };

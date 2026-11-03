@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { contextoOrigemCalculo, recuperarCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
+import { conferirProvaAutomatica } from '../notas/apuracao/v2/PreparacaoAutomaticaSimples.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
@@ -9,7 +10,7 @@ export function validarCompetencia(competencia) {
 }
 
 // Estado operacional independente. Nunca escreve em apuração, fechamento, guia ou Calendário.
-export async function lerOperacao(db, companyId, competencia) {
+export async function lerOperacao(db, companyId, competencia, { rootDb = db, conferirProva = conferirProvaAutomatica } = {}) {
   validarCompetencia(competencia);
   const contexto = await contextoOrigemCalculo({ portalClientId: companyId, competencia }, db);
   const [snapshot, pending, saved] = await Promise.all([
@@ -19,7 +20,17 @@ export async function lerOperacao(db, companyId, competencia) {
   ]);
   const fingerprint = hash([contexto.hash, snapshot, pending.map(p => p.id)]);
   const state = saved?.value || { status: 'PENDING', schedule: null };
-  const recovery = recuperarCalculo(snapshot, { portalClientId: companyId, competencia, contextoOrigem: contexto, cnpj: contexto.contribuinteCnpj, regimeApuracao: contexto.regimeApuracao });
+  let preparacaoAtual, proofError;
+  if (snapshot?.simulacaoSerpro?._portalCalculo?.origemCalculo === 'AUTOMATICO_SIMPLES' || String(snapshot?.idempotencyKey || '').startsWith('fech:auto:')) {
+    try {
+      if (typeof rootDb.$transaction !== 'function') throw fail('Raiz de leitura indisponível.');
+      preparacaoAtual = await conferirProva(snapshot, { portalClientId: companyId, competencia }, { db: rootDb });
+      // A captura RR independente não pode validar outra versão que a do consumidor.
+      const atual = await rootDb.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } } });
+      if (!preparacaoAtual || preparacaoAtual.contexto.hash !== contexto.hash || hash(atual) !== hash(snapshot)) throw fail('Prova alterada.');
+    } catch { proofError = 'A prova do preparo automático não foi confirmada. Confira a tentativa antes de continuar.'; }
+  }
+  const recovery = proofError ? { calculoRecuperacaoMotivo: proofError } : recuperarCalculo(snapshot, { portalClientId: companyId, competencia, contextoOrigem: contexto, cnpj: contexto.contribuinteCnpj, regimeApuracao: contexto.regimeApuracao, preparacaoAtual });
   const blocked = pending.length ? 'Há notas ou eventos posteriores à apuração. Revise as pendências da competência.'
     : !recovery.calculoRecuperavel ? recovery.calculoRecuperacaoMotivo || 'Abra a apuração para conferir um cálculo válido antes de confirmar.' : null;
   const execution = state.releaseId ? (await db.appSetting.findUnique({ where: { key: `operations_execution:${companyId}:${competencia}:${state.releaseId}` } }))?.value : null;
@@ -30,14 +41,14 @@ export async function lerOperacao(db, companyId, competencia) {
     calculation: recovery.calculoRecuperavel || recovery.calculoSalvo || null };
 }
 
-export async function salvarOperacao(db, companyId, competencia, userId, input, { isAdmin = false } = {}) {
+export async function salvarOperacao(db, companyId, competencia, userId, input, { isAdmin = false, transaction = null, rootDb = db } = {}) {
   validarCompetencia(competencia);
   const { action, expectedRevision, requestId, schedule } = input || {};
   if (!['confirm', 'review', 'release', 'schedule'].includes(action) || !/^[a-f0-9]{64}$/.test(expectedRevision || '') || !/^[\w-]{8,100}$/.test(requestId || '')) throw fail('Atualize os dados e confira a ação escolhida.', 422);
   if (action === 'schedule' && schedule !== null && (!/^20\d{2}-(0[1-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-3]):[0-5]\d$/.test(schedule || '') || !Number.isFinite(Date.parse(`${schedule}:00Z`)) || new Date(`${schedule}:00Z`).toISOString().slice(0, 16) !== schedule)) throw fail('Informe uma data e horário válidos.', 422);
   const requestKey = `operations_request:${userId}:${requestId}`;
   const requestHash = hash([companyId, competencia, action, expectedRevision, schedule ?? null]);
-  return db.$transaction(async tx => {
+  const write = async tx => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${keyFor(companyId, competencia)}))::text`;
     if (!isAdmin) {
       const access = await tx.companyFirmAccess.findUnique({ where: { companyId_userId: { companyId, userId: String(userId) } } });
@@ -48,7 +59,7 @@ export async function salvarOperacao(db, companyId, competencia, userId, input, 
       if (previousRequest.value.hash !== requestHash) throw fail('Solicitação já utilizada para outra alteração.');
       return previousRequest.value.result;
     }
-    const before = await lerOperacao(tx, companyId, competencia);
+    const before = await lerOperacao(tx, companyId, competencia, { rootDb });
     if (action !== 'schedule' && before.execution && before.execution.status !== 'DONE') throw fail('Há uma tentativa em andamento ou a conferir. Consulte Tarefas e a central de apuração antes de nova ação.');
     if (before.revision !== expectedRevision) throw fail('Os dados mudaram. Atualize e confira novamente antes de continuar.');
     if (['confirm', 'release'].includes(action) && before.blocked) throw fail(before.blocked);
@@ -61,8 +72,9 @@ export async function salvarOperacao(db, companyId, competencia, userId, input, 
       fingerprint: before.fingerprint, schedule: action === 'schedule' ? schedule : before.schedule,
       changedAt: new Date().toISOString(), changedBy: String(userId) };
     await tx.appSetting.upsert({ where: { key: keyFor(companyId, competencia) }, create: { key: keyFor(companyId, competencia), value }, update: { value } });
-    const result = await lerOperacao(tx, companyId, competencia);
+    const result = await lerOperacao(tx, companyId, competencia, { rootDb });
     await tx.appSetting.create({ data: { key: requestKey, value: { hash: requestHash, companyId, competencia, action, userId: String(userId), before, result } } });
     return result;
-  }, { isolationLevel: 'Serializable', timeout: 20000 });
+  };
+  return transaction ? write(transaction) : db.$transaction(write, { isolationLevel: 'Serializable', timeout: 20000 });
 }
